@@ -112,7 +112,10 @@ fn scan(context: Option<&str>, out_path: &std::path::Path) -> Result<(), String>
     };
 
     let mut kinds = serde_json::Map::new();
-    for kind in KINDS {
+    for (i, kind) in KINDS.iter().enumerate() {
+        // Progress goes to stderr, one line per kind, because a scan is the one slow step in the
+        // pipeline (a kubectl round-trip per kind) and silence reads as a hang.
+        eprint!("[{:>2}/{}] {kind:<24}\r", i + 1, KINDS.len());
         let raw = kubectl(&["--context", &context, "get", kind, "-A", "-o", "json"])
             // Cluster-scoped kinds reject -A; retry without it rather than special-casing a list
             // that would drift from the server's own opinion.
@@ -122,6 +125,8 @@ fn scan(context: Option<&str>, out_path: &std::path::Path) -> Result<(), String>
         if *kind == "secrets" {
             sanitize_secret_list(&mut value)?;
         }
+        let count = value.get("items").and_then(|i| i.as_array()).map_or(0, Vec::len);
+        eprintln!("[{:>2}/{}] {kind:<24} {count:>5}", i + 1, KINDS.len());
         kinds.insert((*kind).to_owned(), value);
     }
 
