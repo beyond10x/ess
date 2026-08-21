@@ -28,6 +28,9 @@ const KINDS: &[&str] = &[
     "deployments",
     "statefulsets",
     "daemonsets",
+    "replicasets",
+    "jobs",
+    "cronjobs",
     "pods",
     "services",
     "ingresses",
@@ -35,6 +38,8 @@ const KINDS: &[&str] = &[
     "secrets",
     "serviceaccounts",
     "persistentvolumeclaims",
+    "poddisruptionbudgets",
+    "horizontalpodautoscalers",
 ];
 
 #[derive(Parser)]
