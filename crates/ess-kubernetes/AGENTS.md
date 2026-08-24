@@ -84,7 +84,7 @@ pipeline's.
 
 No gate step contacts a cluster. A test that needs a live cluster is not a test this gate runs.
 
-There is no `scripts/check-brand.sh` in this repository. If a former brand name appears at the
+The former brand is fenced org-wide by `scripts/check-org-brand.sh` in the **atlas** repo. If a former brand name appears at the
 surface, add the check rather than an exemption (atlas ADR 0001).
 
 ## Releases
