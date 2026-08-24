@@ -105,6 +105,6 @@ control.
 | know what is built, what is not, and what you have to trust | [Status](./status/where-this-stands.md) and [Limitations](./status/limitations.md) |
 
 The project is Apache-2.0 and lives at
-[github.com/unrelated-predecessor/aep](https://github.com/unrelated-predecessor/aep).
+[github.com/beyond10x/aep](https://github.com/beyond10x/aep).
 Every claim on this site is traceable to the repository: concept, example and status pages name
 their source files, and every command a guide shows is runnable from a checkout.

@@ -22,7 +22,7 @@ task against evidence, and asking how old that evidence is.
 ## Build
 
 ```console
-$ git clone https://github.com/unrelated-predecessor/aep
+$ git clone https://github.com/beyond10x/aep
 $ cd aep
 $ cargo build -p protocol-cli
 $ B=target/debug/protocol

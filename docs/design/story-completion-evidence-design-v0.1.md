@@ -1,6 +1,6 @@
 # Story completion, evidence-gated — Design v0.1
 
-> **Repository:** `unrelated-predecessor/aep`
+> **Repository:** `beyond10x/aep`
 > **Status:** **proposed, not accepted.** Nothing here is a work order. It is proposed by
 > [`harness-wave-4-governed-dogfood.md`](../plan/harness-wave-4-governed-dogfood.md) § W4.3, whose
 > acceptance criterion is *a verdict on this document* — accepted, accepted in part, or refused —

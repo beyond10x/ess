@@ -1,6 +1,6 @@
 # ESS Structural Synthesis, Obligations & Realizations — Design v0.1
 
-> **Repository:** `unrelated-predecessor/aep`  
+> **Repository:** `beyond10x/aep`  
 > **Status:** Proposed follow-on design after closed-loop ESS conformance  
 > **Audience:** Implementors extending ESS from verified specification into generated applications and agent-completed implementation gaps  
 > **Relationship to existing work:** Additive. This document assumes the ESS model/compiler, projection layer (`ess-gen`), and the closed-loop ESS conformance milestone already exist and are trusted.

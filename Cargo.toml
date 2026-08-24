@@ -54,7 +54,7 @@ version = "0.1.0"
 edition = "2021"
 rust-version = "1.85"
 license = "Apache-2.0"
-repository = "https://github.com/unrelated-predecessor/aep"
+repository = "https://github.com/beyond10x/aep"
 authors = ["Beyond10x contributors <contributors@beyond10x.invalid>"]
 
 [workspace.dependencies]
