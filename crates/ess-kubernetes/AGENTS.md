@@ -7,6 +7,17 @@ and are not restated here.
 
 `README.md` shows how to run a scan. This file says what must not break.
 
+## Serves
+
+The objectives of the collection this repository moves, by id from `atlas/ROADMAP.md` — the only
+cross-repository roadmap, and the page that says what each id means and which evidence closes it:
+
+- **O2 — decisions as data, with evidence.** An infra-observation bundle is evidence the protocol reasons over.
+- **O1 — governed reach.** The kubeconfig stays with the scanner, so the analysis never holds a credential.
+
+A change here that moves none of these is a question for the operator, not a task.
+`atlas/scripts/check-map.sh` fails a repository whose `AGENTS.md` names no objective.
+
 ## Why this repository exists
 
 **It holds the kubeconfig so the analysis never does.** `aep` reads an
