@@ -1,0 +1,14 @@
+[package]
+name = "ess-kubernetes"
+version = "0.1.0"
+edition = "2021"
+license = "Apache-2.0"
+description = "The actor beside aep: scans a Kubernetes cluster into an infra-observation bundle the pure toolchain consumes. Holds the kubeconfig; the analysis never does."
+
+[dependencies]
+# CLI per the standing rule: clap derive, never hand-rolled argv.
+clap = { version = "4", features = ["derive"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+# Secret values are hashed before anything is written to disk; this is the hasher.
+sha2 = "0.10"
