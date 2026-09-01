@@ -13,6 +13,7 @@ ess-primitives.workspace = true
 ess-domain.workspace = true
 serde.workspace = true
 serde_json.workspace = true
+sha2 = "0.11"
 
 [dev-dependencies]
 serde_yaml.workspace = true

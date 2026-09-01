@@ -4,6 +4,8 @@
 
 - Add reusable named struct `shape` declarations for views, preserving expanded checked fields in
   compiler IR while OpenAPI reuses one component schema through `$ref`.
+- Expose the compiler-owned semantic source digest on `EssIr`, so downstream builders and
+  provenance records bind to one canonical implementation.
 
 ## [0.2.1] — 2026-09-01
 

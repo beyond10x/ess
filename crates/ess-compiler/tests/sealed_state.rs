@@ -60,13 +60,15 @@ fn every_compiler_entrance_validates_before_resolution() {
 
 #[test]
 fn provenance_never_hashes_an_empty_serialization_fallback() {
-    let text = source("crates/ess-gen/src/provenance.rs");
+    let provenance = source("crates/ess-gen/src/provenance.rs");
+    let compiler = source("crates/ess-compiler/src/ir.rs");
     assert!(
-        !text.contains("serde_json::to_vec(ir).unwrap_or_default()"),
+        !provenance.contains("serde_json::to_vec(ir).unwrap_or_default()")
+            && !compiler.contains("serde_json::to_vec(self).unwrap_or_default()"),
         "a serialization failure must be named, never turned into the digest of empty bytes"
     );
     assert!(
-        text.contains("cannot digest an IR that does not serialize"),
+        compiler.contains("cannot digest an IR that does not serialize"),
         "the explicit failure should say which integrity boundary failed"
     );
 }

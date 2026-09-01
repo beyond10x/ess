@@ -1385,4 +1385,24 @@ impl EssIr {
         json.push('\n');
         json
     }
+
+    /// The full SHA-256 digest of this resolved model's canonical semantic bytes.
+    ///
+    /// The digest ignores source-file layout and comments: two source trees that compile to the
+    /// same [`EssIr`] name the same service contract. It uses the compact JSON form already used by
+    /// generated-artifact provenance, so moving this capability into the compiler does not change
+    /// any existing digest.
+    pub fn source_digest(&self) -> String {
+        use sha2::{Digest as _, Sha256};
+        use std::fmt::Write as _;
+
+        let json = serde_json::to_vec(self)
+            .unwrap_or_else(|error| panic!("cannot digest an IR that does not serialize: {error}"));
+        let hash = Sha256::digest(&json);
+        let mut out = String::with_capacity(64);
+        for byte in &hash {
+            let _ = write!(out, "{byte:02x}");
+        }
+        out
+    }
 }

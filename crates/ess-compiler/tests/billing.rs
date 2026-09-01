@@ -348,6 +348,21 @@ fn canonical_json_ends_in_a_newline() {
 }
 
 #[test]
+fn the_source_digest_names_exactly_the_canonical_semantic_model() {
+    use sha2::{Digest as _, Sha256};
+    use std::fmt::Write as _;
+
+    let ir = compiled();
+    let mut expected = String::with_capacity(64);
+    for byte in Sha256::digest(serde_json::to_vec(&ir).unwrap()) {
+        write!(expected, "{byte:02x}").unwrap();
+    }
+
+    assert_eq!(ir.source_digest(), expected);
+    assert_eq!(ir.source_digest().len(), 64);
+}
+
+#[test]
 fn the_json_orders_its_keys_the_way_a_btreemap_does() {
     let json = compiled().to_canonical_json();
     let email = json

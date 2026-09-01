@@ -152,18 +152,7 @@ impl fmt::Display for Provenance {
 /// fine against drift and weak against construction, so once the digest became an acceptance
 /// criterion the truncation had to go (gap register D-4).
 fn digest(ir: &EssIr) -> String {
-    use sha2::{Digest, Sha256};
-
-    use std::fmt::Write as _;
-
-    let json = serde_json::to_vec(ir)
-        .unwrap_or_else(|error| panic!("cannot digest an IR that does not serialize: {error}"));
-    let hash = Sha256::digest(&json);
-    let mut out = String::with_capacity(64);
-    for byte in &hash {
-        let _ = write!(out, "{byte:02x}");
-    }
-    out
+    ir.source_digest()
 }
 
 /// The model slice one artifact derives from, as the artifact records it.
