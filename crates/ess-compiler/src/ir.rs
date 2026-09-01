@@ -791,6 +791,13 @@ pub struct ResolvedView {
     /// So "what is this a view *of*" is answered by [`EssIr::entity`] rather than by a name a
     /// projection has to look up and hope about.
     pub source: EntityHandle,
+    /// The reusable struct this view names as its row contract.
+    ///
+    /// `None` means the author declared [`Self::fields`] inline. When present, the fields below are
+    /// the checked expansion of this handle, so generators can either consume the normalized row or
+    /// preserve schema reuse with a reference.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub shape: Option<TypeHandle>,
     /// What it exposes, in declaration order.
     ///
     /// The view's own declaration of each field, not the entity's. They are checked to agree by
@@ -1378,4 +1385,5 @@ impl EssIr {
         json.push('\n');
         json
     }
+
 }

@@ -704,12 +704,16 @@ fn schemas(ir: &EssIr, component: &ResolvedComponent) -> BTreeMap<String, Fragme
             continue;
         };
         let view = ir.view(handle);
-        out.insert(
-            row_key(view),
-            embedded(&types::message(&Message::of_view(view))),
-        );
+        if let Some(shape) = &view.shape {
+            roots.push(shape);
+        } else {
+            out.insert(
+                row_key(view),
+                embedded(&types::message(&Message::of_view(view))),
+            );
+            roots.extend(types::field_leaves(&view.fields));
+        }
         out.insert(view_key(view), written(view_schema(view)));
-        roots.extend(types::field_leaves(&view.fields));
     }
 
     for (name, definition) in types::definitions(ir, roots) {
@@ -725,6 +729,10 @@ fn schemas(ir: &EssIr, component: &ResolvedComponent) -> BTreeMap<String, Fragme
 /// no such fact today and none is invented here; what the shape buys is that adding one later is
 /// not a breaking change to every client.
 fn view_schema(view: &ResolvedView) -> Value {
+    let row = view
+        .shape
+        .as_ref()
+        .map_or_else(|| row_key(view), ToString::to_string);
     json!({
         "type": "object",
         "additionalProperties": false,
@@ -734,7 +742,7 @@ fn view_schema(view: &ResolvedView) -> Value {
             "rows": {
                 "type": "array",
                 "description": "Every row the projection holds, in the order it holds them.",
-                "items": {"$ref": reference(&row_key(view))},
+                "items": {"$ref": reference(&row)},
             },
         },
     })
