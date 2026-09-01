@@ -271,7 +271,7 @@ impl SuiteProvenance {
         let digest = |value: &str| {
             SpecDigest::new(value).unwrap_or_else(|error| {
                 panic!(
-                    "`ess-gen` writes a digest `aep-domain` accepts: {error}; the two have \
+                    "`ess-gen` writes a digest `SpecDigest` accepts: {error}; the two have \
                      drifted, and a conformance record carrying an unparsable digest attests \
                      nothing"
                 )

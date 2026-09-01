@@ -11,6 +11,7 @@ members = [
     "crates/ess-synth",
     "crates/ess-kubernetes",
     "crates/ess-openapi",
+    "crates/ess-xtask",
     "crates/infra-domain",
     "crates/infra-compiler",
     "crates/infra-analyze",

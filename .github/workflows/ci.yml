@@ -1,6 +1,5 @@
 # CI provisions the environment and delegates verification to the repository's one gate.
-# `cargo xtask status --check` fails if this workflow stops invoking `task check`, so the Taskfile
-# cannot quietly acquire a shorter CI-shaped twin again.
+# The Taskfile remains the one gate; CI only provisions Rust and the pinned task runner.
 name: CI
 
 on:
@@ -18,29 +17,14 @@ permissions:
 
 env:
   CARGO_TERM_COLOR: always
-  ENTITY_POSTGRES_URL: postgres://aep:aep@127.0.0.1:5432/aep
 
 jobs:
   gate:
     name: Gate
     runs-on: ubuntu-latest
     timeout-minutes: 45
-    services:
-      postgres:
-        image: postgres:16
-        env:
-          POSTGRES_USER: aep
-          POSTGRES_PASSWORD: aep
-          POSTGRES_DB: aep
-        ports:
-          - 5432:5432
-        options: >-
-          --health-cmd "pg_isready -U aep"
-          --health-interval 5s
-          --health-timeout 5s
-          --health-retries 10
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           fetch-depth: 0
           fetch-tags: true
@@ -48,15 +32,11 @@ jobs:
       - name: Fetch the annotated release record
         run: git fetch --tags --force --prune origin
 
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: dtolnay/rust-toolchain@4360b52568e2003a75bf9bc1d59f33a8e3fc893c # stable
         with:
           components: rustfmt, clippy
-          targets: wasm32-unknown-unknown
 
-      - name: Install the declared MSRV toolchain
-        run: rustup toolchain install 1.85.0 --profile minimal
-
-      - uses: actions/setup-go@v7
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7
         with:
           # go-task 3.52.0 declares this exact minimum. GOTOOLCHAIN is deliberately local below,
           # so the setup version and the pinned task runner must move together.
@@ -71,13 +51,7 @@ jobs:
           go install github.com/go-task/task/v3/cmd/task@v3.52.0
           echo "$(go env GOPATH)/bin" >> "$GITHUB_PATH"
 
-      - uses: actions/setup-node@v6
-        with:
-          node-version: "22"
-          cache: npm
-          cache-dependency-path: website/package-lock.json
-
-      - uses: Swatinem/rust-cache@v2
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2
 
       - name: Run the repository gate
         run: task check

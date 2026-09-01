@@ -1,6 +1,6 @@
 # Changelog
 
-## [Unreleased]
+## [0.1.0] — 2026-09-01
 
 - Extract ESS, infrastructure modeling, schema contracts, generators, conformance, examples, and
   suites into a standalone repository with no AEP dependency.
