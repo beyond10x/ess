@@ -1,0 +1,52 @@
+{
+  "format": "ess-client-plan/1",
+  "composition": "devcenter",
+  "endpoint_provider": "injected",
+  "authority_provider": "injected",
+  "services": {
+    "todo": {
+      "system": "workbench",
+      "version": 1,
+      "source_digest": "29fd772e3abb87d8042f8155577c3df9549219ace80c9e595d7da9783f7b7dda",
+      "component": "todo-component",
+      "commands": [
+        "workbench.todo.CreateList"
+      ],
+      "queries": [
+        "workbench.todo.ListById"
+      ],
+      "events": [
+        "workbench.todo.ListCreated"
+      ],
+      "errors": [],
+      "types": [
+        "workbench.todo.ListDetails",
+        "workbench.todo.ListId",
+        "workbench.todo.ListRow",
+        "workbench.todo.Title"
+      ]
+    },
+    "usage": {
+      "system": "workbench",
+      "version": 1,
+      "source_digest": "29fd772e3abb87d8042f8155577c3df9549219ace80c9e595d7da9783f7b7dda",
+      "component": "usage-component",
+      "commands": [
+        "workbench.usage.RecordUsage"
+      ],
+      "queries": [
+        "workbench.usage.UsageById"
+      ],
+      "events": [
+        "workbench.usage.UsageRecorded"
+      ],
+      "errors": [],
+      "types": [
+        "workbench.usage.UsageCount",
+        "workbench.usage.UsageDetails",
+        "workbench.usage.UsageId",
+        "workbench.usage.UsageRow"
+      ]
+    }
+  }
+}

@@ -26,7 +26,7 @@ use ess_domain::name::QualifiedName;
 use ess_primitives::error::ParseError;
 
 use crate::ir::{
-    ActorHandle, CommandHandle, ComponentHandle, DomainHandle, EntityHandle, ErrorHandle,
+    ActorHandle, CommandHandle, ComponentHandle, DomainHandle, EntityHandle, ErrorHandle, EssIr,
     EventHandle, TypeHandle, ViewHandle,
 };
 
@@ -327,6 +327,42 @@ pub enum EssSemanticRef {
         /// Which one.
         name: ComponentRef,
     },
+}
+
+impl EssIr {
+    /// Whether this compilation resolves a stable semantic reference.
+    ///
+    /// This is the dynamic counterpart to typed total handle lookups. Persisted compositions cannot
+    /// carry service-local handles, so they select an exact service IR and ask it to resolve this
+    /// closed reference vocabulary. The exhaustive match forces a resolution decision whenever a
+    /// new semantic reference kind is introduced.
+    pub fn resolves(&self, reference: &EssSemanticRef) -> bool {
+        match reference {
+            EssSemanticRef::Domain { name } => self.domains().contains_key(name.name()),
+            EssSemanticRef::Type { name } => self.types().contains_key(name.name()),
+            EssSemanticRef::Entity { name } => self.entities().contains_key(name.name()),
+            EssSemanticRef::Command { name } => self.commands().contains_key(name.name()),
+            EssSemanticRef::Outcome { name } => self
+                .commands()
+                .get(name.command.name())
+                .is_some_and(|command| {
+                    command
+                        .outcomes
+                        .iter()
+                        .any(|outcome| outcome.name == name.outcome)
+                }),
+            EssSemanticRef::Event { name } => self.events().contains_key(name.name()),
+            EssSemanticRef::Error { name } => self.errors().contains_key(name.name()),
+            EssSemanticRef::View { name } => self.views().contains_key(name.name()),
+            EssSemanticRef::Actor { name } => self.actors().contains_key(name.name()),
+            EssSemanticRef::Transition { name } => self
+                .entities()
+                .get(name.entity.name())
+                .is_some_and(|entity| entity.lifecycle.transition(&name.transition).is_some()),
+            EssSemanticRef::Binding { name } => self.bindings().contains_key(name.name()),
+            EssSemanticRef::Component { name } => self.components().contains_key(name.name()),
+        }
+    }
 }
 
 impl fmt::Display for EssSemanticRef {

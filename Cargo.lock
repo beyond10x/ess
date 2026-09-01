@@ -295,6 +295,7 @@ dependencies = [
  "anyhow",
  "clap",
  "ess-compiler",
+ "ess-composition",
  "ess-conformance",
  "ess-diff",
  "ess-domain",
@@ -324,6 +325,17 @@ dependencies = [
  "serde_json",
  "serde_yaml",
  "sha2",
+]
+
+[[package]]
+name = "ess-composition"
+version = "0.2.1"
+dependencies = [
+ "ess-compiler",
+ "ess-domain",
+ "serde",
+ "serde_json",
+ "serde_yaml",
 ]
 
 [[package]]

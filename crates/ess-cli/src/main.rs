@@ -32,6 +32,27 @@ enum Command {
         #[arg(long)]
         out: Option<PathBuf>,
     },
+    /// Compile exact component surfaces into composition IR and generated clients.
+    Compose {
+        /// An `ess-composition/1` JSON or YAML document.
+        #[arg(long)]
+        path: PathBuf,
+        /// A compiled ESS source, written `service-key=path`. Repeat for every import.
+        #[arg(long = "service", value_name = "KEY=PATH", required = true)]
+        services: Vec<ServiceInput>,
+        /// Where to write canonical `ess-composition/1` IR.
+        #[arg(long)]
+        out: Option<PathBuf>,
+        /// Where to write canonical `ess-client-plan/1`.
+        #[arg(long)]
+        client_plan_out: Option<PathBuf>,
+        /// Root for the generated dependency-free Rust composition client.
+        #[arg(long)]
+        client_rust_out: Option<PathBuf>,
+        /// Output rendering.
+        #[arg(long, value_enum, default_value_t = Format::Text)]
+        format: Format,
+    },
     /// Inspect one declaration in resolved IR.
     Inspect {
         #[command(flatten)]
@@ -130,6 +151,29 @@ struct SpecLocation {
     /// One ESS file or a directory containing `system.yaml`.
     #[arg(long, default_value = ".")]
     path: PathBuf,
+}
+
+#[derive(Debug, Clone)]
+struct ServiceInput {
+    key: ess_composition::ServiceKey,
+    path: PathBuf,
+}
+
+impl std::str::FromStr for ServiceInput {
+    type Err = String;
+
+    fn from_str(value: &str) -> Result<Self, Self::Err> {
+        let (key, path) = value
+            .split_once('=')
+            .ok_or_else(|| "expected a service binding written `service-key=path`".to_owned())?;
+        if path.is_empty() {
+            return Err("a service binding path must not be empty".to_owned());
+        }
+        Ok(Self {
+            key: ess_composition::ServiceKey::new(key).map_err(|error| error.to_string())?,
+            path: PathBuf::from(path),
+        })
+    }
 }
 
 #[derive(Debug, Clone, Copy, ValueEnum)]
@@ -325,6 +369,21 @@ fn run(cli: Cli) -> Result<ExitCode> {
     match cli.command {
         Command::Validate(input) => validate(&input.path, input.format),
         Command::Compile { input, out } => compile(&input.path, out.as_deref(), input.format),
+        Command::Compose {
+            path,
+            services,
+            out,
+            client_plan_out,
+            client_rust_out,
+            format,
+        } => compose(
+            &path,
+            &services,
+            out.as_deref(),
+            client_plan_out.as_deref(),
+            client_rust_out.as_deref(),
+            format,
+        ),
         Command::Inspect { input, name } => inspect(&input.path, &name, input.format),
         Command::Graph { input, format } => graph(&input.path, format),
         Command::Diff { from, to, format } => diff(&from, &to, format),
@@ -461,6 +520,93 @@ fn compile(path: &Path, out: Option<&Path>, format: Format) -> Result<ExitCode> 
         ),
         Format::Json => print!("{json}"),
         Format::Yaml => render(&*ir, Format::Yaml)?,
+    }
+    Ok(ExitCode::SUCCESS)
+}
+
+fn compose(
+    path: &Path,
+    services: &[ServiceInput],
+    out: Option<&Path>,
+    client_plan_out: Option<&Path>,
+    client_rust_out: Option<&Path>,
+    format: Format,
+) -> Result<ExitCode> {
+    let text = fs::read_to_string(path).with_context(|| format!("reading {}", path.display()))?;
+    let specification = if path
+        .extension()
+        .is_some_and(|extension| extension == "json")
+    {
+        ess_composition::CompositionSpec::from_json(&text)
+            .with_context(|| format!("reading {} as composition JSON", path.display()))?
+    } else {
+        ess_composition::CompositionSpec::from_yaml(&text)
+            .with_context(|| format!("reading {} as composition YAML", path.display()))?
+    };
+
+    let mut compiled = Vec::with_capacity(services.len());
+    for service in services {
+        let Ok((ir, _)) = resolved(&service.path, format)? else {
+            return Ok(ExitCode::from(1));
+        };
+        compiled.push((service.key.clone(), ir));
+    }
+    let inputs = compiled
+        .iter()
+        .map(|(key, ir)| ess_composition::CompiledService::new(key, ir));
+    let composition = match ess_composition::compile(&specification, inputs) {
+        Ok(composition) => composition,
+        Err(diagnostics) => {
+            if matches!(format, Format::Text) {
+                eprintln!("{} was refused:\n{diagnostics}", path.display());
+            } else {
+                render(&diagnostics.as_slice(), format)?;
+            }
+            return Ok(ExitCode::from(1));
+        }
+    };
+
+    let composition_json = composition.to_canonical_json();
+    if let Some(out) = out {
+        fs::write(out, &composition_json).with_context(|| format!("writing {}", out.display()))?;
+    }
+    let client_plan = composition.client_plan();
+    let client_plan_json = client_plan.to_canonical_json();
+    if let Some(out) = client_plan_out {
+        fs::write(out, &client_plan_json).with_context(|| format!("writing {}", out.display()))?;
+    }
+    let client_artifacts = client_plan.rust_artifacts();
+    if let Some(root) = client_rust_out {
+        for artifact in client_artifacts.values() {
+            let path = root.join(artifact.path());
+            if let Some(parent) = path.parent() {
+                fs::create_dir_all(parent)?;
+            }
+            fs::write(&path, artifact.contents())
+                .with_context(|| format!("writing {}", path.display()))?;
+        }
+    }
+
+    match format {
+        Format::Text => println!(
+            "{} — {} exact component surface(s), {} semantic reference(s), compiled{}{}{}",
+            composition.composition(),
+            composition.services().len(),
+            composition.references().len(),
+            out.map_or_else(String::new, |path| format!(" to {}", path.display())),
+            client_plan_out.map_or_else(String::new, |path| {
+                format!("; client plan written to {}", path.display())
+            }),
+            client_rust_out.map_or_else(String::new, |path| {
+                format!(
+                    "; {} Rust client artifact(s) written to {}",
+                    client_artifacts.len(),
+                    path.display()
+                )
+            })
+        ),
+        Format::Json => print!("{composition_json}"),
+        Format::Yaml => render(&composition, Format::Yaml)?,
     }
     Ok(ExitCode::SUCCESS)
 }

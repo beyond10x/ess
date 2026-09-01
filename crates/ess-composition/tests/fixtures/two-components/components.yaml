@@ -1,0 +1,16 @@
+components:
+  - component: todo-component
+    owns:
+      domains: [workbench.todo]
+    accepts:
+      commands: [workbench.todo.CreateList]
+    publishes:
+      events: [workbench.todo.ListCreated]
+
+  - component: usage-component
+    owns:
+      domains: [workbench.usage]
+    accepts:
+      commands: [workbench.usage.RecordUsage]
+    publishes:
+      events: [workbench.usage.UsageRecorded]

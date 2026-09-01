@@ -1,0 +1,22 @@
+format: ess-composition/1
+composition: devcenter
+services:
+  - key: todo
+    system: workbench
+    version: v1
+    source_digest: 29fd772e3abb87d8042f8155577c3df9549219ace80c9e595d7da9783f7b7dda
+    component: todo-component
+  - key: usage
+    system: workbench
+    version: v1
+    source_digest: 29fd772e3abb87d8042f8155577c3df9549219ace80c9e595d7da9783f7b7dda
+    component: usage-component
+references:
+  - service: todo
+    semantic:
+      kind: command
+      name: workbench.todo.CreateList
+  - service: usage
+    semantic:
+      kind: view
+      name: workbench.usage.UsageById

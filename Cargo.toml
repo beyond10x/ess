@@ -5,6 +5,7 @@ members = [
     "crates/ess-primitives",
     "crates/ess-domain",
     "crates/ess-compiler",
+    "crates/ess-composition",
     "crates/ess-gen",
     "crates/ess-conformance",
     "crates/ess-diff",
@@ -41,6 +42,7 @@ publish = false
 ess-primitives = { path = "crates/ess-primitives", version = "0.2.1" }
 ess-domain = { path = "crates/ess-domain", version = "0.2.1" }
 ess-compiler = { path = "crates/ess-compiler", version = "0.2.1" }
+ess-composition = { path = "crates/ess-composition", version = "0.2.1" }
 ess-gen = { path = "crates/ess-gen", version = "0.2.1" }
 ess-conformance = { path = "crates/ess-conformance", version = "0.2.1" }
 ess-diff = { path = "crates/ess-diff", version = "0.2.1" }

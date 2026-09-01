@@ -10,6 +10,7 @@ tasks:
         --package billing-realization
         --package ess-cli
         --package ess-compiler
+        --package ess-composition
         --package ess-conformance
         --package ess-diff
         --package ess-domain
@@ -47,6 +48,11 @@ tasks:
       - cargo run --quiet --locked --bin ess -- validate --path examples/billing
       - cargo run --quiet --locked --bin ess -- validate --path examples/gatepass
       - cargo run --quiet --locked --bin ess -- validate --path examples/oracle-fixture
+      - >-
+        cargo run --quiet --locked --bin ess -- compose
+        --path crates/ess-composition/tests/fixtures/compositions/workbench.yaml
+        --service todo=crates/ess-composition/tests/fixtures/two-components
+        --service usage=crates/ess-composition/tests/fixtures/two-components
       - cargo run --quiet --locked --bin ess -- import kubernetes --path examples/k3d-dev-cluster/observation.json --format json
       - cargo run --quiet --locked --bin ess -- import openapi --path generated/openapi/invoice-service.yaml --format json
       - >-

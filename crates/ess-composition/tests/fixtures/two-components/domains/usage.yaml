@@ -1,0 +1,53 @@
+domain: workbench.usage
+
+types:
+  - name: workbench.usage.UsageId
+    kind: newtype
+    of: Uuid
+  - name: workbench.usage.UsageCount
+    kind: newtype
+    of: Integer
+  - name: workbench.usage.UsageDetails
+    kind: struct
+    fields:
+      - { name: count, type: workbench.usage.UsageCount }
+  - name: workbench.usage.UsageRow
+    kind: struct
+    fields:
+      - { name: usage_id, type: workbench.usage.UsageId }
+      - { name: details, type: workbench.usage.UsageDetails }
+
+entities:
+  - name: workbench.usage.Usage
+    identity: { name: usage_id, type: workbench.usage.UsageId }
+    fields:
+      - { name: details, type: workbench.usage.UsageDetails }
+    lifecycle:
+      initial: Recorded
+      states: [Recorded]
+      terminal: [Recorded]
+
+commands:
+  - name: workbench.usage.RecordUsage
+    input:
+      - { name: details, type: workbench.usage.UsageDetails }
+    outcomes:
+      - name: recorded
+        creates: workbench.usage.Usage
+        instance: usage_id
+        emits: [workbench.usage.UsageRecorded]
+        payload:
+          workbench.usage.UsageRecorded:
+            details: input.details
+
+events:
+  - name: workbench.usage.UsageRecorded
+    fields:
+      - { name: usage_id, type: workbench.usage.UsageId }
+      - { name: details, type: workbench.usage.UsageDetails }
+
+views:
+  - name: workbench.usage.UsageById
+    source: workbench.usage.Usage
+    shape: workbench.usage.UsageRow
+    consistency: eventual

@@ -1,0 +1,53 @@
+domain: workbench.todo
+
+types:
+  - name: workbench.todo.ListId
+    kind: newtype
+    of: Uuid
+  - name: workbench.todo.Title
+    kind: newtype
+    of: String
+  - name: workbench.todo.ListDetails
+    kind: struct
+    fields:
+      - { name: title, type: workbench.todo.Title }
+  - name: workbench.todo.ListRow
+    kind: struct
+    fields:
+      - { name: list_id, type: workbench.todo.ListId }
+      - { name: details, type: workbench.todo.ListDetails }
+
+entities:
+  - name: workbench.todo.TodoList
+    identity: { name: list_id, type: workbench.todo.ListId }
+    fields:
+      - { name: details, type: workbench.todo.ListDetails }
+    lifecycle:
+      initial: Active
+      states: [Active]
+      terminal: [Active]
+
+commands:
+  - name: workbench.todo.CreateList
+    input:
+      - { name: details, type: workbench.todo.ListDetails }
+    outcomes:
+      - name: created
+        creates: workbench.todo.TodoList
+        instance: list_id
+        emits: [workbench.todo.ListCreated]
+        payload:
+          workbench.todo.ListCreated:
+            details: input.details
+
+events:
+  - name: workbench.todo.ListCreated
+    fields:
+      - { name: list_id, type: workbench.todo.ListId }
+      - { name: details, type: workbench.todo.ListDetails }
+
+views:
+  - name: workbench.todo.ListById
+    source: workbench.todo.TodoList
+    shape: workbench.todo.ListRow
+    consistency: read_your_writes

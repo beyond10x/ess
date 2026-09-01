@@ -12,6 +12,7 @@
 use std::path::{Path, PathBuf};
 
 use ess_compiler::ir::{EssIr, ResolvedFailure, ResolvedMappingValue};
+use ess_compiler::refs::CommandRef;
 use ess_compiler::resolve::{codes, compile, compile_locating, diagnose_locating};
 use ess_compiler::source::SourceMap;
 use ess_domain::binding::BindingName;
@@ -99,6 +100,18 @@ fn the_billing_specification_resolves() {
     assert_eq!(ir.workloads().len(), 2);
     assert_eq!(ir.bindings().len(), 1);
     assert_eq!(ir.conversions().len(), 1);
+}
+
+#[test]
+fn every_stable_reference_from_the_compiler_graph_resolves_against_its_ir() {
+    let ir = compiled();
+    let graph = ess_compiler::graph::SemanticDependencyGraph::of(&ir);
+    for reference in graph.nodes() {
+        assert!(ir.resolves(reference), "compiler graph minted {reference}");
+    }
+
+    let absent = CommandRef::new(name("billing.invoice.CommandThatDoesNotExist")).into();
+    assert!(!ir.resolves(&absent));
 }
 
 #[test]
