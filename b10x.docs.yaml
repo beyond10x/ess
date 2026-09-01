@@ -1,0 +1,21 @@
+schema: b10x-docs/v1
+repository:
+  id: ess
+  url: https://github.com/beyond10x/ess
+surfaces:
+  - id: docs
+    name: ESS
+    summary: Executable system specifications, deterministic intermediate representations, generated contracts, and conformance.
+    kind: documentation
+    canonicalUrl: https://beyond10x.github.io/ess/
+    maturity: experimental
+    availability: planned
+    discoverability: public
+    audiences: [adopter, developer, operator]
+    journeys: [specify, operate-services]
+    capabilities: [system-specification, contract-generation, conformance]
+    sections:
+      - {label: Source, url: https://github.com/beyond10x/ess, kind: source}
+    accent: "#ff9070"
+    mark: website/static/img/mark.svg
+    shell: {integration: docusaurus, revision: 6323bfdaf73609247e8dabcc9df410ab280a1960}
