@@ -19,8 +19,6 @@
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
-use aep_domain::facts::Number;
-use aep_domain::node::Node;
 use ess_compiler::ir::{CommandHandle, EssIr, ResolvedCommand};
 use ess_compiler::resolve::compile;
 use ess_compiler::source::SourceMap;
@@ -36,6 +34,8 @@ use ess_domain::name::QualifiedName;
 use ess_domain::spec::{RawSpecFile, Specification};
 use ess_domain::system::Source;
 use ess_domain::types::Primitive;
+use ess_primitives::facts::Number;
+use ess_primitives::node::Node;
 
 // ---- the billing example, compiled -----------------------------------------------------------
 

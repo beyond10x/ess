@@ -6,7 +6,7 @@
 
 use std::fmt::Write as _;
 
-use aep_domain::predicate::Truth;
+use ess_primitives::predicate::Truth;
 
 use crate::drift::{InfraChange, InfraDrift};
 use crate::simulate::{Outcome, Simulation};

@@ -15,8 +15,8 @@
 //! task can require conformance to a specification, and the evidence has to be able to say *to
 //! which declaration*.
 
-use aep_domain::entity::{EntityLocator, EntityType};
-use aep_domain::error::ParseError;
+use ess_primitives::entity::{EntityLocator, EntityType};
+use ess_primitives::error::ParseError;
 
 use crate::name::QualifiedName;
 
@@ -206,7 +206,7 @@ mod tests {
         for kind in DeclarationKind::ALL {
             let original = name("billing.invoice.Thing");
             let locator = location.locate(kind, &original).expect("a valid locator");
-            let parsed = aep_domain::entity::EntityLocator::parse(&locator.to_string())
+            let parsed = ess_primitives::entity::EntityLocator::parse(&locator.to_string())
                 .expect("round trips through text");
             let (resolved_kind, resolved_name) = resolve(&parsed).expect("resolves");
             assert_eq!(resolved_kind, kind);

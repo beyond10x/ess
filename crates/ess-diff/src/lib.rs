@@ -33,7 +33,7 @@
 //! Wave 5's first slice compared **system, types, events, errors, actors and components** — the six
 //! whose comparison is a walk over values that are equal or are not — and excluded entities,
 //! commands, views and bindings because their invariants, guards and filters are
-//! [`Predicate`](aep_domain::predicate::Predicate)s. W7.2 brought the four in by executing gap
+//! [`Predicate`](ess_primitives::predicate::Predicate)s. W7.2 brought the four in by executing gap
 //! register D-1: the wave-5 record conflated two questions, and only one of them is hard.
 //!
 //! Predicate **implication** — does the new `when:` accept everything the old one did — is

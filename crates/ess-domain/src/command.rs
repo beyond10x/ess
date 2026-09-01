@@ -154,8 +154,8 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::fmt;
 use std::str::FromStr;
 
-use aep_domain::error::{ParseError, ValidationCode, ValidationError, ValidationErrors};
-use aep_domain::predicate::Predicate;
+use ess_primitives::error::{ParseError, ValidationCode, ValidationError, ValidationErrors};
+use ess_primitives::predicate::Predicate;
 
 use crate::name::{Naming, QualifiedName};
 use crate::types::{Field, TypeRegistry};

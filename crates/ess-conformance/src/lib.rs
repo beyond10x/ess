@@ -16,9 +16,9 @@
 //! An [`EssIr`](ess_compiler::EssIr) says a command has an outcome taken `when: amount.amount > 0`.
 //! A conformance runner wanting to exercise that branch has to answer one question first: **given
 //! this candidate input, does that predicate hold?** Nothing in the workspace could answer it.
-//! [`Predicate::evaluate`](aep_domain::predicate::Predicate::evaluate) has always been there, but it
-//! reads a [`FactSource`](aep_domain::facts::FactSource), and the only implementor was
-//! [`FactStore`](aep_domain::facts::FactStore) — nothing projected a *command input* into one. This
+//! [`Predicate::evaluate`](ess_primitives::predicate::Predicate::evaluate) has always been there, but it
+//! reads a [`FactSource`](ess_primitives::facts::FactSource), and the only implementor was
+//! [`FactStore`](ess_primitives::facts::FactStore) — nothing projected a *command input* into one. This
 //! crate is that projection, and the decision procedure built on top of it.
 //!
 //! # Why this is not part of `ess-gen`
@@ -136,7 +136,7 @@ pub mod target;
 pub mod witness;
 
 pub use decision::{when, Decision, Reason, Unevaluable, UnknownCause};
-pub use evidence::ConformanceEvidence;
+pub use evidence::{ConformanceEvidence, StandaloneConformanceReport, STANDALONE_REPORT_FORMAT};
 pub use faulty::{Caught, Fault, Faulty, Injection, System};
 pub use input::{flatten, resolve_path, InputFacts, ShapeError, ShapeErrors, Target};
 pub use report::{

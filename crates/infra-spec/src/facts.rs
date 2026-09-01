@@ -3,8 +3,8 @@
 //!
 //! # Reusing the evaluator means reusing its `Unknown`
 //!
-//! [`Predicate::evaluate`](aep_domain::predicate::Predicate::evaluate) already returns
-//! [`Truth::Unknown`](aep_domain::predicate::Truth::Unknown) when a fact it reads has no value.
+//! [`Predicate::evaluate`](ess_primitives::predicate::Predicate::evaluate) already returns
+//! [`Truth::Unknown`](ess_primitives::predicate::Truth::Unknown) when a fact it reads has no value.
 //! That is the whole mechanism: this module decides **which facts a snapshot can state about a
 //! workload**, and every fact it declines to state becomes an honest `Unknown` in the evaluator
 //! that already exists. Nothing here re-implements three-valued logic, and nothing here can
@@ -33,7 +33,7 @@
 
 use std::collections::BTreeMap;
 
-use aep_domain::facts::{FactPath, FactStore, FactValue};
+use ess_primitives::facts::{FactPath, FactStore, FactValue};
 use infra_analyze::{properties_with, InfraGraph, WorkloadProperties};
 use infra_compiler::InfraIr;
 use infra_domain::workload::WorkloadKind;
@@ -74,7 +74,7 @@ pub struct WorkloadFacts {
     /// What the snapshot can state.
     pub store: FactStore,
     /// What it cannot, and why — keyed by the path, so a predicate's own
-    /// [`fact_paths`](aep_domain::predicate::Predicate::fact_paths) look the reason up directly.
+    /// [`fact_paths`](ess_primitives::predicate::Predicate::fact_paths) look the reason up directly.
     pub withheld: BTreeMap<String, UnknownReason>,
 }
 

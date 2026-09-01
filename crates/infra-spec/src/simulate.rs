@@ -35,7 +35,7 @@
 
 use std::collections::BTreeMap;
 
-use aep_domain::predicate::{Predicate, Truth};
+use ess_primitives::predicate::{Predicate, Truth};
 use infra_analyze::{parse_image, properties_with, InfraGraph, WorkloadProperties};
 use infra_compiler::{InfraIr, ResolvedWorkload, UnresolvedReference, UnresolvedTarget};
 use infra_domain::network::Service;
@@ -789,7 +789,7 @@ fn predicate_outcome(predicate: &Predicate, facts: &WorkloadFacts) -> Outcome {
 
 /// The values a predicate read, as the evidence behind a `False`.
 fn read_facts(predicate: &Predicate, facts: &WorkloadFacts) -> BTreeMap<String, String> {
-    use aep_domain::facts::FactSource as _;
+    use ess_primitives::facts::FactSource as _;
     predicate
         .fact_paths()
         .into_iter()

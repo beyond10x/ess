@@ -49,10 +49,10 @@
 use std::collections::BTreeMap;
 use std::fmt;
 
-use aep_contract::consistency::{ConsistencyToken, QueryConsistency};
-use aep_domain::ids::CorrelationId;
-use aep_domain::node::Node;
-use aep_domain::time::Timestamp;
+use ess_primitives::consistency::{ConsistencyToken, QueryConsistency};
+use ess_primitives::ids::CorrelationId;
+use ess_primitives::node::Node;
+use ess_primitives::time::Timestamp;
 
 use crate::scenario::{
     BindingRef, CommandRef, ErrorRef, EventRef, OutcomeRef, ScenarioId, ViewRef,
@@ -442,7 +442,7 @@ pub struct SemanticViewRequest {
     pub view: ViewRef,
     /// How fresh the read has to be.
     ///
-    /// `aep_contract::consistency::QueryConsistency`, not a second pair of consistency types: §14
+    /// `ess_primitives::consistency::QueryConsistency`, not a second pair of consistency types: §14
     /// records that both already ship, and a parallel pair would buy nothing but a translation table
     /// for the two to drift across.
     pub consistency: QueryConsistency,

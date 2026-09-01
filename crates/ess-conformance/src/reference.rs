@@ -48,9 +48,9 @@
 use std::cell::RefCell;
 use std::collections::BTreeMap;
 
-use aep_contract::consistency::ConsistencyToken;
-use aep_domain::ids::CorrelationId;
-use aep_domain::node::Node;
+use ess_primitives::consistency::ConsistencyToken;
+use ess_primitives::ids::CorrelationId;
+use ess_primitives::node::Node;
 
 use crate::scenario::{BindingRef, CommandRef, ErrorRef, EventRef, OutcomeRef};
 use crate::target::{

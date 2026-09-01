@@ -9,13 +9,7 @@ repository.workspace = true
 authors.workspace = true
 
 [dependencies]
-aep-domain.workspace = true
-
-# The consistency pair a view query needs. Design §14 is explicit that
-# `aep_contract::consistency::{ConsistencyToken, QueryConsistency}` already ship and that a second
-# pair here would buy nothing but a translation table for the two to drift across — so the runner
-# reuses them rather than restating them.
-aep-contract.workspace = true
+ess-primitives.workspace = true
 ess-compiler.workspace = true
 ess-domain.workspace = true
 
@@ -30,7 +24,7 @@ ess-gen.workspace = true
 #
 # Still no third-party crate beyond the workspace list, and that stays a decision: `thiserror` would
 # have bought two `Display` impls that are eleven lines each, and a value tree of this crate's own
-# would have bought a second spelling of `aep_domain::node::Node`.
+# would have bought a second spelling of `ess_primitives::node::Node`.
 serde.workspace = true
 serde_json.workspace = true
 

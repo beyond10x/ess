@@ -74,8 +74,6 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt;
 
-use aep_domain::facts::FactPath;
-use aep_domain::predicate::Predicate;
 use ess_domain::binding::{BindingName, Delivery, Failure};
 use ess_domain::command::{OutcomeName, TestStrategy};
 use ess_domain::component::{ComponentName, Reach};
@@ -84,6 +82,8 @@ use ess_domain::name::{Naming, QualifiedName, Version};
 use ess_domain::topology::{Replicas, Resource};
 use ess_domain::types::Primitive;
 use ess_domain::view::{AssertionStyle, Consistency};
+use ess_primitives::facts::FactPath;
+use ess_primitives::predicate::Predicate;
 
 /// Declares every handle kind, its accessor on [`EssIr`], and the map it indexes — from one line
 /// each, so a handle cannot exist without a total lookup for it.
@@ -1368,7 +1368,7 @@ impl EssIr {
     ///
     /// What it does refuse to write faithfully is a non-finite float, which it emits as `null`
     /// instead. `1e400` in a predicate literal parses to `+inf`
-    /// ([`FactValue::parse_literal`](aep_domain::facts::FactValue::parse_literal) rejects only NaN),
+    /// ([`FactValue::parse_literal`](ess_primitives::facts::FactValue::parse_literal) rejects only NaN),
     /// so that guard is published as `any_of: [null]`. That is a defect in what the model accepts,
     /// not in this function, and it is filed as such: the fix belongs in `aep-domain`'s `Number`,
     /// which promises a total order it does not enforce on input.

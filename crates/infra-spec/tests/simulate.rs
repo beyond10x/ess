@@ -8,7 +8,7 @@
 
 mod support;
 
-use aep_domain::predicate::Truth;
+use ess_primitives::predicate::Truth;
 use infra_spec::simulate::{Gap, Outcome, UnknownReason};
 use infra_spec::{read_spec, simulate, Simulation};
 

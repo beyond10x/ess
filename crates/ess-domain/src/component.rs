@@ -66,7 +66,7 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
-use aep_domain::error::{ValidationCode, ValidationError, ValidationErrors};
+use ess_primitives::error::{ValidationCode, ValidationError, ValidationErrors};
 
 use crate::name::{Naming, QualifiedName};
 
@@ -226,7 +226,7 @@ impl ComponentName {
     pub const PATTERN: &'static str = "^[a-z][a-z0-9]*(-[a-z0-9]+)*$";
 
     /// Parses one.
-    pub fn new(value: impl AsRef<str>) -> Result<Self, aep_domain::error::ParseError> {
+    pub fn new(value: impl AsRef<str>) -> Result<Self, ess_primitives::error::ParseError> {
         let value = value.as_ref();
         let valid = !value.is_empty()
             && value.starts_with(|c: char| c.is_ascii_lowercase())
@@ -236,7 +236,7 @@ impl ComponentName {
                 .chars()
                 .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '-');
         if !valid {
-            return Err(aep_domain::error::ParseError::identifier(
+            return Err(ess_primitives::error::ParseError::identifier(
                 "component name",
                 value,
                 "a component name is lower-case words joined by single hyphens, such as \

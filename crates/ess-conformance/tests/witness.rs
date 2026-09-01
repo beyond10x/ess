@@ -15,10 +15,6 @@
 
 use std::collections::BTreeMap;
 
-use aep_domain::facts::{FactPath, FactValue, Number, Scales};
-use aep_domain::node::Node;
-use aep_domain::predicate::{Predicate, Truth};
-use aep_domain::FactSource;
 use ess_compiler::ir::{EssIr, ResolvedCommand};
 use ess_compiler::resolve::compile;
 use ess_compiler::source::SourceMap;
@@ -26,6 +22,10 @@ use ess_conformance::{flatten, when, Decision, InputFacts, Reason, ShapeError};
 use ess_domain::name::QualifiedName;
 use ess_domain::spec::{RawSpecFile, Specification};
 use ess_domain::system::Source;
+use ess_primitives::facts::{FactPath, FactValue, Number, Scales};
+use ess_primitives::node::Node;
+use ess_primitives::predicate::{Predicate, Truth};
+use ess_primitives::FactSource;
 
 /// One system, declaring one of every construct a fact path can land on.
 const WITNESS: &str = r"

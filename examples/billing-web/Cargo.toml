@@ -21,8 +21,8 @@ version = "0.1.0"
 edition = "2021"
 rust-version = "1.85"
 license = "Apache-2.0"
-repository = "https://github.com/beyond10x/aep"
-authors = ["Beyond10x contributors <contributors@beyond10x.invalid>"]
+repository = "https://github.com/beyond10x/ess"
+authors = ["Beyond10x contributors"]
 publish = false
 
 # Its own root: see above. Nothing is inherited from the source workspace, so nothing here is

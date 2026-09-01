@@ -37,9 +37,9 @@
 use std::collections::BTreeMap;
 use std::fmt;
 
-use aep_domain::error::{ValidationCode, ValidationError, ValidationErrors};
-use aep_domain::facts::{FactPath, FactValue};
-use aep_domain::predicate::{Operand, Predicate};
+use ess_primitives::error::{ValidationCode, ValidationError, ValidationErrors};
+use ess_primitives::facts::{FactPath, FactValue};
+use ess_primitives::predicate::{Operand, Predicate};
 
 use crate::name::{Naming, QualifiedName};
 use crate::types::{Field, TypeBody, TypeRef, TypeRegistry};
@@ -429,9 +429,9 @@ fn compared_values(predicate: &Predicate) -> Vec<(&FactPath, &FactValue)> {
 /// Walks a predicate, because a filter is as often `any: [...]` as a single comparison.
 ///
 /// Unbounded recursion on a bounded tree: a filter is parsed by
-/// [`Predicate::from_node`](aep_domain::predicate::Predicate::from_node) or
-/// [`parse_expression`](aep_domain::predicate::Predicate::parse_expression), both of which refuse
-/// past [`MAX_PREDICATE_DEPTH`](aep_domain::predicate::MAX_PREDICATE_DEPTH).
+/// [`Predicate::from_node`](ess_primitives::predicate::Predicate::from_node) or
+/// [`parse_expression`](ess_primitives::predicate::Predicate::parse_expression), both of which refuse
+/// past [`MAX_PREDICATE_DEPTH`](ess_primitives::predicate::MAX_PREDICATE_DEPTH).
 fn collect_compared_values<'a>(
     predicate: &'a Predicate,
     found: &mut Vec<(&'a FactPath, &'a FactValue)>,

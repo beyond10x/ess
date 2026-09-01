@@ -9,7 +9,7 @@ repository.workspace = true
 authors.workspace = true
 
 [dependencies]
-aep-domain.workspace = true
+ess-primitives.workspace = true
 ess-compiler.workspace = true
 ess-domain.workspace = true
 serde.workspace = true
@@ -22,7 +22,7 @@ sha2 = "0.11"
 # hand-rolled one, which is what makes `pattern` checked. `default-features = false` drops
 # `resolve-http`, `resolve-file` and the TLS backend: no test can retrieve a schema, which is
 # affordable because every `$ref` this crate emits is a same-document pointer. Same version and same
-# spelling as `aep-schema`, deliberately — one validator behaviour across the workspace.
+# spelling as the schema contract, deliberately — one validator behaviour across the workspace.
 jsonschema = { version = "0.52.1", default-features = false }
 
 [lints]

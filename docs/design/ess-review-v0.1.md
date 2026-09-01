@@ -1,7 +1,7 @@
 # Review: ESS Implementor Design v0.1
 
 Reviewing [`ess-implementor-design-v0.1.md`](ess-implementor-design-v0.1.md) against what
-`aep` has already learned building the same shape of thing twice.
+`AEP` has already learned building the same shape of thing twice.
 
 **Verdict: the architecture is right and the scope is too wide.** The core rule — semantic concepts
 are primary, transports are projections — is the correct spine, and §36's invariants are the right

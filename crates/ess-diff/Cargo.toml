@@ -12,7 +12,7 @@ authors.workspace = true
 # `ValidationErrors`, `ValidationCode` and `SpecDigest`. A delta document is read back, so it is
 # refused the way every other document in this workspace is refused: accumulated errors carrying a
 # stable code, never a sentence a test would have to match on.
-aep-domain.workspace = true
+ess-primitives.workspace = true
 
 # The thing being compared. `EssIr` is `PartialEq` throughout and keyed by name, which is what makes
 # a comparator a walk rather than a parser.

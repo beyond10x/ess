@@ -12,7 +12,7 @@ authors.workspace = true
 serde_json.workspace = true
 thiserror.workspace = true
 
-# The same validator and version aep-schema and ess-gen test their published contracts with. It is
+# The same validator and version ESS generators test their published contracts with. It is
 # runtime here because adopter documents are inputs to `protocol schema validate`; default features
 # stay off so a reference cannot turn a local gate into network I/O.
 jsonschema = { version = "0.52.1", default-features = false }

@@ -1,14 +1,21 @@
 [package]
 name = "ess-kubernetes"
-version = "0.1.0"
-edition = "2021"
-license = "Apache-2.0"
-description = "The actor beside aep: scans a Kubernetes cluster into an infra-observation bundle the pure toolchain consumes. Holds the kubeconfig; the analysis never does."
+description = "Credential-edge Kubernetes import adapter for ESS sanitized infrastructure observations."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+publish.workspace = true
 
 [dependencies]
 # CLI per the standing rule: clap derive, never hand-rolled argv.
-clap = { version = "4", features = ["derive"] }
-serde = { version = "1", features = ["derive"] }
-serde_json = "1"
+clap.workspace = true
+serde.workspace = true
+serde_json.workspace = true
 # Secret values are hashed before anything is written to disk; this is the hasher.
-sha2 = "0.10"
+sha2 = "0.11"
+
+[lints]
+workspace = true

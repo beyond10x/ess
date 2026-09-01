@@ -29,7 +29,7 @@
 use std::collections::BTreeMap;
 use std::fmt;
 
-use aep_domain::predicate::Predicate;
+use ess_primitives::predicate::Predicate;
 use infra_domain::workload::WorkloadKind;
 use serde::Serialize;
 
@@ -71,7 +71,7 @@ impl fmt::Display for SubjectClass {
 /// Which subjects of a snapshot an expectation is about.
 ///
 /// A namespace nobody observed is not an empty namespace, and a selector nothing matches is not a
-/// satisfied expectation — both are [`Unknown`](aep_domain::predicate::Truth::Unknown) at
+/// satisfied expectation — both are [`Unknown`](ess_primitives::predicate::Truth::Unknown) at
 /// evaluation, with the reason attached. See [`crate::simulate::UnknownReason`].
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Serialize)]
 #[serde(tag = "kind", rename_all = "snake_case")]
@@ -223,9 +223,9 @@ pub enum ExpectationKind {
     /// A labelled predicate over the workload facts the snapshot projects.
     ///
     /// The escape hatch, and the reason there is no second predicate language here: this is
-    /// [`aep_domain::predicate::Predicate`] evaluated against
+    /// [`ess_primitives::predicate::Predicate`] evaluated against
     /// [`workload facts`](crate::facts::WORKLOAD_FACTS) with
-    /// [`Truth`](aep_domain::predicate::Truth) semantics unchanged. `Unknown` exactly when a fact
+    /// [`Truth`](ess_primitives::predicate::Truth) semantics unchanged. `Unknown` exactly when a fact
     /// the predicate reads is absent from a subject's projection, and the projection records why
     /// each absent fact is absent — so the report says "the bundle did not scan budgets", not
     /// "unknown".

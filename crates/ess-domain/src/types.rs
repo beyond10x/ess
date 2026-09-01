@@ -19,7 +19,7 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt;
 
-use aep_domain::error::{ParseError, ValidationCode, ValidationError, ValidationErrors};
+use ess_primitives::error::{ParseError, ValidationCode, ValidationError, ValidationErrors};
 
 use crate::entity::{Invariant, RawInvariant};
 use crate::name::{Naming, QualifiedName};

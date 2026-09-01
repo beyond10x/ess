@@ -22,9 +22,6 @@
 use std::cell::RefCell;
 use std::collections::BTreeMap;
 
-use aep_contract::consistency::ConsistencyToken;
-use aep_domain::facts::Number;
-use aep_domain::node::Node;
 use billing_realization::corrupted::{CAUGHT_BY, FAULT};
 use billing_realization::invoice::positive;
 use billing_realization::linker::{self, Assembled};
@@ -43,6 +40,9 @@ use ess_conformance::target::{
     RedeliveryRequest, ScenarioContext, SemanticCommandRequest, SemanticCommandResult,
     SemanticViewRequest, SemanticViewResult, TargetError, ViewRow,
 };
+use ess_primitives::consistency::ConsistencyToken;
+use ess_primitives::facts::Number;
+use ess_primitives::node::Node;
 
 // ---- the names the specification declares ----------------------------------------------------
 

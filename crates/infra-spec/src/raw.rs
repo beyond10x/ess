@@ -47,7 +47,7 @@
 
 use std::collections::BTreeMap;
 
-use aep_domain::predicate::Predicate;
+use ess_primitives::predicate::Predicate;
 use infra_domain::code::{InfraCode, ValidationErrors};
 use infra_domain::workload::WorkloadKind;
 

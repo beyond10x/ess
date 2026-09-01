@@ -1,6 +1,6 @@
 # Semantic Infrastructure Discovery, Specification, Conformance & Multi-Cloud Realization - Design v0.1
 
-> **Repository:** `beyond10x/aep`  
+> **Repository:** `beyond10x/aep`
 > **Status:** Proposed follow-on / cross-cutting design  
 > **Audience:** Implementors extending the repository from software-system semantics into infrastructure discovery, infrastructure specification, conformance, portability, and governed infrastructure evolution  
 > **Relationship to existing work:** Additive, but it refines the planned ESS topology-synthesis boundary. It must not disrupt the current Wave 4/5 gating sequence.  

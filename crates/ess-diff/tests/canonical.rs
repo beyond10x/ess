@@ -13,7 +13,6 @@
 
 use std::path::{Path, PathBuf};
 
-use aep_domain::error::ValidationCode;
 use ess_compiler::ir::EssIr;
 use ess_compiler::resolve::compile;
 use ess_compiler::source::SourceMap;
@@ -29,6 +28,7 @@ use ess_diff::{diff, EssDelta, RawEssDelta};
 use ess_domain::name::{QualifiedName, Version};
 use ess_domain::spec::{RawSpecFile, Specification};
 use ess_domain::system::Source;
+use ess_primitives::error::ValidationCode;
 
 /// One half of the fixture pair, compiled from scratch.
 fn compiled(revision: &str) -> EssIr {
@@ -1006,7 +1006,7 @@ fn document() -> serde_json::Value {
 }
 
 /// Reads a document back, expecting it to be refused.
-fn refused(document: &serde_json::Value) -> aep_domain::error::ValidationErrors {
+fn refused(document: &serde_json::Value) -> ess_primitives::error::ValidationErrors {
     let raw: RawEssDelta =
         serde_json::from_value(document.clone()).expect("the document still parses");
     EssDelta::try_from(raw).expect_err("the document is refused")

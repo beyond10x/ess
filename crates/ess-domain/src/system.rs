@@ -35,13 +35,13 @@
 //! Design §23 versions several things. Two of them are here: the **format** (`ess/1`) and the
 //! **system** (`billing/v3`). A format this build does not implement is refused with an instruction
 //! to upgrade the tooling, because a later format may mean something different by the same words —
-//! the same rule, and the same reasoning, as `aep_domain::protocol::is_supported_major`.
+//! the same rule, and the same reasoning, as `ess_primitives::protocol::is_supported_major`.
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt;
 use std::str::FromStr;
 
-use aep_domain::error::{ParseError, ValidationCode, ValidationError, ValidationErrors};
+use ess_primitives::error::{ParseError, ValidationCode, ValidationError, ValidationErrors};
 
 #[cfg(test)]
 use crate::domain::RawDomainSpec;

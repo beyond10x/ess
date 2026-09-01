@@ -54,12 +54,12 @@
 
 use std::collections::BTreeMap;
 
-use aep_contract::consistency::QueryConsistency;
-use aep_domain::facts::{FactPath, FactStore, FactValue};
-use aep_domain::ids::CorrelationId;
-use aep_domain::node::Node;
-use aep_domain::predicate::{Predicate, Truth};
-use aep_domain::time::Timestamp;
+use ess_primitives::consistency::QueryConsistency;
+use ess_primitives::facts::{FactPath, FactStore, FactValue};
+use ess_primitives::ids::CorrelationId;
+use ess_primitives::node::Node;
+use ess_primitives::predicate::{Predicate, Truth};
+use ess_primitives::time::Timestamp;
 
 use crate::report::{
     quote, quote_input, CheckCode, CheckResult, ConformanceReport, Diagnostic, ScenarioResult,
@@ -1595,8 +1595,8 @@ fn no_command(id: &ScenarioId, subject: &str) -> CheckResult {
 mod tests {
     use super::*;
     use crate::scenario::{SuiteFormat, SuiteProvenance};
-    use aep_domain::evidence::SpecDigest;
-    use aep_domain::facts::FactSource;
+    use ess_primitives::evidence::SpecDigest;
+    use ess_primitives::facts::FactSource;
 
     fn view() -> ViewRef {
         "billing.invoice.InvoiceById".parse().expect("a view name")
@@ -1610,7 +1610,7 @@ mod tests {
         let mut fields = BTreeMap::new();
         fields.insert(
             "amount".to_owned(),
-            Node::Number(aep_domain::facts::Number::new(amount).expect("finite")),
+            Node::Number(ess_primitives::facts::Number::new(amount).expect("finite")),
         );
         Node::Map(fields)
     }

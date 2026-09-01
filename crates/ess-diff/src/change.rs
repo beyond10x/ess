@@ -40,7 +40,7 @@
 //!
 //! Gap register D-1, executed. Where a construct's sub-part is a predicate — an entity's or a
 //! type's invariants, an outcome's `when`, a view's filter — the comparison is **conservative
-//! canonical equality** over the parsed [`Predicate`](aep_domain::predicate::Predicate), and the
+//! canonical equality** over the parsed [`Predicate`](ess_primitives::predicate::Predicate), and the
 //! only two outcomes are silence (canonically equal) and [`Changed`](SemanticRelation::Changed)
 //! (canonically different). No direction is ever derived: implication between predicates is a proof
 //! obligation, not a comparison, and it stays refused. That is structural, not remembered — every
@@ -678,7 +678,7 @@ pub enum TypeChange {
     /// A newtype's or a struct's own invariants differ.
     ///
     /// **That they differ, never which is stronger.** A type invariant is a
-    /// [`Predicate`](aep_domain::predicate::Predicate), and deciding whether one implies another is
+    /// [`Predicate`](ess_primitives::predicate::Predicate), and deciding whether one implies another is
     /// a proof obligation rather than a comparison — the same rule every predicate-bearing kind in
     /// every family follows since W7.2 (gap register D-1).
     InvariantsChanged {
@@ -1852,7 +1852,7 @@ pub enum CommandChange {
     ///
     /// The change kind gap register D-1 unblocked, and the polarity is the whole point: where both
     /// conditions are `when:` predicates, the comparison is canonical equality over the parsed
-    /// [`Predicate`](aep_domain::predicate::Predicate)s — a `when:` rewritten with different
+    /// [`Predicate`](ess_primitives::predicate::Predicate)s — a `when:` rewritten with different
     /// spacing resolves to the same predicate and says nothing here, and a genuinely different one
     /// is *changed* with no direction, because whether the new guard accepts everything the old
     /// one did is a proof obligation, not a comparison.

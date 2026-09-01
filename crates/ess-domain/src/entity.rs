@@ -17,7 +17,7 @@
 //!
 //! The middle one is what an invariant is: a condition a generator can compile into a guard, a
 //! property test and a documentation line. It is parsed here with
-//! [`Predicate::parse_expression`](aep_domain::predicate::Predicate::parse_expression) — the same
+//! [`Predicate::parse_expression`](ess_primitives::predicate::Predicate::parse_expression) — the same
 //! expression language the protocol half evaluates — so the review's F4 holds: "invariants reference
 //! valid model fields" is a rule that can actually be checked, because the fields an invariant reads
 //! are recoverable from it.
@@ -43,10 +43,10 @@ use std::collections::{BTreeMap, BTreeSet, VecDeque};
 use std::fmt;
 use std::str::FromStr;
 
-use aep_domain::error::{ParseError, ValidationCode, ValidationError, ValidationErrors};
-use aep_domain::facts::FactPath;
-use aep_domain::node::Node;
-use aep_domain::predicate::Predicate;
+use ess_primitives::error::{ParseError, ValidationCode, ValidationError, ValidationErrors};
+use ess_primitives::facts::FactPath;
+use ess_primitives::node::Node;
+use ess_primitives::predicate::Predicate;
 
 use crate::name::{Naming, QualifiedName};
 use crate::types::{Field, TypeBody, TypeRef, TypeRegistry};

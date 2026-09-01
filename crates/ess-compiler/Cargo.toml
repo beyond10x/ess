@@ -9,7 +9,7 @@ repository.workspace = true
 authors.workspace = true
 
 [dependencies]
-aep-domain.workspace = true
+ess-primitives.workspace = true
 ess-domain.workspace = true
 serde.workspace = true
 serde_json.workspace = true
@@ -25,7 +25,7 @@ serde_yaml.workspace = true
 # function that must terminate on every input — a hang is a finding, not something to mask with a
 # timeout. The gate runs with a fixed seed (invariant 9's spirit: a gate must not be flaky); see
 # `tests/adversarial.rs` for the seed and how to widen locally. Same version and spelling as
-# `aep-domain`, deliberately.
+# the shared workflow model, deliberately.
 proptest = { version = "1.11.0", default-features = false, features = ["std"] }
 
 [lints]

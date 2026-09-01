@@ -46,11 +46,11 @@
 use std::collections::BTreeMap;
 use std::fmt;
 
-use aep_domain::facts::{FactPath, FactSource, FactStore, FactValue, Scales};
-use aep_domain::node::Node;
-use aep_domain::predicate::{Operand, Predicate, Truth};
 use ess_compiler::ir::{EssIr, ResolvedBody, ResolvedCommand, ResolvedField, ResolvedTypeRef};
 use ess_domain::types::{Primitive, MAX_TYPE_DEPTH};
+use ess_primitives::facts::{FactPath, FactSource, FactStore, FactValue, Scales};
+use ess_primitives::node::Node;
+use ess_primitives::predicate::{Operand, Predicate, Truth};
 
 use crate::decision::{Decision, Reason, Unevaluable, UnknownCause};
 
@@ -637,7 +637,7 @@ impl std::error::Error for ShapeErrors {}
 mod tests {
     use super::*;
 
-    use aep_domain::facts::Number;
+    use ess_primitives::facts::Number;
 
     fn number(value: f64) -> Node {
         Node::Number(Number::new(value).expect("a finite number"))

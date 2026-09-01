@@ -34,7 +34,7 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
-use aep_domain::error::{ValidationCode, ValidationError, ValidationErrors};
+use ess_primitives::error::{ValidationCode, ValidationError, ValidationErrors};
 
 use crate::name::{Naming, QualifiedName};
 use crate::types::NamedType;

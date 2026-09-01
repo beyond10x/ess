@@ -61,16 +61,16 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::fmt;
 use std::str::FromStr;
 
-use aep_domain::error::ParseError;
-use aep_domain::evidence::SpecDigest;
-use aep_domain::node::Node;
-use aep_domain::predicate::Predicate;
 use ess_compiler::ir::EssIr;
 use ess_domain::binding::BindingName;
 use ess_domain::command::OutcomeName;
 use ess_domain::entity::StateName;
 use ess_domain::name::{QualifiedName, Version};
 use ess_domain::types::Primitive;
+use ess_primitives::error::ParseError;
+use ess_primitives::evidence::SpecDigest;
+use ess_primitives::node::Node;
+use ess_primitives::predicate::Predicate;
 
 // ---- the suite -----------------------------------------------------------------------------
 
@@ -243,7 +243,7 @@ pub struct SuiteProvenance {
     ///
     /// The field the record is worth anything for. `billing/v3` is a label two different resolutions
     /// can share; a digest is not, and
-    /// [`EssConformanceResult::attests`](aep_domain::evidence::EssConformanceResult::attests) decides
+    /// [`EssConformanceResult::attests`](ess_primitives::evidence::EssConformanceResult::attests) decides
     /// on this and never on the label.
     pub spec_digest: SpecDigest,
     /// A digest of the model slice the suite derives from — the whole model, spelled as a slice.
@@ -1418,7 +1418,7 @@ pub enum ScenarioStep {
     /// means the query must see the command that just returned, `eventual` means the assertion is an
     /// [`EventuallyView`](Self::EventuallyView) instead, and `ResolvedView::assertion_style` holds
     /// that decision so that no projection re-derives it. So the runner queries no older than the
-    /// token the last executed command returned — `aep_contract::consistency::QueryConsistency`,
+    /// token the last executed command returned — `ess_primitives::consistency::QueryConsistency`,
     /// which already ships — and the suite states no consistency of its own. A second pair of
     /// consistency types is exactly what §14 refuses.
     QueryView {
@@ -1551,7 +1551,7 @@ pub use ess_compiler::refs::{
 
 #[cfg(test)]
 mod tests {
-    use aep_domain::facts::Number;
+    use ess_primitives::facts::Number;
 
     use super::*;
 

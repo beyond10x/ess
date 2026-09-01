@@ -823,7 +823,7 @@ fn component_changes(before: &EssIr, after: &EssIr, changes: &mut Vec<SemanticCh
 
 /// What decides an outcome, rendered canonically.
 ///
-/// A `when:` renders through [`Predicate`](aep_domain::predicate::Predicate)'s own `Display`, which
+/// A `when:` renders through [`Predicate`](ess_primitives::predicate::Predicate)'s own `Display`, which
 /// is the canonical compact form — the IR keeps no author spelling for a guard, so two guards that
 /// differ only in formatting are one predicate and never reach a renderer at all.
 fn written_condition(condition: &ResolvedCondition) -> String {

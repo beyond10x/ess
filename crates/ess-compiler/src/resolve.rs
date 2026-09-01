@@ -39,7 +39,6 @@
 use std::cell::RefCell;
 use std::collections::{BTreeMap, BTreeSet};
 
-use aep_domain::error::{ValidationCode, ValidationErrors};
 use ess_domain::actor::ActorSpec;
 use ess_domain::binding::{BindingName, BindingSpec, MappingSource};
 use ess_domain::command::PayloadSource;
@@ -54,6 +53,7 @@ use ess_domain::system::Source;
 use ess_domain::topology::Workload;
 use ess_domain::types::{is_assignable, Field, NamedType, TypeBody, TypeRef, TypeRegistry};
 use ess_domain::view::ViewSpec;
+use ess_primitives::error::{ValidationCode, ValidationErrors};
 
 use crate::diagnostic::{Code, Detail, Diagnostic, Diagnostics, Severity};
 use crate::ir::{
@@ -504,17 +504,17 @@ fn location_of(text: &str, index: usize) -> Location {
 ///
 /// The bridge, and deliberately not a second implementation. Every cross-cutting rule in this model
 /// is enforced by [`Specification::validate`], where it is already tested; what that produces is a
-/// [`ValidationError`](aep_domain::error::ValidationError) with a document path and prose. What §29 asks for is a code, a span and a
+/// [`ValidationError`](ess_primitives::error::ValidationError) with a document path and prose. What §29 asks for is a code, a span and a
 /// structured body. This adds the first two — the family from the location's layer, the class from
 /// the [`ValidationCode`], the line by finding the declaration in the file it was read from.
 ///
 /// # What it cannot add
 ///
-/// The structured body. A [`ValidationError`](aep_domain::error::ValidationError) carries its facts as a sentence, and parsing two types
+/// The structured body. A [`ValidationError`](ess_primitives::error::ValidationError) carries its facts as a sentence, and parsing two types
 /// back out of a sentence is exactly what §29 says a consumer must not have to do — so it would be no
 /// better done here. Diagnostics with typed details are the ones [`compile`] produces itself; the
 /// bridged ones carry the message, the hint, the span and the `ess-domain` code they came from.
-/// Closing that gap means giving [`ValidationError`](aep_domain::error::ValidationError) structured fields, in `ess-domain`.
+/// Closing that gap means giving [`ValidationError`](ess_primitives::error::ValidationError) structured fields, in `ess-domain`.
 pub fn diagnose(errors: &ValidationErrors, sources: &SourceMap) -> Diagnostics {
     diagnose_locating(errors, sources, &[] as &[&str])
 }
@@ -2669,7 +2669,7 @@ mod tests {
         // The bridge's whole point. `ess-domain` refuses a mapping whose types disagree; this pass
         // would have called that `ESS-BINDING-002`; a consumer must not be able to tell which ran.
         let errors = ValidationErrors::new().with(
-            aep_domain::error::ValidationError::new(
+            ess_primitives::error::ValidationError::new(
                 ValidationCode::TypeMismatch,
                 "binding.notify-on-ordered.mapping.recipient",
                 "`shop.orders.Email` is not `shop.orders.Address`",
@@ -2720,7 +2720,7 @@ mod tests {
             "components.yaml",
             "bindings:\n  - id: notify-on-ordered\n    mapping:\n      recipient: event.customer_email\n",
         );
-        let errors = ValidationErrors::new().with(aep_domain::error::ValidationError::new(
+        let errors = ValidationErrors::new().with(ess_primitives::error::ValidationError::new(
             ValidationCode::TypeMismatch,
             "binding.notify-on-ordered.mapping.recipient",
             "the two types disagree",

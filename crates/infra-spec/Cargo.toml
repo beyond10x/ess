@@ -12,7 +12,7 @@ authors.workspace = true
 # `Truth`, `Predicate`, `FactStore`. The three-valued evaluator is reused, never rebuilt: a second
 # predicate language would be a second place for `Unknown` to be collapsed into `False`, and
 # invariant 5 is one rule, not one rule per crate.
-aep-domain.workspace = true
+ess-primitives.workspace = true
 
 # `InfraCode` and `ValidationErrors` — the one `INFRA-` registry and the one accumulator the
 # infrastructure family shares, extended with `INFRA-SPEC-001`…`008` rather than duplicated.

@@ -141,9 +141,6 @@
 use std::collections::{BTreeMap, BTreeSet, VecDeque};
 use std::fmt;
 
-use aep_domain::facts::{FactPath, FactSource, FactStore, FactValue};
-use aep_domain::node::Node;
-use aep_domain::predicate::{Operand, Predicate, Truth};
 use ess_compiler::diagnostic::Code;
 use ess_compiler::ir::{
     Driver, EntityHandle, EssIr, ResolvedBinding, ResolvedBody, ResolvedCommand, ResolvedCondition,
@@ -156,6 +153,9 @@ use ess_domain::entity::{EntitySpec, Invariant, StateName};
 use ess_domain::name::QualifiedName;
 use ess_domain::types::MAX_TYPE_DEPTH;
 use ess_domain::view::AssertionStyle;
+use ess_primitives::facts::{FactPath, FactSource, FactStore, FactValue};
+use ess_primitives::node::Node;
+use ess_primitives::predicate::{Operand, Predicate, Truth};
 
 use crate::decision::{when, Decision, Unevaluable};
 use crate::input::{flatten, resolve_path, ShapeErrors};

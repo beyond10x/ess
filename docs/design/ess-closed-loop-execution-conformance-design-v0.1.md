@@ -1,6 +1,6 @@
 # ESS Closed-Loop Execution & Conformance — Design v0.1
 
-> **Repository:** `beyond10x/aep`  
+> **Repository:** `beyond10x/aep`
 > **Status:** **Reviewed and reconciled 2026-08-20 — frozen for implementation**, except the open decisions listed in §2 under *Open decisions this freeze does not close*.  
 > **Milestone:** ESS wave 4 in [`docs/plan/ess-roadmap.md`](../plan/ess-roadmap.md).  
 > **Audience:** Implementor continuing the existing ESS work after `ess-domain`, `ess-compiler`, and `ess-gen`  
@@ -94,7 +94,7 @@ The milestone is complete only when the loop works end-to-end.
 
 ## 2. Repository Baseline
 
-The design assumes the current `aep` architecture.
+The design assumes the current `AEP` architecture.
 
 Already present in the repository:
 
@@ -2400,7 +2400,7 @@ The closed loop is the deliverable.
 Illustrative only; adapt to the tree as it stands on `main`.
 
 ```text
-aep/
+AEP/
 ├── crates/
 │   ├── ess-domain/
 │   ├── ess-compiler/

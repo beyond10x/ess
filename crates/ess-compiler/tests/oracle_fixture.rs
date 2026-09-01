@@ -21,8 +21,6 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
 
-use aep_domain::facts::{FactPath, FactStore, FactValue};
-use aep_domain::predicate::Truth;
 use ess_compiler::ir::{
     Driver, EntityHandle, EssIr, ResolvedEffect, ResolvedMappingValue, ResolvedView,
 };
@@ -34,6 +32,8 @@ use ess_domain::entity::StateName;
 use ess_domain::spec::{RawSpecFile, Specification};
 use ess_domain::system::Source;
 use ess_domain::view::Consistency;
+use ess_primitives::facts::{FactPath, FactStore, FactValue};
+use ess_primitives::predicate::Truth;
 
 /// The fixture this file is about.
 const FIXTURE: &str = "oracle-fixture";

@@ -19,11 +19,11 @@
 use std::fmt;
 use std::str::FromStr;
 
-use aep_domain::error::ParseError;
 use ess_domain::binding::BindingName;
 use ess_domain::command::OutcomeName;
 use ess_domain::component::ComponentName;
 use ess_domain::name::QualifiedName;
+use ess_primitives::error::ParseError;
 
 use crate::ir::{
     ActorHandle, CommandHandle, ComponentHandle, DomainHandle, EntityHandle, ErrorHandle,

@@ -20,8 +20,8 @@
 use std::collections::BTreeMap;
 use std::fmt;
 
-use aep_domain::node::Node;
-use aep_domain::time::Timestamp;
+use ess_primitives::node::Node;
+use ess_primitives::time::Timestamp;
 
 use crate::scenario::{EssSemanticRef, ScenarioId, SuiteProvenance};
 use crate::target::ImplementationIdentity;

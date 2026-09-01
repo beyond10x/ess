@@ -14,7 +14,6 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
 
-use aep_domain::node::Node;
 use ess_compiler::diagnostic::Code;
 use ess_compiler::ir::{EssIr, ResolvedCondition};
 use ess_compiler::resolve::compile;
@@ -27,6 +26,7 @@ use ess_domain::entity::StateName;
 use ess_domain::name::QualifiedName;
 use ess_domain::spec::{RawSpecFile, Specification};
 use ess_domain::system::Source;
+use ess_primitives::node::Node;
 
 // ---- the specifications under test -------------------------------------------------------------
 

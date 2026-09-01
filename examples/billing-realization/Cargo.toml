@@ -25,8 +25,7 @@ invoice-service = { path = "../../generated/rust/billing/crates/invoice-service"
 
 [dev-dependencies]
 ess-conformance.workspace = true
-aep-domain.workspace = true
-aep-contract.workspace = true
+ess-primitives.workspace = true
 serde_json.workspace = true
 
 [lints]

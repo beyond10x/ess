@@ -2,10 +2,10 @@
 
 use std::fmt;
 
-use aep_domain::error::ParseError;
-use aep_domain::evidence::SpecDigest;
 use ess_compiler::ir::EssIr;
 use ess_domain::name::{QualifiedName, Version};
+use ess_primitives::error::ParseError;
+use ess_primitives::evidence::SpecDigest;
 
 use crate::change::{ChangeId, SemanticChange, SemanticRelation};
 
@@ -99,7 +99,7 @@ impl<'de> serde::Deserialize<'de> for DeltaFormat {
 /// Three facts, and only one of them is identity. `billing/v3` is a label two different resolutions
 /// can share — [`Version`] is major-only on purpose — so the **digest** is what tells two revisions
 /// apart, and the version is here for a person reading the report. That is the same sentence
-/// [`EssConformanceResult`](aep_domain::evidence::EssConformanceResult) already carries about its own
+/// [`EssConformanceResult`](ess_primitives::evidence::EssConformanceResult) already carries about its own
 /// digest, and it is why nothing here orders revisions by version.
 ///
 /// The digest is derived from [`ess_gen::Provenance`], never computed a second way: one model has

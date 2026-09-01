@@ -132,7 +132,7 @@
 use std::collections::btree_map::Entry;
 use std::collections::BTreeMap;
 
-use aep_domain::error::{ParseError, ValidationCode, ValidationError, ValidationErrors};
+use ess_primitives::error::{ParseError, ValidationCode, ValidationError, ValidationErrors};
 
 use crate::command::{CommandSpec, EventSpec};
 use crate::name::{Naming, QualifiedName};

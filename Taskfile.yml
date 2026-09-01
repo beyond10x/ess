@@ -1,368 +1,58 @@
-# Task runner for aep. Requires go-task (https://taskfile.dev).
-version: "3"
+version: '3'
 
 tasks:
-  default:
-    desc: Run the full gate, as CI does.
-    deps: [check]
-
-  check:
-    desc: >-
-      Format check, status check, version check, lint, test, doc check, schema check, projection
-      check, suite check, observation check, synthesis check, MSRV build and website build —
-      everything CI runs.
-      The observation check now also covers the committed manifest projection. The last ones need
-      the Go toolchain, the wasm32-unknown-unknown Rust target, Node and a Rust 1.85 toolchain
-      beside Rust's own.
-
-      `msrv` and `website` are here because they were **not**, and this description said
-      "everything CI runs" while they were missing. CI was red for eleven consecutive releases —
-      every tag from 0.13.0 to 0.23.1 — with a locally green gate the whole time, because the two
-      things that were failing were the two things only CI ran. A gate that covers less than the
-      gate it claims to be is worse than a gate that admits its scope.
-    cmds:
-      - task: fmt-check
-      - task: status-check
-      - task: plan-check
-      - task: audit-check
-      - task: version-check
-      - task: dep-check
-      - task: guard-check
-      - task: claim-check
-      - task: clippy
-      - task: test
-      - task: docs-check
-      - task: plugin-check
-      - task: postgres-check
-      - task: doc-check
-      - task: schema-check
-      - task: generate-check
-      - task: suite-check
-      - task: infra-check
-      - task: synth-check
-      - task: lab-check
-      - task: msrv
-      - task: website
-
-  msrv:
-    desc: Build on the declared MSRV, which is what CI's `MSRV 1.85` job does.
-    # `--locked`, because the failure this catches lives in the lockfile rather than in the source:
-    # a transitive dependency bumping *its* rust-version breaks the build with no commit of ours
-    # touching a line of Rust. `idna_adapter` pulling in `icu_*@2.3.0` (rustc 1.88) did exactly
-    # that, and nothing local noticed for eleven releases.
-    cmds:
-      - cargo +1.85 build --workspace --locked
-
-  website:
-    desc: Build the documentation site, which is what CI's `Website` workflow does.
-    # Docusaurus resolves every markdown link at build time, so a link into the repository tree
-    # from a page under `website/docs/` fails the build rather than 404ing for a reader. Repository
-    # files are linked by absolute GitHub URL; only site pages are linked relatively.
-    #
-    # `npm ci` first, and it is not optional. This task's `desc` says it is what CI's `Website`
-    # workflow does; CI runs `npm ci` (`.github/workflows/pages.yml:75`) and then `npm run build`
-    # (`:85`), and this ran only the second. That made the step pass on any checkout where somebody
-    # had installed once and fail `127 docusaurus: command not found` on every fresh one — a wave's
-    # integration worktree, a new clone, a colleague's machine. A gate whose result depends on
-    # whether a directory `git` does not track happens to be there is not a gate, and this is the
-    # same shape as the eleven red releases `check`'s own description records: a step that claims
-    # a scope it does not cover.
-    dir: website
-    cmds:
-      - npm ci
-      - npm run build
-
-  # `cargo xtask fmt`, not `cargo fmt --all`: `--all` also formats every member's local path
-  # dependencies, and `examples/billing-realization` depends by path on the synthesised crates
-  # under `generated/rust/` — a tree whose bytes are the emitter's, held byte-identical by
-  # `synth-check`. One owner per tree; rustfmt is not the generated workspaces' owner.
-  fmt:
-    desc: Format the source workspace's members.
-    cmds:
-      - cargo xtask fmt
-
   fmt-check:
-    desc: Fail if any workspace member is unformatted. Generated workspaces are exempt by design.
     cmds:
-      - cargo xtask fmt --check
-
-  # The one status surface prose kept getting wrong, derived instead: the table is generated from
-  # the annotated tags, so a wave that ships without retagging cannot leave the page claiming
-  # otherwise. Early in the gate because it is sub-second and needs no compile beyond xtask itself.
-  status:
-    desc: Regenerate every annotated-tag and gate-derived reader-facing status region.
-    cmds:
-      - cargo xtask status
-
-  status-check:
-    desc: >-
-      Fail if a generated status region drifts, CI stops invoking task check, or release stops
-      reusing that CI gate.
-    cmds:
-      - cargo xtask status --check
-
-  audit-check:
-    desc: >-
-      The seven document units of the open-vocabulary audit's own suite: the table's shape, the open
-      and closed cells, the follow-ups, the citations, the layered rows and the scan loop. Four
-      seconds, and what it buys is the drift detector — every `file:line` the audit cites is
-      re-resolved, so a commit that shifts a cited declaration fails here instead of leaving a
-      closed verdict pointing at a serde attribute, which is what happened on 2026-08-28.
-    # Six of the thirteen units are deliberately not here, for two different reasons.
-    #
-    # `surface-hygiene`, `repeatability`, `mutation-proof` and `checks-runner` **run the suite
-    # itself** — nine tree copies for the mutation proof — and cost 65 of its 70 seconds. They are
-    # the suite's meta-tests; run them with `bash .engineering/checks/run.sh` when the suite changes.
-    #
-    # `audit-corpus` is out for a different and more interesting reason: its C9 row asserts *this
-    # unit's writes stay inside its two declared files*, read from `git status`. That is a claim
-    # about the **run** that produced the audit, not about the tree — so in a gate it reddens on any
-    # unrelated uncommitted file, which is every working tree that is mid-change. A check that
-    # cannot pass on a dirty tree is not a gate step; it is a run verifier, and it stays one.
-    cmds:
-      - bash .engineering/checks/run.sh table-shape open-cells closed-cells followups citations layered-rows scan-loop
-
-  plan-check:
-    desc: >-
-      Fail if this repository's own planning store is not valid — an unparseable document, a
-      relation into a repository the workspace manifest does not declare, a status no lifecycle
-      permits. Local, clock-free and sub-second, which is the same argument that placed
-      `status-check` here. It reports statuses reached on an assertion rather than a record and
-      does not fail on them, deliberately: refusing those would stop anybody closing a story on the
-      day a runner is down, which is the day it matters most.
-    cmds:
-      - cargo run -q -p protocol-cli --bin protocol -- artifact validate
-
-  guard-check:
-    desc: >-
-      Fail when a test body is duplicated across crates. A test asserting exactly what a test in
-      another crate asserts is not evidence that the two behave differently — which is how a
-      "rolls back both halves" test that asserted a pre-check refusal was cited for two releases.
-    cmds:
-      - cargo xtask guards
-
-  claim-check:
-    desc: >-
-      Fail when a released `### Fixed` entry names something that did not exist at the previous
-      release. `### Fixed` is a promise about what a user of the previous version experienced, and
-      two of `entity-runtime` 0.6.0's three entries described defects that never shipped.
-    cmds:
-      - cargo xtask claims
-
-  lab-check:
-    desc: >-
-      Fail when the lab's copy of the emitted glue differs from what the emitter produces. Only the
-      Website workflow checked this, so `task check` was green while CI was red for two releases —
-      the version stamp went to 0.26.0 and the copy stayed at 0.1.0. Component gates are not enough.
-    cmds:
-      - cmp generated/web/billing/bridge.js website/src/pages/lab/_bridge.mjs
-
-  plugin-check:
-    desc: >-
-      Fail when the Claude Code plugin changed since the newest release tag and its manifest
-      version did not, when a skill does not state that version, or when roster.json disagrees
-      with the skills and agents on disk. The manifest read 0.1.0 through nine plugin commits;
-      a skill edited eighteen minutes into a running wave halted it, and nothing could say which
-      text the coordinator had loaded.
-    cmds:
-      - cargo xtask plugin
-
-  install:
-    desc: >-
-      Install this tree's `protocol` over the ambient one. The last step of a release: six sessions
-      got a wrong `validate` or `history` answer from a binary older than the store it read, and the
-      install that would have prevented it was nowhere in the procedure.
-    cmds:
-      - cargo install --path crates/protocol-cli --locked --force
-      - protocol --version
-
-  release-check:
-    desc: >-
-      Report whether the newest release was cut completely — version, changelog heading, pushed
-      tag, GitHub Release, and a test_result in the planning store naming the tag's commit. Reaches
-      origin and GitHub, so it is not a step of `check`.
-    cmds:
-      - cargo xtask release
-
-  version-check:
-    desc: >-
-      Fail if the workspace version no longer matches the newest release tag. `protocol --version`
-      prints the workspace version, so while these disagree the binary cannot say which build it
-      is — which is how a stale install writes nothing and looks like it worked.
-    cmds:
-      - cargo xtask version
-
-  dep-check:
-    desc: >-
-      Fail when any `entity-*` crate resolves to two versions, or the `entity-*` crates come from
-      two `entity-runtime` pins. Two kernels were compiled into this workspace for two releases —
-      `entity-core` 0.5.2 under the markdown backend, deciding every status move, and 0.8.0 under
-      the SQLite one — and `cargo tree -i entity-core` was the only thing that said so.
-    cmds:
-      - cargo xtask deps
-
-  docs-check:
-    desc: >-
-      Fail when a verb the CLI answers has no entry in the website's CLI reference. The gate's
-      website step is `npm run build`, and Docusaurus resolves links rather than claims — so a page
-      describing a CLI that moved underneath it builds green for ever. Seven of seventy-seven verbs
-      had no entry on 2026-08-30, the whole `protocol workspace` family among them, eight releases
-      after the site's own roadmap page told readers it had shipped.
-    # A named step as well as a test, for the reason every other drift check is one: `2883 tests, 1
-    # failed` reads as "the gate failed", and `docs-check` reads as "the CLI reference is stale".
-    # The verb list comes from clap, not from parsing `--help`, so a rendering change cannot move it.
-    cmds:
-      - cargo test -q -p protocol-cli --bin protocol cli_reference
+      # Generated Rust is a byte-pinned projection, not formatter input. Name every workspace
+      # member explicitly so a newer rustfmt cannot silently rewrite historical generated bytes.
+      - >-
+        cargo fmt
+        --package billing-realization
+        --package ess-cli
+        --package ess-compiler
+        --package ess-conformance
+        --package ess-diff
+        --package ess-domain
+        --package ess-gen
+        --package ess-kubernetes
+        --package ess-openapi
+        --package ess-primitives
+        --package ess-synth
+        --package gatepass-realization
+        --package infra-analyze
+        --package infra-compiler
+        --package infra-domain
+        --package infra-project
+        --package infra-spec
+        --package schema-contract
+        -- --check
 
   clippy:
-    desc: Lint every target, warnings are errors.
     cmds:
-      - cargo clippy --workspace --all-targets -- -D warnings
+      - cargo clippy --workspace --all-targets --locked -- -D warnings
 
   test:
-    desc: Run every test in the workspace.
     cmds:
-      - cargo test --workspace
+      - cargo test --workspace --locked
 
-  generate:
-    desc: Regenerate generated/ — the projections of examples/billing/.
-    cmds:
-      - cargo xtask generate
-
-  generate-check:
-    desc: Fail if the committed projections differ from what the specification produces.
-    cmds:
-      - cargo xtask generate --check
-
-  # Beside `generate` rather than part of it: `generated/` has one owner and a recursive orphan scan,
-  # so a second task writing into it would delete the first task's output. `xtask/src/main.rs` argues
-  # it at length. The suites also cover two specifications where `generated/` covers one.
-  suite:
-    desc: Regenerate suites/generated/ — the conformance suites examples/ oblige.
-    cmds:
-      - cargo xtask suite
-
-  suite-check:
-    desc: Fail if the committed conformance suites differ from what the specifications oblige.
-    cmds:
-      - cargo xtask suite --check
-
-  # Beside `generate` for the reason `suite` is: `generated/` has one owner per subtree, and the
-  # synthesised trees under `generated/rust/`, `generated/go/` and `generated/web/` are the synth
-  # task's — the projection task's orphan scan carves all three roots out, and `xtask`'s ownership
-  # test holds the carve-outs to the list of owners. This one also builds what it wrote: a tree
-  # that matches its specification byte for byte and no longer compiles is a claim nothing else
-  # checks.
-  synth:
-    desc: >-
-      Regenerate generated/rust/, generated/go/ and generated/web/ — the three trees the
-      specifications determine, from one language-neutral plan — then run the dual-target
-      demonstration against the two applications the committed trees and their realizations build.
-    cmds:
-      - cargo xtask synth
-
-  synth-check:
-    desc: >-
-      Fail if any synthesised tree differs from what the specifications determine, no longer builds
-      (cargo check; gofmt -l, go build, go vet; cargo build --target wasm32-unknown-unknown), if the
-      emitted page calls an export its module does not have, if the committed suite or the browser
-      boundary no longer holds, or if the two applications synthesised from examples/gatepass stop
-      behaving as one system — both are started on ephemeral ports and their startup records,
-      statuses, bodies and published documents are compared. Needs the Go toolchain, the
-      wasm32-unknown-unknown target and Node, and says which is missing rather than skipping.
-    cmds:
-      - cargo xtask synth --check
-
-  # Three named files and one tree: the task owns exactly `cluster.ir.json`, `simulation.json`,
-  # `drift.json` and everything under `projection/`, and every input beside them —
-  # `observation.json`, `observation.drifted.json`, `expected.yaml` — is a reviewed, hand-written
-  # fixture. The fourth output gets an orphan scan the other three do not need, because a patch
-  # file for an object nothing patches any more would sit in the repository looking like a
-  # proposal somebody still stands behind. `xtask/src/main.rs` documents the pairing.
-  infra:
-    desc: >-
-      Regenerate the example cluster's four committed outputs: the compiled IR, the three-valued
-      simulation of expected.yaml against it, the drift between the two observations, and the
-      projection tree — the patches, manifests and obligations that would close the simulation's
-      gaps.
-    cmds:
-      - cargo xtask infra
-
-  infra-check:
-    desc: >-
-      Fail if the committed observation IR, simulation, drift or projection tree differs from what
-      its inputs produce — including a projection file nothing generates any more.
-    cmds:
-      - cargo xtask infra --check
-
-  # The website's lab runs the real thing rather than a recording of it: `website/src/pages/lab/`
-  # fetches a WebAssembly module beside the page, sends five commands over its boundary and reads
-  # its three panels off the answers. This builds that module — the generated bridge under
-  # `generated/web/billing/` linked with the hand-written realization, which is exactly what
-  # `examples/billing-web` already is — and puts it where the site serves static files from.
-  #
-  # The `.wasm` is not committed, for the reason `generated/web/README.md` gives: it is a build
-  # artifact, and a binary nobody can diff is not evidence. `.gitignore` keeps it out, and the Pages
-  # workflow runs these same commands before `npm run build`.
-  #
-  # The `cmp` comes first. `website/src/pages/lab/_bridge.mjs` is a byte-identical copy of the
-  # emitted glue, so that the page and the boundary smoke test drive the module through the same
-  # code; a copy that had drifted would be a page proving something else, so this refuses rather
-  # than builds. The node step at the end is the run's own test: same module, same glue, and the
-  # same engine the page calls.
-  lab:
-    desc: >-
-      Build the browser module the website's lab runs, place it in website/static/lab/, and hold
-      the run it produces to its test. Needs the wasm32-unknown-unknown target and Node 22.18+.
-    cmds:
-      - cmp generated/web/billing/bridge.js website/src/pages/lab/_bridge.mjs
-      - cargo build --release --target wasm32-unknown-unknown --manifest-path examples/billing-web/Cargo.toml
-      - mkdir -p website/static/lab
-      - cp examples/billing-web/target/wasm32-unknown-unknown/release/billing_web_realized.wasm website/static/lab/billing_web_realized.wasm
-      - node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON website/src/pages/lab/_run.test.mjs
-
-  schema:
-    desc: Regenerate schemas/generated/ from the Rust types.
-    cmds:
-      - cargo xtask schema
-
-  schema-check:
-    desc: Fail if the committed schemas differ from the Rust types.
-    cmds:
-      - cargo xtask schema --check
-
-  postgres-check:
-    desc: >-
-      The Postgres backend's tests against the server ENTITY_POSTGRES_URL names, or one printed line
-      saying they did not run. The one gate step that reaches a network, opted into by name; a
-      laptop without a database stays green and stays honest.
-    cmds:
-      - scripts/postgres-check.sh
-
-  doc:
-    desc: Build the API documentation.
-    cmds:
-      - cargo doc --workspace --no-deps
-
-  # Doc comments carry the design reasoning here, so a broken intra-doc link loses an argument, not
-  # just a hyperlink. Same defect class as a clippy warning, so it is a step in `check` rather than a
-  # job of its own, and it reuses the dependency build `test` has already paid for.
   doc-check:
-    desc: Fail if rustdoc emits any warning.
     env:
       RUSTDOCFLAGS: -D warnings
     cmds:
-      - cargo doc --workspace --no-deps
+      - cargo doc --workspace --no-deps --locked
 
-  # `plugin-eval` and `driven-eval` were removed 2026-08-28. Both invoked
-  # `integrations/claude-code/eval/`, which `epic:metaharness-migration` deleted on 2026-08-22: the
-  # agent-eval checks and their recorded transcripts live at metaharness
-  # `evals/aep/`, and `run.sh` retired with the hooks it inspected. Neither task
-  # was a step of `check`, so nothing was failing — a task runner that offers a verb pointing at a
-  # deleted script is the drift invariant 1 exists to prevent, and it is removed rather than
-  # repointed because the eval is no longer this repository's to run.
-
-  codex-eval:
-    desc: Check the Codex instruction surface (free, no API call, no model).
+  example-check:
     cmds:
-      - integrations/codex/eval/check-instruction-surface.sh
+      - cargo run --quiet --locked --bin ess -- validate --path examples/billing
+      - cargo run --quiet --locked --bin ess -- validate --path examples/gatepass
+      - cargo run --quiet --locked --bin ess -- validate --path examples/oracle-fixture
+      - cargo run --quiet --locked --bin ess -- import kubernetes --path examples/k3d-dev-cluster/observation.json --format json
+      - cargo run --quiet --locked --bin ess -- import openapi --path generated/openapi/invoice-service.yaml --format json
+
+  check:
+    cmds:
+      - task: fmt-check
+      - task: clippy
+      - task: test
+      - task: doc-check
+      - task: example-check

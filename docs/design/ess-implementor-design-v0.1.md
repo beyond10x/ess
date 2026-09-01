@@ -2,7 +2,7 @@
 
 > **Status:** Initial implementation design  
 > **Audience:** Engineers implementing the ESS domain model, compiler, generators, and conformance tooling  
-> **Related project:** `aep`  
+> **Related project:** `AEP`
 > **Core idea:** Define a software system once as a typed, technology-independent semantic model, then deterministically derive contracts, documentation, tests, deployment artifacts, and—where the model is sufficiently complete—application implementations.
 
 ## 1. Purpose
@@ -44,7 +44,7 @@ From that specification, tooling should be able to derive:
 
 ESS itself is not tied to Rust, Kubernetes, HTTP, Kafka, NATS, gRPC, or any other realization technology. Those are compilation targets.
 
-## 2. Relationship to `aep`
+## 2. Relationship to `AEP`
 
 ESS and AEP/ADP solve different problems:
 
@@ -1170,7 +1170,7 @@ No unresolved references should exist in the IR.
 ## 26. Suggested crate layout
 
 ```text
-aep/
+AEP/
 ├── crates/
 │   ├── aep-domain/
 │   ├── aep-contract/

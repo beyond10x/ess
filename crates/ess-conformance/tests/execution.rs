@@ -582,19 +582,19 @@ fn an_eventual_view_is_read_again_and_a_read_your_writes_view_is_not() {
 // ---- fixtures -----------------------------------------------------------------------------------
 
 /// A `billing.invoice.Money`.
-fn money(amount: f64) -> aep_domain::node::Node {
+fn money(amount: f64) -> ess_primitives::node::Node {
     let mut fields = BTreeMap::new();
     fields.insert(
         "amount".to_owned(),
-        aep_domain::node::Node::Number(
-            aep_domain::facts::Number::new(amount).expect("a finite amount"),
+        ess_primitives::node::Node::Number(
+            ess_primitives::facts::Number::new(amount).expect("a finite amount"),
         ),
     );
     fields.insert(
         "currency".to_owned(),
-        aep_domain::node::Node::Text("amount.currency".to_owned()),
+        ess_primitives::node::Node::Text("amount.currency".to_owned()),
     );
-    aep_domain::node::Node::Map(fields)
+    ess_primitives::node::Node::Map(fields)
 }
 
 /// The reference with one thing about its answers changed at the boundary.
@@ -641,7 +641,7 @@ impl Perturbed {
         let mut row = ViewRow::new();
         row.insert(
             "invoice_id".to_owned(),
-            aep_domain::node::Node::Text("00000000-0000-4000-8000-999999999999".to_owned()),
+            ess_primitives::node::Node::Text("00000000-0000-4000-8000-999999999999".to_owned()),
         );
         row.insert("total".to_owned(), money(42.0));
         row
@@ -664,13 +664,13 @@ impl ConformanceTarget for Perturbed {
         let mut result = self.inner.execute_command(request)?;
         if self.how == How::Mistyped {
             for occurrence in &mut result.direct_events {
-                if let Some(aep_domain::node::Node::Map(fields)) =
+                if let Some(ess_primitives::node::Node::Map(fields)) =
                     occurrence.payload.get_mut("amount")
                 {
                     fields.insert(
                         "currency".to_owned(),
-                        aep_domain::node::Node::Number(
-                            aep_domain::facts::Number::new(7.0).expect("finite"),
+                        ess_primitives::node::Node::Number(
+                            ess_primitives::facts::Number::new(7.0).expect("finite"),
                         ),
                     );
                 }

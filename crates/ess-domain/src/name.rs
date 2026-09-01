@@ -15,7 +15,7 @@
 use std::fmt;
 use std::str::FromStr;
 
-use aep_domain::error::ParseError;
+use ess_primitives::error::ParseError;
 
 /// One segment of a qualified name.
 ///
@@ -289,7 +289,7 @@ impl Version {
     /// version silently — and two documents that disagree about which version they mean then
     /// compared equal. The published [`Version::PATTERN`] refuses both spellings of that, so a
     /// numeric path that accepted them was a parser looser than its own schema.
-    fn from_number(number: aep_domain::facts::Number) -> Result<Self, ParseError> {
+    fn from_number(number: ess_primitives::facts::Number) -> Result<Self, ParseError> {
         let value = number.get();
         if !value.is_finite() || value.fract() != 0.0 {
             return Err(ParseError::reference(
@@ -392,12 +392,12 @@ impl<'de> serde::Deserialize<'de> for Version {
         // Accepts `v1` and a bare `1`, because both read naturally in a document and neither is
         // ambiguous — and the two spellings agree, which is what makes that true. Whatever `v…`
         // refuses, a bare number refuses as well; see [`Version::from_number`].
-        let node = aep_domain::node::Node::deserialize(deserializer)?;
+        let node = ess_primitives::node::Node::deserialize(deserializer)?;
         match &node {
-            aep_domain::node::Node::Text(text) => {
+            ess_primitives::node::Node::Text(text) => {
                 Self::parse(text).map_err(serde::de::Error::custom)
             }
-            aep_domain::node::Node::Number(number) => {
+            ess_primitives::node::Node::Number(number) => {
                 Self::from_number(*number).map_err(serde::de::Error::custom)
             }
             other => Err(serde::de::Error::custom(format!(
@@ -489,14 +489,13 @@ mod tests {
 
     #[test]
     fn a_version_wider_than_the_model_is_refused_by_the_version_bound() {
-        // `serde_json` arbitrary-precision feature unification changes which deserializer layer
-        // first sees a huge scalar. The stable promise is the version bound, not an incidental
-        // "invalid type" from the intermediary document representation.
+        // Dependency feature unification changes which deserializer layer first sees a huge
+        // scalar. Both layers must refuse it; neither may truncate it into a different version.
         let error = serde_yaml::from_str::<Version>("18446744073709551616").expect_err("too wide");
+        let rendered = error.to_string();
         assert!(
-            error
-                .to_string()
-                .contains("versions run from 1 to 4294967295"),
+            rendered.contains("versions run from 1 to 4294967295")
+                || rendered.contains("JSON number out of range"),
             "{error}"
         );
     }

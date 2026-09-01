@@ -1,174 +1,45 @@
-# aep
+# Executable System Specification
 
-> A strongly typed, portable and machine-executable specification for how autonomous engineering
-> work is performed and proven correct.
+ESS is a standalone Rust workspace for describing systems as typed data, compiling those
+descriptions into deterministic IR, projecting concrete artifacts, and checking implementations or
+infrastructure against what was declared.
 
-Coding and operations agents are usually governed by prose:
-
-> *Follow TDD, don't break existing APIs, verify your work, and ask before deploying.*
-
-That reads well and enforces nothing. It leaves every operative question open: what counts as
-following TDD, what evidence proves a test failed *before* the implementation existed, which
-operations need approval, what "verify your work" means, when the task is actually finished, and what
-happens when verification fails.
-
-`aep` moves those rules out of prompts and into typed, executable protocol
-definitions. The model still reasons. The protocol decides what the resulting facts permit. The
-agent may be probabilistic; the protocol semantics are not.
-
-## Two halves, one seam
-
-| | Governs | Answers |
-|---|---|---|
-| **AEP** — Agentic Engineering Protocol | how engineering work is performed | *Was this built properly?* |
-| **ESS** — Executable System Specification | what software must exist | *Is this the thing we meant to build?* |
-
-They are not layers: AEP does not know what an invoice is, and ESS does not know what a code review
-is. They meet at exactly one point — evidence. ESS defines the target, work proceeds under AEP, ESS
-conformance checks the result, and that verdict is a fact AEP's completion predicate reads. The loop
-closes because the specification that *generated* the contracts is the one that *tests* the
-implementation: an agent cannot pass by weakening a test it did not write, and cannot declare itself
-done, because completion is a predicate over facts it does not control.
-[`docs/VISION.md`](docs/VISION.md) is the full argument.
-
-## What that looks like
+The canonical command is `ess`:
 
 ```console
-$ protocol explain --task examples/development-passkeys/task.yaml --action production.write
-production.write denied
-  operation: change production state
-  reason:    principle approval-gates rule production-write-requires-approval
-  missing:   approval for capability production.write
-  state:     receive
+cargo run --bin ess -- validate --path examples/billing
+cargo run --bin ess -- compile --path examples/billing --format json
+cargo run --bin ess -- generate --path examples/billing --kind openapi --out generated
+cargo run --bin ess -- conform synthesize --path examples/billing --out suite.json
+cargo run --bin ess -- conform run --suite suite.json --target billing --report-out report.json
+cargo run --bin ess -- import openapi --path api.yaml --out interface.json
+cargo run --bin ess -- project openapi --ir interface.json --out normalized-api.yaml
 ```
 
-The refusal has an address: it names a principle someone can go and read, and says what would unlock
-the operation. Nobody wrote that denial into the task — the task names a profile and an objective,
-and nine principles, a workflow and twelve capability decisions are derived from the document tree.
+Adapters use one explicit contract:
 
-* **Red-before-green is a fact, not an instruction:**
-  `evidence.first_seq.test_result < evidence.first_seq.diff`.
-* **An agent cannot verify itself.** An evidence requirement marked `independent: true` is never
-  satisfied by the agent's own report of a green suite.
-* **An approval names the revision it approved.** Approving design version 3 stops satisfying the
-  requirement at version 7 — otherwise a reviewer's name ends up attached to a decision they never saw.
-* **Unknown is not false.** `✗` is a fact that is wrong — fix the code; `?` is a fact nobody
-  observed — go run the tests. Only `true` permits a transition.
-* **A fact knows when somebody looked, and stops counting when nobody has.** Every evidence record
-  states `observed_at`; a requirement may declare a horizon, and past it the observation reads `?`
-  again — never `✗`, because a green suite from three weeks ago is not a wrong answer, it is an old
-  one. Nothing extends a horizon: the only refresh is to observe again and write a new date.
-* **Capabilities default to deny**, and `deny` cannot be granted back by a later document.
-* **Nothing is deleted.** Archive and supersede are the vocabulary; every mutation crosses one
-  boundary carrying actor, executor, correlation, causation and an idempotency key.
-* **`protocol drive` runs the workflow instead of suggesting it.** The tools an agent holds in a
-  state are the ones the protocol grants there, a refused action is refused by a program rather than
-  by a paragraph, and every transition is the engine's. A step that calls a model has no field to put
-  evidence in — the type, not a rule.
-* **`protocol workflow render` draws the run.** A workflow, and where a run has been, what it
-  produced and why it stopped, as SVG, HTML, PNG or a live terminal frame. The reasons are the
-  engine's own sentences, verbatim.
-* **`protocol workflow flow` projects the workflow into the document the b10x loop walks natively**,
-  with `--map` carrying each state's step into its node. An honest projection and not an
-  equivalence: retreats become repeating groups, terminal states are dropped, and no guard travels,
-  so the governor stays a program the loop asks at every section boundary — and every state is a
-  section, so that boundary is every state's. `protocol workflow instruct` writes the same
-  workflow out in words.
-* **`protocol trace check` reads the run back.** An agent's transcript is judged against a typed
-  specification — fifty-three expectation kinds — so *the agent followed the rules* is a verdict a program
-  reached from the record, not a claim the agent made about itself. Its exit codes distinguish
-  contradicted from nobody-found-out.
+- `ess import <adapter>` reads a concrete source and reports coverage, diagnostics, and unresolved
+  references while producing typed IR where the adapter supports the source.
+- `ess project <adapter>` writes reviewable artifacts, obligations, and refusals. It never applies
+  infrastructure or mutates an external system.
+- Kubernetes import accepts a sanitized bundle or performs a live scan at the credential edge.
+  Secret values are digested before any serialization or filesystem write.
+- OpenAPI import produces `ess-service-interface/1`: typed service, operation, JSON-message, local
+  reference, and interface-type structures plus coverage gaps and unresolved references. Projection
+  accepts that IR or a native ESS specification. The supported subset has an IR → OpenAPI → IR
+  semantic round-trip guarantee; unsupported protocol features are normalized, reported, or refused.
 
-## Is this for you
+`EssIr`, `InfraIr`, and the adapter-specific service-interface representation intentionally remain
+distinct. The compiler IRs keep compiler-minted handles, total lookups, ordered collections, and
+deterministic serialization. New typed constructs are added only when an importer or projector
+establishes their semantics; there is no generic property bag or facet registry.
 
-| Read | If |
-|---|---|
-| [`docs/guide/adopting.md`](docs/guide/adopting.md) | you have engineering rules you want enforced, and a repository to put them in |
-| [`docs/guide/harness.md`](docs/guide/harness.md) | you are building an agent harness and want the protocol to decide what it may do |
-| [`docs/guide/backend.md`](docs/guide/backend.md) | you are storing designs, reviews and approvals, and want them to survive an audit |
-| [`docs/guide/specification.md`](docs/guide/specification.md) | you want a system's contracts, tests and documentation derived from one document instead of maintained beside it |
-
-It is not a tool for making an agent ship features faster — and deliberately not an LLM orchestration
-framework, a CI system or a deployment platform: nothing here calls a cloud API or holds a
-credential. External systems do the work; this project decides what the results permit.
-
-**So what is `integrations/`?** A demonstration, not the deliverable. The Claude Code plugin carries
-the specification's rules on one harness — it teaches the CLI and deliberately carries no vocabulary
-of its own — in the same relationship the reference driver has to the protocol it implements. A
-harness that drives these workflows deterministically is what the demonstration is evidence for, and
-it reads the documents rather than the plugin.
-
-## Where it sits
-
-Nothing here spawns a harness, holds a credential or reaches a cluster. Those jobs belong to the
-repositories beside it.
-
-| repo | relationship |
-|---|---|
-| [metaharness](https://github.com/beyond10x/metaharness) | drives a vendor harness and decides each tool call at a seam. The driver's enforcement policy answers that seam per call; the evals that judge this repository's own runs live there, under `evals/aep/` |
-| [entity-runtime](https://github.com/beyond10x/entity-runtime) | the only repository here takes a **dependency** on, and the arrow points one way only. Its `entity-core` is an IO-free kernel — no clock, no filesystem, no network — that takes an entity type as data and answers whether a status move is permitted. `crates/aep-backend-markdown/src/kernel.rs` asks it exactly that and nothing else; nothing of this repository's appears in a manifest of theirs, at any version |
-| [ess-kubernetes](https://github.com/beyond10x/ess-kubernetes) | the actor that holds a kubeconfig and produces the `infra-observation/1` bundles the `infra-*` crates here check three-valued against a desired state |
-| [atlas](https://github.com/beyond10x/atlas) | the map of the wider `beyond10x` estate this sits in |
-
-The split with `ess-kubernetes` is the boundary [`docs/VISION.md`](docs/VISION.md) states under "What
-this is deliberately not", and it is why that repository exists separately.
-
-## Status
-
-Current state is deliberately not copied onto this page:
-
-- [`docs/status.md`](docs/status.md) derives the delivered-wave record from annotated tags.
-- [The planning store](.engineering/planning/) carries accepted work and its lifecycle state.
-- [`docs/plan/gap-register.md`](docs/plan/gap-register.md) carries open gaps and what closes them.
-- [`docs/VISION.md`](docs/VISION.md) lists proposals that neither accepted surface has taken up.
-
-`cargo xtask status --check` holds those generated release and gate stamps to their sources. Run
-`task check` for the repository's verification result; its generated step list is in
-[`AGENTS.md` § Gate](AGENTS.md#gate).
-
-## Where everything is
-
-| | |
-|---|---|
-| [`docs/guide/`](docs/guide/) | the adopter's guide — start here |
-| [`docs/VISION.md`](docs/VISION.md) | why this exists, and how the two halves compose |
-| [`docs/status.md`](docs/status.md) | the annotated-tag delivery record and links to live planning state |
-| [`AGENTS.md`](AGENTS.md) | the working agreement, including the invariant register — every rule names the check that enforces it |
-| [`docs/design/`](docs/design/), [`docs/plan/`](docs/plan/) | designs — proposed until a plan page accepts them — and the plan pages that did |
-| [`crates/`](crates/) | the workspace: the protocol, the ESS toolchain, the infrastructure and trace domains, the driver and the CLI |
-| [`protocols/`](protocols/), [`principles/`](principles/), [`workflows/`](workflows/), [`profiles/`](profiles/), [`drivers/`](drivers/) | the document tree — the rules themselves, and the step maps that say how a harness obtains what a workflow asks for |
-| [`integrations/claude-code/`](integrations/claude-code/) | the plugin: the planning skill and two agents. Its enforcement hooks and eval migrated to the metaharness repository (`epic:metaharness-migration`); enforcement is the driver's own per-call policy through the metaharness seam |
-| [`integrations/codex/`](integrations/codex/) | the same instructions in the form Codex reads them — a skill, an `AGENTS.md` fragment and an instruction-surface check. The product for Codex users; driving Codex is metaharness's `metaharness-codex` adapter |
-| `.engineering/` | this repository's own project: the planning store it plans itself in, the task under work, and the driver's run records |
-| [`examples/`](examples/) | the worked example, the normative specification, the two synthesised applications, and the evidence-horizon corpus a first adopter contributed |
-| [`artifacts/`](artifacts/) | the artifact graph as data: kinds, relations, lifecycles and templates. The authoritative model is Rust; these carry the parts that are data |
-| [`conformance/`](conformance/) | language-neutral fixtures, scenarios and expected results, plus the shipped `trace-spec/1` documents and the replayed eval-case corpus |
-| [`schemas/`](schemas/), [`suites/`](suites/), [`generated/`](generated/) | outputs, each with exactly one owning `xtask` and a drift check in the gate. Do not hand-edit |
-| [`xtask/`](xtask/) | the tasks behind every `--check` step: generate, suite, synth, infra, schema, status |
-| [`website/`](website/) | the public documentation site |
-| [`CHANGELOG.md`](CHANGELOG.md) | what changed, per release |
-
-## Build
-
-Requires Rust 1.85 or newer, [go-task](https://taskfile.dev), the Go toolchain, the
-`wasm32-unknown-unknown` target and Node. A check whose toolchain is missing fails and names it
-rather than skipping — a check that quietly passes without its toolchain reads exactly like a check
-that passed.
+Run the complete offline gate with:
 
 ```console
-task check     # the authoritative gate; run this rather than a copied command list
+task check
 ```
 
-The ordered step list is generated from `Taskfile.yml` into [`AGENTS.md` § Gate](AGENTS.md#gate), so
-this page does not maintain a second copy.
-
-The gate calls no paid or external API and spends no money. Its named `postgres-check` may use the
-loopback database supplied by CI; without one it reports the skipped integration honestly. Paid
-evals remain separate tasks and are never steps of `check` — `task codex-eval` checks the Codex
-instruction surface for free, with no model call.
-
-Published documentation: <https://beyond10x.github.io/aep/>
-
-## Licence
-
-Apache-2.0. See [LICENSE](LICENSE).
+The historical ESS, infrastructure, schema, examples, suites, and generated artifacts were
+extracted with filtered Git history. The Kubernetes adapter additionally carries the imported
+history of the former standalone scanner.

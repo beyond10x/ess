@@ -41,7 +41,7 @@
 //! suite catching that is the suite working.
 //!
 //! **A whole number is written `1.0` in the artifact.** [`Node::Number`] holds an
-//! [`aep_domain::facts::Number`], which is an `f64`, so an `Integer` witness serialises with a
+//! [`ess_primitives::facts::Number`], which is an `f64`, so an `Integer` witness serialises with a
 //! fractional part it does not have. That is the value type's shape rather than a choice here — the
 //! flattener refuses a genuinely fractional value for an `Integer`
 //! ([`crate::input`]) — but a runner handing this straight to a JSON-typed target has to normalise
@@ -57,11 +57,11 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt;
 
-use aep_domain::facts::{FactPath, FactValue, Number};
-use aep_domain::node::Node;
-use aep_domain::predicate::{Operand, Predicate};
 use ess_compiler::ir::{EssIr, ResolvedBody, ResolvedCommand, ResolvedTypeRef};
 use ess_domain::types::{Primitive, MAX_TYPE_DEPTH};
+use ess_primitives::facts::{FactPath, FactValue, Number};
+use ess_primitives::node::Node;
+use ess_primitives::predicate::{Operand, Predicate};
 
 /// How many candidate inputs one outcome is tried against before synthesis refuses.
 ///
@@ -477,7 +477,7 @@ fn fnv1a(bytes: &[u8]) -> u64 {
 mod tests {
     use super::*;
 
-    use aep_domain::facts::FactValue;
+    use ess_primitives::facts::FactValue;
 
     fn path(value: &str) -> FactPath {
         FactPath::new(value).expect("a valid fact path")

@@ -73,8 +73,8 @@
 use std::cell::RefCell;
 use std::collections::BTreeMap;
 
-use aep_domain::facts::Number;
-use aep_domain::node::Node;
+use ess_primitives::facts::Number;
+use ess_primitives::node::Node;
 
 use crate::reference::{
     Billing, Oracle, CANCEL_INVOICE, CREATE_INVOICE, INVALID_AMOUNT, INVOICE_CANCELLED,
@@ -147,7 +147,7 @@ impl Caught {
 
 /// Declares one fault per line, and generates the list a matrix walks from the same lines.
 ///
-/// Hand-maintaining `ALL` beside the enum is what `aep_domain`'s `validation_codes!` macro exists to
+/// Hand-maintaining `ALL` beside the enum is what `ess_primitives`'s `validation_codes!` macro exists to
 /// stop, after five codes had fallen out of such a list. The same argument applies with more force
 /// here: a fault missing from `ALL` is a row the matrix silently does not run, which is exactly the
 /// silent omission this whole slice is about.

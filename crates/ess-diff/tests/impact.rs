@@ -293,7 +293,7 @@ fn a_suite_whose_contract_digest_its_model_does_not_compute_is_refused() {
         synthesize(&before).suite.provenance.spec_digest,
         "the suite is the earlier revision's, so only the contract check can refuse it"
     );
-    forged.provenance.contract_digest = aep_domain::evidence::SpecDigest::new(
+    forged.provenance.contract_digest = ess_primitives::evidence::SpecDigest::new(
         "0000000000000000000000000000000000000000000000000000000000000000",
     )
     .expect("a well-formed digest");

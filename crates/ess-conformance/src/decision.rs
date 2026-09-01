@@ -5,9 +5,9 @@
 
 use std::fmt;
 
-use aep_domain::facts::FactPath;
-use aep_domain::predicate::{Predicate, PredicateOutcome};
 use ess_compiler::ir::{ResolvedCondition, ResolvedOutcome};
+use ess_primitives::facts::FactPath;
+use ess_primitives::predicate::{Predicate, PredicateOutcome};
 
 /// The `when` predicate an outcome is taken by, when its condition is one.
 ///
@@ -41,7 +41,7 @@ pub enum Decision {
     ///
     /// This is the only case that means *try another candidate*: the predicate was decided, and it
     /// was decided against this input. Carries
-    /// [`Predicate::outcome`](aep_domain::predicate::Predicate::outcome)'s explanation, so a runner
+    /// [`Predicate::outcome`](ess_primitives::predicate::Predicate::outcome)'s explanation, so a runner
     /// reporting a shrunk counterexample already has the failing leaves.
     Refuted(PredicateOutcome),
     /// The guard could not be decided at all, and no retry will change that.
@@ -55,7 +55,7 @@ pub enum Decision {
 impl Decision {
     /// `true` only for [`Decision::Satisfied`]; what reaching a branch requires.
     ///
-    /// The mirror of [`Truth::is_satisfied`](aep_domain::predicate::Truth::is_satisfied), and named
+    /// The mirror of [`Truth::is_satisfied`](ess_primitives::predicate::Truth::is_satisfied), and named
     /// after it: there is no `as_bool` here either, because the two false-ish cases mean opposite
     /// things to the caller.
     pub fn is_satisfied(&self) -> bool {
@@ -167,7 +167,7 @@ pub enum Reason {
         /// The segment that names nothing.
         segment: String,
     },
-    /// The path lands on a construct no [`FactValue`](aep_domain::facts::FactValue) can hold.
+    /// The path lands on a construct no [`FactValue`](ess_primitives::facts::FactValue) can hold.
     ///
     /// A fact value is `Bool | Number | Text`. A list, a map, a union and a struct have no scalar
     /// spelling, and a fact path has no index or variant selector to reach inside one with, so this
@@ -190,7 +190,7 @@ pub enum Reason {
     /// Two text values were ordered, and no declared scale contains both.
     ///
     /// `aep-domain` refuses to guess a lexicographic answer for `risk >= medium`, and a protocol
-    /// declares [`Scales`](aep_domain::facts::Scales) to give the comparison a meaning. **An ESS
+    /// declares [`Scales`](ess_primitives::facts::Scales) to give the comparison a meaning. **An ESS
     /// specification declares none**, so every `<`, `<=`, `>` and `>=` between two text values is
     /// unevaluable until [`InputFacts::with_scales`](crate::InputFacts::with_scales) supplies one.
     TextNotOrdered {
@@ -280,7 +280,7 @@ impl fmt::Display for Reason {
 mod tests {
     use super::*;
 
-    use aep_domain::facts::FactPath;
+    use ess_primitives::facts::FactPath;
 
     fn path(value: &str) -> FactPath {
         FactPath::new(value).expect("a valid fact path")

@@ -67,12 +67,12 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt;
 
-use aep_domain::evidence::SpecDigest;
 use ess_compiler::ir::EssIr;
 use ess_conformance::scenario::{
     ConformanceScenario, ConformanceSuite, EssSemanticRef, ScenarioId, SuiteProvenance,
 };
 use ess_domain::name::QualifiedName;
+use ess_primitives::evidence::SpecDigest;
 
 use ess_gen::provenance::ModelSlice;
 
@@ -1310,9 +1310,9 @@ mod tests {
             "a numerator larger than its denominator is wrong on its face"
         );
     }
-    use aep_domain::evidence::SpecDigest;
     use ess_conformance::scenario::{DeclaredTypeRef, ScenarioPurpose, SuiteFormat, ViewRef};
     use ess_domain::name::Version;
+    use ess_primitives::evidence::SpecDigest;
 
     use super::*;
     use crate::change::{SystemChange, TypeChange};

@@ -10,7 +10,7 @@
 //! # What deserialization alone cannot check
 //!
 //! Every scalar in the document validates while it parses — a [`QualifiedName`](ess_domain::name::QualifiedName)
-//! refuses a malformed name, a [`SpecDigest`](aep_domain::evidence::SpecDigest) refuses upper case,
+//! refuses a malformed name, a [`SpecDigest`](ess_primitives::evidence::SpecDigest) refuses upper case,
 //! a [`DeltaFormat`] refuses a spelling that is not a format. None of that can
 //! see the four claims an `EssDelta` makes, because each is about the document as a whole:
 //!
@@ -31,7 +31,7 @@
 //!
 //! Invariant 3. A delta with four doctored ids reports four errors, not the first one.
 
-use aep_domain::error::{ValidationCode, ValidationError, ValidationErrors};
+use ess_primitives::error::{ValidationCode, ValidationError, ValidationErrors};
 
 use crate::change::{ChangeId, SemanticChange, SemanticRelation};
 use crate::delta::{DeltaFormat, EssDelta, EssRevisionRef};
