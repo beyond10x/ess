@@ -1,4 +1,4 @@
-schema: b10x-docs/v1
+schema: b10x-docs/v2
 repository:
   id: ess
   url: https://github.com/beyond10x/ess
@@ -22,6 +22,13 @@ surfaces:
       - {label: Source, url: https://github.com/beyond10x/ess, kind: source}
     feeds:
       - {label: Release notes RSS, url: https://beyond10x.github.io/ess/releases/rss.xml, kind: feed}
+    adoption:
+      label: Compile a system specification
+      url: https://beyond10x.github.io/ess/docs/getting-started
+      mode: source-build
+      estimatedMinutes: 12
+      prerequisites: [Rust toolchain]
+      outcome: Validate system intent and generate deterministic contract artifacts.
     accent: "#ff9070"
     mark: website/static/img/mark.svg
-    shell: {integration: docusaurus, revision: 0cbd1f1b6951fec95767332e3a1792f838feb62d}
+    shell: {integration: docusaurus, revision: 73aefe1ca268cc853ed38fb23478454496462a03}

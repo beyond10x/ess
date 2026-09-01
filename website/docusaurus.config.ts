@@ -1,7 +1,7 @@
 import type {Config} from '@docusaurus/types';
 import type * as Preset from '@docusaurus/preset-classic';
 import {themes as prismThemes} from 'prism-react-renderer';
-import docsSystemPlugin from '@beyond10x/docs-system/docusaurus';
+import docsSystemPlugin, {ecosystemFooterGroup, ecosystemNavbarItems} from '@beyond10x/docs-system/docusaurus';
 
 const config: Config = {
   title: 'ESS',
@@ -57,8 +57,7 @@ const config: Config = {
       title: 'ESS',
       logo: {alt: 'ESS', src: 'img/mark.svg', width: 26, height: 26},
       items: [
-        {href: 'https://beyond10x.github.io/getting-started/', label: 'beyond10x', position: 'left'},
-        {href: 'https://beyond10x.github.io/getting-started/ecosystem', label: 'Ecosystem', position: 'left'},
+        ...ecosystemNavbarItems(),
         {type: 'docSidebar', sidebarId: 'docsSidebar', position: 'left', label: 'Documentation'},
         {to: '/docs/examples/specification-to-contracts', label: 'See it work', position: 'left'},
         {to: '/lab', label: 'Browser lab', position: 'left'},
@@ -75,6 +74,7 @@ const config: Config = {
     footer: {
       style: 'dark',
       links: [
+        ecosystemFooterGroup(),
         {
           title: 'Documentation',
           items: [

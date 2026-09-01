@@ -1,0 +1,13 @@
+schema: b10x-change/v1
+id: ess/standalone-0.1.0
+repository: ess
+publishedAt: 2026-09-01T02:32:47Z
+title: ESS becomes a standalone executable specification toolchain
+summary: ESS 0.1.0 extracts system modeling, schema contracts, generators, and conformance into an independent repository with no AEP dependency.
+kind: migration
+impact: significant
+source:
+  url: https://github.com/beyond10x/ess/releases/tag/0.1.0
+  version: 0.1.0
+journeys: [specify, operate-services]
+affectedSurfaces: [ess/docs]
