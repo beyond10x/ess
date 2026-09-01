@@ -1003,7 +1003,7 @@ fn every_artifact_names_its_specification_and_the_verb_that_rewrites_it() {
             "`{path}` does not say which specification produced it"
         );
         assert!(
-            emitted.contents.contains("protocol ess synthesize"),
+            emitted.contents.contains("ess synthesize"),
             "`{path}` does not name the command that regenerates it — a reader would run the \
              wrong verb"
         );

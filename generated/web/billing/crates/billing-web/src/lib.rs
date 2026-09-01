@@ -1,14 +1,14 @@
 // generated from billing v3
 // model digest 13577b3ce695932e980d418d5863bcde07f4c362516d53147870d31eaf2ed861
 // contract digest d2b48060b7ee32e8f23b1e28972fea39921a25fdcacd635fdf7bbb538e94f367
-// do not edit: regenerate with `protocol ess synthesize --target web`
+// do not edit: regenerate with `ess synthesize --target web`
 
 //! The `billing` system, v3, behind a WebAssembly boundary.
 //!
 //! Invoicing and the notification that follows it: the smallest system that still exercises every construct the model has — two bounded contexts, a command that can be refused, a command with an outcome its input cannot decide, both consistency levels, a state machine, actors, and a type of every kind.
 //!
 //! Generated, not written: the specification is the source of truth, and the door to changing
-//! anything here is `protocol ess synthesize --target web`. This crate emits no behaviour — every
+//! anything here is `ess synthesize --target web`. This crate emits no behaviour — every
 //! command behaviour, view projection and escalation is an obligation, listed with its contract
 //! in the `PLAN.md` beside this tree. With nothing installed the page runs against the generated
 //! stubs and every command answers with the typed refusal naming what is owed.

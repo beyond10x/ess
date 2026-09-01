@@ -2,7 +2,7 @@
 #
 # Every comment in this revision is rewritten and every block below is in a different order from the
 # `before` half, and the domain file is called something else. None of that is a semantic change:
-# `protocol ess diff` reports four changes over this pair, and a text diff reports most of the file.
+# `ess diff` reports four changes over this pair, and a text diff reports most of the file.
 format: ess/1
 system: catalog
 version: v2

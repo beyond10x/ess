@@ -3,12 +3,12 @@
 //! Design §9's picture — an actor invokes a command, a command emits an event, a binding carries an
 //! event into the next command, and a component is the box the whole thing sits in — is the single
 //! most reproduced artifact this repository has. The documentation page opens with it, and
-//! `protocol ess graph` prints it for someone who wants it in a pull request or piped into
+//! `ess graph` prints it for someone who wants it in a pull request or piped into
 //! `dot -Tsvg`.
 //!
 //! # Why the model is here and not in the caller
 //!
-//! Because it was in two callers, and they disagreed. `protocol ess graph` built its own graph and
+//! Because it was in two callers, and they disagreed. `ess graph` built its own graph and
 //! rendered it as DOT; [`crate::docs`] walked the IR again and rendered a Mermaid `flowchart`. The
 //! two readings were not two renderings of one graph — they were two graphs:
 //!
@@ -186,7 +186,7 @@ pub struct GraphEdge<'a> {
 /// **Components are groups rather than nodes**: a component is who has to ship the answer, and a
 /// graph that made it a node would put "who owns this" on the same footing as "what causes this".
 /// **Errors are not nodes**: nothing reacts to one, so an error would be a leaf that cannot
-/// participate in the causality this graph exists to show — `protocol ess inspect` is where a
+/// participate in the causality this graph exists to show — `ess inspect` is where a
 /// command's errors are.
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
 pub struct SystemGraph<'a> {
@@ -504,7 +504,7 @@ fn edges(ir: &EssIr) -> Vec<GraphEdge<'_>> {
 /// The word a document used for a delivery guarantee.
 ///
 /// Spelled as the author typed it, because that is what they will search their sources for. Public
-/// so that a diagram's edge and `protocol ess inspect` cannot come to spell one guarantee two ways.
+/// so that a diagram's edge and `ess inspect` cannot come to spell one guarantee two ways.
 pub fn delivery_word(delivery: Delivery) -> &'static str {
     match delivery {
         Delivery::AtLeastOnce => "at_least_once",

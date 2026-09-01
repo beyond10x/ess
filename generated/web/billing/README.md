@@ -2,11 +2,11 @@
   generated from billing v3
   model digest 13577b3ce695932e980d418d5863bcde07f4c362516d53147870d31eaf2ed861
   contract digest d2b48060b7ee32e8f23b1e28972fea39921a25fdcacd635fdf7bbb538e94f367
-  do not edit: regenerate with `protocol ess synthesize --target web`
+  do not edit: regenerate with `ess synthesize --target web`
 -->
 # billing in a browser
 
-**Do not edit these files.** They are synthesised from `examples/billing/` by `cargo xtask synth`, and CI fails if they differ from what the specification determines, if the module stops building for `wasm32-unknown-unknown`, or if `index.html` calls an export the module does not have. Regenerate with `protocol ess synthesize --target web`.
+**Do not edit these files.** They are synthesised from `examples/billing/` by `cargo xtask synth`, and CI fails if they differ from what the specification determines, if the module stops building for `wasm32-unknown-unknown`, or if `index.html` calls an export the module does not have. Regenerate with `ess synthesize --target web`.
 
 What is here:
 

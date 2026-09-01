@@ -465,7 +465,7 @@ impl Invalidation {
 ///
 /// Three kinds because the repository commits three kinds of derived output, at the granularity
 /// each is regenerated at: a projection is one file, a suite is one document, and a synthesised
-/// workspace is one tree `protocol ess synthesize` rewrites whole — so listing its files one by
+/// workspace is one tree `ess synthesize` rewrites whole — so listing its files one by
 /// one would name a hundred artifacts where there is one decision.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, serde::Serialize)]
 #[serde(tag = "artifact", rename_all = "kebab-case")]
@@ -966,7 +966,7 @@ fn construct_impacts(delta: &EssDelta, graph: &SemanticDependencyGraph) -> Vec<I
 
 /// Every generated artifact the `before` model derives, each with the slice it derives from.
 ///
-/// The projections are generated in memory — the same call `protocol ess generate` makes, so the
+/// The projections are generated in memory — the same call `ess generate` makes, so the
 /// inventory cannot disagree with the committed tree about what exists. The suite and the
 /// synthesised workspaces enter as whole-model artifacts without being synthesised: their slices
 /// are the whole model by construction (a suite holds a scenario for every construct that obliges

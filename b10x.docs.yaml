@@ -9,13 +9,19 @@ surfaces:
     kind: documentation
     canonicalUrl: https://beyond10x.github.io/ess/
     maturity: experimental
-    availability: planned
+    availability: published
     discoverability: public
     audiences: [adopter, developer, operator]
     journeys: [specify, operate-services]
     capabilities: [system-specification, contract-generation, conformance]
     sections:
+      - {label: Getting started, url: https://beyond10x.github.io/ess/docs/getting-started, kind: quickstart}
+      - {label: Concepts, url: https://beyond10x.github.io/ess/docs/concepts/overview, kind: docs}
+      - {label: CLI, url: https://beyond10x.github.io/ess/docs/reference/cli, kind: reference}
+      - {label: Status, url: https://beyond10x.github.io/ess/docs/status/where-this-stands, kind: status}
       - {label: Source, url: https://github.com/beyond10x/ess, kind: source}
+    feeds:
+      - {label: Release notes RSS, url: https://beyond10x.github.io/ess/releases/rss.xml, kind: feed}
     accent: "#ff9070"
     mark: website/static/img/mark.svg
     shell: {integration: docusaurus, revision: 0cbd1f1b6951fec95767332e3a1792f838feb62d}

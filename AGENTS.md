@@ -44,6 +44,17 @@ task check
 The gate is offline and runs formatting, strict Clippy, all workspace tests, rustdoc, command smoke
 tests, and the dependency boundary test. Land nothing until it exits zero.
 
+The adopter-facing Docusaurus site lives under `website/`; repository-root `docs/` remains the
+engineering record and is never published directly. A documentation change, release, or Pages
+change must additionally pass:
+
+```console
+task site-build
+```
+
+This check is separate because `npm ci` fetches the exact public `docs-system` Git revision and
+therefore cannot be part of the offline gate. Pages publishes only `website/build/`.
+
 ## Commits
 
 - Use conventional prefixes and a body explaining what changed and why.

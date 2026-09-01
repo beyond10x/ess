@@ -322,7 +322,7 @@ pub struct Projection {
 
 /// The persisted document: the projection, plus the tree it writes.
 ///
-/// The artifacts are *in* the document for the reason `protocol ess generate --format json`
+/// The artifacts are *in* the document for the reason `ess generate --format json`
 /// carries its own: `cargo xtask` commits the tree by reading what the command printed, so the
 /// bytes it commits are the bytes the command produces. A second path from the library to a file
 /// would be a second answer to "what does this projection write".

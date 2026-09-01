@@ -407,7 +407,7 @@ mod tests {
             Status::Passed,
         )])
         .to_evidence(ObservedAt::new(Timestamp::EPOCH))
-        .obtained_by("protocol ess conform evidence --path examples/billing --target billing");
+        .obtained_by("ess conform evidence --path examples/billing --target billing");
 
         assert_eq!(evidence.producer(), &ConformanceEvidence::PRODUCER);
         assert!(
@@ -416,7 +416,7 @@ mod tests {
         );
         assert_eq!(
             evidence.provenance().command.as_deref(),
-            Some("protocol ess conform evidence --path examples/billing --target billing")
+            Some("ess conform evidence --path examples/billing --target billing")
         );
     }
 
@@ -534,7 +534,7 @@ mod tests {
             Status::Passed,
         )])
         .to_evidence(ObservedAt::new(Timestamp::EPOCH))
-        .obtained_by("protocol ess conform evidence");
+        .obtained_by("ess conform evidence");
 
         let json = serde_json::to_value(&record).expect("an evidence record serialises");
         assert_eq!(json["kind"], "ess_conformance");
@@ -546,9 +546,6 @@ mod tests {
         assert_eq!(json["suite_version"], "ess-conformance/1");
         assert_eq!(json["producer"]["producer"], "verifier");
         assert_eq!(json["producer"]["verifier"], "conformance-runner");
-        assert_eq!(
-            json["provenance"]["command"],
-            "protocol ess conform evidence"
-        );
+        assert_eq!(json["provenance"]["command"], "ess conform evidence");
     }
 }

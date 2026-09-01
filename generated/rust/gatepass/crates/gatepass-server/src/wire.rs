@@ -1,7 +1,7 @@
 // generated from gatepass v1
 // model digest f2e0f8ff51c077fa1c713d8151544379bafac36a5a927e71c685042d53ab6e61
 // contract digest e6e58e055d24f8f494dcff274f55e723d967f9d1f9aea16641bb8dacbb71171e
-// do not edit: regenerate with `protocol ess synthesize`
+// do not edit: regenerate with `ess synthesize`
 //! Every generated declaration, as JSON, in the renderings the published wire contracts fix.
 //!
 //! Generated from the model beside the types it crosses, so a field renamed in the specification

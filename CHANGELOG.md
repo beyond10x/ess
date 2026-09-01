@@ -1,5 +1,10 @@
 # Changelog
 
+## [0.1.1] — 2026-09-01
+
+- Publish the extracted ESS adopter documentation and browser lab at the standalone ESS Pages
+  site, with commands, links, and regeneration guidance written for the canonical `ess` CLI.
+
 ## [0.1.0] — 2026-09-01
 
 - Extract ESS, infrastructure modeling, schema contracts, generators, conformance, examples, and

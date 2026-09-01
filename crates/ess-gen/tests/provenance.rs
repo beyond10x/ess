@@ -153,7 +153,7 @@ fn the_reader_reads_back_every_form_the_writer_emits() {
     let provenance = Provenance::of(&ir);
 
     let yaml_comment = provenance.commented("#");
-    let rust_comment = provenance.commented_for("//", "protocol ess synthesize");
+    let rust_comment = provenance.commented_for("//", "ess synthesize");
     let html = provenance.html_comment();
     let json = serde_json::to_string_pretty(&provenance).expect("provenance serialises");
     // The suite spells the model digest `spec_digest`; the reader must read a committed suite too.

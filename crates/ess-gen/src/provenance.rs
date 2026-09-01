@@ -64,9 +64,9 @@ impl Provenance {
     ///
     /// The default for [`Provenance::lines`] and its comment renderings. A stamped artifact from a
     /// *different* generator names its own command through the `*_for` forms below — `ess-synth`
-    /// writes `protocol ess synthesize` — because a header that tells the reader to run the wrong
+    /// writes `ess synthesize` — because a header that tells the reader to run the wrong
     /// verb is worse than no header at all.
-    pub const REGENERATE: &'static str = "protocol ess generate";
+    pub const REGENERATE: &'static str = "ess generate";
 
     /// The provenance as comment lines, each already prefixed.
     ///

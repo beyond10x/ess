@@ -192,7 +192,7 @@ fn every_weakening_is_visible_in_the_generated_source_and_not_only_in_the_report
         "the target report says what it is *not* about: the plan"
     );
     assert!(
-        target.contains("protocol ess synthesize --target go"),
+        target.contains("ess synthesize --target go"),
         "and names the command that rewrites it: {target}"
     );
 }
@@ -724,7 +724,7 @@ fn every_artifact_names_its_specification_and_the_verb_that_rewrites_it() {
             emitted.path
         );
         assert!(
-            emitted.contents.contains("protocol ess synthesize"),
+            emitted.contents.contains("ess synthesize"),
             "`{}` does not say what rewrites it",
             emitted.path
         );

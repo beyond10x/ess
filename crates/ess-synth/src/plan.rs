@@ -67,7 +67,7 @@ use ess_domain::component::Reach;
 use ess_gen::Provenance;
 
 /// The command that rewrites what this plan describes, named in every rendering of it.
-pub const REGENERATE: &str = "protocol ess synthesize";
+pub const REGENERATE: &str = "ess synthesize";
 
 /// What one specification determines, capability by capability.
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]

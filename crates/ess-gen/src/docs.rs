@@ -1868,7 +1868,7 @@ fn failure_label(ir: &EssIr, binding: &ResolvedBinding) -> String {
 
 /// The whole system: actors, and the commands and events each component declares.
 ///
-/// The diagram is [`SystemGraph`]'s, fenced. The graph itself is not read here: `protocol ess
+/// The diagram is [`SystemGraph`]'s, fenced. The graph itself is not read here: `ess
 /// graph` publishes the same picture, and a second reading of the IR in this file is how the two
 /// came to be different graphs wearing one name — see [`crate::graph`] for what they disagreed
 /// about. The fence is this page's furniture and the only thing added.
@@ -1916,7 +1916,7 @@ fn provenance_comment(provenance: &Provenance) -> String {
 fn provenance_footer(provenance: &Provenance) -> String {
     format!(
         "\n---\n\nGenerated from {} {} · model digest `{}` · contract digest `{}`. Do not \
-         edit this file; change the specification and regenerate it with `protocol ess generate`.\n",
+         edit this file; change the specification and regenerate it with `ess generate`.\n",
         provenance.system,
         provenance.specification_version,
         provenance.source_digest,

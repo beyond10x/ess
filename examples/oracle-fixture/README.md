@@ -30,8 +30,8 @@ at all.
 ## Running it
 
 ```console
-protocol ess validate --path examples/oracle-fixture
-protocol ess compile  --path examples/oracle-fixture
+ess validate --path examples/oracle-fixture
+ess compile  --path examples/oracle-fixture
 ```
 
 `crates/ess-compiler/tests/oracle_fixture.rs` asserts each row of the table above against the

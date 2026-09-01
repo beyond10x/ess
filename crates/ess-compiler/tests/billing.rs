@@ -367,7 +367,7 @@ fn the_json_orders_its_keys_the_way_a_btreemap_does() {
 
 #[test]
 fn a_refusal_from_the_whole_pipeline_carries_a_code_and_the_line_it_belongs_on() {
-    // What `protocol ess compile` does with a broken document. Two structs that require each other
+    // What `ess compile` does with a broken document. Two structs that require each other
     // describe a value nobody can build; `ess-domain` owns that rule and refuses it during assembly,
     // where the verdict is a `ValidationError` with a document path and prose. The bridge is what
     // turns it into `ESS-TYPE-008` at `types.yaml:6` — the two things a `ValidationError` lacks.

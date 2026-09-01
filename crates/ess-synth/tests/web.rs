@@ -619,9 +619,7 @@ fn every_artifact_names_its_specification_and_the_verb_that_rewrites_it() {
             "`{path}` carries no provenance"
         );
         assert!(
-            artifact
-                .contents
-                .contains("protocol ess synthesize --target web"),
+            artifact.contents.contains("ess synthesize --target web"),
             "`{path}` names the wrong regeneration verb"
         );
     }

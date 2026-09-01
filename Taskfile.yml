@@ -54,6 +54,22 @@ tasks:
     cmds:
       - cargo xtask release verify
 
+  site-lab:
+    desc: Build and exercise the WebAssembly module used by the public browser lab.
+    cmds:
+      - cmp generated/web/billing/bridge.js website/src/pages/lab/_bridge.mjs
+      - cargo build --release --target wasm32-unknown-unknown --manifest-path examples/billing-web/Cargo.toml
+      - mkdir -p website/static/lab
+      - cp examples/billing-web/target/wasm32-unknown-unknown/release/billing_web_realized.wasm website/static/lab/billing_web_realized.wasm
+      - node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON website/src/pages/lab/_run.test.mjs
+
+  site-build:
+    desc: Install the pinned public-doc dependencies, exercise the browser lab, and build Docusaurus.
+    cmds:
+      - task: site-lab
+      - npm --prefix website ci
+      - npm --prefix website run build
+
   check:
     cmds:
       - task: fmt-check

@@ -239,7 +239,7 @@ fn every_page_says_which_specification_produced_it() {
         assert_says(text, "model digest", "two checkouts differ by their digest");
         assert_says(
             text,
-            "protocol ess generate",
+            "ess generate",
             "a reader about to hand-edit a generated file has to be told not to",
         );
     }

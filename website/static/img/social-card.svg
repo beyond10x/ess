@@ -1,0 +1,32 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="630" viewBox="0 0 1200 630"
+     font-family="JetBrains Mono, Fira Code, DejaVu Sans Mono, ui-monospace, monospace"
+     role="img" aria-label="ESS — executable system specifications">
+  <defs>
+    <linearGradient id="accent" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0" stop-color="#ff9070"/><stop offset="1" stop-color="#79c0ff"/>
+    </linearGradient>
+  </defs>
+  <style>
+    .panel{fill:#161d24;stroke:#2b3540;stroke-width:1}.rule{stroke:#2b3540;stroke-width:1}
+    .name{fill:#d7dde3;font-size:78px}.claim{fill:#8b98a5;font-size:26px}
+    .label{fill:#8b98a5;font-size:15px;letter-spacing:.08em}.text{fill:#d7dde3;font-size:20px}
+    .accent{fill:#ff9070;font-size:20px}.url{fill:#79c0ff;font-size:17px}
+  </style>
+  <rect width="1200" height="630" fill="#0f1418"/><rect width="1200" height="6" fill="url(#accent)"/>
+  <text class="name" x="72" y="140">ESS</text>
+  <text class="claim" x="72" y="192">Executable system specifications</text>
+  <rect class="panel" x="72" y="258" width="300" height="190" rx="10"/>
+  <text class="label" x="96" y="292">1 · MODEL</text><line class="rule" x1="96" y1="308" x2="348" y2="308"/>
+  <text class="text" x="96" y="348">typed system intent</text><text class="text" x="96" y="384">resolved references</text>
+  <path d="M388 353 H426" stroke="#79c0ff" stroke-width="2"/><polygon points="426,347 438,353 426,359" fill="#79c0ff"/>
+  <rect class="panel" x="450" y="258" width="300" height="190" rx="10"/>
+  <text class="label" x="474" y="292">2 · COMPILE</text><line class="rule" x1="474" y1="308" x2="726" y2="308"/>
+  <text class="text" x="474" y="348">canonical typed IR</text><text class="text" x="474" y="384">deterministic bytes</text>
+  <path d="M766 353 H804" stroke="#79c0ff" stroke-width="2"/><polygon points="804,347 816,353 804,359" fill="#79c0ff"/>
+  <rect class="panel" x="828" y="258" width="300" height="190" rx="10"/>
+  <text class="label" x="852" y="292">3 · PROJECT + PROVE</text><line class="rule" x1="852" y1="308" x2="1104" y2="308"/>
+  <text class="accent" x="852" y="348">contracts · artifacts</text><text class="accent" x="852" y="384">conformance · gaps</text>
+  <line class="rule" x1="72" y1="508" x2="1128" y2="508"/>
+  <text class="claim" x="72" y="552">Model what is known. Refuse to guess the rest.</text>
+  <text class="url" x="1128" y="552" text-anchor="end">beyond10x.github.io/ess</text>
+</svg>

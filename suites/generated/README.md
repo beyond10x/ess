@@ -11,7 +11,7 @@ language can read it, and a fault matrix can name a scenario by an id that does 
 a sibling is added.
 
 ```console
-protocol ess conform run --suite suites/generated/billing/suite.json --target billing
+ess conform run --suite suites/generated/billing/suite.json --target billing
 ```
 
 | suite | checks | scenarios | no scenario | generated from |

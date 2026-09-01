@@ -2,11 +2,11 @@
   generated from billing v3
   model digest 13577b3ce695932e980d418d5863bcde07f4c362516d53147870d31eaf2ed861
   contract digest d2b48060b7ee32e8f23b1e28972fea39921a25fdcacd635fdf7bbb538e94f367
-  do not edit: regenerate with `protocol ess synthesize --target web`
+  do not edit: regenerate with `ess synthesize --target web`
 -->
 # Target notes — web
 
-For billing v3. The `PLAN.md` beside this file is language-neutral and **byte-identical in every target's tree**; this document is what *this* target could not carry across it. Regenerate with `protocol ess synthesize --target web`.
+For billing v3. The `PLAN.md` beside this file is language-neutral and **byte-identical in every target's tree**; this document is what *this* target could not carry across it. Regenerate with `ess synthesize --target web`.
 
 6 weakening(s), 0 target refusal(s). A weakening is emitted code that holds less than the first target's; a target refusal is a capability the plan marks generated and this language cannot represent — a fact about the language, never about the specification.
 

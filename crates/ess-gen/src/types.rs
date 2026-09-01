@@ -401,7 +401,7 @@ impl Attribution {
     pub(crate) fn new(provenance: &Provenance) -> Self {
         Self {
             provenance: provenance.clone(),
-            regenerate: "protocol ess generate",
+            regenerate: "ess generate",
         }
     }
 }
