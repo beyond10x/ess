@@ -11,7 +11,7 @@ touches cluster authority; downstream analysis reads data.
 
 ## Import the committed observation
 
-```console
+```shell-session
 $ ess import kubernetes \
     --path examples/k3d-dev-cluster/observation.json \
     --out target/cluster.ir.json
@@ -22,7 +22,7 @@ policy, or topology semantics.
 
 ## Diagnose and graph the IR
 
-```console
+```shell-session
 $ ess infra diagnose --path target/cluster.ir.json
 $ ess infra graph --path target/cluster.ir.json --format mermaid
 ```
@@ -32,7 +32,7 @@ that established them.
 
 ## Compare two observations
 
-```console
+```shell-session
 $ ess infra diff \
     --from examples/k3d-dev-cluster/observation.json \
     --to examples/k3d-dev-cluster/observation.drifted.json
@@ -43,7 +43,7 @@ intent.
 
 ## Project manifests without applying them
 
-```console
+```shell-session
 $ ess project kubernetes \
     --spec examples/k3d-dev-cluster/expected.yaml \
     --ir target/cluster.ir.json \
@@ -55,7 +55,7 @@ cluster, or applies the projection.
 
 ## Scan a live cluster explicitly
 
-```console
+```shell-session
 $ ess import kubernetes \
     --context my-read-only-context \
     --observation-out target/observation.json \

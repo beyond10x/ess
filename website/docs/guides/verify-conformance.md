@@ -11,7 +11,7 @@ checked against.
 
 ## Generate the suite
 
-```console
+```shell-session
 $ ess conform synthesize \
     --path examples/billing \
     --out target/billing-suite
@@ -22,7 +22,7 @@ derived.
 
 ## Run a supported target
 
-```console
+```shell-session
 $ ess conform run \
     --suite target/billing-suite \
     --target billing \
@@ -34,7 +34,7 @@ The report uses the standalone `ess-conformance-report/1` format and records eac
 
 To run directly from a specification instead of a pre-generated suite:
 
-```console
+```shell-session
 $ ess conform run \
     --path examples/billing \
     --target oracle-fixture \

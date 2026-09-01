@@ -40,7 +40,7 @@ The schema is generated from the same Rust types the validator runs, and `cargo 
 
 ## Validate early, read the refusals
 
-```console
+```shell-session
 $ ess validate --path examples/billing
 billing v3 — 5 file(s): 2 domain(s), 1 entit(ies), 5 command(s), 6 event(s), 3 error(s), 2 view(s), 2 actor(s)
 valid
@@ -50,7 +50,7 @@ Break a reference and the refusal names what was available. Take a copy of `exam
 misspell `InvoiceCreated` as `InvoiceRaised` in the `accepted` branch's `emits:` and `payload:` —
 those two occurrences only, not every one in the file — and run it:
 
-```console
+```shell-session
 $ COPY=$(mktemp -d)/billing && cp -r examples/billing "$COPY"
 $ # in $COPY/domains/invoice.yaml, rename `InvoiceCreated` to `InvoiceRaised` in the
 $ # `accepted` outcome's `emits:` list and its `payload:` key
@@ -229,7 +229,7 @@ declares `reached_by: network`, which is why that example has a served contract 
 with every reference in it resolved — the fastest way to find out whether the thing you meant is the
 thing the model read:
 
-```console
+```shell-session
 $ ess inspect billing.invoice.CreateInvoice --path examples/billing
 command    billing.invoice.CreateInvoice
   domain     billing.invoice
@@ -249,7 +249,7 @@ scenario will reach each branch, before any suite exists.
 
 On a binding it resolves the crossing as well, reason included:
 
-```console
+```shell-session
 $ ess inspect notify-on-invoice-created --path examples/billing
 binding    notify-on-invoice-created
   when       billing.invoice.InvoiceCreated occurs

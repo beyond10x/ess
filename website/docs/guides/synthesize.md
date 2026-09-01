@@ -11,7 +11,7 @@ typestate lifecycles, component ports, one transport — and hands back everythi
 as a **named obligation**. Behaviour is never generated: every algorithm is an obligation someone
 implements.
 
-```console
+```shell-session
 $ ess synthesize --path examples/billing --target rust --out out/
 ```
 
@@ -33,7 +33,7 @@ receives exactly one of three dispositions, with the reason recorded:
 
 The first line of the run is the plan in one sentence, and the reasons follow it:
 
-```console
+```shell-session
 $ ess synthesize --path examples/billing --target rust | head -4
 billing v3 — 45 capabilities: 33 generated, 8 obligation(s), 4 refused, model digest 13577b3ce695932e980d418d5863bcde07f4c362516d53147870d31eaf2ed861
   obligation: command behaviour `billing.email.SendEmail` — decided outside the system: the provider rejects the recipient address

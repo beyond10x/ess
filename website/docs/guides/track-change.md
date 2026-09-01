@@ -17,7 +17,7 @@ The comparison is over two **compiled** models, not text. Moving declarations be
 renaming files, reordering blocks and rewriting every comment report nothing; one line that removes
 a currency reports one narrowing:
 
-```console
+```shell-session
 $ ess diff --from examples/revision-pair/before --to examples/revision-pair/after
 catalog v2 → v2
   before  9aa886fb68a2447af40c92cf53ed260af0d102507ac87e73a8e31fb7d20a0916
@@ -71,7 +71,7 @@ are owed again, and which generated artifacts are owed regeneration. This reposi
 revision of billing, so make the second one: copy it and move a single grant from one actor to
 another.
 
-```console
+```shell-session
 $ NEXT=$(mktemp -d)/billing && cp -r examples/billing "$NEXT"
 $ # in $NEXT/domains/invoice.yaml, move `billing.invoice.CreateInvoice`
 $ # from actor `billing.invoice.Customer`'s `may:` list to `billing.invoice.Auditor`'s
@@ -117,7 +117,7 @@ which is why `impact` is a verb and not a flag.
 `examples/revision-pair/` pair shows it without any editing, because its `before/` obliges a suite
 you can synthesise on the spot:
 
-```console
+```shell-session
 $ SUITE=$(mktemp -d)
 $ ess conform synthesize --path examples/revision-pair/before --out "$SUITE" >/dev/null
 $ ess impact --from examples/revision-pair/before --to examples/revision-pair/after \

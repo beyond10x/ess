@@ -12,7 +12,7 @@ committed, reviewed and drift-checked like source.
 
 ## The four projections
 
-```console
+```shell-session
 $ ess generate --path examples/billing --kind openapi
 billing v3 (13577b3ce695932e980d418d5863bcde07f4c362516d53147870d31eaf2ed861) — 1 projection(s), 2 artifact(s)
   openapi/email-service.yaml — 4710 byte(s)
@@ -34,7 +34,7 @@ write into whatever directory you happened to be in. **`--out` names the root of
 projection's directory**: each artifact's path already begins with its projection, so the committed
 output of the whole set is one command.
 
-```console
+```shell-session
 $ ess generate --path examples/billing --out generated
 ```
 
@@ -66,7 +66,7 @@ examples/billing --format mermaid` emits exactly the bytes fenced under *The sys
 
 Commit the generated output and regenerate in CI:
 
-```console
+```shell-session
 $ cargo xtask generate --check    # committed projections still match the specification?
 projections are up to date
 $ cargo xtask suite --check       # committed conformance suites still match?

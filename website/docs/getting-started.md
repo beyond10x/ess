@@ -9,7 +9,7 @@ description: Validate, compile, inspect, generate, and check the committed billi
 
 ESS is a Rust workspace. From a checkout:
 
-```console
+```shell-session
 $ cargo build --locked --bin ess
 $ cargo run --quiet --locked --bin ess -- --version
 ess 0.1.1
@@ -23,7 +23,7 @@ command below.
 The billing example is split into a system document and domain documents. Validation resolves the
 whole set before reporting success:
 
-```console
+```shell-session
 $ cargo run --quiet --locked --bin ess -- validate --path examples/billing
 valid
 
@@ -37,7 +37,7 @@ bytes.
 
 ## Inspect the model
 
-```console
+```shell-session
 $ cargo run --quiet --locked --bin ess -- graph \
     --path examples/billing --format mermaid
 
@@ -49,7 +49,7 @@ Names resolve before inspection. An unknown or ambiguous name is a refusal, not 
 
 ## Generate contracts
 
-```console
+```shell-session
 $ cargo run --quiet --locked --bin ess -- generate \
     --path examples/billing --kind openapi --out target/openapi
 
@@ -62,7 +62,7 @@ specification.
 
 ## Generate and run conformance
 
-```console
+```shell-session
 $ cargo run --quiet --locked --bin ess -- conform synthesize \
     --path examples/billing --out target/billing-suite
 

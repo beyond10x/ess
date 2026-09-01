@@ -42,7 +42,7 @@ output below is reproducible — and checked by tests, not pasted from memory.
 
 ## One command, one plan, one workspace
 
-```console
+```bash
 ess synthesize --path examples/billing --out billing
 ```
 
@@ -192,7 +192,7 @@ corrupted (`accepts-any-amount`, the `CreateInvoice` guard dropped), and the sam
 fails exactly `billing.invoice.CreateInvoice/outcome/rejected` — blast radius one. Both halves are
 CI, as the gate's `synth-check` step:
 
-```console
+```bash
 cargo test -p billing-realization --test conformance
 ```
 
