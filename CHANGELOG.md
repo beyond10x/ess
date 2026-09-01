@@ -1,5 +1,10 @@
 # Changelog
 
+## [0.3.0] — 2026-09-01
+
+- Add reusable named struct `shape` declarations for views, preserving expanded checked fields in
+  compiler IR while OpenAPI reuses one component schema through `$ref`.
+
 ## [0.2.1] — 2026-09-01
 
 - Restore the extracted `schema-contract` command surface under `ess schema`: offline validation

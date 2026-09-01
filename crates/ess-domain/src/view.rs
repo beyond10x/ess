@@ -27,8 +27,10 @@
 //!
 //! | rule | code |
 //! |---|---|
-//! | a view projects nothing | [`EmptyDeclaration`](ValidationCode::EmptyDeclaration) |
-//! | its source entity, a field it projects, or a projected field's type is not declared | [`UndeclaredReference`](ValidationCode::UndeclaredReference) |
+//! | a view declares neither `shape` nor `fields` | [`EmptyDeclaration`](ValidationCode::EmptyDeclaration) |
+//! | a view declares both `shape` and `fields` | [`ConflictingDeclaration`](ValidationCode::ConflictingDeclaration) |
+//! | its source entity, shape, a projected field, or a projected field's type is not declared | [`UndeclaredReference`](ValidationCode::UndeclaredReference) |
+//! | its shape is not a struct | [`TypeMismatch`](ValidationCode::TypeMismatch) |
 //! | a filter compares a field to a value the field's type does not have | [`UndeclaredReference`](ValidationCode::UndeclaredReference) |
 //! | a projected field's type disagrees with the entity's | [`TypeMismatch`](ValidationCode::TypeMismatch) |
 //! | a filter reads something the source does not have | [`UnobservableFact`](ValidationCode::UnobservableFact) |
@@ -182,7 +184,15 @@ pub struct ViewSpec {
     pub name: QualifiedName,
     /// The entity it projects.
     pub source: QualifiedName,
-    /// What it exposes, in declaration order.
+    /// A reusable named struct describing what it exposes.
+    ///
+    /// Exactly one of this and [`Self::fields`] is present. A shape is expanded and checked against
+    /// the source entity just like inline fields; it is retained as a reference in compiled IR so a
+    /// contract generator can reuse the named schema rather than copy it.
+    pub shape: Option<QualifiedName>,
+    /// What it exposes inline, in declaration order.
+    ///
+    /// Empty when [`Self::shape`] names the reusable row struct.
     pub fields: Vec<Field>,
     /// Which instances it contains. Absent means all of them.
     pub filter: Option<Predicate>,
@@ -193,9 +203,73 @@ pub struct ViewSpec {
 }
 
 impl ViewSpec {
-    /// The projected field with this name.
+    /// The inline projected field with this name.
+    ///
+    /// Use [`Self::projected_fields`] when the view may declare a reusable shape.
     pub fn field(&self, name: &str) -> Option<&Field> {
         self.fields.iter().find(|field| field.name == name)
+    }
+
+    /// The fields this view projects, whether written inline or supplied by a named struct shape.
+    ///
+    /// `None` means the shape does not resolve to a struct. [`Self::validate`] reports the precise
+    /// refusal; this accessor is for consumers of an already validated specification.
+    pub fn projected_fields<'a>(&'a self, types: &'a TypeRegistry) -> Option<&'a [Field]> {
+        match &self.shape {
+            None => Some(&self.fields),
+            Some(shape) => match &types.get(shape)?.body {
+                TypeBody::Struct { fields, .. } => Some(fields),
+                _ => None,
+            },
+        }
+    }
+
+    /// Resolves the projected fields while retaining the diagnostic distinction between a missing
+    /// shape and a declared non-struct shape.
+    fn validated_projected_fields<'a>(
+        &'a self,
+        types: &'a TypeRegistry,
+        errors: &mut ValidationErrors,
+    ) -> Option<&'a [Field]> {
+        let Some(shape) = &self.shape else {
+            return Some(self.fields.as_slice());
+        };
+        let at = |suffix: &str| format!("view.{}.{suffix}", self.name);
+
+        let Some(declared) = types.get(shape) else {
+            errors.push(
+                ValidationError::new(
+                    ValidationCode::UndeclaredReference,
+                    at("shape"),
+                    format!(
+                        "`{shape}` is not a declared type, so `{}` has no row shape",
+                        self.name
+                    ),
+                )
+                .with_hint(format!(
+                    "declare `{shape}` as a struct, or choose one of: {}",
+                    join(types.iter().map(|declared| &declared.name))
+                )),
+            );
+            return None;
+        };
+
+        if let TypeBody::Struct { fields, .. } = &declared.body {
+            return Some(fields.as_slice());
+        }
+
+        errors.push(
+            ValidationError::new(
+                ValidationCode::TypeMismatch,
+                at("shape"),
+                format!(
+                    "`{shape}` is not a struct, so it cannot describe the fields of `{}`",
+                    self.name
+                ),
+            )
+            .with_hint("a view shape must name a `kind: struct` declaration"),
+        );
+        None
     }
 
     /// How a generated scenario must assert this view.
@@ -212,19 +286,39 @@ impl ViewSpec {
         let mut errors = ValidationErrors::new();
         let at = |suffix: &str| format!("view.{}.{suffix}", self.name);
 
-        if self.fields.is_empty() {
-            errors.push(
-                ValidationError::new(
-                    ValidationCode::EmptyDeclaration,
-                    at("fields"),
-                    format!(
-                        "`{}` projects no fields, so it observes nothing and no scenario can \
-                         assert anything about it",
-                        self.name
+        match (&self.shape, self.fields.is_empty()) {
+            (None, true) => {
+                errors.push(
+                    ValidationError::new(
+                        ValidationCode::EmptyDeclaration,
+                        at("fields"),
+                        format!(
+                            "`{}` declares neither `shape` nor `fields`, so it observes nothing and \
+                             no scenario can assert anything about it",
+                            self.name
+                        ),
+                    )
+                    .with_hint(
+                        "name a reusable struct with `shape`, or project at least the identity a \
+                         scenario looks the entity up by",
                     ),
-                )
-                .with_hint("project at least the identity a scenario looks the entity up by"),
-            );
+                );
+            }
+            (Some(_), false) => {
+                errors.push(
+                    ValidationError::new(
+                        ValidationCode::ConflictingDeclaration,
+                        at("shape"),
+                        format!(
+                            "`{}` declares both `shape` and inline `fields`, so there are two row \
+                             contracts and no rule for which one wins",
+                            self.name
+                        ),
+                    )
+                    .with_hint("keep `shape` or `fields`, not both"),
+                );
+            }
+            (None, false) | (Some(_), true) => {}
         }
 
         let mut seen = std::collections::BTreeSet::new();
@@ -254,6 +348,8 @@ impl ViewSpec {
         let mut errors = self.validate_shape();
         let at = |suffix: &str| format!("view.{}.{suffix}", self.name);
 
+        let projected_fields = self.validated_projected_fields(types, &mut errors);
+
         let Some(source_fields) = entities.entity_fields(&self.source) else {
             errors.push(
                 ValidationError::new(
@@ -276,14 +372,19 @@ impl ViewSpec {
 
         let known = |name: &str| source_fields.iter().find(|field| field.name == name);
 
-        for (index, field) in self.fields.iter().enumerate() {
-            errors.extend(types.resolve(&field.type_ref, &at(&format!("fields[{index}].type"))));
+        for (index, field) in projected_fields.into_iter().flatten().enumerate() {
+            let field_at = if self.shape.is_some() {
+                format!("shape.fields[{index}]")
+            } else {
+                format!("fields[{index}]")
+            };
+            errors.extend(types.resolve(&field.type_ref, &at(&format!("{field_at}.type"))));
 
             let Some(source_field) = known(&field.name) else {
                 errors.push(
                     ValidationError::new(
                         ValidationCode::UndeclaredReference,
-                        at(&format!("fields[{index}]")),
+                        at(&field_at),
                         format!(
                             "`{}` has no field `{}`, so `{}` promises an observation nothing \
                              produces",
@@ -302,7 +403,7 @@ impl ViewSpec {
             if !crate::types::is_assignable(&source_field.type_ref, &field.type_ref) {
                 errors.push(ValidationError::new(
                     ValidationCode::TypeMismatch,
-                    at(&format!("fields[{index}].type")),
+                    at(&format!("{field_at}.type")),
                     format!(
                         "`{}` projects `{}` as {}, but `{}` declares it as {}",
                         self.name, field.name, field.type_ref, self.source, source_field.type_ref
@@ -473,7 +574,10 @@ pub struct RawViewSpec {
     pub name: QualifiedName,
     /// The entity it projects.
     pub source: QualifiedName,
-    /// What it exposes.
+    /// A reusable named struct describing what it exposes.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub shape: Option<QualifiedName>,
+    /// What it exposes inline.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub fields: Vec<Field>,
     /// Which instances it contains.
@@ -494,6 +598,7 @@ impl TryFrom<RawViewSpec> for ViewSpec {
         let spec = Self {
             name: raw.name,
             source: raw.source,
+            shape: raw.shape,
             fields: raw.fields,
             filter: raw.filter,
             consistency: raw.consistency,
@@ -508,6 +613,7 @@ impl From<ViewSpec> for RawViewSpec {
         Self {
             name: view.name,
             source: view.source,
+            shape: view.shape,
             fields: view.fields,
             filter: view.filter,
             consistency: view.consistency,
@@ -552,6 +658,19 @@ mod tests {
                     fields: vec![
                         Field::new("amount", TypeRef::Primitive(Primitive::Decimal)),
                         Field::new("currency", TypeRef::Primitive(Primitive::String)),
+                    ],
+                    invariants: Vec::new(),
+                },
+            ),
+            (
+                "billing.invoice.InvoiceRow",
+                TypeBody::Struct {
+                    fields: vec![
+                        Field::new(
+                            "invoice_id",
+                            TypeRef::Named(name("billing.invoice.InvoiceId")),
+                        ),
+                        Field::new("total", TypeRef::Named(name("billing.invoice.Money"))),
                     ],
                     invariants: Vec::new(),
                 },
@@ -614,9 +733,21 @@ fields:
     type: billing.invoice.Money
 ";
 
+    const SHAPED_INVOICE_BY_ID: &str = r"
+name: billing.invoice.InvoiceById
+source: billing.invoice.Invoice
+shape: billing.invoice.InvoiceRow
+consistency: read_your_writes
+";
+
     fn invoice_by_id() -> ViewSpec {
         let raw: RawViewSpec = serde_yaml::from_str(INVOICE_BY_ID).expect("parses");
         ViewSpec::try_from(raw).expect("a valid view")
+    }
+
+    fn shaped_invoice_by_id() -> ViewSpec {
+        let raw: RawViewSpec = serde_yaml::from_str(SHAPED_INVOICE_BY_ID).expect("parses");
+        ViewSpec::try_from(raw).expect("a shape is a complete view declaration")
     }
 
     fn refuse(view: &ViewSpec) -> ValidationErrors {
@@ -688,6 +819,102 @@ fields:
             rendered.contains("consistency: eventual"),
             "consistency survives the document form, or a generator loses it: {rendered}"
         );
+    }
+
+    #[test]
+    fn a_named_struct_supplies_the_projected_fields_and_round_trips_as_a_reference() {
+        let view = shaped_invoice_by_id();
+        let types = registry();
+
+        assert!(view.validate(&types, &entities()).is_ok());
+        assert!(
+            view.fields.is_empty(),
+            "the view does not copy the row fields"
+        );
+        let fields = view
+            .projected_fields(&types)
+            .expect("the named shape is a struct");
+        assert_eq!(
+            fields
+                .iter()
+                .map(|field| field.name.as_str())
+                .collect::<Vec<_>>(),
+            ["invoice_id", "total"]
+        );
+
+        let rendered = serde_yaml::to_string(&view).expect("serialises");
+        assert!(
+            rendered.contains("shape: billing.invoice.InvoiceRow"),
+            "the reusable identity survives: {rendered}"
+        );
+        assert!(
+            !rendered.contains("fields:"),
+            "serialisation must not expand the shape back into boilerplate: {rendered}"
+        );
+        let raw: RawViewSpec = serde_yaml::from_str(&rendered).expect("re-parses");
+        assert_eq!(ViewSpec::try_from(raw).expect("still valid"), view);
+    }
+
+    #[test]
+    fn a_view_cannot_declare_both_a_shape_and_inline_fields() {
+        let raw: RawViewSpec = serde_yaml::from_str(
+            r"
+name: billing.invoice.InvoiceById
+source: billing.invoice.Invoice
+shape: billing.invoice.InvoiceRow
+fields:
+  - name: invoice_id
+    type: billing.invoice.InvoiceId
+",
+        )
+        .expect("parses");
+
+        let errors = ViewSpec::try_from(raw).expect_err("two row contracts must be refused");
+        assert!(errors.contains(ValidationCode::ConflictingDeclaration));
+        assert!(errors
+            .to_string()
+            .contains("both `shape` and inline `fields`"));
+    }
+
+    #[test]
+    fn a_shape_must_name_a_declared_struct() {
+        let mut missing = shaped_invoice_by_id();
+        missing.shape = Some(name("billing.invoice.MissingRow"));
+        let errors = refuse(&missing);
+        assert!(errors.contains(ValidationCode::UndeclaredReference));
+        assert!(errors.to_string().contains("has no row shape"));
+
+        let mut scalar = shaped_invoice_by_id();
+        scalar.shape = Some(name("billing.invoice.Email"));
+        let errors = refuse(&scalar);
+        assert!(errors.contains(ValidationCode::TypeMismatch));
+        assert!(errors.to_string().contains("is not a struct"));
+    }
+
+    #[test]
+    fn every_field_in_a_named_shape_is_checked_against_the_source_entity() {
+        let mut types = registry();
+        types
+            .insert(NamedType {
+                name: name("billing.invoice.ImpossibleRow"),
+                body: TypeBody::Struct {
+                    fields: vec![Field::new(
+                        "customer_name",
+                        TypeRef::Primitive(Primitive::String),
+                    )],
+                    invariants: Vec::new(),
+                },
+                naming: Naming::default(),
+            })
+            .expect("a new type");
+        let mut view = shaped_invoice_by_id();
+        view.shape = Some(name("billing.invoice.ImpossibleRow"));
+
+        let errors = view
+            .validate(&types, &entities())
+            .expect_err("the source cannot supply that row");
+        assert!(errors.contains(ValidationCode::UndeclaredReference));
+        assert!(errors.to_string().contains("has no field `customer_name`"));
     }
 
     #[test]
@@ -864,7 +1091,9 @@ source: billing.invoice.Invoice
         let errors = ViewSpec::try_from(raw).expect_err("a view with no fields");
         assert!(errors.contains(ValidationCode::EmptyDeclaration));
         assert!(
-            errors.to_string().contains("projects no fields"),
+            errors
+                .to_string()
+                .contains("declares neither `shape` nor `fields`"),
             "{errors}"
         );
     }

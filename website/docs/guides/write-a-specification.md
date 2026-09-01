@@ -157,6 +157,38 @@ is the implementation's to assign.
 `consistency: eventual` on a view is what decides that a generated assertion is `eventually` rather
 than immediate. Getting it wrong produces a suite that passes on a laptop and flakes in CI.
 
+When several views expose the same row, declare the row once as a named struct and reference it with
+`shape:`:
+
+```yaml
+types:
+  - name: todo.list.ItemRow
+    kind: struct
+    fields:
+      - name: item_id
+        type: todo.list.ItemId
+      - name: list_id
+        type: todo.list.ListId
+      - name: state
+        type: todo.list.Item.State
+
+views:
+  - name: todo.list.ItemById
+    source: todo.list.Item
+    shape: todo.list.ItemRow
+    consistency: read_your_writes
+
+  - name: todo.list.ListItems
+    source: todo.list.Item
+    shape: todo.list.ItemRow
+    consistency: read_your_writes
+```
+
+A view declares exactly one of `shape` or inline `fields`. The named type must be a struct, and ESS
+still checks each of its fields against the source entity. Compiled IR carries both the shape handle
+and the checked expansion; OpenAPI uses the handle as a real `$ref`, so the row schema is emitted
+once rather than copied per view.
+
 ### A binding says what happens when it fails
 
 Bindings live above the domains, in `components.yaml`:

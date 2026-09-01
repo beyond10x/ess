@@ -1310,7 +1310,7 @@
           ]
         },
         "fields": {
-          "description": "What it exposes.",
+          "description": "What it exposes inline.",
           "type": "array",
           "items": {
             "$ref": "#/definitions/Field"
@@ -1340,6 +1340,17 @@
           "allOf": [
             {
               "$ref": "#/definitions/Naming"
+            }
+          ]
+        },
+        "shape": {
+          "description": "A reusable named struct describing what it exposes.",
+          "anyOf": [
+            {
+              "$ref": "#/definitions/QualifiedName"
+            },
+            {
+              "type": "null"
             }
           ]
         },

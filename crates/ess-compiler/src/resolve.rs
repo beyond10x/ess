@@ -792,7 +792,7 @@ impl<'a> Resolver<'a> {
         let events = self.events();
         let errors = self.errors();
         let commands = self.commands(&events, &errors, &entities);
-        let views = self.views(&entities);
+        let views = self.views(&types, &entities);
         let actors = self.actors(&commands);
         let components = self.components(&commands, &events);
         let bindings = self.bindings(&events, &commands);
@@ -1952,6 +1952,7 @@ impl<'a> Resolver<'a> {
     /// and the repair everybody reaches for is a sleep.
     fn views(
         &mut self,
+        types: &BTreeMap<QualifiedName, ResolvedType>,
         entities: &BTreeMap<QualifiedName, ResolvedEntity>,
     ) -> BTreeMap<QualifiedName, ResolvedView> {
         let declared: Vec<ViewSpec> = self.spec.views().values().cloned().collect();
@@ -1960,7 +1961,21 @@ impl<'a> Resolver<'a> {
             let path = format!("views.{}", view.name);
             let needles = vec![format!("name: {}", view.name)];
             let code = codes::VIEW_UNDECLARED_REFERENCE;
-            let fields = self.fields(code, &view.fields, &view.name, &path, &needles);
+            let declared_fields = view.projected_fields(&self.registry).map(<[Field]>::to_vec);
+            let shape = match &view.shape {
+                None => Some(None),
+                Some(name) if types.contains_key(name) => Some(Some(TypeHandle::new(name.clone()))),
+                Some(_) => None,
+            };
+            if declared_fields.is_none() || shape.is_none() {
+                // `Specification::assemble` normally makes this impossible. Keep compilation closed
+                // if an unchecked in-memory specification reaches us and let the domain validator
+                // supply the precise missing/non-struct shape refusal below.
+                self.off_contract = true;
+            }
+            let fields = declared_fields
+                .as_deref()
+                .and_then(|fields| self.fields(code, fields, &view.name, &path, &needles));
             let domain = self.owner(code, &view.name, "view");
             let source = match self.entity_of(&view.source, entities) {
                 Found::Handle(handle) => Some(handle),
@@ -1987,7 +2002,9 @@ impl<'a> Resolver<'a> {
                     None
                 }
             };
-            let (Some(fields), Some(domain), Some(source)) = (fields, domain, source) else {
+            let (Some(shape), Some(fields), Some(domain), Some(source)) =
+                (shape, fields, domain, source)
+            else {
                 continue;
             };
             resolved.insert(
@@ -1996,6 +2013,7 @@ impl<'a> Resolver<'a> {
                     name: view.name,
                     domain,
                     source,
+                    shape,
                     fields,
                     filter: view.filter,
                     consistency: view.consistency,
