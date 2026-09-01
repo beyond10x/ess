@@ -227,7 +227,13 @@ impl Specification {
             parts.push(collected.absorb(&source, file, &mut errors));
         }
 
-        let (system, merge_errors) = SystemSpec::merge_reporting(parts);
+        let lifecycle_types: Vec<NamedType> = collected
+            .entities
+            .values()
+            .map(EntitySpec::state_type)
+            .collect();
+        let (system, merge_errors) =
+            SystemSpec::merge_reporting_with_reference_types(parts, &lifecycle_types);
         errors.extend(merge_errors);
         // A merge that failed still hands back the graph, so an unsupported format no longer hides
         // every broken reference behind it. The one thing that cannot be worked around is a missing
@@ -880,6 +886,69 @@ events:
         ));
         let specification = Specification::assemble(files).expect("valid");
         assert_eq!(specification.entities.len(), 1);
+    }
+
+    #[test]
+    fn a_reusable_view_shape_may_carry_its_entity_lifecycle_state() {
+        let mut files = minimal();
+        files.push(file(
+            "cart.yaml",
+            r"
+domain: shop.cart
+types:
+  - name: shop.cart.CartRow
+    kind: struct
+    fields:
+      - name: cart_id
+        type: String
+      - name: state
+        type: shop.cart.Cart.State
+entities:
+  - name: shop.cart.Cart
+    identity:
+      name: cart_id
+      type: String
+    fields: []
+    lifecycle:
+      initial: Open
+      states: [Open, Closed]
+      terminal: [Closed]
+      transitions:
+        - name: close
+          from: [Open]
+          to: Closed
+commands:
+  - name: shop.cart.CloseCart
+    input:
+      - name: cart_id
+        type: String
+    outcomes:
+      - name: closed
+        moves: shop.cart.Cart.close
+        instance: cart_id
+        emits: [shop.cart.CartClosed]
+events:
+  - name: shop.cart.CartClosed
+    fields: []
+views:
+  - name: shop.cart.CartById
+    source: shop.cart.Cart
+    shape: shop.cart.CartRow
+    consistency: read_your_writes
+",
+        ));
+
+        let specification =
+            Specification::assemble(files).expect("the derived state type resolves");
+        let view = specification
+            .views
+            .get(&QualifiedName::new("shop.cart.CartById").expect("valid name"))
+            .expect("view");
+        let fields = view
+            .projected_fields(&specification.system.types)
+            .expect("the named shape resolves");
+        assert_eq!(fields.len(), 2);
+        assert_eq!(fields[1].name, "state");
     }
 
     #[test]

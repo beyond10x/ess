@@ -431,6 +431,20 @@ impl SystemSpec {
     pub(crate) fn merge_reporting(
         parts: impl IntoIterator<Item = SpecPart>,
     ) -> (Option<Self>, ValidationErrors) {
+        Self::merge_reporting_with_reference_types(parts, &[])
+    }
+
+    /// As [`Self::merge_reporting`], with additional types that may satisfy references while a
+    /// complete [`crate::spec::Specification`] is assembled.
+    ///
+    /// Lifecycle state enums are derived from entities, rather than declared in a domain's type
+    /// list. A declared struct may still refer to one (for example, a reusable view shape carrying
+    /// an entity's `state`). Those derived enums participate in reference and inhabitation checks,
+    /// but do not become declared system types; the complete specification owns them.
+    pub(crate) fn merge_reporting_with_reference_types(
+        parts: impl IntoIterator<Item = SpecPart>,
+        reference_types: &[NamedType],
+    ) -> (Option<Self>, ValidationErrors) {
         let parts: Vec<SpecPart> = parts.into_iter().collect();
         let mut assembly = Assembly::default();
         let header = assembly.resolve_header(&parts);
@@ -448,7 +462,7 @@ impl SystemSpec {
         let errors = &mut assembly.errors;
         errors.extend(DomainSpec::validate_all(&assembly.domains));
 
-        let types = build_registry(&assembly.types, &assembly.domains, errors);
+        let types = build_registry(&assembly.types, &assembly.domains, reference_types, errors);
 
         let system = Self {
             name: header.name,
@@ -467,6 +481,7 @@ impl SystemSpec {
 fn build_registry(
     system_types: &[NamedType],
     domains: &[DomainSpec],
+    reference_types: &[NamedType],
     errors: &mut ValidationErrors,
 ) -> TypeRegistry {
     let mut registry = TypeRegistry::new();
@@ -479,16 +494,24 @@ fn build_registry(
         }
     }
 
+    let mut reference_registry = registry.clone();
+    for derived in reference_types {
+        // A declaration that collides with a derived type is diagnosed when the complete
+        // specification inserts its lifecycle types. Keeping the declared type here avoids
+        // reporting the same duplicate twice during assembly.
+        let _ = reference_registry.insert(derived.clone());
+    }
+
     for declared in registry.iter() {
         for dependency in declared.dependencies() {
-            errors.extend(registry.resolve(
+            errors.extend(reference_registry.resolve(
                 &TypeRef::Named(dependency.clone()),
                 &format!("types.{}", declared.name),
             ));
         }
     }
 
-    check_inhabitation(&registry, errors);
+    check_inhabitation(&reference_registry, errors);
 
     registry
 }
