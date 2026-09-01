@@ -262,9 +262,6 @@ validation_codes! {
     /// A requirement references an evidence kind the protocol does not declare.
     UndeclaredEvidenceKind => "undeclared_evidence_kind",
 
-    /// Required evidence has no verifier that can establish it.
-    NoVerifierForEvidence => "no_verifier_for_evidence",
-
     /// Rollback is required for a state marked irreversible.
     RollbackOnIrreversibleState => "rollback_on_irreversible_state",
 

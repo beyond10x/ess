@@ -1,9 +1,8 @@
 ---
 title: "0.4.0 — the specification judges the implementation"
 description: >
-  A specification now generates its own conformance suite, runs it, and produces evidence the
-  protocol reads to decide whether the work may be called done. Both halves proven: a correct
-  implementation completes the task, a faulted one is refused by name.
+  A specification generates its own conformance suite, runs it, and produces a standalone report.
+  This retrospective records the pre-extraction milestone.
 slug: the-specification-as-oracle
 tags: [release, ess, conformance]
 date: 2026-08-20T18:09:55+02:00
@@ -11,9 +10,12 @@ release_tag: "0.4.0-ess-wave-4"
 release_commit: 643ebdb50c924ddce1e6367621850ecb1e3a7053
 ---
 
-This is the release where the two halves of the repository close a loop. A specification generates
-its own conformance suite, runs it against an implementation, and produces **evidence the protocol
-reads** to decide whether the work may be called done.
+> Historical release note. ESS now publishes a standalone conformance report; workflow consumers
+> translate that report at their own boundary.
+
+This is the release where a specification first generated its own conformance suite, ran it
+against an implementation, and produced a report a workflow consumer could translate into its own
+evidence vocabulary.
 
 Both halves are proven, which matters more than either alone:
 

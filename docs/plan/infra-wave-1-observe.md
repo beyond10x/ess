@@ -1,5 +1,9 @@
 # Infra wave 1 — observe and persist
 
+> Historical delivery plan. The commands and repository boundaries below record the
+> pre-extraction implementation; current adopter documentation uses the canonical `ess` command
+> and the integrated Kubernetes credential-edge adapter.
+
 Status: **delivered**. This page accepts the scope it describes; the ESS pattern
 (raw→validated, compiler-minted handles, canonical bytes, drift-checked committed output) is
 instantiated a second time, on infrastructure.
@@ -13,8 +17,8 @@ graph and diagnosis (IW2), desired-state diff and simulation (IW3), and manifest
 
 ## The boundary, first
 
-**The scanner is external.** `ess-kubernetes` (its own repository) holds the kubeconfig, shells out
-to `kubectl`, and writes `infra-observation/1` bundles; *it* replaces every secret value with
+**The scanner is a credential-edge adapter.** The integrated Kubernetes scanner holds the
+kubeconfig, shells out to `kubectl`, and writes `infra-observation/1` bundles; *it* replaces every secret value with
 `{sha256, length}` before anything touches disk. Nothing in this workspace reaches a network,
 holds a credential, or links a Kubernetes client — the bundle arrives as a file, and the two
 new crates (`infra-domain`, `infra-compiler`) plus the `protocol infra` verbs are pure
@@ -22,8 +26,8 @@ functions over it. The gate stays offline.
 
 ## Decisions taken
 
-1. **External actor.** Scanner and toolchain are separate repositories with a file-format
-   contract between them, so credentials and API skew stay on the side that already has them.
+1. **Credential-edge actor.** Scanner and pure toolchain crates have a file-format contract
+   between them, so credentials and API skew stay at the explicitly invoked edge.
 2. **Kubernetes subset v1.** Twelve kinds, modelled only as far as IW2–IW4 ask: identity,
    labels, selectors, workload pod-template essentials (containers with env/envFrom/volume
    mounts/probes/resources, volumes, service account, replicas), service type/selector/ports,

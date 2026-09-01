@@ -1,9 +1,8 @@
 ---
 title: "0.3.0 — the second half arrives, and the two halves meet"
 description: >
-  An executable system specification becomes a document this repository parses, validates and
-  refuses — and the protocol can already require conformance to one. Nothing is generated from one
-  yet, and the release says so.
+  The first ESS model release made executable system specifications parseable, validated and
+  explicitly refused. This retrospective records the pre-extraction milestone.
 slug: ess-the-join-and-the-model
 tags: [release, ess]
 date: 2026-08-20T03:50:26+02:00
@@ -11,8 +10,11 @@ release_tag: "0.3.0-ess-wave-1"
 release_commit: 75615f0f4bf1c061c9046a5357974c09efe074fa
 ---
 
-Until now this repository had one half: **AEP**, which governs how engineering work is performed.
-This release starts the other: **ESS**, which specifies what software must exist.
+> Historical release note. ESS later became this standalone repository; references to the former
+> combined repository describe the milestone at the time, not the current dependency boundary.
+
+This release started **ESS**, which specifies what software must exist, inside the repository that
+originally hosted it.
 
 The join is the point. A task can be blocked until something proves a specification is satisfied —
 so the two halves meet at evidence rather than at an integration.
@@ -23,7 +25,8 @@ so the two halves meet at evidence rather than at an integration.
 
 * An **executable system specification** is a document this repository parses, validates and
   **refuses** — the refusals being the part that makes it a specification rather than a format.
-* The protocol can already **require conformance** to one, which is the join.
+* A workflow consumer could already **require conformance** to one through an adapter at its own
+  boundary.
 
 ## What did not
 

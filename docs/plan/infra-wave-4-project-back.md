@@ -1,5 +1,8 @@
 # Infra wave 4 — project the gaps back as a diff
 
+> Historical delivery plan. Its `protocol infra` spellings record the pre-extraction CLI; current
+> adopter documentation uses the canonical `ess` command.
+
 Status: **delivered**. This page accepts the scope it describes: the three-valued report of IW3
 gets an answer to the question it leaves open — *so what would I change?* — and the answer is a
 directory of files a person reviews and commits, not a verb that touches a cluster.

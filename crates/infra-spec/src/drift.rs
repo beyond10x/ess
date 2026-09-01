@@ -19,7 +19,7 @@
 //! a report nobody reads twice — the same argument IW2 decision 5 made when it kept pods out of
 //! the Mermaid rendering and left them in the canonical JSON. What a pod's churn *means* for the
 //! declared state already shows up here: the workload's image, replica count and configuration
-//! digests are all in the vocabulary, and `protocol infra diagnose` answers the runtime question
+//! digests are all in the vocabulary, and `ess infra diagnose` answers the runtime question
 //! about either snapshot on its own.
 //!
 //! # No catch-all

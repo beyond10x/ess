@@ -255,7 +255,7 @@ pub struct ProjectionEntry {
     /// The gap itself, exactly as the simulation reported it.
     pub gap: Gap,
     /// One sentence saying what the subject has and what the expectation wanted — the same
-    /// sentence `protocol infra simulate` prints, from the same function.
+    /// sentence the infrastructure simulation reports, from the same function.
     pub reads: String,
     /// What this projection decided.
     #[serde(flatten)]

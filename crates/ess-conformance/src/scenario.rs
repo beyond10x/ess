@@ -242,9 +242,7 @@ pub struct SuiteProvenance {
     /// A digest of the resolved model the suite was generated from.
     ///
     /// The field the record is worth anything for. `billing/v3` is a label two different resolutions
-    /// can share; a digest is not, and
-    /// [`EssConformanceResult::attests`](ess_primitives::evidence::EssConformanceResult::attests) decides
-    /// on this and never on the label.
+    /// can share; a digest is not. Adapters bind this exact value and never the label.
     pub spec_digest: SpecDigest,
     /// A digest of the model slice the suite derives from — the whole model, spelled as a slice.
     ///

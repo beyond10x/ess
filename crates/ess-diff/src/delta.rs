@@ -98,9 +98,8 @@ impl<'de> serde::Deserialize<'de> for DeltaFormat {
 ///
 /// Three facts, and only one of them is identity. `billing/v3` is a label two different resolutions
 /// can share — [`Version`] is major-only on purpose — so the **digest** is what tells two revisions
-/// apart, and the version is here for a person reading the report. That is the same sentence
-/// [`EssConformanceResult`](ess_primitives::evidence::EssConformanceResult) already carries about its own
-/// digest, and it is why nothing here orders revisions by version.
+/// apart, and the version is here for a person reading the report. The standalone conformance
+/// report carries the same digest, and it is why nothing here orders revisions by version.
 ///
 /// The digest is derived from [`ess_gen::Provenance`], never computed a second way: one model has
 /// one digest, or a delta attests to a specification nobody can find again.

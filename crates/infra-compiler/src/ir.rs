@@ -539,7 +539,7 @@ pub struct InfraIr {
     pub model: InfraModel,
 }
 
-/// The persisted form of an IR: what `protocol infra compile --out` writes.
+/// The persisted form emitted by the ESS infrastructure compiler.
 #[derive(Debug, Clone, Serialize)]
 pub struct InfraIrDocument<'a> {
     /// The format claim, `infra-ir/1`.

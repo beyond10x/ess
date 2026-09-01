@@ -404,10 +404,10 @@ repository fails closed, and it needs G19 as a precondition rather than replacin
 [review](../reviews/2026-08-20-infrastructure-design-feasibility-review.md)) — the *design* is deferred
 whole, and three waves have since shipped from plan pages that took none of it as a work order. It is
 roughly eleven waves at this repository's measured rate, sequenced behind four that do not exist yet. It
-would also put cloud discovery adapters inside this workspace, making live API calls under a credential,
+would also put live API calls inside the pure model crates, making them operate under a credential,
 which `docs/VISION.md` refuses — and the design argues against itself on that point in two of its own
-sections, so the fix is to move the design rather than the boundary. The scanner therefore lives in its
-own repository (`ess-kubernetes`), holds the credentials, and nothing in this workspace reaches a network.
+sections. The scanner is therefore an integrated, explicitly invoked credential-edge adapter; the
+downstream model, compiler, analysis, and projection crates remain offline and credential-free.
 
 What has shipped, as a second instance of the ESS pattern rather than as that design:
 
@@ -420,8 +420,8 @@ What has shipped, as a second instance of the ESS pattern rather than as that de
 
 **IW4 delivered ends the scheduled infrastructure waves.** IW5 — *propose* and *apply*, the verbs
 that consult a registry and reach a cluster — stays unscheduled and adapter-side: both need a
-network and a credential, which is the boundary `docs/VISION.md` draws and the reason the scanner
-lives in its own repository. What this workspace ships is the whole non-acting half: observe,
+network and a credential, which is the boundary `docs/VISION.md` draws and the reason scanning is
+isolated at the credential edge. What this workspace ships is the whole non-acting half: observe,
 analyze, measure against a declared state, and hand back a diff a person applies with their own
 hands.
 

@@ -1,11 +1,11 @@
 //! The observation model for infrastructure: the Kubernetes subset, v1.
 //!
-//! An external scanner (`ess-kubernetes`, a separate repository) reads a cluster and writes an
+//! The integrated Kubernetes credential-edge adapter reads a cluster and writes an
 //! `infra-observation/1` bundle — raw API objects keyed by kind, with every secret value already
 //! replaced by `{sha256, length}`. This crate is the boundary that bundle crosses into the
 //! toolchain: it parses permissively, validates strictly and accumulates every refusal, exactly
-//! as `ess-domain` does for specifications. **Nothing in this workspace reaches a cluster, holds
-//! a credential or opens a network connection**; the scanner is the actor, this is the model.
+//! as `ess-domain` does for specifications. This model crate never reaches a cluster, holds a
+//! credential or opens a network connection; the scanner is the actor, this is the model.
 //!
 //! | module | contents |
 //! |---|---|

@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.2.0] — 2026-09-01
+
+- Make `ess-conformance-report/1` the only ESS conformance handoff and remove the legacy
+  workflow-shaped evidence, producer, provenance, and verifier API. AEP adaptation now lives only
+  in AEP's optional adapter.
+- Use the canonical `ess` command in newly generated provenance guidance and current engineering
+  documentation. Persisted ESS and infrastructure IR envelopes remain version 1.
+
 ## [0.1.1] — 2026-09-01
 
 - Publish the extracted ESS adopter documentation and browser lab at the standalone ESS Pages

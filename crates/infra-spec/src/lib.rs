@@ -32,8 +32,8 @@
 //!
 //! | question | verb | compares |
 //! |---|---|---|
-//! | does the cluster do what I declared, and what would have to change | `protocol infra simulate --spec … --path …` | *unlike* things: a specification against a snapshot |
-//! | what moved between these two scans | `protocol infra diff --from … --to …` | *like* things: a snapshot against a snapshot |
+//! | does the cluster do what I declared, and what would have to change | infrastructure simulation | *unlike* things: a specification against a snapshot |
+//! | what moved between these two scans | `ess infra diff --from … --to …` | *like* things: a snapshot against a snapshot |
 //!
 //! The desired↔observed comparison is **inside `simulate`**, not a third verb: every `False`
 //! already carries its [`Gap`], which is the have-versus-want a separate

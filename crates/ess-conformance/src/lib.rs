@@ -136,7 +136,7 @@ pub mod target;
 pub mod witness;
 
 pub use decision::{when, Decision, Reason, Unevaluable, UnknownCause};
-pub use evidence::{ConformanceEvidence, StandaloneConformanceReport, STANDALONE_REPORT_FORMAT};
+pub use evidence::{StandaloneConformanceReport, STANDALONE_REPORT_FORMAT};
 pub use faulty::{Caught, Fault, Faulty, Injection, System};
 pub use input::{flatten, resolve_path, InputFacts, ShapeError, ShapeErrors, Target};
 pub use report::{

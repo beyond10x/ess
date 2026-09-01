@@ -1,5 +1,8 @@
 # Infra wave 2 — analyze and visualize
 
+> Historical delivery plan. Its `protocol infra` spellings record the pre-extraction CLI; current
+> adopter documentation uses the canonical `ess` command.
+
 Status: **delivered**. This page accepts the scope it describes: the compiled IR of IW1 becomes
 *analyzed* — what depends on what (`protocol infra graph`), what is wrong
 (`protocol infra diagnose`), and the per-workload facts IW3 will consume

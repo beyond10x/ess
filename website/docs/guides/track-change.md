@@ -6,8 +6,8 @@ description: Compare two revisions semantically with ess diff, and compute what 
 
 # Track specification change
 
-Conformance evidence is bound to the specification digest it attested, so the moment a specification
-moves, every requirement it satisfied goes back to owed. That is correct and blunt. `ess diff` and
+Conformance reports are bound to the specification digest they attest, so the moment a specification
+moves, every result produced for the old digest becomes stale. That is correct and blunt. `ess diff` and
 `ess impact` make it proportionate: a typed statement of what moved, and a narrowing of what the
 move actually invalidates.
 
@@ -146,6 +146,6 @@ vocabulary for survival, and three situations put the whole suite back to owed:
 | the suite was produced from another revision or another system | **refused** rather than answered: *the suite checks `billing` and these are two revisions of `catalog`* — exit 1, no report |
 
 And one thing it does not look at all: **prose**. A design doc, a runbook or a README that quotes a
-specification is not in the model, so no closure reaches it and no count includes it. The verb for
-that class of claim is a different one — `protocol evidence scan` reads dated claims out of markdown
-and says which of them nobody has looked at since.
+specification is not in the model, so no closure reaches it and no count includes it. Tracking the
+freshness of prose claims belongs to the workflow or documentation system that owns those claims,
+not to ESS.

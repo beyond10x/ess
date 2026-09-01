@@ -43,5 +43,6 @@ Projection writes artifacts only. It does not call `kubectl`, apply a manifest, 
 
 ## Infrastructure analysis
 
-`ess infra` contains the observation, simulation, drift, graph, diagnosis, and projection-oriented
-operations over sanitized infrastructure IR. Run `ess infra --help` for the current subcommands.
+`ess infra` contains `diagnose`, `graph`, and `diff` operations over sanitized infrastructure IR.
+Live or bundle scanning is under `ess import kubernetes`; manifest generation is under
+`ess project kubernetes`. Run `ess infra --help` for their current arguments.

@@ -1,5 +1,8 @@
 # Infra wave 3 — desired state, simulate, drift
 
+> Historical delivery plan. Its `protocol infra` spellings record the pre-extraction CLI; current
+> adopter documentation uses the canonical `ess` command.
+
 Status: **delivered**. This page accepts the scope it describes: the analyzed cluster of IW2 gets
 something to be measured *against* — an authored desired state, a three-valued report of how the
 snapshot answers it, and a typed comparison of two snapshots.

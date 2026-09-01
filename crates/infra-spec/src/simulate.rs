@@ -3,7 +3,7 @@
 //!
 //! # A simulation is a report, not a gate
 //!
-//! IW2 decision 6, carried forward without change. `protocol infra simulate` exits 0 whatever the
+//! IW2 decision 6, carried forward without change. Infrastructure simulation reports whatever the
 //! verdicts say — a cluster that fails nine expectations has been *successfully* simulated, and
 //! that report is the product. Exit 1 stays where it was: an input that could not be simulated at
 //! all, a refused specification, a refused bundle, a tampered IR document. Anything else would
