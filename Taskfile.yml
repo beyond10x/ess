@@ -49,6 +49,16 @@ tasks:
       - cargo run --quiet --locked --bin ess -- validate --path examples/oracle-fixture
       - cargo run --quiet --locked --bin ess -- import kubernetes --path examples/k3d-dev-cluster/observation.json --format json
       - cargo run --quiet --locked --bin ess -- import openapi --path generated/openapi/invoice-service.yaml --format json
+      - >-
+        cargo run --quiet --locked --bin ess -- schema validate
+        crates/ess-cli/tests/fixtures/schema-contract/instances
+        --schemas crates/ess-cli/tests/fixtures/schema-contract/registry
+      - >-
+        cargo run --quiet --locked --bin ess -- schema typescript urn:example:widget:1
+        --root Widget
+        --schemas crates/ess-cli/tests/fixtures/schema-contract/registry
+        --out crates/ess-cli/tests/fixtures/schema-contract/expected/widget.ts
+        --check
 
   release-check:
     cmds:

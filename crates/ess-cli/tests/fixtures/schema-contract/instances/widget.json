@@ -1,0 +1,5 @@
+{
+  "schema": "urn:example:widget:1",
+  "name": "primary",
+  "enabled": true
+}

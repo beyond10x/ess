@@ -1,6 +1,7 @@
 //! The `ess` command: a deterministic shell over the ESS libraries and explicit adapters.
 
 mod load;
+mod schema;
 
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -101,6 +102,11 @@ enum Command {
     Project {
         #[command(subcommand)]
         adapter: ProjectAdapter,
+    },
+    /// Validate adopter-owned JSON Schema contracts or project their TypeScript types.
+    Schema {
+        #[command(subcommand)]
+        command: schema::SchemaCommand,
     },
     /// Inspect and compare sanitized infrastructure IR.
     Infra {
@@ -343,6 +349,7 @@ fn run(cli: Cli) -> Result<ExitCode> {
         Command::Conform { command } => conform(command),
         Command::Import { adapter } => import(adapter),
         Command::Project { adapter } => project(adapter),
+        Command::Schema { command } => schema::run(command),
         Command::Infra { command } => infra(command),
     }
 }

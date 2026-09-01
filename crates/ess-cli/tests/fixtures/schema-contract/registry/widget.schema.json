@@ -1,0 +1,12 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:example:widget:1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema", "name"],
+  "properties": {
+    "schema": {"const": "urn:example:widget:1"},
+    "name": {"type": "string"},
+    "enabled": {"type": "boolean"}
+  }
+}

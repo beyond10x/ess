@@ -1,5 +1,11 @@
 # Changelog
 
+## [0.2.1] — 2026-09-01
+
+- Restore the extracted `schema-contract` command surface under `ess schema`: offline validation
+  against an explicit schema registry and deterministic TypeScript projection with byte-check mode.
+- Document and gate both commands so consumers no longer depend on the retired repository's CLI.
+
 ## [0.2.0] — 2026-09-01
 
 - Make `ess-conformance-report/1` the only ESS conformance handoff and remove the legacy

@@ -12,6 +12,7 @@ ESS is experimental, standalone, and released as `0.1.x`.
 - validation and canonical compilation of typed system specifications;
 - name resolution, total handle lookup, inspection, graphing, semantic diff, and impact analysis;
 - documentation, JSON Schema, OpenAPI, and AsyncAPI generation;
+- offline validation and deterministic TypeScript projection for adopter-owned JSON Schema registries;
 - structural Rust, Go, and browser synthesis with explicit obligations;
 - semantic conformance-suite generation and reference execution;
 - standalone conformance reports;

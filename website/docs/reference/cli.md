@@ -1,6 +1,6 @@
 ---
 title: CLI reference
-description: The canonical ESS command and its import, projection, infrastructure, generation, and conformance surfaces.
+description: The canonical ESS command and its model, schema-contract, adapter, generation, and conformance surfaces.
 ---
 
 # CLI reference
@@ -29,6 +29,16 @@ semantics, unsupported projection, or a failed check.
 | `ess conform run …` | Execute a suite against a supported target and emit a standalone report. |
 
 Run `ess synthesize --help` and `ess conform <command> --help` for target-specific arguments.
+
+## Adopter-owned schema contracts
+
+| Command | Purpose |
+|---|---|
+| `ess schema validate PATH… --schemas DIR [--format text\|yaml\|json]` | Validate JSON instances against the offline `*.schema.json` registry they select by stable `schema` identity. |
+| `ess schema typescript SCHEMA_ID --root TYPE --schemas DIR [--out FILE] [--check]` | Project deterministic structural TypeScript from one authoritative JSON Schema. |
+
+Both operations are offline. Schema identity comes from `$id`; filenames only locate documents.
+`--check` compares an existing generated module byte for byte without rewriting it.
 
 ## Import and projection
 

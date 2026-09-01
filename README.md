@@ -14,6 +14,8 @@ cargo run --bin ess -- conform synthesize --path examples/billing --out suite.js
 cargo run --bin ess -- conform run --suite suite.json --target billing --report-out report.json
 cargo run --bin ess -- import openapi --path api.yaml --out interface.json
 cargo run --bin ess -- project openapi --ir interface.json --out normalized-api.yaml
+cargo run --bin ess -- schema validate instances --schemas schemas
+cargo run --bin ess -- schema typescript urn:example:registry:1 --root Registry --schemas schemas
 ```
 
 Adapters use one explicit contract:
