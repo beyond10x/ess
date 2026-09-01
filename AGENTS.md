@@ -44,19 +44,29 @@ task check
 The gate is offline and runs formatting, strict Clippy, all workspace tests, rustdoc, command smoke
 tests, and the dependency boundary test. Land nothing until it exits zero.
 
-The adopter-facing Docusaurus site lives under `website/`; repository-root `docs/` remains the
-engineering record and is never published directly. A documentation change, release, or Pages
-change must additionally pass:
+The adopter-facing Docusaurus source lives under `website/`; repository-root `docs/` remains the
+engineering record and is never published directly. A documentation, release, or validation
+workflow change must additionally pass:
 
 ```console
 task site-build
 ```
 
 This check is separate because `npm ci` fetches the exact public `docs-system` Git revision and
-therefore cannot be part of the offline gate. Pages publishes only `website/build/`.
+therefore cannot be part of the offline gate. `.github/workflows/pages.yml` preserves the same
+Rust/WASM, browser-lab and site-build checks without Pages authority; the unified Website publishes
+the collected source and the Atlas-generated façade owns the project redirect.
 
 ## Commits
 
 - Use conventional prefixes and a body explaining what changed and why.
 - Use organization bot tooling outside this public repository for commits and pushes.
 - Never commit credentials, tokens, kubeconfigs, or unsanitized observations.
+
+<!-- b10x-docs-operations:start -->
+## Public documentation operations
+
+This repository owns the public source and presentation allowlist in `b10x.docs.yaml`; the unified [beyond10x Website](https://beyond10x.github.io/docs/ess/) passively collects those declared files from the exact commit in `website/sources.lock.json`. Atlas owns discovery grouping/order; Website and Docs System own rendering, shared components, search, and feeds. Do not add a standalone docs deployer or put App credentials in this public repository. If Atlas catalogs a former Pages workflow, that file remains repository-owned validation: preserve its bespoke checks while keeping exact read-only permissions, an unconditional pull-request trigger, and no deployment primitives. Project Pages at `/ess/` is only the generated redirect façade in `.github/workflows/b10x-docs-pages.yml`.
+
+From a complete organization workspace, run `cargo run --manifest-path atlas/Cargo.toml -- docs reconcile --workspace . --check` to verify the contract. Keep internal plans, stories, ADRs, decisions, worklogs, security material, and research out of the public allowlist unless a repository authority explicitly declares them public.
+<!-- b10x-docs-operations:end -->

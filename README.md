@@ -45,3 +45,9 @@ task check
 The historical ESS, infrastructure, schema, examples, suites, and generated artifacts were
 extracted with filtered Git history. The Kubernetes adapter additionally carries the imported
 history of the former standalone scanner.
+
+<!-- b10x-docs:start -->
+## Documentation
+
+[ESS documentation](https://beyond10x.github.io/docs/ess/) · [Start](https://beyond10x.github.io/) · [Ecosystem](https://beyond10x.github.io/ecosystem/) · [Impact](https://beyond10x.github.io/changes/) · [Releases](https://beyond10x.github.io/releases/)
+<!-- b10x-docs:end -->
