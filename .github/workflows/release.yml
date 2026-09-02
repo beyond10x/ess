@@ -192,6 +192,7 @@ jobs:
   release:
     name: Publish the release
     needs: [resolve, gate, website, package]
+    if: ${{ always() && needs.resolve.result == 'success' && needs.gate.result == 'success' && needs.website.result == 'success' && needs.package.result == 'success' }}
     runs-on: ubuntu-latest
     timeout-minutes: 15
     permissions:

@@ -619,4 +619,16 @@ mod tests {
         assert!(index.contains("| `site` | 2 | static-site-ready Markdown and a sidebar |"));
         assert!(index.contains("* [`site/sidebar.json`](site/sidebar.json)"));
     }
+
+    #[test]
+    fn release_publication_is_evaluated_after_every_dependency_finishes() {
+        let workflow = include_str!("../../../.github/workflows/release.yml");
+        let release_job = workflow
+            .split_once("\n  release:\n")
+            .expect("release workflow has a publication job")
+            .1;
+        assert!(release_job.contains(
+            "if: ${{ always() && needs.resolve.result == 'success' && needs.gate.result == 'success' && needs.website.result == 'success' && needs.package.result == 'success' }}"
+        ));
+    }
 }
