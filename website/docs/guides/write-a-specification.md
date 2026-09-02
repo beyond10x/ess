@@ -144,6 +144,7 @@ are derived. The `error:` is required — without it a generated scenario could 
     - billing.invoice.InvoiceCreated
   payload:
     billing.invoice.InvoiceCreated:
+      account_id: input.account_id
       customer_email: input.customer_email
       amount: input.amount
 ```

@@ -1,5 +1,31 @@
 # Changelog
 
+## [0.5.1] — 2026-09-03
+
+### Fixed
+
+- **The browser lab runs again.** `CreateInvoice` took an `account_id` from 0.5.0 and the lab's
+  script did not send one, so the module refused the first command of the run —
+  `{"kind":"undecodable","at":"input.account_id","expected":"a value","found":"nothing"}` — and
+  `task site-build` failed after the tag was cut. The script now names the account its invoices
+  belong to, which is the caller's to name because `billing.invoice.Account` declares it `owns`
+  them `via account_id`.
+- The lab read the identity for the next command out of the *first* entity in the catalogue, which
+  was the invoice only for as long as the invoice was the only entity. `billing.invoice.Account` is
+  declared above it, so `InvoiceCreated`'s `account_id` was taken for the new invoice's id and the
+  next command was issued against an account. It now reads the identity of the entity the taken
+  outcome `creates:`.
+- `website/src/pages/lab/_source.ts`, the lab's committed copy of `examples/billing/domains/invoice.yaml`,
+  was not refreshed for 0.5.0, so every line the left panel highlighted was off by the relation's
+  own lines. Refreshed — and a stale copy is now a red gate rather than a wrong panel:
+  `task site-lab` compares the two.
+- `examples/billing-web/smoke.mjs` asserted the pre-relation input list and sent the pre-relation
+  input; it is run by no task, which is why nothing caught it. Same fix, and it passes.
+- The documentation pages that quote the command were carrying its old shape:
+  `specification-to-contracts.md` said three values are chosen where there are now four and quoted
+  a JSON Schema "in full" that was missing `account_id`, and `write-a-specification.md` showed the
+  payload block without its first line. Both are the generated files again.
+
 ## [0.5.0] — 2026-09-03
 
 - **An entity declares what it owns and what it references.** `relations:` on an entity names a

@@ -30,6 +30,15 @@ function check(claim, held, detail) {
   if (!held) failures.push(`${claim}${detail === undefined ? "" : ` — ${detail}`}`);
 }
 
+/**
+ * The account the smoke invoices belong to.
+ *
+ * `CreateInvoice` takes one because `billing.invoice.Account` declares it `owns` invoices `via
+ * account_id`. Not of the shape the store mints identifiers in, so an id in an answer is visibly
+ * the module's rather than this file's.
+ */
+const ACCOUNT = "00000000-0000-4000-8000-67229bae00fc";
+
 const { open } = await import(pathToFileURL(glue).href);
 const system = await open(await readFile(wasm));
 
@@ -48,7 +57,7 @@ const create = catalog.commands.find((command) => command.name === "billing.invo
 check("CreateInvoice is in the catalogue", create !== undefined);
 check(
   "its input is typed from the model",
-  create && create.input.map((field) => field.name).join(",") === "customer_email,amount",
+  create && create.input.map((field) => field.name).join(",") === "account_id,customer_email,amount",
   create && JSON.stringify(create.input.map((field) => field.name)),
 );
 check(
@@ -61,7 +70,7 @@ check(
 const accepted = system.request({
   request: "command",
   command: "billing.invoice.CreateInvoice",
-  input: { customer_email: "smoke@example.invalid", amount: { amount: "10.50", currency: "EUR" } },
+  input: { account_id: ACCOUNT, customer_email: "smoke@example.invalid", amount: { amount: "10.50", currency: "EUR" } },
 });
 check("the command was served", accepted.ok === true, JSON.stringify(accepted.error));
 check(
@@ -104,7 +113,7 @@ check(
 const refused = system.request({
   request: "command",
   command: "billing.invoice.CreateInvoice",
-  input: { customer_email: "smoke@example.invalid", amount: { amount: "0", currency: "EUR" } },
+  input: { account_id: ACCOUNT, customer_email: "smoke@example.invalid", amount: { amount: "0", currency: "EUR" } },
 });
 check("a refusal is still a served request", refused.ok === true, JSON.stringify(refused.error));
 check(
@@ -145,7 +154,7 @@ check(
 const mistyped = system.request({
   request: "command",
   command: "billing.invoice.CreateInvoice",
-  input: { customer_email: 7, amount: { amount: "1", currency: "EUR" } },
+  input: { account_id: ACCOUNT, customer_email: 7, amount: { amount: "1", currency: "EUR" } },
 });
 check(
   "an input that does not match its declared type is refused with the path",

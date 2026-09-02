@@ -10,6 +10,9 @@
  *
  *   examples/billing/domains/invoice.yaml -> this constant, with ` -> \`
  *
+ * Forgetting to is a red gate, not a silently wrong panel: `_source.test.mjs` compares the two and
+ * `task site-lab` runs it.
+ *
  * Nothing else in `website/` reads outside `website/`, and this file is why: the copy is committed
  * here rather than read across the tree at build time.
  */
@@ -31,6 +34,10 @@ types:
   - name: billing.invoice.Email
     kind: newtype
     of: String
+
+  - name: billing.invoice.AccountId
+    kind: newtype
+    of: Uuid
 
   - name: billing.invoice.Money
     kind: struct
@@ -74,6 +81,37 @@ types:
         type: billing.invoice.Money
 
 entities:
+  # The owner. An account is what invoices belong to, and \`relations:\` is where that belonging is
+  # written down: without it the ownership would be \`Invoice.account_id\` plus an invariant somebody
+  # remembers, which is prose to every projection and refusable by nothing.
+  - name: billing.invoice.Account
+
+    identity:
+      name: account_id
+      type: billing.invoice.AccountId
+
+    fields:
+      - name: display_name
+        type: String
+
+    relations:
+      # Declared here and nowhere else. \`via:\` names the field on the *target* that carries it,
+      # because that is where an owner's identity lives on the thing it owns; \`cardinality:\` says
+      # how many invoices one account has, and says nothing about that field, which is one account
+      # whether the account has one invoice or a thousand.
+      - name: invoices
+        kind: owns
+        target: billing.invoice.Invoice
+        cardinality: many
+        via: account_id
+
+    # An account is reference data here: one state, no moves, and therefore no command that has to
+    # cause one.
+    lifecycle:
+      initial: Active
+      states: [Active]
+      terminal: [Active]
+
   - name: billing.invoice.Invoice
 
     # The identity carries a name as well as a type. Without the name, every generator would invent
@@ -83,6 +121,10 @@ entities:
       type: billing.invoice.InvoiceId
 
     fields:
+      # The field the ownership above is carried by. Typed as the account's identity, which is what
+      # \`ess validate\` checks: a \`String\` here, or the invoice's own id type, is refused.
+      - name: account_id
+        type: billing.invoice.AccountId
       - name: total
         type: billing.invoice.Money
       - name: payee
@@ -164,6 +206,8 @@ commands:
       display: Create invoice
 
     input:
+      - name: account_id
+        type: billing.invoice.AccountId
       - name: customer_email
         type: billing.invoice.Email
       - name: amount
@@ -196,6 +240,7 @@ commands:
         # and type, never its value.
         payload:
           billing.invoice.InvoiceCreated:
+            account_id: input.account_id
             customer_email: input.customer_email
             amount: input.amount
         summary: The invoice is created in Draft.
@@ -323,6 +368,8 @@ events:
     fields:
       - name: invoice_id
         type: billing.invoice.InvoiceId
+      - name: account_id
+        type: billing.invoice.AccountId
       - name: customer_email
         type: billing.invoice.Email
       - name: amount

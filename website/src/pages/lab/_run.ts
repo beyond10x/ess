@@ -24,11 +24,12 @@
  * identifiers come from a per-store counter in the `Uuid` wire shape (invariant 9), which is why
  * the invoice below is always `…0001`. `_run.test.mjs` holds the stream to that.
  *
- * # The three invented values
+ * # The four invented values
  *
- * An email address and two amounts. A specification declares types and not instances, so somebody
- * has to choose an input — and the choice is confined to [`SCRIPT`], where it can be read at a
- * glance. Everything the run then says about those values came back from the module.
+ * An account id, an email address and two amounts. A specification declares types and not
+ * instances, so somebody has to choose an input — and the choice is confined to [`SCRIPT`], where
+ * it can be read at a glance. Everything the run then says about those values came back from the
+ * module.
  */
 
 import {open} from './_bridge.mjs';
@@ -282,6 +283,20 @@ const ZERO = {amount: '0.00', currency: 'EUR'};
 /** The one address in the script. */
 const CUSTOMER = 'ada@example.com';
 
+/**
+ * The account the script's invoices belong to.
+ *
+ * `CreateInvoice` takes one because `billing.invoice.Account` declares that it `owns` invoices
+ * `via account_id`: an invoice's owner is the caller's to name, and the module fills the field
+ * from the request rather than minting it. So this is an invented value like the address and the
+ * amounts, and it is invented here for the same reason.
+ *
+ * Deliberately *not* of the shape the module's store mints identifiers in — `…-` followed by
+ * twelve decimal digits — so that an identifier appearing in an answer is visibly one the module
+ * assigned rather than one this page sent. `_run.test.mjs` checks exactly that distinction.
+ */
+const ACCOUNT = '00000000-0000-4000-8000-67229bae00fc';
+
 /** What earlier exchanges left behind for later ones to name. */
 type Held = {invoice: string};
 
@@ -302,7 +317,7 @@ type Exchange = {
 const SCRIPT: Exchange[] = [
   {
     command: 'billing.invoice.CreateInvoice',
-    input: () => ({customer_email: CUSTOMER, amount: AMOUNT}),
+    input: () => ({account_id: ACCOUNT, customer_email: CUSTOMER, amount: AMOUNT}),
     why: 'One accepted command, and everything the system does because of it.',
   },
   {
@@ -322,7 +337,7 @@ const SCRIPT: Exchange[] = [
   },
   {
     command: 'billing.invoice.CreateInvoice',
-    input: () => ({customer_email: CUSTOMER, amount: ZERO}),
+    input: () => ({account_id: ACCOUNT, customer_email: CUSTOMER, amount: ZERO}),
     why: 'The refusal this specification can express: the guard is false and nothing is created.',
   },
 ];
@@ -973,8 +988,19 @@ export function buildRun(request: Request, realized: boolean): Run {
     steps.push(...exchangeSteps(catalog, exchange, input, answer, before, at));
 
     // What the next exchange names. The identity is the implementation's to assign, so the only
-    // place it can be read is an announcement the run has already seen.
-    const entity = catalog.entities[0];
+    // place it can be read is an announcement the run has already seen — and *which* field of that
+    // announcement carries it is the outcome's to say: `creates:` names the entity, and the entity
+    // names its identity field. Asking the catalogue for its first entity was right only while
+    // there was one, and stopped being right when `billing.invoice.Account` was declared above the
+    // invoice: `InvoiceCreated` carries an `account_id` too, and the next command was then issued
+    // against the account's id.
+    const created = catalog.commands
+      .find((candidate) => candidate.name === exchange.command)
+      ?.outcomes.find((candidate) => candidate.name === answer.outcome?.outcome)?.moves;
+    const entity =
+      created?.effect.kind === 'creates'
+        ? catalog.entities.find((candidate) => candidate.name === created.entity)
+        : undefined;
     if (entity) {
       for (const published of answer.outcome?.published ?? []) {
         const identity = published.payload[entity.identity.name];
