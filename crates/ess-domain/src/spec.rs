@@ -308,6 +308,11 @@ impl Specification {
             &self.events,
         ));
 
+        // The other cross-entity rule, here for the same reason: a relation is declared on one
+        // entity, carried by a field that may be on another, and the rule that makes `owns` mean
+        // anything — one owner per owned entity — is a statement about all of them at once.
+        errors.extend(crate::entity::validate_relations(&self.entities));
+
         let catalogue = EntityCatalogue::new(self.entities.values());
         for view in self.views.values() {
             if let Err(view_errors) = view.validate(&registry, &catalogue) {

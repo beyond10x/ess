@@ -82,6 +82,8 @@ It holds:
 - `badge` — `Optional<gatepass.visit.Badge>`, which may be absent
 - `on_watchlist` — `Boolean`
 
+It declares no relation to another entity, and no other entity names it.
+
 Every instance satisfies `deposit.amount >= 0` and `expected_minutes > 0` — a predicate over this entity's own fields, checked against them rather than stored as a sentence, so an invariant reading something the entity does not have is refused instead of documented.
 
 Its state is a `gatepass.visit.Visit.State`, one of `Departed`, `Expected` and `OnSite`. That enum is synthesised from the lifecycle rather than declared beside it, so the states a view's filter compares and the states drawn below cannot disagree.

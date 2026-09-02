@@ -1,17 +1,17 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$ref": "#/$defs/billing.invoice.InvoiceId",
+  "$ref": "#/$defs/billing.invoice.AccountId",
   "x-ess-provenance": {
     "system": "billing",
     "specification_version": "v3",
     "source_digest": "aacdc2fe065d462cc4f9ba51e6740f88809b6b17ce006ef846b488f957005da3",
-    "contract_digest": "2bf4ded83f333b7dacc9b33ff0af3183af989e36ef374c9a57b87b88535e4f8d",
+    "contract_digest": "952142b21a05b7cf8c92635d30350e0e44c4d6e68e8a9c5401bbaf847c10312c",
     "regenerate": "ess generate"
   },
   "$defs": {
-    "billing.invoice.InvoiceId": {
-      "title": "InvoiceId",
-      "x-ess-name": "billing.invoice.InvoiceId",
+    "billing.invoice.AccountId": {
+      "title": "AccountId",
+      "x-ess-name": "billing.invoice.AccountId",
       "x-ess-kind": "newtype",
       "type": "string",
       "format": "uuid",

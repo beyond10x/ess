@@ -36,6 +36,11 @@ distinct. The compiler IRs keep compiler-minted handles, total lookups, ordered 
 deterministic serialization. New typed constructs are added only when an importer or projector
 establishes their semantics; there is no generic property bag or facet registry.
 
+A construct is a design page before it is code. The binding designs live in `docs/design/`; the
+newest is [entity relations](docs/design/ess-entity-relations-design-v0.1.md), which decides how an
+entity declares what it owns and what it references, what that refuses, and how one extension key
+(`x-ess-relation`) carries a relation into JSON Schema, OpenAPI and Rust.
+
 Run the complete offline gate with:
 
 ```console

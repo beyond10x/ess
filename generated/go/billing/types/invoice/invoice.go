@@ -1,6 +1,6 @@
 // generated from billing v3
-// model digest 13577b3ce695932e980d418d5863bcde07f4c362516d53147870d31eaf2ed861
-// contract digest d2b48060b7ee32e8f23b1e28972fea39921a25fdcacd635fdf7bbb538e94f367
+// model digest aacdc2fe065d462cc4f9ba51e6740f88809b6b17ce006ef846b488f957005da3
+// contract digest 6ba34a27496cc918b55c749b45599c03b3016fed36487b1763268b95e0c6ffc6
 // do not edit: regenerate with `ess synthesize`
 
 // Package invoice is Invoicing — `billing.invoice`.
@@ -15,6 +15,44 @@ import (
 	"example.invalid/billing/types/obligation"
 	"example.invalid/billing/types/primitives"
 )
+
+// AccountState is the states of `billing.invoice.Account`, as runtime values.
+//
+// Synthesised from the lifecycle, so the two cannot disagree. Which *moves* are legal is
+// not carried here — it is carried by one type per state, where an undeclared move is a
+// method that does not exist.
+//
+// A closed set: the marker method below is unexported, so no type outside this package can
+// join it. Go cannot check that a `switch` over it handles every case — that is a target-stage
+// weakening of what the specification declares, recorded in TARGET.md, not a gap in the model.
+type AccountState interface {
+	isAccountState()
+}
+
+// AccountStateActive is `Active`.
+type AccountStateActive struct{}
+
+func (AccountStateActive) isAccountState() {}
+
+// AccountId is AccountId — `billing.invoice.AccountId`: a distinct wrapper around `Uuid`.
+//
+// The field is unexported, so the only way to make one carrying a value is [NewAccountId] —
+// a defined type over `primitives.Uuid` would have let an untyped constant be assigned straight to
+// AccountId, which is the distinctness this declaration exists for. Go's zero value still
+// needs no constructor (see TARGET.md).
+type AccountId struct {
+	value primitives.Uuid
+}
+
+// NewAccountId wraps a `Uuid` as AccountId.
+func NewAccountId(value primitives.Uuid) AccountId {
+	return AccountId{value: value}
+}
+
+// Value is the wrapped `Uuid`.
+func (v AccountId) Value() primitives.Uuid {
+	return v.value
+}
 
 // Channel is Delivery channel — `billing.invoice.Channel`: one of a closed set of names.
 //
@@ -178,6 +216,89 @@ type PayeePerson struct {
 
 func (PayeePerson) isPayee() {}
 
+// AccountData is what Account — `billing.invoice.Account` — holds, apart from where it is in its lifecycle.
+//
+// The identity and every declared field. The state is deliberately not one: inside the domain
+// it is carried by the type ([AccountActive] and its siblings), and at a boundary by [AccountSnapshot].
+type AccountData struct {
+	// AccountId is the identity: `account_id` — `billing.invoice.AccountId`.
+	AccountId AccountId
+	// DisplayName is `display_name` — `String`.
+	DisplayName string
+}
+
+// AccountInActive is `billing.invoice.Account` resting in `Active`. Where a new instance starts.
+//
+// One type per declared state: a transition is a method on exactly the states the
+// specification declares it starts from, so an undeclared move is a method that does not
+// exist. The field is unexported — the only way to reach a state is the constructor or a
+// declared move (see TARGET.md for what Go's zero value still permits).
+type AccountInActive struct {
+	data AccountData
+}
+
+// NewAccount starts a new `billing.invoice.Account` in `Active` — the only state the lifecycle starts one in.
+func NewAccount(data AccountData) AccountInActive {
+	return AccountInActive{data: data}
+}
+
+// State is the state this instance rests in, as the runtime value.
+func (AccountInActive) State() AccountState {
+	return AccountStateActive{}
+}
+
+// Data is what it holds.
+func (v AccountInActive) Data() AccountData {
+	return v.data
+}
+
+// Snapshot is this instance at a boundary: the state as a value beside the data.
+func (v AccountInActive) Snapshot() AccountSnapshot {
+	return AccountSnapshot{State: AccountStateActive{}, Data: v.data}
+}
+
+func (AccountInActive) isAnyAccount() {}
+
+// AnyAccount is an instance of `billing.invoice.Account` in whichever declared state it was found.
+//
+// A closed set: the marker method below is unexported, so no type outside this package can
+// join it. Go cannot check that a `switch` over it handles every case — that is a target-stage
+// weakening of what the specification declares, recorded in TARGET.md, not a gap in the model.
+type AnyAccount interface {
+	isAnyAccount()
+
+	// State is the state this instance rests in.
+	State() AccountState
+
+	// Snapshot is this instance at a boundary.
+	Snapshot() AccountSnapshot
+}
+
+// AccountSnapshot is `billing.invoice.Account` as it crosses a boundary: the state as a value beside the data.
+//
+// Wire and storage know states only at runtime; [AccountSnapshot.Refine] is the one door back into
+// the typed lifecycle.
+type AccountSnapshot struct {
+	// State is where the instance is in its lifecycle.
+	State AccountState
+	// Data is what it holds.
+	Data AccountData
+}
+
+// Refine refines the runtime state into the typed one.
+//
+// Rust's is total, and this one cannot be: the state is a sealed interface, whose zero
+// value is nil and names no declared state, so a snapshot nothing constructed reaches here.
+// `ok` is false for exactly that snapshot and for no other — every declared state has an
+// arm (see TARGET.md).
+func (v AccountSnapshot) Refine() (AnyAccount, bool) {
+	switch v.State.(type) {
+	case AccountStateActive:
+		return AccountInActive{data: v.Data}, true
+	}
+	return nil, false
+}
+
 // InvoiceData is what Invoice — `billing.invoice.Invoice` — holds, apart from where it is in its lifecycle.
 //
 // The identity and every declared field. The state is deliberately not one: inside the domain
@@ -187,6 +308,8 @@ func (PayeePerson) isPayee() {}
 type InvoiceData struct {
 	// InvoiceId is the identity: `invoice_id` — `billing.invoice.InvoiceId`.
 	InvoiceId InvoiceId
+	// AccountId is `account_id` — `billing.invoice.AccountId`.
+	AccountId AccountId
 	// Total is `total` — `billing.invoice.Money`.
 	Total Money
 	// Payee is `payee` — `billing.invoice.Payee`.
@@ -433,6 +556,8 @@ func (CancelInvoiceOutcomeWrongState) isCancelInvoiceOutcome() {}
 //
 // Everything it can result in is [CreateInvoiceOutcome].
 type CreateInvoice struct {
+	// AccountId is `account_id` — `billing.invoice.AccountId`.
+	AccountId AccountId
 	// CustomerEmail is `customer_email` — `billing.invoice.Email`.
 	CustomerEmail Email
 	// Amount is `amount` — `billing.invoice.Money`.
@@ -576,6 +701,8 @@ type InvoiceCancelled struct {
 type InvoiceCreated struct {
 	// InvoiceId is `invoice_id` — `billing.invoice.InvoiceId`.
 	InvoiceId InvoiceId
+	// AccountId is `account_id` — `billing.invoice.AccountId`.
+	AccountId AccountId
 	// CustomerEmail is `customer_email` — `billing.invoice.Email`.
 	CustomerEmail Email
 	// Amount is `amount` — `billing.invoice.Money`.

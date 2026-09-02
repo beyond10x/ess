@@ -5,6 +5,9 @@
   "x-ess-kind": "command-input",
   "type": "object",
   "properties": {
+    "account_id": {
+      "$ref": "#/$defs/billing.invoice.AccountId"
+    },
     "customer_email": {
       "$ref": "#/$defs/billing.invoice.Email"
     },
@@ -13,6 +16,7 @@
     }
   },
   "required": [
+    "account_id",
     "customer_email",
     "amount"
   ],
@@ -20,11 +24,19 @@
   "x-ess-provenance": {
     "system": "billing",
     "specification_version": "v3",
-    "source_digest": "13577b3ce695932e980d418d5863bcde07f4c362516d53147870d31eaf2ed861",
-    "contract_digest": "e5df34917bf15c4fee175ec02ada20cff4b051b548c7d1da47ff37d85a743822",
+    "source_digest": "aacdc2fe065d462cc4f9ba51e6740f88809b6b17ce006ef846b488f957005da3",
+    "contract_digest": "b98537005aa5deabace3dbf4169af1c27d39520baa61adebf46ed19271af9ba0",
     "regenerate": "ess generate"
   },
   "$defs": {
+    "billing.invoice.AccountId": {
+      "title": "AccountId",
+      "x-ess-name": "billing.invoice.AccountId",
+      "x-ess-kind": "newtype",
+      "type": "string",
+      "format": "uuid",
+      "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$"
+    },
     "billing.invoice.Email": {
       "title": "Email",
       "x-ess-name": "billing.invoice.Email",

@@ -62,8 +62,8 @@ use crate::ir::{
     ResolvedCondition, ResolvedConversion, ResolvedDomain, ResolvedEffect, ResolvedEntity,
     ResolvedError, ResolvedEvent, ResolvedField, ResolvedInstance, ResolvedMapping,
     ResolvedMappingValue, ResolvedOutcome, ResolvedPayload, ResolvedPayloadField,
-    ResolvedPayloadValue, ResolvedSubject, ResolvedType, ResolvedTypeRef, ResolvedView,
-    ResolvedWorkload, TypeHandle, ViewHandle,
+    ResolvedPayloadValue, ResolvedRelation, ResolvedSubject, ResolvedType, ResolvedTypeRef,
+    ResolvedView, ResolvedWorkload, TypeHandle, ViewHandle,
 };
 use crate::source::{Location, SourceMap, Span};
 
@@ -1890,6 +1890,20 @@ impl<'a> Resolver<'a> {
             else {
                 continue;
             };
+            // Every target is a declared entity by the time a `Specification` exists —
+            // `validate_relations` refuses one that is not — so minting the handle here needs no
+            // second lookup and cannot mint one for something absent.
+            let relations = entity
+                .relations
+                .iter()
+                .map(|relation| ResolvedRelation {
+                    name: relation.name.clone(),
+                    kind: relation.kind,
+                    target: EntityHandle::new(relation.target.clone()),
+                    cardinality: relation.cardinality,
+                    via: relation.via.clone(),
+                })
+                .collect();
             resolved.insert(
                 entity.name.clone(),
                 ResolvedEntity {
@@ -1897,6 +1911,7 @@ impl<'a> Resolver<'a> {
                     domain,
                     identity,
                     fields,
+                    relations,
                     state_type,
                     lifecycle,
                     invariants: entity.invariants,

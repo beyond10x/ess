@@ -35,7 +35,7 @@ The first line of the run is the plan in one sentence, and the reasons follow it
 
 ```shell-session
 $ ess synthesize --path examples/billing --target rust | head -4
-billing v3 — 45 capabilities: 33 generated, 8 obligation(s), 4 refused, model digest 13577b3ce695932e980d418d5863bcde07f4c362516d53147870d31eaf2ed861
+billing v3 — 48 capabilities: 36 generated, 8 obligation(s), 4 refused, model digest aacdc2fe065d462cc4f9ba51e6740f88809b6b17ce006ef846b488f957005da3
   obligation: command behaviour `billing.email.SendEmail` — decided outside the system: the provider rejects the recipient address
   obligation: command behaviour `billing.invoice.CancelInvoice` — the contract is declared; the algorithm is not
   obligation: command behaviour `billing.invoice.CreateInvoice` — the contract is declared; the algorithm is not

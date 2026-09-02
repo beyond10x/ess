@@ -14,7 +14,7 @@ committed, reviewed and drift-checked like source.
 
 ```shell-session
 $ ess generate --path examples/billing --kind openapi
-billing v3 (13577b3ce695932e980d418d5863bcde07f4c362516d53147870d31eaf2ed861) — 1 projection(s), 2 artifact(s)
+billing v3 (aacdc2fe065d462cc4f9ba51e6740f88809b6b17ce006ef846b488f957005da3) — 1 projection(s), 2 artifact(s)
   openapi/email-service.yaml — 4710 byte(s)
   openapi/invoice-service.yaml — 15984 byte(s)
 nothing written: pass --out to write these, or --format json for their contents
@@ -60,7 +60,7 @@ each generated document.
 
 One renderer produces both the CLI's diagram and the documentation's: `ess graph --path
 examples/billing --format mermaid` emits exactly the bytes fenced under *The system as a graph* in
-`generated/docs/README.md`, and a test compares them, so the two cannot drift.
+`generated/docs/index.md`, and a test compares them, so the two cannot drift.
 
 ## Drift-checking in CI
 

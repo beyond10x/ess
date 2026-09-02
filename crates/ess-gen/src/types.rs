@@ -144,11 +144,11 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use ess_compiler::ir::{
-    ResolvedBody, ResolvedCommand, ResolvedError, ResolvedEvent, ResolvedField, ResolvedType,
-    ResolvedTypeRef, ResolvedView, TypeHandle,
+    CarriedRelation, ResolvedBody, ResolvedCommand, ResolvedEntity, ResolvedError, ResolvedEvent,
+    ResolvedField, ResolvedType, ResolvedTypeRef, ResolvedView, TypeHandle,
 };
 use ess_compiler::EssIr;
-use ess_domain::entity::Invariant;
+use ess_domain::entity::{Invariant, RelationKind};
 use ess_domain::name::QualifiedName;
 use ess_domain::types::Primitive;
 
@@ -276,6 +276,9 @@ pub(crate) struct Node {
     /// Conditions every value satisfies, as the author wrote them. An annotation, not an assertion.
     #[serde(rename = "x-ess-invariants", skip_serializing_if = "Vec::is_empty")]
     pub(crate) invariants: Vec<String>,
+    /// The relation this property carries, on the property that carries it.
+    #[serde(rename = "x-ess-relation", skip_serializing_if = "Option::is_none")]
+    pub(crate) relation: Option<Relation>,
     /// Where this artifact came from, at a document root only.
     #[serde(rename = "x-ess-provenance", skip_serializing_if = "Option::is_none")]
     pub(crate) provenance: Option<Attribution>,
@@ -402,6 +405,68 @@ impl Attribution {
         Self {
             provenance: provenance.clone(),
             regenerate: "ess generate",
+        }
+    }
+}
+
+/// One relation, as the property carrying it publishes it.
+///
+/// The whole relation and not a pointer to it: a reader looking at `account_id` is a reader who has
+/// not got the specification open, and an annotation that says "see the declaration" says nothing.
+/// `source` is here because for an `owns` relation the carrying property is on the *target*, so
+/// without it the annotation would name one end of a two-ended fact.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
+pub(crate) struct Relation {
+    /// What the relation is called.
+    pub(crate) name: String,
+    /// `owns` or `references`.
+    pub(crate) kind: &'static str,
+    /// The entity that declared it.
+    pub(crate) source: String,
+    /// The entity at the other end.
+    pub(crate) target: String,
+    /// `one` or `many`, on the target side.
+    pub(crate) cardinality: &'static str,
+    /// The field carrying it — this property's own declared name.
+    pub(crate) via: String,
+    /// The schema of the entity this property's value identifies, in documents that have one.
+    ///
+    /// The *other end from the carrier*: a field carrying an owner's id identifies the owner, and a
+    /// field carrying a referenced entity's id identifies that entity. Pointing at `target`
+    /// unconditionally would, for an `owns` relation, point a property of the invoice at the
+    /// invoice.
+    ///
+    /// Written as a pointer into `$defs` and retargeted by the projection that publishes under
+    /// `components.schemas`, which is the path every other reference takes. Absent in a document
+    /// that carries no schema for it, because a `$ref` that resolves to nothing is worse than no
+    /// link at all.
+    #[serde(rename = "$ref", skip_serializing_if = "Option::is_none")]
+    pub(crate) reference: Option<String>,
+}
+
+impl Relation {
+    /// The relation a carrying property publishes, with no link to the target's schema.
+    pub(crate) fn of(carried: &CarriedRelation<'_>) -> Self {
+        Self {
+            name: carried.relation.name.clone(),
+            kind: carried.relation.kind.as_str(),
+            source: carried.source.to_string(),
+            target: carried.relation.target.name().to_string(),
+            cardinality: carried.relation.cardinality.as_str(),
+            via: carried.relation.via.clone(),
+            reference: None,
+        }
+    }
+
+    /// The same relation, linked to the schema of what this property identifies.
+    pub(crate) fn linked(carried: &CarriedRelation<'_>) -> Self {
+        let identified = match carried.relation.kind {
+            RelationKind::Owns => carried.source,
+            RelationKind::References => carried.relation.target.name(),
+        };
+        Self {
+            reference: Some(pointer(identified)),
+            ..Self::of(carried)
         }
     }
 }
@@ -546,6 +611,14 @@ pub(crate) fn wire_name(declared: &ResolvedField) -> &str {
 /// one property; the model validates field *names* for duplication and does not constrain wire names,
 /// so that is a gap in the model rather than something to paper over here.
 pub(crate) fn object(fields: &[ResolvedField]) -> Node {
+    object_with(fields, &BTreeMap::new())
+}
+
+/// The same object, with `x-ess-relation` on each property that carries one.
+///
+/// Keyed by the field's **declared** name rather than its wire name, because `via:` names a
+/// declaration: a field renamed on the wire still carries the relation the model gave it.
+pub(crate) fn object_with(fields: &[ResolvedField], relations: &BTreeMap<&str, Relation>) -> Node {
     let mut properties = Properties::default();
     let mut required = Vec::new();
 
@@ -554,7 +627,9 @@ pub(crate) fn object(fields: &[ResolvedField]) -> Node {
         if !declared.type_ref.is_optional() {
             required.push(wire.to_owned());
         }
-        properties.insert(wire, field(declared));
+        let mut property = field(declared);
+        property.relation = relations.get(declared.name.as_str()).cloned();
+        properties.insert(wire, property);
     }
 
     Node {
@@ -676,6 +751,13 @@ pub(crate) const ERROR_PAYLOAD: &str = "error-payload";
 /// One row of a view, as a message.
 pub(crate) const VIEW_ROW: &str = "view-row";
 
+/// One instance of an entity: what it holds, and what its fields mean.
+///
+/// Not a message the model declares — nothing posts an entity — and published anyway, because a
+/// relation is a fact about an entity and there was previously no document a tool could read it
+/// from. `docs/design/ess-entity-relations-design-v0.1.md` §4 is why this exists.
+pub(crate) const ENTITY: &str = "entity";
+
 /// One message that crosses this system's boundary.
 ///
 /// Shared rather than per projection because the *payload* is the thing the three projections
@@ -693,6 +775,10 @@ pub(crate) struct Message<'a> {
     pub(crate) description: Option<String>,
     /// What it carries.
     pub(crate) fields: &'a [ResolvedField],
+    /// The relations its properties carry, keyed by the declared field name. Empty for everything
+    /// but an entity: a relation is declared on an entity, and a message is a copy of some of its
+    /// values rather than the thing itself.
+    pub(crate) relations: BTreeMap<&'a str, Relation>,
 }
 
 impl<'a> Message<'a> {
@@ -704,6 +790,7 @@ impl<'a> Message<'a> {
             title: format!("{} input", command.naming.display_or(&command.name)),
             description: command.naming.summary.clone(),
             fields: &command.input,
+            relations: BTreeMap::new(),
         }
     }
 
@@ -715,6 +802,7 @@ impl<'a> Message<'a> {
             title: format!("{} payload", event.naming.display_or(&event.name)),
             description: event.naming.summary.clone(),
             fields: &event.fields,
+            relations: BTreeMap::new(),
         }
     }
 
@@ -729,6 +817,7 @@ impl<'a> Message<'a> {
             title: format!("{} payload", error.name.local()),
             description: error.summary.clone(),
             fields: &error.fields,
+            relations: BTreeMap::new(),
         }
     }
 
@@ -744,6 +833,27 @@ impl<'a> Message<'a> {
             title: format!("{} row", view.naming.display_or(&view.name)),
             description: view.naming.summary.clone(),
             fields: &view.fields,
+            relations: BTreeMap::new(),
+        }
+    }
+
+    /// One entity, as the shape an instance of it has.
+    ///
+    /// The fields are passed in rather than read off the entity, because they are not a slice the
+    /// entity owns: identity, declared fields and `state` are three sources, and
+    /// [`entity_fields`] is the one place they are put in an order.
+    pub(crate) fn of_entity(
+        entity: &'a ResolvedEntity,
+        fields: &'a [ResolvedField],
+        relations: BTreeMap<&'a str, Relation>,
+    ) -> Self {
+        Self {
+            kind: ENTITY,
+            name: &entity.name,
+            title: entity.naming.display_or(&entity.name).to_owned(),
+            description: entity.naming.summary.clone(),
+            fields,
+            relations,
         }
     }
 
@@ -753,6 +863,7 @@ impl<'a> Message<'a> {
     pub(crate) fn directory(&self) -> &'static str {
         match self.kind {
             COMMAND_INPUT => "commands",
+            ENTITY => "entities",
             EVENT_PAYLOAD => "events",
             VIEW_ROW => "views",
             _ => "errors",
@@ -767,8 +878,46 @@ pub(crate) fn message(carried: &Message<'_>) -> Node {
         description: carried.description.clone(),
         ess_name: Some(carried.name.to_string()),
         ess_kind: Some(carried.kind),
-        ..object(carried.fields)
+        ..object_with(carried.fields, &carried.relations)
     }
+}
+
+/// What one instance of an entity holds: its identity, its declared fields, and its state.
+///
+/// The same surface [`EntitySpec::observable_fields`](ess_domain::entity::EntitySpec::observable_fields)
+/// offers a view, and in the same order, so a document describing an entity and a view projecting
+/// one cannot disagree about what an entity has. `state` is included because an instance is
+/// somewhere in its lifecycle at all times and a document that left it out would describe a thing
+/// no instance is.
+pub(crate) fn entity_fields(entity: &ResolvedEntity) -> Vec<ResolvedField> {
+    let mut out = Vec::with_capacity(entity.fields.len() + 2);
+    out.push(entity.identity.clone());
+    out.extend(entity.fields.iter().cloned());
+    out.push(entity.state_field());
+    out
+}
+
+/// The relations this entity's own fields carry, ready to publish.
+///
+/// `linked` decides whether the annotation carries a `$ref` to the target's schema, which is a fact
+/// about the document rather than about the relation: `components.schemas` holds every entity of the
+/// component, and a self-contained schema document holds none but its own.
+pub(crate) fn carried<'a>(
+    ir: &'a EssIr,
+    entity: &ResolvedEntity,
+    linked: bool,
+) -> BTreeMap<&'a str, Relation> {
+    ir.relations_carried_by(&entity.name)
+        .into_iter()
+        .map(|(field, carried)| {
+            let published = if linked {
+                Relation::linked(&carried)
+            } else {
+                Relation::of(&carried)
+            };
+            (field, published)
+        })
+        .collect()
 }
 
 /// Every named type reachable from `roots`, including the roots.

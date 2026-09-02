@@ -61,9 +61,10 @@ impl CreateInvoiceBehavior for AcceptsAnyAmount {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use billing_types::invoice::AccountId;
     use billing_types::invoice::Email;
     use billing_types::invoice::Money;
-    use billing_types::primitives::Decimal;
+    use billing_types::primitives::{Decimal, Uuid};
 
     #[test]
     fn the_corruption_accepts_the_amount_the_specification_refuses() {
@@ -72,6 +73,7 @@ mod tests {
         let mut corrupted = AcceptsAnyAmount::over(SharedInvoices::new());
         let outcome = corrupted
             .create_invoice(CreateInvoice {
+                account_id: AccountId(Uuid("00000000-0000-4000-8000-000000000001".to_owned())),
                 customer_email: Email("a@example.com".to_owned()),
                 amount: Money {
                     amount: Decimal("0.00".to_owned()),

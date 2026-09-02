@@ -48,8 +48,10 @@
 #[path = "types.rs"]
 pub(crate) mod types;
 
-use ess_compiler::ir::ResolvedType;
-use ess_compiler::refs::{CommandRef, DeclaredTypeRef, ErrorRef, EssSemanticRef, EventRef};
+use ess_compiler::ir::{ResolvedEntity, ResolvedType};
+use ess_compiler::refs::{
+    CommandRef, DeclaredTypeRef, EntityRef, ErrorRef, EssSemanticRef, EventRef,
+};
 use ess_compiler::EssIr;
 
 use crate::artifact::{Artifact, Generator};
@@ -87,7 +89,7 @@ impl Generator for JsonSchema {
     }
 
     fn describes(&self) -> &'static str {
-        "JSON Schema per command input and event payload"
+        "JSON Schema per command input, event payload and entity"
     }
 
     fn directory(&self) -> &'static str {
@@ -107,6 +109,12 @@ impl Generator for JsonSchema {
         // digest moves exactly when something this document could render moves.
         for declared in ir.types().values() {
             out.push(type_document(ir, declared, mint));
+        }
+        // An entity is not a message and is published anyway: it is the construct a relation is a
+        // fact about, and until this document existed the only tool-readable trace of an ownership
+        // was a typed id field every reader had to interpret for itself.
+        for entity in ir.entities().values() {
+            out.push(entity_document(ir, entity, mint));
         }
         for command in ir.commands().values() {
             out.push(message_document(
@@ -161,6 +169,32 @@ fn type_document(ir: &EssIr, declared: &ResolvedType, mint: &ProvenanceMint) -> 
 
     Artifact::sliced(
         format!("types/{}.schema.json", declared.name),
+        root.to_canonical_json(),
+        sliced.slice,
+    )
+}
+
+/// The document for one entity: what an instance holds, and what its fields mean.
+///
+/// The relations carry no `$ref` to their target. A document here is self-contained and keeps under
+/// `$defs` exactly the named types it reaches; a pointer at another entity's document would be a
+/// cross-file reference, which this projection refuses everywhere else and for the reason the module
+/// header gives — a tree that validates only through a correctly configured registry is a tree that
+/// does not validate in the field.
+fn entity_document(ir: &EssIr, entity: &ResolvedEntity, mint: &ProvenanceMint) -> Artifact {
+    let fields = types::entity_fields(entity);
+    let carried = Message::of_entity(entity, &fields, types::carried(ir, entity, false));
+
+    let sliced = mint.of_seeds([EntityRef::new(entity.name.clone()).into()]);
+    let root = Node {
+        dialect: Some(DIALECT),
+        provenance: Some(Attribution::new(&sliced.provenance)),
+        defs: types::definitions(ir, types::field_leaves(&fields)),
+        ..types::message(&carried)
+    };
+
+    Artifact::sliced(
+        format!("entities/{}.schema.json", entity.name),
         root.to_canonical_json(),
         sliced.slice,
     )

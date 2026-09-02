@@ -1,6 +1,6 @@
 // generated from billing v3
-// model digest 13577b3ce695932e980d418d5863bcde07f4c362516d53147870d31eaf2ed861
-// contract digest d2b48060b7ee32e8f23b1e28972fea39921a25fdcacd635fdf7bbb538e94f367
+// model digest aacdc2fe065d462cc4f9ba51e6740f88809b6b17ce006ef846b488f957005da3
+// contract digest 6ba34a27496cc918b55c749b45599c03b3016fed36487b1763268b95e0c6ffc6
 // do not edit: regenerate with `ess synthesize --target web`
 
 //! Every generated declaration, as JSON, in the renderings the published wire contracts fix.
@@ -51,6 +51,39 @@ pub fn encode_billing_email_template_id(value: &billing_types::email::TemplateId
 /// [`json::DecodeError`] naming the path and what the declaration says belongs there.
 pub fn decode_billing_email_template_id(value: &json::Value, at: &str) -> Result<billing_types::email::TemplateId, json::DecodeError> {
     Ok(billing_types::email::TemplateId(json::text_at(value, at, "a string")?.to_owned()))
+}
+
+/// Writes `billing.invoice.Account.State` as JSON.
+pub fn encode_billing_invoice_account_state(value: &billing_types::invoice::AccountState, out: &mut String) {
+    match value {
+        billing_types::invoice::AccountState::Active => json::push_text(out, "Active"),
+    }
+}
+
+/// Reads `billing.invoice.Account.State` from JSON.
+///
+/// # Errors
+///
+/// [`json::DecodeError`] naming the path and what the declaration says belongs there.
+pub fn decode_billing_invoice_account_state(value: &json::Value, at: &str) -> Result<billing_types::invoice::AccountState, json::DecodeError> {
+    Ok(match json::text_at(value, at, "one of `Active`")? {
+        "Active" => billing_types::invoice::AccountState::Active,
+        other => return Err(json::DecodeError { at: at.to_owned(), expected: "one of `Active`".to_owned(), found: format!("`{other}`") }),
+    })
+}
+
+/// Writes `billing.invoice.AccountId` as JSON.
+pub fn encode_billing_invoice_account_id(value: &billing_types::invoice::AccountId, out: &mut String) {
+    json::push_text(out, &value.0.0);
+}
+
+/// Reads `billing.invoice.AccountId` from JSON.
+///
+/// # Errors
+///
+/// [`json::DecodeError`] naming the path and what the declaration says belongs there.
+pub fn decode_billing_invoice_account_id(value: &json::Value, at: &str) -> Result<billing_types::invoice::AccountId, json::DecodeError> {
+    Ok(billing_types::invoice::AccountId(billing_types::primitives::Uuid(json::text_at(value, at, "a UUID")?.to_owned())))
 }
 
 /// Writes `billing.invoice.Channel` as JSON.
@@ -288,6 +321,8 @@ pub fn encode_event_billing_invoice_invoice_created(value: &billing_types::invoi
     out.push('{');
     json::member(out, "invoice_id");
     encode_billing_invoice_invoice_id(&value.invoice_id, out);
+    json::member(out, "account_id");
+    encode_billing_invoice_account_id(&value.account_id, out);
     json::member(out, "customer_email");
     encode_billing_invoice_email(&value.customer_email, out);
     json::member(out, "amount");
@@ -483,6 +518,8 @@ pub fn encode_outcome_billing_invoice_cancel_invoice(value: &billing_types::invo
 /// Writes the input of `billing.invoice.CreateInvoice` as JSON.
 pub fn encode_command_billing_invoice_create_invoice(value: &billing_types::invoice::CreateInvoice, out: &mut String) {
     out.push('{');
+    json::member(out, "account_id");
+    encode_billing_invoice_account_id(&value.account_id, out);
     json::member(out, "customer_email");
     encode_billing_invoice_email(&value.customer_email, out);
     json::member(out, "amount");
@@ -497,15 +534,20 @@ pub fn encode_command_billing_invoice_create_invoice(value: &billing_types::invo
 /// [`json::DecodeError`] naming the path and what the declaration says belongs there.
 pub fn decode_command_billing_invoice_create_invoice(value: &json::Value, at: &str) -> Result<billing_types::invoice::CreateInvoice, json::DecodeError> {
     Ok(billing_types::invoice::CreateInvoice {
+        account_id: {
+            let at0 = json::nested(at, "account_id");
+            let member0 = json::member_at(value, at, "account_id")?;
+            decode_billing_invoice_account_id(member0, &at0)?
+        },
         customer_email: {
-            let at0 = json::nested(at, "customer_email");
-            let member0 = json::member_at(value, at, "customer_email")?;
-            decode_billing_invoice_email(member0, &at0)?
+            let at1 = json::nested(at, "customer_email");
+            let member1 = json::member_at(value, at, "customer_email")?;
+            decode_billing_invoice_email(member1, &at1)?
         },
         amount: {
-            let at1 = json::nested(at, "amount");
-            let member1 = json::member_at(value, at, "amount")?;
-            decode_billing_invoice_money(member1, &at1)?
+            let at2 = json::nested(at, "amount");
+            let member2 = json::member_at(value, at, "amount")?;
+            decode_billing_invoice_money(member2, &at2)?
         },
     })
 }

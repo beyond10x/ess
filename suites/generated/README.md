@@ -16,7 +16,7 @@ ess conform run --suite suites/generated/billing/suite.json --target billing
 
 | suite | checks | scenarios | no scenario | generated from |
 | --- | --- | --- | --- | --- |
-| [`billing/suite.json`](billing/suite.json) | billing v3 (model digest 13577b3ce695932e980d418d5863bcde07f4c362516d53147870d31eaf2ed861, contract digest d2b48060b7ee32e8f23b1e28972fea39921a25fdcacd635fdf7bbb538e94f367) | 29 | 0 | [`examples/billing`](../../examples/billing) |
+| [`billing/suite.json`](billing/suite.json) | billing v3 (model digest aacdc2fe065d462cc4f9ba51e6740f88809b6b17ce006ef846b488f957005da3, contract digest 6ba34a27496cc918b55c749b45599c03b3016fed36487b1763268b95e0c6ffc6) | 29 | 0 | [`examples/billing`](../../examples/billing) |
 | [`gatepass/suite.json`](gatepass/suite.json) | gatepass v1 (model digest f2e0f8ff51c077fa1c713d8151544379bafac36a5a927e71c685042d53ab6e61, contract digest e6e58e055d24f8f494dcff274f55e723d967f9d1f9aea16641bb8dacbb71171e) | 12 | 5 | [`examples/gatepass`](../../examples/gatepass) |
 | [`oracle-fixture/suite.json`](oracle-fixture/suite.json) | oracle v1 (model digest 4288d50a003fa7d5b39743327880aa7e2f97ff6d9408f8a5ddb908c8b6af79ee, contract digest 9c8f1b65057d7378da54f3072e27e6bb046abd22265bbdf1c1caadb94ecaa1bd) | 31 | 6 | [`examples/oracle-fixture`](../../examples/oracle-fixture) |
 

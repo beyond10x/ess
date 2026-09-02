@@ -1,23 +1,21 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$ref": "#/$defs/billing.invoice.Channel",
+  "$ref": "#/$defs/billing.invoice.Account.State",
   "x-ess-provenance": {
     "system": "billing",
     "specification_version": "v3",
     "source_digest": "aacdc2fe065d462cc4f9ba51e6740f88809b6b17ce006ef846b488f957005da3",
-    "contract_digest": "51db53bdfed3964dc4e6444986c73a1c559a217e5e8f3b1980a70c8e8a360741",
+    "contract_digest": "a96d79d794918a19297540a5dc9a924122559023296713a920621d44f43a8601",
     "regenerate": "ess generate"
   },
   "$defs": {
-    "billing.invoice.Channel": {
-      "title": "Delivery channel",
-      "x-ess-name": "billing.invoice.Channel",
+    "billing.invoice.Account.State": {
+      "title": "State",
+      "x-ess-name": "billing.invoice.Account.State",
       "x-ess-kind": "enum",
       "type": "string",
       "enum": [
-        "Email",
-        "Post",
-        "Portal"
+        "Active"
       ]
     }
   }

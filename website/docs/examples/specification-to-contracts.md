@@ -106,7 +106,7 @@ commands:
   "x-ess-provenance": {
     "system": "billing",
     "specification_version": "v3",
-    "source_digest": "13577b3ce695932e980d418d5863bcde07f4c362516d53147870d31eaf2ed861",
+    "source_digest": "aacdc2fe065d462cc4f9ba51e6740f88809b6b17ce006ef846b488f957005da3",
     "contract_digest": "e5df34917bf15c4fee175ec02ada20cff4b051b548c7d1da47ff37d85a743822",
     "regenerate": "ess generate"
   },
@@ -210,7 +210,7 @@ A generator that invented a broker here would be inventing a decision nobody mad
 
 ## Documentation
 
-`generated/docs/domains/billing.invoice.md` renders the entity lifecycle from the declared
+`generated/docs/domains/billing-invoice.md` renders the entity lifecycle from the declared
 transitions:
 
 ```mermaid
@@ -248,5 +248,5 @@ See [Synthesize code from a specification](../guides/synthesize.md) and
 **Sources.** `examples/billing/domains/invoice.yaml`;
 `generated/schema/commands/billing.invoice.CreateInvoice.schema.json`;
 `generated/openapi/invoice-service.yaml`; `generated/asyncapi/invoice-service.yaml`;
-`generated/docs/domains/billing.invoice.md`; `Taskfile.yml` (`generate-check`, and `lab`, which
+`generated/docs/domains/billing-invoice.md`; `Taskfile.yml` (`generate-check`, and `lab`, which
 builds the module the lab runs and holds its output to `website/src/pages/lab/_run.test.mjs`).

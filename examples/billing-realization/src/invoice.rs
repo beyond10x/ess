@@ -117,6 +117,10 @@ impl InvoiceRealization {
         // because the payee is reached by one, and no signature until an issuer signs.
         let created = Invoice::new(InvoiceData {
             invoice_id: invoice_id.clone(),
+            // The account the invoice belongs to is the caller's, not this store's: the
+            // specification declares `billing.invoice.Account` owns invoices `via account_id`, so
+            // the field is filled from the request and never minted here.
+            account_id: input.account_id.clone(),
             total: input.amount.clone(),
             payee: Payee::Person(input.customer_email.clone()),
             channel: Channel::Email,
@@ -135,6 +139,7 @@ impl InvoiceRealization {
         CreateInvoiceOutcome::Accepted {
             invoice_created: InvoiceCreated {
                 invoice_id,
+                account_id: input.account_id,
                 customer_email: input.customer_email,
                 amount: input.amount,
             },
@@ -342,6 +347,9 @@ mod tests {
     fn create(realization: &mut InvoiceRealization, rendering: &str) -> CreateInvoiceOutcome {
         realization
             .create_invoice(CreateInvoice {
+                account_id: billing_types::invoice::AccountId(Uuid(
+                    "00000000-0000-4000-8000-000000000001".to_owned(),
+                )),
                 customer_email: billing_types::invoice::Email("a@example.com".to_owned()),
                 amount: money(rendering),
             })

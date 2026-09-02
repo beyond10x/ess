@@ -1,0 +1,232 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Invoice",
+  "x-ess-name": "billing.invoice.Invoice",
+  "x-ess-kind": "entity",
+  "type": "object",
+  "properties": {
+    "invoice_id": {
+      "$ref": "#/$defs/billing.invoice.InvoiceId"
+    },
+    "account_id": {
+      "$ref": "#/$defs/billing.invoice.AccountId",
+      "x-ess-relation": {
+        "name": "invoices",
+        "kind": "owns",
+        "source": "billing.invoice.Account",
+        "target": "billing.invoice.Invoice",
+        "cardinality": "many",
+        "via": "account_id"
+      }
+    },
+    "total": {
+      "$ref": "#/$defs/billing.invoice.Money"
+    },
+    "payee": {
+      "$ref": "#/$defs/billing.invoice.Payee"
+    },
+    "channel": {
+      "$ref": "#/$defs/billing.invoice.Channel"
+    },
+    "lines": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/billing.invoice.LineItem"
+      }
+    },
+    "note": {
+      "type": "string"
+    },
+    "metadata": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "string"
+      },
+      "x-ess-map-key": "String"
+    },
+    "issued_at": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "settlement_window": {
+      "type": "string",
+      "format": "duration"
+    },
+    "is_recurring": {
+      "type": "boolean"
+    },
+    "signature": {
+      "type": "string",
+      "pattern": "^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$",
+      "contentEncoding": "base64"
+    },
+    "state": {
+      "$ref": "#/$defs/billing.invoice.Invoice.State"
+    }
+  },
+  "required": [
+    "invoice_id",
+    "account_id",
+    "total",
+    "payee",
+    "channel",
+    "lines",
+    "metadata",
+    "settlement_window",
+    "is_recurring",
+    "signature",
+    "state"
+  ],
+  "additionalProperties": false,
+  "x-ess-provenance": {
+    "system": "billing",
+    "specification_version": "v3",
+    "source_digest": "aacdc2fe065d462cc4f9ba51e6740f88809b6b17ce006ef846b488f957005da3",
+    "contract_digest": "32aef9c9341397b0d6575a3cb9574369a7c8cb5337a3b68ba98675d0d26fa316",
+    "regenerate": "ess generate"
+  },
+  "$defs": {
+    "billing.invoice.AccountId": {
+      "title": "AccountId",
+      "x-ess-name": "billing.invoice.AccountId",
+      "x-ess-kind": "newtype",
+      "type": "string",
+      "format": "uuid",
+      "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$"
+    },
+    "billing.invoice.Channel": {
+      "title": "Delivery channel",
+      "x-ess-name": "billing.invoice.Channel",
+      "x-ess-kind": "enum",
+      "type": "string",
+      "enum": [
+        "Email",
+        "Post",
+        "Portal"
+      ]
+    },
+    "billing.invoice.CompanyRef": {
+      "title": "CompanyRef",
+      "x-ess-name": "billing.invoice.CompanyRef",
+      "x-ess-kind": "newtype",
+      "type": "string"
+    },
+    "billing.invoice.Email": {
+      "title": "Email",
+      "x-ess-name": "billing.invoice.Email",
+      "x-ess-kind": "newtype",
+      "type": "string"
+    },
+    "billing.invoice.Invoice.State": {
+      "title": "State",
+      "x-ess-name": "billing.invoice.Invoice.State",
+      "x-ess-kind": "enum",
+      "type": "string",
+      "enum": [
+        "Cancelled",
+        "Draft",
+        "Issued",
+        "Paid"
+      ]
+    },
+    "billing.invoice.InvoiceId": {
+      "title": "InvoiceId",
+      "x-ess-name": "billing.invoice.InvoiceId",
+      "x-ess-kind": "newtype",
+      "type": "string",
+      "format": "uuid",
+      "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$"
+    },
+    "billing.invoice.LineItem": {
+      "title": "LineItem",
+      "x-ess-name": "billing.invoice.LineItem",
+      "x-ess-kind": "struct",
+      "type": "object",
+      "properties": {
+        "description": {
+          "type": "string"
+        },
+        "quantity": {
+          "type": "integer"
+        },
+        "unit_price": {
+          "$ref": "#/$defs/billing.invoice.Money"
+        }
+      },
+      "required": [
+        "description",
+        "quantity",
+        "unit_price"
+      ],
+      "additionalProperties": false
+    },
+    "billing.invoice.Money": {
+      "title": "Money",
+      "x-ess-name": "billing.invoice.Money",
+      "x-ess-kind": "struct",
+      "type": "object",
+      "properties": {
+        "amount": {
+          "type": "string",
+          "format": "decimal",
+          "pattern": "^-?(0|[1-9][0-9]*)(\\.[0-9]+)?$"
+        },
+        "currency": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "amount",
+        "currency"
+      ],
+      "additionalProperties": false,
+      "x-ess-invariants": [
+        "amount >= 0"
+      ]
+    },
+    "billing.invoice.Payee": {
+      "title": "Payee",
+      "x-ess-name": "billing.invoice.Payee",
+      "x-ess-kind": "union",
+      "oneOf": [
+        {
+          "title": "company",
+          "type": "object",
+          "properties": {
+            "kind": {
+              "type": "string",
+              "const": "company"
+            },
+            "value": {
+              "$ref": "#/$defs/billing.invoice.CompanyRef"
+            }
+          },
+          "required": [
+            "kind",
+            "value"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "title": "person",
+          "type": "object",
+          "properties": {
+            "kind": {
+              "type": "string",
+              "const": "person"
+            },
+            "value": {
+              "$ref": "#/$defs/billing.invoice.Email"
+            }
+          },
+          "required": [
+            "kind",
+            "value"
+          ],
+          "additionalProperties": false
+        }
+      ],
+      "x-ess-union-tag": "kind"
+    }
+  }
+}

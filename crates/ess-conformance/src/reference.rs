@@ -165,6 +165,12 @@ impl Billing {
 
         let created = ObservedEvent::new(event(INVOICE_CREATED))
             .with("invoice_id", Node::Text(id))
+            // Announced from the input unchanged: `billing.invoice.Account` owns invoices by this
+            // field, so a reference implementation minting one would claim an owner nobody named.
+            .with(
+                "account_id",
+                request.input.get("account_id").cloned().unwrap_or_default(),
+            )
             .with(
                 "customer_email",
                 request

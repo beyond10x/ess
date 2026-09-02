@@ -77,7 +77,9 @@ use std::fmt;
 use ess_domain::binding::{BindingName, Delivery, Failure};
 use ess_domain::command::{OutcomeName, TestStrategy};
 use ess_domain::component::{ComponentName, Reach};
-use ess_domain::entity::{EntitySpec, Invariant, StateMachine, StateName, Transition};
+use ess_domain::entity::{
+    Cardinality, EntitySpec, Invariant, RelationKind, StateMachine, StateName, Transition,
+};
 use ess_domain::name::{Naming, QualifiedName, Version};
 use ess_domain::refs::Refs;
 use ess_domain::topology::{Replicas, Resource};
@@ -378,8 +380,49 @@ pub struct ResolvedEntity {
     pub lifecycle: StateMachine,
     /// What must hold of every instance, at rest, as predicates over its fields.
     pub invariants: Vec<Invariant>,
+    /// What it owns and what it names, in declaration order.
+    ///
+    /// Resolved: the target is an [`EntityHandle`], so a projection reading a relation cannot reach
+    /// an entity the compiler did not resolve. Which *field* carries it is not stored beside it —
+    /// the field is on the target for `owns` and on the source for `references`, and
+    /// [`EssIr::relations_carried_by`] is the one place that answers which.
+    ///
+    /// Left out of the serialised form when there are none, so that a specification declaring no
+    /// relation produces the bytes — and therefore the digests — it produced before this construct
+    /// existed. An additive construct that moves every committed artifact of every model is not
+    /// additive.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub relations: Vec<ResolvedRelation>,
     /// What it is called on the wire, and shown as.
     pub naming: Naming,
+}
+
+/// One relation an entity declares, with its target resolved.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
+pub struct ResolvedRelation {
+    /// What the relation is called — `invoices`.
+    pub name: String,
+    /// Whether the source owns the target or merely names it.
+    pub kind: RelationKind,
+    /// The entity at the other end.
+    pub target: EntityHandle,
+    /// How many of the target one source has.
+    pub cardinality: Cardinality,
+    /// The field carrying it: on the target for `owns`, on the source for `references`.
+    pub via: String,
+}
+
+/// One relation as the field carrying it sees it.
+///
+/// A relation is declared on its source, and for `owns` the field that carries it is on the
+/// *target* — so a projection annotating a property needs the source's name as well as the
+/// relation, or it publishes one end of a two-ended fact.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct CarriedRelation<'a> {
+    /// The entity that declared it.
+    pub source: &'a QualifiedName,
+    /// What it declared.
+    pub relation: &'a ResolvedRelation,
 }
 
 impl ResolvedEntity {
@@ -1276,6 +1319,41 @@ impl EssIr {
     /// Every runtime workload, by component.
     pub fn workloads(&self) -> &BTreeMap<ComponentName, ResolvedWorkload> {
         &self.workloads
+    }
+
+    /// Every relation carried by a field of `entity`, keyed by that field's name.
+    ///
+    /// The direction a projection needs, and the one the model does not store: a relation is
+    /// declared on its source, and an `owns` relation's carrying field is on its target, so an
+    /// entity cannot answer "what do my fields mean" from its own declaration alone. Computed
+    /// rather than stored for that reason — a stored copy on the target would be a second
+    /// declaration of the source's fact.
+    ///
+    /// A field carries at most one relation; `ess-domain`'s `validate_relations` refuses a second
+    /// claim on one field as a duplicate declaration, so this map loses nothing.
+    pub fn relations_carried_by(
+        &self,
+        entity: &QualifiedName,
+    ) -> BTreeMap<&str, CarriedRelation<'_>> {
+        let mut out = BTreeMap::new();
+        for source in self.entities.values() {
+            for relation in &source.relations {
+                let carrier = match relation.kind {
+                    RelationKind::Owns => relation.target.name(),
+                    RelationKind::References => &source.name,
+                };
+                if carrier == entity {
+                    out.insert(
+                        relation.via.as_str(),
+                        CarriedRelation {
+                            source: &source.name,
+                            relation,
+                        },
+                    );
+                }
+            }
+        }
+        out
     }
 
     /// Every event that causes a command, and the bindings that make it so.

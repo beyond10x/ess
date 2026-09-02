@@ -601,9 +601,10 @@ fn an_event_assertion_carries_the_declared_shape_and_exactly_the_values_the_payl
     };
     assert_eq!(
         payload.keys().map(String::as_str).collect::<Vec<_>>(),
-        vec!["amount", "customer_email"],
-        "the two determined fields and never the undetermined identity: {payload:?}"
+        vec!["account_id", "amount", "customer_email"],
+        "every field the `payload:` block determines, and never the undetermined identity —          `account_id` among them since the invoice gained the field its account owns it by:          {payload:?}"
     );
+    assert_eq!(payload["account_id"], sent("account_id"));
     assert_eq!(payload["amount"], sent("amount"));
     assert_eq!(payload["customer_email"], sent("customer_email"));
 
@@ -615,6 +616,7 @@ fn an_event_assertion_carries_the_declared_shape_and_exactly_the_values_the_payl
     assert_eq!(
         leaves,
         vec![
+            ("account_id", "a Uuid".to_owned()),
             ("amount.amount", "a Decimal".to_owned()),
             ("amount.currency", "a String".to_owned()),
             ("customer_email", "a String".to_owned()),

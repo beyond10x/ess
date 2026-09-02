@@ -78,7 +78,7 @@ $ # from actor `billing.invoice.Customer`'s `may:` list to `billing.invoice.Audi
 $ ess impact --from examples/billing --to "$NEXT" \
     --suite suites/generated/billing/suite.json | head -18
 billing v3 → v3
-  before  13577b3ce695932e980d418d5863bcde07f4c362516d53147870d31eaf2ed861
+  before  aacdc2fe065d462cc4f9ba51e6740f88809b6b17ce006ef846b488f957005da3
   after   c37415bc4c4d2dc113af19f38be2affc909fdc443fe7b080dbc4a9ef757cfab8
 
 2 change(s): 1 widening, 1 narrowing, 0 other
@@ -88,7 +88,7 @@ billing v3 → v3
   narrows  actor billing.invoice.Customer: may no longer invoke `billing.invoice.CreateInvoice`
            actor/billing.invoice.Customer/grant-removed/billing.invoice.CreateInvoice
 
-suite billing v3 (13577b3ce695932e980d418d5863bcde07f4c362516d53147870d31eaf2ed861): 7 of 29 scenario(s) owed again
+suite billing v3 (aacdc2fe065d462cc4f9ba51e6740f88809b6b17ce006ef846b488f957005da3): 7 of 29 scenario(s) owed again
 2 construct(s) reached: 2 changed, 0 depend on one directly, 0 through another
 9 of 37 generated artifact(s) owed regeneration
 

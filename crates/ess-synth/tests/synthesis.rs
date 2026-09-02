@@ -135,8 +135,8 @@ fn the_billing_plan_counts_are_pinned() {
     // must be a failing test and an approved diff, not a quietly different document.
     let plan = SynthesisPlan::of(&billing());
     let counts = plan.counts();
-    assert_eq!(plan.capabilities.len(), 45, "capabilities in total");
-    assert_eq!(counts.generated, 33, "generated capabilities");
+    assert_eq!(plan.capabilities.len(), 48, "capabilities in total");
+    assert_eq!(counts.generated, 36, "generated capabilities");
     assert_eq!(counts.obligations, 8, "obligations");
     assert_eq!(counts.refused, 4, "refusals");
 }
@@ -615,8 +615,8 @@ fn only_the_initial_state_can_be_constructed() {
     let invoice = artifact(&synthesis, "crates/billing-types/src/invoice.rs");
     assert_eq!(
         invoice.matches("pub fn new").count(),
-        1,
-        "exactly one constructor exists"
+        2,
+        "exactly one constructor per entity of this module — `Invoice` and the `Account` that owns          invoices"
     );
     assert!(
         invoice.contains("impl Invoice<invoice_state::Draft> {\n    /// A new instance"),

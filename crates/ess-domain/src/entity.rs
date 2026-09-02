@@ -590,6 +590,139 @@ impl From<RawInvariant> for Invariant {
     }
 }
 
+/// Which claim a relation makes about the entity at its other end.
+///
+/// Two kinds and no `ownership: true` flag on one kind, because the two are checked by different
+/// rules — an `owns` target has at most one owner across the whole specification and a
+/// `references` target has none — and a boolean would hide that difference behind a default.
+#[derive(
+    Debug,
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Hash,
+    serde::Serialize,
+    serde::Deserialize,
+    schemars::JsonSchema,
+)]
+#[serde(rename_all = "snake_case")]
+pub enum RelationKind {
+    /// The target belongs to the source: it has one owner, and this is it.
+    Owns,
+    /// The target is named by the source and belongs to nobody in particular.
+    References,
+}
+
+impl RelationKind {
+    /// The kind as it is written in a specification and published in a projection.
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Owns => "owns",
+            Self::References => "references",
+        }
+    }
+}
+
+impl fmt::Display for RelationKind {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(self.as_str())
+    }
+}
+
+/// How many of the target one source has.
+///
+/// On the target side only. `min`/`max` on both sides would say a second time what the carrying
+/// field's own type already says — `Optional<…>` is `0..1` and a bare id is `1..1` — and two
+/// statements of one fact are two statements that can disagree.
+#[derive(
+    Debug,
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Hash,
+    serde::Serialize,
+    serde::Deserialize,
+    schemars::JsonSchema,
+)]
+#[serde(rename_all = "snake_case")]
+pub enum Cardinality {
+    /// At most one.
+    One,
+    /// Any number.
+    Many,
+}
+
+impl Cardinality {
+    /// The cardinality as it is written in a specification and published in a projection.
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::One => "one",
+            Self::Many => "many",
+        }
+    }
+}
+
+impl fmt::Display for Cardinality {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(self.as_str())
+    }
+}
+
+/// One relation an entity declares to another.
+///
+/// Declared on the source only. Declaring it on both ends would be two statements of one fact, and
+/// the reverse direction is derivable: an `owns` target has at most one owner, so *who owns me* is
+/// a lookup rather than a declaration. `docs/design/ess-entity-relations-design-v0.1.md` §2 is the
+/// shape, and [`validate_relations`] is every rule it has to satisfy.
+#[derive(
+    Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize, schemars::JsonSchema,
+)]
+#[serde(deny_unknown_fields)]
+pub struct RelationSpec {
+    /// What the relation is called — `invoices`, `clients`.
+    ///
+    /// A name of its own rather than the target's name, because an entity may reach the same target
+    /// twice for different reasons, and because a projection needs something to call it that is not
+    /// a type.
+    #[serde(deserialize_with = "crate::types::deserialize_field_name")]
+    #[schemars(regex(pattern = "^[A-Za-z][A-Za-z0-9_]*$"))]
+    pub name: String,
+    /// Whether the source owns the target or merely names it.
+    pub kind: RelationKind,
+    /// The entity at the other end.
+    pub target: QualifiedName,
+    /// How many of the target one source has.
+    pub cardinality: Cardinality,
+    /// The field that carries the relation.
+    ///
+    /// For `owns`, a field **on the target**, typed as the source's identity. For `references`, a
+    /// field **on the source**, typed as the target's identity — wrapped in `Optional<…>` for an
+    /// optional `one`, in `List<…>` for `many`.
+    #[serde(deserialize_with = "crate::types::deserialize_field_name")]
+    #[schemars(regex(pattern = "^[A-Za-z][A-Za-z0-9_]*$"))]
+    pub via: String,
+}
+
+impl RelationSpec {
+    /// Which entity declares the field this relation is carried by.
+    ///
+    /// The target for `owns`, the source for `references`. One function rather than the same
+    /// `match` at each of the four places that asks, because getting it backwards would produce a
+    /// diagnostic pointing at the wrong document.
+    pub fn carrier<'a>(&'a self, source: &'a QualifiedName) -> &'a QualifiedName {
+        match self.kind {
+            RelationKind::Owns => &self.target,
+            RelationKind::References => source,
+        }
+    }
+}
+
 /// An entity: something with stable identity inside the domain (§4.3).
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
 pub struct EntitySpec {
@@ -605,6 +738,9 @@ pub struct EntitySpec {
     /// What it holds.
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub fields: Vec<Field>,
+    /// What it owns and what it names, checked by [`validate_relations`].
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub relations: Vec<RelationSpec>,
     /// Its lifecycle.
     #[serde(rename = "lifecycle")]
     pub states: StateMachine,
@@ -1138,6 +1274,209 @@ fn validate_instance(
     errors
 }
 
+/// Checks every declared relation against the entities it names.
+///
+/// Beside [`validate_lifecycle_causes`] and for its reason: a relation is a fact about two members,
+/// and neither of them can check it alone — the source declares it, the field that carries it may
+/// be on the target, and the rule that makes `owns` mean anything is a statement about every
+/// entity at once. `docs/design/ess-entity-relations-design-v0.1.md` §3 is the list of rules;
+/// what is refused here is exactly that list and nothing else.
+pub fn validate_relations(entities: &BTreeMap<QualifiedName, EntitySpec>) -> ValidationErrors {
+    let mut errors = ValidationErrors::new();
+    // Who has already claimed each target, and which relation has already claimed each carrying
+    // field. Both are filled in name order, because the entity map is one: the second of two
+    // claimants is reported, and the pair reads the same way on every run.
+    let mut owners: BTreeMap<&QualifiedName, &QualifiedName> = BTreeMap::new();
+    let mut first_claim: BTreeMap<(&QualifiedName, &str), &str> = BTreeMap::new();
+
+    for source in entities.values() {
+        for relation in &source.relations {
+            let at = format!("entity {}.relations.{}", source.name, relation.name);
+
+            let Some(target) = entities.get(&relation.target) else {
+                errors.push(undeclared_target(entities, source, relation, at));
+                continue;
+            };
+
+            // Set when the owner rule has already reported this relation, so the field rule does
+            // not report the same mistake twice: two entities owning one target necessarily claim
+            // one field, and one mistake is one refusal.
+            let mut reported = false;
+            if relation.kind == RelationKind::Owns {
+                if let Some(first) = owners.get(&relation.target) {
+                    reported = true;
+                    errors.push(owned_twice(first, source, relation, at.clone()));
+                } else {
+                    owners.insert(&relation.target, &source.name);
+                }
+            }
+
+            // Whichever entity declares the field that carries the relation. Named in every message
+            // below, because for an `owns` relation it is not the document the author is reading.
+            let holder = match relation.kind {
+                RelationKind::Owns => target,
+                RelationKind::References => source,
+            };
+            let Some(field) = holder.field(&relation.via) else {
+                errors.push(no_such_field(holder, source, relation, at));
+                continue;
+            };
+
+            let claimed = first_claim
+                .get(&(&holder.name, relation.via.as_str()))
+                .copied();
+            match claimed {
+                Some(first) if !reported => {
+                    errors.push(field_claimed_twice(first, holder, relation, at.clone()));
+                }
+                Some(_) => {}
+                None => {
+                    first_claim.insert((&holder.name, relation.via.as_str()), &relation.name);
+                }
+            }
+
+            let accepted = carried_types(relation, source, target);
+            if !accepted.contains(&field.type_ref) {
+                errors.push(wrong_type(&accepted, holder, field, source, relation, at));
+            }
+        }
+    }
+    errors
+}
+
+/// A relation whose target nothing declares.
+fn undeclared_target(
+    entities: &BTreeMap<QualifiedName, EntitySpec>,
+    source: &EntitySpec,
+    relation: &RelationSpec,
+    at: String,
+) -> ValidationError {
+    ValidationError::new(
+        ValidationCode::UndeclaredReference,
+        at,
+        format!(
+            "relation `{}` of `{}` targets `{}`, which is not a declared entity",
+            relation.name, source.name, relation.target
+        ),
+    )
+    .with_hint(format!(
+        "declared entities: {}",
+        names(entities.keys().map(ToString::to_string))
+    ))
+}
+
+/// A second entity claiming to own one that is already owned.
+fn owned_twice(
+    first: &QualifiedName,
+    source: &EntitySpec,
+    relation: &RelationSpec,
+    at: String,
+) -> ValidationError {
+    ValidationError::new(
+        ValidationCode::ConflictingDeclaration,
+        at,
+        format!(
+            "`{}` is owned by `{first}` as well as by `{}`, and an owned entity has one owner",
+            relation.target, source.name
+        ),
+    )
+    .with_hint(format!(
+        "`{first}` claims it already; a second claim on it is a `references` relation, or one of \
+         the two is wrong"
+    ))
+}
+
+/// A relation carried by a field the entity holding it does not declare.
+fn no_such_field(
+    holder: &EntitySpec,
+    source: &EntitySpec,
+    relation: &RelationSpec,
+    at: String,
+) -> ValidationError {
+    ValidationError::new(
+        ValidationCode::MissingDeclaration,
+        at,
+        format!(
+            "relation `{}` of `{}` is carried by `{}`, which `{}` does not declare",
+            relation.name, source.name, relation.via, holder.name
+        ),
+    )
+    .with_hint(format!(
+        "fields of `{}`: {}",
+        holder.name,
+        names(holder.fields.iter().map(|field| field.name.clone()))
+    ))
+}
+
+/// A second relation carried by a field that already carries one.
+fn field_claimed_twice(
+    first: &str,
+    holder: &EntitySpec,
+    relation: &RelationSpec,
+    at: String,
+) -> ValidationError {
+    ValidationError::new(
+        ValidationCode::DuplicateDeclaration,
+        at,
+        format!(
+            "`{}.{}` already carries the relation `{first}`, and a field carries one relation",
+            holder.name, relation.via
+        ),
+    )
+    .with_hint(format!(
+        "`{first}` claims `{}.{}` already; one relation is what that field means",
+        holder.name, relation.via
+    ))
+}
+
+/// A carrying field typed as something other than the identity the relation needs.
+fn wrong_type(
+    accepted: &[TypeRef],
+    holder: &EntitySpec,
+    field: &Field,
+    source: &EntitySpec,
+    relation: &RelationSpec,
+    at: String,
+) -> ValidationError {
+    ValidationError::new(
+        ValidationCode::TypeMismatch,
+        at,
+        format!(
+            "relation `{}` of `{}` is carried by `{}.{}`, which is typed `{}`",
+            relation.name, source.name, holder.name, field.name, field.type_ref
+        ),
+    )
+    .with_hint(format!(
+        "`{}.{}` must be typed {}",
+        holder.name,
+        field.name,
+        names(accepted.iter().map(|type_ref| format!("`{type_ref}`")))
+    ))
+}
+
+/// Every type the field carrying `relation` may have, in the order a hint should offer them.
+///
+/// One function rather than a comparison at the call site, because the rule is the design page's
+/// §2 table and a table is what it should look like: an `owns` carrier is the owner's identity
+/// unwrapped — a child has one owner whether the owner has one child or a thousand — and a
+/// `references` carrier is wrapped by whatever its cardinality means on the source side.
+fn carried_types(
+    relation: &RelationSpec,
+    source: &EntitySpec,
+    target: &EntitySpec,
+) -> Vec<TypeRef> {
+    match (relation.kind, relation.cardinality) {
+        (RelationKind::Owns, _) => vec![source.identity.type_ref.clone()],
+        (RelationKind::References, Cardinality::One) => vec![
+            target.identity.type_ref.clone(),
+            TypeRef::Optional(Box::new(target.identity.type_ref.clone())),
+        ],
+        (RelationKind::References, Cardinality::Many) => {
+            vec![TypeRef::List(Box::new(target.identity.type_ref.clone()))]
+        }
+    }
+}
+
 /// Renders a list of names for a diagnostic hint, saying so when the list is empty.
 fn names(items: impl Iterator<Item = String>) -> String {
     let rendered: Vec<String> = items.collect();
@@ -1194,6 +1533,9 @@ pub struct RawEntitySpec {
     /// What it holds.
     #[serde(default)]
     pub fields: Vec<Field>,
+    /// What it owns and what it names.
+    #[serde(default)]
+    pub relations: Vec<RelationSpec>,
     /// What must hold of every instance.
     #[serde(default)]
     pub invariants: Vec<RawInvariant>,
@@ -1219,6 +1561,7 @@ impl TryFrom<RawEntitySpec> for EntitySpec {
             name: raw.name,
             identity: raw.identity,
             fields: raw.fields,
+            relations: raw.relations,
             states: raw.states.into(),
             invariants: raw.invariants.into_iter().map(Invariant::from).collect(),
             naming: raw.naming,
@@ -2546,6 +2889,294 @@ lifecycle:
         )
         .expect("a one-state entity");
         let errors = validate_lifecycle_causes(&lifecycle(settled), &BTreeMap::new(), &events());
+        assert!(errors.is_empty(), "{errors}");
+    }
+
+    /// The owner half of the relation fixtures: an account that owns many invoices.
+    ///
+    /// A one-state lifecycle, because what these tests are about is the relation and a second state
+    /// would need a command to cause the move into it.
+    const ACCOUNT: &str = "\
+name: billing.invoice.Account
+identity:
+  name: account_id
+  type: billing.invoice.AccountId
+relations:
+  - name: invoices
+    kind: owns
+    target: billing.invoice.Invoice
+    cardinality: many
+    via: account_id
+lifecycle:
+  states: [Active]
+  initial: Active
+  terminal: [Active]
+";
+
+    /// The owned half: an invoice carrying the account's identity, which is what `via` names.
+    const OWNED_INVOICE: &str = "\
+name: billing.invoice.Invoice
+identity:
+  name: invoice_id
+  type: billing.invoice.InvoiceId
+fields:
+  - name: account_id
+    type: billing.invoice.AccountId
+lifecycle:
+  states: [Draft, Paid]
+  initial: Draft
+  terminal: [Paid]
+  transitions:
+    - name: settle
+      from: [Draft]
+      to: Paid
+";
+
+    /// Every entity a relation test population holds, keyed the way a specification keys them.
+    fn population(specs: &[&str]) -> BTreeMap<QualifiedName, EntitySpec> {
+        specs
+            .iter()
+            .map(|yaml| {
+                let spec = entity(yaml).expect("a well-formed entity");
+                (spec.name.clone(), spec)
+            })
+            .collect()
+    }
+
+    #[test]
+    fn a_relation_parses_from_the_shape_the_design_page_writes() {
+        let account = entity(ACCOUNT).expect("an account");
+        let [relation] = account.relations.as_slice() else {
+            panic!("one relation, not {}", account.relations.len());
+        };
+        assert_eq!(relation.name, "invoices");
+        assert_eq!(relation.kind, RelationKind::Owns);
+        assert_eq!(relation.target, name("billing.invoice.Invoice"));
+        assert_eq!(relation.cardinality, Cardinality::Many);
+        assert_eq!(relation.via, "account_id");
+        // The carrier of an `owns` relation is the target, and of a `references` relation the
+        // source. Getting this backwards would point every diagnostic at the wrong document.
+        assert_eq!(
+            relation.carrier(&account.name),
+            &name("billing.invoice.Invoice")
+        );
+    }
+
+    #[test]
+    fn a_key_the_relation_shape_does_not_have_is_refused_while_the_document_is_read() {
+        // `on_delete` is the one a reader is most likely to try, because it is what every ORM has
+        // and what the design page decided against for v0.1. It has to fail as a *parse* error:
+        // accepting and ignoring it would publish a deletion policy nothing enforces.
+        let error = serde_yaml::from_str::<RawEntitySpec>(&ACCOUNT.replace(
+            "    via: account_id",
+            "    via: account_id\n    on_delete: cascade",
+        ))
+        .expect_err("an undeclared key is refused");
+        assert!(
+            error.to_string().contains("on_delete"),
+            "the refusal names the key: {error}"
+        );
+    }
+
+    #[test]
+    fn a_target_no_entity_declares_is_refused_as_an_undeclared_reference() {
+        let errors = validate_relations(&population(&[
+            &ACCOUNT.replace("billing.invoice.Invoice", "billing.invoice.Invoce"),
+            OWNED_INVOICE,
+        ]));
+        let [error] = errors.as_slice() else {
+            panic!("one refusal, not {}: {errors}", errors.len());
+        };
+        assert_eq!(error.code, ValidationCode::UndeclaredReference);
+        assert_eq!(
+            error.location,
+            "entity billing.invoice.Account.relations.invoices"
+        );
+        assert!(
+            error.message.contains("billing.invoice.Invoce"),
+            "the message names the target: {error}"
+        );
+        assert!(
+            error
+                .hint
+                .as_deref()
+                .is_some_and(|hint| hint.contains("billing.invoice.Invoice")),
+            "the hint lists the entities that do exist: {error}"
+        );
+    }
+
+    #[test]
+    fn a_via_field_the_carrier_does_not_declare_is_refused_as_a_missing_declaration() {
+        // The target exists and simply has no such field, which is the common typo: `acount_id`
+        // resolves to nothing, and a relation carried by nothing is a relation nobody can follow.
+        let errors = validate_relations(&population(&[
+            &ACCOUNT.replace("via: account_id", "via: acount_id"),
+            OWNED_INVOICE,
+        ]));
+        let [error] = errors.as_slice() else {
+            panic!("one refusal, not {}: {errors}", errors.len());
+        };
+        assert_eq!(error.code, ValidationCode::MissingDeclaration);
+        assert!(
+            error.message.contains("acount_id")
+                && error.message.contains("billing.invoice.Invoice"),
+            "the message names the field and the entity it was looked for on: {error}"
+        );
+        assert!(
+            error
+                .hint
+                .as_deref()
+                .is_some_and(|hint| hint.contains("account_id")),
+            "the hint lists the fields that entity has: {error}"
+        );
+    }
+
+    #[test]
+    fn a_via_field_typed_as_something_else_is_refused_as_a_type_mismatch() {
+        // Both are a `Uuid` underneath, which is exactly the crossing a typed model exists to
+        // refuse: an invoice's own identity is not the account's.
+        let errors = validate_relations(&population(&[
+            ACCOUNT,
+            &OWNED_INVOICE.replace(
+                "    type: billing.invoice.AccountId",
+                "    type: billing.invoice.InvoiceId",
+            ),
+        ]));
+        let [error] = errors.as_slice() else {
+            panic!("one refusal, not {}: {errors}", errors.len());
+        };
+        assert_eq!(error.code, ValidationCode::TypeMismatch);
+        assert!(
+            error
+                .hint
+                .as_deref()
+                .is_some_and(|hint| hint.contains("billing.invoice.AccountId")),
+            "the hint says what the field has to be typed: {error}"
+        );
+    }
+
+    #[test]
+    fn a_references_relation_to_many_is_refused_unless_its_field_holds_many() {
+        // `many` on the source side is a `List<…>`; a single id cannot hold many, and accepting it
+        // would publish a cardinality the field contradicts.
+        let referring = "\
+name: billing.invoice.Statement
+identity:
+  name: statement_id
+  type: billing.invoice.StatementId
+fields:
+  - name: invoice_ids
+    type: billing.invoice.InvoiceId
+relations:
+  - name: invoices
+    kind: references
+    target: billing.invoice.Invoice
+    cardinality: many
+    via: invoice_ids
+lifecycle:
+  states: [Open]
+  initial: Open
+  terminal: [Open]
+";
+        let errors = validate_relations(&population(&[referring, OWNED_INVOICE]));
+        let [error] = errors.as_slice() else {
+            panic!("one refusal, not {}: {errors}", errors.len());
+        };
+        assert_eq!(error.code, ValidationCode::TypeMismatch);
+        assert!(
+            error
+                .hint
+                .as_deref()
+                .is_some_and(|hint| hint.contains("List<billing.invoice.InvoiceId>")),
+            "the hint spells the type `many` requires: {error}"
+        );
+
+        // The same relation carried by a list is accepted, so the rule is about the wrapper and not
+        // about the relation.
+        let accepted = validate_relations(&population(&[
+            &referring.replace(
+                "    type: billing.invoice.InvoiceId",
+                "    type: List<billing.invoice.InvoiceId>",
+            ),
+            OWNED_INVOICE,
+        ]));
+        assert!(accepted.is_empty(), "{accepted}");
+    }
+
+    #[test]
+    fn an_entity_two_entities_claim_to_own_is_refused_as_a_conflicting_declaration() {
+        // The rule that makes `owns` mean anything. Reported once, on the second owner in name
+        // order, because reporting it on both would make one mistake look like two.
+        let errors = validate_relations(&population(&[
+            ACCOUNT,
+            // Only the entity's own name changes: the two owners share an identity type, so each
+            // claim is well formed on its own and the pair is what contradicts.
+            &ACCOUNT.replace(
+                "name: billing.invoice.Account\n",
+                "name: billing.invoice.Ledger\n",
+            ),
+            OWNED_INVOICE,
+        ]));
+        let [error] = errors.as_slice() else {
+            panic!("one refusal, not {}: {errors}", errors.len());
+        };
+        assert_eq!(error.code, ValidationCode::ConflictingDeclaration);
+        assert_eq!(
+            error.location,
+            "entity billing.invoice.Ledger.relations.invoices"
+        );
+        assert!(
+            error
+                .hint
+                .as_deref()
+                .is_some_and(|hint| hint.contains("billing.invoice.Account")),
+            "the hint names the owner that got there first: {error}"
+        );
+    }
+
+    #[test]
+    fn two_relations_carried_by_one_field_are_refused_as_a_duplicate_declaration() {
+        // Both relations are well formed on their own: the account owns the invoice, and the
+        // invoice names the account it belongs to. Together they give `account_id` two meanings,
+        // and every projection annotating that property would have to pick one.
+        let also_referring = format!(
+            "{OWNED_INVOICE}relations:
+  - name: account
+    kind: references
+    target: billing.invoice.Account
+    cardinality: one
+    via: account_id
+"
+        );
+        let errors = validate_relations(&population(&[ACCOUNT, &also_referring]));
+        let [error] = errors.as_slice() else {
+            panic!("one refusal, not {}: {errors}", errors.len());
+        };
+        assert_eq!(error.code, ValidationCode::DuplicateDeclaration);
+        assert_eq!(
+            error.location,
+            "entity billing.invoice.Invoice.relations.account"
+        );
+        assert!(
+            error
+                .hint
+                .as_deref()
+                .is_some_and(|hint| hint.contains("invoices")),
+            "the hint names the relation that claimed the field first: {error}"
+        );
+    }
+
+    #[test]
+    fn an_entity_nobody_owns_is_not_refused() {
+        // Ownership is a claim somebody makes, not a duty every entity has: refusing an unowned
+        // entity would make a root aggregate an error.
+        let errors = validate_relations(&population(&[OWNED_INVOICE]));
+        assert!(errors.is_empty(), "{errors}");
+    }
+
+    #[test]
+    fn a_well_formed_ownership_is_accepted() {
+        let errors = validate_relations(&population(&[ACCOUNT, OWNED_INVOICE]));
         assert!(errors.is_empty(), "{errors}");
     }
 }

@@ -56,5 +56,5 @@ tree through a filesystem `replace`, so nothing here resolves over a network eit
 
 | module | generated from | generated | obligations | refused | weakened | target-refused | plan | target notes |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| [`billing/`](billing) | billing v3 (model digest 13577b3ce695932e980d418d5863bcde07f4c362516d53147870d31eaf2ed861, contract digest d2b48060b7ee32e8f23b1e28972fea39921a25fdcacd635fdf7bbb538e94f367) | 33 | 8 | 4 | 4 | 0 | [`billing/PLAN.md`](billing/PLAN.md) | [`billing/TARGET.md`](billing/TARGET.md) |
+| [`billing/`](billing) | billing v3 (model digest aacdc2fe065d462cc4f9ba51e6740f88809b6b17ce006ef846b488f957005da3, contract digest 6ba34a27496cc918b55c749b45599c03b3016fed36487b1763268b95e0c6ffc6) | 33 | 8 | 4 | 4 | 0 | [`billing/PLAN.md`](billing/PLAN.md) | [`billing/TARGET.md`](billing/TARGET.md) |
 | [`gatepass/`](gatepass) | gatepass v1 (model digest f2e0f8ff51c077fa1c713d8151544379bafac36a5a927e71c685042d53ab6e61, contract digest e6e58e055d24f8f494dcff274f55e723d967f9d1f9aea16641bb8dacbb71171e) | 22 | 5 | 2 | 5 | 0 | [`gatepass/PLAN.md`](gatepass/PLAN.md) | [`gatepass/TARGET.md`](gatepass/TARGET.md) |

@@ -81,12 +81,26 @@ fn data_struct(out: &mut String, emit: &Emit<'_>, entity: &ResolvedEntity, conte
         name::value_ident(&entity.identity.name),
         emit.rust_type(&entity.identity.type_ref)
     );
+    let carried = emit.ir.relations_carried_by(&entity.name);
     for field in &entity.fields {
+        let _ = writeln!(out, "    /// `{}` — `{}`.", field.name, field.type_ref);
+        // A doc attribute and not a typed field: a typed owner here would make the child hold the
+        // parent, which is a navigation decision the runtime owns and nothing synthesised here has
+        // a store to make good on (design §4.3).
+        if let Some(relation) = carried.get(field.name.as_str()) {
+            let _ = writeln!(
+                out,
+                "    ///\n    /// Carries `{}`: `{}` {} {} `{}`.",
+                relation.relation.name,
+                relation.source,
+                relation.relation.kind,
+                relation.relation.cardinality,
+                relation.relation.target
+            );
+        }
         let _ = writeln!(
             out,
-            "    /// `{}` — `{}`.\n    pub {}: {},",
-            field.name,
-            field.type_ref,
+            "    pub {}: {},",
             name::value_ident(&field.name),
             emit.rust_type(&field.type_ref)
         );

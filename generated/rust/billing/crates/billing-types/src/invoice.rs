@@ -1,6 +1,6 @@
 // generated from billing v3
-// model digest 13577b3ce695932e980d418d5863bcde07f4c362516d53147870d31eaf2ed861
-// contract digest d2b48060b7ee32e8f23b1e28972fea39921a25fdcacd635fdf7bbb538e94f367
+// model digest aacdc2fe065d462cc4f9ba51e6740f88809b6b17ce006ef846b488f957005da3
+// contract digest 6ba34a27496cc918b55c749b45599c03b3016fed36487b1763268b95e0c6ffc6
 // do not edit: regenerate with `ess synthesize`
 
 //! Invoicing — `billing.invoice`.
@@ -8,6 +8,20 @@
 //! Issuing invoices and tracking whether they are paid.
 //!
 //! Everything this bounded context declares that the synthesis plan marks generated.
+
+/// The states of `billing.invoice.Account`, as runtime values.
+///
+/// Synthesised from the lifecycle, so the two cannot disagree. Which *moves* are legal is not
+/// carried here — it is carried by `Account<S>`, where an undeclared move does not compile.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum AccountState {
+    /// `Active`.
+    Active,
+}
+
+/// AccountId — `billing.invoice.AccountId`: a distinct wrapper around `Uuid`.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct AccountId(pub crate::primitives::Uuid);
 
 /// Delivery channel — `billing.invoice.Channel`: one of a closed set of names.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -79,6 +93,134 @@ pub enum Payee {
     Person(Email),
 }
 
+/// What Account — `billing.invoice.Account` — holds, apart from where it is in its lifecycle.
+///
+/// The identity and every declared field. The state is deliberately not one: inside the domain it
+/// is carried by the type parameter of [`Account<S>`], and at a boundary by [`AccountSnapshot::state`].
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct AccountData {
+    /// The identity: `account_id` — `billing.invoice.AccountId`.
+    pub account_id: AccountId,
+    /// `display_name` — `String`.
+    pub display_name: String,
+}
+
+/// The states of `billing.invoice.Account`, at the type level.
+///
+/// One marker type per declared state, sealed: a state the lifecycle does not declare cannot
+/// implement [`Marker`](account_state::Marker), so [`Account<S>`](Account) can only ever rest in a real state.
+pub mod account_state {
+    /// Closes [`Marker`] over the declared states.
+    mod sealed {
+        /// Implemented only by the marker types beside this module.
+        pub trait Sealed {}
+        impl Sealed for super::Active {}
+    }
+
+    /// A declared state of `Account`, as a type.
+    pub trait Marker: sealed::Sealed {
+        /// The same state, as the runtime value.
+        const STATE: super::AccountState;
+    }
+
+    /// `Active`. Where a new instance starts.
+    pub struct Active;
+
+    impl Marker for Active {
+        const STATE: super::AccountState = super::AccountState::Active;
+    }
+}
+
+/// Account — `billing.invoice.Account` — with its lifecycle state carried by the type.
+///
+/// The one constructor rests in `Active`, and the only way to change `S` is a method generated from
+/// a declared transition. A move the specification does not declare is therefore not an error
+/// case: it does not compile. Where the state is data — wire, storage — use [`AccountSnapshot`]
+/// and [`AccountSnapshot::refine`].
+pub struct Account<S: account_state::Marker> {
+    data: AccountData,
+    state: core::marker::PhantomData<S>,
+}
+
+impl<S: account_state::Marker> Account<S> {
+    /// The state this instance rests in, as the runtime value.
+    pub fn state(&self) -> AccountState {
+        S::STATE
+    }
+
+    /// What it holds.
+    pub fn data(&self) -> &AccountData {
+        &self.data
+    }
+
+    /// Hands the data back, giving up the typed state.
+    pub fn into_data(self) -> AccountData {
+        self.data
+    }
+}
+
+impl Account<account_state::Active> {
+    /// A new instance, resting in `Active` — the only state the lifecycle starts one in.
+    pub fn new(data: AccountData) -> Self {
+        Self {
+            data,
+            state: core::marker::PhantomData,
+        }
+    }
+}
+
+/// `billing.invoice.Account` as it crosses a boundary: the state as a value beside the data.
+///
+/// Wire and storage know states only at runtime; [`AccountSnapshot::refine`] is the one door back
+/// into the typed lifecycle.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct AccountSnapshot {
+    /// Where the instance is in its lifecycle.
+    pub state: AccountState,
+    /// What it holds.
+    pub data: AccountData,
+}
+
+/// An `Account` in whichever declared state it was found.
+pub enum AnyAccount {
+    /// Resting in `Active`.
+    Active(Account<account_state::Active>),
+}
+
+impl AccountSnapshot {
+    /// Refines the runtime state into the typed one.
+    ///
+    /// Total: every declared state has an arm, and an undeclared state cannot reach here because
+    /// `AccountState` cannot spell one.
+    pub fn refine(self) -> AnyAccount {
+        match self.state {
+            AccountState::Active => AnyAccount::Active(Account {
+                data: self.data,
+                state: core::marker::PhantomData,
+            }),
+        }
+    }
+}
+
+impl AnyAccount {
+    /// The state, as the runtime value.
+    pub fn state(&self) -> AccountState {
+        match self {
+            Self::Active(_) => AccountState::Active,
+        }
+    }
+
+    /// Back to the boundary shape.
+    pub fn snapshot(self) -> AccountSnapshot {
+        match self {
+            Self::Active(instance) => AccountSnapshot {
+                state: AccountState::Active,
+                data: instance.into_data(),
+            },
+        }
+    }
+}
+
 /// What Invoice — `billing.invoice.Invoice` — holds, apart from where it is in its lifecycle.
 ///
 /// The identity and every declared field. The state is deliberately not one: inside the domain it
@@ -89,6 +231,10 @@ pub enum Payee {
 pub struct InvoiceData {
     /// The identity: `invoice_id` — `billing.invoice.InvoiceId`.
     pub invoice_id: InvoiceId,
+    /// `account_id` — `billing.invoice.AccountId`.
+    ///
+    /// Carries `invoices`: `billing.invoice.Account` owns many `billing.invoice.Invoice`.
+    pub account_id: AccountId,
     /// `total` — `billing.invoice.Money`.
     pub total: Money,
     /// `payee` — `billing.invoice.Payee`.
@@ -357,6 +503,8 @@ pub enum CancelInvoiceOutcome {
 /// Everything it can result in is [`CreateInvoiceOutcome`].
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct CreateInvoice {
+    /// `account_id` — `billing.invoice.AccountId`.
+    pub account_id: AccountId,
     /// `customer_email` — `billing.invoice.Email`.
     pub customer_email: Email,
     /// `amount` — `billing.invoice.Money`.
@@ -471,6 +619,8 @@ pub struct InvoiceCancelled {
 pub struct InvoiceCreated {
     /// `invoice_id` — `billing.invoice.InvoiceId`.
     pub invoice_id: InvoiceId,
+    /// `account_id` — `billing.invoice.AccountId`.
+    pub account_id: AccountId,
     /// `customer_email` — `billing.invoice.Email`.
     pub customer_email: Email,
     /// `amount` — `billing.invoice.Money`.

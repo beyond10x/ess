@@ -37,6 +37,8 @@ It holds:
 - `alternate_contact` — `oracle.order.Email`
 - `weight_grams` — `Integer`
 
+It declares no relation to another entity, and no other entity names it.
+
 Every instance satisfies `weight_grams >= 0` — a predicate over this entity's own fields, checked against them rather than stored as a sentence, so an invariant reading something the entity does not have is refused instead of documented.
 
 Its state is a `oracle.order.Order.State`, one of `Cancelled`, `Held`, `Placed` and `Shipped`. That enum is synthesised from the lifecycle rather than declared beside it, so the states a view's filter compares and the states drawn below cannot disagree.

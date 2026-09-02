@@ -46,7 +46,7 @@ use ess_compiler::ir::{
 };
 use ess_domain::binding::Delivery;
 use ess_domain::command::TestStrategy;
-use ess_domain::entity::{Invariant, StateMachine, StateName};
+use ess_domain::entity::{Cardinality, Invariant, RelationKind, StateMachine, StateName};
 use ess_domain::name::{Naming, QualifiedName};
 use ess_domain::refs::ExternalRef;
 use ess_domain::view::{AssertionStyle, Consistency, Direction};
@@ -709,6 +709,7 @@ fn entities_section(ir: &EssIr, domain: &ResolvedDomain, body: &mut String) {
             }
             body.push('\n');
         }
+        let _ = writeln!(body, "{}\n", relations_sentence(ir, domain, entity));
         let _ = writeln!(body, "{}\n", entity_invariants_sentence(entity));
         let _ = writeln!(body, "{}\n", state_type_sentence(entity));
         let _ = writeln!(body, "{}\n", resting_sentence(&entity.lifecycle));
@@ -724,6 +725,57 @@ fn entities_section(ir: &EssIr, domain: &ResolvedDomain, body: &mut String) {
             observed_by_sentence(ir, domain, projections.get(handle))
         );
     }
+}
+
+/// What one entity owns, what it names, and what owns it.
+///
+/// Both directions on one page, because a relation is declared on one end and read from both: a
+/// reader of the invoice wants to know whose it is, and that fact is written in the account's
+/// declaration. Nothing here is inferred — the reverse direction is a lookup over the declarations,
+/// which is what `EssIr::relations_carried_by` answers.
+fn relations_sentence(ir: &EssIr, domain: &ResolvedDomain, entity: &ResolvedEntity) -> String {
+    let mut sentences = Vec::new();
+
+    for relation in &entity.relations {
+        let target = ir.entity(&relation.target);
+        sentences.push(format!(
+            "It {} {} {}, as `{}`, carried by `{}.{}`.",
+            relation.kind,
+            match relation.cardinality {
+                Cardinality::One => "at most one",
+                Cardinality::Many => "any number of",
+            },
+            section_link(ir, domain, &target.name, &target.domain),
+            relation.name,
+            relative(
+                match relation.kind {
+                    RelationKind::Owns => &target.name,
+                    RelationKind::References => &entity.name,
+                },
+                &domain.name
+            ),
+            relation.via
+        ));
+    }
+
+    for (field, carried) in ir.relations_carried_by(&entity.name) {
+        if carried.source == &entity.name {
+            continue;
+        }
+        let source = &ir.entities()[carried.source];
+        sentences.push(format!(
+            "Its `{field}` is what {} {} it by, as `{}`.",
+            section_link(ir, domain, &source.name, &source.domain),
+            carried.relation.kind,
+            carried.relation.name
+        ));
+    }
+
+    if sentences.is_empty() {
+        return "It declares no relation to another entity, and no other entity names it."
+            .to_owned();
+    }
+    sentences.join(" ")
 }
 
 /// Every view: what it reads, which instances it holds, and how soon it holds them.

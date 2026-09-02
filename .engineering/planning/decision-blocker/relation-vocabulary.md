@@ -2,13 +2,13 @@
 format: aep.planning-md/1
 id: decision-blocker:relation-vocabulary
 kind: decision-blocker
-status: open
+status: cleared
 title: Nobody has decided the relation vocabulary
 summary: Kinds, cardinality form, direction and on_delete are open; default for silence is written in the body.
 owner: ess
 relations:
 - blocks: story:relations-in-the-domain-model
-revision: 1
+revision: 3
 ---
 # Decision blocker: Nobody has decided the relation vocabulary
 
@@ -30,3 +30,7 @@ Two kinds (`owns`, `references`); cardinality `one | many` on the target side; d
 ## What it withholds
 
 `story:relations-in-the-domain-model` cannot start without it: the parser's shape is the decision.
+
+## Decided
+
+2026-09-03: the operator accepted the default ("yes, do it" on the report that named it). Two kinds, `owns` and `references`; cardinality `one | many` on the target side; declared on the source entity only, with `owns` targets checked for a single owner; no `on_delete` in v0.1. The design page (`story:relations-design-page`) writes the shape down.

@@ -93,12 +93,17 @@ func (t *Target) create(request essconform.CommandRequest) essconform.CommandRes
 	// for a random id would put one back.
 	id := fmt.Sprintf("00000000-0000-4000-8000-%012d", t.minted)
 	email, _ := request.Input["customer_email"].(string)
+	// The account the invoice belongs to. Read from the input and announced unchanged: the
+	// specification declares `billing.invoice.Account` owns invoices by this field, so a target
+	// that minted one here would be claiming an owner nobody asked for.
+	account, _ := request.Input["account_id"].(string)
 	t.invoices[id] = &invoice{id: id, state: "Draft", email: email, amount: amount}
 
 	created := essconform.ObservedEvent{
 		Event: "billing.invoice.InvoiceCreated",
 		Payload: map[string]essconform.Node{
 			"invoice_id":     id,
+			"account_id":     account,
 			"customer_email": email,
 			"amount":         amount,
 		},

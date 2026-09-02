@@ -255,10 +255,16 @@ fn the_catalogue_carries_every_command_with_its_typed_input_and_every_declared_o
     assert_eq!(create["component"], "invoice-service");
     assert_eq!(create["dispatchable"], true);
     let input = create["input"].as_array().expect("a typed input");
-    assert_eq!(input.len(), 2);
-    assert_eq!(input[1]["name"], "amount");
-    assert_eq!(input[1]["type"]["kind"], "declared");
-    assert_eq!(input[1]["type"]["name"], "billing.invoice.Money");
+    assert_eq!(
+        input.len(),
+        3,
+        "the account it belongs to, the address, and the amount"
+    );
+    assert_eq!(input[0]["name"], "account_id");
+    assert_eq!(input[0]["type"]["name"], "billing.invoice.AccountId");
+    assert_eq!(input[2]["name"], "amount");
+    assert_eq!(input[2]["type"]["kind"], "declared");
+    assert_eq!(input[2]["type"]["name"], "billing.invoice.Money");
     let outcomes = create["outcomes"].as_array().expect("declared outcomes");
     assert_eq!(
         outcomes.len(),
@@ -290,8 +296,15 @@ fn the_public_browser_catalog_is_the_web_targets_exact_document() {
 fn the_catalogue_carries_the_lifecycle_and_says_where_instances_can_be_observed() {
     let catalog = catalog(&web());
     let entities = catalog["entities"].as_array().expect("entities");
-    assert_eq!(entities.len(), 1);
-    let invoice = &entities[0];
+    assert_eq!(
+        entities.len(),
+        2,
+        "the invoice, and the account that owns invoices"
+    );
+    let invoice = entities
+        .iter()
+        .find(|entity| entity["name"] == "billing.invoice.Invoice")
+        .expect("the invoice is in the catalogue");
     assert_eq!(invoice["initial"], "Draft");
     assert_eq!(
         invoice["transitions"]

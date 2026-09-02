@@ -327,18 +327,29 @@ fn every_reference_resolves_inside_the_document_that_makes_it() {
     let ir = billing();
 
     for (path, document) in documents(&ir) {
-        let schemas = document["components"]["schemas"]
-            .as_object()
-            .expect("schemas");
         let mut found = BTreeSet::new();
         references(&document, &mut found);
         assert!(!found.is_empty(), "{path} makes no references at all");
         for reference in found {
-            let key = reference
-                .strip_prefix("#/components/schemas/")
+            // Two tables, and a pointer names which: the contract's schemas, and the model view
+            // beside it. A third spelling is a decision about the projection, so it fails here
+            // rather than being read as one of these.
+            let (table, key) = ["components/schemas", "x-ess-entities"]
+                .into_iter()
+                .find_map(|table| {
+                    reference
+                        .strip_prefix(&format!("#/{table}/"))
+                        .map(|key| (table, key))
+                })
                 .unwrap_or_else(|| panic!("{path}: `{reference}` leaves the document"));
+            let holding = match table {
+                "x-ess-entities" => &document["x-ess-entities"],
+                _ => &document["components"]["schemas"],
+            };
             assert!(
-                schemas.contains_key(key),
+                holding
+                    .as_object()
+                    .is_some_and(|table| table.contains_key(key)),
                 "{path}: `{reference}` points at nothing"
             );
         }
@@ -368,6 +379,37 @@ fn every_schema_the_document_declares_is_pointed_at_by_something() {
                 "{path}: `{key}` is emitted and referenced by nothing"
             );
         }
+    }
+}
+
+#[test]
+fn the_entities_published_are_exactly_those_of_the_domains_the_component_owns() {
+    // The bound on the model view. A component's document describes its own surface: the aggregates
+    // its commands act on, and not the whole model's.
+    let ir = billing();
+
+    for component in ir.components().values() {
+        let expected: BTreeSet<String> = component
+            .owns
+            .iter()
+            .flat_map(|domain| &ir.domain(domain).entities)
+            .map(|handle| ir.entity(handle).name.to_string())
+            .collect();
+
+        let document = document(&ir, &component.name.to_string());
+        let published: BTreeSet<String> = document["x-ess-entities"]
+            .as_object()
+            .into_iter()
+            .flatten()
+            .filter(|(_, schema)| schema["x-ess-kind"].as_str() == Some("entity"))
+            .map(|(key, _)| key.clone())
+            .collect();
+
+        assert_eq!(
+            published, expected,
+            "`{}` publishes the entities of the domains it owns, no more and no fewer",
+            component.name
+        );
     }
 }
 
@@ -949,7 +991,7 @@ fn a_commands_input_becomes_a_closed_object_over_its_declared_fields() {
     assert_eq!(input["additionalProperties"], false);
     assert_eq!(
         input["required"],
-        serde_json::json!(["customer_email", "amount"])
+        serde_json::json!(["account_id", "customer_email", "amount"])
     );
     assert_eq!(
         input["properties"]["customer_email"]["$ref"],

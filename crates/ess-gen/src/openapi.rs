@@ -356,6 +356,7 @@ fn document(ir: &EssIr, component: &ResolvedComponent, provenance: &Provenance) 
         components: Components {
             schemas: schemas(ir, component),
         },
+        entities: entity_model(ir, component),
     }
 }
 
@@ -722,6 +723,53 @@ fn schemas(ir: &EssIr, component: &ResolvedComponent) -> BTreeMap<String, Fragme
     out
 }
 
+/// Every entity of the domains this component owns, and every named type they reach.
+///
+/// A root extension rather than `components.schemas`, and the reason is measured rather than
+/// stylistic. `components.schemas` is the half of this document `ess import openapi` reads back —
+/// the subset with a round-trip guarantee — and an entity's shape reaches constructs that subset
+/// does not carry: `billing.invoice.Invoice` alone brings a `Map` field and a tagged union, and
+/// putting them there makes this repository's own adapter refuse the document it generated —
+/// "schema must declare a reference or one supported type", on `billing.invoice.Payee`. An
+/// extension is ignored by a reader that does not know it, so the contract stays exactly what it
+/// was and the model view sits beside it.
+///
+/// Entities and the types they reach share one table, keyed by qualified name, because they share
+/// one pointer prefix: a reference inside it resolves the same way whether it names an aggregate or
+/// a value.
+fn entity_model(ir: &EssIr, component: &ResolvedComponent) -> BTreeMap<String, Fragment> {
+    let mut out: BTreeMap<String, Fragment> = BTreeMap::new();
+    let mut roots: Vec<&TypeHandle> = Vec::new();
+
+    for domain in &component.owns {
+        for handle in &ir.domain(domain).entities {
+            let entity = ir.entity(handle);
+            let fields = types::entity_fields(entity);
+            out.insert(
+                entity.name.to_string(),
+                under(
+                    &types::message(&Message::of_entity(
+                        entity,
+                        &fields,
+                        types::carried(ir, entity, true),
+                    )),
+                    MODEL,
+                ),
+            );
+            // Taken from the entity rather than from `fields`, which is a local clone: a handle
+            // borrowed from it would not outlive the loop.
+            roots.push(&entity.state_type);
+            roots.extend(entity.identity.type_ref.named_leaves());
+            roots.extend(types::field_leaves(&entity.fields));
+        }
+    }
+
+    for (name, definition) in types::definitions(ir, roots) {
+        out.insert(name, under(&definition, MODEL));
+    }
+    out
+}
+
 /// The response body for one view: the rows, under a key.
 ///
 /// An object rather than a bare array, because a bare array is a body with nowhere to put a second
@@ -943,7 +991,22 @@ pub(crate) fn under_components(node: &Node, prefix: &str) -> Fragment {
     retargeted(
         serde_yaml::to_value(node)
             .unwrap_or_else(|error| panic!("a schema fragment converts to YAML: {error}")),
+        SCHEMAS,
         prefix,
+    )
+}
+
+/// The same fragment with every pointer retargeted at a table other than `components.schemas`.
+///
+/// One table per base, and the base is the whole prefix: the model view under `x-ess-entities` is
+/// keyed by qualified name exactly as `components.schemas` is, so nothing but the first segment of
+/// the pointer differs.
+fn under(node: &Node, base: &str) -> Fragment {
+    retargeted(
+        serde_yaml::to_value(node)
+            .unwrap_or_else(|error| panic!("a schema fragment converts to YAML: {error}")),
+        base,
+        "",
     )
 }
 
@@ -954,16 +1017,16 @@ pub(crate) fn under_components(node: &Node, prefix: &str) -> Fragment {
 /// an `anyOf`, a `List` an `items` — and a type reference is at most
 /// [`MAX_TYPE_DEPTH`](ess_domain::types::MAX_TYPE_DEPTH) deep, refused there rather than here. A
 /// named type is a `$ref` into a flat table, not an inlined subtree, so nothing compounds.
-fn retargeted(fragment: Fragment, prefix: &str) -> Fragment {
+fn retargeted(fragment: Fragment, base: &str, prefix: &str) -> Fragment {
     match fragment {
         Fragment::Mapping(entries) => Fragment::Mapping(
             entries
                 .into_iter()
                 .map(|(keyword, value)| {
                     let value = if keyword.as_str() == Some(REFERENCE) {
-                        Fragment::String(reference(&format!("{prefix}{}", pointed_at(&value))))
+                        Fragment::String(format!("{base}{prefix}{}", pointed_at(&value)))
                     } else {
-                        retargeted(value, prefix)
+                        retargeted(value, base, prefix)
                     };
                     (keyword, value)
                 })
@@ -972,7 +1035,7 @@ fn retargeted(fragment: Fragment, prefix: &str) -> Fragment {
         Fragment::Sequence(items) => Fragment::Sequence(
             items
                 .into_iter()
-                .map(|item| retargeted(item, prefix))
+                .map(|item| retargeted(item, base, prefix))
                 .collect(),
         ),
         other => other,
@@ -1009,8 +1072,14 @@ fn error_key(declared: &ResolvedError) -> String {
 /// Always in-document. A qualified name contains neither `/` nor `~`, so no JSON Pointer escaping is
 /// needed and the key is the name a reader is looking for.
 fn reference(key: &str) -> String {
-    format!("#/components/schemas/{key}")
+    format!("{SCHEMAS}{key}")
 }
+
+/// Where the contract's schemas live.
+const SCHEMAS: &str = "#/components/schemas/";
+
+/// Where the model view lives: the entities of this component's domains, and what they reach.
+const MODEL: &str = "#/x-ess-entities/";
 
 /// One media type, holding one schema.
 fn content(schema: Value) -> BTreeMap<String, MediaType> {
@@ -1046,6 +1115,13 @@ struct Document {
     tags: Vec<Tag>,
     paths: BTreeMap<String, PathItem>,
     components: Components,
+    /// The model view: what this component's domains are about, beside the contract they answer.
+    ///
+    /// Last, because a reader of an `OpenAPI` document is looking for the paths and the schemas
+    /// they reference; this is the part no HTTP client needs and every reader asking *what is an
+    /// invoice* wants. [`entity_model`] carries why it is an extension.
+    #[serde(rename = "x-ess-entities", skip_serializing_if = "BTreeMap::is_empty")]
+    entities: BTreeMap<String, Fragment>,
 }
 
 /// What this document describes.

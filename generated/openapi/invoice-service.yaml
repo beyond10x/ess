@@ -1,6 +1,6 @@
 # generated from billing v3
-# model digest 13577b3ce695932e980d418d5863bcde07f4c362516d53147870d31eaf2ed861
-# contract digest 349f5a6ba27e3e94aba00b700b07454ac9f44021daa1385d6df99e9d4dc83bdd
+# model digest aacdc2fe065d462cc4f9ba51e6740f88809b6b17ce006ef846b488f957005da3
+# contract digest 7f041e2bd9b917eb25b0462f16ac30a523ae6be67577bb1b860108ce80aa3890
 # do not edit: regenerate with `ess generate`
 openapi: 3.1.0
 info:
@@ -14,8 +14,8 @@ info:
   x-ess-provenance:
     system: billing
     specification_version: v3
-    source_digest: 13577b3ce695932e980d418d5863bcde07f4c362516d53147870d31eaf2ed861
-    contract_digest: 349f5a6ba27e3e94aba00b700b07454ac9f44021daa1385d6df99e9d4dc83bdd
+    source_digest: aacdc2fe065d462cc4f9ba51e6740f88809b6b17ce006ef846b488f957005da3
+    contract_digest: 7f041e2bd9b917eb25b0462f16ac30a523ae6be67577bb1b860108ce80aa3890
 tags:
 - name: invoices
   description: Issuing invoices and tracking whether they are paid.
@@ -134,6 +134,13 @@ paths:
                 $ref: '#/components/schemas/billing.invoice.PayInvoice.rejected.Response'
 components:
   schemas:
+    billing.invoice.AccountId:
+      title: AccountId
+      x-ess-name: billing.invoice.AccountId
+      x-ess-kind: newtype
+      type: string
+      format: uuid
+      pattern: ^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$
     billing.invoice.CancelInvoice.Input:
       title: Cancel invoice input
       x-ess-name: billing.invoice.CancelInvoice
@@ -179,11 +186,14 @@ components:
       x-ess-kind: command-input
       type: object
       properties:
+        account_id:
+          $ref: '#/components/schemas/billing.invoice.AccountId'
         customer_email:
           $ref: '#/components/schemas/billing.invoice.Email'
         amount:
           $ref: '#/components/schemas/billing.invoice.Money'
       required:
+      - account_id
       - customer_email
       - amount
       additionalProperties: false
@@ -378,3 +388,198 @@ components:
       - error
       - payload
       type: object
+x-ess-entities:
+  billing.invoice.Account:
+    title: Account
+    x-ess-name: billing.invoice.Account
+    x-ess-kind: entity
+    type: object
+    properties:
+      account_id:
+        $ref: '#/x-ess-entities/billing.invoice.AccountId'
+      display_name:
+        type: string
+      state:
+        $ref: '#/x-ess-entities/billing.invoice.Account.State'
+    required:
+    - account_id
+    - display_name
+    - state
+    additionalProperties: false
+  billing.invoice.Account.State:
+    title: State
+    x-ess-name: billing.invoice.Account.State
+    x-ess-kind: enum
+    type: string
+    enum:
+    - Active
+  billing.invoice.AccountId:
+    title: AccountId
+    x-ess-name: billing.invoice.AccountId
+    x-ess-kind: newtype
+    type: string
+    format: uuid
+    pattern: ^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$
+  billing.invoice.Channel:
+    title: Delivery channel
+    x-ess-name: billing.invoice.Channel
+    x-ess-kind: enum
+    type: string
+    enum:
+    - Email
+    - Post
+    - Portal
+  billing.invoice.CompanyRef:
+    title: CompanyRef
+    x-ess-name: billing.invoice.CompanyRef
+    x-ess-kind: newtype
+    type: string
+  billing.invoice.Email:
+    title: Email
+    x-ess-name: billing.invoice.Email
+    x-ess-kind: newtype
+    type: string
+  billing.invoice.Invoice:
+    title: Invoice
+    x-ess-name: billing.invoice.Invoice
+    x-ess-kind: entity
+    type: object
+    properties:
+      invoice_id:
+        $ref: '#/x-ess-entities/billing.invoice.InvoiceId'
+      account_id:
+        $ref: '#/x-ess-entities/billing.invoice.AccountId'
+        x-ess-relation:
+          name: invoices
+          kind: owns
+          source: billing.invoice.Account
+          target: billing.invoice.Invoice
+          cardinality: many
+          via: account_id
+          $ref: '#/x-ess-entities/billing.invoice.Account'
+      total:
+        $ref: '#/x-ess-entities/billing.invoice.Money'
+      payee:
+        $ref: '#/x-ess-entities/billing.invoice.Payee'
+      channel:
+        $ref: '#/x-ess-entities/billing.invoice.Channel'
+      lines:
+        type: array
+        items:
+          $ref: '#/x-ess-entities/billing.invoice.LineItem'
+      note:
+        type: string
+      metadata:
+        type: object
+        additionalProperties:
+          type: string
+        x-ess-map-key: String
+      issued_at:
+        type: string
+        format: date-time
+      settlement_window:
+        type: string
+        format: duration
+      is_recurring:
+        type: boolean
+      signature:
+        type: string
+        pattern: ^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$
+        contentEncoding: base64
+      state:
+        $ref: '#/x-ess-entities/billing.invoice.Invoice.State'
+    required:
+    - invoice_id
+    - account_id
+    - total
+    - payee
+    - channel
+    - lines
+    - metadata
+    - settlement_window
+    - is_recurring
+    - signature
+    - state
+    additionalProperties: false
+  billing.invoice.Invoice.State:
+    title: State
+    x-ess-name: billing.invoice.Invoice.State
+    x-ess-kind: enum
+    type: string
+    enum:
+    - Cancelled
+    - Draft
+    - Issued
+    - Paid
+  billing.invoice.InvoiceId:
+    title: InvoiceId
+    x-ess-name: billing.invoice.InvoiceId
+    x-ess-kind: newtype
+    type: string
+    format: uuid
+    pattern: ^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$
+  billing.invoice.LineItem:
+    title: LineItem
+    x-ess-name: billing.invoice.LineItem
+    x-ess-kind: struct
+    type: object
+    properties:
+      description:
+        type: string
+      quantity:
+        type: integer
+      unit_price:
+        $ref: '#/x-ess-entities/billing.invoice.Money'
+    required:
+    - description
+    - quantity
+    - unit_price
+    additionalProperties: false
+  billing.invoice.Money:
+    title: Money
+    x-ess-name: billing.invoice.Money
+    x-ess-kind: struct
+    type: object
+    properties:
+      amount:
+        type: string
+        format: decimal
+        pattern: ^-?(0|[1-9][0-9]*)(\.[0-9]+)?$
+      currency:
+        type: string
+    required:
+    - amount
+    - currency
+    additionalProperties: false
+    x-ess-invariants:
+    - amount >= 0
+  billing.invoice.Payee:
+    title: Payee
+    x-ess-name: billing.invoice.Payee
+    x-ess-kind: union
+    oneOf:
+    - title: company
+      type: object
+      properties:
+        kind:
+          type: string
+          const: company
+        value:
+          $ref: '#/x-ess-entities/billing.invoice.CompanyRef'
+      required:
+      - kind
+      - value
+      additionalProperties: false
+    - title: person
+      type: object
+      properties:
+        kind:
+          type: string
+          const: person
+        value:
+          $ref: '#/x-ess-entities/billing.invoice.Email'
+      required:
+      - kind
+      - value
+      additionalProperties: false
+    x-ess-union-tag: kind

@@ -1,7 +1,7 @@
 <!--
 generated from billing v3
-model digest 13577b3ce695932e980d418d5863bcde07f4c362516d53147870d31eaf2ed861
-contract digest d2b48060b7ee32e8f23b1e28972fea39921a25fdcacd635fdf7bbb538e94f367
+model digest aacdc2fe065d462cc4f9ba51e6740f88809b6b17ce006ef846b488f957005da3
+contract digest 6ba34a27496cc918b55c749b45599c03b3016fed36487b1763268b95e0c6ffc6
 do not edit: regenerate with `ess generate`
 -->
 
@@ -9,9 +9,13 @@ do not edit: regenerate with `ess generate`
 
 Issuing invoices and tracking whether they are paid.
 
-`billing.invoice` is one of billing's bounded contexts. [Back to the index](../README.md).
+`billing.invoice` is one of billing's bounded contexts. [Back to the index](../index.md).
 
 ## Types
+
+### `AccountId`
+
+`billing.invoice.AccountId` wraps `Uuid` and is not interchangeable with one: the whole value of naming it separately is the crossings the model then refuses.
 
 ### `Channel`
 
@@ -59,6 +63,36 @@ Every value satisfies `amount >= 0`.
 
 An entity is what this context is about: something with an identity that outlives any one request, a shape, and a lifecycle. The lifecycle is exhaustive — a move that is not drawn below is a move this specification does not permit, and that is the only way it says so. Every move is labelled with the command that takes it, because a move nothing can trigger is refused rather than drawn.
 
+### `Account`
+
+`billing.invoice.Account`.
+
+An instance is identified by `account_id`, a `billing.invoice.AccountId`. The name is part of the model and not a convention: a view projects the identity under that name, so a projection inventing its own would disagree with the view.
+
+It holds:
+
+- `display_name` — `String`
+
+It owns any number of [`Invoice`](#invoice), as `invoices`, carried by `Invoice.account_id`.
+
+No invariant is declared, so nothing here constrains an instance at rest.
+
+Its state is a `billing.invoice.Account.State`, one of `Active`. That enum is synthesised from the lifecycle rather than declared beside it, so the states a view's filter compares and the states drawn below cannot disagree.
+
+An instance is created in `Active`. `Active` is terminal, so an instance may rest there forever. That is declared rather than inferred from having no way out: an entity that cannot leave a state is either finished or stuck, and only its author knows which.
+
+```mermaid
+stateDiagram-v2
+    [*] --> Active
+    Active --> [*]
+```
+
+It declares no moves, so nothing changes its state once it exists.
+
+It has one state, so there is no move to permit or to forbid.
+
+No view projects it, so nothing outside this context is promised a way to observe one.
+
 ### `Invoice`
 
 `billing.invoice.Invoice`.
@@ -67,6 +101,7 @@ An instance is identified by `invoice_id`, a `billing.invoice.InvoiceId`. The na
 
 It holds:
 
+- `account_id` — `billing.invoice.AccountId`
 - `total` — `billing.invoice.Money`
 - `payee` — `billing.invoice.Payee`
 - `channel` — `billing.invoice.Channel`
@@ -77,6 +112,8 @@ It holds:
 - `settlement_window` — `Duration`
 - `is_recurring` — `Boolean`
 - `signature` — `Bytes`
+
+Its `account_id` is what [`Account`](#account) owns it by, as `invoices`.
 
 Every instance satisfies `total.amount >= 0` — a predicate over this entity's own fields, checked against them rather than stored as a sentence, so an invariant reading something the entity does not have is refused instead of documented.
 
@@ -133,6 +170,8 @@ It exposes:
 - `invoice_id` — `billing.invoice.InvoiceId`
 - `total` — `billing.invoice.Money`
 
+It declares no order, so the rows come back in whatever order the implementation has, and two reads may disagree.
+
 **Eventual**: it catches up some time after the command returns, so a caller that reads it immediately may legitimately not see its own write yet. Nothing here says how long that takes, so nothing here lets a caller wait a fixed time and call it correct.
 
 A generated scenario therefore retries the assertion until the projection catches up, rather than asserting once and racing it. The repair everyone reaches for instead is a sleep, which turns the suite into a test of the machine it runs on.
@@ -149,6 +188,8 @@ It exposes:
 
 - `invoice_id` — `billing.invoice.InvoiceId`
 - `total` — `billing.invoice.Money`
+
+It declares no order, so the rows come back in whatever order the implementation has, and two reads may disagree.
 
 **Read-your-writes**: it is current the moment the command that changed it returns. A caller that has just created an invoice and cannot see it in here has been told a lie about what it did.
 
@@ -176,6 +217,7 @@ It has two outcomes.
 
 It takes:
 
+- `account_id` — `billing.invoice.AccountId`
 - `customer_email` — `billing.invoice.Email`
 - `amount` — `billing.invoice.Money`
 
@@ -237,6 +279,7 @@ Nothing in this system reacts to it.
 It carries:
 
 - `invoice_id` — `billing.invoice.InvoiceId`
+- `account_id` — `billing.invoice.AccountId`
 - `customer_email` — `billing.invoice.Email`
 - `amount` — `billing.invoice.Money`
 
@@ -326,4 +369,4 @@ Every crossing in the system is on one page: [Type crossings](../crossings.md).
 
 ---
 
-Generated from billing v3 · model digest `13577b3ce695932e980d418d5863bcde07f4c362516d53147870d31eaf2ed861` · contract digest `d2b48060b7ee32e8f23b1e28972fea39921a25fdcacd635fdf7bbb538e94f367`. Do not edit this file; change the specification and regenerate it with `ess generate`.
+Generated from billing v3 · model digest `aacdc2fe065d462cc4f9ba51e6740f88809b6b17ce006ef846b488f957005da3` · contract digest `6ba34a27496cc918b55c749b45599c03b3016fed36487b1763268b95e0c6ffc6`. Do not edit this file; change the specification and regenerate it with `ess generate`.

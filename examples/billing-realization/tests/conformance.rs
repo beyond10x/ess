@@ -27,8 +27,9 @@ use billing_realization::invoice::positive;
 use billing_realization::linker::{self, Assembled};
 use billing_system::{BindingInvocation, SystemEvent};
 use billing_types::invoice::{
-    CancelInvoice, CancelInvoiceOutcome, CreateInvoice, CreateInvoiceOutcome, Email, InvoiceId,
-    InvoiceState, IssueInvoice, IssueInvoiceOutcome, Money, PayInvoice, PayInvoiceOutcome,
+    AccountId, CancelInvoice, CancelInvoiceOutcome, CreateInvoice, CreateInvoiceOutcome, Email,
+    InvoiceId, InvoiceState, IssueInvoice, IssueInvoiceOutcome, Money, PayInvoice,
+    PayInvoiceOutcome,
 };
 use billing_types::primitives::{Decimal, Uuid};
 use ess_conformance::report::{ConformanceStatus, Status};
@@ -320,6 +321,7 @@ fn create_invoice(
     request: &SemanticCommandRequest,
 ) -> Result<SemanticCommandResult, TargetError> {
     let input = CreateInvoice {
+        account_id: AccountId(Uuid(text_input(request, "account_id")?)),
         customer_email: Email(text_input(request, "customer_email")?),
         amount: money_input(request, "amount")?,
     };
@@ -335,6 +337,10 @@ fn create_invoice(
                 .with(
                     "invoice_id",
                     Node::Text(invoice_created.invoice_id.0 .0.clone()),
+                )
+                .with(
+                    "account_id",
+                    Node::Text(invoice_created.account_id.0 .0.clone()),
                 )
                 .with(
                     "customer_email",

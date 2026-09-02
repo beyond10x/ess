@@ -359,7 +359,7 @@ fn field_name(value: &str) -> Result<String, ParseError> {
 
 /// Serde entry point for [`field_name`], so a name nothing could generate is refused while the
 /// document is read rather than surviving into the model.
-fn deserialize_field_name<'de, D: serde::Deserializer<'de>>(
+pub(crate) fn deserialize_field_name<'de, D: serde::Deserializer<'de>>(
     deserializer: D,
 ) -> Result<String, D::Error> {
     let raw = <String as serde::Deserialize>::deserialize(deserializer)?;

@@ -3,8 +3,8 @@
     "suite_version": "ess-conformance/1",
     "system": "billing",
     "specification_version": "v3",
-    "spec_digest": "13577b3ce695932e980d418d5863bcde07f4c362516d53147870d31eaf2ed861",
-    "contract_digest": "d2b48060b7ee32e8f23b1e28972fea39921a25fdcacd635fdf7bbb538e94f367"
+    "spec_digest": "aacdc2fe065d462cc4f9ba51e6740f88809b6b17ce006ef846b488f957005da3",
+    "contract_digest": "6ba34a27496cc918b55c749b45599c03b3016fed36487b1763268b95e0c6ffc6"
   },
   "scenarios": {
     "billing.email.SendEmail/outcome/failed": {
@@ -237,6 +237,10 @@
           "command": "billing.invoice.CreateInvoice",
           "actor": "billing.invoice.Customer",
           "input": {
+            "account_id": {
+              "kind": "literal",
+              "value": "00000000-0000-4000-8000-67229bae00fc"
+            },
             "amount": {
               "kind": "literal",
               "value": {
@@ -415,6 +419,10 @@
           "command": "billing.invoice.CreateInvoice",
           "actor": "billing.invoice.Customer",
           "input": {
+            "account_id": {
+              "kind": "literal",
+              "value": "00000000-0000-4000-8000-67229bae00fc"
+            },
             "amount": {
               "kind": "literal",
               "value": {
@@ -439,6 +447,7 @@
           "step": "expect_event",
           "event": "billing.invoice.InvoiceCreated",
           "payload": {
+            "account_id": "00000000-0000-4000-8000-67229bae00fc",
             "amount": {
               "amount": 1.0,
               "currency": "amount.currency"
@@ -446,6 +455,10 @@
             "customer_email": "customer_email"
           },
           "shape": {
+            "account_id": {
+              "holds": "primitive",
+              "kind": "uuid"
+            },
             "amount.amount": {
               "holds": "primitive",
               "kind": "decimal"
@@ -520,6 +533,10 @@
       "source": [
         {
           "kind": "type",
+          "name": "billing.invoice.AccountId"
+        },
+        {
+          "kind": "type",
           "name": "billing.invoice.Email"
         },
         {
@@ -591,6 +608,10 @@
           "command": "billing.invoice.CreateInvoice",
           "actor": "billing.invoice.Customer",
           "input": {
+            "account_id": {
+              "kind": "literal",
+              "value": "00000000-0000-4000-8000-67229bae00fc"
+            },
             "amount": {
               "kind": "literal",
               "value": {
@@ -641,6 +662,10 @@
         }
       ],
       "source": [
+        {
+          "kind": "type",
+          "name": "billing.invoice.AccountId"
+        },
         {
           "kind": "type",
           "name": "billing.invoice.Email"
@@ -702,6 +727,10 @@
           "command": "billing.invoice.CreateInvoice",
           "actor": "billing.invoice.Customer",
           "input": {
+            "account_id": {
+              "kind": "literal",
+              "value": "00000000-0000-4000-8000-67229bae00fc"
+            },
             "amount": {
               "kind": "literal",
               "value": {
@@ -804,6 +833,10 @@
           "command": "billing.invoice.CreateInvoice",
           "actor": "billing.invoice.Customer",
           "input": {
+            "account_id": {
+              "kind": "literal",
+              "value": "00000000-0000-4000-8000-67229bae00fc"
+            },
             "amount": {
               "kind": "literal",
               "value": {
@@ -834,6 +867,10 @@
         }
       ],
       "source": [
+        {
+          "kind": "type",
+          "name": "billing.invoice.AccountId"
+        },
         {
           "kind": "type",
           "name": "billing.invoice.Email"
@@ -875,6 +912,10 @@
           "command": "billing.invoice.CreateInvoice",
           "actor": "billing.invoice.Customer",
           "input": {
+            "account_id": {
+              "kind": "literal",
+              "value": "00000000-0000-4000-8000-67229bae00fc"
+            },
             "amount": {
               "kind": "literal",
               "value": {
@@ -993,6 +1034,10 @@
           "command": "billing.invoice.CreateInvoice",
           "actor": "billing.invoice.Customer",
           "input": {
+            "account_id": {
+              "kind": "literal",
+              "value": "00000000-0000-4000-8000-67229bae00fc"
+            },
             "amount": {
               "kind": "literal",
               "value": {
@@ -1134,6 +1179,10 @@
           "command": "billing.invoice.CreateInvoice",
           "actor": "billing.invoice.Customer",
           "input": {
+            "account_id": {
+              "kind": "literal",
+              "value": "00000000-0000-4000-8000-67229bae00fc"
+            },
             "amount": {
               "kind": "literal",
               "value": {
@@ -1296,6 +1345,10 @@
           "command": "billing.invoice.CreateInvoice",
           "actor": "billing.invoice.Customer",
           "input": {
+            "account_id": {
+              "kind": "literal",
+              "value": "00000000-0000-4000-8000-67229bae00fc"
+            },
             "amount": {
               "kind": "literal",
               "value": {
@@ -1469,6 +1522,10 @@
           "command": "billing.invoice.CreateInvoice",
           "actor": "billing.invoice.Customer",
           "input": {
+            "account_id": {
+              "kind": "literal",
+              "value": "00000000-0000-4000-8000-67229bae00fc"
+            },
             "amount": {
               "kind": "literal",
               "value": {
@@ -1649,6 +1706,10 @@
           "command": "billing.invoice.CreateInvoice",
           "actor": "billing.invoice.Customer",
           "input": {
+            "account_id": {
+              "kind": "literal",
+              "value": "00000000-0000-4000-8000-67229bae00fc"
+            },
             "amount": {
               "kind": "literal",
               "value": {
@@ -1801,6 +1862,10 @@
           "command": "billing.invoice.CreateInvoice",
           "actor": "billing.invoice.Customer",
           "input": {
+            "account_id": {
+              "kind": "literal",
+              "value": "00000000-0000-4000-8000-67229bae00fc"
+            },
             "amount": {
               "kind": "literal",
               "value": {
@@ -1963,6 +2028,10 @@
           "command": "billing.invoice.CreateInvoice",
           "actor": "billing.invoice.Customer",
           "input": {
+            "account_id": {
+              "kind": "literal",
+              "value": "00000000-0000-4000-8000-67229bae00fc"
+            },
             "amount": {
               "kind": "literal",
               "value": {
@@ -2171,6 +2240,10 @@
           "command": "billing.invoice.CreateInvoice",
           "actor": "billing.invoice.Customer",
           "input": {
+            "account_id": {
+              "kind": "literal",
+              "value": "00000000-0000-4000-8000-67229bae00fc"
+            },
             "amount": {
               "kind": "literal",
               "value": {
@@ -2368,6 +2441,10 @@
           "command": "billing.invoice.CreateInvoice",
           "actor": "billing.invoice.Customer",
           "input": {
+            "account_id": {
+              "kind": "literal",
+              "value": "00000000-0000-4000-8000-67229bae00fc"
+            },
             "amount": {
               "kind": "literal",
               "value": {
@@ -2572,6 +2649,10 @@
           "command": "billing.invoice.CreateInvoice",
           "actor": "billing.invoice.Customer",
           "input": {
+            "account_id": {
+              "kind": "literal",
+              "value": "00000000-0000-4000-8000-67229bae00fc"
+            },
             "amount": {
               "kind": "literal",
               "value": {
@@ -2750,6 +2831,10 @@
           "command": "billing.invoice.CreateInvoice",
           "actor": "billing.invoice.Customer",
           "input": {
+            "account_id": {
+              "kind": "literal",
+              "value": "00000000-0000-4000-8000-67229bae00fc"
+            },
             "amount": {
               "kind": "literal",
               "value": {
@@ -2928,6 +3013,10 @@
           "command": "billing.invoice.CreateInvoice",
           "actor": "billing.invoice.Customer",
           "input": {
+            "account_id": {
+              "kind": "literal",
+              "value": "00000000-0000-4000-8000-67229bae00fc"
+            },
             "amount": {
               "kind": "literal",
               "value": {
@@ -3159,6 +3248,10 @@
           "command": "billing.invoice.CreateInvoice",
           "actor": "billing.invoice.Customer",
           "input": {
+            "account_id": {
+              "kind": "literal",
+              "value": "00000000-0000-4000-8000-67229bae00fc"
+            },
             "amount": {
               "kind": "literal",
               "value": {
@@ -3337,6 +3430,10 @@
           "command": "billing.invoice.CreateInvoice",
           "actor": "billing.invoice.Customer",
           "input": {
+            "account_id": {
+              "kind": "literal",
+              "value": "00000000-0000-4000-8000-67229bae00fc"
+            },
             "amount": {
               "kind": "literal",
               "value": {
@@ -3443,6 +3540,10 @@
           "command": "billing.invoice.CreateInvoice",
           "actor": "billing.invoice.Customer",
           "input": {
+            "account_id": {
+              "kind": "literal",
+              "value": "00000000-0000-4000-8000-67229bae00fc"
+            },
             "amount": {
               "kind": "literal",
               "value": {
@@ -3659,6 +3760,10 @@
           "command": "billing.invoice.CreateInvoice",
           "actor": "billing.invoice.Customer",
           "input": {
+            "account_id": {
+              "kind": "literal",
+              "value": "00000000-0000-4000-8000-67229bae00fc"
+            },
             "amount": {
               "kind": "literal",
               "value": {
@@ -3890,6 +3995,10 @@
           "command": "billing.invoice.CreateInvoice",
           "actor": "billing.invoice.Customer",
           "input": {
+            "account_id": {
+              "kind": "literal",
+              "value": "00000000-0000-4000-8000-67229bae00fc"
+            },
             "amount": {
               "kind": "literal",
               "value": {
@@ -3914,6 +4023,10 @@
           "step": "expect_event",
           "event": "billing.invoice.InvoiceCreated",
           "shape": {
+            "account_id": {
+              "holds": "primitive",
+              "kind": "uuid"
+            },
             "amount.amount": {
               "holds": "primitive",
               "kind": "decimal"
@@ -3959,6 +4072,10 @@
         {
           "kind": "type",
           "name": "billing.email.MessageId"
+        },
+        {
+          "kind": "type",
+          "name": "billing.invoice.AccountId"
         },
         {
           "kind": "type",
@@ -4028,6 +4145,10 @@
           "command": "billing.invoice.CreateInvoice",
           "actor": "billing.invoice.Customer",
           "input": {
+            "account_id": {
+              "kind": "literal",
+              "value": "00000000-0000-4000-8000-67229bae00fc"
+            },
             "amount": {
               "kind": "literal",
               "value": {
@@ -4052,6 +4173,10 @@
           "step": "expect_event",
           "event": "billing.invoice.InvoiceCreated",
           "shape": {
+            "account_id": {
+              "holds": "primitive",
+              "kind": "uuid"
+            },
             "amount.amount": {
               "holds": "primitive",
               "kind": "decimal"
@@ -4093,6 +4218,10 @@
         {
           "kind": "type",
           "name": "billing.email.MessageId"
+        },
+        {
+          "kind": "type",
+          "name": "billing.invoice.AccountId"
         },
         {
           "kind": "type",
@@ -4162,6 +4291,10 @@
           "command": "billing.invoice.CreateInvoice",
           "actor": "billing.invoice.Customer",
           "input": {
+            "account_id": {
+              "kind": "literal",
+              "value": "00000000-0000-4000-8000-67229bae00fc"
+            },
             "amount": {
               "kind": "literal",
               "value": {
@@ -4186,6 +4319,10 @@
           "step": "expect_event",
           "event": "billing.invoice.InvoiceCreated",
           "shape": {
+            "account_id": {
+              "holds": "primitive",
+              "kind": "uuid"
+            },
             "amount.amount": {
               "holds": "primitive",
               "kind": "decimal"
@@ -4229,6 +4366,10 @@
         {
           "kind": "type",
           "name": "billing.email.TemplateId"
+        },
+        {
+          "kind": "type",
+          "name": "billing.invoice.AccountId"
         },
         {
           "kind": "type",
@@ -4290,6 +4431,10 @@
           "command": "billing.invoice.CreateInvoice",
           "actor": "billing.invoice.Customer",
           "input": {
+            "account_id": {
+              "kind": "literal",
+              "value": "00000000-0000-4000-8000-67229bae00fc"
+            },
             "amount": {
               "kind": "literal",
               "value": {
@@ -4314,6 +4459,10 @@
           "step": "expect_event",
           "event": "billing.invoice.InvoiceCreated",
           "shape": {
+            "account_id": {
+              "holds": "primitive",
+              "kind": "uuid"
+            },
             "amount.amount": {
               "holds": "primitive",
               "kind": "decimal"
@@ -4348,6 +4497,10 @@
         }
       ],
       "source": [
+        {
+          "kind": "type",
+          "name": "billing.invoice.AccountId"
+        },
         {
           "kind": "type",
           "name": "billing.invoice.Email"

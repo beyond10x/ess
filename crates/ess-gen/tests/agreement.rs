@@ -169,6 +169,9 @@ const EVENT_PAYLOAD: &str = "event payload";
 /// What an error carries.
 const ERROR_PAYLOAD: &str = "error payload";
 
+/// What an instance of an entity holds.
+const ENTITY: &str = "entity";
+
 /// Something a projection publishes a schema for.
 ///
 /// Keyed by kind as well as by name, because the model's names are unique per kind and not across
@@ -250,9 +253,11 @@ fn compact(value: &Value) -> String {
 }
 
 /// The three pointer spellings, the longest first so `asyncapi`'s is not read as `openapi`'s.
-const POINTERS: [&str; 3] = [
+const POINTERS: [&str; 4] = [
     "#/components/schemas/type.",
     "#/components/schemas/",
+    // `openapi`'s model view, which is keyed by qualified name exactly as its contract table is.
+    "#/x-ess-entities/",
     "#/$defs/",
 ];
 
@@ -283,6 +288,7 @@ fn normalised(fragment: &Value) -> Value {
         Value::Object(fields) => Value::Object(
             fields
                 .iter()
+                .filter(|(keyword, _)| keyword.as_str() != "$ref" || !inside_relation(fields))
                 .map(|(keyword, value)| {
                     let value = if keyword == "$ref" {
                         Value::String(resolved(value))
@@ -296,6 +302,23 @@ fn normalised(fragment: &Value) -> Value {
         Value::Array(items) => Value::Array(items.iter().map(normalised).collect()),
         other => other.clone(),
     }
+}
+
+/// Whether this object is a published relation, whose `$ref` is a fact about the document.
+///
+/// `x-ess-relation` names its target under `target`, in every projection, and *additionally* links
+/// to the target's schema where the document publishing it has one — `components.schemas` holds
+/// every entity of a component, a self-contained schema document holds none but its own. That link
+/// is dropped before comparing, and the model facts beside it are compared as strictly as
+/// everything else. Dropping the whole keyword would have been the easy thing and the wrong one:
+/// the fact this construct exists to publish would then be the one fact nothing checks.
+///
+/// Recognised by the keys a relation always has rather than by remembering the parent keyword while
+/// recursing: an object carrying all of them is a relation, and nothing else in these documents is.
+fn inside_relation(fields: &serde_json::Map<String, Value>) -> bool {
+    ["cardinality", "kind", "source", "target", "via"]
+        .iter()
+        .all(|key| fields.contains_key(*key))
 }
 
 /// The keywords that change which bytes a document accepts.
@@ -328,7 +351,7 @@ const ASSERTIONS: [&str; 14] = [
 /// Compared exactly as strictly as [`ASSERTIONS`]. The argument is in this file's module
 /// documentation: each of these is a fact the *model* states, not a fact about the document carrying
 /// it, and one fact with two spellings is drift.
-const ANNOTATIONS: [&str; 8] = [
+const ANNOTATIONS: [&str; 9] = [
     "description",
     "title",
     "x-ess-field",
@@ -336,11 +359,20 @@ const ANNOTATIONS: [&str; 8] = [
     "x-ess-kind",
     "x-ess-map-key",
     "x-ess-name",
+    "x-ess-relation",
     "x-ess-union-tag",
 ];
 
 /// The keyword whose children are property names rather than keywords.
 const PROPERTIES: &str = "properties";
+
+/// The keyword whose children are its own fields rather than keywords.
+///
+/// `x-ess-relation` publishes one value with a fixed shape — the relation — the way
+/// `x-ess-provenance` publishes one record. Walking into it would report `target` and `via` as
+/// keywords a projection had invented, which is the opposite of what this taxonomy is for: they are
+/// the annotation's content, and the annotation itself is classified once, by name.
+const RELATION: &str = "x-ess-relation";
 
 /// What a difference at one keyword costs.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
@@ -568,6 +600,10 @@ fn message_construct(document: &Value) -> Option<Construct> {
     let name = document.get("x-ess-name")?.as_str()?;
     let kind = match document.get("x-ess-kind")?.as_str()? {
         "command-input" => COMMAND_INPUT,
+        // Published by `schema` and by `openapi`, and by `asyncapi` deliberately not: an entity is
+        // not something a channel carries, and an event that announces one already publishes its
+        // own payload.
+        "entity" => ENTITY,
         "event-payload" => EVENT_PAYLOAD,
         "error-payload" => ERROR_PAYLOAD,
         other => panic!(
@@ -605,7 +641,29 @@ fn published_by_openapi(ir: &EssIr) -> Published {
             Construct::new(ERROR_PAYLOAD, name.to_string()),
         );
     }
-    under_components(&OpenApi, "openapi", ir, &wanted)
+    let mut published = under_components(&OpenApi, "openapi", ir, &wanted);
+
+    // The model view, beside the contract. Harvested so that an entity published by both
+    // projections is compared by both, which is the whole point of this file — `openapi.rs` keeps
+    // it out of `components.schemas` because `ess import openapi` reads that table back and an
+    // entity's shape reaches constructs its subset does not carry.
+    for (path, artifact) in artifacts(&OpenApi, ir) {
+        let document: Value = serde_yaml::from_str(&artifact.contents)
+            .unwrap_or_else(|error| panic!("{path} is YAML: {error}"));
+        for (key, fragment) in document["x-ess-entities"]
+            .as_object()
+            .into_iter()
+            .flatten()
+            .filter(|(_, fragment)| fragment["x-ess-kind"] == "entity")
+        {
+            published.record(
+                Construct::new(ENTITY, key.clone()),
+                normalised(fragment),
+                &path,
+            );
+        }
+    }
+    published
 }
 
 /// What the `asyncapi` projection publishes, per construct.
@@ -786,7 +844,7 @@ fn collect_keywords(fragment: &Value, into: &mut BTreeSet<String>) {
                     for schema in value.as_object().into_iter().flatten().map(|(_, it)| it) {
                         collect_keywords(schema, into);
                     }
-                } else {
+                } else if keyword != RELATION {
                     collect_keywords(value, into);
                 }
             }

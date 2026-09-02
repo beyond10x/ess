@@ -244,7 +244,10 @@ fn a_scenario_whose_input_no_longer_reaches_its_branch_fails_with_a_diagnostic_n
         "billing.invoice.CreateInvoice/outcome/rejected",
         "a command takes the declared branch its guards select",
         "outcome billing.invoice.CreateInvoice/rejected",
-        r#"billing.invoice.CreateInvoice(amount = {"amount":1.0"#,
+        // The input, rendered in field order. `account_id` leads it since the billing example
+        // gained the ownership relation the invoice carries.
+        r"billing.invoice.CreateInvoice(account_id = ",
+        r#"amount = {"amount":1.0"#,
         "expected:\n  outcome = rejected",
         "observed:\n  outcome = accepted",
     ] {

@@ -186,10 +186,18 @@ fn keywords(node: &Value, into: &mut std::collections::BTreeSet<String>) {
             for (name, value) in members {
                 into.insert(name.clone());
                 // Descend only where a schema can be, so a property or a definition *named* `type`
-                // is not mistaken for the keyword.
+                // is not mistaken for the keyword. `x-ess-relation` is here for the reason
+                // `x-ess-provenance` is: it publishes one record with a fixed shape, and its own
+                // fields are that record's content rather than keywords a projection invented.
                 if matches!(
                     name.as_str(),
-                    "$defs" | "properties" | "$ref" | "const" | "enum" | "x-ess-provenance"
+                    "$defs"
+                        | "properties"
+                        | "$ref"
+                        | "const"
+                        | "enum"
+                        | "x-ess-provenance"
+                        | "x-ess-relation"
                 ) {
                     continue;
                 }
@@ -447,6 +455,7 @@ fn a_command_input_accepts_a_filled_instance_and_refuses_a_misspelt_field() {
     accepts(
         &validator,
         &json!({
+            "account_id": "3f2504e0-4f89-41d3-9a0c-0305e82c3301",
             "customer_email": "someone@example.com",
             "amount": { "amount": "12.50", "currency": "EUR" },
         }),
@@ -455,6 +464,7 @@ fn a_command_input_accepts_a_filled_instance_and_refuses_a_misspelt_field() {
     refuses(
         &validator,
         &json!({
+            "account_id": "3f2504e0-4f89-41d3-9a0c-0305e82c3301",
             "customer_emal": "someone@example.com",
             "amount": { "amount": "12.50", "currency": "EUR" },
         }),
@@ -462,12 +472,13 @@ fn a_command_input_accepts_a_filled_instance_and_refuses_a_misspelt_field() {
     );
     refuses(
         &validator,
-        &json!({ "customer_email": "someone@example.com" }),
+        &json!({ "account_id": "3f2504e0-4f89-41d3-9a0c-0305e82c3301", "customer_email": "someone@example.com" }),
         "`amount` is not optional, so an input without it is not an input",
     );
     refuses(
         &validator,
         &json!({
+            "account_id": "3f2504e0-4f89-41d3-9a0c-0305e82c3301",
             "customer_email": "someone@example.com",
             "amount": { "amount": "12.50" },
         }),
@@ -633,6 +644,7 @@ fn an_event_payload_accepts_what_the_specification_says_it_carries() {
         &validator,
         &json!({
             "invoice_id": "8ba7b810-9dad-11d1-80b4-00c04fd430c8",
+            "account_id": "3f2504e0-4f89-41d3-9a0c-0305e82c3301",
             "customer_email": "someone@example.com",
             "amount": { "amount": "12.50", "currency": "EUR" },
         }),
@@ -642,6 +654,7 @@ fn an_event_payload_accepts_what_the_specification_says_it_carries() {
         &validator,
         &json!({
             "invoice_id": "8ba7b810-9dad-11d1-80b4-00c04fd430c8",
+            "account_id": "3f2504e0-4f89-41d3-9a0c-0305e82c3301",
             "customer_email": "someone@example.com",
         }),
         "an event missing a field it declares is not that event",
@@ -976,8 +989,16 @@ fn no_schema_uses_a_keyword_outside_the_set_this_projection_publishes() {
         "type",
         "x-ess-invariants",
         "x-ess-kind",
+        // The model's key type, which a JSON object cannot express: `propertyNames` constrains how
+        // a key is spelt and says nothing about what it *is* (`src/types.rs`, `Node::ess_map_key`).
+        // Emitted since the first `Map`-typed field reached a published document, which the entity
+        // document is: no message in the billing example carries one.
+        "x-ess-map-key",
         "x-ess-name",
         "x-ess-provenance",
+        // The relation the carrying property publishes
+        // (`docs/design/ess-entity-relations-design-v0.1.md` §4).
+        "x-ess-relation",
         // The field a union's variant is named in, which the branches pin with `const` and a reader
         // otherwise has to infer from them (`src/types.rs`, `Node::ess_union_tag`).
         "x-ess-union-tag",
@@ -1051,8 +1072,16 @@ fn every_message_accepts_an_instance_of_itself_and_refuses_one_that_is_wrong() {
         ),
         (
             "schema/commands/billing.invoice.CreateInvoice.schema.json",
-            json!({ "customer_email": "someone@example.com", "amount": invoice.clone() }),
-            json!({ "customer_email": "someone@example.com", "amount": "12.50" }),
+            json!({
+                "account_id": uuid,
+                "customer_email": "someone@example.com",
+                "amount": invoice.clone(),
+            }),
+            json!({
+                "account_id": uuid,
+                "customer_email": "someone@example.com",
+                "amount": "12.50",
+            }),
             "`Money` is a struct, not the amount on its own",
         ),
         (
@@ -1065,11 +1094,13 @@ fn every_message_accepts_an_instance_of_itself_and_refuses_one_that_is_wrong() {
             "schema/events/billing.invoice.InvoiceCreated.schema.json",
             json!({
                 "invoice_id": uuid,
+                "account_id": uuid,
                 "customer_email": "someone@example.com",
                 "amount": invoice.clone(),
             }),
             json!({
                 "invoice_id": uuid,
+                "account_id": uuid,
                 "customer_email": "someone@example.com",
                 "amount": { "amount": "12.50", "currency": 978 },
             }),

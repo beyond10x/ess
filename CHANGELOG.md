@@ -1,5 +1,41 @@
 # Changelog
 
+## [Unreleased]
+
+- **An entity declares what it owns and what it references.** `relations:` on an entity names a
+  relation, its kind (`owns` or `references`), the entity at the other end, how many of it there
+  are (`one` or `many`), and the field that carries it. It is declared on the source and nowhere
+  else: the reverse direction is a lookup, and a second declaration is a second thing to keep in
+  step. Previously an ownership was a typed id field on the child plus an invariant somebody
+  remembered to write, which is prose to every projection and refusable by nothing.
+- `ess validate` refuses five things a relation can get wrong: a target that is not a declared
+  entity, a `via` field the carrying entity does not have, a `via` field typed as anything but the
+  identity the design requires — `Optional<…>` or `List<…>` where the cardinality says so — a second
+  entity claiming to own one that is already owned, and two relations claiming one field. Each is an
+  existing `ValidationCode` with a hint naming what to write instead, and each has a test that
+  breaks it on purpose.
+- **One extension key, `x-ess-relation`, carries a relation into every projection**, on the property
+  that carries the field. The JSON Schema projection gains a document per entity,
+  `schema/entities/<name>.schema.json`, because an entity was previously rendered by the
+  documentation and by nothing a tool reads; the `OpenAPI` projection publishes the same shapes under a root
+  extension, `x-ess-entities` — no path, no method, no query parameter — and adds a `$ref` to the
+  schema of what the property identifies, which that document has and a self-contained schema
+  document does not. An extension rather than `components.schemas` because that table is what
+  `ess import openapi` reads back, and an entity's shape reaches a `Map` and a tagged union, which
+  the adapter's subset does not carry: publishing them there made this repository's own adapter
+  refuse the document it had generated. The synthesised Rust names the relation in the carrying field's doc comment rather than as a
+  typed field: the specification describes, and nothing generated here has a store to navigate with.
+- `examples/billing` carries one of them — `billing.invoice.Account` owns many
+  `billing.invoice.Invoice`, by the invoice's `account_id` — so the pattern an adopter is pointed at
+  is validated, compiled and projected rather than described. `CreateInvoice` takes the account and
+  `InvoiceCreated` announces it, because an owner nobody named is an owner the implementation
+  invented.
+- The committed `generated/` tree is regenerated, which also lands 0.4.0's documentation filenames:
+  `docs/index.md` and `docs/domains/billing-invoice.md` replace the `README.md` and dotted names the
+  tree still carried. `schemas/generated/ess.schema.json` is regenerated from the Rust types, which
+  additionally publishes the `order_by:` and quantifier constructs 0.4.0 added and the file had not
+  caught up with.
+
 ## [0.4.0] — 2026-09-02
 
 - **The documentation projection writes different filenames.** `--kind docs` now writes `index.md`

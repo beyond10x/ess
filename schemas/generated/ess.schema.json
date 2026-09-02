@@ -186,6 +186,25 @@
         }
       ]
     },
+    "Cardinality": {
+      "description": "How many of the target one source has.\n\nOn the target side only. `min`/`max` on both sides would say a second time what the carrying field's own type already says — `Optional<…>` is `0..1` and a bare id is `1..1` — and two statements of one fact are two statements that can disagree.",
+      "oneOf": [
+        {
+          "description": "At most one.",
+          "type": "string",
+          "enum": [
+            "one"
+          ]
+        },
+        {
+          "description": "Any number.",
+          "type": "string",
+          "enum": [
+            "many"
+          ]
+        }
+      ]
+    },
     "Consistency": {
       "description": "How soon a view reflects a command that has already returned.\n\nThis decides whether a generated scenario asserts the view with `expect` or with `eventually` — which is the entire reason the field exists. Getting it wrong in the model is how a generated suite acquires a sleep.",
       "oneOf": [
@@ -248,6 +267,43 @@
           ]
         }
       ]
+    },
+    "Direction": {
+      "description": "Which way a ranking key runs.",
+      "oneOf": [
+        {
+          "description": "Smallest first. The default, because it is the one a reader assumes when nothing says.",
+          "type": "string",
+          "enum": [
+            "ascending"
+          ]
+        },
+        {
+          "description": "Largest first.",
+          "type": "string",
+          "enum": [
+            "descending"
+          ]
+        }
+      ]
+    },
+    "ExternalRef": {
+      "description": "One record outside this model, named as `provider:key`.",
+      "type": "object",
+      "required": [
+        "provider",
+        "reference"
+      ],
+      "properties": {
+        "provider": {
+          "description": "The system holding the record, such as `jira`.",
+          "type": "string"
+        },
+        "reference": {
+          "description": "Its key in that system, such as `DEV-630`.",
+          "type": "string"
+        }
+      }
     },
     "Failure": {
       "description": "What happens when the command does not run.\n\nThe word only. What an [`Escalate`](Self::Escalate) publishes is beside it — on [`RawFailure::emits`] as a document writes it, on [`BindingSpec::escalation`] once validated — so that this stays the one token every projection prints as \"the word an author wrote\".",
@@ -595,7 +651,7 @@
       "pattern": "^[a-z][a-z0-9]*(-[a-z0-9]+)*$"
     },
     "Predicate": {
-      "description": "A condition over facts: the compact expression form (`tests.unit.failed == 0`), a list (implicit `all`), or a mapping using `all`, `any`, `not`, `none` or a fact path with an operator constraint.",
+      "description": "A condition over facts: the compact expression form (`tests.unit.failed == 0`), a list (implicit `all`), or a mapping using `all`, `any`, `not`, `none`, `forall`, `exists` or a fact path with an operator constraint.",
       "anyOf": [
         {
           "type": "string"
@@ -621,6 +677,28 @@
       "description": "Stable logical identity, such as `billing.invoice.CreateInvoice`. Not a wire name.",
       "type": "string",
       "pattern": "^[A-Za-z][A-Za-z0-9_-]*(\\.[A-Za-z][A-Za-z0-9_-]*)*$"
+    },
+    "Ranking": {
+      "description": "One ranking key of a view: a field it projects, and which way that field runs.\n\nWritten `priority desc`, or `queued_at` for the ascending default.",
+      "type": "object",
+      "required": [
+        "direction",
+        "field"
+      ],
+      "properties": {
+        "direction": {
+          "description": "Which way it runs.",
+          "allOf": [
+            {
+              "$ref": "#/definitions/Direction"
+            }
+          ]
+        },
+        "field": {
+          "description": "The projected field the rows are ordered by.",
+          "type": "string"
+        }
+      }
     },
     "RawActorSpec": {
       "description": "An actor, as parsed.",
@@ -661,26 +739,10 @@
     "RawBindingSpec": {
       "description": "A binding, as a document says it.",
       "type": "object",
-      "allOf": [
-        {
-          "description": "Exactly one of `name` and `id` is required.",
-          "oneOf": [
-            {
-              "required": [
-                "name"
-              ]
-            },
-            {
-              "required": [
-                "id"
-              ]
-            }
-          ]
-        }
-      ],
       "required": [
         "delivery",
         "invoke",
+        "name",
         "on_failure",
         "when"
       ],
@@ -692,10 +754,6 @@
               "$ref": "#/definitions/Delivery"
             }
           ]
-        },
-        "id": {
-          "description": "An accepted spelling of `name`; give one or the other, not both.",
-          "type": "string"
         },
         "invoke": {
           "description": "What it does.",
@@ -733,6 +791,13 @@
               "$ref": "#/definitions/BindingFailure"
             }
           ]
+        },
+        "refs": {
+          "description": "The records outside this model that explain it, such as `jira:DEV-630`.\n\nEmpty by default. See [`crate::refs`] for why this is a reference and not a paragraph.",
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/ExternalRef"
+          }
         },
         "summary": {
           "description": "What it is for, in one line.",
@@ -789,6 +854,13 @@
           "items": {
             "$ref": "#/definitions/RawOutcome"
           }
+        },
+        "refs": {
+          "description": "The records outside this model that explain it, such as `jira:DEV-630`.\n\nEmpty by default. See [`crate::refs`] for why this is a reference and not a paragraph.",
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/ExternalRef"
+          }
         }
       },
       "additionalProperties": false
@@ -811,22 +883,8 @@
     "RawComponentSpec": {
       "description": "What a component is made of, as a document says it.",
       "type": "object",
-      "allOf": [
-        {
-          "description": "Exactly one of `name` and `component` is required.",
-          "oneOf": [
-            {
-              "required": [
-                "name"
-              ]
-            },
-            {
-              "required": [
-                "component"
-              ]
-            }
-          ]
-        }
+      "required": [
+        "name"
       ],
       "properties": {
         "accepts": {
@@ -836,10 +894,6 @@
               "$ref": "#/definitions/RawComponentSurface"
             }
           ]
-        },
-        "component": {
-          "description": "An accepted spelling of `name`; give one or the other, not both.",
-          "type": "string"
         },
         "name": {
           "description": "Its name — a single segment, like `invoice-service`.",
@@ -878,6 +932,13 @@
               "$ref": "#/definitions/Reach"
             }
           ]
+        },
+        "refs": {
+          "description": "The records outside this model that explain it, such as `jira:DEV-630`.\n\nEmpty by default. See [`crate::refs`] for why this is a reference and not a paragraph.",
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/ExternalRef"
+          }
         },
         "summary": {
           "description": "What it is, in one line.",
@@ -969,6 +1030,14 @@
               "$ref": "#/definitions/Naming"
             }
           ]
+        },
+        "relations": {
+          "description": "What it owns and what it names.",
+          "default": [],
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/RelationSpec"
+          }
         }
       },
       "additionalProperties": false
@@ -1152,6 +1221,13 @@
             "additionalProperties": {
               "type": "string"
             }
+          }
+        },
+        "refs": {
+          "description": "The records outside this model that explain it, such as `jira:DEV-630`.\n\nEmpty by default. See [`crate::refs`] for why this is a reference and not a paragraph.",
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/ExternalRef"
           }
         },
         "summary": {
@@ -1343,6 +1419,13 @@
             }
           ]
         },
+        "order_by": {
+          "description": "The order the rows are ranked in, most significant key first.",
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/Ranking"
+          }
+        },
         "shape": {
           "description": "A reusable named struct describing what it exposes.",
           "anyOf": [
@@ -1419,6 +1502,73 @@
           ]
         }
       ]
+    },
+    "RelationKind": {
+      "description": "Which claim a relation makes about the entity at its other end.\n\nTwo kinds and no `ownership: true` flag on one kind, because the two are checked by different rules — an `owns` target has at most one owner across the whole specification and a `references` target has none — and a boolean would hide that difference behind a default.",
+      "oneOf": [
+        {
+          "description": "The target belongs to the source: it has one owner, and this is it.",
+          "type": "string",
+          "enum": [
+            "owns"
+          ]
+        },
+        {
+          "description": "The target is named by the source and belongs to nobody in particular.",
+          "type": "string",
+          "enum": [
+            "references"
+          ]
+        }
+      ]
+    },
+    "RelationSpec": {
+      "description": "One relation an entity declares to another.\n\nDeclared on the source only. Declaring it on both ends would be two statements of one fact, and the reverse direction is derivable: an `owns` target has at most one owner, so *who owns me* is a lookup rather than a declaration. `docs/design/ess-entity-relations-design-v0.1.md` §2 is the shape, and [`validate_relations`] is every rule it has to satisfy.",
+      "type": "object",
+      "required": [
+        "cardinality",
+        "kind",
+        "name",
+        "target",
+        "via"
+      ],
+      "properties": {
+        "cardinality": {
+          "description": "How many of the target one source has.",
+          "allOf": [
+            {
+              "$ref": "#/definitions/Cardinality"
+            }
+          ]
+        },
+        "kind": {
+          "description": "Whether the source owns the target or merely names it.",
+          "allOf": [
+            {
+              "$ref": "#/definitions/RelationKind"
+            }
+          ]
+        },
+        "name": {
+          "description": "What the relation is called — `invoices`, `clients`.\n\nA name of its own rather than the target's name, because an entity may reach the same target twice for different reasons, and because a projection needs something to call it that is not a type.",
+          "type": "string",
+          "pattern": "^[A-Za-z][A-Za-z0-9_]*$"
+        },
+        "target": {
+          "description": "The entity at the other end.",
+          "allOf": [
+            {
+              "$ref": "#/definitions/QualifiedName"
+            }
+          ]
+        },
+        "via": {
+          "description": "The field that carries the relation.\n\nFor `owns`, a field **on the target**, typed as the source's identity. For `references`, a field **on the source**, typed as the target's identity — wrapped in `Optional<…>` for an optional `one`, in `List<…>` for `many`.",
+          "type": "string",
+          "pattern": "^[A-Za-z][A-Za-z0-9_]*$"
+        }
+      },
+      "additionalProperties": false
     },
     "StateName": {
       "description": "One state of an entity's lifecycle, in UpperCamelCase, such as `Draft`.",
