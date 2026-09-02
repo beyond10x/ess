@@ -209,7 +209,7 @@ fn readme(ir: &EssIr, provenance: &SlicedProvenance) -> Artifact {
     ));
 
     page(
-        "README.md".to_owned(),
+        "index.md".to_owned(),
         &format!("{} {}", ir.system(), ir.version()),
         &body,
         provenance,
@@ -321,7 +321,7 @@ fn domain_page(ir: &EssIr, domain: &ResolvedDomain, provenance: &SlicedProvenanc
     }
     let _ = writeln!(
         body,
-        "`{}` is one of {}'s bounded contexts. [Back to the index](../README.md).\n",
+        "`{}` is one of {}'s bounded contexts. [Back to the index](../index.md).\n",
         domain.name,
         ir.system()
     );
@@ -355,7 +355,7 @@ fn interactions_page(ir: &EssIr, provenance: &SlicedProvenance) -> Artifact {
         "A binding is the only way an event in one context causes a command in another. Each one \
          states how many times the command may run and what happens when it does not, because a \
          binding that can fail quietly is the difference between specifying a system and specifying \
-         a demo.\n\n[Back to the index](README.md).\n\n",
+         a demo.\n\n[Back to the index](index.md).\n\n",
     );
 
     if ir.bindings().is_empty() {
@@ -431,7 +431,7 @@ fn crossings_page(ir: &EssIr, provenance: &SlicedProvenance) -> Artifact {
         }
     }
 
-    body.push_str("[Back to the index](README.md).\n");
+    body.push_str("[Back to the index](index.md).\n");
     page(
         "crossings.md".to_owned(),
         "Type crossings",
@@ -487,7 +487,7 @@ fn topology_page(ir: &EssIr, provenance: &SlicedProvenance) -> Artifact {
         body.push('\n');
     }
 
-    body.push_str("[Back to the index](README.md).\n");
+    body.push_str("[Back to the index](index.md).\n");
     page("topology.md".to_owned(), "Topology", &body, provenance)
 }
 
@@ -2013,8 +2013,14 @@ fn domain_path(name: &QualifiedName) -> String {
 }
 
 /// The file name of a bounded context's page, which is also the link between two of them.
+///
+/// The dots of a qualified name become hyphens. A dot in a path segment makes a static file server
+/// read `acd.routing` as a name with an extension, so `domains/acd.routing.md` is served as
+/// something it is not or not at all — every one of these pages 404'd behind GitLab Pages until
+/// the adopter carried a rename pass of their own. A generator that emits a route nothing can serve
+/// has not generated documentation.
 fn domain_file(name: &QualifiedName) -> String {
-    format!("{name}.md")
+    format!("{}.md", name.to_string().replace('.', "-"))
 }
 
 /// The enum each of a context's entities forms from its lifecycle.

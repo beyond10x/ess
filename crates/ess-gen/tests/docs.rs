@@ -305,7 +305,7 @@ fn every_link_between_pages_lands_on_a_page_that_exists_at_the_heading_it_names(
 #[test]
 fn every_type_kind_reaches_a_page_including_the_tagged_union() {
     let docs = docs();
-    let invoice = page(&docs, "docs/domains/billing.invoice.md");
+    let invoice = page(&docs, "docs/domains/billing-invoice.md");
 
     // A newtype is not its representation, and the page has to say so or the reader learns the
     // opposite from the fact that both are strings.
@@ -367,7 +367,7 @@ fn every_type_kind_reaches_a_page_including_the_tagged_union() {
 #[test]
 fn a_type_nothing_references_is_flagged_rather_than_left_looking_used() {
     let warehouse = pages(&compiled(&[("warehouse.yaml", AN_UNREACHED_TYPE)]));
-    let core = page(&warehouse, "docs/domains/warehouse.core.md");
+    let core = page(&warehouse, "docs/domains/warehouse-core.md");
 
     let note = core
         .lines()
@@ -395,7 +395,7 @@ fn a_type_reached_only_through_an_entitys_field_is_not_called_unreached() {
     // the IR, every reference to `Channel`, `LineItem` and `Payee` was invisible, so the page called
     // three types orphans on a page that now draws all three inside `Invoice`. An orphan count that
     // means "reached only through a construct the projection ignores" is worse than no count.
-    let invoice = page(&docs(), "docs/domains/billing.invoice.md");
+    let invoice = page(&docs(), "docs/domains/billing-invoice.md");
 
     assert!(
         !invoice.contains("reached by nothing else in this system"),
@@ -407,7 +407,7 @@ fn a_type_reached_only_through_an_entitys_field_is_not_called_unreached() {
 #[test]
 fn a_commands_refusal_branch_is_documented_and_not_only_its_name() {
     let docs = docs();
-    let invoice = page(&docs, "docs/domains/billing.invoice.md");
+    let invoice = page(&docs, "docs/domains/billing-invoice.md");
 
     assert_says(&invoice, "### `CreateInvoice`", "a command has a section");
     assert_says(
@@ -460,7 +460,7 @@ fn a_wrong_state_branch_is_documented_with_the_states_the_document_never_lists()
     // declares `from: [Draft]` and nothing anywhere writes down that `Issued`, `Paid` and
     // `Cancelled` are therefore states `IssueInvoice` refuses in. A reader who cannot see that set
     // has to hold a lifecycle and a command in their head at once.
-    let invoice = page(&docs(), "docs/domains/billing.invoice.md");
+    let invoice = page(&docs(), "docs/domains/billing-invoice.md");
 
     assert_says(&invoice, "**`wrong-state`**", "the branch has a heading");
     assert_says(
@@ -491,7 +491,7 @@ fn an_outcome_that_changes_an_entity_says_which_instance_and_where_the_identity_
     // instance is named by the caller, and a new one is announced by the event the branch emits,
     // because it did not exist when the request was made.
     let docs = docs();
-    let invoice = page(&docs, "docs/domains/billing.invoice.md");
+    let invoice = page(&docs, "docs/domains/billing-invoice.md");
 
     assert_says(
         &invoice,
@@ -509,7 +509,7 @@ fn an_outcome_that_changes_an_entity_says_which_instance_and_where_the_identity_
 #[test]
 fn an_outcome_the_input_cannot_decide_says_so_rather_than_claiming_it_is_unreachable() {
     let docs = docs();
-    let email = page(&docs, "docs/domains/billing.email.md");
+    let email = page(&docs, "docs/domains/billing-email.md");
 
     assert_says(&email, "**`failed`**", "the external branch");
     assert_says(
@@ -527,8 +527,8 @@ fn an_outcome_the_input_cannot_decide_says_so_rather_than_claiming_it_is_unreach
 #[test]
 fn an_events_payload_and_an_errors_payload_are_both_documented_field_by_field() {
     let docs = docs();
-    let invoice = page(&docs, "docs/domains/billing.invoice.md");
-    let email = page(&docs, "docs/domains/billing.email.md");
+    let invoice = page(&docs, "docs/domains/billing-invoice.md");
+    let email = page(&docs, "docs/domains/billing-email.md");
 
     assert_says(&invoice, "### `InvoiceCreated`", "an event has a section");
     assert_says(
@@ -635,8 +635,8 @@ fn a_declared_conversion_carries_its_reason_everywhere_a_reader_might_start() {
     // Beside the type, on both contexts' pages: this is how someone finds it without knowing to
     // look for it.
     for path in [
-        "docs/domains/billing.invoice.md",
-        "docs/domains/billing.email.md",
+        "docs/domains/billing-invoice.md",
+        "docs/domains/billing-email.md",
     ] {
         assert_says(
             &page(&docs, path),
@@ -656,13 +656,13 @@ fn a_declared_conversion_carries_its_reason_everywhere_a_reader_might_start() {
 #[test]
 fn a_components_ownership_and_a_workloads_replica_floor_are_both_documented() {
     let docs = docs();
-    let readme = page(&docs, "docs/README.md");
+    let readme = page(&docs, "docs/index.md");
     let topology = page(&docs, "docs/topology.md");
 
     assert_says(&readme, "**`invoice-service`**", "a component");
     assert_says(
         &readme,
-        "It owns [`billing.invoice`](domains/billing.invoice.md).",
+        "It owns [`billing.invoice`](domains/billing-invoice.md).",
         "ownership is the only claim a component makes",
     );
     assert_says(
@@ -734,7 +734,7 @@ fn a_binding_renders_as_a_flow_and_a_lifecycle_as_a_state_diagram() {
          look for to tell an escalation from nothing happening",
     );
 
-    let readme = page(&docs, "docs/README.md");
+    let readme = page(&docs, "docs/index.md");
     assert_says(&readme, "```mermaid\nflowchart TB", "the system is a graph");
     assert_says(
         &readme,
@@ -742,7 +742,7 @@ fn a_binding_renders_as_a_flow_and_a_lifecycle_as_a_state_diagram() {
         "a binding is the dashed edge between two components",
     );
 
-    let invoice = page(&docs, "docs/domains/billing.invoice.md");
+    let invoice = page(&docs, "docs/domains/billing-invoice.md");
     assert_says(
         &invoice,
         "```mermaid\nstateDiagram-v2",
@@ -759,7 +759,7 @@ fn a_binding_renders_as_a_flow_and_a_lifecycle_as_a_state_diagram() {
 fn an_entitys_lifecycle_transitions_reach_the_page_as_arrows() {
     // The state *set* was all the IR used to carry, and a diagram of four unconnected states is not
     // a lifecycle: which moves exist is the whole content of `examples/billing/`'s invoice.
-    let invoice = page(&docs(), "docs/domains/billing.invoice.md");
+    let invoice = page(&docs(), "docs/domains/billing-invoice.md");
 
     assert_says(
         &invoice,
@@ -805,7 +805,7 @@ fn the_command_that_takes_each_move_reaches_the_page_beside_the_move_itself() {
     // may happen with nothing that makes any of it happen, and `Issued -> Paid` is design §19's
     // worked example: the scenario it wants to generate is unwritable until the page can say which
     // command takes it.
-    let invoice = page(&docs(), "docs/domains/billing.invoice.md");
+    let invoice = page(&docs(), "docs/domains/billing-invoice.md");
 
     assert_says(
         &invoice,
@@ -837,7 +837,7 @@ fn the_command_that_takes_each_move_reaches_the_page_beside_the_move_itself() {
 
 #[test]
 fn an_outcome_says_what_it_does_to_an_entity_and_a_refusal_says_it_changes_none() {
-    let invoice = page(&docs(), "docs/domains/billing.invoice.md");
+    let invoice = page(&docs(), "docs/domains/billing-invoice.md");
 
     assert_says(
         &invoice,
@@ -859,7 +859,7 @@ fn an_outcome_says_what_it_does_to_an_entity_and_a_refusal_says_it_changes_none(
     );
 
     // `SendEmail` acts on no entity at all, which is the reason the link is optional on this side.
-    let email = page(&docs(), "docs/domains/billing.email.md");
+    let email = page(&docs(), "docs/domains/billing-email.md");
     assert_says(
         &email,
         "No entity in this specification changes.",
@@ -876,7 +876,7 @@ fn an_entitys_absent_transition_is_named_as_a_move_the_specification_does_not_pe
     // The example's headline case: a paid invoice may not be cancelled, and the model says so by not
     // saying anything. A diagram cannot draw an absence, so the complement is written out — and it
     // must be the complement of the real transitions, not of an empty set.
-    let invoice = page(&docs(), "docs/domains/billing.invoice.md");
+    let invoice = page(&docs(), "docs/domains/billing-invoice.md");
 
     assert_says(
         &invoice,
@@ -902,7 +902,7 @@ fn an_entitys_absent_transition_is_named_as_a_move_the_specification_does_not_pe
 
 #[test]
 fn an_entitys_invariant_reaches_the_page_as_a_condition_on_every_instance() {
-    let invoice = page(&docs(), "docs/domains/billing.invoice.md");
+    let invoice = page(&docs(), "docs/domains/billing-invoice.md");
 
     assert_says(
         &invoice,
@@ -921,7 +921,7 @@ fn an_entitys_invariant_reaches_the_page_as_a_condition_on_every_instance() {
 fn an_entitys_identity_reaches_the_page_by_name_and_not_only_by_type() {
     // The wave-1 decision the IR carries: without the identity's name, every projection invents one
     // and the view projecting `invoice_id` agrees with none of them.
-    let invoice = page(&docs(), "docs/domains/billing.invoice.md");
+    let invoice = page(&docs(), "docs/domains/billing-invoice.md");
 
     assert_says(
         &invoice,
@@ -945,7 +945,7 @@ fn a_views_eventual_consistency_reads_differently_from_an_immediate_one() {
     // Two views over one entity, and the difference between them decides whether a generated
     // assertion may run once. A page that renders both the same way is a page that cannot be used to
     // write either test.
-    let invoice = page(&docs(), "docs/domains/billing.invoice.md");
+    let invoice = page(&docs(), "docs/domains/billing-invoice.md");
 
     assert_says(
         &invoice,
@@ -981,7 +981,7 @@ fn a_views_eventual_consistency_reads_differently_from_an_immediate_one() {
 fn a_views_filter_reaches_the_page_rather_than_being_silently_dropped() {
     // A filter is what makes a view a subset. Dropping it turns "the invoices still owed" into "the
     // invoices", which is a different promise and one nobody would notice being made.
-    let invoice = page(&docs(), "docs/domains/billing.invoice.md");
+    let invoice = page(&docs(), "docs/domains/billing-invoice.md");
 
     assert_says(
         &invoice,
@@ -998,7 +998,7 @@ fn a_views_filter_reaches_the_page_rather_than_being_silently_dropped() {
 #[test]
 fn an_actors_grant_renders_as_an_edge_from_the_actor_to_that_command_in_the_index_graph() {
     let docs = docs();
-    let readme = page(&docs, "docs/README.md");
+    let readme = page(&docs, "docs/index.md");
 
     assert_says(
         &readme,
@@ -1035,7 +1035,7 @@ fn an_actors_grant_renders_as_an_edge_from_the_actor_to_that_command_in_the_inde
     );
 
     // And the same grant, beside the actor, as a link to where the command is written.
-    let invoice = page(&docs, "docs/domains/billing.invoice.md");
+    let invoice = page(&docs, "docs/domains/billing-invoice.md");
     assert_says(
         &invoice,
         "It may invoke [`CreateInvoice`](#createinvoice).",
@@ -1052,7 +1052,7 @@ fn an_actors_grant_renders_as_an_edge_from_the_actor_to_that_command_in_the_inde
 fn an_actor_that_may_invoke_nothing_is_still_on_the_page() {
     // "Who is in this picture" is part of the specification. An actor with no grants dropped from
     // the page reads as an actor nobody declared.
-    let invoice = page(&docs(), "docs/domains/billing.invoice.md");
+    let invoice = page(&docs(), "docs/domains/billing-invoice.md");
 
     assert_says(&invoice, "### `Auditor`", "an observer is declared");
     assert_says(
@@ -1067,15 +1067,15 @@ fn a_grant_that_crosses_two_contexts_links_to_the_other_contexts_page() {
     // Within one context a grant is a fragment; across two it has to leave the page, and a link that
     // opens the right document at the wrong place fails silently.
     let depot = pages(&compiled(A_GRANT_ACROSS_CONTEXTS));
-    let orders = page(&depot, "docs/domains/depot.orders.md");
+    let orders = page(&depot, "docs/domains/depot-orders.md");
 
     assert_says(
         &orders,
-        "It may invoke [`depot.shipping.Dispatch`](depot.shipping.md#dispatch).",
+        "It may invoke [`depot.shipping.Dispatch`](depot-shipping.md#dispatch).",
         "a grant across contexts names the other context's page, not a fragment of this one",
     );
     assert_says(
-        &page(&depot, "docs/domains/depot.shipping.md"),
+        &page(&depot, "docs/domains/depot-shipping.md"),
         "### `Dispatch`",
         "and that page has the heading the link names",
     );
@@ -1245,7 +1245,7 @@ fn every_member_of_a_resolved_domain_reaches_the_page_of_the_context_it_belongs_
          reader would lose if it did not"
     );
 
-    let invoice = page(&docs(), "docs/domains/billing.invoice.md");
+    let invoice = page(&docs(), "docs/domains/billing-invoice.md");
     for (member, wanted) in &evidence {
         assert_says(
             &invoice,

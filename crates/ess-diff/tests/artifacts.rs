@@ -84,7 +84,7 @@ fn the_artifacts_the_currency_changes_reach_are_owed_and_named() {
         "schema/types/catalog.pricing.Money.schema.json",
         "schema/types/catalog.pricing.Headline.schema.json",
         "schema/commands/catalog.pricing.CreatePriceList.schema.json",
-        "docs/domains/catalog.pricing.md",
+        "docs/domains/catalog-pricing.md",
         "openapi/pricing-service.yaml",
         "asyncapi/pricing-service.yaml",
     ] {
@@ -176,7 +176,7 @@ fn the_two_predicate_edits_narrow_the_artifacts_differently_and_both_subsets_are
         "schema/commands/catalog.pricing.CreatePriceList.schema.json",
         "schema/commands/catalog.pricing.PublishPriceList.schema.json",
         "schema/commands/catalog.pricing.RetirePriceList.schema.json",
-        "docs/domains/catalog.pricing.md",
+        "docs/domains/catalog-pricing.md",
     ] {
         assert!(
             reasons_naming(&projection(path), entity_edit) > 0,
@@ -252,7 +252,7 @@ fn whole_model_artifacts_are_owed_by_any_change_at_all() {
     let owed = owed(&report);
 
     for id in [
-        projection("docs/README.md"),
+        projection("docs/index.md"),
         projection("docs/interactions.md"),
         projection("docs/crossings.md"),
         projection("docs/topology.md"),

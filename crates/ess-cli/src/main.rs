@@ -200,6 +200,8 @@ enum GraphFormat {
 #[derive(Debug, Clone, Copy, ValueEnum)]
 enum Projection {
     Docs,
+    /// The same pages with frontmatter and a sidebar, for a static site.
+    Site,
     Schema,
     #[value(name = "openapi")]
     OpenApi,
@@ -211,6 +213,7 @@ impl Projection {
     fn name(self) -> &'static str {
         match self {
             Self::Docs => "docs",
+            Self::Site => "site",
             Self::Schema => "schema",
             Self::OpenApi => "openapi",
             Self::AsyncApi => "asyncapi",
