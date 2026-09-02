@@ -28,8 +28,10 @@
 pub mod artifact;
 pub mod asyncapi;
 pub mod docs;
+pub mod document;
 pub mod graph;
 pub mod http;
+pub mod markdown;
 pub mod openapi;
 pub mod provenance;
 pub mod schema;

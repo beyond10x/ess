@@ -161,7 +161,7 @@ fn digest(ir: &EssIr) -> String {
 /// fail-closed direction, because a whole-model slice makes the artifact owed whenever anything
 /// moves. Narrowing to a seed set is something a generator does explicitly, per artifact, by
 /// naming the constructs the artifact is about.
-#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 #[serde(tag = "of", rename_all = "kebab-case")]
 pub enum ModelSlice {
     /// The artifact derives from the whole model.
@@ -184,7 +184,7 @@ pub enum ModelSlice {
 /// beside it would be making a false claim about derivation, so the two travel as one value and
 /// [`crate::artifact::run`] checks the stamped digest against the recorded slice for every artifact
 /// it accepts.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct SlicedProvenance {
     /// The provenance to stamp into the artifact.
     pub provenance: Provenance,

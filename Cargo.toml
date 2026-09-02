@@ -63,6 +63,10 @@ schemars = "0.8"
 thiserror = "2"
 clap = { version = "4", features = ["derive"] }
 anyhow = "1"
+# Markdown to HTML for the site projection, so an adopter's documentation is a directory of files
+# and not a Node build. Pure Rust, no transitive dependencies, and the CommonMark reference
+# implementation in this ecosystem.
+pulldown-cmark = { version = "0.13", default-features = false, features = ["html"] }
 
 [workspace.lints.rust]
 missing_docs = "warn"

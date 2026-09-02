@@ -52,6 +52,7 @@ use ess_domain::refs::ExternalRef;
 use ess_domain::view::{AssertionStyle, Consistency, Direction};
 
 use crate::artifact::{Artifact, Generator};
+use crate::document::{Block, Blocks, Inline, Page, PageId, Target};
 use crate::graph::{label, SystemGraph};
 use ess_compiler::refs::{
     ActorRef, BindingRef, CommandRef, ComponentRef, DeclaredTypeRef, DomainRef, EntityRef,
@@ -94,7 +95,10 @@ impl Generator for Docs {
         }
         out.push(interactions_page(ir, &mint.whole()));
         out.push(crossings_page(ir, &mint.whole()));
-        out.push(topology_page(ir, &mint.whole()));
+        // Ported to the document IR. The others follow; until they do, one `generate` builds both
+        // shapes, and the bytes are the same either way — which is the point of porting one page
+        // at a time rather than all five at once.
+        out.push(crate::markdown::page(&topology_page(ir, &mint.whole())));
         out
     }
 }
@@ -441,31 +445,53 @@ fn crossings_page(ir: &EssIr, provenance: &SlicedProvenance) -> Artifact {
 }
 
 /// What each component needs in order to run, and what a replica floor is claiming.
-fn topology_page(ir: &EssIr, provenance: &SlicedProvenance) -> Artifact {
-    let mut body = String::from(
+fn topology_page(ir: &EssIr, provenance: &SlicedProvenance) -> Page {
+    let mut blocks = Blocks::new();
+    blocks.sentence(
         "Runtime requirements, stated semantically. None of this is a deployment and nothing \
          generates a manifest from it: a replica floor of two is a claim that the system is not \
          correct with one instance, which is a fact about the design and survives every change of \
-         hosting.\n\n",
+         hosting.",
     );
 
     for workload in ir.workloads().values() {
         let component = ir.component(&workload.component);
-        let _ = writeln!(body, "## `{}`\n", component.name);
+        let mut under = Blocks::new();
         if let Some(summary) = &component.naming.summary {
-            let _ = writeln!(body, "{summary}\n");
+            under.sentence(summary);
         }
-        let _ = writeln!(body, "{}\n", replicas_sentence(workload));
-        let _ = writeln!(body, "{}\n", stateless_sentence(workload));
+        under.sentence(replicas_sentence(workload));
+        under.sentence(stateless_sentence(workload));
         if workload.requires.is_empty() {
-            let _ = writeln!(body, "It requires nothing beyond itself.\n");
+            under.sentence("It requires nothing beyond itself.");
         } else {
-            let _ = writeln!(body, "It requires:\n");
-            for resource in &workload.requires {
-                let _ = writeln!(body, "- `{}` — `{}`", resource.kind, resource.name);
-            }
-            body.push('\n');
+            under.sentence("It requires:");
+            under.push(Block::List {
+                ordered: false,
+                items: workload
+                    .requires
+                    .iter()
+                    .map(|resource| {
+                        vec![Block::Prose {
+                            text: vec![
+                                Inline::code(resource.kind.clone()),
+                                Inline::text(" — "),
+                                Inline::code(resource.name.clone()),
+                            ],
+                        }]
+                    })
+                    .collect(),
+            });
         }
+        blocks.push(Block::Section {
+            level: 2,
+            title: vec![Inline::code(component.name.to_string())],
+            anchor: slug(&component.name.to_string()),
+            about: Some(EssSemanticRef::Component {
+                name: ComponentRef::new(component.name.clone()),
+            }),
+            blocks: under.finish(),
+        });
     }
 
     let idle: Vec<_> = ir
@@ -474,21 +500,56 @@ fn topology_page(ir: &EssIr, provenance: &SlicedProvenance) -> Artifact {
         .filter(|name| !ir.workloads().contains_key(*name))
         .collect();
     if !idle.is_empty() {
-        let _ = writeln!(body, "## Components that run nowhere\n");
-        let _ = writeln!(
-            body,
+        let mut under = Blocks::new();
+        under.sentence(
             "Declared as a unit of ownership, with nothing in the topology running it. That is \
              legal — a context can be owned by a library — but it is the kind of legal worth \
-             reading twice.\n"
+             reading twice.",
         );
-        for name in idle {
-            let _ = writeln!(body, "- `{name}`");
-        }
-        body.push('\n');
+        under.push(Block::List {
+            ordered: false,
+            items: idle
+                .into_iter()
+                .map(|name| {
+                    vec![Block::Prose {
+                        text: vec![Inline::code(name.to_string())],
+                    }]
+                })
+                .collect(),
+        });
+        blocks.push(Block::Section {
+            level: 2,
+            title: vec![Inline::text("Components that run nowhere")],
+            anchor: "components-that-run-nowhere".to_owned(),
+            about: None,
+            blocks: under.finish(),
+        });
     }
 
-    body.push_str("[Back to the index](index.md).\n");
-    page("topology.md".to_owned(), "Topology", &body, provenance)
+    blocks.prose(back_to_the_index());
+    Page {
+        id: PageId::from("topology"),
+        title: vec![Inline::text("Topology")],
+        about: None,
+        provenance: provenance.clone(),
+        blocks: blocks.finish(),
+    }
+}
+
+/// The link every page ends with.
+///
+/// A target and not a path. Which file the index is, and how far up it sits from here, is the
+/// renderer's business — this says only which page is meant.
+fn back_to_the_index() -> Vec<Inline> {
+    vec![
+        Inline::Link {
+            to: Target::Page {
+                page: PageId::from("index"),
+            },
+            text: vec![Inline::text("Back to the index")],
+        },
+        Inline::text("."),
+    ]
 }
 
 // ---- sections ---------------------------------------------------------------------------------
