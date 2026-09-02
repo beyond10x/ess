@@ -1,5 +1,35 @@
 # Changelog
 
+## [0.4.0] — 2026-09-02
+
+- **The documentation projection writes different filenames.** `--kind docs` now writes `index.md`
+  rather than `README.md`, and `domains/acd-routing.md` rather than `domains/acd.routing.md`: a dot
+  in a path segment makes a static file server read the name as having an extension, so every one
+  of those pages was unservable behind GitLab Pages and an adopter carried a rename pass of their
+  own. Committed output moves once; the links inside it move with it.
+- Add `forall:` and `exists:` to the predicate language, quantifying an invariant over a `List` or
+  a `Map`. A collection publishes its size as `<path>.count`, so no existing fact source changes to
+  gain them, and one nobody observed evaluates to `unknown` rather than to the vacuous truth an
+  empty one gives. Quantifying over anything that is not a collection is refused as
+  `type_mismatch`.
+- Add `order_by:` to a view, so a view named for a position says something about position.
+  Generated conformance scenarios assert it on adjacent rows; a key the view does not project is
+  refused, because a rank over a field nobody can read is a promise nothing can check.
+- Add `ess conform synthesize --target go`, which writes a Go test package — the runner, a
+  three-valued predicate evaluator and the suite — so an implementation in Go is held to the
+  specification by `go test`. Previously `conform run` reached only the reference targets in this
+  workspace, and an adopter's suite was regenerated on every model change and never executed.
+- Add `refs:` to commands, outcomes, bindings and components, written `provider:key`, so a
+  construct can name the ticket or incident that explains it. `Conversion.because` was the only
+  prose field in the model, and everything else went into YAML comments no projection reads.
+- Add `ess generate --kind site`: the documentation with frontmatter and a sidebar, for publishing
+  as a static site.
+- Print the refusals `conform synthesize` finds instead of counting them. A count says something is
+  unchecked without saying what.
+- Introduce `ess-docs/1`, an internal document representation between the model and the pages, with
+  the markdown projection as one renderer of it. No output changes; the documentation of every
+  example is pinned byte for byte and compared.
+
 ## [0.3.0] — 2026-09-01
 
 - Add reusable named struct `shape` declarations for views, preserving expanded checked fields in
