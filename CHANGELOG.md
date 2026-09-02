@@ -1,6 +1,6 @@
 # Changelog
 
-## [Unreleased]
+## [0.5.0] — 2026-09-03
 
 - **An entity declares what it owns and what it references.** `relations:` on an entity names a
   relation, its kind (`owns` or `references`), the entity at the other end, how many of it there
