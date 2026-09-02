@@ -869,12 +869,22 @@ fn conform(command: ConformCommand) -> Result<ExitCode> {
             };
 
             match input.format {
-                Format::Text => println!(
-                    "{} scenario(s), {} refusal(s), {}",
-                    synthesis.suite.len(),
-                    synthesis.refusals.len(),
-                    written.unwrap_or_else(|| "nothing written".to_owned())
-                ),
+                Format::Text => {
+                    // Printed, not counted. A refusal is a construct the specification declares and
+                    // the suite does not check, and a number saying there are thirty-one of them
+                    // tells a reader that something is unchecked without telling them what — which
+                    // is the same "generated tests are green" failure the refusal list exists to
+                    // rule out, one step further back.
+                    for refusal in &synthesis.refusals {
+                        println!("refused: {refusal}");
+                    }
+                    println!(
+                        "{} scenario(s), {} refusal(s), {}",
+                        synthesis.suite.len(),
+                        synthesis.refusals.len(),
+                        written.unwrap_or_else(|| "nothing written".to_owned())
+                    );
+                }
                 Format::Json => print!("{json}"),
                 Format::Yaml => render(&synthesis.suite, Format::Yaml)?,
             }
