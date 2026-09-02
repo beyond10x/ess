@@ -57,6 +57,15 @@ therefore cannot be part of the offline gate. `.github/workflows/pages.yml` pres
 Rust/WASM, browser-lab and site-build checks without Pages authority; the unified Website publishes
 the collected source and the Atlas-generated façade owns the project redirect.
 
+## Where work is tracked
+
+| What | Where |
+|---|---|
+| The plan: epics, stories, blockers | `.engineering/planning/`, mutated only through `aep artifact` — never by editing a store file, never by writing `status:` |
+| The protocol tree the store obeys | `.engineering/project.yaml` (a pinned `git+…#<40-hex>` source) |
+| Binding designs | `docs/design/` — a construct is a design page before it is code |
+| What shipped | `CHANGELOG.md`, and `git tag -n99` |
+
 ## Commits
 
 - Use conventional prefixes and a body explaining what changed and why.
