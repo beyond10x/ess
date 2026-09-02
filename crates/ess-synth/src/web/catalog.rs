@@ -34,10 +34,14 @@ use crate::plan::{condition_phrase, CapabilityKind, SynthesisDisposition};
 
 use super::Bridge;
 
+/// Exact format identity of the browser-facing ESS catalogue.
+pub const FORMAT: &str = "ess-browser-catalog/1";
+
 /// The catalogue of one specification, as canonical JSON.
 pub(super) fn document(bridge: &Bridge<'_>) -> String {
     let ir = bridge.ir;
     let mut root = Map::new();
+    root.insert("format".to_owned(), json!(FORMAT));
     root.insert("provenance".to_owned(), provenance(bridge));
     root.insert("system".to_owned(), json!(ir.system().to_string()));
     root.insert("version".to_owned(), json!(ir.version().to_string()));

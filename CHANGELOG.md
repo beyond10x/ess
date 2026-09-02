@@ -6,6 +6,8 @@
   compiler IR while OpenAPI reuses one component schema through `$ref`.
 - Expose the compiler-owned semantic source digest on `EssIr`, so downstream builders and
   provenance records bind to one canonical implementation.
+- Expose the exact versioned browser catalog through `ess_synth::web::browser_catalog`, so service
+  generators and documentation hosts consume the same document as the ESS browser target.
 
 ## [0.2.1] — 2026-09-01
 

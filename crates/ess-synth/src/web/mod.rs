@@ -49,6 +49,9 @@ use crate::{TargetRefusal, TargetReport, TargetWeakening};
 use self::layout::Layout;
 use self::refusal::TargetRefusals;
 
+/// Exact format identity of [`BrowserCatalog`].
+pub use self::catalog::FORMAT as CATALOG_FORMAT;
+
 /// The name this target reports itself under.
 pub const TARGET: &str = "web";
 
@@ -60,6 +63,28 @@ const EDITION: &str = "2021";
 
 /// The file the page and the bridge crate both read the model from.
 pub const CATALOG: &str = "catalog.json";
+
+/// Canonical browser catalogue derived from one resolved model and its synthesis plan.
+///
+/// The document is intentionally opaque to downstream Rust code: ESS owns its fields and
+/// version, while consumers can persist or embed the exact canonical bytes without rebuilding
+/// semantic structure from compiler internals.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct BrowserCatalog {
+    canonical_json: String,
+}
+
+impl BrowserCatalog {
+    /// Exact versioned catalogue bytes, including one trailing newline.
+    pub fn as_json(&self) -> &str {
+        &self.canonical_json
+    }
+
+    /// Consumes the catalogue into its canonical JSON representation.
+    pub fn into_json(self) -> String {
+        self.canonical_json
+    }
+}
 
 /// The page a person opens.
 pub const PAGE: &str = "index.html";
@@ -273,24 +298,9 @@ pub fn workspace(ir: &EssIr, plan: &SynthesisPlan) -> Emission {
     let bridge = Bridge::new(ir, plan, &layout, &refusals);
     let provenance = &plan.provenance;
 
-    // Presented here rather than inside a renderer, because these three are surfaces of the model
-    // that the page shows as tables rather than as code: a binding row, a component's grouping,
-    // and the crossing a transformation reads a field through.
-    for component in ir.components().keys() {
-        bridge.present(CapabilityKind::ComponentPort, &component.to_string());
-    }
-    for binding in ir.bindings().keys() {
-        bridge.present(CapabilityKind::BindingTransformation, &binding.to_string());
-        bridge.present(CapabilityKind::BindingDelivery, &binding.to_string());
-    }
-    for conversion in ir.conversions() {
-        bridge.present(CapabilityKind::Conversion, &conversion_source(conversion));
-    }
-    for entity in ir.entities().keys() {
-        bridge.present(CapabilityKind::EntityLifecycle, &entity.to_string());
-    }
+    present_catalog_surfaces(&bridge);
 
-    let catalog = catalog::document(&bridge);
+    let catalog = render_catalog(&bridge).into_json();
     let wire = crate::rust::wire::module(&bridge);
     let library = bridge::module(&bridge);
 
@@ -341,6 +351,44 @@ pub fn workspace(ir: &EssIr, plan: &SynthesisPlan) -> Emission {
                 })
                 .collect(),
         },
+    }
+}
+
+/// Builds the exact versioned catalogue used by the browser target without emitting a web tree.
+///
+/// This is the supported seam for documentation hosts and service generators. They receive the
+/// same bytes as [`workspace`], including target refusals, and never need to read private compiler
+/// structures or scrape a generated directory.
+pub fn browser_catalog(ir: &EssIr, plan: &SynthesisPlan) -> BrowserCatalog {
+    let layout = Layout::of(ir);
+    let acceptors = refusal::acceptors(ir);
+    let refusals = TargetRefusals::of(ir, plan, &acceptors);
+    let bridge = Bridge::new(ir, plan, &layout, &refusals);
+    present_catalog_surfaces(&bridge);
+    render_catalog(&bridge)
+}
+
+fn render_catalog(bridge: &Bridge<'_>) -> BrowserCatalog {
+    BrowserCatalog {
+        canonical_json: catalog::document(bridge),
+    }
+}
+
+fn present_catalog_surfaces(bridge: &Bridge<'_>) {
+    // Presented here rather than inside a renderer, because these are surfaces of the model that
+    // the catalogue shows as tables rather than code.
+    for component in bridge.ir.components().keys() {
+        bridge.present(CapabilityKind::ComponentPort, &component.to_string());
+    }
+    for binding in bridge.ir.bindings().keys() {
+        bridge.present(CapabilityKind::BindingTransformation, &binding.to_string());
+        bridge.present(CapabilityKind::BindingDelivery, &binding.to_string());
+    }
+    for conversion in bridge.ir.conversions() {
+        bridge.present(CapabilityKind::Conversion, &conversion_source(conversion));
+    }
+    for entity in bridge.ir.entities().keys() {
+        bridge.present(CapabilityKind::EntityLifecycle, &entity.to_string());
     }
 }
 

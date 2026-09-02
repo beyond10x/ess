@@ -717,6 +717,7 @@
       "summary": null
     }
   ],
+  "format": "ess-browser-catalog/1",
   "plan": {
     "generated": 33,
     "obligations": 8,

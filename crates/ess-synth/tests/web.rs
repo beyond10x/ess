@@ -17,6 +17,7 @@ use ess_compiler::resolve::compile_locating;
 use ess_compiler::source::SourceMap;
 use ess_domain::spec::{RawSpecFile, Specification};
 use ess_domain::system::Source;
+use ess_synth::web::{browser_catalog, CATALOG_FORMAT};
 use ess_synth::{synthesize_for, CapabilityKind, Synthesis, Target};
 
 /// The example directory.
@@ -244,6 +245,7 @@ fn the_page_names_no_construct_of_the_specification_it_was_generated_from() {
 fn the_catalogue_carries_every_command_with_its_typed_input_and_every_declared_outcome() {
     let synthesis = web();
     let catalog = catalog(&synthesis);
+    assert_eq!(catalog["format"], CATALOG_FORMAT);
     let commands = catalog["commands"].as_array().expect("commands");
     assert_eq!(commands.len(), 5, "billing declares five commands");
     let create = commands
@@ -270,6 +272,18 @@ fn the_catalogue_carries_every_command_with_its_typed_input_and_every_declared_o
         "and the page can say whether a refusal is the system saying no or nobody having written \
          it yet"
     );
+}
+
+#[test]
+fn the_public_browser_catalog_is_the_web_targets_exact_document() {
+    let ir = billing();
+    let synthesis = synthesize_for(&ir, Target::Web);
+    let public = browser_catalog(&ir, &synthesis.plan);
+    let emitted = synthesis
+        .artifacts
+        .get(ess_synth::web::CATALOG)
+        .expect("the web target emits its catalog");
+    assert_eq!(public.as_json(), emitted.contents);
 }
 
 #[test]
