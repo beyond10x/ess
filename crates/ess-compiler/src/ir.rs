@@ -79,6 +79,7 @@ use ess_domain::command::{OutcomeName, TestStrategy};
 use ess_domain::component::{ComponentName, Reach};
 use ess_domain::entity::{EntitySpec, Invariant, StateMachine, StateName, Transition};
 use ess_domain::name::{Naming, QualifiedName, Version};
+use ess_domain::refs::Refs;
 use ess_domain::topology::{Replicas, Resource};
 use ess_domain::types::Primitive;
 use ess_domain::view::{AssertionStyle, Consistency, Ranking};
@@ -641,6 +642,11 @@ pub struct ResolvedOutcome {
     /// One line for generated documentation.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub summary: Option<String>,
+    /// The records outside this model that explain it, such as `jira:DEV-630`.
+    ///
+    /// Carried through from the declaration so a projection can publish it. Empty by default.
+    #[serde(default, skip_serializing_if = "ess_domain::refs::is_empty")]
+    pub refs: Refs,
 }
 
 /// Where a determined payload field's value comes from, resolved.
@@ -712,6 +718,11 @@ pub struct ResolvedCommand {
     pub outcomes: Vec<ResolvedOutcome>,
     /// What it is called on the wire, and shown as.
     pub naming: Naming,
+    /// The records outside this model that explain it, such as `jira:DEV-630`.
+    ///
+    /// Carried through from the declaration so a projection can publish it. Empty by default.
+    #[serde(default, skip_serializing_if = "ess_domain::refs::is_empty")]
+    pub refs: Refs,
 }
 
 impl ResolvedCommand {
@@ -948,6 +959,11 @@ pub struct ResolvedBinding {
     pub escalation: Option<EventHandle>,
     /// What it is called on the wire, and shown as.
     pub naming: Naming,
+    /// The records outside this model that explain it, such as `jira:DEV-630`.
+    ///
+    /// Carried through from the declaration so a projection can publish it. Empty by default.
+    #[serde(default, skip_serializing_if = "ess_domain::refs::is_empty")]
+    pub refs: Refs,
 }
 
 /// What happens when a binding's command does not run, with whatever that publishes.
@@ -1026,6 +1042,11 @@ pub struct ResolvedComponent {
     pub reached_by: Reach,
     /// What it is called on the wire, and shown as.
     pub naming: Naming,
+    /// The records outside this model that explain it, such as `jira:DEV-630`.
+    ///
+    /// Carried through from the declaration so a projection can publish it. Empty by default.
+    #[serde(default, skip_serializing_if = "ess_domain::refs::is_empty")]
+    pub refs: Refs,
 }
 
 /// `true` where a component's reach is the unstated default.

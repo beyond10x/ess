@@ -136,6 +136,7 @@ use ess_primitives::error::{ParseError, ValidationCode, ValidationError, Validat
 
 use crate::command::{CommandSpec, EventSpec};
 use crate::name::{Naming, QualifiedName};
+use crate::refs::Refs;
 use crate::types::{ConversionRegistry, Field, Primitive, TypeBody, TypeRef, TypeRegistry};
 
 /// A binding, as a document says it.
@@ -162,6 +163,11 @@ pub struct RawBindingSpec {
     /// What it is for, in one line.
     #[serde(default)]
     pub summary: Option<String>,
+    /// The records outside this model that explain it, such as `jira:DEV-630`.
+    ///
+    /// Empty by default. See [`crate::refs`] for why this is a reference and not a paragraph.
+    #[serde(default, skip_serializing_if = "crate::refs::is_empty")]
+    pub refs: Refs,
 }
 
 /// What a binding reacts to.
@@ -641,6 +647,11 @@ pub struct BindingSpec {
     pub escalation: Option<QualifiedName>,
     /// What it is called on the wire, and what a person is shown.
     pub naming: Naming,
+    /// The records outside this model that explain it, such as `jira:DEV-630`.
+    ///
+    /// Empty by default. See [`crate::refs`] for why this is a reference and not a paragraph.
+    #[serde(default, skip_serializing_if = "crate::refs::is_empty")]
+    pub refs: Refs,
 }
 
 impl BindingSpec {
@@ -831,6 +842,7 @@ impl TryFrom<RawBindingSpec> for BindingSpec {
                 summary: raw.naming.summary.or(raw.summary),
                 ..raw.naming
             },
+            refs: raw.refs,
         };
 
         errors.extend(binding.validate());
@@ -1327,6 +1339,53 @@ fn list<T: std::fmt::Display>(names: impl IntoIterator<Item = T>) -> String {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn a_binding_names_the_records_that_explain_it_and_writes_them_back() {
+        let document = "\
+id: notify-on-invoice-created
+when: {event: billing.invoice.InvoiceCreated}
+invoke: {command: billing.email.SendEmail}
+delivery: at_least_once
+on_failure: {escalate: {emits: billing.email.DeliveryEscalated}}
+refs: [jira:DEV-630, zendesk:204519]
+";
+        let raw: RawBindingSpec = serde_yaml::from_str(document).expect("parses");
+        let binding = BindingSpec::try_from(raw).expect("a valid binding");
+        assert_eq!(
+            binding
+                .refs
+                .iter()
+                .map(ToString::to_string)
+                .collect::<Vec<_>>(),
+            vec!["jira:DEV-630".to_owned(), "zendesk:204519".to_owned()],
+            "order is the author's: the first reference is usually why the thing exists"
+        );
+
+        let written = serde_yaml::to_string(&binding).expect("writes");
+        assert!(written.contains("jira:DEV-630"), "{written}");
+    }
+
+    #[test]
+    fn a_binding_that_names_no_record_writes_no_key() {
+        let document = "\
+id: notify-on-invoice-created
+when: {event: billing.invoice.InvoiceCreated}
+invoke: {command: billing.email.SendEmail}
+delivery: at_least_once
+on_failure: {escalate: {emits: billing.email.DeliveryEscalated}}
+";
+        let raw: RawBindingSpec = serde_yaml::from_str(document).expect("parses");
+        let binding = BindingSpec::try_from(raw).expect("a valid binding");
+        assert!(binding.refs.is_empty());
+
+        let written = serde_yaml::to_string(&binding).expect("writes");
+        assert!(
+            !written.contains("refs"),
+            "an empty list is absence, and writing it back would put a key in every document: \
+             {written}"
+        );
+    }
+
     use super::*;
     use crate::types::{Conversion, NamedType};
 
@@ -1414,6 +1473,7 @@ mod tests {
                 .collect(),
             outcomes: Vec::new(),
             naming: Naming::default(),
+            refs: Refs::new(),
         };
         [(spec.name.clone(), spec)].into()
     }

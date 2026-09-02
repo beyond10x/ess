@@ -639,6 +639,7 @@ const STRUCTURAL: &[&str] = &[
     "moves",
     "updates",
     "instance",
+    "refs",
     "filter",
     "order_by",
     "states",
@@ -1309,6 +1310,7 @@ impl<'a> Resolver<'a> {
                         input,
                         outcomes,
                         naming: command.naming,
+                        refs: command.refs,
                     },
                 );
             }
@@ -1401,6 +1403,7 @@ impl<'a> Resolver<'a> {
                 payload,
                 error,
                 summary: outcome.summary.clone(),
+                refs: outcome.refs.clone(),
             });
         }
         complete.then_some(resolved)
@@ -2147,6 +2150,7 @@ impl<'a> Resolver<'a> {
                         accepts,
                         publishes,
                         naming: component.naming,
+                        refs: component.refs,
                     },
                 );
             }
@@ -2293,6 +2297,7 @@ impl<'a> Resolver<'a> {
                     failure: binding.failure,
                     escalation,
                     naming: binding.naming,
+                    refs: binding.refs,
                 },
             );
         }

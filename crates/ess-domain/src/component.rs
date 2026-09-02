@@ -69,6 +69,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use ess_primitives::error::{ValidationCode, ValidationError, ValidationErrors};
 
 use crate::name::{Naming, QualifiedName};
+use crate::refs::Refs;
 
 /// What a component is made of, as a document says it.
 #[derive(Debug, Clone, serde::Deserialize, schemars::JsonSchema)]
@@ -98,6 +99,11 @@ pub struct RawComponentSpec {
     /// What it is, in one line.
     #[serde(default)]
     pub summary: Option<String>,
+    /// The records outside this model that explain it, such as `jira:DEV-630`.
+    ///
+    /// Empty by default. See [`crate::refs`] for why this is a reference and not a paragraph.
+    #[serde(default, skip_serializing_if = "crate::refs::is_empty")]
+    pub refs: Refs,
 }
 
 /// Where the callers of a component's surface are.
@@ -210,6 +216,11 @@ pub struct ComponentSpec {
     pub reached_by: Reach,
     /// What it is called on the wire, and what a person is shown.
     pub naming: Naming,
+    /// The records outside this model that explain it, such as `jira:DEV-630`.
+    ///
+    /// Empty by default. See [`crate::refs`] for why this is a reference and not a paragraph.
+    #[serde(default, skip_serializing_if = "crate::refs::is_empty")]
+    pub refs: Refs,
 }
 
 /// A component's name.
@@ -302,6 +313,7 @@ impl TryFrom<RawComponentSpec> for ComponentSpec {
                 summary: raw.naming.summary.or(raw.summary),
                 ..raw.naming
             },
+            refs: raw.refs,
         };
 
         errors.extend(component.validate());

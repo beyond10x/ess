@@ -1997,8 +1997,10 @@ lifecycle:
                 payload: std::collections::BTreeMap::new(),
                 error: None,
                 summary: None,
+                refs: crate::refs::Refs::new(),
             }],
             naming: Naming::default(),
+            refs: crate::refs::Refs::new(),
         }
     }
 

@@ -63,6 +63,7 @@ pub mod domain;
 pub mod entity;
 pub mod locate;
 pub mod name;
+pub mod refs;
 pub mod spec;
 pub mod system;
 pub mod topology;

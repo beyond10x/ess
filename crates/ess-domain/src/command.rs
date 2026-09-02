@@ -158,6 +158,7 @@ use ess_primitives::error::{ParseError, ValidationCode, ValidationError, Validat
 use ess_primitives::predicate::Predicate;
 
 use crate::name::{Naming, QualifiedName};
+use crate::refs::Refs;
 use crate::types::{Field, TypeRegistry};
 
 /// The name of one outcome of a command, such as `accepted`, `rejected` or `not-found`.
@@ -789,6 +790,11 @@ pub struct Outcome {
     pub error: Option<QualifiedName>,
     /// One line for generated documentation and for the generated scenario's title.
     pub summary: Option<String>,
+    /// The records outside this model that explain it, such as `jira:DEV-630`.
+    ///
+    /// Empty by default. See [`crate::refs`] for why this is a reference and not a paragraph.
+    #[serde(default, skip_serializing_if = "crate::refs::is_empty")]
+    pub refs: Refs,
 }
 
 impl Outcome {
@@ -802,6 +808,7 @@ impl Outcome {
             payload: BTreeMap::new(),
             error: None,
             summary: None,
+            refs: Refs::new(),
         }
     }
 
@@ -815,6 +822,7 @@ impl Outcome {
             payload: BTreeMap::new(),
             error: None,
             summary: None,
+            refs: Refs::new(),
         }
     }
 
@@ -832,6 +840,7 @@ impl Outcome {
             payload: BTreeMap::new(),
             error: Some(error),
             summary: None,
+            refs: Refs::new(),
         }
     }
 
@@ -910,6 +919,11 @@ pub struct CommandSpec {
     pub outcomes: Vec<Outcome>,
     /// What it is called on the wire and shown as.
     pub naming: Naming,
+    /// The records outside this model that explain it, such as `jira:DEV-630`.
+    ///
+    /// Empty by default. See [`crate::refs`] for why this is a reference and not a paragraph.
+    #[serde(default, skip_serializing_if = "crate::refs::is_empty")]
+    pub refs: Refs,
 }
 
 impl CommandSpec {
@@ -1722,6 +1736,11 @@ pub struct RawCommandSpec {
     /// What it is called on the wire and shown as.
     #[serde(default, skip_serializing_if = "Naming::is_empty")]
     pub naming: Naming,
+    /// The records outside this model that explain it, such as `jira:DEV-630`.
+    ///
+    /// Empty by default. See [`crate::refs`] for why this is a reference and not a paragraph.
+    #[serde(default, skip_serializing_if = "crate::refs::is_empty")]
+    pub refs: Refs,
 }
 
 /// One outcome as written in a document, before validation.
@@ -1788,6 +1807,11 @@ pub struct RawOutcome {
     /// One line for generated documentation.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub summary: Option<String>,
+    /// The records outside this model that explain it, such as `jira:DEV-630`.
+    ///
+    /// Empty by default. See [`crate::refs`] for why this is a reference and not a paragraph.
+    #[serde(default, skip_serializing_if = "crate::refs::is_empty")]
+    pub refs: Refs,
 }
 
 /// An event as written in a document, before validation.
@@ -1883,6 +1907,7 @@ impl TryFrom<RawOutcome> for Outcome {
             payload,
             error: raw.error,
             summary: raw.summary,
+            refs: raw.refs,
         })
     }
 }
@@ -2064,6 +2089,7 @@ impl TryFrom<RawCommandSpec> for CommandSpec {
             input: raw.input,
             outcomes,
             naming: raw.naming,
+            refs: raw.refs,
         };
         errors.extend(spec.validate_shape());
         errors.into_result(spec)
@@ -2152,6 +2178,7 @@ impl From<Outcome> for RawOutcome {
             payload,
             error: outcome.error,
             summary: outcome.summary,
+            refs: outcome.refs,
         }
     }
 }
@@ -2163,6 +2190,7 @@ impl From<CommandSpec> for RawCommandSpec {
             input: command.input,
             outcomes: command.outcomes.into_iter().map(RawOutcome::from).collect(),
             naming: command.naming,
+            refs: command.refs,
         }
     }
 }
@@ -2272,6 +2300,7 @@ outcomes:
             )],
             outcomes,
             naming: Naming::default(),
+            refs: Refs::new(),
         }
     }
 
@@ -2398,6 +2427,7 @@ outcomes:
                 payload: BTreeMap::new(),
                 error: Some(name("billing.invoice.InvalidAmount")),
                 summary: None,
+                refs: Refs::new(),
             },
         ]));
 
@@ -2439,6 +2469,7 @@ outcomes:
             payload: BTreeMap::new(),
             error: Some(name("billing.invoice.InvalidAmount")),
             summary: None,
+            refs: Refs::new(),
         }]));
 
         assert!(errors.contains(ValidationCode::RefusalMutatedState));
@@ -2470,6 +2501,7 @@ outcomes:
                 payload: BTreeMap::new(),
                 error: Some(name("billing.invoice.InvalidAmount")),
                 summary: None,
+                refs: Refs::new(),
             },
         ]));
 
@@ -2494,6 +2526,7 @@ outcomes:
             payload: BTreeMap::new(),
             error: Some(name("billing.invoice.InvalidAmount")),
             summary: None,
+            refs: Refs::new(),
         }]));
 
         assert!(errors.contains(ValidationCode::UnreachableBranch));
@@ -2554,6 +2587,7 @@ outcomes:
                 payload: BTreeMap::new(),
                 error: None,
                 summary: None,
+                refs: Refs::new(),
             },
         ]));
 
@@ -2731,6 +2765,7 @@ outcomes:
                 payload: BTreeMap::new(),
                 error: Some(name("billing.invoice.InvalidAmount")),
                 summary: None,
+                refs: Refs::new(),
             },
         ]));
 
@@ -2760,6 +2795,7 @@ outcomes:
                 payload: BTreeMap::new(),
                 error: Some(name("billing.invoice.AmountTooLarge")),
                 summary: None,
+                refs: Refs::new(),
             },
         ]));
 
@@ -2878,6 +2914,7 @@ outcomes:
             payload: BTreeMap::new(),
             error: Some(name("billing.invoice.InvalidAmount")),
             summary: None,
+            refs: Refs::new(),
         };
         assert_eq!(inject.test_strategy(), TestStrategy::InjectFault);
         assert_eq!(inject.test_strategy().as_str(), "inject_fault");
@@ -3106,6 +3143,7 @@ outcomes:
                 payload: BTreeMap::new(),
                 error: Some(name("billing.invoice.InvalidAmount")),
                 summary: None,
+                refs: Refs::new(),
             },
         ]));
         assert!(
@@ -3226,9 +3264,11 @@ outcomes:
                     payload: BTreeMap::new(),
                     error: Some(name("billing.invoice.InvalidAmount")),
                     summary: None,
+                    refs: Refs::new(),
                 },
             ],
             naming: Naming::default(),
+            refs: Refs::new(),
         };
 
         let errors = refuse(&command);

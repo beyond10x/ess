@@ -48,6 +48,7 @@ use ess_domain::binding::Delivery;
 use ess_domain::command::TestStrategy;
 use ess_domain::entity::{Invariant, StateMachine, StateName};
 use ess_domain::name::{Naming, QualifiedName};
+use ess_domain::refs::ExternalRef;
 use ess_domain::view::{AssertionStyle, Consistency, Direction};
 
 use crate::artifact::{Artifact, Generator};
@@ -706,6 +707,24 @@ fn views_section(ir: &EssIr, domain: &ResolvedDomain, body: &mut String) {
     }
 }
 
+/// The records a construct names, where it names any.
+///
+/// Written as the shorthand and never as a link. The address is built from the project's own
+/// `providers:` map, which this projection does not read: a page that guessed a host would carry a
+/// link that opens the wrong page, and a wrong link cannot be told from a right one by looking at
+/// it.
+fn write_refs(refs: &[ExternalRef], body: &mut String) {
+    if refs.is_empty() {
+        return;
+    }
+    let listed = refs
+        .iter()
+        .map(|reference| format!("`{reference}`"))
+        .collect::<Vec<_>>()
+        .join(", ");
+    let _ = writeln!(body, "Recorded at {listed}.\n");
+}
+
 /// What order the rows come back in, or that the view does not say.
 ///
 /// Absence is written down rather than left out. A reader who is not told is entitled to assume
@@ -774,6 +793,7 @@ fn commands_section(ir: &EssIr, domain: &ResolvedDomain, body: &mut String) {
             "{}\n",
             naming_sentence(&command.naming, &command.name)
         );
+        write_refs(&command.refs, body);
         if command.input.is_empty() {
             let _ = writeln!(body, "It takes no input.\n");
         } else {
@@ -911,6 +931,7 @@ fn binding_section(ir: &EssIr, binding: &ResolvedBinding, body: &mut String) {
     if let Some(summary) = &binding.naming.summary {
         let _ = writeln!(body, "{summary}\n");
     }
+    write_refs(&binding.refs, body);
     let _ = writeln!(
         body,
         "`{}` causes [`{}`]({}#{}).\n",
