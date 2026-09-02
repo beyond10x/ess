@@ -2,7 +2,7 @@
 format: aep.planning-md/1
 id: story:relations-in-the-billing-example
 kind: story
-status: draft
+status: implemented
 title: The billing example shows an ownership relation end to end
 summary: examples/billing carries one owns relation, validated, compiled into the golden fixtures and explained in its README.
 owner: ess
@@ -12,7 +12,7 @@ tags:
 relations:
 - decomposes: epic:entity-relations
 - depends_on: story:relations-projected
-revision: 1
+revision: 4
 ---
 # Story: The billing example shows an ownership relation end to end
 

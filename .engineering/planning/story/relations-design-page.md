@@ -2,7 +2,7 @@
 format: aep.planning-md/1
 id: story:relations-design-page
 kind: story
-status: draft
+status: implemented
 title: The relation vocabulary is decided on a design page before code
 summary: 'docs/design/ess-entity-relations-design-v0.1.md: shape, refusals, projections, rejected alternatives.'
 owner: ess
@@ -11,7 +11,7 @@ tags:
 - relations
 relations:
 - decomposes: epic:entity-relations
-revision: 1
+revision: 4
 ---
 # Story: The relation vocabulary is decided on a design page before code
 

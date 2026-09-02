@@ -2,7 +2,7 @@
 format: aep.planning-md/1
 id: story:own-planning-store
 kind: story
-status: draft
+status: implemented
 title: ESS plans in a store of its own
 summary: The .engineering store, pinned to aep 0.42.0, so cross-repository work has a plan that is not a chat.
 owner: ess
@@ -10,7 +10,7 @@ tags:
 - store
 relations:
 - decomposes: epic:entity-relations
-revision: 1
+revision: 4
 ---
 # Story: ESS plans in a store of its own
 

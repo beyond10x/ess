@@ -2,7 +2,7 @@
 format: aep.planning-md/1
 id: story:relations-projected
 kind: story
-status: draft
+status: implemented
 title: A relation survives into every projection
 summary: One extension key carries target and cardinality into JSON Schema, OpenAPI and Rust; golden tests per projection.
 owner: ess
@@ -12,7 +12,7 @@ tags:
 relations:
 - decomposes: epic:entity-relations
 - depends_on: story:relations-in-the-domain-model
-revision: 1
+revision: 4
 ---
 # Story: A relation survives into every projection
 

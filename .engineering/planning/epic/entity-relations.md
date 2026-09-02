@@ -2,14 +2,14 @@
 format: aep.planning-md/1
 id: epic:entity-relations
 kind: epic
-status: draft
+status: implemented
 title: An entity declares its relations, and the model checks them
 summary: 'A relations: list on an entity, validated and projected, so an ownership relation is a declared fact rather than a typed id field plus an invariant somebody remembers.'
 owner: ess
 tags:
 - domain
 - relations
-revision: 1
+revision: 4
 ---
 # Epic: An entity declares its relations, and the model checks them
 

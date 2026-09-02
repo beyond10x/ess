@@ -2,7 +2,7 @@
 format: aep.planning-md/1
 id: story:relations-in-the-domain-model
 kind: story
-status: draft
+status: implemented
 title: An entity's relations are typed, resolved and refused like its fields
 summary: RelationSpec on EntitySpec, a validation pass beside validate_lifecycle_causes, four refusals each with a test that breaks it.
 owner: ess
@@ -12,7 +12,7 @@ tags:
 relations:
 - decomposes: epic:entity-relations
 - depends_on: story:relations-design-page
-revision: 1
+revision: 4
 ---
 # Story: An entity's relations are typed, resolved and refused like its fields
 
