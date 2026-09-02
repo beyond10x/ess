@@ -10,9 +10,9 @@
 #
 # `[workspace.lints.rust] unsafe_code = "forbid"` — invariant 12 — and a WebAssembly export is a
 # `#[no_mangle]` item, which rustc's own `unsafe_code` lint flags. Admitting this crate as a member
-# would mean lifting that lint for the other fourteen, so it carries its own `[workspace]` root
-# instead, exactly as the generated trees do. It is not therefore ungated: `cargo xtask synth`
-# builds it for `wasm32-unknown-unknown` and then runs the boundary smoke test against the module
+# would mean lifting that lint for the other workspace members, so it carries its own `[workspace]`
+# root instead, exactly as the generated trees do. It is not therefore ungated: `task site-build`
+# builds it for `wasm32-unknown-unknown` and runs the page's Node-driven lab test against the module
 # it produces.
 [package]
 name = "billing-web-realized"

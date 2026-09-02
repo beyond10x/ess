@@ -7,8 +7,9 @@ description: Author an ESS document — the layout, the constructs the model ins
 # Write a specification
 
 This guide covers authoring an Executable System Specification. The normative example is
-`examples/billing/` in the repository — deliberately the smallest system that exercises everything
-the model has. Concepts are covered in [ESS](../concepts/ess.md); this page is about writing one.
+`examples/billing/` in the repository — deliberately the smallest system that exercises the
+current `0.5.1` model. Concepts are covered in [ESS](../concepts/ess.md); this page is about writing
+one.
 
 ## Layout
 
@@ -35,15 +36,14 @@ The header's `domains:` list is checked in both directions, and both refusals na
 ```
 
 Point your editor at `schemas/generated/ess.schema.json` and field names are checked as you type.
-The schema is generated from the same Rust types the validator runs, and `cargo xtask schema
---check` runs in CI as its own step, so drift fails by name rather than inside a test log.
+The schema is generated from the same Rust types the validator runs. The repository's authoritative
+offline gate is `task check`, which exercises the schema contract alongside the workspace.
 
 ## Validate early, read the refusals
 
 ```shell-session
 $ ess validate --path examples/billing
-billing v3 — 5 file(s): 2 domain(s), 1 entit(ies), 5 command(s), 6 event(s), 3 error(s), 2 view(s), 2 actor(s)
-valid
+billing v3 — 5 file(s), valid
 ```
 
 Break a reference and the refusal names what was available. Take a copy of `examples/billing/`,
@@ -55,10 +55,11 @@ $ COPY=$(mktemp -d)/billing && cp -r examples/billing "$COPY"
 $ # in $COPY/domains/invoice.yaml, rename `InvoiceCreated` to `InvoiceRaised` in the
 $ # `accepted` outcome's `emits:` list and its `payload:` key
 $ ess validate --path "$COPY"
-5 file(s)
-2 problem(s):
+…/billing was refused:
   - [undeclared_reference] command.billing.invoice.CreateInvoice.outcomes.accepted.emits: `billing.invoice.InvoiceRaised` is not a declared event (hint: declared events: `billing.email.DeliveryEscalated`, `billing.email.EmailSent`, `billing.invoice.InvoiceCancelled`, `billing.invoice.InvoiceCreated`, `billing.invoice.InvoiceIssued`, `billing.invoice.InvoicePaid`)
   - [undeclared_reference] command.billing.invoice.CreateInvoice.outcomes.accepted.instance: outcome `accepted` of `billing.invoice.CreateInvoice` acts on the instance named by `invoice_id`, which is no field of an emitted event of it (hint: the field of an emitted event must be typed `billing.invoice.InvoiceId` — declared: none are declared)
+  - error[ESS-COMMAND-001]: `billing.invoice.InvoiceRaised` is not a declared event
+  … structured diagnostics continue with source locations and repair hints …
 ```
 
 Every problem is reported in one run — one typo, two consequences, both stated, and the exit code is
@@ -69,7 +70,7 @@ its identity in an emitted event, and the misspelling took away the event that w
 
 These are the authoring decisions that surprise people coming from OpenAPI-first or prose designs.
 Each exists to keep a generated test honest. Every block below is an excerpt of
-`examples/billing/`, abridged only by dropping comments and `summary:` lines.
+`examples/billing/`, abridged to the construct being explained.
 
 ### A command that can be refused says so
 
@@ -263,36 +264,65 @@ with every reference in it resolved — the fastest way to find out whether the 
 thing the model read:
 
 ```shell-session
-$ ess inspect billing.invoice.CreateInvoice --path examples/billing
-command    billing.invoice.CreateInvoice
-  domain     billing.invoice
-  input      customer_email: billing.invoice.Email
-  input      amount: billing.invoice.Money
-  outcome    accepted — when amount.amount > 0 (test: construct_input)
-    emits      billing.invoice.InvoiceCreated
-  outcome    rejected — otherwise (test: default_branch)
-    reports    billing.invoice.InvalidAmount
-  wire       create-invoice
-  display    Create invoice
+$ ess inspect --path examples/billing billing.invoice.CreateInvoice
+commands:
+  domain: billing.invoice
+  input:
+  - name: account_id
+    type_ref:
+      kind: declared
+      name: billing.invoice.AccountId
+  - name: customer_email
+    type_ref:
+      kind: declared
+      name: billing.invoice.Email
+  - name: amount
+    type_ref:
+      kind: declared
+      name: billing.invoice.Money
+  name: billing.invoice.CreateInvoice
+  naming:
+    display: Create invoice
+    wire: create-invoice
+  outcomes:
+  - condition:
+      kind: when
+      predicate: amount.amount > 0
+    name: accepted
+    test_strategy: construct_input
+  - condition:
+      kind: otherwise
+    error: billing.invoice.InvalidAmount
+    name: rejected
+    test_strategy: default_branch
 ```
 
-`rejected — otherwise` is the line to read: the specification names no condition for that branch, and
-the model derived one. `(test: construct_input)` and `(test: default_branch)` say how a generated
-scenario will reach each branch, before any suite exists.
+`kind: otherwise` is the line to read: the specification names no condition for that branch, and the
+model derived one. `construct_input` and `default_branch` say how a generated scenario will reach
+each branch, before any suite exists. The actual YAML includes the resolved payload and subject
+records as well; the excerpt above keeps only the fields relevant to that question.
 
 On a binding it resolves the crossing as well, reason included:
 
 ```shell-session
-$ ess inspect notify-on-invoice-created --path examples/billing
-binding    notify-on-invoice-created
-  when       billing.invoice.InvoiceCreated occurs
-  invoke     billing.email.SendEmail
-  mapping    recipient: billing.email.EmailAddress = event.customer_email: billing.invoice.Email
-    converted  An invoice's customer email is a deliverable address; the email context validates it again on the way out, so the invoice context does not have to know how.
-  mapping    template: billing.email.TemplateId = `invoice-created` (literal)
-  delivery   at_least_once
-  on failure escalate
-  summary    Tell the customer an invoice exists.
+$ ess inspect --path examples/billing notify-on-invoice-created
+bindings:
+  command: billing.email.SendEmail
+  delivery: at_least_once
+  escalation: billing.email.DeliveryEscalated
+  event: billing.invoice.InvoiceCreated
+  failure: escalate
+  mapping:
+  - conversion: An invoice's customer email is a deliverable address; the email context validates it again on the way out, so the invoice context does not have to know how.
+    target: recipient
+    target_type:
+      name: billing.email.EmailAddress
+    value:
+      field: customer_email
+      kind: event_field
+      type_ref:
+        name: billing.invoice.Email
+  name: notify-on-invoice-created
 ```
 
 `--kind` is only needed when one name is used in two namespaces; the seven it accepts are `domain`,

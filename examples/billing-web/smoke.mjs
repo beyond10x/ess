@@ -1,8 +1,8 @@
 // The boundary smoke test: load the realized module outside a browser and drive it.
 //
-// It is a *boundary* test, not a suite. The billing system's twenty-seven scenarios are the
-// committed conformance suite's, run natively against the same realization by
-// `cargo xtask synth`; what nothing else covers is the crossing this target adds — JSON in over
+// It is a *boundary* test, not a suite. The billing system's twenty-nine scenarios are the
+// committed conformance suite's, run natively against the same realization by the workspace tests;
+// what nothing else covers is the crossing this target adds — JSON in over
 // linear memory, JSON out, a catalogue built from the model, and a page that calls three exports.
 // So this asserts exactly that crossing, end to end, once.
 //

@@ -11,6 +11,7 @@ Generated from billing v3 (model digest aacdc2fe065d462cc4f9ba51e6740f88809b6b17
 | projection | files | describes |
 | --- | --- | --- |
 | `docs` | 6 | Markdown and Mermaid: the cheapest check that every construct can be described |
+| `site` | 7 | the documentation with frontmatter and a sidebar, ready for a static site |
 | `schema` | 29 | JSON Schema per command input, event payload and entity |
 | `openapi` | 2 | an OpenAPI document for every command a component accepts |
 | `asyncapi` | 2 | an AsyncAPI 3.0 document per component, covering what it publishes and what it reacts to |
@@ -23,6 +24,16 @@ Generated from billing v3 (model digest aacdc2fe065d462cc4f9ba51e6740f88809b6b17
 * [`docs/index.md`](docs/index.md)
 * [`docs/interactions.md`](docs/interactions.md)
 * [`docs/topology.md`](docs/topology.md)
+
+## `site`
+
+* [`site/crossings.md`](site/crossings.md)
+* [`site/domains/billing-email.md`](site/domains/billing-email.md)
+* [`site/domains/billing-invoice.md`](site/domains/billing-invoice.md)
+* [`site/index.md`](site/index.md)
+* [`site/interactions.md`](site/interactions.md)
+* [`site/sidebar.json`](site/sidebar.json)
+* [`site/topology.md`](site/topology.md)
 
 ## `schema`
 

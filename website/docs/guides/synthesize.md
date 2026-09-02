@@ -31,14 +31,13 @@ receives exactly one of three dispositions, with the reason recorded:
 | **obligation** | the specification cannot determine it — a decision or an algorithm — so it is named and left to a person, with a declared seam to implement against |
 | **refused** | the specification cannot even state what would be needed; the reason is printed |
 
-The first line of the run is the plan in one sentence, and the reasons follow it:
+The command summarizes the plan and the artifact inventory. `PLAN.md` and `plan.json` in the output
+carry each disposition and its reason:
 
 ```shell-session
-$ ess synthesize --path examples/billing --target rust | head -4
-billing v3 — 48 capabilities: 36 generated, 8 obligation(s), 4 refused, model digest aacdc2fe065d462cc4f9ba51e6740f88809b6b17ce006ef846b488f957005da3
-  obligation: command behaviour `billing.email.SendEmail` — decided outside the system: the provider rejects the recipient address
-  obligation: command behaviour `billing.invoice.CancelInvoice` — the contract is declared; the algorithm is not
-  obligation: command behaviour `billing.invoice.CreateInvoice` — the contract is declared; the algorithm is not
+$ ess synthesize --path examples/billing --target rust | head -2
+48 capabilities: 36 generated, 8 obligation(s), 4 refused
+15 artifact(s), nothing written
 ```
 
 A refusal reads the same way and says what it cannot state: *"actor grants
@@ -46,7 +45,7 @@ A refusal reads the same way and says what it cannot state: *"actor grants
 carry"*.
 
 The plan is rendered as `PLAN.md` and `plan.json` in every emitted tree, and it is
-**byte-identical across all three targets** — the same 45/33/8/4 line and the same `plan.json`
+**byte-identical across all three targets** — the same 48/36/8/4 summary and the same `plan.json`
 digest come back from `--target rust`, `--target go` and `--target web`. Choosing an emitter never
 changes the plan, only what is made of it.
 
@@ -85,20 +84,20 @@ candidate implementations; ambiguity is an error.
 ## How the output is proven, not assumed
 
 The generated code is judged by the suite the same specification generated
-(see [Verify an implementation](./verify-conformance.md)), and the repository's gate runs the whole
-argument on every commit — `cargo xtask synth --check`, a named step of `task check`:
+(see [Verify an implementation](./verify-conformance.md)), and the repository's `task check` gate
+runs the source-workspace tests and realization checks on every commit. Use the public
+`ess synthesize` command to write a target and review its output:
 
 * The committed billing suite, **unchanged**, passes the generated workspace linked with the
   hand-written realization — 29 of 29 scenarios — and a deliberately corrupted linkage fails
   exactly the scenario that exists to catch it.
-* The committed trees under `generated/rust/`, `generated/go/` and `generated/web/` are
-  regenerated and compared byte-for-byte, then built: `cargo check`, `gofmt`/`go build`/`go vet`,
-  and `cargo build --target wasm32-unknown-unknown` plus a Node-driven boundary test that loads the
-  committed module outside a browser and drives it through the page's own glue. Its last line is
+* Generator tests cover the structural contracts and deterministic bytes. The browser-specific
+  `task site-build` gate additionally compiles the committed WebAssembly realization and runs a
+  Node-driven boundary test that loads the module outside a browser and drives it through the
+  page's own glue. Its last line is
   `browser boundary: 21 claims held — catalogue, dispatch, transport, view, refusal, redelivery`
   — the count is derived from the checks the script actually makes, not written down beside them.
-  None of those three checks skips when its toolchain is missing: it fails and names it, because a
-  skipped check reads exactly like a passing one.
+  That gate fails when its toolchain is missing; it does not report a skipped check as passing.
 * The **dual-target demonstration**: `examples/gatepass/` is synthesized to Rust *and* Go, both
   binaries are started on ephemeral ports, and their startup records, their answers to seven HTTP
   exchanges, and the `/openapi.json` and `/docs` documents they publish are compared. The seven are

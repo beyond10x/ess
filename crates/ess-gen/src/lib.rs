@@ -14,10 +14,11 @@
 //!
 //! # An artifact says where it came from
 //!
-//! Design §10 asks for provenance on generated output: specification version, source digest,
-//! compiler version, generator version. [`Provenance`] carries all four, and every generator emits it,
-//! because an artifact that cannot say which specification produced it is an artifact nobody can
-//! audit — and the moment there are two checkouts, that is the only question anyone asks about it.
+//! Generated output carries the specification identity, the resolved-model digest, the digest of
+//! the model slice it derives from, and the regeneration command. [`Provenance`] deliberately does
+//! not stamp a compiler or generator build version: a release-only change must not rewrite an
+//! otherwise identical artifact. Every generator emits the content-addressed provenance because an
+//! artifact that cannot say which model produced it is an artifact nobody can audit.
 //!
 //! # Determinism
 //!

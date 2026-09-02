@@ -79,7 +79,7 @@ $ ess impact --from examples/billing --to "$NEXT" \
     --suite suites/generated/billing/suite.json | head -18
 billing v3 → v3
   before  aacdc2fe065d462cc4f9ba51e6740f88809b6b17ce006ef846b488f957005da3
-  after   c37415bc4c4d2dc113af19f38be2affc909fdc443fe7b080dbc4a9ef757cfab8
+  after   d3598193e8d2a0066993b7e2e9b9d09ceafde5e4989c4389f9f09c3d7e968257
 
 2 change(s): 1 widening, 1 narrowing, 0 other
 
@@ -90,7 +90,7 @@ billing v3 → v3
 
 suite billing v3 (aacdc2fe065d462cc4f9ba51e6740f88809b6b17ce006ef846b488f957005da3): 7 of 29 scenario(s) owed again
 2 construct(s) reached: 2 changed, 0 depend on one directly, 0 through another
-9 of 37 generated artifact(s) owed regeneration
+15 of 48 generated artifact(s) owed regeneration
 
   billing.invoice.CreateInvoice/outcome/accepted
     directly-changed actor billing.invoice.Customer — actor/billing.invoice.Customer/grant-removed/billing.invoice.CreateInvoice
@@ -118,10 +118,10 @@ which is why `impact` is a verb and not a flag.
 you can synthesise on the spot:
 
 ```shell-session
-$ SUITE=$(mktemp -d)
+$ SUITE=$(mktemp -d)/suite.json
 $ ess conform synthesize --path examples/revision-pair/before --out "$SUITE" >/dev/null
 $ ess impact --from examples/revision-pair/before --to examples/revision-pair/after \
-    --suite "$SUITE/suite.json" | grep -A 3 'PublishPriceList/outcome/published'
+    --suite "$SUITE" | grep -A 3 'PublishPriceList/outcome/published'
   catalog.pricing.PublishPriceList/outcome/published
     transitively-impacted entity catalog.pricing.PriceList — type/catalog.pricing.Currency/variant-added/CHF
       -> type catalog.pricing.Money has a field of type type catalog.pricing.Currency

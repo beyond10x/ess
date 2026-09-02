@@ -20,7 +20,7 @@ A specification — one YAML file or a directory — declares:
 |---|---|
 | **system** | the root: name, version, the domains it contains |
 | **types** | newtypes, structs, enums, unions — with invariants (`amount >= 0`) that travel into every projection |
-| **entities** | identity-bearing state with a lifecycle: states, transitions, and invariants that must hold |
+| **entities** | identity-bearing state with a lifecycle, invariants, and declared ownership/reference relations |
 | **commands** | the only way state changes; each declares its input and its **outcomes** — including the refusal branches, which the model gives no way to omit |
 | **events** | facts a command's outcome emits |
 | **errors** | declared domain refusals |
@@ -37,7 +37,7 @@ lists the absent pairs explicitly, derived from the same transitions.
 ## The pipeline
 
 ```text
-source ──validate──► consistent?  ──compile──► normalized IR ──┬─► generate   docs, JSON Schema, OpenAPI 3.1, AsyncAPI 3.0
+source ──validate──► consistent?  ──compile──► normalized IR ──┬─► generate   docs, site source, JSON Schema, OpenAPI, AsyncAPI
                                                                ├─► conform    scenario suite → runner → evidence
                                                                ├─► diff       semantic delta between two revisions
                                                                ├─► impact     what the delta invalidates
@@ -55,7 +55,8 @@ Everything downstream consumes the IR, and compiling the same source twice is by
 | Kind | Output | Why it exists |
 |---|---|---|
 | `docs` | Markdown with Mermaid diagrams | the cheapest completeness check: a construct with no rendering is a hole in a page a person reads |
-| `schema` | one JSON Schema per command input, event and error payload | the type system, projected without losing its distinctions — newtypes stay separate definitions |
+| `site` | the same Markdown with frontmatter and a deterministic sidebar | hand static-site generators model-derived pages without making ESS own presentation |
+| `schema` | JSON Schema for command inputs, messages, named types, and entities | the type system, projected without losing its distinctions — newtypes stay separate definitions |
 | `openapi` | one OpenAPI 3.1 document per component | the specification *is* the HTTP contract |
 | `asyncapi` | one AsyncAPI 3.0 document per component | the same for messaging, including what happens when a binding fails |
 
@@ -63,6 +64,11 @@ Every artifact carries provenance: specification version, a digest of the resolv
 digest of the model *slice* it derives from (`contract_digest`). Committed output is drift-checked
 in CI. See [the worked example](../examples/specification-to-contracts.md) for real input and
 output side by side.
+
+The arrow is one-way: the typed ESS YAML is the specification, and the documentation is one
+projection of it. ESS does not infer model semantics from an existing Markdown document. The
+`site` projection, introduced in `0.4.0`, also stops at static-site-ready Markdown and sidebar data;
+it deliberately emits no HTML, theme, or hosted site.
 
 ### The conformance suite (`ess conform`)
 
@@ -115,8 +121,8 @@ named obligation for a human. Nothing reaches a cluster. See
 
 ---
 
-**Sources.** `docs/guide/specification.md`; `crates/ess-domain/` through `crates/ess-synth/`;
+**Sources.** `crates/ess-domain/` through `crates/ess-synth/`;
 `crates/ess-diff/src/lib.rs` (the construct families); `crates/infra-spec/src/spec.rs`;
 `examples/billing/` (the normative
 specification); `suites/generated/*/suite.json` (the scenario counts);
-`generated/rust/billing/PLAN.md`; `CHANGELOG.md` §§ *0.7.1*, *0.8.0*.
+`generated/rust/billing/PLAN.md`; `CHANGELOG.md` §§ *0.4.0*, *0.5.0*.

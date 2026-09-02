@@ -23,12 +23,16 @@ semantics, unsupported projection, or a failed check.
 
 | Command | Purpose |
 |---|---|
-| `ess generate --path PATH --kind docs\|schema\|openapi\|asyncapi --out PATH` | Generate deterministic projections. |
+| `ess generate --path PATH --kind docs\|site\|schema\|openapi\|asyncapi --out PATH` | Generate deterministic projections. `site` is Markdown plus frontmatter and `sidebar.json`, not HTML. |
 | `ess synthesize …` | Emit supported structural implementation artifacts plus obligations. |
 | `ess conform synthesize …` | Generate the semantic suite required by a specification. |
 | `ess conform run …` | Execute a suite against a supported target and emit a standalone report. |
 
 Run `ess synthesize --help` and `ess conform <command> --help` for target-specific arguments.
+
+Omitting `--kind` generates every projection. Omitting `--out` lists or serializes artifacts
+without writing them. The repository-only `cargo xtask generate` command reconciles the committed
+`generated/` projection tree; `cargo xtask generate --check` compares it without writing.
 
 ## Adopter-owned schema contracts
 

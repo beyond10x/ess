@@ -8,7 +8,10 @@ repository.workspace = true
 publish = false
 
 [dependencies]
+anyhow.workspace = true
 clap.workspace = true
+ess-gen.workspace = true
+serde_json.workspace = true
 
 [lints]
 workspace = true

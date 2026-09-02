@@ -1,7 +1,7 @@
 ---
 title: A specification and its contracts
 sidebar_position: 1
-description: One command from the billing specification, and the JSON Schema, OpenAPI, AsyncAPI and documentation actually generated from it.
+description: One command from the billing specification and the contracts, repository documentation, and static-site source actually generated from it.
 ---
 
 import LabLaunch from '@site/src/components/LabLaunch';
@@ -12,6 +12,10 @@ This page shows the central claim on real files: the specification is not a docu
 contracts — it is what the contracts are derived from. Everything below is copied out of the
 repository: the source from `examples/billing/`, the output from `generated/`, kept in step by
 `cargo xtask generate --check` in CI.
+
+This page tracks the current `0.5.1` source tag. The `site` projection itself was introduced in
+`0.4.0`; entity relations and the account field visible in the current billing example shipped in
+`0.5.0`.
 
 ## The source
 
@@ -26,11 +30,11 @@ way this model can answer. The outcomes, the log, the binding invocations and th
 came back; the middle panel is the compiler's own model, asked for out of the same module. Nothing
 on the page is a recording of an earlier run.
 
-Four values are chosen rather than derived: an account id, an email address and two amounts. A
-specification declares types and not instances, so somebody has to pick an input. Everything the run then says
-about them came back over the module's boundary. Identifiers come from a counter inside the module
-rather than from a clock, so the same script produces a byte-identical stream of steps on every
-load, and `website/src/pages/lab/_run.test.mjs` holds it there.
+Four values are chosen rather than derived: an account id, an email address, and two amounts. A
+specification declares types and not instances, so somebody has to pick an input. Everything the run
+then says about them came back over the module's boundary. Generated invoice identifiers come from
+a counter inside the module rather than from a clock, so the same script produces a byte-identical
+stream of steps on every load, and `website/src/pages/lab/_run.test.mjs` holds it there.
 
 One command, from `examples/billing/domains/invoice.yaml`:
 
@@ -254,6 +258,25 @@ diagram cannot show an absence, the unconnected pairs are listed, derived from t
 The same page renders the cross-context binding as a flowchart — the event, the command it invokes,
 its outcomes, and the escalation event that makes the failure path observable at all.
 
+## Static-site source
+
+`ess generate --kind site` renders the same model-derived pages with frontmatter and a sidebar:
+
+```yaml
+---
+title: "billing v3"
+sidebar_position: 0
+---
+```
+
+The committed `generated/site/sidebar.json` begins with the same model and contract digests as the
+pages and orders `index`, the domain pages, interactions, and topology deterministically. This is
+the handoff to a documentation host: ESS produces Markdown and navigation data, not HTML, CSS, a
+theme, or a deployment.
+
+It is also not a reverse parser. The ESS YAML above is the specification; the prose in the generated
+page is one projection. Editing that prose cannot change the model, and regenerating replaces it.
+
 ## What is not generated
 
 Behaviour. The specification also generates its own conformance suite and the structural part of its
@@ -266,5 +289,6 @@ See [Synthesize code from a specification](../guides/synthesize.md) and
 **Sources.** `examples/billing/domains/invoice.yaml`;
 `generated/schema/commands/billing.invoice.CreateInvoice.schema.json`;
 `generated/openapi/invoice-service.yaml`; `generated/asyncapi/invoice-service.yaml`;
-`generated/docs/domains/billing-invoice.md`; `Taskfile.yml` (`generate-check`, and `lab`, which
+`generated/docs/domains/billing-invoice.md`; `generated/site/index.md`;
+`generated/site/sidebar.json`; `Taskfile.yml` (`projection-check` and `site-lab`, which
 builds the module the lab runs and holds its output to `website/src/pages/lab/_run.test.mjs`).

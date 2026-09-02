@@ -9,6 +9,8 @@ The canonical command is `ess`:
 ```console
 cargo run --bin ess -- validate --path examples/billing
 cargo run --bin ess -- compile --path examples/billing --format json
+cargo run --bin ess -- generate --path examples/billing --kind docs --out generated
+cargo run --bin ess -- generate --path examples/billing --kind site --out generated
 cargo run --bin ess -- generate --path examples/billing --kind openapi --out generated
 cargo run --bin ess -- conform synthesize --path examples/billing --out suite.json
 cargo run --bin ess -- conform run --suite suite.json --target billing --report-out report.json
@@ -16,6 +18,39 @@ cargo run --bin ess -- import openapi --path api.yaml --out interface.json
 cargo run --bin ess -- project openapi --ir interface.json --out normalized-api.yaml
 cargo run --bin ess -- schema validate instances --schemas schemas
 cargo run --bin ess -- schema typescript urn:example:registry:1 --root Registry --schemas schemas
+```
+
+## Install the command
+
+Every version release publishes checksum-pinned archives for Linux and macOS on x86-64 and ARM64.
+Pick the target for your machine from the [release page](https://github.com/beyond10x/ess/releases):
+
+| Machine | Target |
+|---|---|
+| Linux x86-64 | `x86_64-unknown-linux-gnu` |
+| Linux ARM64 | `aarch64-unknown-linux-gnu` |
+| macOS Intel | `x86_64-apple-darwin` |
+| macOS Apple Silicon | `aarch64-apple-darwin` |
+
+For example, to install the current release for Apple Silicon in the current directory:
+
+```console
+version=0.5.1
+target=aarch64-apple-darwin
+archive="ess-${version}-${target}.tar.gz"
+base="https://github.com/beyond10x/ess/releases/download/${version}"
+curl --fail --location --remote-name "${base}/${archive}"
+curl --fail --location --remote-name "${base}/SHA256SUMS"
+grep -F "  ${archive}" SHA256SUMS | shasum -a 256 --check
+tar -xzf "${archive}"
+"./ess-${version}-${target}/ess" --version
+```
+
+If none of the four targets matches your machine, build the locked source checkout instead:
+
+```console
+cargo build --locked --release --bin ess
+./target/release/ess --version
 ```
 
 Adapters use one explicit contract:
@@ -36,10 +71,15 @@ distinct. The compiler IRs keep compiler-minted handles, total lookups, ordered 
 deterministic serialization. New typed constructs are added only when an importer or projector
 establishes their semantics; there is no generic property bag or facet registry.
 
-A construct is a design page before it is code. The binding designs live in `docs/design/`; the
-newest is [entity relations](docs/design/ess-entity-relations-design-v0.1.md), which decides how an
-entity declares what it owns and what it references, what that refuses, and how one extension key
-(`x-ess-relation`) carries a relation into JSON Schema, OpenAPI and Rust.
+A construct is a design page before it is code. The binding designs live in `docs/design/`; entity
+relations shipped in `0.5.0` and their
+[design](docs/design/ess-entity-relations-design-v0.1.md) records how an entity declares what it owns
+and references, what that refuses, and how one extension key (`x-ess-relation`) carries a relation
+into JSON Schema, OpenAPI and Rust.
+
+`generate --kind docs` emits repository Markdown and Mermaid. The `site` projection, introduced in
+`0.4.0`, adds frontmatter and `sidebar.json` to the same pages so a static site generator can consume
+them. It does not accept prose as its specification and does not emit HTML, a theme, or hosting.
 
 Run the complete offline gate with:
 

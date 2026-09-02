@@ -14,7 +14,7 @@ checked against.
 ```shell-session
 $ ess conform synthesize \
     --path examples/billing \
-    --out target/billing-suite
+    --out target/billing-suite.json
 ```
 
 The suite is deterministic. Its provenance names the model and contract digests from which it was
@@ -24,7 +24,7 @@ derived.
 
 ```shell-session
 $ ess conform run \
-    --suite target/billing-suite \
+    --suite target/billing-suite.json \
     --target billing \
     --report-out target/billing-conformance.json
 ```
@@ -37,7 +37,7 @@ To run directly from a specification instead of a pre-generated suite:
 ```shell-session
 $ ess conform run \
     --path examples/billing \
-    --target oracle-fixture \
+    --target billing \
     --format json
 ```
 

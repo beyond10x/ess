@@ -70,6 +70,11 @@ tasks:
     cmds:
       - cargo xtask release verify
 
+  projection-check:
+    desc: Verify the committed projections of the normative billing specification.
+    cmds:
+      - cargo xtask generate --check
+
   site-lab:
     desc: Build and exercise the WebAssembly module used by the public browser lab.
     cmds:
@@ -78,6 +83,7 @@ tasks:
       - cargo build --release --target wasm32-unknown-unknown --manifest-path examples/billing-web/Cargo.toml
       - mkdir -p website/static/lab
       - cp examples/billing-web/target/wasm32-unknown-unknown/release/billing_web_realized.wasm website/static/lab/billing_web_realized.wasm
+      - node examples/billing-web/smoke.mjs generated/web/billing/bridge.js website/static/lab/billing_web_realized.wasm
       - node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON website/src/pages/lab/_run.test.mjs
 
   site-build:
@@ -94,4 +100,5 @@ tasks:
       - task: test
       - task: doc-check
       - task: example-check
+      - task: projection-check
       - task: release-check
