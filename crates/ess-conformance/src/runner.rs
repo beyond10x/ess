@@ -52,6 +52,8 @@
 //! that was never established — an unbound instance, a command result that does not exist — and a
 //! cascade of errors buries the one that matters.
 
+use ess_domain::view::{Direction, Ranking};
+use std::cmp::Ordering;
 use std::collections::BTreeMap;
 
 use ess_primitives::consistency::QueryConsistency;
@@ -1362,6 +1364,75 @@ fn decide(required: &Required, result: &SemanticViewResult) -> Verdict {
             }
         }
         Required::Satisfies(predicate) => satisfies(predicate, result),
+        Required::Ranked(order_by) => ranked(order_by, result),
+    }
+}
+
+/// The rows are in the declared order, most significant key first.
+///
+/// Adjacent pairs, not a sort: re-sorting the rows and comparing would answer "do these rows
+/// contain the right multiset", which they trivially do, and would pass a view that returned every
+/// row in reverse.
+///
+/// Fewer than two rows passes. There is no adjacent pair to be out of order, and demanding one
+/// would quietly make every ordering claim a non-emptiness claim as well.
+fn ranked(order_by: &[Ranking], result: &SemanticViewResult) -> Verdict {
+    for pair in result.rows.windows(2) {
+        let (earlier, later) = (&pair[0], &pair[1]);
+        for ranking in order_by {
+            let (Some(left), Some(right)) =
+                (earlier.get(&ranking.field), later.get(&ranking.field))
+            else {
+                return Verdict::Undecidable {
+                    predicate: format!("order by {ranking}"),
+                    row: format!("{} then {}", quote_row(earlier), quote_row(later)),
+                    missing: ranking.field.clone(),
+                };
+            };
+            let Some(order) = compare_nodes(left, right) else {
+                return Verdict::Undecidable {
+                    predicate: format!("order by {ranking}"),
+                    row: format!("{} then {}", quote_row(earlier), quote_row(later)),
+                    missing: format!(
+                        "`{}` holds values of two kinds, which have no order between them",
+                        ranking.field
+                    ),
+                };
+            };
+            // Equal on this key decides nothing; the next key does. Running out of keys with every
+            // one equal is a tie, and a tie is in order whichever way round it is.
+            if order == Ordering::Equal {
+                continue;
+            }
+            let wanted = match ranking.direction {
+                Direction::Ascending => Ordering::Less,
+                Direction::Descending => Ordering::Greater,
+            };
+            if order == wanted {
+                break;
+            }
+            return Verdict::Unsatisfied(format!(
+                "{} then {}, which is not `{ranking}`",
+                quote_row(earlier),
+                quote_row(later)
+            ));
+        }
+    }
+    Verdict::Satisfied
+}
+
+/// Two row values compared, or `None` when they are of kinds nothing orders.
+///
+/// A view that publishes a number in one row and a string in the next has not returned rows in the
+/// wrong order — it has returned a column that is not one thing, and calling that "out of order"
+/// would name the wrong defect.
+fn compare_nodes(left: &Node, right: &Node) -> Option<Ordering> {
+    match (left, right) {
+        (Node::Number(left), Node::Number(right)) => Some(left.cmp(right)),
+        (Node::Text(left), Node::Text(right)) => Some(left.cmp(right)),
+        (Node::Bool(left), Node::Bool(right)) => Some(left.cmp(right)),
+        (Node::Null, Node::Null) => Some(Ordering::Equal),
+        _ => None,
     }
 }
 
@@ -1378,6 +1449,11 @@ enum Required {
     Excludes(BTreeMap<String, Node>),
     /// Every row satisfies this, and there is at least one.
     Satisfies(Predicate),
+    /// The rows are in this order, most significant key first.
+    ///
+    /// Nothing to resolve: a ranking names a projected field and a direction, both of which the
+    /// specification wrote and neither of which a run can bind.
+    Ranked(Vec<Ranking>),
 }
 
 impl Required {
@@ -1397,6 +1473,7 @@ impl Required {
             ViewExpectation::Contains { fields } => Self::Contains(resolve(fields)?),
             ViewExpectation::Excludes { fields } => Self::Excludes(resolve(fields)?),
             ViewExpectation::Satisfies { predicate } => Self::Satisfies(predicate.clone()),
+            ViewExpectation::Ranked { order_by } => Self::Ranked(order_by.clone()),
         })
     }
 }
@@ -1493,6 +1570,14 @@ fn wanted(view: &ViewRef, required: &Required) -> String {
         }
         Required::Satisfies(predicate) => {
             format!("every row of {view} satisfies `{predicate}`, and it holds at least one")
+        }
+        Required::Ranked(order_by) => {
+            let keys = order_by
+                .iter()
+                .map(ToString::to_string)
+                .collect::<Vec<_>>()
+                .join(", then ");
+            format!("{view} holds its rows ordered by {keys}")
         }
     }
 }
@@ -1671,6 +1756,106 @@ mod tests {
         assert_eq!(awkward.correlation().as_str(), "Billing-v3-main-000001");
         let mut empty = Ids::seeded("///");
         assert_eq!(empty.correlation().as_str(), "ess-000001");
+    }
+
+    /// A row with a `priority` and a `queued_at`, the two keys an ordered queue view ranks by.
+    fn queued(priority: f64, queued_at: &str) -> ViewRow {
+        let mut fields = ViewRow::new();
+        fields.insert(
+            "priority".to_owned(),
+            Node::Number(ess_primitives::facts::Number::new(priority).expect("finite")),
+        );
+        fields.insert("queued_at".to_owned(), Node::Text(queued_at.to_owned()));
+        fields
+    }
+
+    fn ranking(field: &str, direction: Direction) -> Ranking {
+        Ranking {
+            field: field.to_owned(),
+            direction,
+        }
+    }
+
+    #[test]
+    fn a_declared_order_is_checked_on_adjacent_rows_and_the_next_key_breaks_a_tie() {
+        let order = Required::Ranked(vec![
+            ranking("priority", Direction::Descending),
+            ranking("queued_at", Direction::Ascending),
+        ]);
+
+        // Highest priority first; within one priority, oldest first.
+        assert_eq!(
+            decide(
+                &order,
+                &SemanticViewResult::of([
+                    queued(9.0, "2026-01-01T00:00:00Z"),
+                    queued(5.0, "2025-01-01T00:00:00Z"),
+                    queued(5.0, "2025-06-01T00:00:00Z"),
+                ])
+            ),
+            Verdict::Satisfied
+        );
+
+        // The tie-break is the assertion, not decoration: these two agree on priority and are the
+        // wrong way round on the key that decides.
+        assert!(matches!(
+            decide(
+                &order,
+                &SemanticViewResult::of([
+                    queued(5.0, "2025-06-01T00:00:00Z"),
+                    queued(5.0, "2025-01-01T00:00:00Z"),
+                ])
+            ),
+            Verdict::Unsatisfied(_)
+        ));
+
+        // Reversed on the first key.
+        assert!(matches!(
+            decide(
+                &order,
+                &SemanticViewResult::of([
+                    queued(1.0, "2025-01-01T00:00:00Z"),
+                    queued(9.0, "2025-01-01T00:00:00Z"),
+                ])
+            ),
+            Verdict::Unsatisfied(_)
+        ));
+    }
+
+    #[test]
+    fn an_order_over_fewer_than_two_rows_holds_and_does_not_double_as_a_non_emptiness_claim() {
+        let order = Required::Ranked(vec![ranking("priority", Direction::Descending)]);
+
+        assert_eq!(
+            decide(&order, &SemanticViewResult::default()),
+            Verdict::Satisfied
+        );
+        assert_eq!(
+            decide(
+                &order,
+                &SemanticViewResult::of([queued(1.0, "2025-01-01T00:00:00Z")])
+            ),
+            Verdict::Satisfied
+        );
+    }
+
+    #[test]
+    fn a_ranking_key_a_row_does_not_publish_is_undecidable_rather_than_out_of_order() {
+        let order = Required::Ranked(vec![ranking("score", Direction::Descending)]);
+        assert!(
+            matches!(
+                decide(
+                    &order,
+                    &SemanticViewResult::of([
+                        queued(1.0, "2025-01-01T00:00:00Z"),
+                        queued(2.0, "2025-01-01T00:00:00Z"),
+                    ])
+                ),
+                Verdict::Undecidable { .. }
+            ),
+            "a view that does not publish the key it is ranked by is a defect in the view, and \
+             calling it out of order would name the wrong one"
+        );
     }
 
     #[test]

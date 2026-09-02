@@ -81,7 +81,7 @@ use ess_domain::entity::{EntitySpec, Invariant, StateMachine, StateName, Transit
 use ess_domain::name::{Naming, QualifiedName, Version};
 use ess_domain::topology::{Replicas, Resource};
 use ess_domain::types::Primitive;
-use ess_domain::view::{AssertionStyle, Consistency};
+use ess_domain::view::{AssertionStyle, Consistency, Ranking};
 use ess_primitives::facts::FactPath;
 use ess_primitives::predicate::Predicate;
 
@@ -807,6 +807,13 @@ pub struct ResolvedView {
     /// Which instances it contains, as a parsed predicate. `None` means all of them.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub filter: Option<Predicate>,
+    /// The order the rows are ranked in, most significant key first. Empty means unordered.
+    ///
+    /// Every key names a field in [`Self::fields`], checked by `ess-domain`, so a consumer of this
+    /// IR can assert the order against the rows it was handed rather than against a field it was
+    /// never shown.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub order_by: Vec<Ranking>,
     /// How soon it reflects a command that has already returned.
     pub consistency: Consistency,
     /// The block a generated scenario must assert this view in.

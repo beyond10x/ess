@@ -67,6 +67,7 @@ use ess_domain::command::OutcomeName;
 use ess_domain::entity::StateName;
 use ess_domain::name::{QualifiedName, Version};
 use ess_domain::types::Primitive;
+use ess_domain::view::Ranking;
 use ess_primitives::error::ParseError;
 use ess_primitives::evidence::SpecDigest;
 use ess_primitives::node::Node;
@@ -1530,6 +1531,22 @@ pub enum ViewExpectation {
     Satisfies {
         /// The condition every row must satisfy.
         predicate: Predicate,
+    },
+    /// The rows are in the order the view declares, most significant key first.
+    ///
+    /// The keys are carried rather than a boolean, so a runner reports *which* key two adjacent
+    /// rows disagreed on. Every key names a field the view projects — `ess-domain` refuses one that
+    /// does not — so the assertion is answerable from the rows the target handed over and needs
+    /// nothing the specification did not promise to publish.
+    ///
+    /// # Fewer than two rows passes
+    ///
+    /// There is no adjacent pair to be out of order, and demanding one would make an ordering claim
+    /// double as a non-emptiness claim. [`Satisfies`](Self::Satisfies) makes that demand because an
+    /// invariant over no rows is vacuous; an *order* over no rows is simply held.
+    Ranked {
+        /// The ranking keys, most significant first.
+        order_by: Vec<Ranking>,
     },
 }
 

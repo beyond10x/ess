@@ -48,7 +48,7 @@ use ess_domain::binding::Delivery;
 use ess_domain::command::TestStrategy;
 use ess_domain::entity::{Invariant, StateMachine, StateName};
 use ess_domain::name::{Naming, QualifiedName};
-use ess_domain::view::{AssertionStyle, Consistency};
+use ess_domain::view::{AssertionStyle, Consistency, Direction};
 
 use crate::artifact::{Artifact, Generator};
 use crate::graph::{label, SystemGraph};
@@ -700,9 +700,43 @@ fn views_section(ir: &EssIr, domain: &ResolvedDomain, body: &mut String) {
             }
             body.push('\n');
         }
+        let _ = writeln!(body, "{}\n", order_sentence(view));
         let _ = writeln!(body, "{}\n", consistency_sentence(view.consistency));
         let _ = writeln!(body, "{}\n", assertion_sentence(view.assertion_style));
     }
+}
+
+/// What order the rows come back in, or that the view does not say.
+///
+/// Absence is written down rather than left out. A reader who is not told is entitled to assume
+/// there is an order and that it is the obvious one, and a view named for a position is exactly
+/// where that assumption gets made.
+fn order_sentence(view: &ResolvedView) -> String {
+    if view.order_by.is_empty() {
+        return "It declares no order, so the rows come back in whatever order the implementation \
+                has, and two reads may disagree."
+            .to_owned();
+    }
+    let keys = view
+        .order_by
+        .iter()
+        .map(|ranking| {
+            format!(
+                "`{}` {}",
+                ranking.field,
+                match ranking.direction {
+                    Direction::Ascending => "ascending",
+                    Direction::Descending => "descending",
+                }
+            )
+        })
+        .collect::<Vec<_>>();
+    format!("Its rows are ordered by {}.", join_with_then(&keys))
+}
+
+/// `a`, then `b`, then `c` — the ranking keys in significance order.
+fn join_with_then(keys: &[String]) -> String {
+    keys.join(", then ")
 }
 
 /// Every actor, and the commands each of them may invoke.

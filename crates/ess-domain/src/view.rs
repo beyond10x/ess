@@ -36,10 +36,10 @@
 //! | a filter reads something the source does not have | [`UnobservableFact`](ValidationCode::UnobservableFact) |
 //! | a field is projected twice | [`DuplicateDeclaration`](ValidationCode::DuplicateDeclaration) |
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::fmt;
 
-use ess_primitives::error::{ValidationCode, ValidationError, ValidationErrors};
+use ess_primitives::error::{ParseError, ValidationCode, ValidationError, ValidationErrors};
 use ess_primitives::facts::{FactPath, FactValue};
 use ess_primitives::predicate::{Operand, Predicate};
 
@@ -173,6 +173,118 @@ impl EntityFields for BTreeMap<QualifiedName, Vec<Field>> {
     }
 }
 
+/// Which way a ranking key runs.
+#[derive(
+    Debug,
+    Clone,
+    Copy,
+    Default,
+    PartialEq,
+    Eq,
+    serde::Serialize,
+    serde::Deserialize,
+    schemars::JsonSchema,
+)]
+#[serde(rename_all = "snake_case")]
+pub enum Direction {
+    /// Smallest first. The default, because it is the one a reader assumes when nothing says.
+    #[default]
+    Ascending,
+    /// Largest first.
+    Descending,
+}
+
+impl Direction {
+    /// The word as written in a document.
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Ascending => "asc",
+            Self::Descending => "desc",
+        }
+    }
+
+    /// Reads `asc`, `ascending`, `desc` or `descending`.
+    fn parse(word: &str) -> Option<Self> {
+        match word {
+            "asc" | "ascending" => Some(Self::Ascending),
+            "desc" | "descending" => Some(Self::Descending),
+            _ => None,
+        }
+    }
+}
+
+impl fmt::Display for Direction {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(self.as_str())
+    }
+}
+
+/// One ranking key of a view: a field it projects, and which way that field runs.
+///
+/// Written `priority desc`, or `queued_at` for the ascending default.
+#[derive(Debug, Clone, PartialEq, Eq, schemars::JsonSchema)]
+#[schemars(with = "String")]
+pub struct Ranking {
+    /// The projected field the rows are ordered by.
+    pub field: String,
+    /// Which way it runs.
+    pub direction: Direction,
+}
+
+impl Ranking {
+    /// Parses one key, written `<field>` or `<field> asc|desc`.
+    fn parse(value: &str) -> Result<Self, ParseError> {
+        let mut words = value.split_whitespace();
+        let Some(field) = words.next() else {
+            return Err(ParseError::shape(
+                "order_by",
+                "`<field> asc|desc`",
+                "nothing",
+            ));
+        };
+        let direction = match words.next() {
+            None => Direction::Ascending,
+            Some(word) => Direction::parse(word).ok_or_else(|| {
+                ParseError::identifier(
+                    "order_by direction",
+                    word,
+                    "must be `asc`, `ascending`, `desc` or `descending`".to_owned(),
+                )
+            })?,
+        };
+        if let Some(extra) = words.next() {
+            return Err(ParseError::shape(
+                "order_by",
+                "`<field> asc|desc`",
+                format!("a third word, `{extra}`"),
+            ));
+        }
+        Ok(Self {
+            field: field.to_owned(),
+            direction,
+        })
+    }
+}
+
+impl fmt::Display for Ranking {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{} {}", self.field, self.direction)
+    }
+}
+
+impl serde::Serialize for Ranking {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        serializer.serialize_str(&self.to_string())
+    }
+}
+
+impl<'de> serde::Deserialize<'de> for Ranking {
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        let written = String::deserialize(deserializer)?;
+        Self::parse(&written).map_err(serde::de::Error::custom)
+    }
+}
+
 /// A declared projection of an entity: the part of it the outside world is promised.
 ///
 /// A view does not require the implementation to use CQRS (§4.6). It says what can be observed, not
@@ -196,6 +308,13 @@ pub struct ViewSpec {
     pub fields: Vec<Field>,
     /// Which instances it contains. Absent means all of them.
     pub filter: Option<Predicate>,
+    /// The order the rows are ranked in, most significant key first. Empty means unordered.
+    ///
+    /// A view named for a position — `CallPosition`, `TopAgents` — says nothing about position
+    /// without this. Absent is a real answer and stays the default: most views are sets, and a
+    /// specification that made every one of them declare an order would be inventing a promise the
+    /// implementation never made.
+    pub order_by: Vec<Ranking>,
     /// How soon it reflects a command that has already returned.
     pub consistency: Consistency,
     /// What it is called on the wire and shown as.
@@ -440,7 +559,64 @@ impl ViewSpec {
             errors.extend(self.validate_filter_values(filter, types, source_fields));
         }
 
+        errors.extend(self.validate_order(projected_fields));
+
         errors.into_result(())
+    }
+
+    /// Checks that every ranking key names a field this view projects, once.
+    ///
+    /// **Projected, not merely declared on the source.** A rank over a field the view does not
+    /// expose is a promise nobody can check: a consumer reading the rows cannot tell a correctly
+    /// ordered page from a wrongly ordered one, and neither can a conformance scenario, which is
+    /// the reader this rule is written for.
+    fn validate_order(&self, projected: Option<&[Field]>) -> ValidationErrors {
+        let mut errors = ValidationErrors::new();
+        if self.order_by.is_empty() {
+            return errors;
+        }
+        let at = format!("view.{}.order_by", self.name);
+
+        // `None` means the shape did not resolve, which is already reported; checking keys against
+        // fields nobody could read would be a second report of one defect.
+        let Some(projected) = projected else {
+            return errors;
+        };
+
+        let mut seen: BTreeSet<&str> = BTreeSet::new();
+        for ranking in &self.order_by {
+            if !projected.iter().any(|field| field.name == ranking.field) {
+                errors.push(
+                    ValidationError::new(
+                        ValidationCode::UndeclaredReference,
+                        at.clone(),
+                        format!(
+                            "`{}` ranks by `{}`, which it does not project, so nothing reading \
+                             this view can tell whether the order holds",
+                            self.name, ranking.field
+                        ),
+                    )
+                    .with_hint(format!(
+                        "projected here: {}",
+                        join(projected.iter().map(|field| field.name.clone()))
+                    )),
+                );
+                continue;
+            }
+            if !seen.insert(ranking.field.as_str()) {
+                errors.push(ValidationError::new(
+                    ValidationCode::DuplicateDeclaration,
+                    at.clone(),
+                    format!(
+                        "`{}` ranks by `{}` twice; the second key can never decide anything the \
+                         first did not",
+                        self.name, ranking.field
+                    ),
+                ));
+            }
+        }
+
+        errors
     }
 
     /// Checks every value a filter compares against what the field it compares can hold.
@@ -598,6 +774,9 @@ pub struct RawViewSpec {
     /// Which instances it contains.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub filter: Option<Predicate>,
+    /// The order the rows are ranked in, most significant key first.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub order_by: Vec<Ranking>,
     /// How soon it reflects a command that has already returned. Defaults to `eventual`.
     #[serde(default)]
     pub consistency: Consistency,
@@ -616,6 +795,7 @@ impl TryFrom<RawViewSpec> for ViewSpec {
             shape: raw.shape,
             fields: raw.fields,
             filter: raw.filter,
+            order_by: raw.order_by,
             consistency: raw.consistency,
             naming: raw.naming,
         };
@@ -631,6 +811,7 @@ impl From<ViewSpec> for RawViewSpec {
             shape: view.shape,
             fields: view.fields,
             filter: view.filter,
+            order_by: view.order_by,
             consistency: view.consistency,
             naming: view.naming,
         }
@@ -768,6 +949,101 @@ consistency: read_your_writes
     fn refuse(view: &ViewSpec) -> ValidationErrors {
         view.validate(&registry(), &entities())
             .expect_err("expected a refusal")
+    }
+
+    fn ordered(order_by: &str) -> Result<ViewSpec, ValidationErrors> {
+        let document = format!("{INVOICE_BY_ID}order_by:\n{order_by}");
+        let raw: RawViewSpec = serde_yaml::from_str(&document).expect("parses");
+        ViewSpec::try_from(raw)
+    }
+
+    #[test]
+    fn a_view_declares_the_order_its_rows_come_back_in() {
+        let view = ordered("  - total desc\n  - invoice_id\n").expect("a valid view");
+        assert!(view.validate(&registry(), &entities()).is_ok());
+
+        assert_eq!(
+            view.order_by,
+            vec![
+                Ranking {
+                    field: "total".to_owned(),
+                    direction: Direction::Descending
+                },
+                Ranking {
+                    field: "invoice_id".to_owned(),
+                    direction: Direction::Ascending
+                },
+            ],
+            "a key with no direction is ascending, which is what a reader assumes"
+        );
+
+        let round_tripped: RawViewSpec =
+            serde_yaml::from_str(&serde_yaml::to_string(&view).expect("writes")).expect("re-reads");
+        assert_eq!(
+            ViewSpec::try_from(round_tripped).expect("valid").order_by,
+            view.order_by
+        );
+    }
+
+    #[test]
+    fn a_view_says_nothing_about_order_unless_it_declares_one() {
+        assert!(
+            invoice_by_id().order_by.is_empty(),
+            "most views are sets, and making every one of them declare an order would invent a \
+             promise the implementation never made"
+        );
+    }
+
+    #[test]
+    fn ranking_by_a_field_the_view_does_not_project_is_refused() {
+        // `state` is a field of the entity and not of this view. Ordering by it would be a promise
+        // nothing reading the view could check.
+        let view = ordered("  - state desc\n").expect("parses");
+        let errors = view
+            .validate(&registry(), &entities())
+            .expect_err("expected a refusal");
+        let refusal = errors
+            .as_slice()
+            .iter()
+            .find(|error| error.code == ValidationCode::UndeclaredReference)
+            .unwrap_or_else(|| panic!("expected an undeclared reference, got {errors}"));
+        assert!(
+            refusal.message.contains("`state`") && refusal.message.contains("does not project"),
+            "{}",
+            refusal.message
+        );
+    }
+
+    #[test]
+    fn ranking_by_one_field_twice_is_refused() {
+        let view = ordered("  - total desc\n  - total asc\n").expect("parses");
+        let errors = view
+            .validate(&registry(), &entities())
+            .expect_err("expected a refusal");
+        assert!(
+            errors
+                .as_slice()
+                .iter()
+                .any(|error| error.code == ValidationCode::DuplicateDeclaration),
+            "{errors}"
+        );
+    }
+
+    #[test]
+    fn a_direction_that_is_not_a_direction_is_refused_by_name() {
+        // A ranking is refused where it is read, not where the view is validated: `sideways` is
+        // not a direction in any view, so there is nothing about this view to check it against.
+        let read = |order_by: &str| {
+            serde_yaml::from_str::<RawViewSpec>(&format!("{INVOICE_BY_ID}order_by:\n{order_by}"))
+                .expect_err("refused")
+                .to_string()
+        };
+
+        let unknown = read("  - total sideways\n");
+        assert!(unknown.contains("sideways"), "{unknown}");
+
+        let extra = read("  - total desc please\n");
+        assert!(extra.contains("please"), "{extra}");
     }
 
     #[test]

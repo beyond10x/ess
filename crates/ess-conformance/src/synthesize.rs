@@ -1726,6 +1726,24 @@ fn view_expectations(
                 expectation,
             }),
         }
+        // A declared order is a second promise about the same read, asserted in the same block as
+        // the first: an `eventual` view that is queried again would be a different read, and two
+        // reads can disagree about order without either of them being wrong.
+        if !view.order_by.is_empty() {
+            let ranked = ViewExpectation::Ranked {
+                order_by: view.order_by.clone(),
+            };
+            match view.assertion_style {
+                AssertionStyle::Expect => steps.push(ScenarioStep::ExpectView {
+                    view: name.clone(),
+                    expectation: ranked,
+                }),
+                AssertionStyle::Eventually => steps.push(ScenarioStep::EventuallyView {
+                    view: name.clone(),
+                    expectation: ranked,
+                }),
+            }
+        }
         named.insert(name);
     }
     (steps, named)
