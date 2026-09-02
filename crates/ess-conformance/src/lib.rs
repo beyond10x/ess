@@ -126,6 +126,7 @@
 pub mod decision;
 pub mod evidence;
 pub mod faulty;
+pub mod go;
 pub mod input;
 pub mod reference;
 pub mod report;

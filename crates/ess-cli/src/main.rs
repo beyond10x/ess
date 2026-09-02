@@ -238,9 +238,18 @@ impl SynthesisTarget {
 #[derive(Debug, Subcommand)]
 enum ConformCommand {
     /// Generate the suite the specification obliges.
+    ///
+    /// `ir` writes the canonical suite document to the file `--out` names. `go` writes a Go test
+    /// package into the directory `--out` names — the runner, the evaluator and the suite — so an
+    /// implementation in Go can be held to the specification by `go test` rather than by nothing,
+    /// which is what a synthesized suite no runner can reach amounts to.
     Synthesize {
         #[command(flatten)]
         input: SpecPath,
+        /// What to write the suite as.
+        #[arg(long, value_enum, default_value_t = SuiteTarget::Ir)]
+        target: SuiteTarget,
+        /// A file for `--target ir`, a directory for `--target go`.
         #[arg(long)]
         out: Option<PathBuf>,
     },
@@ -258,6 +267,15 @@ enum ConformCommand {
         #[arg(long, value_enum, default_value_t = Format::Text)]
         format: Format,
     },
+}
+
+/// What a synthesized suite is written as.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
+enum SuiteTarget {
+    /// The canonical `ess-conformance/1` document.
+    Ir,
+    /// A Go test package: the runner, the evaluator and the suite.
+    Go,
 }
 
 #[derive(Debug, Clone, Copy, ValueEnum)]
@@ -812,24 +830,47 @@ fn synthesize(
 
 fn conform(command: ConformCommand) -> Result<ExitCode> {
     match command {
-        ConformCommand::Synthesize { input, out } => {
+        ConformCommand::Synthesize { input, target, out } => {
             let Ok((ir, _)) = resolved(&input.path, input.format)? else {
                 return Ok(ExitCode::from(1));
             };
             let synthesis = ess_conformance::synthesize(&ir);
             let json = synthesis.suite.to_canonical_json();
-            if let Some(out) = &out {
-                fs::write(out, &json).with_context(|| format!("writing {}", out.display()))?;
-            }
+
+            let written = match (target, &out) {
+                (SuiteTarget::Ir, Some(out)) => {
+                    fs::write(out, &json).with_context(|| format!("writing {}", out.display()))?;
+                    Some(format!("written to {}", out.display()))
+                }
+                (SuiteTarget::Go, Some(out)) => {
+                    let files = ess_conformance::go::emit(&synthesis.suite);
+                    for file in &files {
+                        let path = out.join(&file.path);
+                        if let Some(parent) = path.parent() {
+                            fs::create_dir_all(parent)
+                                .with_context(|| format!("creating {}", parent.display()))?;
+                        }
+                        fs::write(&path, &file.contents)
+                            .with_context(|| format!("writing {}", path.display()))?;
+                    }
+                    Some(format!(
+                        "{} file(s) written to {}",
+                        files.len(),
+                        out.display()
+                    ))
+                }
+                // Refusing to write without `--out` is the rule every generating verb here keeps:
+                // a verb that scatters a tree over a working directory the first time somebody
+                // tries it is a verb nobody tries twice.
+                (_, None) => None,
+            };
+
             match input.format {
                 Format::Text => println!(
-                    "{} scenario(s), {} refusal(s){}",
+                    "{} scenario(s), {} refusal(s), {}",
                     synthesis.suite.len(),
                     synthesis.refusals.len(),
-                    out.map_or_else(
-                        || ", nothing written".to_owned(),
-                        |path| format!(", written to {}", path.display())
-                    )
+                    written.unwrap_or_else(|| "nothing written".to_owned())
                 ),
                 Format::Json => print!("{json}"),
                 Format::Yaml => render(&synthesis.suite, Format::Yaml)?,
