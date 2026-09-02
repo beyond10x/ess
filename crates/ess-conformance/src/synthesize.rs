@@ -155,7 +155,7 @@ use ess_domain::types::MAX_TYPE_DEPTH;
 use ess_domain::view::AssertionStyle;
 use ess_primitives::facts::{FactPath, FactSource, FactStore, FactValue};
 use ess_primitives::node::Node;
-use ess_primitives::predicate::{Operand, Predicate, Truth};
+use ess_primitives::predicate::{Operand, Predicate, Quantified, Truth};
 
 use crate::decision::{when, Decision, Unevaluable};
 use crate::input::{flatten, resolve_path, ShapeErrors};
@@ -2465,8 +2465,12 @@ fn rebased(predicate: &Predicate, prefix: &str, body: &ResolvedBody) -> Predicat
     map_paths(predicate, &onto)
 }
 
-/// One predicate with every fact path rewritten, and nothing else touched.
-fn map_paths(predicate: &Predicate, onto: &impl Fn(&FactPath) -> FactPath) -> Predicate {
+/// One predicate with every *free* fact path rewritten, and nothing else touched.
+///
+/// `dyn` rather than a generic, because a quantifier has to descend with a different rewrite from
+/// the one it was handed — one that leaves its binder alone — and two closures written at different
+/// places are two types.
+fn map_paths(predicate: &Predicate, onto: &dyn Fn(&FactPath) -> FactPath) -> Predicate {
     let operand = |it: &Operand| match it {
         Operand::Fact(path) => Operand::Fact(onto(path)),
         Operand::Literal(value) => Operand::Literal(value.clone()),
@@ -2502,6 +2506,29 @@ fn map_paths(predicate: &Predicate, onto: &impl Fn(&FactPath) -> FactPath) -> Pr
             path: onto(path),
             values: values.clone(),
         },
+        // The collection is a model path and moves with the rest. The binder is not: re-rooting
+        // `slot.left` at a field position would produce a path naming a field that does not exist,
+        // and it would do it silently, which is the failure this whole module refuses elsewhere.
+        Predicate::Forall(quantified) | Predicate::Exists(quantified) => {
+            let bind = quantified.bind.clone();
+            let inner = move |path: &FactPath| {
+                if path.namespace() == bind {
+                    path.clone()
+                } else {
+                    onto(path)
+                }
+            };
+            let mapped = Box::new(Quantified {
+                over: onto(&quantified.over),
+                bind: quantified.bind.clone(),
+                body: map_paths(&quantified.body, &inner),
+            });
+            if matches!(predicate, Predicate::Forall(_)) {
+                Predicate::Forall(mapped)
+            } else {
+                Predicate::Exists(mapped)
+            }
+        }
     }
 }
 

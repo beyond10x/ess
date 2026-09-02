@@ -227,6 +227,12 @@ fn collect_literals(predicate: &Predicate, path: &FactPath, found: &mut Vec<Fact
                 found.extend(values.iter().cloned());
             }
         }
+        // Walked, not skipped: a body may compare a free path against a literal beside the
+        // element ones. A binder-rooted read cannot collide with `path`, which is a model path, so
+        // no filtering is needed here — the equality test does it.
+        Predicate::Forall(quantified) | Predicate::Exists(quantified) => {
+            collect_literals(&quantified.body, path, found);
+        }
         Predicate::Always | Predicate::Never | Predicate::Truthy(_) | Predicate::Defined(_) => {}
     }
 }

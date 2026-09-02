@@ -37,12 +37,43 @@
 //! A bare list is an implicit `all`. On the right-hand side of a comparison, a bare word
 //! containing a dot is read as a fact path and anything else as a literal; quote a literal
 //! that contains dots (`version == "1.2.3"`).
+//!
+//! # Quantifiers
+//!
+//! Everything above asks about one value. A claim about a *collection* — every element, or some
+//! element — needs a quantifier, and there is no way to write one by nesting the forms above: a
+//! predicate that reads `slots.0.matched` and `slots.1.matched` is a claim about a collection of
+//! exactly two, which is not what anybody meant.
+//!
+//! ```yaml
+//! forall:
+//!   in: slots            # the collection, a fact path
+//!   as: slot             # the name the body binds each element to
+//!   that: slot.left.count >= 0
+//!
+//! exists:
+//!   in: pairs
+//!   as: pair
+//!   that:
+//!     all:
+//!       - pair.left == input.agent_id
+//!       - pair.right != ""
+//! ```
+//!
+//! **There is no string form.** Implication has none either, for the same reason: the compact
+//! syntax is one scalar, and a binder introduces a scope that a scalar cannot delimit without
+//! becoming a second grammar to keep in step with this one.
+//!
+//! A collection publishes its size as `<path>.count` and its elements as `<path>.0.…` — see
+//! [`FactSource::cardinality`]. An unobserved collection evaluates to [`Truth::Unknown`], never to
+//! the vacuous truth an empty one would give: *nobody looked* and *there was nothing to look at*
+//! are the two situations three-valued logic exists to keep apart.
 
 use std::cmp::Ordering;
 use std::fmt;
 
 use crate::error::ParseError;
-use crate::facts::{FactPath, FactSource, FactValue};
+use crate::facts::{FactPath, FactSource, FactValue, Scales};
 use crate::node::Node;
 
 /// The result of evaluating a predicate.
@@ -332,6 +363,100 @@ pub enum Predicate {
         /// Rejected values.
         values: Vec<FactValue>,
     },
+    /// Every element of a collection satisfies the body.
+    ///
+    /// Empty holds vacuously; unobserved is [`Truth::Unknown`].
+    Forall(Box<Quantified>),
+    /// At least one element of a collection satisfies the body.
+    ///
+    /// Empty does not hold; unobserved is [`Truth::Unknown`].
+    Exists(Box<Quantified>),
+}
+
+/// A quantified claim: a collection, the name its elements are bound to, and the body.
+///
+/// # Why the binder is part of the value rather than a positional index
+///
+/// The body could have been written against `element.…` with no binder at all, and one nested
+/// inside another would then have no way to reach the outer element. Naming the binder costs one
+/// line in the document and makes nesting mean something.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Quantified {
+    /// The collection to walk.
+    pub over: FactPath,
+    /// The name the body reads each element under. One fact-path segment.
+    pub bind: String,
+    /// The condition each element is held to.
+    pub body: Predicate,
+}
+
+impl Quantified {
+    /// Evaluates the body once per element, folding conjunctively when `universal`.
+    fn evaluate(&self, facts: &dyn FactSource, universal: bool) -> Truth {
+        let Some(count) = facts.cardinality(&self.over) else {
+            return Truth::Unknown;
+        };
+        let mut result = if universal { Truth::True } else { Truth::False };
+        for index in 0..count {
+            let element = Element {
+                inner: facts,
+                bind: &self.bind,
+                prefix: self.over.child(&index.to_string()),
+            };
+            let truth = self.body.evaluate(&element);
+            result = if universal {
+                result.and(truth)
+            } else {
+                result.or(truth)
+            };
+            // `False` dominates a conjunction and `True` a disjunction, so the remaining elements
+            // cannot change the answer. Stopping is not an optimisation: walking a collection whose
+            // verdict is already settled would report causes from elements nobody is waiting on.
+            if result == if universal { Truth::False } else { Truth::True } {
+                break;
+            }
+        }
+        result
+    }
+}
+
+/// One element of a collection, seen as a fact source.
+///
+/// Reads of `<bind>.rest` become reads of `<over>.<index>.rest`; every other path passes through
+/// untouched, which is what lets a body mix element facts with free ones. Nesting one of these
+/// inside another is how an inner quantifier still reaches the outer element: the inner rewrites
+/// its own binder and hands the result to the outer, which rewrites its own.
+struct Element<'a> {
+    inner: &'a dyn FactSource,
+    bind: &'a str,
+    prefix: FactPath,
+}
+
+impl Element<'_> {
+    fn rebind(&self, path: &FactPath) -> FactPath {
+        if path.namespace() != self.bind {
+            return path.clone();
+        }
+        let mut rebound = self.prefix.clone();
+        for segment in &path.segments()[1..] {
+            rebound = rebound.child(segment);
+        }
+        rebound
+    }
+}
+
+impl FactSource for Element<'_> {
+    fn fact(&self, path: &FactPath) -> Option<FactValue> {
+        self.inner.fact(&self.rebind(path))
+    }
+
+    fn scales(&self) -> &Scales {
+        self.inner.scales()
+    }
+
+    fn cardinality(&self, path: &FactPath) -> Option<usize> {
+        self.inner.cardinality(&self.rebind(path))
+    }
 }
 
 impl Predicate {
@@ -406,6 +531,8 @@ impl Predicate {
             Self::NoneOf { path, values } => facts.fact(path).map_or(Truth::Unknown, |observed| {
                 Truth::from_bool(!values.contains(&observed))
             }),
+            Self::Forall(quantified) => quantified.evaluate(facts, true),
+            Self::Exists(quantified) => quantified.evaluate(facts, false),
         }
     }
 
@@ -568,26 +695,91 @@ impl Predicate {
     }
 
     fn visit_fact_paths<'a>(&'a self, visit: &mut impl FnMut(&'a FactPath)) {
+        self.visit_free_paths(&mut Vec::new(), visit);
+    }
+
+    /// [`Self::visit_fact_paths`], skipping paths rooted at a quantifier's binder.
+    ///
+    /// A binder is not a fact and no projection publishes one, so a caller validating that "every
+    /// path this predicate reads exists in the model" must not be shown `slot.left`. It is shown
+    /// the collection the binder ranges over instead, which *is* a model path, and every free path
+    /// the body reads beside it.
+    fn visit_free_paths<'a>(
+        &'a self,
+        bound: &mut Vec<&'a str>,
+        visit: &mut impl FnMut(&'a FactPath),
+    ) {
         match self {
             Self::Always | Self::Never => {}
             Self::All(children) | Self::Any(children) => {
                 for child in children {
-                    child.visit_fact_paths(visit);
+                    child.visit_free_paths(bound, visit);
                 }
             }
-            Self::Not(inner) => inner.visit_fact_paths(visit),
+            Self::Not(inner) => inner.visit_free_paths(bound, visit),
             Self::Compare { left, right, .. } => {
-                if let Some(path) = left.fact_path() {
-                    visit(path);
-                }
-                if let Some(path) = right.fact_path() {
-                    visit(path);
+                for path in [left.fact_path(), right.fact_path()].into_iter().flatten() {
+                    if !bound.contains(&path.namespace()) {
+                        visit(path);
+                    }
                 }
             }
             Self::Truthy(path)
             | Self::Defined(path)
             | Self::AnyOf { path, .. }
-            | Self::NoneOf { path, .. } => visit(path),
+            | Self::NoneOf { path, .. } => {
+                if !bound.contains(&path.namespace()) {
+                    visit(path);
+                }
+            }
+            Self::Forall(quantified) | Self::Exists(quantified) => {
+                if !bound.contains(&quantified.over.namespace()) {
+                    visit(&quantified.over);
+                }
+                bound.push(&quantified.bind);
+                quantified.body.visit_free_paths(bound, visit);
+                bound.pop();
+            }
+        }
+    }
+
+    /// Every collection a quantifier in this predicate walks, outermost first.
+    ///
+    /// A caller validating an invariant needs these separately from [`Self::fact_paths`]: those are
+    /// checked for *existing*, and a collection is additionally checked for *being* one. Walking a
+    /// scalar is not a condition nobody can decide, it is a condition that means nothing.
+    /// A nested quantifier over an outer element — `forall e in slot.left` inside `forall slot in
+    /// slots` — is *not* returned: `slot.left` names no field of anything the caller can resolve.
+    /// It is checked where it can be, by the same walk one level down.
+    pub fn quantified_collections(&self) -> Vec<&FactPath> {
+        let mut found = Vec::new();
+        self.visit_quantified(&mut Vec::new(), &mut found);
+        found
+    }
+
+    fn visit_quantified<'a>(&'a self, bound: &mut Vec<&'a str>, found: &mut Vec<&'a FactPath>) {
+        match self {
+            Self::All(children) | Self::Any(children) => {
+                for child in children {
+                    child.visit_quantified(bound, found);
+                }
+            }
+            Self::Not(inner) => inner.visit_quantified(bound, found),
+            Self::Forall(quantified) | Self::Exists(quantified) => {
+                if !bound.contains(&quantified.over.namespace()) {
+                    found.push(&quantified.over);
+                }
+                bound.push(&quantified.bind);
+                quantified.body.visit_quantified(bound, found);
+                bound.pop();
+            }
+            Self::Always
+            | Self::Never
+            | Self::Compare { .. }
+            | Self::Truthy(_)
+            | Self::Defined(_)
+            | Self::AnyOf { .. }
+            | Self::NoneOf { .. } => {}
         }
     }
 
@@ -662,6 +854,8 @@ impl Predicate {
                 Ok(Self::any(children))
             }
             "not" => Ok(Self::not(nested(value)?)),
+            "forall" => Ok(Self::Forall(Box::new(Self::quantifier(value, depth)?))),
+            "exists" => Ok(Self::Exists(Box::new(Self::quantifier(value, depth)?))),
             "none" | "none_of_these" => {
                 let children = value
                     .as_seq_or_single()
@@ -675,13 +869,83 @@ impl Predicate {
                     ParseError::predicate(
                         path,
                         format!(
-                            "{error}; expected a fact path or one of `all`, `any`, `not`, `none`"
+                            "{error}; expected a fact path or one of `all`, `any`, `not`, `none`, \
+                             `forall`, `exists`"
                         ),
                     )
                 })?;
                 Self::from_constraint(path, value)
             }
         }
+    }
+
+    /// Parses the body of a `forall:` or `exists:` entry.
+    fn quantifier(value: &Node, depth: usize) -> Result<Quantified, ParseError> {
+        let Node::Map(entries) = value else {
+            return Err(ParseError::shape(
+                "quantifier",
+                "a mapping with `in`, `as` and `that`",
+                value.type_name(),
+            ));
+        };
+
+        let mut over = None;
+        let mut bind = None;
+        let mut body = None;
+        for (key, node) in entries {
+            match key.as_str() {
+                "in" => over = Some(Self::quantifier_collection(node)?),
+                "as" => bind = Some(Self::quantifier_binder(node)?),
+                "that" => body = Some(Self::from_node_nested(node, depth + 1)?),
+                other => {
+                    return Err(ParseError::predicate(
+                        other,
+                        "a quantifier takes `in`, `as` and `that`, and nothing else",
+                    ));
+                }
+            }
+        }
+
+        let missing = |what: &str| {
+            ParseError::shape(
+                "quantifier",
+                "`in`, `as` and `that`",
+                format!("no `{what}`"),
+            )
+        };
+        Ok(Quantified {
+            over: over.ok_or_else(|| missing("in"))?,
+            bind: bind.ok_or_else(|| missing("as"))?,
+            body: body.ok_or_else(|| missing("that"))?,
+        })
+    }
+
+    /// Parses the `in:` of a quantifier: the collection it walks.
+    fn quantifier_collection(node: &Node) -> Result<FactPath, ParseError> {
+        let text = node
+            .as_text()
+            .ok_or_else(|| ParseError::shape("quantifier `in`", "a fact path", node.type_name()))?;
+        FactPath::new(text)
+    }
+
+    /// Parses the `as:` of a quantifier: the name its body binds each element to.
+    ///
+    /// One segment, because a binder is a name and not a path — `as: slot.left` would read as a
+    /// claim about where the element comes from, which is what `in:` already says.
+    fn quantifier_binder(node: &Node) -> Result<String, ParseError> {
+        let text = node
+            .as_text()
+            .ok_or_else(|| ParseError::shape("quantifier `as`", "a name", node.type_name()))?;
+        let path = FactPath::new(text)?;
+        if path.segments().len() != 1 {
+            return Err(ParseError::identifier(
+                "quantifier binder",
+                text,
+                "must be one segment; a binder names an element, it does not path into one"
+                    .to_owned(),
+            ));
+        }
+        Ok(text.to_owned())
     }
 
     /// Parses the constraint attached to a fact path in mapping form.
@@ -907,9 +1171,35 @@ impl Predicate {
                 .into_iter()
                 .collect(),
             ),
+            Self::Forall(quantified) => quantifier_node("forall", quantified),
+            Self::Exists(quantified) => quantifier_node("exists", quantified),
             leaf => Node::Text(leaf.to_string()),
         }
     }
+}
+
+/// Renders a quantifier back into the mapping it was written as.
+///
+/// Explicit rather than falling through to the string arm below, because there is no string form
+/// to fall through to: a quantifier that rendered as text would be a document this parser refuses
+/// to read back.
+fn quantifier_node(keyword: &str, quantified: &Quantified) -> Node {
+    Node::Map(
+        [(
+            keyword.to_owned(),
+            Node::Map(
+                [
+                    ("in".to_owned(), Node::Text(quantified.over.to_string())),
+                    ("as".to_owned(), Node::Text(quantified.bind.clone())),
+                    ("that".to_owned(), quantified.body.to_node()),
+                ]
+                .into_iter()
+                .collect(),
+            ),
+        )]
+        .into_iter()
+        .collect(),
+    )
 }
 
 /// Converts a fact value into a document node.
@@ -1014,8 +1304,23 @@ impl fmt::Display for Predicate {
             Self::Defined(path) => write!(f, "defined({path})"),
             Self::AnyOf { path, values } => write!(f, "{path} in [{}]", join_values(values)),
             Self::NoneOf { path, values } => write!(f, "{path} not in [{}]", join_values(values)),
+            Self::Forall(quantified) => write_quantified(f, "forall", quantified),
+            Self::Exists(quantified) => write_quantified(f, "exists", quantified),
         }
     }
+}
+
+/// Renders a quantifier for a human: `forall slot in slots: (…)`.
+fn write_quantified(
+    f: &mut fmt::Formatter<'_>,
+    keyword: &str,
+    quantified: &Quantified,
+) -> fmt::Result {
+    write!(
+        f,
+        "{keyword} {} in {}: ({})",
+        quantified.bind, quantified.over, quantified.body
+    )
 }
 
 /// Renders children joined by `separator`, parenthesised.
@@ -1079,8 +1384,8 @@ impl schemars::JsonSchema for Predicate {
         ]);
         schema.metadata().description = Some(
             "A condition over facts: the compact expression form (`tests.unit.failed == 0`), a \
-             list (implicit `all`), or a mapping using `all`, `any`, `not`, `none` or a fact path \
-             with an operator constraint."
+             list (implicit `all`), or a mapping using `all`, `any`, `not`, `none`, `forall`, \
+             `exists` or a fact path with an operator constraint."
                 .to_owned(),
         );
         schema.into()
@@ -1151,6 +1456,141 @@ mod tests {
 
     fn parse(input: &str) -> Predicate {
         Predicate::parse_expression(input).expect("parses")
+    }
+
+    fn quantifier(yaml: &str) -> Predicate {
+        let node: Node = serde_yaml::from_str(yaml).expect("yaml");
+        Predicate::from_node(&node).expect("parses")
+    }
+
+    /// Two slots, the first matched and the second not.
+    fn slots() -> FactStore {
+        store(&[
+            ("slots.count", FactValue::count(2)),
+            ("slots.0.matched", FactValue::Bool(true)),
+            ("slots.0.score", FactValue::count(10)),
+            ("slots.1.matched", FactValue::Bool(false)),
+            ("slots.1.score", FactValue::count(5)),
+        ])
+    }
+
+    #[test]
+    fn a_universal_holds_only_when_every_element_does() {
+        let every = quantifier("forall: {in: slots, as: slot, that: slot.score >= 5}");
+        assert_eq!(every.evaluate(&slots()), Truth::True);
+
+        let all_matched = quantifier("forall: {in: slots, as: slot, that: slot.matched}");
+        assert_eq!(all_matched.evaluate(&slots()), Truth::False);
+    }
+
+    #[test]
+    fn an_existential_holds_as_soon_as_one_element_does() {
+        let any_matched = quantifier("exists: {in: slots, as: slot, that: slot.matched}");
+        assert_eq!(any_matched.evaluate(&slots()), Truth::True);
+
+        let any_negative = quantifier("exists: {in: slots, as: slot, that: slot.score < 0}");
+        assert_eq!(any_negative.evaluate(&slots()), Truth::False);
+    }
+
+    #[test]
+    fn an_unobserved_collection_is_unknown_and_an_empty_one_is_not() {
+        let every = quantifier("forall: {in: slots, as: slot, that: slot.matched}");
+        let some = quantifier("exists: {in: slots, as: slot, that: slot.matched}");
+
+        // Nothing looked.
+        assert_eq!(every.evaluate(&store(&[])), Truth::Unknown);
+        assert_eq!(some.evaluate(&store(&[])), Truth::Unknown);
+
+        // Somebody looked and there was nothing there. Vacuously true, and not existentially true.
+        let empty = store(&[("slots.count", FactValue::count(0))]);
+        assert_eq!(every.evaluate(&empty), Truth::True);
+        assert_eq!(some.evaluate(&empty), Truth::False);
+    }
+
+    #[test]
+    fn a_count_that_is_not_a_whole_number_of_elements_is_unobserved() {
+        let every = quantifier("forall: {in: slots, as: slot, that: slot.matched}");
+        for bad in [
+            FactValue::Number(crate::facts::Number::new(-1.0).expect("finite")),
+            FactValue::Text("two".to_owned()),
+        ] {
+            let facts = store(&[("slots.count", bad)]);
+            assert_eq!(every.evaluate(&facts), Truth::Unknown);
+        }
+    }
+
+    #[test]
+    fn a_nested_quantifier_still_reaches_the_outer_element() {
+        let facts = store(&[
+            ("groups.count", FactValue::count(2)),
+            ("groups.0.limit", FactValue::count(10)),
+            ("groups.0.members.count", FactValue::count(1)),
+            ("groups.0.members.0.size", FactValue::count(4)),
+            ("groups.1.limit", FactValue::count(3)),
+            ("groups.1.members.count", FactValue::count(1)),
+            ("groups.1.members.0.size", FactValue::count(4)),
+        ]);
+        let within = quantifier(
+            "forall:\n  in: groups\n  as: group\n  that:\n    forall:\n      in: group.members\n      as: member\n      that: member.size <= group.limit\n",
+        );
+        // The second group's only member is over its limit, and `group.limit` is read from the
+        // outer binder while `member.size` is read from the inner one.
+        assert_eq!(within.evaluate(&facts), Truth::False);
+    }
+
+    #[test]
+    fn a_binder_is_not_a_fact_path_but_its_collection_is() {
+        let every =
+            quantifier("forall: {in: slots, as: slot, that: {all: [slot.matched, tenant.active]}}");
+        let read: Vec<String> = every.fact_paths().iter().map(ToString::to_string).collect();
+        assert_eq!(read, vec!["slots".to_owned(), "tenant.active".to_owned()]);
+
+        let collections: Vec<String> = every
+            .quantified_collections()
+            .iter()
+            .map(ToString::to_string)
+            .collect();
+        assert_eq!(collections, vec!["slots".to_owned()]);
+    }
+
+    #[test]
+    fn a_quantifier_round_trips_through_its_document_form() {
+        let original = quantifier("exists: {in: pairs, as: pair, that: pair.left == a}");
+        let round_tripped = Predicate::from_node(&original.to_node()).expect("re-reads");
+        assert_eq!(round_tripped, original);
+    }
+
+    #[test]
+    fn a_malformed_quantifier_is_refused_by_what_is_wrong_with_it() {
+        let refusal = |yaml: &str| {
+            let node: Node = serde_yaml::from_str(yaml).expect("yaml");
+            Predicate::from_node(&node)
+                .expect_err("refused")
+                .to_string()
+        };
+
+        assert!(
+            refusal("forall: {as: slot, that: slot.matched}").contains("no `in`"),
+            "missing collection"
+        );
+        assert!(
+            refusal("forall: {in: slots, as: slot}").contains("no `that`"),
+            "missing body"
+        );
+        assert!(
+            refusal("forall: {in: slots, as: slot.left, that: slot.matched}")
+                .contains("one segment"),
+            "a binder is a name, not a path"
+        );
+        assert!(
+            refusal("forall: {in: slots, as: slot, that: slot.matched, unless: x}")
+                .contains("`in`, `as` and `that`"),
+            "an unknown key names the vocabulary"
+        );
+        assert!(
+            refusal("forall: [slots, slot]").contains("a mapping"),
+            "a sequence is not a quantifier"
+        );
     }
 
     #[test]

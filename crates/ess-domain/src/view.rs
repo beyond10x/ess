@@ -523,7 +523,7 @@ fn enumeration<'a>(
 /// Every fact a predicate compares to a literal, paired with that literal.
 fn compared_values(predicate: &Predicate) -> Vec<(&FactPath, &FactValue)> {
     let mut found = Vec::new();
-    collect_compared_values(predicate, &mut found);
+    collect_compared_values(predicate, &mut Vec::new(), &mut found);
     found
 }
 
@@ -535,22 +535,37 @@ fn compared_values(predicate: &Predicate) -> Vec<(&FactPath, &FactValue)> {
 /// past [`MAX_PREDICATE_DEPTH`](ess_primitives::predicate::MAX_PREDICATE_DEPTH).
 fn collect_compared_values<'a>(
     predicate: &'a Predicate,
+    bound: &mut Vec<&'a str>,
     found: &mut Vec<(&'a FactPath, &'a FactValue)>,
 ) {
     match predicate {
         Predicate::All(children) | Predicate::Any(children) => {
             for child in children {
-                collect_compared_values(child, found);
+                collect_compared_values(child, bound, found);
             }
         }
-        Predicate::Not(inner) => collect_compared_values(inner, found),
+        Predicate::Not(inner) => collect_compared_values(inner, bound, found),
         Predicate::Compare { left, right, .. } => match (left, right) {
             (Operand::Fact(path), Operand::Literal(value))
-            | (Operand::Literal(value), Operand::Fact(path)) => found.push((path, value)),
+            | (Operand::Literal(value), Operand::Fact(path))
+                if !bound.contains(&path.namespace()) =>
+            {
+                found.push((path, value));
+            }
             _ => {}
         },
         Predicate::AnyOf { path, values } | Predicate::NoneOf { path, values } => {
-            found.extend(values.iter().map(|value| (path, value)));
+            if !bound.contains(&path.namespace()) {
+                found.extend(values.iter().map(|value| (path, value)));
+            }
+        }
+        // The body is walked, but under the binder: `slot.state == Free` is a claim about an
+        // element of a collection, not about a field of the view, and checking it against the
+        // view's own enum variants would refuse a correct filter.
+        Predicate::Forall(quantified) | Predicate::Exists(quantified) => {
+            bound.push(&quantified.bind);
+            collect_compared_values(&quantified.body, bound, found);
+            bound.pop();
         }
         Predicate::Always | Predicate::Never | Predicate::Truthy(_) | Predicate::Defined(_) => {}
     }

@@ -612,6 +612,47 @@ pub trait FactSource {
     fn scales(&self) -> &Scales {
         Scales::empty()
     }
+
+    /// How many elements the collection at `path` has, or `None` when nothing has observed it.
+    ///
+    /// A quantifier needs to know how far to count, and a fact is a scalar bound to a dotted
+    /// path — there is no collection value to ask for a length. So a collection publishes its own
+    /// size as `<path>.count` and its elements as `<path>.0.…`, `<path>.1.…`, which is the shape
+    /// every projection in this workspace already flattens to. The default implementation reads
+    /// that convention and nothing else, so no existing source has to change to gain quantifiers,
+    /// and a source that knows its own cardinality directly may override it.
+    ///
+    /// A negative or fractional count is not a smaller collection, it is a projection defect, and
+    /// answering `None` reports it as *unobserved* rather than silently walking zero elements —
+    /// which is the difference between a quantifier that says `unknown` and one that says `true`.
+    fn cardinality(&self, path: &FactPath) -> Option<usize> {
+        match self.fact(&path.child("count"))? {
+            FactValue::Number(number) => whole_count(number.get()),
+            _ => None,
+        }
+    }
+}
+
+/// A count as a number of elements, or `None` when it is not one.
+///
+/// The upper bound is 2^53, the largest integer an `f64` holds exactly. Past it the value is not a
+/// larger collection somebody observed, it is the rounding a `f64` did on the way in, and treating
+/// it as a length would walk a number of elements nobody wrote down.
+fn whole_count(value: f64) -> Option<usize> {
+    /// 2^53.
+    const EXACT_INTEGER_LIMIT: f64 = 9_007_199_254_740_992.0;
+
+    if value < 0.0 || value.fract() != 0.0 || value > EXACT_INTEGER_LIMIT {
+        return None;
+    }
+    // Every branch that reaches here has established a non-negative whole number at most 2^53, and
+    // `usize` is 64-bit on every target this workspace builds for, so the conversion is exact.
+    #[allow(
+        clippy::cast_possible_truncation,
+        clippy::cast_sign_loss,
+        reason = "bounded and whole by the guard above"
+    )]
+    Some(value as usize)
 }
 
 /// An in-memory set of facts.

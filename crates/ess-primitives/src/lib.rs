@@ -23,6 +23,8 @@ pub use evidence::SpecDigest;
 pub use facts::{FactPath, FactPattern, FactSource, FactStore, FactValue, Number, Scales};
 pub use ids::CorrelationId;
 pub use node::Node;
-pub use predicate::{CompareOp, LeafOutcome, Operand, Predicate, PredicateOutcome, Truth};
+pub use predicate::{
+    CompareOp, LeafOutcome, Operand, Predicate, PredicateOutcome, Quantified, Truth,
+};
 pub use time::{CivilDate, Granularity, Horizon, ObservedAt, Timestamp};
 pub use verification::VerificationStatus;

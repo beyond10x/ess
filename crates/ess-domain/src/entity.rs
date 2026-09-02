@@ -722,6 +722,36 @@ impl EntitySpec {
                 };
                 check_nested(registry, &at, invariant, path, field, &mut errors);
             }
+
+            // A `forall` needs something to count. A scalar has one value and no cardinality, so
+            // quantifying over one is not a claim that happens to be false — it is a sentence with
+            // no meaning, and it would evaluate to `Unknown` forever without ever saying why.
+            for path in invariant.predicate.quantified_collections() {
+                let root = path.namespace();
+                let Some(field) = self.readable_field(root) else {
+                    continue; // Already reported by the loop above.
+                };
+                let Some(resolved) =
+                    check_nested(registry, &at, invariant, path, field, &mut errors)
+                else {
+                    continue; // The path leaves what this model describes; do not guess.
+                };
+                if !matches!(resolved, TypeRef::List(_) | TypeRef::Map(_, _)) {
+                    errors.push(
+                        ValidationError::new(
+                            ValidationCode::TypeMismatch,
+                            at.clone(),
+                            format!(
+                                "`{invariant}` quantifies over `{path}`, which is `{resolved}` and \
+                                 not a collection"
+                            ),
+                        )
+                        .with_hint(
+                            "`forall` and `exists` walk a `List<T>` or a `Map<K, V>`".to_owned(),
+                        ),
+                    );
+                }
+            }
         }
 
         errors
@@ -763,17 +793,17 @@ fn check_nested(
     path: &FactPath,
     field: &Field,
     errors: &mut ValidationErrors,
-) {
+) -> Option<TypeRef> {
     let mut current = field.type_ref.required().clone();
     for segment in path.segments().iter().skip(1) {
         let TypeRef::Named(name) = &current else {
-            return;
+            return None;
         };
         let Some(declared) = registry.get(name) else {
-            return; // Already reported where the field's own type failed to resolve.
+            return None; // Already reported where the field's own type failed to resolve.
         };
         let TypeBody::Struct { fields, .. } = &declared.body else {
-            return;
+            return None;
         };
         let Some(next) = fields.iter().find(|candidate| &candidate.name == segment) else {
             errors.push(
@@ -791,10 +821,11 @@ fn check_nested(
                         .join(", ")
                 )),
             );
-            return;
+            return None;
         };
         current = next.type_ref.required().clone();
     }
+    Some(current)
 }
 
 /// Checks the link between a command's outcomes and the lifecycles they drive, in both directions.
@@ -1343,6 +1374,76 @@ invariants:
             })
             .expect("new");
         registry
+    }
+
+    /// `Invoice` with a `List<Money>` beside the scalar total, so a quantifier has something real
+    /// to walk and something real to get wrong.
+    fn with_lines(invariants: &str) -> String {
+        INVOICE
+            .replace(
+                "  - name: total\n    type: billing.Money\n",
+                "  - name: total\n    type: billing.Money\n  - name: lines\n    type: \
+                 List<billing.Money>\n",
+            )
+            .replace("invariants:\n  - total.amount >= 0\n", invariants)
+    }
+
+    #[test]
+    fn a_quantifier_reads_its_collection_and_never_its_binder() {
+        let document =
+            with_lines("invariants:\n  - forall: {in: lines, as: line, that: line.amount >= 0}\n");
+        let invoice = entity(&document).expect("valid");
+        let errors = invoice.validate(&registry());
+        assert!(errors.is_empty(), "{errors}");
+
+        let read: Vec<String> = invoice.invariants[0]
+            .predicate
+            .fact_paths()
+            .iter()
+            .map(ToString::to_string)
+            .collect();
+        assert_eq!(
+            read,
+            vec!["lines".to_owned()],
+            "`line.amount` is a binder, and refusing it as an unknown field would refuse a \
+             correct invariant"
+        );
+    }
+
+    #[test]
+    fn quantifying_over_something_that_is_not_a_collection_is_refused() {
+        let document =
+            with_lines("invariants:\n  - forall: {in: total, as: part, that: part.amount >= 0}\n");
+        let invoice = entity(&document).expect("parses");
+        let errors = invoice.validate(&registry());
+
+        let refusal = errors
+            .as_slice()
+            .iter()
+            .find(|error| error.code == ValidationCode::TypeMismatch)
+            .unwrap_or_else(|| panic!("expected a type mismatch, got {errors}"));
+        assert!(
+            refusal.message.contains("`total`") && refusal.message.contains("not a collection"),
+            "{}",
+            refusal.message
+        );
+    }
+
+    #[test]
+    fn a_quantifier_over_a_field_the_entity_does_not_have_is_still_refused() {
+        let document = with_lines(
+            "invariants:\n  - forall: {in: attachments, as: file, that: file.size >= 0}\n",
+        );
+        let invoice = entity(&document).expect("parses");
+        let errors = invoice.validate(&registry());
+        assert!(
+            errors
+                .as_slice()
+                .iter()
+                .any(|error| error.code == ValidationCode::UnobservableFact
+                    && error.message.contains("attachments")),
+            "{errors}"
+        );
     }
 
     #[test]

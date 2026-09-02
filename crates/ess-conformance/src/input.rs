@@ -256,6 +256,18 @@ impl<'ir> InputFacts<'ir> {
                     }),
                 }
             }
+            // A quantifier is `Unknown` when the collection it walks is unobserved, which is the
+            // same defect `Truthy` reports and is answerable the same way. It is also `Unknown`
+            // when a body leaf is, and that case is not classified here: the body reads paths under
+            // a binder, and `explain_path` resolves against the command's input types, where no
+            // binder exists. Reporting the collection would name the wrong path.
+            Predicate::Forall(quantified) | Predicate::Exists(quantified) => {
+                if self.cardinality(&quantified.over).is_none() {
+                    push(self.explain_path(&quantified.over));
+                } else {
+                    push(Reason::Unclassified);
+                }
+            }
             Predicate::Always
             | Predicate::Never
             | Predicate::All(_)
