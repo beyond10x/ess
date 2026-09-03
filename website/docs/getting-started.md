@@ -17,21 +17,21 @@ for four native targets:
 | macOS Intel | `x86_64-apple-darwin` |
 | macOS Apple Silicon | `aarch64-apple-darwin` |
 
-Choose the target for your machine. This example downloads the current `0.8.0` release for Apple
+Choose the target for your machine. This example downloads the current `0.9.0` release for Apple
 Silicon, verifies the archive before extracting it, and runs the binary in place:
 
 ```shell-session
-$ version=0.8.0
+$ version=0.9.0
 $ target=aarch64-apple-darwin
 $ archive="ess-${version}-${target}.tar.gz"
 $ base="https://github.com/beyond10x/ess/releases/download/${version}"
 $ curl --fail --location --remote-name "${base}/${archive}"
 $ curl --fail --location --remote-name "${base}/SHA256SUMS"
 $ grep -F "  ${archive}" SHA256SUMS | shasum -a 256 --check
-ess-0.8.0-aarch64-apple-darwin.tar.gz: OK
+ess-0.9.0-aarch64-apple-darwin.tar.gz: OK
 $ tar -xzf "${archive}"
 $ "./ess-${version}-${target}/ess" --version
-ess 0.8.0
+ess 0.9.0
 ```
 
 `SHA256SUMS` covers all four archives. Filtering the exact filename lets the checksum tool verify
@@ -43,7 +43,7 @@ locked Rust workspace from a source checkout:
 ```shell-session
 $ cargo build --locked --release --bin ess
 $ ./target/release/ess --version
-ess 0.8.0
+ess 0.9.0
 ```
 
 The walkthrough uses the source-checkout form so every path names a file in the repository. You can

@@ -5,7 +5,7 @@ description: Shipped ESS capabilities and the evidence behind them.
 
 # Where this stands
 
-ESS is experimental and standalone. `0.8.0` is the current release. Version releases publish
+ESS is experimental and standalone. `0.9.0` is the current release. Version releases publish
 checksum-pinned `ess` archives for Linux and macOS on x86-64 and ARM64; a locked source build remains
 the fallback for other targets. Entity relations shipped in `0.5.0`; the static-site source
 projection shipped in `0.4.0`.
