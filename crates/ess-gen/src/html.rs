@@ -150,18 +150,16 @@ fn index_sections(blocks: &[Block], here: &PageId, into: &mut BTreeMap<EssSemant
 pub struct Site {
     /// How it looks.
     pub style: Style,
-    /// An adopter's own front page, as the markdown they wrote it in.
+    /// An adopter's own front page, shown above the generated index.
     ///
-    /// **It is emitted verbatim, not rendered.** This module consumes an IR and re-introducing a
-    /// markdown parser here would undo the layer it belongs to: the point of `ess-docs/1` is that
-    /// nothing re-parses generated text, and a parser added "just for the README" is a parser every
-    /// later renderer inherits. So the text is escaped into a `<pre>` under
-    /// `<section class="front-page">`, which is honest about being unrendered and is readable.
+    /// Empty means the generated overview is the front page, which is the honest default: a
+    /// specification whose author wrote no prose about it should not get a blank panel where the
+    /// prose would be.
     ///
-    /// The clean fix is one layer up: whoever reads the `README.md` converts it to
-    /// [`Block`] values once and hands the document a front-page page, at which point this field
-    /// and its `<pre>` go away and the front page renders like everything else.
-    pub front_page: Option<String>,
+    /// Blocks and not markdown. A renderer that parsed text would be the second parser in this
+    /// crate and exactly the round trip the document IR exists to remove; [`crate::authored`]
+    /// reads a `README.md` into blocks once, and every renderer of the document gets it.
+    pub front_page: Vec<Block>,
 }
 
 impl Site {
@@ -170,12 +168,13 @@ impl Site {
         Self::default()
     }
 
-    /// The same site, carrying an adopter's markdown front page.
+    /// The same site, opening on blocks an adopter wrote.
     ///
-    /// See [`Site::front_page`] for what is and is not done with it.
+    /// Blocks and not markdown: reading `README.md` is [`crate::authored`]'s job, and a renderer
+    /// that took the text would be the second thing in this crate to parse.
     #[must_use]
-    pub fn with_front_page(mut self, markdown: impl Into<String>) -> Self {
-        self.front_page = Some(markdown.into());
+    pub fn with_front_page(mut self, blocks: Vec<Block>) -> Self {
+        self.front_page = blocks;
         self
     }
 
@@ -239,10 +238,8 @@ impl Site {
             "<h1>{}</h1>",
             inlines(&page.title, &page.id, constructs)
         );
-        if page.id.as_str() == INDEX {
-            if let Some(front) = self.front_page.as_deref() {
-                out.push_str(&front_page(front));
-            }
+        if page.id.as_str() == INDEX && !self.front_page.is_empty() {
+            out.push_str(&body(&self.front_page, &page.id, constructs));
         }
         out.push_str(&body(&page.blocks, &page.id, constructs));
         out.push_str("</article>\n");
@@ -257,16 +254,6 @@ impl Site {
             page.provenance.slice.clone(),
         )
     }
-}
-
-/// The adopter's front page, above the generated index.
-///
-/// A `<pre>` and not a rendering: see [`Site::front_page`].
-fn front_page(markdown: &str) -> String {
-    format!(
-        "<section class=\"front-page\">\n<pre>{}</pre>\n</section>\n",
-        escape(markdown)
-    )
 }
 
 /// The masthead and the page list.
@@ -951,16 +938,16 @@ mod tests {
                 page("domains/billing-invoice", Vec::new()),
             ],
         );
-        let site = Site::new().with_front_page("# Billing\n\nRead <this> first.\n");
+        let site = Site::new().with_front_page(crate::authored::blocks("Read **this** first.\n"));
 
         let index = site.page(&document, &document.pages[0], &empty()).contents;
         assert!(
-            index.contains("<section class=\"front-page\">\n<pre># Billing\n\nRead &lt;this&gt; first.\n</pre>"),
-            "{index}"
+            index.contains("<p>Read <strong>this</strong> first.</p>"),
+            "the adopter's prose is rendered, not shown as source: {index}"
         );
 
         let other = site.page(&document, &document.pages[1], &empty()).contents;
-        assert!(!other.contains("front-page"), "{other}");
+        assert!(!other.contains("Read <strong>"), "{other}");
     }
 
     #[test]

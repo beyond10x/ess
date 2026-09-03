@@ -28,6 +28,7 @@
 
 pub mod artifact;
 pub mod asyncapi;
+pub mod authored;
 pub mod docs;
 pub mod document;
 pub mod graph;

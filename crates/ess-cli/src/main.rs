@@ -88,11 +88,22 @@ enum Command {
         format: MachineFormat,
     },
     /// Generate deterministic documentation, schemas, and interface contracts.
+    ///
+    /// `--kind site` opens on the `README.md` beside the specification, where there is one, and
+    /// takes any number of `--include` pages beside the generated ones — a plan board another tool
+    /// rendered, a runbook. Both are markdown somebody wrote, read into the document and styled
+    /// like every other page.
     Generate {
         #[command(flatten)]
         input: SpecLocation,
         #[arg(long, value_enum)]
         kind: Option<Projection>,
+        /// A markdown page to publish beside the generated ones, written `<page-id>=<path>`.
+        ///
+        /// The id is where the page is filed and what links to it — `plan/board`. Repeat for more
+        /// than one.
+        #[arg(long, value_name = "PAGE=PATH")]
+        include: Vec<String>,
         #[arg(long)]
         out: Option<PathBuf>,
         #[arg(long, value_enum, default_value_t = Format::Text)]
@@ -421,9 +432,10 @@ fn run(cli: Cli) -> Result<ExitCode> {
         Command::Generate {
             input,
             kind,
+            include,
             out,
             format,
-        } => generate(&input.path, kind, out.as_deref(), format),
+        } => generate(&input.path, kind, &include, out.as_deref(), format),
         Command::Synthesize {
             input,
             target,
@@ -765,9 +777,40 @@ fn write_artifacts(
     Ok(())
 }
 
+/// The `README.md` beside a specification, as blocks, or nothing where there is none.
+///
+/// Absent is the common case and is not an error: most models have no prose beside them, and a
+/// documentation build that failed for want of a file nobody promised would be a build nobody
+/// runs. `--path` may name one file rather than a directory, in which case its parent is where a
+/// README would sit.
+fn front_page(path: &Path) -> Vec<ess_gen::document::Block> {
+    let directory = if path.is_dir() {
+        path.to_path_buf()
+    } else {
+        path.parent().unwrap_or(Path::new(".")).to_path_buf()
+    };
+    fs::read_to_string(directory.join("README.md"))
+        .map(|markdown| ess_gen::authored::titled(&markdown, "").1)
+        .unwrap_or_default()
+}
+
+/// One `--include` argument, read into the page it names.
+///
+/// The id is the caller's: it is where the page is filed and what a link to it says, and deriving
+/// it from a filename would make `board.md` and `plan/board.md` two different sites.
+fn included(argument: &str) -> Result<(String, String)> {
+    let (id, path) = argument.split_once('=').with_context(|| {
+        format!("`--include {argument}` is not `<page-id>=<path>`, such as `plan/board=board.md`")
+    })?;
+    let markdown =
+        fs::read_to_string(path).with_context(|| format!("reading the included page {path}"))?;
+    Ok((id.to_owned(), markdown))
+}
+
 fn generate(
     path: &Path,
     kind: Option<Projection>,
+    include: &[String],
     out: Option<&Path>,
     format: Format,
 ) -> Result<ExitCode> {
@@ -788,6 +831,28 @@ fn generate(
             )]
             .into_iter()
             .collect()
+        }
+        // The site is the one projection an adopter contributes to, so it is built here rather
+        // than fetched by name: a `Generator` is handed the model and nothing else.
+        Some(Projection::Site) => {
+            let mint = ess_gen::provenance::ProvenanceMint::new(&ir);
+            let mut document = ess_gen::docs::document(&ir, &mint);
+            for argument in include {
+                let (id, markdown) = included(argument)?;
+                let (title, blocks) = ess_gen::authored::titled(&markdown, &id);
+                document.pages.push(ess_gen::document::Page {
+                    id: ess_gen::document::PageId(id),
+                    title,
+                    about: None,
+                    provenance: mint.whole(),
+                    blocks,
+                });
+            }
+            let site = ess_gen::html::Site::new().with_front_page(front_page(path));
+            site.render(&document, &mint.whole().provenance)
+                .into_iter()
+                .map(|artifact| (format!("site/{}", artifact.path), artifact))
+                .collect()
         }
         Some(kind) => {
             let generator = ess_gen::generator(kind.name()).context("projection unavailable")?;
@@ -1133,9 +1198,13 @@ fn project(adapter: ProjectAdapter) -> Result<ExitCode> {
             out,
             format,
         } => match (path, ir) {
-            (Some(path), None) => {
-                generate(&path, Some(Projection::OpenApi), out.as_deref(), format)
-            }
+            (Some(path), None) => generate(
+                &path,
+                Some(Projection::OpenApi),
+                &[],
+                out.as_deref(),
+                format,
+            ),
             (None, Some(ir)) => project_openapi_interface(&ir, out.as_deref(), format),
             _ => bail!("exactly one of --path or --ir is required"),
         },
