@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.9.2] — 2026-09-03
+
+### Added
+
+- `ess build graph` renders the exact validated `ess-build/1` DAG and its independent release-unit
+  outputs as deterministic Mermaid source, so adopter documentation can show the graph CI actually
+  executes and refuse a hand-maintained diagram that drifts from it.
+
 ## [0.9.1] — 2026-09-03
 
 ### Fixed

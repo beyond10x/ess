@@ -6,8 +6,8 @@ use std::path::{Path, PathBuf};
 use ess_compiler::resolve::compile;
 use ess_compiler::source::SourceMap;
 use ess_deployment::{
-    compile_build, compile_deployment, compile_runtime, project_buildkit, project_helm,
-    resolve_stack, verify_release, BuildIr, BuildSpec, DeploymentIr, DiagnosticCode,
+    compile_build, compile_deployment, compile_runtime, project_build_mermaid, project_buildkit,
+    project_helm, resolve_stack, verify_release, BuildIr, BuildSpec, DeploymentIr, DiagnosticCode,
     EnvironmentSpec, ReleaseCatalog, ReleaseManifest, RuntimeIr, RuntimeSpec, StackLock, StackSpec,
 };
 use ess_domain::spec::{RawSpecFile, Specification};
@@ -277,6 +277,12 @@ fn build_graph_is_canonical_and_projects_executable_buildkit_inputs() {
         .files()
         .values()
         .any(|value| value.contains("secret value")));
+    let graph = project_build_mermaid(&first);
+    assert!(graph.starts_with("flowchart LR\n"));
+    assert!(graph.contains("source<br/><small>source</small>"));
+    assert!(graph.contains("app<br/><small>OCI image · oracle-runtime</small>"));
+    assert!(graph.contains("chart<br/><small>Helm chart · oracle-chart</small>"));
+    assert_eq!(graph, project_build_mermaid(&second));
 }
 
 #[test]

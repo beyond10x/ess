@@ -598,6 +598,93 @@ impl BuildkitProjection {
     }
 }
 
+/// Render the exact validated build DAG as deterministic Mermaid source.
+///
+/// Stable synthetic node identifiers keep adopter-owned labels from becoming Mermaid syntax. The
+/// graph includes release outputs as terminal nodes so shared work and independent release-unit
+/// fan-out remain visible in generated documentation.
+pub fn project_build_mermaid(build: &BuildIr) -> String {
+    let node_ids = build
+        .order
+        .iter()
+        .enumerate()
+        .map(|(index, identifier)| (identifier, format!("n{index}")))
+        .collect::<BTreeMap<_, _>>();
+    let mut graph = String::from("flowchart LR\n");
+    writeln!(
+        &mut graph,
+        "  subgraph build_graph[\"{} build graph\"]",
+        mermaid_label(build.build.as_str())
+    )
+    .unwrap();
+    for identifier in &build.order {
+        let node = &build.nodes[identifier];
+        writeln!(
+            &mut graph,
+            "    {}[\"{}<br/><small>{}</small>\"]",
+            node_ids[identifier],
+            mermaid_label(identifier.as_str()),
+            build_node_label(node)
+        )
+        .unwrap();
+    }
+    for identifier in &build.order {
+        for dependency in build.nodes[identifier].dependencies() {
+            writeln!(
+                &mut graph,
+                "    {} --> {}",
+                node_ids[&dependency], node_ids[identifier]
+            )
+            .unwrap();
+        }
+    }
+    graph.push_str("  end\n");
+    graph.push_str("  subgraph release_outputs[\"Independent release outputs\"]\n");
+    for (index, output) in build.outputs.values().enumerate() {
+        writeln!(
+            &mut graph,
+            "    o{index}([\"{}<br/><small>{} · {}</small>\"])",
+            mermaid_label(output.name.as_str()),
+            build_output_label(output.kind),
+            mermaid_label(output.release_unit.as_str())
+        )
+        .unwrap();
+    }
+    graph.push_str("  end\n");
+    for (index, output) in build.outputs.values().enumerate() {
+        writeln!(&mut graph, "  {} --> o{index}", node_ids[&output.node]).unwrap();
+    }
+    graph
+}
+
+fn build_node_label(node: &BuildNode) -> &'static str {
+    match node {
+        BuildNode::Source { .. } => "source",
+        BuildNode::OciBase { .. } => "pinned OCI base",
+        BuildNode::Run { .. } => "run",
+        BuildNode::Copy { .. } => "copy",
+        BuildNode::Image { .. } => "OCI image",
+        BuildNode::Artifact { .. } => "artifact",
+    }
+}
+
+fn build_output_label(kind: BuildOutputKind) -> &'static str {
+    match kind {
+        BuildOutputKind::OciImage => "OCI image",
+        BuildOutputKind::Binary => "binary",
+        BuildOutputKind::Archive => "archive",
+        BuildOutputKind::HelmChart => "Helm chart",
+    }
+}
+
+fn mermaid_label(value: &str) -> String {
+    value
+        .replace('&', "&amp;")
+        .replace('<', "&lt;")
+        .replace('>', "&gt;")
+        .replace('"', "'")
+}
+
 /// Project a validated build graph to a Dockerfile frontend and Bake targets.
 #[allow(clippy::too_many_lines)]
 pub fn project_buildkit(build: &BuildIr) -> BuildkitProjection {

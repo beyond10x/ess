@@ -494,6 +494,13 @@ enum BuildCommand {
         #[arg(long, value_enum, default_value_t = Format::Text)]
         format: Format,
     },
+    /// Render the validated build DAG as deterministic Mermaid source.
+    Graph {
+        #[arg(long)]
+        path: PathBuf,
+        #[arg(long)]
+        out: Option<PathBuf>,
+    },
 }
 
 #[derive(Debug, Subcommand)]
@@ -796,6 +803,19 @@ fn build(command: BuildCommand) -> Result<ExitCode> {
                 ),
                 Format::Json => print!("{json}"),
                 Format::Yaml => render(&ir, format)?,
+            }
+            Ok(ExitCode::SUCCESS)
+        }
+        BuildCommand::Graph { path, out } => {
+            let specification: ess_deployment::BuildSpec = read_document(&path)?;
+            let ir = match ess_deployment::compile_build(&specification) {
+                Ok(ir) => ir,
+                Err(diagnostics) => return deployment_refusal(&diagnostics, Format::Text),
+            };
+            let graph = ess_deployment::project_build_mermaid(&ir);
+            write_canonical(out.as_deref(), &graph)?;
+            if out.is_none() {
+                print!("{graph}");
             }
             Ok(ExitCode::SUCCESS)
         }

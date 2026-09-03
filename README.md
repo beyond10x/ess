@@ -17,6 +17,7 @@ cargo run --bin ess -- conform run --suite suite.json --target billing --report-
 cargo run --bin ess -- import openapi --path api.yaml --out interface.json
 cargo run --bin ess -- project openapi --ir interface.json --out normalized-api.yaml
 cargo run --bin ess -- build compile --path ess/build.yaml --out generated/ess/build.json
+cargo run --bin ess -- build graph --path ess/build.yaml --out generated/ess/build.mmd
 cargo run --bin ess -- project buildkit --ir generated/ess/build.json --out generated/build
 cargo run --bin ess -- runtime compile --path ess/runtime.yaml --system ess/system --realization ess/realization.yaml --build-ir generated/ess/build.json --out generated/ess/runtime.json
 cargo run --bin ess -- project helm --ir generated/ess/runtime.json --chart example --version 1.0.0 --out generated/chart
@@ -86,7 +87,8 @@ approval-required hosted interfaces. `ess realization compile` emits `ess-realiz
 Markdown generator turns the same IR into a drift-checkable run-mode guide.
 
 Build and deployment use another explicit lowering chain. `ess-build/1` is a typed, content-addressed
-transformation DAG which projects to `BuildKit` inputs but never executes them. `ess-realization/1`
+transformation DAG which projects to `BuildKit` inputs and a deterministic Mermaid graph but never
+executes them. `ess-realization/1`
 binds exact semantic components to immutable implementation artifacts and entrypoints.
 `ess-runtime/1` maps those components to processes, container roles, and workloads. Executor-produced
 `ess-release/1` manifests bind those inputs to immutable artifacts and evidence. Generic

@@ -14,9 +14,9 @@ mod runtime;
 mod stack;
 
 pub use build::{
-    compile_build, project_buildkit, BuildIr, BuildMount, BuildNode, BuildOutput, BuildOutputKind,
-    BuildSpec, BuildkitProjection, ImageConfig, NetworkMode, Platform, BUILD_FORMAT,
-    BUILD_IR_FORMAT,
+    compile_build, project_build_mermaid, project_buildkit, BuildIr, BuildMount, BuildNode,
+    BuildOutput, BuildOutputKind, BuildSpec, BuildkitProjection, ImageConfig, NetworkMode,
+    Platform, BUILD_FORMAT, BUILD_IR_FORMAT,
 };
 pub use diagnostic::{Diagnostic, DiagnosticCode, Diagnostics, Stage};
 pub use environment::{
