@@ -702,8 +702,12 @@ fn a_view_is_asserted_in_the_block_its_own_consistency_decides() {
             "capture",
             "execute",
             "outcome",
+            // Two bounded steps, because `InvoiceById` is asked two things: that it holds this
+            // invoice, and that it holds as many rows as the scenario put there.
+            "eventually-view",
             "eventually-view",
             "query",
+            "view",
             "view",
             "view"
         ],
@@ -780,6 +784,43 @@ fn a_declared_order_is_asserted_against_two_rows_the_scenario_arranged_itself() 
             issued.len()
         );
     }
+}
+
+#[test]
+fn a_synthesised_count_is_a_floor_the_scenario_arranged_and_never_a_ceiling() {
+    // §8 permits a target to be shared as long as scenarios do not interfere, so a row this
+    // scenario did not make is legitimate. A floor survives that and a ceiling does not — "exactly
+    // this many" would be a claim about every other user of the target, which no specification
+    // makes. Both bounds are in the vocabulary for an author to write; only one is inferred here.
+    let synthesis = synthesize(&example("billing"));
+
+    let mut found = 0;
+    for id in ids(&synthesis) {
+        for step in steps(&synthesis, &id) {
+            let (ScenarioStep::ExpectView { expectation, .. }
+            | ScenarioStep::EventuallyView { expectation, .. }) = step
+            else {
+                continue;
+            };
+            let ViewExpectation::Counts { at_least, at_most } = expectation else {
+                continue;
+            };
+            found += 1;
+            assert_eq!(
+                *at_most, None,
+                "`{id}` claims an upper bound the specification does not license"
+            );
+            assert!(
+                at_least.is_some_and(|floor| floor >= 2),
+                "`{id}` writes a floor of {at_least:?}; one is what `Contains` already says, and \
+                 two spellings of one claim are two things that can disagree"
+            );
+        }
+    }
+    assert_eq!(
+        found, 14,
+        "one per view read by a scenario that put more than one row in it"
+    );
 }
 
 #[test]
@@ -956,7 +997,9 @@ fn a_scenario_that_moves_an_instance_names_the_one_an_earlier_step_created() {
             "execute",
             "outcome",
             "eventually-view",
+            "eventually-view",
             "query",
+            "view",
             "view",
             "view"
         ],

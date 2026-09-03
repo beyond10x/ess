@@ -272,12 +272,16 @@ fn a_faults_blast_radius_is_accounted_for() {
     //                             its mapping, its delivery and its failure policy. The other two
     //                             bindings' seven scenarios stay green, which is the whole reason
     //                             `examples/oracle-fixture/` exists.
-    //   StaleReadYourWrites    4  every scenario whose read-your-writes assertion is *positive* —
-    //                             now including the §20 value check at `OutstandingInvoices.total`,
+    //   StaleReadYourWrites    9  every scenario whose read-your-writes assertion is *positive* —
+    //                             including the §20 value check at `OutstandingInvoices.total`,
     //                             whose first stale read answers an empty view and "every row, and
-    //                             at least one" demands a row. The four that assert a view
-    //                             `Excludes` a row pass, because a view answering from before the
-    //                             write legitimately excludes it.
+    //                             at least one" demands a row. A view answering from before the
+    //                             write legitimately `Excludes` a row, and used to leave five
+    //                             scenarios green on that reading alone: the same stale answer also
+    //                             holds fewer rows than the scenario put there, and a count is a
+    //                             claim `Excludes` cannot make. That is the floor doing its job, not
+    //                             a scenario over-reaching — `OutstandingInvoices` ranks its rows,
+    //                             so every scenario that reads it now says how many it arranged.
     //   AllowIllegalTransition 2  billing declares two states `cancel` must not run from, `Paid`
     //                             and `Cancelled`, so one missing guard is two refusals.
     //   IgnoreExternalOutcome  2  the forced failure is what makes the escalation reachable, so the
@@ -314,7 +318,7 @@ fn a_faults_blast_radius_is_accounted_for() {
         (Fault::DropConsistencyToken, 9),
         (Fault::DropBinding, 4),
         (Fault::ExtraEvent, 4),
-        (Fault::StaleReadYourWrites, 4),
+        (Fault::StaleReadYourWrites, 9),
         (Fault::WrongRefusalError, 3),
         (Fault::AllowIllegalTransition, 2),
         (Fault::IgnoreExternalOutcome, 2),

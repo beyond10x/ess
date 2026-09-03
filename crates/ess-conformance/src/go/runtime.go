@@ -309,11 +309,17 @@ type Value struct {
 }
 
 // Expectation is what must hold of a view.
+//
+// AtLeast and AtMost are pointers because absent and zero are different answers: a floor of zero
+// requires nothing, and a suite that wrote neither bound is asking nothing at all — which is a
+// generator defect this runner reports rather than passes.
 type Expectation struct {
 	Expect    string           `json:"expect"`
 	Fields    map[string]Value `json:"fields,omitempty"`
 	Predicate json.RawMessage  `json:"predicate,omitempty"`
 	OrderBy   []string         `json:"order_by,omitempty"`
+	AtLeast   *int             `json:"at_least,omitempty"`
+	AtMost    *int             `json:"at_most,omitempty"`
 }
 
 // ---- running ----------------------------------------------------------------------------------
@@ -699,6 +705,26 @@ func (r *run) decide(index int, step Step) (bool, string, bool) {
 					predicate, describeRow(row),
 				), true
 			}
+		}
+		return true, "", false
+	case "counts":
+		// A count and not a match: which rows they are is what `contains` asks, and asking both in
+		// one assertion would report two different defects under one name.
+		if expectation.AtLeast == nil && expectation.AtMost == nil {
+			return false, "a count with neither `at_least` nor `at_most` requires nothing, which is a generator defect", true
+		}
+		held := len(r.lastView.Rows)
+		if expectation.AtLeast != nil && held < *expectation.AtLeast {
+			return false, fmt.Sprintf(
+				"`%s` holds %d row(s) and the specification requires at least %d",
+				step.View, held, *expectation.AtLeast,
+			), false
+		}
+		if expectation.AtMost != nil && held > *expectation.AtMost {
+			return false, fmt.Sprintf(
+				"`%s` holds %d row(s) and the specification permits at most %d",
+				step.View, held, *expectation.AtMost,
+			), false
 		}
 		return true, "", false
 	case "ranked":

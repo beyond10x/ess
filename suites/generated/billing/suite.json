@@ -435,6 +435,14 @@
           }
         },
         {
+          "step": "eventually_view",
+          "view": "billing.invoice.InvoiceById",
+          "expectation": {
+            "expect": "counts",
+            "at_least": 3
+          }
+        },
+        {
           "step": "query_view",
           "view": "billing.invoice.OutstandingInvoices"
         },
@@ -449,6 +457,14 @@
                 "instance": "invoice"
               }
             }
+          }
+        },
+        {
+          "step": "expect_view",
+          "view": "billing.invoice.OutstandingInvoices",
+          "expectation": {
+            "expect": "counts",
+            "at_least": 2
           }
         },
         {
@@ -745,6 +761,14 @@
           }
         },
         {
+          "step": "eventually_view",
+          "view": "billing.invoice.InvoiceById",
+          "expectation": {
+            "expect": "counts",
+            "at_least": 3
+          }
+        },
+        {
           "step": "query_view",
           "view": "billing.invoice.OutstandingInvoices"
         },
@@ -760,6 +784,14 @@
                 "field": "invoice_id"
               }
             }
+          }
+        },
+        {
+          "step": "expect_view",
+          "view": "billing.invoice.OutstandingInvoices",
+          "expectation": {
+            "expect": "counts",
+            "at_least": 2
           }
         },
         {
@@ -3101,6 +3133,14 @@
           }
         },
         {
+          "step": "eventually_view",
+          "view": "billing.invoice.InvoiceById",
+          "expectation": {
+            "expect": "counts",
+            "at_least": 3
+          }
+        },
+        {
           "step": "query_view",
           "view": "billing.invoice.OutstandingInvoices"
         },
@@ -3115,6 +3155,14 @@
                 "instance": "invoice"
               }
             }
+          }
+        },
+        {
+          "step": "expect_view",
+          "view": "billing.invoice.OutstandingInvoices",
+          "expectation": {
+            "expect": "counts",
+            "at_least": 2
           }
         },
         {
@@ -3357,6 +3405,14 @@
           }
         },
         {
+          "step": "eventually_view",
+          "view": "billing.invoice.InvoiceById",
+          "expectation": {
+            "expect": "counts",
+            "at_least": 2
+          }
+        },
+        {
           "step": "query_view",
           "view": "billing.invoice.OutstandingInvoices"
         },
@@ -3371,6 +3427,14 @@
                 "instance": "invoice"
               }
             }
+          }
+        },
+        {
+          "step": "expect_view",
+          "view": "billing.invoice.OutstandingInvoices",
+          "expectation": {
+            "expect": "counts",
+            "at_least": 2
           }
         },
         {
@@ -3693,6 +3757,14 @@
           }
         },
         {
+          "step": "eventually_view",
+          "view": "billing.invoice.InvoiceById",
+          "expectation": {
+            "expect": "counts",
+            "at_least": 3
+          }
+        },
+        {
           "step": "query_view",
           "view": "billing.invoice.OutstandingInvoices"
         },
@@ -3707,6 +3779,14 @@
                 "instance": "invoice"
               }
             }
+          }
+        },
+        {
+          "step": "expect_view",
+          "view": "billing.invoice.OutstandingInvoices",
+          "expectation": {
+            "expect": "counts",
+            "at_least": 2
           }
         },
         {
@@ -3953,6 +4033,14 @@
           }
         },
         {
+          "step": "eventually_view",
+          "view": "billing.invoice.InvoiceById",
+          "expectation": {
+            "expect": "counts",
+            "at_least": 2
+          }
+        },
+        {
           "step": "query_view",
           "view": "billing.invoice.OutstandingInvoices"
         },
@@ -3967,6 +4055,14 @@
                 "instance": "invoice"
               }
             }
+          }
+        },
+        {
+          "step": "expect_view",
+          "view": "billing.invoice.OutstandingInvoices",
+          "expectation": {
+            "expect": "counts",
+            "at_least": 2
           }
         },
         {
@@ -4619,6 +4715,14 @@
           }
         },
         {
+          "step": "eventually_view",
+          "view": "billing.invoice.InvoiceById",
+          "expectation": {
+            "expect": "counts",
+            "at_least": 3
+          }
+        },
+        {
           "step": "query_view",
           "view": "billing.invoice.OutstandingInvoices"
         },
@@ -4633,6 +4737,14 @@
                 "instance": "invoice"
               }
             }
+          }
+        },
+        {
+          "step": "expect_view",
+          "view": "billing.invoice.OutstandingInvoices",
+          "expectation": {
+            "expect": "counts",
+            "at_least": 2
           }
         },
         {

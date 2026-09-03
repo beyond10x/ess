@@ -1532,6 +1532,40 @@ pub enum ViewExpectation {
         /// The condition every row must satisfy.
         predicate: Predicate,
     },
+    /// The view holds a number of rows inside these bounds.
+    ///
+    /// The claim the other four cannot make. [`Contains`](Self::Contains) says a row is there and
+    /// [`Excludes`](Self::Excludes) says one is not; neither can say *how many*, and "the queue
+    /// holds exactly the two calls that were submitted" and "the count drops by one when a call is
+    /// dispatched" are claims real specifications make and this vocabulary had no form for.
+    ///
+    /// # It is what makes an order a claim
+    ///
+    /// [`Ranked`](Self::Ranked) holds on fewer than two rows, deliberately and permanently: there is
+    /// no adjacent pair to be out of order. Read alone, an ordering assertion therefore cannot
+    /// distinguish "the rows are in order" from "there were no rows". A floor of two beside it is
+    /// the missing half, and it is a *separate* assertion rather than a change to that one, because
+    /// an order and a count are two things an implementation can get wrong one at a time.
+    ///
+    /// # Why synthesis writes a floor and not a ceiling
+    ///
+    /// §8 requires that scenarios do not interfere; it does not require that a target is empty, and
+    /// a shared staging system is the case it has in mind. A floor survives that — rows this
+    /// scenario did not make cannot take a row away — and a ceiling does not: "exactly two" is a
+    /// claim about every other user of the target, which no specification makes and this crate will
+    /// not infer. So both bounds are in the vocabulary, an author or an adapter may write either,
+    /// and synthesis emits only [`at_least`](Self::Counts::at_least).
+    ///
+    /// Both bounds absent is a suite defect rather than a satisfied assertion: it asks nothing, and
+    /// a runner reports it as one.
+    Counts {
+        /// The fewest rows the view may hold.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        at_least: Option<usize>,
+        /// The most rows it may hold.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        at_most: Option<usize>,
+    },
     /// The rows are in the order the view declares, most significant key first.
     ///
     /// The keys are carried rather than a boolean, so a runner reports *which* key two adjacent

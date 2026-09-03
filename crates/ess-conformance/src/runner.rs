@@ -1364,6 +1364,7 @@ fn decide(required: &Required, result: &SemanticViewResult) -> Verdict {
             }
         }
         Required::Satisfies(predicate) => satisfies(predicate, result),
+        Required::Counts { at_least, at_most } => counts(*at_least, *at_most, result),
         Required::Ranked(order_by) => ranked(order_by, result),
     }
 }
@@ -1449,6 +1450,15 @@ enum Required {
     Excludes(BTreeMap<String, Node>),
     /// Every row satisfies this, and there is at least one.
     Satisfies(Predicate),
+    /// The view holds a number of rows inside these bounds.
+    ///
+    /// Nothing to resolve: a count is a number the suite wrote, and no run can bind one.
+    Counts {
+        /// The fewest rows it may hold.
+        at_least: Option<usize>,
+        /// The most rows it may hold.
+        at_most: Option<usize>,
+    },
     /// The rows are in this order, most significant key first.
     ///
     /// Nothing to resolve: a ranking names a projected field and a direction, both of which the
@@ -1473,6 +1483,19 @@ impl Required {
             ViewExpectation::Contains { fields } => Self::Contains(resolve(fields)?),
             ViewExpectation::Excludes { fields } => Self::Excludes(resolve(fields)?),
             ViewExpectation::Satisfies { predicate } => Self::Satisfies(predicate.clone()),
+            ViewExpectation::Counts { at_least, at_most } => {
+                // An expectation with neither bound asks nothing, which is a suite defect and not a
+                // satisfied assertion — the one shape of green this crate exists to rule out.
+                if at_least.is_none() && at_most.is_none() {
+                    return Err(
+                        "a count with neither `at_least` nor `at_most` requires nothing".to_owned(),
+                    );
+                }
+                Self::Counts {
+                    at_least: *at_least,
+                    at_most: *at_most,
+                }
+            }
             ViewExpectation::Ranked { order_by } => Self::Ranked(order_by.clone()),
         })
     }
@@ -1517,6 +1540,18 @@ fn satisfies(predicate: &Predicate, result: &SemanticViewResult) -> Verdict {
                 };
             }
         }
+    }
+    Verdict::Satisfied
+}
+
+/// The view holds a number of rows inside the declared bounds.
+///
+/// A count and not a match: which rows they are is what [`Required::Contains`] asks, and asking both
+/// in one assertion would report two different defects under one name.
+fn counts(at_least: Option<usize>, at_most: Option<usize>, result: &SemanticViewResult) -> Verdict {
+    let held = result.rows.len();
+    if at_least.is_some_and(|floor| held < floor) || at_most.is_some_and(|ceiling| held > ceiling) {
+        return Verdict::Unsatisfied(format!("it holds {held} row(s): {}", rows(result)));
     }
     Verdict::Satisfied
 }
@@ -1571,6 +1606,19 @@ fn wanted(view: &ViewRef, required: &Required) -> String {
         Required::Satisfies(predicate) => {
             format!("every row of {view} satisfies `{predicate}`, and it holds at least one")
         }
+        Required::Counts { at_least, at_most } => match (at_least, at_most) {
+            (Some(floor), Some(ceiling)) if floor == ceiling => {
+                format!("{view} holds exactly {floor} row(s)")
+            }
+            (Some(floor), Some(ceiling)) => {
+                format!("{view} holds between {floor} and {ceiling} row(s)")
+            }
+            (Some(floor), None) => format!("{view} holds at least {floor} row(s)"),
+            (None, Some(ceiling)) => format!("{view} holds at most {ceiling} row(s)"),
+            // `Required::of` refuses this before a comparison is made; rendering it is what makes
+            // the refusal readable rather than a panic.
+            (None, None) => format!("{view} holds any number of rows"),
+        },
         Required::Ranked(order_by) => {
             let keys = order_by
                 .iter()
@@ -1836,6 +1884,84 @@ mod tests {
                 &SemanticViewResult::of([queued(1.0, "2025-01-01T00:00:00Z")])
             ),
             Verdict::Satisfied
+        );
+    }
+
+    #[test]
+    fn a_count_is_the_half_of_an_ordering_claim_that_says_the_rows_were_there() {
+        // `Ranked` holds on fewer than two rows and always will; the assertion beside it is what
+        // says the pair existed. Read together they are a complete ordering claim, and neither had
+        // to change its own meaning to get there.
+        let floor = Required::Counts {
+            at_least: Some(2),
+            at_most: None,
+        };
+        assert!(matches!(
+            decide(
+                &floor,
+                &SemanticViewResult::of([queued(1.0, "2025-01-01T00:00:00Z")])
+            ),
+            Verdict::Unsatisfied(_)
+        ));
+        assert_eq!(
+            decide(
+                &floor,
+                &SemanticViewResult::of([
+                    queued(9.0, "2025-01-01T00:00:00Z"),
+                    queued(1.0, "2025-01-01T00:00:00Z"),
+                ])
+            ),
+            Verdict::Satisfied
+        );
+
+        // A floor is not a ceiling: §8 permits a target to be shared, so a row this scenario did
+        // not make is legitimate and cannot take one away.
+        assert_eq!(
+            decide(
+                &floor,
+                &SemanticViewResult::of([
+                    queued(9.0, "2025-01-01T00:00:00Z"),
+                    queued(5.0, "2025-01-01T00:00:00Z"),
+                    queued(1.0, "2025-01-01T00:00:00Z"),
+                ])
+            ),
+            Verdict::Satisfied
+        );
+        assert!(matches!(
+            decide(
+                &Required::Counts {
+                    at_least: None,
+                    at_most: Some(2),
+                },
+                &SemanticViewResult::of([
+                    queued(9.0, "2025-01-01T00:00:00Z"),
+                    queued(5.0, "2025-01-01T00:00:00Z"),
+                    queued(1.0, "2025-01-01T00:00:00Z"),
+                ])
+            ),
+            Verdict::Unsatisfied(_)
+        ));
+    }
+
+    #[test]
+    fn a_count_with_neither_bound_is_a_suite_defect_and_not_a_satisfied_assertion() {
+        // It asks nothing, and an assertion that asks nothing passing is the shape of green this
+        // crate exists to rule out. Refused where it is read, before any row is looked at.
+        let correlation =
+            ess_primitives::ids::CorrelationId::new("test-correlation").expect("a correlation id");
+        let run = Run::new(scenario(), ScenarioContext::new(scenario(), correlation));
+        let Err(reason) = Required::of(
+            &ViewExpectation::Counts {
+                at_least: None,
+                at_most: None,
+            },
+            &run,
+        ) else {
+            panic!("a count with neither bound is a suite defect")
+        };
+        assert!(
+            reason.contains("requires nothing"),
+            "the reason says what is wrong with it: {reason}"
         );
     }
 

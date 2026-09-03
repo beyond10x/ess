@@ -245,6 +245,13 @@ func (t *Target) QueryView(request essconform.ViewRequest) (essconform.ViewResul
 	// `order_by: issued_at desc`, which the specification declares and this therefore obeys.
 	if request.View == "billing.invoice.OutstandingInvoices" {
 		byIssuedAtDescending(rows)
+		if t.broken == "one-row" {
+			// A second deliberate defect: a page that stops after the first row. Every row it does
+			// return is right and in the right order, so only a count can see it.
+			if len(rows) > 1 {
+				rows = rows[:1]
+			}
+		}
 		if t.broken == "reversed-order" {
 			// The deliberate defect: the right rows, in the wrong order. Nothing else about the
 			// answer changes, so the only assertion that can catch it is the declared order — and

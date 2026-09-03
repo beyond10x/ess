@@ -1862,6 +1862,25 @@ fn view_expectations(
             ViewExpectation::Excludes { fields }
         };
         require(view, &name, expectation, &mut out.asserted);
+        // How many rows this scenario put there, as a floor and never as a ceiling. §8 permits a
+        // target to be shared as long as scenarios do not interfere, so a row this scenario did not
+        // make is legitimate and cannot take one away — where "exactly this many" would be a claim
+        // about every other user of the target, which no specification makes.
+        //
+        // Only from two, because one is what `Contains` above already says: a floor of one beside
+        // it is a second spelling of one claim, and two spellings are two things that can disagree.
+        let rows = rows_shown(view, *admits_subject, &companions);
+        if rows >= RANKING_ROWS {
+            require(
+                view,
+                &name,
+                ViewExpectation::Counts {
+                    at_least: Some(rows),
+                    at_most: None,
+                },
+                &mut out.asserted,
+            );
+        }
         // A declared order is a second promise about the same read, asserted in the same block as
         // the first: an `eventual` view that is queried again would be a different read, and two
         // reads can disagree about order without either of them being wrong.
