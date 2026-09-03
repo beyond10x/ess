@@ -70,6 +70,12 @@ tasks:
     cmds:
       - cargo xtask release verify
 
+  release-status:
+    desc: Report whether every pushed version tag has a GitHub Release behind it.
+    # Deliberately outside `check`: this one asks the remote and GitHub, and the gate is offline.
+    cmds:
+      - cargo xtask release status
+
   projection-check:
     desc: Verify the committed projections of the normative billing specification.
     cmds:

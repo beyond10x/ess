@@ -1,0 +1,57 @@
+# Answers one question about the repository itself: does every pushed version tag have a GitHub
+# Release behind it? A version tag is what an install instruction names, so a tag with nothing
+# published for it promises a download nobody can make.
+#
+# 0.5.0 is why this exists. The tag was pushed, `task site-build` failed in the release run that
+# followed it, publication was skipped, and the repository carried the tag with no way to say so:
+# the failing run notified the bot that had pushed the tag, and no other reader.
+#
+# Retracting the stranded tag from here is not possible. The `b10x-bot-tag-authority` ruleset
+# refuses tag creation, update and deletion to every actor except one App, and a workflow holds the
+# Actions token rather than that App's. So this reports, and a maintainer publishes or deletes.
+#
+# It runs when a release run finishes, which is the moment the answer can change, and daily, which
+# catches a tag pushed while no run was watching.
+name: Release record
+
+on:
+  workflow_run:
+    workflows: [Release]
+    types: [completed]
+  schedule:
+    - cron: "17 6 * * *"
+  workflow_dispatch:
+
+concurrency:
+  group: release-record
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  record:
+    name: Every version tag has a release
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+
+      - uses: dtolnay/rust-toolchain@4360b52568e2003a75bf9bc1d59f33a8e3fc893c # stable
+
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2
+        with:
+          key: release-record
+
+      # The check reads the remote's tags and GitHub's releases, so it cannot live in the offline
+      # gate, and it cannot live in the release run either: at that moment the tag exists and its
+      # own release does not yet.
+      - name: Every pushed version tag has a GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: cargo xtask release status

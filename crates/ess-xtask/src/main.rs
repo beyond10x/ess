@@ -59,6 +59,8 @@ enum ReleaseCommand {
         /// Version whose notes should be rendered.
         version: String,
     },
+    /// Report whether every pushed version tag has a GitHub Release behind it.
+    Status,
 }
 
 fn main() -> ExitCode {
@@ -105,6 +107,14 @@ fn run(cli: Cli) -> Result<String, String> {
                 ));
             }
             release_notes(&changelog, &version)
+        }
+        Command::Release {
+            command: ReleaseCommand::Status,
+        } => {
+            let (version, changelog) = release_inputs(&root)?;
+            let tags = pushed_version_tags(&root)?;
+            let releases = published_releases(&root)?;
+            release_status(&version, &changelog, &tags, &releases)
         }
     }
 }
@@ -165,6 +175,133 @@ fn release_notes(changelog: &str, version: &str) -> Result<String, String> {
         return Err(format!("release heading for {version} has no notes"));
     }
     Ok(format!("{body}\n"))
+}
+
+/// The release record: what the workspace claims, and what the remote actually carries.
+///
+/// A version tag is what an install instruction names, so a tag with no GitHub Release behind it
+/// promises a download nobody can make. 0.5.0 was that: the tag was pushed, the release gate failed
+/// after it, publication was skipped, and the repository had no way to state the discrepancy. This
+/// is that way.
+///
+/// A version named by Cargo and the changelog but not yet tagged is the ordinary state between two
+/// releases and is reported, not refused.
+fn release_status(
+    version: &str,
+    changelog: &str,
+    tags: &BTreeSet<String>,
+    releases: &BTreeSet<String>,
+) -> Result<String, String> {
+    release_notes(changelog, version)?;
+    let cut = match (tags.contains(version), releases.contains(version)) {
+        (true, true) => "tagged and published",
+        (true, false) => "tagged, not published",
+        (false, _) => "not cut yet",
+    };
+    let mut report = format!("release {version}: workspace version and changelog agree, {cut}\n");
+    let stranded: Vec<&str> = tags
+        .iter()
+        .filter(|tag| !releases.contains(*tag))
+        .map(String::as_str)
+        .collect();
+    if stranded.is_empty() {
+        let _ = writeln!(
+            report,
+            "version tags pushed: {}, each with a GitHub Release",
+            tags.len()
+        );
+        return Ok(report);
+    }
+    let _ = write!(
+        report,
+        "version tags with no GitHub Release: {}\n\
+         re-run the release for one with `gh workflow run release.yml -f tag=<version>`, which \
+         gates the tagged tree again and publishes it if it passes; delete the tag instead when \
+         that tree cannot pass.\n",
+        stranded.join(", ")
+    );
+    Err(report)
+}
+
+/// The release tags the remote carries.
+///
+/// `release.yml` triggers on bare versions, so a tag under any other name never asked for a
+/// release and promises none. `v0.3.0` is one such tag; it predates the convention.
+fn pushed_version_tags(root: &Path) -> Result<BTreeSet<String>, String> {
+    let output = std::process::Command::new("git")
+        .args(["ls-remote", "--tags", "origin"])
+        .current_dir(root)
+        .output()
+        .map_err(|error| format!("running git to read the remote's tags: {error}"))?;
+    if !output.status.success() {
+        return Err(format!(
+            "`git ls-remote --tags origin` failed: {}",
+            String::from_utf8_lossy(&output.stderr).trim()
+        ));
+    }
+    Ok(version_tags(&String::from_utf8_lossy(&output.stdout)))
+}
+
+/// The tags GitHub has published a release for.
+fn published_releases(root: &Path) -> Result<BTreeSet<String>, String> {
+    // The limit covers the whole tag history on one page, because a release paged off the end
+    // would be read as a release that does not exist.
+    let output = std::process::Command::new("gh")
+        .args(["release", "list", "--limit", "1000", "--json", "tagName"])
+        .current_dir(root)
+        .output()
+        .map_err(|error| {
+            format!("running gh to read the published releases: {error}. `release status` asks GitHub over the network and the offline gate does not run it")
+        })?;
+    if !output.status.success() {
+        return Err(format!(
+            "`gh release list` failed: {}",
+            String::from_utf8_lossy(&output.stderr).trim()
+        ));
+    }
+    release_tag_names(&String::from_utf8_lossy(&output.stdout))
+}
+
+/// Bare-version tag names in `git ls-remote --tags` output.
+fn version_tags(listing: &str) -> BTreeSet<String> {
+    listing
+        .lines()
+        .filter_map(|line| line.split('\t').nth(1))
+        .filter_map(|reference| reference.strip_prefix("refs/tags/"))
+        // `refs/tags/<name>^{}` is the commit an annotated tag points at, listed beside the tag.
+        .filter(|name| !name.ends_with("^{}") && is_bare_version(name))
+        .map(ToOwned::to_owned)
+        .collect()
+}
+
+/// Whether a tag names a release: three dot-separated runs of digits and nothing else.
+fn is_bare_version(name: &str) -> bool {
+    let mut parts = name.split('.');
+    let numbered = (0..3).all(|_| {
+        parts
+            .next()
+            .is_some_and(|part| !part.is_empty() && part.bytes().all(|byte| byte.is_ascii_digit()))
+    });
+    numbered && parts.next().is_none()
+}
+
+/// Tag names in a `gh release list --json tagName` report.
+fn release_tag_names(report: &str) -> Result<BTreeSet<String>, String> {
+    let releases: serde_json::Value = serde_json::from_str(report)
+        .map_err(|error| format!("reading the JSON printed by `gh release list`: {error}"))?;
+    releases
+        .as_array()
+        .ok_or_else(|| "`gh release list --json tagName` did not print an array".to_owned())?
+        .iter()
+        .map(|release| {
+            release["tagName"]
+                .as_str()
+                .map(ToOwned::to_owned)
+                .ok_or_else(|| {
+                    "a release in the `gh release list` report has no `tagName`".to_owned()
+                })
+        })
+        .collect()
 }
 
 /// One projection published by `ess generate`.
@@ -630,5 +767,66 @@ mod tests {
         assert!(release_job.contains(
             "if: ${{ always() && needs.resolve.result == 'success' && needs.gate.result == 'success' && needs.website.result == 'success' && needs.package.result == 'success' }}"
         ));
+    }
+
+    #[test]
+    fn only_bare_version_tags_are_release_tags() {
+        let listing = concat!(
+            "aaa\trefs/tags/0.5.1\n",
+            "bbb\trefs/tags/0.5.1^{}\n",
+            "ccc\trefs/tags/v0.3.0\n",
+            "ddd\trefs/tags/0.1.0\n",
+            "eee\trefs/tags/1.2.3.4\n",
+            "fff\trefs/tags/1.2\n",
+            "ggg\trefs/tags/2026.01\n",
+        );
+        assert_eq!(
+            version_tags(listing),
+            BTreeSet::from(["0.1.0".to_owned(), "0.5.1".to_owned()])
+        );
+    }
+
+    #[test]
+    fn published_release_tags_come_from_the_json_report() {
+        assert_eq!(
+            release_tag_names(r#"[{"tagName":"0.5.1"},{"tagName":"0.4.0"}]"#),
+            Ok(BTreeSet::from(["0.4.0".to_owned(), "0.5.1".to_owned()]))
+        );
+        assert!(release_tag_names("[{}]").is_err());
+        assert!(release_tag_names("{}").is_err());
+    }
+
+    #[test]
+    fn a_version_tag_with_no_release_behind_it_is_refused() {
+        let refusal = release_status(
+            "0.5.1",
+            "## [0.5.1] \u{2014} 2026-09-03\n\n- Fixed.\n",
+            &BTreeSet::from(["0.5.0".to_owned(), "0.5.1".to_owned()]),
+            &BTreeSet::from(["0.5.1".to_owned()]),
+        )
+        .expect_err("a pushed tag with no release is an incomplete release");
+        assert!(refusal.contains("version tags with no GitHub Release: 0.5.0"));
+        assert!(refusal.contains("gh workflow run release.yml -f tag=<version>"));
+    }
+
+    #[test]
+    fn a_named_but_untagged_version_is_not_an_incomplete_release() {
+        assert_eq!(
+            release_status(
+                "0.6.0",
+                "## [0.6.0] \u{2014} 2026-09-04\n\n- Next.\n",
+                &BTreeSet::from(["0.5.1".to_owned()]),
+                &BTreeSet::from(["0.5.1".to_owned()]),
+            ),
+            Ok("release 0.6.0: workspace version and changelog agree, not cut yet\nversion tags pushed: 1, each with a GitHub Release\n".to_owned())
+        );
+    }
+
+    #[test]
+    fn the_release_record_is_checked_after_every_release_run() {
+        let workflow = include_str!("../../../.github/workflows/release-record.yml");
+        assert!(workflow.contains("workflows: [Release]"));
+        assert!(workflow.contains("types: [completed]"));
+        assert!(workflow.contains("cargo xtask release status"));
     }
 }

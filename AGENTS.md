@@ -57,6 +57,20 @@ therefore cannot be part of the offline gate. `.github/workflows/pages.yml` pres
 Rust/WASM, browser-lab and site-build checks without Pages authority; the unified Website publishes
 the collected source and the Atlas-generated façade owns the project redirect.
 
+Cutting a release pushes a tag, and the release workflow gates the tag only after it exists. Run
+`task check` and `task site-build` on the commit being tagged before pushing the tag: 0.5.0 was
+tagged eleven minutes after `task site-build` had already gone red on `main`, its release was never
+published, and no workflow can withdraw a tag here. After cutting a release, and after any release
+run that fails:
+
+```console
+task release-status
+```
+
+It asks the remote and GitHub whether every pushed version tag has a release behind it, and fails
+while one does not. `.github/workflows/release-record.yml` runs it after every release run and
+daily.
+
 ## Where work is tracked
 
 | What | Where |
