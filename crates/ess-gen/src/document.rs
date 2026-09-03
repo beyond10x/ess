@@ -179,6 +179,16 @@ pub enum Block {
         /// The body rows, each the same width as `columns`.
         rows: Vec<Vec<Vec<Inline>>>,
     },
+    /// Somebody else's words, quoted.
+    ///
+    /// A conversion's reason is written by the person who allowed the crossing. A page that set it
+    /// in its own voice would be claiming it, and the whole point of requiring a reason is that a
+    /// reader can tell who is answerable for it. Blocks rather than inlines, because a reason is
+    /// allowed to run to more than one paragraph.
+    Quote {
+        /// What is quoted.
+        blocks: Vec<Block>,
+    },
     /// A verbatim block that is not a diagram.
     Code {
         /// What it is written in, for a renderer that highlights.

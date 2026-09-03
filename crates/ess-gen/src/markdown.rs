@@ -101,6 +101,20 @@ fn flatten(blocks: &[Block], here: &PageId) -> Vec<String> {
                 }
                 out.push(chunk);
             }
+            Block::Quote { blocks } => {
+                let mut chunk = String::new();
+                for (position, part) in flatten(blocks, here).iter().enumerate() {
+                    // A quoted blank line between paragraphs. An ordinary blank line would end the
+                    // quotation, so the second paragraph would be the page speaking again.
+                    if position > 0 {
+                        chunk.push_str(">\n");
+                    }
+                    for line in part.trim_end_matches('\n').lines() {
+                        let _ = writeln!(chunk, "> {line}");
+                    }
+                }
+                out.push(chunk);
+            }
             Block::Code { language, text } => out.push(format!(
                 "```{}\n{text}\n```\n",
                 language.as_deref().unwrap_or_default()
@@ -275,6 +289,25 @@ mod tests {
         assert_eq!(
             flatten(&blocks.finish(), &here()).join("\n"),
             "```mermaid\nstateDiagram-v2\n    [*] --> Draft\n```\n"
+        );
+    }
+
+    #[test]
+    fn a_quotation_marks_every_line_it_covers() {
+        let mut blocks = Blocks::new();
+        blocks.push(Block::Quote {
+            blocks: vec![
+                Block::Prose {
+                    text: vec![Inline::text("They allowed it.")],
+                },
+                Block::Prose {
+                    text: vec![Inline::text("And said why.")],
+                },
+            ],
+        });
+        assert_eq!(
+            flatten(&blocks.finish(), &here()).join("\n"),
+            "> They allowed it.\n>\n> And said why.\n"
         );
     }
 
