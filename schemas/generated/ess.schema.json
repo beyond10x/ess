@@ -1230,6 +1230,13 @@
             "$ref": "#/definitions/ExternalRef"
           }
         },
+        "sets": {
+          "description": "Which fields of the subject this outcome sets, and from where.\n\nKeyed by the entity's own field, and sparse for the reason [`PayloadSource`] gives about a payload: a field with no declared source is the implementation's to choose, and saying so by omission is a statement rather than a gap.\n\nA [`PayloadTable`] and not a map, for the reason that type exists: `serde_yaml` keeps the last of two identical keys, so a document that set one field two contradictory ways would parse clean and lose a line.",
+          "type": "object",
+          "additionalProperties": {
+            "type": "string"
+          }
+        },
         "summary": {
           "description": "One line for generated documentation.",
           "type": [

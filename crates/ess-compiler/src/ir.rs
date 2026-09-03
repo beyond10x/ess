@@ -690,6 +690,17 @@ pub struct ResolvedOutcome {
     /// Carried through from the declaration so a projection can publish it. Empty by default.
     #[serde(default, skip_serializing_if = "ess_domain::refs::is_empty")]
     pub refs: Refs,
+    /// Which fields of the subject this outcome sets, and from what.
+    ///
+    /// The same relation [`ResolvedOutcome::payload`] holds for an emitted event, pointed at the
+    /// entity instead: one entry per field the branch determines, in the entity's declaration
+    /// order. It is what relates a command's input to the state a view of that entity later
+    /// shows. Without it a scenario can arrange an instance and know only its identity — enough to
+    /// find the row, not enough to say which of two rows a declared order puts first.
+    ///
+    /// Empty is the common case and a statement, not a gap, exactly as for `payload`.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub sets: Vec<ResolvedPayloadField>,
 }
 
 /// Where a determined payload field's value comes from, resolved.

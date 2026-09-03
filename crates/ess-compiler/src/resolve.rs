@@ -769,6 +769,52 @@ struct Resolver<'a> {
     diagnostics: Diagnostics,
 }
 
+/// Which of an outcome's two source blocks a field is being checked against.
+///
+/// `payload:` fills an emitted event's fields and `sets:` fills the subject entity's; both take a
+/// [`PayloadSource`] and both are checked by [`Resolver::payload_field`]. All that differs at a
+/// refusal is where in the document to point and what to advise, so that is all this carries.
+#[derive(Debug, Clone, Copy)]
+enum SourceBlock<'a> {
+    /// Filling `event`'s payload.
+    Payload(&'a QualifiedName),
+    /// Setting `entity`'s fields.
+    Sets(&'a QualifiedName),
+}
+
+impl<'a> SourceBlock<'a> {
+    /// What holds the field being filled — an event, or an entity.
+    fn owner(self) -> &'a QualifiedName {
+        match self {
+            Self::Payload(name) | Self::Sets(name) => name,
+        }
+    }
+
+    /// The block's own step in an artifact path, under the outcome.
+    fn segment(self) -> String {
+        match self {
+            // Sources for one event among several the branch emits, so the event names the block.
+            Self::Payload(event) => format!("payload.{event}"),
+            // Sources for the one entity the branch acts on, so there is nothing to name.
+            Self::Sets(_) => "sets".to_owned(),
+        }
+    }
+
+    /// What a reader should have written instead.
+    fn advice(self) -> &'static str {
+        match self {
+            Self::Payload(_) => {
+                "a payload source fills a field the emitted event carries, from a field of the \
+                 command's input or from a literal"
+            }
+            Self::Sets(_) => {
+                "a `sets` source fills a field the subject entity holds, from a field of the \
+                 command's input or from a literal"
+            }
+        }
+    }
+}
+
 impl<'a> Resolver<'a> {
     fn new(spec: &'a Specification, locator: Locator<'a>) -> Self {
         let mut registry = spec.system().types.clone();
@@ -1394,6 +1440,11 @@ impl<'a> Resolver<'a> {
                 complete = false;
             }
             let payload = payload.unwrap_or_default();
+            let sets = self.sets(command, outcome, input, entities);
+            if sets.is_none() {
+                complete = false;
+            }
+            let sets = sets.unwrap_or_default();
             resolved.push(ResolvedOutcome {
                 name: outcome.name.clone(),
                 condition: condition_of(outcome),
@@ -1404,9 +1455,99 @@ impl<'a> Resolver<'a> {
                 error,
                 summary: outcome.summary.clone(),
                 refs: outcome.refs.clone(),
+                sets,
             });
         }
         complete.then_some(resolved)
+    }
+
+    /// One outcome's declared entity state, resolved against the subject it acts on.
+    ///
+    /// [`Resolver::payload`] one construct over: the same sources, checked the same way, against
+    /// the entity's fields rather than an event's. The identity field is a legal target — an
+    /// outcome that creates an instance is where the identity comes from — so it is walked with
+    /// the rest.
+    ///
+    /// What is deliberately not checked: an entity field with **no** source. A branch that names
+    /// two fields of six has said what it determines, not failed to say the other four.
+    fn sets(
+        &mut self,
+        command: &CommandSpec,
+        outcome: &ess_domain::command::Outcome,
+        input: Option<&[ResolvedField]>,
+        entities: &BTreeMap<QualifiedName, ResolvedEntity>,
+    ) -> Option<Vec<ResolvedPayloadField>> {
+        if outcome.sets.is_empty() {
+            return Some(Vec::new());
+        }
+        // A backstop: `ess-domain` refuses `sets:` on a branch that acts on no entity, so only a
+        // hand-built specification reaches this arm, and its own refusal is the one to raise.
+        let Some(declared) = &outcome.subject else {
+            self.refuse_payload(
+                command,
+                outcome,
+                SourceBlock::Sets(&command.name),
+                None,
+                codes::COMMAND_UNDECLARED_REFERENCE,
+                format!(
+                    "outcome `{}` of `{}` sets entity fields and acts on no entity",
+                    outcome.name, command.name
+                ),
+                Vec::new(),
+            );
+            return None;
+        };
+        let Some(entity) = entities.get(&declared.entity) else {
+            // The entity itself did not resolve, and the subject walk already said so.
+            return None;
+        };
+
+        let mut complete = true;
+        let mut determined = Vec::new();
+        // The entity's declaration order, identity first, as `payload` takes the event's: the
+        // IR's order is the model's, never the document's.
+        for target in std::iter::once(&entity.identity).chain(&entity.fields) {
+            let Some(source) = outcome.sets.get(&target.name) else {
+                continue;
+            };
+            match self.payload_field(
+                command,
+                outcome,
+                SourceBlock::Sets(&entity.name),
+                target,
+                source,
+                input,
+            ) {
+                Some(field) => determined.push(field),
+                None => complete = false,
+            }
+        }
+        for (target, source) in &outcome.sets {
+            if target != &entity.identity.name
+                && !entity.fields.iter().any(|field| &field.name == target)
+            {
+                complete = false;
+                let carried = names(
+                    std::iter::once(entity.identity.name.clone())
+                        .chain(entity.fields.iter().map(|field| field.name.clone())),
+                );
+                self.refuse_payload(
+                    command,
+                    outcome,
+                    SourceBlock::Sets(&entity.name),
+                    Some((target, source)),
+                    codes::PAYLOAD_FILLS_UNDECLARED_FIELD,
+                    format!(
+                        "outcome `{}` of `{}` sets `{}.{target}`, which the entity does not hold",
+                        outcome.name, command.name, entity.name
+                    ),
+                    vec![Detail::Note {
+                        text: format!("`{}` holds: {carried}", entity.name),
+                    }],
+                );
+            }
+        }
+        complete.then_some(determined)
     }
 
     /// One outcome's declared payload, resolved against the events it fills and the input it
@@ -1438,7 +1579,7 @@ impl<'a> Resolver<'a> {
                 self.refuse_payload(
                     command,
                     outcome,
-                    event_name,
+                    SourceBlock::Payload(event_name),
                     None,
                     codes::COMMAND_UNDECLARED_REFERENCE,
                     format!(
@@ -1463,7 +1604,14 @@ impl<'a> Resolver<'a> {
                 let Some(source) = fields.get(&target.name) else {
                     continue;
                 };
-                match self.payload_field(command, outcome, event, target, source, input) {
+                match self.payload_field(
+                    command,
+                    outcome,
+                    SourceBlock::Payload(&event.name),
+                    target,
+                    source,
+                    input,
+                ) {
                     Some(field) => determined.push(field),
                     None => complete = false,
                 }
@@ -1475,7 +1623,7 @@ impl<'a> Resolver<'a> {
                     self.refuse_payload(
                         command,
                         outcome,
-                        event_name,
+                        SourceBlock::Payload(event_name),
                         Some((target, source)),
                         codes::PAYLOAD_FILLS_UNDECLARED_FIELD,
                         format!(
@@ -1502,7 +1650,7 @@ impl<'a> Resolver<'a> {
         &mut self,
         command: &CommandSpec,
         outcome: &ess_domain::command::Outcome,
-        event: &ResolvedEvent,
+        block: SourceBlock<'_>,
         target: &ResolvedField,
         source: &PayloadSource,
         input: Option<&[ResolvedField]>,
@@ -1530,7 +1678,7 @@ impl<'a> Resolver<'a> {
                 self.refuse_payload(
                     command,
                     outcome,
-                    &event.name,
+                    block,
                     Some((&target.name, source)),
                     codes::COMMAND_UNDECLARED_REFERENCE,
                     format!(
@@ -1561,7 +1709,7 @@ impl<'a> Resolver<'a> {
             self.refuse_payload(
                 command,
                 outcome,
-                &event.name,
+                block,
                 Some((&target.name, source)),
                 codes::COMMAND_TYPE_MISMATCH,
                 format!(
@@ -1575,7 +1723,7 @@ impl<'a> Resolver<'a> {
                         requires: false,
                     },
                     Detail::Typed {
-                        subject: format!("{}.{}", event.name, target.name),
+                        subject: format!("{}.{}", block.owner(), target.name),
                         type_ref: target.type_ref.to_string(),
                         requires: true,
                     },
@@ -1607,7 +1755,7 @@ impl<'a> Resolver<'a> {
         &mut self,
         command: &CommandSpec,
         outcome: &ess_domain::command::Outcome,
-        event: &QualifiedName,
+        block: SourceBlock<'_>,
         entry: Option<(&String, &PayloadSource)>,
         code: Code,
         message: String,
@@ -1615,8 +1763,10 @@ impl<'a> Resolver<'a> {
     ) {
         let mut needles = Vec::new();
         let mut path = format!(
-            "commands.{}.outcomes.{}.payload.{event}",
-            command.name, outcome.name
+            "commands.{}.outcomes.{}.{}",
+            command.name,
+            outcome.name,
+            block.segment()
         );
         if let Some((target, source)) = entry {
             path.push('.');
@@ -1625,16 +1775,7 @@ impl<'a> Resolver<'a> {
         }
         needles.push(format!("name: {}", command.name));
         let span = self.locator.span(path, &needles);
-        self.refuse(
-            code,
-            message,
-            details,
-            Some(
-                "a payload source fills a field the emitted event carries, from a field of the \
-                 command's input or from a literal",
-            ),
-            span,
-        );
+        self.refuse(code, message, details, Some(block.advice()), span);
     }
 
     /// One outcome's subject: the entity it acts on, and the move it takes.

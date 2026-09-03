@@ -1612,17 +1612,17 @@ pub enum ViewExpectation {
     ///
     /// # Why synthesis does not write one
     ///
-    /// Nothing in the model says where a row's ranking value comes from. An entity's field and a
-    /// command's input are related by no declaration — the same gap the payload-value table in
-    /// [`mod@crate::synthesize`] names — so a scenario that arranges two instances knows which inputs it
-    /// sent and *not* which of the two rows the implementation will rank first. Choosing one would
-    /// be a match on a shared field name, which is the inference this crate refuses everywhere else.
+    /// It now knows the values and still cannot name the row. An outcome's `sets:` says which
+    /// entity field each input fills, so a scenario that arranges two instances knows what each of
+    /// its own rows holds and can order them. What it does not know is whether they are the only
+    /// rows: §8 permits a target to be shared, and a row another scenario put there could outrank
+    /// both. "First" would then be a claim about the other user of the target, which is the reading
+    /// that makes [`Counts`](Self::Counts) a floor and never a ceiling.
     ///
-    /// The one position the model does determine is the one in a view holding a single row, and a
-    /// synthesised scenario that arranges one row in a ranked view has already refused the order for
-    /// want of a second. So this variant is written by an author or by an adapter, and read by both
-    /// runners; the construct that would license synthesising one is a declaration relating an
-    /// outcome's input to the entity field a view ranks by.
+    /// So this variant is written by an author or by an adapter, and read by both runners. What
+    /// would license synthesising one is a view saying it holds only what the scenario running it
+    /// put there; the value side of the question is answered, and
+    /// [`mod@crate::synthesize`] records which half is which.
     At {
         /// The order the position is relative to, most significant key first.
         ///

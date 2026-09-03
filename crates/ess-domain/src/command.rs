@@ -622,6 +622,13 @@ pub struct PayloadField {
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct PayloadTable(pub Vec<PayloadField>);
 
+impl PayloadTable {
+    /// `true` when no field is given a source.
+    pub fn is_empty(&self) -> bool {
+        self.0.is_empty()
+    }
+}
+
 impl<'de> serde::Deserialize<'de> for PayloadTable {
     fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
         struct Entries;
@@ -779,6 +786,14 @@ pub struct Outcome {
     pub subject: Option<Subject>,
     /// The events this outcome emits, as facts, in the order they happen.
     pub emits: Vec<QualifiedName>,
+    /// Which fields of the subject this outcome sets, and from where.
+    ///
+    /// The counterpart of [`Self::payload`] on the other side of the same command: a payload says
+    /// what an emitted *event* carries, this says what the *entity* comes to hold. Both were
+    /// needed and only one existed, which is why a generated scenario could arrange an instance and
+    /// then know nothing about it beyond its identity — enough to find the row in a view, not
+    /// enough to say which of two rows a declared order puts first.
+    pub sets: BTreeMap<String, PayloadSource>,
     /// Where the fields of those events' payloads come from, for the fields some declaration
     /// determines.
     ///
@@ -808,6 +823,7 @@ impl Outcome {
             payload: BTreeMap::new(),
             error: None,
             summary: None,
+            sets: BTreeMap::new(),
             refs: Refs::new(),
         }
     }
@@ -822,6 +838,7 @@ impl Outcome {
             payload: BTreeMap::new(),
             error: None,
             summary: None,
+            sets: BTreeMap::new(),
             refs: Refs::new(),
         }
     }
@@ -840,6 +857,7 @@ impl Outcome {
             payload: BTreeMap::new(),
             error: Some(error),
             summary: None,
+            sets: BTreeMap::new(),
             refs: Refs::new(),
         }
     }
@@ -1135,6 +1153,7 @@ impl CommandSpec {
         }
 
         errors.extend(self.validate_payload_shape(outcome, inputs, &location));
+        errors.extend(self.validate_sets_shape(outcome, inputs, &location));
         errors.extend(self.validate_guard(outcome, inputs, &location));
         errors
     }
@@ -1186,6 +1205,60 @@ impl CommandSpec {
                         .with_hint(format!("declared input: {}", join(inputs.iter()))),
                     );
                 }
+            }
+        }
+        errors
+    }
+
+    /// Checks that what an outcome sets is set on something, and read from what the caller supplied.
+    ///
+    /// The entity's own fields are checked in [`validate_sets`], which needs the entity
+    /// declarations; this is the half a command can answer alone.
+    fn validate_sets_shape(
+        &self,
+        outcome: &Outcome,
+        inputs: &BTreeSet<&str>,
+        location: &str,
+    ) -> ValidationErrors {
+        let mut errors = ValidationErrors::new();
+        if outcome.sets.is_empty() {
+            return errors;
+        }
+
+        if outcome.subject.is_none() {
+            errors.push(
+                ValidationError::new(
+                    ValidationCode::UnobservableFact,
+                    format!("{location}.sets"),
+                    format!(
+                        "outcome `{}` sets entity fields and acts on no entity, so the sources \
+                         describe an instance this branch never touches",
+                        outcome.name
+                    ),
+                )
+                .with_hint(
+                    "name the subject with `creates:`, `moves:` or `updates:`, or delete `sets:`"
+                        .to_owned(),
+                ),
+            );
+        }
+
+        for (target, source) in &outcome.sets {
+            let PayloadSource::InputField { field } = source else {
+                continue;
+            };
+            if !inputs.contains(field.as_str()) {
+                errors.push(
+                    ValidationError::new(
+                        ValidationCode::UndeclaredReference,
+                        format!("{location}.sets.{target}"),
+                        format!(
+                            "`{source}` reads `{field}`, which `{}` does not declare as input",
+                            self.name
+                        ),
+                    )
+                    .with_hint(format!("declared input: {}", join(inputs.iter()))),
+                );
             }
         }
         errors
@@ -1520,6 +1593,97 @@ fn check_payload_entry(
     errors
 }
 
+/// Checks every `sets:` entry against the entity it is about.
+///
+/// The cross-declaration half of the construct, beside [`validate_payloads`] and for the same
+/// reason: an outcome fills an entity's fields from its command's input, and neither declaration
+/// can check the pair alone.
+pub fn validate_sets(
+    commands: &BTreeMap<QualifiedName, CommandSpec>,
+    entities: &BTreeMap<QualifiedName, crate::entity::EntitySpec>,
+    conversions: &crate::types::ConversionRegistry,
+) -> ValidationErrors {
+    let mut errors = ValidationErrors::new();
+    for command in commands.values() {
+        for outcome in &command.outcomes {
+            // An outcome that sets fields on nothing was already reported by the command's own
+            // shape check, and an entity nothing declares by the subject's.
+            let Some(subject) = &outcome.subject else {
+                continue;
+            };
+            let Some(entity) = entities.get(&subject.entity) else {
+                continue;
+            };
+
+            for (target, source) in &outcome.sets {
+                let at = format!(
+                    "commands.{}.outcomes.{}.sets.{target}",
+                    command.name, outcome.name
+                );
+                // The identity is settable and is a field like any other: an outcome that creates
+                // an instance from an input id is exactly what `instance:` already describes, and
+                // refusing to let it say so would make one construct contradict the other.
+                let held = if entity.identity.name == *target {
+                    Some(&entity.identity)
+                } else {
+                    entity.field(target)
+                };
+                let Some(held) = held else {
+                    errors.push(
+                        ValidationError::new(
+                            ValidationCode::UndeclaredReference,
+                            at,
+                            format!(
+                                "`{target}` is not a field of `{}`, so this branch sets something \
+                                 the entity does not hold",
+                                entity.name
+                            ),
+                        )
+                        .with_hint(format!(
+                            "`{}` holds: {}",
+                            entity.name,
+                            join(
+                                std::iter::once(entity.identity.name.clone())
+                                    .chain(entity.fields.iter().map(|field| field.name.clone()))
+                            )
+                        )),
+                    );
+                    continue;
+                };
+
+                let PayloadSource::InputField { field } = source else {
+                    // A literal is checked where a payload literal is, against the same rules; the
+                    // entity side adds nothing a reader would learn twice.
+                    continue;
+                };
+                let Some(read) = command.input_field(field) else {
+                    continue;
+                };
+                if conversions.permits(&read.type_ref, &held.type_ref) {
+                    continue;
+                }
+                errors.push(
+                    ValidationError::new(
+                        ValidationCode::TypeMismatch,
+                        at,
+                        format!(
+                            "`{}.{field}` has type `{}`, and `{}.{target}` holds `{}`; no \
+                             conversion is declared",
+                            command.name, read.type_ref, entity.name, held.type_ref
+                        ),
+                    )
+                    .with_hint(format!(
+                        "declare the crossing — `conversions: [{{from: {}, to: {}, because: …}}]` \
+                         — or make the two types agree",
+                        read.type_ref, held.type_ref
+                    )),
+                );
+            }
+        }
+    }
+    errors
+}
+
 /// A payload literal, against the representation of the event field it fills.
 ///
 /// The same three guards a binding's literal gets, because the mistake is the same one wearing the
@@ -1801,6 +1965,17 @@ pub struct RawOutcome {
     /// [`PayloadSource`] for why an absent field is a statement rather than an omission.
     #[serde(default, skip_serializing_if = "PayloadDeclaration::is_empty")]
     pub payload: PayloadDeclaration,
+    /// Which fields of the subject this outcome sets, and from where.
+    ///
+    /// Keyed by the entity's own field, and sparse for the reason [`PayloadSource`] gives about a
+    /// payload: a field with no declared source is the implementation's to choose, and saying so by
+    /// omission is a statement rather than a gap.
+    ///
+    /// A [`PayloadTable`] and not a map, for the reason that type exists: `serde_yaml` keeps the
+    /// last of two identical keys, so a document that set one field two contradictory ways would
+    /// parse clean and lose a line.
+    #[serde(default, skip_serializing_if = "PayloadTable::is_empty")]
+    pub sets: PayloadTable,
     /// The error it reports.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub error: Option<QualifiedName>,
@@ -1899,12 +2074,14 @@ impl TryFrom<RawOutcome> for Outcome {
         };
         let subject = subject_of(&raw.name, raw.creates, raw.moves, raw.updates, raw.instance)?;
         let payload = keyed_payload(&raw.name, raw.payload)?;
+        let sets = keyed_sets(&raw.name, raw.sets)?;
         Ok(Self {
             name: raw.name,
             condition,
             subject,
             emits: raw.emits,
             payload,
+            sets,
             error: raw.error,
             summary: raw.summary,
             refs: raw.refs,
@@ -1919,6 +2096,37 @@ impl TryFrom<RawOutcome> for Outcome {
 /// as two entries, and keying them without looking would keep one and lose the author's conflict.
 /// Accumulating rather than stopping at the first (invariant 3): a document with three duplicated
 /// lines is three repairs.
+/// One outcome's `sets:` keyed by field, or every duplicate the document wrote.
+///
+/// The same check `keyed_payload` makes, one level shallower: a repeated key parses clean and keeps
+/// the last, so a field set two contradictory ways would lose a line silently.
+fn keyed_sets(
+    name: &OutcomeName,
+    declared: PayloadTable,
+) -> Result<BTreeMap<String, PayloadSource>, ValidationErrors> {
+    let mut errors = ValidationErrors::new();
+    let mut fields: BTreeMap<String, PayloadSource> = BTreeMap::new();
+    for entry in declared.0 {
+        if fields.contains_key(&entry.target) {
+            errors.push(
+                ValidationError::new(
+                    ValidationCode::DuplicateDeclaration,
+                    format!("outcomes.{name}.sets.{}", entry.target),
+                    format!(
+                        "`{}` is set more than once; two sources for one field leave nothing \
+                         downstream able to tell which the author meant",
+                        entry.target
+                    ),
+                )
+                .with_hint("keep the one that is true and delete the other"),
+            );
+            continue;
+        }
+        fields.insert(entry.target, entry.source);
+    }
+    errors.into_result(fields)
+}
+
 fn keyed_payload(
     name: &OutcomeName,
     declared: PayloadDeclaration,
@@ -2176,6 +2384,13 @@ impl From<Outcome> for RawOutcome {
             instance,
             emits: outcome.emits,
             payload,
+            sets: PayloadTable(
+                outcome
+                    .sets
+                    .into_iter()
+                    .map(|(target, source)| PayloadField { target, source })
+                    .collect(),
+            ),
             error: outcome.error,
             summary: outcome.summary,
             refs: outcome.refs,
@@ -2428,6 +2643,7 @@ outcomes:
                 error: Some(name("billing.invoice.InvalidAmount")),
                 summary: None,
                 refs: Refs::new(),
+                sets: BTreeMap::new(),
             },
         ]));
 
@@ -2470,6 +2686,7 @@ outcomes:
             error: Some(name("billing.invoice.InvalidAmount")),
             summary: None,
             refs: Refs::new(),
+            sets: BTreeMap::new(),
         }]));
 
         assert!(errors.contains(ValidationCode::RefusalMutatedState));
@@ -2502,6 +2719,7 @@ outcomes:
                 error: Some(name("billing.invoice.InvalidAmount")),
                 summary: None,
                 refs: Refs::new(),
+                sets: BTreeMap::new(),
             },
         ]));
 
@@ -2527,6 +2745,7 @@ outcomes:
             error: Some(name("billing.invoice.InvalidAmount")),
             summary: None,
             refs: Refs::new(),
+            sets: BTreeMap::new(),
         }]));
 
         assert!(errors.contains(ValidationCode::UnreachableBranch));
@@ -2588,6 +2807,7 @@ outcomes:
                 error: None,
                 summary: None,
                 refs: Refs::new(),
+                sets: BTreeMap::new(),
             },
         ]));
 
@@ -2766,6 +2986,7 @@ outcomes:
                 error: Some(name("billing.invoice.InvalidAmount")),
                 summary: None,
                 refs: Refs::new(),
+                sets: BTreeMap::new(),
             },
         ]));
 
@@ -2796,6 +3017,7 @@ outcomes:
                 error: Some(name("billing.invoice.AmountTooLarge")),
                 summary: None,
                 refs: Refs::new(),
+                sets: BTreeMap::new(),
             },
         ]));
 
@@ -2915,6 +3137,7 @@ outcomes:
             error: Some(name("billing.invoice.InvalidAmount")),
             summary: None,
             refs: Refs::new(),
+            sets: BTreeMap::new(),
         };
         assert_eq!(inject.test_strategy(), TestStrategy::InjectFault);
         assert_eq!(inject.test_strategy().as_str(), "inject_fault");
@@ -3047,6 +3270,92 @@ summary: The requested amount is not positive.
         assert_eq!(ErrorSpec::try_from(reparsed).expect("valid"), declared);
     }
 
+    /// One outcome whose `sets:` block is written in a document, so the whole read path is used.
+    fn outcome_setting(yaml: &str) -> Result<Outcome, ValidationErrors> {
+        let raw: RawOutcome = serde_yaml::from_str(yaml).expect("the document is well formed");
+        Outcome::try_from(raw)
+    }
+
+    #[test]
+    fn an_outcome_says_which_entity_fields_it_sets_and_from_where() {
+        let outcome = outcome_setting(
+            "name: accepted
+creates: billing.invoice.Invoice
+instance: invoice_id
+sets: {total: input.amount, currency: EUR}
+",
+        )
+        .expect("valid");
+
+        assert_eq!(
+            outcome.sets.get("total"),
+            Some(&PayloadSource::InputField {
+                field: "amount".to_owned()
+            })
+        );
+        assert_eq!(
+            outcome.sets.get("currency"),
+            Some(&PayloadSource::Literal {
+                value: "EUR".to_owned()
+            }),
+            "the same two sources a payload has, because the question is the same one"
+        );
+    }
+
+    #[test]
+    fn setting_one_field_twice_is_refused_rather_than_silently_keeping_the_last() {
+        let errors = outcome_setting(
+            "name: accepted
+creates: billing.invoice.Invoice
+instance: invoice_id
+sets:
+  total: input.amount
+  total: input.other
+",
+        )
+        .expect_err("refused");
+        assert!(
+            errors
+                .as_slice()
+                .iter()
+                .any(|error| error.code == ValidationCode::DuplicateDeclaration),
+            "{errors}"
+        );
+    }
+
+    #[test]
+    fn setting_a_field_on_no_entity_is_refused() {
+        let outcome =
+            outcome_setting("name: rejected\nsets:\n  total: input.amount\n").expect("parses");
+        let errors = refuse(&command_with(vec![outcome]));
+        let found = errors
+            .as_slice()
+            .iter()
+            .find(|error| error.code == ValidationCode::UnobservableFact)
+            .unwrap_or_else(|| panic!("expected an unobservable fact, got {errors}"));
+        assert!(
+            found.message.contains("acts on no entity"),
+            "{}",
+            found.message
+        );
+    }
+
+    #[test]
+    fn setting_a_field_from_something_the_command_does_not_take_is_refused() {
+        let outcome = outcome_setting(
+            "name: accepted\ncreates: billing.invoice.Invoice\ninstance: invoice_id\nsets:\n               total: input.nothing\n",
+        )
+        .expect("parses");
+        let errors = refuse(&command_with(vec![outcome]));
+        assert!(
+            errors.as_slice().iter().any(|error| {
+                error.code == ValidationCode::UndeclaredReference
+                    && error.message.contains("nothing")
+            }),
+            "{errors}"
+        );
+    }
+
     #[test]
     fn an_error_payload_field_must_name_a_declared_type() {
         let declared = ErrorSpec {
@@ -3144,6 +3453,7 @@ outcomes:
                 error: Some(name("billing.invoice.InvalidAmount")),
                 summary: None,
                 refs: Refs::new(),
+                sets: BTreeMap::new(),
             },
         ]));
         assert!(
@@ -3265,6 +3575,7 @@ outcomes:
                     error: Some(name("billing.invoice.InvalidAmount")),
                     summary: None,
                     refs: Refs::new(),
+                    sets: BTreeMap::new(),
                 },
             ],
             naming: Naming::default(),

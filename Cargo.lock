@@ -469,7 +469,9 @@ version = "0.9.2"
 dependencies = [
  "anyhow",
  "clap",
+ "ess-domain",
  "ess-gen",
+ "schemars",
  "serde_json",
 ]
 

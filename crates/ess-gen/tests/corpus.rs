@@ -1,13 +1,13 @@
 //! The bytes `ess generate --kind docs` writes, pinned.
 //!
-//! This exists for one job: the documentation projection is being ported from writing markdown
-//! directly to producing an `ess-docs/1` document that a renderer writes. That port touches two
-//! thousand lines across thirty functions, and the only claim worth making about it is that the
-//! output did not move.
+//! It was written for the port from writing markdown directly to producing an `ess-docs/1`
+//! document that a renderer writes: two thousand lines across thirty functions, where the only
+//! claim worth making was that the output did not move. The port is done and the pin stays, doing
+//! the same job for every change after it.
 //!
-//! So the corpus is committed and compared. A change here is not a test to update — it is the port
-//! having changed what an adopter's committed pages say, which is a different piece of work with a
-//! different commit message.
+//! So the corpus is committed and compared. A change here is not a test to update — it is a change
+//! to what every adopter's committed pages say, and it belongs in the commit that meant to make
+//! it, with the reason in the message.
 //!
 //! # Why a whole tree and not assertions
 //!
@@ -111,10 +111,9 @@ fn assert_pinned(example: &str) {
         });
         assert_eq!(
             *contents, recorded,
-            "`{path}` of `{example}` is not what is pinned. The documentation projection is not \
-             supposed to change what it says while it is being ported to the document IR; if this \
-             is a deliberate change to the pages, it belongs in its own commit and the corpus is \
-             updated there"
+            "`{path}` of `{example}` is not what is pinned. This is what every adopter's \
+             committed pages would gain in `git diff`; if the change is deliberate, regenerate \
+             the corpus in the commit that meant to make it and say why in the message"
         );
     }
 

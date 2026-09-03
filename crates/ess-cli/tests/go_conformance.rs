@@ -147,15 +147,25 @@ fn one_deliberate_defect_fails_the_scenarios_responsible_for_it_and_no_others() 
     assert_eq!(
         scenarios(&printed, "FAIL"),
         vec![
+            "billing.invoice.CancelInvoice/outcome/cancelled",
+            "billing.invoice.CreateInvoice/outcome/accepted",
             "billing.invoice.Invoice/invariant/after/billing.invoice.CancelInvoice/cancelled",
             "billing.invoice.Invoice/invariant/after/billing.invoice.CreateInvoice/accepted",
             "billing.invoice.Invoice/invariant/after/billing.invoice.IssueInvoice/issued",
             "billing.invoice.Invoice/invariant/after/billing.invoice.PayInvoice/settled",
+            "billing.invoice.Invoice/transition/cancel/by/billing.invoice.CancelInvoice/cancelled",
+            "billing.invoice.Invoice/transition/issue/by/billing.invoice.IssueInvoice/issued",
+            "billing.invoice.Invoice/transition/settle/by/billing.invoice.PayInvoice/settled",
+            "billing.invoice.IssueInvoice/outcome/issued",
             "billing.invoice.Money/invariant/at/billing.invoice.InvoiceById/total",
             "billing.invoice.Money/invariant/at/billing.invoice.OutstandingInvoices/total",
+            "billing.invoice.PayInvoice/outcome/settled",
         ],
-        "the six scenarios that read a total are the six that must catch a negative one, and a \
-         suite that failed more would not be telling anybody which check found it:\n{printed}"
+        "the thirteen scenarios that read a total are the thirteen that must catch a negative one, \
+         and a suite that failed more would not be telling anybody which check found it. Six of \
+         them read it through an invariant and seven through the value `sets:` says the row holds \
+         — a scenario that only found the invoice and never looked at it was in the second group \
+         before that block existed:\n{printed}"
     );
     let _ = std::fs::remove_dir_all(&directory);
 }

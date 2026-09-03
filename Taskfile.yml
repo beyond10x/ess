@@ -86,6 +86,10 @@ tasks:
     desc: Verify the committed projections of the normative billing specification.
     cmds:
       - cargo xtask generate --check
+      # The published document schema is a projection of `RawSpecFile` like any other. Unchecked,
+      # it goes stale in the one direction nobody notices: still accepting what it always accepted,
+      # and refusing the key the model has just gained.
+      - cargo xtask schema --check
 
   site-lab:
     desc: Build and exercise the WebAssembly module used by the public browser lab.

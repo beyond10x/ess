@@ -1,6 +1,6 @@
 # generated from billing v3
-# model digest 62706dc8de60f859f9fa11d363bae20825e7c74e71435e2fd28691488d787af1
-# contract digest fed3dac8422d48748e0ec5c0c58941bd048be7d6a7f4d56499540467668fb996
+# model digest 8b52fe739078f96a006d7bee5e9b9530c3a30221f7bc003f291dcfe17cdcfea3
+# contract digest 24c7e46bb1dbf91dd335da8d91379c3251c99e9288219d0828892962b27bdf59
 # do not edit: regenerate with `ess generate`
 asyncapi: 3.0.0
 info:
@@ -18,8 +18,8 @@ info:
   x-ess-provenance:
     system: billing
     specification_version: v3
-    source_digest: 62706dc8de60f859f9fa11d363bae20825e7c74e71435e2fd28691488d787af1
-    contract_digest: fed3dac8422d48748e0ec5c0c58941bd048be7d6a7f4d56499540467668fb996
+    source_digest: 8b52fe739078f96a006d7bee5e9b9530c3a30221f7bc003f291dcfe17cdcfea3
+    contract_digest: 24c7e46bb1dbf91dd335da8d91379c3251c99e9288219d0828892962b27bdf59
 defaultContentType: application/json
 channels:
   billing.invoice.InvoiceCancelled:

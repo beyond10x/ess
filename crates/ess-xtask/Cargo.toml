@@ -10,7 +10,9 @@ publish = false
 [dependencies]
 anyhow.workspace = true
 clap.workspace = true
+ess-domain.workspace = true
 ess-gen.workspace = true
+schemars.workspace = true
 serde_json.workspace = true
 
 [lints]

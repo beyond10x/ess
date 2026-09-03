@@ -367,6 +367,13 @@ impl Specification {
             &self.conversions,
         ));
 
+        // The other half of the same construct: what an outcome sets on the entity it acts on.
+        errors.extend(crate::command::validate_sets(
+            &self.commands,
+            &self.entities,
+            &self.conversions,
+        ));
+
         errors.extend(crate::binding::validate_bindings(
             &self.bindings,
             &self.events,

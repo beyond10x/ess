@@ -121,19 +121,35 @@
 //! [`RefusalCause::RefusalUndeclared`] is recorded beside the scenario, which is the same
 //! arrangement as before for the specifications that have not adopted the construct.
 //!
+//! # What an outcome determines, and what is therefore asserted
+//!
+//! Two blocks on an outcome relate the input a command was given to something an observer can
+//! read, and each licenses a class of assertion that was a refusal before it existed:
+//!
+//! | block | fills | what is asserted with it | what is asserted without it |
+//! |---|---|---|---|
+//! | `payload:` | a field of an event the branch emits | the field carries the value the input supplied | the field is present and of its declared type |
+//! | `sets:` | a field of the entity the branch acts on | every view that projects that field holds a row carrying the value | the row is found by its identity and nothing is said about what it holds |
+//!
+//! `sets:` is read in two steps, `settled` and `shown`: a source that is a literal, that crosses a
+//! declared conversion, or that fills a field no view projects at the entity's own type is left
+//! out rather than guessed at, because in each the value the row holds is not the value sent.
+//!
 //! # What the model cannot say yet, and what is therefore not asserted
 //!
-//! Two gaps left, reported rather than left to be noticed. They are one gap read in two places: the
-//! model relates an outcome's input to nothing an observer can read, so neither an event's values
-//! nor a row's ranking values have a declared source.
+//! One gap left, reported rather than left to be noticed: **which** row a ranked view puts first.
 //!
-//! | gap | what is asserted instead | what would close it |
-//! |---|---|---|
-//! | where a payload field's **value** comes from | the field is present and of its declared type | a construct relating an outcome's emitted event to the command's input, in the shape a binding's `mapping:` already has |
-//! | which row a ranked view puts **first** | the rows are in the declared order, and there are at least as many as the scenario arranged | a construct relating an outcome's input to the entity field a view ranks by — see [`ViewExpectation::At`], which is in the vocabulary and is written by an author rather than synthesised |
+//! The values are now known — `sets:` says where each row's ranking value came from, and the
+//! scenario chose it — so the order over the rows *this scenario made* is computable. What is not
+//! known is whether they are the only rows. §8 permits a target to be shared between scenarios, so
+//! a row somebody else put there could outrank all of them, and `first` would be a claim about the
+//! other user of the target rather than about the implementation. It is the same reading that makes
+//! [`ViewExpectation::Counts`] a floor and never a ceiling.
 //!
-//! It is a refusal or a recorded matrix row rather than a silence, because a suite quietly holding a
-//! thinner check than the specification requires is the one failure a passing run cannot show.
+//! What would close it is a view saying it holds only what the scenario running it put there.
+//! Until then [`ViewExpectation::Ranked`] asserts that the rows are in the declared order and
+//! [`ViewExpectation::Contains`] asserts what each of them holds, which is together every part of
+//! the claim except the one about the rows nobody in this scenario made.
 //!
 //! A value object's invariants are the third: `billing.invoice.Money` says `amount >= 0` of every
 //! `Money` in the system, which is a claim about a *type* rather than about an instance at rest, and
@@ -971,15 +987,7 @@ fn exercise(
     let emitted: Vec<EventRef> = outcome.emits.iter().map(EventRef::from).collect();
     let absent = not_emitted(ir, &emitted);
     let actor = run.actor.clone();
-    let views = view_expectations(
-        ir,
-        outcome,
-        run.after.as_ref(),
-        run.instance.as_ref(),
-        actors,
-        id,
-        refusals,
-    );
+    let views = view_expectations(ir, outcome, &run, actors, id, refusals);
 
     let mut steps = run.steps();
     if let Some(error) = &outcome.error {
@@ -1050,6 +1058,11 @@ struct Run {
     input: BTreeMap<String, ScenarioValue>,
     /// What the arrangement depends on.
     source: BTreeSet<EssSemanticRef>,
+    /// What the subject's fields hold once the branch under test has run.
+    ///
+    /// The arrangement's, with this branch's own `sets:` applied over the top — this branch runs
+    /// last, so where both name a field it is this one's value the row will carry.
+    settled: BTreeMap<String, Determined>,
 }
 
 impl Run {
@@ -1093,6 +1106,8 @@ fn run(
         outcome: outcome_ref,
     });
 
+    let mut settled = setup.settled;
+    settled.extend(super::synthesize::settled(outcome, &supplied));
     Ok(Run {
         setup: setup.steps,
         invoke,
@@ -1101,6 +1116,7 @@ fn run(
         actor,
         input: supplied,
         source: setup.source,
+        settled,
     })
 }
 
@@ -1117,6 +1133,8 @@ struct Setup {
     source: BTreeSet<EssSemanticRef>,
     /// The state the subject is in once the branch has been taken, where there is a subject.
     after: Option<StateName>,
+    /// What the arrangement left in the subject's fields, where the branches it ran said.
+    settled: BTreeMap<String, Determined>,
 }
 
 impl Setup {
@@ -1127,6 +1145,7 @@ impl Setup {
             instance: None,
             source: BTreeSet::new(),
             after: None,
+            settled: BTreeMap::new(),
         }
     }
 }
@@ -1178,6 +1197,7 @@ fn prepare(
         instance: Some(arrangement.instance),
         source: arrangement.source,
         after: Some(after),
+        settled: arrangement.settled,
     })
 }
 
@@ -1196,6 +1216,12 @@ struct Arrangement {
     steps: Vec<ScenarioStep>,
     /// What those steps depend on.
     source: BTreeSet<EssSemanticRef>,
+    /// What those steps left in the entity's fields, where the branches said.
+    ///
+    /// Accumulated in step order, so a move that sets a field the creation also set leaves the
+    /// later value — which is what the implementation will hold, and so what a declared order
+    /// ranks this row by.
+    settled: BTreeMap<String, Determined>,
 }
 
 /// The cheapest of several candidate states the specification can actually reach.
@@ -1265,9 +1291,11 @@ fn arrange(
     let mut steps = Vec::new();
     let mut source = BTreeSet::new();
 
-    let (created, used) = invoke(ir, creator, None, actors, distinction)?;
-    steps.extend(created);
-    source.extend(used);
+    let mut settled = BTreeMap::new();
+    let created = invoke(ir, creator, None, actors, distinction)?;
+    steps.extend(created.steps);
+    source.extend(created.source);
+    settled.extend(created.settled);
     // Where the identity becomes knowable. `creates:` names a field of an event the branch emits,
     // because the caller could not have named an instance that did not exist when it called — and
     // because §9's command result already carries the events a command emitted, so binding it here
@@ -1285,15 +1313,17 @@ fn arrange(
     source.insert(EventRef::from(event).into());
 
     for driver in route {
-        let (moved, used) = invoke(ir, &driver, Some(&instance), actors, distinction)?;
-        steps.extend(moved);
-        source.extend(used);
+        let moved = invoke(ir, &driver, Some(&instance), actors, distinction)?;
+        steps.extend(moved.steps);
+        source.extend(moved.source);
+        settled.extend(moved.settled);
     }
     Ok(Arrangement {
         instance,
         state: target.clone(),
         steps,
         source,
+        settled,
     })
 }
 
@@ -1308,7 +1338,7 @@ fn invoke(
     instance: Option<&InstanceName>,
     actors: &BTreeMap<QualifiedName, ActorRef>,
     distinction: Distinction,
-) -> Result<(Vec<ScenarioStep>, BTreeSet<EssSemanticRef>), Unreachable> {
+) -> Result<Invocation, Unreachable> {
     let command_ref = CommandRef::new(driver.command.name.clone());
     let outcome_ref = OutcomeRef::new(command_ref.clone(), driver.outcome.name.clone());
     // The cause is not carried up. That branch has a refusal of its own, under its own id, saying
@@ -1326,10 +1356,12 @@ fn invoke(
             force: outcome_ref.clone(),
         });
     }
+    let supplied = supply(&input, driver.outcome.subject.as_ref(), instance);
+    let settled = settled(driver.outcome, &supplied);
     steps.push(ScenarioStep::ExecuteCommand {
         command: command_ref.clone(),
         actor: actors.get(&driver.command.name).cloned(),
-        input: supply(&input, driver.outcome.subject.as_ref(), instance),
+        input: supplied,
     });
     steps.push(ScenarioStep::ExpectOutcome {
         outcome: outcome_ref.clone(),
@@ -1338,7 +1370,21 @@ fn invoke(
     let source: BTreeSet<EssSemanticRef> = [command_ref.into(), outcome_ref.into()]
         .into_iter()
         .collect();
-    Ok((steps, source))
+    Ok(Invocation {
+        steps,
+        source,
+        settled,
+    })
+}
+
+/// One invoked branch: the steps that run it, what they depend on, and what they left behind.
+struct Invocation {
+    /// The steps, in order.
+    steps: Vec<ScenarioStep>,
+    /// The constructs they depend on.
+    source: BTreeSet<EssSemanticRef>,
+    /// What the branch's `sets:` determined, read against the input this invocation supplied.
+    settled: BTreeMap<String, Determined>,
 }
 
 /// The shortest sequence of driven transitions from where the lifecycle starts to `target`.
@@ -1761,15 +1807,19 @@ struct ViewAssertions {
 
 /// The view assertions a branch that changed an entity supports (§14, §20).
 ///
-/// `after` is the state the subject is in once the branch has been taken — the lifecycle's `initial`
-/// for a `creates:`, the transition's `to` for a `moves:`, and the state it was arranged in for an
-/// `updates:`. It is passed in rather than re-derived, because deciding a filter against the wrong
-/// state is a wrong assertion rather than a missing one.
+/// Everything about the subject is read off the `run` rather than re-derived, because three
+/// answers to *what did this scenario do to the entity* have to agree:
+///
+/// * [`Run::after`] is the state it is in once the branch has been taken — the lifecycle's
+///   `initial` for a `creates:`, the transition's `to` for a `moves:`, and the state it was
+///   arranged in for an `updates:`. Deciding a filter against the wrong state is a wrong assertion
+///   rather than a missing one.
+/// * [`Run::instance`] is what the arrangement bound it as, and it is what turns "the view holds a
+///   row" into "the view holds *this* one" — see [`identifying`].
+/// * [`Run::settled`] is what its fields hold, and it is what turns that into "the view holds this
+///   one, carrying what it was given" — see [`shown`].
 ///
 /// A branch with no subject changes nothing a view could show, and produces no steps.
-///
-/// `instance` is what the arrangement bound the subject as, and it is what turns "the view holds a
-/// row" into "the view holds *this* one" — see [`identifying`].
 ///
 /// # A declared order costs further instances
 ///
@@ -1785,16 +1835,16 @@ struct ViewAssertions {
 fn view_expectations(
     ir: &EssIr,
     outcome: &ResolvedOutcome,
-    after: Option<&StateName>,
-    instance: Option<&InstanceName>,
+    run: &Run,
     actors: &BTreeMap<QualifiedName, ActorRef>,
     id: &ScenarioId,
     refusals: &mut Vec<Refusal>,
 ) -> ViewAssertions {
     let mut out = ViewAssertions::default();
-    let (Some(subject), Some(state)) = (&outcome.subject, after) else {
+    let (Some(subject), Some(state)) = (&outcome.subject, run.after.as_ref()) else {
         return out;
     };
+    let (instance, settled) = (run.instance.as_ref(), &run.settled);
     let projections = ir.projections();
     let Some(views) = projections.get(&subject.entity) else {
         return out;
@@ -1857,7 +1907,15 @@ fn view_expectations(
         let name = ViewRef::new(view.name.clone());
         let fields = identifying(ir, subject, instance, view);
         let expectation = if *admits_subject {
-            ViewExpectation::Contains { fields }
+            // Every projected field whose value this scenario determined, beside the identity that
+            // says which row. A view whose rows all carry the same wrong value passes `Contains`
+            // on the identity alone and passes `Ranked` below trivially; this is the assertion
+            // that reads them. It is sound on a target §8 permits to be shared, where a claim
+            // about which row comes *first* would not be: a row this scenario did not make cannot
+            // stop one it did from holding what it was given.
+            ViewExpectation::Contains {
+                fields: shown(view, fields.clone(), settled),
+            }
         } else {
             // A cancelled invoice that stays in `OutstandingInvoices` is the defect the positive
             // assertion cannot see, and an entity that has not reached the filtered state yet is
@@ -1900,6 +1958,86 @@ fn view_expectations(
         out.views.insert(name);
     }
     out
+}
+
+/// What one invoked branch leaves in the entity's fields, read against what it was supplied.
+///
+/// The `sets:` block names the field and where its value comes from; `supplied` is what this
+/// invocation actually sent. Together they say what the row will hold, which is the relation
+/// nothing in the model carried before `sets:` existed.
+///
+/// Three kinds of entry are left out rather than guessed at, and each is a thing the model does
+/// not determine:
+///
+/// * a field whose source is a **literal** — it is written as text, and reading it as the field's
+///   declared type is a parse no declaration specifies, which is the reading
+///   [`ResolvedPayloadValue::Literal`] already gets one construct over;
+/// * a field that crosses a declared **conversion** — the conversion says the two types may meet
+///   and nothing says what it computes, so the value the row holds is not the value sent;
+/// * a field the arrangement did not choose a **literal** for — an identity captured from an
+///   earlier step is a name for a value rather than the value, and a row carrying it is a claim
+///   two reads have to agree on before it says anything about this one.
+///
+/// The entity field's type is carried out beside the value, because the fourth exclusion needs a
+/// view in hand — see [`shown`].
+fn settled(
+    outcome: &ResolvedOutcome,
+    supplied: &BTreeMap<String, ScenarioValue>,
+) -> BTreeMap<String, Determined> {
+    let mut out = BTreeMap::new();
+    for field in &outcome.sets {
+        if field.conversion.is_some() {
+            continue;
+        }
+        let ResolvedPayloadValue::InputField { field: read, .. } = &field.value else {
+            continue;
+        };
+        let Some(value @ ScenarioValue::Literal { .. }) = supplied.get(read) else {
+            continue;
+        };
+        out.insert(
+            field.target.clone(),
+            Determined {
+                value: value.clone(),
+                type_ref: field.target_type.clone(),
+            },
+        );
+    }
+    out
+}
+
+/// One entity field a scenario determined the value of, and the type the entity holds it at.
+#[derive(Debug, Clone, PartialEq)]
+struct Determined {
+    /// What the row will hold.
+    value: ScenarioValue,
+    /// The entity field's declared type. A view has to project the field at this type for the row
+    /// to carry the value the command supplied rather than something computed from it.
+    type_ref: ResolvedTypeRef,
+}
+
+/// One row's assertable fields: what identifies it, and what of it this scenario determined.
+///
+/// Only fields the view actually projects, **at the type the entity holds them at**. A field the
+/// view leaves out is not in the row, so asserting it would be a claim about a read nobody
+/// performs; a field the view projects at a different type is a value the view computed from the
+/// entity's rather than the one the command supplied, and the two are equal only by coincidence.
+///
+/// The identity wins where both name it: it is read from the arrangement, and a `sets:` source for
+/// it says the same thing one step further from the observation.
+fn shown(
+    view: &ResolvedView,
+    mut fields: BTreeMap<String, ScenarioValue>,
+    settled: &BTreeMap<String, Determined>,
+) -> BTreeMap<String, ScenarioValue> {
+    for (name, determined) in settled {
+        if view.field(name).map(|field| &field.type_ref) == Some(&determined.type_ref) {
+            fields
+                .entry(name.clone())
+                .or_insert_with(|| determined.value.clone());
+        }
+    }
+    fields
 }
 
 /// Adds one requirement about one view, in the block that view's consistency decides.

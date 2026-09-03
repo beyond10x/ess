@@ -1,5 +1,35 @@
 # Changelog
 
+## Unreleased
+
+### Added
+
+- **`sets:` on a command outcome: which fields of the entity the branch determines, and from
+  what.** The twin of `payload:`, pointed at the subject instead of an emitted event. Before it,
+  nothing in the model related a command's input to the entity state it produced, so a generated
+  scenario could find the row it had just created and say nothing about what was in it — an
+  implementation that stored somebody else's amount passed. Validated like `payload:`: the field
+  must exist on the entity, the source must be an input the command takes, and the types must be
+  assignable or have a declared conversion.
+- **A generated `contains` names the values the row holds, not only which row it is.** Read from
+  `sets:` where the source is an input the scenario chose, the types do not cross a conversion, and
+  the view projects the field at the entity's own type; left out rather than guessed at otherwise.
+  Measured on the normative billing example, which now declares `sets:` on `CreateInvoice`: the
+  deliberate negative-total fault was caught by 6 of 29 scenarios before and is caught by 13 after.
+  It is a claim about a row this scenario made, so it holds on a target §8 permits to be shared.
+- The documentation projection writes a sentence for `sets:` on every outcome that declares one.
+- `cargo xtask schema [--check]` regenerates `schemas/generated/ess.schema.json` from
+  `RawSpecFile`, and `task projection-check` runs it. The file was documented as drift-checked and
+  was checked by nothing; the schema an adopter validates against had not moved since the model
+  gained its last two constructs.
+
+### Changed
+
+- `at` is still not synthesised, and the reason is now a different one. The values are known —
+  `sets:` says where each row's ranking value came from — but nothing says a view holds only what
+  the scenario running it put there, so naming the *first* row would be a claim about another user
+  of the target. The gap table records which half is answered.
+
 ## [0.9.2] — 2026-09-03
 
 ### Added

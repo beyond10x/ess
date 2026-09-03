@@ -46,8 +46,8 @@ use ess_compiler::ir::{
     Driver, EssIr, ResolvedActor, ResolvedBinding, ResolvedBody, ResolvedCommand,
     ResolvedComponent, ResolvedCondition, ResolvedConversion, ResolvedDomain, ResolvedEffect,
     ResolvedEntity, ResolvedError, ResolvedEvent, ResolvedFailure, ResolvedField, ResolvedMapping,
-    ResolvedMappingValue, ResolvedSubject, ResolvedType, ResolvedView, ResolvedWorkload,
-    TypeHandle,
+    ResolvedMappingValue, ResolvedPayloadValue, ResolvedSubject, ResolvedType, ResolvedView,
+    ResolvedWorkload, TypeHandle,
 };
 use ess_domain::binding::Delivery;
 use ess_domain::command::TestStrategy;
@@ -1408,10 +1408,46 @@ fn outcome_prose(
             out.push(Inline::text("."));
         }
     }
+    out.extend(sets_sentence(outcome));
     out.push(Inline::text(format!(
         " {}",
         strategy_sentence(outcome.test_strategy)
     )));
+    out
+}
+
+/// Which of the subject's fields the branch determines, and from what.
+///
+/// Written only where the branch says something. Silence here means the values are the
+/// implementation's to choose, which is a different statement from "the projection dropped it" —
+/// and the one place a reader can tell them apart is that a branch with no `sets:` also gets no
+/// sentence, consistently, on every page.
+fn sets_sentence(outcome: &ess_compiler::ir::ResolvedOutcome) -> Vec<Inline> {
+    if outcome.sets.is_empty() {
+        return Vec::new();
+    }
+    let mut out = vec![Inline::text(" It sets ")];
+    out.extend(inline_list(
+        outcome
+            .sets
+            .iter()
+            .map(|field| {
+                let mut said = vec![
+                    Inline::code(field.target.clone()),
+                    Inline::text(" from "),
+                    Inline::code(match &field.value {
+                        ResolvedPayloadValue::InputField { field, .. } => format!("input.{field}"),
+                        ResolvedPayloadValue::Literal { value } => format!("\"{value}\""),
+                    }),
+                ];
+                if let Some(because) = &field.conversion {
+                    said.push(Inline::text(format!(", converted because {because}")));
+                }
+                said
+            })
+            .collect(),
+    ));
+    out.push(Inline::text("."));
     out
 }
 

@@ -33,6 +33,15 @@ const PROJECTION_EXCLUSIONS: &[&str] = &["go", "instructions", "rust", "web"];
 /// compared, which is what the sample is for.
 const PROJECTION_CONSTANTS: &[&str] = &["site/assets/"];
 
+/// The published JSON Schema of an ESS source file.
+///
+/// It is the interoperability contract: an editor, a CI job or a language nobody here writes can
+/// check a specification against it without linking these crates. That only holds while it says
+/// what `RawSpecFile` says, and a key the model gained is a key this file rejects — which is a
+/// stale schema refusing a valid document, the failure an adopter reports as a bug in their
+/// specification.
+const DOCUMENT_SCHEMA: &str = "schemas/generated/ess.schema.json";
+
 #[derive(Debug, Parser)]
 #[command(name = "ess-xtask")]
 #[command(about = "Repository-only ESS maintenance commands")]
@@ -45,6 +54,12 @@ struct Cli {
 enum Command {
     /// Regenerate or check the normative example's committed projections.
     Generate {
+        /// Compare byte for byte without writing.
+        #[arg(long)]
+        check: bool,
+    },
+    /// Regenerate or check the published JSON Schema of an ESS source file.
+    Schema {
         /// Compare byte for byte without writing.
         #[arg(long)]
         check: bool,
@@ -91,6 +106,7 @@ fn run(cli: Cli) -> Result<String, String> {
     let root = workspace_root()?;
     match cli.command {
         Command::Generate { check } => generate(&root, check).map_err(|error| format!("{error:#}")),
+        Command::Schema { check } => schema(&root, check).map_err(|error| format!("{error:#}")),
         Command::Release {
             command: ReleaseCommand::Verify { version },
         } => {
@@ -328,6 +344,34 @@ struct Generated {
 }
 
 /// Writes or checks every projection of [`NORMATIVE_EXAMPLE`].
+/// Writes [`DOCUMENT_SCHEMA`], or reports that the committed bytes are not what the types say.
+///
+/// Derived from `RawSpecFile` rather than written, for the reason every other projection here is:
+/// a schema maintained by hand drifts from the parser silently, and the direction it drifts in is
+/// the one nobody notices — it keeps accepting what it always accepted and starts refusing what
+/// the model just gained.
+fn schema(root: &Path, check: bool) -> AnyResult<String> {
+    let path = root.join(DOCUMENT_SCHEMA);
+    let schema = schemars::schema_for!(ess_domain::spec::RawSpecFile);
+    let mut written = serde_json::to_string_pretty(&schema).context("rendering the schema")?;
+    written.push('\n');
+
+    if check {
+        let recorded =
+            fs::read_to_string(&path).with_context(|| format!("reading {}", path.display()))?;
+        if recorded != written {
+            bail!(
+                "{DOCUMENT_SCHEMA} is not what `RawSpecFile` produces; regenerate it with `cargo \
+                 xtask schema`"
+            );
+        }
+        return Ok(format!("{DOCUMENT_SCHEMA}: current\n"));
+    }
+
+    fs::write(&path, &written).with_context(|| format!("writing {}", path.display()))?;
+    Ok(format!("{DOCUMENT_SCHEMA}: {} byte(s)\n", written.len()))
+}
+
 fn generate(root: &Path, check: bool) -> AnyResult<String> {
     let generated = projections(root, &root.join(NORMATIVE_EXAMPLE))?;
     let mut expected: BTreeMap<String, String> = generated

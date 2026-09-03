@@ -2341,6 +2341,7 @@ lifecycle:
                 error: None,
                 summary: None,
                 refs: crate::refs::Refs::new(),
+                sets: BTreeMap::new(),
             }],
             naming: Naming::default(),
             refs: crate::refs::Refs::new(),

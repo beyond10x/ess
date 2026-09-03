@@ -304,11 +304,15 @@ fn a_faults_blast_radius_is_accounted_for() {
     //                             submitted. The row designates the transition scenario because the
     //                             outcome scenario already names `PartialEventPayload`, and one
     //                             scenario names one fault.
-    //   NegativeProjectedTotal 2  the entity's own invariant reads the same words off the same
-    //                             view — `Invoice` declares `total.amount >= 0` too, so the §20
-    //                             entity check after `issue` fails beside the designated value
-    //                             check. The value check at `InvoiceById.total` stays green, which
-    //                             is the point of keying the family by position.
+    //   NegativeProjectedTotal 4  two readings of the same projected value, times two scenarios
+    //                             each. The entity's own invariant reads the same words off the
+    //                             same view — `Invoice` declares `total.amount >= 0` too — and
+    //                             `CreateInvoice.accepted` now says `sets: total: input.amount`,
+    //                             so every scenario that runs `issue` also holds the row to the
+    //                             amount that was submitted. Both readings fire on the branch
+    //                             scenario and on the transition scenario. The checks at
+    //                             `InvoiceById.total` stay green, which is the point of keying the
+    //                             family by position.
     //   WrongRefusalError      3  `issue` runs from `Draft` alone, so `IssueInvoice` answers its
     //                             `wrong_state:` branch in the other three declared states, and one
     //                             wrong error name is wrong in all three. Narrower is not available:
@@ -324,7 +328,7 @@ fn a_faults_blast_radius_is_accounted_for() {
         (Fault::IgnoreExternalOutcome, 2),
         (Fault::PartialEventPayload, 2),
         (Fault::WrongEventPayload, 2),
-        (Fault::NegativeProjectedTotal, 2),
+        (Fault::NegativeProjectedTotal, 4),
     ];
 
     for fault in Fault::ALL {
