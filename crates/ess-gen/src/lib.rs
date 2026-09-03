@@ -37,7 +37,6 @@ pub mod markdown;
 pub mod openapi;
 pub mod provenance;
 pub mod schema;
-pub mod site;
 
 pub use artifact::{Artifact, Generator};
 pub use graph::SystemGraph;
@@ -52,7 +51,7 @@ pub use provenance::Provenance;
 pub fn generators() -> Vec<Box<dyn Generator>> {
     vec![
         Box::new(docs::Docs),
-        Box::new(site::Site),
+        Box::new(html::Site::new()),
         Box::new(schema::JsonSchema),
         Box::new(openapi::OpenApi),
         Box::new(asyncapi::AsyncApi),

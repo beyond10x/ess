@@ -11,7 +11,7 @@ Generated from billing v3 (model digest aacdc2fe065d462cc4f9ba51e6740f88809b6b17
 | projection | files | describes |
 | --- | --- | --- |
 | `docs` | 6 | Markdown and Mermaid: the cheapest check that every construct can be described |
-| `site` | 7 | the documentation with frontmatter and a sidebar, ready for a static site |
+| `site` | 9 | the documentation as a browsable site: pages, navigation, stylesheet and diagrams |
 | `schema` | 29 | JSON Schema per command input, event payload and entity |
 | `openapi` | 2 | an OpenAPI document for every command a component accepts |
 | `asyncapi` | 2 | an AsyncAPI 3.0 document per component, covering what it publishes and what it reacts to |
@@ -27,13 +27,15 @@ Generated from billing v3 (model digest aacdc2fe065d462cc4f9ba51e6740f88809b6b17
 
 ## `site`
 
-* [`site/crossings.md`](site/crossings.md)
-* [`site/domains/billing-email.md`](site/domains/billing-email.md)
-* [`site/domains/billing-invoice.md`](site/domains/billing-invoice.md)
-* [`site/index.md`](site/index.md)
-* [`site/interactions.md`](site/interactions.md)
-* [`site/sidebar.json`](site/sidebar.json)
-* [`site/topology.md`](site/topology.md)
+* [`site/assets/mermaid.LICENSE`](site/assets/mermaid.LICENSE)
+* [`site/assets/mermaid.min.js`](site/assets/mermaid.min.js)
+* [`site/assets/style.css`](site/assets/style.css)
+* [`site/crossings.html`](site/crossings.html)
+* [`site/domains/billing-email.html`](site/domains/billing-email.html)
+* [`site/domains/billing-invoice.html`](site/domains/billing-invoice.html)
+* [`site/index.html`](site/index.html)
+* [`site/interactions.html`](site/interactions.html)
+* [`site/topology.html`](site/topology.html)
 
 ## `schema`
 

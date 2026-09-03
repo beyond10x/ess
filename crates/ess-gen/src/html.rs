@@ -41,7 +41,7 @@ use std::fmt::Write as _;
 
 use ess_compiler::refs::EssSemanticRef;
 
-use crate::artifact::Artifact;
+use crate::artifact::{Artifact, Generator};
 use crate::document::{Block, Document, Inline, Page, PageId, Target};
 use crate::provenance::Provenance;
 
@@ -354,6 +354,13 @@ fn body(blocks: &[Block], here: &PageId, constructs: &ConstructIndex) -> String 
                 );
                 out.push_str(&body(blocks, here, constructs));
             }
+            Block::Quote { blocks } => {
+                let _ = writeln!(
+                    out,
+                    "<blockquote>\n{}</blockquote>",
+                    body(blocks, here, constructs)
+                );
+            }
             Block::List { ordered, items } => {
                 let tag = if *ordered { "ol" } else { "ul" };
                 let _ = writeln!(out, "<{tag}>");
@@ -598,6 +605,34 @@ fn licence(provenance: &Provenance) -> String {
         let _ = writeln!(out, "{line}");
     }
     out
+}
+
+/// The site is a projection like any other, so `ess generate` reaches it by name and
+/// `generate_all` writes it beside the rest.
+///
+/// The front page a `Site` may carry is not reachable through this trait — `generate` receives only
+/// the model. A caller that has an adopter's `README.md` in hand constructs the `Site` itself and
+/// calls [`Site::render`].
+impl Generator for Site {
+    fn name(&self) -> &'static str {
+        "site"
+    }
+
+    fn describes(&self) -> &'static str {
+        "the documentation as a browsable site: pages, navigation, stylesheet and diagrams"
+    }
+
+    fn directory(&self) -> &'static str {
+        "site"
+    }
+
+    fn generate(
+        &self,
+        ir: &ess_compiler::EssIr,
+        mint: &crate::provenance::ProvenanceMint,
+    ) -> Vec<Artifact> {
+        self.render(&crate::docs::document(ir, mint), &mint.whole().provenance)
+    }
 }
 
 #[cfg(test)]

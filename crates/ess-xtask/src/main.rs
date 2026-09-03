@@ -24,6 +24,15 @@ const INDEX: &str = "README.md";
 /// leave a stale public contract behind unnoticed.
 const PROJECTION_EXCLUSIONS: &[&str] = &["go", "instructions", "rust", "web"];
 
+/// Generated paths that are constants rather than projections of the model.
+///
+/// The site projection ships a stylesheet and a vendored Mermaid bundle. Neither derives from a
+/// specification — the same bytes are emitted for every model — and the bundle alone is 3.5 MB, so
+/// committing a sample copy would double this repository's weight to record a constant that
+/// `include_str!` already pins and a unit test already checks. The pages beside them are still
+/// compared, which is what the sample is for.
+const PROJECTION_CONSTANTS: &[&str] = &["site/assets/"];
+
 #[derive(Debug, Parser)]
 #[command(name = "ess-xtask")]
 #[command(about = "Repository-only ESS maintenance commands")]
@@ -321,7 +330,16 @@ struct Generated {
 /// Writes or checks every projection of [`NORMATIVE_EXAMPLE`].
 fn generate(root: &Path, check: bool) -> AnyResult<String> {
     let generated = projections(root, &root.join(NORMATIVE_EXAMPLE))?;
-    let mut expected = generated.artifacts.clone();
+    let mut expected: BTreeMap<String, String> = generated
+        .artifacts
+        .iter()
+        .filter(|(path, _)| {
+            !PROJECTION_CONSTANTS
+                .iter()
+                .any(|prefix| path.starts_with(prefix))
+        })
+        .map(|(path, contents)| (path.clone(), contents.clone()))
+        .collect();
     expected.insert(INDEX.to_owned(), projection_index(&generated));
     sync(
         &root.join(PROJECTIONS),

@@ -1,0 +1,301 @@
+<!DOCTYPE html>
+<!--
+  generated from billing v3
+  model digest aacdc2fe065d462cc4f9ba51e6740f88809b6b17ce006ef846b488f957005da3
+  contract digest 6ba34a27496cc918b55c749b45599c03b3016fed36487b1763268b95e0c6ffc6
+  do not edit: regenerate with `ess generate`
+-->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Invoicing · billing</title>
+<link rel="stylesheet" href="../assets/style.css">
+</head>
+<body>
+<div class="shell">
+<nav class="sidebar">
+<a class="masthead" href="../index.html">
+<span class="system">billing</span><span class="version">v3</span>
+</a>
+<div class="nav">
+<a href="../index.html">billing v3</a>
+<a href="../crossings.html">Type crossings</a>
+<div class="group">domains</div>
+<a class="nested" href="billing-email.html">email</a>
+<a class="nested" href="billing-invoice.html" aria-current="page">Invoicing</a>
+<a href="../interactions.html">Interactions</a>
+<a href="../topology.html">Topology</a>
+</div>
+</nav>
+<main>
+<article class="content">
+<h1>Invoicing</h1>
+<p>Issuing invoices and tracking whether they are paid.</p>
+<p><code>billing.invoice</code> is one of billing&#39;s bounded contexts. <a href="../index.html">Back to the index</a>.</p>
+<h2 id="types">Types</h2>
+<h3 id="accountid"><code>AccountId</code></h3>
+<p><code>billing.invoice.AccountId</code> wraps <code>Uuid</code> and is not interchangeable with one: the whole value of naming it separately is the crossings the model then refuses.</p>
+<h3 id="channel"><code>Channel</code></h3>
+<p><code>billing.invoice.Channel</code> is one of <code>Email</code>, <code>Post</code> and <code>Portal</code>.</p>
+<p>Shown to a person as &quot;Delivery channel&quot;.</p>
+<h3 id="companyref"><code>CompanyRef</code></h3>
+<p><code>billing.invoice.CompanyRef</code> wraps <code>String</code> and is not interchangeable with one: the whole value of naming it separately is the crossings the model then refuses.</p>
+<h3 id="email"><code>Email</code></h3>
+<p><code>billing.invoice.Email</code> wraps <code>String</code> and is not interchangeable with one: the whole value of naming it separately is the crossings the model then refuses.</p>
+<h3 id="invoiceid"><code>InvoiceId</code></h3>
+<p><code>billing.invoice.InvoiceId</code> wraps <code>Uuid</code> and is not interchangeable with one: the whole value of naming it separately is the crossings the model then refuses.</p>
+<h3 id="lineitem"><code>LineItem</code></h3>
+<p><code>billing.invoice.LineItem</code> is a record of three fields:</p>
+<ul>
+<li><code>description</code> — <code>String</code></li>
+<li><code>quantity</code> — <code>Integer</code></li>
+<li><code>unit_price</code> — <code>billing.invoice.Money</code></li>
+</ul>
+<h3 id="money"><code>Money</code></h3>
+<p><code>billing.invoice.Money</code> is a record of two fields:</p>
+<ul>
+<li><code>amount</code> — <code>Decimal</code></li>
+<li><code>currency</code> — <code>String</code></li>
+</ul>
+<p>Every value satisfies <code>amount &gt;= 0</code>.</p>
+<h3 id="payee"><code>Payee</code></h3>
+<p><code>billing.invoice.Payee</code> is one of two shapes, told apart by a <code>kind</code> field — tagged, so a decoder never has to guess which branch it is reading:</p>
+<ul>
+<li><code>company</code> — <code>billing.invoice.CompanyRef</code></li>
+<li><code>person</code> — <code>billing.invoice.Email</code></li>
+</ul>
+<h2 id="entities">Entities</h2>
+<p>An entity is what this context is about: something with an identity that outlives any one request, a shape, and a lifecycle. The lifecycle is exhaustive — a move that is not drawn below is a move this specification does not permit, and that is the only way it says so. Every move is labelled with the command that takes it, because a move nothing can trigger is refused rather than drawn.</p>
+<h3 id="account"><code>Account</code></h3>
+<p><code>billing.invoice.Account</code>.</p>
+<p>An instance is identified by <code>account_id</code>, a <code>billing.invoice.AccountId</code>. The name is part of the model and not a convention: a view projects the identity under that name, so a projection inventing its own would disagree with the view.</p>
+<p>It holds:</p>
+<ul>
+<li><code>display_name</code> — <code>String</code></li>
+</ul>
+<p>It owns any number of <a href="#invoice"><code>Invoice</code></a>, as <code>invoices</code>, carried by <code>Invoice.account_id</code>.</p>
+<p>No invariant is declared, so nothing here constrains an instance at rest.</p>
+<p>Its state is a <code>billing.invoice.Account.State</code>, one of <code>Active</code>. That enum is synthesised from the lifecycle rather than declared beside it, so the states a view&#39;s filter compares and the states drawn below cannot disagree.</p>
+<p>An instance is created in <code>Active</code>. <code>Active</code> is terminal, so an instance may rest there forever. That is declared rather than inferred from having no way out: an entity that cannot leave a state is either finished or stuck, and only its author knows which.</p>
+<pre class="mermaid">stateDiagram-v2
+    [*] --&gt; Active
+    Active --&gt; [*]</pre>
+<p>It declares no moves, so nothing changes its state once it exists.</p>
+<p>It has one state, so there is no move to permit or to forbid.</p>
+<p>No view projects it, so nothing outside this context is promised a way to observe one.</p>
+<h3 id="invoice"><code>Invoice</code></h3>
+<p><code>billing.invoice.Invoice</code>.</p>
+<p>An instance is identified by <code>invoice_id</code>, a <code>billing.invoice.InvoiceId</code>. The name is part of the model and not a convention: a view projects the identity under that name, so a projection inventing its own would disagree with the view.</p>
+<p>It holds:</p>
+<ul>
+<li><code>account_id</code> — <code>billing.invoice.AccountId</code></li>
+<li><code>total</code> — <code>billing.invoice.Money</code></li>
+<li><code>payee</code> — <code>billing.invoice.Payee</code></li>
+<li><code>channel</code> — <code>billing.invoice.Channel</code></li>
+<li><code>lines</code> — <code>List&lt;billing.invoice.LineItem&gt;</code></li>
+<li><code>note</code> — <code>Optional&lt;String&gt;</code>, which may be absent</li>
+<li><code>metadata</code> — <code>Map&lt;String, String&gt;</code></li>
+<li><code>issued_at</code> — <code>Optional&lt;Timestamp&gt;</code>, which may be absent</li>
+<li><code>settlement_window</code> — <code>Duration</code></li>
+<li><code>is_recurring</code> — <code>Boolean</code></li>
+<li><code>signature</code> — <code>Bytes</code></li>
+</ul>
+<p>Its <code>account_id</code> is what <a href="#account"><code>Account</code></a> owns it by, as <code>invoices</code>.</p>
+<p>Every instance satisfies <code>total.amount &gt;= 0</code> — a predicate over this entity&#39;s own fields, checked against them rather than stored as a sentence, so an invariant reading something the entity does not have is refused instead of documented.</p>
+<p>Its state is a <code>billing.invoice.Invoice.State</code>, one of <code>Cancelled</code>, <code>Draft</code>, <code>Issued</code> and <code>Paid</code>. That enum is synthesised from the lifecycle rather than declared beside it, so the states a view&#39;s filter compares and the states drawn below cannot disagree.</p>
+<p>An instance is created in <code>Draft</code>. <code>Cancelled</code> and <code>Paid</code> are terminal, so an instance may rest there forever. That is declared rather than inferred from having no way out: an entity that cannot leave a state is either finished or stuck, and only its author knows which.</p>
+<pre class="mermaid">stateDiagram-v2
+    [*] --&gt; Draft
+    Draft --&gt; Issued: issue (IssueInvoice)
+    Issued --&gt; Paid: settle (PayInvoice)
+    Draft --&gt; Cancelled: cancel (CancelInvoice)
+    Issued --&gt; Cancelled: cancel (CancelInvoice)
+    Cancelled --&gt; [*]
+    Paid --&gt; [*]</pre>
+<p>Each move is taken by a declared command outcome, and a move nothing takes is refused as <code>missing_causation</code> rather than left as a state change nobody can trigger:</p>
+<ul>
+<li><code>issue</code> — taken by <code>billing.invoice.IssueInvoice</code> on its <code>issued</code> outcome</li>
+<li><code>settle</code> — taken by <code>billing.invoice.PayInvoice</code> on its <code>settled</code> outcome</li>
+<li><code>cancel</code> — taken by <code>billing.invoice.CancelInvoice</code> on its <code>cancelled</code> outcome</li>
+</ul>
+<p>An instance is brought into existence by <code>billing.invoice.CreateInvoice</code> on its <code>accepted</code> outcome.</p>
+<p>Illegal transitions are illegal by absence: no rule forbids them, there is simply no arrow, because a rule would be a second place for the same truth to live. A diagram cannot show an absence, so the pairs it does not connect are listed here, derived from the same transitions — anything named below is a move this specification does not permit.</p>
+<ul>
+<li><code>Cancelled</code> may not become <code>Draft</code></li>
+<li><code>Cancelled</code> may not become <code>Issued</code></li>
+<li><code>Cancelled</code> may not become <code>Paid</code></li>
+<li><code>Draft</code> may not become <code>Paid</code></li>
+<li><code>Issued</code> may not become <code>Draft</code></li>
+<li><code>Paid</code> may not become <code>Cancelled</code></li>
+<li><code>Paid</code> may not become <code>Draft</code></li>
+<li><code>Paid</code> may not become <code>Issued</code></li>
+</ul>
+<p>Two views project it: <a href="#invoicebyid"><code>InvoiceById</code></a> and <a href="#outstandinginvoices"><code>OutstandingInvoices</code></a>.</p>
+<h2 id="views">Views</h2>
+<p>A view is what the outside world is promised it can observe. Each one says which instances it contains and how soon it reflects a command that has already returned, because &quot;you can read this&quot; without &quot;how soon&quot; is the promise every flaky suite is built on.</p>
+<h3 id="invoicebyid"><code>InvoiceById</code></h3>
+<p><code>billing.invoice.InvoiceById</code>.</p>
+<p>It reads <a href="#invoice"><code>Invoice</code></a>.</p>
+<p>It contains every instance of that entity: no filter narrows it, which is a decision somebody made and not a line somebody omitted.</p>
+<p>It exposes:</p>
+<ul>
+<li><code>invoice_id</code> — <code>billing.invoice.InvoiceId</code></li>
+<li><code>total</code> — <code>billing.invoice.Money</code></li>
+</ul>
+<p>It declares no order, so the rows come back in whatever order the implementation has, and two reads may disagree.</p>
+<p><strong>Eventual</strong>: it catches up some time after the command returns, so a caller that reads it immediately may legitimately not see its own write yet. Nothing here says how long that takes, so nothing here lets a caller wait a fixed time and call it correct.</p>
+<p>A generated scenario therefore retries the assertion until the projection catches up, rather than asserting once and racing it. The repair everyone reaches for instead is a sleep, which turns the suite into a test of the machine it runs on.</p>
+<h3 id="outstandinginvoices"><code>OutstandingInvoices</code></h3>
+<p><code>billing.invoice.OutstandingInvoices</code>, shown to a person as &quot;Outstanding invoices&quot; and called <code>outstanding</code> on the wire.</p>
+<p>It reads <a href="#invoice"><code>Invoice</code></a>.</p>
+<p>It contains the instances where <code>state == Issued</code> holds, and only those — so an instance a caller cannot find in here has been filtered out rather than lost.</p>
+<p>It exposes:</p>
+<ul>
+<li><code>invoice_id</code> — <code>billing.invoice.InvoiceId</code></li>
+<li><code>total</code> — <code>billing.invoice.Money</code></li>
+</ul>
+<p>It declares no order, so the rows come back in whatever order the implementation has, and two reads may disagree.</p>
+<p><strong>Read-your-writes</strong>: it is current the moment the command that changed it returns. A caller that has just created an invoice and cannot see it in here has been told a lie about what it did.</p>
+<p>A generated scenario asserts it once, immediately after the command: a view promising this and not keeping the promise has to fail the suite rather than be retried until it passes.</p>
+<h2 id="commands">Commands</h2>
+<h3 id="cancelinvoice"><code>CancelInvoice</code></h3>
+<p><code>billing.invoice.CancelInvoice</code>, shown to a person as &quot;Cancel invoice&quot; and called <code>cancel-invoice</code> on the wire.</p>
+<p>It takes:</p>
+<ul>
+<li><code>invoice_id</code> — <code>billing.invoice.InvoiceId</code></li>
+</ul>
+<p>It has two outcomes.</p>
+<p><strong><code>cancelled</code></strong> — The invoice is cancelled, from Draft or from Issued. The default branch, taken when no other outcome&#39;s condition matched. It moves a <code>billing.invoice.Invoice</code> from <code>Draft</code> and <code>Issued</code> to <code>Cancelled</code>, along the declared move <code>cancel</code>. The instance is the one named by the input field <code>invoice_id</code>. It emits <code>billing.invoice.InvoiceCancelled</code>. A test reaches it by constructing an input that satisfies no other outcome&#39;s condition.</p>
+<p><strong><code>wrong-state</code></strong> — The invoice is already Paid or already Cancelled, so nothing was cancelled. Taken when the subject is resting in a state none of this command&#39;s moves start from — a <code>billing.invoice.Invoice</code> in <code>Cancelled</code> and <code>Paid</code>, which is what is left of the lifecycle once this command&#39;s own moves are taken away. The document lists none of it. No entity in this specification changes. It reports <code>billing.invoice.InvoiceStateConflict</code>, carrying <code>state</code>. It emits nothing. A test reaches it by driving an instance into one of those states and then issuing the command, because no input selects this branch.</p>
+<h3 id="createinvoice"><code>CreateInvoice</code></h3>
+<p><code>billing.invoice.CreateInvoice</code>, shown to a person as &quot;Create invoice&quot; and called <code>create-invoice</code> on the wire.</p>
+<p>It takes:</p>
+<ul>
+<li><code>account_id</code> — <code>billing.invoice.AccountId</code></li>
+<li><code>customer_email</code> — <code>billing.invoice.Email</code></li>
+<li><code>amount</code> — <code>billing.invoice.Money</code></li>
+</ul>
+<p>It has two outcomes.</p>
+<p><strong><code>accepted</code></strong> — The invoice is created in Draft. Taken when <code>amount.amount &gt; 0</code> holds of the input. It creates a <code>billing.invoice.Invoice</code>, which starts in <code>Draft</code>. The new instance&#39;s identity is published as <code>invoice_id</code> on <code>billing.invoice.InvoiceCreated</code>. It emits <code>billing.invoice.InvoiceCreated</code>. A test reaches it by constructing an input that satisfies that condition.</p>
+<p><strong><code>rejected</code></strong> — The amount was not positive, and nothing was created. The default branch, taken when no other outcome&#39;s condition matched. No entity in this specification changes. It reports <code>billing.invoice.InvalidAmount</code>, carrying <code>submitted</code>. It emits nothing. A test reaches it by constructing an input that satisfies no other outcome&#39;s condition.</p>
+<h3 id="issueinvoice"><code>IssueInvoice</code></h3>
+<p><code>billing.invoice.IssueInvoice</code>, shown to a person as &quot;Issue invoice&quot; and called <code>issue-invoice</code> on the wire.</p>
+<p>It takes:</p>
+<ul>
+<li><code>invoice_id</code> — <code>billing.invoice.InvoiceId</code></li>
+</ul>
+<p>It has two outcomes.</p>
+<p><strong><code>issued</code></strong> — The invoice leaves Draft and is now Issued. The default branch, taken when no other outcome&#39;s condition matched. It moves a <code>billing.invoice.Invoice</code> from <code>Draft</code> to <code>Issued</code>, along the declared move <code>issue</code>. The instance is the one named by the input field <code>invoice_id</code>. It emits <code>billing.invoice.InvoiceIssued</code>. A test reaches it by constructing an input that satisfies no other outcome&#39;s condition.</p>
+<p><strong><code>wrong-state</code></strong> — The invoice is not in Draft, so it was not issued. Taken when the subject is resting in a state none of this command&#39;s moves start from — a <code>billing.invoice.Invoice</code> in <code>Cancelled</code>, <code>Issued</code> and <code>Paid</code>, which is what is left of the lifecycle once this command&#39;s own moves are taken away. The document lists none of it. No entity in this specification changes. It reports <code>billing.invoice.InvoiceStateConflict</code>, carrying <code>state</code>. It emits nothing. A test reaches it by driving an instance into one of those states and then issuing the command, because no input selects this branch.</p>
+<h3 id="payinvoice"><code>PayInvoice</code></h3>
+<p><code>billing.invoice.PayInvoice</code>, shown to a person as &quot;Pay invoice&quot; and called <code>pay-invoice</code> on the wire.</p>
+<p>It takes:</p>
+<ul>
+<li><code>invoice_id</code> — <code>billing.invoice.InvoiceId</code></li>
+<li><code>amount</code> — <code>billing.invoice.Money</code></li>
+</ul>
+<p>It has three outcomes.</p>
+<p><strong><code>settled</code></strong> — The payment is accepted and the invoice becomes Paid. Taken when <code>amount.amount &gt; 0</code> holds of the input. It moves a <code>billing.invoice.Invoice</code> from <code>Issued</code> to <code>Paid</code>, along the declared move <code>settle</code>. The instance is the one named by the input field <code>invoice_id</code>. It emits <code>billing.invoice.InvoicePaid</code>. A test reaches it by constructing an input that satisfies that condition.</p>
+<p><strong><code>rejected</code></strong> — The payment was not positive, so the invoice did not move. The default branch, taken when no other outcome&#39;s condition matched. No entity in this specification changes. It reports <code>billing.invoice.InvalidAmount</code>, carrying <code>submitted</code>. It emits nothing. A test reaches it by constructing an input that satisfies no other outcome&#39;s condition.</p>
+<p><strong><code>wrong-state</code></strong> — The invoice is not Issued, so the payment did not settle it. Taken when the subject is resting in a state none of this command&#39;s moves start from — a <code>billing.invoice.Invoice</code> in <code>Cancelled</code>, <code>Draft</code> and <code>Paid</code>, which is what is left of the lifecycle once this command&#39;s own moves are taken away. The document lists none of it. No entity in this specification changes. It reports <code>billing.invoice.InvoiceStateConflict</code>, carrying <code>state</code>. It emits nothing. A test reaches it by driving an instance into one of those states and then issuing the command, because no input selects this branch.</p>
+<h2 id="events">Events</h2>
+<h3 id="invoicecancelled"><code>InvoiceCancelled</code></h3>
+<p><code>billing.invoice.InvoiceCancelled</code>.</p>
+<p>It carries:</p>
+<ul>
+<li><code>invoice_id</code> — <code>billing.invoice.InvoiceId</code></li>
+</ul>
+<p>Emitted by <code>billing.invoice.CancelInvoice</code> on its <code>cancelled</code> outcome.</p>
+<p>Nothing in this system reacts to it.</p>
+<h3 id="invoicecreated"><code>InvoiceCreated</code></h3>
+<p><code>billing.invoice.InvoiceCreated</code>.</p>
+<p>It carries:</p>
+<ul>
+<li><code>invoice_id</code> — <code>billing.invoice.InvoiceId</code></li>
+<li><code>account_id</code> — <code>billing.invoice.AccountId</code></li>
+<li><code>customer_email</code> — <code>billing.invoice.Email</code></li>
+<li><code>amount</code> — <code>billing.invoice.Money</code></li>
+</ul>
+<p>Emitted by <code>billing.invoice.CreateInvoice</code> on its <code>accepted</code> outcome.</p>
+<p><code>notify-on-invoice-created</code> reacts to it — see <a href="../interactions.html">Interactions</a>.</p>
+<h3 id="invoiceissued"><code>InvoiceIssued</code></h3>
+<p><code>billing.invoice.InvoiceIssued</code>.</p>
+<p>It carries:</p>
+<ul>
+<li><code>invoice_id</code> — <code>billing.invoice.InvoiceId</code></li>
+</ul>
+<p>Emitted by <code>billing.invoice.IssueInvoice</code> on its <code>issued</code> outcome.</p>
+<p>Nothing in this system reacts to it.</p>
+<h3 id="invoicepaid"><code>InvoicePaid</code></h3>
+<p><code>billing.invoice.InvoicePaid</code>.</p>
+<p>It carries:</p>
+<ul>
+<li><code>invoice_id</code> — <code>billing.invoice.InvoiceId</code></li>
+<li><code>amount</code> — <code>billing.invoice.Money</code></li>
+</ul>
+<p>Emitted by <code>billing.invoice.PayInvoice</code> on its <code>settled</code> outcome.</p>
+<p>Nothing in this system reacts to it.</p>
+<h2 id="errors">Errors</h2>
+<h3 id="invalidamount"><code>InvalidAmount</code></h3>
+<p>The requested amount is not positive.</p>
+<p>It carries:</p>
+<ul>
+<li><code>submitted</code> — <code>billing.invoice.Money</code></li>
+</ul>
+<p>Reported by <code>billing.invoice.CreateInvoice</code> on its <code>rejected</code> outcome.</p>
+<p>Reported by <code>billing.invoice.PayInvoice</code> on its <code>rejected</code> outcome.</p>
+<h3 id="invoicestateconflict"><code>InvoiceStateConflict</code></h3>
+<p>The invoice is not in a state this command acts from, so nothing moved.</p>
+<p>It carries:</p>
+<ul>
+<li><code>state</code> — <code>billing.invoice.Invoice.State</code></li>
+</ul>
+<p>Reported by <code>billing.invoice.CancelInvoice</code> on its <code>wrong-state</code> outcome.</p>
+<p>Reported by <code>billing.invoice.IssueInvoice</code> on its <code>wrong-state</code> outcome.</p>
+<p>Reported by <code>billing.invoice.PayInvoice</code> on its <code>wrong-state</code> outcome.</p>
+<h2 id="actors">Actors</h2>
+<p>An actor is who may ask this context for something. Every grant below points at a command this specification declares — a grant is a resolved reference, so &quot;may invoke&quot; something nobody wrote is not a permission this model can express, and an authorisation that authorises nothing cannot ship quietly.</p>
+<h3 id="auditor"><code>Auditor</code></h3>
+<p><code>billing.invoice.Auditor</code>.</p>
+<p>It may invoke nothing: it observes. &quot;Who is in this picture&quot; is part of what a specification describes, so an actor with no grant is a statement rather than an unfinished line.</p>
+<h3 id="customer"><code>Customer</code></h3>
+<p><code>billing.invoice.Customer</code>, shown to a person as &quot;Customer&quot;.</p>
+<p>It may invoke <a href="#createinvoice"><code>CreateInvoice</code></a>.</p>
+<h2 id="type-crossings">Type crossings</h2>
+<p>Types in this context that the specification permits to be used as another type, or the other way round. Nothing else crosses: two newtypes over the same primitive stay distinct until a line in the specification says otherwise.</p>
+<p><strong><code>billing.invoice.Email</code> may be used as <code>billing.email.EmailAddress</code></strong>, because:</p>
+<blockquote>
+<p>An invoice&#39;s customer email is a deliverable address; the email context validates it again on the way out, so the invoice context does not have to know how.</p>
+</blockquote>
+<p>Every crossing in the system is on one page: <a href="../crossings.html">Type crossings</a>.</p>
+<ul>
+</ul>
+</article>
+<footer class="provenance">
+Generated from billing v3 · model digest <code>aacdc2fe065d462cc4f9ba51e6740f88809b6b17ce006ef846b488f957005da3</code> · contract digest <code>6ba34a27496cc918b55c749b45599c03b3016fed36487b1763268b95e0c6ffc6</code>. Do not edit this file; change the specification and regenerate it with <code>ess generate</code>.
+</footer>
+</main>
+</div>
+<script type="module">
+const diagrams = document.querySelectorAll("pre.mermaid");
+if (diagrams.length > 0) {
+  // A script element, not `import`: the bundle publishes itself with a top-level `var`, and a
+  // top-level `var` in a module is scoped to the module, so importing it throws.
+  await new Promise((resolve, reject) => {
+    const tag = document.createElement("script");
+    tag.src = "../assets/mermaid.min.js";
+    tag.addEventListener("load", resolve);
+    tag.addEventListener("error", reject);
+    document.head.append(tag);
+  });
+  globalThis.mermaid.initialize({
+    startOnLoad: false,
+    securityLevel: "strict",
+    theme: window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "default",
+  });
+  await globalThis.mermaid.run({ querySelector: "pre.mermaid" });
+}
+</script>
+</body>
+</html>

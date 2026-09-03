@@ -200,8 +200,11 @@ enum GraphFormat {
 #[derive(Debug, Clone, Copy, ValueEnum)]
 enum Projection {
     Docs,
-    /// The same pages with frontmatter and a sidebar, for a static site.
+    /// The same pages as a browsable site: HTML, navigation, stylesheet and diagrams.
     Site,
+    /// The `ess-docs/1` document the other two render, for a presentation layer of your own.
+    #[value(name = "docs-ir")]
+    DocsIr,
     Schema,
     #[value(name = "openapi")]
     OpenApi,
@@ -214,6 +217,7 @@ impl Projection {
         match self {
             Self::Docs => "docs",
             Self::Site => "site",
+            Self::DocsIr => "docs-ir",
             Self::Schema => "schema",
             Self::OpenApi => "openapi",
             Self::AsyncApi => "asyncapi",
@@ -770,13 +774,28 @@ fn generate(
     let Ok((ir, _)) = resolved(path, format)? else {
         return Ok(ExitCode::from(1));
     };
-    let artifacts = if let Some(kind) = kind {
-        let generator = ess_gen::generator(kind.name()).context("projection unavailable")?;
-        ess_gen::artifact::run(generator.as_ref(), &ir)?
+    let artifacts = match kind {
+        // Not a `Generator`: it writes the document the generators read, so it has no rendering of
+        // its own and nothing to stamp per page beyond what the document already carries.
+        Some(Projection::DocsIr) => {
+            let mint = ess_gen::provenance::ProvenanceMint::new(&ir);
+            let document = ess_gen::docs::document(&ir, &mint);
+            let json = serde_json::to_string_pretty(&document)
+                .context("the document does not serialise")?;
+            [(
+                "docs-ir/document.json".to_owned(),
+                ess_gen::Artifact::new("docs-ir/document.json", format!("{json}\n")),
+            )]
             .into_iter()
             .collect()
-    } else {
-        ess_gen::generate_all(&ir)?
+        }
+        Some(kind) => {
+            let generator = ess_gen::generator(kind.name()).context("projection unavailable")?;
+            ess_gen::artifact::run(generator.as_ref(), &ir)?
+                .into_iter()
+                .collect()
+        }
+        None => ess_gen::generate_all(&ir)?,
     };
     write_artifacts(out, &artifacts)?;
     if matches!(format, Format::Text) {

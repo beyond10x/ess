@@ -1,0 +1,114 @@
+<!DOCTYPE html>
+<!--
+  generated from billing v3
+  model digest aacdc2fe065d462cc4f9ba51e6740f88809b6b17ce006ef846b488f957005da3
+  contract digest fed3dac8422d48748e0ec5c0c58941bd048be7d6a7f4d56499540467668fb996
+  do not edit: regenerate with `ess generate`
+-->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>email · billing</title>
+<link rel="stylesheet" href="../assets/style.css">
+</head>
+<body>
+<div class="shell">
+<nav class="sidebar">
+<a class="masthead" href="../index.html">
+<span class="system">billing</span><span class="version">v3</span>
+</a>
+<div class="nav">
+<a href="../index.html">billing v3</a>
+<a href="../crossings.html">Type crossings</a>
+<div class="group">domains</div>
+<a class="nested" href="billing-email.html" aria-current="page">email</a>
+<a class="nested" href="billing-invoice.html">Invoicing</a>
+<a href="../interactions.html">Interactions</a>
+<a href="../topology.html">Topology</a>
+</div>
+</nav>
+<main>
+<article class="content">
+<h1>email</h1>
+<p>Sending the notifications other contexts ask for.</p>
+<p><code>billing.email</code> is one of billing&#39;s bounded contexts. <a href="../index.html">Back to the index</a>.</p>
+<h2 id="types">Types</h2>
+<h3 id="emailaddress"><code>EmailAddress</code></h3>
+<p><code>billing.email.EmailAddress</code> wraps <code>String</code> and is not interchangeable with one: the whole value of naming it separately is the crossings the model then refuses.</p>
+<h3 id="messageid"><code>MessageId</code></h3>
+<p><code>billing.email.MessageId</code> wraps <code>Uuid</code> and is not interchangeable with one: the whole value of naming it separately is the crossings the model then refuses.</p>
+<h3 id="templateid"><code>TemplateId</code></h3>
+<p><code>billing.email.TemplateId</code> wraps <code>String</code> and is not interchangeable with one: the whole value of naming it separately is the crossings the model then refuses.</p>
+<h2 id="commands">Commands</h2>
+<h3 id="sendemail"><code>SendEmail</code></h3>
+<p><code>billing.email.SendEmail</code>.</p>
+<p>It takes:</p>
+<ul>
+<li><code>recipient</code> — <code>billing.email.EmailAddress</code></li>
+<li><code>template</code> — <code>billing.email.TemplateId</code></li>
+</ul>
+<p>It has two outcomes.</p>
+<p><strong><code>sent</code></strong> — The default branch, taken when no other outcome&#39;s condition matched. No entity in this specification changes. It emits <code>billing.email.EmailSent</code>. A test reaches it by constructing an input that satisfies no other outcome&#39;s condition.</p>
+<p><strong><code>failed</code></strong> — Decided outside the input: the provider rejects the recipient address. No predicate over the input reaches this branch, and saying <code>when: false</code> instead would have claimed it is unreachable, which is a different and false statement. No entity in this specification changes. It reports <code>billing.email.Undeliverable</code>. It emits nothing. A test reaches it by injecting the declared fault, because no input can.</p>
+<h2 id="events">Events</h2>
+<h3 id="deliveryescalated"><code>DeliveryEscalated</code></h3>
+<p><code>billing.email.DeliveryEscalated</code>, shown to a person as &quot;Delivery escalated&quot;.</p>
+<p>It carries:</p>
+<ul>
+<li><code>recipient</code> — <code>billing.email.EmailAddress</code></li>
+<li><code>template</code> — <code>billing.email.TemplateId</code></li>
+</ul>
+<p>Emitted when binding <code>notify-on-invoice-created</code> escalates: <code>billing.email.SendEmail</code> failed and a person was told.</p>
+<p>Nothing in this system reacts to it.</p>
+<h3 id="emailsent"><code>EmailSent</code></h3>
+<p><code>billing.email.EmailSent</code>.</p>
+<p>It carries:</p>
+<ul>
+<li><code>message_id</code> — <code>billing.email.MessageId</code></li>
+<li><code>recipient</code> — <code>billing.email.EmailAddress</code></li>
+</ul>
+<p>Emitted by <code>billing.email.SendEmail</code> on its <code>sent</code> outcome.</p>
+<p>Nothing in this system reacts to it.</p>
+<h2 id="errors">Errors</h2>
+<h3 id="undeliverable"><code>Undeliverable</code></h3>
+<p>The address was rejected by the provider.</p>
+<p>It carries nothing beyond its name, so a caller can tell what went wrong and not which value caused it.</p>
+<p>Reported by <code>billing.email.SendEmail</code> on its <code>failed</code> outcome.</p>
+<h2 id="type-crossings">Type crossings</h2>
+<p>Types in this context that the specification permits to be used as another type, or the other way round. Nothing else crosses: two newtypes over the same primitive stay distinct until a line in the specification says otherwise.</p>
+<p><strong><code>billing.invoice.Email</code> may be used as <code>billing.email.EmailAddress</code></strong>, because:</p>
+<blockquote>
+<p>An invoice&#39;s customer email is a deliverable address; the email context validates it again on the way out, so the invoice context does not have to know how.</p>
+</blockquote>
+<p>Every crossing in the system is on one page: <a href="../crossings.html">Type crossings</a>.</p>
+<ul>
+</ul>
+</article>
+<footer class="provenance">
+Generated from billing v3 · model digest <code>aacdc2fe065d462cc4f9ba51e6740f88809b6b17ce006ef846b488f957005da3</code> · contract digest <code>fed3dac8422d48748e0ec5c0c58941bd048be7d6a7f4d56499540467668fb996</code>. Do not edit this file; change the specification and regenerate it with <code>ess generate</code>.
+</footer>
+</main>
+</div>
+<script type="module">
+const diagrams = document.querySelectorAll("pre.mermaid");
+if (diagrams.length > 0) {
+  // A script element, not `import`: the bundle publishes itself with a top-level `var`, and a
+  // top-level `var` in a module is scoped to the module, so importing it throws.
+  await new Promise((resolve, reject) => {
+    const tag = document.createElement("script");
+    tag.src = "../assets/mermaid.min.js";
+    tag.addEventListener("load", resolve);
+    tag.addEventListener("error", reject);
+    document.head.append(tag);
+  });
+  globalThis.mermaid.initialize({
+    startOnLoad: false,
+    securityLevel: "strict",
+    theme: window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "default",
+  });
+  await globalThis.mermaid.run({ querySelector: "pre.mermaid" });
+}
+</script>
+</body>
+</html>

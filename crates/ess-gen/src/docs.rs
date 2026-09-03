@@ -93,23 +93,29 @@ impl Generator for Docs {
     /// Every page is built once, as a [`Document`], and handed to one renderer. A second surface
     /// that wants the same pages asks the document for them rather than reading these bytes back.
     fn generate(&self, ir: &EssIr, mint: &ProvenanceMint) -> Vec<Artifact> {
-        // The four system-wide pages derive from the whole model, honestly: the index draws the
-        // whole graph, the interactions page reads every binding, the crossings and topology pages
-        // are each one system-wide question. A domain page derives from its own context — plus the
-        // bindings and components, which reach across contexts by design — and says so.
-        let mut pages = vec![readme(ir, &mint.whole())];
-        for domain in ir.domains().values() {
-            pages.push(domain_page(ir, domain, &domain_slice(ir, domain, mint)));
-        }
-        pages.push(interactions_page(ir, &mint.whole()));
-        pages.push(crossings_page(ir, &mint.whole()));
-        pages.push(topology_page(ir, &mint.whole()));
-        crate::markdown::render(&Document::new(
-            ir.system().to_string(),
-            ir.version().to_string(),
-            pages,
-        ))
+        crate::markdown::render(&document(ir, mint))
     }
+}
+
+/// The documentation of one model, as the document every renderer reads.
+///
+/// The entry point to this projection for anything that is not markdown: the site renderer, the
+/// `docs-ir` projection, and whatever a third party writes. Building the pages once and rendering
+/// them many times is the whole point of the layer — a second surface that wants these pages asks
+/// for the document rather than reading the markdown back.
+pub fn document(ir: &EssIr, mint: &ProvenanceMint) -> Document {
+    // The four system-wide pages derive from the whole model, honestly: the index draws the whole
+    // graph, the interactions page reads every binding, the crossings and topology pages are each
+    // one system-wide question. A domain page derives from its own context — plus the bindings and
+    // components, which reach across contexts by design — and says so.
+    let mut pages = vec![readme(ir, &mint.whole())];
+    for domain in ir.domains().values() {
+        pages.push(domain_page(ir, domain, &domain_slice(ir, domain, mint)));
+    }
+    pages.push(interactions_page(ir, &mint.whole()));
+    pages.push(crossings_page(ir, &mint.whole()));
+    pages.push(topology_page(ir, &mint.whole()));
+    Document::new(ir.system().to_string(), ir.version().to_string(), pages)
 }
 
 impl Docs {
