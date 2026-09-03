@@ -157,6 +157,13 @@ type RedeliveryRequest struct {
 // ViewRequest reads one view.
 type ViewRequest struct {
 	View string
+	// Params is the value bound to each parameter the view declares, resolved.
+	//
+	// Empty for a view with no `params:`, which is most of them. A view that declares them is one
+	// the implementation cannot answer without them — ACD's position in a queue is per queue — and
+	// the runner refuses to send a request with a parameter it could not resolve rather than
+	// reading a different set of rows and asserting against those.
+	Params map[string]Node
 	// AtLeast is the consistency token the read must reflect, empty for a current read.
 	AtLeast     string
 	Correlation string
@@ -283,6 +290,10 @@ type Step struct {
 	Shape       map[string]Held `json:"shape,omitempty"`
 	Error       string          `json:"error,omitempty"`
 	View        string          `json:"view,omitempty"`
+	// Params is what the caller supplies for a view that declares `params:`. Value, not Node, for
+	// the same reason `input` is: a parameter may be the identity an earlier step captured, which
+	// the suite cannot know and names instead.
+	Params      map[string]Value `json:"params,omitempty"`
 	Expectation *Expectation    `json:"expectation,omitempty"`
 	Binding     string          `json:"binding,omitempty"`
 	Instance    string          `json:"instance,omitempty"`
@@ -733,8 +744,13 @@ func (r *run) captureInstance(index int, step Step) bool {
 }
 
 func (r *run) queryView(index int, step Step) bool {
+	params, ok := r.resolveAll(index, step.Params)
+	if !ok {
+		return false
+	}
 	result, err := r.target.QueryView(ViewRequest{
 		View:        step.View,
+		Params:      params,
 		AtLeast:     r.consistency,
 		Correlation: r.correlation,
 		Deadline:    r.harness.Deadline(),
@@ -759,8 +775,13 @@ func (r *run) expectView(index int, step Step, retry bool) bool {
 	var last string
 	for attempt := 0; attempt < attempts; attempt++ {
 		if retry || r.queried != step.View {
+			params, ok := r.resolveAll(index, step.Params)
+			if !ok {
+				return false
+			}
 			result, err := r.target.QueryView(ViewRequest{
 				View:        step.View,
+				Params:      params,
 				Correlation: r.correlation,
 				Deadline:    Deadline{Attempts: attempts - attempt},
 			})

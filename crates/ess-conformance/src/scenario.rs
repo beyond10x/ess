@@ -1467,6 +1467,14 @@ pub enum ScenarioStep {
     QueryView {
         /// Which view.
         view: ViewRef,
+        /// The value bound to each parameter the view declares.
+        ///
+        /// Empty for a view with no `params:`, which is most of them. Complete for one that has
+        /// them — `ess-domain` checks that the filter reads every declared parameter, and
+        /// synthesis binds every one from the instance the scenario arranged, so a target is never
+        /// handed a request it has to guess a value for.
+        #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+        params: BTreeMap<String, ScenarioValue>,
     },
     /// Require something of the view last read.
     ///
@@ -1504,6 +1512,9 @@ pub enum ScenarioStep {
     EventuallyView {
         /// Which view.
         view: ViewRef,
+        /// The value bound to each parameter the view declares. See [`Self::QueryView`].
+        #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+        params: BTreeMap<String, ScenarioValue>,
         /// What must eventually hold of it.
         expectation: ViewExpectation,
     },

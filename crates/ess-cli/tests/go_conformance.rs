@@ -412,6 +412,7 @@ fn the_emitted_runner_reads_a_positional_assertion_and_refuses_one_in_an_unorder
         view: "billing.invoice.OutstandingInvoices"
             .parse()
             .expect("a view"),
+        params: BTreeMap::new(),
     });
     steps.push(at(Position::First, "later"));
     steps.push(at(Position::Last, "earlier"));
@@ -441,6 +442,7 @@ fn the_emitted_runner_reads_a_positional_assertion_and_refuses_one_in_an_unorder
                 [
                     ScenarioStep::QueryView {
                         view: "billing.invoice.InvoiceById".parse().expect("a view"),
+                        params: BTreeMap::new(),
                     },
                     ScenarioStep::ExpectView {
                         view: "billing.invoice.InvoiceById".parse().expect("a view"),

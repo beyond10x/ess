@@ -440,6 +440,14 @@ pub struct RedeliveryRequest {
 pub struct SemanticViewRequest {
     /// Which view.
     pub view: ViewRef,
+    /// The value bound to each parameter the view declares, resolved.
+    ///
+    /// Empty for a view with no `params:`, which is most of them. Complete for one that has them:
+    /// `ess-domain` checks that the filter reads every declared parameter, and the runner refuses
+    /// to send a request with one it could not resolve — a query with a made-up parameter reads a
+    /// different set of rows, and every assertion after it is about the wrong thing.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub params: BTreeMap<String, Node>,
     /// How fresh the read has to be.
     ///
     /// `ess_primitives::consistency::QueryConsistency`, not a second pair of consistency types: §14

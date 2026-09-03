@@ -306,6 +306,19 @@ pub struct ViewSpec {
     ///
     /// Empty when [`Self::shape`] names the reusable row struct.
     pub fields: Vec<Field>,
+    /// What the caller must supply to ask for this view, in declaration order.
+    ///
+    /// Empty is the common case: most views are one answer the whole system shares, and a reader
+    /// asks for the lot. A parameter is for the view that has no such answer — ACD's position in a
+    /// queue is *per queue*, and one ranked list of every queued call is a different thing from
+    /// what the implementation can be asked. Before this, a specification with a parameterised
+    /// read either declared the unparameterised view and generated scenarios nothing could answer,
+    /// or did not declare it.
+    ///
+    /// A parameter is read in [`Self::filter`] as `param.<name>`, which is a fact path like any
+    /// other — so the predicate grammar needs nothing new, and what makes the name a parameter is
+    /// that it is declared here.
+    pub params: Vec<Field>,
     /// Which instances it contains. Absent means all of them.
     pub filter: Option<Predicate>,
     /// The order the rows are ranked in, most significant key first. Empty means unordered.
@@ -536,6 +549,12 @@ impl ViewSpec {
             // named struct, and resolving that belongs with the IR, which knows every type.
             for path in filter.fact_paths() {
                 let root = path.namespace();
+                // `param.<name>` is a fact the *caller* supplies, so it is not looked for on the
+                // source. The predicate grammar needs nothing new for this — a parameter reads as
+                // a fact path like any other, and what makes the name a parameter is `params:`.
+                if root == Self::PARAM {
+                    continue;
+                }
                 if known(root).is_none() {
                     errors.push(
                         ValidationError::new(
@@ -559,6 +578,7 @@ impl ViewSpec {
             errors.extend(self.validate_filter_values(filter, types, source_fields));
         }
 
+        errors.extend(self.validate_params());
         errors.extend(self.validate_order(projected_fields));
 
         errors.into_result(())
@@ -616,6 +636,68 @@ impl ViewSpec {
             }
         }
 
+        errors
+    }
+
+    /// The namespace a parameter is read under in a filter.
+    pub const PARAM: &'static str = "param";
+
+    /// Checks that declared parameters and the ones a filter reads are the same set.
+    ///
+    /// Both directions, and each catches a different mistake. A filter reading `param.queue_id`
+    /// that `params:` does not declare is a view nobody can call correctly — a generated scenario
+    /// would have to invent the value, which is the invention this crate refuses everywhere. A
+    /// declared parameter no filter reads is worse than useless: every caller is made to supply it
+    /// and nothing selects on it, so two different values return the same rows and the view looks
+    /// parameterised to a reader who then trusts it.
+    fn validate_params(&self) -> ValidationErrors {
+        let mut errors = ValidationErrors::new();
+        let declared: BTreeSet<&str> = self
+            .params
+            .iter()
+            .map(|field| field.name.as_str())
+            .collect();
+        let read: BTreeSet<&str> = self
+            .filter
+            .iter()
+            .flat_map(Predicate::fact_paths)
+            .filter(|path| path.namespace() == Self::PARAM && path.segments().len() == 2)
+            .map(|path| path.segments()[1].as_str())
+            .collect();
+
+        for name in read.difference(&declared) {
+            errors.push(
+                ValidationError::new(
+                    ValidationCode::UndeclaredReference,
+                    format!("view.{}.filter", self.name),
+                    format!(
+                        "the filter reads `param.{name}`, which `{}` does not declare; a caller \
+                         cannot supply a parameter the view never asked for",
+                        self.name
+                    ),
+                )
+                .with_hint(
+                    "declare it under `params:`, with the type the field it is compared to has",
+                ),
+            );
+        }
+        for name in declared.difference(&read) {
+            errors.push(
+                ValidationError::new(
+                    ValidationCode::UnobservableFact,
+                    format!("view.{}.params", self.name),
+                    format!(
+                        "`{}` declares the parameter `{name}` and no filter reads it, so every \
+                         value of it returns the same rows",
+                        self.name
+                    ),
+                )
+                .with_hint(format!(
+                    "read it in `filter:` as `param.{name}`, or drop it — a parameter nothing \
+                     selects on makes the view look narrower than it is"
+                )),
+            );
+        }
         errors
     }
 
@@ -771,6 +853,9 @@ pub struct RawViewSpec {
     /// What it exposes inline.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub fields: Vec<Field>,
+    /// What the caller must supply to ask for this view.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub params: Vec<Field>,
     /// Which instances it contains.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub filter: Option<Predicate>,
@@ -794,6 +879,7 @@ impl TryFrom<RawViewSpec> for ViewSpec {
             source: raw.source,
             shape: raw.shape,
             fields: raw.fields,
+            params: raw.params,
             filter: raw.filter,
             order_by: raw.order_by,
             consistency: raw.consistency,
@@ -810,6 +896,7 @@ impl From<ViewSpec> for RawViewSpec {
             source: view.source,
             shape: view.shape,
             fields: view.fields,
+            params: view.params,
             filter: view.filter,
             order_by: view.order_by,
             consistency: view.consistency,
@@ -955,6 +1042,80 @@ consistency: read_your_writes
         let document = format!("{INVOICE_BY_ID}order_by:\n{order_by}");
         let raw: RawViewSpec = serde_yaml::from_str(&document).expect("parses");
         ViewSpec::try_from(raw)
+    }
+
+    /// `InvoiceById`, asked about one customer rather than about the whole system.
+    fn parameterised(params: &str, filter: &str) -> ViewSpec {
+        let document = format!("{INVOICE_BY_ID}params:\n{params}filter: {filter}\n");
+        let raw: RawViewSpec = serde_yaml::from_str(&document).expect("parses");
+        ViewSpec::try_from(raw).expect("the shape is well formed")
+    }
+
+    const ONE_PARAM: &str = "  - name: customer_email\n    type: billing.invoice.Email\n";
+
+    #[test]
+    fn a_view_may_be_asked_about_one_value_the_caller_supplies() {
+        // Most views are one answer the whole system shares. A parameter is for the view that has
+        // no such answer — ACD's position in a queue is *per queue*, and one ranked list of every
+        // queued call is a different thing from what the implementation can be asked. Without
+        // this, a specification either declared the unparameterised view and generated scenarios
+        // nothing could answer, or did not declare it.
+        let view = parameterised(ONE_PARAM, "customer_email == param.customer_email");
+        assert!(
+            view.validate(&registry(), &entities()).is_ok(),
+            "{:?}",
+            view.validate(&registry(), &entities())
+        );
+        assert_eq!(
+            view.params
+                .iter()
+                .map(|field| field.name.clone())
+                .collect::<Vec<_>>(),
+            vec!["customer_email".to_owned()],
+            "and it is typed, because a caller binding one has to know what it may send"
+        );
+
+        let round_tripped: RawViewSpec =
+            serde_yaml::from_str(&serde_yaml::to_string(&view).expect("writes")).expect("re-reads");
+        assert_eq!(
+            ViewSpec::try_from(round_tripped)
+                .expect("valid")
+                .params
+                .len(),
+            1
+        );
+    }
+
+    #[test]
+    fn a_parameter_and_the_filter_that_reads_it_must_be_the_same_set() {
+        // Both directions, and each catches a different mistake.
+
+        // A filter reading a parameter nothing declared: no caller can bind it, so a generated
+        // scenario would have to invent the value.
+        let errors = refuse(&parameterised("", "customer_email == param.customer_email"));
+        assert!(
+            errors.contains(ValidationCode::UndeclaredReference),
+            "{errors}"
+        );
+        assert!(
+            errors.to_string().contains("param.customer_email"),
+            "the refusal names the parameter: {errors}"
+        );
+
+        // A declared parameter no filter reads is worse than useless: every caller is made to
+        // supply it, nothing selects on it, and two different values return the same rows — so the
+        // view looks narrower than it is to a reader who then trusts it.
+        let errors = refuse(&parameterised(ONE_PARAM, "total >= 0"));
+        assert!(
+            errors.contains(ValidationCode::UnobservableFact),
+            "{errors}"
+        );
+        assert!(
+            errors
+                .to_string()
+                .contains("every value of it returns the same rows"),
+            "{errors}"
+        );
     }
 
     #[test]

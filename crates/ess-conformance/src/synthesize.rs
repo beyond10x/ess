@@ -2051,7 +2051,7 @@ fn view_expectations(
     // other view of the same entity — so what each view holds cannot be settled one view at a time.
     let mut decided: Vec<(&&ResolvedView, bool)> = Vec::new();
     for view in views {
-        match shows(view, state) {
+        match shows(view, state, settled, &bound(view, settled)) {
             Ok(admits) => decided.push((view, admits)),
             Err(unbound) => refusals.push(Refusal::about(
                 id,
@@ -2075,9 +2075,13 @@ fn view_expectations(
             continue;
         }
         let name = ViewRef::new(view.name.clone());
-        while rows_shown(view, *admits_subject, &companions) < RANKING_ROWS {
+        // The subject's own binding, and it is the right one: a companion counts towards a ranked
+        // read only if the *caller's* parameter admits it. A row in another queue is a row this
+        // query never asked for.
+        let params = bound(view, settled);
+        while rows_shown(view, *admits_subject, &companions, &params) < RANKING_ROWS {
             let distinction = Distinction::further(companions.len() + 1);
-            match arrange_beside(ir, &subject.entity, view, actors, distinction) {
+            match arrange_beside(ir, &subject.entity, view, actors, distinction, &params) {
                 Ok(companion) => companions.push(companion),
                 Err(reason) => {
                     refusals.push(Refusal::about(
@@ -2085,7 +2089,7 @@ fn view_expectations(
                         RefusalCause::OrderUnwitnessed {
                             view: name.clone(),
                             entity: EntityRef::from(&subject.entity),
-                            arranged: rows_shown(view, *admits_subject, &companions),
+                            arranged: rows_shown(view, *admits_subject, &companions, &params),
                             reason,
                         },
                     ));
@@ -2119,7 +2123,8 @@ fn view_expectations(
             // exactly that case at the other end.
             ViewExpectation::Excludes { fields }
         };
-        require(view, &name, expectation, &mut out.asserted);
+        let params = bound(view, settled);
+        require(view, &name, params.clone(), expectation, &mut out.asserted);
         // How many rows this scenario put there, as a floor and never as a ceiling. §8 permits a
         // target to be shared as long as scenarios do not interfere, so a row this scenario did not
         // make is legitimate and cannot take one away — where "exactly this many" would be a claim
@@ -2127,11 +2132,12 @@ fn view_expectations(
         //
         // Only from two, because one is what `Contains` above already says: a floor of one beside
         // it is a second spelling of one claim, and two spellings are two things that can disagree.
-        let rows = rows_shown(view, *admits_subject, &companions);
+        let rows = rows_shown(view, *admits_subject, &companions, &params);
         if rows >= RANKING_ROWS {
             require(
                 view,
                 &name,
+                params.clone(),
                 ViewExpectation::Counts {
                     at_least: Some(rows),
                     at_most: None,
@@ -2146,6 +2152,7 @@ fn view_expectations(
             require(
                 view,
                 &name,
+                params,
                 ViewExpectation::Ranked {
                     order_by: view.order_by.clone(),
                 },
@@ -2246,6 +2253,7 @@ fn shown(
 fn require(
     view: &ResolvedView,
     name: &ViewRef,
+    params: BTreeMap<String, ScenarioValue>,
     expectation: ViewExpectation,
     steps: &mut Vec<ScenarioStep>,
 ) {
@@ -2253,9 +2261,12 @@ fn require(
         AssertionStyle::Expect => {
             let queried = steps
                 .iter()
-                .any(|step| matches!(step, ScenarioStep::QueryView { view } if view == name));
+                .any(|step| matches!(step, ScenarioStep::QueryView { view, .. } if view == name));
             if !queried {
-                steps.push(ScenarioStep::QueryView { view: name.clone() });
+                steps.push(ScenarioStep::QueryView {
+                    view: name.clone(),
+                    params: params.clone(),
+                });
             }
             steps.push(ScenarioStep::ExpectView {
                 view: name.clone(),
@@ -2264,6 +2275,7 @@ fn require(
         }
         AssertionStyle::Eventually => steps.push(ScenarioStep::EventuallyView {
             view: name.clone(),
+            params,
             expectation,
         }),
     }
@@ -2275,11 +2287,18 @@ fn require(
 /// A companion whose state the filter cannot decide counts for nothing. That is the same three-valued
 /// reading [`shows`] makes everywhere else — an undecided filter is not a row, and counting one
 /// would be the invention §11 rules out.
-fn rows_shown(view: &ResolvedView, admits_subject: bool, companions: &[Arrangement]) -> usize {
+fn rows_shown(
+    view: &ResolvedView,
+    admits_subject: bool,
+    companions: &[Arrangement],
+    params: &BTreeMap<String, ScenarioValue>,
+) -> usize {
     usize::from(admits_subject)
         + companions
             .iter()
-            .filter(|companion| shows(view, &companion.state) == Ok(true))
+            .filter(|companion| {
+                shows(view, &companion.state, &companion.settled, params) == Ok(true)
+            })
             .count()
 }
 
@@ -2295,12 +2314,13 @@ fn arrange_beside(
     view: &ResolvedView,
     actors: &BTreeMap<QualifiedName, ActorRef>,
     distinction: Distinction,
+    params: &BTreeMap<String, ScenarioValue>,
 ) -> Result<Arrangement, Unreachable> {
     let lifecycle = &ir.entity(entity).lifecycle;
     let admitted: Vec<StateName> = lifecycle
         .states
         .iter()
-        .filter(|state| shows(view, state) == Ok(true))
+        .filter(|state| shows(view, state, &BTreeMap::new(), params) == Ok(true))
         .cloned()
         .collect();
     if admitted.is_empty() {
@@ -2359,6 +2379,44 @@ fn identifying(
     [(named, value)].into_iter().collect()
 }
 
+/// What this scenario supplies for each parameter the view declares.
+///
+/// Read from what the arrangement settled, never invented: a parameter is compared against a field
+/// of the source entity, and the scenario put a value in that field on the way to the state it is
+/// asserting. So `queue_id == param.queue_id` asks for the queue the instance was just placed in,
+/// and the row it expects is the one it created.
+///
+/// A parameter the arrangement did not settle comes back missing, which leaves the filter
+/// undecidable and the view refused by name — the same answer this module gives everywhere for a
+/// question the model cannot decide.
+fn bound(
+    view: &ResolvedView,
+    settled: &BTreeMap<String, Determined>,
+) -> BTreeMap<String, ScenarioValue> {
+    view.params
+        .iter()
+        .filter_map(|param| {
+            settled
+                .get(&param.name)
+                .map(|determined| (param.name.clone(), determined.value.clone()))
+        })
+        .collect()
+}
+
+/// One scalar node as a fact, or nothing when it is not a scalar.
+///
+/// A parameter compared in a filter is compared against a field, and a field holds a scalar. A
+/// sequence or a map returns `None`, which leaves the filter undecidable and the view refused by
+/// name rather than admitted on a comparison nobody could evaluate.
+fn fact_value(node: &Node) -> Option<FactValue> {
+    match node {
+        Node::Text(text) => Some(FactValue::text(text.clone())),
+        Node::Bool(value) => Some(FactValue::text(value.to_string())),
+        Node::Number(number) => FactValue::number(number.get()).ok(),
+        Node::Null | Node::Seq(_) | Node::Map(_) => None,
+    }
+}
+
 /// Whether a view holds a row for an entity in `state`, or the paths that stop the question being
 /// answered.
 ///
@@ -2366,7 +2424,12 @@ fn identifying(
 /// lifecycle starts, so that is the one fact bound. Three-valued, and the third value refuses:
 /// `Unknown` here means the filter reads something no scenario can know, and asserting either way
 /// would be the invention §11 rules out.
-fn shows(view: &ResolvedView, state: &StateName) -> Result<bool, Vec<FactPath>> {
+fn shows(
+    view: &ResolvedView,
+    state: &StateName,
+    settled: &BTreeMap<String, Determined>,
+    params: &BTreeMap<String, ScenarioValue>,
+) -> Result<bool, Vec<FactPath>> {
     let Some(filter) = &view.filter else {
         return Ok(true);
     };
@@ -2374,6 +2437,34 @@ fn shows(view: &ResolvedView, state: &StateName) -> Result<bool, Vec<FactPath>> 
     let path = FactPath::new(EntitySpec::STATE)
         .unwrap_or_else(|error| panic!("`{}` is a fact path: {error}", EntitySpec::STATE));
     facts.set(path, FactValue::text(state.as_str()));
+    // What the arrangement put in the entity's own fields. The state used to be the only fact a
+    // synthesised scenario knew about the instance it had just created; `sets:` made the rest
+    // knowable, and a filter over a field this scenario supplied is decidable from what it
+    // supplied. Without this, `lane_id == param.lane_id` is `Unknown` however well the parameter
+    // is bound, because the left side is the one nothing had answered.
+    for (name, determined) in settled {
+        if let (Ok(path), ScenarioValue::Literal { value }) =
+            (FactPath::new(name), &determined.value)
+        {
+            if let Some(fact) = fact_value(value) {
+                facts.set(path, fact);
+            }
+        }
+    }
+    // A parameter is a fact the *caller* supplies, and this scenario is the caller. Binding it is
+    // what lets the two sides meet: the arrangement set the row's `lane_id`, so the scenario asks
+    // for the lane it just put the instance in. Unbound leaves the filter `Unknown` and the view
+    // is refused by name, which is the honest answer.
+    for (name, value) in params {
+        if let ScenarioValue::Literal { value } = value {
+            if let (Ok(path), Some(fact)) = (
+                FactPath::new(format!("{}.{name}", ess_domain::view::ViewSpec::PARAM)),
+                fact_value(value),
+            ) {
+                facts.set(path, fact);
+            }
+        }
+    }
 
     match filter.evaluate(&facts) {
         Truth::True => Ok(true),
@@ -2835,7 +2926,7 @@ fn holds_after(
     let mut steps = run.steps();
     let mut named: BTreeSet<ViewRef> = BTreeSet::new();
     for invariant in &entity.invariants {
-        let witnesses = witnesses_for(ir, invariant, views, &state);
+        let witnesses = witnesses_for(ir, invariant, views, &state, &run.settled);
         if witnesses.is_empty() {
             refusals.push(Refusal::about(
                 id,
@@ -2849,7 +2940,11 @@ fn holds_after(
             continue;
         }
         for view in witnesses {
-            steps.extend(assert_satisfied(view, invariant.predicate.clone()));
+            steps.extend(assert_satisfied(
+                view,
+                bound(view, &run.settled),
+                invariant.predicate.clone(),
+            ));
             named.insert(ViewRef::new(view.name.clone()));
         }
     }
@@ -2886,12 +2981,19 @@ fn holds_after(
 /// everyone reaches for is a sleep. Takes the predicate rather than an [`Invariant`] because two
 /// families arrive here — an entity's invariant as written, and a value object's invariant rebased
 /// onto the field position that holds one — and the view does not care which.
-fn assert_satisfied(view: &ResolvedView, predicate: Predicate) -> Vec<ScenarioStep> {
+fn assert_satisfied(
+    view: &ResolvedView,
+    params: BTreeMap<String, ScenarioValue>,
+    predicate: Predicate,
+) -> Vec<ScenarioStep> {
     let name = ViewRef::new(view.name.clone());
     let expectation = ViewExpectation::Satisfies { predicate };
     match view.assertion_style {
         AssertionStyle::Expect => vec![
-            ScenarioStep::QueryView { view: name.clone() },
+            ScenarioStep::QueryView {
+                view: name.clone(),
+                params,
+            },
             ScenarioStep::ExpectView {
                 view: name,
                 expectation,
@@ -2899,6 +3001,7 @@ fn assert_satisfied(view: &ResolvedView, predicate: Predicate) -> Vec<ScenarioSt
         ],
         AssertionStyle::Eventually => vec![ScenarioStep::EventuallyView {
             view: name,
+            params,
             expectation,
         }],
     }
@@ -3171,7 +3274,8 @@ fn holds_at(
             let Some(state) = run.after.clone() else {
                 continue;
             };
-            if !matches!(shows(view, &state), Ok(true)) {
+            let params = bound(view, &run.settled);
+            if !matches!(shows(view, &state, &run.settled, &params), Ok(true)) {
                 continue;
             }
 
@@ -3179,6 +3283,7 @@ fn holds_at(
             for invariant in invariants {
                 steps.extend(assert_satisfied(
                     view,
+                    params.clone(),
                     rebased(&invariant.predicate, field, &declared.body),
                 ));
             }
@@ -3246,6 +3351,7 @@ fn witnesses_for<'a>(
     invariant: &Invariant,
     views: &[&'a ResolvedView],
     state: &StateName,
+    settled: &BTreeMap<String, Determined>,
 ) -> Vec<&'a ResolvedView> {
     views
         .iter()
@@ -3255,7 +3361,7 @@ fn witnesses_for<'a>(
                 .fact_paths()
                 .into_iter()
                 .all(|path| resolve_path(ir, &view.fields, path).is_scalar())
-                && matches!(shows(view, state), Ok(true))
+                && matches!(shows(view, state, settled, &bound(view, settled)), Ok(true))
         })
         .copied()
         .collect()

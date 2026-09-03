@@ -224,6 +224,7 @@ fn expectation<'a>(
             ScenarioStep::EventuallyView {
                 view: named,
                 expectation,
+                ..
             } if named.to_string() == view => Some(("eventually", expectation)),
             _ => None,
         })
@@ -1341,6 +1342,56 @@ fn a_command_that_declares_no_wrong_state_answer_is_refused_by_name_beside_its_s
 }
 
 #[test]
+fn a_parameterised_view_is_queried_with_the_value_the_scenario_put_in_the_row() {
+    // The parameter is bound from what the arrangement settled, never invented. `PlaceOrder` sets
+    // `lane_id` from its input, so the scenario asks for the lane it just put the order in and the
+    // row it expects is the one it created. A generated query that guessed a lane would read a
+    // different set of rows and every assertion after it would be about the wrong thing.
+    let synthesis = synthesize(&fixture(PARAMETERISED_VIEW));
+    let id = "quiet.orders.PlaceOrder/outcome/accepted";
+
+    let queried: Vec<&BTreeMap<String, ScenarioValue>> = steps(&synthesis, id)
+        .iter()
+        .filter_map(|step| match step {
+            ScenarioStep::QueryView { view, params }
+                if view.to_string() == "quiet.orders.OrdersInLane" =>
+            {
+                Some(params)
+            }
+            _ => None,
+        })
+        .collect();
+    assert!(
+        !queried.is_empty(),
+        "the view is queried at all: {:?}",
+        shape(&synthesis, id)
+    );
+
+    for params in &queried {
+        assert_eq!(
+            params.keys().collect::<Vec<_>>(),
+            vec!["lane_id"],
+            "every declared parameter is bound, and nothing else is sent"
+        );
+        assert!(
+            matches!(params["lane_id"], ScenarioValue::Literal { .. }),
+            "and it is the value the command supplied, not a name the target has to resolve: {:?}",
+            params["lane_id"]
+        );
+    }
+
+    // The filter is decidable *because* the parameter is bound. Unbound it reads `Unknown`, and
+    // this crate refuses a view it cannot decide rather than asserting either way — so a refusal
+    // here would mean the binding never happened.
+    assert_eq!(
+        synthesis.refused(code(11)).count(),
+        0,
+        "binding the parameter is what makes `lane_id == param.lane_id` decidable: {:?}",
+        refused(&synthesis)
+    );
+}
+
+#[test]
 fn a_command_that_accepts_a_wrong_state_is_asserted_as_accepting_rather_than_refusing() {
     // The claim under test is *the command answers here and the order does not move*, and it is a
     // different claim from a refusal — which is why the id says so. A scenario named
@@ -1964,9 +2015,9 @@ fn an_invariant_is_asserted_against_every_view_that_publishes_what_it_reads() {
         .iter()
         .filter_map(|step| match step {
             ScenarioStep::ExpectView { view, expectation } => Some(("expect", view, expectation)),
-            ScenarioStep::EventuallyView { view, expectation } => {
-                Some(("eventually", view, expectation))
-            }
+            ScenarioStep::EventuallyView {
+                view, expectation, ..
+            } => Some(("eventually", view, expectation)),
             _ => None,
         })
         .map(|(block, view, expectation)| {
@@ -2846,6 +2897,98 @@ commands:
       - name: accepted
         creates: quiet.orders.Order
         instance: order_id
+        emits:
+          - quiet.orders.OrderPlaced
+
+  - name: quiet.orders.ShipOrder
+    input:
+      - name: order_id
+        type: quiet.orders.OrderId
+    outcomes:
+      - name: shipped
+        moves: quiet.orders.Order.ship
+        instance: order_id
+        emits:
+          - quiet.orders.OrderShipped
+";
+
+/// A view nobody can be asked for without saying *which queue*.
+///
+/// ACD's shape, cut to the smallest thing that shows it: the position of a call is per queue, and
+/// a specification that declared one ranked list of every queued call declared something the
+/// implementation has no way to answer.
+const PARAMETERISED_VIEW: &str = r"
+format: ess/1
+system: quiet
+version: v1
+domain: quiet.orders
+
+types:
+  - name: quiet.orders.OrderId
+    kind: newtype
+    of: Uuid
+  - name: quiet.orders.LaneId
+    kind: newtype
+    of: String
+
+entities:
+  - name: quiet.orders.Order
+    identity:
+      name: order_id
+      type: quiet.orders.OrderId
+    fields:
+      - name: lane_id
+        type: quiet.orders.LaneId
+    lifecycle:
+      initial: Placed
+      states: [Placed, Shipped]
+      terminal: [Shipped]
+      transitions:
+        - name: ship
+          from: [Placed]
+          to: Shipped
+
+views:
+  - name: quiet.orders.OrdersInLane
+    source: quiet.orders.Order
+    consistency: read_your_writes
+    params:
+      - name: lane_id
+        type: quiet.orders.LaneId
+    filter:
+      all:
+        - state == Placed
+        - lane_id == param.lane_id
+    fields:
+      - name: order_id
+        type: quiet.orders.OrderId
+      - name: lane_id
+        type: quiet.orders.LaneId
+
+events:
+  - name: quiet.orders.OrderPlaced
+    fields:
+      - name: order_id
+        type: quiet.orders.OrderId
+      - name: lane_id
+        type: quiet.orders.LaneId
+
+  - name: quiet.orders.OrderShipped
+    fields:
+      - name: order_id
+        type: quiet.orders.OrderId
+
+commands:
+  - name: quiet.orders.PlaceOrder
+    input:
+      - name: lane_id
+        type: quiet.orders.LaneId
+    outcomes:
+      - name: accepted
+        creates: quiet.orders.Order
+        instance: order_id
+        sets:
+          lane_id: input.lane_id
         emits:
           - quiet.orders.OrderPlaced
 

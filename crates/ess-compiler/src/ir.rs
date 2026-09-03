@@ -887,6 +887,13 @@ pub struct ResolvedView {
     /// `ess-domain` — a projection that widens a type is a promise the entity cannot keep — and this
     /// is the side a contract is generated from.
     pub fields: Vec<ResolvedField>,
+    /// What a caller must supply to ask for this view, in declaration order.
+    ///
+    /// Empty is the common case and is what every view declared before `params:` existed means.
+    /// The filter reads each as `param.<name>`; `ess-domain` checks the two sets are the same, so
+    /// a consumer of this IR can bind every declared parameter and know the filter uses it.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub params: Vec<ResolvedField>,
     /// Which instances it contains, as a parsed predicate. `None` means all of them.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub filter: Option<Predicate>,

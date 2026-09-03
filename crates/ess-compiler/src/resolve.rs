@@ -2137,6 +2137,9 @@ impl<'a> Resolver<'a> {
             let fields = declared_fields
                 .as_deref()
                 .and_then(|fields| self.fields(code, fields, &view.name, &path, &needles));
+            // Resolved the same way as the projected fields, and for the same reason: a parameter
+            // is typed, and a consumer binding one has to know what it may send.
+            let params = self.fields(code, &view.params, &view.name, &path, &needles);
             let domain = self.owner(code, &view.name, "view");
             let source = match self.entity_of(&view.source, entities) {
                 Found::Handle(handle) => Some(handle),
@@ -2163,8 +2166,8 @@ impl<'a> Resolver<'a> {
                     None
                 }
             };
-            let (Some(shape), Some(fields), Some(domain), Some(source)) =
-                (shape, fields, domain, source)
+            let (Some(shape), Some(fields), Some(params), Some(domain), Some(source)) =
+                (shape, fields, params, domain, source)
             else {
                 continue;
             };
@@ -2176,6 +2179,7 @@ impl<'a> Resolver<'a> {
                     source,
                     shape,
                     fields,
+                    params,
                     filter: view.filter,
                     order_by: view.order_by,
                     consistency: view.consistency,

@@ -407,16 +407,18 @@ impl<C: Clock> Runner<C> {
                 command,
                 input,
             } => self.expect_invocation(binding, command, input, run, target),
-            ScenarioStep::QueryView { view } => self.query_view(view, run, target),
+            ScenarioStep::QueryView { view, params } => self.query_view(view, params, run, target),
             ScenarioStep::ExpectView { view, expectation } => expect_view(view, expectation, run),
             ScenarioStep::EventuallyEvent {
                 event,
                 payload,
                 shape,
             } => self.eventually_event(event, payload, shape, run, target),
-            ScenarioStep::EventuallyView { view, expectation } => {
-                self.eventually_view(view, expectation, run, target)
-            }
+            ScenarioStep::EventuallyView {
+                view,
+                params,
+                expectation,
+            } => self.eventually_view(view, params, expectation, run, target),
         }
     }
 
@@ -531,9 +533,13 @@ impl<C: Clock> Runner<C> {
     fn query_view<T: ConformanceTarget>(
         &mut self,
         view: &ViewRef,
+        params: &BTreeMap<String, ScenarioValue>,
         run: &mut Run,
         target: &T,
     ) -> Flow {
+        let Ok(bound) = resolve_params(view, params, run) else {
+            return Flow::Stop;
+        };
         let consistency = match run.last_command.as_ref() {
             // Nothing has been written in this scenario, so there is no write to read no older
             // than. Synthesis never produces this, and a suite that does means it.
@@ -550,6 +556,7 @@ impl<C: Clock> Runner<C> {
         let deadline = self.deadline();
         let request = SemanticViewRequest {
             view: view.clone(),
+            params: bound,
             consistency,
             correlation: run.context.correlation.clone(),
             deadline,
@@ -643,10 +650,14 @@ impl<C: Clock> Runner<C> {
     fn eventually_view<T: ConformanceTarget>(
         &mut self,
         view: &ViewRef,
+        params: &BTreeMap<String, ScenarioValue>,
         expectation: &ViewExpectation,
         run: &mut Run,
         target: &T,
     ) -> Flow {
+        let Ok(bound) = resolve_params(view, params, run) else {
+            return Flow::Stop;
+        };
         let required = match Required::of(expectation, run) {
             Ok(required) => required,
             Err(reason) => {
@@ -660,6 +671,7 @@ impl<C: Clock> Runner<C> {
             asks += 1;
             let request = SemanticViewRequest {
                 view: view.clone(),
+                params: bound.clone(),
                 // `Current`, never `AtLeast`: demanding the token would make the target block until
                 // the projection caught up, which is the very thing this step exists to observe.
                 consistency: QueryConsistency::Current,
@@ -726,6 +738,36 @@ fn configure_external<T: ConformanceTarget>(force: &OutcomeRef, run: &mut Run, t
             Flow::Stop
         }
     }
+}
+
+/// The value bound to each of a view's parameters, resolved against what this run has established.
+///
+/// A parameter carries a [`ScenarioValue`] for the same reason a command's input does: the suite
+/// cannot know the identity an implementation minted, so it names the earlier step that produced
+/// it. An unresolvable one stops the scenario rather than sending a guess — a query with a made-up
+/// parameter reads a different set of rows and every assertion after it is about the wrong thing.
+fn resolve_params(
+    view: &ViewRef,
+    params: &BTreeMap<String, ScenarioValue>,
+    run: &mut Run,
+) -> Result<BTreeMap<String, Node>, ()> {
+    let mut bound = BTreeMap::new();
+    for (name, value) in params {
+        match run.resolve(value) {
+            Ok(node) => {
+                bound.insert(name.clone(), node);
+            }
+            Err(reason) => {
+                run.record(unresolvable(
+                    view,
+                    &run.id.clone(),
+                    &format!("the parameter `{name}`: {reason}"),
+                ));
+                return Err(());
+            }
+        }
+    }
+    Ok(bound)
 }
 
 /// Invokes a command, with every reference the suite carries resolved first (§9).

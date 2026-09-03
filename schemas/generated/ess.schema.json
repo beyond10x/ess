@@ -1440,6 +1440,13 @@
             "$ref": "#/definitions/Ranking"
           }
         },
+        "params": {
+          "description": "What the caller must supply to ask for this view.",
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/Field"
+          }
+        },
         "shape": {
           "description": "A reusable named struct describing what it exposes.",
           "anyOf": [
