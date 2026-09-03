@@ -1,4 +1,9 @@
-//! Markdown and Mermaid: the first projection, and therefore the completeness check.
+//! The document a specification obliges: the first projection, and therefore the completeness check.
+//!
+//! This module walks [`EssIr`] and says what is true of it, as [`crate::document`] pages of blocks.
+//! It writes no Markdown: which characters a heading, a link or a diagram is made of belongs to
+//! [`crate::markdown`], which is the renderer whose bytes are pinned. What is here is the wording,
+//! the order and the construct each section is about.
 //!
 //! Documentation is generated first because it is the cheapest way to find out what the model cannot
 //! say. A construct with no rendering shows up here as a hole in a page a person reads, rather than
@@ -52,14 +57,14 @@ use ess_domain::refs::ExternalRef;
 use ess_domain::view::{AssertionStyle, Consistency, Direction};
 
 use crate::artifact::{Artifact, Generator};
-use crate::document::{Block, Blocks, Inline, Page, PageId, Target};
+use crate::document::{Block, Blocks, DiagramKind, Document, Inline, Page, PageId, Target};
 use crate::graph::{label, SystemGraph};
 use ess_compiler::refs::{
     ActorRef, BindingRef, CommandRef, ComponentRef, DeclaredTypeRef, DomainRef, EntityRef,
     ErrorRef, EssSemanticRef, EventRef, ViewRef,
 };
 
-use crate::provenance::{Provenance, ProvenanceMint, SlicedProvenance};
+use crate::provenance::{ProvenanceMint, SlicedProvenance};
 
 /// Markdown and Mermaid: the cheapest check that every construct can be described.
 pub struct Docs;
@@ -77,29 +82,33 @@ impl Generator for Docs {
         "docs"
     }
 
-    /// Five kinds of page, and one per bounded context.
+    /// Five kinds of page, and one per bounded context, rendered as Markdown.
     ///
     /// The split follows what a reader arrives with a question about, not what the IR happens to
     /// store: a bounded context is the unit someone reads to learn a vocabulary, the interactions
     /// are the unit someone reads to learn how two contexts meet, and the crossings and the topology
     /// are each a single system-wide question — "what is this system willing to treat as what" and
     /// "what does it need in order to run" — that would be invisible if scattered per domain.
+    ///
+    /// Every page is built once, as a [`Document`], and handed to one renderer. A second surface
+    /// that wants the same pages asks the document for them rather than reading these bytes back.
     fn generate(&self, ir: &EssIr, mint: &ProvenanceMint) -> Vec<Artifact> {
         // The four system-wide pages derive from the whole model, honestly: the index draws the
         // whole graph, the interactions page reads every binding, the crossings and topology pages
         // are each one system-wide question. A domain page derives from its own context — plus the
         // bindings and components, which reach across contexts by design — and says so.
-        let mut out = vec![readme(ir, &mint.whole())];
+        let mut pages = vec![readme(ir, &mint.whole())];
         for domain in ir.domains().values() {
-            out.push(domain_page(ir, domain, &domain_slice(ir, domain, mint)));
+            pages.push(domain_page(ir, domain, &domain_slice(ir, domain, mint)));
         }
-        out.push(interactions_page(ir, &mint.whole()));
-        out.push(crossings_page(ir, &mint.whole()));
-        // Ported to the document IR. The others follow; until they do, one `generate` builds both
-        // shapes, and the bytes are the same either way — which is the point of porting one page
-        // at a time rather than all five at once.
-        out.push(crate::markdown::page(&topology_page(ir, &mint.whole())));
-        out
+        pages.push(interactions_page(ir, &mint.whole()));
+        pages.push(crossings_page(ir, &mint.whole()));
+        pages.push(topology_page(ir, &mint.whole()));
+        crate::markdown::render(&Document::new(
+            ir.system().to_string(),
+            ir.version().to_string(),
+            pages,
+        ))
     }
 }
 
@@ -143,81 +152,158 @@ const GAPS: &[Gap] = &[];
 // ---- pages ------------------------------------------------------------------------------------
 
 /// The index: what the system is, how it fits together, and where everything else is.
-fn readme(ir: &EssIr, provenance: &SlicedProvenance) -> Artifact {
-    let mut body = String::new();
+fn readme(ir: &EssIr, provenance: &SlicedProvenance) -> Page {
+    let mut blocks = Blocks::new();
     if let Some(summary) = ir.summary() {
-        let _ = writeln!(body, "{summary}\n");
+        blocks.sentence(summary);
     }
 
-    let _ = writeln!(body, "## The system as a graph\n");
-    body.push_str(&system_graph(ir));
-    let _ = writeln!(
-        body,
-        "\nA command is accepted by the component that owns its context, emits the events one of \
-         its outcomes declares, and a dashed edge is a binding carrying an event into the next \
-         command. Design §9 begins one step earlier, at the actor who invokes the first command, \
-         and so does this graph: a solid edge out of an actor is a grant, and an actor drawn with \
-         no edge at all may invoke nothing — which is something the model says, not an arrow \
-         somebody forgot.\n"
-    );
+    blocks.push(graph_section(ir));
+    blocks.push(contexts_section(ir));
+    blocks.push(components_section(ir));
+    blocks.push(other_pages_section(ir));
 
-    let _ = writeln!(body, "## Bounded contexts\n");
-    for domain in ir.domains().values() {
-        let _ = writeln!(body, "{}", domain_index_entry(ir, domain));
-    }
-
-    let _ = writeln!(body, "\n## Components\n");
-    let _ = writeln!(
-        body,
-        "A component is a unit of ownership, not a deployment. How many of each runs, and what each \
-         needs, is [the topology](topology.md).\n"
-    );
-    for component in ir.components().values() {
-        let _ = writeln!(body, "{}\n", component_prose(ir, component));
-    }
-
-    let _ = writeln!(body, "## The other pages\n");
-    let _ = writeln!(body, "| page | what is on it |");
-    let _ = writeln!(body, "|---|---|");
-    for domain in ir.domains().values() {
-        let _ = writeln!(
-            body,
-            "| [{}]({}) | the `{}` vocabulary: its types, entities, views, commands, events, \
-             errors and actors |",
-            display_of(&domain.naming, &domain.name),
-            domain_path(&domain.name),
-            domain.name
-        );
-    }
-    let _ = writeln!(
-        body,
-        "| [Interactions](interactions.md) | every binding, with what it guarantees and what \
-         happens when it fails |"
-    );
-    let _ = writeln!(
-        body,
-        "| [Type crossings](crossings.md) | every conversion this system permits, and the reason \
-         someone gave for it |"
-    );
-    let _ = writeln!(
-        body,
-        "| [Topology](topology.md) | what each component needs in order to run |"
-    );
-
-    body.push('\n');
-    body.push_str(&gap_table(
-        "## What this projection cannot show",
+    blocks.extend(gap_blocks(
+        "What this projection cannot show",
         "These constructs are in the specification and not in the intermediate representation these \
          pages are generated from, so they cannot appear. They are listed rather than omitted: a \
          page that quietly leaves an entity out reads exactly like a system that has none.",
     ));
+    blocks.push(trailing_blank());
 
-    page(
-        "index.md".to_owned(),
-        &format!("{} {}", ir.system(), ir.version()),
-        &body,
-        provenance,
+    Page {
+        id: PageId::from("index"),
+        title: vec![Inline::text(format!("{} {}", ir.system(), ir.version()))],
+        about: None,
+        provenance: provenance.clone(),
+        blocks: blocks.finish(),
+    }
+}
+
+/// The whole system in one picture, with the reading of it a picture cannot give.
+fn graph_section(ir: &EssIr) -> Block {
+    let mut under = Blocks::new();
+    under.push(Block::Diagram {
+        kind: DiagramKind::System,
+        source: system_graph(ir),
+    });
+    under.sentence(
+        "A command is accepted by the component that owns its context, emits the events one of \
+         its outcomes declares, and a dashed edge is a binding carrying an event into the next \
+         command. Design §9 begins one step earlier, at the actor who invokes the first command, \
+         and so does this graph: a solid edge out of an actor is a grant, and an actor drawn with \
+         no edge at all may invoke nothing — which is something the model says, not an arrow \
+         somebody forgot.",
+    );
+    section(
+        2,
+        vec![Inline::text("The system as a graph")],
+        None,
+        under.finish(),
     )
+}
+
+/// Every bounded context, with the numbers its own page then spells out.
+fn contexts_section(ir: &EssIr) -> Block {
+    section(
+        2,
+        vec![Inline::text("Bounded contexts")],
+        None,
+        vec![bullets(
+            ir.domains()
+                .values()
+                .map(|domain| domain_index_entry(ir, domain))
+                .collect(),
+        )],
+    )
+}
+
+/// Every component, and the one thing a component is not.
+fn components_section(ir: &EssIr) -> Block {
+    let mut under = Blocks::new();
+    under.prose(vec![
+        Inline::text(
+            "A component is a unit of ownership, not a deployment. How many of each runs, and \
+             what each needs, is ",
+        ),
+        Inline::Link {
+            to: Target::Page {
+                page: PageId::from("topology"),
+            },
+            text: vec![Inline::text("the topology")],
+        },
+        Inline::text("."),
+    ]);
+    for component in ir.components().values() {
+        under.prose(component_prose(ir, component));
+    }
+    section(2, vec![Inline::text("Components")], None, under.finish())
+}
+
+/// Where everything else is, as the table a reader scans rather than a paragraph they read.
+fn other_pages_section(ir: &EssIr) -> Block {
+    let mut rows: Vec<Vec<Vec<Inline>>> = ir
+        .domains()
+        .values()
+        .map(|domain| {
+            vec![
+                vec![Inline::Link {
+                    to: Target::Page {
+                        page: domain_page_id(&domain.name),
+                    },
+                    text: vec![Inline::text(display_of(&domain.naming, &domain.name))],
+                }],
+                vec![
+                    Inline::text("the "),
+                    Inline::code(domain.name.to_string()),
+                    Inline::text(
+                        " vocabulary: its types, entities, views, commands, events, errors and \
+                         actors",
+                    ),
+                ],
+            ]
+        })
+        .collect();
+    rows.push(page_row(
+        "Interactions",
+        "interactions",
+        "every binding, with what it guarantees and what happens when it fails",
+    ));
+    rows.push(page_row(
+        "Type crossings",
+        "crossings",
+        "every conversion this system permits, and the reason someone gave for it",
+    ));
+    rows.push(page_row(
+        "Topology",
+        "topology",
+        "what each component needs in order to run",
+    ));
+    section(
+        2,
+        vec![Inline::text("The other pages")],
+        None,
+        vec![Block::Table {
+            columns: vec![
+                vec![Inline::text("page")],
+                vec![Inline::text("what is on it")],
+            ],
+            rows,
+        }],
+    )
+}
+
+/// One row of the index's table of pages.
+fn page_row(title: &str, page: &str, about: &str) -> Vec<Vec<Inline>> {
+    vec![
+        vec![Inline::Link {
+            to: Target::Page {
+                page: PageId::from(page),
+            },
+            text: vec![Inline::text(title)],
+        }],
+        vec![Inline::text(about)],
+    ]
 }
 
 /// One bounded context: everything declared inside it, in the order a reader needs it.
@@ -313,83 +399,92 @@ pub fn served(ir: &EssIr, component: &ResolvedComponent) -> String {
         if !out.is_empty() {
             out.push('\n');
         }
-        out.push_str(&domain_page(ir, domain, &domain_slice(ir, domain, &mint)).contents);
+        let page = domain_page(ir, domain, &domain_slice(ir, domain, &mint));
+        out.push_str(&crate::markdown::page(&page).contents);
     }
     out
 }
 
-fn domain_page(ir: &EssIr, domain: &ResolvedDomain, provenance: &SlicedProvenance) -> Artifact {
-    let mut body = String::new();
+fn domain_page(ir: &EssIr, domain: &ResolvedDomain, provenance: &SlicedProvenance) -> Page {
+    let mut blocks = Blocks::new();
     if let Some(summary) = &domain.naming.summary {
-        let _ = writeln!(body, "{summary}\n");
+        blocks.sentence(summary);
     }
-    let _ = writeln!(
-        body,
-        "`{}` is one of {}'s bounded contexts. [Back to the index](../index.md).\n",
-        domain.name,
-        ir.system()
-    );
+    let mut opening = vec![
+        Inline::code(domain.name.to_string()),
+        Inline::text(format!(" is one of {}'s bounded contexts. ", ir.system())),
+    ];
+    opening.extend(back_to_the_index());
+    blocks.prose(opening);
 
-    types_section(ir, domain, &mut body);
-    entities_section(ir, domain, &mut body);
-    views_section(ir, domain, &mut body);
-    commands_section(ir, domain, &mut body);
-    events_section(ir, domain, &mut body);
-    errors_section(ir, domain, &mut body);
-    actors_section(ir, domain, &mut body);
-    crossings_section(ir, domain, &mut body);
+    blocks.extend(types_section(ir, domain));
+    blocks.extend(entities_section(ir, domain));
+    blocks.extend(views_section(ir, domain));
+    blocks.extend(commands_section(ir, domain));
+    blocks.extend(events_section(ir, domain));
+    blocks.extend(errors_section(ir, domain));
+    blocks.extend(actors_section(ir, domain));
+    blocks.extend(crossings_section(ir, domain));
 
-    body.push_str(&gap_table(
-        "## What this page cannot show",
+    blocks.extend(gap_blocks(
+        "What this page cannot show",
         "This context declares more than appears above. What is missing is missing from the \
          intermediate representation this page is generated from, not from the specification.",
     ));
+    blocks.push(trailing_blank());
 
-    page(
-        domain_path(&domain.name),
-        display_of(&domain.naming, &domain.name),
-        &body,
-        provenance,
-    )
+    Page {
+        id: domain_page_id(&domain.name),
+        title: vec![Inline::text(display_of(&domain.naming, &domain.name))],
+        about: Some(DomainRef::new(domain.name.clone()).into()),
+        provenance: provenance.clone(),
+        blocks: blocks.finish(),
+    }
 }
 
 /// Every binding: what it reacts to, what it invokes, and what it promises while doing so.
-fn interactions_page(ir: &EssIr, provenance: &SlicedProvenance) -> Artifact {
-    let mut body = String::from(
+fn interactions_page(ir: &EssIr, provenance: &SlicedProvenance) -> Page {
+    let mut blocks = Blocks::new();
+    blocks.sentence(
         "A binding is the only way an event in one context causes a command in another. Each one \
          states how many times the command may run and what happens when it does not, because a \
          binding that can fail quietly is the difference between specifying a system and specifying \
-         a demo.\n\n[Back to the index](index.md).\n\n",
+         a demo.",
     );
+    blocks.prose(back_to_the_index());
 
     if ir.bindings().is_empty() {
-        body.push_str("This system declares no bindings: nothing here reacts to anything.\n\n");
+        blocks.sentence("This system declares no bindings: nothing here reacts to anything.");
     }
     for binding in ir.bindings().values() {
-        binding_section(ir, binding, &mut body);
+        blocks.push(binding_section(ir, binding));
     }
 
     let unread = unread_events(ir);
     if !unread.is_empty() {
-        let _ = writeln!(body, "## Events nothing reacts to\n");
-        let _ = writeln!(
-            body,
+        let mut under = Blocks::new();
+        under.sentence(
             "Legal, and worth seeing. An event with no reader inside the system is either a \
              deliberate boundary — something outside consumes it — or a binding somebody forgot, \
-             and only a person can tell which.\n"
+             and only a person can tell which.",
         );
-        for name in unread {
-            let _ = writeln!(body, "- `{name}`");
-        }
-        body.push('\n');
+        under.push(bullets(names(unread)));
+        blocks.push(section(
+            2,
+            vec![Inline::text("Events nothing reacts to")],
+            None,
+            under.finish(),
+        ));
     }
+    blocks.push(trailing_blank());
 
-    page(
-        "interactions.md".to_owned(),
-        "Interactions",
-        &body,
-        provenance,
-    )
+    Page {
+        id: PageId::from("interactions"),
+        title: vec![Inline::text("Interactions")],
+        about: None,
+        provenance: provenance.clone(),
+        blocks: blocks.finish(),
+    }
 }
 
 /// Every declared conversion, with the reason attached to it.
@@ -398,50 +493,64 @@ fn interactions_page(ir: &EssIr, provenance: &SlicedProvenance) -> Artifact {
 /// same reason is repeated at each point of use — on the binding that relies on it, and on the pages
 /// of both contexts whose types it joins — so that a reader who never thought to ask "what may be
 /// treated as what here" still meets the answer beside the type it concerns.
-fn crossings_page(ir: &EssIr, provenance: &SlicedProvenance) -> Artifact {
-    let mut body = String::from(
+fn crossings_page(ir: &EssIr, provenance: &SlicedProvenance) -> Page {
+    let mut blocks = Blocks::new();
+    blocks.sentence(
         "A conversion is this system's permission for a value of one type to be used as another. \
          Every one of them carries a reason, and the reason is required rather than optional \
          precisely so that this page can exist: someone asking why an invoice's email address is \
          allowed to become a mailbox address gets an answer written by the person who allowed it, \
-         not a shrug.\n\nDeclaring a crossing is also the only way to make one. Two newtypes over \
-         `String` do not convert because they are both strings; they convert because a line in the \
-         specification says they may.\n\n",
+         not a shrug.",
     );
+    blocks.prose(vec![
+        Inline::text("Declaring a crossing is also the only way to make one. Two newtypes over "),
+        Inline::code("String"),
+        Inline::text(
+            " do not convert because they are both strings; they convert because a line in the \
+             specification says they may.",
+        ),
+    ]);
 
     if ir.conversions().is_empty() {
-        body.push_str("This system declares no crossings. Every type is used only as itself.\n\n");
+        blocks.sentence("This system declares no crossings. Every type is used only as itself.");
     }
     for conversion in ir.conversions() {
-        let _ = writeln!(
-            body,
-            "## `{}` may be used as `{}`\n",
-            conversion.from, conversion.to
-        );
-        let _ = writeln!(body, "{}\n", quote(&conversion.because));
+        let title = vec![
+            Inline::code(conversion.from.to_string()),
+            Inline::text(" may be used as "),
+            Inline::code(conversion.to.to_string()),
+        ];
+        let mut under = Blocks::new();
+        under.push(quoted_reason(&conversion.because));
         let users = crossing_users(ir, conversion);
         if users.is_empty() {
-            let _ = writeln!(
-                body,
+            under.sentence(
                 "Nothing uses this crossing yet. It is still part of what the system permits, \
-                 which is why it is written down.\n"
+                 which is why it is written down.",
             );
         } else {
-            let _ = writeln!(body, "Relied on by:\n");
-            for user in users {
-                let _ = writeln!(body, "- {user}");
-            }
-            body.push('\n');
+            under.sentence("Relied on by:");
+            under.push(bullets(users));
         }
+        blocks.push(Block::Section {
+            level: 2,
+            anchor: anchor_of(&title),
+            title,
+            // A crossing is a pair of types and the sentence joining them; the IR names no
+            // construct for it, so there is nothing honest to point a consumer at.
+            about: None,
+            blocks: under.finish(),
+        });
     }
 
-    body.push_str("[Back to the index](index.md).\n");
-    page(
-        "crossings.md".to_owned(),
-        "Type crossings",
-        &body,
-        provenance,
-    )
+    blocks.prose(back_to_the_index());
+    Page {
+        id: PageId::from("crossings"),
+        title: vec![Inline::text("Type crossings")],
+        about: None,
+        provenance: provenance.clone(),
+        blocks: blocks.finish(),
+    }
 }
 
 /// What each component needs in order to run, and what a replica floor is claiming.
@@ -466,32 +575,26 @@ fn topology_page(ir: &EssIr, provenance: &SlicedProvenance) -> Page {
             under.sentence("It requires nothing beyond itself.");
         } else {
             under.sentence("It requires:");
-            under.push(Block::List {
-                ordered: false,
-                items: workload
+            under.push(bullets(
+                workload
                     .requires
                     .iter()
                     .map(|resource| {
-                        vec![Block::Prose {
-                            text: vec![
-                                Inline::code(resource.kind.clone()),
-                                Inline::text(" — "),
-                                Inline::code(resource.name.clone()),
-                            ],
-                        }]
+                        vec![
+                            Inline::code(resource.kind.clone()),
+                            Inline::text(" — "),
+                            Inline::code(resource.name.clone()),
+                        ]
                     })
                     .collect(),
-            });
+            ));
         }
-        blocks.push(Block::Section {
-            level: 2,
-            title: vec![Inline::code(component.name.to_string())],
-            anchor: slug(&component.name.to_string()),
-            about: Some(EssSemanticRef::Component {
-                name: ComponentRef::new(component.name.clone()),
-            }),
-            blocks: under.finish(),
-        });
+        blocks.push(section(
+            2,
+            vec![Inline::code(component.name.to_string())],
+            Some(ComponentRef::new(component.name.clone()).into()),
+            under.finish(),
+        ));
     }
 
     let idle: Vec<_> = ir
@@ -506,24 +609,13 @@ fn topology_page(ir: &EssIr, provenance: &SlicedProvenance) -> Page {
              legal — a context can be owned by a library — but it is the kind of legal worth \
              reading twice.",
         );
-        under.push(Block::List {
-            ordered: false,
-            items: idle
-                .into_iter()
-                .map(|name| {
-                    vec![Block::Prose {
-                        text: vec![Inline::code(name.to_string())],
-                    }]
-                })
-                .collect(),
-        });
-        blocks.push(Block::Section {
-            level: 2,
-            title: vec![Inline::text("Components that run nowhere")],
-            anchor: "components-that-run-nowhere".to_owned(),
-            about: None,
-            blocks: under.finish(),
-        });
+        under.push(bullets(names(idle)));
+        blocks.push(section(
+            2,
+            vec![Inline::text("Components that run nowhere")],
+            None,
+            under.finish(),
+        ));
     }
 
     blocks.prose(back_to_the_index());
@@ -560,23 +652,36 @@ fn back_to_the_index() -> Vec<Inline> {
 /// synthesises it from a lifecycle, and it is rendered with that lifecycle, in the entity's own
 /// section. Found by comparing handles with [`ResolvedEntity::state_type`] rather than by reading
 /// `State` out of a name, because a name read for meaning is an identity used as a key.
-fn types_section(ir: &EssIr, domain: &ResolvedDomain, body: &mut String) {
+fn types_section(ir: &EssIr, domain: &ResolvedDomain) -> Vec<Block> {
     let synthesised = state_types(ir, domain);
-    let declared: Vec<_> = domain
+    let declared: Vec<(&TypeHandle, &ResolvedType)> = domain
         .types
         .iter()
         .filter(|handle| !synthesised.contains(*handle))
-        .map(|handle| ir.named_type(handle))
+        .map(|handle| (handle, ir.named_type(handle)))
         .collect();
     if declared.is_empty() {
-        return;
+        return Vec::new();
     }
-    let _ = writeln!(body, "## Types\n");
-    for declared in &declared {
-        let _ = writeln!(body, "### `{}`\n", relative(&declared.name, &domain.name));
-        let _ = writeln!(body, "{}\n", type_prose(declared).trim_end());
+    let mut under = Blocks::new();
+    for (handle, named) in &declared {
+        under.push(section(
+            3,
+            vec![Inline::code(relative(&named.name, &domain.name))],
+            Some(DeclaredTypeRef::from(*handle).into()),
+            type_prose(named),
+        ));
     }
-    orphan_note(ir, &declared, body);
+    let types: Vec<&ResolvedType> = declared.iter().map(|(_, named)| *named).collect();
+    if let Some(note) = orphan_note(ir, &types) {
+        under.prose(note);
+    }
+    vec![section(
+        2,
+        vec![Inline::text("Types")],
+        None,
+        under.finish(),
+    )]
 }
 
 /// The types nothing else in the IR mentions.
@@ -587,26 +692,30 @@ fn types_section(ir: &EssIr, domain: &ResolvedDomain, body: &mut String) {
 /// "reached through a construct the projection dropped" — every construct that reaches a type
 /// (entity, view, command, event, error, crossing) is counted below, so an orphan here is an orphan
 /// in the model.
-fn orphan_note(ir: &EssIr, declared: &[&ResolvedType], body: &mut String) {
+fn orphan_note(ir: &EssIr, declared: &[&ResolvedType]) -> Option<Vec<Inline>> {
     let referenced = referenced_types(ir);
-    let orphans: Vec<_> = declared
+    let orphans: Vec<Vec<Inline>> = declared
         .iter()
         .filter(|it| !referenced.contains(&it.name))
-        .map(|it| code(&it.name.to_string()))
+        .map(|it| vec![Inline::code(it.name.to_string())])
         .collect();
     if orphans.is_empty() {
-        return;
+        return None;
     }
-    let _ = writeln!(
-        body,
-        "{} of the types above {} reached by nothing else in this system: {}. No entity, view, \
-         command, event, error or crossing names {}, so it is either vocabulary something outside \
-         this specification uses or a leftover — and only a person can tell which.\n",
-        capitalise(&number(orphans.len())),
-        if orphans.len() == 1 { "is" } else { "are" },
-        list(&orphans),
-        if orphans.len() == 1 { "it" } else { "them" }
-    );
+    let count = orphans.len();
+    let mut out = vec![Inline::text(format!(
+        "{} of the types above {} reached by nothing else in this system: ",
+        capitalise(&number(count)),
+        if count == 1 { "is" } else { "are" },
+    ))];
+    out.extend(inline_list(orphans));
+    out.push(Inline::text(format!(
+        ". No entity, view, command, event, error or crossing names {}, so it is either vocabulary \
+         something outside this specification uses or a leftover — and only a person can tell \
+         which.",
+        if count == 1 { "it" } else { "them" }
+    )));
+    Some(out)
 }
 
 /// Every named type reached from a field, an input, a payload, a union variant or a crossing.
@@ -677,54 +786,56 @@ fn referenced_types(ir: &EssIr) -> BTreeSet<QualifiedName> {
 /// the *absence* of a transition, so the section carries three things a list of states cannot: the
 /// diagram, the initial and terminal states, and — because absence does not draw — the pairs no move
 /// connects.
-fn entities_section(ir: &EssIr, domain: &ResolvedDomain, body: &mut String) {
+fn entities_section(ir: &EssIr, domain: &ResolvedDomain) -> Vec<Block> {
     if domain.entities.is_empty() {
-        return;
+        return Vec::new();
     }
     let projections = ir.projections();
     let drivers = ir.drivers();
-    let _ = writeln!(body, "## Entities\n");
-    let _ = writeln!(
-        body,
+    let mut under = Blocks::new();
+    under.sentence(
         "An entity is what this context is about: something with an identity that outlives any one \
          request, a shape, and a lifecycle. The lifecycle is exhaustive — a move that is not drawn \
          below is a move this specification does not permit, and that is the only way it says so. \
          Every move is labelled with the command that takes it, because a move nothing can trigger \
-         is refused rather than drawn.\n"
+         is refused rather than drawn.",
     );
     for handle in &domain.entities {
         let entity = ir.entity(handle);
-        let _ = writeln!(body, "### `{}`\n", relative(&entity.name, &domain.name));
-        let _ = writeln!(body, "{}\n", naming_sentence(&entity.naming, &entity.name));
-        let _ = writeln!(body, "{}\n", identity_sentence(entity));
+        let mut about = Blocks::new();
+        about.prose(naming_sentence(&entity.naming, &entity.name));
+        about.prose(identity_sentence(entity));
         if entity.fields.is_empty() {
-            let _ = writeln!(
-                body,
-                "It holds nothing beyond its identity and its state.\n"
-            );
+            about.sentence("It holds nothing beyond its identity and its state.");
         } else {
-            let _ = writeln!(body, "It holds:\n");
-            for field in &entity.fields {
-                let _ = writeln!(body, "{}", field_bullet(field));
-            }
-            body.push('\n');
+            about.sentence("It holds:");
+            about.push(bullets(entity.fields.iter().map(field_bullet).collect()));
         }
-        let _ = writeln!(body, "{}\n", relations_sentence(ir, domain, entity));
-        let _ = writeln!(body, "{}\n", entity_invariants_sentence(entity));
-        let _ = writeln!(body, "{}\n", state_type_sentence(entity));
-        let _ = writeln!(body, "{}\n", resting_sentence(&entity.lifecycle));
+        about.prose(relations_sentence(ir, domain, entity));
+        about.prose(entity_invariants_sentence(entity));
+        about.prose(state_type_sentence(entity));
+        about.prose(resting_sentence(&entity.lifecycle));
         let driven = drivers.get(handle).map_or(&[][..], Vec::as_slice);
-        body.push_str(&state_diagram(&entity.lifecycle, driven));
-        body.push('\n');
-        let _ = writeln!(body, "{}\n", driven_sentence(&entity.lifecycle, driven));
-        let _ = writeln!(body, "{}", legality_note(&entity.lifecycle).trim_end());
-        body.push('\n');
-        let _ = writeln!(
-            body,
-            "{}\n",
-            observed_by_sentence(ir, domain, projections.get(handle))
-        );
+        about.push(Block::Diagram {
+            kind: DiagramKind::Lifecycle,
+            source: state_diagram(&entity.lifecycle, driven),
+        });
+        about.extend(driven_blocks(&entity.lifecycle, driven));
+        about.extend(legality_note(&entity.lifecycle));
+        about.prose(observed_by_sentence(ir, domain, projections.get(handle)));
+        under.push(section(
+            3,
+            vec![Inline::code(relative(&entity.name, &domain.name))],
+            Some(EntityRef::from(handle).into()),
+            about.finish(),
+        ));
     }
+    vec![section(
+        2,
+        vec![Inline::text("Entities")],
+        None,
+        under.finish(),
+    )]
 }
 
 /// What one entity owns, what it names, and what owns it.
@@ -733,29 +844,37 @@ fn entities_section(ir: &EssIr, domain: &ResolvedDomain, body: &mut String) {
 /// reader of the invoice wants to know whose it is, and that fact is written in the account's
 /// declaration. Nothing here is inferred — the reverse direction is a lookup over the declarations,
 /// which is what `EssIr::relations_carried_by` answers.
-fn relations_sentence(ir: &EssIr, domain: &ResolvedDomain, entity: &ResolvedEntity) -> String {
-    let mut sentences = Vec::new();
+fn relations_sentence(ir: &EssIr, domain: &ResolvedDomain, entity: &ResolvedEntity) -> Vec<Inline> {
+    let mut sentences: Vec<Vec<Inline>> = Vec::new();
 
     for relation in &entity.relations {
         let target = ir.entity(&relation.target);
-        sentences.push(format!(
-            "It {} {} {}, as `{}`, carried by `{}.{}`.",
-            relation.kind,
-            match relation.cardinality {
-                Cardinality::One => "at most one",
-                Cardinality::Many => "any number of",
-            },
+        sentences.push(vec![
+            Inline::text(format!(
+                "It {} {} ",
+                relation.kind,
+                match relation.cardinality {
+                    Cardinality::One => "at most one",
+                    Cardinality::Many => "any number of",
+                }
+            )),
             section_link(ir, domain, &target.name, &target.domain),
-            relation.name,
-            relative(
-                match relation.kind {
-                    RelationKind::Owns => &target.name,
-                    RelationKind::References => &entity.name,
-                },
-                &domain.name
-            ),
-            relation.via
-        ));
+            Inline::text(", as "),
+            Inline::code(relation.name.clone()),
+            Inline::text(", carried by "),
+            Inline::code(format!(
+                "{}.{}",
+                relative(
+                    match relation.kind {
+                        RelationKind::Owns => &target.name,
+                        RelationKind::References => &entity.name,
+                    },
+                    &domain.name
+                ),
+                relation.via
+            )),
+            Inline::text("."),
+        ]);
     }
 
     for (field, carried) in ir.relations_carried_by(&entity.name) {
@@ -763,61 +882,79 @@ fn relations_sentence(ir: &EssIr, domain: &ResolvedDomain, entity: &ResolvedEnti
             continue;
         }
         let source = &ir.entities()[carried.source];
-        sentences.push(format!(
-            "Its `{field}` is what {} {} it by, as `{}`.",
+        sentences.push(vec![
+            Inline::text("Its "),
+            Inline::code(field.to_string()),
+            Inline::text(" is what "),
             section_link(ir, domain, &source.name, &source.domain),
-            carried.relation.kind,
-            carried.relation.name
-        ));
+            Inline::text(format!(" {} it by, as ", carried.relation.kind)),
+            Inline::code(carried.relation.name.clone()),
+            Inline::text("."),
+        ]);
     }
 
     if sentences.is_empty() {
-        return "It declares no relation to another entity, and no other entity names it."
-            .to_owned();
+        return vec![Inline::text(
+            "It declares no relation to another entity, and no other entity names it.",
+        )];
     }
-    sentences.join(" ")
+    let mut out = Vec::new();
+    for (position, sentence) in sentences.into_iter().enumerate() {
+        if position > 0 {
+            out.push(Inline::text(" "));
+        }
+        out.extend(sentence);
+    }
+    out
 }
 
 /// Every view: what it reads, which instances it holds, and how soon it holds them.
-fn views_section(ir: &EssIr, domain: &ResolvedDomain, body: &mut String) {
+fn views_section(ir: &EssIr, domain: &ResolvedDomain) -> Vec<Block> {
     if domain.views.is_empty() {
-        return;
+        return Vec::new();
     }
-    let _ = writeln!(body, "## Views\n");
-    let _ = writeln!(
-        body,
+    let mut under = Blocks::new();
+    under.sentence(
         "A view is what the outside world is promised it can observe. Each one says which instances \
          it contains and how soon it reflects a command that has already returned, because \"you \
-         can read this\" without \"how soon\" is the promise every flaky suite is built on.\n"
+         can read this\" without \"how soon\" is the promise every flaky suite is built on.",
     );
     for handle in &domain.views {
         let view = ir.view(handle);
         let source = ir.entity(&view.source);
-        let _ = writeln!(body, "### `{}`\n", relative(&view.name, &domain.name));
-        let _ = writeln!(body, "{}\n", naming_sentence(&view.naming, &view.name));
-        let _ = writeln!(
-            body,
-            "It reads {}.\n",
-            section_link(ir, domain, &source.name, &source.domain)
-        );
-        let _ = writeln!(body, "{}\n", filter_sentence(view));
+        let mut about = Blocks::new();
+        about.prose(naming_sentence(&view.naming, &view.name));
+        about.prose(vec![
+            Inline::text("It reads "),
+            section_link(ir, domain, &source.name, &source.domain),
+            Inline::text("."),
+        ]);
+        about.prose(filter_sentence(view));
         if view.fields.is_empty() {
-            let _ = writeln!(
-                body,
+            about.sentence(
                 "It exposes no fields, so it answers \"does an instance match\" and nothing about \
-                 the instance.\n"
+                 the instance.",
             );
         } else {
-            let _ = writeln!(body, "It exposes:\n");
-            for field in &view.fields {
-                let _ = writeln!(body, "{}", field_bullet(field));
-            }
-            body.push('\n');
+            about.sentence("It exposes:");
+            about.push(bullets(view.fields.iter().map(field_bullet).collect()));
         }
-        let _ = writeln!(body, "{}\n", order_sentence(view));
-        let _ = writeln!(body, "{}\n", consistency_sentence(view.consistency));
-        let _ = writeln!(body, "{}\n", assertion_sentence(view.assertion_style));
+        about.prose(order_sentence(view));
+        about.prose(consistency_sentence(view.consistency));
+        about.sentence(assertion_sentence(view.assertion_style));
+        under.push(section(
+            3,
+            vec![Inline::code(relative(&view.name, &domain.name))],
+            Some(ViewRef::from(handle).into()),
+            about.finish(),
+        ));
     }
+    vec![section(
+        2,
+        vec![Inline::text("Views")],
+        None,
+        under.finish(),
+    )]
 }
 
 /// The records a construct names, where it names any.
@@ -826,16 +963,19 @@ fn views_section(ir: &EssIr, domain: &ResolvedDomain, body: &mut String) {
 /// `providers:` map, which this projection does not read: a page that guessed a host would carry a
 /// link that opens the wrong page, and a wrong link cannot be told from a right one by looking at
 /// it.
-fn write_refs(refs: &[ExternalRef], body: &mut String) {
+fn refs_sentence(refs: &[ExternalRef]) -> Option<Vec<Inline>> {
     if refs.is_empty() {
-        return;
+        return None;
     }
-    let listed = refs
-        .iter()
-        .map(|reference| format!("`{reference}`"))
-        .collect::<Vec<_>>()
-        .join(", ");
-    let _ = writeln!(body, "Recorded at {listed}.\n");
+    let mut out = vec![Inline::text("Recorded at ")];
+    for (position, reference) in refs.iter().enumerate() {
+        if position > 0 {
+            out.push(Inline::text(", "));
+        }
+        out.push(Inline::code(reference.to_string()));
+    }
+    out.push(Inline::text("."));
+    Some(out)
 }
 
 /// What order the rows come back in, or that the view does not say.
@@ -843,160 +983,197 @@ fn write_refs(refs: &[ExternalRef], body: &mut String) {
 /// Absence is written down rather than left out. A reader who is not told is entitled to assume
 /// there is an order and that it is the obvious one, and a view named for a position is exactly
 /// where that assumption gets made.
-fn order_sentence(view: &ResolvedView) -> String {
+fn order_sentence(view: &ResolvedView) -> Vec<Inline> {
     if view.order_by.is_empty() {
-        return "It declares no order, so the rows come back in whatever order the implementation \
-                has, and two reads may disagree."
-            .to_owned();
+        return vec![Inline::text(
+            "It declares no order, so the rows come back in whatever order the implementation has, \
+             and two reads may disagree.",
+        )];
     }
-    let keys = view
-        .order_by
-        .iter()
-        .map(|ranking| {
-            format!(
-                "`{}` {}",
-                ranking.field,
-                match ranking.direction {
-                    Direction::Ascending => "ascending",
-                    Direction::Descending => "descending",
-                }
-            )
-        })
-        .collect::<Vec<_>>();
-    format!("Its rows are ordered by {}.", join_with_then(&keys))
-}
-
-/// `a`, then `b`, then `c` — the ranking keys in significance order.
-fn join_with_then(keys: &[String]) -> String {
-    keys.join(", then ")
+    let mut out = vec![Inline::text("Its rows are ordered by ")];
+    // `a`, then `b`, then `c` — the ranking keys in significance order, which is not an English
+    // list: `and` between two keys would read as though either one of them decided the order.
+    for (position, ranking) in view.order_by.iter().enumerate() {
+        if position > 0 {
+            out.push(Inline::text(", then "));
+        }
+        out.push(Inline::code(ranking.field.clone()));
+        out.push(Inline::text(match ranking.direction {
+            Direction::Ascending => " ascending",
+            Direction::Descending => " descending",
+        }));
+    }
+    out.push(Inline::text("."));
+    out
 }
 
 /// Every actor, and the commands each of them may invoke.
-fn actors_section(ir: &EssIr, domain: &ResolvedDomain, body: &mut String) {
+fn actors_section(ir: &EssIr, domain: &ResolvedDomain) -> Vec<Block> {
     if domain.actors.is_empty() {
-        return;
+        return Vec::new();
     }
-    let _ = writeln!(body, "## Actors\n");
-    let _ = writeln!(
-        body,
+    let mut under = Blocks::new();
+    under.sentence(
         "An actor is who may ask this context for something. Every grant below points at a command \
          this specification declares — a grant is a resolved reference, so \"may invoke\" something \
          nobody wrote is not a permission this model can express, and an authorisation that \
-         authorises nothing cannot ship quietly.\n"
+         authorises nothing cannot ship quietly.",
     );
     for handle in &domain.actors {
         let actor = ir.actor(handle);
-        let _ = writeln!(body, "### `{}`\n", relative(&actor.name, &domain.name));
-        let _ = writeln!(body, "{}\n", naming_sentence(&actor.naming, &actor.name));
-        let _ = writeln!(body, "{}\n", grants_sentence(ir, domain, actor));
+        let mut about = Blocks::new();
+        about.prose(naming_sentence(&actor.naming, &actor.name));
+        about.prose(grants_sentence(ir, domain, actor));
+        under.push(section(
+            3,
+            vec![Inline::code(relative(&actor.name, &domain.name))],
+            Some(ActorRef::from(handle).into()),
+            about.finish(),
+        ));
     }
+    vec![section(
+        2,
+        vec![Inline::text("Actors")],
+        None,
+        under.finish(),
+    )]
 }
 
 /// Every command, with its input and — the part that matters — every outcome.
-fn commands_section(ir: &EssIr, domain: &ResolvedDomain, body: &mut String) {
+fn commands_section(ir: &EssIr, domain: &ResolvedDomain) -> Vec<Block> {
     if domain.commands.is_empty() {
-        return;
+        return Vec::new();
     }
-    let _ = writeln!(body, "## Commands\n");
+    let mut under = Blocks::new();
     for handle in &domain.commands {
         let command = ir.command(handle);
-        let _ = writeln!(body, "### `{}`\n", relative(&command.name, &domain.name));
-        let _ = writeln!(
-            body,
-            "{}\n",
-            naming_sentence(&command.naming, &command.name)
-        );
-        write_refs(&command.refs, body);
+        let mut about = Blocks::new();
+        about.prose(naming_sentence(&command.naming, &command.name));
+        if let Some(recorded) = refs_sentence(&command.refs) {
+            about.prose(recorded);
+        }
         if command.input.is_empty() {
-            let _ = writeln!(body, "It takes no input.\n");
+            about.sentence("It takes no input.");
         } else {
-            let _ = writeln!(body, "It takes:\n");
-            for field in &command.input {
-                let _ = writeln!(body, "{}", field_bullet(field));
-            }
-            body.push('\n');
+            about.sentence("It takes:");
+            about.push(bullets(command.input.iter().map(field_bullet).collect()));
         }
-        let _ = writeln!(
-            body,
-            "{}\n",
-            outcome_count_sentence(command.outcomes.len(), &command.name)
-        );
+        about.prose(outcome_count_sentence(
+            command.outcomes.len(),
+            &command.name,
+        ));
         for outcome in &command.outcomes {
-            let _ = writeln!(body, "{}\n", outcome_prose(ir, command, outcome));
+            about.prose(outcome_prose(ir, command, outcome));
         }
+        under.push(section(
+            3,
+            vec![Inline::code(relative(&command.name, &domain.name))],
+            Some(CommandRef::from(handle).into()),
+            about.finish(),
+        ));
     }
+    vec![section(
+        2,
+        vec![Inline::text("Commands")],
+        None,
+        under.finish(),
+    )]
 }
 
 /// Every event, what it carries, and who causes and reads it.
-fn events_section(ir: &EssIr, domain: &ResolvedDomain, body: &mut String) {
+fn events_section(ir: &EssIr, domain: &ResolvedDomain) -> Vec<Block> {
     if domain.events.is_empty() {
-        return;
+        return Vec::new();
     }
     let reactions = ir.reactions();
-    let _ = writeln!(body, "## Events\n");
+    let mut under = Blocks::new();
     for handle in &domain.events {
         let event = ir.event(handle);
-        let _ = writeln!(body, "### `{}`\n", relative(&event.name, &domain.name));
-        let _ = writeln!(body, "{}\n", naming_sentence(&event.naming, &event.name));
+        let mut about = Blocks::new();
+        about.prose(naming_sentence(&event.naming, &event.name));
         if event.fields.is_empty() {
-            let _ = writeln!(
-                body,
-                "It carries nothing: the fact that it happened is the whole payload.\n"
-            );
+            about.sentence("It carries nothing: the fact that it happened is the whole payload.");
         } else {
-            let _ = writeln!(body, "It carries:\n");
-            for field in &event.fields {
-                let _ = writeln!(body, "{}", field_bullet(field));
-            }
-            body.push('\n');
+            about.sentence("It carries:");
+            about.push(bullets(event.fields.iter().map(field_bullet).collect()));
         }
         for sentence in emitters(ir, event) {
-            let _ = writeln!(body, "{sentence}\n");
+            about.prose(sentence);
         }
         match reactions.get(handle) {
             None => {
-                let _ = writeln!(body, "Nothing in this system reacts to it.\n");
+                about.sentence("Nothing in this system reacts to it.");
             }
             Some(bindings) => {
-                let names = list(&bindings.iter().map(|it| code(it.name.as_str())).collect());
-                let _ = writeln!(
-                    body,
-                    "{names} reacts to it — see [Interactions](../interactions.md).\n"
+                let mut reacts = inline_list(
+                    bindings
+                        .iter()
+                        .map(|it| vec![Inline::code(it.name.to_string())])
+                        .collect(),
                 );
+                reacts.push(Inline::text(" reacts to it — see "));
+                reacts.push(Inline::Link {
+                    to: Target::Page {
+                        page: PageId::from("interactions"),
+                    },
+                    text: vec![Inline::text("Interactions")],
+                });
+                reacts.push(Inline::text("."));
+                about.prose(reacts);
             }
         }
+        under.push(section(
+            3,
+            vec![Inline::code(relative(&event.name, &domain.name))],
+            Some(EventRef::from(handle).into()),
+            about.finish(),
+        ));
     }
+    vec![section(
+        2,
+        vec![Inline::text("Events")],
+        None,
+        under.finish(),
+    )]
 }
 
 /// Every error, what it carries, and which branch reports it.
-fn errors_section(ir: &EssIr, domain: &ResolvedDomain, body: &mut String) {
+fn errors_section(ir: &EssIr, domain: &ResolvedDomain) -> Vec<Block> {
     if domain.errors.is_empty() {
-        return;
+        return Vec::new();
     }
-    let _ = writeln!(body, "## Errors\n");
+    let mut under = Blocks::new();
     for handle in &domain.errors {
         let error = ir.error(handle);
-        let _ = writeln!(body, "### `{}`\n", relative(&error.name, &domain.name));
+        let mut about = Blocks::new();
         if let Some(summary) = &error.summary {
-            let _ = writeln!(body, "{summary}\n");
+            about.sentence(summary);
         }
         if error.fields.is_empty() {
-            let _ = writeln!(
-                body,
+            about.sentence(
                 "It carries nothing beyond its name, so a caller can tell what went wrong and not \
-                 which value caused it.\n"
+                 which value caused it.",
             );
         } else {
-            let _ = writeln!(body, "It carries:\n");
-            for field in &error.fields {
-                let _ = writeln!(body, "{}", field_bullet(field));
-            }
-            body.push('\n');
+            about.sentence("It carries:");
+            about.push(bullets(error.fields.iter().map(field_bullet).collect()));
         }
         for sentence in reporters(ir, error) {
-            let _ = writeln!(body, "{sentence}\n");
+            about.prose(sentence);
         }
+        under.push(section(
+            3,
+            vec![Inline::code(relative(&error.name, &domain.name))],
+            Some(ErrorRef::from(handle).into()),
+            about.finish(),
+        ));
     }
+    vec![section(
+        2,
+        vec![Inline::text("Errors")],
+        None,
+        under.finish(),
+    )]
 }
 
 /// The crossings with an end in this context, repeated here on purpose.
@@ -1004,7 +1181,7 @@ fn errors_section(ir: &EssIr, domain: &ResolvedDomain, body: &mut String) {
 /// This is the answer to "where does a conversion's reason go so that someone finds it without
 /// knowing to look": beside the type. A reader on this page is reading about `Email`; that is where
 /// the sentence saying `Email` may become somebody else's address has to be.
-fn crossings_section(ir: &EssIr, domain: &ResolvedDomain, body: &mut String) {
+fn crossings_section(ir: &EssIr, domain: &ResolvedDomain) -> Vec<Block> {
     let relevant: Vec<_> = ir
         .conversions()
         .iter()
@@ -1013,116 +1190,172 @@ fn crossings_section(ir: &EssIr, domain: &ResolvedDomain, body: &mut String) {
         })
         .collect();
     if relevant.is_empty() {
-        return;
+        return Vec::new();
     }
-    let _ = writeln!(body, "## Type crossings\n");
-    let _ = writeln!(
-        body,
+    let mut under = Blocks::new();
+    under.sentence(
         "Types in this context that the specification permits to be used as another type, or the \
          other way round. Nothing else crosses: two newtypes over the same primitive stay distinct \
-         until a line in the specification says otherwise.\n"
+         until a line in the specification says otherwise.",
     );
     for conversion in relevant {
-        let _ = writeln!(
-            body,
-            "**`{}` may be used as `{}`**, because:\n",
-            conversion.from, conversion.to
-        );
-        let _ = writeln!(body, "{}\n", quote(&conversion.because));
+        under.prose(vec![
+            Inline::Strong {
+                text: vec![
+                    Inline::code(conversion.from.to_string()),
+                    Inline::text(" may be used as "),
+                    Inline::code(conversion.to.to_string()),
+                ],
+            },
+            Inline::text(", because:"),
+        ]);
+        under.push(quoted_reason(&conversion.because));
     }
-    let _ = writeln!(
-        body,
-        "Every crossing in the system is on one page: [Type crossings](../crossings.md).\n"
-    );
+    under.prose(vec![
+        Inline::text("Every crossing in the system is on one page: "),
+        Inline::Link {
+            to: Target::Page {
+                page: PageId::from("crossings"),
+            },
+            text: vec![Inline::text("Type crossings")],
+        },
+        Inline::text("."),
+    ]);
+    vec![section(
+        2,
+        vec![Inline::text("Type crossings")],
+        None,
+        under.finish(),
+    )]
 }
 
 /// One binding, its guarantees in prose, its mapping, and the flow a table cannot show.
-fn binding_section(ir: &EssIr, binding: &ResolvedBinding, body: &mut String) {
+fn binding_section(ir: &EssIr, binding: &ResolvedBinding) -> Block {
     let event = ir.event(&binding.event);
     let command = ir.command(&binding.command);
-    let _ = writeln!(body, "## `{}`\n", binding.name);
+    let owner = ir.domain(&command.domain);
+    let mut under = Blocks::new();
     if let Some(summary) = &binding.naming.summary {
-        let _ = writeln!(body, "{summary}\n");
+        under.sentence(summary);
     }
-    write_refs(&binding.refs, body);
-    let _ = writeln!(
-        body,
-        "`{}` causes [`{}`]({}#{}).\n",
-        event.name,
-        command.name,
-        domain_path(&ir.domain(&command.domain).name),
-        slug(&relative(&command.name, &ir.domain(&command.domain).name))
-    );
+    if let Some(recorded) = refs_sentence(&binding.refs) {
+        under.prose(recorded);
+    }
+    under.prose(vec![
+        Inline::code(event.name.to_string()),
+        Inline::text(" causes "),
+        Inline::code_link(
+            Target::Anchor {
+                page: domain_page_id(&owner.name),
+                anchor: slug(&relative(&command.name, &owner.name)),
+            },
+            command.name.to_string(),
+        ),
+        Inline::text("."),
+    ]);
 
-    body.push_str(&binding_flow(ir, binding));
-    body.push('\n');
+    under.push(Block::Diagram {
+        kind: DiagramKind::BindingFlow,
+        source: binding_flow(ir, binding),
+    });
 
-    let _ = writeln!(body, "{}\n", delivery_sentence(binding.delivery, command));
-    let _ = writeln!(body, "{}\n", failure_sentence(ir, binding));
+    under.prose(delivery_sentence(binding.delivery, command));
+    under.prose(failure_sentence(ir, binding));
 
     if binding.mapping.is_empty() {
-        let _ = writeln!(
-            body,
+        under.sentence(
             "It fills none of the command's input: every value the command needs has to come from \
-             somewhere else.\n"
+             somewhere else.",
         );
     } else {
-        let _ = writeln!(body, "It fills the command's input like this:\n");
-        for mapping in &binding.mapping {
-            let _ = writeln!(body, "{}", mapping_bullet(mapping));
-        }
-        body.push('\n');
+        under.sentence("It fills the command's input like this:");
+        under.push(bullets(
+            binding.mapping.iter().map(mapping_bullet).collect(),
+        ));
     }
+
+    section(
+        2,
+        vec![Inline::code(binding.name.to_string())],
+        Some(BindingRef::new(binding.name.clone()).into()),
+        under.finish(),
+    )
 }
 
 // ---- prose ------------------------------------------------------------------------------------
 
 /// A named type as a sentence, because its shape is one fact and a table of one fact is furniture.
-fn type_prose(declared: &ResolvedType) -> String {
-    let name = code(&declared.name.to_string());
-    let mut out = match &declared.body {
+fn type_prose(declared: &ResolvedType) -> Vec<Block> {
+    let name = Inline::code(declared.name.to_string());
+    let mut out = Blocks::new();
+    match &declared.body {
         ResolvedBody::Newtype { of, invariants } => {
-            let mut text = format!(
-                "{name} wraps `{of}` and is not interchangeable with one: the whole value of naming \
-                 it separately is the crossings the model then refuses."
-            );
-            text.push_str(&invariants_clause(invariants));
-            text
-        }
-        ResolvedBody::Struct { fields, invariants } => {
-            let mut text = format!(
-                "{name} is a record of {}:\n\n",
-                plural(fields.len(), "field")
-            );
-            for field in fields {
-                let _ = writeln!(text, "{}", field_bullet(field));
-            }
+            let mut text = vec![
+                name,
+                Inline::text(" wraps "),
+                Inline::code(of.to_string()),
+                Inline::text(
+                    " and is not interchangeable with one: the whole value of naming it separately \
+                     is the crossings the model then refuses.",
+                ),
+            ];
             let clause = invariants_clause(invariants);
             if !clause.is_empty() {
-                let _ = write!(text, "\n{}", clause.trim_start());
+                text.push(Inline::text(" "));
+                text.extend(clause);
             }
-            text
+            out.prose(text);
         }
-        ResolvedBody::Enum { variants } => format!(
-            "{name} is one of {}.",
-            list(&variants.iter().map(|it| code(it)).collect())
-        ),
+        ResolvedBody::Struct { fields, invariants } => {
+            out.prose(vec![
+                name,
+                Inline::text(format!(
+                    " is a record of {}:",
+                    plural(fields.len(), "field")
+                )),
+            ]);
+            out.push(bullets(fields.iter().map(field_bullet).collect()));
+            let clause = invariants_clause(invariants);
+            if !clause.is_empty() {
+                out.prose(clause);
+            }
+        }
+        ResolvedBody::Enum { variants } => {
+            let mut text = vec![name, Inline::text(" is one of ")];
+            text.extend(inline_list(names(variants)));
+            text.push(Inline::text("."));
+            out.prose(text);
+        }
         ResolvedBody::Union { tag, variants } => {
-            let mut text = format!(
-                "{name} is one of {}, told apart by a `{tag}` field — tagged, so a decoder never \
-                 has to guess which branch it is reading:\n\n",
-                plural(variants.len(), "shape")
-            );
-            for (variant, type_ref) in variants {
-                let _ = writeln!(text, "- `{variant}` — `{type_ref}`");
-            }
-            text
+            out.prose(vec![
+                name,
+                Inline::text(format!(
+                    " is one of {}, told apart by a ",
+                    plural(variants.len(), "shape")
+                )),
+                Inline::code(tag.clone()),
+                Inline::text(
+                    " field — tagged, so a decoder never has to guess which branch it is reading:",
+                ),
+            ]);
+            out.push(bullets(
+                variants
+                    .iter()
+                    .map(|(variant, type_ref)| {
+                        vec![
+                            Inline::code(variant.clone()),
+                            Inline::text(" — "),
+                            Inline::code(type_ref.to_string()),
+                        ]
+                    })
+                    .collect(),
+            ));
         }
-    };
-    if let Some(display) = &declared.naming.display {
-        let _ = write!(out, "\n\nShown to a person as \"{display}\".");
     }
-    out
+    if let Some(display) = &declared.naming.display {
+        out.sentence(format!("Shown to a person as \"{display}\"."));
+    }
+    out.finish()
 }
 
 /// One outcome, including the two things a name alone loses: what decides it, and what it costs.
@@ -1130,35 +1363,49 @@ fn outcome_prose(
     ir: &EssIr,
     command: &ResolvedCommand,
     outcome: &ess_compiler::ir::ResolvedOutcome,
-) -> String {
-    let mut out = format!("**`{}`** — ", outcome.name);
+) -> Vec<Inline> {
+    let mut out = vec![
+        Inline::Strong {
+            text: vec![Inline::code(outcome.name.to_string())],
+        },
+        Inline::text(" — "),
+    ];
     if let Some(summary) = &outcome.summary {
-        let _ = write!(out, "{summary} ");
+        out.push(Inline::text(format!("{summary} ")));
     }
-    let _ = write!(
-        out,
-        "{}",
-        condition_sentence(ir, command, &outcome.condition)
-    );
-    let _ = write!(out, " {}", effect_sentence(ir, outcome.subject.as_ref()));
+    out.extend(condition_sentence(ir, command, &outcome.condition));
+    out.push(Inline::text(" "));
+    out.extend(effect_sentence(ir, outcome.subject.as_ref()));
     if let Some(error) = &outcome.error {
         let reported = ir.error(error);
-        let _ = write!(out, " It reports `{}`", reported.name);
+        out.push(Inline::text(" It reports "));
+        out.push(Inline::code(reported.name.to_string()));
         if reported.fields.is_empty() {
-            out.push('.');
+            out.push(Inline::text("."));
         } else {
-            let carried = list(&reported.fields.iter().map(|it| code(&it.name)).collect());
-            let _ = write!(out, ", carrying {carried}.");
+            out.push(Inline::text(", carrying "));
+            out.extend(inline_list(
+                reported
+                    .fields
+                    .iter()
+                    .map(|it| vec![Inline::code(it.name.clone())])
+                    .collect(),
+            ));
+            out.push(Inline::text("."));
         }
     }
     match outcome.emits.as_slice() {
-        [] => out.push_str(" It emits nothing."),
+        [] => out.push(Inline::text(" It emits nothing.")),
         emitted => {
-            let names = list(&emitted.iter().map(|it| code(&it.to_string())).collect());
-            let _ = write!(out, " It emits {names}.");
+            out.push(Inline::text(" It emits "));
+            out.extend(inline_list(names(emitted)));
+            out.push(Inline::text("."));
         }
     }
-    let _ = write!(out, " {}", strategy_sentence(outcome.test_strategy));
+    out.push(Inline::text(format!(
+        " {}",
+        strategy_sentence(outcome.test_strategy)
+    )));
     out
 }
 
@@ -1167,35 +1414,42 @@ fn outcome_prose(
 /// Written for every outcome and not only for the ones with a subject, because silence is the one
 /// answer a reader cannot interpret: "this branch changes no entity" and "the projection dropped the
 /// field" look identical on a page, and the first is a fact about the system.
-fn effect_sentence(ir: &EssIr, subject: Option<&ResolvedSubject>) -> String {
+fn effect_sentence(ir: &EssIr, subject: Option<&ResolvedSubject>) -> Vec<Inline> {
     let Some(subject) = subject else {
-        return "No entity in this specification changes.".to_owned();
+        return vec![Inline::text("No entity in this specification changes.")];
     };
     let entity = ir.entity(&subject.entity);
-    let effect = match &subject.effect {
-        ResolvedEffect::Creates => format!(
-            "It creates a `{}`, which starts in `{}`.",
-            entity.name, entity.lifecycle.initial
-        ),
-        ResolvedEffect::Moves { transition } => format!(
-            "It moves a `{}` from {} to `{}`, along the declared move `{}`.",
-            entity.name,
-            list(
-                &transition
-                    .from
-                    .iter()
-                    .map(|state| code(&state.to_string()))
-                    .collect()
-            ),
-            transition.to,
-            transition.name
-        ),
-        ResolvedEffect::Updates => format!(
-            "It changes a `{}` without moving it along its lifecycle.",
-            entity.name
-        ),
+    let mut out = match &subject.effect {
+        ResolvedEffect::Creates => vec![
+            Inline::text("It creates a "),
+            Inline::code(entity.name.to_string()),
+            Inline::text(", which starts in "),
+            Inline::code(entity.lifecycle.initial.to_string()),
+            Inline::text("."),
+        ],
+        ResolvedEffect::Moves { transition } => {
+            let mut moved = vec![
+                Inline::text("It moves a "),
+                Inline::code(entity.name.to_string()),
+                Inline::text(" from "),
+            ];
+            moved.extend(inline_list(names(&transition.from)));
+            moved.push(Inline::text(" to "));
+            moved.push(Inline::code(transition.to.to_string()));
+            moved.push(Inline::text(", along the declared move "));
+            moved.push(Inline::code(transition.name.clone()));
+            moved.push(Inline::text("."));
+            moved
+        }
+        ResolvedEffect::Updates => vec![
+            Inline::text("It changes a "),
+            Inline::code(entity.name.to_string()),
+            Inline::text(" without moving it along its lifecycle."),
+        ],
     };
-    format!("{effect} {}", instance_sentence(ir, subject))
+    out.push(Inline::text(" "));
+    out.extend(instance_sentence(ir, subject));
+    out
 }
 
 /// Which instance the branch acts on, and where a reader finds its identity.
@@ -1204,18 +1458,21 @@ fn effect_sentence(ir: &EssIr, subject: Option<&ResolvedSubject>) -> String {
 /// The two sentences differ because the two surfaces do: an existing instance is named by the caller
 /// in the request, and a new one is announced by the event the branch emits, because it did not
 /// exist when the request was made.
-fn instance_sentence(ir: &EssIr, subject: &ResolvedSubject) -> String {
+fn instance_sentence(ir: &EssIr, subject: &ResolvedSubject) -> Vec<Inline> {
     let field = subject.instance.field();
     match subject.instance.event() {
-        None => format!(
-            "The instance is the one named by the input field {}.",
-            code(&field.name)
-        ),
-        Some(event) => format!(
-            "The new instance's identity is published as {} on `{}`.",
-            code(&field.name),
-            ir.event(event).name
-        ),
+        None => vec![
+            Inline::text("The instance is the one named by the input field "),
+            Inline::code(field.name.clone()),
+            Inline::text("."),
+        ],
+        Some(event) => vec![
+            Inline::text("The new instance's identity is published as "),
+            Inline::code(field.name.clone()),
+            Inline::text(" on "),
+            Inline::code(ir.event(event).name.to_string()),
+            Inline::text("."),
+        ],
     }
 }
 
@@ -1230,41 +1487,43 @@ fn condition_sentence(
     ir: &EssIr,
     command: &ResolvedCommand,
     condition: &ResolvedCondition,
-) -> String {
+) -> Vec<Inline> {
     match condition {
-        ResolvedCondition::When { predicate } => {
-            format!("Taken when `{predicate}` holds of the input.")
-        }
-        ResolvedCondition::Otherwise => {
-            "The default branch, taken when no other outcome's condition matched.".to_owned()
-        }
-        ResolvedCondition::External { cause } => format!(
-            "Decided outside the input: {cause}. No predicate over the input reaches this branch, \
-             and saying `when: false` instead would have claimed it is unreachable, which is a \
-             different and false statement."
-        ),
+        ResolvedCondition::When { predicate } => vec![
+            Inline::text("Taken when "),
+            Inline::code(predicate.to_string()),
+            Inline::text(" holds of the input."),
+        ],
+        ResolvedCondition::Otherwise => vec![Inline::text(
+            "The default branch, taken when no other outcome's condition matched.",
+        )],
+        ResolvedCondition::External { cause } => vec![
+            Inline::text(format!(
+                "Decided outside the input: {cause}. No predicate over the input reaches this \
+                 branch, and saying "
+            )),
+            Inline::code("when: false"),
+            Inline::text(
+                " instead would have claimed it is unreachable, which is a different and false \
+                 statement.",
+            ),
+        ],
         ResolvedCondition::WrongState => {
-            let mut text = "Taken when the subject is resting in a state none of this command's \
-                            moves start from"
-                .to_owned();
+            let mut out = vec![Inline::text(
+                "Taken when the subject is resting in a state none of this command's moves start \
+                 from",
+            )];
             for (handle, states) in ir.wrong_states(command) {
-                let _ = write!(
-                    text,
-                    " — a `{}` in {}",
-                    ir.entity(handle).name,
-                    list(
-                        &states
-                            .iter()
-                            .map(|state| code(&state.to_string()))
-                            .collect()
-                    )
-                );
+                out.push(Inline::text(" — a "));
+                out.push(Inline::code(ir.entity(handle).name.to_string()));
+                out.push(Inline::text(" in "));
+                out.extend(inline_list(names(states)));
             }
-            text.push_str(
+            out.push(Inline::text(
                 ", which is what is left of the lifecycle once this command's own moves are taken \
                  away. The document lists none of it.",
-            );
-            text
+            ));
+            out
         }
     }
 }
@@ -1292,14 +1551,21 @@ fn strategy_sentence(strategy: TestStrategy) -> &'static str {
 }
 
 /// How many times the command may run, and what that obliges the command to be.
-fn delivery_sentence(delivery: Delivery, command: &ResolvedCommand) -> String {
+fn delivery_sentence(delivery: Delivery, command: &ResolvedCommand) -> Vec<Inline> {
     match delivery {
-        Delivery::AtLeastOnce => format!(
-            "Delivered **at least once**, so `{}` must be idempotent: the same event arriving twice \
-             must not do the work twice. \"Exactly once\" is what everyone believes they have until \
-             a retry proves otherwise, which is why this is written down rather than assumed.",
-            command.name
-        ),
+        Delivery::AtLeastOnce => vec![
+            Inline::text("Delivered "),
+            Inline::Strong {
+                text: vec![Inline::text("at least once")],
+            },
+            Inline::text(", so "),
+            Inline::code(command.name.to_string()),
+            Inline::text(
+                " must be idempotent: the same event arriving twice must not do the work twice. \
+                 \"Exactly once\" is what everyone believes they have until a retry proves \
+                 otherwise, which is why this is written down rather than assumed.",
+            ),
+        ],
     }
 }
 
@@ -1308,130 +1574,179 @@ fn delivery_sentence(delivery: Delivery, command: &ResolvedCommand) -> String {
 /// The escalation's event is named rather than left as "surfaced to a person somehow", because the
 /// page is what a conformance target is written against: a sentence that names no observable
 /// describes a requirement nobody can be asked to prove.
-fn failure_sentence(ir: &EssIr, binding: &ResolvedBinding) -> String {
+fn failure_sentence(ir: &EssIr, binding: &ResolvedBinding) -> Vec<Inline> {
     match binding.on_failure() {
-        ResolvedFailure::Retry => {
-            "When it fails it is **retried**, on whatever schedule the transport provides. Nothing \
-             here says how many times, so nothing here says when it stops. A retry publishes \
-             nothing of its own, because it is already observable: it is another invocation of the \
-             command."
-                .to_owned()
-        }
-        ResolvedFailure::Escalate { emits } => format!(
-            "When it fails it is **escalated** — surfaced to a person, who decides what happens \
-             next — and the system publishes `{}` to say so. Surfacing something to a person \
-             happens outside the system, so that event is the only way a reader, a test or a \
-             conformance target can tell that the escalation happened at all.",
-            ir.event(emits).name
-        ),
-        ResolvedFailure::Drop => {
-            "When it fails the work is **dropped**. The system loses it, silently, and that is a \
-             decision someone made deliberately: `drop` is never a default, so this word was \
-             typed. Nothing is published, on purpose — an event here would make this a \
-             notification, which is a different decision."
-                .to_owned()
-        }
+        ResolvedFailure::Retry => vec![
+            Inline::text("When it fails it is "),
+            Inline::Strong {
+                text: vec![Inline::text("retried")],
+            },
+            Inline::text(
+                ", on whatever schedule the transport provides. Nothing here says how many times, \
+                 so nothing here says when it stops. A retry publishes nothing of its own, because \
+                 it is already observable: it is another invocation of the command.",
+            ),
+        ],
+        ResolvedFailure::Escalate { emits } => vec![
+            Inline::text("When it fails it is "),
+            Inline::Strong {
+                text: vec![Inline::text("escalated")],
+            },
+            Inline::text(
+                " — surfaced to a person, who decides what happens next — and the system publishes ",
+            ),
+            Inline::code(ir.event(emits).name.to_string()),
+            Inline::text(
+                " to say so. Surfacing something to a person happens outside the system, so that \
+                 event is the only way a reader, a test or a conformance target can tell that the \
+                 escalation happened at all.",
+            ),
+        ],
+        ResolvedFailure::Drop => vec![
+            Inline::text("When it fails the work is "),
+            Inline::Strong {
+                text: vec![Inline::text("dropped")],
+            },
+            Inline::text(
+                ". The system loses it, silently, and that is a decision someone made \
+                 deliberately: ",
+            ),
+            Inline::code("drop"),
+            Inline::text(
+                " is never a default, so this word was typed. Nothing is published, on purpose — \
+                 an event here would make this a notification, which is a different decision.",
+            ),
+        ],
     }
 }
 
 /// One filled command input, and the reason its types were allowed to meet.
-fn mapping_bullet(mapping: &ResolvedMapping) -> String {
-    let mut out = format!("- `{}` (`{}`) ← ", mapping.target, mapping.target_type);
+fn mapping_bullet(mapping: &ResolvedMapping) -> Vec<Inline> {
+    let mut out = vec![
+        Inline::code(mapping.target.clone()),
+        Inline::text(" ("),
+        Inline::code(mapping.target_type.to_string()),
+        Inline::text(") ← "),
+    ];
     match &mapping.value {
         ResolvedMappingValue::EventField { field, type_ref } => {
-            let _ = write!(out, "the event's `{field}` (`{type_ref}`)");
+            out.push(Inline::text("the event's "));
+            out.push(Inline::code(field.clone()));
+            out.push(Inline::text(" ("));
+            out.push(Inline::code(type_ref.to_string()));
+            out.push(Inline::text(")"));
             if let Some(because) = &mapping.conversion {
-                let _ = write!(
-                    out,
+                out.push(Inline::text(format!(
                     ". The two types differ, and the crossing is declared: \"{}.\"",
                     because.trim().trim_end_matches('.')
-                );
+                )));
             } else {
-                out.push('.');
+                out.push(Inline::text("."));
             }
         }
         ResolvedMappingValue::Literal { value } => {
-            let _ = write!(
-                out,
-                "the literal `{value}`. Nothing in the model says how to read that as a `{}`, so \
-                 the compiler took it on trust rather than checking it.",
-                mapping.target_type
-            );
+            out.push(Inline::text("the literal "));
+            out.push(Inline::code(value.clone()));
+            out.push(Inline::text(
+                ". Nothing in the model says how to read that as a ",
+            ));
+            out.push(Inline::code(mapping.target_type.to_string()));
+            out.push(Inline::text(
+                ", so the compiler took it on trust rather than checking it.",
+            ));
         }
     }
     out
 }
 
 /// A component's ownership, which is the only claim it makes.
-fn component_prose(ir: &EssIr, component: &ResolvedComponent) -> String {
-    let mut out = format!("**`{}`**", component.name);
+fn component_prose(ir: &EssIr, component: &ResolvedComponent) -> Vec<Inline> {
+    let mut out = vec![Inline::Strong {
+        text: vec![Inline::code(component.name.to_string())],
+    }];
     if let Some(display) = &component.naming.display {
-        let _ = write!(out, " (shown as \"{display}\")");
+        out.push(Inline::text(format!(" (shown as \"{display}\")")));
     }
     if let Some(summary) = &component.naming.summary {
-        let _ = write!(out, " — {summary}");
+        out.push(Inline::text(format!(" — {summary}")));
     } else {
-        out.push('.');
+        out.push(Inline::text("."));
     }
-    let _ = write!(out, " It owns {}.", owned_list(ir, component));
+    out.push(Inline::text(" It owns "));
+    out.extend(owned_list(ir, component));
+    out.push(Inline::text("."));
     if component.accepts.is_empty() {
-        out.push_str(" It accepts no commands.");
+        out.push(Inline::text(" It accepts no commands."));
     } else {
-        let names = list(
-            &component
-                .accepts
-                .iter()
-                .map(|it| code(&it.to_string()))
-                .collect(),
-        );
-        let _ = write!(out, " It accepts {names}.");
+        out.push(Inline::text(" It accepts "));
+        out.extend(inline_list(names(&component.accepts)));
+        out.push(Inline::text("."));
     }
     if component.publishes.is_empty() {
-        out.push_str(" It publishes no events.");
+        out.push(Inline::text(" It publishes no events."));
     } else {
-        let names = list(
-            &component
-                .publishes
-                .iter()
-                .map(|it| code(&it.to_string()))
-                .collect(),
-        );
-        let _ = write!(out, " It publishes {names}.");
+        out.push(Inline::text(" It publishes "));
+        out.extend(inline_list(names(&component.publishes)));
+        out.push(Inline::text("."));
     }
     out
 }
 
+/// A run of handles as the monospaced names a reader knows them by.
+fn names<'a, T: ToString + 'a>(handles: impl IntoIterator<Item = &'a T>) -> Vec<Vec<Inline>> {
+    handles
+        .into_iter()
+        .map(|handle| vec![Inline::code(handle.to_string())])
+        .collect()
+}
+
 /// The contexts a component owns, or the fact that it owns none.
-fn owned_list(ir: &EssIr, component: &ResolvedComponent) -> String {
+fn owned_list(ir: &EssIr, component: &ResolvedComponent) -> Vec<Inline> {
     if component.owns.is_empty() {
-        return "no bounded context — it is a unit of ownership that owns nothing, which is worth a \
-                second look"
-            .to_owned();
+        return vec![Inline::text(
+            "no bounded context — it is a unit of ownership that owns nothing, which is worth a \
+             second look",
+        )];
     }
-    list(
-        &component
+    inline_list(
+        component
             .owns
             .iter()
             .map(|handle| {
                 let domain = ir.domain(handle);
-                format!("[`{}`]({})", domain.name, domain_path(&domain.name))
+                vec![Inline::code_link(
+                    Target::Page {
+                        page: domain_page_id(&domain.name),
+                    },
+                    domain.name.to_string(),
+                )]
             })
             .collect(),
     )
 }
 
 /// One line in the index for a bounded context, with the numbers rather than an adjective.
-fn domain_index_entry(ir: &EssIr, domain: &ResolvedDomain) -> String {
-    let mut out = format!(
-        "- **[{}]({})** (`{}`)",
-        display_of(&domain.naming, &domain.name),
-        domain_path(&domain.name),
-        domain.name
-    );
+fn domain_index_entry(ir: &EssIr, domain: &ResolvedDomain) -> Vec<Inline> {
+    let mut out = vec![
+        Inline::Strong {
+            text: vec![Inline::Link {
+                to: Target::Page {
+                    page: domain_page_id(&domain.name),
+                },
+                text: vec![Inline::text(display_of(&domain.naming, &domain.name))],
+            }],
+        },
+        Inline::text(" ("),
+        Inline::code(domain.name.to_string()),
+        Inline::text(")"),
+    ];
     if let Some(summary) = &domain.naming.summary {
-        let _ = write!(out, " — {summary}");
+        out.push(Inline::text(format!(" — {summary}")));
     }
-    let _ = write!(out, " {}.", capitalise(&list(&member_counts(ir, domain))));
+    out.push(Inline::text(format!(
+        " {}.",
+        capitalise(&list(&member_counts(ir, domain)))
+    )));
     out
 }
 
@@ -1485,60 +1800,77 @@ fn stateless_sentence(workload: &ResolvedWorkload) -> &'static str {
 }
 
 /// What a construct is called, on the wire and to a person.
-fn naming_sentence(naming: &Naming, name: &QualifiedName) -> String {
-    let mut parts = Vec::new();
+fn naming_sentence(naming: &Naming, name: &QualifiedName) -> Vec<Inline> {
+    let mut parts: Vec<Vec<Inline>> = Vec::new();
     if let Some(display) = &naming.display {
-        parts.push(format!("shown to a person as \"{display}\""));
+        parts.push(vec![Inline::text(format!(
+            "shown to a person as \"{display}\""
+        ))]);
     }
     if let Some(wire) = &naming.wire {
-        parts.push(format!("called `{wire}` on the wire"));
+        parts.push(vec![
+            Inline::text("called "),
+            Inline::code(wire.clone()),
+            Inline::text(" on the wire"),
+        ]);
     }
-    if parts.is_empty() {
-        format!("`{name}`.")
-    } else {
-        format!("`{name}`, {}.", list(&parts))
+    let mut out = vec![Inline::code(name.to_string())];
+    if !parts.is_empty() {
+        out.push(Inline::text(", "));
+        out.extend(inline_list(parts));
     }
+    out.push(Inline::text("."));
+    out
 }
 
 /// How an instance is identified, and why the field's *name* is on this page at all.
-fn identity_sentence(entity: &ResolvedEntity) -> String {
-    let mut out = format!(
-        "An instance is identified by `{}`, a `{}`",
-        entity.identity.name, entity.identity.type_ref
-    );
+fn identity_sentence(entity: &ResolvedEntity) -> Vec<Inline> {
+    let mut out = vec![
+        Inline::text("An instance is identified by "),
+        Inline::code(entity.identity.name.clone()),
+        Inline::text(", a "),
+        Inline::code(entity.identity.type_ref.to_string()),
+    ];
     if let Some(wire) = &entity.identity.naming.wire {
         if wire != &entity.identity.name {
-            let _ = write!(out, ", called `{wire}` on the wire");
+            out.push(Inline::text(", called "));
+            out.push(Inline::code(wire.clone()));
+            out.push(Inline::text(" on the wire"));
         }
     }
     if let Some(display) = &entity.identity.naming.display {
-        let _ = write!(out, ", shown as \"{display}\"");
+        out.push(Inline::text(format!(", shown as \"{display}\"")));
     }
-    out.push_str(
+    out.push(Inline::text(
         ". The name is part of the model and not a convention: a view projects the identity under \
          that name, so a projection inventing its own would disagree with the view.",
-    );
+    ));
     out
 }
 
 /// What must hold of an instance at rest, or the fact that nothing does.
-fn entity_invariants_sentence(entity: &ResolvedEntity) -> String {
+fn entity_invariants_sentence(entity: &ResolvedEntity) -> Vec<Inline> {
     if entity.invariants.is_empty() {
-        return "No invariant is declared, so nothing here constrains an instance at rest."
-            .to_owned();
+        return vec![Inline::text(
+            "No invariant is declared, so nothing here constrains an instance at rest.",
+        )];
     }
-    format!(
-        "Every instance satisfies {} — a predicate over this entity's own fields, checked against \
-         them rather than stored as a sentence, so an invariant reading something the entity does \
-         not have is refused instead of documented.",
-        list(
-            &entity
-                .invariants
-                .iter()
-                .map(|it| code(&it.statement))
-                .collect()
-        )
-    )
+    let mut out = vec![Inline::text("Every instance satisfies ")];
+    out.extend(inline_list(statements(&entity.invariants)));
+    out.push(Inline::text(
+        " — a predicate over this entity's own fields, checked against them rather than stored as \
+         a sentence, so an invariant reading something the entity does not have is refused instead \
+         of documented.",
+    ));
+    out
+}
+
+/// The invariants of a construct, as the predicates a reader can check them against.
+fn statements(invariants: &[Invariant]) -> Vec<Vec<Inline>> {
+    invariants
+        .iter()
+        .map(|it| vec![Inline::code(it.statement.clone())])
+        .collect()
 }
 
 /// The states an instance can be in, and where that enum comes from.
@@ -1546,50 +1878,45 @@ fn entity_invariants_sentence(entity: &ResolvedEntity) -> String {
 /// The states are read from the lifecycle rather than from the enum's variants: both say the same
 /// thing, and taking them from the declaration that owns the rule means this page cannot show a
 /// state the diagram below does not.
-fn state_type_sentence(entity: &ResolvedEntity) -> String {
-    format!(
-        "Its state is a `{}`, one of {}. That enum is synthesised from the lifecycle rather than \
-         declared beside it, so the states a view's filter compares and the states drawn below \
-         cannot disagree.",
-        entity.state_type,
-        list(
-            &entity
-                .lifecycle
-                .states
-                .iter()
-                .map(|state| code(state.as_str()))
-                .collect()
-        )
-    )
+fn state_type_sentence(entity: &ResolvedEntity) -> Vec<Inline> {
+    let mut out = vec![
+        Inline::text("Its state is a "),
+        Inline::code(entity.state_type.to_string()),
+        Inline::text(", one of "),
+    ];
+    out.extend(inline_list(names(&entity.lifecycle.states)));
+    out.push(Inline::text(
+        ". That enum is synthesised from the lifecycle rather than declared beside it, so the \
+         states a view's filter compares and the states drawn below cannot disagree.",
+    ));
+    out
 }
 
 /// Where an instance starts, and where it is allowed to stop.
-fn resting_sentence(lifecycle: &StateMachine) -> String {
-    let mut out = format!("An instance is created in `{}`.", lifecycle.initial);
+fn resting_sentence(lifecycle: &StateMachine) -> Vec<Inline> {
+    let mut out = vec![
+        Inline::text("An instance is created in "),
+        Inline::code(lifecycle.initial.to_string()),
+        Inline::text("."),
+    ];
     if lifecycle.terminal.is_empty() {
-        out.push_str(
+        out.push(Inline::text(
             " No state is terminal: nothing in this lifecycle says an instance may stop moving.",
-        );
+        ));
         return out;
     }
-    let _ = write!(
-        out,
-        " {} {} terminal, so an instance may rest there forever. That is declared rather than \
-         inferred from having no way out: an entity that cannot leave a state is either finished or \
-         stuck, and only its author knows which.",
-        capitalise(&list(
-            &lifecycle
-                .terminal
-                .iter()
-                .map(|state| code(state.as_str()))
-                .collect()
-        )),
+    out.push(Inline::text(" "));
+    out.extend(inline_list(names(&lifecycle.terminal)));
+    out.push(Inline::text(format!(
+        " {} terminal, so an instance may rest there forever. That is declared rather than \
+         inferred from having no way out: an entity that cannot leave a state is either finished \
+         or stuck, and only its author knows which.",
         if lifecycle.terminal.len() == 1 {
             "is"
         } else {
             "are"
         }
-    );
+    )));
     out
 }
 
@@ -1598,55 +1925,71 @@ fn observed_by_sentence(
     ir: &EssIr,
     domain: &ResolvedDomain,
     views: Option<&Vec<&ResolvedView>>,
-) -> String {
+) -> Vec<Inline> {
     let Some(views) = views else {
-        return "No view projects it, so nothing outside this context is promised a way to observe \
-                one."
-            .to_owned();
+        return vec![Inline::text(
+            "No view projects it, so nothing outside this context is promised a way to observe \
+             one.",
+        )];
     };
-    let links: Vec<String> = views
+    let links: Vec<Vec<Inline>> = views
         .iter()
-        .map(|view| section_link(ir, domain, &view.name, &view.domain))
+        .map(|view| vec![section_link(ir, domain, &view.name, &view.domain)])
         .collect();
-    format!(
-        "{} {} it: {}.",
+    let mut out = vec![Inline::text(format!(
+        "{} {} it: ",
         capitalise(&plural(links.len(), "view")),
         if links.len() == 1 {
             "projects"
         } else {
             "project"
-        },
-        list(&links)
-    )
+        }
+    ))];
+    out.extend(inline_list(links));
+    out.push(Inline::text("."));
+    out
 }
 
 /// Which instances a view holds, including the case where it holds all of them.
-fn filter_sentence(view: &ResolvedView) -> String {
+fn filter_sentence(view: &ResolvedView) -> Vec<Inline> {
     match &view.filter {
-        None => "It contains every instance of that entity: no filter narrows it, which is a \
-                 decision somebody made and not a line somebody omitted."
-            .to_owned(),
-        Some(filter) => format!(
-            "It contains the instances where `{filter}` holds, and only those — so an instance a \
-             caller cannot find in here has been filtered out rather than lost."
-        ),
+        None => vec![Inline::text(
+            "It contains every instance of that entity: no filter narrows it, which is a decision \
+             somebody made and not a line somebody omitted.",
+        )],
+        Some(filter) => vec![
+            Inline::text("It contains the instances where "),
+            Inline::code(filter.to_string()),
+            Inline::text(
+                " holds, and only those — so an instance a caller cannot find in here has been \
+                 filtered out rather than lost.",
+            ),
+        ],
     }
 }
 
 /// How soon a view reflects a command that has already returned.
-fn consistency_sentence(consistency: Consistency) -> &'static str {
-    match consistency {
-        Consistency::ReadYourWrites => {
-            "**Read-your-writes**: it is current the moment the command that changed it returns. A \
-             caller that has just created an invoice and cannot see it in here has been told a lie \
-             about what it did."
-        }
-        Consistency::Eventual => {
-            "**Eventual**: it catches up some time after the command returns, so a caller that \
-             reads it immediately may legitimately not see its own write yet. Nothing here says how \
-             long that takes, so nothing here lets a caller wait a fixed time and call it correct."
-        }
-    }
+fn consistency_sentence(consistency: Consistency) -> Vec<Inline> {
+    let (name, rest) = match consistency {
+        Consistency::ReadYourWrites => (
+            "Read-your-writes",
+            ": it is current the moment the command that changed it returns. A caller that has \
+             just created an invoice and cannot see it in here has been told a lie about what it \
+             did.",
+        ),
+        Consistency::Eventual => (
+            "Eventual",
+            ": it catches up some time after the command returns, so a caller that reads it \
+             immediately may legitimately not see its own write yet. Nothing here says how long \
+             that takes, so nothing here lets a caller wait a fixed time and call it correct.",
+        ),
+    };
+    vec![
+        Inline::Strong {
+            text: vec![Inline::text(name)],
+        },
+        Inline::text(rest),
+    ]
 }
 
 /// What that consistency obliges a generated test to do, which is where it stops being a word.
@@ -1666,48 +2009,59 @@ fn assertion_sentence(style: AssertionStyle) -> &'static str {
 }
 
 /// The commands an actor may invoke, as links to where each one is written.
-fn grants_sentence(ir: &EssIr, domain: &ResolvedDomain, actor: &ResolvedActor) -> String {
+fn grants_sentence(ir: &EssIr, domain: &ResolvedDomain, actor: &ResolvedActor) -> Vec<Inline> {
     if actor.may.is_empty() {
-        return "It may invoke nothing: it observes. \"Who is in this picture\" is part of what a \
-                specification describes, so an actor with no grant is a statement rather than an \
-                unfinished line."
-            .to_owned();
+        return vec![Inline::text(
+            "It may invoke nothing: it observes. \"Who is in this picture\" is part of what a \
+             specification describes, so an actor with no grant is a statement rather than an \
+             unfinished line.",
+        )];
     }
-    let links: Vec<String> = actor
-        .may
-        .iter()
-        .map(|handle| {
-            let command = ir.command(handle);
-            section_link(ir, domain, &command.name, &command.domain)
-        })
-        .collect();
-    format!("It may invoke {}.", list(&links))
+    let mut out = vec![Inline::text("It may invoke ")];
+    out.extend(inline_list(
+        actor
+            .may
+            .iter()
+            .map(|handle| {
+                let command = ir.command(handle);
+                vec![section_link(ir, domain, &command.name, &command.domain)]
+            })
+            .collect(),
+    ));
+    out.push(Inline::text("."));
+    out
 }
 
 /// The invariants a type's values satisfy, as a clause rather than a heading.
-fn invariants_clause(invariants: &[Invariant]) -> String {
+fn invariants_clause(invariants: &[Invariant]) -> Vec<Inline> {
     if invariants.is_empty() {
-        return String::new();
+        return Vec::new();
     }
-    format!(
-        " Every value satisfies {}.",
-        list(&invariants.iter().map(|it| code(&it.statement)).collect())
-    )
+    let mut out = vec![Inline::text("Every value satisfies ")];
+    out.extend(inline_list(statements(invariants)));
+    out.push(Inline::text("."));
+    out
 }
 
 /// One field, with the two things its type does not say.
-fn field_bullet(field: &ResolvedField) -> String {
-    let mut out = format!("- `{}` — `{}`", field.name, field.type_ref);
+fn field_bullet(field: &ResolvedField) -> Vec<Inline> {
+    let mut out = vec![
+        Inline::code(field.name.clone()),
+        Inline::text(" — "),
+        Inline::code(field.type_ref.to_string()),
+    ];
     if field.type_ref.is_optional() {
-        out.push_str(", which may be absent");
+        out.push(Inline::text(", which may be absent"));
     }
     if let Some(wire) = &field.naming.wire {
         if wire != &field.name {
-            let _ = write!(out, ", called `{wire}` on the wire");
+            out.push(Inline::text(", called "));
+            out.push(Inline::code(wire.clone()));
+            out.push(Inline::text(" on the wire"));
         }
     }
     if let Some(display) = &field.naming.display {
-        let _ = write!(out, ", shown as \"{display}\"");
+        out.push(Inline::text(format!(", shown as \"{display}\"")));
     }
     out
 }
@@ -1717,49 +2071,68 @@ fn field_bullet(field: &ResolvedField) -> String {
 /// A binding is the second way an event happens. Leaving it out would print "no command in this
 /// system emits it, so something outside the specification does" on the page of an event this
 /// specification is the only possible source of, which is the reverse of the truth.
-fn emitters(ir: &EssIr, event: &ResolvedEvent) -> Vec<String> {
+fn emitters(ir: &EssIr, event: &ResolvedEvent) -> Vec<Vec<Inline>> {
     let mut out = Vec::new();
     for binding in ir.bindings().values() {
         if let ResolvedFailure::Escalate { emits } = binding.on_failure() {
             if emits.name() == &event.name {
-                out.push(format!(
-                    "Emitted when binding `{}` escalates: `{}` failed and a person was told.",
-                    binding.name,
-                    ir.command(&binding.command).name
-                ));
+                out.push(vec![
+                    Inline::text("Emitted when binding "),
+                    Inline::code(binding.name.to_string()),
+                    Inline::text(" escalates: "),
+                    Inline::code(ir.command(&binding.command).name.to_string()),
+                    Inline::text(" failed and a person was told."),
+                ]);
             }
         }
     }
     for command in ir.commands().values() {
-        let branches: Vec<_> = command
+        let branches: Vec<&ess_compiler::ir::ResolvedOutcome> = command
             .outcomes
             .iter()
             .filter(|outcome| outcome.emits.iter().any(|it| it.name() == &event.name))
-            .map(|outcome| code(outcome.name.as_str()))
             .collect();
         if !branches.is_empty() {
-            out.push(format!(
-                "Emitted by `{}` on its {} {}.",
-                command.name,
-                list(&branches),
-                plural_bare(branches.len(), "outcome")
-            ));
+            out.push(branch_sentence("Emitted by ", command, &branches));
         }
     }
     if out.is_empty() {
-        out.push(
-            "No command in this system emits it, so something outside the specification does."
-                .to_owned(),
-        );
+        out.push(vec![Inline::text(
+            "No command in this system emits it, so something outside the specification does.",
+        )]);
     }
     out
 }
 
+/// Which command, and which of its branches, does something to a construct.
+fn branch_sentence(
+    opening: &str,
+    command: &ResolvedCommand,
+    branches: &[&ess_compiler::ir::ResolvedOutcome],
+) -> Vec<Inline> {
+    let mut out = vec![
+        Inline::text(opening.to_owned()),
+        Inline::code(command.name.to_string()),
+        Inline::text(" on its "),
+    ];
+    out.extend(inline_list(
+        branches
+            .iter()
+            .map(|outcome| vec![Inline::code(outcome.name.to_string())])
+            .collect(),
+    ));
+    out.push(Inline::text(format!(
+        " {}.",
+        plural_bare(branches.len(), "outcome")
+    )));
+    out
+}
+
 /// Which command and branch reports an error.
-fn reporters(ir: &EssIr, error: &ResolvedError) -> Vec<String> {
+fn reporters(ir: &EssIr, error: &ResolvedError) -> Vec<Vec<Inline>> {
     let mut out = Vec::new();
     for command in ir.commands().values() {
-        let branches: Vec<_> = command
+        let branches: Vec<&ess_compiler::ir::ResolvedOutcome> = command
             .outcomes
             .iter()
             .filter(|outcome| {
@@ -1768,33 +2141,30 @@ fn reporters(ir: &EssIr, error: &ResolvedError) -> Vec<String> {
                     .as_ref()
                     .is_some_and(|it| it.name() == &error.name)
             })
-            .map(|outcome| code(outcome.name.as_str()))
             .collect();
         if !branches.is_empty() {
-            out.push(format!(
-                "Reported by `{}` on its {} {}.",
-                command.name,
-                list(&branches),
-                plural_bare(branches.len(), "outcome")
-            ));
+            out.push(branch_sentence("Reported by ", command, &branches));
         }
     }
     if out.is_empty() {
-        out.push(
-            "No outcome in this system reports it: it is declared and unreachable.".to_owned(),
-        );
+        out.push(vec![Inline::text(
+            "No outcome in this system reports it: it is declared and unreachable.",
+        )]);
     }
     out
 }
 
 /// How many outcomes a command has, said as a person would say it.
-fn outcome_count_sentence(count: usize, name: &QualifiedName) -> String {
+fn outcome_count_sentence(count: usize, name: &QualifiedName) -> Vec<Inline> {
     match count {
-        0 => format!(
-            "`{name}` declares no outcomes, so nothing here says what it does or when it refuses."
-        ),
-        1 => "It has one outcome.".to_owned(),
-        _ => format!("It has {} outcomes.", number(count)),
+        0 => vec![
+            Inline::code(name.to_string()),
+            Inline::text(
+                " declares no outcomes, so nothing here says what it does or when it refuses.",
+            ),
+        ],
+        1 => vec![Inline::text("It has one outcome.")],
+        _ => vec![Inline::text(format!("It has {} outcomes.", number(count)))],
     }
 }
 
@@ -1814,7 +2184,7 @@ fn outcome_count_sentence(count: usize, name: &QualifiedName) -> String {
 /// of it happen. The commands come from [`EssIr::drivers`] rather than from a name that looks like
 /// the transition's — the spelling of a move says nothing about who performs it.
 fn state_diagram(lifecycle: &StateMachine, drivers: &[Driver<'_>]) -> String {
-    let mut out = String::from("```mermaid\nstateDiagram-v2\n");
+    let mut out = String::from("stateDiagram-v2\n");
     let _ = writeln!(out, "    [*] --> {}", lifecycle.initial);
     for transition in &lifecycle.transitions {
         let label = match takers(drivers, &transition.name).as_slice() {
@@ -1837,8 +2207,7 @@ fn state_diagram(lifecycle: &StateMachine, drivers: &[Driver<'_>]) -> String {
             let _ = writeln!(out, "    {state}");
         }
     }
-    out.push_str("```\n");
-    out
+    trimmed(out)
 }
 
 /// The local names of the commands that take one transition, in the order the IR holds them.
@@ -1863,56 +2232,74 @@ fn takers(drivers: &[Driver<'_>], transition: &str) -> Vec<String> {
 /// The diagram's labels say *which command*; this says which of its branches, which is the unit a
 /// generated scenario is built per. It also states the rule that makes the list exhaustive, so a
 /// reader knows an unlisted move is impossible rather than merely undocumented.
-fn driven_sentence(lifecycle: &StateMachine, drivers: &[Driver<'_>]) -> String {
+fn driven_blocks(lifecycle: &StateMachine, drivers: &[Driver<'_>]) -> Vec<Block> {
     if lifecycle.transitions.is_empty() {
-        return "It declares no moves, so nothing changes its state once it exists.".to_owned();
+        let mut only = Blocks::new();
+        only.sentence("It declares no moves, so nothing changes its state once it exists.");
+        return only.finish();
     }
-    let mut out = String::from(
-        "Each move is taken by a declared command outcome, and a move nothing takes is refused as \
-         `missing_causation` rather than left as a state change nobody can trigger:\n\n",
-    );
-    for transition in &lifecycle.transitions {
-        let taken: Vec<String> = drivers
+    let mut out = Blocks::new();
+    out.prose(vec![
+        Inline::text(
+            "Each move is taken by a declared command outcome, and a move nothing takes is refused \
+             as ",
+        ),
+        Inline::code("missing_causation"),
+        Inline::text(" rather than left as a state change nobody can trigger:"),
+    ]);
+    out.push(bullets(
+        lifecycle
+            .transitions
             .iter()
-            .filter(|driver| driver.takes(&transition.name))
-            .map(|driver| {
-                format!(
-                    "`{}` on its `{}` outcome",
-                    driver.command.name, driver.outcome.name
-                )
+            .map(|transition| {
+                let taken = taken_by(
+                    drivers
+                        .iter()
+                        .filter(|driver| driver.takes(&transition.name)),
+                );
+                let mut item = vec![
+                    Inline::code(transition.name.clone()),
+                    Inline::text(" — taken by "),
+                ];
+                if taken.is_empty() {
+                    item.push(Inline::text("nothing in this specification"));
+                } else {
+                    item.extend(inline_list(taken));
+                }
+                item
             })
-            .collect();
-        let by = if taken.is_empty() {
-            "nothing in this specification".to_owned()
-        } else {
-            list(&taken)
-        };
-        let _ = writeln!(out, "- `{}` — taken by {by}", transition.name);
-    }
-    let creators: Vec<String> = drivers
-        .iter()
-        .filter(|driver| matches!(driver.effect, ResolvedEffect::Creates))
-        .map(|driver| {
-            format!(
-                "`{}` on its `{}` outcome",
-                driver.command.name, driver.outcome.name
-            )
-        })
-        .collect();
-    let _ = write!(
-        out,
-        "\n{}",
-        if creators.is_empty() {
-            "No command here creates one, so an instance arrives from outside this specification."
-                .to_owned()
-        } else {
-            format!(
-                "An instance is brought into existence by {}.",
-                list(&creators)
-            )
-        }
+            .collect(),
+    ));
+    let creators = taken_by(
+        drivers
+            .iter()
+            .filter(|driver| matches!(driver.effect, ResolvedEffect::Creates)),
     );
-    out
+    if creators.is_empty() {
+        out.sentence(
+            "No command here creates one, so an instance arrives from outside this specification.",
+        );
+    } else {
+        let mut brought = vec![Inline::text("An instance is brought into existence by ")];
+        brought.extend(inline_list(creators));
+        brought.push(Inline::text("."));
+        out.prose(brought);
+    }
+    out.finish()
+}
+
+/// The command and branch behind each of a set of moves.
+fn taken_by<'a>(drivers: impl Iterator<Item = &'a Driver<'a>>) -> Vec<Vec<Inline>> {
+    drivers
+        .map(|driver| {
+            vec![
+                Inline::code(driver.command.name.to_string()),
+                Inline::text(" on its "),
+                Inline::code(driver.outcome.name.to_string()),
+                Inline::text(" outcome"),
+            ]
+        })
+        .collect()
 }
 
 /// `true` when any transition or the initial state mentions this state.
@@ -1929,27 +2316,39 @@ fn touched(lifecycle: &StateMachine, state: &StateName) -> bool {
 /// absence does not draw: a missing arrow looks like an arrow nobody has added yet. So the pairs no
 /// move connects are listed, derived from the same transitions the diagram is drawn from, which is
 /// why the two cannot come apart.
-fn legality_note(lifecycle: &StateMachine) -> String {
+fn legality_note(lifecycle: &StateMachine) -> Vec<Block> {
+    let mut out = Blocks::new();
     if lifecycle.states.len() < 2 {
-        return "It has one state, so there is no move to permit or to forbid.\n".to_owned();
+        out.sentence("It has one state, so there is no move to permit or to forbid.");
+        return out.finish();
     }
     let unconnected = forbidden(lifecycle);
     if unconnected.is_empty() {
-        return "Every ordered pair of these states is connected by some move, so this lifecycle \
-                forbids nothing.\n"
-            .to_owned();
+        out.sentence(
+            "Every ordered pair of these states is connected by some move, so this lifecycle \
+             forbids nothing.",
+        );
+        return out.finish();
     }
-    let mut out = String::from(
+    out.sentence(
         "Illegal transitions are illegal by absence: no rule forbids them, there is simply no \
          arrow, because a rule would be a second place for the same truth to live. A diagram cannot \
          show an absence, so the pairs it does not connect are listed here, derived from the same \
-         transitions — anything named below is a move this specification does not permit.\n\n",
+         transitions — anything named below is a move this specification does not permit.",
     );
-    for (from, to) in unconnected {
-        let _ = writeln!(out, "- `{from}` may not become `{to}`");
-    }
-    out.push('\n');
-    out
+    out.push(bullets(
+        unconnected
+            .into_iter()
+            .map(|(from, to)| {
+                vec![
+                    Inline::code(from.to_string()),
+                    Inline::text(" may not become "),
+                    Inline::code(to.to_string()),
+                ]
+            })
+            .collect(),
+    ));
+    out.finish()
 }
 
 /// Every ordered pair of distinct states with no transition between them.
@@ -1973,7 +2372,7 @@ fn forbidden(lifecycle: &StateMachine) -> Vec<(&StateName, &StateName)> {
 fn binding_flow(ir: &EssIr, binding: &ResolvedBinding) -> String {
     let event = ir.event(&binding.event);
     let command = ir.command(&binding.command);
-    let mut out = String::from("```mermaid\nflowchart LR\n");
+    let mut out = String::from("flowchart LR\n");
     let _ = writeln!(out, "    event[\"{}\"]", label(&event.name.to_string()));
     let _ = writeln!(out, "    command[\"{}\"]", label(&command.name.to_string()));
     let _ = writeln!(
@@ -2019,8 +2418,7 @@ fn binding_flow(ir: &EssIr, binding: &ResolvedBinding) -> String {
         );
         let _ = writeln!(out, "    failure --> escalation");
     }
-    out.push_str("```\n");
-    out
+    trimmed(out)
 }
 
 /// Where a failed binding's work goes, in a few words for a diagram node.
@@ -2036,104 +2434,74 @@ fn failure_label(ir: &EssIr, binding: &ResolvedBinding) -> String {
 
 /// The whole system: actors, and the commands and events each component declares.
 ///
-/// The diagram is [`SystemGraph`]'s, fenced. The graph itself is not read here: `ess
-/// graph` publishes the same picture, and a second reading of the IR in this file is how the two
-/// came to be different graphs wearing one name — see [`crate::graph`] for what they disagreed
-/// about. The fence is this page's furniture and the only thing added.
+/// The diagram is [`SystemGraph`]'s, unchanged. The graph itself is not read here: `ess graph`
+/// publishes the same picture, and a second reading of the IR in this file is how the two came to
+/// be different graphs wearing one name — see [`crate::graph`] for what they disagreed about.
 fn system_graph(ir: &EssIr) -> String {
-    format!("```mermaid\n{}```\n", SystemGraph::of(ir).mermaid())
+    trimmed(SystemGraph::of(ir).mermaid())
+}
+
+/// Mermaid source as a [`Block::Diagram`] carries it: the lines, and not the newline after the last.
+///
+/// The renderer writes the newline that closes the fence. A source that ended with one of its own
+/// would put a blank line inside every diagram on every page.
+fn trimmed(mut source: String) -> String {
+    source.truncate(source.trim_end_matches('\n').len());
+    source
 }
 
 // ---- plumbing ---------------------------------------------------------------------------------
-
-/// A page, with the provenance a reader can see and the provenance a tool can read.
-fn page(path: String, title: &str, body: &str, sliced: &SlicedProvenance) -> Artifact {
-    let provenance = &sliced.provenance;
-    let mut contents = provenance_comment(provenance);
-    let _ = writeln!(contents, "\n# {title}\n");
-    contents.push_str(body);
-    if !contents.ends_with('\n') {
-        contents.push('\n');
-    }
-    contents.push_str(&provenance_footer(provenance));
-    Artifact::sliced(path, contents, sliced.slice.clone())
-}
-
-/// The provenance block every artifact opens with, as one HTML comment.
-///
-/// Not `Provenance::commented("<!--")`, whose own doc comment offers exactly that prefix for
-/// Markdown: a per-line prefix cannot close an HTML comment, so four lines each opening one and none
-/// closing it leaves a renderer swallowing the rest of the page. `Provenance::lines` is the part of
-/// that API usable here, and the block form is the valid one.
-fn provenance_comment(provenance: &Provenance) -> String {
-    let mut out = String::from("<!--\n");
-    for line in provenance.lines() {
-        // `--` is what ends an HTML comment early. Nothing that reaches these lines can contain
-        // one — a qualified name has no hyphens, a version is `v` and digits, a digest is hex — and
-        // `tests/docs.rs` asserts it, which is cheaper than an escape no reader could decode.
-        let _ = writeln!(out, "{line}");
-    }
-    out.push_str("-->\n");
-    out
-}
-
-/// The same facts, visible.
-///
-/// Duplicated on purpose: the comment above is for a tool and a diff, and it is invisible to exactly
-/// the person who is about to edit a generated file by hand and lose the work.
-fn provenance_footer(provenance: &Provenance) -> String {
-    format!(
-        "\n---\n\nGenerated from {} {} · model digest `{}` · contract digest `{}`. Do not \
-         edit this file; change the specification and regenerate it with `ess generate`.\n",
-        provenance.system,
-        provenance.specification_version,
-        provenance.source_digest,
-        provenance.contract_digest,
-    )
-}
 
 /// The known gaps as a table, under a heading the page chooses, or nothing when there are none.
 ///
 /// Nothing, rather than an empty table under its heading: a section that says "what this cannot
 /// show" and then shows an empty table teaches a reader to skip it, and the day it has a row in it
 /// is the day that habit costs something.
-fn gap_table(heading: &str, preamble: &str) -> String {
+fn gap_blocks(heading: &str, preamble: &str) -> Vec<Block> {
     if Docs::known_gaps().is_empty() {
-        return String::new();
+        return Vec::new();
     }
-    let mut out = format!("{heading}\n\n{preamble}\n\n");
-    let _ = writeln!(
-        out,
-        "| construct | what is dropped | where it would go | what it needs |"
-    );
-    let _ = writeln!(out, "|---|---|---|---|");
-    for gap in Docs::known_gaps() {
-        let _ = writeln!(
-            out,
-            "| {} | {} | {} | {} |",
-            gap.construct,
-            cell(gap.dropped),
-            gap.page,
-            cell(gap.needs)
-        );
-    }
-    out
+    let mut under = Blocks::new();
+    under.sentence(preamble);
+    under.push(Block::Table {
+        columns: [
+            "construct",
+            "what is dropped",
+            "where it would go",
+            "what it needs",
+        ]
+        .into_iter()
+        .map(|column| vec![Inline::text(column)])
+        .collect(),
+        rows: Docs::known_gaps()
+            .iter()
+            .map(|gap| {
+                vec![
+                    vec![Inline::text(gap.construct)],
+                    vec![Inline::text(cell(gap.dropped))],
+                    vec![Inline::text(gap.page)],
+                    vec![Inline::text(cell(gap.needs))],
+                ]
+            })
+            .collect(),
+    });
+    vec![section(
+        2,
+        vec![Inline::text(heading)],
+        None,
+        under.finish(),
+    )]
 }
 
-/// The path of a bounded context's page, relative to the projection's own directory.
-fn domain_path(name: &QualifiedName) -> String {
-    format!("domains/{}", domain_file(name))
-}
-
-/// The file name of a bounded context's page, which is also the link between two of them.
+/// The identity of a bounded context's page, which is also where a renderer files it.
 ///
 /// The dots of a qualified name become hyphens. A dot in a path segment makes a static file server
 /// read `acd.routing` as a name with an extension, so `domains/acd.routing.md` is served as
 /// something it is not or not at all — every one of these pages 404'd behind GitLab Pages until
 /// the adopter carried a rename pass of their own. A generator that emits a route nothing can serve
 /// has not generated documentation.
-fn domain_file(name: &QualifiedName) -> String {
-    format!("{}.md", name.to_string().replace('.', "-"))
+fn domain_page_id(name: &QualifiedName) -> PageId {
+    PageId(format!("domains/{}", name.to_string().replace('.', "-")))
 }
 
 /// The enum each of a context's entities forms from its lifecycle.
@@ -2160,13 +2528,16 @@ fn section_link(
     from: &ResolvedDomain,
     name: &QualifiedName,
     owner: &ess_compiler::ir::DomainHandle,
-) -> String {
+) -> Inline {
     let owner = ir.domain(owner);
-    let anchor = slug(&relative(name, &owner.name));
+    let to = Target::Anchor {
+        page: domain_page_id(&owner.name),
+        anchor: slug(&relative(name, &owner.name)),
+    };
     if owner.name == from.name {
-        format!("[`{}`](#{anchor})", relative(name, &from.name))
+        Inline::code_link(to, relative(name, &from.name))
     } else {
-        format!("[`{name}`]({}#{anchor})", domain_file(&owner.name))
+        Inline::code_link(to, name.to_string())
     }
 }
 
@@ -2186,7 +2557,7 @@ fn touches(reference: &ess_compiler::ir::ResolvedTypeRef, domain: &QualifiedName
 }
 
 /// The bindings that rely on a crossing, and the input each of them fills with it.
-fn crossing_users(ir: &EssIr, conversion: &ResolvedConversion) -> Vec<String> {
+fn crossing_users(ir: &EssIr, conversion: &ResolvedConversion) -> Vec<Vec<Inline>> {
     let mut out = Vec::new();
     for binding in ir.bindings().values() {
         for mapping in &binding.mapping {
@@ -2196,16 +2567,23 @@ fn crossing_users(ir: &EssIr, conversion: &ResolvedConversion) -> Vec<String> {
                     if type_ref == &conversion.from && mapping.target_type == conversion.to
             );
             if crossed {
-                out.push(format!(
-                    "[`{}`](interactions.md#{}), filling `{}`",
-                    binding.name,
-                    slug(binding.name.as_str()),
-                    mapping.target
-                ));
+                out.push(vec![
+                    Inline::code_link(binding_target(binding), binding.name.to_string()),
+                    Inline::text(", filling "),
+                    Inline::code(mapping.target.clone()),
+                ]);
             }
         }
     }
     out
+}
+
+/// Where a binding is written up, which is its own section of the interactions page.
+fn binding_target(binding: &ResolvedBinding) -> Target {
+    Target::Anchor {
+        page: PageId::from("interactions"),
+        anchor: slug(binding.name.as_str()),
+    }
 }
 
 /// Events no binding reacts to.
@@ -2222,17 +2600,96 @@ fn display_of<'a>(naming: &'a Naming, name: &'a QualifiedName) -> &'a str {
     naming.display_or(name)
 }
 
-/// A phrase in backticks.
-fn code(text: &str) -> String {
-    format!("`{text}`")
+/// Somebody's reason, quoted, so it reads as their words rather than as this page's.
+///
+/// Each line is trimmed before it is quoted: a reason written as a folded block in the
+/// specification arrives carrying the indentation of the file it was written in, and that
+/// indentation would be four spaces inside a quotation — which every Markdown renderer reads as
+/// code.
+fn quoted_reason(text: &str) -> Block {
+    Block::Quote {
+        blocks: vec![Block::Prose {
+            text: vec![Inline::text(
+                text.lines().map(str::trim).collect::<Vec<_>>().join("\n"),
+            )],
+        }],
+    }
 }
 
-/// A blockquote, so a quoted reason reads as somebody's words rather than as this page's.
-fn quote(text: &str) -> String {
-    text.lines()
-        .map(|line| format!("> {}", line.trim()))
-        .collect::<Vec<_>>()
-        .join("\n")
+/// A headed run of blocks, with the anchor derived from the heading rather than written twice.
+fn section(
+    level: u8,
+    title: Vec<Inline>,
+    about: Option<EssSemanticRef>,
+    blocks: Vec<Block>,
+) -> Block {
+    Block::Section {
+        level,
+        anchor: anchor_of(&title),
+        title,
+        about,
+        blocks,
+    }
+}
+
+/// An unordered list of one paragraph each, which is every list these pages write.
+fn bullets(items: Vec<Vec<Inline>>) -> Block {
+    Block::List {
+        ordered: false,
+        items: items
+            .into_iter()
+            .map(|text| vec![Block::Prose { text }])
+            .collect(),
+    }
+}
+
+/// An English list of runs: `a`, `a and b`, `a, b and c`.
+///
+/// [`list`]'s shape over inlines rather than over strings, because a list of links is the common
+/// case and a link cannot survive being turned into a sentence fragment first.
+fn inline_list(items: Vec<Vec<Inline>>) -> Vec<Inline> {
+    let mut out = Vec::new();
+    let last = items.len().saturating_sub(1);
+    for (position, item) in items.into_iter().enumerate() {
+        if position > 0 {
+            out.push(Inline::text(if position == last { " and " } else { ", " }));
+        }
+        out.extend(item);
+    }
+    out
+}
+
+/// The anchor a heading gets, derived from the words in it rather than from its markup.
+fn anchor_of(title: &[Inline]) -> String {
+    slug(&plain(title))
+}
+
+/// The words of a run of inlines, with everything that is not a word dropped.
+fn plain(text: &[Inline]) -> String {
+    let mut out = String::new();
+    for inline in text {
+        match inline {
+            Inline::Text { text } | Inline::Code { text } => out.push_str(text),
+            Inline::Emphasis { text } | Inline::Strong { text } | Inline::Link { text, .. } => {
+                out.push_str(&plain(text));
+            }
+        }
+    }
+    out
+}
+
+/// The blank line the index, the interactions page and every context page end with.
+///
+/// A list with nothing in it, which renders as nothing; what reaches the page is the blank line the
+/// renderer puts between one block and the next. That blank is what the string writer this replaced
+/// left at the end of those three pages, and `tests/corpus` pins it. Tidying it away would change
+/// what is committed in every adopter's repository, which is a different change from this one and
+/// belongs in its own commit.
+fn trailing_blank() -> Block {
+    Block::List {
+        ordered: false,
+        items: Vec::new(),
+    }
 }
 
 /// Text safe inside a Markdown table cell.
@@ -2340,6 +2797,30 @@ mod tests {
         }
     }
 
+    /// The blocks as the Markdown renderer writes them.
+    ///
+    /// The assertions below are about what a reader is told, and the renderer is what turns blocks
+    /// back into lines. A test that walked the blocks instead would be checking the structure it
+    /// had just been handed against itself.
+    fn rendered(blocks: Vec<Block>) -> String {
+        crate::markdown::page(&Page {
+            id: PageId::from("page"),
+            title: vec![Inline::text("Page")],
+            about: None,
+            provenance: SlicedProvenance {
+                provenance: crate::provenance::Provenance {
+                    system: "billing".to_owned(),
+                    specification_version: "v3".to_owned(),
+                    source_digest: "0".repeat(64),
+                    contract_digest: "f".repeat(64),
+                },
+                slice: crate::provenance::ModelSlice::WholeModel,
+            },
+            blocks,
+        })
+        .contents
+    }
+
     /// One move, or a panic naming the transition that is not one.
     fn moves(name: &str, from: &[&str], to: &str) -> Transition {
         Transition::new(name, from.iter().map(|it| state(it)), state(to))
@@ -2368,10 +2849,7 @@ mod tests {
     fn a_lifecycle_renders_as_a_state_diagram_with_its_initial_and_terminal_states_marked() {
         let diagram = state_diagram(&invoice_lifecycle(), &[]);
 
-        assert!(
-            diagram.starts_with("```mermaid\nstateDiagram-v2\n"),
-            "{diagram}"
-        );
+        assert!(diagram.starts_with("stateDiagram-v2\n"), "{diagram}");
         assert!(diagram.contains("    [*] --> Draft\n"), "{diagram}");
         assert!(
             diagram.contains("    Draft --> Issued: issue\n"),
@@ -2389,8 +2867,10 @@ mod tests {
             diagram.contains("    Issued --> Cancelled: cancel\n"),
             "{diagram}"
         );
-        assert!(diagram.contains("    Paid --> [*]\n"), "{diagram}");
         assert!(diagram.contains("    Cancelled --> [*]\n"), "{diagram}");
+        // The last line carries no newline of its own: the renderer writes the one that closes the
+        // fence, and a source ending in one would put a blank line inside every diagram.
+        assert!(diagram.ends_with("    Paid --> [*]"), "{diagram}");
     }
 
     #[test]
@@ -2415,12 +2895,12 @@ mod tests {
         let diagram = state_diagram(&stranded, &[]);
 
         assert!(diagram.contains("    [*] --> Draft\n"), "{diagram}");
-        assert!(diagram.contains("    Void\n"), "{diagram}");
+        assert!(diagram.ends_with("\n    Void"), "{diagram}");
     }
 
     #[test]
     fn the_page_names_every_transition_the_specification_does_not_permit() {
-        let note = legality_note(&invoice_lifecycle());
+        let note = rendered(legality_note(&invoice_lifecycle()));
 
         // The example's own headline case: a paid invoice may not be cancelled, and the model says
         // so by not saying anything.
@@ -2440,7 +2920,7 @@ mod tests {
         // would be inventing a prohibition out of an empty set.
         let single = machine("Draft", &["Draft"], &["Draft"], Vec::new());
 
-        let note = legality_note(&single);
+        let note = rendered(legality_note(&single));
 
         assert!(!note.contains("may not become"), "{note}");
         assert!(note.contains("one state"), "{note}");
@@ -2458,7 +2938,7 @@ mod tests {
             ],
         );
 
-        let note = legality_note(&open);
+        let note = rendered(legality_note(&open));
 
         // The distinction the page has to keep: "nothing is forbidden" and "nothing was carried"
         // read the same to a reader and are opposite statements about the model.
