@@ -1,5 +1,34 @@
 # Changelog
 
+## [0.7.0] — 2026-09-03
+
+### Fixed
+
+- **A declared `order_by` was asserted against nothing.** Synthesis created at most one instance
+  per scenario and a `ranked` expectation passes on fewer than two rows by design, so every
+  ordering assertion a suite emitted was a no-op: an author declared an order, saw scenarios
+  generated, saw them pass, and was covered by nothing. Scenarios that assert an order now arrange
+  a second row through declared command outcomes, differing on the ranking keys. Measured on an
+  adopter's model: 11 ordering assertions, 0 of them running against two rows before, 11 after.
+  Where a second row cannot be arranged the order is refused (`ESS-SYNTH-014`) and not asserted.
+
+### Changed
+
+- **`ess-conformance/2`.** The expectation vocabulary grew, and the emitted Go runner reports an
+  expectation it does not know as a *failed scenario* — a wrong verdict about an implementation,
+  caused by the age of the tool reading the suite. A reader that checks the format first refuses
+  the document instead. Both `1` and `2` are read: a `1` suite means in `2` exactly what it meant.
+
+### Added
+
+- A `counts` view expectation, asserting how many rows a view holds. Synthesis writes only a floor,
+  and only from two up: a target may be shared, so "exactly N" is a claim about every other user of
+  it, and "at least one" is what `contains` already says. Both bounds are in the vocabulary.
+- An `at` view expectation, asserting what sits at a position. Both runners read it and both refuse
+  it on a view that declares no order. **Synthesis does not yet emit it**: nothing in the model
+  relates a command's input to the field a view ranks by, so choosing a position would be matching
+  on a shared field name. The construct that would license one is named in the gap table.
+
 ## [0.6.0] — 2026-09-03
 
 ### Changed
