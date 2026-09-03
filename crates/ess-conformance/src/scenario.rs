@@ -480,6 +480,14 @@ pub enum ScenarioId {
         state: StateName,
         /// The command that must not move it.
         command: CommandRef,
+        /// Whether the command refuses here, or is accepted and changes nothing.
+        ///
+        /// Part of the identity, and it renders: `refuses` or `accepts`. A command may be
+        /// deliberately idempotent — `EndCall` on a call that has ended answers and does nothing —
+        /// and until `refuses: false` existed a specification could not say so. A scenario that
+        /// asserted acceptance while its id read `refuses/EndCall` would be exactly the artifact
+        /// this crate exists to avoid: a name a reader takes for a claim the run never made.
+        refuses: bool,
     },
     /// What must hold of an entity after a branch changed one (§20).
     ///
@@ -580,11 +588,15 @@ impl ScenarioId {
                     ),
                 })
             }
-            [entity, Self::STATE, state, "refuses", command] => Ok(Self::Refusal {
-                entity: EntityRef::new(name(entity)?),
-                state: StateName::new(state).map_err(|_| reject("has a malformed state name"))?,
-                command: CommandRef::new(name(command)?),
-            }),
+            [entity, Self::STATE, state, verb @ ("refuses" | "accepts"), command] => {
+                Ok(Self::Refusal {
+                    entity: EntityRef::new(name(entity)?),
+                    state: StateName::new(state)
+                        .map_err(|_| reject("has a malformed state name"))?,
+                    command: CommandRef::new(name(command)?),
+                    refuses: *verb == "refuses",
+                })
+            }
             [entity, Self::INVARIANT, "after", command, outcome] => Ok(Self::Invariant {
                 entity: EntityRef::new(name(entity)?),
                 after: OutcomeRef::new(
@@ -649,7 +661,13 @@ impl fmt::Display for ScenarioId {
                 entity,
                 state,
                 command,
-            } => write!(f, "{entity}/{}/{state}/refuses/{command}", Self::STATE),
+                refuses,
+            } => write!(
+                f,
+                "{entity}/{}/{state}/{}/{command}",
+                Self::STATE,
+                if *refuses { "refuses" } else { "accepts" }
+            ),
             Self::Invariant { entity, after } => write!(
                 f,
                 "{entity}/{}/after/{}/{}",
@@ -1838,6 +1856,7 @@ mod tests {
                 entity: entity.clone(),
                 state: StateName::new("Paid").expect("valid"),
                 command: command("billing.invoice.CancelInvoice"),
+                refuses: true,
             },
             ScenarioId::Invariant {
                 entity,

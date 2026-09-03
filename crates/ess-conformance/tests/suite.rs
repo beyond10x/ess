@@ -830,6 +830,7 @@ fn every_scenario_id_the_billing_model_can_produce_reads_back() {
             entity,
             state: transition.to.clone(),
             command: CommandRef::from(command_handle(&ir, "billing.invoice.CancelInvoice")),
+            refuses: true,
         },
         ScenarioId::Binding {
             binding: BindingRef::new(BindingName::new(binding.name.as_str()).expect("valid")),

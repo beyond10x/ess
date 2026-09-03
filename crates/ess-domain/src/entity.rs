@@ -2339,6 +2339,7 @@ lifecycle:
                 emits: vec![name("billing.invoice.Moved")],
                 payload: std::collections::BTreeMap::new(),
                 error: None,
+                refuses: true,
                 summary: None,
                 refs: crate::refs::Refs::new(),
                 sets: BTreeMap::new(),

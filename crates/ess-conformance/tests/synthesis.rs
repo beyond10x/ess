@@ -1341,6 +1341,61 @@ fn a_command_that_declares_no_wrong_state_answer_is_refused_by_name_beside_its_s
 }
 
 #[test]
+fn a_command_that_accepts_a_wrong_state_is_asserted_as_accepting_rather_than_refusing() {
+    // The claim under test is *the command answers here and the order does not move*, and it is a
+    // different claim from a refusal — which is why the id says so. A scenario named
+    // `.../refuses/ShipOrder` that asserted acceptance would be the artifact this crate exists to
+    // avoid: a name a reader takes for a check the run never made.
+    let synthesis = synthesize(&fixture(ACCEPTED_IN_A_WRONG_STATE));
+    let id = "quiet.orders.Order/state/Shipped/accepts/quiet.orders.ShipOrder";
+
+    assert!(
+        ids(&synthesis).iter().any(|known| known == id),
+        "the id names what the branch claims: {:?}",
+        ids(&synthesis)
+    );
+    assert!(
+        !ids(&synthesis)
+            .iter()
+            .any(|known| known.contains("/refuses/quiet.orders.ShipOrder")),
+        "and the refusing spelling is not also produced: {:?}",
+        ids(&synthesis)
+    );
+
+    // Last, not first: the steps that arrange the instance assert their own branches on the way.
+    let branch = steps(&synthesis, id)
+        .iter()
+        .rev()
+        .find_map(|step| match step {
+            ScenarioStep::ExpectOutcome { outcome } => Some(outcome.to_string()),
+            _ => None,
+        })
+        .expect("the scenario requires a branch");
+    assert_eq!(
+        branch, "quiet.orders.ShipOrder/already-shipped",
+        "the declared branch is still required by name; that half does not change"
+    );
+
+    assert!(
+        !shape(&synthesis, id).contains(&"error"),
+        "and no error is asserted, because a command that accepts a state reports none"
+    );
+    assert!(
+        shape(&synthesis, id).contains(&"no-event"),
+        "while the other half stands: accepting a state is not licence to publish from it"
+    );
+
+    // The refusal that fires for a command saying nothing must not fire here. This command says
+    // something; what it says is that it does not refuse.
+    assert_eq!(
+        synthesis.refused(code(12)).count(),
+        0,
+        "a declared branch is a declaration whichever answer it gives: {:?}",
+        refused(&synthesis)
+    );
+}
+
+#[test]
 fn a_state_reached_only_through_a_branch_no_input_reaches_is_refused_rather_than_arranged() {
     // The refusal that survives the gate. `Held` is declared, reachable and driven — and the branch
     // that drives it is guarded by `quantity == 0.5`, which no `Integer` satisfies. So the state
@@ -2804,6 +2859,73 @@ commands:
         instance: order_id
         emits:
           - quiet.orders.OrderShipped
+";
+
+/// The same shape, with `ShipOrder` declared **idempotent** rather than refusing.
+///
+/// Shipping an order that has already shipped is a real command answering a real retry, and until
+/// `refuses: false` existed a specification had two ways to write it and both were wrong: claim a
+/// refusal the implementation never makes, or leave the branch out and say nothing about the state.
+const ACCEPTED_IN_A_WRONG_STATE: &str = r"
+format: ess/1
+system: quiet
+version: v1
+domain: quiet.orders
+
+types:
+  - name: quiet.orders.OrderId
+    kind: newtype
+    of: Uuid
+
+entities:
+  - name: quiet.orders.Order
+    identity:
+      name: order_id
+      type: quiet.orders.OrderId
+    lifecycle:
+      initial: Placed
+      states: [Placed, Shipped]
+      terminal: [Shipped]
+      transitions:
+        - name: ship
+          from: [Placed]
+          to: Shipped
+
+events:
+  - name: quiet.orders.OrderPlaced
+    fields:
+      - name: order_id
+        type: quiet.orders.OrderId
+
+  - name: quiet.orders.OrderShipped
+    fields:
+      - name: order_id
+        type: quiet.orders.OrderId
+
+commands:
+  - name: quiet.orders.PlaceOrder
+    outcomes:
+      - name: accepted
+        creates: quiet.orders.Order
+        instance: order_id
+        emits:
+          - quiet.orders.OrderPlaced
+
+  - name: quiet.orders.ShipOrder
+    input:
+      - name: order_id
+        type: quiet.orders.OrderId
+    outcomes:
+      - name: shipped
+        moves: quiet.orders.Order.ship
+        instance: order_id
+        emits:
+          - quiet.orders.OrderShipped
+
+      - name: already-shipped
+        wrong_state: true
+        refuses: false
+        summary: The order has already shipped, so the command is answered and nothing moves.
 ";
 
 // ---- one component's suite ------------------------------------------------------------------------

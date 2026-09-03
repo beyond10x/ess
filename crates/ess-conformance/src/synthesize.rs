@@ -2546,10 +2546,28 @@ fn lifecycle(
                 if !wrong.contains(state) {
                     continue;
                 }
+                // Whether the id reads `refuses` or `accepts` is the command's own claim, read
+                // from the branch rather than inferred from what the scenario ends up asserting.
+                // A command with no wrong-state branch says nothing, and the scenario is still
+                // produced with `RefusalUndeclared` beside it — so the default here is the one
+                // every specification written before `refuses:` existed meant.
+                let refuses = drivers
+                    .iter()
+                    .find(|driver| &driver.command.name == *command)
+                    .and_then(|driver| {
+                        driver
+                            .command
+                            .outcomes
+                            .iter()
+                            .find(|outcome| outcome.condition == ResolvedCondition::WrongState)
+                            .map(|outcome| outcome.refuses)
+                    })
+                    .unwrap_or(true);
                 let id = ScenarioId::Refusal {
                     entity: entity.clone(),
                     state: state.clone(),
                     command: CommandRef::new((*command).clone()),
+                    refuses,
                 };
                 let Some(scenario) =
                     refused_here(ir, handle, &drivers, command, state, actors, &id, refusals)
@@ -2663,6 +2681,12 @@ fn refused_here(
         .outcomes
         .iter()
         .find(|outcome| outcome.condition == ResolvedCondition::WrongState);
+    // `refuses: false` on that branch: the command is accepted here and the subject does not move.
+    // Everything the refusing scenario asserts still holds — the declared branch is taken and no
+    // event is published — and one thing does not: there is no error to name, because the command
+    // reports none. The domain refuses the two together, so this reads the claim rather than
+    // guessing it from `error:` being absent.
+    let accepted = declared.is_some_and(|outcome| !outcome.refuses);
     let reported = if let Some(refusal) = declared {
         let branch = OutcomeRef::new(command_ref.clone(), refusal.name.clone());
         steps.push(ScenarioStep::ExpectOutcome {
@@ -2703,11 +2727,14 @@ fn refused_here(
     }
     source.extend(forbidden.into_iter().map(EssSemanticRef::from));
 
-    let text = match &reported {
-        Some(error) => format!(
+    let text = match (&reported, accepted) {
+        (Some(error), _) => format!(
             "`{command}` does not move a `{entity}` that is in `{state}`, and reports `{error}`"
         ),
-        None => format!("`{command}` does not move a `{entity}` that is in `{state}`"),
+        (None, true) => format!(
+            "`{command}` is accepted on a `{entity}` that is in `{state}`, and does not move it"
+        ),
+        (None, false) => format!("`{command}` does not move a `{entity}` that is in `{state}`"),
     };
     Some(ConformanceScenario::new(clipped(&text), steps, source))
 }

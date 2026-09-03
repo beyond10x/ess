@@ -1453,6 +1453,7 @@ impl<'a> Resolver<'a> {
                 emits,
                 payload,
                 error,
+                refuses: outcome.refuses,
                 summary: outcome.summary.clone(),
                 refs: outcome.refs.clone(),
                 sets,

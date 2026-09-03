@@ -241,6 +241,51 @@ impl From<OutcomeName> for String {
     }
 }
 
+/// Checks that a wrong-state branch's answer and its `error:` say one thing rather than two.
+///
+/// Lifted out of [`CommandSpec::validate_outcome`] to keep that function readable. Both directions
+/// are checked, and the second is the one `refuses:` made possible: a branch that says the command
+/// does not refuse and then names the error it reports leaves a generated assertion picking one.
+fn validate_wrong_state_answer(outcome: &Outcome, location: &str) -> ValidationErrors {
+    let mut errors = ValidationErrors::new();
+    if outcome.condition != OutcomeCondition::WrongState {
+        return errors;
+    }
+    if outcome.refuses && outcome.error.is_none() {
+        errors.push(
+            ValidationError::new(
+                ValidationCode::MissingDeclaration,
+                format!("{location}.error"),
+                format!(
+                    "outcome `{}` is the branch taken when the subject is in a state no move \
+                     starts from, and names no error; the states are already declared and the \
+                     error is the only thing this branch can add",
+                    outcome.name
+                ),
+            )
+            .with_hint(
+                "give it `error:`, naming what the command reports when it will not act from this \
+                 state; or `refuses: false` if the command accepts here and changes nothing",
+            ),
+        );
+    }
+    if !outcome.refuses && outcome.error.is_some() {
+        errors.push(
+            ValidationError::new(
+                ValidationCode::ConflictingDeclaration,
+                format!("{location}.error"),
+                format!(
+                    "outcome `{}` declares `refuses: false` and an `error:`; a command that \
+                     accepts a state reports nothing from it",
+                    outcome.name
+                ),
+            )
+            .with_hint("drop the `error:`, or drop `refuses: false`"),
+        );
+    }
+    errors
+}
+
 impl<'de> serde::Deserialize<'de> for OutcomeName {
     fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
         let raw = String::deserialize(deserializer)?;
@@ -803,6 +848,12 @@ pub struct Outcome {
     pub payload: BTreeMap<QualifiedName, BTreeMap<String, PayloadSource>>,
     /// The error this outcome reports, from the domain's declared error vocabulary.
     pub error: Option<QualifiedName>,
+    /// Whether a [`WrongState`](OutcomeCondition::WrongState) branch refuses or accepts.
+    ///
+    /// `true` on every other kind of outcome and read by nothing there. On a wrong-state branch it
+    /// is the whole claim: `true` says the command reports [`Self::error`] and does not act,
+    /// `false` says it is accepted and the subject does not move. See [`RawOutcome::refuses`].
+    pub refuses: bool,
     /// One line for generated documentation and for the generated scenario's title.
     pub summary: Option<String>,
     /// The records outside this model that explain it, such as `jira:DEV-630`.
@@ -822,6 +873,7 @@ impl Outcome {
             emits,
             payload: BTreeMap::new(),
             error: None,
+            refuses: true,
             summary: None,
             sets: BTreeMap::new(),
             refs: Refs::new(),
@@ -837,6 +889,7 @@ impl Outcome {
             emits,
             payload: BTreeMap::new(),
             error: None,
+            refuses: true,
             summary: None,
             sets: BTreeMap::new(),
             refs: Refs::new(),
@@ -856,6 +909,7 @@ impl Outcome {
             emits: Vec::new(),
             payload: BTreeMap::new(),
             error: Some(error),
+            refuses: true,
             summary: None,
             sets: BTreeMap::new(),
             refs: Refs::new(),
@@ -1050,7 +1104,14 @@ impl CommandSpec {
         let mut errors = ValidationErrors::new();
         let location = format!("command.{}.outcomes.{}", self.name, outcome.name);
 
-        if outcome.emits.is_empty() && outcome.error.is_none() {
+        // An accepting wrong-state branch is the one outcome that observably does neither. What a
+        // generated scenario checks is that the command answered *this branch* and the subject did
+        // not move — which is an observation, and a stronger one than the negative check that was
+        // all a specification could make before `refuses: false` existed. Everything else with no
+        // event and no error really is unobservable, so the rule stands for it.
+        let accepts_wrong_state =
+            outcome.condition == OutcomeCondition::WrongState && !outcome.refuses;
+        if outcome.emits.is_empty() && outcome.error.is_none() && !accepts_wrong_state {
             errors.push(
                 ValidationError::new(
                     ValidationCode::EmptyChange,
@@ -1116,24 +1177,7 @@ impl CommandSpec {
         // error". A wrong-state branch exists precisely to name that error, and the states it
         // answers in are already declared by the transitions it does not run from — so the error is
         // the one thing the branch carries, and a branch without one carries nothing at all.
-        if outcome.condition == OutcomeCondition::WrongState && outcome.error.is_none() {
-            errors.push(
-                ValidationError::new(
-                    ValidationCode::MissingDeclaration,
-                    format!("{location}.error"),
-                    format!(
-                        "outcome `{}` is the branch taken when the subject is in a state no move \
-                         starts from, and names no error; the states are already declared and the \
-                         error is the only thing this branch can add",
-                        outcome.name
-                    ),
-                )
-                .with_hint(
-                    "give it `error:`, naming what the command reports when it will not act from \
-                     this state",
-                ),
-            );
-        }
+        errors.extend(validate_wrong_state_answer(outcome, &location));
 
         if let OutcomeCondition::External { cause } = &outcome.condition {
             if cause.trim().is_empty() {
@@ -1935,6 +1979,22 @@ pub struct RawOutcome {
     /// beside it, which is required.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub wrong_state: bool,
+    /// Whether the command *refuses* in those states, or accepts and changes nothing.
+    ///
+    /// Absent means it refuses, which is what every wrong-state branch written before this key
+    /// existed meant, and it is the answer that needs an `error:`. `refuses: false` is the other
+    /// answer and the reason the key exists: a command can be deliberately idempotent, answering
+    /// from a state none of its moves start from without acting and without reporting anything.
+    /// Before this, a specification had no way to write that down — so an author with an
+    /// idempotent command either claimed a refusal the implementation never makes, or said nothing
+    /// at all about those states.
+    ///
+    /// A key rather than "leave `error:` out", because those are not the same document: a branch
+    /// missing its `error:` is a mistake the validator has caught since `wrong_state:` shipped,
+    /// and making the omission mean *accepts* would turn every one of those mistakes into a
+    /// silent claim.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub refuses: Option<bool>,
     /// The entity a new instance of which this outcome brings into existence.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub creates: Option<QualifiedName>,
@@ -2072,6 +2132,21 @@ impl TryFrom<RawOutcome> for Outcome {
             (None, None, true) => OutcomeCondition::WrongState,
             (None, None, false) => OutcomeCondition::Otherwise,
         };
+        // `refuses:` answers a question only a wrong-state branch is asked. On any other branch it
+        // reads like a claim about the outcome and decides nothing, so it is refused where the
+        // author would go and delete it rather than carried as a field nothing consults.
+        if raw.refuses.is_some() && condition != OutcomeCondition::WrongState {
+            return Err(conflict(
+                "refuses",
+                format!(
+                    "outcome `{}` declares `refuses` without `wrong_state`; only the branch taken \
+                     in a state no move starts from has a refusal to describe",
+                    raw.name
+                ),
+                "drop `refuses`, or add `wrong_state: true` if this is that branch",
+            ));
+        }
+        let refuses = raw.refuses.unwrap_or(true);
         let subject = subject_of(&raw.name, raw.creates, raw.moves, raw.updates, raw.instance)?;
         let payload = keyed_payload(&raw.name, raw.payload)?;
         let sets = keyed_sets(&raw.name, raw.sets)?;
@@ -2083,6 +2158,7 @@ impl TryFrom<RawOutcome> for Outcome {
             payload,
             sets,
             error: raw.error,
+            refuses,
             summary: raw.summary,
             refs: raw.refs,
         })
@@ -2378,6 +2454,10 @@ impl From<Outcome> for RawOutcome {
             when,
             external,
             wrong_state,
+            // Written back only where it says something. On any branch but a refusing wrong-state
+            // one the value is the default, and a round trip that added `refuses: true` to every
+            // outcome would change every document that has ever been read and re-emitted.
+            refuses: (wrong_state && !outcome.refuses).then_some(false),
             creates,
             moves,
             updates,
@@ -2641,6 +2721,7 @@ outcomes:
                 emits: Vec::new(),
                 payload: BTreeMap::new(),
                 error: Some(name("billing.invoice.InvalidAmount")),
+                refuses: true,
                 summary: None,
                 refs: Refs::new(),
                 sets: BTreeMap::new(),
@@ -2684,6 +2765,7 @@ outcomes:
             emits: vec![name("billing.invoice.InvoiceCreated")],
             payload: BTreeMap::new(),
             error: Some(name("billing.invoice.InvalidAmount")),
+            refuses: true,
             summary: None,
             refs: Refs::new(),
             sets: BTreeMap::new(),
@@ -2717,6 +2799,7 @@ outcomes:
                 emits: Vec::new(),
                 payload: BTreeMap::new(),
                 error: Some(name("billing.invoice.InvalidAmount")),
+                refuses: true,
                 summary: None,
                 refs: Refs::new(),
                 sets: BTreeMap::new(),
@@ -2743,6 +2826,7 @@ outcomes:
             emits: Vec::new(),
             payload: BTreeMap::new(),
             error: Some(name("billing.invoice.InvalidAmount")),
+            refuses: true,
             summary: None,
             refs: Refs::new(),
             sets: BTreeMap::new(),
@@ -2788,6 +2872,120 @@ outcomes:
     }
 
     #[test]
+    fn a_branch_that_accepts_a_wrong_state_needs_no_error_and_may_not_name_one() {
+        // The other answer, and the reason the key exists rather than `error:` simply becoming
+        // optional. A command can be deliberately idempotent — ACD's `EndCall` on a call that has
+        // already ended answers and does nothing — and a specification with no way to write that
+        // either claims a refusal the implementation never makes or says nothing about the state.
+        let accepting = |error: Option<QualifiedName>| Outcome {
+            name: outcome_name("already-done"),
+            condition: OutcomeCondition::WrongState,
+            subject: None,
+            emits: Vec::new(),
+            payload: BTreeMap::new(),
+            error,
+            refuses: false,
+            summary: None,
+            refs: Refs::new(),
+            sets: BTreeMap::new(),
+        };
+        let with = |outcome: Outcome| {
+            command_with(vec![
+                Outcome::otherwise(
+                    outcome_name("accepted"),
+                    vec![name("billing.invoice.InvoiceCreated")],
+                ),
+                outcome,
+            ])
+        };
+
+        // No error, and that is the whole claim: the command answered and the subject did not
+        // move. It validates — it is not a branch missing its `error:`, and it is not the
+        // unobservable outcome `empty_change` refuses, because *this branch was taken and nothing
+        // moved* is an observation.
+        assert!(
+            with(accepting(None))
+                .validate(&registry(), &events(), &errors())
+                .is_ok(),
+            "an accepting branch is a complete declaration: {:?}",
+            with(accepting(None)).validate(&registry(), &events(), &errors())
+        );
+
+        // Both together is two claims, and a generated assertion would have to pick one.
+        let errors = refuse(&with(accepting(Some(name(
+            "billing.invoice.InvoiceStateConflict",
+        )))));
+        assert!(
+            errors.contains(ValidationCode::ConflictingDeclaration),
+            "{errors}"
+        );
+        assert!(
+            errors
+                .to_string()
+                .contains("a command that accepts a state reports nothing from it"),
+            "{errors}"
+        );
+    }
+
+    #[test]
+    fn refuses_is_refused_on_a_branch_that_has_no_refusal_to_describe() {
+        // `refuses:` answers a question only a wrong-state branch is asked. Anywhere else it reads
+        // like a claim about the outcome and decides nothing, and a key nothing consults is one an
+        // author will write expecting it to matter.
+        let raw: RawOutcome = serde_yaml::from_str(
+            "name: accepted\nrefuses: false\nemits: [billing.invoice.InvoiceCreated]\n",
+        )
+        .expect("the document parses");
+        let errors =
+            Outcome::try_from(raw).expect_err("`refuses` without `wrong_state` is refused");
+        assert!(
+            errors.contains(ValidationCode::ConflictingDeclaration),
+            "{errors}"
+        );
+        assert!(
+            errors
+                .to_string()
+                .contains("declares `refuses` without `wrong_state`"),
+            "{errors}"
+        );
+    }
+
+    #[test]
+    fn only_a_refusing_wrong_state_branch_writes_the_key_back() {
+        // A round trip that added `refuses: true` to every outcome would rewrite every document
+        // that has ever been read and re-emitted, for a value that says what its absence says.
+        let accepting = Outcome {
+            name: outcome_name("already-done"),
+            condition: OutcomeCondition::WrongState,
+            subject: None,
+            emits: Vec::new(),
+            payload: BTreeMap::new(),
+            error: None,
+            refuses: false,
+            summary: None,
+            refs: Refs::new(),
+            sets: BTreeMap::new(),
+        };
+        let written =
+            serde_yaml::to_string(&RawOutcome::from(accepting.clone())).expect("it renders");
+        assert!(written.contains("refuses: false"), "{written}");
+        let again =
+            Outcome::try_from(serde_yaml::from_str::<RawOutcome>(&written).expect("it re-reads"))
+                .expect("and it is still valid");
+        assert_eq!(again.refuses, accepting.refuses);
+
+        let refusing = Outcome::wrong_state(
+            outcome_name("wrong-state"),
+            name("billing.invoice.InvoiceStateConflict"),
+        );
+        let written = serde_yaml::to_string(&RawOutcome::from(refusing)).expect("it renders");
+        assert!(
+            !written.contains("refuses"),
+            "the default is not written back: {written}"
+        );
+    }
+
+    #[test]
     fn a_wrong_state_branch_that_names_no_error_is_refused() {
         // The one thing a `wrong_state:` branch carries. The states are already declared — a
         // transition says what it runs `from:` — so a branch without an error adds nothing at all,
@@ -2805,6 +3003,7 @@ outcomes:
                 emits: Vec::new(),
                 payload: BTreeMap::new(),
                 error: None,
+                refuses: true,
                 summary: None,
                 refs: Refs::new(),
                 sets: BTreeMap::new(),
@@ -2984,6 +3183,7 @@ outcomes:
                 emits: Vec::new(),
                 payload: BTreeMap::new(),
                 error: Some(name("billing.invoice.InvalidAmount")),
+                refuses: true,
                 summary: None,
                 refs: Refs::new(),
                 sets: BTreeMap::new(),
@@ -3015,6 +3215,7 @@ outcomes:
                 emits: Vec::new(),
                 payload: BTreeMap::new(),
                 error: Some(name("billing.invoice.AmountTooLarge")),
+                refuses: true,
                 summary: None,
                 refs: Refs::new(),
                 sets: BTreeMap::new(),
@@ -3135,6 +3336,7 @@ outcomes:
             emits: Vec::new(),
             payload: BTreeMap::new(),
             error: Some(name("billing.invoice.InvalidAmount")),
+            refuses: true,
             summary: None,
             refs: Refs::new(),
             sets: BTreeMap::new(),
@@ -3451,6 +3653,7 @@ outcomes:
                 emits: Vec::new(),
                 payload: BTreeMap::new(),
                 error: Some(name("billing.invoice.InvalidAmount")),
+                refuses: true,
                 summary: None,
                 refs: Refs::new(),
                 sets: BTreeMap::new(),
@@ -3573,6 +3776,7 @@ outcomes:
                     emits: Vec::new(),
                     payload: BTreeMap::new(),
                     error: Some(name("billing.invoice.InvalidAmount")),
+                    refuses: true,
                     summary: None,
                     refs: Refs::new(),
                     sets: BTreeMap::new(),

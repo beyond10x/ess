@@ -645,6 +645,16 @@ pub struct ResolvedSubject {
     pub instance: ResolvedInstance,
 }
 
+/// Whether a branch takes the default answer, so the key is left out of the compiled document.
+///
+/// Only `refuses: false` is written. The IR is serialised and never read back, and an IR that
+/// gained `refuses: true` on every outcome would change the bytes of every pinned corpus tree for
+/// a value that says what its absence already says.
+#[allow(clippy::trivially_copy_pass_by_ref)]
+fn is_refusing(refuses: &bool) -> bool {
+    *refuses
+}
+
 /// One thing a command can result in.
 ///
 /// The skeleton flattened every outcome's events into one `emits` list on the command. That answers
@@ -682,6 +692,14 @@ pub struct ResolvedOutcome {
     /// The error it reports, if it reports one.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub error: Option<ErrorHandle>,
+    /// Whether a [`WrongState`](ResolvedCondition::WrongState) branch refuses or accepts.
+    ///
+    /// `true` everywhere else and read by nothing there. Carried rather than derived from `error`
+    /// being absent, because those are different documents: an author who left `error:` off a
+    /// refusing branch made a mistake the domain refuses, and a consumer that read the absence as
+    /// *accepts* would turn that mistake into a claim.
+    #[serde(skip_serializing_if = "is_refusing")]
+    pub refuses: bool,
     /// One line for generated documentation.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub summary: Option<String>,

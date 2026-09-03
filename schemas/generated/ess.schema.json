@@ -1230,6 +1230,13 @@
             "$ref": "#/definitions/ExternalRef"
           }
         },
+        "refuses": {
+          "description": "Whether the command *refuses* in those states, or accepts and changes nothing.\n\nAbsent means it refuses, which is what every wrong-state branch written before this key existed meant, and it is the answer that needs an `error:`. `refuses: false` is the other answer and the reason the key exists: a command can be deliberately idempotent, answering from a state none of its moves start from without acting and without reporting anything. Before this, a specification had no way to write that down — so an author with an idempotent command either claimed a refusal the implementation never makes, or said nothing at all about those states.\n\nA key rather than \"leave `error:` out\", because those are not the same document: a branch missing its `error:` is a mistake the validator has caught since `wrong_state:` shipped, and making the omission mean *accepts* would turn every one of those mistakes into a silent claim.",
+          "type": [
+            "boolean",
+            "null"
+          ]
+        },
         "sets": {
           "description": "Which fields of the subject this outcome sets, and from where.\n\nKeyed by the entity's own field, and sparse for the reason [`PayloadSource`] gives about a payload: a field with no declared source is the implementation's to choose, and saying so by omission is a statement rather than a gap.\n\nA [`PayloadTable`] and not a map, for the reason that type exists: `serde_yaml` keeps the last of two identical keys, so a document that set one field two contradictory ways would parse clean and lose a line.",
           "type": "object",
