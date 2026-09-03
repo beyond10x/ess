@@ -103,7 +103,7 @@ Twenty-eight expectations covering all twelve kinds of the `infra-spec/1` vocabu
 appears at least twice — once where this cluster satisfies it and once where it does not — so a
 kind that stops working fails a test rather than quietly reporting `ok` everywhere. One kind,
 `image_pinned_by_digest`, has no satisfying case here because nothing in this cluster is
-digest-pinned; that positive lives in a purpose-built bundle in `crates/infra-spec/tests/`, and
+digest-pinned; that positive lives in a purpose-built bundle in `crates/infra/infra-spec/tests/`, and
 `every_expectation_kind_holds_somewhere_on_the_fixture_and_fails_somewhere_on_it` names the
 exception so it stays deliberate.
 
@@ -148,7 +148,7 @@ The last two are the part worth reading twice. Raising `flaky-agent` from one re
 satisfies `shop-replicas` and immediately breaks `shop-pdb`, which held before only because the
 workload had a single replica. The projection simulates its own changes, sees the gap it opened,
 marks it **induced**, and closes it in the same tree — so applying the whole directory leaves the
-cluster with more expectations holding and none newly broken. `crates/infra-project/tests/round_trip.rs`
+cluster with more expectations holding and none newly broken. `crates/infra/infra-project/tests/round_trip.rs`
 applies these files to `observation.json`, recompiles and re-simulates to prove it.
 
 Seven of the twenty-three gaps get a change; sixteen are decisions this build refuses to take for

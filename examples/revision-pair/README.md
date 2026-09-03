@@ -29,7 +29,7 @@ The grant and variant rows are the only relations this repository claims to deri
 Everything else a delta reports is *changed*, which says the two revisions differ and that no
 direction follows from the difference alone — a guard rewritten with different spacing, by
 contrast, resolves to the same canonical predicate and is not a change at all
-(`crates/ess-diff/tests/families.rs` proves that on a witness specification).
+(`crates/verify/ess-diff/tests/families.rs` proves that on a witness specification).
 
 ## The rest of the diff is a lie, and that is the point
 
@@ -44,8 +44,8 @@ to the system, and all of it is there deliberately:
 | every comment is rewritten | comments are not in the model |
 | `display: Auditor` written out on one side, left out on the other | the model falls back to the declaration's own last segment, so both spellings are the same display name |
 
-`crates/ess-diff/tests/revision_pair.rs` asserts the delta's contents change by change, and asserts by
-name that none of the four rows above reaches it. `crates/ess-diff/tests/impact.rs` asserts which of
+`crates/verify/ess-diff/tests/revision_pair.rs` asserts the delta's contents change by change, and asserts by
+name that none of the four rows above reaches it. `crates/verify/ess-diff/tests/impact.rs` asserts which of
 the ten scenarios each change puts back to owed, and the exact path that explains one of them.
 
 ## What is in the fixture and why
@@ -53,7 +53,7 @@ the ten scenarios each change puts back to owed, and the exact path that explain
 One domain, one entity, three commands, three events, two errors, two actors, one component: the
 smallest specification that carries one of each construct whose comparison the fixture is there to
 prove — and nothing it does not. There is deliberately no view and no binding here: those families
-are proven on the witness specification in `crates/ess-diff/tests/families.rs`, and the entity
+are proven on the witness specification in `crates/verify/ess-diff/tests/families.rs`, and the entity
 invariant's conformance scenarios are refused by the synthesiser (no view publishes `floor.amount`),
 which is itself the honest answer and part of what the fixture shows.
 

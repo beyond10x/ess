@@ -79,10 +79,10 @@ Validation accumulates: one run reports every refusal (invariant 3), each with a
 
 ## Delivered
 
-* `crates/infra-domain` — raw types (permissive, tolerate unknown fields) → validated
+* `crates/infra/infra-domain` — raw types (permissive, tolerate unknown fields) → validated
   observation via `TryFrom`, accumulating `ValidationErrors`; validated types never
   `Deserialize` (invariant 2, enforced by a source scan with an inverse assertion).
-* `crates/infra-compiler` — `InfraIr`: `BTreeMap`s keyed by identity
+* `crates/infra/infra-compiler` — `InfraIr`: `BTreeMap`s keyed by identity
   (`namespace/name`; workloads `namespace/kind/name`), compiler-minted handles with total
   lookups, unresolved facts, provenance, digest. Compilation is total.
 * `protocol infra validate | compile | inspect` — clap derive, `--format text|json|yaml`,
@@ -92,7 +92,7 @@ Validation accumulates: one run reports every refusal (invariant 3), each with a
   README documents the derivation and the three synthesized objects) and the committed IR,
   drift-checked by `cargo xtask infra --check` in the Taskfile (`infra-check`, gate step 8 of 9)
   and its own CI job.
-* Refusal fixtures under `crates/infra-domain/tests/fixtures/`, exercised at both the domain
+* Refusal fixtures under `crates/infra/infra-domain/tests/fixtures/`, exercised at both the domain
   layer and through the real binary.
 
 ## Acceptance (all held)

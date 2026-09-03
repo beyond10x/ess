@@ -104,9 +104,9 @@ a refusal the normative example does not — which is what a second fixture was 
 
 ## Does it bite
 
-[`crates/ess-conformance/src/faulty.rs`](../../crates/ess-conformance/src/faulty.rs) ships twelve
+[`crates/verify/ess-conformance/src/faulty.rs`](../../crates/verify/ess-conformance/src/faulty.rs) ships twelve
 implementations that are wrong in exactly one way each, and
-[`tests/faults.rs`](../../crates/ess-conformance/tests/faults.rs) asserts two properties per fault
+[`tests/faults.rs`](../../crates/verify/ess-conformance/tests/faults.rs) asserts two properties per fault
 rather than one:
 
 1. the fault fails **the scenario that exists to catch it**, by name — not "the run went red", which a
@@ -262,7 +262,7 @@ an observation the specification declines to make.
 
 **Attestation is still a gap**, unchanged by this wave and now load-bearing in one more place.
 
-**One number in the crate's own prose is stale.** `crates/ess-conformance/src/lib.rs` and
+**One number in the crate's own prose is stale.** `crates/verify/ess-conformance/src/lib.rs` and
 `examples/billing-conformance/README.md` both say *eleven* deliberate faults where `Fault::ALL` holds
 twelve and a test asserts the length. The count moved when `wrong-refusal-error` was added and two
 sentences did not follow it. Trivial, and recorded here rather than fixed silently, because this

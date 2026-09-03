@@ -15,7 +15,7 @@ Projected status after: **≈20% of the ESS design**, with AEP unchanged at 100%
 | Deliverable | Where |
 |---|---|
 | The join: artifact kind, evidence kind, `ess-conformance` principle | `aep-domain`, `principles/verification/` |
-| The typed model | [`crates/ess-domain/`](../../crates/ess-domain/) — 10 modules |
+| The typed model | [`crates/specify/ess-domain/`](../../crates/specify/ess-domain/) — 10 modules |
 | The normative example, parsed by a test | [`examples/billing/`](../../examples/billing/) |
 | `protocol ess validate` | [`crates/protocol-cli/`](../../crates/protocol-cli/) |
 | Published JSON Schema, drift-checked | [`schemas/generated/ess.schema.json`](../../schemas/generated/ess.schema.json) |

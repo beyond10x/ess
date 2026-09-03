@@ -185,7 +185,7 @@ and a test per construct per projection.
 
 That criterion originally read: *"OpenAPI and AsyncAPI are validated against their own schemas, not
 merely produced."* That is not what shipped, and the projection tests say so in writing
-(`crates/ess-gen/tests/openapi.rs:14`, `crates/ess-gen/tests/schema.rs:277`). Rather than leave the
+(`crates/generate/ess-gen/tests/openapi.rs:14`, `crates/generate/ess-gen/tests/schema.rs:277`). Rather than leave the
 roadmap as the last place still claiming an unmet gate, the criterion above states what is delivered:
 embedded schemas validated for real, envelopes checked structurally.
 

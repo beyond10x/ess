@@ -71,7 +71,7 @@ step; the same three steps got sharper teeth.
 
 ### Proven on the fixture pair
 
-`crates/ess-diff/tests/artifacts.rs`, by name: the revision pair's four-change delta narrows the
+`crates/verify/ess-diff/tests/artifacts.rs`, by name: the revision pair's four-change delta narrows the
 owed artifacts to a strict subset — the `Currency` changes reach the `Money`, `Headline` and
 command schemas, the domain page and both API documents, while the `PriceListId` and event schemas
 are absent; a grant change reaches the `OpenAPI` document (which renders grants) and not the
@@ -136,7 +136,7 @@ meant.
 
 ## W7.3 — a second emitter, and the seam proves itself. Delivered.
 
-**Go, and the plan did not move.** `crates/ess-synth/src/go/` consumes a finished `SynthesisPlan`
+**Go, and the plan did not move.** `crates/generate/ess-synth/src/go/` consumes a finished `SynthesisPlan`
 through exactly the surface `src/rust/` uses — `is_generated`, `obligation_of`, `generated`,
 `obligations` — and `src/plan.rs` gained not one line to admit it. The claim is checked rather than
 asserted, twice: `the_plan_is_byte_identical_in_both_targets_trees` compares the emitter's output,
@@ -236,7 +236,7 @@ fails. Nothing in W7.3 blocks it: the two trees exist, both build, and both are 
 
 Filed under W7.3's number rather than its own because it is the same claim continued: a third
 emitter behind the same seam, and the plan gained not one line to admit it. `PLAN.md` and
-`plan.json` are byte-identical in all three trees. `crates/ess-synth/src/web/` emits a
+`plan.json` are byte-identical in all three trees. `crates/generate/ess-synth/src/web/` emits a
 `WebAssembly` bridge over the Rust target's system — three `#[no_mangle]` exports passing JSON over
 linear memory, no `wasm-bindgen` and no build tool, because a gate step that resolves a crate is a
 gate step that reaches a network — beside one page whose command forms, event log, view tables and
@@ -273,7 +273,7 @@ components:
 deployed with it has to exist on a wire, and this repository projects exactly one contract for a
 component's command surface — the `OpenAPI` document under `generated/openapi/` — which is an HTTP
 contract. A synthesised server speaking anything else would contradict the document committed
-beside it. Neither variant of [`Reach`](../../crates/ess-domain/src/component.rs) says `http`, and
+beside it. Neither variant of [`Reach`](../../crates/specify/ess-domain/src/component.rs) says `http`, and
 adding one would be design §7's transport DSL, which this model has not taken.
 
 | what the word closed | how |

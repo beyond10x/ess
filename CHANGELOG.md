@@ -1,5 +1,22 @@
 # Changelog
 
+## [Unreleased]
+
+### Changed
+
+- **Every crate moved under the area it serves — `crates/<area>/<crate>/` — and no crate or binary
+  was renamed.** `specify/` carries an authored system to a validated IR, `generate/` turns that IR
+  into artifacts, `verify/` holds an implementation or a later revision to it, `infra/` is the
+  separate bounded context over an observed cluster, and `edge/` is the `ess` binary and this
+  repository's own tooling. Every `[package] name`, every `[workspace.dependencies]` key and the
+  `ess` binary name are the bytes they were: nothing an adopter builds, links or runs changed, and
+  `cargo metadata` names the same twenty-two packages. `ess-deployment` is under `generate/`
+  because it depends on `ess-compiler` and `ess-realization` and on no `infra-*` crate.
+- A workspace test now asserts both halves of that layout: every member sits under one of the five
+  areas, and every literal `crates/<crate>/…` path this repository writes down — a fixture argument
+  in `Taskfile.yml`, a source path a test reads, a path named in prose — resolves to something that
+  exists. The paths that break on a move are the ones no compiler reads.
+
 ## [0.11.0] — 2026-09-03
 
 ### Added

@@ -121,8 +121,8 @@ named obligation for a human. Nothing reaches a cluster. See
 
 ---
 
-**Sources.** `crates/ess-domain/` through `crates/ess-synth/`;
-`crates/ess-diff/src/lib.rs` (the construct families); `crates/infra-spec/src/spec.rs`;
+**Sources.** `crates/specify/ess-domain/` through `crates/generate/ess-synth/`;
+`crates/verify/ess-diff/src/lib.rs` (the construct families); `crates/infra/infra-spec/src/spec.rs`;
 `examples/billing/` (the normative
 specification); `suites/generated/*/suite.json` (the scenario counts);
 `generated/rust/billing/PLAN.md`; `CHANGELOG.md` §§ *0.4.0*, *0.5.0*.

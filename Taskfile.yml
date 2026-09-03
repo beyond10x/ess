@@ -52,9 +52,9 @@ tasks:
       - cargo run --quiet --locked --bin ess -- validate --path examples/oracle-fixture
       - >-
         cargo run --quiet --locked --bin ess -- compose
-        --path crates/ess-composition/tests/fixtures/compositions/workbench.yaml
-        --service todo=crates/ess-composition/tests/fixtures/two-components
-        --service usage=crates/ess-composition/tests/fixtures/two-components
+        --path crates/specify/ess-composition/tests/fixtures/compositions/workbench.yaml
+        --service todo=crates/specify/ess-composition/tests/fixtures/two-components
+        --service usage=crates/specify/ess-composition/tests/fixtures/two-components
       - >-
         cargo run --quiet --locked --bin ess -- realization validate
         --path examples/realizations/billing-local.yaml
@@ -63,13 +63,13 @@ tasks:
       - cargo run --quiet --locked --bin ess -- import openapi --path generated/openapi/invoice-service.yaml --format json
       - >-
         cargo run --quiet --locked --bin ess -- schema validate
-        crates/ess-cli/tests/fixtures/schema-contract/instances
-        --schemas crates/ess-cli/tests/fixtures/schema-contract/registry
+        crates/edge/ess-cli/tests/fixtures/schema-contract/instances
+        --schemas crates/edge/ess-cli/tests/fixtures/schema-contract/registry
       - >-
         cargo run --quiet --locked --bin ess -- schema typescript urn:example:widget:1
         --root Widget
-        --schemas crates/ess-cli/tests/fixtures/schema-contract/registry
-        --out crates/ess-cli/tests/fixtures/schema-contract/expected/widget.ts
+        --schemas crates/edge/ess-cli/tests/fixtures/schema-contract/registry
+        --out crates/edge/ess-cli/tests/fixtures/schema-contract/expected/widget.ts
         --check
 
   release-check:

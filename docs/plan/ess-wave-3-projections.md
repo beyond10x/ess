@@ -164,8 +164,8 @@ one.
 ## Open decision — `OpenAPI` and `AsyncAPI` are not validated against their meta-schemas
 
 W3.2 asked for these documents to be "validated against their own schemas". They are not. What ships
-is hand-written structural validation: `assert_valid` in `crates/ess-gen/tests/openapi.rs` and
-`a_document_is_a_valid_asyncapi_three_skeleton` in `crates/ess-gen/tests/asyncapi.rs` check the
+is hand-written structural validation: `assert_valid` in `crates/generate/ess-gen/tests/openapi.rs` and
+`a_document_is_a_valid_asyncapi_three_skeleton` in `crates/generate/ess-gen/tests/asyncapi.rs` check the
 version string, `info.title` and `info.version`, that every path starts with `/`, that every operation
 has an `operationId`, that every response key is three digits and carries a non-empty `description`,
 that every parameter names a location the specification format knows, and that every action is `send`

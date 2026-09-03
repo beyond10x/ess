@@ -17,7 +17,7 @@ mapped and analyzed".
 
 ## Delivered
 
-* `crates/infra-analyze` — the third infrastructure crate: `graph` (typed edges, Mermaid and
+* `crates/infra/infra-analyze` — the third infrastructure crate: `graph` (typed edges, Mermaid and
   JSON renderings, derived pod ownership), `diagnose` (fourteen rules), `code` (the
   `INFRA-DIAG-*` registry with severities), `properties` (replicas, parsed images, resource
   envelopes).

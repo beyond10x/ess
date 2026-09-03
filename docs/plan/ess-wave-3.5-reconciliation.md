@@ -72,7 +72,7 @@ paragraph are not: those stay human, and the mitigation is that this table exist
 ### G2 — `on_failure: escalate` has an observable consequence
 
 `examples/billing/components.yaml:56` declares `on_failure: escalate`. `Failure::Escalate`
-(`crates/ess-domain/src/binding.rs:168`) documents it as "Surface it to a person". Nothing in the
+(`crates/specify/ess-domain/src/binding.rs:168`) documents it as "Surface it to a person". Nothing in the
 model says what surfacing *is*: no event, no command, no view field, no state. So a conformance target
 cannot be asked to prove escalation happened, and the flagship example contains a requirement the
 flagship oracle cannot check.
@@ -129,7 +129,7 @@ Those two contracts do not belong behind one trait, and the refusals must be typ
 rather than a silent omission.
 
 **Synthesis consumes the decisions the compiler already made.** `ResolvedOutcome::test_strategy`
-(`crates/ess-compiler/src/ir.rs:484`) and `ResolvedView::assertion_style` (`ir.rs:602`) exist so that no
+(`crates/specify/ess-compiler/src/ir.rs:484`) and `ResolvedView::assertion_style` (`ir.rs:602`) exist so that no
 generator decides independently whether a branch is reachable by constructing an input, or whether a
 view assertion must be retried. Both doc comments say why: a decision made per projection is a
 decision made wrong eventually. If synthesis asks those questions again, that is a regression.
@@ -191,7 +191,7 @@ was never validated, and every rule downstream is then reasoning about a value w
 checked. Every other guarantee in this repository sits on top of that one.
 
 There is a precedent for enforcing a rule like this mechanically rather than by review:
-`crates/ess-compiler/tests/billing.rs:275` scans every source file in the crate for banned tokens
+`crates/specify/ess-compiler/tests/billing.rs:275` scans every source file in the crate for banned tokens
 (`HashMap`, `SystemTime`, `rand::`) with the reasoning that a compile-twice test cannot catch either
 failure mode. A scan for `Deserialize` on the validated types, or a `trybuild` case per type, is the same
 shape of answer. Note the scan there covers only `ess-compiler/src`; `ess-domain` and `ess-gen` have no
@@ -233,7 +233,7 @@ pinning `stable` is a no-op, and either would override all three existing jobs a
 costs about two seconds because it reuses the dependency build `Test` already paid for. It lands red:
 **35 warnings across 11 files and 8 crates** — 17 redundant explicit link targets, 7 links from public
 documentation into private items, one `resolve` that is both a function and a module
-(`crates/aep-engine/src/lib.rs:29`), and one genuinely broken link at `crates/ess-gen/src/openapi.rs:175`
+(`crates/aep-engine/src/lib.rs:29`), and one genuinely broken link at `crates/generate/ess-gen/src/openapi.rs:175`
 (`BTreeSet`, not in scope).
 
 Clippy already denies `missing_docs`, so this is not that. What only rustdoc sees is the other half of
@@ -299,7 +299,7 @@ reproduced independently with a conforming validator. It demands `name:` on a co
 while the parser accepts `component:` and `id:` and the normative example uses exactly those.
 
 The cause is one line of type-level drift: `#[serde(alias = "component")]` on
-`crates/ess-domain/src/component.rs` is invisible to `schemars`, so the generated schema describes the
+`crates/specify/ess-domain/src/component.rs` is invisible to `schemars`, so the generated schema describes the
 canonical spelling only. `AGENTS.md` records that wire-format aliases are deliberate — both spellings
 appear in the design documents, and aliases are accepted on input on purpose. The schema does not know
 that, so it publishes half the language.
@@ -316,14 +316,14 @@ normative example. That is the same shape as every survived mutation this milest
 assertion is real, and the state where it would fail is unreachable from the fixture.
 
 This exact defect class is recorded in this repository already, in
-`crates/ess-gen/tests/schema.rs`'s module doc: *"this repository has published a schema that rejected
+`crates/generate/ess-gen/tests/schema.rs`'s module doc: *"this repository has published a schema that rejected
 its own normative example, and … one that described a Rust representation rather than what an author
 writes. Both were well formed. Both passed every check that only asked whether the output parsed."* It
 has now happened a third time, in the one place that comment was not looking.
 
 Two things to fix, and the second matters more: the schema should describe both spellings, since both
 are legal input; and the test must **discover** the example's files rather than list them, so a file
-added to the example cannot be silently exempt. `crates/ess-compiler/tests/billing.rs` already
+added to the example cannot be silently exempt. `crates/specify/ess-compiler/tests/billing.rs` already
 discovers rather than lists, and says why.
 
 ## The property-based work, and where it sits
@@ -334,9 +334,9 @@ to the class of defect G5 is made of, and G5's mutations are the argument for it
 **Phase 1, harden this repository.** Generate adversarial *specifications* and assert the properties
 that must hold for all of them: no panic, no non-termination, a refusal rather than an acceptance, and
 byte-identical output on a second run. The generator must live in `tests/` or its own crate, never in
-`src` — `crates/ess-compiler/tests/billing.rs:286` mechanically bans the token `rand::` under
+`src` — `crates/specify/ess-compiler/tests/billing.rs:286` mechanically bans the token `rand::` under
 `ess-compiler/src`, and that guard is worth keeping. The `proptest` dev-dependency must carry a
-justification comment of the standard set by `crates/ess-gen/Cargo.toml:20`.
+justification comment of the standard set by `crates/generate/ess-gen/Cargo.toml:20`.
 
 **Phase 2, witness synthesis for wave 4.** Gated on G16, which is where the optimism goes. Generate-and-
 filter is the right shape — keep candidates whose `Predicate::evaluate` returns `True` and discard
@@ -354,13 +354,13 @@ refuses; this page was the only place that said otherwise. Add `proptest`'s shri
 minimal, which is the difference between a counterexample a person acts on and one they re-derive.
 
 Two hazards specific to this codebase, both from the sweep: a handle from one `EssIr` used against another
-panics *by design* (`crates/ess-compiler/src/ir.rs:141`), so a generator that mixes two compilations will
+panics *by design* (`crates/specify/ess-compiler/src/ir.rs:141`), so a generator that mixes two compilations will
 look like a crash rather than a mistake; and `Operand::parse`'s dot heuristic
 (`crates/aep-domain/src/predicate.rs:225`) reads any unquoted bare word containing a dot as a fact path, so
 a generated literal like `en.US` silently becomes a path lookup.
 
 Phase 1 has a ready-made property, generalising the byte-identical test at
-`crates/ess-compiler/tests/billing.rs:256`: **any generated document either yields at least one
+`crates/specify/ess-compiler/tests/billing.rs:256`: **any generated document either yields at least one
 `ValidationCode`, or compiles and re-serialises identically.** No panic, no hang, no third outcome.
 
 ## Decisions taken

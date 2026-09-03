@@ -17,7 +17,7 @@ else moved.
 
 ## Delivered
 
-* `crates/infra-project` — the fifth infrastructure crate: `patch` (merge and strategic patches,
+* `crates/infra/infra-project` — the fifth infrastructure crate: `patch` (merge and strategic patches,
   generated objects, deterministic filenames), `project` (the three dispositions, the fixed point,
   the self-check, `infra-projection/1`), `render` (`SUMMARY.md`, `OBLIGATIONS.md`, the terminal
   form).
@@ -171,7 +171,7 @@ which of its entries are its own doing.
 
 ## The round trip, asserted
 
-`crates/infra-project/tests/round_trip.rs` reaches the post-state a second, independent way: it
+`crates/infra/infra-project/tests/round_trip.rs` reaches the post-state a second, independent way: it
 applies the emitted patch files to `observation.json`, appends the generated manifests, recompiles
 the bundle from scratch and re-simulates. Then, for every entry:
 

@@ -18,6 +18,28 @@ The contract for changing this repository. Organization-wide rules live in `atla
   references, and refusals.
 - Anything executable is Rust. Do not add Python or shell checkers.
 
+## Crate tree
+
+`crates/<area>/<crate>/`. The area is the directory only; a crate's name is its identity and is
+never changed to follow a move.
+
+- **`crates/specify/`** — `ess-primitives`, `ess-domain`, `ess-compiler`, `ess-composition`,
+  `ess-realization`: an authored system becomes a validated, resolved IR.
+- **`crates/generate/`** — `ess-gen`, `ess-synth`, `ess-openapi`, `schema-contract`,
+  `ess-deployment`: that IR becomes artifacts, and nothing here applies one to a running system.
+- **`crates/verify/`** — `ess-conformance`, `ess-diff`: an implementation held to the
+  specification, and one revision of a specification against another.
+- **`crates/infra/`** — `infra-domain`, `infra-compiler`, `infra-analyze`, `infra-spec`,
+  `infra-project`, `ess-kubernetes`: the observed cluster, a separate bounded context whose only
+  dependency on the rest is `ess-primitives`.
+- **`crates/edge/`** — `ess-cli`, `ess-xtask`: the `ess` binary an adopter runs, and this
+  repository's own tooling.
+
+`ess-deployment` sits under `generate/` rather than `infra/` because its dependencies are
+`ess-compiler` and `ess-realization` and it has no `infra-*` dependency at all — an environment
+lowered to a deployment document is a projection of the specification, not an observation of a
+cluster.
+
 ## Determinism and formats
 
 - Ordered collections only in persisted or generated data.

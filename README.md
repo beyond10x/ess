@@ -107,6 +107,23 @@ into JSON Schema, OpenAPI and Rust.
 `0.4.0`, adds frontmatter and `sidebar.json` to the same pages so a static site generator can consume
 them. It does not accept prose as its specification and does not emit HTML, a theme, or hosting.
 
+## The crate tree
+
+Crates sit under the area they serve. The name of a crate is its identity and no move changed one;
+the directory says which half of the pipeline it belongs to.
+
+- **`crates/specify/`** — `ess-primitives`, `ess-domain`, `ess-compiler`, `ess-composition`,
+  `ess-realization`: an authored system becomes a validated, resolved IR.
+- **`crates/generate/`** — `ess-gen`, `ess-synth`, `ess-openapi`, `schema-contract`,
+  `ess-deployment`: that IR becomes artifacts, and nothing here applies one to a running system.
+- **`crates/verify/`** — `ess-conformance`, `ess-diff`: an implementation held to the
+  specification, and one revision of a specification against another.
+- **`crates/infra/`** — `infra-domain`, `infra-compiler`, `infra-analyze`, `infra-spec`,
+  `infra-project`, `ess-kubernetes`: the observed cluster, a separate bounded context whose only
+  dependency on the rest is `ess-primitives`.
+- **`crates/edge/`** — `ess-cli`, `ess-xtask`: the `ess` binary an adopter runs, and this
+  repository's own tooling.
+
 Run the complete offline gate with:
 
 ```console

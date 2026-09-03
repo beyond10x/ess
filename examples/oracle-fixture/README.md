@@ -34,5 +34,5 @@ ess validate --path examples/oracle-fixture
 ess compile  --path examples/oracle-fixture
 ```
 
-`crates/ess-compiler/tests/oracle_fixture.rs` asserts each row of the table above against the
+`crates/specify/ess-compiler/tests/oracle_fixture.rs` asserts each row of the table above against the
 compiled IR, so a corner cannot be deleted from these files without a named test failing.

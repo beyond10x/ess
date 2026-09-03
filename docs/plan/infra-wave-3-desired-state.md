@@ -17,7 +17,7 @@ running cluster raises: what moved since the last scan.
 
 ## Delivered
 
-* `crates/infra-spec` — the fourth infrastructure crate: `spec` (twelve expectation kinds, three
+* `crates/infra/infra-spec` — the fourth infrastructure crate: `spec` (twelve expectation kinds, three
   scopes), `raw` (raw→validated, eight `INFRA-SPEC-*` refusals, accumulating), `facts` (the
   workload fact sheet the predicate escape hatch reads, and why each withheld fact is withheld),
   `simulate` (the evaluator, `infra-simulation/1`), `drift` (sixteen change kinds,
