@@ -1,5 +1,33 @@
 # Changelog
 
+## [0.6.0] — 2026-09-03
+
+### Changed
+
+- **`--kind site` writes a website, not inputs for one.** It used to emit markdown with frontmatter
+  and a sidebar list, leaving an adopter to run a static site generator over it — measured on the
+  one that did: `npm ci` plus a webpack build peaking at 3931 MiB, killed twice by a CI runner, to
+  render seven pages of prose that were already written. It now writes the pages as HTML with
+  navigation, a stylesheet and a diagram renderer beside them, so publishing a specification is one
+  command and needs no Node. **An adopter consuming the old markdown output must change.**
+- The documentation projection is built as an `ess-docs/1` document and rendered, rather than
+  written as markdown directly. The markdown a repository reads is unchanged, byte for byte, and
+  the documentation of every example is now pinned and compared to keep it so. The point of the
+  layer is that the site renderer reads the same document instead of parsing the markdown back —
+  which is what it had to do before, scanning for a heading to recover a title it had just written.
+- The site's stylesheet and its vendored Mermaid bundle stay out of the committed projection
+  sample. Neither derives from a specification, and the bundle alone is 3.5 MB.
+
+### Added
+
+- `--kind docs-ir` writes the `ess-docs/1` document as JSON, so a presentation layer of your own
+  needs nothing from this crate.
+- `--kind site` opens on the `README.md` beside the specification, and takes
+  `--include <page-id>=<path>` for any number of pages beside the generated ones — a plan board
+  another tool rendered, a runbook. Both are markdown somebody wrote, read into the document and
+  styled like every other page. Raw HTML in them is dropped rather than passed through: a generated
+  site that embedded it would inherit that markdown's scripts and its styling.
+
 ## [0.5.1] — 2026-09-03
 
 ### Fixed
