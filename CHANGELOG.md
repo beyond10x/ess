@@ -1,5 +1,46 @@
 # Changelog
 
+## [0.11.0] — 2026-09-03
+
+### Added
+
+- **A wrong-state branch that accepts rather than refuses: `refuses: false`.** `wrong_state:` could
+  say one thing — the command refuses here, and reports this error — so a command that is
+  deliberately idempotent had no way to be written down. ACD's `EndCall` on a call that has already
+  ended answers and does nothing, on purpose and documented; its specification claimed a refusal the
+  code never makes, and that claim was filed as a defect in ACD before anybody read the code. A key
+  rather than "leave `error:` out": a branch missing its error is a mistake the validator has caught
+  since `wrong_state:` shipped, and making the omission mean *accepts* would turn every one of those
+  mistakes into a silent claim. The generated scenario's id says which claim it carries —
+  `…/accepts/EndCall` beside `…/refuses/CancelInvoice`.
+- **`params:` on a view, and a `query_view` that carries them.** Most views are one answer the whole
+  system shares. ACD's position in a queue is not: it is per queue, and one ranked list of every
+  queued call is a different thing from what the implementation can be asked. A parameter is read in
+  the filter as `param.<name>`, so the predicate grammar needs nothing new; `params:` and the
+  parameters the filter reads must be the same set. Synthesis binds each from what the arrangement
+  settled — the scenario asks for the lane it just put the order in — and the runner refuses to send
+  a request with a parameter it could not resolve, because a query with a made-up parameter reads a
+  different set of rows and every assertion after it is about the wrong thing. `SemanticViewRequest`
+  and the Go runner's `ViewRequest` gain `Params`.
+- **`task release-status` checks that every pushed version tag is on `origin/main`.** See *Fixed*.
+
+### Changed
+
+- **A view's filter is now decided against what the arrangement settled, not only against the
+  state.** The state was the only fact a synthesised scenario knew about the instance it had just
+  created; `sets:` made the rest knowable in 0.10.0. Without this, `lane_id == param.lane_id` stays
+  undecidable however well the parameter is bound, because the left side is the one nothing had
+  answered. A filter over a field the scenario supplied is now decidable, so more views are asserted
+  and fewer are refused as undecidable.
+
+### Fixed
+
+- **A release could be tagged on a branch that never reached `main`.** `task release-status` asked
+  the remote for the tag list and GitHub for the release list, and neither says which line a commit
+  is on — so `0.10.0`, tagged on `feat/outcome-sets-entity-fields` and never merged, reported
+  "tagged and published" while `main` did not have a line of it. It is checked now, and `AGENTS.md`
+  says to merge before tagging.
+
 ## [0.10.0] — 2026-09-03
 
 ### Added

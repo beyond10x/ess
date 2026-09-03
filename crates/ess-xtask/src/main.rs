@@ -293,7 +293,12 @@ fn tags_off_main(root: &Path, tags: &BTreeSet<String>) -> Result<BTreeSet<String
     let mut off = BTreeSet::new();
     for tag in tags {
         let known = std::process::Command::new("git")
-            .args(["rev-parse", "--quiet", "--verify", &format!("{tag}^{{commit}}")])
+            .args([
+                "rev-parse",
+                "--quiet",
+                "--verify",
+                &format!("{tag}^{{commit}}"),
+            ])
             .current_dir(root)
             .output()
             .is_ok_and(|out| out.status.success());
