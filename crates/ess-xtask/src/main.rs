@@ -139,7 +139,8 @@ fn run(cli: Cli) -> Result<String, String> {
             let (version, changelog) = release_inputs(&root)?;
             let tags = pushed_version_tags(&root)?;
             let releases = published_releases(&root)?;
-            release_status(&version, &changelog, &tags, &releases)
+            let stranded = tags_off_main(&root, &tags)?;
+            release_status(&version, &changelog, &tags, &releases, &stranded)
         }
     }
 }
@@ -216,6 +217,7 @@ fn release_status(
     changelog: &str,
     tags: &BTreeSet<String>,
     releases: &BTreeSet<String>,
+    off_main: &BTreeSet<String>,
 ) -> Result<String, String> {
     release_notes(changelog, version)?;
     let cut = match (tags.contains(version), releases.contains(version)) {
@@ -229,10 +231,21 @@ fn release_status(
         .filter(|tag| !releases.contains(*tag))
         .map(String::as_str)
         .collect();
+    if !off_main.is_empty() {
+        let _ = write!(
+            report,
+            "version tags whose commit is not on `origin/main`: {}\n\
+             a release names the line everybody else builds on. `0.10.0` was tagged on a feature \
+             branch that was never merged, and every other check passed because every other check \
+             reads `HEAD`. Merge the branch, then tag.\n",
+            off_main.iter().cloned().collect::<Vec<_>>().join(", ")
+        );
+        return Err(report);
+    }
     if stranded.is_empty() {
         let _ = writeln!(
             report,
-            "version tags pushed: {}, each with a GitHub Release",
+            "version tags pushed: {}, each on `origin/main` and each with a GitHub Release",
             tags.len()
         );
         return Ok(report);
@@ -246,6 +259,57 @@ fn release_status(
         stranded.join(", ")
     );
     Err(report)
+}
+
+/// The version tags whose commit is not reachable from `main` on `origin`.
+///
+/// A release is a claim about the line everybody else builds on, and until this existed nothing
+/// here looked at that line. `0.10.0` was tagged on `feat/outcome-sets-entity-fields`, which was
+/// never merged: `task release-status` reported it tagged and published, and `main` did not have a
+/// line of it. AEP hit the same shape one version later and cut a *newer* release that silently
+/// dropped the older one's features.
+///
+/// The remote is asked rather than `refs/remotes/origin/main`, which is only as fresh as the last
+/// fetch. A tag whose commit the local object store does not hold is left out rather than reported
+/// — *cannot tell* and *is off main* are different answers, and only one of them is a defect.
+fn tags_off_main(root: &Path, tags: &BTreeSet<String>) -> Result<BTreeSet<String>, String> {
+    let output = std::process::Command::new("git")
+        .args(["ls-remote", "origin", "refs/heads/main"])
+        .current_dir(root)
+        .output()
+        .map_err(|error| format!("running git to read the remote's main: {error}"))?;
+    if !output.status.success() {
+        return Err(format!(
+            "git ls-remote failed: {}",
+            String::from_utf8_lossy(&output.stderr).trim()
+        ));
+    }
+    let head = String::from_utf8_lossy(&output.stdout)
+        .split_whitespace()
+        .next()
+        .map(ToOwned::to_owned)
+        .ok_or_else(|| "origin has no `main`".to_owned())?;
+
+    let mut off = BTreeSet::new();
+    for tag in tags {
+        let known = std::process::Command::new("git")
+            .args(["rev-parse", "--quiet", "--verify", &format!("{tag}^{{commit}}")])
+            .current_dir(root)
+            .output()
+            .is_ok_and(|out| out.status.success());
+        if !known {
+            continue;
+        }
+        let reachable = std::process::Command::new("git")
+            .args(["merge-base", "--is-ancestor", tag, &head])
+            .current_dir(root)
+            .output()
+            .is_ok_and(|out| out.status.success());
+        if !reachable {
+            off.insert(tag.clone());
+        }
+    }
+    Ok(off)
 }
 
 /// The release tags the remote carries.
@@ -865,6 +929,7 @@ mod tests {
             "## [0.5.1] \u{2014} 2026-09-03\n\n- Fixed.\n",
             &BTreeSet::from(["0.5.0".to_owned(), "0.5.1".to_owned()]),
             &BTreeSet::from(["0.5.1".to_owned()]),
+            &BTreeSet::new(),
         )
         .expect_err("a pushed tag with no release is an incomplete release");
         assert!(refusal.contains("version tags with no GitHub Release: 0.5.0"));
@@ -879,8 +944,33 @@ mod tests {
                 "## [0.6.0] \u{2014} 2026-09-04\n\n- Next.\n",
                 &BTreeSet::from(["0.5.1".to_owned()]),
                 &BTreeSet::from(["0.5.1".to_owned()]),
+                &BTreeSet::new(),
             ),
-            Ok("release 0.6.0: workspace version and changelog agree, not cut yet\nversion tags pushed: 1, each with a GitHub Release\n".to_owned())
+            Ok("release 0.6.0: workspace version and changelog agree, not cut yet\nversion tags pushed: 1, each on `origin/main` and each with a GitHub Release\n".to_owned())
+        );
+    }
+
+    #[test]
+    fn a_version_tag_whose_commit_never_reached_main_is_refused() {
+        // `0.10.0` was tagged on `feat/outcome-sets-entity-fields` and published, and `main` did
+        // not have a line of it — because every other check here reads the workspace and the
+        // remote's tag list, and neither says which line a commit is on. AEP hit the same shape
+        // and cut a *newer* release that silently dropped the older one's features.
+        let refusal = release_status(
+            "0.5.1",
+            "## [0.5.1] \u{2014} 2026-09-03\n\n- Fixed.\n",
+            &BTreeSet::from(["0.5.0".to_owned(), "0.5.1".to_owned()]),
+            &BTreeSet::from(["0.5.0".to_owned(), "0.5.1".to_owned()]),
+            &BTreeSet::from(["0.5.1".to_owned()]),
+        )
+        .expect_err("a tag off `main` is not a complete release");
+        assert!(
+            refusal.contains("version tags whose commit is not on `origin/main`: 0.5.1"),
+            "{refusal}"
+        );
+        assert!(
+            refusal.contains("Merge the branch, then tag."),
+            "the refusal says what to do about it: {refusal}"
         );
     }
 

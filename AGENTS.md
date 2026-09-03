@@ -67,9 +67,14 @@ run that fails:
 task release-status
 ```
 
-It asks the remote and GitHub whether every pushed version tag has a release behind it, and fails
-while one does not. `.github/workflows/release-record.yml` runs it after every release run and
-daily.
+It asks the remote and GitHub whether every pushed version tag is on `origin/main` and has a
+release behind it, and fails while one is not. `.github/workflows/release-record.yml` runs it after
+every release run and daily.
+
+**Merge the branch, then tag.** `0.10.0` was tagged on `feat/outcome-sets-entity-fields`, published,
+and `main` did not have a line of it — every other check reads the workspace and the remote's tag
+list, and neither says which line a commit is on. AEP hit the same shape one version later and cut a
+*newer* release that silently dropped the older one's features.
 
 ## Where work is tracked
 
