@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.8.0] — 2026-09-03
+
+### Added
+
+- **Physical realizations are typed data without changing `EssIr`.** An adopter-authored
+  `ess-realization/1` binds one exact ESS system, version, and semantic digest to resolved
+  components and actors, immutable implementation artifacts, typed runtime requirements, and local,
+  loopback, or network entrypoints. `ess realization compile` emits deterministic
+  `ess-realization-ir/1` and rejects stale locks, unresolved or out-of-subset references,
+  incomplete implementation coverage, malformed placeholders, and inline secret arguments.
+- `ess realization generate` projects the same resolved IR into a deterministic run-mode guide and
+  supports `--check` for committed-document drift.
+
 ## [0.7.0] — 2026-09-03
 
 ### Fixed

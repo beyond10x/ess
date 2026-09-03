@@ -18,6 +18,8 @@ cargo run --bin ess -- import openapi --path api.yaml --out interface.json
 cargo run --bin ess -- project openapi --ir interface.json --out normalized-api.yaml
 cargo run --bin ess -- schema validate instances --schemas schemas
 cargo run --bin ess -- schema typescript urn:example:registry:1 --root Registry --schemas schemas
+cargo run --bin ess -- realization validate --path realization.yaml --spec path/to/spec
+cargo run --bin ess -- realization generate --path realization.yaml --spec path/to/spec --out running-modes.md
 ```
 
 ## Install the command
@@ -35,7 +37,7 @@ Pick the target for your machine from the [release page](https://github.com/beyo
 For example, to install the current release for Apple Silicon in the current directory:
 
 ```console
-version=0.5.1
+version=0.8.0
 target=aarch64-apple-darwin
 archive="ess-${version}-${target}.tar.gz"
 base="https://github.com/beyond10x/ess/releases/download/${version}"
@@ -70,6 +72,12 @@ Adapters use one explicit contract:
 distinct. The compiler IRs keep compiler-minted handles, total lookups, ordered collections, and
 deterministic serialization. New typed constructs are added only when an importer or projector
 establishes their semantics; there is no generic property bag or facet registry.
+
+`ess-realization/1` describes one physical implementation of an exact `EssIr` without changing the
+semantic system. It binds the ESS digest to immutable implementation artifacts and typed
+entrypoints, including local CLIs, loopback browser surfaces, model-backed agent loops, or
+approval-required hosted interfaces. `ess realization compile` emits `ess-realization-ir/1`; the
+Markdown generator turns the same IR into a drift-checkable run-mode guide.
 
 A construct is a design page before it is code. The binding designs live in `docs/design/`; entity
 relations shipped in `0.5.0` and their

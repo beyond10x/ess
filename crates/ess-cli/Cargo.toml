@@ -21,6 +21,7 @@ serde_yaml.workspace = true
 ess-domain.workspace = true
 ess-compiler.workspace = true
 ess-composition.workspace = true
+ess-realization.workspace = true
 ess-conformance.workspace = true
 ess-diff.workspace = true
 ess-gen.workspace = true

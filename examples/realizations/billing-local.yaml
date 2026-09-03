@@ -1,0 +1,44 @@
+type: ess-realization/1
+id: billing-local
+specification:
+  system: billing
+  version: v3
+  source_digest: sha256:62706dc8de60f859f9fa11d363bae20825e7c74e71435e2fd28691488d787af1
+synthesis:
+  target: rust-linux-x86_64/1
+  generator: ess/0.8.0
+components: [invoice-service]
+actors: [billing.invoice.Customer, billing.invoice.Auditor]
+implementations:
+  - id: billing-binary
+    components: [invoice-service]
+    artifact:
+      kind: binary
+      locator: https://example.invalid/billing.tar.gz
+      identity: sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+entrypoints:
+  - id: local-tui
+    title: Local TUI
+    summary: Run the interactive terminal interface.
+    primary: true
+    interaction: agent_loop
+    attachment: in_process
+    availability: public
+    support: preview
+    implementation: billing-binary
+    actors: [billing.invoice.Customer]
+    surfaces:
+      - kind: command
+        name: billing.invoice.CreateInvoice
+      - kind: view
+        name: billing.invoice.InvoiceById
+    invocation:
+      kind: argv
+      argv: [billing, tui, --model, "${MODEL}"]
+    requires:
+      - kind: operating_system
+        name: linux
+        summary: Linux host.
+      - kind: environment_variable
+        name: MODEL
+        summary: Model identifier, not a credential.

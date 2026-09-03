@@ -53,6 +53,11 @@ enum Command {
         #[arg(long, value_enum, default_value_t = Format::Text)]
         format: Format,
     },
+    /// Validate, compile, or document a physical realization of one exact ESS.
+    Realization {
+        #[command(subcommand)]
+        command: RealizationCommand,
+    },
     /// Inspect one declaration in resolved IR.
     Inspect {
         #[command(flatten)]
@@ -287,6 +292,44 @@ enum ConformCommand {
     },
 }
 
+#[derive(Debug, Subcommand)]
+enum RealizationCommand {
+    /// Validate and resolve an `ess-realization/1` declaration.
+    Validate(RealizationInput),
+    /// Compile a declaration into canonical `ess-realization-ir/1` JSON.
+    Compile {
+        #[command(flatten)]
+        input: RealizationInput,
+        /// Where to write canonical JSON IR.
+        #[arg(long)]
+        out: Option<PathBuf>,
+    },
+    /// Generate the deterministic public-facing run-mode guide.
+    Generate {
+        #[command(flatten)]
+        input: RealizationInput,
+        /// Markdown file to write or compare.
+        #[arg(long)]
+        out: PathBuf,
+        /// Compare with `--out` and fail on drift instead of writing.
+        #[arg(long)]
+        check: bool,
+    },
+}
+
+#[derive(Debug, clap::Args)]
+struct RealizationInput {
+    /// An `ess-realization/1` JSON or YAML document.
+    #[arg(long)]
+    path: PathBuf,
+    /// One ESS file or a directory containing `system.yaml`.
+    #[arg(long = "spec")]
+    specification: PathBuf,
+    /// Output and diagnostic rendering.
+    #[arg(long, value_enum, default_value_t = Format::Text)]
+    format: Format,
+}
+
 /// What a synthesized suite is written as.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
 enum SuiteTarget {
@@ -420,6 +463,7 @@ fn run(cli: Cli) -> Result<ExitCode> {
             client_rust_out.as_deref(),
             format,
         ),
+        Command::Realization { command } => realization(&command),
         Command::Inspect { input, name } => inspect(&input.path, &name, input.format),
         Command::Graph { input, format } => graph(&input.path, format),
         Command::Diff { from, to, format } => diff(&from, &to, format),
@@ -448,6 +492,90 @@ fn run(cli: Cli) -> Result<ExitCode> {
         Command::Schema { command } => schema::run(command),
         Command::Infra { command } => infra(command),
     }
+}
+
+fn realization(command: &RealizationCommand) -> Result<ExitCode> {
+    let (input, out, generate) = match command {
+        RealizationCommand::Validate(input) => (input, None, None),
+        RealizationCommand::Compile { input, out } => (input, out.as_deref(), None),
+        RealizationCommand::Generate { input, out, check } => {
+            (input, Some(out.as_path()), Some(*check))
+        }
+    };
+    let text = fs::read_to_string(&input.path)
+        .with_context(|| format!("reading {}", input.path.display()))?;
+    let specification = if input
+        .path
+        .extension()
+        .is_some_and(|extension| extension == "json")
+    {
+        ess_realization::RealizationSpec::from_json(&text)
+            .with_context(|| format!("reading {} as realization JSON", input.path.display()))?
+    } else {
+        ess_realization::RealizationSpec::from_yaml(&text)
+            .with_context(|| format!("reading {} as realization YAML", input.path.display()))?
+    };
+    let Ok((ess, _)) = resolved(&input.specification, input.format)? else {
+        return Ok(ExitCode::from(1));
+    };
+    let realization = match ess_realization::compile(&specification, &ess) {
+        Ok(realization) => realization,
+        Err(diagnostics) => {
+            if matches!(input.format, Format::Text) {
+                eprintln!("{} was refused:\n{diagnostics}", input.path.display());
+            } else {
+                render(&diagnostics, input.format)?;
+            }
+            return Ok(ExitCode::from(1));
+        }
+    };
+
+    match command {
+        RealizationCommand::Validate(_) => match input.format {
+            Format::Text => println!(
+                "{} — {} entrypoint(s), valid",
+                realization.id(),
+                realization.entrypoints().len()
+            ),
+            _ => render(&realization, input.format)?,
+        },
+        RealizationCommand::Compile { .. } => {
+            let json = realization.to_canonical_json();
+            if let Some(path) = out {
+                fs::write(path, &json).with_context(|| format!("writing {}", path.display()))?;
+            }
+            match input.format {
+                Format::Text => println!(
+                    "{} — {} entrypoint(s), compiled{}",
+                    realization.id(),
+                    realization.entrypoints().len(),
+                    out.map_or_else(String::new, |path| format!(" to {}", path.display()))
+                ),
+                Format::Json => print!("{json}"),
+                Format::Yaml => render(&realization, Format::Yaml)?,
+            }
+        }
+        RealizationCommand::Generate { .. } => {
+            let path = out.expect("generate always supplies --out");
+            let markdown = realization.to_markdown();
+            if generate == Some(true) {
+                let existing = fs::read_to_string(path)
+                    .with_context(|| format!("reading {} for drift check", path.display()))?;
+                if existing != markdown {
+                    eprintln!(
+                        "{} is stale; regenerate it with `ess realization generate`",
+                        path.display()
+                    );
+                    return Ok(ExitCode::from(1));
+                }
+                println!("{} — current", path.display());
+            } else {
+                fs::write(path, markdown).with_context(|| format!("writing {}", path.display()))?;
+                println!("{} — generated", path.display());
+            }
+        }
+    }
+    Ok(ExitCode::SUCCESS)
 }
 
 fn render<T: serde::Serialize>(value: &T, format: Format) -> Result<()> {

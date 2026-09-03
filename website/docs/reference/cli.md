@@ -27,6 +27,9 @@ semantics, unsupported projection, or a failed check.
 | `ess synthesize …` | Emit supported structural implementation artifacts plus obligations. |
 | `ess conform synthesize …` | Generate the semantic suite required by a specification. |
 | `ess conform run …` | Execute a suite against a supported target and emit a standalone report. |
+| `ess realization validate …` | Resolve a physical realization against one exact ESS digest. |
+| `ess realization compile …` | Emit deterministic `ess-realization-ir/1`. |
+| `ess realization generate …` | Render a run-mode guide from the resolved realization. |
 
 Run `ess synthesize --help` and `ess conform <command> --help` for target-specific arguments.
 

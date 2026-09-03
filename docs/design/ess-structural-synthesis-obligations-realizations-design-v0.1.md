@@ -1305,6 +1305,30 @@ Realization
     concrete implementation choice
 ```
 
+### 30.1 Persisted realization contract
+
+The first executable contract is deliberately separate from `EssIr`. `ess-realization/1` is an
+adopter-authored declaration; compiling it against one exact `EssIr` produces
+`ess-realization-ir/1`. The source binds the ESS system, version, and semantic digest, then names:
+
+- the resolved components and actors present in this physical realization;
+- exact implementation artifacts (`sha256:<64 lowercase hex>` or `git:<40 lowercase hex>`);
+- entrypoints, each with an interaction shape (`observe`, `invoke`, or `agent_loop`), an attachment
+  boundary (`in_process`, `loopback`, or `network`), a closed set of ESS semantic references, and
+  exactly one argv or URL invocation;
+- typed runtime requirements that carry names and descriptions, never credential values; and
+- optional conformance evidence with exact suite and report digests.
+
+Compilation refuses a mismatched ESS identity, unresolved or out-of-realization references,
+duplicate identifiers, unimplemented components, malformed invocation placeholders, URL
+credentials or query strings, and argv that appears to contain an inline secret. Canonical IR uses
+ordered maps and sets. The Markdown projection is derived from that IR, so a run-mode guide can be
+checked for byte drift without becoming a second declaration.
+
+The IR is an implementation record, not a deployment planner. It does not alter `EssIr`, choose a
+transport, apply infrastructure, discover credentials, or imply that a network entrypoint is
+publicly available.
+
 ---
 
 ## 31. Realization Identity
