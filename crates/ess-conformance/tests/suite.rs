@@ -25,8 +25,8 @@ use ess_compiler::source::SourceMap;
 use ess_conformance::scenario::{
     BindingAspect, BindingRef, CommandRef, ConformanceScenario, ConformanceSuite, DeclaredTypeRef,
     ErrorRef, EssSemanticRef, EventRef, Holds, LeafShape, OutcomeRef, PayloadShape, Position,
-    ScenarioId, ScenarioPurpose, ScenarioStep, ScenarioValue, SuiteFormat, SuiteProvenance,
-    TransitionRef, ViewExpectation,
+    ScenarioId, ScenarioPurpose, ScenarioStep, ScenarioValue, SuiteProvenance, TransitionRef,
+    ViewExpectation,
 };
 use ess_domain::binding::BindingName;
 use ess_domain::command::OutcomeName;
@@ -433,7 +433,14 @@ fn a_suite_parses_from_text_alone_without_an_ir() {
 
     let suite = ConformanceSuite::from_json(written).expect("text alone is enough");
 
-    assert_eq!(suite.provenance.suite_version, SuiteFormat::CURRENT);
+    // A suite written by an older build, read by this one. The number is not `CURRENT` and that is
+    // the point: every word in a `1` document means in `2` exactly what it meant, so the document
+    // is supported rather than merely tolerated.
+    assert!(suite.provenance.suite_version.is_supported());
+    assert_eq!(
+        suite.provenance.suite_version.to_string(),
+        "ess-conformance/1"
+    );
     assert_eq!(suite.len(), 1);
     let id = ScenarioId::parse("billing.invoice.CreateInvoice/outcome/rejected").expect("id");
     assert_eq!(

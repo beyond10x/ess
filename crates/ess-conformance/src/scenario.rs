@@ -287,7 +287,11 @@ impl SuiteProvenance {
 }
 
 /// Suite format major versions this build implements.
-pub const SUPPORTED_SUITE_FORMATS: &[u32] = &[1];
+///
+/// Both, because a `1` suite means in `2` exactly what it meant in `1` — the vocabulary grew and
+/// nothing in it changed meaning. A reader that refused the older number would refuse a suite it
+/// understands perfectly.
+pub const SUPPORTED_SUITE_FORMATS: &[u32] = &[1, 2];
 
 /// The version of the *document shape* a suite is written in — `ess-conformance/1`.
 ///
@@ -313,8 +317,16 @@ pub const SUPPORTED_SUITE_FORMATS: &[u32] = &[1];
 pub struct SuiteFormat(Version);
 
 impl SuiteFormat {
-    /// The first, and so far only, suite format.
-    pub const CURRENT: Self = Self(Version::V1);
+    /// The format a suite written by this build claims.
+    ///
+    /// `2` since the expectation vocabulary gained `counts`, `at` and a `ranked` that is arranged
+    /// rather than assumed. The number moved because of what an *old reader* does with a new word,
+    /// not because of what a new reader does with an old suite: the emitted Go runner reports an
+    /// expectation it does not know as a **failed scenario**, which is a wrong verdict about an
+    /// implementation caused by the age of the tool reading it. A reader that checks this number
+    /// first refuses the document instead, which is the difference between "I cannot read this"
+    /// and "your system is broken".
+    pub const CURRENT: Self = Self(Version::V2);
 
     /// How a suite format is written.
     pub const PREFIX: &'static str = "ess-conformance/";
@@ -1995,10 +2007,16 @@ mod tests {
 
     #[test]
     fn a_suite_format_from_a_later_build_is_refused_rather_than_guessed() {
-        assert_eq!(SuiteFormat::CURRENT.to_string(), "ess-conformance/1");
+        assert_eq!(SuiteFormat::CURRENT.to_string(), "ess-conformance/2");
         assert!(SuiteFormat::CURRENT.is_supported());
 
-        let later = SuiteFormat::parse("ess-conformance/2").expect("well formed");
+        // The older format is still read. A `1` suite means in `2` exactly what it meant in `1`:
+        // the vocabulary grew and no word in it changed meaning, so refusing the number would
+        // refuse a document this build understands completely.
+        let earlier = SuiteFormat::parse("ess-conformance/1").expect("well formed");
+        assert!(earlier.is_supported());
+
+        let later = SuiteFormat::parse("ess-conformance/3").expect("well formed");
         assert!(
             !later.is_supported(),
             "a later format may mean something different by the same words"

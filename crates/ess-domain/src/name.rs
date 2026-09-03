@@ -238,6 +238,9 @@ impl Version {
     /// Version 1.
     pub const V1: Self = Self(1);
 
+    /// Version 2.
+    pub const V2: Self = Self(2);
+
     /// What a written version looks like, for the generated schema.
     ///
     /// Kept beside [`Version::parse`] so the two are read together; a test asserts they agree,
