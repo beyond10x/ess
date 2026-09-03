@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## [0.10.0] — 2026-09-03
 
 ### Added
 
@@ -18,10 +18,50 @@
   deliberate negative-total fault was caught by 6 of 29 scenarios before and is caught by 13 after.
   It is a claim about a row this scenario made, so it holds on a target §8 permits to be shared.
 - The documentation projection writes a sentence for `sets:` on every outcome that declares one.
+- **The billing example declares an invariant over a top-level field of its own** —
+  `reminder_count >= 0`, projected by `InvoiceById` so it can be decided. Nothing shipped here had
+  that shape: the entity's other invariant is `total.amount >= 0`, which has a dot and parses the
+  same either way, so the Go runner's left-operand defect below was invisible to every fixture.
 - `cargo xtask schema [--check]` regenerates `schemas/generated/ess.schema.json` from
   `RawSpecFile`, and `task projection-check` runs it. The file was documented as drift-checked and
   was checked by nothing; the schema an adopter validates against had not moved since the model
   gained its last two constructs.
+- **`ess conform synthesize --component <name>`: the suite one component can be held to.** A
+  specification with two components obliges two implementations, and an implementation of one
+  answers `ErrUnsupported` to every scenario about the other — which the runner reports as a skip,
+  and a run with skips in it cannot say it passed. The scoped suite holds exactly the scenarios
+  whose every command, event and view the component accepts, publishes or owns; the rest are
+  printed as `outside:` with what they need, so they are visible somewhere other than by their
+  absence. `SuiteProvenance.component` records the scope and is left out of an unscoped suite, so
+  every existing suite is the bytes it was. The refusals are the whole system's, untouched.
+  Measured on the ACD ↔ backend model: 44 scenarios for the system, of which the `acd` component
+  can be held to the ones its own commands, events and views make answerable.
+- **The emitted Go runner writes `ess-conformance-report/1`.** `ESS_REPORT_OUT=<file> go test`
+  leaves the same closed document the Rust runner writes — specification, digest, implementation,
+  status, counts, the non-passing scenarios by status — so `aep artifact evidence --from <file>`
+  records a Go implementation's run without anybody typing a count. Before this the Go suite
+  produced a `go test` exit status and nothing a workflow system could read. A skipped scenario
+  makes the run `inconclusive`: a target that could not answer has not shown the answer. Recording
+  a skip means the runner routes every `Skipf` through one helper that sets the status first, which
+  is exercised here for the first time — no shipped fixture skips, so nothing before this release
+  ran that path at all.
+
+### Fixed
+
+- **The emitted Go runner read the left-hand side of a comparison as a literal.** `Operand::parse`
+  is documented for the *right* side — a bare word is a literal there, which is what makes
+  `state == Bridged` name an enum variant — and the Go mirror put both sides through it. So an
+  entity invariant over a top-level field of its own compared the *word*: `reschedule_count >= 0`
+  asked whether the string `"reschedule_count"` is at least zero, which is Unknown and reported as
+  a defect in the view, and `any: [{not: state == Bridged}, defined(agent_id)]` evaluated
+  `"state" == "Bridged"`, which is false, so the `not` made the implication vacuously true and the
+  invariant checked nothing. The Rust runner never had this: `parse_expression` puts the left side
+  through `FactPath::new`. Found by the first run of a generated Go suite against an adopter.
+- **`ErrUnsupported` from `ExecuteCommand` failed the scenario instead of skipping it.** Every
+  other method's sentinel was honoured; this one was compared and then reported as an execution
+  error. A command whose actor is the implementation itself has no caller a target can be, and a
+  target saying so was being told its implementation is wrong. Every sentinel comparison now goes
+  through `errors.Is`, so a wrapped one carrying the reason is recognised too.
 
 ### Changed
 

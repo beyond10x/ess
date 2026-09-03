@@ -1,6 +1,6 @@
 // generated from billing v3
-// model digest 62706dc8de60f859f9fa11d363bae20825e7c74e71435e2fd28691488d787af1
-// contract digest d0791c480f462a0bd205e4eda077f60c22bedf0f83756f7ff35687682ce8e3dd
+// model digest 56090788443a14b4a51ad151eb5cb3ebded2b98f6defe9ac50826296ac5d0942
+// contract digest cb634bd5e6f1afa6ebc8e9dca752e9901a9a68a2e51fc5009d099f155680606c
 // do not edit: regenerate with `ess synthesize --target web`
 
 // The boundary, written once. The page imports it, and so does the smoke test that loads the

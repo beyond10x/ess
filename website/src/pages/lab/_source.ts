@@ -145,9 +145,17 @@ entities:
         type: Boolean
       - name: signature
         type: Bytes
+      # A top-level Integer, and the reason it is one is the invariant below.
+      - name: reminder_count
+        type: Integer
 
     invariants:
       - total.amount >= 0
+      # A field of this entity's own, named without a dot — which is how anybody writes an
+      # invariant over a top-level field, and the shape the Go runner used to read as the *word*
+      # \`reminder_count\` rather than the value. Left out of the examples until 0.10.0, so nothing
+      # shipped here caught it: \`total.amount\` above has a dot and parses the same either way.
+      - reminder_count >= 0
 
     # Illegal transitions are illegal by absence. \`Paid → Cancelled\` is not forbidden by a rule,
     # because a rule would be a second place for the same truth to live.
@@ -243,6 +251,20 @@ commands:
             account_id: input.account_id
             customer_email: input.customer_email
             amount: input.amount
+        # The same relation, pointed at the invoice instead of the announcement. \`payload:\` says
+        # what the event carries; this says what the *invoice* holds, which is what every view of
+        # it later shows. Without it a generated scenario can find the row it created and say
+        # nothing about what is in it, so an implementation that stored somebody else's amount
+        # passes — the ordering half of the same gap is why \`OutstandingInvoices\` could be asserted
+        # to be in order and never to be in the right order.
+        #
+        # \`invoice_id\` has no line here for the reason it has none above: the identity is the
+        # implementation's to assign. \`issued_at\` has none because \`CreateInvoice\` is not what
+        # sets it and \`IssueInvoice\` does not take it — a clock is not an input, and the model says
+        # so by staying quiet rather than by naming a source that does not exist.
+        sets:
+          account_id: input.account_id
+          total: input.amount
         summary: The invoice is created in Draft.
 
       - name: rejected
@@ -402,6 +424,10 @@ views:
         type: billing.invoice.InvoiceId
       - name: total
         type: billing.invoice.Money
+      # Projected so the entity's \`reminder_count >= 0\` has rows it can be decided against. An
+      # invariant reading a field no view publishes is refused rather than asserted against nothing.
+      - name: reminder_count
+        type: Integer
 
   # Read-your-writes, so a generated scenario asserts this one immediately: a caller that has just
   # issued an invoice and cannot see it in its own list has been told a lie about what it did.

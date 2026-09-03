@@ -2,8 +2,8 @@
   "provenance": {
     "system": "billing",
     "specification_version": "v3",
-    "source_digest": "8b52fe739078f96a006d7bee5e9b9530c3a30221f7bc003f291dcfe17cdcfea3",
-    "contract_digest": "0c2f2067136aea0bc0a45ca5b01bf70f551fc6199956699c5d5b939c350688f8"
+    "source_digest": "56090788443a14b4a51ad151eb5cb3ebded2b98f6defe9ac50826296ac5d0942",
+    "contract_digest": "cb634bd5e6f1afa6ebc8e9dca752e9901a9a68a2e51fc5009d099f155680606c"
   },
   "target": "web",
   "weakenings": [
