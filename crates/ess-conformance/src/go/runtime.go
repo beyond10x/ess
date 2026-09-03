@@ -28,11 +28,14 @@ package essconform
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
+	"os"
 	"sort"
 	"strconv"
 	"strings"
 	"testing"
+	"time"
 )
 
 // ---- what an implementation offers ------------------------------------------------------------
@@ -63,6 +66,10 @@ type Target interface {
 
 	// ExecuteCommand invokes one command and reports the branch it took, the error it declared and
 	// the events it emitted directly.
+	//
+	// Return ErrUnsupported where the implementation offers no way to invoke it — a command whose
+	// actor is the implementation itself has no caller a target can be. The scenario is reported
+	// as skipped, which is a different fact from the command being wrong.
 	ExecuteCommand(request CommandRequest) (CommandResult, error)
 
 	// QueryView reads one view at the consistency the request demands. A read_your_writes view must
@@ -91,7 +98,7 @@ type Target interface {
 //
 // Distinct from a failure: a suite that counted "the implementation cannot show me this" as "the
 // implementation is wrong" would report a defect nobody can fix.
-var ErrUnsupported = fmt.Errorf("the target does not expose this")
+var ErrUnsupported = errors.New("the target does not expose this")
 
 // Identity names the implementation under test.
 type Identity struct {
@@ -262,25 +269,25 @@ type Scenario struct {
 
 // Step is one step of a scenario. Which fields are set depends on Step.
 type Step struct {
-	Step        string           `json:"step"`
-	Command     string           `json:"command,omitempty"`
-	Actor       string           `json:"actor,omitempty"`
-	Input       map[string]Value `json:"input,omitempty"`
-	Outcome     *OutcomeRef      `json:"outcome,omitempty"`
-	Force       *OutcomeRef      `json:"force,omitempty"`
-	Event string `json:"event,omitempty"`
+	Step    string           `json:"step"`
+	Command string           `json:"command,omitempty"`
+	Actor   string           `json:"actor,omitempty"`
+	Input   map[string]Value `json:"input,omitempty"`
+	Outcome *OutcomeRef      `json:"outcome,omitempty"`
+	Force   *OutcomeRef      `json:"force,omitempty"`
+	Event   string           `json:"event,omitempty"`
 	// Payload is plain values, not Value: an event's fields are compared against what the
 	// specification declared them to be, and there is nothing earlier in the scenario for them to
 	// refer to. `input` and a view expectation's `fields` are the ones that can refer back.
-	Payload map[string]Node `json:"payload,omitempty"`
-	Shape       map[string]Held  `json:"shape,omitempty"`
-	Error       string           `json:"error,omitempty"`
-	View        string           `json:"view,omitempty"`
-	Expectation *Expectation     `json:"expectation,omitempty"`
-	Binding     string           `json:"binding,omitempty"`
-	Instance    string           `json:"instance,omitempty"`
-	Entity      string           `json:"entity,omitempty"`
-	Field       string           `json:"field,omitempty"`
+	Payload     map[string]Node `json:"payload,omitempty"`
+	Shape       map[string]Held `json:"shape,omitempty"`
+	Error       string          `json:"error,omitempty"`
+	View        string          `json:"view,omitempty"`
+	Expectation *Expectation    `json:"expectation,omitempty"`
+	Binding     string          `json:"binding,omitempty"`
+	Instance    string          `json:"instance,omitempty"`
+	Entity      string          `json:"entity,omitempty"`
+	Field       string          `json:"field,omitempty"`
 }
 
 // Held is what one declared payload field must hold.
@@ -363,9 +370,21 @@ func Run(t *testing.T, newTarget func() Target) {
 		suite.Provenance.SpecDigest,
 	)
 
+	// One extra target, for the name the report carries. Asked before any scenario runs so a
+	// target that cannot name itself fails the run here, with that message, rather than leaving a
+	// report that says nothing about what was tested.
+	identity, err := newTarget().Identity()
+	if err != nil {
+		t.Fatalf("the target does not name itself: %v", err)
+	}
+
 	harness := NewHarness(suite.Provenance.System)
+	results := make([]scenarioResult, 0, len(ids))
 	for _, id := range ids {
 		scenario := suite.Scenarios[id]
+		// Read after the subtest, not returned from it: Skipf and Fatalf leave through Goexit,
+		// and what the run had decided by then is the only record of how it left.
+		status := statusPassed
 		t.Run(id, func(t *testing.T) {
 			run := &run{
 				t:           t,
@@ -374,10 +393,107 @@ func Run(t *testing.T, newTarget func() Target) {
 				correlation: harness.Correlation(),
 				instances:   map[string]Node{},
 				observed:    map[string][]ObservedEvent{},
+				status:      statusPassed,
 			}
+			defer func() { status = run.status }()
 			run.execute(id, scenario)
 		})
+		results = append(results, scenarioResult{id: id, status: status})
 	}
+	writeReport(t, suite, identity, results)
+}
+
+// ---- the report ------------------------------------------------------------------------------
+
+// What one scenario came to, in the words the report uses.
+const (
+	statusPassed  = "passed"
+	statusFailed  = "failed"
+	statusSkipped = "skipped"
+)
+
+// scenarioResult is one scenario's verdict, for the report.
+type scenarioResult struct {
+	id     string
+	status string
+}
+
+// report is `ess-conformance-report/1`: the closed document a conformance run publishes, and the
+// one `aep artifact evidence --from` reads. The same shape the Rust runner writes, so a workflow
+// system adapting one adapts the other.
+//
+// The status vocabulary is the runner's: `passed` when every scenario passed, `failed` when any
+// failed, and `inconclusive` when none failed and some were skipped — a skipped scenario is one
+// the target could not answer, and a run that could not ask everything cannot say the
+// specification held.
+type report struct {
+	Format          string   `json:"format"`
+	Specification   string   `json:"specification"`
+	SpecDigest      string   `json:"spec_digest"`
+	Implementation  string   `json:"implementation"`
+	Status          string   `json:"status"`
+	ScenariosTotal  int      `json:"scenarios_total"`
+	ScenariosFailed int      `json:"scenarios_failed"`
+	SuiteVersion    string   `json:"suite_version"`
+	FailedScenarios []string `json:"failed_scenarios"`
+	CompletedAt     int64    `json:"completed_at"`
+}
+
+// writeReport writes the run's report where ESS_REPORT_OUT names, and nowhere when it is unset.
+//
+// An environment variable rather than a flag, because `go test` owns the flags and a generated
+// package cannot add one without every adopter's test binary learning it. The clock is read here,
+// once, at the edge: the one place in this file that knows what time it is.
+func writeReport(t *testing.T, suite Suite, identity Identity, results []scenarioResult) {
+	t.Helper()
+	path := os.Getenv("ESS_REPORT_OUT")
+	if path == "" {
+		return
+	}
+
+	failed := make([]string, 0)
+	anyFailed, anySkipped := false, false
+	for _, result := range results {
+		switch result.status {
+		case statusPassed:
+			continue
+		case statusFailed:
+			anyFailed = true
+		case statusSkipped:
+			anySkipped = true
+		}
+		failed = append(failed, result.status+" "+result.id)
+	}
+	status := statusPassed
+	switch {
+	case anyFailed:
+		status = statusFailed
+	case anySkipped:
+		status = "inconclusive"
+	}
+
+	document := report{
+		Format:          "ess-conformance-report/1",
+		Specification:   suite.Provenance.System + "/" + suite.Provenance.SpecificationVersion,
+		SpecDigest:      suite.Provenance.SpecDigest,
+		Implementation:  identity.Name + " " + identity.Version,
+		Status:          status,
+		ScenariosTotal:  len(results),
+		ScenariosFailed: len(failed),
+		SuiteVersion:    suite.Provenance.SuiteVersion,
+		FailedScenarios: failed,
+		CompletedAt:     time.Now().UnixMilli(),
+	}
+	encoded, err := json.MarshalIndent(document, "", "  ")
+	if err != nil {
+		t.Errorf("the report does not encode, which is a runner defect: %v", err)
+		return
+	}
+	if err := os.WriteFile(path, append(encoded, '\n'), 0o644); err != nil {
+		t.Errorf("writing the report to %s: %v", path, err)
+		return
+	}
+	t.Logf("report: %s, %d scenario(s), %d not passed, written to %s", status, len(results), len(failed), path)
 }
 
 // run is one scenario in flight, and everything it has bound.
@@ -408,18 +524,22 @@ type run struct {
 	lastView ViewResult
 	// queried is which view lastView came from.
 	queried string
+	// status is what this scenario has come to so far: passed until a step fails or skips.
+	status string
 }
 
 func (r *run) execute(id string, scenario Scenario) {
 	context := ScenarioContext{Scenario: id, Correlation: r.correlation}
 	if err := r.target.BeginScenario(context); err != nil {
-		if err == ErrUnsupported {
-			r.t.Skipf("the target does not support this scenario: %v", err)
+		if errors.Is(err, ErrUnsupported) {
+			r.skip("the target does not support this scenario: %v", err)
 		}
+		r.status = statusFailed
 		r.t.Fatalf("begin: %v", err)
 	}
 	defer func() {
 		if err := r.target.EndScenario(context); err != nil {
+			r.status = statusFailed
 			r.t.Errorf("end: %v", err)
 		}
 	}()
@@ -469,7 +589,7 @@ func (r *run) step(index int, step Step) bool {
 	default:
 		// A step this build does not know is a suite written by a newer generator. Reporting it as
 		// a failure would blame the implementation for the tool's age.
-		r.t.Skipf("step %d is `%s`, which this generated runner does not implement", index, step.Step)
+		r.skip("step %d is `%s`, which this generated runner does not implement", index, step.Step)
 		return false
 	}
 }
@@ -485,6 +605,10 @@ func (r *run) executeCommand(index int, step Step) bool {
 		Input:       input,
 		Correlation: r.correlation,
 	})
+	if errors.Is(err, ErrUnsupported) {
+		r.skip("step %d: the target does not expose `%s`", index, step.Command)
+		return false
+	}
 	if err != nil {
 		return r.fail(index, "executing `%s`: %v", step.Command, err)
 	}
@@ -576,8 +700,8 @@ func (r *run) eventuallyEvent(index int, step Step) bool {
 			Correlation: r.correlation,
 			Deadline:    Deadline{Attempts: deadline.Attempts - attempt},
 		})
-		if err == ErrUnsupported {
-			r.t.Skipf("step %d: the target cannot observe `%s`", index, step.Event)
+		if errors.Is(err, ErrUnsupported) {
+			r.skip("step %d: the target cannot observe `%s`", index, step.Event)
 			return false
 		}
 		if err != nil {
@@ -615,8 +739,8 @@ func (r *run) queryView(index int, step Step) bool {
 		Correlation: r.correlation,
 		Deadline:    r.harness.Deadline(),
 	})
-	if err == ErrUnsupported {
-		r.t.Skipf("step %d: the target does not expose `%s`", index, step.View)
+	if errors.Is(err, ErrUnsupported) {
+		r.skip("step %d: the target does not expose `%s`", index, step.View)
 		return false
 	}
 	if err != nil {
@@ -640,8 +764,8 @@ func (r *run) expectView(index int, step Step, retry bool) bool {
 				Correlation: r.correlation,
 				Deadline:    Deadline{Attempts: attempts - attempt},
 			})
-			if err == ErrUnsupported {
-				r.t.Skipf("step %d: the target does not expose `%s`", index, step.View)
+			if errors.Is(err, ErrUnsupported) {
+				r.skip("step %d: the target does not expose `%s`", index, step.View)
 				return false
 			}
 			if err != nil {
@@ -789,10 +913,10 @@ func (r *run) expectInvocation(index int, step Step) bool {
 		Correlation: r.correlation,
 		Deadline:    r.harness.Deadline(),
 	})
-	if err == ErrUnsupported {
+	if errors.Is(err, ErrUnsupported) {
 		// The one method the model explicitly refuses to require. Unsupported is a fact about the
 		// target, not a failure of the specification.
-		r.t.Skipf("step %d: the target does not expose what `%s` invoked", index, step.Binding)
+		r.skip("step %d: the target does not expose what `%s` invoked", index, step.Binding)
 		return false
 	}
 	if err != nil {
@@ -816,8 +940,8 @@ func (r *run) expectInvocation(index int, step Step) bool {
 
 func (r *run) redeliver(index int, step Step) bool {
 	err := r.target.RedeliverEvent(RedeliveryRequest{Event: step.Event, Correlation: r.correlation})
-	if err == ErrUnsupported {
-		r.t.Skipf("step %d: the target cannot redeliver `%s`, so `at_least_once` is unchecked", index, step.Event)
+	if errors.Is(err, ErrUnsupported) {
+		r.skip("step %d: the target cannot redeliver `%s`, so `at_least_once` is unchecked", index, step.Event)
 		return false
 	}
 	if err != nil {
@@ -835,8 +959,8 @@ func (r *run) configure(index int, step Step) bool {
 		Outcome:     step.Force.Outcome,
 		Correlation: r.correlation,
 	})
-	if err == ErrUnsupported {
-		r.t.Skipf("step %d: the target cannot force `%s`", index, step.Force.Outcome)
+	if errors.Is(err, ErrUnsupported) {
+		r.skip("step %d: the target cannot force `%s`", index, step.Force.Outcome)
 		return false
 	}
 	if err != nil {
@@ -847,8 +971,18 @@ func (r *run) configure(index int, step Step) bool {
 
 // fail records one failed assertion and stops the scenario.
 func (r *run) fail(index int, format string, args ...any) bool {
+	r.status = statusFailed
 	r.t.Errorf("step %d: "+format, append([]any{index}, args...)...)
 	return false
+}
+
+// skip ends the scenario as one the target could not answer, and records that it did.
+//
+// Every skip in this file goes through here so the report and the test log cannot disagree
+// about what the scenario came to.
+func (r *run) skip(format string, args ...any) {
+	r.status = statusSkipped
+	r.t.Skipf(format, args...)
 }
 
 // resolveAll resolves every value a step carries against what this run has bound.

@@ -26,11 +26,12 @@ use std::process::Command;
 use ess_conformance::scenario::{CommandRef, EventRef, OutcomeRef};
 use ess_conformance::{
     ConformanceScenario, ConformanceSuite, InstanceName, Position, ScenarioId, ScenarioStep,
-    ScenarioValue, ViewExpectation,
+    ScenarioValue, StandaloneConformanceReport, ViewExpectation,
 };
 use ess_domain::view::{Direction, Ranking};
 use ess_primitives::facts::Number;
 use ess_primitives::node::Node;
+use ess_primitives::verification::VerificationStatus;
 
 /// The repository root.
 fn root() -> PathBuf {
@@ -85,10 +86,41 @@ fn module(name: &str) -> PathBuf {
     directory
 }
 
+/// Where a run in `directory` writes its `ess-conformance-report/1`.
+fn report_path(directory: &Path) -> PathBuf {
+    directory.join("report.json")
+}
+
+/// The report a run in `directory` wrote, read back through the closed shape the Rust side
+/// publishes — so a Go runner that drifted from it fails to parse here rather than being adapted
+/// by a workflow system into a claim it never made.
+fn report(directory: &Path) -> StandaloneConformanceReport {
+    let text = std::fs::read_to_string(report_path(directory)).expect("the runner wrote a report");
+    StandaloneConformanceReport::from_json(&text).unwrap_or_else(|error| {
+        panic!("the report is not ess-conformance-report/1: {error}\n{text}")
+    })
+}
+
+/// The digest the emitted `suite.json` carries, which is what the report has to repeat.
+fn suite_digest(directory: &Path) -> String {
+    let text = std::fs::read_to_string(directory.join("essconform/suite.json"))
+        .expect("the emitted suite exists");
+    let suite: serde_json::Value = serde_json::from_str(&text).expect("the suite is JSON");
+    suite["provenance"]["spec_digest"]
+        .as_str()
+        .expect("the suite names its digest")
+        .to_owned()
+}
+
 /// Runs `go test -v` in `directory`, returning whether it passed and what it printed.
+///
+/// Every run asks for a report, because the report is part of what the emitted runner is held to.
 fn go_test(go: &Path, directory: &Path, broken: Option<&str>) -> (bool, String) {
     let mut command = Command::new(go);
-    command.args(["test", "-v", "./..."]).current_dir(directory);
+    command
+        .args(["test", "-v", "./..."])
+        .current_dir(directory)
+        .env("ESS_REPORT_OUT", report_path(directory));
     if let Some(defect) = broken {
         command.env("ESS_BREAK", defect);
     }
@@ -131,6 +163,18 @@ fn the_emitted_package_holds_a_correct_go_implementation_to_the_whole_suite() {
         29,
         "every scenario must run, and a suite that skipped them all would also pass:\n{printed}"
     );
+
+    // The report says the same thing the log does, in the shape a workflow system reads. The
+    // digest is the field a passing run is worth anything for, so it is checked against the suite
+    // rather than against a constant.
+    let written = report(&directory);
+    assert_eq!(written.status, VerificationStatus::Passed);
+    assert_eq!(written.scenarios_total, 29);
+    assert_eq!(written.scenarios_failed, 0);
+    assert!(written.failed_scenarios.is_empty());
+    assert_eq!(written.spec_digest.as_str(), suite_digest(&directory));
+    assert_eq!(written.specification, "billing/v3");
+    assert_eq!(written.suite_version, "ess-conformance/2");
     let _ = std::fs::remove_dir_all(&directory);
 }
 
@@ -167,6 +211,17 @@ fn one_deliberate_defect_fails_the_scenarios_responsible_for_it_and_no_others() 
          — a scenario that only found the invoice and never looked at it was in the second group \
          before that block existed:\n{printed}"
     );
+
+    // The report names the same thirteen, as failures, and calls the run failed.
+    let written = report(&directory);
+    assert_eq!(written.status, VerificationStatus::Failed);
+    assert_eq!(written.scenarios_total, 29);
+    assert_eq!(written.scenarios_failed, 13);
+    let named: Vec<String> = scenarios(&printed, "FAIL")
+        .into_iter()
+        .map(|id| format!("failed {id}"))
+        .collect();
+    assert_eq!(written.failed_scenarios, named);
     let _ = std::fs::remove_dir_all(&directory);
 }
 
