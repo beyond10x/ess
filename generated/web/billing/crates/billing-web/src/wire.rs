@@ -1,6 +1,6 @@
 // generated from billing v3
-// model digest aacdc2fe065d462cc4f9ba51e6740f88809b6b17ce006ef846b488f957005da3
-// contract digest 6ba34a27496cc918b55c749b45599c03b3016fed36487b1763268b95e0c6ffc6
+// model digest 62706dc8de60f859f9fa11d363bae20825e7c74e71435e2fd28691488d787af1
+// contract digest d0791c480f462a0bd205e4eda077f60c22bedf0f83756f7ff35687682ce8e3dd
 // do not edit: regenerate with `ess synthesize --target web`
 
 //! Every generated declaration, as JSON, in the renderings the published wire contracts fix.
@@ -387,6 +387,10 @@ pub fn encode_view_billing_invoice_outstanding_invoices(value: &billing_types::i
     encode_billing_invoice_invoice_id(&value.invoice_id, out);
     json::member(out, "total");
     encode_billing_invoice_money(&value.total, out);
+    if let Some(held0) = &value.issued_at {
+        json::member(out, "issued_at");
+        json::push_text(out, &(*held0).0);
+    }
     out.push('}');
 }
 

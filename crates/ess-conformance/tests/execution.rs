@@ -447,6 +447,54 @@ fn a_read_your_writes_view_is_not_quietly_read_at_current_when_no_token_came_bac
 }
 
 #[test]
+fn a_view_answered_in_the_wrong_order_fails_exactly_the_scenarios_that_assert_its_order() {
+    // The defect `order_by:` exists to forbid, and the evidence that asserting it is worth
+    // anything. Every row is right and the set of rows is right, so `contains`, `excludes` and
+    // `satisfies` all still hold — only the declared order can see this, and only where the
+    // scenario put more than one row in the view for it to be compared over. A `Ranked` assertion
+    // against one row holds for every implementation there is, which is what this run would show
+    // as green if synthesis had not arranged the second one.
+    let suite = suite();
+    let report = Runner::for_suite(&suite).run(&suite, &Perturbed::reversed());
+
+    let failed: Vec<String> = report
+        .scenarios
+        .iter()
+        .filter(|result| result.status != Status::Passed)
+        .map(|result| result.scenario.to_string())
+        .collect();
+    assert_eq!(
+        failed,
+        vec![
+            "billing.invoice.CancelInvoice/outcome/cancelled",
+            "billing.invoice.CreateInvoice/outcome/accepted",
+            "billing.invoice.Invoice/transition/cancel/by/billing.invoice.CancelInvoice/cancelled",
+            "billing.invoice.Invoice/transition/issue/by/billing.invoice.IssueInvoice/issued",
+            "billing.invoice.Invoice/transition/settle/by/billing.invoice.PayInvoice/settled",
+            "billing.invoice.IssueInvoice/outcome/issued",
+            "billing.invoice.PayInvoice/outcome/settled",
+        ],
+        "every scenario that asserts `OutstandingInvoices`'s declared order, and no others:\n{report}"
+    );
+
+    // And the diagnostic says which pair disagreed, not merely that something is wrong.
+    let issued = ScenarioId::parse("billing.invoice.IssueInvoice/outcome/issued").expect("an id");
+    let diagnostic = report
+        .scenarios
+        .iter()
+        .find(|result| result.scenario == issued)
+        .expect("the issued scenario ran")
+        .diagnostics()
+        .find(|diagnostic| diagnostic.code == CheckCode::View)
+        .expect("the view check says what it read")
+        .to_string();
+    assert!(
+        diagnostic.contains("issued_at desc"),
+        "the key two adjacent rows disagreed on is in the diagnostic:\n{diagnostic}"
+    );
+}
+
+#[test]
 fn a_view_assertion_names_the_instance_the_scenario_created_rather_than_any_row() {
     // §8 lets a target be shared as long as scenarios do not interfere, and with literal-only field
     // matches `Contains {}` means "some row" — which passes on a row belonging to something else.
@@ -617,6 +665,8 @@ enum How {
     Mistyped,
     /// Every view answers with one extra row, belonging to nothing this scenario made.
     Crowded,
+    /// Every view answers with its rows in the opposite order.
+    Reversed,
 }
 
 impl Perturbed {
@@ -639,7 +689,24 @@ impl Perturbed {
         }
     }
 
+    /// A target that answers with the right rows in the wrong order.
+    ///
+    /// **Not** conformant: `billing.invoice.OutstandingInvoices` declares `issued_at desc`, and
+    /// this is the one defect that assertion exists to catch. Every value in every row is right,
+    /// and the set of rows is right, so nothing else in the suite can see it.
+    fn reversed() -> Self {
+        Self {
+            inner: Billing::new(),
+            how: How::Reversed,
+        }
+    }
+
     /// The row belonging to nobody, which satisfies everything `billing.invoice.Invoice` declares.
+    ///
+    /// Including the declared order. It is appended, so under `issued_at desc` it has to be the
+    /// oldest row there is — a shared system whose other invoices were issued a year ago is exactly
+    /// the case §8 has in mind, and one that answered out of order would be a wrong implementation
+    /// rather than a crowded one.
     fn stranger() -> ViewRow {
         let mut row = ViewRow::new();
         row.insert(
@@ -647,6 +714,10 @@ impl Perturbed {
             ess_primitives::node::Node::Text("00000000-0000-4000-8000-999999999999".to_owned()),
         );
         row.insert("total".to_owned(), money(42.0));
+        row.insert(
+            "issued_at".to_owned(),
+            ess_primitives::node::Node::Text("2019-01-01T00:00:00Z".to_owned()),
+        );
         row
     }
 }
@@ -686,6 +757,9 @@ impl ConformanceTarget for Perturbed {
         let mut result = self.inner.query_view(request)?;
         if self.how == How::Crowded {
             result.rows.push(Self::stranger());
+        }
+        if self.how == How::Reversed {
+            result.rows.reverse();
         }
         Ok(result)
     }

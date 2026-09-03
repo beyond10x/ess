@@ -411,11 +411,22 @@ views:
     # The filter is checked against the lifecycle's states, so a misspelt \`Issed\` is refused rather
     # than silently matching nothing.
     filter: state == Issued
+    # A list a person works down is a list with an order, and without this line the order is
+    # whatever the store happened to return. Most recently issued first, because that is the one an
+    # accounts clerk is asked about; \`ess conform synthesize\` arranges two invoices in this view so
+    # the claim has a pair to compare, and refuses the assertion rather than emitting one that
+    # cannot fail.
+    order_by:
+      - issued_at desc
     fields:
       - name: invoice_id
         type: billing.invoice.InvoiceId
       - name: total
         type: billing.invoice.Money
+      # Projected because the view is ranked by it. An order nobody can read is an order nothing can
+      # check, and \`ess validate\` refuses a ranking key the view does not publish.
+      - name: issued_at
+        type: Optional<Timestamp>
     naming:
       wire: outstanding
       display: Outstanding invoices

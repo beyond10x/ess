@@ -373,8 +373,17 @@ type run struct {
 
 	// instances are what `capture_instance` bound, by name.
 	instances map[string]Node
-	// observed are the events seen so far in this scenario, by event name.
+	// observed are the events the last command published, by event name. Cleared per command,
+	// because every `expect_no_event` is a claim about *that* invocation.
 	observed map[string][]ObservedEvent
+	// seen are the events observed anywhere in this scenario so far, in the order they arrived.
+	//
+	// A second record rather than the same one, because the two answer different questions. A
+	// negative event assertion asks what this command published; a value written `observed` asks
+	// what some earlier step in this scenario published, which is what the suite means by it — and
+	// a scenario that arranges further instances after the branch would otherwise lose the branch's
+	// own occurrence the moment the next command ran.
+	seen []ObservedEvent
 	// last is what the most recent command did, for the assertions that read it.
 	last CommandResult
 	// consistency is the token the last command returned, for a read_your_writes query.
@@ -471,8 +480,19 @@ func (r *run) executeCommand(index int, step Step) bool {
 	r.observed = map[string][]ObservedEvent{}
 	for _, event := range result.DirectEvents {
 		r.observed[event.Event] = append(r.observed[event.Event], event)
+		r.remember(event)
 	}
 	return true
+}
+
+// remember records an occurrence for the whole scenario, without recording one twice.
+func (r *run) remember(event ObservedEvent) {
+	for _, held := range r.seen {
+		if held.Event == event.Event && equal(held.Payload, event.Payload) {
+			return
+		}
+	}
+	r.seen = append(r.seen, event)
 }
 
 func (r *run) expectOutcome(index int, step Step) bool {
@@ -549,6 +569,7 @@ func (r *run) eventuallyEvent(index int, step Step) bool {
 		}
 		for _, event := range events {
 			r.observed[event.Event] = append(r.observed[event.Event], event)
+			r.remember(event)
 		}
 		if len(r.observed[step.Event]) > 0 {
 			return true
@@ -781,7 +802,13 @@ func (r *run) resolve(value Value) (Node, error) {
 		}
 		return bound, nil
 	case "observed":
-		for _, event := range r.observed[value.Event] {
+		// The whole scenario, and the first occurrence in it. `observed` means "what an earlier
+		// step in this scenario published", so a later command that published nothing of this name
+		// does not unbind it, and a neighbouring instance arranged afterwards does not take it over.
+		for _, event := range r.seen {
+			if event.Event != value.Event {
+				continue
+			}
 			if field, ok := event.Payload[value.Field]; ok {
 				return field, nil
 			}

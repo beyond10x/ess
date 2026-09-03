@@ -1,5 +1,5 @@
 # generated from billing v3
-# model digest aacdc2fe065d462cc4f9ba51e6740f88809b6b17ce006ef846b488f957005da3
+# model digest 62706dc8de60f859f9fa11d363bae20825e7c74e71435e2fd28691488d787af1
 # contract digest a62c403d22637b0bee44036a80329060588799b255669f766bedd4d5a2eb7c3b
 # do not edit: regenerate with `ess generate`
 openapi: 3.1.0
@@ -14,7 +14,7 @@ info:
   x-ess-provenance:
     system: billing
     specification_version: v3
-    source_digest: aacdc2fe065d462cc4f9ba51e6740f88809b6b17ce006ef846b488f957005da3
+    source_digest: 62706dc8de60f859f9fa11d363bae20825e7c74e71435e2fd28691488d787af1
     contract_digest: a62c403d22637b0bee44036a80329060588799b255669f766bedd4d5a2eb7c3b
 tags:
 - name: email

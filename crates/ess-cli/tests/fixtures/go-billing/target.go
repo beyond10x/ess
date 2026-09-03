@@ -18,6 +18,9 @@ type invoice struct {
 	state  string
 	email  string
 	amount map[string]any
+	// issuedAt is when it left Draft, and empty while it has not. The model declares
+	// `issued_at: Optional<Timestamp>`, and `OutstandingInvoices` ranks by it.
+	issuedAt string
 }
 
 // Target is the billing system, in memory.
@@ -155,6 +158,12 @@ func (t *Target) move(request essconform.CommandRequest, transition, outcome, ev
 		}
 	}
 	held.state = reached(transition)
+	if transition == "issue" {
+		t.minted++
+		// Counted, not read off a clock: two invoices issued in one scenario have to be orderable,
+		// and a wall clock would make that depend on how fast the test ran.
+		held.issuedAt = fmt.Sprintf("2020-01-01T00:00:%02dZ", t.minted%60)
+	}
 	return essconform.CommandResult{
 		Outcome:     outcome,
 		Consistency: fmt.Sprintf("token-%s-%s", id, transition),
@@ -214,8 +223,8 @@ func (t *Target) send(request essconform.CommandRequest) essconform.CommandResul
 
 func (t *Target) QueryView(request essconform.ViewRequest) (essconform.ViewResult, error) {
 	var rows []essconform.Row
-	// Sorted by id, so two runs return the same page. The model declares no order for either view,
-	// so any order satisfies it — this one is for the diagnostics.
+	// Sorted by id, so two runs return the same page. `InvoiceById` declares no order, so any order
+	// satisfies it — this one is for the diagnostics.
 	for _, id := range t.ids() {
 		held := t.invoices[id]
 		if request.View == "billing.invoice.OutstandingInvoices" && held.state != "Issued" {
@@ -225,9 +234,40 @@ func (t *Target) QueryView(request essconform.ViewRequest) (essconform.ViewResul
 		if t.broken == "negative-total" {
 			total = map[string]any{"amount": -1.0, "currency": "EUR"}
 		}
-		rows = append(rows, essconform.Row{"invoice_id": held.id, "total": total})
+		row := essconform.Row{"invoice_id": held.id, "total": total}
+		if held.issuedAt != "" {
+			row["issued_at"] = held.issuedAt
+		} else {
+			row["issued_at"] = nil
+		}
+		rows = append(rows, row)
+	}
+	// `order_by: issued_at desc`, which the specification declares and this therefore obeys.
+	if request.View == "billing.invoice.OutstandingInvoices" {
+		byIssuedAtDescending(rows)
+		if t.broken == "reversed-order" {
+			// The deliberate defect: the right rows, in the wrong order. Nothing else about the
+			// answer changes, so the only assertion that can catch it is the declared order — and
+			// it can only catch it where the view holds more than one row.
+			for left, right := 0, len(rows)-1; left < right; left, right = left+1, right-1 {
+				rows[left], rows[right] = rows[right], rows[left]
+			}
+		}
 	}
 	return essconform.ViewResult{Rows: rows}, nil
+}
+
+// byIssuedAtDescending puts the most recently issued invoice first.
+func byIssuedAtDescending(rows []essconform.Row) {
+	at := func(row essconform.Row) string {
+		written, _ := row["issued_at"].(string)
+		return written
+	}
+	for index := 1; index < len(rows); index++ {
+		for back := index; back > 0 && at(rows[back]) > at(rows[back-1]); back-- {
+			rows[back], rows[back-1] = rows[back-1], rows[back]
+		}
+	}
 }
 
 func (t *Target) ids() []string {

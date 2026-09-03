@@ -1,5 +1,5 @@
 # generated from billing v3
-# model digest aacdc2fe065d462cc4f9ba51e6740f88809b6b17ce006ef846b488f957005da3
+# model digest 62706dc8de60f859f9fa11d363bae20825e7c74e71435e2fd28691488d787af1
 # contract digest fed3dac8422d48748e0ec5c0c58941bd048be7d6a7f4d56499540467668fb996
 # do not edit: regenerate with `ess generate`
 asyncapi: 3.0.0
@@ -18,7 +18,7 @@ info:
   x-ess-provenance:
     system: billing
     specification_version: v3
-    source_digest: aacdc2fe065d462cc4f9ba51e6740f88809b6b17ce006ef846b488f957005da3
+    source_digest: 62706dc8de60f859f9fa11d363bae20825e7c74e71435e2fd28691488d787af1
     contract_digest: fed3dac8422d48748e0ec5c0c58941bd048be7d6a7f4d56499540467668fb996
 defaultContentType: application/json
 channels:

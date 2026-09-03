@@ -12,7 +12,7 @@
 //! deterministic order, without a constraint solver — which §11 names as a later extension and not a
 //! requirement of the first closed loop.
 //!
-//! # The strategy, in four rules
+//! # The strategy, in five rules
 //!
 //! 1. **One base witness per command**, built from the declared input types alone. Every field is
 //!    filled, optionals included, so a guard reading one is decided rather than
@@ -27,6 +27,10 @@
 //!    neither number was invented.
 //! 4. **Bounded.** At most [`MAX_CANDIDATES`] inputs per outcome. Exhausting them is a refusal that
 //!    says how many were tried, never a longer search.
+//! 5. **A second instance is a second witness.** Rule 2 keeps two *fields* apart; [`Distinction`]
+//!    keeps two *instances* apart, by moving every leaf the walk records as far as its declared
+//!    type allows. Without it, a scenario that runs one creating command twice submits one input
+//!    twice.
 //!
 //! # What has no witness
 //!
@@ -70,6 +74,41 @@ use ess_primitives::predicate::{Operand, Predicate};
 /// number. A larger number would turn a specification that needs a solver into a slower build that
 /// still cannot say so.
 pub const MAX_CANDIDATES: usize = 64;
+
+/// Which of several instances of one entity a witness is being built for.
+///
+/// A view that declares an order is asserted against **two** rows or against nothing:
+/// [`ViewExpectation::Ranked`](crate::ViewExpectation::Ranked) compares adjacent pairs, and a view
+/// holding one row has no pair. So a scenario that asserts an order arranges further instances by
+/// running the declared creating outcome again — and two runs of one command with one witness
+/// submit one input twice, down to the field the entity's identity is supplied in.
+///
+/// A distinction moves every leaf the walk records: `0` is the plain witness every scenario's own
+/// subject is built from, and each further instance takes the next number. What moves is bounded by
+/// the declared type rather than by this module's imagination — a `String` grows a suffix, a
+/// `Timestamp` moves a day, a number counts up — and a `Boolean` says out loud what a two-valued
+/// type can do: [`Distinction`] `1` and `3` give it the same value, so two rows tie on that key
+/// rather than pretend not to.
+///
+/// It is not a seed. The value at a distinction is a function of the path and the number, so two
+/// runs over one model produce one suite (§37).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Default)]
+pub struct Distinction(usize);
+
+impl Distinction {
+    /// The witness a scenario's own subject is built from.
+    pub const PLAIN: Self = Self(0);
+
+    /// The witness for the `nth` further instance, counting from one.
+    pub const fn further(nth: usize) -> Self {
+        Self(nth)
+    }
+
+    /// How far from the plain witness this one is.
+    pub const fn get(self) -> usize {
+        self.0
+    }
+}
 
 /// The wire key a union variant's value is carried under.
 ///
@@ -130,6 +169,11 @@ enum Leaf {
 /// The first is always the base witness, so a guard that any well-typed input satisfies is decided
 /// on the first try and the committed suite carries the plainest values the specification allows.
 ///
+/// `distinction` says which instance the input is for. [`Distinction::PLAIN`] is the witness every
+/// scenario's own subject is built from; a further one moves the base value of every leaf, and the
+/// ladder is built from that moved base rather than from the plain one — offering a candidate the
+/// base already carries would spend a try on a value already decided.
+///
 /// # Errors
 ///
 /// [`WitnessGap`] when some field of the input has no safe value at all.
@@ -137,19 +181,20 @@ pub fn candidates(
     ir: &EssIr,
     command: &ResolvedCommand,
     guards: &[&Predicate],
+    distinction: Distinction,
 ) -> Result<Vec<BTreeMap<String, Node>>, WitnessGap> {
-    let mut builder = Builder::new(ir);
+    let mut builder = Builder::new(ir, distinction);
     let base = builder.input(command, &BTreeMap::new())?;
 
     let mut ladders: Vec<(FactPath, Vec<Node>)> = Vec::new();
     for path in read_paths(guards) {
-        let Some(leaf) = builder.leaves.get(&path) else {
+        let Some((leaf, at_base)) = builder.leaves.get(&path) else {
             // A path the guard reads and the input does not bind: a list, a map, the inside of a
             // union, or a segment no type declares. No value this module chooses changes that, and
             // `InputFacts::decide` is what names which of them it is.
             continue;
         };
-        let alternatives = alternatives(leaf, &literals_at(guards, &path));
+        let alternatives = alternatives(leaf, at_base, &literals_at(guards, &path));
         if !alternatives.is_empty() {
             ladders.push((path, alternatives));
         }
@@ -237,22 +282,26 @@ fn collect_literals(predicate: &Predicate, path: &FactPath, found: &mut Vec<Fact
     }
 }
 
-/// The values one leaf is tried at, beside its base value, in the order they are tried.
+/// The values one leaf is tried at, beside the base value it already carries, in the order they are
+/// tried.
 ///
 /// Derived from what the guard writes, never from a range this module imagines. The one addition is
 /// `0` and `-1` for a number: a guard that compares two facts writes no literal at all, and those
 /// two are the values that decide sign and truthiness — which is what `> 0`, `>= 0` and a bare
 /// truthiness test are made of.
-fn alternatives(leaf: &Leaf, literals: &[FactValue]) -> Vec<Node> {
+///
+/// `base` is what this leaf already holds at its [`Distinction`], and it is excluded rather than
+/// assumed to be the plain one: the first candidate is the base witness, so offering the same value
+/// again spends a try on a decision already taken.
+fn alternatives(leaf: &Leaf, base: &Node, literals: &[FactValue]) -> Vec<Node> {
     let mut values = Vec::new();
     let mut push = |value: Node| {
-        if !values.contains(&value) {
+        if &value != base && !values.contains(&value) {
             values.push(value);
         }
     };
     match leaf {
         Leaf::Number { integral } => {
-            let base = number(BASE_NUMBER);
             let mut numbers: Vec<f64> = Vec::new();
             for literal in literals {
                 if let Some(number) = literal.as_number() {
@@ -264,12 +313,12 @@ fn alternatives(leaf: &Leaf, literals: &[FactValue]) -> Vec<Node> {
                 let Ok(candidate) = Number::new(value) else {
                     continue;
                 };
-                if (!*integral || candidate.is_integral()) && candidate != base {
+                if !*integral || candidate.is_integral() {
                     push(Node::Number(candidate));
                 }
             }
         }
-        Leaf::Bool => push(Node::Bool(!BASE_BOOL)),
+        Leaf::Bool => push(Node::Bool(!matches!(base, Node::Bool(true)))),
         Leaf::Text => {
             for literal in literals {
                 if let Some(text) = literal.as_text() {
@@ -278,7 +327,7 @@ fn alternatives(leaf: &Leaf, literals: &[FactValue]) -> Vec<Node> {
             }
         }
         Leaf::Enum { variants } => {
-            for variant in variants.iter().skip(1) {
+            for variant in variants {
                 push(Node::Text(variant.clone()));
             }
         }
@@ -292,26 +341,42 @@ const BASE_NUMBER: f64 = 1.0;
 /// The boolean every boolean witness starts at.
 const BASE_BOOL: bool = true;
 
-/// The instant every `Timestamp` witness carries. A constant, so nothing here reads a clock.
-const BASE_TIMESTAMP: &str = "2020-01-01T00:00:00Z";
+/// The day the first `Timestamp` witness lands on. A constant, so nothing here reads a clock.
+///
+/// A further instance takes the next day of the same month, which is why the month is written here
+/// and the day is not.
+const BASE_TIMESTAMP_MONTH: &str = "2020-01";
 
-/// The length every `Duration` witness carries.
-const BASE_DURATION: &str = "PT1S";
+/// How many instances a `Timestamp` witness can be told apart by, before the days repeat.
+///
+/// Twenty-eight, because every month has a twenty-eighth and no month has a thirty-second: a witness
+/// that is not a date is a witness a target refuses for a reason that has nothing to do with what
+/// the scenario tests.
+const DISTINGUISHABLE_DAYS: usize = 28;
 
-/// The bytes every `Bytes` witness carries: one zero byte, base64.
-const BASE_BYTES: &str = "AA==";
+/// The number of seconds the first `Duration` witness carries.
+const BASE_DURATION_SECONDS: usize = 1;
+
+/// The byte the first `Bytes` witness carries, encoded base64 as `AA==`.
+const BASE_BYTE: u8 = 0;
 
 /// Builds one input from the declared types, recording where a candidate could vary it.
 struct Builder<'ir> {
     ir: &'ir EssIr,
-    /// Every scalar the input holds, by the fact path that reads it.
-    leaves: BTreeMap<FactPath, Leaf>,
+    /// Which instance the input is for.
+    distinction: Distinction,
+    /// Every scalar the input holds, by the fact path that reads it, with the base value it took.
+    ///
+    /// The value is kept beside the leaf because the ladder is built relative to it, and at a
+    /// further [`Distinction`] the base is not the one this module's constants name.
+    leaves: BTreeMap<FactPath, (Leaf, Node)>,
 }
 
 impl<'ir> Builder<'ir> {
-    fn new(ir: &'ir EssIr) -> Self {
+    fn new(ir: &'ir EssIr, distinction: Distinction) -> Self {
         Self {
             ir,
+            distinction,
             leaves: BTreeMap::new(),
         }
     }
@@ -362,13 +427,12 @@ impl<'ir> Builder<'ir> {
             ResolvedTypeRef::List { .. } => Ok(Node::Seq(Vec::new())),
             ResolvedTypeRef::Map { .. } => Ok(Node::Map(BTreeMap::new())),
             ResolvedTypeRef::Primitive { name } => {
+                let base = primitive_value(*name, path, self.distinction);
                 if record {
-                    self.leaves.insert(path.clone(), Leaf::of_primitive(*name));
+                    self.leaves
+                        .insert(path.clone(), (Leaf::of_primitive(*name), base.clone()));
                 }
-                Ok(overrides
-                    .get(path)
-                    .cloned()
-                    .unwrap_or_else(|| primitive_value(*name, path)))
+                Ok(overrides.get(path).cloned().unwrap_or(base))
             }
             ResolvedTypeRef::Declared { name } => {
                 // Read through the IR reference rather than through `self`, so what comes back
@@ -379,16 +443,26 @@ impl<'ir> Builder<'ir> {
                         self.value(of, path, overrides, depth + 1, record)
                     }
                     ResolvedBody::Enum { variants } => {
+                        // The variants cycle, so a closed set of two names distinguishes two
+                        // instances and no more — which is the type's answer, not a shortfall here.
+                        let chosen = if variants.is_empty() {
+                            String::new()
+                        } else {
+                            variants[self.distinction.get() % variants.len()].clone()
+                        };
+                        let base = Node::Text(chosen);
                         if record {
                             self.leaves.insert(
                                 path.clone(),
-                                Leaf::Enum {
-                                    variants: variants.clone(),
-                                },
+                                (
+                                    Leaf::Enum {
+                                        variants: variants.clone(),
+                                    },
+                                    base.clone(),
+                                ),
                             );
                         }
-                        let first = variants.first().cloned().unwrap_or_default();
-                        Ok(overrides.get(path).cloned().unwrap_or(Node::Text(first)))
+                        Ok(overrides.get(path).cloned().unwrap_or(base))
                     }
                     ResolvedBody::Union { tag, variants } => {
                         let Some((label, variant)) = variants.iter().next() else {
@@ -432,18 +506,49 @@ impl Leaf {
     }
 }
 
-/// The base value of one primitive, at one path.
-fn primitive_value(primitive: Primitive, path: &FactPath) -> Node {
+/// The base value of one primitive, at one path, for one instance.
+///
+/// At [`Distinction::PLAIN`] every value is the constant or the path this module documents. Further
+/// instances move each value inside its own declared type — a whole day for a `Timestamp`, a whole
+/// second for a `Duration`, a suffix for a `String` — so a target that parses the plain witness
+/// parses this one too. A `Boolean` is the exception the type imposes rather than a choice here: it
+/// has two values, and beyond the second instance it repeats.
+fn primitive_value(primitive: Primitive, path: &FactPath, distinction: Distinction) -> Node {
+    let nth = distinction.get();
+    // The same ordinal, in the width the two numeric types can carry exactly. A scenario arranges
+    // one further instance per row a declared order needs, so `nth` is a small count and the
+    // saturation below is unreachable; it is written rather than cast because a witness that
+    // silently rounded would be two instances nothing could tell apart.
+    let ordinal = u32::try_from(nth).unwrap_or(u32::MAX);
     match primitive {
-        Primitive::Boolean => Node::Bool(BASE_BOOL),
-        Primitive::Integer | Primitive::Decimal => Node::Number(number(BASE_NUMBER)),
-        Primitive::Timestamp => Node::Text(BASE_TIMESTAMP.to_owned()),
-        Primitive::Duration => Node::Text(BASE_DURATION.to_owned()),
-        Primitive::Bytes => Node::Text(BASE_BYTES.to_owned()),
-        Primitive::Uuid => Node::Text(uuid(path)),
-        // The path itself, so two fields of one type never carry one value — see rule 2.
-        Primitive::String => Node::Text(path.to_string()),
+        Primitive::Boolean => Node::Bool(BASE_BOOL != (nth % 2 == 1)),
+        Primitive::Integer | Primitive::Decimal => {
+            Node::Number(number(BASE_NUMBER + f64::from(ordinal)))
+        }
+        // A whole day apart, and inside one month, so every instance carries a date that exists.
+        Primitive::Timestamp => Node::Text(format!(
+            "{BASE_TIMESTAMP_MONTH}-{:02}T00:00:00Z",
+            1 + nth % DISTINGUISHABLE_DAYS
+        )),
+        Primitive::Duration => Node::Text(format!("PT{}S", BASE_DURATION_SECONDS + nth)),
+        Primitive::Bytes => Node::Text(base64_byte(
+            BASE_BYTE.wrapping_add(ordinal.to_le_bytes()[0]),
+        )),
+        Primitive::Uuid => Node::Text(uuid(path, distinction)),
+        // The path itself, so two fields of one type never carry one value — see rule 2. The suffix
+        // is what keeps two *instances* apart, and it is a suffix rather than a prefix so the field
+        // a value came from is still the first thing a reader of a failing diagnostic sees.
+        Primitive::String if nth == 0 => Node::Text(path.to_string()),
+        Primitive::String => Node::Text(format!("{path}-{nth}")),
     }
+}
+
+/// One byte, base64. [`BASE_BYTE`] encodes as `AA==`.
+fn base64_byte(value: u8) -> String {
+    const ALPHABET: &[u8; 64] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+    let high = char::from(ALPHABET[usize::from(value >> 2)]);
+    let low = char::from(ALPHABET[usize::from((value & 0b11) << 4)]);
+    format!("{high}{low}==")
 }
 
 /// A number that is known to be finite.
@@ -451,7 +556,7 @@ fn number(value: f64) -> Number {
     Number::new(value).unwrap_or_else(|error| panic!("a witness is a finite number: {error}"))
 }
 
-/// A syntactically well-formed UUID, derived from the path it sits at.
+/// A syntactically well-formed UUID, derived from the path it sits at and the instance it is for.
 ///
 /// Derived rather than fixed so two `Uuid` fields of one input differ, and derived by hashing rather
 /// than counting so inserting a field renumbers nothing. Version 4 and the standard variant, because
@@ -459,8 +564,12 @@ fn number(value: f64) -> Number {
 ///
 /// It identifies nothing, and synthesis never asks it to: an outcome that needs an instance that
 /// already exists is refused before a witness is built.
-fn uuid(path: &FactPath) -> String {
-    let digest = fnv1a(path.to_string().as_bytes()) & 0xffff_ffff_ffff;
+fn uuid(path: &FactPath, distinction: Distinction) -> String {
+    let seed = match distinction.get() {
+        0 => path.to_string(),
+        nth => format!("{path}#{nth}"),
+    };
+    let digest = fnv1a(seed.as_bytes()) & 0xffff_ffff_ffff;
     format!("00000000-0000-4000-8000-{digest:012x}")
 }
 
@@ -494,8 +603,12 @@ mod tests {
         // The property `examples/oracle-fixture/` exists for: `contact` and `alternate_contact` are
         // both `oracle.order.Email`, so a binding that maps the wrong one is only detectable if the
         // two carry different values.
-        let contact = primitive_value(Primitive::String, &path("contact"));
-        let alternate = primitive_value(Primitive::String, &path("alternate_contact"));
+        let contact = primitive_value(Primitive::String, &path("contact"), Distinction::PLAIN);
+        let alternate = primitive_value(
+            Primitive::String,
+            &path("alternate_contact"),
+            Distinction::PLAIN,
+        );
 
         assert_eq!(contact, Node::Text("contact".to_owned()));
         assert_ne!(
@@ -506,13 +619,13 @@ mod tests {
 
     #[test]
     fn two_uuid_witnesses_differ_and_neither_moves_when_a_third_field_appears() {
-        let first = primitive_value(Primitive::Uuid, &path("invoice_id"));
-        let second = primitive_value(Primitive::Uuid, &path("order_id"));
+        let first = primitive_value(Primitive::Uuid, &path("invoice_id"), Distinction::PLAIN);
+        let second = primitive_value(Primitive::Uuid, &path("order_id"), Distinction::PLAIN);
 
         assert_ne!(first, second, "two ids of one input must not collide");
         assert_eq!(
             first,
-            primitive_value(Primitive::Uuid, &path("invoice_id")),
+            primitive_value(Primitive::Uuid, &path("invoice_id"), Distinction::PLAIN),
             "a witness derived from a counter would move when a field is inserted before it"
         );
         let Node::Text(rendered) = first else {
@@ -530,6 +643,7 @@ mod tests {
     fn the_alternatives_for_a_number_are_the_guards_own_literals_either_side() {
         let alternatives = alternatives(
             &Leaf::Number { integral: false },
+            &Node::Number(number(BASE_NUMBER)),
             &[FactValue::number(0.0).expect("finite")],
         );
 
@@ -550,8 +664,9 @@ mod tests {
         // carried one would be rejected as misshapen before any guard was decided.
         let literal = FactValue::number(0.5).expect("finite");
         let literals = std::slice::from_ref(&literal);
-        let integral = alternatives(&Leaf::Number { integral: true }, literals);
-        let decimal = alternatives(&Leaf::Number { integral: false }, literals);
+        let base = Node::Number(number(BASE_NUMBER));
+        let integral = alternatives(&Leaf::Number { integral: true }, &base, literals);
+        let decimal = alternatives(&Leaf::Number { integral: false }, &base, literals);
 
         assert_eq!(
             integral,
@@ -570,6 +685,7 @@ mod tests {
             &Leaf::Enum {
                 variants: vec!["Email".to_owned(), "Post".to_owned(), "Portal".to_owned()],
             },
+            &Node::Text("Email".to_owned()),
             &[],
         );
 

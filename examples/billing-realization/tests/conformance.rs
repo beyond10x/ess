@@ -31,7 +31,7 @@ use billing_types::invoice::{
     InvoiceId, InvoiceState, IssueInvoice, IssueInvoiceOutcome, Money, PayInvoice,
     PayInvoiceOutcome,
 };
-use billing_types::primitives::{Decimal, Uuid};
+use billing_types::primitives::{Decimal, Timestamp, Uuid};
 use ess_conformance::report::{ConformanceStatus, Status};
 use ess_conformance::runner::Runner;
 use ess_conformance::scenario::{BindingRef, CommandRef, ConformanceSuite, ErrorRef, EventRef};
@@ -210,9 +210,9 @@ impl ConformanceTarget for Synthesized {
                     .map_err(|unmet| {
                         TargetError::unavailable("reading the projection", unmet.to_string())
                     })?;
-                Ok(SemanticViewResult::of(
-                    rows.iter().map(|row| row_of(&row.invoice_id, &row.total)),
-                ))
+                Ok(SemanticViewResult::of(rows.iter().map(|row| {
+                    outstanding_row(&row.invoice_id, &row.total, row.issued_at.as_ref())
+                })))
             }
             other => Err(TargetError::unavailable(
                 format!("reading `{other}`"),
@@ -612,11 +612,28 @@ fn money_node(money: &Money) -> Node {
     Node::Map(fields)
 }
 
-/// One view row: what both declared projections publish.
+/// What both declared projections publish of one invoice.
 fn row_of(invoice_id: &InvoiceId, total: &Money) -> ViewRow {
     let mut row = ViewRow::new();
     row.insert("invoice_id".to_owned(), Node::Text(invoice_id.0 .0.clone()));
     row.insert("total".to_owned(), money_node(total));
+    row
+}
+
+/// A row of `billing.invoice.OutstandingInvoices`, which projects one field more.
+///
+/// The view ranks by `issued_at`, and a ranking key the rows do not carry is an order nothing can
+/// read — which the runner reports as a defect in the view rather than as a wrong order.
+fn outstanding_row(
+    invoice_id: &InvoiceId,
+    total: &Money,
+    issued_at: Option<&Timestamp>,
+) -> ViewRow {
+    let mut row = row_of(invoice_id, total);
+    row.insert(
+        "issued_at".to_owned(),
+        issued_at.map_or(Node::Null, |at| Node::Text(at.0.clone())),
+    );
     row
 }
 

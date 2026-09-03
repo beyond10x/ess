@@ -27,7 +27,7 @@ use billing_types::invoice::{
     IssueInvoiceOutcome, Money, OutstandingInvoices, PayInvoice, PayInvoiceOutcome, Payee,
 };
 use billing_types::obligation::UnmetObligation;
-use billing_types::primitives::{Duration, Uuid};
+use billing_types::primitives::{Duration, Timestamp, Uuid};
 
 /// `amount.amount > 0`, decided on the wire rendering and never on a float.
 ///
@@ -60,6 +60,20 @@ impl Store {
             "00000000-0000-4000-8000-{:012}",
             self.sequence
         )))
+    }
+
+    /// The instant a write happens at, from the same counter and from no clock.
+    ///
+    /// `billing.invoice.OutstandingInvoices` ranks by `issued_at`, so two invoices issued in one
+    /// scenario have to be orderable — and a wall clock would make the declared order depend on how
+    /// fast the machine ran the two commands that filled it.
+    fn instant(&mut self) -> Timestamp {
+        self.sequence += 1;
+        Timestamp(format!(
+            "2020-01-01T00:{:02}:{:02}Z",
+            self.sequence / 60,
+            self.sequence % 60
+        ))
     }
 }
 
@@ -196,9 +210,12 @@ impl IssueInvoiceBehavior for InvoiceRealization {
         // the legal move is a method call and every other state is the declared `wrong-state`.
         match snapshot.refine() {
             AnyInvoice::Draft(invoice) => {
-                store
-                    .invoices
-                    .insert(key, AnyInvoice::Issued(invoice.issue()).snapshot());
+                let issued_at = store.instant();
+                let mut issued = AnyInvoice::Issued(invoice.issue()).snapshot();
+                // The one field issuing an invoice fills. It is `Optional<Timestamp>` because a
+                // draft has no issuing instant, and it stops being absent exactly here.
+                issued.data.issued_at = Some(issued_at);
+                store.invoices.insert(key, issued);
                 Ok(IssueInvoiceOutcome::Issued {
                     invoice_issued: InvoiceIssued {
                         invoice_id: input.invoice_id,
@@ -311,7 +328,7 @@ impl OutstandingInvoicesQuery for InvoiceRealization {
     /// The declared filter, `state == Issued`, at `read_your_writes` — which a projection read
     /// straight off the store gives without waiting.
     fn outstanding_invoices(&self) -> Result<Vec<OutstandingInvoices>, UnmetObligation> {
-        Ok(self
+        let mut rows: Vec<OutstandingInvoices> = self
             .invoices
             .store
             .borrow()
@@ -321,8 +338,14 @@ impl OutstandingInvoicesQuery for InvoiceRealization {
             .map(|snapshot| OutstandingInvoices {
                 invoice_id: snapshot.data.invoice_id.clone(),
                 total: snapshot.data.total.clone(),
+                issued_at: snapshot.data.issued_at.clone(),
             })
-            .collect())
+            .collect();
+        // The declared `order_by: issued_at desc`. The rows come out of a map keyed by identity,
+        // and answering in that order would be answering in whichever order the store happened to
+        // have — which is the promise this line exists to keep.
+        rows.sort_by(|left, right| right.issued_at.cmp(&left.issued_at));
+        Ok(rows)
     }
 }
 

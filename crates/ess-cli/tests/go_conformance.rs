@@ -13,6 +13,9 @@
 //! `fixtures/go-billing/target.go` is that implementation — hand-written, small, and not a
 //! reference. `ESS_BREAK=negative-total` makes its views publish a negative total, which is exactly
 //! what `billing.invoice.Money`'s `amount >= 0` and `Invoice`'s `total.amount >= 0` forbid.
+//! `ESS_BREAK=reversed-order` returns the right rows of `billing.invoice.OutstandingInvoices` in
+//! the wrong order, which is the defect the view's `order_by:` exists to forbid — and the one that
+//! was uncatchable until synthesis arranged a second row for it to be compared against.
 
 use std::path::{Path, PathBuf};
 use std::process::Command;
@@ -141,6 +144,40 @@ fn one_deliberate_defect_fails_the_scenarios_responsible_for_it_and_no_others() 
         ],
         "the six scenarios that read a total are the six that must catch a negative one, and a \
          suite that failed more would not be telling anybody which check found it:\n{printed}"
+    );
+    let _ = std::fs::remove_dir_all(&directory);
+}
+
+#[test]
+fn a_view_returned_in_the_wrong_order_fails_exactly_the_scenarios_that_assert_its_order() {
+    // The check that makes `order_by:` worth declaring, and the one the suite could not make until
+    // a scenario arranged two rows for it. The rows are the right rows and every value in them is
+    // right; only the order is wrong, so nothing but the declared order can catch it.
+    let Some(go) = go() else {
+        eprintln!("no Go toolchain on this machine; the Go emitter is unchecked here");
+        return;
+    };
+    let directory = module("reversed");
+    let (passed, printed) = go_test(&go, &directory, Some("reversed-order"));
+
+    assert!(
+        !passed,
+        "a view that answers backwards passed a suite that declares its order:\n{printed}"
+    );
+    assert_eq!(
+        scenarios(&printed, "FAIL"),
+        vec![
+            "billing.invoice.CancelInvoice/outcome/cancelled",
+            "billing.invoice.CreateInvoice/outcome/accepted",
+            "billing.invoice.Invoice/transition/cancel/by/billing.invoice.CancelInvoice/cancelled",
+            "billing.invoice.Invoice/transition/issue/by/billing.invoice.IssueInvoice/issued",
+            "billing.invoice.Invoice/transition/settle/by/billing.invoice.PayInvoice/settled",
+            "billing.invoice.IssueInvoice/outcome/issued",
+            "billing.invoice.PayInvoice/outcome/settled",
+        ],
+        "exactly the scenarios that assert `OutstandingInvoices`'s declared order, and no others: \
+         a reversed page is the right multiset, so every other check in the suite still holds and \
+         a suite that failed more would not be saying which check found it:\n{printed}"
     );
     let _ = std::fs::remove_dir_all(&directory);
 }

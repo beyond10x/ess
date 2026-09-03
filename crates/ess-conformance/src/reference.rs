@@ -159,6 +159,7 @@ impl Billing {
                 id: id.clone(),
                 total: amount.clone(),
                 state: Lifecycle::Draft,
+                issued_at: None,
                 visible_after,
             },
         );
@@ -236,6 +237,10 @@ struct Invoice {
     id: String,
     total: Node,
     state: Lifecycle,
+    /// When it was issued, where it has been. `None` while it is still a draft, which is what the
+    /// model declares: `issued_at` is `Optional<Timestamp>` because an invoice has no issuing
+    /// instant until something issues it.
+    issued_at: Option<String>,
     visible_after: u64,
 }
 
@@ -293,6 +298,19 @@ impl State {
     /// An identifier of the shape the model's `Uuid` primitive takes.
     fn identifier(&mut self) -> String {
         format!("00000000-0000-4000-8000-{:012}", self.tick())
+    }
+
+    /// The instant a write happened at, of the shape the model's `Timestamp` primitive takes.
+    ///
+    /// Counted, not read off a clock. §37 puts every source of variation on the runner's side, and a
+    /// reference target that reached for the wall clock would make the declared order of its own
+    /// view depend on how fast the machine ran the commands that filled it.
+    fn instant(&mut self) -> String {
+        format!(
+            "2020-01-01T00:{:02}:{:02}Z",
+            self.sequence / 60,
+            self.tick() % 60
+        )
     }
 
     /// The token a read may demand a view no older than.
@@ -412,13 +430,18 @@ impl ConformanceTarget for Billing {
         match request.view.to_string().as_str() {
             // `read_your_writes`: a caller that has just issued an invoice and cannot see it in its
             // own list has been told a lie about what it did. There is nothing to wait for.
-            OUTSTANDING => Ok(SemanticViewResult::of(
-                state
+            // `order_by: issued_at desc`, which the model declares and this therefore obeys: the
+            // rows come out of a map keyed by identity, and publishing them in that order would be
+            // publishing whichever order the store happened to have.
+            OUTSTANDING => {
+                let mut outstanding: Vec<&Invoice> = state
                     .invoices
                     .values()
                     .filter(|invoice| invoice.state == Lifecycle::Issued)
-                    .map(row),
-            )),
+                    .collect();
+                outstanding.sort_by(|left, right| right.issued_at.cmp(&left.issued_at));
+                Ok(SemanticViewResult::of(outstanding.into_iter().map(row)))
+            }
             // `eventual`. A read demanding `AtLeast(token)` is the one case where the target waits
             // until it can answer (§14, §15) — here, by catching the projection up rather than by
             // sleeping. A read at `Current` gets what the projection has, which is the point.
@@ -544,8 +567,10 @@ fn issue_invoice(
     if current != Lifecycle::Draft {
         return wrong_state(ISSUE_INVOICE, current);
     }
+    let issued_at = state.instant();
     if let Some(invoice) = state.invoices.get_mut(&id) {
         invoice.state = Lifecycle::Issued;
+        invoice.issued_at = Some(issued_at);
     }
     state.touch(&id, lag);
 
@@ -674,6 +699,10 @@ fn row(invoice: &Invoice) -> ViewRow {
     let mut fields = ViewRow::new();
     fields.insert("invoice_id".to_owned(), Node::Text(invoice.id.clone()));
     fields.insert("total".to_owned(), invoice.total.clone());
+    fields.insert(
+        "issued_at".to_owned(),
+        invoice.issued_at.clone().map_or(Node::Null, Node::Text),
+    );
     fields
 }
 

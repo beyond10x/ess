@@ -165,7 +165,7 @@ use crate::scenario::{
     InstanceName, LeafShape, OutcomeRef, PayloadShape, ScenarioId, ScenarioPurpose, ScenarioStep,
     ScenarioValue, SuiteProvenance, TransitionRef, ViewExpectation, ViewRef,
 };
-use crate::witness::{candidates, WitnessGap, MAX_CANDIDATES};
+use crate::witness::{candidates, Distinction, WitnessGap, MAX_CANDIDATES};
 
 /// Everything one specification obliges an implementation to pass, and everything it does not say
 /// enough for.
@@ -320,6 +320,30 @@ pub enum RefusalCause {
         /// The paths the filter reads that nothing binds.
         unbound: Vec<FactPath>,
     },
+    /// A view declares an order and the scenario cannot put two rows in it.
+    ///
+    /// [`ViewExpectation::Ranked`] compares adjacent pairs, so a view holding fewer than two rows
+    /// holds its order for every implementation there is. That is deliberate on the assertion's side
+    /// — an order over no rows is simply held, and demanding a row would make every ordering claim a
+    /// non-emptiness claim as well — and it is exactly why the *scenario* has to arrange the second
+    /// row instead. Where the specification cannot produce one, the honest result is this refusal
+    /// and no assertion, because an assertion no implementation can fail is worse than a missing
+    /// one: it looks like a present check in every report that reads it.
+    ///
+    /// The instances are arranged the way every other instance in a suite is — the declared creating
+    /// outcome, then the declared moves that reach a state the view's filter admits. There is no
+    /// seeding route around that, and there is deliberately none: a target asked to put a row
+    /// somewhere would be a target answering a question only a test asks.
+    OrderUnwitnessed {
+        /// The view whose order is not asserted.
+        view: ViewRef,
+        /// Whose instances it holds.
+        entity: EntityRef,
+        /// How many rows the scenario could put there.
+        arranged: usize,
+        /// Why it could not arrange another.
+        reason: Unreachable,
+    },
     /// A construct this build does not synthesise yet.
     ///
     /// Visible rather than silent, deliberately. A reader of a suite cannot tell an unimplemented
@@ -454,6 +478,7 @@ impl RefusalCause {
                 Self::InvariantUnobservable { .. } => 11,
                 Self::RefusalUndeclared { .. } => 12,
                 Self::ValueInvariantUnwitnessed { .. } => 13,
+                Self::OrderUnwitnessed { .. } => 14,
             },
         )
     }
@@ -476,6 +501,10 @@ impl RefusalCause {
             Self::ViewUndecidable { .. } => {
                 "filter the view on the entity's state, which is what a generated scenario knows \
                  after the command it ran"
+            }
+            Self::OrderUnwitnessed { .. } => {
+                "declare an outcome that can leave a second instance where this view shows one, or \
+                 drop `order_by:`; an order over one row is a claim no implementation can fail"
             }
             Self::NotSynthesisedYet { .. } => "a later slice of `ess-conformance` synthesises this",
             Self::BindingUnobservable { gap, .. } => gap.hint(),
@@ -543,6 +572,16 @@ impl fmt::Display for RefusalCause {
                 }
                 Ok(())
             }
+            Self::OrderUnwitnessed {
+                view,
+                entity,
+                arranged,
+                reason,
+            } => write!(
+                f,
+                "`{view}` declares an order and this scenario can put {arranged} row(s) in it: \
+                 comparing two rows needs two `{entity}`s, and {reason}"
+            ),
             Self::NotSynthesisedYet {
                 construct,
                 sections,
@@ -929,11 +968,12 @@ fn exercise(
     let emitted: Vec<EventRef> = outcome.emits.iter().map(EventRef::from).collect();
     let absent = not_emitted(ir, &emitted);
     let actor = run.actor.clone();
-    let (view_steps, views) = view_expectations(
+    let views = view_expectations(
         ir,
         outcome,
         run.after.as_ref(),
         run.instance.as_ref(),
+        actors,
         id,
         refusals,
     );
@@ -959,10 +999,17 @@ fn exercise(
             event: event.clone(),
         });
     }
-    steps.extend(view_steps);
+    // After everything that reads the branch, and before anything that reads a view. Both halves of
+    // that are load-bearing. Put later, the arrangement would run after the view it exists to fill;
+    // put earlier, its own creating command would publish the first occurrence of the event the
+    // branch publishes — and `creates:` says the new identity is *in that event*, so every reference
+    // to the instance this scenario is about would resolve to a neighbour's.
+    steps.extend(views.arranged);
+    steps.extend(views.asserted);
 
-    let mut source = dependencies(ir, command, outcome, &absent, actor, &views);
+    let mut source = dependencies(ir, command, outcome, &absent, actor, &views.views);
     source.extend(run.source);
+    source.extend(views.source);
     Some((steps, source))
 }
 
@@ -1019,7 +1066,7 @@ fn run(
     actors: &BTreeMap<QualifiedName, ActorRef>,
 ) -> Result<Run, RefusalCause> {
     let setup = prepare(ir, outcome, actors)?;
-    let input = reach(ir, command, outcome)?;
+    let input = reach(ir, command, outcome, Distinction::PLAIN)?;
 
     let command_ref = CommandRef::new(command.name.clone());
     let outcome_ref = OutcomeRef::new(command_ref.clone(), outcome.name.clone());
@@ -1117,13 +1164,12 @@ fn prepare(
         ResolvedEffect::Creates | ResolvedEffect::Updates => lifecycle.initial.clone(),
     };
 
-    let arrangement = arrange_first(ir, &subject.entity, &targets, actors).map_err(|reason| {
-        RefusalCause::InstanceRequired {
+    let arrangement = arrange_first(ir, &subject.entity, &targets, actors, Distinction::PLAIN)
+        .map_err(|reason| RefusalCause::InstanceRequired {
             entity: EntityRef::from(&subject.entity),
             need,
             reason,
-        }
-    })?;
+        })?;
     Ok(Setup {
         steps: arrangement.steps,
         instance: Some(arrangement.instance),
@@ -1133,9 +1179,16 @@ fn prepare(
 }
 
 /// One instance of an entity, resting in a state, and the name the scenario calls it by.
+#[derive(Debug)]
 struct Arrangement {
     /// What it is called for the rest of the scenario.
     instance: InstanceName,
+    /// The state the steps leave it in.
+    ///
+    /// Carried out rather than re-derived by the caller: which of several admissible states an
+    /// arrangement reached decides which views hold a row for it, and answering that twice is two
+    /// answers to one question.
+    state: StateName,
     /// The steps that produce it.
     steps: Vec<ScenarioStep>,
     /// What those steps depend on.
@@ -1157,11 +1210,12 @@ fn arrange_first(
     entity: &EntityHandle,
     targets: &[StateName],
     actors: &BTreeMap<QualifiedName, ActorRef>,
+    distinction: Distinction,
 ) -> Result<Arrangement, Unreachable> {
     let mut cheapest: Option<Arrangement> = None;
     let mut first: Option<Unreachable> = None;
     for target in targets {
-        match arrange(ir, entity, target, actors) {
+        match arrange(ir, entity, target, actors, distinction) {
             Ok(arrangement) => {
                 if cheapest
                     .as_ref()
@@ -1192,6 +1246,7 @@ fn arrange(
     entity: &EntityHandle,
     target: &StateName,
     actors: &BTreeMap<QualifiedName, ActorRef>,
+    distinction: Distinction,
 ) -> Result<Arrangement, Unreachable> {
     let all = ir.drivers();
     let drivers: &[Driver<'_>] = all.get(entity).map_or(&[], Vec::as_slice);
@@ -1203,11 +1258,11 @@ fn arrange(
         from: ir.entity(entity).lifecycle.initial.clone(),
     })?;
 
-    let instance = instance_name(&ir.entity(entity).name);
+    let instance = instance_name(&ir.entity(entity).name, distinction);
     let mut steps = Vec::new();
     let mut source = BTreeSet::new();
 
-    let (created, used) = invoke(ir, creator, None, actors)?;
+    let (created, used) = invoke(ir, creator, None, actors, distinction)?;
     steps.extend(created);
     source.extend(used);
     // Where the identity becomes knowable. `creates:` names a field of an event the branch emits,
@@ -1227,12 +1282,13 @@ fn arrange(
     source.insert(EventRef::from(event).into());
 
     for driver in route {
-        let (moved, used) = invoke(ir, &driver, Some(&instance), actors)?;
+        let (moved, used) = invoke(ir, &driver, Some(&instance), actors, distinction)?;
         steps.extend(moved);
         source.extend(used);
     }
     Ok(Arrangement {
         instance,
+        state: target.clone(),
         steps,
         source,
     })
@@ -1248,16 +1304,18 @@ fn invoke(
     driver: &Driver<'_>,
     instance: Option<&InstanceName>,
     actors: &BTreeMap<QualifiedName, ActorRef>,
+    distinction: Distinction,
 ) -> Result<(Vec<ScenarioStep>, BTreeSet<EssSemanticRef>), Unreachable> {
     let command_ref = CommandRef::new(driver.command.name.clone());
     let outcome_ref = OutcomeRef::new(command_ref.clone(), driver.outcome.name.clone());
     // The cause is not carried up. That branch has a refusal of its own, under its own id, saying
     // exactly why no input reaches it; repeating it here would be one defect reported twice with two
     // repairs to weigh.
-    let input =
-        reach(ir, driver.command, driver.outcome).map_err(|_| Unreachable::Unwitnessable {
+    let input = reach(ir, driver.command, driver.outcome, distinction).map_err(|_| {
+        Unreachable::Unwitnessable {
             outcome: outcome_ref.clone(),
-        })?;
+        }
+    })?;
 
     let mut steps = Vec::new();
     if driver.outcome.test_strategy == TestStrategy::InjectFault {
@@ -1361,8 +1419,11 @@ fn subject<'a>(driver: &Driver<'a>) -> &'a ResolvedSubject {
 /// What a scenario calls one instance of this entity: its local name, in lower-kebab.
 ///
 /// Derived from the model rather than counted, so two scenarios about one entity use one word and a
-/// reader of a suite recognises it.
-fn instance_name(entity: &QualifiedName) -> InstanceName {
+/// reader of a suite recognises it. A further instance takes the same word and its number —
+/// `invoice`, then `invoice-2` — because a second row arranged so a declared order has a pair to
+/// compare is the same kind of thing as the first, and a reader should not have to look up which is
+/// which.
+fn instance_name(entity: &QualifiedName, distinction: Distinction) -> InstanceName {
     let local = entity.local();
     let mut out = String::with_capacity(local.len() + 4);
     for (index, character) in local.char_indices() {
@@ -1377,8 +1438,16 @@ fn instance_name(entity: &QualifiedName) -> InstanceName {
             out.push(character);
         }
     }
-    InstanceName::new(out)
-        .unwrap_or_else(|_| InstanceName::new("subject").expect("`subject` is lower-kebab"))
+    // The number goes on last, and on the fallback too: two instances that shared a name would be
+    // one instance the runner bound twice, which is a suite that arranges two rows and asserts
+    // against one.
+    let suffix = match distinction {
+        Distinction::PLAIN => String::new(),
+        further => format!("-{}", further.get() + 1),
+    };
+    InstanceName::new(format!("{out}{suffix}"))
+        .or_else(|_| InstanceName::new(format!("subject{suffix}")))
+        .expect("`subject` and its number are lower-kebab")
 }
 
 /// A witness input, with the field that names the instance replaced by the instance itself.
@@ -1417,10 +1486,17 @@ fn supply(
 ///
 /// Branches on [`ResolvedOutcome::test_strategy`] and never on the predicate: the compiler decided
 /// reachability once, and asking again here is the divergence the field exists to prevent.
+///
+/// `distinction` says which instance the input is for. A scenario that arranges a second row in a
+/// ranked view runs the same creating outcome twice, and the guard is decided again against the
+/// second witness rather than assumed to hold of it: a value that moved may have moved out of the
+/// branch, and a suite that sent it anyway would arrange an instance the specification says the
+/// command refuses.
 fn reach(
     ir: &EssIr,
     command: &ResolvedCommand,
     outcome: &ResolvedOutcome,
+    distinction: Distinction,
 ) -> Result<BTreeMap<String, Node>, RefusalCause> {
     let strategy = outcome.test_strategy;
     let guards: Vec<&Predicate> = match strategy {
@@ -1446,7 +1522,7 @@ fn reach(
     };
     let satisfy = strategy == TestStrategy::ConstructInput;
 
-    let inputs = candidates(ir, command, &guards).map_err(RefusalCause::NoWitness)?;
+    let inputs = candidates(ir, command, &guards, distinction).map_err(RefusalCause::NoWitness)?;
     for input in &inputs {
         let facts = flatten(ir, command, input).map_err(RefusalCause::WitnessRejected)?;
         if decides(&facts, &guards, satisfy)? {
@@ -1653,6 +1729,33 @@ fn describe(
     }
 }
 
+/// How many rows a declared order has to be compared against before it is a claim at all.
+///
+/// Two. [`ViewExpectation::Ranked`] compares adjacent pairs, and a view holding one row has no
+/// pair — so an order asserted against one row is an assertion no implementation can fail, which is
+/// worse than a missing check because it looks like a present one.
+const RANKING_ROWS: usize = 2;
+
+/// The view assertions a branch that changed an entity supports, and what they need arranged.
+///
+/// Two lists rather than one, because they do not run in the same place. Every assertion after an
+/// [`ScenarioStep::ExecuteCommand`] is about *that* invocation, and `creates:` declares that a new
+/// identity is published in an event — so a neighbouring instance arranged **before** the branch
+/// would publish the first occurrence of that event, and the scenario's own subject would be the
+/// second. The arrangement therefore goes between the branch's own assertions and the first read of
+/// a view: after everything that reads the command, before anything that reads a projection.
+#[derive(Debug, Default)]
+struct ViewAssertions {
+    /// The further instances a declared order needs, arranged once the branch has been required.
+    arranged: Vec<ScenarioStep>,
+    /// The reads and the requirements, after it.
+    asserted: Vec<ScenarioStep>,
+    /// The views named.
+    views: BTreeSet<ViewRef>,
+    /// What the arrangements depend on.
+    source: BTreeSet<EssSemanticRef>,
+}
+
 /// The view assertions a branch that changed an entity supports (§14, §20).
 ///
 /// `after` is the state the subject is in once the branch has been taken — the lifecycle's `initial`
@@ -1664,89 +1767,191 @@ fn describe(
 ///
 /// `instance` is what the arrangement bound the subject as, and it is what turns "the view holds a
 /// row" into "the view holds *this* one" — see [`identifying`].
+///
+/// # A declared order costs further instances
+///
+/// A view that declares `order_by:` is read twice in the same block, and the second read is the one
+/// this function has to arrange for. Synthesis makes at most one instance of an entity per scenario
+/// otherwise, and an order over one row holds for every implementation — so where a ranked view
+/// would see fewer than [`RANKING_ROWS`], further instances are arranged through the declared
+/// creating outcome and the declared moves that reach a state the view's filter admits, each built
+/// from its own [`Distinction`]. Where the specification cannot produce them,
+/// [`RefusalCause::OrderUnwitnessed`] is recorded and the order is **not** asserted: §36's rule is
+/// that a check the specification asked for and did not get is named, and this is the one shape
+/// where emitting it anyway would have been silently free.
 fn view_expectations(
     ir: &EssIr,
     outcome: &ResolvedOutcome,
     after: Option<&StateName>,
     instance: Option<&InstanceName>,
+    actors: &BTreeMap<QualifiedName, ActorRef>,
     id: &ScenarioId,
     refusals: &mut Vec<Refusal>,
-) -> (Vec<ScenarioStep>, BTreeSet<ViewRef>) {
-    let mut steps = Vec::new();
-    let mut named = BTreeSet::new();
+) -> ViewAssertions {
+    let mut out = ViewAssertions::default();
     let (Some(subject), Some(state)) = (&outcome.subject, after) else {
-        return (steps, named);
+        return out;
     };
     let projections = ir.projections();
     let Some(views) = projections.get(&subject.entity) else {
-        return (steps, named);
+        return out;
     };
 
+    // Decided first, and for every view, because the companions one ranked view needs land in every
+    // other view of the same entity — so what each view holds cannot be settled one view at a time.
+    let mut decided: Vec<(&&ResolvedView, bool)> = Vec::new();
     for view in views {
+        match shows(view, state) {
+            Ok(admits) => decided.push((view, admits)),
+            Err(unbound) => refusals.push(Refusal::about(
+                id,
+                RefusalCause::ViewUndecidable {
+                    view: ViewRef::new(view.name.clone()),
+                    filter: view
+                        .filter
+                        .as_ref()
+                        .map_or_else(String::new, ToString::to_string),
+                    state: state.clone(),
+                    unbound,
+                },
+            )),
+        }
+    }
+
+    let mut companions: Vec<Arrangement> = Vec::new();
+    let mut unwitnessed: BTreeSet<ViewRef> = BTreeSet::new();
+    for (view, admits_subject) in &decided {
+        if view.order_by.is_empty() {
+            continue;
+        }
+        let name = ViewRef::new(view.name.clone());
+        while rows_shown(view, *admits_subject, &companions) < RANKING_ROWS {
+            let distinction = Distinction::further(companions.len() + 1);
+            match arrange_beside(ir, &subject.entity, view, actors, distinction) {
+                Ok(companion) => companions.push(companion),
+                Err(reason) => {
+                    refusals.push(Refusal::about(
+                        id,
+                        RefusalCause::OrderUnwitnessed {
+                            view: name.clone(),
+                            entity: EntityRef::from(&subject.entity),
+                            arranged: rows_shown(view, *admits_subject, &companions),
+                            reason,
+                        },
+                    ));
+                    unwitnessed.insert(name.clone());
+                    break;
+                }
+            }
+        }
+    }
+    for companion in &companions {
+        out.arranged.extend(companion.steps.iter().cloned());
+        out.source.extend(companion.source.iter().cloned());
+    }
+
+    for (view, admits_subject) in &decided {
         let name = ViewRef::new(view.name.clone());
         let fields = identifying(ir, subject, instance, view);
-        let expectation = match shows(view, state) {
-            Ok(true) => ViewExpectation::Contains {
-                fields: fields.clone(),
-            },
+        let expectation = if *admits_subject {
+            ViewExpectation::Contains { fields }
+        } else {
             // A cancelled invoice that stays in `OutstandingInvoices` is the defect the positive
             // assertion cannot see, and an entity that has not reached the filtered state yet is
             // exactly that case at the other end.
-            Ok(false) => ViewExpectation::Excludes {
-                fields: fields.clone(),
-            },
-            Err(unbound) => {
-                refusals.push(Refusal::about(
-                    id,
-                    RefusalCause::ViewUndecidable {
-                        view: name,
-                        filter: view
-                            .filter
-                            .as_ref()
-                            .map_or_else(String::new, ToString::to_string),
-                        state: state.clone(),
-                        unbound,
-                    },
-                ));
-                continue;
-            }
+            ViewExpectation::Excludes { fields }
         };
-        // The style is read, never re-derived: asserting an `eventual` view with `expect` races the
-        // projection, and the repair everyone reaches for is a sleep.
-        match view.assertion_style {
-            AssertionStyle::Expect => {
-                steps.push(ScenarioStep::QueryView { view: name.clone() });
-                steps.push(ScenarioStep::ExpectView {
-                    view: name.clone(),
-                    expectation,
-                });
-            }
-            AssertionStyle::Eventually => steps.push(ScenarioStep::EventuallyView {
-                view: name.clone(),
-                expectation,
-            }),
-        }
+        require(view, &name, expectation, &mut out.asserted);
         // A declared order is a second promise about the same read, asserted in the same block as
         // the first: an `eventual` view that is queried again would be a different read, and two
         // reads can disagree about order without either of them being wrong.
-        if !view.order_by.is_empty() {
-            let ranked = ViewExpectation::Ranked {
-                order_by: view.order_by.clone(),
-            };
-            match view.assertion_style {
-                AssertionStyle::Expect => steps.push(ScenarioStep::ExpectView {
-                    view: name.clone(),
-                    expectation: ranked,
-                }),
-                AssertionStyle::Eventually => steps.push(ScenarioStep::EventuallyView {
-                    view: name.clone(),
-                    expectation: ranked,
-                }),
-            }
+        if !view.order_by.is_empty() && !unwitnessed.contains(&name) {
+            require(
+                view,
+                &name,
+                ViewExpectation::Ranked {
+                    order_by: view.order_by.clone(),
+                },
+                &mut out.asserted,
+            );
         }
-        named.insert(name);
+        out.views.insert(name);
     }
-    (steps, named)
+    out
+}
+
+/// Adds one requirement about one view, in the block that view's consistency decides.
+///
+/// The style is read, never re-derived: asserting an `eventual` view with `expect` races the
+/// projection, and the repair everyone reaches for is a sleep. A second requirement about a view
+/// already queried adds no second query — an `eventual` view read twice is two reads, and two reads
+/// can disagree without either of them being wrong.
+fn require(
+    view: &ResolvedView,
+    name: &ViewRef,
+    expectation: ViewExpectation,
+    steps: &mut Vec<ScenarioStep>,
+) {
+    match view.assertion_style {
+        AssertionStyle::Expect => {
+            let queried = steps
+                .iter()
+                .any(|step| matches!(step, ScenarioStep::QueryView { view } if view == name));
+            if !queried {
+                steps.push(ScenarioStep::QueryView { view: name.clone() });
+            }
+            steps.push(ScenarioStep::ExpectView {
+                view: name.clone(),
+                expectation,
+            });
+        }
+        AssertionStyle::Eventually => steps.push(ScenarioStep::EventuallyView {
+            view: name.clone(),
+            expectation,
+        }),
+    }
+}
+
+/// How many rows this scenario puts in one view: its subject, where the filter admits it, and every
+/// further instance arranged beside it.
+///
+/// A companion whose state the filter cannot decide counts for nothing. That is the same three-valued
+/// reading [`shows`] makes everywhere else — an undecided filter is not a row, and counting one
+/// would be the invention §11 rules out.
+fn rows_shown(view: &ResolvedView, admits_subject: bool, companions: &[Arrangement]) -> usize {
+    usize::from(admits_subject)
+        + companions
+            .iter()
+            .filter(|companion| shows(view, &companion.state) == Ok(true))
+            .count()
+}
+
+/// One further instance of an entity, resting where a view's filter admits it.
+///
+/// The states are the entity's own declared ones, filtered by the view's own declared filter, and
+/// the cheapest reachable one wins — the same rule [`arrange_first`] applies to a branch's subject,
+/// for the same reason: every extra command is another way for an arrangement to fail for a reason
+/// that has nothing to do with what the scenario tests.
+fn arrange_beside(
+    ir: &EssIr,
+    entity: &EntityHandle,
+    view: &ResolvedView,
+    actors: &BTreeMap<QualifiedName, ActorRef>,
+    distinction: Distinction,
+) -> Result<Arrangement, Unreachable> {
+    let lifecycle = &ir.entity(entity).lifecycle;
+    let admitted: Vec<StateName> = lifecycle
+        .states
+        .iter()
+        .filter(|state| shows(view, state) == Ok(true))
+        .cloned()
+        .collect();
+    if admitted.is_empty() {
+        return Err(Unreachable::NoPath {
+            from: lifecycle.initial.clone(),
+        });
+    }
+    arrange_first(ir, entity, &admitted, actors, distinction)
 }
 
 /// The field match that names the instance this scenario is about, where the model publishes one.
@@ -2050,7 +2255,7 @@ fn refused_here(
         .collect();
     let attempt = movers.first().copied()?;
 
-    let arrangement = match arrange(ir, handle, state, actors) {
+    let arrangement = match arrange(ir, handle, state, actors, Distinction::PLAIN) {
         Ok(arrangement) => arrangement,
         Err(reason) => {
             refusals.push(Refusal::about(
@@ -2066,7 +2271,7 @@ fn refused_here(
             return None;
         }
     };
-    let input = match reach(ir, attempt.command, attempt.outcome) {
+    let input = match reach(ir, attempt.command, attempt.outcome, Distinction::PLAIN) {
         Ok(input) => input,
         Err(cause) => {
             refusals.push(Refusal::about(id, cause));

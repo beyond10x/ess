@@ -155,9 +155,14 @@ fn steps<'a>(synthesis: &'a Synthesis, id: &str) -> &'a [ScenarioStep] {
         .steps
 }
 
-/// The input one scenario sends, in the *last* command it runs — the one it is about.
+/// The input one scenario sends in the command it is about.
+///
+/// The last command it runs is not always that one: a scenario asserting a ranked view arranges
+/// further instances after the branch has been required, so what identifies the invocation under
+/// test is that the branch's own assertions come after it. Those are the first step that reads
+/// something other than which branch was taken.
 fn sent(synthesis: &Synthesis, id: &str) -> BTreeMap<String, ScenarioValue> {
-    steps(synthesis, id)
+    under_test(steps(synthesis, id))
         .iter()
         .rev()
         .find_map(|step| match step {
@@ -165,6 +170,32 @@ fn sent(synthesis: &Synthesis, id: &str) -> BTreeMap<String, ScenarioValue> {
             _ => None,
         })
         .unwrap_or_else(|| panic!("`{id}` invokes a command"))
+}
+
+/// The prefix of a scenario that arranges and runs the branch it is about.
+///
+/// Everything after the first step that reads something other than which branch was taken belongs to
+/// the assertions, or to the further instances a ranked view's order is compared over — which are
+/// arranged there rather than at the front, so that the branch's own published event is the first
+/// occurrence of it in the scenario.
+fn under_test(steps: &[ScenarioStep]) -> &[ScenarioStep] {
+    let asserted = steps
+        .iter()
+        .position(|step| {
+            matches!(
+                step,
+                ScenarioStep::ExpectError { .. }
+                    | ScenarioStep::ExpectEvent { .. }
+                    | ScenarioStep::ExpectNoEvent { .. }
+                    | ScenarioStep::EventuallyEvent { .. }
+                    | ScenarioStep::QueryView { .. }
+                    | ScenarioStep::ExpectView { .. }
+                    | ScenarioStep::EventuallyView { .. }
+                    | ScenarioStep::ExpectInvocation { .. }
+            )
+        })
+        .unwrap_or(steps.len());
+    &steps[..asserted]
 }
 
 /// The literal half of that input, which is every field a guard is allowed to read.
@@ -657,12 +688,154 @@ fn a_view_is_asserted_in_the_block_its_own_consistency_decides() {
             "execute",
             "outcome",
             "event",
+            // `OutstandingInvoices` declares an order, and `accepted` leaves its invoice in
+            // `Draft`, which that view's filter does not admit. So the two rows its order is
+            // compared over are two further invoices, each created and issued after the branch has
+            // been required and before the view is read.
+            "execute",
+            "outcome",
+            "capture",
+            "execute",
+            "outcome",
+            "execute",
+            "outcome",
+            "capture",
+            "execute",
+            "outcome",
             "eventually-view",
             "query",
+            "view",
             "view"
         ],
         "an immediate assertion is a read and a check; a bounded one is a single step, because \
          retrying means re-running the query"
+    );
+}
+
+#[test]
+fn a_declared_order_is_asserted_against_two_rows_the_scenario_arranged_itself() {
+    // The defect this family exists to close. `Ranked` compares adjacent pairs, so it holds for
+    // every implementation there is against a view with one row — and synthesis made at most one
+    // instance of an entity per scenario, so every ordering claim a specification wrote was an
+    // assertion nothing could fail. Each ranked assertion now stands beside further instances the
+    // scenario arranged through the declared creating outcome and the declared moves that reach a
+    // state the view's filter admits.
+    let synthesis = synthesize(&example("billing"));
+    let outstanding = "billing.invoice.OutstandingInvoices";
+
+    let ranked: Vec<String> = ids(&synthesis)
+        .into_iter()
+        .filter(|id| {
+            steps(&synthesis, id).iter().any(|step| {
+                matches!(
+                    step,
+                    ScenarioStep::ExpectView {
+                        expectation: ViewExpectation::Ranked { .. },
+                        ..
+                    }
+                )
+            })
+        })
+        .collect();
+    assert_eq!(
+        ranked.len(),
+        7,
+        "every branch that changes an invoice reads the view that ranks them: {ranked:?}"
+    );
+
+    for id in &ranked {
+        // `OutstandingInvoices` filters on `state == Issued`, so a row in it is an invoice this
+        // scenario issued and did not then move out. Counting them is counting the rows the order
+        // is compared over, and fewer than two is the vacuous assertion this test forbids.
+        let mut issued: BTreeSet<String> = BTreeSet::new();
+        let mut subject: Option<String> = None;
+        for step in steps(&synthesis, id) {
+            match step {
+                ScenarioStep::CaptureInstance { instance, .. } => {
+                    subject = Some(instance.to_string());
+                }
+                ScenarioStep::ExecuteCommand { command, input, .. } => {
+                    let named = match input.get("invoice_id") {
+                        Some(ScenarioValue::Instance { instance }) => instance.to_string(),
+                        // The branch under test may create the invoice it is about, in which case
+                        // no earlier step named it and the scenario knows it only as `the subject`.
+                        _ => subject.clone().unwrap_or_else(|| "subject".to_owned()),
+                    };
+                    match command.to_string().as_str() {
+                        "billing.invoice.IssueInvoice" => {
+                            issued.insert(named);
+                        }
+                        "billing.invoice.PayInvoice" | "billing.invoice.CancelInvoice" => {
+                            issued.remove(&named);
+                        }
+                        _ => {}
+                    }
+                }
+                _ => {}
+            }
+        }
+        assert!(
+            issued.len() >= 2,
+            "`{id}` asserts the order of `{outstanding}` over {} row(s): {issued:?}",
+            issued.len()
+        );
+    }
+}
+
+#[test]
+fn an_order_the_specification_cannot_put_two_rows_under_is_refused_and_not_asserted() {
+    // §36 applied to the one assertion that is silently free. Emitting `Ranked` here would cost
+    // nothing and check nothing, and nothing in a passing run would say so — so the scenario keeps
+    // every assertion it can make, loses the one it cannot, and the refusal names the view, the
+    // number of rows it could reach and why there is no second one.
+    let synthesis = synthesize(&fixture(UNARRANGEABLE_ORDER));
+    let id = "stuck.orders.PlaceOrder/outcome/accepted";
+
+    assert!(
+        !steps(&synthesis, id).iter().any(|step| matches!(
+            step,
+            ScenarioStep::ExpectView {
+                expectation: ViewExpectation::Ranked { .. },
+                ..
+            } | ScenarioStep::EventuallyView {
+                expectation: ViewExpectation::Ranked { .. },
+                ..
+            }
+        )),
+        "an order over rows nothing can arrange is not an assertion, it is a formality"
+    );
+    let refusal = synthesis
+        .refused(code(14))
+        .find(|refusal| {
+            refusal
+                .scenario
+                .as_ref()
+                .is_some_and(|at| at.to_string() == id)
+        })
+        .expect("the order that cannot be witnessed keeps a refusal");
+    let rendered = refusal.to_string();
+    for required in [
+        "stuck.orders.HeldOrders",
+        "0 row(s)",
+        "stuck.orders.HoldOrder/held",
+    ] {
+        assert!(
+            rendered.contains(required),
+            "{required:?} is missing from:\n{rendered}"
+        );
+    }
+    assert!(
+        refusal.hint().contains("order_by"),
+        "and the hint names the two repairs: {}",
+        refusal.hint()
+    );
+
+    // The rest of the view's assertions survive: what is refused is the order, not the read.
+    assert!(
+        steps(&synthesis, id)
+            .iter()
+            .any(|step| matches!(step, ScenarioStep::ExpectView { .. })),
+        "the view is still read and still required to exclude the instance it does not hold"
     );
 }
 
@@ -769,8 +942,22 @@ fn a_scenario_that_moves_an_instance_names_the_one_an_earlier_step_created() {
             "execute",
             "outcome",
             "event",
+            // `settle` leaves the invoice `Paid`, which `OutstandingInvoices` does not hold — so
+            // both rows its declared order is compared over are further invoices, each created and
+            // issued after the branch has been required and before the view is read.
+            "execute",
+            "outcome",
+            "capture",
+            "execute",
+            "outcome",
+            "execute",
+            "outcome",
+            "capture",
+            "execute",
+            "outcome",
             "eventually-view",
             "query",
+            "view",
             "view"
         ],
         "create, bind the new invoice, issue it, then pay it and assert what that promises"
@@ -806,7 +993,7 @@ fn a_scenario_that_moves_an_instance_names_the_one_an_earlier_step_created() {
 
     // Every later command names that binding rather than a value, and the fields the guard reads
     // are still literals the synthesizer decided.
-    for step in steps(&synthesis, id) {
+    for step in under_test(steps(&synthesis, id)) {
         let ScenarioStep::ExecuteCommand { command, input, .. } = step else {
             continue;
         };
@@ -821,12 +1008,62 @@ fn a_scenario_that_moves_an_instance_names_the_one_an_earlier_step_created() {
             "`{command}` must act on the invoice step one created, not on an invented id"
         );
     }
+
     assert!(
         sent(&synthesis, id)
             .get("amount")
             .and_then(ScenarioValue::as_literal)
             .is_some(),
         "and the field its guard reads is still a decided value"
+    );
+}
+
+#[test]
+fn every_command_names_an_instance_an_earlier_step_of_the_same_scenario_bound() {
+    // A scenario that arranges further instances has more than one binding in flight, and a command
+    // reaching for the wrong one would act on the wrong invoice — which is a green scenario about
+    // something nobody asked for. Read over the whole example rather than one scenario, because the
+    // property is about the vocabulary and not about a case.
+    let synthesis = synthesize(&example("billing"));
+    for id in ids(&synthesis) {
+        let mut bound: BTreeSet<String> = BTreeSet::new();
+        for step in steps(&synthesis, &id) {
+            match step {
+                ScenarioStep::CaptureInstance { instance, .. } => {
+                    bound.insert(instance.to_string());
+                }
+                ScenarioStep::ExecuteCommand { command, input, .. } => {
+                    for (field, value) in input {
+                        if let ScenarioValue::Instance { instance } = value {
+                            assert!(
+                                bound.contains(&instance.to_string()),
+                                "`{id}` sends `{command}.{field}` as `{instance}`, which no \
+                                 earlier step bound: {bound:?}"
+                            );
+                        }
+                    }
+                }
+                _ => {}
+            }
+        }
+    }
+
+    // And the scenario that needs the most of them binds exactly three: its own subject, and the
+    // two rows `OutstandingInvoices` needs before its declared order is a claim at all.
+    let settle = "billing.invoice.Invoice/transition/settle/by/billing.invoice.PayInvoice/settled";
+    let bound: BTreeSet<String> = steps(&synthesis, settle)
+        .iter()
+        .filter_map(|step| match step {
+            ScenarioStep::CaptureInstance { instance, .. } => Some(instance.to_string()),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(
+        bound,
+        ["invoice", "invoice-2", "invoice-3"]
+            .into_iter()
+            .map(ToOwned::to_owned)
+            .collect::<BTreeSet<String>>()
     );
 }
 
@@ -1763,6 +2000,10 @@ fn a_value_object_nothing_observable_holds_keeps_a_refusal_naming_what_would_clo
     let ir = example_with("billing", |document| {
         for view in &mut document.views {
             view.fields.retain(|field| field.name == "invoice_id");
+            // A ranking key has to be projected, so narrowing a view to its identity narrows its
+            // declared order away with it — which is still a view set the specification could have
+            // declared, and is the point of the fixture.
+            view.order_by.clear();
         }
     });
     let synthesis = synthesize(&ir);
@@ -2210,6 +2451,97 @@ commands:
         instance: order_id
         emits:
           - stuck.orders.OrderCancelled
+";
+
+/// A ranked view over a state no scenario can arrange a second instance into.
+///
+/// `Held` is declared and reachable on paper — `ess-domain` refuses a state nothing reaches — and
+/// the only branch that moves an order there is guarded by `quantity == 0.5` on an `Integer`, which
+/// no candidate satisfies. So `stuck.orders.HeldOrders` declares an order over rows nothing can put
+/// there, which is exactly the shape that must produce a refusal rather than an assertion.
+const UNARRANGEABLE_ORDER: &str = r"
+format: ess/1
+system: stuck
+version: v1
+domain: stuck.orders
+
+types:
+  - name: stuck.orders.OrderId
+    kind: newtype
+    of: Uuid
+
+errors:
+  - name: stuck.orders.Refused
+    summary: The hold was refused.
+
+entities:
+  - name: stuck.orders.Order
+    identity:
+      name: order_id
+      type: stuck.orders.OrderId
+    fields:
+      - name: weight_grams
+        type: Integer
+    lifecycle:
+      initial: Placed
+      states: [Placed, Held]
+      terminal: [Held]
+      transitions:
+        - name: hold
+          from: [Placed]
+          to: Held
+
+events:
+  - name: stuck.orders.OrderPlaced
+    fields:
+      - name: order_id
+        type: stuck.orders.OrderId
+
+  - name: stuck.orders.OrderHeld
+    fields:
+      - name: order_id
+        type: stuck.orders.OrderId
+
+commands:
+  - name: stuck.orders.PlaceOrder
+    input:
+      - name: weight_grams
+        type: Integer
+    outcomes:
+      - name: accepted
+        creates: stuck.orders.Order
+        instance: order_id
+        emits:
+          - stuck.orders.OrderPlaced
+
+  - name: stuck.orders.HoldOrder
+    input:
+      - name: order_id
+        type: stuck.orders.OrderId
+      - name: quantity
+        type: Integer
+    outcomes:
+      - name: held
+        when: quantity == 0.5
+        moves: stuck.orders.Order.hold
+        instance: order_id
+        emits:
+          - stuck.orders.OrderHeld
+      - name: refused
+        error: stuck.orders.Refused
+
+views:
+  - name: stuck.orders.HeldOrders
+    source: stuck.orders.Order
+    consistency: read_your_writes
+    filter: state == Held
+    order_by:
+      - weight_grams desc
+    fields:
+      - name: order_id
+        type: stuck.orders.OrderId
+      - name: weight_grams
+        type: Integer
 ";
 
 /// An entity that moves and that nothing creates.
