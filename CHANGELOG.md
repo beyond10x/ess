@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.9.1] — 2026-09-03
+
+### Fixed
+
+- `ess project buildkit` emits source, cross-stage, and artifact Dockerfile `COPY` instructions in
+  valid JSON form, so generated multi-output Dockerfiles are accepted by BuildKit.
+
 ## [0.9.0] — 2026-09-03
 
 ### Added

@@ -610,9 +610,8 @@ pub fn project_buildkit(build: &BuildIr) -> BuildkitProjection {
                 writeln!(&mut dockerfile, "FROM scratch AS {stage_alias}").unwrap();
                 writeln!(
                     &mut dockerfile,
-                    "COPY {} {}",
-                    json_array([path.as_str()]),
-                    json_array([destination.as_str()])
+                    "COPY {}",
+                    json_array([path.as_str(), destination.as_str()])
                 )
                 .unwrap();
             }
@@ -666,10 +665,9 @@ pub fn project_buildkit(build: &BuildIr) -> BuildkitProjection {
                 writeln!(&mut dockerfile, "FROM {} AS {stage_alias}", alias(base)).unwrap();
                 writeln!(
                     &mut dockerfile,
-                    "COPY --from={} {} {}",
+                    "COPY --from={} {}",
                     alias(from),
-                    json_array([source.as_str()]),
-                    json_array([destination.as_str()])
+                    json_array([source.as_str(), destination.as_str()])
                 )
                 .unwrap();
             }
@@ -705,9 +703,9 @@ pub fn project_buildkit(build: &BuildIr) -> BuildkitProjection {
                 writeln!(&mut dockerfile, "FROM scratch AS {stage_alias}").unwrap();
                 writeln!(
                     &mut dockerfile,
-                    "COPY --from={} {} /out/",
+                    "COPY --from={} {}",
                     alias(from),
-                    json_array([path.as_str()])
+                    json_array([path.as_str(), "/out/"])
                 )
                 .unwrap();
             }

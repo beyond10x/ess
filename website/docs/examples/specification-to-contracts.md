@@ -13,7 +13,7 @@ contracts — it is what the contracts are derived from. Everything below is cop
 repository: the source from `examples/billing/`, the output from `generated/`, kept in step by
 `cargo xtask generate --check` in CI.
 
-This page tracks the current `0.9.0` source tag. The `site` projection itself was introduced in
+This page tracks the current `0.9.1` source tag. The `site` projection itself was introduced in
 `0.4.0`; entity relations and the account field visible in the current billing example shipped in
 `0.5.0`.
 

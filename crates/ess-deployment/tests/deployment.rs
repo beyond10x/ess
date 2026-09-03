@@ -267,7 +267,11 @@ fn build_graph_is_canonical_and_projects_executable_buildkit_inputs() {
     assert_eq!(first.to_canonical_json(), second.to_canonical_json());
     assert_eq!(first.order().len(), first.nodes().len());
     let files = project_buildkit(&first);
-    assert!(files.files()["Dockerfile.ess"].contains("FROM docker.io/library/alpine@sha256:"));
+    let dockerfile = &files.files()["Dockerfile.ess"];
+    assert!(dockerfile.contains("FROM docker.io/library/alpine@sha256:"));
+    assert!(dockerfile.contains("COPY [\".\",\"/src\"]"));
+    assert!(!dockerfile.contains("] ["));
+    assert!(!dockerfile.contains("] /"));
     assert!(files.files()["docker-bake.hcl"].contains("target \"app\""));
     assert!(!files
         .files()
