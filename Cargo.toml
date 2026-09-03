@@ -37,7 +37,7 @@ exclude = [
 ]
 
 [workspace.package]
-version = "0.11.0"
+version = "0.11.1"
 edition = "2021"
 rust-version = "1.85"
 license = "Apache-2.0"
@@ -46,24 +46,24 @@ authors = ["Beyond10x contributors"]
 publish = false
 
 [workspace.dependencies]
-ess-primitives = { path = "crates/specify/ess-primitives", version = "0.11.0" }
-ess-domain = { path = "crates/specify/ess-domain", version = "0.11.0" }
-ess-compiler = { path = "crates/specify/ess-compiler", version = "0.11.0" }
-ess-composition = { path = "crates/specify/ess-composition", version = "0.11.0" }
-ess-realization = { path = "crates/specify/ess-realization", version = "0.11.0" }
-ess-deployment = { path = "crates/generate/ess-deployment", version = "0.11.0" }
-ess-gen = { path = "crates/generate/ess-gen", version = "0.11.0" }
-ess-conformance = { path = "crates/verify/ess-conformance", version = "0.11.0" }
-ess-diff = { path = "crates/verify/ess-diff", version = "0.11.0" }
-ess-synth = { path = "crates/generate/ess-synth", version = "0.11.0" }
-ess-kubernetes = { path = "crates/infra/ess-kubernetes", version = "0.11.0" }
-ess-openapi = { path = "crates/generate/ess-openapi", version = "0.11.0" }
-infra-domain = { path = "crates/infra/infra-domain", version = "0.11.0" }
-infra-compiler = { path = "crates/infra/infra-compiler", version = "0.11.0" }
-infra-analyze = { path = "crates/infra/infra-analyze", version = "0.11.0" }
-infra-spec = { path = "crates/infra/infra-spec", version = "0.11.0" }
-infra-project = { path = "crates/infra/infra-project", version = "0.11.0" }
-schema-contract = { path = "crates/generate/schema-contract", version = "0.11.0" }
+ess-primitives = { path = "crates/specify/ess-primitives", version = "0.11.1" }
+ess-domain = { path = "crates/specify/ess-domain", version = "0.11.1" }
+ess-compiler = { path = "crates/specify/ess-compiler", version = "0.11.1" }
+ess-composition = { path = "crates/specify/ess-composition", version = "0.11.1" }
+ess-realization = { path = "crates/specify/ess-realization", version = "0.11.1" }
+ess-deployment = { path = "crates/generate/ess-deployment", version = "0.11.1" }
+ess-gen = { path = "crates/generate/ess-gen", version = "0.11.1" }
+ess-conformance = { path = "crates/verify/ess-conformance", version = "0.11.1" }
+ess-diff = { path = "crates/verify/ess-diff", version = "0.11.1" }
+ess-synth = { path = "crates/generate/ess-synth", version = "0.11.1" }
+ess-kubernetes = { path = "crates/infra/ess-kubernetes", version = "0.11.1" }
+ess-openapi = { path = "crates/generate/ess-openapi", version = "0.11.1" }
+infra-domain = { path = "crates/infra/infra-domain", version = "0.11.1" }
+infra-compiler = { path = "crates/infra/infra-compiler", version = "0.11.1" }
+infra-analyze = { path = "crates/infra/infra-analyze", version = "0.11.1" }
+infra-spec = { path = "crates/infra/infra-spec", version = "0.11.1" }
+infra-project = { path = "crates/infra/infra-project", version = "0.11.1" }
+schema-contract = { path = "crates/generate/schema-contract", version = "0.11.1" }
 semver = { version = "1", features = ["serde"] }
 
 serde = { version = "1", features = ["derive"] }
