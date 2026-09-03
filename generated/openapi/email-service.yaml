@@ -1,6 +1,6 @@
 # generated from billing v3
-# model digest 8b52fe739078f96a006d7bee5e9b9530c3a30221f7bc003f291dcfe17cdcfea3
-# contract digest 5f2209cbee91d8b9315edf2ec9daac787036c31ca4989fa2d8d76fa70465c805
+# model digest 56090788443a14b4a51ad151eb5cb3ebded2b98f6defe9ac50826296ac5d0942
+# contract digest 9cd942cd8437f5f98a69fd1a8b3463112b7bcf84319ed10e04dd365f9872e92b
 # do not edit: regenerate with `ess generate`
 openapi: 3.1.0
 info:
@@ -14,8 +14,8 @@ info:
   x-ess-provenance:
     system: billing
     specification_version: v3
-    source_digest: 8b52fe739078f96a006d7bee5e9b9530c3a30221f7bc003f291dcfe17cdcfea3
-    contract_digest: 5f2209cbee91d8b9315edf2ec9daac787036c31ca4989fa2d8d76fa70465c805
+    source_digest: 56090788443a14b4a51ad151eb5cb3ebded2b98f6defe9ac50826296ac5d0942
+    contract_digest: 9cd942cd8437f5f98a69fd1a8b3463112b7bcf84319ed10e04dd365f9872e92b
 tags:
 - name: email
   description: Sending the notifications other contexts ask for.

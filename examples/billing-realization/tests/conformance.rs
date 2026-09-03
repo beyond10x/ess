@@ -197,9 +197,9 @@ impl ConformanceTarget for Synthesized {
                     .map_err(|unmet| {
                         TargetError::unavailable("reading the projection", unmet.to_string())
                     })?;
-                Ok(SemanticViewResult::of(
-                    rows.iter().map(|row| row_of(&row.invoice_id, &row.total)),
-                ))
+                Ok(SemanticViewResult::of(rows.iter().map(|row| {
+                    by_id_row(&row.invoice_id, &row.total, row.reminder_count)
+                })))
             }
             OUTSTANDING => {
                 let rows = live
@@ -591,6 +591,20 @@ fn decimal_rendering(number: Number) -> String {
     format!("{}", number.get())
 }
 
+/// An `Integer` as the numeric node the suite's shapes expect.
+///
+/// `f64::from` over a checked narrowing, and not `as f64`: a double holds an integer exactly only
+/// up to 2^53, and beyond that the nearest one is a *different* number. Publishing it would be
+/// this adapter inventing a value, so a count it cannot represent is published as text — which the
+/// payload shape check reports readably, the same line [`decimal_node`] takes.
+fn integer_node(value: i64) -> Node {
+    i32::try_from(value)
+        .ok()
+        .map(f64::from)
+        .and_then(|number| Number::new(number).ok())
+        .map_or_else(|| Node::Text(value.to_string()), Node::Number)
+}
+
 /// A `Decimal` back into the numeric node the suite's shapes expect.
 ///
 /// A rendering this adapter did not mint may not parse; that surfaces as a text node, which the
@@ -617,6 +631,18 @@ fn row_of(invoice_id: &InvoiceId, total: &Money) -> ViewRow {
     let mut row = ViewRow::new();
     row.insert("invoice_id".to_owned(), Node::Text(invoice_id.0 .0.clone()));
     row.insert("total".to_owned(), money_node(total));
+    row
+}
+
+/// A row of `billing.invoice.InvoiceById`, which projects one field more than the pair share.
+///
+/// `reminder_count` is what the entity's `reminder_count >= 0` reads, and this is the only view
+/// that declares it — so the runner asserts that invariant here and nowhere else. A row that
+/// withheld it would make the assertion undecidable, which is reported as a defect in the view
+/// rather than as a violated invariant.
+fn by_id_row(invoice_id: &InvoiceId, total: &Money, reminder_count: i64) -> ViewRow {
+    let mut row = row_of(invoice_id, total);
+    row.insert("reminder_count".to_owned(), integer_node(reminder_count));
     row
 }
 

@@ -718,6 +718,15 @@ impl Perturbed {
             "issued_at".to_owned(),
             ess_primitives::node::Node::Text("2019-01-01T00:00:00Z".to_owned()),
         );
+        // The entity's `reminder_count >= 0` is asserted against every row this view holds, so a
+        // stranger that omitted it would make the run an error about a missing path rather than
+        // the assertion this test is about.
+        row.insert(
+            "reminder_count".to_owned(),
+            ess_primitives::node::Node::Number(
+                ess_primitives::facts::Number::new(0.0).expect("zero is finite"),
+            ),
+        );
         row
     }
 }

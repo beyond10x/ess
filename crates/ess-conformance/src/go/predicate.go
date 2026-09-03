@@ -338,8 +338,14 @@ func parseLeaf(expression string) (predicate, error) {
 	for _, op := range []string{"==", "!=", "<=", ">=", "<", ">"} {
 		if left, right, ok := strings.Cut(trimmed, op); ok {
 			return predicate{
-				kind:  "compare",
-				left:  parseOperand(left),
+				kind: "compare",
+				// The left-hand side of a comparison is always a fact path, never a literal —
+				// which is what `Predicate::parse_expression` does on the Rust side, and the two
+				// have to agree or the same specification says different things to two runners.
+				// Read as a literal instead, `reschedule_count >= 0` compares the *word* to zero
+				// and `state == Bridged` compares two words, which is false and silently vacuous
+				// under the `not` an implication is written with.
+				left:  operand{path: strings.TrimSpace(left), isFact: true},
 				op:    op,
 				right: parseOperand(right),
 			}, nil
@@ -351,7 +357,7 @@ func parseLeaf(expression string) (predicate, error) {
 	return predicate{kind: "truthy", path: trimmed}, nil
 }
 
-// parseOperand reads one side of a comparison.
+// parseOperand reads the right-hand side of a comparison.
 //
 // A bare word containing a dot is a fact path and anything else is a literal, which is the model's
 // own rule; a literal containing dots is quoted.

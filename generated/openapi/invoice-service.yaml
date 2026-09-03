@@ -1,6 +1,6 @@
 # generated from billing v3
-# model digest 8b52fe739078f96a006d7bee5e9b9530c3a30221f7bc003f291dcfe17cdcfea3
-# contract digest 2db039d0e2a8b280e2558d85b269d6e032d1fcd6ed247777e398f35709343d08
+# model digest 56090788443a14b4a51ad151eb5cb3ebded2b98f6defe9ac50826296ac5d0942
+# contract digest 4a8707523699f478d5d4e0068d6953a49cc0a36b9b026bab5ef7eeb6244f0fdd
 # do not edit: regenerate with `ess generate`
 openapi: 3.1.0
 info:
@@ -14,8 +14,8 @@ info:
   x-ess-provenance:
     system: billing
     specification_version: v3
-    source_digest: 8b52fe739078f96a006d7bee5e9b9530c3a30221f7bc003f291dcfe17cdcfea3
-    contract_digest: 2db039d0e2a8b280e2558d85b269d6e032d1fcd6ed247777e398f35709343d08
+    source_digest: 56090788443a14b4a51ad151eb5cb3ebded2b98f6defe9ac50826296ac5d0942
+    contract_digest: 4a8707523699f478d5d4e0068d6953a49cc0a36b9b026bab5ef7eeb6244f0fdd
 tags:
 - name: invoices
   description: Issuing invoices and tracking whether they are paid.
@@ -486,6 +486,8 @@ x-ess-entities:
         type: string
         pattern: ^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$
         contentEncoding: base64
+      reminder_count:
+        type: integer
       state:
         $ref: '#/x-ess-entities/billing.invoice.Invoice.State'
     required:
@@ -499,6 +501,7 @@ x-ess-entities:
     - settlement_window
     - is_recurring
     - signature
+    - reminder_count
     - state
     additionalProperties: false
   billing.invoice.Invoice.State:

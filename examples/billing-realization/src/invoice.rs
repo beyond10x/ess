@@ -145,6 +145,10 @@ impl InvoiceRealization {
             settlement_window: Duration("P30D".to_owned()),
             is_recurring: false,
             signature: Vec::new(),
+            // A new invoice has been reminded about nothing. The entity declares
+            // `reminder_count >= 0`, and zero is what satisfies it — nothing in this example ever
+            // sends a reminder, so nothing ever raises it.
+            reminder_count: 0,
         });
         store.invoices.insert(
             invoice_id.0 .0.clone(),
@@ -319,6 +323,9 @@ impl InvoiceByIdQuery for InvoiceRealization {
             .map(|snapshot| InvoiceById {
                 invoice_id: snapshot.data.invoice_id.clone(),
                 total: snapshot.data.total.clone(),
+                // Published because the view declares it, and the view declares it because the
+                // entity's `reminder_count >= 0` cannot be decided against rows that withhold it.
+                reminder_count: snapshot.data.reminder_count,
             })
             .collect())
     }

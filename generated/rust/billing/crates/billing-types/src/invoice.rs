@@ -1,6 +1,6 @@
 // generated from billing v3
-// model digest 8b52fe739078f96a006d7bee5e9b9530c3a30221f7bc003f291dcfe17cdcfea3
-// contract digest 0c2f2067136aea0bc0a45ca5b01bf70f551fc6199956699c5d5b939c350688f8
+// model digest 56090788443a14b4a51ad151eb5cb3ebded2b98f6defe9ac50826296ac5d0942
+// contract digest cb634bd5e6f1afa6ebc8e9dca752e9901a9a68a2e51fc5009d099f155680606c
 // do not edit: regenerate with `ess synthesize`
 
 //! Invoicing — `billing.invoice`.
@@ -227,6 +227,7 @@ impl AnyAccount {
 /// is carried by the type parameter of [`Invoice<S>`], and at a boundary by [`InvoiceSnapshot::state`].
 ///
 /// Every value satisfies `total.amount >= 0` — declared here, enforced by whatever behaviour constructs one.
+/// Every value satisfies `reminder_count >= 0` — declared here, enforced by whatever behaviour constructs one.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct InvoiceData {
     /// The identity: `invoice_id` — `billing.invoice.InvoiceId`.
@@ -255,6 +256,8 @@ pub struct InvoiceData {
     pub is_recurring: bool,
     /// `signature` — `Bytes`.
     pub signature: Vec<u8>,
+    /// `reminder_count` — `Integer`.
+    pub reminder_count: i64,
 }
 
 /// The states of `billing.invoice.Invoice`, at the type level.
@@ -672,6 +675,8 @@ pub struct InvoiceById {
     pub invoice_id: InvoiceId,
     /// `total` — `billing.invoice.Money`.
     pub total: Money,
+    /// `reminder_count` — `Integer`.
+    pub reminder_count: i64,
 }
 
 /// Outstanding invoices — one row of the view `billing.invoice.OutstandingInvoices`.

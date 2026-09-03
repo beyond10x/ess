@@ -127,9 +127,17 @@ entities:
         type: Boolean
       - name: signature
         type: Bytes
+      # A top-level Integer, and the reason it is one is the invariant below.
+      - name: reminder_count
+        type: Integer
 
     invariants:
       - total.amount >= 0
+      # A field of this entity's own, named without a dot — which is how anybody writes an
+      # invariant over a top-level field, and the shape the Go runner used to read as the *word*
+      # `reminder_count` rather than the value. Left out of the examples until 0.10.0, so nothing
+      # shipped here caught it: `total.amount` above has a dot and parses the same either way.
+      - reminder_count >= 0
 
     # Illegal transitions are illegal by absence. `Paid → Cancelled` is not forbidden by a rule,
     # because a rule would be a second place for the same truth to live.
@@ -398,6 +406,10 @@ views:
         type: billing.invoice.InvoiceId
       - name: total
         type: billing.invoice.Money
+      # Projected so the entity's `reminder_count >= 0` has rows it can be decided against. An
+      # invariant reading a field no view publishes is refused rather than asserted against nothing.
+      - name: reminder_count
+        type: Integer
 
   # Read-your-writes, so a generated scenario asserts this one immediately: a caller that has just
   # issued an invoice and cannot see it in its own list has been told a lie about what it did.

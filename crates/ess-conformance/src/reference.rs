@@ -703,6 +703,13 @@ fn row(invoice: &Invoice) -> ViewRow {
         "issued_at".to_owned(),
         invoice.issued_at.clone().map_or(Node::Null, Node::Text),
     );
+    // Read by the entity's `reminder_count >= 0`, which is the one invariant in the example that
+    // names a field of its own without a dot. Nothing here ever sends a reminder, so it is zero;
+    // the point of the field is the *shape* of the predicate that reads it.
+    fields.insert(
+        "reminder_count".to_owned(),
+        Node::Number(ess_primitives::facts::Number::new(0.0).expect("zero is finite")),
+    );
     fields
 }
 

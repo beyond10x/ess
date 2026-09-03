@@ -234,7 +234,11 @@ func (t *Target) QueryView(request essconform.ViewRequest) (essconform.ViewResul
 		if t.broken == "negative-total" {
 			total = map[string]any{"amount": -1.0, "currency": "EUR"}
 		}
-		row := essconform.Row{"invoice_id": held.id, "total": total}
+		// `reminder_count` is projected by `InvoiceById` and read by the entity's
+		// `reminder_count >= 0`. Nothing in this fixture ever sends a reminder, so it is zero —
+		// which the invariant is satisfied by, and which an invariant that compared the *name*
+		// `reminder_count` against zero could not decide at all.
+		row := essconform.Row{"invoice_id": held.id, "total": total, "reminder_count": 0.0}
 		if held.issuedAt != "" {
 			row["issued_at"] = held.issuedAt
 		} else {

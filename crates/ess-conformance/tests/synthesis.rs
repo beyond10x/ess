@@ -1879,7 +1879,9 @@ fn an_invariant_is_asserted_against_every_view_that_publishes_what_it_reads() {
     // §20 at the level it asks for: after a successful state-changing command, against observable
     // view state. `InvoiceById` and `OutstandingInvoices` both publish `total`, so both can answer
     // `total.amount >= 0` — and each is asserted in the block its own consistency decides, which is
-    // §14's rule reaching a second family rather than being decided again here.
+    // §14's rule reaching a second family rather than being decided again here. Only `InvoiceById`
+    // publishes `reminder_count`, so the entity's second invariant reaches one view and not two:
+    // *every view that publishes what it reads*, which is the rule this test is named for.
     let synthesis = synthesize(&example("billing"));
     let id = "billing.invoice.Invoice/invariant/after/billing.invoice.IssueInvoice/issued";
 
@@ -1893,30 +1895,60 @@ fn an_invariant_is_asserted_against_every_view_that_publishes_what_it_reads() {
             "outcome",
             "eventually-view",
             "query",
-            "view"
+            "view",
+            "eventually-view"
         ],
         "create an invoice, issue it, then read what must still hold of it"
     );
-    for (view, block) in [
-        ("billing.invoice.InvoiceById", "eventually"),
-        ("billing.invoice.OutstandingInvoices", "expect"),
-    ] {
-        let (found, expectation) = expectation(&synthesis, id, view);
-        assert_eq!(
-            found, block,
-            "`{view}` is asserted where its consistency says"
-        );
-        let ViewExpectation::Satisfies { predicate } = expectation else {
-            panic!(
-                "an invariant is a range, which no set of field values expresses: {expectation:?}"
-            )
-        };
-        assert_eq!(
-            predicate.to_string(),
-            "total.amount >= 0",
-            "the predicate carried is the one the specification wrote"
-        );
-    }
+
+    // Every invariant assertion the scenario carries, as (block, view, predicate). Asserted as a
+    // set rather than looked up one view at a time: a lookup finds the *first* assertion naming a
+    // view, so a second invariant silently dropped from `InvoiceById` would leave the old form of
+    // this test green.
+    let asserted: Vec<(String, String, String)> = steps(&synthesis, id)
+        .iter()
+        .filter_map(|step| match step {
+            ScenarioStep::ExpectView { view, expectation } => Some(("expect", view, expectation)),
+            ScenarioStep::EventuallyView { view, expectation } => {
+                Some(("eventually", view, expectation))
+            }
+            _ => None,
+        })
+        .map(|(block, view, expectation)| {
+            let ViewExpectation::Satisfies { predicate } = expectation else {
+                panic!(
+                    "an invariant is a range, which no set of field values expresses: \
+                     {expectation:?}"
+                )
+            };
+            (block.to_owned(), view.to_string(), predicate.to_string())
+        })
+        .collect();
+
+    assert_eq!(
+        asserted,
+        vec![
+            (
+                "eventually".to_owned(),
+                "billing.invoice.InvoiceById".to_owned(),
+                "total.amount >= 0".to_owned(),
+            ),
+            (
+                "expect".to_owned(),
+                "billing.invoice.OutstandingInvoices".to_owned(),
+                "total.amount >= 0".to_owned(),
+            ),
+            // The bare-field form. It parses to a fact path and not to the *word*
+            // `reminder_count`, which is the whole reason the example declares it.
+            (
+                "eventually".to_owned(),
+                "billing.invoice.InvoiceById".to_owned(),
+                "reminder_count >= 0".to_owned(),
+            ),
+        ],
+        "each invariant reaches every view that publishes what it reads, in the block that \
+         view's consistency decides"
+    );
 }
 
 #[test]
@@ -1938,7 +1970,12 @@ fn a_view_that_does_not_hold_the_instance_yet_is_not_asked_about_its_invariants(
 
     assert_eq!(
         asserted,
-        vec!["billing.invoice.InvoiceById".to_owned()],
+        vec![
+            "billing.invoice.InvoiceById".to_owned(),
+            // Twice, because the entity declares two invariants and `InvoiceById` publishes what
+            // both of them read. `OutstandingInvoices` appears in neither.
+            "billing.invoice.InvoiceById".to_owned(),
+        ],
         "only the view that holds a `Draft` invoice is asked what must be true of one"
     );
 }
