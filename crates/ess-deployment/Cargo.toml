@@ -1,0 +1,25 @@
+[package]
+name = "ess-deployment"
+description = "Typed build, realization, release, stack, environment, and deployment IR for ESS systems."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+
+[dependencies]
+ess-compiler.workspace = true
+ess-realization.workspace = true
+semver.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+serde_yaml.workspace = true
+sha2 = "0.11"
+thiserror.workspace = true
+
+[dev-dependencies]
+ess-domain.workspace = true
+
+[lints]
+workspace = true

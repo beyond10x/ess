@@ -53,10 +53,35 @@ enum Command {
         #[arg(long, value_enum, default_value_t = Format::Text)]
         format: Format,
     },
+    /// Compile and inspect canonical build graphs.
+    Build {
+        #[command(subcommand)]
+        command: BuildCommand,
+    },
     /// Validate, compile, or document a physical realization of one exact ESS.
     Realization {
         #[command(subcommand)]
         command: RealizationCommand,
+    },
+    /// Compile semantic-component to deployable runtime mappings.
+    Runtime {
+        #[command(subcommand)]
+        command: RuntimeCommand,
+    },
+    /// Verify immutable executor-produced releases.
+    Release {
+        #[command(subcommand)]
+        command: ReleaseCommand,
+    },
+    /// Resolve generic product stacks from an offline release catalogue.
+    Stack {
+        #[command(subcommand)]
+        command: StackCommand,
+    },
+    /// Compile and compare exact environment deployments.
+    Deployment {
+        #[command(subcommand)]
+        command: DeploymentCommand,
     },
     /// Inspect one declaration in resolved IR.
     Inspect {
@@ -379,6 +404,30 @@ enum ImportAdapter {
 
 #[derive(Debug, Subcommand)]
 enum ProjectAdapter {
+    /// Project canonical build IR to `BuildKit` Dockerfile and Bake inputs.
+    Buildkit {
+        /// Compiled `ess-build-ir/1` JSON.
+        #[arg(long)]
+        ir: PathBuf,
+        /// Output directory.
+        #[arg(long)]
+        out: PathBuf,
+    },
+    /// Project runtime IR into one configuration-neutral component Helm chart.
+    Helm {
+        /// Compiled `ess-runtime-ir/1` JSON.
+        #[arg(long)]
+        ir: PathBuf,
+        /// Stable chart name.
+        #[arg(long)]
+        chart: ess_deployment::Identifier,
+        /// Independent chart version.
+        #[arg(long)]
+        version: semver::Version,
+        /// Output directory.
+        #[arg(long)]
+        out: PathBuf,
+    },
     /// Project infrastructure intent and observed IR into Kubernetes manifests and obligations.
     Kubernetes {
         #[arg(long)]
@@ -434,6 +483,105 @@ enum InfraCommand {
     },
 }
 
+#[derive(Debug, Subcommand)]
+enum BuildCommand {
+    /// Validate and compile `ess-build/1` to canonical `ess-build-ir/1`.
+    Compile {
+        #[arg(long)]
+        path: PathBuf,
+        #[arg(long)]
+        out: Option<PathBuf>,
+        #[arg(long, value_enum, default_value_t = Format::Text)]
+        format: Format,
+    },
+}
+
+#[derive(Debug, Subcommand)]
+enum RuntimeCommand {
+    /// Compile `ess-runtime/1` against exact semantic, realization, and build inputs.
+    Compile {
+        /// Authored runtime JSON or YAML.
+        #[arg(long)]
+        path: PathBuf,
+        /// ESS source file or directory.
+        #[arg(long)]
+        system: PathBuf,
+        /// Authored `ess-realization/1` bound to the same ESS source.
+        #[arg(long)]
+        realization: PathBuf,
+        /// Compiled `ess-build-ir/1` JSON.
+        #[arg(long)]
+        build_ir: PathBuf,
+        #[arg(long)]
+        out: Option<PathBuf>,
+        #[arg(long, value_enum, default_value_t = Format::Text)]
+        format: Format,
+    },
+}
+
+#[derive(Debug, Subcommand)]
+enum ReleaseCommand {
+    /// Verify an `ess-release/1` against exact build and runtime IR.
+    Verify {
+        #[arg(long)]
+        path: PathBuf,
+        #[arg(long)]
+        build_ir: PathBuf,
+        #[arg(long)]
+        runtime_ir: PathBuf,
+        #[arg(long, value_enum, default_value_t = Format::Text)]
+        format: Format,
+    },
+}
+
+#[derive(Debug, Subcommand)]
+enum StackCommand {
+    /// Resolve constraints to an exact `ess-stack-lock/1` using only the supplied catalogue.
+    Resolve {
+        #[arg(long)]
+        path: PathBuf,
+        #[arg(long)]
+        catalog: PathBuf,
+        #[arg(long)]
+        out: Option<PathBuf>,
+        #[arg(long, value_enum, default_value_t = Format::Text)]
+        format: Format,
+    },
+    /// Validate that a generic stack resolves completely.
+    Validate {
+        #[arg(long)]
+        path: PathBuf,
+        #[arg(long)]
+        catalog: PathBuf,
+        #[arg(long, value_enum, default_value_t = Format::Text)]
+        format: Format,
+    },
+}
+
+#[derive(Debug, Subcommand)]
+enum DeploymentCommand {
+    /// Bind an exact stack lock to an environment and emit `ess-deployment/1`.
+    Compile {
+        #[arg(long)]
+        path: PathBuf,
+        #[arg(long)]
+        stack_lock: PathBuf,
+        #[arg(long)]
+        out: Option<PathBuf>,
+        #[arg(long, value_enum, default_value_t = Format::Text)]
+        format: Format,
+    },
+    /// Report which independent releases differ between two deployment IR documents.
+    Diff {
+        #[arg(long)]
+        from: PathBuf,
+        #[arg(long)]
+        to: PathBuf,
+        #[arg(long, value_enum, default_value_t = MachineFormat::Text)]
+        format: MachineFormat,
+    },
+}
+
 fn main() -> ExitCode {
     match run(Cli::parse()) {
         Ok(code) => code,
@@ -464,6 +612,11 @@ fn run(cli: Cli) -> Result<ExitCode> {
             format,
         ),
         Command::Realization { command } => realization(&command),
+        Command::Build { command } => build(command),
+        Command::Runtime { command } => runtime(command),
+        Command::Release { command } => release(command),
+        Command::Stack { command } => stack(command),
+        Command::Deployment { command } => deployment(command),
         Command::Inspect { input, name } => inspect(&input.path, &name, input.format),
         Command::Graph { input, format } => graph(&input.path, format),
         Command::Diff { from, to, format } => diff(&from, &to, format),
@@ -584,6 +737,273 @@ fn render<T: serde::Serialize>(value: &T, format: Format) -> Result<()> {
         Format::Json => println!("{}", serde_json::to_string_pretty(value)?),
     }
     Ok(())
+}
+
+fn read_document<T>(path: &Path) -> Result<T>
+where
+    T: serde::de::DeserializeOwned,
+{
+    let text = fs::read_to_string(path).with_context(|| format!("reading {}", path.display()))?;
+    if path
+        .extension()
+        .is_some_and(|extension| extension == "json")
+    {
+        serde_json::from_str(&text).with_context(|| format!("parsing {} as JSON", path.display()))
+    } else {
+        serde_yaml::from_str(&text).with_context(|| format!("parsing {} as YAML", path.display()))
+    }
+}
+
+fn write_canonical(path: Option<&Path>, json: &str) -> Result<()> {
+    if let Some(path) = path {
+        if let Some(parent) = path.parent() {
+            fs::create_dir_all(parent)?;
+        }
+        fs::write(path, json).with_context(|| format!("writing {}", path.display()))?;
+    }
+    Ok(())
+}
+
+fn deployment_refusal(
+    diagnostics: &ess_deployment::Diagnostics,
+    format: Format,
+) -> Result<ExitCode> {
+    match format {
+        Format::Text => eprintln!("lowering was refused:\n{diagnostics}"),
+        Format::Json | Format::Yaml => render(&diagnostics.as_slice(), format)?,
+    }
+    Ok(ExitCode::from(1))
+}
+
+fn build(command: BuildCommand) -> Result<ExitCode> {
+    match command {
+        BuildCommand::Compile { path, out, format } => {
+            let specification: ess_deployment::BuildSpec = read_document(&path)?;
+            let ir = match ess_deployment::compile_build(&specification) {
+                Ok(ir) => ir,
+                Err(diagnostics) => return deployment_refusal(&diagnostics, format),
+            };
+            let json = ir.to_canonical_json();
+            write_canonical(out.as_deref(), &json)?;
+            match format {
+                Format::Text => println!(
+                    "{} — {} node(s), {} output(s), compiled{}",
+                    ir.build(),
+                    ir.nodes().len(),
+                    ir.outputs().len(),
+                    out.as_ref()
+                        .map_or_else(String::new, |path| format!(" to {}", path.display()))
+                ),
+                Format::Json => print!("{json}"),
+                Format::Yaml => render(&ir, format)?,
+            }
+            Ok(ExitCode::SUCCESS)
+        }
+    }
+}
+
+fn runtime(command: RuntimeCommand) -> Result<ExitCode> {
+    match command {
+        RuntimeCommand::Compile {
+            path,
+            system,
+            realization,
+            build_ir,
+            out,
+            format,
+        } => {
+            let specification: ess_deployment::RuntimeSpec = read_document(&path)?;
+            let build: ess_deployment::BuildIr = read_document(&build_ir)?;
+            let Ok((semantic, _)) = resolved(&system, format)? else {
+                return Ok(ExitCode::from(1));
+            };
+            let realization_text = fs::read_to_string(&realization)
+                .with_context(|| format!("reading {}", realization.display()))?;
+            let realization_specification = if realization
+                .extension()
+                .is_some_and(|extension| extension == "json")
+            {
+                ess_realization::RealizationSpec::from_json(&realization_text).with_context(
+                    || format!("reading {} as realization JSON", realization.display()),
+                )?
+            } else {
+                ess_realization::RealizationSpec::from_yaml(&realization_text).with_context(
+                    || format!("reading {} as realization YAML", realization.display()),
+                )?
+            };
+            let physical = match ess_realization::compile(&realization_specification, &semantic) {
+                Ok(realization) => realization,
+                Err(diagnostics) => {
+                    if matches!(format, Format::Text) {
+                        eprintln!("{} was refused:\n{diagnostics}", realization.display());
+                    } else {
+                        render(&diagnostics, format)?;
+                    }
+                    return Ok(ExitCode::from(1));
+                }
+            };
+            let ir =
+                match ess_deployment::compile_runtime(&specification, &semantic, &physical, &build)
+                {
+                    Ok(ir) => ir,
+                    Err(diagnostics) => return deployment_refusal(&diagnostics, format),
+                };
+            let json = ir.to_canonical_json();
+            write_canonical(out.as_deref(), &json)?;
+            match format {
+                Format::Text => println!(
+                    "{} — {} process(es), {} container role(s), {} workload(s), compiled{}",
+                    ir.runtime(),
+                    ir.processes().len(),
+                    ir.containers().len(),
+                    ir.workloads().len(),
+                    out.as_ref()
+                        .map_or_else(String::new, |path| format!(" to {}", path.display()))
+                ),
+                Format::Json => print!("{json}"),
+                Format::Yaml => render(&ir, format)?,
+            }
+            Ok(ExitCode::SUCCESS)
+        }
+    }
+}
+
+fn release(command: ReleaseCommand) -> Result<ExitCode> {
+    match command {
+        ReleaseCommand::Verify {
+            path,
+            build_ir,
+            runtime_ir,
+            format,
+        } => {
+            let release: ess_deployment::ReleaseManifest = read_document(&path)?;
+            let build: ess_deployment::BuildIr = read_document(&build_ir)?;
+            let realization: ess_deployment::RuntimeIr = read_document(&runtime_ir)?;
+            if let Err(diagnostics) = ess_deployment::verify_release(&release, &build, &realization)
+            {
+                return deployment_refusal(&diagnostics, format);
+            }
+            match format {
+                Format::Text => println!(
+                    "{} {} — {} immutable artifact(s), verified",
+                    release.release_unit,
+                    release.version,
+                    release.artifacts.len()
+                ),
+                Format::Json | Format::Yaml => render(&release, format)?,
+            }
+            Ok(ExitCode::SUCCESS)
+        }
+    }
+}
+
+fn stack(command: StackCommand) -> Result<ExitCode> {
+    let (path, catalog_path, out, format) = match command {
+        StackCommand::Resolve {
+            path,
+            catalog,
+            out,
+            format,
+        } => (path, catalog, out, format),
+        StackCommand::Validate {
+            path,
+            catalog,
+            format,
+        } => (path, catalog, None, format),
+    };
+    let specification: ess_deployment::StackSpec = read_document(&path)?;
+    let catalog: ess_deployment::ReleaseCatalog = read_document(&catalog_path)?;
+    let lock = match ess_deployment::resolve_stack(&specification, &catalog) {
+        Ok(lock) => lock,
+        Err(diagnostics) => return deployment_refusal(&diagnostics, format),
+    };
+    let json = lock.to_canonical_json();
+    write_canonical(out.as_deref(), &json)?;
+    match format {
+        Format::Text => println!(
+            "{} — {} exact release(s), {} external system(s), resolved{}",
+            lock.stack,
+            lock.systems.len(),
+            lock.external_systems.len(),
+            out.as_ref()
+                .map_or_else(String::new, |path| format!(" to {}", path.display()))
+        ),
+        Format::Json => print!("{json}"),
+        Format::Yaml => render(&lock, format)?,
+    }
+    Ok(ExitCode::SUCCESS)
+}
+
+fn deployment(command: DeploymentCommand) -> Result<ExitCode> {
+    match command {
+        DeploymentCommand::Compile {
+            path,
+            stack_lock,
+            out,
+            format,
+        } => {
+            let environment: ess_deployment::EnvironmentSpec = read_document(&path)?;
+            let lock: ess_deployment::StackLock = read_document(&stack_lock)?;
+            let ir = match ess_deployment::compile_deployment(&environment, &lock) {
+                Ok(ir) => ir,
+                Err(diagnostics) => return deployment_refusal(&diagnostics, format),
+            };
+            let json = ir.to_canonical_json();
+            write_canonical(out.as_deref(), &json)?;
+            match format {
+                Format::Text => println!(
+                    "{} — {} independent release(s), compiled{}",
+                    ir.environment,
+                    ir.releases.len(),
+                    out.as_ref()
+                        .map_or_else(String::new, |path| format!(" to {}", path.display()))
+                ),
+                Format::Json => print!("{json}"),
+                Format::Yaml => render(&ir, format)?,
+            }
+            Ok(ExitCode::SUCCESS)
+        }
+        DeploymentCommand::Diff { from, to, format } => {
+            let from: ess_deployment::DeploymentIr = read_document(&from)?;
+            let to: ess_deployment::DeploymentIr = read_document(&to)?;
+            let added: Vec<_> = to
+                .releases
+                .keys()
+                .filter(|service| !from.releases.contains_key(*service))
+                .cloned()
+                .collect();
+            let removed: Vec<_> = from
+                .releases
+                .keys()
+                .filter(|service| !to.releases.contains_key(*service))
+                .cloned()
+                .collect();
+            let changed: Vec<_> = to
+                .releases
+                .iter()
+                .filter(|(service, release)| from.releases.get(*service) != Some(*release))
+                .filter(|(service, _)| from.releases.contains_key(*service))
+                .map(|(service, _)| service.clone())
+                .collect();
+            let report = serde_json::json!({
+                "format": "ess-deployment-diff/1",
+                "from": from.digest(),
+                "to": to.digest(),
+                "added": added,
+                "changed": changed,
+                "removed": removed,
+            });
+            match format {
+                MachineFormat::Text => {
+                    println!("added: {}", report["added"]);
+                    println!("changed: {}", report["changed"]);
+                    println!("removed: {}", report["removed"]);
+                }
+                MachineFormat::Json => println!("{}", serde_json::to_string_pretty(&report)?),
+            }
+            Ok(ExitCode::SUCCESS)
+        }
+    }
 }
 
 fn resolved_infrastructure(path: &Path) -> Result<Box<infra_compiler::InfraIr>> {
@@ -1314,6 +1734,33 @@ fn import_openapi(path: &Path, out: Option<&Path>, format: Format) -> Result<Exi
 
 fn project(adapter: ProjectAdapter) -> Result<ExitCode> {
     match adapter {
+        ProjectAdapter::Buildkit { ir, out } => {
+            let build: ess_deployment::BuildIr = read_document(&ir)?;
+            let projection = ess_deployment::project_buildkit(&build);
+            write_projection_files(&out, projection.files())?;
+            println!(
+                "{} BuildKit file(s) projected to {} without executing them",
+                projection.files().len(),
+                out.display()
+            );
+            Ok(ExitCode::SUCCESS)
+        }
+        ProjectAdapter::Helm {
+            ir,
+            chart,
+            version,
+            out,
+        } => {
+            let realization: ess_deployment::RuntimeIr = read_document(&ir)?;
+            let projection = ess_deployment::project_helm(&realization, &chart, &version);
+            write_projection_files(&out, projection.files())?;
+            println!(
+                "{} Helm chart file(s) projected to {} without applying them",
+                projection.files().len(),
+                out.display()
+            );
+            Ok(ExitCode::SUCCESS)
+        }
         ProjectAdapter::Kubernetes {
             spec,
             ir,
@@ -1337,6 +1784,20 @@ fn project(adapter: ProjectAdapter) -> Result<ExitCode> {
             _ => bail!("exactly one of --path or --ir is required"),
         },
     }
+}
+
+fn write_projection_files(
+    root: &Path,
+    files: &std::collections::BTreeMap<String, String>,
+) -> Result<()> {
+    for (relative, contents) in files {
+        let path = root.join(relative);
+        if let Some(parent) = path.parent() {
+            fs::create_dir_all(parent)?;
+        }
+        fs::write(&path, contents).with_context(|| format!("writing {}", path.display()))?;
+    }
+    Ok(())
 }
 
 fn project_openapi_interface(

@@ -13,6 +13,19 @@
 - `ess realization generate` projects the same resolved IR into a deterministic run-mode guide and
   supports `--check` for committed-document drift.
 
+## Unreleased
+
+### Added
+
+- Typed `ess-build/1`, `ess-runtime/1`, `ess-release/1`, `ess-stack/1`,
+  `ess-stack-lock/1`, `ess-environment/1`, and `ess-deployment/1` formats establish the deterministic
+  lowering seam from semantic systems to independently released Helm deployments. ESS projects
+  `BuildKit` and chart inputs, verifies immutable executor evidence, and refuses unresolved
+  stage-owned obligations; it still never builds, publishes, or applies anything.
+- The `ess` CLI compiles build and runtime IR, verifies releases, resolves stacks from an
+  explicit offline catalogue, projects `BuildKit` and Helm files, compiles environment deployments,
+  and reports the exact component releases changed between two deployment documents.
+
 ## [0.7.0] — 2026-09-03
 
 ### Fixed

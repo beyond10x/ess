@@ -7,6 +7,7 @@ members = [
     "crates/ess-compiler",
     "crates/ess-composition",
     "crates/ess-realization",
+    "crates/ess-deployment",
     "crates/ess-gen",
     "crates/ess-conformance",
     "crates/ess-diff",
@@ -45,6 +46,7 @@ ess-domain = { path = "crates/ess-domain", version = "0.8.0" }
 ess-compiler = { path = "crates/ess-compiler", version = "0.8.0" }
 ess-composition = { path = "crates/ess-composition", version = "0.8.0" }
 ess-realization = { path = "crates/ess-realization", version = "0.8.0" }
+ess-deployment = { path = "crates/ess-deployment", version = "0.8.0" }
 ess-gen = { path = "crates/ess-gen", version = "0.8.0" }
 ess-conformance = { path = "crates/ess-conformance", version = "0.8.0" }
 ess-diff = { path = "crates/ess-diff", version = "0.8.0" }
@@ -57,6 +59,7 @@ infra-analyze = { path = "crates/infra-analyze", version = "0.8.0" }
 infra-spec = { path = "crates/infra-spec", version = "0.8.0" }
 infra-project = { path = "crates/infra-project", version = "0.8.0" }
 schema-contract = { path = "crates/schema-contract", version = "0.8.0" }
+semver = { version = "1", features = ["serde"] }
 
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"

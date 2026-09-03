@@ -297,6 +297,7 @@ dependencies = [
  "ess-compiler",
  "ess-composition",
  "ess-conformance",
+ "ess-deployment",
  "ess-diff",
  "ess-domain",
  "ess-gen",
@@ -311,6 +312,7 @@ dependencies = [
  "infra-project",
  "infra-spec",
  "schema-contract",
+ "semver",
  "serde",
  "serde_json",
  "serde_yaml",
@@ -350,6 +352,21 @@ dependencies = [
  "ess-primitives",
  "serde",
  "serde_json",
+]
+
+[[package]]
+name = "ess-deployment"
+version = "0.8.0"
+dependencies = [
+ "ess-compiler",
+ "ess-domain",
+ "ess-realization",
+ "semver",
+ "serde",
+ "serde_json",
+ "serde_yaml",
+ "sha2",
+ "thiserror",
 ]
 
 [[package]]
@@ -1099,6 +1116,16 @@ name = "scopeguard"
 version = "1.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "94143f37725109f92c262ed2cf5e59bce7498c01bcc1502d7b9afe439a4e9f49"
+
+[[package]]
+name = "semver"
+version = "1.0.28"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "8a7852d02fc848982e0c167ef163aaff9cd91dc640ba85e263cb1ce46fae51cd"
+dependencies = [
+ "serde",
+ "serde_core",
+]
 
 [[package]]
 name = "serde"

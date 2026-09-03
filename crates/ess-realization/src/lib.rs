@@ -469,6 +469,11 @@ impl RealizationIr {
         &self.id
     }
 
+    /// The exact digest of the implementation selection represented by this IR.
+    pub fn realization_digest(&self) -> &ArtifactIdentity {
+        &self.realization_digest
+    }
+
     /// The exact ESS identity this realization implements.
     pub fn specification(&self) -> &SpecificationIdentity {
         &self.specification

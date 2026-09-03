@@ -16,6 +16,12 @@ cargo run --bin ess -- conform synthesize --path examples/billing --out suite.js
 cargo run --bin ess -- conform run --suite suite.json --target billing --report-out report.json
 cargo run --bin ess -- import openapi --path api.yaml --out interface.json
 cargo run --bin ess -- project openapi --ir interface.json --out normalized-api.yaml
+cargo run --bin ess -- build compile --path ess/build.yaml --out generated/ess/build.json
+cargo run --bin ess -- project buildkit --ir generated/ess/build.json --out generated/build
+cargo run --bin ess -- runtime compile --path ess/runtime.yaml --system ess/system --realization ess/realization.yaml --build-ir generated/ess/build.json --out generated/ess/runtime.json
+cargo run --bin ess -- project helm --ir generated/ess/runtime.json --chart example --version 1.0.0 --out generated/chart
+cargo run --bin ess -- stack resolve --path ess/stack.yaml --catalog releases.json --out stack.lock.json
+cargo run --bin ess -- deployment compile --path environment.yaml --stack-lock stack.lock.json --out deployment.json
 cargo run --bin ess -- schema validate instances --schemas schemas
 cargo run --bin ess -- schema typescript urn:example:registry:1 --root Registry --schemas schemas
 cargo run --bin ess -- realization validate --path realization.yaml --spec path/to/spec
@@ -78,6 +84,16 @@ semantic system. It binds the ESS digest to immutable implementation artifacts a
 entrypoints, including local CLIs, loopback browser surfaces, model-backed agent loops, or
 approval-required hosted interfaces. `ess realization compile` emits `ess-realization-ir/1`; the
 Markdown generator turns the same IR into a drift-checkable run-mode guide.
+
+Build and deployment use another explicit lowering chain. `ess-build/1` is a typed, content-addressed
+transformation DAG which projects to `BuildKit` inputs but never executes them. `ess-realization/1`
+binds exact semantic components to immutable implementation artifacts and entrypoints.
+`ess-runtime/1` maps those components to processes, container roles, and workloads. Executor-produced
+`ess-release/1` manifests bind those inputs to immutable artifacts and evidence. Generic
+`ess-stack/1` constraints resolve offline to an exact `ess-stack-lock/1`; a private
+`ess-environment/1` then lowers to `ess-deployment/1`, one independently deployable Helm release per
+system. Chart and runtime releases are selected and pinned separately. Secret bytes have no field in
+any of these documents.
 
 A construct is a design page before it is code. The binding designs live in `docs/design/`; entity
 relations shipped in `0.5.0` and their
