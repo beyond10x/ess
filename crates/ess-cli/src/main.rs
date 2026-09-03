@@ -300,6 +300,15 @@ enum ConformCommand {
         /// A file for `--target ir`, a directory for `--target go`.
         #[arg(long)]
         out: Option<PathBuf>,
+        /// Hold one component to the specification rather than the whole system.
+        ///
+        /// Keeps only the scenarios whose every command, event and view this component accepts,
+        /// publishes or owns, and lists the rest with what they need — they belong in the suite of
+        /// the component that realises it. An implementation of one component answers
+        /// `ErrUnsupported` to the other's scenarios, and a run with skips in it cannot say it
+        /// passed.
+        #[arg(long)]
+        component: Option<String>,
     },
     /// Run a generated or committed suite against a built-in reference implementation.
     Run {
@@ -1485,63 +1494,12 @@ fn synthesize(
 
 fn conform(command: ConformCommand) -> Result<ExitCode> {
     match command {
-        ConformCommand::Synthesize { input, target, out } => {
-            let Ok((ir, _)) = resolved(&input.path, input.format)? else {
-                return Ok(ExitCode::from(1));
-            };
-            let synthesis = ess_conformance::synthesize(&ir);
-            let json = synthesis.suite.to_canonical_json();
-
-            let written = match (target, &out) {
-                (SuiteTarget::Ir, Some(out)) => {
-                    fs::write(out, &json).with_context(|| format!("writing {}", out.display()))?;
-                    Some(format!("written to {}", out.display()))
-                }
-                (SuiteTarget::Go, Some(out)) => {
-                    let files = ess_conformance::go::emit(&synthesis.suite);
-                    for file in &files {
-                        let path = out.join(&file.path);
-                        if let Some(parent) = path.parent() {
-                            fs::create_dir_all(parent)
-                                .with_context(|| format!("creating {}", parent.display()))?;
-                        }
-                        fs::write(&path, &file.contents)
-                            .with_context(|| format!("writing {}", path.display()))?;
-                    }
-                    Some(format!(
-                        "{} file(s) written to {}",
-                        files.len(),
-                        out.display()
-                    ))
-                }
-                // Refusing to write without `--out` is the rule every generating verb here keeps:
-                // a verb that scatters a tree over a working directory the first time somebody
-                // tries it is a verb nobody tries twice.
-                (_, None) => None,
-            };
-
-            match input.format {
-                Format::Text => {
-                    // Printed, not counted. A refusal is a construct the specification declares and
-                    // the suite does not check, and a number saying there are thirty-one of them
-                    // tells a reader that something is unchecked without telling them what — which
-                    // is the same "generated tests are green" failure the refusal list exists to
-                    // rule out, one step further back.
-                    for refusal in &synthesis.refusals {
-                        println!("refused: {refusal}");
-                    }
-                    println!(
-                        "{} scenario(s), {} refusal(s), {}",
-                        synthesis.suite.len(),
-                        synthesis.refusals.len(),
-                        written.unwrap_or_else(|| "nothing written".to_owned())
-                    );
-                }
-                Format::Json => print!("{json}"),
-                Format::Yaml => render(&synthesis.suite, Format::Yaml)?,
-            }
-            Ok(ExitCode::SUCCESS)
-        }
+        ConformCommand::Synthesize {
+            input,
+            target,
+            out,
+            component,
+        } => synthesize_suite(&input, target, out.as_deref(), component.as_deref()),
         ConformCommand::Run {
             path,
             suite,
@@ -1578,6 +1536,93 @@ fn conform(command: ConformCommand) -> Result<ExitCode> {
             })
         }
     }
+}
+
+/// `ess conform synthesize`: the suite the specification obliges, for the system or for one
+/// component of it, written where `--out` says and reported as `--format` says.
+fn synthesize_suite(
+    input: &SpecPath,
+    target: SuiteTarget,
+    out: Option<&Path>,
+    component: Option<&str>,
+) -> Result<ExitCode> {
+    let Ok((ir, _)) = resolved(&input.path, input.format)? else {
+        return Ok(ExitCode::from(1));
+    };
+    let synthesis = match component {
+        None => ess_conformance::synthesize(&ir),
+        Some(name) => match ess_conformance::synthesize::synthesize_for(&ir, name) {
+            Ok(synthesis) => synthesis,
+            Err(unknown) => {
+                eprintln!("{unknown}");
+                return Ok(ExitCode::from(1));
+            }
+        },
+    };
+    let json = synthesis.suite.to_canonical_json();
+
+    let written = match (target, &out) {
+        (SuiteTarget::Ir, Some(out)) => {
+            fs::write(out, &json).with_context(|| format!("writing {}", out.display()))?;
+            Some(format!("written to {}", out.display()))
+        }
+        (SuiteTarget::Go, Some(out)) => {
+            let files = ess_conformance::go::emit(&synthesis.suite);
+            for file in &files {
+                let path = out.join(&file.path);
+                if let Some(parent) = path.parent() {
+                    fs::create_dir_all(parent)
+                        .with_context(|| format!("creating {}", parent.display()))?;
+                }
+                fs::write(&path, &file.contents)
+                    .with_context(|| format!("writing {}", path.display()))?;
+            }
+            Some(format!(
+                "{} file(s) written to {}",
+                files.len(),
+                out.display()
+            ))
+        }
+        // Refusing to write without `--out` is the rule every generating verb here keeps:
+        // a verb that scatters a tree over a working directory the first time somebody
+        // tries it is a verb nobody tries twice.
+        (_, None) => None,
+    };
+
+    match input.format {
+        Format::Text => {
+            // Printed, not counted. A refusal is a construct the specification declares and
+            // the suite does not check, and a number saying there are thirty-one of them
+            // tells a reader that something is unchecked without telling them what — which
+            // is the same "generated tests are green" failure the refusal list exists to
+            // rule out, one step further back.
+            for refusal in &synthesis.refusals {
+                println!("refused: {refusal}");
+            }
+            // Listed for the same reason: a scenario the specification obliges and this
+            // suite does not hold has to be visible somewhere other than by its absence.
+            for outside in &synthesis.outside {
+                println!("outside: {outside}");
+            }
+            let written = written.unwrap_or_else(|| "nothing written".to_owned());
+            match component {
+                None => println!(
+                    "{} scenario(s), {} refusal(s), {written}",
+                    synthesis.suite.len(),
+                    synthesis.refusals.len(),
+                ),
+                Some(name) => println!(
+                    "{} scenario(s) for `{name}`, {} outside it, {} refusal(s), {written}",
+                    synthesis.suite.len(),
+                    synthesis.outside.len(),
+                    synthesis.refusals.len(),
+                ),
+            }
+        }
+        Format::Json => print!("{json}"),
+        Format::Yaml => render(&synthesis.suite, Format::Yaml)?,
+    }
+    Ok(ExitCode::SUCCESS)
 }
 
 #[derive(serde::Serialize)]

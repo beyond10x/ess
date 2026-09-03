@@ -152,6 +152,7 @@ mod tests {
                     "fedcba9876543210fedcba9876543210fedcba9876543210fedcba9876543210",
                 )
                 .expect("a digest"),
+                component: None,
             },
             implementation: ImplementationIdentity::new("billing-reference", "0.1.0"),
             started_at: ess_primitives::time::Timestamp::from_epoch_millis(1_700_000_000_000),

@@ -254,6 +254,19 @@ pub struct SuiteProvenance {
     /// different suite. Derived from [`ess_gen::Provenance::contract_digest`], never computed a
     /// second way — one model, one slice rule, one digest.
     pub contract_digest: SpecDigest,
+    /// The component this suite holds to the specification, where it was scoped to one.
+    ///
+    /// `None` is the whole system, and is what every suite before this field said without saying
+    /// it. A suite written for one component holds only the scenarios whose every command, event
+    /// and view that component accepts, publishes or owns — because an implementation of one
+    /// component cannot be held to the obligations of another, and a runner that skipped the
+    /// other's scenarios would publish a run that was partly a shrug.
+    ///
+    /// Left out of the document when it is `None`, so a whole-system suite is the bytes it always
+    /// was and its digest does not move. Text rather than a `ComponentName`, for the reason every
+    /// other field here is text: a suite is read back, and validated names do not deserialize.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub component: Option<String>,
 }
 
 impl SuiteProvenance {
@@ -282,6 +295,7 @@ impl SuiteProvenance {
             specification_version: projection.specification_version,
             spec_digest: digest(projection.source_digest.as_str()),
             contract_digest: digest(projection.contract_digest.as_str()),
+            component: None,
         }
     }
 }
@@ -2077,6 +2091,7 @@ mod tests {
                 "fedcba9876543210fedcba9876543210fedcba9876543210fedcba9876543210",
             )
             .expect("a digest"),
+            component: None,
         }
     }
 }

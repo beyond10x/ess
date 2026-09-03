@@ -162,9 +162,10 @@ use std::fmt;
 
 use ess_compiler::diagnostic::Code;
 use ess_compiler::ir::{
-    Driver, EntityHandle, EssIr, ResolvedBinding, ResolvedBody, ResolvedCommand, ResolvedCondition,
-    ResolvedEffect, ResolvedFailure, ResolvedInstance, ResolvedMappingValue, ResolvedOutcome,
-    ResolvedPayloadValue, ResolvedSubject, ResolvedType, ResolvedTypeRef, ResolvedView,
+    Driver, EntityHandle, EssIr, ResolvedBinding, ResolvedBody, ResolvedCommand, ResolvedComponent,
+    ResolvedCondition, ResolvedEffect, ResolvedFailure, ResolvedInstance, ResolvedMappingValue,
+    ResolvedOutcome, ResolvedPayloadValue, ResolvedSubject, ResolvedType, ResolvedTypeRef,
+    ResolvedView,
 };
 use ess_domain::binding::Delivery;
 use ess_domain::command::{OutcomeName, TestStrategy};
@@ -198,6 +199,14 @@ pub struct Synthesis {
     pub suite: ConformanceSuite,
     /// Every construct that could not, in the order the model declares them.
     pub refusals: Vec<Refusal>,
+    /// The scenarios the specification obliges and this suite does not hold, because it was
+    /// scoped to one component and they need another.
+    ///
+    /// Empty for a whole-system suite. Not a refusal: the specification said enough, and the
+    /// scenario exists — in the suite for the component that realises what it needs. Listed
+    /// rather than dropped for the reason refusals are listed: a suite that quietly holds fewer
+    /// checks than the specification demands is the one failure a passing run cannot show.
+    pub outside: Vec<Outside>,
 }
 
 impl Synthesis {
@@ -941,7 +950,195 @@ pub fn synthesize(ir: &EssIr) -> Synthesis {
     invariants(ir, &actors, &mut suite, &mut refusals);
     bindings(ir, &actors, &mut suite, &mut refusals);
 
-    Synthesis { suite, refusals }
+    Synthesis {
+        suite,
+        refusals,
+        outside: Vec::new(),
+    }
+}
+
+/// The suite one component can be held to.
+///
+/// [`synthesize`] obliges the whole system, and a specification with two components obliges two
+/// implementations. An implementation of one of them answers `ErrUnsupported` to every scenario
+/// about the other — which the runner reports as a skip, and a run with skips in it is a run that
+/// cannot say it passed. So the suite for a component holds exactly the scenarios whose every
+/// command it accepts or owns the domain of, every event it publishes or owns, and every view it
+/// owns; the rest are returned as [`Synthesis::outside`], each with what it needs, so a reader can
+/// see which component's suite they belong in.
+///
+/// A negative event assertion counts for nothing here. `expect_no_event` names every event the
+/// specification declares minus the branch's own, and an implementation can say it did not emit an
+/// event it has never heard of; requiring the component to publish it would empty every suite.
+///
+/// The refusals are the whole system's, untouched: a refusal is a fact about the specification, and
+/// scoping the suite does not make a construct say more.
+///
+/// # Errors
+///
+/// [`UnknownComponent`] when the specification declares no component of that name, carrying the
+/// names it does declare.
+pub fn synthesize_for(ir: &EssIr, component: &str) -> Result<Synthesis, UnknownComponent> {
+    let Some(realised) = ir
+        .components()
+        .values()
+        .find(|declared| declared.name.as_str() == component)
+    else {
+        return Err(UnknownComponent {
+            component: component.to_owned(),
+            declared: ir
+                .components()
+                .keys()
+                .map(|name| name.as_str().to_owned())
+                .collect(),
+        });
+    };
+
+    let whole = synthesize(ir);
+    let mut provenance = whole.suite.provenance.clone();
+    provenance.component = Some(component.to_owned());
+    let mut suite = ConformanceSuite::new(provenance);
+    let mut outside = Vec::new();
+    for (id, scenario) in whole.suite.scenarios {
+        let needs = needs_of(ir, realised, &scenario);
+        if needs.is_empty() {
+            suite
+                .insert(id, scenario)
+                .expect("the whole suite held each id once, so its subset does too");
+        } else {
+            outside.push(Outside {
+                scenario: id,
+                needs,
+            });
+        }
+    }
+    Ok(Synthesis {
+        suite,
+        refusals: whole.refusals,
+        outside,
+    })
+}
+
+/// A scenario a component's suite does not hold, and what it would need the component to realise.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Outside {
+    /// The scenario, as the whole-system suite names it.
+    pub scenario: ScenarioId,
+    /// The commands, events and views another component realises, in name order.
+    pub needs: Vec<EssSemanticRef>,
+}
+
+impl fmt::Display for Outside {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let needs: Vec<String> = self.needs.iter().map(|need| format!("`{need}`")).collect();
+        write!(f, "`{}` needs {}", self.scenario, needs.join(", "))
+    }
+}
+
+/// A component name the specification does not declare.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct UnknownComponent {
+    /// What was asked for.
+    pub component: String,
+    /// What the specification declares, in name order.
+    pub declared: Vec<String>,
+}
+
+impl fmt::Display for UnknownComponent {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "no component `{}` is declared", self.component)?;
+        if self.declared.is_empty() {
+            write!(f, "; the specification declares no components")
+        } else {
+            let declared: Vec<String> = self
+                .declared
+                .iter()
+                .map(|name| format!("`{name}`"))
+                .collect();
+            write!(f, "; it declares {}", declared.join(", "))
+        }
+    }
+}
+
+impl std::error::Error for UnknownComponent {}
+
+/// What a scenario asks of an implementation that this component does not realise.
+///
+/// One entry per distinct construct, in name order, so the list is a function of the scenario and
+/// not of the order its steps happen to name things.
+fn needs_of(
+    ir: &EssIr,
+    component: &ResolvedComponent,
+    scenario: &ConformanceScenario,
+) -> Vec<EssSemanticRef> {
+    let mut needs: BTreeSet<EssSemanticRef> = BTreeSet::new();
+    for step in &scenario.steps {
+        match step {
+            ScenarioStep::ExecuteCommand { command, .. }
+            | ScenarioStep::ExpectInvocation { command, .. } => {
+                if !handles(ir, component, command.name()) {
+                    needs.insert(command.clone().into());
+                }
+            }
+            ScenarioStep::ConfigureExternalOutcome { force } => {
+                if !handles(ir, component, force.command.name()) {
+                    needs.insert(force.command.clone().into());
+                }
+            }
+            ScenarioStep::ExpectEvent { event, .. }
+            | ScenarioStep::EventuallyEvent { event, .. }
+            | ScenarioStep::RedeliverEvent { event, .. }
+            | ScenarioStep::CaptureInstance { event, .. } => {
+                if !emits(ir, component, event.name()) {
+                    needs.insert(event.clone().into());
+                }
+            }
+            ScenarioStep::QueryView { view, .. }
+            | ScenarioStep::ExpectView { view, .. }
+            | ScenarioStep::EventuallyView { view, .. } => {
+                if !owns_view(ir, component, view.name()) {
+                    needs.insert(view.clone().into());
+                }
+            }
+            // About the command the scenario just ran, or about an event it must *not* have
+            // published — neither asks the component to realise anything more.
+            ScenarioStep::ExpectOutcome { .. }
+            | ScenarioStep::ExpectError { .. }
+            | ScenarioStep::ExpectNoEvent { .. } => {}
+        }
+    }
+    needs.into_iter().collect()
+}
+
+/// Whether a component is the handler of a command: it accepts it, or owns the domain it is in.
+fn handles(ir: &EssIr, component: &ResolvedComponent, command: &QualifiedName) -> bool {
+    component
+        .accepts
+        .iter()
+        .any(|accepted| accepted.name() == command)
+        || ir
+            .commands()
+            .get(command)
+            .is_some_and(|declared| component.owns.contains(&declared.domain))
+}
+
+/// Whether a component is where an event comes from: it publishes it, or owns the domain it is in.
+fn emits(ir: &EssIr, component: &ResolvedComponent, event: &QualifiedName) -> bool {
+    component
+        .publishes
+        .iter()
+        .any(|published| published.name() == event)
+        || ir
+            .events()
+            .get(event)
+            .is_some_and(|declared| component.owns.contains(&declared.domain))
+}
+
+/// Whether a component projects a view: a view is declared inside a domain, so this is ownership.
+fn owns_view(ir: &EssIr, component: &ResolvedComponent, view: &QualifiedName) -> bool {
+    ir.views()
+        .get(view)
+        .is_some_and(|declared| component.owns.contains(&declared.domain))
 }
 
 /// One scenario per declared outcome (§10), or the refusal that says why there is none.

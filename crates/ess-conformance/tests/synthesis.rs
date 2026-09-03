@@ -19,7 +19,9 @@ use ess_compiler::ir::{EssIr, ResolvedCondition};
 use ess_compiler::resolve::compile;
 use ess_compiler::source::SourceMap;
 use ess_conformance::scenario::{BindingAspect, ScenarioStep, ScenarioValue, ViewExpectation};
-use ess_conformance::synthesize::{synthesize, BindingGap, RefusalCause, Synthesis, Unreachable};
+use ess_conformance::synthesize::{
+    synthesize, synthesize_for, BindingGap, RefusalCause, Synthesis, Unreachable,
+};
 use ess_conformance::{flatten, when, Decision, ScenarioId};
 use ess_domain::binding::{Delivery, Failure};
 use ess_domain::entity::StateName;
@@ -2766,3 +2768,86 @@ commands:
         emits:
           - quiet.orders.OrderShipped
 ";
+
+// ---- one component's suite ------------------------------------------------------------------------
+
+/// The billing example declares two components. The suite for one of them holds exactly the
+/// scenarios that component can answer, names every other scenario with what it needs, and keeps
+/// the whole system's refusals — because scoping a suite does not make a construct say more.
+#[test]
+fn a_suite_for_one_component_holds_only_what_that_component_realises() {
+    let ir = example("billing");
+    let whole = synthesize(&ir);
+    let scoped = synthesize_for(&ir, "email-service").expect("billing declares email-service");
+
+    assert_eq!(
+        scoped.suite.len() + scoped.outside.len(),
+        whole.suite.len(),
+        "every scenario of the whole suite is either held or listed outside; none is dropped"
+    );
+    assert!(
+        !scoped.suite.scenarios.is_empty(),
+        "email-service has scenarios of its own"
+    );
+    assert!(
+        !scoped.outside.is_empty(),
+        "invoice-service's scenarios are not email-service's"
+    );
+    assert_eq!(
+        scoped.suite.provenance.component.as_deref(),
+        Some("email-service"),
+        "the suite says which component it holds to the specification"
+    );
+    assert_eq!(scoped.refusals, whole.refusals);
+
+    for (id, scenario) in &scoped.suite.scenarios {
+        assert!(
+            !matches!(id, ScenarioId::Binding { .. }),
+            "`{id}`: a binding crosses the two components, so no component's suite holds one"
+        );
+        for step in &scenario.steps {
+            if let ScenarioStep::ExecuteCommand { command, .. } = step {
+                assert!(
+                    command.name().to_string().starts_with("billing.email."),
+                    "`{id}` executes `{}`, which email-service does not accept",
+                    command.name()
+                );
+            }
+        }
+    }
+    for outside in &scoped.outside {
+        assert!(
+            !outside.needs.is_empty(),
+            "`{}` is outside for no stated reason",
+            outside.scenario
+        );
+    }
+}
+
+/// A whole-system suite is the bytes it always was: the scoping field is absent, not `null`.
+#[test]
+fn a_whole_system_suite_does_not_mention_a_component() {
+    let ir = example("billing");
+    let whole = synthesize(&ir);
+    assert_eq!(whole.suite.provenance.component, None);
+    assert!(whole.outside.is_empty());
+    let document: serde_json::Value =
+        serde_json::from_str(&whole.suite.to_canonical_json()).expect("the suite is JSON");
+    assert!(
+        document["provenance"].get("component").is_none(),
+        "an unscoped suite must digest exactly as it did before the field existed"
+    );
+}
+
+/// Asking for a component the specification does not declare is refused with the ones it does.
+#[test]
+fn a_component_nothing_declares_is_refused_by_name() {
+    let ir = example("billing");
+    let refused = synthesize_for(&ir, "ledger-service").expect_err("billing declares no ledger");
+    assert_eq!(refused.component, "ledger-service");
+    assert_eq!(refused.declared, vec!["email-service", "invoice-service"]);
+    assert_eq!(
+        refused.to_string(),
+        "no component `ledger-service` is declared; it declares `email-service`, `invoice-service`"
+    );
+}

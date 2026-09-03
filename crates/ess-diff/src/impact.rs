@@ -1346,6 +1346,7 @@ mod tests {
                 "fedcba9876543210fedcba9876543210fedcba9876543210fedcba9876543210",
             )
             .expect("a digest"),
+            component: None,
         });
         suite
             .insert(
