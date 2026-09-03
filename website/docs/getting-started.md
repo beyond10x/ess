@@ -40,9 +40,9 @@ the one archive you downloaded without treating the other three as missing files
 If your machine is not in the release matrix, or you need to work from current `main`, build the
 locked Rust workspace from a source checkout:
 
-```console
-cargo build --locked --release --bin ess
-./target/release/ess --version
+```shell-session
+$ cargo build --locked --release --bin ess
+$ ./target/release/ess --version
 ess 0.5.1
 ```
 
