@@ -123,11 +123,14 @@
 //!
 //! # What the model cannot say yet, and what is therefore not asserted
 //!
-//! One gap left, reported rather than left to be noticed:
+//! Two gaps left, reported rather than left to be noticed. They are one gap read in two places: the
+//! model relates an outcome's input to nothing an observer can read, so neither an event's values
+//! nor a row's ranking values have a declared source.
 //!
 //! | gap | what is asserted instead | what would close it |
 //! |---|---|---|
 //! | where a payload field's **value** comes from | the field is present and of its declared type | a construct relating an outcome's emitted event to the command's input, in the shape a binding's `mapping:` already has |
+//! | which row a ranked view puts **first** | the rows are in the declared order, and there are at least as many as the scenario arranged | a construct relating an outcome's input to the entity field a view ranks by — see [`ViewExpectation::At`], which is in the vocabulary and is written by an author rather than synthesised |
 //!
 //! It is a refusal or a recorded matrix row rather than a silence, because a suite quietly holding a
 //! thinner check than the specification requires is the one failure a passing run cannot show.

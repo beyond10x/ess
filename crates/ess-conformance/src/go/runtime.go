@@ -320,6 +320,16 @@ type Expectation struct {
 	OrderBy   []string         `json:"order_by,omitempty"`
 	AtLeast   *int             `json:"at_least,omitempty"`
 	AtMost    *int             `json:"at_most,omitempty"`
+	Position  *Position        `json:"position,omitempty"`
+}
+
+// Position is which row of a view an assertion is about.
+//
+// `last` is not `nth` at any number a suite could write, because the count is the target's — which
+// is why the three cases are three and not one with an index.
+type Position struct {
+	Row   string `json:"row"`
+	Index int    `json:"index,omitempty"`
 }
 
 // ---- running ----------------------------------------------------------------------------------
@@ -729,6 +739,44 @@ func (r *run) decide(index int, step Step) (bool, string, bool) {
 		return true, "", false
 	case "ranked":
 		return ranked(step.View, expectation.OrderBy, r.lastView.Rows)
+	case "at":
+		// A position in an unordered view names a different row on every read, and calling whichever
+		// one came back "the first" is a coin toss reported as a check.
+		if len(expectation.OrderBy) == 0 {
+			return false, fmt.Sprintf(
+				"`%s` declares no order, so a position in it names no particular row",
+				step.View,
+			), true
+		}
+		if expectation.Position == nil {
+			return false, "the suite names no position, which is a generator defect", true
+		}
+		want, ok := r.resolveAll(index, expectation.Fields)
+		if !ok {
+			return false, "a value the expectation names is not bound", true
+		}
+		held := len(r.lastView.Rows)
+		at := expectation.Position.Index
+		switch expectation.Position.Row {
+		case "first":
+			at = 0
+		case "last":
+			at = held - 1
+		case "nth":
+		default:
+			return false, fmt.Sprintf(
+				"`%s` is a position this generated runner does not implement", expectation.Position.Row,
+			), true
+		}
+		if at < 0 || at >= held {
+			return false, fmt.Sprintf("`%s` holds %d row(s)", step.View, held), false
+		}
+		if !matches(r.lastView.Rows[at], want) {
+			return false, fmt.Sprintf(
+				"row %d of `%s` is %s", at, step.View, describeRow(r.lastView.Rows[at]),
+			), false
+		}
+		return true, "", false
 	default:
 		return false, fmt.Sprintf("`%s` is an expectation this generated runner does not implement", expectation.Expect), true
 	}

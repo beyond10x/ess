@@ -147,7 +147,7 @@ pub use report::{
 pub use runner::{AdvancingClock, Clock, Ids, Runner, RunnerConfig};
 pub use scenario::{
     BindingAspect, ConformanceScenario, ConformanceSuite, EssSemanticRef, Holds, InstanceName,
-    LeafShape, PayloadShape, ScenarioId, ScenarioPurpose, ScenarioStep, ScenarioValue,
+    LeafShape, PayloadShape, Position, ScenarioId, ScenarioPurpose, ScenarioStep, ScenarioValue,
     SuiteProvenance, ViewExpectation,
 };
 pub use synthesize::{

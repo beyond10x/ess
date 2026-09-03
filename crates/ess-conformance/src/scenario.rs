@@ -1582,6 +1582,83 @@ pub enum ViewExpectation {
         /// The ranking keys, most significant first.
         order_by: Vec<Ranking>,
     },
+    /// The row at this position holds these field values.
+    ///
+    /// "Pop returns the highest-scored element", "`GetPosition` answers 0, 1 and 2" — claims about
+    /// *which* row, where [`Contains`](Self::Contains) can only say that some row matches and
+    /// [`Ranked`](Self::Ranked) can only say the rows are in order relative to each other.
+    ///
+    /// # It carries the order it is relative to
+    ///
+    /// A position in an unordered view names no particular row: the specification says the rows may
+    /// come back in any order and that two reads may disagree, so "the first one" is a different row
+    /// every time and an assertion about it is a coin toss reported as a check. Carrying the keys
+    /// makes that refusable where the assertion is read rather than only where it was written — a
+    /// runner meeting an empty `order_by` here reports a **suite** defect, which is the same reading
+    /// [`ExpectView`](ScenarioStep::ExpectView) already makes of an expectation naming a view the
+    /// query before it did not.
+    ///
+    /// # Why synthesis does not write one
+    ///
+    /// Nothing in the model says where a row's ranking value comes from. An entity's field and a
+    /// command's input are related by no declaration — the same gap the payload-value table in
+    /// [`mod@crate::synthesize`] names — so a scenario that arranges two instances knows which inputs it
+    /// sent and *not* which of the two rows the implementation will rank first. Choosing one would
+    /// be a match on a shared field name, which is the inference this crate refuses everywhere else.
+    ///
+    /// The one position the model does determine is the one in a view holding a single row, and a
+    /// synthesised scenario that arranges one row in a ranked view has already refused the order for
+    /// want of a second. So this variant is written by an author or by an adapter, and read by both
+    /// runners; the construct that would license synthesising one is a declaration relating an
+    /// outcome's input to the entity field a view ranks by.
+    At {
+        /// The order the position is relative to, most significant key first.
+        ///
+        /// Empty is a suite defect and not an unordered claim — see above.
+        order_by: Vec<Ranking>,
+        /// Which row.
+        position: Position,
+        /// The fields that row must match, by name.
+        ///
+        /// Partial, as [`Contains`](Self::Contains) is: a row carries what the view projects, and an
+        /// assertion names the fields that identify what it is about. Empty says only that the view
+        /// has a row at that position, which is a claim [`Counts`](Self::Counts) makes better.
+        #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+        fields: BTreeMap<String, ScenarioValue>,
+    },
+}
+
+/// Which row of a view an assertion is about.
+///
+/// Three cases, and the third is not a generalisation of the other two: [`First`](Self::First) is
+/// [`Nth`](Self::Nth) at zero, but [`Last`](Self::Last) is not `Nth` at any number a suite could
+/// write, because the count is the target's. Naming both ends is what lets an assertion say "the
+/// most urgent call" and "the one that waits longest" without knowing how many are queued.
+///
+/// Rows are indexed from zero, as the query result is.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(tag = "row", rename_all = "snake_case")]
+pub enum Position {
+    /// The row the declared order puts first.
+    First,
+    /// The row the declared order puts last.
+    Last,
+    /// The row at this index, counting from zero.
+    Nth {
+        /// How far in, from zero.
+        index: usize,
+    },
+}
+
+impl fmt::Display for Position {
+    /// Reads as the tail of "`OutstandingInvoices` …".
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::First => f.write_str("holds first"),
+            Self::Last => f.write_str("holds last"),
+            Self::Nth { index } => write!(f, "holds at row {index}"),
+        }
+    }
 }
 
 // ---- names -----------------------------------------------------------------------------------

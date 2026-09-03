@@ -69,8 +69,8 @@ use crate::report::{
 };
 use crate::scenario::{
     ActorRef, BindingRef, CommandRef, ConformanceScenario, ConformanceSuite, EntityRef, ErrorRef,
-    EventRef, InstanceName, OutcomeRef, PayloadShape, ScenarioId, ScenarioStep, ScenarioValue,
-    ViewExpectation, ViewRef,
+    EventRef, InstanceName, OutcomeRef, PayloadShape, Position, ScenarioId, ScenarioStep,
+    ScenarioValue, ViewExpectation, ViewRef,
 };
 use crate::target::{
     ConformanceTarget, Deadline, EventObservationRequest, ExternalOutcomeControl,
@@ -1366,6 +1366,40 @@ fn decide(required: &Required, result: &SemanticViewResult) -> Verdict {
         Required::Satisfies(predicate) => satisfies(predicate, result),
         Required::Counts { at_least, at_most } => counts(*at_least, *at_most, result),
         Required::Ranked(order_by) => ranked(order_by, result),
+        Required::At {
+            position, fields, ..
+        } => at(position, fields, result),
+    }
+}
+
+/// The row at one position matches what the assertion names.
+///
+/// Two failures and not one, because a reader repairs them differently: a view with no row there
+/// answered a shorter page than the assertion is about, and a row there that does not match answered
+/// the right length and the wrong content.
+fn at(
+    position: &Position,
+    fields: &BTreeMap<String, Node>,
+    result: &SemanticViewResult,
+) -> Verdict {
+    let held = result.rows.len();
+    let index = match position {
+        Position::First => 0,
+        // Not `Nth` at any number a suite could write: the count is the target's, so the last row is
+        // named rather than computed.
+        Position::Last => match held.checked_sub(1) {
+            Some(last) => last,
+            None => return Verdict::Unsatisfied("the view holds no rows".to_owned()),
+        },
+        Position::Nth { index } => *index,
+    };
+    let Some(row) = result.rows.get(index) else {
+        return Verdict::Unsatisfied(format!("it holds {held} row(s): {}", rows(result)));
+    };
+    if matches(row, fields) {
+        Verdict::Satisfied
+    } else {
+        Verdict::Unsatisfied(format!("row {index} is {}", quote_row(row)))
     }
 }
 
@@ -1464,6 +1498,15 @@ enum Required {
     /// Nothing to resolve: a ranking names a projected field and a direction, both of which the
     /// specification wrote and neither of which a run can bind.
     Ranked(Vec<Ranking>),
+    /// The row at this position matches these values.
+    At {
+        /// The order the position is relative to. Never empty: [`Required::of`] refuses one.
+        order_by: Vec<Ranking>,
+        /// Which row.
+        position: Position,
+        /// What that row must match.
+        fields: BTreeMap<String, Node>,
+    },
 }
 
 impl Required {
@@ -1497,6 +1540,25 @@ impl Required {
                 }
             }
             ViewExpectation::Ranked { order_by } => Self::Ranked(order_by.clone()),
+            ViewExpectation::At {
+                order_by,
+                position,
+                fields,
+            } => {
+                // A position in an unordered view names a different row on every read, and calling
+                // whichever one came back "the first" is a coin toss reported as a check.
+                if order_by.is_empty() {
+                    return Err(
+                        "a position is a claim about a declared order, and this view declares none"
+                            .to_owned(),
+                    );
+                }
+                Self::At {
+                    order_by: order_by.clone(),
+                    position: position.clone(),
+                    fields: resolve(fields)?,
+                }
+            }
         })
     }
 }
@@ -1619,6 +1681,25 @@ fn wanted(view: &ViewRef, required: &Required) -> String {
             // the refusal readable rather than a panic.
             (None, None) => format!("{view} holds any number of rows"),
         },
+        Required::At {
+            order_by,
+            position,
+            fields,
+        } => {
+            let keys = order_by
+                .iter()
+                .map(ToString::to_string)
+                .collect::<Vec<_>>()
+                .join(", then ");
+            if fields.is_empty() {
+                format!("{view} ordered by {keys} {position} a row")
+            } else {
+                format!(
+                    "{view} ordered by {keys} {position} a row where {}",
+                    fields_of(fields)
+                )
+            }
+        }
         Required::Ranked(order_by) => {
             let keys = order_by
                 .iter()
@@ -1941,6 +2022,81 @@ mod tests {
             ),
             Verdict::Unsatisfied(_)
         ));
+    }
+
+    #[test]
+    fn a_position_names_both_ends_and_a_row_that_is_not_there_is_not_a_match() {
+        let priority = |value: f64| {
+            let mut fields = BTreeMap::new();
+            fields.insert(
+                "priority".to_owned(),
+                Node::Number(ess_primitives::facts::Number::new(value).expect("finite")),
+            );
+            fields
+        };
+        let at = |position: Position, value: f64| Required::At {
+            order_by: vec![ranking("priority", Direction::Descending)],
+            position,
+            fields: priority(value),
+        };
+        let queue = SemanticViewResult::of([
+            queued(9.0, "2025-01-01T00:00:00Z"),
+            queued(5.0, "2025-01-01T00:00:00Z"),
+            queued(1.0, "2025-01-01T00:00:00Z"),
+        ]);
+
+        assert_eq!(
+            decide(&at(Position::First, 9.0), &queue),
+            Verdict::Satisfied
+        );
+        assert_eq!(decide(&at(Position::Last, 1.0), &queue), Verdict::Satisfied);
+        assert_eq!(
+            decide(&at(Position::Nth { index: 1 }, 5.0), &queue),
+            Verdict::Satisfied
+        );
+        assert!(matches!(
+            decide(&at(Position::First, 1.0), &queue),
+            Verdict::Unsatisfied(_)
+        ));
+
+        // A row that is not there is a shorter page than the assertion is about, which is a
+        // different repair from a row that is there and wrong — so it says which.
+        let short = decide(&at(Position::Nth { index: 7 }, 1.0), &queue);
+        let Verdict::Unsatisfied(reason) = short else {
+            panic!("a view with three rows has no eighth")
+        };
+        assert!(
+            reason.contains("3 row(s)"),
+            "the reason says how long the page was: {reason}"
+        );
+        assert!(matches!(
+            decide(&at(Position::Last, 1.0), &SemanticViewResult::default()),
+            Verdict::Unsatisfied(_)
+        ));
+    }
+
+    #[test]
+    fn a_position_in_a_view_that_declares_no_order_is_a_suite_defect() {
+        // "The first row" of an unordered view is a different row on every read: the specification
+        // says the rows may come back in any order and that two reads may disagree, so an assertion
+        // about one of them is a coin toss reported as a check.
+        let correlation =
+            ess_primitives::ids::CorrelationId::new("test-correlation").expect("a correlation id");
+        let run = Run::new(scenario(), ScenarioContext::new(scenario(), correlation));
+        let Err(reason) = Required::of(
+            &ViewExpectation::At {
+                order_by: Vec::new(),
+                position: Position::First,
+                fields: BTreeMap::new(),
+            },
+            &run,
+        ) else {
+            panic!("a position without an order is a suite defect")
+        };
+        assert!(
+            reason.contains("declares none"),
+            "the reason says what is wrong with it: {reason}"
+        );
     }
 
     #[test]

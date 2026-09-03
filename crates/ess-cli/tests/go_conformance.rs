@@ -19,8 +19,18 @@
 //! `ESS_BREAK=one-row` returns the first of those rows and drops the rest, which is right in every
 //! value and wrong in its count.
 
+use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 use std::process::Command;
+
+use ess_conformance::scenario::{CommandRef, EventRef, OutcomeRef};
+use ess_conformance::{
+    ConformanceScenario, ConformanceSuite, InstanceName, Position, ScenarioId, ScenarioStep,
+    ScenarioValue, ViewExpectation,
+};
+use ess_domain::view::{Direction, Ranking};
+use ess_primitives::facts::Number;
+use ess_primitives::node::Node;
 
 /// The repository root.
 fn root() -> PathBuf {
@@ -213,6 +223,190 @@ fn a_view_that_drops_rows_fails_the_scenarios_that_say_how_many_it_holds() {
             "billing.invoice.PayInvoice/outcome/settled",
         ],
         "exactly the scenarios that arranged more than one row in `OutstandingInvoices`:\n{printed}"
+    );
+    let _ = std::fs::remove_dir_all(&directory);
+}
+
+/// A suite step's value: a literal number, wrapped as the model's own dynamic value.
+fn number(value: f64) -> Node {
+    Node::Number(Number::new(value).expect("a finite witness"))
+}
+
+/// `billing.invoice.Money`, as a command input carries one.
+fn money(amount: f64) -> Node {
+    Node::Map(BTreeMap::from([
+        ("amount".to_owned(), number(amount)),
+        ("currency".to_owned(), Node::Text("EUR".to_owned())),
+    ]))
+}
+
+/// Creating one invoice and issuing it, bound under `instance`.
+///
+/// Written by hand because synthesis will not write one: nothing in the model relates a command's
+/// input to the field a view ranks by, so no generator knows which of two invoices the
+/// implementation will put first. An adapter that *does* know writes exactly this.
+fn create_and_issue(instance: &str, amount: f64) -> Vec<ScenarioStep> {
+    let create: CommandRef = "billing.invoice.CreateInvoice".parse().expect("a command");
+    let issue: CommandRef = "billing.invoice.IssueInvoice".parse().expect("a command");
+    let created: EventRef = "billing.invoice.InvoiceCreated".parse().expect("an event");
+    let bound: InstanceName = instance.parse().expect("a lower-kebab instance name");
+    vec![
+        ScenarioStep::ExecuteCommand {
+            command: create.clone(),
+            actor: None,
+            input: BTreeMap::from([
+                (
+                    "account_id".to_owned(),
+                    ScenarioValue::literal(Node::Text(
+                        "00000000-0000-4000-8000-000000000042".to_owned(),
+                    )),
+                ),
+                (
+                    "customer_email".to_owned(),
+                    ScenarioValue::literal(Node::Text(format!("{instance}@example.com"))),
+                ),
+                ("amount".to_owned(), ScenarioValue::literal(money(amount))),
+            ]),
+        },
+        ScenarioStep::ExpectOutcome {
+            outcome: OutcomeRef::new(create, "accepted".parse().expect("an outcome name")),
+        },
+        ScenarioStep::CaptureInstance {
+            instance: bound.clone(),
+            entity: "billing.invoice.Invoice".parse().expect("an entity"),
+            event: created,
+            field: "invoice_id".to_owned(),
+        },
+        ScenarioStep::ExecuteCommand {
+            command: issue.clone(),
+            actor: None,
+            input: BTreeMap::from([("invoice_id".to_owned(), ScenarioValue::instance(bound))]),
+        },
+        ScenarioStep::ExpectOutcome {
+            outcome: OutcomeRef::new(issue, "issued".parse().expect("an outcome name")),
+        },
+    ]
+}
+
+/// The declared order of `billing.invoice.OutstandingInvoices`, as the view writes it.
+fn issued_at_descending() -> Vec<Ranking> {
+    vec![Ranking {
+        field: "issued_at".to_owned(),
+        direction: Direction::Descending,
+    }]
+}
+
+/// One positional assertion about `billing.invoice.OutstandingInvoices`.
+fn at(position: Position, instance: &str) -> ScenarioStep {
+    ScenarioStep::ExpectView {
+        view: "billing.invoice.OutstandingInvoices"
+            .parse()
+            .expect("a view"),
+        expectation: ViewExpectation::At {
+            order_by: issued_at_descending(),
+            position,
+            fields: BTreeMap::from([(
+                "invoice_id".to_owned(),
+                ScenarioValue::instance(instance.parse().expect("an instance name")),
+            )]),
+        },
+    }
+}
+
+/// The scenario id of a hand-written check, which is a shape [`ScenarioId`] already has.
+fn hand_written(branch: &str) -> ScenarioId {
+    ScenarioId::parse(&format!("billing.invoice.IssueInvoice/outcome/{branch}"))
+        .expect("a scenario id")
+}
+
+#[test]
+fn the_emitted_runner_reads_a_positional_assertion_and_refuses_one_in_an_unordered_view() {
+    // What `ViewExpectation::At` is in the vocabulary for, and the one check that can catch the Go
+    // runner and the Rust runner disagreeing about it — a variant Go did not implement would be
+    // skipped, which is the shape of green this whole milestone exists to rule out.
+    //
+    // Synthesis writes no positional assertion, for the reason the variant's own documentation
+    // gives, so this suite is the emitted one with two scenarios added: an adapter's, in the types
+    // an adapter writes them in.
+    let Some(go) = go() else {
+        eprintln!("no Go toolchain on this machine; the Go emitter is unchecked here");
+        return;
+    };
+    let directory = module("positional");
+    let embedded = directory.join("essconform/suite.json");
+    let mut suite = ConformanceSuite::from_json(
+        &std::fs::read_to_string(&embedded).expect("the emitted suite is readable"),
+    )
+    .expect("the emitted suite parses");
+
+    // `issued_at desc`, and the fixture issues in scenario order — so the invoice issued second is
+    // the one the view puts first, and the one issued first is the one it puts last.
+    let mut steps = create_and_issue("earlier", 1.0);
+    steps.extend(create_and_issue("later", 2.0));
+    steps.push(ScenarioStep::QueryView {
+        view: "billing.invoice.OutstandingInvoices"
+            .parse()
+            .expect("a view"),
+    });
+    steps.push(at(Position::First, "later"));
+    steps.push(at(Position::Last, "earlier"));
+    steps.push(at(Position::Nth { index: 1 }, "earlier"));
+    suite
+        .insert(
+            hand_written("position-of-the-newest"),
+            ConformanceScenario::new(
+                "the newest issued invoice is the first row of the ranked view"
+                    .parse()
+                    .expect("a purpose"),
+                steps,
+                [],
+            ),
+        )
+        .expect("the id is free");
+
+    // And the same claim about a view that declares no order is a suite defect, not a coin toss:
+    // `InvoiceById` says the rows come back in whatever order the implementation has.
+    suite
+        .insert(
+            hand_written("position-without-an-order"),
+            ConformanceScenario::new(
+                "a position in a view that declares no order names no particular row"
+                    .parse()
+                    .expect("a purpose"),
+                [
+                    ScenarioStep::QueryView {
+                        view: "billing.invoice.InvoiceById".parse().expect("a view"),
+                    },
+                    ScenarioStep::ExpectView {
+                        view: "billing.invoice.InvoiceById".parse().expect("a view"),
+                        expectation: ViewExpectation::At {
+                            order_by: Vec::new(),
+                            position: Position::First,
+                            fields: BTreeMap::new(),
+                        },
+                    },
+                ],
+                [],
+            ),
+        )
+        .expect("the id is free");
+    std::fs::write(&embedded, suite.to_canonical_json()).expect("the suite writes");
+
+    let (passed, printed) = go_test(&go, &directory, None);
+    assert!(
+        !passed,
+        "the unordered position is a suite defect and must be reported as one:\n{printed}"
+    );
+    let failed = scenarios(&printed, "FAIL");
+    assert_eq!(
+        failed,
+        vec!["billing.invoice.IssueInvoice/outcome/position-without-an-order"],
+        "only the assertion that names no particular row:\n{printed}"
+    );
+    assert!(
+        scenarios(&printed, "PASS")
+            .contains(&"billing.invoice.IssueInvoice/outcome/position-of-the-newest".to_owned()),
+        "the emitted runner reads `first`, `last` and `nth` the way the Rust runner does:\n{printed}"
     );
     let _ = std::fs::remove_dir_all(&directory);
 }

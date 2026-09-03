@@ -34,5 +34,10 @@ ess-kubernetes.workspace = true
 ess-openapi.workspace = true
 schema-contract.workspace = true
 
+[dev-dependencies]
+# `tests/go_conformance.rs` writes a scenario by hand, in the same types synthesis writes one in, so
+# what the emitted Go runner is held to is the serialiser an adopter's suite comes out of.
+ess-primitives.workspace = true
+
 [lints]
 workspace = true

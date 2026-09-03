@@ -24,9 +24,9 @@ use ess_compiler::resolve::compile;
 use ess_compiler::source::SourceMap;
 use ess_conformance::scenario::{
     BindingAspect, BindingRef, CommandRef, ConformanceScenario, ConformanceSuite, DeclaredTypeRef,
-    ErrorRef, EssSemanticRef, EventRef, Holds, LeafShape, OutcomeRef, PayloadShape, ScenarioId,
-    ScenarioPurpose, ScenarioStep, ScenarioValue, SuiteFormat, SuiteProvenance, TransitionRef,
-    ViewExpectation,
+    ErrorRef, EssSemanticRef, EventRef, Holds, LeafShape, OutcomeRef, PayloadShape, Position,
+    ScenarioId, ScenarioPurpose, ScenarioStep, ScenarioValue, SuiteFormat, SuiteProvenance,
+    TransitionRef, ViewExpectation,
 };
 use ess_domain::binding::BindingName;
 use ess_domain::command::OutcomeName;
@@ -550,6 +550,96 @@ fn the_steps_a_binding_and_an_invariant_need_survive_being_read_back_from_text()
         ConformanceSuite::from_json(&written.replace("total.amount >= 0", "total amount >= 0"))
             .is_err(),
         "and a condition nothing can parse is refused while the suite is read"
+    );
+}
+
+#[test]
+fn a_count_and_a_position_read_back_as_what_a_runner_in_another_language_must_read() {
+    // The wire form, pinned. Two runners execute a suite — this one and the Go package `conform
+    // synthesize --target go` emits — and a variant one of them spells differently is a check the
+    // other silently skips. So the JSON is written out here rather than round-tripped from a value,
+    // which would agree with itself whatever it said.
+    let written = r#"{
+  "provenance": {
+    "suite_version": "ess-conformance/1",
+    "system": "billing",
+    "specification_version": "v3",
+    "spec_digest": "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+    "contract_digest": "fedcba9876543210fedcba9876543210fedcba9876543210fedcba9876543210"
+  },
+  "scenarios": {
+    "billing.invoice.IssueInvoice/outcome/issued": {
+      "purpose": "the queue holds what was put in it, in the order it declares",
+      "steps": [
+        {
+          "step": "expect_view",
+          "view": "billing.invoice.OutstandingInvoices",
+          "expectation": { "expect": "counts", "at_least": 2 }
+        },
+        {
+          "step": "expect_view",
+          "view": "billing.invoice.OutstandingInvoices",
+          "expectation": {
+            "expect": "at",
+            "order_by": ["issued_at desc"],
+            "position": { "row": "nth", "index": 1 },
+            "fields": { "invoice_id": { "kind": "instance", "instance": "invoice" } }
+          }
+        }
+      ],
+      "source": [{ "kind": "view", "name": "billing.invoice.OutstandingInvoices" }]
+    }
+  }
+}
+"#;
+
+    let suite = ConformanceSuite::from_json(written).expect("text alone is enough");
+    let id = ScenarioId::parse("billing.invoice.IssueInvoice/outcome/issued").expect("an id");
+    let steps = &suite.scenario(&id).expect("the scenario").steps;
+
+    let ScenarioStep::ExpectView { expectation, .. } = &steps[0] else {
+        panic!("the step came back as something else")
+    };
+    assert_eq!(
+        *expectation,
+        ViewExpectation::Counts {
+            at_least: Some(2),
+            at_most: None,
+        },
+        "an absent bound is absent, not zero: a floor of zero requires nothing"
+    );
+
+    let ScenarioStep::ExpectView { expectation, .. } = &steps[1] else {
+        panic!("the step came back as something else")
+    };
+    let ViewExpectation::At {
+        order_by,
+        position,
+        fields,
+    } = expectation
+    else {
+        panic!("a position is not a set of field values: {expectation:?}")
+    };
+    assert_eq!(
+        order_by.iter().map(ToString::to_string).collect::<Vec<_>>(),
+        vec!["issued_at desc"],
+        "a position carries the order it is relative to, in the spelling a view declares it in"
+    );
+    assert_eq!(*position, Position::Nth { index: 1 });
+    assert_eq!(
+        fields.get("invoice_id"),
+        Some(&ScenarioValue::instance(
+            "invoice".parse().expect("an instance name")
+        )),
+        "and it names the row by what an earlier step bound, as `contains` does"
+    );
+
+    // And back out again, byte for byte with what a second reader would produce.
+    assert_eq!(
+        ConformanceSuite::from_json(&suite.to_canonical_json())
+            .expect("what this crate writes, this crate reads")
+            .to_canonical_json(),
+        suite.to_canonical_json()
     );
 }
 

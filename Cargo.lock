@@ -302,6 +302,7 @@ dependencies = [
  "ess-gen",
  "ess-kubernetes",
  "ess-openapi",
+ "ess-primitives",
  "ess-synth",
  "infra-analyze",
  "infra-compiler",
