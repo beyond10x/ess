@@ -9,7 +9,7 @@ owner: ess
 tags:
 - domain
 - relations
-revision: 4
+revision: 5
 ---
 # Epic: An entity declares its relations, and the model checks them
 
@@ -19,7 +19,7 @@ A modeller writes *an Account owns many CommercialClients* as one declared relat
 
 ## Why Now
 
-The second adopter of the planning plugins lost a plan on exactly this: the relationship between an account and a commercial-client object was inconsistent across passes (`#ai-general`, 2026-09-02 07:27 UTC). The review of that failure found that ESS is the only typed place in either stack to write the relation down, and that ESS today has no construct for it: `grep -rn 'cardinality\|association\|foreign' crates/ess-domain/src` returns nothing, `EntitySpec` holds `name`, `identity`, `fields`, `states`, `invariants`, `naming` and nothing relational (`crates/ess-domain/src/entity.rs:595-617`), and the only cross-member checks are member-to-domain ownership and command-to-lifecycle causes (`crates/ess-domain/src/spec.rs:302-309`, `:385`). A relation is therefore a typed id field on the child plus an invariant somebody remembers to write. The planning guardrail that now routes a new noun to ESS (`agentplugins` 0.4.0) routes it to a place that cannot hold the one fact that was missing.
+The second adopter of the planning plugins lost a plan on exactly this: the relationship between an account and a commercial-client object was inconsistent across passes. The review of that failure found that ESS is the only typed place in either stack to write the relation down, and that ESS today has no construct for it: `grep -rn 'cardinality\|association\|foreign' crates/ess-domain/src` returns nothing, `EntitySpec` holds `name`, `identity`, `fields`, `states`, `invariants`, `naming` and nothing relational (`crates/ess-domain/src/entity.rs:595-617`), and the only cross-member checks are member-to-domain ownership and command-to-lifecycle causes (`crates/ess-domain/src/spec.rs:302-309`, `:385`). A relation is therefore a typed id field on the child plus an invariant somebody remembers to write. The planning guardrail that now routes a new noun to ESS (`agentplugins` 0.4.0) routes it to a place that cannot hold the one fact that was missing.
 
 ## Scope
 
