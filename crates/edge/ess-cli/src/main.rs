@@ -5,7 +5,7 @@ mod schema;
 
 use std::fs;
 use std::path::{Path, PathBuf};
-use std::process::ExitCode;
+use std::process::{Command as ProcessCommand, ExitCode};
 
 use anyhow::{bail, Context, Result};
 use clap::{CommandFactory, FromArgMatches, Parser, Subcommand, ValueEnum};
@@ -32,7 +32,7 @@ enum Command {
         #[command(subcommand)]
         command: SpecifyCommand,
     },
-    /// Turn a resolved system into artifacts, and never apply one to anything running.
+    /// Turn a resolved system into artifacts and cross explicit delivery executor boundaries.
     ///
     /// The options below belong to the `generate` verb, which is spelled either way:
     /// `ess generate --path …` is `ess generate generate --path …`. They cannot be written beside
@@ -169,7 +169,7 @@ struct GenerateArgs {
     format: Format,
 }
 
-/// `ess generate`: IR becomes artifacts, and nothing here applies one — `crates/generate/`.
+/// `ess generate`: IR becomes artifacts; explicit executor verbs deliver them — `crates/generate/`.
 #[derive(Debug, Subcommand)]
 enum GenerateCommand {
     /// Synthesize implementation artifacts and explicit obligations.
@@ -197,6 +197,11 @@ enum GenerateCommand {
     Build {
         #[command(subcommand)]
         command: BuildCommand,
+    },
+    /// Compile a repository-owned independently releasable component descriptor.
+    Component {
+        #[command(subcommand)]
+        command: ComponentCommand,
     },
     /// Verify immutable executor-produced releases.
     Release {
@@ -608,6 +613,43 @@ enum BuildCommand {
         #[arg(long)]
         out: Option<PathBuf>,
     },
+    /// Compile, project, and execute a build through Docker Buildx Bake.
+    Execute {
+        /// Authored `ess-build/1` JSON or YAML.
+        #[arg(long)]
+        path: PathBuf,
+        /// Repository root used as the `BuildKit` context.
+        #[arg(long, default_value = ".")]
+        workdir: PathBuf,
+        /// Directory receiving the reviewable `BuildKit` projection.
+        #[arg(long)]
+        projection_out: PathBuf,
+        /// Optional Bake target. Repeat to build a subset; omitted builds the default group.
+        #[arg(long = "target")]
+        targets: Vec<String>,
+        /// Bake override such as `app.tags=registry.example/app:version`. Repeat as needed.
+        #[arg(long = "set")]
+        settings: Vec<String>,
+        /// Push OCI outputs to their configured registries.
+        #[arg(long, conflicts_with = "load")]
+        push: bool,
+        /// Load a single-platform OCI output into the local image store.
+        #[arg(long, conflicts_with = "push")]
+        load: bool,
+    },
+}
+
+#[derive(Debug, Subcommand)]
+enum ComponentCommand {
+    /// Validate and compile `ess-component/1` to canonical `ess-component-ir/1`.
+    Compile {
+        #[arg(long)]
+        path: PathBuf,
+        #[arg(long)]
+        out: Option<PathBuf>,
+        #[arg(long, value_enum, default_value_t = Format::Text)]
+        format: Format,
+    },
 }
 
 #[derive(Debug, Subcommand)]
@@ -645,6 +687,49 @@ enum ReleaseCommand {
         runtime_ir: PathBuf,
         #[arg(long, value_enum, default_value_t = Format::Text)]
         format: Format,
+    },
+    /// Combine a component and its verified runtime/chart releases into an OCI payload.
+    Bundle {
+        #[arg(long)]
+        component_ir: PathBuf,
+        #[arg(long)]
+        build_ir: PathBuf,
+        #[arg(long)]
+        runtime_ir: PathBuf,
+        /// Executor-produced `ess-release/1` manifest. Supply once per release unit.
+        #[arg(long = "release", required = true)]
+        releases: Vec<PathBuf>,
+        #[arg(long)]
+        out: Option<PathBuf>,
+        #[arg(long, value_enum, default_value_t = Format::Text)]
+        format: Format,
+    },
+    /// Revalidate an `ess-release-bundle/1` received from an untrusted boundary.
+    VerifyBundle {
+        #[arg(long)]
+        path: PathBuf,
+        #[arg(long, value_enum, default_value_t = Format::Text)]
+        format: Format,
+    },
+    /// Publish a verified release bundle as an OCI artifact through ORAS.
+    Publish {
+        #[arg(long)]
+        path: PathBuf,
+        /// Tagged OCI destination. Consumers must use the digest printed by this command.
+        #[arg(long)]
+        to: String,
+    },
+    /// Fetch, verify, and cache a release bundle from a digest-pinned OCI reference.
+    Fetch {
+        /// OCI source ending in `@sha256:<64 lowercase hex characters>`.
+        #[arg(long)]
+        from: String,
+        /// Content-addressed cache root.
+        #[arg(long)]
+        cache: PathBuf,
+        /// Optional copy of the verified canonical bundle.
+        #[arg(long)]
+        out: Option<PathBuf>,
     },
 }
 
@@ -693,6 +778,27 @@ enum DeploymentCommand {
         to: PathBuf,
         #[arg(long, value_enum, default_value_t = MachineFormat::Text)]
         format: MachineFormat,
+    },
+    /// Reconcile only changed independent Helm releases through ORAS and Helm.
+    Reconcile {
+        /// Desired canonical `ess-deployment/1` document.
+        #[arg(long)]
+        path: PathBuf,
+        /// Previously applied deployment IR. Omit for a first deployment.
+        #[arg(long)]
+        current: Option<PathBuf>,
+        /// Cache root for digest-pinned chart artifacts.
+        #[arg(long)]
+        cache: PathBuf,
+        /// Permit uninstalling releases absent from the desired deployment.
+        #[arg(long)]
+        allow_removals: bool,
+        /// Render the affected set without contacting OCI, Helm, or Kubernetes.
+        #[arg(long)]
+        dry_run: bool,
+        /// Helm wait timeout.
+        #[arg(long, default_value = "5m")]
+        timeout: String,
     },
 }
 
@@ -829,6 +935,7 @@ fn generate_area(command: GenerateCommand) -> Result<ExitCode> {
         GenerateCommand::Project { adapter } => project(adapter),
         GenerateCommand::Schema { command } => schema::run(command),
         GenerateCommand::Build { command } => build(command),
+        GenerateCommand::Component { command } => component(command),
         GenerateCommand::Release { command } => release(command),
         GenerateCommand::Stack { command } => stack(command),
         GenerateCommand::Deployment { command } => deployment(command),
@@ -1040,6 +1147,83 @@ fn build(command: BuildCommand) -> Result<ExitCode> {
             }
             Ok(ExitCode::SUCCESS)
         }
+        BuildCommand::Execute {
+            path,
+            workdir,
+            projection_out,
+            targets,
+            settings,
+            push,
+            load,
+        } => {
+            let specification: ess_deployment::BuildSpec = read_document(&path)?;
+            let ir = match ess_deployment::compile_build(&specification) {
+                Ok(ir) => ir,
+                Err(diagnostics) => return deployment_refusal(&diagnostics, Format::Text),
+            };
+            let projection = ess_deployment::project_buildkit(&ir);
+            write_projection_files(&projection_out, projection.files())?;
+
+            let workdir = fs::canonicalize(&workdir)
+                .with_context(|| format!("resolving build context {}", workdir.display()))?;
+            let projection_out = fs::canonicalize(&projection_out).with_context(|| {
+                format!("resolving BuildKit projection {}", projection_out.display())
+            })?;
+            let dockerfile = projection_out.join("Dockerfile.ess");
+            let bake_file = projection_out.join("docker-bake.hcl");
+            let mut process = ProcessCommand::new("docker");
+            process
+                .current_dir(&workdir)
+                .args(["buildx", "bake", "--file"])
+                .arg(&bake_file)
+                .arg("--set")
+                .arg(format!("*.context={}", workdir.display()))
+                .arg("--set")
+                .arg(format!("*.dockerfile={}", dockerfile.display()));
+            for setting in settings {
+                process.arg("--set").arg(setting);
+            }
+            if push {
+                process.arg("--push");
+            } else if load {
+                process.arg("--load");
+            }
+            process.args(targets);
+            run_external(&mut process, "Docker Buildx Bake")?;
+            println!(
+                "{} — executed from {}",
+                ir.build(),
+                projection_out.display()
+            );
+            Ok(ExitCode::SUCCESS)
+        }
+    }
+}
+
+fn component(command: ComponentCommand) -> Result<ExitCode> {
+    match command {
+        ComponentCommand::Compile { path, out, format } => {
+            let specification: ess_deployment::ComponentSpec = read_document(&path)?;
+            let ir = match ess_deployment::compile_component(&specification) {
+                Ok(ir) => ir,
+                Err(diagnostics) => return deployment_refusal(&diagnostics, format),
+            };
+            let json = ir.to_canonical_json();
+            write_canonical(out.as_deref(), &json)?;
+            match format {
+                Format::Text => println!(
+                    "{} — runtime {} and chart {}, compiled{}",
+                    ir.component(),
+                    ir.release_units().runtime,
+                    ir.release_units().chart,
+                    out.as_ref()
+                        .map_or_else(String::new, |path| format!(" to {}", path.display()))
+                ),
+                Format::Json => print!("{json}"),
+                Format::Yaml => render(&ir, format)?,
+            }
+            Ok(ExitCode::SUCCESS)
+        }
     }
 }
 
@@ -1109,6 +1293,7 @@ fn runtime(command: RuntimeCommand) -> Result<ExitCode> {
     }
 }
 
+#[allow(clippy::too_many_lines)]
 fn release(command: ReleaseCommand) -> Result<ExitCode> {
     match command {
         ReleaseCommand::Verify {
@@ -1133,6 +1318,130 @@ fn release(command: ReleaseCommand) -> Result<ExitCode> {
                 ),
                 Format::Json | Format::Yaml => render(&release, format)?,
             }
+            Ok(ExitCode::SUCCESS)
+        }
+        ReleaseCommand::Bundle {
+            component_ir,
+            build_ir,
+            runtime_ir,
+            releases,
+            out,
+            format,
+        } => {
+            let component: ess_deployment::ComponentIr = read_document(&component_ir)?;
+            let build: ess_deployment::BuildIr = read_document(&build_ir)?;
+            let runtime: ess_deployment::RuntimeIr = read_document(&runtime_ir)?;
+            let releases = releases
+                .iter()
+                .map(|path| read_document(path))
+                .collect::<Result<Vec<ess_deployment::ReleaseManifest>>>()?;
+            let bundle = match ess_deployment::bundle_release(component, build, runtime, releases) {
+                Ok(bundle) => bundle,
+                Err(diagnostics) => return deployment_refusal(&diagnostics, format),
+            };
+            let json = bundle.to_canonical_json();
+            write_canonical(out.as_deref(), &json)?;
+            match format {
+                Format::Text => println!(
+                    "{} — {} release unit(s), bundled as {}{}",
+                    bundle.component.component(),
+                    bundle.releases.len(),
+                    bundle.digest(),
+                    out.as_ref()
+                        .map_or_else(String::new, |path| format!(" at {}", path.display()))
+                ),
+                Format::Json => print!("{json}"),
+                Format::Yaml => render(&bundle, format)?,
+            }
+            Ok(ExitCode::SUCCESS)
+        }
+        ReleaseCommand::VerifyBundle { path, format } => {
+            let bundle = verified_bundle(&path, true)?;
+            match format {
+                Format::Text => println!(
+                    "{} — {} release unit(s), verified as {}",
+                    bundle.component.component(),
+                    bundle.releases.len(),
+                    bundle.digest()
+                ),
+                Format::Json | Format::Yaml => render(&bundle, format)?,
+            }
+            Ok(ExitCode::SUCCESS)
+        }
+        ReleaseCommand::Publish { path, to } => {
+            let bundle = verified_bundle(&path, true)?;
+            if to.contains('@') {
+                bail!("OCI publication destination must be a tag, not a digest reference");
+            }
+            let staging = TemporaryDirectory::create("ess-release-publish")?;
+            let payload = staging.path().join("ess-release-bundle.json");
+            fs::write(&payload, bundle.to_canonical_json())
+                .with_context(|| format!("staging {}", payload.display()))?;
+            let output = ProcessCommand::new("oras")
+                .current_dir(staging.path())
+                .args([
+                    "push",
+                    "--no-tty",
+                    "--artifact-type",
+                    "application/vnd.beyond10x.ess.release-bundle.v1",
+                    "--format",
+                    "go-template={{.digest}}",
+                ])
+                .arg(&to)
+                .arg("ess-release-bundle.json:application/vnd.beyond10x.ess.release-bundle.v1+json")
+                .output()
+                .context("starting ORAS")?;
+            if !output.status.success() {
+                bail!(
+                    "ORAS publication failed: {}",
+                    String::from_utf8_lossy(&output.stderr).trim()
+                );
+            }
+            let digest = String::from_utf8(output.stdout)
+                .context("ORAS returned a non-UTF-8 manifest digest")?;
+            let digest = digest.trim();
+            ess_deployment::Digest::new(digest)
+                .with_context(|| format!("ORAS returned invalid manifest digest {digest:?}"))?;
+            println!("{to} — published at {digest}");
+            Ok(ExitCode::SUCCESS)
+        }
+        ReleaseCommand::Fetch { from, cache, out } => {
+            let digest = pinned_oci_digest(&from)?;
+            let cache_path = cache
+                .join("sha256")
+                .join(digest.as_str().trim_start_matches("sha256:"))
+                .join("ess-release-bundle.json");
+            let bundle = if cache_path.is_file() {
+                verified_bundle(&cache_path, true).with_context(|| {
+                    format!(
+                        "cached OCI release bundle {} is invalid",
+                        cache_path.display()
+                    )
+                })?
+            } else {
+                let staging = TemporaryDirectory::create("ess-release-fetch")?;
+                let mut process = ProcessCommand::new("oras");
+                process
+                    .args(["pull", "--no-tty", "--output"])
+                    .arg(staging.path())
+                    .arg(&from);
+                run_external(&mut process, "ORAS pull")?;
+                let payload = only_regular_file(staging.path())?;
+                let bundle = verified_bundle(&payload, true)
+                    .with_context(|| format!("verifying OCI payload from {from}"))?;
+                write_canonical(Some(&cache_path), &bundle.to_canonical_json())?;
+                bundle
+            };
+            if let Some(out) = out.as_deref() {
+                write_canonical(Some(out), &bundle.to_canonical_json())?;
+            }
+            println!(
+                "{} — verified {}{}",
+                from,
+                bundle.digest(),
+                out.as_ref()
+                    .map_or_else(String::new, |path| format!(" at {}", path.display()))
+            );
             Ok(ExitCode::SUCCESS)
         }
     }
@@ -1175,6 +1484,7 @@ fn stack(command: StackCommand) -> Result<ExitCode> {
     Ok(ExitCode::SUCCESS)
 }
 
+#[allow(clippy::too_many_lines)]
 fn deployment(command: DeploymentCommand) -> Result<ExitCode> {
     match command {
         DeploymentCommand::Compile {
@@ -1242,6 +1552,111 @@ fn deployment(command: DeploymentCommand) -> Result<ExitCode> {
                 }
                 MachineFormat::Json => println!("{}", serde_json::to_string_pretty(&report)?),
             }
+            Ok(ExitCode::SUCCESS)
+        }
+        DeploymentCommand::Reconcile {
+            path,
+            current,
+            cache,
+            allow_removals,
+            dry_run,
+            timeout,
+        } => {
+            let desired: ess_deployment::DeploymentIr = read_document(&path)?;
+            let current = current
+                .as_deref()
+                .map(read_document::<ess_deployment::DeploymentIr>)
+                .transpose()?;
+            if current
+                .as_ref()
+                .is_some_and(|current| current.cluster != desired.cluster)
+            {
+                bail!(
+                    "refusing to reconcile across cluster changes; retire the old deployment explicitly"
+                );
+            }
+
+            let affected = desired
+                .rollout_order
+                .iter()
+                .filter(|service| {
+                    current
+                        .as_ref()
+                        .and_then(|state| state.releases.get(*service))
+                        != desired.releases.get(*service)
+                })
+                .cloned()
+                .collect::<Vec<_>>();
+            let removed = current
+                .as_ref()
+                .map(|state| {
+                    state
+                        .rollout_order
+                        .iter()
+                        .rev()
+                        .filter(|service| !desired.releases.contains_key(*service))
+                        .cloned()
+                        .collect::<Vec<_>>()
+                })
+                .unwrap_or_default();
+            if !removed.is_empty() && !allow_removals {
+                bail!(
+                    "deployment removes {}; rerun with --allow-removals after reviewing the retirement set",
+                    removed
+                        .iter()
+                        .map(ToString::to_string)
+                        .collect::<Vec<_>>()
+                        .join(", ")
+                );
+            }
+
+            if dry_run {
+                println!(
+                    "apply: {}",
+                    affected
+                        .iter()
+                        .map(ToString::to_string)
+                        .collect::<Vec<_>>()
+                        .join(", ")
+                );
+                println!(
+                    "remove: {}",
+                    removed
+                        .iter()
+                        .map(ToString::to_string)
+                        .collect::<Vec<_>>()
+                        .join(", ")
+                );
+                return Ok(ExitCode::SUCCESS);
+            }
+
+            for service in &affected {
+                let release = desired
+                    .releases
+                    .get(service)
+                    .expect("rollout order refers to a release");
+                reconcile_release(&desired.cluster, release, &cache, &timeout)?;
+            }
+            if let Some(current) = &current {
+                for service in &removed {
+                    let release = current
+                        .releases
+                        .get(service)
+                        .expect("current rollout order refers to a release");
+                    let mut process = ProcessCommand::new("helm");
+                    process
+                        .args(["uninstall", &release.release_name, "--namespace"])
+                        .arg(&release.namespace)
+                        .args(["--kube-context", &current.cluster]);
+                    run_external(&mut process, "Helm uninstall")?;
+                }
+            }
+            println!(
+                "{} — {} release(s) reconciled, {} removed",
+                desired.environment,
+                affected.len(),
+                removed.len()
+            );
             Ok(ExitCode::SUCCESS)
         }
     }
@@ -2077,6 +2492,202 @@ fn write_projection_files(
     Ok(())
 }
 
+fn run_external(process: &mut ProcessCommand, operation: &str) -> Result<()> {
+    let status = process
+        .status()
+        .with_context(|| format!("starting {operation}"))?;
+    if status.success() {
+        Ok(())
+    } else {
+        bail!("{operation} failed with {status}")
+    }
+}
+
+fn verified_bundle(path: &Path, require_canonical: bool) -> Result<ess_deployment::ReleaseBundle> {
+    let text = fs::read_to_string(path).with_context(|| format!("reading {}", path.display()))?;
+    let parsed = if path
+        .extension()
+        .is_some_and(|extension| extension == "json")
+    {
+        ess_deployment::ReleaseBundle::from_json(&text)
+            .with_context(|| format!("parsing {} as release-bundle JSON", path.display()))?
+    } else {
+        ess_deployment::ReleaseBundle::from_yaml(&text)
+            .with_context(|| format!("parsing {} as release-bundle YAML", path.display()))?
+    };
+    let verified = ess_deployment::verify_release_bundle(parsed)
+        .with_context(|| format!("validating {}", path.display()))?;
+    if require_canonical && text != verified.to_canonical_json() {
+        bail!(
+            "{} is not canonical release-bundle JSON; regenerate it with `ess release bundle`",
+            path.display()
+        );
+    }
+    Ok(verified)
+}
+
+fn pinned_oci_digest(reference: &str) -> Result<ess_deployment::Digest> {
+    let (repository, digest) = reference
+        .rsplit_once('@')
+        .context("OCI release source must be pinned as <repository>@sha256:<digest>")?;
+    if repository.is_empty() {
+        bail!("OCI release source repository must not be empty");
+    }
+    ess_deployment::Digest::new(digest)
+        .with_context(|| format!("OCI release source has invalid digest {digest:?}"))
+}
+
+fn only_regular_file(directory: &Path) -> Result<PathBuf> {
+    let entries = fs::read_dir(directory)
+        .with_context(|| format!("reading ORAS output directory {}", directory.display()))?
+        .collect::<std::io::Result<Vec<_>>>()?;
+    if entries.len() != 1 || !entries[0].file_type()?.is_file() {
+        bail!(
+            "OCI release bundle must contain exactly one regular payload file; found {} entry(s)",
+            entries.len()
+        );
+    }
+    Ok(entries[0].path())
+}
+
+fn reconcile_release(
+    cluster: &str,
+    release: &ess_deployment::DeploymentRelease,
+    cache: &Path,
+    timeout: &str,
+) -> Result<()> {
+    if release.chart.kind != ess_deployment::ArtifactKind::HelmChart {
+        bail!("{} does not select a Helm chart artifact", release.service);
+    }
+    let chart = fetch_helm_chart(&release.chart, cache)?;
+    let staging = TemporaryDirectory::create("ess-helm-values")?;
+    let values_path = staging.path().join("values.yaml");
+    let values = serde_yaml::to_string(&serde_json::json!({
+        "serviceAccount": {"name": &release.service_account},
+        "images": release.images.iter().map(|(name, artifact)| {
+            (name.as_str(), serde_json::json!({
+                "repository": &artifact.reference,
+                "digest": &artifact.digest,
+            }))
+        }).collect::<std::collections::BTreeMap<_, _>>(),
+        "config": &release.config,
+        "secrets": &release.secrets,
+        "endpoints": &release.endpoints,
+    }))?;
+    fs::write(&values_path, values)
+        .with_context(|| format!("writing transient Helm values for {}", release.service))?;
+
+    let mut process = ProcessCommand::new("helm");
+    process
+        .args(["upgrade", "--install", &release.release_name])
+        .arg(&chart)
+        .args(["--namespace", &release.namespace, "--create-namespace"])
+        .args(["--kube-context", cluster, "--values"])
+        .arg(&values_path)
+        .args(["--atomic", "--wait", "--timeout", timeout]);
+    run_external(&mut process, "Helm reconciliation")
+}
+
+fn fetch_helm_chart(artifact: &ess_deployment::Artifact, cache: &Path) -> Result<PathBuf> {
+    let digest_hex = artifact.digest.as_str().trim_start_matches("sha256:");
+    let cache_directory = cache.join("helm").join("sha256").join(digest_hex);
+    let archive = cache_directory.join("chart.tgz");
+    let checksum = cache_directory.join("payload.digest");
+    if archive.is_file() && checksum.is_file() {
+        let expected = fs::read_to_string(&checksum)
+            .with_context(|| format!("reading {}", checksum.display()))?;
+        let actual = ess_deployment::Digest::of_bytes(
+            &fs::read(&archive).with_context(|| format!("reading {}", archive.display()))?,
+        );
+        if expected.trim() != actual.as_str() {
+            bail!(
+                "cached Helm payload {} failed its local checksum",
+                archive.display()
+            );
+        }
+        return Ok(archive);
+    }
+
+    let staging = TemporaryDirectory::create("ess-helm-fetch")?;
+    let reference = format!(
+        "{}@{}",
+        artifact.reference.trim_start_matches("oci://"),
+        artifact.digest
+    );
+    let mut process = ProcessCommand::new("oras");
+    process
+        .args(["pull", "--no-tty", "--output"])
+        .arg(staging.path())
+        .arg(&reference);
+    run_external(&mut process, "ORAS chart pull")?;
+    let source = only_chart_archive(staging.path())?;
+    let bytes = fs::read(&source).with_context(|| format!("reading {}", source.display()))?;
+    let payload_digest = ess_deployment::Digest::of_bytes(&bytes);
+    fs::create_dir_all(&cache_directory)
+        .with_context(|| format!("creating {}", cache_directory.display()))?;
+    fs::write(&archive, bytes).with_context(|| format!("writing {}", archive.display()))?;
+    fs::write(&checksum, format!("{payload_digest}\n"))
+        .with_context(|| format!("writing {}", checksum.display()))?;
+    Ok(archive)
+}
+
+fn only_chart_archive(directory: &Path) -> Result<PathBuf> {
+    let mut pending = vec![directory.to_path_buf()];
+    let mut archives = Vec::new();
+    while let Some(next) = pending.pop() {
+        for entry in fs::read_dir(&next)
+            .with_context(|| format!("reading ORAS chart output {}", next.display()))?
+        {
+            let entry = entry?;
+            let kind = entry.file_type()?;
+            if kind.is_dir() {
+                pending.push(entry.path());
+            } else if kind.is_file()
+                && entry
+                    .path()
+                    .extension()
+                    .is_some_and(|extension| extension == "tgz")
+            {
+                archives.push(entry.path());
+            }
+        }
+    }
+    if archives.len() != 1 {
+        bail!(
+            "OCI Helm artifact must contain exactly one .tgz archive; found {}",
+            archives.len()
+        );
+    }
+    Ok(archives.remove(0))
+}
+
+struct TemporaryDirectory(PathBuf);
+
+impl TemporaryDirectory {
+    fn create(prefix: &str) -> Result<Self> {
+        use std::time::{SystemTime, UNIX_EPOCH};
+
+        let nonce = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .context("system clock precedes the Unix epoch")?
+            .as_nanos();
+        let path = std::env::temp_dir().join(format!("{prefix}-{}-{nonce}", std::process::id()));
+        fs::create_dir(&path)
+            .with_context(|| format!("creating temporary directory {}", path.display()))?;
+        Ok(Self(path))
+    }
+
+    fn path(&self) -> &Path {
+        &self.0
+    }
+}
+
+impl Drop for TemporaryDirectory {
+    fn drop(&mut self) {
+        let _ = fs::remove_dir_all(&self.0);
+    }
+}
+
 fn project_openapi_interface(
     ir_path: &Path,
     out: Option<&Path>,
@@ -2310,7 +2921,7 @@ mod tests {
     ///
     /// Written down on purpose. A verb added to the tree and to no area would otherwise be
     /// counted by the enumeration it is missing from and pass every case below.
-    const AREA_LEAVES: usize = 33;
+    const AREA_LEAVES: usize = 40;
 
     /// The order they are offered in is checked where it is rendered, in
     /// `tests/command_surface.rs`: `mut_subcommand` moves what it touches to the end of the list,

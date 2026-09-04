@@ -5,7 +5,8 @@ description: What ESS deliberately does not infer, apply, or attest.
 
 # Limitations and trust assumptions
 
-- ESS describes and checks systems; it is not a deployment engine or control plane.
+- ESS is not a continuously running deployment control plane. Its explicit executor commands invoke
+  local BuildKit, ORAS, and Helm clients; credentials and retry policy remain owned by the caller.
 - Import coverage is adapter-specific. Unsupported input is reported rather than placed in an
   arbitrary property bag.
 - Projection is not universal reversibility. Supported IR can round-trip semantically; concrete

@@ -14,7 +14,7 @@ lists exactly those:
 | Area | The verbs it holds |
 |---|---|
 | `ess specify` | `validate`, `compile`, `compose`, `inspect`, `graph`, `realization`, `runtime` |
-| `ess generate` | `generate`, `synthesize`, `project`, `schema`, `build`, `release`, `stack`, `deployment` |
+| `ess generate` | `generate`, `synthesize`, `project`, `schema`, `build`, `component`, `release`, `stack`, `deployment` |
 | `ess verify` | `conform`, `diff`, `impact` |
 | `ess infra` | `infra`, `import` |
 
@@ -51,7 +51,7 @@ refused with exit 2 rather than run against the current directory.
 | `ess specify realization generate …` | Render a run-mode guide from the resolved realization. |
 | `ess specify runtime compile …` | Compile `ess-runtime/1` against exact semantic, realization, and build inputs. |
 
-## `ess generate` — artifacts, and never an applied one
+## `ess generate` — artifacts and explicit delivery executors
 
 | Command | Purpose |
 |---|---|
@@ -59,10 +59,11 @@ refused with exit 2 rather than run against the current directory.
 | `ess generate synthesize …` | Emit supported structural implementation artifacts plus obligations. |
 | `ess generate project <adapter> …` | Project typed IR into concrete artifacts. |
 | `ess generate schema validate …` | Validate adopter-owned JSON Schema contracts. |
-| `ess generate build compile\|graph …` | Validate and compile `ess-build/1`, or render its DAG. |
-| `ess generate release verify …` | Verify an `ess-release/1` against exact build and runtime IR. |
+| `ess generate build compile\|graph\|execute …` | Validate and compile `ess-build/1`, render its DAG, or explicitly execute its BuildKit projection. |
+| `ess generate component compile …` | Validate a repository-owned component descriptor. |
+| `ess generate release verify\|bundle\|verify-bundle\|publish\|fetch …` | Verify and bundle release records or explicitly cross the OCI credential edge. |
 | `ess generate stack resolve\|validate …` | Resolve generic product stacks from an offline release catalogue. |
-| `ess generate deployment compile\|diff …` | Bind an exact stack lock to an environment, or compare two deployments. |
+| `ess generate deployment compile\|diff\|reconcile …` | Bind an exact stack lock, compare deployments, or explicitly reconcile the affected Helm releases. |
 
 Run `ess generate synthesize --help` and `ess generate <command> --help` for target-specific
 arguments.
@@ -70,6 +71,23 @@ arguments.
 Omitting `--kind` generates every projection. Omitting `--out` lists or serializes artifacts
 without writing them. The repository-only `cargo xtask generate` command reconciles the committed
 `generated/` projection tree; `cargo xtask generate --check` compares it without writing.
+
+## Component delivery
+
+| Command | Purpose |
+|---|---|
+| `ess generate component compile --path FILE [--out FILE]` | Validate a repository-owned component descriptor. |
+| `ess generate build execute --path FILE --projection-out DIR …` | Compile and retain the BuildKit projection, then invoke Docker Buildx Bake. |
+| `ess generate release bundle …` | Verify runtime and chart releases and write one canonical OCI payload. |
+| `ess generate release publish --path FILE --to OCI_TAG` | Publish a verified bundle and print its immutable OCI manifest digest. |
+| `ess generate release fetch --from OCI_REF@sha256:… --cache DIR` | Fetch a digest-pinned bundle, revalidate it, and cache canonical bytes. |
+| `ess generate deployment reconcile --path FILE --current FILE --cache DIR` | Apply only added or changed Helm releases in rollout order. |
+
+The compiler and projection operations stay offline. The commands that say `execute`, `publish`,
+`fetch`, or `reconcile` are explicit credential edges and invoke installed Docker, ORAS, or Helm
+clients. Reconciliation refuses removals unless `--allow-removals` is supplied. Use `--dry-run` to
+print the affected set without contacting external systems. See
+[Independent component delivery](../concepts/component-delivery.md).
 
 ### Adopter-owned schema contracts
 
@@ -101,7 +119,8 @@ Run `ess verify conform <command> --help` for target-specific arguments.
 | `ess generate project openapi …` | ESS service/interface IR → OpenAPI. |
 | `ess generate project kubernetes …` | infrastructure intent and observation → manifests and obligations. |
 
-Projection writes artifacts only. It does not call `kubectl`, apply a manifest, or mutate a target.
+The commands under `ess project` write artifacts only. They do not call `kubectl`, apply a manifest,
+or mutate a target.
 
 `ess infra infra` contains `diagnose`, `graph`, and `diff` operations over sanitized infrastructure
 IR — the same three as `ess infra diagnose`, `ess infra graph` and `ess infra diff`, which are their

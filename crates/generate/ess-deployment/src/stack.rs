@@ -5,7 +5,7 @@ use semver::{Version, VersionReq};
 use crate::diagnostic::{Diagnostic, DiagnosticCode, Diagnostics, Stage};
 use crate::identity::{canonical_json, Digest, Identifier};
 use crate::release::{verify_release_document, Artifact, ReleaseManifest};
-use crate::runtime::{ConfigKind, RuntimeIr};
+use crate::runtime::{ConfigKind, EndpointScheme, RuntimeIr};
 
 /// Generic deployable stack format.
 pub const STACK_FORMAT: &str = "ess-stack/1";
@@ -132,8 +132,24 @@ pub struct RuntimeRequirements {
     pub secrets: BTreeSet<Identifier>,
     /// Required endpoint slots and target systems.
     pub endpoints: BTreeMap<Identifier, Identifier>,
+    /// Required endpoint slots and the named endpoint expected from their target system.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub endpoint_names: BTreeMap<Identifier, Identifier>,
+    /// Component-owned endpoints available for automatic in-cluster binding.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub provided_endpoints: BTreeMap<Identifier, ProvidedEndpointRequirement>,
     /// Required workload token audiences.
     pub audiences: BTreeSet<String>,
+}
+
+/// Network coordinates needed to derive a component-owned in-cluster endpoint URL.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ProvidedEndpointRequirement {
+    /// Protocol exposed by the generated Service.
+    pub scheme: EndpointScheme,
+    /// Service port exposed by the generated Service.
+    pub port: u16,
 }
 
 /// Exact first-party release selected for one stack service.
@@ -452,6 +468,8 @@ fn runtime_requirements(realization: &RuntimeIr) -> RuntimeRequirements {
     let mut config = BTreeMap::new();
     let mut secrets = BTreeSet::new();
     let mut endpoints = BTreeMap::new();
+    let mut endpoint_names = BTreeMap::new();
+    let mut provided_endpoints = BTreeMap::new();
     let mut audiences = BTreeSet::new();
     for container in realization.containers().values() {
         for slot in &container.config {
@@ -466,12 +484,33 @@ fn runtime_requirements(realization: &RuntimeIr) -> RuntimeRequirements {
                 .iter()
                 .map(|slot| (slot.name.clone(), slot.system.clone())),
         );
+        endpoint_names.extend(container.endpoints.iter().filter_map(|slot| {
+            slot.endpoint
+                .as_ref()
+                .map(|endpoint| (slot.name.clone(), endpoint.clone()))
+        }));
         audiences.extend(container.audiences.iter().cloned());
+    }
+    for (name, endpoint) in realization.provided_endpoints() {
+        let port = realization
+            .containers()
+            .get(&endpoint.container)
+            .and_then(|container| container.http_port)
+            .expect("compiled provided endpoints always select an HTTP port");
+        provided_endpoints.insert(
+            name.clone(),
+            ProvidedEndpointRequirement {
+                scheme: endpoint.scheme,
+                port,
+            },
+        );
     }
     RuntimeRequirements {
         config,
         secrets,
         endpoints,
+        endpoint_names,
+        provided_endpoints,
         audiences,
     }
 }

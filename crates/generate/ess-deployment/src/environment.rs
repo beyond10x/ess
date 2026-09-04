@@ -259,6 +259,14 @@ pub fn compile_deployment(
             ));
             continue;
         };
+        if binding.release_name.is_empty() {
+            diagnostics.push(Diagnostic::new(
+                Stage::Deployment,
+                DiagnosticCode::MissingBinding,
+                Some(service.clone()),
+                "Helm release name must not be empty",
+            ));
+        }
         for (slot, kind) in &locked.runtime.config {
             if *kind == ConfigKind::Required && !binding.config.contains_key(slot) {
                 diagnostics.push(Diagnostic::new(
@@ -279,8 +287,27 @@ pub fn compile_deployment(
                 ));
             }
         }
+        let mut endpoints = binding.endpoints.clone();
         for (slot, target) in &locked.runtime.endpoints {
-            if !binding.endpoints.contains_key(slot) {
+            if endpoints.contains_key(slot) {
+                continue;
+            }
+            let derived = locked
+                .runtime
+                .endpoint_names
+                .get(slot)
+                .and_then(|endpoint| {
+                    derive_endpoint(
+                        stack,
+                        &release_bindings,
+                        &external_bindings,
+                        target,
+                        endpoint,
+                    )
+                });
+            if let Some(derived) = derived {
+                endpoints.insert(slot.clone(), derived);
+            } else {
                 diagnostics.push(Diagnostic::new(
                     Stage::Deployment,
                     DiagnosticCode::MissingBinding,
@@ -315,7 +342,7 @@ pub fn compile_deployment(
                 service_account: binding.service_account.clone(),
                 config: binding.config.clone(),
                 secrets: binding.secrets.clone(),
-                endpoints: binding.endpoints.clone(),
+                endpoints,
                 audiences: locked.runtime.audiences.clone(),
                 depends_on: locked.depends_on.clone(),
             },
@@ -354,6 +381,39 @@ pub fn compile_deployment(
     } else {
         Err(Diagnostics::from(diagnostics))
     }
+}
+
+fn derive_endpoint(
+    stack: &StackLock,
+    release_bindings: &BTreeMap<Identifier, &ReleaseBinding>,
+    external_bindings: &BTreeMap<Identifier, &ExternalBinding>,
+    target: &Identifier,
+    endpoint: &Identifier,
+) -> Option<String> {
+    if let Some(external) = external_bindings.get(target) {
+        return external.endpoints.get(endpoint).cloned();
+    }
+
+    let candidates = stack
+        .systems
+        .iter()
+        .filter(|(service, system)| {
+            (*service == target || system.system == *target)
+                && system.runtime.provided_endpoints.contains_key(endpoint)
+        })
+        .collect::<Vec<_>>();
+    let [(service, system)] = candidates.as_slice() else {
+        return None;
+    };
+    let release = release_bindings.get(*service)?;
+    let provided = system.runtime.provided_endpoints.get(endpoint)?;
+    Some(format!(
+        "{}://{}-{}:{}",
+        provided.scheme.as_str(),
+        release.release_name,
+        endpoint,
+        provided.port
+    ))
 }
 
 fn unique_bindings<'a, T>(
@@ -450,6 +510,16 @@ pub fn project_helm(
                 "    storage:\n      class: \"\"\n      size: {storage:?}"
             )
             .unwrap();
+        } else if !workload.volumes.is_empty() {
+            values.push_str("    volumes:\n");
+            for volume in &workload.volumes {
+                writeln!(
+                    &mut values,
+                    "      {}:\n        class: \"\"\n        size: {:?}",
+                    volume.name, volume.size
+                )
+                .unwrap();
+            }
         }
     }
 
@@ -471,22 +541,25 @@ pub fn project_helm(
     schema_json.push('\n');
 
     let workloads = render_workloads(realization);
+    let services = render_services(realization);
     let files = BTreeMap::from([
         ("Chart.yaml".to_owned(), chart_yaml),
         ("values.yaml".to_owned(), values),
         ("values.schema.json".to_owned(), schema_json),
         ("templates/workloads.yaml".to_owned(), workloads),
+        ("templates/services.yaml".to_owned(), services),
     ]);
     HelmProjection { files }
 }
 
+#[allow(clippy::too_many_lines)]
 fn render_workloads(realization: &RuntimeIr) -> String {
     let mut output = String::from("{{- $root := . -}}\n");
     for (index, workload) in realization.workloads().values().enumerate() {
         if index > 0 {
             output.push_str("---\n");
         }
-        let stateful = workload.storage.is_some();
+        let stateful = workload.storage.is_some() || !workload.volumes.is_empty();
         writeln!(
             &mut output,
             "apiVersion: apps/v1\nkind: {}",
@@ -509,8 +582,28 @@ fn render_workloads(realization: &RuntimeIr) -> String {
             workload.name
         )
         .unwrap();
+        if stateful {
+            writeln!(
+                &mut output,
+                "  serviceName: {{{{ .Release.Name }}}}-{}-headless",
+                workload.name
+            )
+            .unwrap();
+        }
         output.push_str("  selector:\n    matchLabels:\n      app.kubernetes.io/instance: {{ .Release.Name }}\n");
+        writeln!(
+            &mut output,
+            "      app.kubernetes.io/component: {}",
+            workload.name
+        )
+        .unwrap();
         output.push_str("  template:\n    metadata:\n      labels:\n        app.kubernetes.io/instance: {{ .Release.Name }}\n");
+        writeln!(
+            &mut output,
+            "        app.kubernetes.io/component: {}",
+            workload.name
+        )
+        .unwrap();
         output.push_str("    spec:\n      serviceAccountName: {{ .Values.serviceAccount.name }}\n      containers:\n");
         for container_name in &workload.containers {
             let container = realization
@@ -549,6 +642,17 @@ fn render_workloads(realization: &RuntimeIr) -> String {
             if let Some(path) = &container.liveness_path {
                 writeln!(&mut output, "          livenessProbe:\n            httpGet:\n              path: {path}\n              port: http").unwrap();
             }
+            if !container.volume_mounts.is_empty() {
+                output.push_str("          volumeMounts:\n");
+                for mount in &container.volume_mounts {
+                    writeln!(
+                        &mut output,
+                        "            - name: {}\n              mountPath: {:?}",
+                        mount.volume, mount.mount_path
+                    )
+                    .unwrap();
+                }
+            }
             let has_env = !container.config.is_empty()
                 || !container.secrets.is_empty()
                 || !container.endpoints.is_empty();
@@ -579,6 +683,83 @@ fn render_workloads(realization: &RuntimeIr) -> String {
                 writeln!(&mut output, "            - name: {}\n              valueFrom:\n                secretKeyRef:\n                  name: {{{{ index .Values.secrets \"{}\" \"name\" }}}}\n                  key: {{{{ index .Values.secrets \"{}\" \"key\" }}}}", slot.environment, slot.name, slot.name).unwrap();
             }
         }
+        if stateful {
+            output.push_str("  volumeClaimTemplates:\n");
+            if workload.storage.is_some() {
+                render_volume_claim(&mut output, workload, "data");
+            } else {
+                for volume in &workload.volumes {
+                    render_volume_claim(&mut output, workload, volume.name.as_str());
+                }
+            }
+        }
+    }
+    output
+}
+
+fn render_volume_claim(output: &mut String, workload: &crate::runtime::Workload, volume: &str) {
+    writeln!(
+        output,
+        "    - metadata:\n        name: {volume}\n      spec:\n        accessModes: [\"ReadWriteOnce\"]"
+    )
+    .unwrap();
+    if workload.storage.is_some() {
+        writeln!(
+            output,
+            "        {{{{- with (index $root.Values.workloads {:?} \"storage\" \"class\") }}}}\n        storageClassName: {{{{ . | quote }}}}\n        {{{{- end }}}}\n        resources:\n          requests:\n            storage: {{{{ index $root.Values.workloads {:?} \"storage\" \"size\" | quote }}}}",
+            workload.name.as_str(),
+            workload.name.as_str()
+        )
+        .unwrap();
+    } else {
+        writeln!(
+            output,
+            "        {{{{- with (index $root.Values.workloads {:?} \"volumes\" {:?} \"class\") }}}}\n        storageClassName: {{{{ . | quote }}}}\n        {{{{- end }}}}\n        resources:\n          requests:\n            storage: {{{{ index $root.Values.workloads {:?} \"volumes\" {:?} \"size\" | quote }}}}",
+            workload.name.as_str(),
+            volume,
+            workload.name.as_str(),
+            volume
+        )
+        .unwrap();
+    }
+}
+
+fn render_services(realization: &RuntimeIr) -> String {
+    let mut output = String::new();
+    let mut documents = 0usize;
+    for endpoint in realization.provided_endpoints().values() {
+        if documents > 0 {
+            output.push_str("---\n");
+        }
+        documents += 1;
+        let container = realization
+            .containers()
+            .get(&endpoint.container)
+            .expect("compiled provided endpoint container is total");
+        writeln!(
+            &mut output,
+            "apiVersion: v1\nkind: Service\nmetadata:\n  name: {{{{ .Release.Name }}}}-{}\nspec:\n  selector:\n    app.kubernetes.io/instance: {{{{ .Release.Name }}}}\n    app.kubernetes.io/component: {}\n  ports:\n    - name: http\n      port: {}\n      targetPort: http",
+            endpoint.name,
+            endpoint.workload,
+            container.http_port.expect("compiled endpoint has a port")
+        )
+        .unwrap();
+    }
+    for workload in realization
+        .workloads()
+        .values()
+        .filter(|workload| workload.storage.is_some() || !workload.volumes.is_empty())
+    {
+        if documents > 0 {
+            output.push_str("---\n");
+        }
+        documents += 1;
+        writeln!(
+            &mut output,
+            "apiVersion: v1\nkind: Service\nmetadata:\n  name: {{{{ .Release.Name }}}}-{}-headless\nspec:\n  clusterIP: None\n  selector:\n    app.kubernetes.io/instance: {{{{ .Release.Name }}}}\n    app.kubernetes.io/component: {}",
+            workload.name, workload.name
+        )
+        .unwrap();
     }
     output
 }
