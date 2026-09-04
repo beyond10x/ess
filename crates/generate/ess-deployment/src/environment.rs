@@ -484,7 +484,7 @@ pub fn project_helm(
         "apiVersion: v2\nname: {chart}\ndescription: Generated from {}\ntype: application\nversion: {version}\n",
         realization.runtime()
     );
-    let mut values = String::from("serviceAccount:\n  name: \"\"\nimages:\n");
+    let mut values = String::from("serviceAccount:\n  name: default\nimages:\n");
     let mut image_names = BTreeSet::new();
     for process in realization.processes().values() {
         image_names.insert(process.image.clone());
