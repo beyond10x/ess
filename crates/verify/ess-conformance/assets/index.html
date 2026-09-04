@@ -1,0 +1,264 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{{ system }} {{ version }} — scenarios</title>
+<style>
+  :root {
+    --bg:#12141a; --panel:#191c24; --edge:#262b36; --ink:#e6e8ee; --dim:#8b93a6;
+    --accent:#ff9070; --live:#63d2a4; --warn:#f2c66d; --ghost:#4a5164;
+    --mono: ui-monospace,"SF Mono","JetBrains Mono",Menlo,monospace;
+  }
+  @media (prefers-color-scheme: light) {
+    :root { --bg:#f7f8fa; --panel:#fff; --edge:#dfe3ea; --ink:#1b1f27; --dim:#6b7484;
+            --accent:#d2542b; --live:#1c8a5f; --warn:#a5720c; --ghost:#c3c9d4; }
+  }
+  *{box-sizing:border-box} body{margin:0;background:var(--bg);color:var(--ink);font:14px/1.55 system-ui,sans-serif}
+  code{font-family:var(--mono);font-size:.92em}
+  header{padding:13px 20px;border-bottom:1px solid var(--edge);display:flex;gap:14px;align-items:baseline;flex-wrap:wrap}
+  header h1{font-size:15px;margin:0;font-weight:600}
+  .meta{color:var(--dim);font-size:12px;font-family:var(--mono)}
+  .caveat{margin:0;padding:8px 20px;background:color-mix(in srgb,var(--warn) 13%,transparent);
+          border-bottom:1px solid var(--edge);font-size:12.5px}
+  .caveat b{color:var(--warn)}
+  main{display:grid;grid-template-columns:220px minmax(420px,1.15fr) minmax(360px,1fr);gap:1px;
+       background:var(--edge);min-height:calc(100vh - 92px)}
+  section{background:var(--panel);padding:13px 15px;overflow:auto}
+  h2{font-size:11px;text-transform:uppercase;letter-spacing:.09em;color:var(--dim);margin:0 0 9px;font-weight:600}
+  h3{font-size:12px;margin:15px 0 6px;color:var(--dim);font-weight:600}
+  .empty{color:var(--dim);font-style:italic;font-size:12.5px}
+  .footnote{color:var(--dim);font-size:11.5px;margin-top:10px;line-height:1.5}
+
+  .scn{padding:8px 9px;border-radius:6px;cursor:pointer;border:1px solid transparent;margin-bottom:4px}
+  .scn:hover{border-color:var(--edge)} .scn .n{font-family:var(--mono);font-size:12px}
+  .scn .p{color:var(--dim);font-size:11px;margin-top:2px}
+  .scn.on{background:color-mix(in srgb,var(--accent) 15%,transparent);border-color:var(--accent)}
+  .grp{font-family:var(--mono);font-size:10px;color:var(--dim);margin:10px 0 4px;text-transform:uppercase}
+
+  .transport{display:flex;gap:6px;align-items:center;margin-bottom:12px;flex-wrap:wrap}
+  button{font:inherit;font-size:13px;padding:5px 12px;border-radius:6px;border:1px solid var(--edge);
+         background:var(--bg);color:var(--ink);cursor:pointer}
+  button:hover:not(:disabled){border-color:var(--accent)} button:disabled{opacity:.36;cursor:default}
+  button.go{background:var(--accent);border-color:var(--accent);color:#12141a;font-weight:600}
+  .pos{color:var(--dim);font-family:var(--mono);font-size:12px;margin-left:auto}
+
+  /* swimlanes: one column per actor lane, one row per act, time downward */
+  .swim{display:grid;gap:0;position:relative;font-size:12px}
+  .lane-hd{font-family:var(--mono);font-size:11px;color:var(--dim);padding:0 8px 6px;
+           border-bottom:1px solid var(--edge);text-align:center}
+  .lane-hd.binding{color:var(--warn)}
+  .gutter{font-family:var(--mono);font-size:11px;color:var(--dim);padding:8px 6px 0 0;text-align:right;white-space:nowrap}
+  .gutter.now{color:var(--accent);font-weight:700}
+  .cell{padding:5px 4px}
+  .card{border:1px solid var(--edge);border-radius:7px;padding:7px 9px;background:var(--bg)}
+  .card .cmd{font-family:var(--mono);font-size:12px}
+  .card .out{color:var(--live);font-family:var(--mono);font-size:11px}
+  .card .ev{color:var(--dim);font-family:var(--mono);font-size:10.5px;margin-top:3px}
+  .row-past .card{opacity:.5}
+  .row-now .card{border-color:var(--accent);box-shadow:0 0 0 1px var(--accent) inset;
+                 background:color-mix(in srgb,var(--accent) 10%,var(--bg))}
+  .row-next .card{opacity:.42;border-style:solid;background:transparent}
+  .card.declared{border-style:dashed;border-color:var(--warn);background:transparent}
+  .card.declared .cmd{color:var(--warn)}
+  .card.declared .why{color:var(--dim);font-size:10.5px;font-family:var(--mono);margin-top:3px}
+  .here{color:var(--accent);font-size:11px;font-family:var(--mono)}
+  .arrow{position:absolute;pointer-events:none;inset:0}
+
+  .tabs{display:flex;gap:5px;margin-bottom:10px}
+  .tabs button{font-size:12px;padding:4px 10px}
+  .tabs button.on{background:var(--accent);border-color:var(--accent);color:#12141a;font-weight:600}
+
+  .inst{border:1px solid var(--edge);border-radius:7px;padding:9px 10px;margin-bottom:7px}
+  .inst.declared{border-style:dashed;border-color:var(--warn)}
+  .inst .hd{display:flex;justify-content:space-between;gap:8px;align-items:baseline}
+  .inst .nm{font-family:var(--mono);font-size:12px}
+  .badge{font-family:var(--mono);font-size:10.5px;padding:2px 8px;border-radius:20px;
+         background:color-mix(in srgb,var(--live) 20%,transparent);color:var(--live)}
+  .badge.term{background:color-mix(in srgb,var(--ghost) 32%,transparent);color:var(--dim)}
+  .kv{font-family:var(--mono);font-size:11px;color:var(--dim)}
+  .fld{display:flex;justify-content:space-between;gap:8px;font-family:var(--mono);font-size:11px;padding:1px 0}
+  .fld.hot{background:color-mix(in srgb,var(--live) 16%,transparent);border-radius:4px;padding:1px 5px;margin:0 -5px}
+  .lc{display:flex;align-items:center;gap:3px;flex-wrap:wrap;margin-top:7px}
+  .lc i{font-family:var(--mono);font-size:10px;padding:2px 6px;border-radius:4px;border:1px solid var(--edge);
+        color:var(--dim);font-style:normal;background:var(--bg)}
+  .lc i.at{background:var(--live);border-color:var(--live);color:#12141a;font-weight:700}
+  .lc i.was{border-color:var(--live);color:var(--live)}
+  .lc b{color:var(--ghost);font-weight:400;font-size:10px}
+
+  .vw{border:1px solid var(--edge);border-radius:7px;padding:8px 10px;margin-bottom:7px}
+  .vw .vh{display:flex;justify-content:space-between;gap:8px;align-items:baseline}
+  .vw .vn{font-family:var(--mono);font-size:11.5px}
+  .cons{font-family:var(--mono);font-size:10px;padding:1px 7px;border-radius:20px;
+        background:color-mix(in srgb,var(--live) 18%,transparent);color:var(--live)}
+  .cons.eventual{background:color-mix(in srgb,var(--warn) 20%,transparent);color:var(--warn)}
+  .vw table{width:100%;border-collapse:collapse;margin-top:6px;font-family:var(--mono);font-size:10.5px}
+  .vw th{text-align:left;color:var(--dim);font-weight:400;border-bottom:1px solid var(--edge);padding:2px 4px}
+  .vw td{padding:2px 4px;border-bottom:1px solid color-mix(in srgb,var(--edge) 50%,transparent)}
+  .vw tr.declared td{color:var(--warn);font-style:italic}
+  .vw .na{color:var(--dim);font-size:11px;font-style:italic;margin-top:4px}
+  .fil{font-family:var(--mono);font-size:10px;color:var(--dim);margin-top:3px}
+
+  /* the skin */
+  .phone{display:flex;gap:14px;flex-wrap:wrap}
+  .bezel{width:190px;border:1px solid var(--edge);border-radius:16px;padding:9px;background:var(--bg)}
+  .bar{font-family:var(--mono);font-size:9.5px;margin-bottom:6px;text-align:center}
+  .reg.ok{color:var(--live)} .reg.no{color:var(--warn)} .reg.none{color:var(--dim)}
+  .screen{min-height:150px;border:1px solid var(--edge);border-radius:9px;padding:8px;
+          background:color-mix(in srgb,var(--panel) 60%,var(--bg))}
+  .mode{font-family:var(--mono);font-size:10px;color:var(--live);text-align:center;margin-bottom:7px}
+  .mode.absent{color:var(--dim);font-style:italic}
+  .scr-empty{color:var(--dim);font-size:11px;text-align:center;margin-top:22px}
+  .scr-empty .hint{font-size:10px;margin-top:5px}
+  .tile{border:1px solid var(--live);border-radius:7px;padding:6px 7px;margin-bottom:5px}
+  .tile.declared{border-style:dashed;border-color:var(--warn)}
+  .tl-1{font-size:11.5px} .tl-2{font-family:var(--mono);font-size:10px;color:var(--dim)}
+  .tl-3{font-size:9.5px;color:var(--warn);margin-top:3px}
+  .entry{font-family:var(--mono);font-size:13px;text-align:right;margin-top:7px;color:var(--dim)}
+  .pad{display:grid;grid-template-columns:repeat(3,1fr);gap:4px;margin-top:8px}
+  .pad span{border:1px solid var(--edge);border-radius:6px;text-align:center;padding:5px 0;
+            font-family:var(--mono);font-size:11px;color:var(--dim)}
+  .beside{flex:1;min-width:190px}
+  .callrow{display:flex;justify-content:space-between;gap:8px;padding:4px 0;border-bottom:1px solid var(--edge)}
+  .mono{font-family:var(--mono);font-size:11px}
+  .pill{font-family:var(--mono);font-size:10px;padding:1px 8px;border-radius:20px;
+        background:color-mix(in srgb,var(--live) 18%,transparent);color:var(--live)}
+  .note{border-left:2px solid var(--warn);padding:4px 0 4px 9px;margin-bottom:4px;font-size:11.5px;color:var(--warn)}
+</style>
+</head>
+<body>
+<pre id="boom" style="display:none;margin:0;padding:14px 20px;background:#5c1f1f;color:#ffd9d9;font:12px/1.5 ui-monospace,monospace;white-space:pre-wrap"></pre>
+<div id="app">
+  <header>
+    <h1>{{ system }} {{ version }} — scenario player</h1>
+    <span class="meta">spec {{ spec }}</span>
+    <span class="meta">{{ scenarioCount }} authored scenario(s)</span>
+  </header>
+
+  <p class="caveat">
+    <b>Declared replay, not an execution.</b> Every transition is read from the model — an outcome
+    names its transition and the states it runs from. Dashed means the model <em>declares</em> it and
+    the scenario asserts nothing about it. No obligation is filled: nothing here decides anything,
+    the scenario says which outcome each command took, and this walks that declaration.
+  </p>
+
+  <main>
+    <section>
+      <h2>Scenarios</h2>
+      <div v-for="s in scenarios" :key="s.name" class="scn" :class="{on:s.name===state.selected}" @click="select(s.name)">
+        <div class="n">{{ s.short }}</div>
+        <div class="p">{{ s.purpose }}</div>
+      </div>
+    </section>
+
+    <section>
+      <h2>Flow</h2>
+      <div class="transport">
+        <button class="go" @click="state.playing ? (state.playing=false) : play()">
+          {{ state.playing ? '❙❙ Pause' : '▶ Play' }}</button>
+        <button @click="step" :disabled="done || state.playing">Step ▸</button>
+        <button @click="back" :disabled="state.cursor<0 || state.playing">◂ Back</button>
+        <button @click="reset" :disabled="state.cursor<0">Reset</button>
+        <span class="pos">{{ state.cursor+1 }} / {{ acts.length }}</span>
+      </div>
+
+      <div class="swim" :style="{gridTemplateColumns:'44px repeat('+lanes.length+',minmax(0,1fr))'}">
+        <div></div>
+        <div v-for="l in lanes" :key="l.key" class="lane-hd" :class="l.kind">{{ l.label }}</div>
+
+        <template v-for="(a,i) in acts" :key="i">
+          <div class="gutter" :class="{now:i===state.cursor}">
+            {{ mark(i) }} {{ i+1 }}
+          </div>
+          <div v-for="l in lanes" :key="l.key" class="cell" :class="'row-'+rowState(i)">
+            <div v-if="l.kind==='actor' && a.actor===l.key" class="card">
+              <div class="cmd">{{ short(a.command) }}</div>
+              <div class="out" v-if="a.outcome">→ {{ a.outcome }}</div>
+              <div class="ev" v-for="e in a.events" :key="e.event">● {{ short(e.event) }}</div>
+              <div class="here" v-if="i===state.cursor">you are here</div>
+            </div>
+            <div v-if="l.kind==='binding'" >
+              <div v-for="c in a.consequences" :key="c.command" class="card declared">
+                <div class="cmd">⇢ {{ short(c.command) }}</div>
+                <div class="why">{{ c.binding }}</div>
+                <div class="why">granted to {{ c.grantedTo.join(', ') || 'nobody' }}</div>
+              </div>
+            </div>
+          </div>
+        </template>
+      </div>
+    </section>
+
+    <section>
+      <div class="tabs">
+        <button :class="{on:state.tab==='state'}" @click="state.tab='state'">State</button>
+        <button :class="{on:state.tab==='views'}" @click="state.tab='views'">Views</button>
+        <button :class="{on:state.tab==='ui'}" @click="state.tab='ui'">UI</button>
+      </div>
+
+      <template v-if="state.tab==='state'">
+        <h2>Instances</h2>
+        <p v-if="!instances.length" class="empty">Nothing exists yet. Press play.</p>
+        <div v-for="inst in instances" :key="inst.instance" class="inst" :class="{declared:inst.declared}">
+          <div class="hd">
+            <span class="nm">{{ inst.instance }}</span>
+            <span class="badge" :class="{term:(lifecycle(inst)?.terminal||[]).includes(inst.state)}">{{ inst.state }}</span>
+          </div>
+          <div class="kv" style="margin:2px 0 5px">{{ inst.entity }}</div>
+          <div v-for="(v,k) in inst.fields" :key="k" class="fld" :class="{hot:changed.has(inst.instance+'.'+k)}">
+            <span style="color:var(--dim)">{{ k }}</span><span>{{ v }}</span>
+          </div>
+          <div class="lc">
+            <template v-for="(st,ix) in (lifecycle(inst)?.states||[])" :key="st">
+              <b v-if="ix">›</b>
+              <i :class="{at:st===inst.state, was:inst.path.length && st!==inst.state}">{{ st }}</i>
+            </template>
+          </div>
+        </div>
+
+        <h3>Events</h3>
+        <p v-if="!state.world.events.length" class="empty">No events yet.</p>
+        <div v-for="(e,i) in state.world.events" :key="i" class="kv">● {{ short(e.event) }}</div>
+        <template v-if="state.world.notes.length">
+          <h3>Refusals the model would have made</h3>
+          <div v-for="(n,i) in state.world.notes" :key="i" class="note">step {{ n.at+1 }}: {{ n.text }}</div>
+        </template>
+      </template>
+
+      <template v-if="state.tab==='views'">
+        <h2>Views — projections, not state</h2>
+        <p v-if="!liveViews.length" class="empty">No view has rows or an unmet parameter yet.</p>
+        <div v-for="v in liveViews" :key="v.name" class="vw">
+          <div class="vh">
+            <span class="vn">{{ v.short }}</span>
+            <span class="cons" :class="{eventual:v.consistency==='eventual'}">{{ v.consistency }}</span>
+          </div>
+          <div class="fil" v-if="v.filterText">filter: {{ v.filterText }}</div>
+          <p v-if="v.unavailable" class="na">unavailable — {{ v.unavailable }}</p>
+          <p v-else-if="v.unevaluated" class="na">filter not evaluated by this player</p>
+          <table v-else-if="v.rows.length"><tbody>
+            <tr><th v-for="f in v.fields" :key="f">{{ f }}</th></tr>
+            <tr v-for="r in v.rows" :key="r.instance" :class="{declared:r.declared}">
+              <td v-for="c in r.cells" :key="c[0]">{{ c[1] }}</td>
+            </tr>
+          </tbody></table>
+          <p v-else class="na">no rows match</p>
+        </div>
+        <p class="footnote">
+          A view is not a window onto the state. It has a filter, so rows appear and vanish as
+          instances move; it takes parameters, so it cannot be read without an argument; and it has a
+          consistency, so an <code>eventual</code> view is allowed to be behind the panel beside this
+          one.
+        </p>
+      </template>
+
+      <template v-if="state.tab==='ui'">
+        <h2>Outer representation</h2>
+        <outer-surface />
+      </template>
+    </section>
+  </main>
+</div>
+<script type="module" src="player.js"></script>
+</body>
+</html>

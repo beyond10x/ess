@@ -437,6 +437,25 @@ enum ConformCommand {
         #[arg(long)]
         out: Option<PathBuf>,
     },
+    /// Render the scenarios as a page somebody can press play on.
+    ///
+    /// Emits a specification-neutral player and one generated `model.json`: the entities and their
+    /// lifecycles, what each command outcome does, what each view selects, who may ask, and what a
+    /// binding reacts to. Serve the directory and open `index.html`.
+    ///
+    /// It replays rather than executes. A scenario declares which outcome each command took and the
+    /// page applies the effect the model attaches to it, so a green walk says the specification is
+    /// coherent — never that an implementation works.
+    Web {
+        #[command(flatten)]
+        input: SpecPath,
+        /// A directory of `ess-scenario/1` documents, or one file.
+        #[arg(long)]
+        scenarios: Option<PathBuf>,
+        /// Where to write the player.
+        #[arg(long)]
+        out: Option<PathBuf>,
+    },
     /// Run a generated or committed suite against a built-in reference implementation.
     Run {
         #[arg(long, default_value = ".")]
@@ -2169,6 +2188,11 @@ fn conform(command: ConformCommand) -> Result<ExitCode> {
             scenarios,
             out,
         } => author_suite(&input, scenarios.as_deref(), out.as_deref()),
+        ConformCommand::Web {
+            input,
+            scenarios,
+            out,
+        } => conform_web(&input, scenarios.as_deref(), out.as_deref()),
         ConformCommand::Run {
             path,
             suite,
@@ -2340,6 +2364,46 @@ fn synthesize_suite(
 /// specification requires; this asks whether what somebody wrote still typechecks against it, which
 /// is the question an author asks after every model change and does not want a hundred generated
 /// scenarios printed at.
+/// Emits the scenario player for a specification and the scenarios an author wrote.
+fn conform_web(input: &SpecPath, scenarios: Option<&Path>, out: Option<&Path>) -> Result<ExitCode> {
+    let Ok((ir, _)) = resolved(&input.path, input.format)? else {
+        return Ok(ExitCode::from(1));
+    };
+    let sources = authored_sources(scenarios)?;
+    let authoring = ess_conformance::authored::compile(&ir, &sources);
+    let complete = authoring.is_complete();
+    let mut suite =
+        ess_conformance::ConformanceSuite::new(ess_conformance::SuiteProvenance::of(&ir));
+    for (id, scenario) in authoring.scenarios {
+        if let Err(id) = suite.insert(id, scenario) {
+            bail!("`{id}` is already in the suite");
+        }
+    }
+
+    // A refusal is printed rather than counted, for the reason `author` prints its own: a number
+    // saying a scenario did not compile tells an author something is unchecked without saying what.
+    for refusal in &authoring.refusals {
+        println!("{refusal}");
+    }
+
+    let artifacts = ess_conformance::web::emit(&ir, &suite);
+    write_artifacts(out, &artifacts)?;
+    println!(
+        "{} scenario(s), {} artifact(s){}",
+        suite.len(),
+        artifacts.len(),
+        match out {
+            Some(out) => format!(", written to {}", out.display()),
+            None => ", nothing written".to_owned(),
+        }
+    );
+    Ok(if complete {
+        ExitCode::SUCCESS
+    } else {
+        ExitCode::from(1)
+    })
+}
+
 fn author_suite(
     input: &SpecPath,
     scenarios: Option<&Path>,
@@ -3101,7 +3165,7 @@ mod tests {
     ///
     /// Written down on purpose. A verb added to the tree and to no area would otherwise be
     /// counted by the enumeration it is missing from and pass every case below.
-    const AREA_LEAVES: usize = 41;
+    const AREA_LEAVES: usize = 42;
 
     /// The order they are offered in is checked where it is rendered, in
     /// `tests/command_surface.rs`: `mut_subcommand` moves what it touches to the end of the list,
