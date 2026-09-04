@@ -1,0 +1,16 @@
+schema: b10x-change/v1
+id: ess/authored-scenarios-0.15.0
+repository: ess
+# `publishedAt` and `source` are filled when the tag exists. Neither is knowable now, and a
+# guessed timestamp or a release URL for a version nobody cut is a fact this file would be
+# asserting on nothing.
+title: A specification carries the scenarios an author wrote, not only the ones it obliges
+summary: >-
+  `ess-scenario/1` is a document a person writes: an arrangement of modelled instances, a timeline
+  of modelled commands, and expectations in the vocabulary a suite already has. It compiles into
+  the same `ess-conformance/2` suite synthesis emits, under an id of its own so the two populations
+  cannot be confused, and twenty-seven refusals hold every name it uses to what the model declares.
+kind: feature
+impact: significant
+journeys: [specify, verify]
+affectedSurfaces: [ess/docs]

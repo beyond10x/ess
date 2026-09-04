@@ -1902,7 +1902,7 @@ fn determined_payload(
 ///
 /// The one payload claim that needs no model change. [`PayloadShape`] argues why the *values* are
 /// not here and what the model would have to gain before they could be.
-fn payload_shape(ir: &EssIr, event: &EventRef) -> PayloadShape {
+pub(crate) fn payload_shape(ir: &EssIr, event: &EventRef) -> PayloadShape {
     let mut shape = PayloadShape::new();
     // Every `EventRef` a suite carries was minted from this IR's own events, so the lookup finds
     // one; a shape that described nothing would be a silently weaker assertion, which is the one
@@ -2533,7 +2533,11 @@ fn dependencies(
 /// Every declared type a reference reaches, through newtypes, structs and unions.
 ///
 /// The set is the visited guard, so a type that refers to itself terminates rather than recursing.
-fn reachable_types(ir: &EssIr, type_ref: &ResolvedTypeRef, found: &mut BTreeSet<DeclaredTypeRef>) {
+pub(crate) fn reachable_types(
+    ir: &EssIr,
+    type_ref: &ResolvedTypeRef,
+    found: &mut BTreeSet<DeclaredTypeRef>,
+) {
     for handle in type_ref.named_leaves() {
         if !found.insert(DeclaredTypeRef::from(handle)) {
             continue;
@@ -3909,6 +3913,11 @@ fn subject_of(id: &ScenarioId) -> EssSemanticRef {
         }
         ScenarioId::ValueInvariant { value, .. } => value.clone().into(),
         ScenarioId::Binding { binding, .. } => binding.clone().into(),
+        // Synthesis mints every id it refuses about and mints no authored one — an authored
+        // scenario is a person's claim, compiled and refused by [`crate::authored`] in a vocabulary
+        // of its own. The arm is here because the match is total, and it answers with the one
+        // construct the id does carry rather than inventing a command the author never named.
+        ScenarioId::Authored { domain, .. } => domain.clone().into(),
     }
 }
 

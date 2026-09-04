@@ -1,5 +1,62 @@
 # Changelog
 
+## [0.15.0] — 2026-09-04
+
+### Added
+
+- **A specification can carry the scenarios an author wrote.** `ess verify conform` had two verbs
+  and neither read a scenario anybody wrote: `synthesize` generates what the specification obliges,
+  and `run` executes a generated or committed suite. What was missing was an authoring surface, and
+  the reason it is needed is a refusal synthesis already prints — *the contract is declared; the
+  algorithm is not*. A router's matching order, a scorer's tie-break and the rule that decides which
+  of two waiting calls is dispatched first are not derivable from any model, and until now the only
+  places to write them down were a bespoke runner in each consuming repository or nowhere.
+
+- **`ess-scenario/1`**, the document. An arrangement of modelled entity instances, an ordered
+  timeline of modelled commands with explicit instants, and expectations in the vocabulary a suite
+  already has — `contains`, `excludes`, `counts`, `ranked`, `at`, `satisfies`, over literals,
+  captured instances and observed event fields. Three decisions in it are worth stating. The
+  timeline's instants must strictly ascend, because a list is ordered by where its entries sit on
+  the page and moving two blocks would otherwise change what the scenario means, silently. Whether a
+  view assertion retries is read off the view's declared consistency and never written by the
+  author, and the ranking a positional claim is relative to is the view's own `order_by:` — a second
+  copy is the copy that goes stale. And a reference is spelled `{$instance: …}`, because a declared
+  struct may perfectly well have a field called `instance` and `$` cannot begin an ESS field name.
+
+- **Twenty-seven refusals**, one per way a scenario can fail to typecheck against the model, each
+  with a stable `ESS-AUTHOR-nnn` code, the file it was read from and what would have to change. A
+  scenario naming a command, actor, outcome, event, error, view, entity, field, enum variant or
+  lifecycle state the specification does not declare is refused when it is compiled rather than at
+  the first run that reaches it — which is the whole value over a bespoke runner, where a scenario
+  naming a field that was renamed last week keeps passing in each consumer independently until
+  something executes it.
+
+- **`ess verify conform author`**, and `--scenarios` on `synthesize` and `run`. An authored scenario
+  compiles into the same `ess-conformance/2` document synthesis emits, over the same closed step
+  vocabulary, and runs on the runners that already exist — the Rust one and the emitted Go one —
+  with no change to `ConformanceTarget`. The committed billing suite now holds thirty scenarios,
+  twenty-nine obligations and one assertion, and the Go conformance test runs all thirty against a
+  hand-written implementation with the fixture untouched.
+
+- **The two populations are told apart by their ids.** `ScenarioId::Authored` renders
+  `<domain>/authored/<name>`, so a suite, a report, a fault matrix and a `go test -run` filter can
+  each tell an obligation the specification derived from an assertion a person made, without being
+  told. A coverage number that counted the second as the first would describe a model that does not
+  exist. The format stays `ess-conformance/2`: the id is a new word in a vocabulary that already
+  grew once, an old Go runner executes an authored scenario correctly because every step in it is
+  one it already knows, and the number moves for what an old reader does *wrong*, not for what it
+  has not seen.
+
+### Changed
+
+- A value naming something a declared enum does not have as a variant is now its own refusal rather
+  than a wrong shape. The repair can be stated exactly — the model declares a closed set — where
+  `expected one of Email, Post, found a string` reads as a type error about a value whose type is
+  right. It is what lets an authored scenario distinguish a misspelt lifecycle state from a misspelt
+  enum variant, and name the entity in the first case.
+
+Releases 0.15.0.
+
 ## [0.14.0] — 2026-09-04
 
 ### Added

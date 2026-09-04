@@ -778,9 +778,11 @@ fn the_committed_suite_unchanged_passes_the_linked_synthesized_system() {
     let suite = committed_suite();
     assert_eq!(
         suite.len(),
-        29,
+        30,
         "the criterion is the whole committed suite; fewer scenarios would prove less than wave \
-         6 claims"
+         6 claims. Twenty-nine are the specification's obligations and the thirtieth is the \
+         authored scenario `examples/billing/scenarios/` carries — a generated implementation has \
+         to answer a person's claim about the order of a view as well as the model's own"
     );
     assert_same_model(&suite);
 
@@ -800,7 +802,7 @@ fn the_committed_suite_unchanged_passes_the_linked_synthesized_system() {
             .next()
             .map_or_else(|| "none".to_owned(), ToString::to_string)
     );
-    assert_eq!(report.scenarios.len(), 29);
+    assert_eq!(report.scenarios.len(), 30);
     assert_eq!(report.status, ConformanceStatus::Passed);
     assert!(report.is_conformant());
     assert_eq!(

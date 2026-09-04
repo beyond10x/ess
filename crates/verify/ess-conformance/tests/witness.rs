@@ -430,11 +430,7 @@ fn a_scalar_of_the_wrong_shape_is_refused_rather_than_coerced() {
     wrong.insert("channel".to_owned(), text("Carrier pigeon"));
 
     let errors = flatten(&ir, place_order(&ir), &wrong).expect_err("three values are wrong");
-    let shapes: Vec<_> = errors
-        .iter()
-        .filter(|error| matches!(error, ShapeError::WrongShape { .. }))
-        .collect();
-    assert_eq!(shapes.len(), 3, "each is reported: {errors}");
+    assert_eq!(errors.len(), 3, "each is reported: {errors}");
     assert!(
         errors.iter().any(|error| matches!(
             error,
@@ -445,8 +441,20 @@ fn a_scalar_of_the_wrong_shape_is_refused_rather_than_coerced() {
     );
     assert!(errors.iter().any(|error| matches!(
         error,
-        ShapeError::WrongShape { at, .. } if at == "channel"
+        ShapeError::WrongShape { at, .. } if at == "express"
     )));
+    // A name a closed set does not have is its own refusal, because it is the one mistake here
+    // whose repair can be stated exactly: the variants the model declares. A `WrongShape` could
+    // only have said "expected one of Email, Post, found a string", which reads as a type error
+    // about a value whose type is right.
+    assert!(
+        errors.iter().any(|error| matches!(
+            error,
+            ShapeError::UndeclaredVariant { at, value, variants, .. }
+                if at == "channel" && value == "Carrier pigeon" && variants == &["Email", "Post"]
+        )),
+        "the variants are named: {errors}"
+    );
 }
 
 // ---------------------------------------------------------------------------------------------

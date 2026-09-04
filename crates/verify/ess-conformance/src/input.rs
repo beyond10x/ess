@@ -67,10 +67,36 @@ pub fn flatten<'ir>(
     command: &'ir ResolvedCommand,
     candidate: &BTreeMap<String, Node>,
 ) -> Result<InputFacts<'ir>, ShapeErrors> {
+    bind(ir, &command.input, candidate, Completeness::Total).map(|facts| InputFacts {
+        ir,
+        command,
+        facts,
+        scales: Scales::default(),
+    })
+}
+
+/// Projects a map of values into facts, guided by the fields some construct declares.
+///
+/// The half of [`flatten`] that is not about a command. A command's input, an event's payload, a
+/// declared error's fields and a view's row are four surfaces the model describes the same way — a
+/// flat list of named, typed members — and the question asked of a supplied value is identical at
+/// each: *is this a value of the type declared there?* One walk answers all four, because a second
+/// one written beside it would be a second opinion about whether `1.5` is an `Integer` and about
+/// which variants `Channel` has.
+///
+/// Refuses everything wrong with the map rather than the first thing, so an author correcting a
+/// scenario sees the whole list.
+pub fn bind(
+    ir: &EssIr,
+    fields: &[ResolvedField],
+    values: &BTreeMap<String, Node>,
+    completeness: Completeness,
+) -> Result<FactStore, ShapeErrors> {
     let mut facts = FactStore::new();
     let mut errors = Vec::new();
+    let candidate = values;
 
-    for field in &command.input {
+    for field in fields {
         let Ok(path) = FactPath::new(&field.name) else {
             errors.push(ShapeError::UnnameableField {
                 field: field.name.clone(),
@@ -88,6 +114,7 @@ pub fn flatten<'ir>(
                 &mut errors,
             ),
             None if field.type_ref.is_optional() => {}
+            None if completeness == Completeness::Partial => {}
             None => errors.push(ShapeError::MissingField {
                 at: String::new(),
                 field: field.name.clone(),
@@ -95,7 +122,7 @@ pub fn flatten<'ir>(
         }
     }
     for supplied in candidate.keys() {
-        if command.input_field(supplied).is_none() {
+        if !fields.iter().any(|field| &field.name == supplied) {
             errors.push(ShapeError::UndeclaredField {
                 at: String::new(),
                 field: supplied.clone(),
@@ -104,15 +131,29 @@ pub fn flatten<'ir>(
     }
 
     if errors.is_empty() {
-        Ok(InputFacts {
-            ir,
-            command,
-            facts,
-            scales: Scales::default(),
-        })
+        Ok(facts)
     } else {
         Err(ShapeErrors(errors))
     }
+}
+
+/// Whether every declared field has to be supplied, or only the ones named.
+///
+/// A command's input is [`Total`](Self::Total): a command is invoked with all of it, and a field
+/// left out is a call that could not be made. A *comparison* is [`Partial`](Self::Partial): an
+/// event's payload, a declared error's fields and a view's row are asserted field by field, because
+/// a specification does not determine every value an implementation may legitimately put in one —
+/// which is the reading [`ScenarioStep::ExpectError`](crate::ScenarioStep::ExpectError) already
+/// states about its own `fields`.
+///
+/// Nothing else moves with it: a value supplied under a name the surface does not declare, and a
+/// value the declared type does not admit, are refused either way.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Completeness {
+    /// Every non-optional field must be supplied.
+    Total,
+    /// Only the fields named are checked, and the rest are not required.
+    Partial,
 }
 
 /// The facts one candidate input projects, and the guards they decide.
@@ -453,7 +494,18 @@ fn project(
                     Some(text) if variants.iter().any(|variant| variant == text) => {
                         facts.set(path.clone(), FactValue::text(text));
                     }
-                    _ => wrong(errors, format!("one of {}", variants.join(", "))),
+                    // A string that is not one of the variants is a different mistake from a
+                    // number where a name was wanted, and only the first can be answered by
+                    // showing the closed set the model declares. A generated candidate never
+                    // reaches it — the witness walk draws from the variants — so this exists for
+                    // the surface where a person types the name: `authored`.
+                    Some(text) => errors.push(ShapeError::UndeclaredVariant {
+                        at: path.to_string(),
+                        declared_by: name.to_string(),
+                        value: text.to_owned(),
+                        variants: variants.clone(),
+                    }),
+                    None => wrong(errors, format!("one of {}", variants.join(", "))),
                 },
                 // Shape only, as for a list: the tag is a text a fact could hold, and binding it is
                 // a decision this gate does not take.
@@ -554,6 +606,21 @@ pub enum ShapeError {
         /// What the candidate carried.
         found: &'static str,
     },
+    /// A value names something the declared enum does not have as a variant.
+    ///
+    /// Separate from [`WrongShape`](Self::WrongShape) because the repair is different and the
+    /// message can be exact: the model declares a closed set, so the answer is the set rather than
+    /// the name of a shape.
+    UndeclaredVariant {
+        /// Where it sits.
+        at: String,
+        /// The declared type the value had to be a variant of.
+        declared_by: String,
+        /// The name supplied.
+        value: String,
+        /// What the model declares, in declaration order.
+        variants: Vec<String>,
+    },
     /// Projection walked deeper than [`MAX_TYPE_DEPTH`], which a type referring to itself is the
     /// only way to do.
     TooDeep {
@@ -588,6 +655,17 @@ impl fmt::Display for ShapeError {
                 expected,
                 found,
             } => write!(f, "{at}: expected {expected}, found {found}"),
+            Self::UndeclaredVariant {
+                at,
+                declared_by,
+                value,
+                variants,
+            } => write!(
+                f,
+                "{}: `{value}` is not a variant of `{declared_by}`; it declares {}",
+                at_or_root(at),
+                variants.join(", ")
+            ),
             Self::TooDeep { at, limit } => {
                 write!(f, "{at}: walked deeper than {limit} types")
             }

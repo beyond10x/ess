@@ -123,6 +123,7 @@
 //! * **A constraint solver, still.** §11 names one as a later extension, and nothing in the fault
 //!   matrix needed it.
 
+pub mod authored;
 pub mod decision;
 pub mod evidence;
 pub mod faulty;
@@ -139,16 +140,18 @@ pub mod witness;
 pub use decision::{when, Decision, Reason, Unevaluable, UnknownCause};
 pub use evidence::{StandaloneConformanceReport, STANDALONE_REPORT_FORMAT};
 pub use faulty::{Caught, Fault, Faulty, Injection, System};
-pub use input::{flatten, resolve_path, InputFacts, ShapeError, ShapeErrors, Target};
+pub use input::{
+    bind, flatten, resolve_path, Completeness, InputFacts, ShapeError, ShapeErrors, Target,
+};
 pub use report::{
     CheckCode, CheckResult, ConformanceReport, ConformanceStatus, Diagnostic, ScenarioResult,
     Status,
 };
 pub use runner::{AdvancingClock, Clock, Ids, Runner, RunnerConfig};
 pub use scenario::{
-    BindingAspect, ConformanceScenario, ConformanceSuite, EssSemanticRef, Holds, InstanceName,
-    LeafShape, PayloadShape, Position, ScenarioId, ScenarioPurpose, ScenarioStep, ScenarioValue,
-    SuiteProvenance, ViewExpectation,
+    AuthoredName, BindingAspect, ConformanceScenario, ConformanceSuite, EssSemanticRef, Holds,
+    InstanceName, LeafShape, PayloadShape, Position, ScenarioId, ScenarioPurpose, ScenarioStep,
+    ScenarioValue, SuiteProvenance, ViewExpectation,
 };
 pub use synthesize::{
     synthesize, BindingGap, InstanceNeed, Refusal, RefusalCause, Synthesis, Unreachable,

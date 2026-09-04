@@ -5,10 +5,17 @@
 //! not a weak suite, it is no suite: `ess conform run` reaches only the Rust targets in this
 //! workspace, and every adopter's implementation is somewhere else.
 //!
-//! So the emitted package is held to a real implementation, twice: once correct, where all 29
+//! So the emitted package is held to a real implementation, twice: once correct, where all 30
 //! scenarios must pass, and once with a single deliberate defect, where the scenarios responsible
 //! for that defect must fail and **no others**. A suite that failed everything would prove nothing
 //! about which check caught what.
+//!
+//! One of the thirty is not synthesized. `examples/billing/scenarios/` carries an authored scenario,
+//! and `ess conform synthesize` compiles it into the same suite — so what this file also shows is
+//! that a scenario a person wrote runs on the emitted runner **unchanged**: no step it uses is new,
+//! no method of `Target` moved, and the fixture beside it was not touched for it. It earns its place
+//! twice over in the matrix below, because it is the only check that catches both of the two defects
+//! a page can have while every value in it is right.
 //!
 //! `fixtures/go-billing/target.go` is that implementation — hand-written, small, and not a
 //! reference. `ESS_BREAK=negative-total` makes its views publish a negative total, which is exactly
@@ -65,6 +72,11 @@ fn module(name: &str) -> PathBuf {
     let emitted = Command::new(env!("CARGO_BIN_EXE_ess"))
         .args(["conform", "synthesize", "--path"])
         .arg(root().join("examples/billing"))
+        // The authored half, named rather than discovered: a specification directory holds `ess/1`
+        // documents and nothing else, so the scenarios a person wrote about this model sit beside
+        // it instead of inside it.
+        .arg("--scenarios")
+        .arg(root().join("examples/billing-scenarios"))
         .args(["--target", "go", "--out"])
         .arg(&directory)
         .output()
@@ -160,7 +172,7 @@ fn the_emitted_package_holds_a_correct_go_implementation_to_the_whole_suite() {
     assert!(passed, "a correct implementation did not pass:\n{printed}");
     assert_eq!(
         scenarios(&printed, "PASS").len(),
-        29,
+        30,
         "every scenario must run, and a suite that skipped them all would also pass:\n{printed}"
     );
 
@@ -169,7 +181,7 @@ fn the_emitted_package_holds_a_correct_go_implementation_to_the_whole_suite() {
     // rather than against a constant.
     let written = report(&directory);
     assert_eq!(written.status, VerificationStatus::Passed);
-    assert_eq!(written.scenarios_total, 29);
+    assert_eq!(written.scenarios_total, 30);
     assert_eq!(written.scenarios_failed, 0);
     assert!(written.failed_scenarios.is_empty());
     assert_eq!(written.spec_digest.as_str(), suite_digest(&directory));
@@ -215,7 +227,7 @@ fn one_deliberate_defect_fails_the_scenarios_responsible_for_it_and_no_others() 
     // The report names the same thirteen, as failures, and calls the run failed.
     let written = report(&directory);
     assert_eq!(written.status, VerificationStatus::Failed);
-    assert_eq!(written.scenarios_total, 29);
+    assert_eq!(written.scenarios_total, 30);
     assert_eq!(written.scenarios_failed, 13);
     let named: Vec<String> = scenarios(&printed, "FAIL")
         .into_iter()
@@ -251,10 +263,15 @@ fn a_view_returned_in_the_wrong_order_fails_exactly_the_scenarios_that_assert_it
             "billing.invoice.Invoice/transition/settle/by/billing.invoice.PayInvoice/settled",
             "billing.invoice.IssueInvoice/outcome/issued",
             "billing.invoice.PayInvoice/outcome/settled",
+            "billing.invoice/authored/outstanding-invoices-rank-latest-first",
         ],
         "exactly the scenarios that assert `OutstandingInvoices`'s declared order, and no others: \
          a reversed page is the right multiset, so every other check in the suite still holds and \
-         a suite that failed more would not be saying which check found it:\n{printed}"
+         a suite that failed more would not be saying which check found it. The last of them is \
+         the authored one, and it is the row that shows what authoring buys: synthesis can say the \
+         rows are in order and will not say which row is first, so the generated checks catch a \
+         reversal only through the pair they arranged, and a person's claim about the first row \
+         catches it directly:\n{printed}"
     );
     let _ = std::fs::remove_dir_all(&directory);
 }
@@ -286,8 +303,11 @@ fn a_view_that_drops_rows_fails_the_scenarios_that_say_how_many_it_holds() {
             "billing.invoice.Invoice/transition/settle/by/billing.invoice.PayInvoice/settled",
             "billing.invoice.IssueInvoice/outcome/issued",
             "billing.invoice.PayInvoice/outcome/settled",
+            "billing.invoice/authored/outstanding-invoices-rank-latest-first",
         ],
-        "exactly the scenarios that arranged more than one row in `OutstandingInvoices`:\n{printed}"
+        "exactly the scenarios that arranged more than one row in `OutstandingInvoices`, the \
+         authored one included: it asserts a first row and a last one, and a page of one row has \
+         no last:\n{printed}"
     );
     let _ = std::fs::remove_dir_all(&directory);
 }

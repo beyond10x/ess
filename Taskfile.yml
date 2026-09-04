@@ -80,7 +80,14 @@ tasks:
         cargo run --quiet --locked --bin ess -- generate schema validate
         crates/edge/ess-cli/tests/fixtures/schema-contract/instances
         --schemas crates/edge/ess-cli/tests/fixtures/schema-contract/registry
-      - cargo run --quiet --locked --bin ess -- verify conform synthesize --path examples/billing
+      - >-
+        cargo run --quiet --locked --bin ess -- verify conform synthesize
+        --path examples/billing
+        --scenarios examples/billing-scenarios
+      - >-
+        cargo run --quiet --locked --bin ess -- verify conform author
+        --path examples/billing
+        --scenarios examples/billing-scenarios
       - >-
         cargo run --quiet --locked --bin ess -- infra infra diagnose
         --path examples/k3d-dev-cluster/observation.json

@@ -414,6 +414,28 @@ enum ConformCommand {
         /// passed.
         #[arg(long)]
         component: Option<String>,
+        /// The `ess-scenario/1` documents to compile beside the generated scenarios.
+        ///
+        /// A directory or one file. Defaults to `scenarios/` beside the specification, so a suite
+        /// holds everything the specification's own directory says — the obligations it derives and
+        /// the checks somebody wrote for what it cannot.
+        #[arg(long)]
+        scenarios: Option<PathBuf>,
+    },
+    /// Compile the scenarios an author wrote, and nothing the specification obliges.
+    ///
+    /// The authoring surface on its own: every command, actor, outcome, event, error, view, entity,
+    /// field, enum variant and lifecycle state a scenario names is resolved against the model, and
+    /// a name it does not declare is refused here rather than at the first run that reaches it.
+    Author {
+        #[command(flatten)]
+        input: SpecPath,
+        /// A directory of `ess-scenario/1` documents, or one file.
+        #[arg(long)]
+        scenarios: Option<PathBuf>,
+        /// Where to write the compiled `ess-conformance/2` suite.
+        #[arg(long)]
+        out: Option<PathBuf>,
     },
     /// Run a generated or committed suite against a built-in reference implementation.
     Run {
@@ -421,6 +443,12 @@ enum ConformCommand {
         path: PathBuf,
         #[arg(long)]
         suite: Option<PathBuf>,
+        /// The `ess-scenario/1` documents to run beside the generated scenarios.
+        ///
+        /// Read only where the suite is synthesized rather than named by `--suite`: a committed
+        /// suite already holds whatever was compiled into it.
+        #[arg(long)]
+        scenarios: Option<PathBuf>,
         #[arg(long, value_enum)]
         target: ReferenceTarget,
         /// Where to write `ess-conformance-report/1`.
@@ -2128,10 +2156,23 @@ fn conform(command: ConformCommand) -> Result<ExitCode> {
             target,
             out,
             component,
-        } => synthesize_suite(&input, target, out.as_deref(), component.as_deref()),
+            scenarios,
+        } => synthesize_suite(
+            &input,
+            target,
+            out.as_deref(),
+            component.as_deref(),
+            scenarios.as_deref(),
+        ),
+        ConformCommand::Author {
+            input,
+            scenarios,
+            out,
+        } => author_suite(&input, scenarios.as_deref(), out.as_deref()),
         ConformCommand::Run {
             path,
             suite,
+            scenarios,
             target,
             report_out,
             format,
@@ -2142,7 +2183,23 @@ fn conform(command: ConformCommand) -> Result<ExitCode> {
                 let Ok((ir, _)) = resolved(&path, format)? else {
                     return Ok(ExitCode::from(1));
                 };
-                ess_conformance::synthesize(&ir).suite
+                let mut suite = ess_conformance::synthesize(&ir).suite;
+                let authoring = ess_conformance::authored::compile(
+                    &ir,
+                    &authored_sources(scenarios.as_deref())?,
+                );
+                for refusal in &authoring.refusals {
+                    eprintln!("{refusal}");
+                }
+                if !authoring.is_complete() {
+                    return Ok(ExitCode::from(1));
+                }
+                for (id, scenario) in authoring.scenarios {
+                    if let Err(id) = suite.insert(id, scenario) {
+                        bail!("`{id}` is already in the suite");
+                    }
+                }
+                suite
             };
             let report = match target {
                 ReferenceTarget::Billing => ess_conformance::Runner::for_suite(&suite)
@@ -2174,11 +2231,12 @@ fn synthesize_suite(
     target: SuiteTarget,
     out: Option<&Path>,
     component: Option<&str>,
+    scenarios: Option<&Path>,
 ) -> Result<ExitCode> {
     let Ok((ir, _)) = resolved(&input.path, input.format)? else {
         return Ok(ExitCode::from(1));
     };
-    let synthesis = match component {
+    let mut synthesis = match component {
         None => ess_conformance::synthesize(&ir),
         Some(name) => match ess_conformance::synthesize::synthesize_for(&ir, name) {
             Ok(synthesis) => synthesis,
@@ -2188,6 +2246,23 @@ fn synthesize_suite(
             }
         },
     };
+    // The authored half, compiled against the same model and filed in the same suite. Refused
+    // rather than merged where a scenario names something the specification does not declare: a
+    // suite carrying a check nobody can resolve is the artifact this whole verb exists to avoid.
+    let authoring = ess_conformance::authored::compile(&ir, &authored_sources(scenarios)?);
+    let authored = authoring.scenarios.len();
+    let complete = authoring.is_complete();
+    for (id, scenario) in authoring.scenarios {
+        if let Err(id) = synthesis.suite.insert(id, scenario) {
+            bail!("`{id}` is already in the suite");
+        }
+    }
+    if !complete {
+        for refusal in &authoring.refusals {
+            eprintln!("{refusal}");
+        }
+        return Ok(ExitCode::from(1));
+    }
     let json = synthesis.suite.to_canonical_json();
 
     let written = match (target, &out) {
@@ -2234,14 +2309,19 @@ fn synthesize_suite(
                 println!("outside: {outside}");
             }
             let written = written.unwrap_or_else(|| "nothing written".to_owned());
+            // Counted apart, because they are not the same claim. A generated scenario is an
+            // obligation the specification derived; an authored one is what a person asserted about
+            // an algorithm the model cannot derive, and it is only as good as the person. One
+            // number covering both would report coverage a specification never promised.
             match component {
                 None => println!(
-                    "{} scenario(s), {} refusal(s), {written}",
+                    "{} scenario(s) ({authored} authored), {} refusal(s), {written}",
                     synthesis.suite.len(),
                     synthesis.refusals.len(),
                 ),
                 Some(name) => println!(
-                    "{} scenario(s) for `{name}`, {} outside it, {} refusal(s), {written}",
+                    "{} scenario(s) for `{name}` ({authored} authored), {} outside it, {} \
+                     refusal(s), {written}",
                     synthesis.suite.len(),
                     synthesis.outside.len(),
                     synthesis.refusals.len(),
@@ -2252,6 +2332,104 @@ fn synthesize_suite(
         Format::Yaml => render(&synthesis.suite, Format::Yaml)?,
     }
     Ok(ExitCode::SUCCESS)
+}
+
+/// `ess conform author`: the authored scenarios alone, compiled against the model.
+///
+/// Separate from `synthesize` because the two answer different questions. `synthesize` asks what the
+/// specification requires; this asks whether what somebody wrote still typechecks against it, which
+/// is the question an author asks after every model change and does not want a hundred generated
+/// scenarios printed at.
+fn author_suite(
+    input: &SpecPath,
+    scenarios: Option<&Path>,
+    out: Option<&Path>,
+) -> Result<ExitCode> {
+    let Ok((ir, _)) = resolved(&input.path, input.format)? else {
+        return Ok(ExitCode::from(1));
+    };
+    let sources = authored_sources(scenarios)?;
+    let authoring = ess_conformance::authored::compile(&ir, &sources);
+    let mut suite =
+        ess_conformance::ConformanceSuite::new(ess_conformance::SuiteProvenance::of(&ir));
+    let complete = authoring.is_complete();
+    for (id, scenario) in authoring.scenarios {
+        if let Err(id) = suite.insert(id, scenario) {
+            bail!("`{id}` is already in the suite");
+        }
+    }
+    let json = suite.to_canonical_json();
+    let written = match out {
+        Some(out) => {
+            fs::write(out, &json).with_context(|| format!("writing {}", out.display()))?;
+            format!("written to {}", out.display())
+        }
+        None => "nothing written".to_owned(),
+    };
+
+    match input.format {
+        // Printed, not counted, for the reason a synthesis refusal is: a number saying a scenario
+        // did not compile tells an author that something is unchecked without telling them what.
+        Format::Text => {
+            for refusal in &authoring.refusals {
+                println!("{refusal}");
+            }
+            println!(
+                "{} authored scenario(s) from {} file(s), {} refusal(s), {written}",
+                suite.len(),
+                sources.len(),
+                authoring.refusals.len(),
+            );
+        }
+        Format::Json => print!("{json}"),
+        Format::Yaml => render(&suite, Format::Yaml)?,
+    }
+    Ok(if complete {
+        ExitCode::SUCCESS
+    } else {
+        ExitCode::from(1)
+    })
+}
+
+/// Every `ess-scenario/1` document a run should compile, in a deterministic order.
+///
+/// `--scenarios` names a directory or one file, and there is no default. That is deliberate rather
+/// than unfinished: `--path` names a **specification**, every walk of one in this workspace collects
+/// `*.yaml` from it, and a document that is not `ess/1` sitting inside would refuse the model
+/// everywhere it is read. So authored scenarios live outside the specification directory and are
+/// named, which also lets one set of them be compiled against two revisions of one model.
+///
+/// Sorted by path, because `read_dir` is not: two runs over one directory have to compile the same
+/// files in the same order, or a duplicate would be refused in one run and not the other.
+fn authored_sources(scenarios: Option<&Path>) -> Result<Vec<ess_conformance::authored::Source>> {
+    let read = |path: &Path| -> Result<ess_conformance::authored::Source> {
+        let text =
+            fs::read_to_string(path).with_context(|| format!("reading {}", path.display()))?;
+        Ok(ess_conformance::authored::Source::new(
+            path.display().to_string(),
+            text,
+        ))
+    };
+    let directory = match scenarios {
+        None => return Ok(Vec::new()),
+        Some(path) if path.is_file() => return Ok(vec![read(path)?]),
+        Some(path) => path.to_path_buf(),
+    };
+    if !directory.is_dir() {
+        bail!("{} is not a directory of scenarios", directory.display());
+    }
+    let mut files: Vec<PathBuf> = fs::read_dir(&directory)
+        .with_context(|| format!("reading {}", directory.display()))?
+        .collect::<std::io::Result<Vec<_>>>()?
+        .into_iter()
+        .map(|entry| entry.path())
+        .filter(|path| {
+            path.extension()
+                .is_some_and(|extension| extension == "yaml" || extension == "yml")
+        })
+        .collect();
+    files.sort();
+    files.iter().map(|path| read(path)).collect()
 }
 
 #[derive(serde::Serialize)]
@@ -2923,7 +3101,7 @@ mod tests {
     ///
     /// Written down on purpose. A verb added to the tree and to no area would otherwise be
     /// counted by the enumeration it is missing from and pass every case below.
-    const AREA_LEAVES: usize = 40;
+    const AREA_LEAVES: usize = 41;
 
     /// The order they are offered in is checked where it is rendered, in
     /// `tests/command_surface.rs`: `mut_subcommand` moves what it touches to the end of the list,

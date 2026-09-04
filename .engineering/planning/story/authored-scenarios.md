@@ -2,9 +2,9 @@
 format: aep.planning-md/1
 id: story:authored-scenarios
 kind: story
-status: draft
+status: implemented
 title: A specification carries the scenarios an author wrote, not only the ones it obliges
-revision: 1
+revision: 4
 ---
 ## What is missing
 

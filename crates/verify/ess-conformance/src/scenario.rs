@@ -548,6 +548,42 @@ pub enum ScenarioId {
         /// Which of its clauses.
         aspect: BindingAspect,
     },
+    /// A check a person wrote: `billing.invoice/authored/two-issued-invoices-rank-latest-first`.
+    ///
+    /// The one id in this type that names no construct the model obliges, and that is exactly what
+    /// it is for. The other six are derived — a specification declares a branch, so a suite owes a
+    /// scenario about it — and an authored scenario is the opposite claim: *this* is what the
+    /// algorithm does, said by somebody, about something the model declares a contract for and no
+    /// algorithm for. A router's matching order is the case it exists for.
+    ///
+    /// # It is a variant rather than a flag on a scenario
+    ///
+    /// Two reasons, and the first is mechanical. [`ConformanceSuite::insert`] refuses a second
+    /// scenario under one id, so an authored check about `CreateInvoice/accepted` written beside the
+    /// generated one would have to displace it or be dropped — and neither is what the author meant.
+    /// A separate id space means the two populations cannot collide, whatever anybody writes.
+    ///
+    /// The second is that the distinction has to survive the document. A suite is read back by a
+    /// runner in another language, and a report keys on the id and nothing else; a boolean beside
+    /// the steps would be invisible in every place a reader actually meets a scenario. Written into
+    /// the name, "the model obliged this" and "a person asserted this" are told apart by anything
+    /// that can read a string — which is what stops a coverage number from quietly counting the
+    /// second as the first.
+    ///
+    /// # Why the domain is part of it
+    ///
+    /// So an authored scenario has a place in the model's namespace rather than a namespace of its
+    /// own: `grep billing.invoice` finds it beside everything else about that context, and the
+    /// domain is the one construct every authored scenario certainly has, whatever else it touches.
+    /// What it *depends* on is not restated here — [`ConformanceScenario::source`] already carries
+    /// every command, event, view and type the scenario reads, and a second answer beside it is the
+    /// one that goes stale.
+    Authored {
+        /// The bounded context the scenario is written about.
+        domain: DomainRef,
+        /// What the author called it.
+        name: AuthoredName,
+    },
 }
 
 impl ScenarioId {
@@ -557,6 +593,7 @@ impl ScenarioId {
     const STATE: &'static str = "state";
     const INVARIANT: &'static str = "invariant";
     const BINDING: &'static str = "binding";
+    const AUTHORED: &'static str = "authored";
 
     /// Reads an id back from its rendered form.
     ///
@@ -615,6 +652,11 @@ impl ScenarioId {
                     field: (*field).to_owned(),
                 })
             }
+            [domain, Self::AUTHORED, authored] => Ok(Self::Authored {
+                domain: DomainRef::new(name(domain)?),
+                name: AuthoredName::new(authored)
+                    .map_err(|_| reject("has a malformed authored scenario name"))?,
+            }),
             [binding, Self::BINDING, aspect] => Ok(Self::Binding {
                 binding: BindingRef::new(
                     BindingName::new(binding)
@@ -632,7 +674,8 @@ impl ScenarioId {
                  `<entity>/transition/<name>/by/<command>/<outcome>`, \
                  `<entity>/state/<state>/refuses/<command>`, \
                  `<entity>/invariant/after/<command>/<outcome>`, \
-                 `<type>/invariant/at/<view>/<field>` or `<binding>/binding/<aspect>`",
+                 `<type>/invariant/at/<view>/<field>`, `<binding>/binding/<aspect>` or \
+                 `<domain>/authored/<name>`",
             )),
         }
     }
@@ -680,6 +723,9 @@ impl fmt::Display for ScenarioId {
             }
             Self::Binding { binding, aspect } => {
                 write!(f, "{binding}/{}/{aspect}", Self::BINDING)
+            }
+            Self::Authored { domain, name } => {
+                write!(f, "{domain}/{}/{name}", Self::AUTHORED)
             }
         }
     }
@@ -1012,6 +1058,83 @@ impl FromStr for InstanceName {
 }
 
 impl<'de> serde::Deserialize<'de> for InstanceName {
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        let raw = String::deserialize(deserializer)?;
+        Self::new(raw).map_err(serde::de::Error::custom)
+    }
+}
+
+/// What an author calls the scenario they wrote.
+///
+/// The last segment of [`ScenarioId::Authored`], and the only part of a suite's identity a person
+/// chooses freely. Lower-kebab, for the reason every other name that reaches a report is: this one
+/// is printed beside a verdict, keyed on in a fault matrix and typed into a `go test -run` filter,
+/// and one spelling in the file is one spelling in all three.
+///
+/// It carries no `/`, which is what keeps [`ScenarioId::parse`] total — a name with one in it would
+/// split into segments the id grammar would read as a different variant.
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, serde::Serialize)]
+#[serde(into = "String")]
+pub struct AuthoredName(String);
+
+impl AuthoredName {
+    /// The pattern published in generated JSON Schema.
+    pub const PATTERN: &'static str = "^[a-z][a-z0-9]*(-[a-z0-9]+)*$";
+
+    /// Parses one.
+    pub fn new(value: impl AsRef<str>) -> Result<Self, ParseError> {
+        let value = value.as_ref();
+        let reject = |reason: &str| {
+            Err(ParseError::identifier(
+                "authored scenario name",
+                value,
+                reason.to_owned(),
+            ))
+        };
+        if value.is_empty() {
+            return reject("must say what the scenario is about");
+        }
+        if !value.starts_with(|character: char| character.is_ascii_lowercase()) {
+            return reject("must start with a lower-case letter; scenario names are lower-kebab");
+        }
+        if !value.chars().all(|character| {
+            character.is_ascii_lowercase() || character.is_ascii_digit() || character == '-'
+        }) {
+            return reject("may hold only lower-case letters, digits and hyphens");
+        }
+        if value.ends_with('-') || value.contains("--") {
+            return reject("has an empty segment");
+        }
+        Ok(Self(value.to_owned()))
+    }
+
+    /// The name as written.
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
+}
+
+impl fmt::Display for AuthoredName {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(&self.0)
+    }
+}
+
+impl From<AuthoredName> for String {
+    fn from(value: AuthoredName) -> Self {
+        value.0
+    }
+}
+
+impl FromStr for AuthoredName {
+    type Err = ParseError;
+
+    fn from_str(value: &str) -> Result<Self, Self::Err> {
+        Self::new(value)
+    }
+}
+
+impl<'de> serde::Deserialize<'de> for AuthoredName {
     fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
         let raw = String::deserialize(deserializer)?;
         Self::new(raw).map_err(serde::de::Error::custom)
@@ -1873,6 +1996,14 @@ mod tests {
                 entity,
                 after: outcome("billing.invoice.CreateInvoice", "accepted"),
             },
+            // The one id that names no obligation. It reads back for the same reason the rest do,
+            // and for one more: it is what tells a report which scenarios the model derived and
+            // which a person asserted, so a reader that could not parse it could not tell them
+            // apart.
+            ScenarioId::Authored {
+                domain: DomainRef::new(QualifiedName::new("billing.invoice").expect("valid")),
+                name: AuthoredName::new("two-issued-invoices-rank-latest-first").expect("valid"),
+            },
         ];
         ids.extend(BindingAspect::ALL.map(|(aspect, _)| ScenarioId::Binding {
             binding: BindingRef::new(BindingName::new("notify-on-invoice-created").expect("valid")),
@@ -1880,7 +2011,7 @@ mod tests {
         }));
         assert_eq!(
             ids.len(),
-            8,
+            9,
             "five id shapes, and every aspect a binding scenario can be filed under"
         );
 
