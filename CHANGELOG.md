@@ -1,5 +1,39 @@
 # Changelog
 
+## [0.18.0] — 2026-09-04
+
+### Added
+
+- **A specification's scenarios can be rendered as a page somebody presses play on.**
+  `ess verify conform web` emits a player: the scenarios on the left, a swimlane in the middle with
+  one lane per actor and one row per act, and the state, the views and an optional device surface on
+  the right. It is emitted for any specification and knows nothing about any of them — the page and
+  the engine are static assets, and the only generated file is `model.json`, the projection the page
+  reads.
+
+  The reason to have it is that a specification nobody has run is a specification nobody has checked,
+  and until now the only way to run one was to hand-write an implementation of it. Two exist —
+  `reference::Billing` and `reference::Oracle` — and they exist so a generated suite has a
+  known-good target, not so that every adopter writes one before seeing anything move.
+
+  It **replays rather than executes**, and says so on the page. A scenario declares which outcome
+  each command took; the player applies the effect the model attaches to that outcome. Every
+  transition it shows is the model's — an outcome names its transition and the states it runs from —
+  so a walk that stays legal says the specification is coherent, never that an implementation works.
+
+  Three things the page keeps apart, because the model does: **state** is the truth now, a **view**
+  is a projection with a filter, parameters and a consistency, and the **UI** is whatever a hand-
+  written `skin.js` beside the emitted files renders. A view that selects nothing shows no rows; one
+  whose parameter nothing has bound says which parameter it wants; an `eventual` one is allowed to be
+  behind the state panel next to it.
+
+  A binding's consequence is drawn in a lane of its own, dashed, because the model declares it and no
+  scenario asserts it. That lane is where a command runs on nobody's grant, which is visible rather
+  than argued about.
+
+  `assets/vue.esm-browser.prod.js` is vendored unmodified with its licence beside it, the way
+  `assets/mermaid.min.js` already is. No `package.json` enters the repository.
+
 ## [0.17.0] — 2026-09-04
 
 ### Added

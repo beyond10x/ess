@@ -135,6 +135,7 @@ pub mod runner;
 pub mod scenario;
 pub mod synthesize;
 pub mod target;
+pub mod web;
 pub mod witness;
 
 pub use decision::{when, Decision, Reason, Unevaluable, UnknownCause};
