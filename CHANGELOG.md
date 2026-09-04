@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.13.1] — 2026-09-04
+
+### Fixed
+
+- Configuration-neutral Helm projections now provide a schema-valid default service account,
+  allowing a freshly generated chart to pass `helm lint` before private environment bindings
+  replace it.
+
 ## [0.13.0] — 2026-09-04
 
 ### Added

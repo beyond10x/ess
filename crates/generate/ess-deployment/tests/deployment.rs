@@ -441,6 +441,7 @@ external_systems:
     assert!(chart.files()["templates/workloads.yaml"].contains("mountPath: \"/var/lib/oracle\""));
     assert!(chart.files()["templates/services.yaml"].contains("kind: Service"));
     assert!(chart.files()["templates/services.yaml"].contains("-api"));
+    assert!(chart.files()["values.yaml"].contains("serviceAccount:\n  name: default\n"));
 }
 
 #[test]
