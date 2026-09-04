@@ -294,32 +294,10 @@ func (t *Target) send(request essconform.CommandRequest) essconform.CommandResul
 
 func (t *Target) QueryView(request essconform.ViewRequest) (essconform.ViewResult, error) {
 	var rows []essconform.Row
-	// Sorted by id, so two runs return the same page. `InvoiceById` declares no order, so any order
-	// satisfies it — this one is for the diagnostics.
-	for _, id := range t.ids() {
-		held := t.invoices[id]
-		if request.View == "billing.invoice.OutstandingInvoices" && held.state != "Issued" {
-			continue
-		}
-		total := held.amount
-		if t.broken == "negative-total" {
-			total = map[string]any{"amount": -1.0, "currency": "EUR"}
-		}
-		// `reminder_count` is projected by `InvoiceById` and read by the entity's
-		// `reminder_count >= 0`. Nothing in this fixture ever sends a reminder, so it is zero —
-		// which the invariant is satisfied by, and which an invariant that compared the *name*
-		// `reminder_count` against zero could not decide at all.
-		row := essconform.Row{"invoice_id": held.id, "total": total, "reminder_count": 0.0}
-		if held.issuedAt != "" {
-			row["issued_at"] = held.issuedAt
-		} else {
-			row["issued_at"] = nil
-		}
-		rows = append(rows, row)
+	for _, id := range t.keys(request.View) {
+		rows = append(rows, t.row(id))
 	}
-	// `order_by: issued_at desc`, which the specification declares and this therefore obeys.
 	if request.View == "billing.invoice.OutstandingInvoices" {
-		byIssuedAtDescending(rows)
 		if t.broken == "one-row" {
 			// A second deliberate defect: a page that stops after the first row. Every row it does
 			// return is right and in the right order, so only a count can see it.
@@ -327,27 +305,102 @@ func (t *Target) QueryView(request essconform.ViewRequest) (essconform.ViewResul
 				rows = rows[:1]
 			}
 		}
-		if t.broken == "reversed-order" {
-			// The deliberate defect: the right rows, in the wrong order. Nothing else about the
-			// answer changes, so the only assertion that can catch it is the declared order — and
-			// it can only catch it where the view holds more than one row.
-			for left, right := 0, len(rows)-1; left < right; left, right = left+1, right-1 {
-				rows[left], rows[right] = rows[right], rows[left]
-			}
-		}
 	}
 	return essconform.ViewResult{Rows: rows}, nil
 }
 
-// byIssuedAtDescending puts the most recently issued invoice first.
-func byIssuedAtDescending(rows []essconform.Row) {
-	at := func(row essconform.Row) string {
-		written, _ := row["issued_at"].(string)
-		return written
+// keys is the listing's index: the ids the view holds, in the order it declares.
+//
+// The index and the rows are separate on purpose, and that separation is what makes an ordered scan
+// meaningful at all. Keeping an ordering is what an index does; building a row is the per-row work a
+// producer does, and the only thing a reader's stop can save. A target whose ordered read is "give
+// me every row" has no index in this sense, which is exactly the finding an early-stop claim exists
+// to report.
+//
+// Sorted by id first, so two runs return the same page. `InvoiceById` declares no order, so any
+// order satisfies it — that one is for the diagnostics.
+func (t *Target) keys(view string) []string {
+	var ids []string
+	for _, id := range t.ids() {
+		held := t.invoices[id]
+		if view == "billing.invoice.OutstandingInvoices" && held.state != "Issued" {
+			continue
+		}
+		ids = append(ids, id)
 	}
-	for index := 1; index < len(rows); index++ {
-		for back := index; back > 0 && at(rows[back]) > at(rows[back-1]); back-- {
-			rows[back], rows[back-1] = rows[back-1], rows[back]
+	// `order_by: issued_at desc`, which the specification declares and this therefore obeys.
+	if view == "billing.invoice.OutstandingInvoices" {
+		byIssuedAtDescendingKey(ids, func(id string) string { return t.invoices[id].issuedAt })
+		if t.broken == "reversed-order" {
+			// The deliberate defect: the right rows, in the wrong order. Nothing else about the
+			// answer changes, so the only assertion that can catch it is the declared order — and
+			// it can only catch it where the view holds more than one row.
+			for left, right := 0, len(ids)-1; left < right; left, right = left+1, right-1 {
+				ids[left], ids[right] = ids[right], ids[left]
+			}
+		}
+	}
+	return ids
+}
+
+// row builds one row of a listing, which is the work an early stop saves.
+func (t *Target) row(id string) essconform.Row {
+	held := t.invoices[id]
+	total := held.amount
+	if t.broken == "negative-total" {
+		total = map[string]any{"amount": -1.0, "currency": "EUR"}
+	}
+	// `reminder_count` is projected by `InvoiceById` and read by the entity's
+	// `reminder_count >= 0`. Nothing in this fixture ever sends a reminder, so it is zero — which
+	// the invariant is satisfied by, and which an invariant that compared the *name*
+	// `reminder_count` against zero could not decide at all.
+	row := essconform.Row{"invoice_id": held.id, "total": total, "reminder_count": 0.0}
+	if held.issuedAt != "" {
+		row["issued_at"] = held.issuedAt
+	} else {
+		row["issued_at"] = nil
+	}
+	return row
+}
+
+// ScanView reads a listing in its declared order, a row at a time, and stops when the reader does.
+//
+// The whole of a target's side of an early-stop claim, and it is eight lines because that is what
+// the claim is: walk the index, build a row, offer it, and stop when the reader says so. What is
+// reported is what this loop did — how many rows it *built*, and whether it left early — never
+// whether that satisfies anything.
+//
+// `ESS_BREAK=never-stops` is the defect the claim exists to catch: a listing that is built in full
+// before the reader sees the first row. Its rows are the right rows in the right order, it honours
+// the reader's stop, and every other check in the suite passes against it.
+func (t *Target) ScanView(request essconform.ScanRequest) (essconform.ScanObservation, error) {
+	keys := t.keys(request.View)
+	if t.broken == "never-stops" {
+		for _, id := range keys {
+			_ = t.row(id)
+		}
+		return essconform.ScanObservation{
+			Produced: len(keys),
+			Halted:   len(keys) >= request.StopAfter,
+		}, nil
+	}
+	produced, halted := 0, false
+	for _, id := range keys {
+		_ = t.row(id)
+		produced++
+		if produced >= request.StopAfter {
+			halted = true
+			break
+		}
+	}
+	return essconform.ScanObservation{Produced: produced, Halted: halted}, nil
+}
+
+// byIssuedAtDescendingKey puts the most recently issued id first.
+func byIssuedAtDescendingKey(ids []string, at func(string) string) {
+	for index := 1; index < len(ids); index++ {
+		for back := index; back > 0 && at(ids[back]) > at(ids[back-1]); back-- {
+			ids[back], ids[back-1] = ids[back-1], ids[back]
 		}
 	}
 }

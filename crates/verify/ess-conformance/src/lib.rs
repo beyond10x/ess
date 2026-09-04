@@ -72,7 +72,7 @@
 //!
 //! # Execution: from a suite to a verdict
 //!
-//! [`target`] is what an implementation offers — eleven methods, each traceable to a construct the
+//! [`target`] is what an implementation offers — twelve methods, each traceable to a construct the
 //! specification declares, and not one of them an assertion. [`runner`] executes a suite against one
 //! and returns a [`report`]. The split is design §27's: the runner owns sequencing, isolation,
 //! bounded waiting, comparison and diagnostics; the target owns invoking the implementation,
@@ -159,8 +159,8 @@ pub use synthesize::{
 pub use target::{
     ConformanceTarget, Deadline, DeclaredErrorValue, ElapsedObservation, ElapsedObservationRequest,
     EventObservationRequest, ExternalOutcomeControl, ImplementationIdentity, InstantMark,
-    InvocationObservationRequest, ObservedEvent, ObservedInvocation, RedeliveryRequest,
-    ScenarioContext, SemanticCommandRequest, SemanticCommandResult, SemanticViewRequest,
-    SemanticViewResult, TargetError, ViewRow,
+    InvocationObservationRequest, ObservedEvent, ObservedInvocation, OrderedScan,
+    OrderedScanRequest, RedeliveryRequest, ScenarioContext, SemanticCommandRequest,
+    SemanticCommandResult, SemanticViewRequest, SemanticViewResult, TargetError, ViewRow,
 };
 pub use witness::WitnessGap;

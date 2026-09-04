@@ -18,13 +18,15 @@
 //! | [`observe_invocations`](ConformanceTarget::observe_invocations) | a binding's `mapping:` (§16) | [`ExpectInvocation`](crate::scenario::ScenarioStep::ExpectInvocation) |
 //! | [`mark_instant`](ConformanceTarget::mark_instant) | none — it names the instant a duration claim is measured from, which the suite may not invent | [`MarkInstant`](crate::scenario::ScenarioStep::MarkInstant) |
 //! | [`observe_elapsed`](ConformanceTarget::observe_elapsed) | a timer, a wrap-up window, a TTL: a length of time the system's own behaviour turns on | [`ExpectNotBefore`](crate::scenario::ScenarioStep::ExpectNotBefore), [`ExpectWithin`](crate::scenario::ScenarioStep::ExpectWithin), [`ExpectQuiet`](crate::scenario::ScenarioStep::ExpectQuiet) |
+//! | [`scan_view`](ConformanceTarget::scan_view) | a view's `order_by:` read one row at a time: whether a consumer can stop the producer | [`ExpectHalt`](crate::scenario::ScenarioStep::ExpectHalt), [`EventuallyHalt`](crate::scenario::ScenarioStep::EventuallyHalt) |
 //!
-//! Seven of those eleven are §7's. The four that are not were added because a step in the closed
+//! Seven of those twelve are §7's. The five that are not were added because a step in the closed
 //! vocabulary could not otherwise be executed at all, and each is argued on its own method. None is
 //! a shortcut past a semantic: `redeliver_event` is the only way to perform the claim the word
-//! `at_least_once` makes, `observe_invocations` is the one §16 explicitly refuses to require, and
-//! the last two are what a duration claim needs from a system that owns its own clock. Those three
-//! are the methods with a default body that answers [`TargetError::Unsupported`], which is what
+//! `at_least_once` makes, `observe_invocations` is the one §16 explicitly refuses to require, the
+//! two before `scan_view` are what a duration claim needs from a system that owns its own clock,
+//! and `scan_view` is the only place an implementation's own iteration is observable at all. Those
+//! four are the methods with a default body that answers [`TargetError::Unsupported`], which is what
 //! keeps a target written against the earlier interface compiling — and what stops it being read as
 //! agreeing with a claim it never checked.
 //!
@@ -40,6 +42,12 @@
 //! *measurement* the target stands behind. Which clock produced the measurement — a wall clock
 //! waited on, a logical clock advanced — is the one thing the interface deliberately does not ask,
 //! because requiring either would exclude half the systems that have a timer worth testing.
+//!
+//! [`scan_view`](ConformanceTarget::scan_view) does not put an assertion here either, and it is the
+//! method most at risk of looking like one. It returns two numbers and a flag about the target's own
+//! read — how many rows the ordered source produced, and whether the consumer's stop is what ended
+//! the iteration — and decides nothing. Whether that is the halt the scenario claimed is compared
+//! against `after` by the runner, which is the only party holding the suite.
 //!
 //! And no assertion. There is no `assert_the_binding_worked`, no `tell_me_whether_escalation_happened`
 //! and no `reset_for_test` beyond the isolation §8 requires. A target reports what it observed; the
@@ -201,6 +209,57 @@ pub trait ConformanceTarget {
                 request.hold, request.instant
             ),
             "this target cannot make time pass or say how much has",
+        ))
+    }
+
+    /// Reads a view in its declared order, one row at a time, and stops when told to.
+    ///
+    /// The twelfth method, and the only one that asks an implementation about its own iteration.
+    /// Every other read in this interface answers *what does this view hold*; this one answers *what
+    /// happened while you were producing it*, which is a different question and the only one that
+    /// can distinguish two systems returning identical rows.
+    ///
+    /// # What the target does, and what it reports
+    ///
+    /// Read `view` in the order it declares, hand rows to a consumer that accepts
+    /// [`stop_after`](OrderedScanRequest::stop_after) of them and then says stop, and report:
+    ///
+    /// * [`produced`](OrderedScan::produced) — how many rows the **ordered source** yielded. Not how
+    ///   many the consumer accepted, which is `stop_after` by construction and would make every
+    ///   target answer the claim correctly. An implementation whose ordered read materialises the
+    ///   whole listing produced all of it, and saying so is the honest answer.
+    /// * [`halted`](OrderedScan::halted) — whether the iteration ended because the consumer said
+    ///   stop, rather than because the source ran out.
+    ///
+    /// Both are observations about the target's own control flow, and neither is a verdict. The
+    /// runner decides, and it requires both: a source holding exactly `stop_after` rows produces
+    /// `stop_after` and ends because it is empty, which is not a halt.
+    ///
+    /// # Why an adopter can supply this
+    ///
+    /// Because the callback shape is the ordinary one every ordered collection already has. A
+    /// visitor that returns "keep going" or "stop" is what `ScanOrdered`, `try_for_each`,
+    /// `ControlFlow` and a `for` loop with a `break` all are; the target counts its own invocations
+    /// and records which branch ended the loop. Nothing here asks for instrumentation, a profiler or
+    /// a hook into a query planner, and a target whose only ordered read is "give me a `Vec`"
+    /// answers `produced = rows.len()` and `halted = false` truthfully — which is a red scenario,
+    /// and it is the finding.
+    ///
+    /// # A target that cannot answer says so
+    ///
+    /// The default body is [`TargetError::Unsupported`], for the same reason
+    /// [`observe_elapsed`](Self::observe_elapsed)'s is. A target written before this method existed
+    /// keeps compiling and keeps meaning what it meant; what it cannot do is stay quiet and be read
+    /// as agreeing. The runner records `unsupported`, and §28 makes an `unsupported` scenario fail
+    /// conformance. A scan nobody stopped is never a scan that halted.
+    fn scan_view(&self, request: OrderedScanRequest) -> Result<OrderedScan, TargetError> {
+        Err(TargetError::unsupported(
+            format!(
+                "reading `{}` one row at a time and stopping after {}",
+                request.view, request.stop_after
+            ),
+            "this target cannot read a view a row at a time, so it cannot say whether a consumer \
+             stopped the producer or merely stopped looking",
         ))
     }
 
@@ -598,6 +657,57 @@ impl SemanticViewResult {
 
 /// One row of a view: a value per projected field name.
 pub type ViewRow = BTreeMap<String, Node>;
+
+// ---- ordered scans -----------------------------------------------------------------------------
+
+/// A request to read a view in its declared order and stop part way through.
+///
+/// # Why the stop is in the request rather than a callback the runner supplies
+///
+/// Because a callback would put the runner inside the target's iteration, and this trait is
+/// synchronous, object-unsafe-free and crosses a process boundary in the emitted Go runner. A number
+/// says the same thing in one direction: *a consumer takes this many and then says stop*. What comes
+/// back is what the target's own loop did with that, which is the only fact worth having.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
+pub struct OrderedScanRequest {
+    /// Which view to read, in the order it declares.
+    pub view: ViewRef,
+    /// The value bound to each parameter the view declares, resolved.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub params: BTreeMap<String, Node>,
+    /// How many rows the consumer accepts before it says stop.
+    ///
+    /// Never zero: a consumer that takes no row never sees one and so never says stop, and the
+    /// authored format refuses to write it (`ESS-AUTHOR-034`).
+    pub stop_after: usize,
+    /// How fresh the read has to be, exactly as [`SemanticViewRequest`] means it.
+    pub consistency: QueryConsistency,
+    /// The scenario this belongs to.
+    pub correlation: CorrelationId,
+    /// When the target may stop waiting for the freshness it was asked for.
+    pub deadline: Deadline,
+}
+
+/// What one ordered read did, as the target that performed it saw it.
+///
+/// Two facts and no verdict, which is §7's rule applied to iteration. The runner compares them with
+/// the claim; nothing here knows what was claimed.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct OrderedScan {
+    /// How many rows the ordered source produced before the read ended.
+    ///
+    /// The source's count, not the consumer's. A target that hands back only what was accepted
+    /// answers [`OrderedScanRequest::stop_after`] whatever it did, which would make every
+    /// implementation halt and the claim mean nothing.
+    pub produced: usize,
+    /// Whether the read ended because the consumer said stop.
+    ///
+    /// `false` when the source ran out first, which is the other way an iteration ends and is not a
+    /// halt. Required beside the count because a source holding exactly `stop_after` rows produces
+    /// `stop_after` either way, and reading that as a halt is the silent pass this step exists to
+    /// rule out.
+    pub halted: bool,
+}
 
 // ---- invocations -----------------------------------------------------------------------------
 

@@ -75,9 +75,9 @@ use crate::scenario::{
 use crate::target::{
     ConformanceTarget, Deadline, ElapsedObservation, ElapsedObservationRequest,
     EventObservationRequest, ExternalOutcomeControl, ImplementationIdentity, InstantMark,
-    InvocationObservationRequest, ObservedEvent, RedeliveryRequest, ScenarioContext,
-    SemanticCommandRequest, SemanticCommandResult, SemanticViewRequest, SemanticViewResult,
-    TargetError, ViewRow,
+    InvocationObservationRequest, ObservedEvent, OrderedScanRequest, RedeliveryRequest,
+    ScenarioContext, SemanticCommandRequest, SemanticCommandResult, SemanticViewRequest,
+    SemanticViewResult, TargetError, ViewRow,
 };
 
 // ---- the clock -------------------------------------------------------------------------------
@@ -432,6 +432,129 @@ impl<C: Clock> Runner<C> {
                 instant,
                 elapsed,
             } => expect_quiet(event, instant, *elapsed, run, target),
+            ScenarioStep::ExpectHalt {
+                view,
+                params,
+                after,
+            } => self.expect_halt(view, params, *after, false, run, target),
+            ScenarioStep::EventuallyHalt {
+                view,
+                params,
+                after,
+            } => self.expect_halt(view, params, *after, true, run, target),
+        }
+    }
+
+    /// Requires that a consumer's stop stopped the producer of an ordered read (§14).
+    ///
+    /// Two conditions and the claim needs both, which is the whole reason this is not a predicate
+    /// over rows. The source must have produced exactly what the consumer took — a target that read
+    /// the whole listing and handed back a prefix produced more — and the read must have ended
+    /// because the consumer said stop, because a source that ran out first ended for its own reason
+    /// and a scan that could not tell those apart would pass against a listing of exactly the right
+    /// length.
+    ///
+    /// `retry` is the `eventual` half, and it retries the *whole bounded read*: a listing that has
+    /// not caught up runs out before the consumer stops it, which is the ordinary lag an eventual
+    /// view is allowed and not a wrong implementation.
+    fn expect_halt<T: ConformanceTarget>(
+        &mut self,
+        view: &ViewRef,
+        params: &BTreeMap<String, ScenarioValue>,
+        after: usize,
+        retry: bool,
+        run: &mut Run,
+        target: &T,
+    ) -> Flow {
+        let Ok(bound) = resolve_params(view, params, run) else {
+            return Flow::Stop;
+        };
+        let about = format!("reading `{view}` stops after {after} row(s) because the reader did");
+        // The same reading `query_view` and `eventually_view` take, for their reasons: an immediate
+        // claim demands the token the last command returned, and an eventual one may not, because
+        // demanding it would make the target block until the projection caught up — which is the
+        // lag the retry is there to observe.
+        let last = run.last_command.as_ref().map(|executed| {
+            (
+                executed.command.clone(),
+                executed.result.consistency.clone(),
+            )
+        });
+        let consistency = match last {
+            _ if retry => QueryConsistency::Current,
+            // Nothing has been written in this scenario, so there is no write to read no older than.
+            None => QueryConsistency::Current,
+            Some((_, Some(token))) => QueryConsistency::at_least(token),
+            // §14, as `expect_view` reads it: the read is not made at all rather than made at
+            // `Current`, which would answer a weaker question and report the answer as this one.
+            Some((command, None)) => {
+                run.record(CheckResult::failed(
+                    about.clone(),
+                    Diagnostic::new(CheckCode::Halt, run.id.clone())
+                        .declared_by(view.clone())
+                        .expected(format!(
+                            "`{command}` names the write `{view}` is then read no older than, \
+                             which is what `read_your_writes` promises (§14)"
+                        ))
+                        .observed(format!(
+                            "`{command}` returned no consistency token, so the ordered read was \
+                             not made"
+                        )),
+                ));
+                return Flow::Continue;
+            }
+        };
+        let deadline = self.deadline();
+        let mut asks = 0_u32;
+        loop {
+            asks += 1;
+            let request = OrderedScanRequest {
+                view: view.clone(),
+                params: bound.clone(),
+                stop_after: after,
+                consistency: consistency.clone(),
+                correlation: run.context.correlation.clone(),
+                deadline,
+            };
+            let scan = match target.scan_view(request) {
+                Ok(scan) => scan,
+                Err(error) => {
+                    run.record(target_failure(
+                        &run.id,
+                        &format!("reading `{view}` one row at a time"),
+                        &error,
+                    ));
+                    return Flow::Stop;
+                }
+            };
+            if scan.halted && scan.produced == after {
+                run.record(CheckResult::passed(CheckCode::Halt, about));
+                return Flow::Continue;
+            }
+            if retry && !deadline.has_passed(self.clock.now()) {
+                continue;
+            }
+            let observed = if scan.halted {
+                format!(
+                    "the reader stopped, and the target produced {} row(s) to hand it {after}",
+                    scan.produced
+                )
+            } else {
+                format!(
+                    "the read ended because the source ran out after {} row(s), not because the \
+                     reader stopped it",
+                    scan.produced
+                )
+            };
+            let mut diagnostic = Diagnostic::new(CheckCode::Halt, run.id.clone())
+                .declared_by(view.clone())
+                .expected(about.clone())
+                .observed(observed);
+            if retry {
+                diagnostic = diagnostic.observed(format!("still so after {asks} reads"));
+            }
+            run.record(CheckResult::failed(about, diagnostic));
+            return Flow::Continue;
         }
     }
 

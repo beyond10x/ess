@@ -1,5 +1,62 @@
 # Changelog
 
+## [0.17.0] — 2026-09-04
+
+### Added
+
+- **An authored scenario can claim that a consumer halted an ordered scan.** The six assertion forms
+  are all predicates over the rows a read returned — `contains`, `excludes`, `counts`, `ranked`,
+  `at`, `satisfies` — and two implementations that return the same rows are indistinguishable under
+  every one of them. "The producer stopped" is exactly the fact that separates them, and until now
+  the format could not say it: a migration of forty-five ACD slotmatcher cases hit the wall twice,
+  refused to write a prefix assertion in its place, and quoted this crate's own documentation back —
+  *a prefix read in silence is still a prefix*. The claim it could not make is `ScanOrdered`
+  returning "stop" after two of three elements, and the implementation it would have hidden is real:
+  one of the two engines has no early-stop iterator at all.
+
+- **`halts_after: <n>`**, the seventh claim key, exclusive with the other six. A reader of the view
+  takes `n` rows, says stop, and the producer stops too. It compiles to a step of its own rather
+  than to a seventh `ViewExpectation`, and that is the whole design: an expectation is decided
+  against the rows a read returned, so a claim filed there would be decided by evidence that cannot
+  see it. It changes the **read** instead.
+
+- **Two steps and one target method.** `expect_halt` and `eventually_halt` join the closed
+  vocabulary, which now has nineteen words; which of the two a scenario gets is read off the view's
+  declared consistency, exactly as it is for every other claim about a view. `ConformanceTarget`
+  gains `scan_view`, with a default body answering `Unsupported`, so a target written against the
+  earlier interface compiles unchanged; the emitted Go runner asks for an optional `OrderedReader`
+  interface for the same reason. A target that cannot read a view a row at a time reports the
+  scenario **unsupported**, which §28 makes a failing run. There is no path on which a scan nobody
+  stopped passes.
+
+- **Two observations, and the claim needs both.** `scan_view` reports how many rows the ordered
+  *source* produced and whether the read ended because the reader said stop — facts about the
+  target's own control flow, never a verdict. The count alone is satisfied by a listing that
+  happened to hold exactly `n` rows and ran out; the flag alone is satisfied by a target that
+  materialised everything and then broke out of a loop over the copy. An adopter can report both
+  without instrumentation, because the callback shape is the ordinary one every ordered collection
+  already has.
+
+- **One refusal**, `ESS-AUTHOR-034`: a halt claimed after no rows at all. A reader that takes none
+  never sees a row and so never says stop, and what an honest source produced before being refused
+  its first row differs between two implementations that are both right. A halt claimed of a view
+  that declares no order is refused by `ESS-AUTHOR-024`, which already says so — one mistake, one
+  repair, one code. The format now numbers thirty-four, and `tests/authored.rs` still holds a case
+  per code and a case asserting the numbering and the documents agree.
+
+### Changed
+
+- **`ess-conformance/4`.** The step vocabulary grew, which is a change to the shape of the persisted
+  document, and that shape is exactly what a suite format versions — the same argument `3` made, on
+  the same reader. An old Rust reader parses a closed tagged enum, so a `4`-shaped suite labelled
+  `3` fails with `unknown variant`, blaming the document for the age of the tool; an old Go runner
+  reports a step it does not know as skipped, which is the right answer reached by accident.
+  `SUPPORTED_SUITE_FORMATS` keeps `1`, `2` and `3`, because a `3` suite means in `4` exactly what it
+  meant in `3`. The committed suites under `suites/generated/` are regenerated at the new number and
+  are otherwise byte-identical.
+
+Releases 0.17.0.
+
 ## [0.16.0] — 2026-09-04
 
 ### Added

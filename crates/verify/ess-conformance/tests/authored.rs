@@ -131,6 +131,18 @@ const RANKED: &str = r"assert:
       fields: {total: {amount: 10, currency: EUR}}
 ";
 
+/// A claim that a reader of the ranked view stopped the producer after two rows.
+const HALTS: &str = r"assert:
+  - view: billing.invoice.OutstandingInvoices
+    halts_after: 2
+";
+
+/// The same claim, made after no rows at all.
+const HALTS_AT_NOTHING: &str = r"assert:
+  - view: billing.invoice.OutstandingInvoices
+    halts_after: 0
+";
+
 /// The creating act with its instant named, and a second act ten seconds later to hang a claim on.
 ///
 /// Ten seconds because every window case below states a length against it, and the compiler holds
@@ -912,7 +924,7 @@ fn every_cause_is_reachable_from_a_document() {
 ///
 /// Written down rather than counted, because the point of the case above is that the numbering and
 /// the documents agree: a count taken from the enum would agree with itself whatever happened.
-const CAUSES: u16 = 33;
+const CAUSES: u16 = 34;
 
 /// One entry per refusal, each the documents that reach it compiled together.
 ///
@@ -1022,5 +1034,219 @@ fn refusable() -> Vec<(&'static str, Vec<String>)> {
         )),
         billing(windowed("        not_before: PT30S\n")),
         billing(windowed("        not_before: PT10S\n        within: PT10S\n")),
+        // 34 a halt after no rows at all
+        billing(format!("{CREATED}{HALTS_AT_NOTHING}")),
     ]
+}
+
+// ---- the early stop ------------------------------------------------------------------------------
+
+/// A model with an ordered listing the specification declares `eventual`.
+///
+/// Neither example carries one: `billing.invoice.OutstandingInvoices` is ordered and
+/// `read_your_writes`, and `billing.invoice.InvoiceById` is `eventual` and unordered. The eventual
+/// half of a halt claim is a real branch of the compiler and this is the smallest model that reaches
+/// it — which is the shape a real one has, because a ranked listing a projection maintains is
+/// exactly the case the feature was built for.
+const RANKED_AND_EVENTUAL: &str = r"
+format: ess/1
+system: shelf
+version: v1
+domain: shelf.orders
+
+types:
+  - name: shelf.orders.OrderId
+    kind: newtype
+    of: Uuid
+
+entities:
+  - name: shelf.orders.Order
+    identity:
+      name: order_id
+      type: shelf.orders.OrderId
+    fields:
+      - name: weight_grams
+        type: Integer
+    lifecycle:
+      initial: Placed
+      states: [Placed, Shipped]
+      terminal: [Shipped]
+      transitions:
+        - name: ship
+          from: [Placed]
+          to: Shipped
+
+events:
+  - name: shelf.orders.OrderPlaced
+    fields:
+      - name: order_id
+        type: shelf.orders.OrderId
+
+  - name: shelf.orders.OrderShipped
+    fields:
+      - name: order_id
+        type: shelf.orders.OrderId
+
+commands:
+  - name: shelf.orders.PlaceOrder
+    input:
+      - name: weight_grams
+        type: Integer
+    outcomes:
+      - name: accepted
+        creates: shelf.orders.Order
+        instance: order_id
+        emits:
+          - shelf.orders.OrderPlaced
+
+  - name: shelf.orders.ShipOrder
+    input:
+      - name: order_id
+        type: shelf.orders.OrderId
+    outcomes:
+      - name: shipped
+        moves: shelf.orders.Order.ship
+        instance: order_id
+        emits:
+          - shelf.orders.OrderShipped
+
+views:
+  - name: shelf.orders.HeaviestFirst
+    source: shelf.orders.Order
+    consistency: eventual
+    order_by:
+      - weight_grams desc
+    fields:
+      - name: order_id
+        type: shelf.orders.OrderId
+      - name: weight_grams
+        type: Integer
+";
+
+/// A specification written inline, for a corner neither example carries.
+fn fixture(text: &str) -> EssIr {
+    let raw = RawSpecFile::parse(text).expect("the fixture is well formed");
+    let specification = Specification::assemble([(SpecSource::new("fixture.yaml"), raw)])
+        .unwrap_or_else(|errors| panic!("the fixture validates:\n{errors}"));
+    compile(&specification, &SourceMap::new())
+        .unwrap_or_else(|diagnostics| panic!("the fixture resolves:\n{diagnostics}"))
+}
+
+#[test]
+fn a_halt_compiles_to_a_step_of_its_own_and_not_to_a_claim_about_rows() {
+    // The whole design decision, asserted rather than argued. `halts_after` does not become a
+    // seventh `ViewExpectation`, because an expectation is decided against the rows a read returned
+    // and two targets returning identical rows differ on whether the producer stopped. It becomes a
+    // step that carries the view and its parameters, so the *read* is the bounded one.
+    let ir = example("billing");
+    let authoring = authoring(&ir, &document(&format!("{CREATED}{HALTS}")));
+    assert!(authoring.is_complete(), "{:?}", authoring.refusals);
+
+    let scenario = authoring.scenarios.values().next().expect("one scenario");
+    let halts: Vec<&ScenarioStep> = scenario
+        .steps
+        .iter()
+        .filter(|step| {
+            matches!(
+                step,
+                ScenarioStep::ExpectHalt { .. } | ScenarioStep::EventuallyHalt { .. }
+            )
+        })
+        .collect();
+    assert!(
+        matches!(
+            halts.as_slice(),
+            [ScenarioStep::ExpectHalt { view, after, .. }]
+                if view.to_string() == "billing.invoice.OutstandingInvoices" && *after == 2
+        ),
+        "one halt step, naming the view it reads and how many rows the reader takes: {halts:?}"
+    );
+    assert!(
+        !scenario.steps.iter().any(|step| matches!(
+            step,
+            ScenarioStep::QueryView { .. } | ScenarioStep::ExpectView { .. }
+        )),
+        "and no query beside it: the halt is the read, so a second one would be a second read the \
+         claim is not about"
+    );
+}
+
+#[test]
+fn a_halt_of_a_listing_the_model_calls_eventual_retries_because_the_model_said_so() {
+    // The style is never written by an author, exactly as it is never written for `at:` or
+    // `contains:`. A listing a projection maintains may not hold the rows yet, and a scan of one
+    // that has not caught up runs out before the reader stops it — which is lag, not a wrong
+    // implementation.
+    let ir = fixture(RANKED_AND_EVENTUAL);
+    let text = "type: ess-scenario/1\n\
+                domain: shelf.orders\n\
+                scenario: a-reader-stops-the-listing\n\
+                summary: A reader of the ranked listing takes two rows and stops it.\n\
+                timeline:\n  \
+                - at: 2026-01-05T09:00:00Z\n    \
+                command: shelf.orders.PlaceOrder\n    \
+                input:\n      weight_grams: 900\n    \
+                outcome: accepted\n\
+                assert:\n  \
+                - view: shelf.orders.HeaviestFirst\n    \
+                halts_after: 2\n";
+    let authoring = authoring(&ir, text);
+    assert!(authoring.is_complete(), "{:?}", authoring.refusals);
+
+    let scenario = authoring.scenarios.values().next().expect("one scenario");
+    assert!(
+        scenario.steps.iter().any(|step| matches!(
+            step,
+            ScenarioStep::EventuallyHalt { after, .. } if *after == 2
+        )),
+        "the eventual listing gets the retrying step: {:?}",
+        scenario.steps
+    );
+}
+
+#[test]
+fn a_halt_after_no_rows_at_all_is_refused_rather_than_compiled() {
+    // `ESS-AUTHOR-034`. A reader that takes no row never sees one and so never says stop, and what
+    // an honest source produced before being refused its first row is a different number in two
+    // implementations that are both right. There is nothing here for a target to be wrong about.
+    let ir = example("billing");
+    let refused = refusal(&ir, &document(&format!("{CREATED}{HALTS_AT_NOTHING}")));
+    assert_eq!(refused.code().to_string(), "ESS-AUTHOR-034");
+    assert!(matches!(
+        refused.cause,
+        Cause::HaltsAtNothing { ref view } if view.to_string() == "billing.invoice.OutstandingInvoices"
+    ));
+}
+
+#[test]
+fn a_halt_claimed_of_a_listing_with_no_declared_order_is_refused_by_the_code_that_already_says_so()
+{
+    // `ESS-AUTHOR-024`, in a new place rather than a new code: it is the same mistake with the same
+    // repair. A halt after two rows of an unordered listing says the reader stopped and says nothing
+    // about what it read, because the two rows are different rows on every read — and what these
+    // scenarios claim is that a consumer of an *ordered* listing did not have to see the rest of it.
+    let ir = example("billing");
+    let body =
+        format!("{CREATED}assert:\n  - view: billing.invoice.InvoiceById\n    halts_after: 2\n");
+    assert!(matches!(
+        cause(&ir, &document(&body)),
+        Cause::Unordered { view } if view.to_string() == "billing.invoice.InvoiceById"
+    ));
+}
+
+#[test]
+fn a_halt_stated_beside_another_claim_is_two_assertions_filed_as_one() {
+    // The seventh key is exclusive with the other six, and the refusal names it — a message that
+    // listed six of the seven would send an author looking for a key the format has.
+    let ir = example("billing");
+    let body = format!(
+        "{CREATED}assert:\n  - view: billing.invoice.OutstandingInvoices\n    \
+         halts_after: 2\n    counts: {{at_least: 1}}\n"
+    );
+    match cause(&ir, &document(&body)) {
+        Cause::AmbiguousClaim { stated, .. } => {
+            assert_eq!(stated, vec!["counts", "halts_after"]);
+        }
+        other => panic!("two claims in one assertion is refused as two: {other}"),
+    }
 }

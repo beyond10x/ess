@@ -186,7 +186,7 @@ fn the_emitted_package_holds_a_correct_go_implementation_to_the_whole_suite() {
     assert!(written.failed_scenarios.is_empty());
     assert_eq!(written.spec_digest.as_str(), suite_digest(&directory));
     assert_eq!(written.specification, "billing/v3");
-    assert_eq!(written.suite_version, "ess-conformance/3");
+    assert_eq!(written.suite_version, "ess-conformance/4");
     let _ = std::fs::remove_dir_all(&directory);
 }
 
@@ -595,6 +595,95 @@ fn the_emitted_runner_holds_a_window_and_fails_a_target_whose_clock_never_moves(
         "exactly the scenario that claims a length of time, and no others: the target is right \
          about every value, every branch and every view, and wrong only about how long it \
          took:\n{printed}"
+    );
+    let _ = std::fs::remove_dir_all(&directory);
+}
+
+/// Three issued invoices, and the claim that a reader of the ranked listing stops it after two.
+///
+/// Built here rather than authored in `examples/billing-scenarios/`, for the reason the window above
+/// gives: the committed suite is wave 4's artifact and a scenario added to it would change what an
+/// unrelated test is pinning. Three rather than two, because the claim is only worth making where
+/// there is a third row a producer could have gone on to build.
+fn stopped_scan() -> Vec<ScenarioStep> {
+    let mut steps = create_and_issue("first", 1.0);
+    steps.extend(create_and_issue("second", 2.0));
+    steps.extend(create_and_issue("third", 3.0));
+    steps.push(ScenarioStep::ExpectHalt {
+        view: "billing.invoice.OutstandingInvoices"
+            .parse()
+            .expect("a view"),
+        params: BTreeMap::new(),
+        after: 2,
+    });
+    steps
+}
+
+/// The emitted suite with one early-stop scenario added, written back where the package embeds it.
+fn with_a_stop(directory: &Path) {
+    let embedded = directory.join("essconform/suite.json");
+    let mut suite = ConformanceSuite::from_json(
+        &std::fs::read_to_string(&embedded).expect("the emitted suite is readable"),
+    )
+    .expect("the emitted suite parses");
+    suite
+        .insert(
+            hand_written("stopped-after-two-rows"),
+            ConformanceScenario::new(
+                "a reader of the ranked listing takes two rows and the producer stops too"
+                    .parse()
+                    .expect("a purpose"),
+                stopped_scan(),
+                [],
+            ),
+        )
+        .expect("the id is free");
+    std::fs::write(&embedded, suite.to_canonical_json()).expect("the suite writes");
+}
+
+#[test]
+fn the_emitted_runner_stops_a_scan_and_fails_a_target_that_builds_the_whole_listing() {
+    // The acceptance for the Go half of the early stop, and both directions of it. Green shows the
+    // step is executed rather than skipped — a step the emitted runner did not implement would be
+    // *skipped*, which is the shape of green this whole feature exists to rule out. Red shows the
+    // claim bites: `never-stops` builds every row before the reader sees the first one, and it is
+    // wrong in no other way. Its rows are the right rows, in the right order, in the right number,
+    // so nothing else in the suite can see it — which is the entire argument for the step existing.
+    let Some(go) = go() else {
+        eprintln!("no Go toolchain on this machine; the Go emitter is unchecked here");
+        return;
+    };
+    let stopped = "billing.invoice.IssueInvoice/outcome/stopped-after-two-rows";
+
+    let directory = module("scan");
+    with_a_stop(&directory);
+    let (passed, printed) = go_test(&go, &directory, None);
+    assert!(
+        passed,
+        "a target that reads a listing a row at a time did not pass the early stop:\n{printed}"
+    );
+    assert!(
+        scenarios(&printed, "PASS").contains(&stopped.to_owned()),
+        "the early-stop scenario has to PASS, not SKIP: a skipped one is what an emitted runner \
+         that does not implement the step would produce, and it would look like nothing was \
+         wrong:\n{printed}"
+    );
+    let _ = std::fs::remove_dir_all(&directory);
+
+    let directory = module("nostop");
+    with_a_stop(&directory);
+    let (passed, printed) = go_test(&go, &directory, Some("never-stops"));
+    assert!(
+        !passed,
+        "a listing built in full before anybody read a row passed a suite that claims a reader \
+         stopped it:\n{printed}"
+    );
+    assert_eq!(
+        scenarios(&printed, "FAIL"),
+        vec![stopped.to_owned()],
+        "exactly the scenario that claims a reader stopped a scan, and no others: the target is \
+         right about every value, every branch, every order and every count, and wrong only about \
+         how much it built to answer:\n{printed}"
     );
     let _ = std::fs::remove_dir_all(&directory);
 }

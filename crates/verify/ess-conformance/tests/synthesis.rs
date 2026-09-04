@@ -138,6 +138,8 @@ fn shape(synthesis: &Synthesis, id: &str) -> Vec<&'static str> {
             ScenarioStep::ExpectNotBefore { .. } => "not-before",
             ScenarioStep::ExpectWithin { .. } => "within",
             ScenarioStep::ExpectQuiet { .. } => "quiet",
+            ScenarioStep::ExpectHalt { .. } => "halt",
+            ScenarioStep::EventuallyHalt { .. } => "halt, eventually",
         })
         .collect()
 }

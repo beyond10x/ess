@@ -1095,7 +1095,11 @@ fn needs_of(
             }
             ScenarioStep::QueryView { view, .. }
             | ScenarioStep::ExpectView { view, .. }
-            | ScenarioStep::EventuallyView { view, .. } => {
+            | ScenarioStep::EventuallyView { view, .. }
+            // A halt is a *read* of a view, so it needs the view the same way a query does — the
+            // component that does not publish it cannot be asked to stop producing it either.
+            | ScenarioStep::ExpectHalt { view, .. }
+            | ScenarioStep::EventuallyHalt { view, .. } => {
                 if !owns_view(ir, component, view.name()) {
                     needs.insert(view.clone().into());
                 }

@@ -111,6 +111,44 @@
 //! business and this format has no opinion; what it may not do is stay quiet and be read as
 //! agreeing. A target that implements neither method answers `unsupported`, the scenario is reported
 //! `unsupported`, and §28 makes the run fail. There is no path on which an unheld window passes.
+//! # An early stop
+//!
+//! An assertion may say that a reader of an ordered view took a number of rows, said stop, and that
+//! the producer stopped too.
+//!
+//! ```yaml
+//! assert:
+//!   - view: acd.matching.SlotOrder
+//!     params: {group_id: {$instance: group}}
+//!     halts_after: 2
+//! ```
+//!
+//! **It is the seventh claim key and not a seventh row shape, and that is the whole design.** The
+//! other six — `contains`, `excludes`, `counts`, `ranked`, `at`, `satisfies` — are predicates over
+//! the rows a read returned, and this one cannot be. Two implementations that return identical rows
+//! differ on it: one reads the whole listing, hands back the first two and discards the rest; one
+//! pulls two and stops. Nothing in the result tells them apart, which is exactly why this format
+//! could not state the claim before and why a prefix assertion written in its place would be green
+//! for a reason unrelated to what it says.
+//!
+//! So it changes the **read** rather than the expectation. It compiles to
+//! [`ExpectHalt`](ScenarioStep::ExpectHalt) — or [`EventuallyHalt`](ScenarioStep::EventuallyHalt),
+//! read off the view's declared consistency as every other claim about a view is — and that step
+//! carries the view and its parameters, because the read and the claim are one act.
+//!
+//! **What a target is asked, and what happens when it cannot answer.** Read the view in its declared
+//! order, hand rows to a reader that takes `halts_after` of them and then says stop, and report two
+//! facts about the read: how many rows the ordered *source* produced, and whether the reader's stop
+//! is what ended it. Both are needed. The count alone is satisfied by a listing that happened to
+//! hold exactly that many rows and ran out; the flag alone is satisfied by a target that
+//! materialised everything and then broke out of a loop over the copy. A target that cannot read a
+//! view a row at a time answers `unsupported`, the scenario is reported `unsupported`, and §28 makes
+//! the run fail. There is no path on which a scan nobody stopped passes.
+//!
+//! **`halts_after: 0` is refused.** A reader that takes no row never sees one and therefore never
+//! says stop, and what an honest source produces before being refused its first row differs between
+//! two implementations that are both right.
+//!
 //! # Three decisions the format makes, and why
 //!
 //! **The timeline carries an explicit instant, and it has to ascend.** A list is ordered by where
@@ -151,10 +189,10 @@
 //!   and stops there. Nothing here says what time it is, and a scenario's meaning does not change
 //!   with the machine that runs it: an [`Elapsed`] is a length the specification's own timers wait,
 //!   which reads the same everywhere, and it is measured by the only party that has a clock.
-//! * **A producer that halted.** No bound here says an ordered scan *stopped*, only that nothing was
-//!   published for a stated length of time — which is a claim about a window, not about a stream
-//!   having ended. The two look alike and are not: a prefix read in silence is still a prefix. That
-//!   is a different feature.
+//! * **A count of rows a target read on its own account.** [`halts_after`](Assertion::halts_after)
+//!   below says a reader *stopped a producer*, which is a claim about an implementation's own
+//!   iteration; nothing here asks how many rows a target read for its own reasons, because no
+//!   specification construct obliges a number.
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt;
@@ -290,8 +328,8 @@ pub struct Act {
 
 /// One claim about the time between a marked instant and the act that carries it.
 ///
-/// Exactly one of the three bounds, for the reason [`Assertion`] states about its six: two would be
-/// two claims filed as one, and none would be a claim that cannot fail.
+/// Exactly one of the three bounds, for the reason [`Assertion`] states about its seven: two would
+/// be two claims filed as one, and none would be a claim that cannot fail.
 #[derive(Debug, Clone, PartialEq, Eq, serde::Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Window {
@@ -404,7 +442,7 @@ pub struct Capture {
 
 /// One claim about one view.
 ///
-/// Exactly one of the six expectation keys, because two would be two assertions filed as one and
+/// Exactly one of the seven expectation keys, because two would be two assertions filed as one and
 /// none would be an assertion that cannot fail.
 #[derive(Debug, Clone, PartialEq, serde::Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -432,6 +470,12 @@ pub struct Assertion {
     /// Every row satisfies this predicate, and there is at least one.
     #[serde(default)]
     pub satisfies: Option<Predicate>,
+    /// A reader of this view takes this many rows, says stop, and the producer stops too.
+    ///
+    /// The one claim here that is not about the rows. See the module documentation for why it
+    /// could not be filed beside the other six and had to change the read instead.
+    #[serde(default)]
+    pub halts_after: Option<usize>,
 }
 
 /// How many rows a view may hold.
@@ -987,6 +1031,11 @@ pub enum Cause {
         /// The bounds it states.
         stated: Vec<&'static str>,
     },
+    /// An early stop is claimed after no rows at all.
+    HaltsAtNothing {
+        /// Which view.
+        view: ViewRef,
+    },
 }
 
 impl Cause {
@@ -1034,13 +1083,14 @@ impl Cause {
                 Self::QuietAboutNothing { .. } => 31,
                 Self::WindowContradictsTimeline { .. } => 32,
                 Self::AmbiguousWindow { .. } => 33,
+                Self::HaltsAtNothing { .. } => 34,
             },
         )
     }
 
     /// What would have to change for the scenario to compile.
     ///
-    /// One arm per cause, and long because there are thirty-three of them — the same argument
+    /// One arm per cause, and long because there are thirty-four of them — the same argument
     /// [`Display`](fmt::Display) makes below. A reader comparing two repairs reads them side by
     /// side or not at all, and splitting the list would put half of it somewhere else.
     #[allow(clippy::too_many_lines)]
@@ -1118,8 +1168,8 @@ impl Cause {
                  unordered view names a different row on every read"
             }
             Self::AmbiguousClaim { .. } => {
-                "state exactly one of `contains`, `excludes`, `counts`, `ranked`, `at` or \
-                 `satisfies` per assertion"
+                "state exactly one of `contains`, `excludes`, `counts`, `ranked`, `at`, \
+                 `satisfies` or `halts_after` per assertion"
             }
             Self::UnreadablePredicate { .. } => {
                 "read only fields the view projects, or project the field the predicate reads"
@@ -1152,12 +1202,17 @@ impl Cause {
                 "state exactly one of `not_before`, `within` or `quiet` per window, and write a \
                  second window for a second claim"
             }
+            Self::HaltsAtNothing { .. } => {
+                "say how many rows the reader takes before it stops; a reader that takes none never \
+                 sees a row and so never says stop, and what a source produced before being refused \
+                 its first row is a different answer in two implementations that are both right"
+            }
         }
     }
 }
 
 impl fmt::Display for Cause {
-    /// One arm per cause, and long because there are thirty-three of them. Splitting it would put
+    /// One arm per cause, and long because there are thirty-four of them. Splitting it would put
     /// half the wording somewhere a reader comparing two refusals has to go and find.
     #[allow(clippy::too_many_lines)]
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -1346,6 +1401,10 @@ impl fmt::Display for Cause {
                     )
                 }
             }
+            Self::HaltsAtNothing { view } => write!(
+                f,
+                "the read of `{view}` is claimed to stop after no rows at all"
+            ),
         }
     }
 }
@@ -1859,6 +1918,10 @@ impl Compiler<'_> {
             &Surface::Params(view.clone()),
             Completeness::Total,
         );
+        if let Some(after) = assertion.halts_after {
+            self.halt(&view, bound, after, &order_by, style);
+            return;
+        }
         let Some(expectation) = self.expectation(assertion, &view, &fields, &order_by) else {
             return;
         };
@@ -1877,6 +1940,57 @@ impl Compiler<'_> {
                 expectation,
             }),
         }
+    }
+
+    /// An early stop: the reader takes `after` rows, says stop, and the producer stops too.
+    ///
+    /// # Why this is not a seventh [`ViewExpectation`]
+    ///
+    /// Because the other six are decided against the rows a read returned, and this one cannot be.
+    /// Two implementations that return the same rows differ on it — one pulls three, hands two on
+    /// and throws the third away; one pulls two and stops — so a claim filed where the rows are the
+    /// evidence is a claim that passes for a reason unrelated to itself. It changes the *read*
+    /// instead, which is why it compiles to a step carrying the view and its parameters rather than
+    /// to an expectation about a query some earlier step made.
+    ///
+    /// # Why the view has to declare an order
+    ///
+    /// `ESS-AUTHOR-024`, in a new place and for its own reason. A halt after two rows of an
+    /// unordered listing says the reader stopped and says nothing about *what it read*, because the
+    /// two rows are different rows on every read. The claim these scenarios exist to make is that a
+    /// consumer of an ordered listing did not have to see the rest of it.
+    fn halt(
+        &mut self,
+        view: &ViewRef,
+        params: BTreeMap<String, ScenarioValue>,
+        after: usize,
+        order_by: &[Ranking],
+        style: AssertionStyle,
+    ) {
+        if after == 0 {
+            self.refuse(Cause::HaltsAtNothing { view: view.clone() });
+            return;
+        }
+        if order_by.is_empty() {
+            self.refuse(Cause::Unordered { view: view.clone() });
+            return;
+        }
+        // The style is the model's, exactly as it is for every other claim about a view: a listing
+        // the specification calls `eventual` may not hold the rows yet, and a scan of one that has
+        // not caught up runs out before the reader stops it, which is lag rather than a wrong
+        // implementation.
+        self.steps.push(match style {
+            AssertionStyle::Expect => ScenarioStep::ExpectHalt {
+                view: view.clone(),
+                params,
+                after,
+            },
+            AssertionStyle::Eventually => ScenarioStep::EventuallyHalt {
+                view: view.clone(),
+                params,
+                after,
+            },
+        });
     }
 
     /// The one claim an assertion states, in the suite's own vocabulary.
@@ -2178,6 +2292,9 @@ impl Assertion {
         }
         if self.satisfies.is_some() {
             stated.push("satisfies");
+        }
+        if self.halts_after.is_some() {
+            stated.push("halts_after");
         }
         stated
     }

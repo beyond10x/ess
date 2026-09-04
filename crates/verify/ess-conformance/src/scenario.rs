@@ -302,10 +302,10 @@ impl SuiteProvenance {
 
 /// Suite format major versions this build implements.
 ///
-/// All three, because a `1` suite means in `3` exactly what it meant in `1` — the vocabulary grew
-/// twice and nothing in it changed meaning. A reader that refused an older number would refuse a
-/// suite it understands perfectly.
-pub const SUPPORTED_SUITE_FORMATS: &[u32] = &[1, 2, 3];
+/// All four, because a `1` suite means in `4` exactly what it meant in `1` — the vocabulary grew
+/// three times and nothing in it changed meaning. A reader that refused an older number would
+/// refuse a suite it understands perfectly.
+pub const SUPPORTED_SUITE_FORMATS: &[u32] = &[1, 2, 3, 4];
 
 /// The version of the *document shape* a suite is written in — `ess-conformance/1`.
 ///
@@ -352,7 +352,15 @@ impl SuiteFormat {
     /// document for the age of the tool. And a duration claim is the one construct where being
     /// ignored is indistinguishable from being satisfied — nothing about an unheld window is
     /// visible in a passing run — so the envelope that carries one says so in its first line.
-    pub const CURRENT: Self = Self(Version::V3);
+    ///
+    /// `4` is the step vocabulary gaining [`ExpectHalt`](ScenarioStep::ExpectHalt) and
+    /// [`EventuallyHalt`](ScenarioStep::EventuallyHalt), and the argument is `3`'s exactly. The
+    /// closed tagged enum is still what makes the number necessary: a `4` suite labelled `3` fails
+    /// to deserialise with `unknown variant`, which blames the document for the age of the tool. And
+    /// a halt is the second construct after a window where being ignored and being satisfied look
+    /// the same from outside — the rows a materialising target returns are the rows a halting one
+    /// returns — so the envelope that carries one says so in its first line too.
+    pub const CURRENT: Self = Self(Version::V4);
 
     /// How a suite format is written.
     pub const PREFIX: &'static str = "ess-conformance/";
@@ -1553,13 +1561,13 @@ impl fmt::Display for Holds {
 ///
 /// # The vocabulary is closed
 ///
-/// Seventeen steps, and a suite may contain nothing else. That is the point of a scenario IR: a
+/// Nineteen steps, and a suite may contain nothing else. That is the point of a scenario IR: a
 /// check a runner can perform but this vocabulary cannot express is a semantic the specification
 /// does not have, and adding a step here is a decision about what an ESS *means* — not a convenience
 /// for one runner. When synthesis cannot express what a construct requires, §18's rule applies:
 /// refuse, and say the model is incomplete. Do not reach for an implementation-specific assertion.
 ///
-/// Ten of them are the ones design §21 lists. Seven are not, each added when something could not be
+/// Ten of them are the ones design §21 lists. Nine are not, each added when something could not be
 /// said without it, and each argued on the variant itself:
 ///
 /// | step | what could not be said without it | §|
@@ -1571,6 +1579,23 @@ impl fmt::Display for Holds {
 /// | [`ExpectNotBefore`](Self::ExpectNotBefore) | that a consequence does **not** arrive early | §37 |
 /// | [`ExpectWithin`](Self::ExpectWithin) | that one arrived in time rather than merely arriving | §37 |
 /// | [`ExpectQuiet`](Self::ExpectQuiet) | that nothing happened for a stated length of time | §37 |
+/// | [`ExpectHalt`](Self::ExpectHalt) | that a consumer **stopped** an ordered read | §14 |
+/// | [`EventuallyHalt`](Self::EventuallyHalt) | the same, of a view the model declares `eventual` | §14 |
+///
+/// # A halt is not a predicate over rows, and that is why it is a step
+///
+/// The natural place to file "the scan stopped after two" is beside `at:` and `counts:`, as a
+/// seventh [`ViewExpectation`]. It cannot go there, and the reason is the whole feature: a
+/// `ViewExpectation` is decided against the rows a read returned, and two targets that return the
+/// same rows differ on whether the producer halted. One reads three rows, hands two on and throws
+/// the third away; one pulls two and stops. Their `SemanticViewResult` is identical. A claim filed
+/// where its evaluation input cannot see it is a claim that passes for a reason unrelated to
+/// itself, which is exactly the "prefix read in silence" this vocabulary refused to write until now.
+///
+/// So the halt changes the **read** rather than the expectation: the runner asks for a bounded
+/// ordered read through [`scan_view`](crate::target::ConformanceTarget::scan_view), and the target
+/// reports how many rows its ordered source produced and whether the consumer's stop is what ended
+/// the read. Both are facts about the target's own control flow, never a verdict.
 ///
 /// # Time is claimed here and owned by the target
 ///
@@ -1895,6 +1920,61 @@ pub enum ScenarioStep {
         instant: InstantName,
         /// How long the window stays open.
         elapsed: Elapsed,
+    },
+    /// Require that an ordered read of this view **stopped** when its consumer said stop.
+    ///
+    /// The early stop, and the claim about an implementation's own control flow that no predicate
+    /// over rows can make. `at:` says which row is first, `counts:` bounds how many there are,
+    /// `ranked:` says they are in the declared order — and a target that reads every row and hands
+    /// back the first two satisfies all three exactly as a target that pulled two and stopped does.
+    /// What separates them is that one kept pulling, and there was no way to write that down.
+    ///
+    /// The runner asks the target to read the view in its declared order, take `after` rows, and
+    /// then say stop. Two things have to hold of the answer and neither is sufficient alone:
+    ///
+    /// * the ordered source **produced** exactly `after` rows — a target that materialised the
+    ///   whole listing and then stopped a loop over the copy produced all of them, and this is what
+    ///   catches it;
+    /// * and the read ended **because the consumer said stop** — a source holding exactly `after`
+    ///   rows produces `after` and ends because it ran out, which is not a halt and must not be
+    ///   read as one.
+    ///
+    /// It carries its own `params` for the reason [`EventuallyView`](Self::EventuallyView) does:
+    /// the read and the claim are one act. A separate query step could not express it, because the
+    /// observation belongs to the bounded read and not to the rows it returned.
+    ExpectHalt {
+        /// Which view is read.
+        view: ViewRef,
+        /// The value bound to each parameter the view declares. See [`Self::QueryView`].
+        #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+        params: BTreeMap<String, ScenarioValue>,
+        /// How many rows the consumer takes before it says stop.
+        ///
+        /// Never zero. A consumer that takes no row never sees one and so never says stop, and what
+        /// an honest source produces before being refused its first row differs between two
+        /// implementations that are both right. `ESS-AUTHOR-034` refuses it in an authored file.
+        after: usize,
+    },
+    /// The same claim, asked again until it holds or the deadline expires (§14).
+    ///
+    /// What [`EventuallyView`](Self::EventuallyView) is to [`ExpectView`](Self::ExpectView), and
+    /// for the same reason rather than a new one: a view the model declares `eventual` may not hold
+    /// the rows yet, and a scan of a listing that has not caught up runs out before the consumer
+    /// stops it. Each attempt is a fresh bounded read, and the claim is about the one that answered.
+    ///
+    /// Which of the two a scenario gets is read off
+    /// [`ResolvedView::assertion_style`](ess_compiler::ir::ResolvedView::assertion_style) and never
+    /// written by an author, exactly as it is for every other claim about a view. A single step that
+    /// always retried would make a `read_your_writes` listing that lags pass, which is the defect
+    /// the two styles exist to keep apart.
+    EventuallyHalt {
+        /// Which view is read.
+        view: ViewRef,
+        /// The value bound to each parameter the view declares. See [`Self::QueryView`].
+        #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+        params: BTreeMap<String, ScenarioValue>,
+        /// How many rows the consumer takes before it says stop.
+        after: usize,
     },
 }
 
@@ -2437,18 +2517,22 @@ mod tests {
 
     #[test]
     fn a_suite_format_from_a_later_build_is_refused_rather_than_guessed() {
-        assert_eq!(SuiteFormat::CURRENT.to_string(), "ess-conformance/3");
+        assert_eq!(SuiteFormat::CURRENT.to_string(), "ess-conformance/4");
         assert!(SuiteFormat::CURRENT.is_supported());
 
         // The older formats are still read. A `1` suite means in `3` exactly what it meant in `1`:
         // the vocabulary grew twice and no word in it changed meaning, so refusing the number would
         // refuse a document this build understands completely.
-        for earlier in ["ess-conformance/1", "ess-conformance/2"] {
+        for earlier in [
+            "ess-conformance/1",
+            "ess-conformance/2",
+            "ess-conformance/3",
+        ] {
             let earlier = SuiteFormat::parse(earlier).expect("well formed");
             assert!(earlier.is_supported());
         }
 
-        let later = SuiteFormat::parse("ess-conformance/4").expect("well formed");
+        let later = SuiteFormat::parse("ess-conformance/5").expect("well formed");
         assert!(
             !later.is_supported(),
             "a later format may mean something different by the same words"

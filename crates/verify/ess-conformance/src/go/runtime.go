@@ -241,6 +241,63 @@ type Clock interface {
 	ObserveElapsed(request ElapsedRequest) (ElapsedObservation, error)
 }
 
+// OrderedReader is what a target offers so that a scenario can claim a consumer stopped a scan.
+//
+// Optional, and separate from Target for the reason Clock is: plenty of implementations read a view
+// by materialising it, and folding this into Target would break every target that already compiles.
+// A target that can read a listing a row at a time implements this; one that cannot is *skipped* on
+// the scenarios that need it. Never passed: a scan nobody stopped is not a scan that halted.
+//
+//	func (t *target) ScanView(request ScanRequest) (ScanObservation, error) {
+//	    produced, halted := 0, false
+//	    t.listing(request.View).ScanOrdered(func(row Row) bool {
+//	        produced++
+//	        if produced >= request.StopAfter {
+//	            halted = true
+//	            return false
+//	        }
+//	        return true
+//	    })
+//	    return ScanObservation{Produced: produced, Halted: halted}, nil
+//	}
+//
+// Produced is the *source's* count and not the reader's. A target that reports how many rows it
+// handed on answers StopAfter whatever it did, which makes every implementation halt and the claim
+// mean nothing. A target whose only ordered read returns a slice answers len(slice) and false, which
+// is a red scenario and is the finding.
+type OrderedReader interface {
+	// ScanView reads a view in its declared order, hands rows to a reader that takes StopAfter of
+	// them and then says stop, and reports what the iteration did.
+	//
+	// It reports an observation and never a verdict: whether that is the halt the scenario claimed
+	// is the runner's decision, made against the suite.
+	ScanView(request ScanRequest) (ScanObservation, error)
+}
+
+// ScanRequest asks for a bounded ordered read of one view.
+type ScanRequest struct {
+	// View is the view to read, in the order it declares.
+	View string
+	// Params is what the caller supplies for a view that declares `params:`, resolved.
+	Params map[string]Node
+	// StopAfter is how many rows the reader takes before it says stop. Never zero.
+	StopAfter int
+	// AtLeast is the consistency token a read_your_writes read demands, empty when there is none.
+	AtLeast     string
+	Correlation string
+	Deadline    Deadline
+}
+
+// ScanObservation is what one ordered read did, as the target that performed it saw it.
+type ScanObservation struct {
+	// Produced is how many rows the ordered source yielded before the read ended.
+	Produced int
+	// Halted says whether the read ended because the reader said stop, rather than because the
+	// source ran out. Both facts are needed: a source holding exactly StopAfter rows produces
+	// StopAfter either way.
+	Halted bool
+}
+
 // InstantMark names the instant a scenario has reached.
 type InstantMark struct {
 	Instant     string
@@ -377,6 +434,11 @@ type Step struct {
 	Instant string `json:"instant,omitempty"`
 	// Elapsed is a length of time in whole seconds.
 	Elapsed int `json:"elapsed,omitempty"`
+	// After is how many rows a reader takes from an ordered view before it says stop.
+	//
+	// Never zero in a suite this runner will see: the authored format refuses a halt claimed after
+	// no rows at all, because a reader that takes none never sees one and so never says stop.
+	After int `json:"after,omitempty"`
 }
 
 // Held is what one declared payload field must hold.
@@ -687,6 +749,10 @@ func (r *run) step(index int, step Step) bool {
 		return r.expectElapsed(index, step, true)
 	case "expect_quiet":
 		return r.expectQuiet(index, step)
+	case "expect_halt":
+		return r.expectHalt(index, step, false)
+	case "eventually_halt":
+		return r.expectHalt(index, step, true)
 	default:
 		// A step this build does not know is a suite written by a newer generator. Reporting it as
 		// a failure would blame the implementation for the tool's age.
@@ -1203,6 +1269,75 @@ func (r *run) expectQuiet(index int, step Step) bool {
 		)
 	}
 	return true
+}
+
+// expectHalt requires that a reader's stop stopped the producer of an ordered read.
+//
+// Two conditions and the claim needs both. The source must have produced exactly what the reader
+// took — a target that read the whole listing and handed back a prefix produced more — and the read
+// must have ended because the reader said stop, because a source that ran out first ended for its
+// own reason and a listing of exactly the right length would otherwise be read as a halt.
+func (r *run) expectHalt(index int, step Step, retry bool) bool {
+	reader, ok := r.target.(OrderedReader)
+	if !ok {
+		r.skip(
+			"step %d claims a reader stopped an ordered scan, and this target implements no "+
+				"OrderedReader, so the claim cannot be checked. It is reported unanswered rather "+
+				"than satisfied.",
+			index,
+		)
+		return false
+	}
+	params, ok := r.resolveAll(index, step.Params)
+	if !ok {
+		return false
+	}
+	// `Current` for the eventual half, exactly as expectView reads it: demanding the token would
+	// make the target block until the projection caught up, which is the lag the retry observes.
+	atLeast := r.consistency
+	attempts := 1
+	if retry {
+		atLeast = ""
+		attempts = r.harness.Deadline().Attempts
+	}
+	var last string
+	for attempt := 0; attempt < attempts; attempt++ {
+		observed, err := reader.ScanView(ScanRequest{
+			View:        step.View,
+			Params:      params,
+			StopAfter:   step.After,
+			AtLeast:     atLeast,
+			Correlation: r.correlation,
+			Deadline:    Deadline{Attempts: attempts - attempt},
+		})
+		if errors.Is(err, ErrUnsupported) {
+			r.skip("step %d: the target cannot read `%s` a row at a time", index, step.View)
+			return false
+		}
+		if err != nil {
+			return r.fail(index, "reading `%s` a row at a time: %v", step.View, err)
+		}
+		if observed.Halted && observed.Produced == step.After {
+			return true
+		}
+		if observed.Halted {
+			last = fmt.Sprintf(
+				"the reader stopped, and the target produced %d row(s) to hand it %d",
+				observed.Produced, step.After,
+			)
+		} else {
+			last = fmt.Sprintf(
+				"the read ended because the source ran out after %d row(s), not because the "+
+					"reader stopped it",
+				observed.Produced,
+			)
+		}
+	}
+	return r.fail(
+		index,
+		"reading `%s` must stop after %d row(s) because the reader did: %s",
+		step.View, step.After, last,
+	)
 }
 
 // fail records one failed assertion and stops the scenario.
