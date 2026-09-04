@@ -95,7 +95,7 @@ checksum = "f2032f911046de80f0a198e0901378627c33f59ea0ac00e363d481118bd70a53"
 
 [[package]]
 name = "billing-realization"
-version = "0.11.1"
+version = "0.12.0"
 dependencies = [
  "billing-system",
  "billing-types",
@@ -290,7 +290,7 @@ checksum = "877a4ace8713b0bcf2a4e7eec82529c029f1d0619886d18145fea96c3ffe5c0f"
 
 [[package]]
 name = "ess-cli"
-version = "0.11.1"
+version = "0.12.0"
 dependencies = [
  "anyhow",
  "clap",
@@ -320,7 +320,7 @@ dependencies = [
 
 [[package]]
 name = "ess-compiler"
-version = "0.11.1"
+version = "0.12.0"
 dependencies = [
  "ess-domain",
  "ess-primitives",
@@ -333,7 +333,7 @@ dependencies = [
 
 [[package]]
 name = "ess-composition"
-version = "0.11.1"
+version = "0.12.0"
 dependencies = [
  "ess-compiler",
  "ess-domain",
@@ -344,7 +344,7 @@ dependencies = [
 
 [[package]]
 name = "ess-conformance"
-version = "0.11.1"
+version = "0.12.0"
 dependencies = [
  "ess-compiler",
  "ess-domain",
@@ -356,7 +356,7 @@ dependencies = [
 
 [[package]]
 name = "ess-deployment"
-version = "0.11.1"
+version = "0.12.0"
 dependencies = [
  "ess-compiler",
  "ess-domain",
@@ -371,7 +371,7 @@ dependencies = [
 
 [[package]]
 name = "ess-diff"
-version = "0.11.1"
+version = "0.12.0"
 dependencies = [
  "ess-compiler",
  "ess-conformance",
@@ -384,7 +384,7 @@ dependencies = [
 
 [[package]]
 name = "ess-domain"
-version = "0.11.1"
+version = "0.12.0"
 dependencies = [
  "ess-primitives",
  "schemars",
@@ -396,7 +396,7 @@ dependencies = [
 
 [[package]]
 name = "ess-gen"
-version = "0.11.1"
+version = "0.12.0"
 dependencies = [
  "ess-compiler",
  "ess-domain",
@@ -411,7 +411,7 @@ dependencies = [
 
 [[package]]
 name = "ess-kubernetes"
-version = "0.11.1"
+version = "0.12.0"
 dependencies = [
  "clap",
  "serde",
@@ -421,7 +421,7 @@ dependencies = [
 
 [[package]]
 name = "ess-openapi"
-version = "0.11.1"
+version = "0.12.0"
 dependencies = [
  "serde",
  "serde_json",
@@ -430,7 +430,7 @@ dependencies = [
 
 [[package]]
 name = "ess-primitives"
-version = "0.11.1"
+version = "0.12.0"
 dependencies = [
  "schemars",
  "serde",
@@ -441,7 +441,7 @@ dependencies = [
 
 [[package]]
 name = "ess-realization"
-version = "0.11.1"
+version = "0.12.0"
 dependencies = [
  "ess-compiler",
  "ess-domain",
@@ -454,7 +454,7 @@ dependencies = [
 
 [[package]]
 name = "ess-synth"
-version = "0.11.1"
+version = "0.12.0"
 dependencies = [
  "ess-compiler",
  "ess-domain",
@@ -465,7 +465,7 @@ dependencies = [
 
 [[package]]
 name = "ess-xtask"
-version = "0.11.1"
+version = "0.12.0"
 dependencies = [
  "anyhow",
  "clap",
@@ -515,7 +515,7 @@ dependencies = [
 
 [[package]]
 name = "gatepass-realization"
-version = "0.11.1"
+version = "0.12.0"
 dependencies = [
  "gatepass-server",
  "gatepass-system",
@@ -597,7 +597,7 @@ dependencies = [
 
 [[package]]
 name = "infra-analyze"
-version = "0.11.1"
+version = "0.12.0"
 dependencies = [
  "infra-compiler",
  "infra-domain",
@@ -607,7 +607,7 @@ dependencies = [
 
 [[package]]
 name = "infra-compiler"
-version = "0.11.1"
+version = "0.12.0"
 dependencies = [
  "infra-domain",
  "serde",
@@ -617,7 +617,7 @@ dependencies = [
 
 [[package]]
 name = "infra-domain"
-version = "0.11.1"
+version = "0.12.0"
 dependencies = [
  "serde",
  "serde_json",
@@ -626,7 +626,7 @@ dependencies = [
 
 [[package]]
 name = "infra-project"
-version = "0.11.1"
+version = "0.12.0"
 dependencies = [
  "infra-analyze",
  "infra-compiler",
@@ -638,7 +638,7 @@ dependencies = [
 
 [[package]]
 name = "infra-spec"
-version = "0.11.1"
+version = "0.12.0"
 dependencies = [
  "ess-primitives",
  "infra-analyze",
@@ -1082,7 +1082,7 @@ checksum = "9774ba4a74de5f7b1c1451ed6cd5285a32eddb5cccb8cc655a4e50009e06477f"
 
 [[package]]
 name = "schema-contract"
-version = "0.11.1"
+version = "0.12.0"
 dependencies = [
  "jsonschema",
  "serde_json",
