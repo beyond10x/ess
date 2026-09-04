@@ -15,6 +15,18 @@ inputs:
     description: Repository-owned verification command run before publication.
     required: false
     default: task check
+  rust-toolchain:
+    description: Exact Rust toolchain used for ESS and the repository-owned verification command.
+    required: false
+    default: "1.85.0"
+  node-version:
+    description: Exact Node major to provision for the verification command; empty disables Node setup.
+    required: false
+    default: ""
+  pnpm-version:
+    description: Exact pnpm version to provision with Node; empty disables pnpm setup.
+    required: false
+    default: ""
   component-path:
     description: Repository-relative ess-component/1 path.
     required: false
@@ -62,8 +74,25 @@ runs:
   steps:
     - uses: dtolnay/rust-toolchain@4360b52568e2003a75bf9bc1d59f33a8e3fc893c
       with:
-        toolchain: "1.85.0"
+        toolchain: ${{ inputs.rust-toolchain }}
         components: rustfmt
+    - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38
+      if: inputs.node-version != ''
+      with:
+        node-version: ${{ inputs.node-version }}
+    - name: Install exact pnpm release
+      if: inputs.pnpm-version != ''
+      shell: bash
+      env:
+        PNPM_VERSION: ${{ inputs.pnpm-version }}
+      run: |
+        if [[ -z "${{ inputs.node-version }}" ]]; then
+          echo 'pnpm-version requires node-version' >&2
+          exit 1
+        fi
+        corepack enable
+        corepack prepare "pnpm@$PNPM_VERSION" --activate
+        pnpm --version
     - uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f
     - uses: oras-project/setup-oras@22ce207df3b08e061f537244349aac6ae1d214f6
     - uses: sigstore/cosign-installer@398d4b0eeef1380460a10c8013a76f728fb906ac

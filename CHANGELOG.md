@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.13.5] — 2026-09-04
+
+### Added
+
+- The reusable component-release action accepts an exact Rust toolchain and optional exact Node
+  and pnpm toolchains for repository-owned checks. Components with generated browser surfaces can
+  now use the same ESS release path without preinstalled runner tools or a bespoke release job.
+
 ## [0.13.4] — 2026-09-04
 
 ### Fixed
