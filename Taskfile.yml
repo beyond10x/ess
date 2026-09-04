@@ -89,6 +89,18 @@ tasks:
     cmds:
       - cargo xtask release verify
 
+  action-check:
+    cmds:
+      - bash -n .github/actions/release-component/release.sh
+      - "grep -q '^name: Release ESS component$' .github/actions/release-component/action.yml"
+      - "grep -q 'build-image:' .github/actions/release-component/action.yml"
+      - "grep -q 'generate release bundle' .github/actions/release-component/release.sh"
+      - "grep -q 'helm push .*2>&1' .github/actions/release-component/release.sh"
+      - >-
+        test "$(printf 'Pushed: example.invalid/charts/service:1.2.3\nDigest: sha256:%064d\n' 0 |
+        grep -Eo 'sha256:[0-9a-f]{64}' | tail -1)" =
+        "sha256:0000000000000000000000000000000000000000000000000000000000000000"
+
   release-status:
     desc: Report whether every pushed version tag has a GitHub Release behind it.
     # Deliberately outside `check`: this one asks the remote and GitHub, and the gate is offline.
@@ -131,3 +143,4 @@ tasks:
       - task: example-check
       - task: projection-check
       - task: release-check
+      - task: action-check

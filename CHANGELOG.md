@@ -1,5 +1,20 @@
 # Changelog
 
+## [0.13.3] — 2026-09-04
+
+### Fixed
+
+- Helm projections now materialize every typed runtime secret slot as a credential-free
+  `{name, key}` default and describe that closed shape in the values schema. A newly projected
+  chart therefore renders and lints before an environment supplies its Secret object name.
+
+### Added
+
+- The ESS-owned `release-component` action lets any component repository run its own gate, build or
+  adopt an exact runtime image, package and sign its chart, publish SBOM/provenance/signature/
+  conformance evidence, verify release manifests, and publish the canonical OCI component bundle.
+  It has no Service SDK manifest or registry-coordinate assumptions.
+
 ## [0.13.2] — 2026-09-04
 
 ### Fixed

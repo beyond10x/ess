@@ -474,6 +474,42 @@ impl HelmProjection {
     }
 }
 
+fn helm_secret_slots(realization: &RuntimeIr) -> BTreeMap<Identifier, String> {
+    let mut slots = BTreeMap::new();
+    for container in realization.containers().values() {
+        for slot in &container.secrets {
+            slots
+                .entry(slot.name.clone())
+                .or_insert_with(|| slot.key.clone());
+        }
+    }
+    slots
+}
+
+fn helm_secret_schema(
+    slots: &BTreeMap<Identifier, String>,
+) -> (serde_json::Map<String, serde_json::Value>, Vec<String>) {
+    let properties = slots
+        .keys()
+        .map(|name| {
+            (
+                name.to_string(),
+                serde_json::json!({
+                    "type": "object",
+                    "additionalProperties": false,
+                    "required": ["name", "key"],
+                    "properties": {
+                        "name": {"type": "string"},
+                        "key": {"type": "string", "minLength": 1}
+                    }
+                }),
+            )
+        })
+        .collect();
+    let required = slots.keys().map(ToString::to_string).collect();
+    (properties, required)
+}
+
 /// Project one component-owned, configuration-neutral Helm chart.
 pub fn project_helm(
     realization: &RuntimeIr,
@@ -496,7 +532,17 @@ pub fn project_helm(
         )
         .unwrap();
     }
-    values.push_str("config: {}\nsecrets: {}\nendpoints: {}\nworkloads:\n");
+    let secret_slots = helm_secret_slots(realization);
+    values.push_str("config: {}\n");
+    if secret_slots.is_empty() {
+        values.push_str("secrets: {}\n");
+    } else {
+        values.push_str("secrets:\n");
+        for (name, key) in &secret_slots {
+            writeln!(&mut values, "  {name}:\n    name: \"\"\n    key: {key:?}").unwrap();
+        }
+    }
+    values.push_str("endpoints: {}\nworkloads:\n");
     for workload in realization.workloads().values() {
         writeln!(
             &mut values,
@@ -523,6 +569,7 @@ pub fn project_helm(
         }
     }
 
+    let (secret_properties, required_secrets) = helm_secret_schema(&secret_slots);
     let schema = serde_json::json!({
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "type": "object",
@@ -532,7 +579,12 @@ pub fn project_helm(
             "serviceAccount": {"type": "object", "additionalProperties": false, "required": ["name"], "properties": {"name": {"type": "string", "minLength": 1}}},
             "images": {"type": "object"},
             "config": {"type": "object", "additionalProperties": {"type": "string"}},
-            "secrets": {"type": "object"},
+            "secrets": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": required_secrets,
+                "properties": secret_properties
+            },
             "endpoints": {"type": "object", "additionalProperties": {"type": "string", "format": "uri"}},
             "workloads": {"type": "object"}
         }

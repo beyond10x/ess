@@ -459,6 +459,29 @@ external_systems:
 }
 
 #[test]
+fn helm_defaults_materialize_typed_secret_slots_without_secret_bytes() {
+    let semantic = semantic();
+    let runtime = runtime(&semantic, &build());
+    let chart = project_helm(
+        &runtime,
+        &"oracle".parse().unwrap(),
+        &"1.0.0".parse().unwrap(),
+    );
+    assert!(chart.files()["values.yaml"]
+        .contains("secrets:\n  database-password:\n    name: \"\"\n    key: \"password\"\n"));
+    let schema: serde_json::Value =
+        serde_json::from_str(&chart.files()["values.schema.json"]).unwrap();
+    assert_eq!(
+        schema["properties"]["secrets"]["required"],
+        serde_json::json!(["database-password"])
+    );
+    assert_eq!(
+        schema["properties"]["secrets"]["properties"]["database-password"]["required"],
+        serde_json::json!(["name", "key"])
+    );
+}
+
+#[test]
 fn component_release_bundle_is_canonical_and_revalidates_after_transport() {
     let semantic = semantic();
     let build = build();
