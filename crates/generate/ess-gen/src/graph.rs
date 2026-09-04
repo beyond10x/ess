@@ -37,7 +37,7 @@
 //! delivery guarantee and the failure policy on a binding's edge, which the page states in prose
 //! beside its diagram instead. Neither is allowed to differ in *which nodes exist, which edges
 //! exist, or which group holds which node* — those come from the value, and
-//! `crates/protocol-cli/tests/graph.rs` compares the two published renderings to keep it that way.
+//! AEP's `aep-cli` graph tests compare the two published renderings to keep it that way.
 //!
 //! # Determinism
 //!
@@ -222,7 +222,7 @@ impl<'a> SystemGraph<'a> {
     /// Without the fence because the two callers need different furniture: a Markdown page wraps it
     /// in ` ```mermaid `, and a CLI writing to a pipe must not, or the first thing anyone does with
     /// the output is delete three characters off each end. The fence is the only difference between
-    /// the two, which is what `crates/protocol-cli/tests/graph.rs` normalises and all it normalises.
+    /// the two, which is what AEP's `aep-cli` graph tests normalise and all they normalise.
     pub fn mermaid(&self) -> String {
         let ids = self.mermaid_ids();
         // `TB` rather than `LR`: the page is read in a column, and a wide graph is a horizontal

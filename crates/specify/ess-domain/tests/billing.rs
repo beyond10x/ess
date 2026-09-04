@@ -28,7 +28,7 @@ fn read(relative: &str) -> (Source, RawSpecFile) {
         .unwrap_or_else(|error| panic!("{} is readable: {error}", path.display()));
     // `RawSpecFile::parse`, not `serde_yaml::from_str`: the latter keeps the last of two identical
     // mapping keys without saying so, and it is not what any real caller uses — the CLI reads the
-    // example through `RawSpecFile::parse` (`protocol-cli/src/main.rs:734`). A test of the
+    // example through `RawSpecFile::parse` (AEP's `aep-cli`). A test of the
     // normative example that takes a path no caller takes is not testing the example.
     let parsed = RawSpecFile::parse(&text)
         .unwrap_or_else(|error| panic!("{} is well formed: {error}", path.display()));
