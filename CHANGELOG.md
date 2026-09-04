@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.13.2] — 2026-09-04
+
+### Fixed
+
+- Canonical build IR restores an omitted empty secret set while reading, so compiler output
+  round-trips through release verification and OCI bundle construction.
+
 ## [0.13.1] — 2026-09-04
 
 ### Fixed
