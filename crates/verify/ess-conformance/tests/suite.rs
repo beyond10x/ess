@@ -925,20 +925,44 @@ fn the_scan_for_a_clock_finds_one_and_does_not_find_a_word_that_merely_ends_in_a
         "rand::"
     ));
     assert!(!contains_token("let ranked = rank(status);", "rand::"));
+
+    // The far boundary, which is the one an elapsed-time claim needs: a slot named `InstantName` is
+    // not the wall clock, and every spelling of the wall clock still is.
+    assert!(!contains_token(
+        "let instant: InstantName = name;",
+        "Instant"
+    ));
+    assert!(contains_token("use std::time::Instant;", "Instant"));
+    assert!(contains_token("let started = Instant::now();", "Instant"));
+    assert!(contains_token("fn started() -> Instant {", "Instant"));
 }
 
-/// `true` when `text` uses `token` as a token rather than as the tail of a longer identifier.
+/// `true` when `text` uses `token` as a token rather than as part of a longer identifier.
 ///
 /// A plain `contains` is what `ess-compiler`'s scan uses and it cannot be reused here: `Operand::`
 /// ends in `rand::`, so this crate's predicate walk would fail a scan for randomness that has found
 /// nothing. A scan that reports a defect that is not there gets deleted by the next reader, which
 /// costs the real check too.
+///
+/// Both boundaries, and the far one is not optional either: `InstantName` is a slot a scenario
+/// names and `std::time::Instant` is the wall clock this crate refuses, and a scan that could not
+/// tell them apart would have to be turned off. Every real use of a banned token is followed by
+/// `::`, a space or a punctuation mark, so nothing the scan is for gets past it — `Instant::now`,
+/// `use std::time::Instant;` and `-> Instant` are all still caught.
 fn contains_token(text: &str, token: &str) -> bool {
-    text.match_indices(token).any(|(at, _)| {
-        at == 0
-            || !text[..at]
+    let word = |character: char| character.is_alphanumeric() || character == '_';
+    // A side is only a boundary where the token has an identifier character on it. `rand::` ends in
+    // a colon and is followed by `rngs`, which is the module it is banned for — demanding a
+    // boundary there would turn the scan off for the one token it was written for.
+    let open = token.starts_with(word);
+    let close = token.ends_with(word);
+    text.match_indices(token).any(|(at, matched)| {
+        let before = !open || text[..at].chars().next_back().is_none_or(|it| !word(it));
+        let after = !close
+            || text[at + matched.len()..]
                 .chars()
-                .next_back()
-                .is_some_and(|character| character.is_alphanumeric() || character == '_')
+                .next()
+                .is_none_or(|it| !word(it));
+        before && after
     })
 }

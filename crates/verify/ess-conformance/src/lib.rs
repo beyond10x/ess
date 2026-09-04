@@ -72,7 +72,7 @@
 //!
 //! # Execution: from a suite to a verdict
 //!
-//! [`target`] is what an implementation offers — nine methods, each traceable to a construct the
+//! [`target`] is what an implementation offers — eleven methods, each traceable to a construct the
 //! specification declares, and not one of them an assertion. [`runner`] executes a suite against one
 //! and returns a [`report`]. The split is design §27's: the runner owns sequencing, isolation,
 //! bounded waiting, comparison and diagnostics; the target owns invoking the implementation,
@@ -149,17 +149,18 @@ pub use report::{
 };
 pub use runner::{AdvancingClock, Clock, Ids, Runner, RunnerConfig};
 pub use scenario::{
-    AuthoredName, BindingAspect, ConformanceScenario, ConformanceSuite, EssSemanticRef, Holds,
-    InstanceName, LeafShape, PayloadShape, Position, ScenarioId, ScenarioPurpose, ScenarioStep,
-    ScenarioValue, SuiteProvenance, ViewExpectation,
+    AuthoredName, BindingAspect, ConformanceScenario, ConformanceSuite, Elapsed, EssSemanticRef,
+    Holds, InstanceName, InstantName, LeafShape, PayloadShape, Position, ScenarioId,
+    ScenarioPurpose, ScenarioStep, ScenarioValue, SuiteProvenance, ViewExpectation,
 };
 pub use synthesize::{
     synthesize, BindingGap, InstanceNeed, Refusal, RefusalCause, Synthesis, Unreachable,
 };
 pub use target::{
-    ConformanceTarget, Deadline, DeclaredErrorValue, EventObservationRequest,
-    ExternalOutcomeControl, ImplementationIdentity, InvocationObservationRequest, ObservedEvent,
-    ObservedInvocation, RedeliveryRequest, ScenarioContext, SemanticCommandRequest,
-    SemanticCommandResult, SemanticViewRequest, SemanticViewResult, TargetError, ViewRow,
+    ConformanceTarget, Deadline, DeclaredErrorValue, ElapsedObservation, ElapsedObservationRequest,
+    EventObservationRequest, ExternalOutcomeControl, ImplementationIdentity, InstantMark,
+    InvocationObservationRequest, ObservedEvent, ObservedInvocation, RedeliveryRequest,
+    ScenarioContext, SemanticCommandRequest, SemanticCommandResult, SemanticViewRequest,
+    SemanticViewResult, TargetError, ViewRow,
 };
 pub use witness::WitnessGap;

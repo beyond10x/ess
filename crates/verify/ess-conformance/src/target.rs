@@ -16,19 +16,30 @@
 //! | [`configure_external_outcome`](ConformanceTarget::configure_external_outcome) | an outcome declared `external:` (§12) | [`ConfigureExternalOutcome`](crate::scenario::ScenarioStep::ConfigureExternalOutcome) |
 //! | [`redeliver_event`](ConformanceTarget::redeliver_event) | a binding's `delivery: at_least_once` (§17) | [`RedeliverEvent`](crate::scenario::ScenarioStep::RedeliverEvent) |
 //! | [`observe_invocations`](ConformanceTarget::observe_invocations) | a binding's `mapping:` (§16) | [`ExpectInvocation`](crate::scenario::ScenarioStep::ExpectInvocation) |
+//! | [`mark_instant`](ConformanceTarget::mark_instant) | none — it names the instant a duration claim is measured from, which the suite may not invent | [`MarkInstant`](crate::scenario::ScenarioStep::MarkInstant) |
+//! | [`observe_elapsed`](ConformanceTarget::observe_elapsed) | a timer, a wrap-up window, a TTL: a length of time the system's own behaviour turns on | [`ExpectNotBefore`](crate::scenario::ScenarioStep::ExpectNotBefore), [`ExpectWithin`](crate::scenario::ScenarioStep::ExpectWithin), [`ExpectQuiet`](crate::scenario::ScenarioStep::ExpectQuiet) |
 //!
-//! Seven of those nine are §7's. The two that are not were added because a step in the closed
-//! thirteen-step vocabulary could not otherwise be executed at all, and each is argued on its own
-//! method. Neither is a shortcut past a semantic: `redeliver_event` is the only way to perform the
-//! claim the word `at_least_once` makes, and `observe_invocations` is the one §16 explicitly
-//! refuses to require, which is why it is the one method with a default body that answers
-//! [`TargetError::Unsupported`].
+//! Seven of those eleven are §7's. The four that are not were added because a step in the closed
+//! vocabulary could not otherwise be executed at all, and each is argued on its own method. None is
+//! a shortcut past a semantic: `redeliver_event` is the only way to perform the claim the word
+//! `at_least_once` makes, `observe_invocations` is the one §16 explicitly refuses to require, and
+//! the last two are what a duration claim needs from a system that owns its own clock. Those three
+//! are the methods with a default body that answers [`TargetError::Unsupported`], which is what
+//! keeps a target written against the earlier interface compiling — and what stops it being read as
+//! agreeing with a claim it never checked.
 //!
 //! # What is deliberately absent
 //!
 //! No clock, no seed, no id source — §7 says so and §37 says why: the runner owns every source of
 //! variation and hands it to the target. A target that needs a correlation id or a deadline is
 //! **given** one in the request.
+//!
+//! [`observe_elapsed`](ConformanceTarget::observe_elapsed) does not put a clock here, and the
+//! distinction is worth stating because it looks like one. The runner still reads no clock of the
+//! target's and sets none: it hands over a *length* the specification stated and receives a
+//! *measurement* the target stands behind. Which clock produced the measurement — a wall clock
+//! waited on, a logical clock advanced — is the one thing the interface deliberately does not ask,
+//! because requiring either would exclude half the systems that have a timer worth testing.
 //!
 //! And no assertion. There is no `assert_the_binding_worked`, no `tell_me_whether_escalation_happened`
 //! and no `reset_for_test` beyond the isolation §8 requires. A target reports what it observed; the
@@ -55,7 +66,8 @@ use ess_primitives::node::Node;
 use ess_primitives::time::Timestamp;
 
 use crate::scenario::{
-    BindingRef, CommandRef, ErrorRef, EventRef, OutcomeRef, ScenarioId, ViewRef,
+    BindingRef, CommandRef, Elapsed, ErrorRef, EventRef, InstantName, OutcomeRef, ScenarioId,
+    ViewRef,
 };
 
 // ---- the trait -------------------------------------------------------------------------------
@@ -137,6 +149,58 @@ pub trait ConformanceTarget {
                 request.binding, request.command
             ),
             "this target does not expose the commands its bindings invoke",
+        ))
+    }
+
+    /// Records the instant this scenario has reached, under a name a later claim measures from.
+    ///
+    /// The tenth method, and the first of the two an elapsed-time claim needs. It is not an
+    /// assertion and cannot fail an implementation: marking is *arranging*, exactly as
+    /// [`CaptureInstance`](crate::scenario::ScenarioStep::MarkInstant)'s sibling is, and a target
+    /// that cannot mark reports the scenario `unsupported` rather than wrong.
+    ///
+    /// Its default body says so. A target implementing the nine that came before it keeps compiling
+    /// and keeps meaning what it meant; what it cannot do is silently agree with a claim about time.
+    fn mark_instant(&self, request: InstantMark) -> Result<(), TargetError> {
+        Err(TargetError::unsupported(
+            format!("marking the instant `{}`", request.instant),
+            "this target keeps no clock a scenario can measure from",
+        ))
+    }
+
+    /// Lets a window close and reports what its clock read, and what it published on the way.
+    ///
+    /// The eleventh method, and the one the whole elapsed-time feature rests on. §7's rule holds
+    /// here as everywhere: this reports an **observation**, never a verdict. The target says how
+    /// much time passed and how many times the watched event appeared; whether that satisfies
+    /// *within*, *not before* or *not within N of X* is the runner's decision, made against the
+    /// suite.
+    ///
+    /// # The three clocks, and why the interface names none of them
+    ///
+    /// A duration claim can be checked three ways, and each is wrong as a *requirement*. Waiting on
+    /// a wall clock is real and makes every suite slow and flaky. Advancing a logical clock is
+    /// deterministic and most systems have none to advance. Reporting an elapsed measurement after
+    /// the fact is honest and, on its own, cannot make the twenty seconds of DEV-741's experiment
+    /// actually happen.
+    ///
+    /// So the interface asks for the third and permits the first two to produce it. `hold` says how
+    /// much of the window must have closed *before you answer*, and how the target gets there is its
+    /// own business: an end-to-end target sleeps, an in-memory target advances a clock it owns and
+    /// returns immediately, and both answer the same question truthfully. What no target may do is
+    /// stay silent and be read as agreeing — the default body below is
+    /// [`TargetError::Unsupported`], the runner records `unsupported`, and §28 makes an
+    /// `unsupported` scenario fail conformance. A window nobody held is never a window that passed.
+    fn observe_elapsed(
+        &self,
+        request: ElapsedObservationRequest,
+    ) -> Result<ElapsedObservation, TargetError> {
+        Err(TargetError::unsupported(
+            format!(
+                "letting {} pass since the instant `{}`",
+                request.hold, request.instant
+            ),
+            "this target cannot make time pass or say how much has",
         ))
     }
 
@@ -419,6 +483,62 @@ pub struct EventObservationRequest {
     pub correlation: CorrelationId,
     /// When the target may stop waiting.
     pub deadline: Deadline,
+}
+
+// ---- elapsed time ------------------------------------------------------------------------------
+
+/// Naming the instant the scenario has reached, so a later claim can be measured from it.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
+pub struct InstantMark {
+    /// What later claims call it.
+    pub instant: InstantName,
+    /// The scenario this belongs to.
+    pub correlation: CorrelationId,
+}
+
+/// A request for what a target's clock reads, and for what happened while it got there.
+///
+/// # Why `hold` and the reading are one request
+///
+/// Because splitting them would be a race the runner could not see. "Let twenty seconds pass" and
+/// "tell me how long has passed" as two calls admits a target that returns immediately from the
+/// first and truthfully answers `20000` from the second, having done nothing in between; the point
+/// of the hold is what runs *during* it. One request means the target that answers is the target
+/// that waited, and the answer is about the wait.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
+pub struct ElapsedObservationRequest {
+    /// The instant the window opens at, named by an earlier [`InstantMark`].
+    pub instant: InstantName,
+    /// How much of the window to let close before answering.
+    ///
+    /// Zero asks for the reading as it stands, which is what a *within* claim wants: it measures
+    /// what already happened rather than making anything happen.
+    pub hold: Elapsed,
+    /// The event whose publication inside the window the runner is asking about, where there is one.
+    ///
+    /// A question, not an assertion — the target says what it saw and the runner decides what that
+    /// means, which is the line §7 draws through this whole interface. It is here rather than on
+    /// [`observe_events`](ConformanceTarget::observe_events) because that method answers *what has
+    /// this activity published*, with no notion of when, and the whole claim here is *when*.
+    pub watching: Option<EventRef>,
+    /// The scenario this belongs to.
+    pub correlation: CorrelationId,
+}
+
+/// What a target's clock read, and what it published while the window was open.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct ElapsedObservation {
+    /// How much has passed since the marked instant, in milliseconds.
+    ///
+    /// The target's own measurement on its own clock, of whichever kind it keeps: a wall clock it
+    /// waited on, or one it advanced. Milliseconds because a measurement rounded towards the claim
+    /// is how a window that did not close gets reported as one that did.
+    pub elapsed_ms: u64,
+    /// How many times the watched event was published inside the window.
+    ///
+    /// Zero when nothing was watched, which is not the same fact and is never read as one: the
+    /// runner only asks the question when a claim needs it.
+    pub published: usize,
 }
 
 /// A request to deliver an already-published event to its bindings again (§17).

@@ -302,10 +302,10 @@ impl SuiteProvenance {
 
 /// Suite format major versions this build implements.
 ///
-/// Both, because a `1` suite means in `2` exactly what it meant in `1` — the vocabulary grew and
-/// nothing in it changed meaning. A reader that refused the older number would refuse a suite it
-/// understands perfectly.
-pub const SUPPORTED_SUITE_FORMATS: &[u32] = &[1, 2];
+/// All three, because a `1` suite means in `3` exactly what it meant in `1` — the vocabulary grew
+/// twice and nothing in it changed meaning. A reader that refused an older number would refuse a
+/// suite it understands perfectly.
+pub const SUPPORTED_SUITE_FORMATS: &[u32] = &[1, 2, 3];
 
 /// The version of the *document shape* a suite is written in — `ess-conformance/1`.
 ///
@@ -333,14 +333,26 @@ pub struct SuiteFormat(Version);
 impl SuiteFormat {
     /// The format a suite written by this build claims.
     ///
-    /// `2` since the expectation vocabulary gained `counts`, `at` and a `ranked` that is arranged
+    /// `2` was the expectation vocabulary gaining `counts`, `at` and a `ranked` that is arranged
     /// rather than assumed. The number moved because of what an *old reader* does with a new word,
     /// not because of what a new reader does with an old suite: the emitted Go runner reports an
     /// expectation it does not know as a **failed scenario**, which is a wrong verdict about an
     /// implementation caused by the age of the tool reading it. A reader that checks this number
     /// first refuses the document instead, which is the difference between "I cannot read this"
     /// and "your system is broken".
-    pub const CURRENT: Self = Self(Version::V2);
+    ///
+    /// `3` is the step vocabulary gaining [`MarkInstant`](ScenarioStep::MarkInstant),
+    /// [`ExpectNotBefore`](ScenarioStep::ExpectNotBefore),
+    /// [`ExpectWithin`](ScenarioStep::ExpectWithin) and [`ExpectQuiet`](ScenarioStep::ExpectQuiet).
+    /// Same rule, read on the reader that is worse off. An old *Go* runner does not return a wrong
+    /// verdict here — its step switch abandons a scenario whose first word it does not know and
+    /// reports it skipped, which is the right answer reached by accident. An old *Rust* reader is
+    /// the one this number is for: [`ConformanceSuite::from_json`] parses a closed tagged enum, so
+    /// a `3` suite labelled `2` fails to deserialise with `unknown variant`, which blames the
+    /// document for the age of the tool. And a duration claim is the one construct where being
+    /// ignored is indistinguishable from being satisfied — nothing about an unheld window is
+    /// visible in a passing run — so the envelope that carries one says so in its first line.
+    pub const CURRENT: Self = Self(Version::V3);
 
     /// How a suite format is written.
     pub const PREFIX: &'static str = "ess-conformance/";
@@ -1000,35 +1012,37 @@ impl<'de> serde::Deserialize<'de> for ScenarioPurpose {
 #[serde(into = "String")]
 pub struct InstanceName(String);
 
+/// The one grammar every slot a scenario names is written in.
+///
+/// Shared by [`InstanceName`] and [`InstantName`] rather than written twice, because two copies of
+/// "lower-kebab" is two copies that eventually disagree about one string — and the two names sit in
+/// one document, where a reader would have to be told which rule applies to which key.
+fn lower_kebab(kind: &'static str, value: &str) -> Result<String, ParseError> {
+    let reject = |reason: &str| Err(ParseError::identifier(kind, value, reason.to_owned()));
+    if value.is_empty() {
+        return reject("must not be empty");
+    }
+    if !value.starts_with(|character: char| character.is_ascii_lowercase()) {
+        return reject("must start with a lower-case letter; these names are lower-kebab");
+    }
+    if !value.chars().all(|character| {
+        character.is_ascii_lowercase() || character.is_ascii_digit() || character == '-'
+    }) {
+        return reject("may hold only lower-case letters, digits and hyphens");
+    }
+    if value.ends_with('-') || value.contains("--") {
+        return reject("has an empty segment");
+    }
+    Ok(value.to_owned())
+}
+
 impl InstanceName {
     /// The pattern published in generated JSON Schema.
     pub const PATTERN: &'static str = "^[a-z][a-z0-9]*(-[a-z0-9]+)*$";
 
     /// Parses one.
     pub fn new(value: impl AsRef<str>) -> Result<Self, ParseError> {
-        let value = value.as_ref();
-        let reject = |reason: &str| {
-            Err(ParseError::identifier(
-                "instance name",
-                value,
-                reason.to_owned(),
-            ))
-        };
-        if value.is_empty() {
-            return reject("must not be empty");
-        }
-        if !value.starts_with(|character: char| character.is_ascii_lowercase()) {
-            return reject("must start with a lower-case letter; instance names are lower-kebab");
-        }
-        if !value.chars().all(|character| {
-            character.is_ascii_lowercase() || character.is_ascii_digit() || character == '-'
-        }) {
-            return reject("may hold only lower-case letters, digits and hyphens");
-        }
-        if value.ends_with('-') || value.contains("--") {
-            return reject("has an empty segment");
-        }
-        Ok(Self(value.to_owned()))
+        lower_kebab("instance name", value.as_ref()).map(Self)
     }
 
     /// The name as written.
@@ -1061,6 +1075,163 @@ impl<'de> serde::Deserialize<'de> for InstanceName {
     fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
         let raw = String::deserialize(deserializer)?;
         Self::new(raw).map_err(serde::de::Error::custom)
+    }
+}
+
+/// What one scenario calls one instant while it runs.
+///
+/// A slot, exactly as [`InstanceName`] is one, and for the same reason: the instant itself does not
+/// exist until the run that reaches it, so a suite that carried a timestamp would be a suite whose
+/// meaning changed with the machine it ran on. What the suite carries instead is *which* instant —
+/// the one the [`MarkInstant`](ScenarioStep::MarkInstant) step named earlier in the same scenario.
+///
+/// # Why a duration claim may not have an implicit anchor
+///
+/// Every step in this vocabulary but this one is anchored by position: an assertion is about the
+/// command before it. A window is not, and the difference is not cosmetic. The ACD end-to-end suite
+/// this feature was built for had a `NeverWithin(observation, duration)` whose window opened
+/// "wherever the preceding block happened to end", so inserting one arrangement step moved every
+/// negative in the file and nothing said so. A window therefore names the instant it opens at, that
+/// instant is marked by a step somebody wrote, and a claim naming an unmarked one is refused rather
+/// than measured from whatever was in hand.
+///
+/// Lower-kebab, for the reason [`InstanceName`] is.
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, serde::Serialize)]
+#[serde(into = "String")]
+pub struct InstantName(String);
+
+impl InstantName {
+    /// The pattern published in generated JSON Schema.
+    pub const PATTERN: &'static str = InstanceName::PATTERN;
+
+    /// Parses one.
+    pub fn new(value: impl AsRef<str>) -> Result<Self, ParseError> {
+        lower_kebab("instant name", value.as_ref()).map(Self)
+    }
+
+    /// The name as written.
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
+}
+
+impl fmt::Display for InstantName {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(&self.0)
+    }
+}
+
+impl From<InstantName> for String {
+    fn from(value: InstantName) -> Self {
+        value.0
+    }
+}
+
+impl FromStr for InstantName {
+    type Err = ParseError;
+
+    fn from_str(value: &str) -> Result<Self, Self::Err> {
+        Self::new(value)
+    }
+}
+
+impl<'de> serde::Deserialize<'de> for InstantName {
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        let raw = String::deserialize(deserializer)?;
+        Self::new(raw).map_err(serde::de::Error::custom)
+    }
+}
+
+/// A length of time a claim is made over, in whole seconds.
+///
+/// # Why seconds, and why a whole number of them
+///
+/// Because the claims that exist are written in them. The ACD suite's five lost windows are 20 s,
+/// 5 s, 20 s, 1 s and 60 s, and every one of them is a configured timer or a sweep interval —
+/// nothing in that population is finer than a second and nothing is expressed as a fraction. A
+/// millisecond field would therefore be four zeroes on every line of every scenario, and a
+/// floating-point one would give two spellings of one value, which is the thing
+/// [`to_canonical_json`](ConformanceSuite::to_canonical_json) cannot have.
+///
+/// The *reading* a target reports back is milliseconds ([`ElapsedObservation`](crate::target::ElapsedObservation)),
+/// because that is a measurement rather than a claim and rounding a measurement towards the claim
+/// is how a window that did not close gets reported as one that did.
+#[derive(
+    Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, serde::Serialize, serde::Deserialize,
+)]
+#[serde(transparent)]
+pub struct Elapsed {
+    seconds: u32,
+}
+
+impl Elapsed {
+    /// A window of this many seconds.
+    pub const fn seconds(seconds: u32) -> Self {
+        Self { seconds }
+    }
+
+    /// How many seconds it is.
+    pub const fn get(self) -> u32 {
+        self.seconds
+    }
+
+    /// The same length in milliseconds, for comparison against a target's reading.
+    pub const fn millis(self) -> u64 {
+        (self.seconds as u64) * 1000
+    }
+
+    /// `true` when the window has no width, and therefore no claim in it.
+    pub const fn is_empty(self) -> bool {
+        self.seconds == 0
+    }
+}
+
+impl fmt::Display for Elapsed {
+    /// ISO 8601, to the second, which is the spelling
+    /// [`Timestamp::iso_8601`](ess_primitives::time::Timestamp::iso_8601) already gives an instant.
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "PT{}S", self.seconds)
+    }
+}
+
+impl Elapsed {
+    /// Parses `PT20S`.
+    ///
+    /// One spelling per value, for the reason [`Version::parse`] refuses `01`: `PT1M` and `PT60S`
+    /// would be two documents that disagree textually and agree semantically, and there is no
+    /// reading of a suite that wants both.
+    pub fn parse(value: &str) -> Result<Self, ParseError> {
+        let reject = |reason: &str| {
+            ParseError::reference(
+                "elapsed time",
+                value,
+                format!("{reason}; a length of time is written `PT<seconds>S`, in whole seconds"),
+            )
+        };
+        let digits = value
+            .strip_prefix("PT")
+            .and_then(|rest| rest.strip_suffix('S'))
+            .ok_or_else(|| reject("is not written `PT…S`"))?;
+        if digits.is_empty() {
+            return Err(reject("names no number of seconds"));
+        }
+        if digits.len() > 1 && digits.starts_with('0') {
+            return Err(reject(
+                "has a leading zero, which is a second spelling of one value",
+            ));
+        }
+        let seconds = digits
+            .parse::<u32>()
+            .map_err(|_| reject("has a number of seconds that is not a whole number"))?;
+        Ok(Self { seconds })
+    }
+}
+
+impl FromStr for Elapsed {
+    type Err = ParseError;
+
+    fn from_str(value: &str) -> Result<Self, Self::Err> {
+        Self::parse(value)
     }
 }
 
@@ -1382,20 +1553,38 @@ impl fmt::Display for Holds {
 ///
 /// # The vocabulary is closed
 ///
-/// Thirteen steps, and a suite may contain nothing else. That is the point of a scenario IR: a check
-/// a runner can perform but this vocabulary cannot express is a semantic the specification does not
-/// have, and adding a step here is a decision about what an ESS *means* — not a convenience for one
-/// runner. When synthesis cannot express what a construct requires, §18's rule applies: refuse, and
-/// say the model is incomplete. Do not reach for an implementation-specific assertion.
+/// Seventeen steps, and a suite may contain nothing else. That is the point of a scenario IR: a
+/// check a runner can perform but this vocabulary cannot express is a semantic the specification
+/// does not have, and adding a step here is a decision about what an ESS *means* — not a convenience
+/// for one runner. When synthesis cannot express what a construct requires, §18's rule applies:
+/// refuse, and say the model is incomplete. Do not reach for an implementation-specific assertion.
 ///
-/// Ten of them are the ones design §21 lists. Three are not, each added when a section of the design
-/// could not be written without it, and each argued on the variant itself:
+/// Ten of them are the ones design §21 lists. Seven are not, each added when something could not be
+/// said without it, and each argued on the variant itself:
 ///
 /// | step | what could not be said without it | §|
 /// |---|---|---|
 /// | [`CaptureInstance`](Self::CaptureInstance) | which instance the second command in a sequence acts on | §19 |
 /// | [`RedeliverEvent`](Self::RedeliverEvent) | that the same event may arrive twice | §17 |
 /// | [`ExpectInvocation`](Self::ExpectInvocation) | which value a binding's mapping put in which input | §16 |
+/// | [`MarkInstant`](Self::MarkInstant) | the instant a window opens at, said out loud | §37 |
+/// | [`ExpectNotBefore`](Self::ExpectNotBefore) | that a consequence does **not** arrive early | §37 |
+/// | [`ExpectWithin`](Self::ExpectWithin) | that one arrived in time rather than merely arriving | §37 |
+/// | [`ExpectQuiet`](Self::ExpectQuiet) | that nothing happened for a stated length of time | §37 |
+///
+/// # Time is claimed here and owned by the target
+///
+/// The last four are the elapsed-time claims, and they take §37 exactly where it already stood
+/// rather than moving it. The suite still holds no clock: it states a **length** and the **instant**
+/// the length is measured from, and it neither reads a clock nor tells a target which kind to keep.
+/// What a target is asked for is a *reading* — [`ElapsedObservation`](crate::target::ElapsedObservation),
+/// how much has passed since a marked instant, in milliseconds it stands behind — and how it
+/// produces one is its business: an end-to-end target waits on a wall clock, an in-memory target
+/// advances a clock it owns and answers instantly, and a target that can do neither answers
+/// [`TargetError::Unsupported`](crate::TargetError) and the scenario is reported `unsupported`.
+/// Never passed. A duration claim is the one construct where being ignored and being satisfied look
+/// identical from the outside, so the one thing this design will not do is let a target say nothing
+/// and be read as agreeing.
 ///
 /// # Negative assertions are first class
 ///
@@ -1426,6 +1615,11 @@ impl fmt::Display for Holds {
 /// target. A suite that carried a deadline would be a suite whose meaning changed with the machine
 /// it ran on, and a consistency token does not exist until the run that mints it — which is why
 /// [`QueryView`](ScenarioStep::QueryView) says *which view*, and the runner supplies the freshness.
+///
+/// An [`Elapsed`] is not a deadline and does not breach that. A deadline is *when to give up*, which
+/// is a property of the machine; a length of time a specification's own timer waits is a property of
+/// the system, and reads the same on every machine. The steps that carry one still read no clock —
+/// they name a length and ask the target what it measured.
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 #[serde(tag = "step", rename_all = "snake_case")]
 pub enum ScenarioStep {
@@ -1640,6 +1834,67 @@ pub enum ScenarioStep {
         params: BTreeMap<String, ScenarioValue>,
         /// What must eventually hold of it.
         expectation: ViewExpectation,
+    },
+    /// Name the instant the scenario has reached, so a later claim can be measured from it.
+    ///
+    /// Not an assertion, and it is the one step in the four that asks nothing of an implementation:
+    /// a target that fails to mark has failed to *arrange* the scenario, exactly as one that could
+    /// not bind an identity has. It is a step rather than a field on
+    /// [`ExecuteCommand`](Self::ExecuteCommand) for that reason, and because a window may legitimately
+    /// open at a point in a scenario where no command runs.
+    MarkInstant {
+        /// What later claims call it.
+        instant: InstantName,
+    },
+    /// Require that this point of the scenario is not reached before a length of time has passed.
+    ///
+    /// The **hold**: the claim that a consequence does not arrive early, which is the half of
+    /// timeliness that nothing in this vocabulary could state. `EventuallyEvent` says a consequence
+    /// arrives; nothing said a system's own timer had to run first, so a system that fired every
+    /// timer immediately passed every suite ESS could write.
+    ///
+    /// It is also the only way to say *let the system run for this long* — DEV-741's twenty seconds
+    /// are twenty passes of a one-hertz sweep against a bridged call, and the sweep is the
+    /// experiment. The runner asks the target to let the window close and compares the reading it
+    /// gets back; a target that reports less than the claim asked for **fails**, rather than the
+    /// runner assuming it waited.
+    ExpectNotBefore {
+        /// The instant the window opens at, marked earlier in this scenario.
+        instant: InstantName,
+        /// How much must have passed since it.
+        elapsed: Elapsed,
+    },
+    /// Require that this point of the scenario was reached no later than a length of time after one.
+    ///
+    /// The other bound, and the one that is a measurement rather than a hold: nothing is made to
+    /// pass, the target is asked what its clock reads, and a reading past the claim fails. This is
+    /// what a teardown margin, a re-offer deadline or an SLA is — *it happened* is a weaker claim
+    /// than the system makes about itself.
+    ExpectWithin {
+        /// The instant the window opens at, marked earlier in this scenario.
+        instant: InstantName,
+        /// The most that may have passed since it.
+        elapsed: Elapsed,
+    },
+    /// Require that this event was not published anywhere in a window.
+    ///
+    /// The bounded negative, and it is a different claim from [`ExpectNoEvent`](Self::ExpectNoEvent)
+    /// rather than a variation of one. `ExpectNoEvent` is about the command before it: *that
+    /// invocation published nothing*. This is about a stretch of time in which no command of the
+    /// scenario's runs at all: *nothing published it while the system was left alone*. A wrong
+    /// implementation that re-offers a call one second after the agent went into wrap-up passes the
+    /// first and fails the second, and there was no way to write the second down.
+    ///
+    /// The anchor is a marked instant and never the previous step, which is the defect this feature
+    /// was reported for: the suite it replaces had a window whose start moved whenever anything was
+    /// inserted before it, and no diff showed it.
+    ExpectQuiet {
+        /// The event that must not appear.
+        event: EventRef,
+        /// The instant the window opens at, marked earlier in this scenario.
+        instant: InstantName,
+        /// How long the window stays open.
+        elapsed: Elapsed,
     },
 }
 
@@ -2182,16 +2437,18 @@ mod tests {
 
     #[test]
     fn a_suite_format_from_a_later_build_is_refused_rather_than_guessed() {
-        assert_eq!(SuiteFormat::CURRENT.to_string(), "ess-conformance/2");
+        assert_eq!(SuiteFormat::CURRENT.to_string(), "ess-conformance/3");
         assert!(SuiteFormat::CURRENT.is_supported());
 
-        // The older format is still read. A `1` suite means in `2` exactly what it meant in `1`:
-        // the vocabulary grew and no word in it changed meaning, so refusing the number would
+        // The older formats are still read. A `1` suite means in `3` exactly what it meant in `1`:
+        // the vocabulary grew twice and no word in it changed meaning, so refusing the number would
         // refuse a document this build understands completely.
-        let earlier = SuiteFormat::parse("ess-conformance/1").expect("well formed");
-        assert!(earlier.is_supported());
+        for earlier in ["ess-conformance/1", "ess-conformance/2"] {
+            let earlier = SuiteFormat::parse(earlier).expect("well formed");
+            assert!(earlier.is_supported());
+        }
 
-        let later = SuiteFormat::parse("ess-conformance/3").expect("well formed");
+        let later = SuiteFormat::parse("ess-conformance/4").expect("well formed");
         assert!(
             !later.is_supported(),
             "a later format may mean something different by the same words"

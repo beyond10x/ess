@@ -1,5 +1,66 @@
 # Changelog
 
+## [0.16.0] — 2026-09-04
+
+### Added
+
+- **An authored scenario can claim a length of time.** `ess-scenario/1` could say what happened and
+  in what order, and nothing about how long anything took: `at:` ordered the file and reached no
+  runner. A migration of forty-five ACD scenarios into the format reported that as its one class of
+  loss, and enumerated it — a twenty-second hold that *is* an experiment's independent variable, two
+  wrap-up windows, a one-second queue-exit threshold, a one-minute callback TTL and a five-second
+  teardown margin, all of them gaps between two instants and enforced by nothing. A system that
+  fires every timer the moment it is armed passed every check ESS could write.
+
+- **Three bounds, each on an anchor somebody wrote.** An act names its instant with `mark:`, and a
+  later act states what must be true of the gap: `not_before:` is the hold, `within:` is the
+  deadline, and `quiet: {for: …, events: […]}` is the bounded negative. Every window names the
+  instant it opens at, and there is no implicit anchor anywhere — the suite this was built for had
+  negatives whose window opened wherever the preceding block happened to end, so inserting one
+  arrangement step moved five assertions and no diff showed it.
+
+- **`at:` is load-bearing at last.** It still reaches no runner, and it is now what a duration claim
+  is held against: `not_before: PT20S` in a file whose two instants are five seconds apart is a
+  document saying two things, and it is refused rather than compiled into whichever one the compiler
+  read first.
+
+- **Six refusals**, `ESS-AUTHOR-028` to `ESS-AUTHOR-033`: a window measured from an instant nothing
+  marked, one name for two instants, a window of no seconds, a bounded negative that forbids no
+  event, a claim the timeline contradicts, and a window stating other than exactly one bound. The
+  format now numbers thirty-three, and `tests/authored.rs` still holds a case per code and a case
+  asserting the numbering and the documents agree.
+
+- **Four steps and two target methods.** `mark_instant`, `expect_not_before`, `expect_within` and
+  `expect_quiet` join the closed vocabulary, which now has seventeen words. `ConformanceTarget`
+  gains `mark_instant` and `observe_elapsed`, both with default bodies answering `Unsupported`, so a
+  target written against the earlier interface compiles unchanged; the emitted Go runner asks for an
+  optional `Clock` interface for the same reason. A target that implements neither reports the
+  scenario **unsupported**, which §28 makes a failing run. There is no path on which an unheld
+  window passes.
+
+- **The clock stays the target's.** A duration claim could have been built on wall-clock waiting,
+  which makes every suite slow and flaky; on a logical clock, which most systems have none of; or on
+  an observation reported after the fact, which on its own cannot make twenty seconds happen. This
+  asks for the third and permits the first two to produce it: the suite states a *length* and the
+  *instant* it is measured from, `observe_elapsed` says how much of the window to let close before
+  answering, and the target reports a reading in milliseconds it stands behind. An end-to-end target
+  waits; an in-memory target advances a clock it owns and answers instantly; the runner compares the
+  reading with the claim and will not round towards it.
+
+### Changed
+
+- **`ess-conformance/3`.** The step vocabulary grew, which is a change to the shape of the persisted
+  document, and that shape is exactly what a suite format versions. The reader this number is for is
+  the one that would otherwise be worst off: an old Rust reader parses a closed tagged enum, so a
+  `3`-shaped suite labelled `2` fails with `unknown variant` — a message blaming the document for
+  the age of the tool. An old *Go* runner does not return a wrong verdict here; its step switch
+  abandons a scenario whose first word it does not know and reports it skipped, which is the right
+  answer reached by accident. `SUPPORTED_SUITE_FORMATS` keeps `1` and `2`, because a `2` suite means
+  in `3` exactly what it meant in `2`. The committed suites under `suites/generated/` are
+  regenerated at the new number and are otherwise byte-identical.
+
+Releases 0.16.0.
+
 ## [0.15.0] — 2026-09-04
 
 ### Added

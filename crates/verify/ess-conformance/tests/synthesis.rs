@@ -130,6 +130,14 @@ fn shape(synthesis: &Synthesis, id: &str) -> Vec<&'static str> {
             ScenarioStep::ExpectView { .. } => "view",
             ScenarioStep::EventuallyEvent { .. } => "eventually-event",
             ScenarioStep::EventuallyView { .. } => "eventually-view",
+            // Synthesis writes none of the four: a duration is a claim about a system's own timers
+            // that no model declares, so it comes from an author or from nowhere. Named rather than
+            // wildcarded, so a step added to the vocabulary fails here until somebody decides
+            // whether synthesis owes one.
+            ScenarioStep::MarkInstant { .. } => "mark",
+            ScenarioStep::ExpectNotBefore { .. } => "not-before",
+            ScenarioStep::ExpectWithin { .. } => "within",
+            ScenarioStep::ExpectQuiet { .. } => "quiet",
         })
         .collect()
 }

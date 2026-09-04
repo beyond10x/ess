@@ -36,16 +36,30 @@ type Target struct {
 	pending map[string][]essconform.ObservedEvent
 	// broken makes one deliberate defect, for the test that checks the suite can fail.
 	broken string
+
+	// now is this target's clock, in milliseconds since the scenario began.
+	//
+	// A logical clock, not a wall clock, and that is what makes the elapsed-time claims runnable
+	// here at all: `go test` finishes in milliseconds, two runs produce the same report, and the
+	// claim is still checked honestly. `essconform.Clock` deliberately does not say which kind a
+	// target keeps — an end-to-end target waits, and this one adds a number.
+	now int64
+	// marked is the instant each `MarkInstant` named.
+	marked map[string]int64
+	// publishedAt is when each event was published, on this clock.
+	publishedAt map[string][]int64
 }
 
 // New builds an empty billing system.
 func New(broken string) *Target {
 	return &Target{
-		invoices: map[string]*invoice{},
-		forced:   map[string]string{},
-		escalate: map[string]bool{},
-		pending:  map[string][]essconform.ObservedEvent{},
-		broken:   broken,
+		invoices:    map[string]*invoice{},
+		forced:      map[string]string{},
+		escalate:    map[string]bool{},
+		pending:     map[string][]essconform.ObservedEvent{},
+		broken:      broken,
+		marked:      map[string]int64{},
+		publishedAt: map[string][]int64{},
 	}
 }
 
@@ -58,7 +72,42 @@ func (t *Target) BeginScenario(essconform.ScenarioContext) error {
 	t.forced = map[string]string{}
 	t.escalate = map[string]bool{}
 	t.pending = map[string][]essconform.ObservedEvent{}
+	t.now = 0
+	t.marked = map[string]int64{}
+	t.publishedAt = map[string][]int64{}
 	return nil
+}
+
+// MarkInstant records where the clock stands, under the name a later claim measures from.
+func (t *Target) MarkInstant(mark essconform.InstantMark) error {
+	t.marked[mark.Instant] = t.now
+	return nil
+}
+
+// ObserveElapsed lets a window close and says what the clock read, and what happened inside it.
+//
+// The whole of a logical-clock target's side of a duration claim: move the clock to the end of the
+// window, then answer. `ESS_BREAK=never-holds` is the defect this claim exists to catch — a system
+// that fires every timer the instant it is armed, which passes every other check in the suite.
+func (t *Target) ObserveElapsed(request essconform.ElapsedRequest) (essconform.ElapsedObservation, error) {
+	opened, ok := t.marked[request.Instant]
+	if !ok {
+		return essconform.ElapsedObservation{}, fmt.Errorf("`%s` was never marked", request.Instant)
+	}
+	if t.broken != "never-holds" {
+		if closes := opened + int64(request.Hold)*1000; closes > t.now {
+			t.now = closes
+		}
+	}
+	published := 0
+	if request.Watching != "" {
+		for _, at := range t.publishedAt[request.Watching] {
+			if at >= opened && at <= t.now {
+				published++
+			}
+		}
+	}
+	return essconform.ElapsedObservation{ElapsedMillis: t.now - opened, Published: published}, nil
 }
 
 func (t *Target) EndScenario(essconform.ScenarioContext) error { return nil }
@@ -68,17 +117,39 @@ func (t *Target) ConfigureExternalOutcome(control essconform.ExternalOutcomeCont
 	return nil
 }
 
+// record notes when an event was published, on this target's own clock.
+//
+// What a `quiet` claim reads. It is a record of *when*, not of *whether*: an event published before
+// the window opened is outside it, and a target that answered "have you ever published this" would
+// fail a claim that is true.
+func (t *Target) record(result essconform.CommandResult) essconform.CommandResult {
+	for _, event := range result.DirectEvents {
+		t.publishedAt[event.Event] = append(t.publishedAt[event.Event], t.now)
+	}
+	for name, queued := range t.pending {
+		for range queued {
+			t.publishedAt[name] = append(t.publishedAt[name], t.now)
+		}
+	}
+	return result
+}
+
 func (t *Target) ExecuteCommand(request essconform.CommandRequest) (essconform.CommandResult, error) {
 	t.pending = map[string][]essconform.ObservedEvent{}
+	// A command takes a moment. One millisecond rather than a real measurement, because the point
+	// is only that two things that happened at different times have different times: an event
+	// published before a window opened must fall outside it, and a clock that never moved between
+	// them could not say so.
+	t.now++
 	switch request.Command {
 	case "billing.invoice.CreateInvoice":
-		return t.create(request), nil
+		return t.record(t.create(request)), nil
 	case "billing.invoice.IssueInvoice":
-		return t.move(request, "issue", "issued", "billing.invoice.InvoiceIssued"), nil
+		return t.record(t.move(request, "issue", "issued", "billing.invoice.InvoiceIssued")), nil
 	case "billing.invoice.CancelInvoice":
-		return t.move(request, "cancel", "cancelled", "billing.invoice.InvoiceCancelled"), nil
+		return t.record(t.move(request, "cancel", "cancelled", "billing.invoice.InvoiceCancelled")), nil
 	case "billing.invoice.PayInvoice":
-		return t.pay(request), nil
+		return t.record(t.pay(request)), nil
 	case "billing.email.SendEmail":
 		return t.send(request), nil
 	default:

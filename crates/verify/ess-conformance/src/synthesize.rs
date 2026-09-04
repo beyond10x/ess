@@ -1100,11 +1100,19 @@ fn needs_of(
                     needs.insert(view.clone().into());
                 }
             }
-            // About the command the scenario just ran, or about an event it must *not* have
-            // published — neither asks the component to realise anything more.
+            // About the command the scenario just ran, about an event it must *not* have
+            // published, or about how much time passed — none asks the component to realise
+            // anything more. `ExpectQuiet` names an event the way `ExpectNoEvent` does, and for the
+            // same reason it is here: a component that never emits it satisfies the claim, so
+            // requiring it to realise the event would scope the scenario out of the one component
+            // it is most obviously about.
             ScenarioStep::ExpectOutcome { .. }
             | ScenarioStep::ExpectError { .. }
-            | ScenarioStep::ExpectNoEvent { .. } => {}
+            | ScenarioStep::ExpectNoEvent { .. }
+            | ScenarioStep::MarkInstant { .. }
+            | ScenarioStep::ExpectNotBefore { .. }
+            | ScenarioStep::ExpectWithin { .. }
+            | ScenarioStep::ExpectQuiet { .. } => {}
         }
     }
     needs.into_iter().collect()

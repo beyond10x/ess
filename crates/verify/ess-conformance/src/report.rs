@@ -167,6 +167,10 @@ pub enum CheckCode {
     Instance,
     /// Every path an asserted predicate reads is published by the surface it is asserted against.
     Predicate,
+    /// A window of a length the specification states really passed, and was measured.
+    Elapsed,
+    /// Nothing published an event inside a window the specification says it stays out of.
+    Quiet,
     /// The target could carry out what the scenario asked of it.
     Target,
     /// The suite asked for something it cannot mean — a defect in the suite, not in the target.
@@ -178,7 +182,7 @@ impl CheckCode {
     ///
     /// Public for the reason `BindingAspect::ALL` is: a list nobody iterates is a list that goes
     /// stale, and this is what makes "every rule the runner checks has a name" assertable.
-    pub const ALL: [Self; 13] = [
+    pub const ALL: [Self; 15] = [
         Self::Outcome,
         Self::Error,
         Self::Event,
@@ -190,6 +194,8 @@ impl CheckCode {
         Self::Invocation,
         Self::Instance,
         Self::Predicate,
+        Self::Elapsed,
+        Self::Quiet,
         Self::Target,
         Self::Suite,
     ];
@@ -208,6 +214,8 @@ impl CheckCode {
             Self::Invocation => "ESS-CF-INVOCATION",
             Self::Instance => "ESS-CF-INSTANCE",
             Self::Predicate => "ESS-CF-PREDICATE",
+            Self::Elapsed => "ESS-CF-ELAPSED",
+            Self::Quiet => "ESS-CF-QUIET",
             Self::Target => "ESS-CF-TARGET",
             Self::Suite => "ESS-CF-SUITE",
         }
@@ -250,6 +258,14 @@ impl CheckCode {
             Self::Predicate => {
                 "every path an asserted predicate reads is published by the surface \
                                 it is asserted against"
+            }
+            Self::Elapsed => {
+                "a length of time the specification states really passes before the \
+                              consequence that turns on it, and no later than it says"
+            }
+            Self::Quiet => {
+                "nothing publishes an event inside a window the specification says it \
+                            stays out of"
             }
             Self::Target => "the target can carry out what a scenario asks of it",
             Self::Suite => "a scenario asks only for what its own earlier steps established",

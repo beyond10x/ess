@@ -28,11 +28,10 @@
 //!   would be describing a model that does not exist.
 //!
 //! Everything else is deliberately identical. An authored scenario compiles into the same
-//! [`ConformanceScenario`] over the same closed [`ScenarioStep`] vocabulary, lands in the same
-//! `ess-conformance/2` document, and runs on the runners that already exist — the Rust one and the
-//! emitted Go one — with no change to [`ConformanceTarget`](crate::ConformanceTarget). A verb that
-//! needed its own runner would be a second definition of what a scenario means, which is the failure
-//! [`scenario`](crate::scenario) exists to prevent.
+//! [`ConformanceScenario`] over the same closed [`ScenarioStep`] vocabulary and lands in the same
+//! `ess-conformance/3` document synthesis writes. A verb that needed its own runner would be a
+//! second definition of what a scenario means, which is the failure [`scenario`](crate::scenario)
+//! exists to prevent.
 //!
 //! # The document
 //!
@@ -67,6 +66,51 @@
 //!       fields: {invoice_id: {$instance: earlier}}
 //! ```
 //!
+//! # Elapsed time
+//!
+//! An act may name its instant, and a later act may say what must be true of the time between them.
+//!
+//! ```yaml
+//! timeline:
+//!   - at: 2026-01-05T09:00:13Z
+//!     command: acd.routing.BridgeEntry
+//!     mark: bridged
+//!
+//!   - at: 2026-01-05T09:00:33Z
+//!     command: acd.routing.EnterQueue
+//!     elapsed:
+//!       - since: bridged
+//!         not_before: PT20S
+//!       - since: bridged
+//!         quiet: {for: PT20S, events: [acd.routing.CallEnded]}
+//! ```
+//!
+//! Three bounds, one per window, and each names the instant it opens at:
+//!
+//! | bound | what it claims | what the target is asked |
+//! |---|---|---|
+//! | `not_before: PT20S` | this act does not happen until twenty seconds after `since` | let the window close, then say how much passed |
+//! | `within: PT5S` | this act happened no later than five seconds after `since` | say how much has passed |
+//! | `quiet: {for: …, events: […]}` | none of these appeared in the window after `since` | let the window close, then say how often each appeared |
+//!
+//! **The anchor is written and never inferred.** Every other assertion in this format is anchored by
+//! position — it is about the act it sits on. A window is not, and the suite this was built for is
+//! the reason: its bounded negatives opened "wherever the preceding block happened to end", so
+//! inserting one arrangement step silently moved five of them. `since:` names a `mark:`, a window
+//! measured from an unmarked instant is refused, and an act cannot mark and measure at the same
+//! instant.
+//!
+//! **The file's own instants are held to the claim.** `at:` still reaches no runner, but it is no
+//! longer decorative: `not_before: PT20S` in a file whose two instants are five seconds apart is a
+//! document that says two different things, and it is refused rather than compiled into whichever
+//! one the compiler happened to read.
+//!
+//! **What a target has to be able to do, and what happens when it cannot.** A window is checked by
+//! asking the target how much time passed since a marked instant, having first asked it to let the
+//! window close. Whether it gets there by waiting on a wall clock or by advancing one it owns is its
+//! business and this format has no opinion; what it may not do is stay quiet and be read as
+//! agreeing. A target that implements neither method answers `unsupported`, the scenario is reported
+//! `unsupported`, and §28 makes the run fail. There is no path on which an unheld window passes.
 //! # Three decisions the format makes, and why
 //!
 //! **The timeline carries an explicit instant, and it has to ascend.** A list is ordered by where
@@ -103,7 +147,14 @@
 //! * **A value a run produced, compared as a literal.** An event's payload and an error's fields are
 //!   compared field by field against values the suite carries, which is what the steps that hold
 //!   them declare; a reference is refused there rather than silently dropped.
-//! * **A clock the runner honours.** See above: `at:` orders the file and stops there.
+//! * **A clock the runner honours.** `at:` orders the file, bounds the durations claimed against it,
+//!   and stops there. Nothing here says what time it is, and a scenario's meaning does not change
+//!   with the machine that runs it: an [`Elapsed`] is a length the specification's own timers wait,
+//!   which reads the same everywhere, and it is measured by the only party that has a clock.
+//! * **A producer that halted.** No bound here says an ordered scan *stopped*, only that nothing was
+//!   published for a stated length of time — which is a claim about a window, not about a stream
+//!   having ended. The two look alike and are not: a prefix read in silence is still a prefix. That
+//!   is a different feature.
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt;
@@ -117,12 +168,13 @@ use ess_primitives::error::ParseError;
 use ess_primitives::node::Node;
 use ess_primitives::predicate::Predicate;
 use ess_primitives::time::{CivilDate, Timestamp};
+use serde::Deserialize as _;
 
 use crate::input::{bind, resolve_path, Completeness, ShapeError, ShapeErrors};
 use crate::scenario::{
-    ActorRef, AuthoredName, CommandRef, ConformanceScenario, DeclaredTypeRef, DomainRef, EntityRef,
-    ErrorRef, EssSemanticRef, EventRef, InstanceName, OutcomeRef, Position, ScenarioId,
-    ScenarioPurpose, ScenarioStep, ScenarioValue, ViewExpectation, ViewRef,
+    ActorRef, AuthoredName, CommandRef, ConformanceScenario, DeclaredTypeRef, DomainRef, Elapsed,
+    EntityRef, ErrorRef, EssSemanticRef, EventRef, InstanceName, InstantName, OutcomeRef, Position,
+    ScenarioId, ScenarioPurpose, ScenarioStep, ScenarioValue, ViewExpectation, ViewRef,
 };
 use crate::synthesize::{payload_shape, reachable_types};
 
@@ -221,6 +273,99 @@ pub struct Act {
     /// The identity to bind, so later steps can name the instance this act brought into existence.
     #[serde(default)]
     pub capture: Option<Capture>,
+    /// What must be true of the time between an earlier instant and this act.
+    ///
+    /// A list, because an act may legitimately carry more than one — "twenty seconds after the
+    /// bridge, and nothing was offered in them" is two claims about one gap, and folding them into
+    /// one key would be the [`AmbiguousClaim`](Cause::AmbiguousClaim) mistake in a new place.
+    #[serde(default)]
+    pub elapsed: Vec<Window>,
+    /// The name a later window measures from this act's instant.
+    ///
+    /// Marked *after* the act, so a window cannot open at the act it is written on: that window has
+    /// no width and the claim in it cannot fail.
+    #[serde(default)]
+    pub mark: Option<InstantName>,
+}
+
+/// One claim about the time between a marked instant and the act that carries it.
+///
+/// Exactly one of the three bounds, for the reason [`Assertion`] states about its six: two would be
+/// two claims filed as one, and none would be a claim that cannot fail.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct Window {
+    /// The instant the window opens at — a name an earlier act marked.
+    ///
+    /// Required, and there is no default. The suite this format was extended for had a negative
+    /// whose window opened wherever the preceding block happened to end, so inserting one step
+    /// moved five assertions and no diff showed it. An anchor a reader has to reconstruct is an
+    /// anchor that has already moved.
+    pub since: InstantName,
+    /// This act does not happen until at least this much has passed since `since`.
+    #[serde(default, deserialize_with = "written_length")]
+    pub not_before: Option<Elapsed>,
+    /// This act happens no later than this much after `since`.
+    #[serde(default, deserialize_with = "written_length")]
+    pub within: Option<Elapsed>,
+    /// These occurrences do not appear in a window of this length after `since`.
+    #[serde(default)]
+    pub quiet: Option<Quiet>,
+}
+
+/// A stretch of time in which named occurrences must not appear.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct Quiet {
+    /// How long the window stays open.
+    #[serde(rename = "for", deserialize_with = "required_length")]
+    pub duration: Elapsed,
+    /// The declared events that must not appear in it.
+    pub events: Vec<String>,
+}
+
+/// A length of time as an author writes it: `PT20S`.
+///
+/// The written spelling and the persisted one are deliberately different, and each is right where it
+/// is. A person writes `PT20S`, which says what it is; a suite writes `20`, which every runner in
+/// every language can read without a date library. One value, two audiences, and the conversion
+/// happens once — here — rather than in each runner.
+fn required_length<'de, D: serde::Deserializer<'de>>(deserializer: D) -> Result<Elapsed, D::Error> {
+    let raw = String::deserialize(deserializer)?;
+    Elapsed::parse(&raw).map_err(serde::de::Error::custom)
+}
+
+/// The same, where the key is optional.
+fn written_length<'de, D: serde::Deserializer<'de>>(
+    deserializer: D,
+) -> Result<Option<Elapsed>, D::Error> {
+    Option::<String>::deserialize(deserializer)?
+        .map(|raw| Elapsed::parse(&raw).map_err(serde::de::Error::custom))
+        .transpose()
+}
+
+impl Window {
+    /// The bounds this window states, which has to be exactly one.
+    fn stated(&self) -> Vec<&'static str> {
+        let mut stated = Vec::new();
+        if self.not_before.is_some() {
+            stated.push("not_before");
+        }
+        if self.within.is_some() {
+            stated.push("within");
+        }
+        if self.quiet.is_some() {
+            stated.push("quiet");
+        }
+        stated
+    }
+
+    /// The length of the window, whichever bound states it.
+    fn length(&self) -> Option<Elapsed> {
+        self.not_before
+            .or(self.within)
+            .or_else(|| self.quiet.as_ref().map(|quiet| quiet.duration))
+    }
 }
 
 /// The declared error a branch reports, and the fields to compare.
@@ -398,6 +543,27 @@ impl Moment {
         Ok(Self(Timestamp::from_epoch_millis(
             date.to_timestamp().epoch_millis() + seconds_into_day * 1000,
         )))
+    }
+}
+
+impl Moment {
+    /// How much of the file's own timeline sits between an earlier instant and this one.
+    ///
+    /// What makes `at:` load-bearing for the first time. It still reaches no runner — see the
+    /// module documentation — but it is now the thing a duration claim is held against, so a
+    /// scenario cannot say "twenty seconds" in one line and "five" in the two lines that bracket it.
+    ///
+    /// Saturating, and the arm never runs: the timeline's instants strictly ascend, and a window is
+    /// only ever measured from one an earlier act marked. Written this way rather than with an
+    /// `unwrap` because an underflow here would be a wrong number rather than a panic.
+    fn since(self, opened: Self) -> Elapsed {
+        let millis = self
+            .0
+            .epoch_millis()
+            .saturating_sub(opened.0.epoch_millis());
+        // Both instants are whole seconds, so the division is exact, and the cast cannot lose:
+        // `Moment::parse` builds from a `CivilDate` and a time of day inside one clock.
+        Elapsed::seconds(u32::try_from(millis / 1000).unwrap_or(u32::MAX))
     }
 }
 
@@ -777,6 +943,50 @@ pub enum Cause {
     },
     /// The scenario runs no command and asserts nothing.
     NothingHappens,
+    /// A window is measured from an instant nothing marked before it.
+    UnmarkedInstant {
+        /// The name written.
+        instant: InstantName,
+        /// What earlier acts have marked.
+        marked: Vec<String>,
+    },
+    /// Two acts mark the same instant.
+    DuplicateInstant {
+        /// The name written twice.
+        instant: InstantName,
+        /// The instant the first one named.
+        first: Moment,
+    },
+    /// A window has no width.
+    VacuousWindow {
+        /// The instant it would have opened at.
+        instant: InstantName,
+    },
+    /// A bounded negative forbids no occurrence.
+    QuietAboutNothing {
+        /// The instant the window opens at.
+        instant: InstantName,
+        /// How long it stays open.
+        duration: Elapsed,
+    },
+    /// The timeline's own instants say something the window contradicts.
+    WindowContradictsTimeline {
+        /// The instant the window opens at.
+        instant: InstantName,
+        /// The bound the window states.
+        stated: &'static str,
+        /// The length it states.
+        elapsed: Elapsed,
+        /// What the file's own instants put between the two acts.
+        written: Elapsed,
+    },
+    /// A window states other than exactly one bound.
+    AmbiguousWindow {
+        /// The instant it opens at.
+        instant: InstantName,
+        /// The bounds it states.
+        stated: Vec<&'static str>,
+    },
 }
 
 impl Cause {
@@ -818,11 +1028,22 @@ impl Cause {
                 Self::AmbiguousClaim { .. } => 25,
                 Self::UnreadablePredicate { .. } => 26,
                 Self::NothingHappens => 27,
+                Self::UnmarkedInstant { .. } => 28,
+                Self::DuplicateInstant { .. } => 29,
+                Self::VacuousWindow { .. } => 30,
+                Self::QuietAboutNothing { .. } => 31,
+                Self::WindowContradictsTimeline { .. } => 32,
+                Self::AmbiguousWindow { .. } => 33,
             },
         )
     }
 
     /// What would have to change for the scenario to compile.
+    ///
+    /// One arm per cause, and long because there are thirty-three of them — the same argument
+    /// [`Display`](fmt::Display) makes below. A reader comparing two repairs reads them side by
+    /// side or not at all, and splitting the list would put half of it somewhere else.
+    #[allow(clippy::too_many_lines)]
     pub fn hint(&self) -> &'static str {
         match self {
             Self::Unreadable { .. } => {
@@ -907,12 +1128,36 @@ impl Cause {
                 "give the scenario a timeline; a scenario that runs nothing is a check that cannot \
                  fail"
             }
+            Self::UnmarkedInstant { .. } => {
+                "write `mark:` on the earlier act the window opens at; a duration is measured from \
+                 an instant somebody named, never from wherever the step before it happened to end"
+            }
+            Self::DuplicateInstant { .. } => {
+                "give the two acts different names; one name for two instants is a window whose \
+                 length depends on which one a reader had in mind"
+            }
+            Self::VacuousWindow { .. } => {
+                "give the window a length; a window of no seconds is a claim about no time, and \
+                 there is no target it can fail against"
+            }
+            Self::QuietAboutNothing { .. } => {
+                "name the events the window must stay clear of; a bounded negative that forbids \
+                 nothing is satisfied by every implementation there is"
+            }
+            Self::WindowContradictsTimeline { .. } => {
+                "move the act's `at:` so the file's own instants agree with the claim, or state \
+                 the length the file already shows; the timeline is what a reader believes"
+            }
+            Self::AmbiguousWindow { .. } => {
+                "state exactly one of `not_before`, `within` or `quiet` per window, and write a \
+                 second window for a second claim"
+            }
         }
     }
 }
 
 impl fmt::Display for Cause {
-    /// One arm per cause, and long because there are twenty-seven of them. Splitting it would put
+    /// One arm per cause, and long because there are thirty-three of them. Splitting it would put
     /// half the wording somewhere a reader comparing two refusals has to go and find.
     #[allow(clippy::too_many_lines)]
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -1061,6 +1306,46 @@ impl fmt::Display for Cause {
                 write!(f, "`{view}` publishes nothing at `{path}`")
             }
             Self::NothingHappens => f.write_str("the timeline is empty"),
+            Self::UnmarkedInstant { instant, marked } => {
+                let marked = if marked.is_empty() {
+                    "nothing is marked before it".to_owned()
+                } else {
+                    format!("the instants marked before it are {}", marked.join(", "))
+                };
+                write!(f, "no earlier act marks the instant `{instant}`; {marked}")
+            }
+            Self::DuplicateInstant { instant, first } => {
+                write!(f, "the instant `{instant}` is already marked, at `{first}`")
+            }
+            Self::VacuousWindow { instant } => {
+                write!(f, "the window opening at `{instant}` is `PT0S` long")
+            }
+            Self::QuietAboutNothing { instant, duration } => write!(
+                f,
+                "the window of {duration} after `{instant}` names no event it must stay clear of"
+            ),
+            Self::WindowContradictsTimeline {
+                instant,
+                stated,
+                elapsed,
+                written,
+            } => write!(
+                f,
+                "`{stated}: {elapsed}` since `{instant}`, and the timeline writes {written} \
+                 between the two acts"
+            ),
+            Self::AmbiguousWindow { instant, stated } => {
+                if stated.is_empty() {
+                    write!(f, "the window opening at `{instant}` states no bound")
+                } else {
+                    write!(
+                        f,
+                        "the window opening at `{instant}` states {} bounds: {}",
+                        stated.len(),
+                        stated.join(", ")
+                    )
+                }
+            }
         }
     }
 }
@@ -1144,6 +1429,7 @@ fn compile_one(
         arranged: BTreeMap::new(),
         bound: BTreeSet::new(),
         observed: BTreeSet::new(),
+        marked: BTreeMap::new(),
         steps: Vec::new(),
         source: BTreeSet::new(),
         types: BTreeSet::new(),
@@ -1186,6 +1472,8 @@ struct Compiler<'a> {
     bound: BTreeSet<InstanceName>,
     /// The events an earlier act has required.
     observed: BTreeSet<EventRef>,
+    /// The instant each earlier act marked, and where the file puts it.
+    marked: BTreeMap<InstantName, Moment>,
     steps: Vec<ScenarioStep>,
     source: BTreeSet<EssSemanticRef>,
     types: BTreeSet<DeclaredTypeRef>,
@@ -1260,9 +1548,17 @@ impl Compiler<'_> {
 
     /// One act: the command, what it must answer, and what it binds.
     fn act(&mut self, act: &Act) {
+        // The windows come first, and that is the semantics rather than a filing decision: a claim
+        // about the time before an act is a claim the act is not allowed to be the cause of. Emitted
+        // after `ExecuteCommand`, "not before twenty seconds" would be checked against a system the
+        // step it is guarding had already changed.
+        for window in &act.elapsed {
+            self.window(window, act.at);
+        }
         let Some((name, command)) = self.declared(&act.command, self.ir.commands(), |command| {
             Cause::UndeclaredCommand { command }
         }) else {
+            self.mark(act);
             return;
         };
         let command_ref = CommandRef::new(name.clone());
@@ -1326,6 +1622,118 @@ impl Compiler<'_> {
         if let Some(capture) = &act.capture {
             self.capture(capture);
         }
+        self.mark(act);
+    }
+
+    /// Names this act's instant, so a later window can open at it.
+    ///
+    /// After everything else the act does, which is what stops a window opening at the act that
+    /// carries it: the two would be the same instant, and a window of no width is a claim that
+    /// cannot fail.
+    fn mark(&mut self, act: &Act) {
+        let Some(instant) = &act.mark else {
+            return;
+        };
+        if let Some(first) = self.marked.get(instant).copied() {
+            self.refuse(Cause::DuplicateInstant {
+                instant: instant.clone(),
+                first,
+            });
+            return;
+        }
+        self.marked.insert(instant.clone(), act.at);
+        self.steps.push(ScenarioStep::MarkInstant {
+            instant: instant.clone(),
+        });
+    }
+
+    /// One claim about the time between a marked instant and this act.
+    ///
+    /// # Why the file's own instants are checked against the claim
+    ///
+    /// `at:` used to order the file and nothing else, and that made every duration in a scenario a
+    /// gap between two comments. It still reaches no runner — a suite that carried an instant would
+    /// mean something different on a machine with a different clock — but a claim that contradicts
+    /// the gap the author wrote is a document that says two things, and the reader believes the
+    /// timeline. So the two are held to each other here, at compile time, where the disagreement
+    /// costs a refusal instead of a wrong verdict.
+    fn window(&mut self, window: &Window, at: Moment) {
+        let stated = window.stated();
+        if stated.len() != 1 {
+            self.refuse(Cause::AmbiguousWindow {
+                instant: window.since.clone(),
+                stated,
+            });
+            return;
+        }
+        // `stated` has exactly one entry, so `length` has a value.
+        let Some(elapsed) = window.length() else {
+            return;
+        };
+        if elapsed.is_empty() {
+            self.refuse(Cause::VacuousWindow {
+                instant: window.since.clone(),
+            });
+            return;
+        }
+        let Some(opened) = self.marked.get(&window.since).copied() else {
+            self.refuse(Cause::UnmarkedInstant {
+                instant: window.since.clone(),
+                marked: self.marked.keys().map(ToString::to_string).collect(),
+            });
+            return;
+        };
+        let written = at.since(opened);
+        // `not_before` and `quiet` both need the window closed by the time the act runs; `within`
+        // needs the act inside it. One comparison per bound, against the gap the file writes.
+        let contradicted = match stated[0] {
+            "within" => written.get() > elapsed.get(),
+            _ => written.get() < elapsed.get(),
+        };
+        if contradicted {
+            self.refuse(Cause::WindowContradictsTimeline {
+                instant: window.since.clone(),
+                stated: stated[0],
+                elapsed,
+                written,
+            });
+            return;
+        }
+
+        if let Some(quiet) = &window.quiet {
+            if quiet.events.is_empty() {
+                self.refuse(Cause::QuietAboutNothing {
+                    instant: window.since.clone(),
+                    duration: quiet.duration,
+                });
+                return;
+            }
+            for written in &quiet.events {
+                if let Some((name, _)) = self.declared(written, self.ir.events(), |event| {
+                    Cause::UndeclaredEvent { event }
+                }) {
+                    let event = EventRef::new(name);
+                    self.source.insert(event.clone().into());
+                    self.steps.push(ScenarioStep::ExpectQuiet {
+                        event,
+                        instant: window.since.clone(),
+                        elapsed: quiet.duration,
+                    });
+                }
+            }
+            return;
+        }
+        self.steps.push(if window.within.is_some() {
+            ScenarioStep::ExpectWithin {
+                instant: window.since.clone(),
+                elapsed,
+            }
+        } else {
+            ScenarioStep::ExpectNotBefore {
+                instant: window.since.clone(),
+                elapsed,
+            }
+        });
     }
 
     /// The actor an act runs as, where the specification grants it the command.

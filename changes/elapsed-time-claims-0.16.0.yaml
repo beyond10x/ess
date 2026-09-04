@@ -1,0 +1,17 @@
+schema: b10x-change/v1
+id: ess/elapsed-time-claims-0.16.0
+repository: ess
+# `publishedAt` and `source` are filled when the tag exists. Neither is knowable now, and a
+# guessed timestamp or a release URL for a version nobody cut is a fact this file would be
+# asserting on nothing.
+title: An authored scenario can claim a length of time, and a target has to answer for it
+summary: >-
+  `ess-scenario/1` gains `mark:` and `elapsed:` — three bounds on an anchor somebody wrote:
+  `not_before` is the hold, `within` is the deadline, `quiet` is the bounded negative. The suite
+  states a length and the instant it is measured from; the target reports what its clock read, by
+  waiting or by advancing one of its own, and a target with neither reports `unsupported` rather
+  than agreeing. `ess-conformance/3`, six new refusals, four new steps.
+kind: feature
+impact: significant
+journeys: [specify, verify]
+affectedSurfaces: [ess/docs]

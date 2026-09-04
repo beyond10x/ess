@@ -54,7 +54,7 @@
 
 use ess_domain::view::{Direction, Ranking};
 use std::cmp::Ordering;
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 use ess_primitives::consistency::QueryConsistency;
 use ess_primitives::facts::{FactPath, FactStore, FactValue};
@@ -68,15 +68,16 @@ use crate::report::{
     Status,
 };
 use crate::scenario::{
-    ActorRef, BindingRef, CommandRef, ConformanceScenario, ConformanceSuite, EntityRef, ErrorRef,
-    EventRef, InstanceName, OutcomeRef, PayloadShape, Position, ScenarioId, ScenarioStep,
-    ScenarioValue, ViewExpectation, ViewRef,
+    ActorRef, BindingRef, CommandRef, ConformanceScenario, ConformanceSuite, Elapsed, EntityRef,
+    ErrorRef, EventRef, InstanceName, InstantName, OutcomeRef, PayloadShape, Position, ScenarioId,
+    ScenarioStep, ScenarioValue, ViewExpectation, ViewRef,
 };
 use crate::target::{
-    ConformanceTarget, Deadline, EventObservationRequest, ExternalOutcomeControl,
-    ImplementationIdentity, InvocationObservationRequest, ObservedEvent, RedeliveryRequest,
-    ScenarioContext, SemanticCommandRequest, SemanticCommandResult, SemanticViewRequest,
-    SemanticViewResult, TargetError, ViewRow,
+    ConformanceTarget, Deadline, ElapsedObservation, ElapsedObservationRequest,
+    EventObservationRequest, ExternalOutcomeControl, ImplementationIdentity, InstantMark,
+    InvocationObservationRequest, ObservedEvent, RedeliveryRequest, ScenarioContext,
+    SemanticCommandRequest, SemanticCommandResult, SemanticViewRequest, SemanticViewResult,
+    TargetError, ViewRow,
 };
 
 // ---- the clock -------------------------------------------------------------------------------
@@ -419,6 +420,18 @@ impl<C: Clock> Runner<C> {
                 params,
                 expectation,
             } => self.eventually_view(view, params, expectation, run, target),
+            ScenarioStep::MarkInstant { instant } => mark_instant(instant, run, target),
+            ScenarioStep::ExpectNotBefore { instant, elapsed } => {
+                elapsed_bound(instant, *elapsed, Bound::NotBefore, run, target)
+            }
+            ScenarioStep::ExpectWithin { instant, elapsed } => {
+                elapsed_bound(instant, *elapsed, Bound::Within, run, target)
+            }
+            ScenarioStep::ExpectQuiet {
+                event,
+                instant,
+                elapsed,
+            } => expect_quiet(event, instant, *elapsed, run, target),
         }
     }
 
@@ -1108,6 +1121,204 @@ fn capture_instance(
     Flow::Stop
 }
 
+/// Names the instant a later claim measures from (§37).
+///
+/// An `error` rather than a `failed` when the target refuses, for the same reason
+/// [`capture_instance`] is: the scenario could not be *arranged*, and every window after it would be
+/// measured from nothing. `unsupported` when the target says it keeps no such clock, which §28 still
+/// makes a run fail — a target that cannot answer a question has not shown the answer.
+fn mark_instant<T: ConformanceTarget>(instant: &InstantName, run: &mut Run, target: &T) -> Flow {
+    let request = InstantMark {
+        instant: instant.clone(),
+        correlation: run.context.correlation.clone(),
+    };
+    match target.mark_instant(request) {
+        Ok(()) => {
+            run.marked.insert(instant.clone());
+            Flow::Continue
+        }
+        Err(error) => {
+            run.record(target_failure(
+                &run.id,
+                &format!("marking the instant `{instant}`"),
+                &error,
+            ));
+            Flow::Stop
+        }
+    }
+}
+
+/// Which side of a window a bound is on.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Bound {
+    /// The window must have closed before this point of the scenario is reached.
+    NotBefore,
+    /// This point must have been reached before the window closed.
+    Within,
+}
+
+impl Bound {
+    /// How much of the window to ask the target to let close before it answers.
+    ///
+    /// A *not before* claim is the hold — the twenty seconds are the experiment, and a runner that
+    /// asked for a reading without asking for the wait would be measuring a system nobody left
+    /// alone. A *within* claim makes nothing happen: it reads what already did, and holding first
+    /// would guarantee the answer it is asking about.
+    fn hold(self, elapsed: Elapsed) -> Elapsed {
+        match self {
+            Self::NotBefore => elapsed,
+            Self::Within => Elapsed::seconds(0),
+        }
+    }
+
+    /// Whether a reading satisfies the claim.
+    fn holds(self, reading_ms: u64, elapsed: Elapsed) -> bool {
+        match self {
+            Self::NotBefore => reading_ms >= elapsed.millis(),
+            Self::Within => reading_ms <= elapsed.millis(),
+        }
+    }
+
+    /// The claim, as a diagnostic states one.
+    fn expected(self, instant: &InstantName, elapsed: Elapsed) -> String {
+        match self {
+            Self::NotBefore => format!("at least {elapsed} has passed since `{instant}`"),
+            Self::Within => format!("no more than {elapsed} has passed since `{instant}`"),
+        }
+    }
+}
+
+/// Requires that a window of the length the specification states really passed (§37).
+fn elapsed_bound<T: ConformanceTarget>(
+    instant: &InstantName,
+    elapsed: Elapsed,
+    bound: Bound,
+    run: &mut Run,
+    target: &T,
+) -> Flow {
+    let Some(observation) = observe_elapsed(instant, bound.hold(elapsed), None, run, target) else {
+        return Flow::Stop;
+    };
+    let about = bound.expected(instant, elapsed);
+    if bound.holds(observation.elapsed_ms, elapsed) {
+        run.record(CheckResult::passed(CheckCode::Elapsed, about));
+    } else {
+        run.record(CheckResult::failed(
+            about.clone(),
+            Diagnostic::new(CheckCode::Elapsed, run.id.clone())
+                .expected(about)
+                .observed(format!(
+                    "the target measured {}ms since `{instant}`",
+                    observation.elapsed_ms
+                )),
+        ));
+    }
+    Flow::Continue
+}
+
+/// Requires that nothing published an event inside a window (§37).
+///
+/// The bounded negative, and the reason it is not [`expect_no_event`] with a duration: that one
+/// reads the result of the last command, and the whole claim here is about a stretch of the
+/// scenario in which no command of its own runs.
+fn expect_quiet<T: ConformanceTarget>(
+    event: &EventRef,
+    instant: &InstantName,
+    elapsed: Elapsed,
+    run: &mut Run,
+    target: &T,
+) -> Flow {
+    let watching = Some(event.clone());
+    let Some(observation) = observe_elapsed(instant, elapsed, watching, run, target) else {
+        return Flow::Stop;
+    };
+    let about = format!("no event {event} within {elapsed} of `{instant}`");
+    // The window has to have closed for the claim to be about what it says it is about. A target
+    // that answered early has reported on a shorter window, and reading that as the claim holding
+    // is exactly the silent pass this step exists to rule out.
+    if observation.elapsed_ms < elapsed.millis() {
+        run.record(CheckResult::failed(
+            about.clone(),
+            Diagnostic::new(CheckCode::Quiet, run.id.clone())
+                .declared_by(event.clone())
+                .expected(format!("the window of {elapsed} after `{instant}` closes"))
+                .observed(format!(
+                    "the target measured {}ms since `{instant}`, so the window it answered about \
+                     is shorter than the one the scenario claims",
+                    observation.elapsed_ms
+                )),
+        ));
+        return Flow::Continue;
+    }
+    if observation.published == 0 {
+        run.record(CheckResult::passed(CheckCode::Quiet, about));
+    } else {
+        run.record(CheckResult::failed(
+            about.clone(),
+            Diagnostic::new(CheckCode::Quiet, run.id.clone())
+                .declared_by(event.clone())
+                .expected(about)
+                .observed(format!(
+                    "{event} was published {} time(s) inside it",
+                    observation.published
+                )),
+        ));
+    }
+    Flow::Continue
+}
+
+/// Asks the target to let a window close, and reports what it measured.
+///
+/// `None` when the scenario cannot continue: the instant was never marked, which is a **suite**
+/// defect, or the target refused, which is its own.
+fn observe_elapsed<T: ConformanceTarget>(
+    instant: &InstantName,
+    hold: Elapsed,
+    watching: Option<EventRef>,
+    run: &mut Run,
+    target: &T,
+) -> Option<ElapsedObservation> {
+    if !run.marked.contains(instant) {
+        run.record(CheckResult::errored(
+            format!("a window opening at `{instant}`"),
+            Diagnostic::new(CheckCode::Suite, run.id.clone())
+                .expected(format!(
+                    "an earlier step marks the instant `{instant}` the window is measured from"
+                ))
+                .observed(if run.marked.is_empty() {
+                    "no instant has been marked in this scenario".to_owned()
+                } else {
+                    format!(
+                        "the instants marked so far are {}",
+                        run.marked
+                            .iter()
+                            .map(ToString::to_string)
+                            .collect::<Vec<_>>()
+                            .join(", ")
+                    )
+                }),
+        ));
+        return None;
+    }
+    let request = ElapsedObservationRequest {
+        instant: instant.clone(),
+        hold,
+        watching,
+        correlation: run.context.correlation.clone(),
+    };
+    match target.observe_elapsed(request) {
+        Ok(observation) => Some(observation),
+        Err(error) => {
+            run.record(target_failure(
+                &run.id,
+                &format!("letting {hold} pass since the instant `{instant}`"),
+                &error,
+            ));
+            None
+        }
+    }
+}
+
 /// Delivers an already-published event to its bindings a second time (§17).
 fn redeliver_event<T: ConformanceTarget>(event: &EventRef, run: &mut Run, target: &T) -> Flow {
     let request = RedeliveryRequest {
@@ -1246,6 +1457,9 @@ struct Run {
     /// The view a read-your-writes read could not be made of, and the command that owes the token.
     unreadable: Option<(ViewRef, String)>,
     instances: BTreeMap<InstanceName, Node>,
+    /// The instants an earlier step named, so a window measured from an unmarked one is a suite
+    /// defect rather than a measurement from whatever was in hand.
+    marked: BTreeSet<InstantName>,
     seen: Vec<ObservedEvent>,
     checks: Vec<CheckResult>,
 }
@@ -1259,6 +1473,7 @@ impl Run {
             last_view: None,
             unreadable: None,
             instances: BTreeMap::new(),
+            marked: BTreeSet::new(),
             seen: Vec::new(),
             checks: Vec::new(),
         }

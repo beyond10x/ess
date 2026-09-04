@@ -433,7 +433,7 @@ enum ConformCommand {
         /// A directory of `ess-scenario/1` documents, or one file.
         #[arg(long)]
         scenarios: Option<PathBuf>,
-        /// Where to write the compiled `ess-conformance/2` suite.
+        /// Where to write the compiled `ess-conformance/3` suite.
         #[arg(long)]
         out: Option<PathBuf>,
     },

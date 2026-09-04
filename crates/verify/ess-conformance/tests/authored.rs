@@ -131,6 +131,19 @@ const RANKED: &str = r"assert:
       fields: {total: {amount: 10, currency: EUR}}
 ";
 
+/// The creating act with its instant named, and a second act ten seconds later to hang a claim on.
+///
+/// Ten seconds because every window case below states a length against it, and the compiler holds
+/// the claim to the gap the file writes — so the fixture has to have a gap worth contradicting.
+fn windowed(claim: &str) -> String {
+    format!(
+        "{CREATED}    mark: created\n  - at: 2026-01-05T09:00:10Z\n    \
+         command: billing.invoice.CancelInvoice\n    input:\n      \
+         invoice_id: 00000000-0000-4000-8000-000000000001\n    elapsed:\n      \
+         - since: created\n{claim}"
+    )
+}
+
 /// Compiles one document against a model.
 fn authoring(ir: &EssIr, text: &str) -> Authoring {
     compile_authored(ir, &[Source::new("scenario.yaml", text)])
@@ -709,6 +722,158 @@ fn a_scenario_that_runs_nothing_is_refused_rather_than_counted_as_a_check() {
     assert!(matches!(cause(&ir, &document("")), Cause::NothingHappens));
 }
 
+#[test]
+fn an_elapsed_claim_compiles_to_the_four_steps_that_carry_it_and_they_come_before_the_act() {
+    // The order is the semantics rather than a filing decision. A window is a claim about the time
+    // *before* an act, so a runner that checked it after the act had run would be checking a system
+    // the act had already changed — which is how "twenty seconds passed" becomes true for the wrong
+    // reason.
+    let ir = example("billing");
+    let body = windowed(
+        "        not_before: PT10S\n      - since: created\n        \
+         quiet:\n          for: PT10S\n          \
+         events: [billing.invoice.InvoicePaid]\n",
+    );
+    let authoring = authoring(&ir, &document(&body));
+    assert!(authoring.is_complete(), "{:?}", authoring.refusals);
+    let scenario = authoring.scenarios.values().next().expect("one scenario");
+    let shape: Vec<&str> = scenario
+        .steps
+        .iter()
+        .map(|step| match step {
+            ScenarioStep::ExecuteCommand { .. } => "execute",
+            ScenarioStep::ExpectOutcome { .. } => "outcome",
+            ScenarioStep::MarkInstant { .. } => "mark",
+            ScenarioStep::ExpectNotBefore { .. } => "not-before",
+            ScenarioStep::ExpectQuiet { .. } => "quiet",
+            other => panic!("an elapsed claim compiled to {other:?}"),
+        })
+        .collect();
+    assert_eq!(
+        shape,
+        vec![
+            "execute",
+            "outcome",
+            "mark",
+            "not-before",
+            "quiet",
+            "execute"
+        ],
+        "the instant is named after the act that reaches it, and the windows close before the act \
+         that claims them"
+    );
+    assert!(scenario.steps.iter().any(|step| matches!(
+        step,
+        ScenarioStep::ExpectNotBefore { instant, elapsed }
+            if instant.as_str() == "created" && elapsed.get() == 10
+    )));
+}
+
+#[test]
+fn a_window_measured_from_an_instant_nothing_marked_is_refused_with_the_ones_that_are() {
+    // The refusal the whole feature turns on. The suite this format was extended for had a bounded
+    // negative whose window opened wherever the preceding block happened to end, so inserting one
+    // arrangement step moved five assertions and nothing said so. An anchor a reader reconstructs
+    // is an anchor that has already moved.
+    let ir = example("billing");
+    let body =
+        windowed("        not_before: PT10S\n").replace("- since: created", "- since: dialled");
+    assert!(matches!(
+        cause(&ir, &document(&body)),
+        Cause::UnmarkedInstant { instant, marked }
+            if instant.as_str() == "dialled" && marked == vec!["created".to_owned()]
+    ));
+}
+
+#[test]
+fn an_act_cannot_open_a_window_at_its_own_instant() {
+    // The same refusal, reached the other way, and the reason `mark:` is recorded after the act
+    // rather than before it: a window from an act to itself has no width, and a claim about no time
+    // is a claim that cannot fail.
+    let ir = example("billing");
+    let body = format!(
+        "{CREATED}    mark: created\n    elapsed:\n      - since: created\n        \
+         not_before: PT10S\n"
+    );
+    assert!(matches!(
+        cause(&ir, &document(&body)),
+        Cause::UnmarkedInstant { instant, .. } if instant.as_str() == "created"
+    ));
+}
+
+#[test]
+fn one_name_for_two_instants_is_refused_rather_than_read_as_the_later_one() {
+    let ir = example("billing");
+    let body = format!(
+        "{}    mark: created\n",
+        windowed("        not_before: PT10S\n")
+    );
+    assert!(matches!(
+        cause(&ir, &document(&body)),
+        Cause::DuplicateInstant { instant, .. } if instant.as_str() == "created"
+    ));
+}
+
+#[test]
+fn a_window_of_no_seconds_is_refused_rather_than_compiled_into_a_check_that_cannot_fail() {
+    let ir = example("billing");
+    assert!(matches!(
+        cause(&ir, &document(&windowed("        not_before: PT0S\n"))),
+        Cause::VacuousWindow { instant } if instant.as_str() == "created"
+    ));
+}
+
+#[test]
+fn a_bounded_negative_that_forbids_no_event_is_refused() {
+    let ir = example("billing");
+    let body = windowed("        quiet:\n          for: PT10S\n          events: []\n");
+    assert!(matches!(
+        cause(&ir, &document(&body)),
+        Cause::QuietAboutNothing { instant, duration }
+            if instant.as_str() == "created" && duration.get() == 10
+    ));
+}
+
+#[test]
+fn a_claim_the_timelines_own_instants_contradict_is_refused() {
+    // What makes `at:` load-bearing. It still reaches no runner, and it is now the thing a duration
+    // is held against: a file that writes ten seconds between two acts and claims thirty is a
+    // document saying two things, and the reader believes the timeline.
+    let ir = example("billing");
+    assert!(matches!(
+        cause(&ir, &document(&windowed("        not_before: PT30S\n"))),
+        Cause::WindowContradictsTimeline { stated, elapsed, written, .. }
+            if stated == "not_before" && elapsed.get() == 30 && written.get() == 10
+    ));
+
+    // And the other way for `within`, whose contradiction is the opposite inequality: the file puts
+    // the act ten seconds later and the claim says it happened inside five.
+    assert!(matches!(
+        cause(&ir, &document(&windowed("        within: PT5S\n"))),
+        Cause::WindowContradictsTimeline { stated, elapsed, written, .. }
+            if stated == "within" && elapsed.get() == 5 && written.get() == 10
+    ));
+}
+
+#[test]
+fn a_window_that_states_other_than_one_bound_is_refused() {
+    let ir = example("billing");
+    let two = windowed("        not_before: PT10S\n        within: PT10S\n");
+    assert!(matches!(
+        cause(&ir, &document(&two)),
+        Cause::AmbiguousWindow { stated, .. } if stated == vec!["not_before", "within"]
+    ));
+
+    let none = windowed("        {}\n").replace(
+        "      - since: created\n        {}\n",
+        "      - since: created\n",
+    );
+    assert!(matches!(
+        cause(&ir, &document(&none)),
+        Cause::AmbiguousWindow { stated, .. } if stated.is_empty()
+    ));
+}
+
 // ---- the set is closed ----------------------------------------------------------------------------
 
 #[test]
@@ -747,7 +912,7 @@ fn every_cause_is_reachable_from_a_document() {
 ///
 /// Written down rather than counted, because the point of the case above is that the numbering and
 /// the documents agree: a count taken from the enum would agree with itself whatever happened.
-const CAUSES: u16 = 27;
+const CAUSES: u16 = 33;
 
 /// One entry per refusal, each the documents that reach it compiled together.
 ///
@@ -839,5 +1004,23 @@ fn refusable() -> Vec<(&'static str, Vec<String>)> {
         )),
         // 27 nothing happens
         billing(String::new()),
+        // 28 unmarked instant, 29 duplicate instant, 30 vacuous window
+        (
+            "billing",
+            vec![document(
+                &windowed("        not_before: PT10S\n").replace("- since: created", "- since: dialled"),
+            )],
+        ),
+        billing(format!(
+            "{}    mark: created\n",
+            windowed("        not_before: PT10S\n")
+        )),
+        billing(windowed("        not_before: PT0S\n")),
+        // 31 quiet about nothing, 32 contradicted by the timeline, 33 ambiguous window
+        billing(windowed(
+            "        quiet:\n          for: PT10S\n          events: []\n",
+        )),
+        billing(windowed("        not_before: PT30S\n")),
+        billing(windowed("        not_before: PT10S\n        within: PT10S\n")),
     ]
 }

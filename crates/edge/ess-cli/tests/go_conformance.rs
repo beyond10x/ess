@@ -30,10 +30,10 @@ use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
-use ess_conformance::scenario::{CommandRef, EventRef, OutcomeRef};
+use ess_conformance::scenario::{CommandRef, EventRef, InstantName, OutcomeRef};
 use ess_conformance::{
-    ConformanceScenario, ConformanceSuite, InstanceName, Position, ScenarioId, ScenarioStep,
-    ScenarioValue, StandaloneConformanceReport, ViewExpectation,
+    ConformanceScenario, ConformanceSuite, Elapsed, InstanceName, Position, ScenarioId,
+    ScenarioStep, ScenarioValue, StandaloneConformanceReport, ViewExpectation,
 };
 use ess_domain::view::{Direction, Ranking};
 use ess_primitives::facts::Number;
@@ -186,7 +186,7 @@ fn the_emitted_package_holds_a_correct_go_implementation_to_the_whole_suite() {
     assert!(written.failed_scenarios.is_empty());
     assert_eq!(written.spec_digest.as_str(), suite_digest(&directory));
     assert_eq!(written.specification, "billing/v3");
-    assert_eq!(written.suite_version, "ess-conformance/2");
+    assert_eq!(written.suite_version, "ess-conformance/3");
     let _ = std::fs::remove_dir_all(&directory);
 }
 
@@ -494,6 +494,107 @@ fn the_emitted_runner_reads_a_positional_assertion_and_refuses_one_in_an_unorder
         scenarios(&printed, "PASS")
             .contains(&"billing.invoice.IssueInvoice/outcome/position-of-the-newest".to_owned()),
         "the emitted runner reads `first`, `last` and `nth` the way the Rust runner does:\n{printed}"
+    );
+    let _ = std::fs::remove_dir_all(&directory);
+}
+
+/// A window over the invoice this scenario created, and the twenty seconds it must stay quiet for.
+///
+/// Built here rather than authored in `examples/billing-scenarios/`, for the same reason the
+/// positional case above is: the committed suite is wave 4's artifact and a scenario added to it
+/// would change what an unrelated test is pinning. What this needs to show is narrower — that the
+/// four steps the emitted runner gained really run, against a target with a clock — and a scenario
+/// injected into the emitted document shows exactly that.
+fn held_window() -> Vec<ScenarioStep> {
+    let created: EventRef = "billing.invoice.InvoiceCreated".parse().expect("an event");
+    let bridged: InstantName = "created".parse().expect("an instant name");
+    let mut steps = create_and_issue("held", 5.0);
+    steps.push(ScenarioStep::MarkInstant {
+        instant: bridged.clone(),
+    });
+    steps.push(ScenarioStep::ExpectNotBefore {
+        instant: bridged.clone(),
+        elapsed: Elapsed::seconds(20),
+    });
+    // `InvoiceCreated` was published before the mark, so it is outside the window. A target that
+    // answered "have you ever published this" rather than "did you publish it in here" fails a
+    // claim that is true, which is the one way a windowed negative can be wrong without anybody
+    // noticing.
+    steps.push(ScenarioStep::ExpectQuiet {
+        event: created,
+        instant: bridged.clone(),
+        elapsed: Elapsed::seconds(20),
+    });
+    steps.push(ScenarioStep::ExpectWithin {
+        instant: bridged,
+        elapsed: Elapsed::seconds(60),
+    });
+    steps
+}
+
+/// The emitted suite with one elapsed-time scenario added, written back where the package embeds it.
+fn with_a_window(directory: &Path) {
+    let embedded = directory.join("essconform/suite.json");
+    let mut suite = ConformanceSuite::from_json(
+        &std::fs::read_to_string(&embedded).expect("the emitted suite is readable"),
+    )
+    .expect("the emitted suite parses");
+    suite
+        .insert(
+            hand_written("held-for-twenty-seconds"),
+            ConformanceScenario::new(
+                "twenty seconds really pass, and nothing is published while they do"
+                    .parse()
+                    .expect("a purpose"),
+                held_window(),
+                [],
+            ),
+        )
+        .expect("the id is free");
+    std::fs::write(&embedded, suite.to_canonical_json()).expect("the suite writes");
+}
+
+#[test]
+fn the_emitted_runner_holds_a_window_and_fails_a_target_whose_clock_never_moves() {
+    // The acceptance for the Go half of elapsed time, and both directions of it. Green shows the
+    // four steps are executed rather than skipped — a step the emitted runner did not implement
+    // would be *skipped*, which is the shape of green this whole milestone exists to rule out. Red
+    // shows the claim bites: `never-holds` is a system that fires every timer the instant it is
+    // armed, and it is wrong in no other way, so nothing else in the suite can see it.
+    let Some(go) = go() else {
+        eprintln!("no Go toolchain on this machine; the Go emitter is unchecked here");
+        return;
+    };
+    let held = "billing.invoice.IssueInvoice/outcome/held-for-twenty-seconds";
+
+    let directory = module("window");
+    with_a_window(&directory);
+    let (passed, printed) = go_test(&go, &directory, None);
+    assert!(
+        passed,
+        "a target with a clock did not pass the window:\n{printed}"
+    );
+    assert!(
+        scenarios(&printed, "PASS").contains(&held.to_owned()),
+        "the window scenario has to PASS, not SKIP: a skipped one is what an emitted runner that \
+         does not implement the steps would produce, and it would look like nothing was wrong:\n\
+         {printed}"
+    );
+    let _ = std::fs::remove_dir_all(&directory);
+
+    let directory = module("nohold");
+    with_a_window(&directory);
+    let (passed, printed) = go_test(&go, &directory, Some("never-holds"));
+    assert!(
+        !passed,
+        "a system whose timers all fire immediately passed a suite that claims one waits:\n{printed}"
+    );
+    assert_eq!(
+        scenarios(&printed, "FAIL"),
+        vec![held.to_owned()],
+        "exactly the scenario that claims a length of time, and no others: the target is right \
+         about every value, every branch and every view, and wrong only about how long it \
+         took:\n{printed}"
     );
     let _ = std::fs::remove_dir_all(&directory);
 }

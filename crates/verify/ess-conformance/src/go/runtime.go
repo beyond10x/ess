@@ -23,7 +23,10 @@
 // produce the same report on any machine, at any load, on any day.
 //
 // Nothing sleeps. An `eventually` step asks the target again and hands it the deadline; the waiting
-// happens inside the target, which is the only layer that knows what it is waiting for.
+// happens inside the target, which is the only layer that knows what it is waiting for. The same
+// goes for a length of time a scenario claims: the runner states the length and asks Clock what it
+// measured, and whether the target got there by waiting or by advancing a clock of its own is not
+// something this file knows or asks.
 package essconform
 
 import (
@@ -196,6 +199,75 @@ type ExternalOutcomeControl struct {
 	Correlation string
 }
 
+// Clock is what a target offers so that a scenario can claim a length of time.
+//
+// Optional, and separate from Target on purpose. A duration claim is a claim about a system's own
+// timers — a wrap-up window, a TTL, a queue-exit threshold — and plenty of implementations have
+// none worth testing. Folding these two methods into Target would break every target that already
+// compiles, to no benefit; leaving them out of the suite would leave the claims unwritable. So a
+// target that has a clock implements this, and one that does not is *skipped* on the scenarios that
+// need it. Never passed: a window nobody held is not a window that held.
+//
+//	func (t *target) MarkInstant(mark InstantMark) error {
+//	    t.marks[mark.Instant] = t.now()
+//	    return nil
+//	}
+//
+//	func (t *target) ObserveElapsed(request ElapsedRequest) (ElapsedObservation, error) {
+//	    opened, ok := t.marks[request.Instant]
+//	    if !ok {
+//	        return ElapsedObservation{}, fmt.Errorf("`%s` was never marked", request.Instant)
+//	    }
+//	    t.advance(opened.Add(time.Duration(request.Hold) * time.Second))
+//	    return ElapsedObservation{
+//	        ElapsedMillis: t.now().Sub(opened).Milliseconds(),
+//	        Published:     t.publishedSince(request.Watching, opened),
+//	    }, nil
+//	}
+//
+// How the target gets there is its own business. A target driving a real system waits; a target
+// with a clock of its own advances it and answers immediately. Both answer the same question, and
+// the runner compares the answer with what the suite claimed.
+type Clock interface {
+	// MarkInstant records the instant this scenario has reached, under a name a later claim
+	// measures from.
+	MarkInstant(mark InstantMark) error
+
+	// ObserveElapsed lets a window close and reports what the clock read, and what was published
+	// while it was open.
+	//
+	// It reports an observation and never a verdict: whether the reading satisfies the claim is
+	// the runner's decision, made against the suite.
+	ObserveElapsed(request ElapsedRequest) (ElapsedObservation, error)
+}
+
+// InstantMark names the instant a scenario has reached.
+type InstantMark struct {
+	Instant     string
+	Correlation string
+}
+
+// ElapsedRequest asks how much of a window has closed, and what happened in it.
+type ElapsedRequest struct {
+	// Instant is the name of the instant the window opens at, marked earlier in this scenario.
+	Instant string
+	// Hold is how many seconds of the window to let close before answering. Zero asks for the
+	// reading as it stands, which is what a `within` claim wants.
+	Hold int
+	// Watching is the event whose publication inside the window the runner is asking about, empty
+	// when there is none.
+	Watching    string
+	Correlation string
+}
+
+// ElapsedObservation is what a clock read, and what it saw.
+type ElapsedObservation struct {
+	// ElapsedMillis is how much has passed since the marked instant, on the target's own clock.
+	ElapsedMillis int64
+	// Published is how many times the watched event was published inside the window.
+	Published int
+}
+
 // Deadline is when the target may stop waiting, on the runner's clock.
 //
 // A budget rather than an instant, and there is no poll interval: a poll interval is a fixed delay
@@ -286,19 +358,25 @@ type Step struct {
 	// Payload is plain values, not Value: an event's fields are compared against what the
 	// specification declared them to be, and there is nothing earlier in the scenario for them to
 	// refer to. `input` and a view expectation's `fields` are the ones that can refer back.
-	Payload     map[string]Node `json:"payload,omitempty"`
-	Shape       map[string]Held `json:"shape,omitempty"`
-	Error       string          `json:"error,omitempty"`
-	View        string          `json:"view,omitempty"`
+	Payload map[string]Node `json:"payload,omitempty"`
+	Shape   map[string]Held `json:"shape,omitempty"`
+	Error   string          `json:"error,omitempty"`
+	View    string          `json:"view,omitempty"`
 	// Params is what the caller supplies for a view that declares `params:`. Value, not Node, for
 	// the same reason `input` is: a parameter may be the identity an earlier step captured, which
 	// the suite cannot know and names instead.
 	Params      map[string]Value `json:"params,omitempty"`
-	Expectation *Expectation    `json:"expectation,omitempty"`
-	Binding     string          `json:"binding,omitempty"`
-	Instance    string          `json:"instance,omitempty"`
-	Entity      string          `json:"entity,omitempty"`
-	Field       string          `json:"field,omitempty"`
+	Expectation *Expectation     `json:"expectation,omitempty"`
+	Binding     string           `json:"binding,omitempty"`
+	Instance    string           `json:"instance,omitempty"`
+	Entity      string           `json:"entity,omitempty"`
+	Field       string           `json:"field,omitempty"`
+	// Instant is the window's anchor: the name a `mark_instant` step gave one instant of this
+	// scenario. Never inferred from the step before it — a window whose start moves when something
+	// is inserted above it is the defect these four steps were added to fix.
+	Instant string `json:"instant,omitempty"`
+	// Elapsed is a length of time in whole seconds.
+	Elapsed int `json:"elapsed,omitempty"`
 }
 
 // Held is what one declared payload field must hold.
@@ -403,6 +481,7 @@ func Run(t *testing.T, newTarget func() Target) {
 				harness:     harness,
 				correlation: harness.Correlation(),
 				instances:   map[string]Node{},
+				marked:      map[string]bool{},
 				observed:    map[string][]ObservedEvent{},
 				status:      statusPassed,
 			}
@@ -516,6 +595,9 @@ type run struct {
 
 	// instances are what `capture_instance` bound, by name.
 	instances map[string]Node
+	// marked are the instants `mark_instant` named, so a window measured from one nothing marked
+	// is a suite defect rather than a measurement from whatever was in hand.
+	marked map[string]bool
 	// observed are the events the last command published, by event name. Cleared per command,
 	// because every `expect_no_event` is a claim about *that* invocation.
 	observed map[string][]ObservedEvent
@@ -597,6 +679,14 @@ func (r *run) step(index int, step Step) bool {
 		return r.redeliver(index, step)
 	case "configure_external_outcome":
 		return r.configure(index, step)
+	case "mark_instant":
+		return r.markInstant(index, step)
+	case "expect_not_before":
+		return r.expectElapsed(index, step, false)
+	case "expect_within":
+		return r.expectElapsed(index, step, true)
+	case "expect_quiet":
+		return r.expectQuiet(index, step)
 	default:
 		// A step this build does not know is a suite written by a newer generator. Reporting it as
 		// a failure would blame the implementation for the tool's age.
@@ -986,6 +1076,131 @@ func (r *run) configure(index int, step Step) bool {
 	}
 	if err != nil {
 		return r.fail(index, "forcing `%s`: %v", step.Force.Outcome, err)
+	}
+	return true
+}
+
+// clock is the target's clock, or a report that it has none.
+//
+// One place, so every one of the four steps reaches the same answer and the skip reads the same.
+func (r *run) clock(index int) (Clock, bool) {
+	clock, ok := r.target.(Clock)
+	if !ok {
+		r.skip(
+			"step %d claims a length of time, and this target implements no Clock, so the claim "+
+				"cannot be checked. It is reported unanswered rather than satisfied.",
+			index,
+		)
+	}
+	return clock, ok
+}
+
+// markInstant names the instant a later claim measures from.
+func (r *run) markInstant(index int, step Step) bool {
+	clock, ok := r.clock(index)
+	if !ok {
+		return false
+	}
+	if err := clock.MarkInstant(InstantMark{Instant: step.Instant, Correlation: r.correlation}); err != nil {
+		if errors.Is(err, ErrUnsupported) {
+			r.skip("step %d: the target cannot mark the instant `%s`", index, step.Instant)
+			return false
+		}
+		return r.fail(index, "marking the instant `%s`: %v", step.Instant, err)
+	}
+	r.marked[step.Instant] = true
+	return true
+}
+
+// elapsed asks the clock to let a window close, and returns what it read.
+func (r *run) elapsed(index int, step Step, hold int, watching string) (ElapsedObservation, bool) {
+	clock, ok := r.clock(index)
+	if !ok {
+		return ElapsedObservation{}, false
+	}
+	if !r.marked[step.Instant] {
+		return ElapsedObservation{}, r.fail(
+			index,
+			"the window opens at `%s`, and no earlier step marked it; this is a defect in the "+
+				"suite rather than in the implementation",
+			step.Instant,
+		)
+	}
+	observed, err := clock.ObserveElapsed(ElapsedRequest{
+		Instant:     step.Instant,
+		Hold:        hold,
+		Watching:    watching,
+		Correlation: r.correlation,
+	})
+	if errors.Is(err, ErrUnsupported) {
+		r.skip("step %d: the target cannot let time pass since `%s`", index, step.Instant)
+		return ElapsedObservation{}, false
+	}
+	if err != nil {
+		r.fail(index, "letting %ds pass since `%s`: %v", hold, step.Instant, err)
+		return ElapsedObservation{}, false
+	}
+	return observed, true
+}
+
+// expectElapsed requires that a window of a stated length really passed, on one side or the other.
+//
+// `within` measures what already happened and holds nothing: holding first would guarantee the
+// answer it is asking about. `not_before` is the hold, and the hold is the point — the twenty
+// seconds of an experiment are twenty seconds of the system running, not a number in a document.
+func (r *run) expectElapsed(index int, step Step, within bool) bool {
+	hold := step.Elapsed
+	if within {
+		hold = 0
+	}
+	observed, ok := r.elapsed(index, step, hold, "")
+	if !ok {
+		return false
+	}
+	claimed := int64(step.Elapsed) * 1000
+	if within && observed.ElapsedMillis > claimed {
+		return r.fail(
+			index,
+			"no more than %ds may have passed since `%s`, and the target measured %dms",
+			step.Elapsed, step.Instant, observed.ElapsedMillis,
+		)
+	}
+	if !within && observed.ElapsedMillis < claimed {
+		return r.fail(
+			index,
+			"at least %ds must have passed since `%s`, and the target measured %dms",
+			step.Elapsed, step.Instant, observed.ElapsedMillis,
+		)
+	}
+	return true
+}
+
+// expectQuiet requires that an event was not published anywhere inside a window.
+//
+// A different claim from `expect_no_event`, which is about the command before it. This is about a
+// stretch of the scenario in which no command of its own runs.
+func (r *run) expectQuiet(index int, step Step) bool {
+	observed, ok := r.elapsed(index, step, step.Elapsed, step.Event)
+	if !ok {
+		return false
+	}
+	// The window has to have closed for the claim to be about the window the scenario wrote. A
+	// target that answered early reported on a shorter one, and reading that as agreement is the
+	// silent pass this step exists to rule out.
+	if observed.ElapsedMillis < int64(step.Elapsed)*1000 {
+		return r.fail(
+			index,
+			"the window of %ds after `%s` did not close: the target measured %dms, so what it "+
+				"answered about is shorter than what the scenario claims",
+			step.Elapsed, step.Instant, observed.ElapsedMillis,
+		)
+	}
+	if observed.Published > 0 {
+		return r.fail(
+			index,
+			"`%s` was published %d time(s) within %ds of `%s`",
+			step.Event, observed.Published, step.Elapsed, step.Instant,
+		)
 	}
 	return true
 }
