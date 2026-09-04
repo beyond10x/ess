@@ -1,5 +1,46 @@
 # Changelog
 
+## [0.14.0] — 2026-09-04
+
+### Added
+
+- A component can declare that its callers are people at a terminal. `reached_by: command_line`
+  is a third answer to the question the other two already answer — *where are the callers* — and
+  like them it names no wire, no port, no path and no verb. What it states is that the surface
+  leaves the process as a **grammar** rather than as a call, which is the one fact neither
+  `in_process` nor `network` can state: a command-line caller is deployed with the binary and is
+  not a program.
+
+- A `cli:` block says where each accepted command sits in that grammar. Paths within a group are
+  derived from `naming.wire`, as `OpenAPI` paths already are; grouping is declared, because which
+  *activity* a command belongs to cannot be derived from anything the model holds. Eight refusals
+  come with it, and they are the reason the tree is declared here rather than written beside a
+  parser: a block on a component reached another way, a command-line surface with no block, a
+  placed command the component does not accept, a placed view no domain it owns projects, an
+  accepted command or a projected view the tree places nowhere, and either placed twice.
+
+  The view half exists because of a defect found in a consuming repository rather than imagined
+  here. `connectors` serves `kubernetes.workloads` from its personal-local daemon and has no
+  command-line verb that reads a datasource at all, so an operator on that machine cannot reach a
+  projection the process beside them is already publishing. Nobody wrote that down until somebody
+  noticed. It is now a refusal at `ess validate`, before a tree is generated from a declaration
+  that forgot it.
+
+- `ess generate synthesize --target clap` emits the grammar and the completion of it: a `clap`
+  command tree, one flag per declared input field, a `Handler` trait carrying one obligation per
+  word the tree places, and a `completions` verb that writes a script for every shell `clap`
+  supports. An enum-typed field completes its whole closed set, so a shell completes the *values*
+  a flag accepts and not merely the word in front of them; a field the model cannot enumerate
+  completes as free text, because offering a guess would complete values the system refuses.
+
+  It emits no type layer. The Rust target already emits every input, outcome, event and error as
+  a type, and a fourth rendering of that layer would be a fourth thing to keep in step — so a
+  handler receives `clap::ArgMatches`, and `TARGET.md` states that as a weakening rather than
+  leaving it to be discovered.
+
+  The format is still `ess/1`. Both additions serialize out when unset, so every existing
+  document digests exactly as it did; the published schema grows by 93 lines and loses nothing.
+
 ## [0.13.5] — 2026-09-04
 
 ### Added

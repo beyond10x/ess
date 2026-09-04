@@ -76,7 +76,7 @@ use std::fmt;
 
 use ess_domain::binding::{BindingName, Delivery, Failure};
 use ess_domain::command::{OutcomeName, TestStrategy};
-use ess_domain::component::{ComponentName, Reach};
+use ess_domain::component::{CliName, ComponentName, Reach};
 use ess_domain::entity::{
     Cardinality, EntitySpec, Invariant, RelationKind, StateMachine, StateName, Transition,
 };
@@ -1119,6 +1119,13 @@ pub struct ResolvedComponent {
     /// statement no author made.
     #[serde(skip_serializing_if = "unstated_reach")]
     pub reached_by: Reach,
+    /// Where each accepted command sits in the command tree.
+    ///
+    /// `None` for every component that is not a command-line surface, and skipped when it is, for
+    /// the same reason `reached_by` is: a key that appeared everywhere to say nothing was declared
+    /// would move every committed digest in the repository for a statement no author made.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub cli: Option<ResolvedCommandLineSurface>,
     /// What it is called on the wire, and shown as.
     pub naming: Naming,
     /// The records outside this model that explain it, such as `jira:DEV-630`.
@@ -1126,6 +1133,37 @@ pub struct ResolvedComponent {
     /// Carried through from the declaration so a projection can publish it. Empty by default.
     #[serde(default, skip_serializing_if = "ess_domain::refs::is_empty")]
     pub refs: Refs,
+}
+
+/// Where a command-line surface puts each command it accepts, with its commands resolved.
+///
+/// The handles are what make this worth carrying into the IR rather than reading the declaration
+/// again: a projection walking the tree reaches the command's input fields and outcomes through the
+/// same total lookup every other handle uses.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
+pub struct ResolvedCommandLineSurface {
+    /// What the binary is called.
+    pub binary: CliName,
+    /// Commands at the top level, under no group.
+    pub commands: BTreeSet<CommandHandle>,
+    /// Views read at the top level, under no group.
+    pub views: BTreeSet<ViewHandle>,
+    /// The groups, in the order the document wrote them.
+    pub groups: Vec<ResolvedCommandGroup>,
+}
+
+/// One first-level word in a command tree, with its commands resolved.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
+pub struct ResolvedCommandGroup {
+    /// The word.
+    pub name: CliName,
+    /// What the group is, in one line.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub summary: Option<String>,
+    /// The commands under it.
+    pub commands: BTreeSet<CommandHandle>,
+    /// The views read under it.
+    pub views: BTreeSet<ViewHandle>,
 }
 
 /// `true` where a component's reach is the unstated default.

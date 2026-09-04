@@ -818,6 +818,81 @@
       },
       "additionalProperties": false
     },
+    "RawCommandGroup": {
+      "description": "One first-level word in a command tree, as a document says it.",
+      "type": "object",
+      "required": [
+        "name"
+      ],
+      "properties": {
+        "commands": {
+          "description": "The commands under it.",
+          "default": [],
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/QualifiedName"
+          }
+        },
+        "name": {
+          "description": "The word, as typed.",
+          "type": "string"
+        },
+        "summary": {
+          "description": "What the group is, in one line. Becomes the group's `--help` text.",
+          "default": null,
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "views": {
+          "description": "The views read under it.",
+          "default": [],
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/QualifiedName"
+          }
+        }
+      },
+      "additionalProperties": false
+    },
+    "RawCommandLineSurface": {
+      "description": "Where a command-line surface puts each command it accepts, as a document says it.\n\n# Why this is declared and paths are not\n\nA command's own path is derived, the way an `OpenAPI` path already is: `naming.wire` gives it one token. Which *activity* it belongs under cannot be derived from anything — `doctor` and `providers` are both reads, `init` and `connect` are both first-run, and no field in the model says so. That judgement is the whole content of this block, and writing it here is what lets a checker answer \"does every command have exactly one place\" at all.",
+      "type": "object",
+      "required": [
+        "binary"
+      ],
+      "properties": {
+        "binary": {
+          "description": "What the binary is called, as typed.",
+          "type": "string"
+        },
+        "commands": {
+          "description": "Commands that sit at the top level, under no group.",
+          "default": [],
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/QualifiedName"
+          }
+        },
+        "groups": {
+          "description": "The groups, each a first-level word with commands under it.",
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/RawCommandGroup"
+          }
+        },
+        "views": {
+          "description": "Views read at the top level, under no group.",
+          "default": [],
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/QualifiedName"
+          }
+        }
+      },
+      "additionalProperties": false
+    },
     "RawCommandSpec": {
       "description": "A command as written in a document, before validation.",
       "type": "object",
@@ -892,6 +967,17 @@
           "allOf": [
             {
               "$ref": "#/definitions/RawComponentSurface"
+            }
+          ]
+        },
+        "cli": {
+          "description": "Where each accepted command sits in the command tree, when this is a command-line surface.\n\nUnstated is absent, and absent digests as it did before the key existed. Only meaningful beside [`Reach::CommandLine`]; anywhere else it is refused.",
+          "anyOf": [
+            {
+              "$ref": "#/definitions/RawCommandLineSurface"
+            },
+            {
+              "type": "null"
             }
           ]
         },
@@ -1520,6 +1606,13 @@
           "type": "string",
           "enum": [
             "network"
+          ]
+        },
+        {
+          "description": "Every caller is a person at a terminal, typing.\n\nDeployed with it, like [`Self::InProcess`], and yet the surface does leave the process: it leaves as a *grammar* rather than a call, and a grammar is a contract a person reads. That is the fact neither other variant can state, and the reason this one exists.\n\nWhich contract follows is derived here too. [`Self::Network`] derives an `OpenAPI` document because that is the one contract this repository projects for a command surface on a wire; `command_line` derives the `clap` tree and completion scripts `ess generate synthesize --target clap` writes, for the same reason. No variant names a wire, a port, a path or a verb, and this one does not either.",
+          "type": "string",
+          "enum": [
+            "command_line"
           ]
         }
       ]

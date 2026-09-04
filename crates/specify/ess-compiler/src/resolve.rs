@@ -58,14 +58,25 @@ use ess_primitives::error::{ValidationCode, ValidationErrors};
 use crate::diagnostic::{Code, Detail, Diagnostic, Diagnostics, Severity};
 use crate::ir::{
     ActorHandle, CommandHandle, ComponentHandle, DomainHandle, EntityHandle, ErrorHandle, EssIr,
-    EventHandle, ResolvedActor, ResolvedBinding, ResolvedBody, ResolvedCommand, ResolvedComponent,
-    ResolvedCondition, ResolvedConversion, ResolvedDomain, ResolvedEffect, ResolvedEntity,
-    ResolvedError, ResolvedEvent, ResolvedField, ResolvedInstance, ResolvedMapping,
-    ResolvedMappingValue, ResolvedOutcome, ResolvedPayload, ResolvedPayloadField,
-    ResolvedPayloadValue, ResolvedRelation, ResolvedSubject, ResolvedType, ResolvedTypeRef,
-    ResolvedView, ResolvedWorkload, TypeHandle, ViewHandle,
+    EventHandle, ResolvedActor, ResolvedBinding, ResolvedBody, ResolvedCommand,
+    ResolvedCommandGroup, ResolvedCommandLineSurface, ResolvedComponent, ResolvedCondition,
+    ResolvedConversion, ResolvedDomain, ResolvedEffect, ResolvedEntity, ResolvedError,
+    ResolvedEvent, ResolvedField, ResolvedInstance, ResolvedMapping, ResolvedMappingValue,
+    ResolvedOutcome, ResolvedPayload, ResolvedPayloadField, ResolvedPayloadValue, ResolvedRelation,
+    ResolvedSubject, ResolvedType, ResolvedTypeRef, ResolvedView, ResolvedWorkload, TypeHandle,
+    ViewHandle,
 };
 use crate::source::{Location, SourceMap, Span};
+
+/// Handles for the views a command tree reads.
+///
+/// A view handle is minted from its name rather than looked up, the way a domain handle is: the
+/// component's own domains were resolved a few lines above, and `validate_command_line_views` has
+/// already refused a tree naming a view no domain the component owns projects. There is nothing
+/// left here that could miss.
+fn view_handles(names: &std::collections::BTreeSet<QualifiedName>) -> BTreeSet<ViewHandle> {
+    names.iter().cloned().map(ViewHandle::new).collect()
+}
 
 /// The code space, and every rejection either half of the compiler reports.
 ///
@@ -2257,6 +2268,33 @@ impl<'a> Resolver<'a> {
     /// The rejections here belong to `ess-domain`'s `validate_components`, so nothing is refused
     /// twice: a reference to something undeclared marks the compilation off-contract and the
     /// component stays out of the IR.
+    /// Resolves a set of command names to handles, marking the compilation incomplete on a miss.
+    ///
+    /// Used only by the command tree, whose names `validate_command_line` has already held to the
+    /// component's `accepts` set — so a miss here means the command itself did not resolve, and the
+    /// component is left out of the IR exactly as `accepts` would have left it out.
+    fn handles_of(
+        &mut self,
+        names: &BTreeSet<QualifiedName>,
+        commands: &BTreeMap<QualifiedName, ResolvedCommand>,
+        complete: &mut bool,
+    ) -> BTreeSet<CommandHandle> {
+        let mut handles = BTreeSet::new();
+        for name in names {
+            match self.command_of(name, commands) {
+                Found::Handle(handle) => {
+                    handles.insert(handle);
+                }
+                Found::Unresolved => *complete = false,
+                Found::Missing => {
+                    *complete = false;
+                    self.off_contract = true;
+                }
+            }
+        }
+        handles
+    }
+
     fn components(
         &mut self,
         commands: &BTreeMap<QualifiedName, ResolvedCommand>,
@@ -2301,11 +2339,33 @@ impl<'a> Resolver<'a> {
                     }
                 }
             }
+            // Every placed command is one the component accepts — `validate_command_line` refuses
+            // the tree otherwise — so this walks the same resolution `accepts` just did and cannot
+            // reach a name that was not already looked up.
+            let cli = component
+                .cli
+                .as_ref()
+                .map(|cli| ResolvedCommandLineSurface {
+                    binary: cli.binary.clone(),
+                    commands: self.handles_of(&cli.commands, commands, &mut complete),
+                    views: view_handles(&cli.views),
+                    groups: cli
+                        .groups
+                        .iter()
+                        .map(|group| ResolvedCommandGroup {
+                            name: group.name.clone(),
+                            summary: group.summary.clone(),
+                            commands: self.handles_of(&group.commands, commands, &mut complete),
+                            views: view_handles(&group.views),
+                        })
+                        .collect(),
+                });
             if complete {
                 resolved.insert(
                     component.name.clone(),
                     ResolvedComponent {
                         reached_by: component.reached_by,
+                        cli,
                         name: component.name,
                         owns,
                         accepts,

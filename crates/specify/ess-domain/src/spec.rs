@@ -333,28 +333,32 @@ impl Specification {
             .iter()
             .map(|domain| domain.name.clone())
             .collect();
-        // The domains that project a row, which is what decides whether a component reached over
-        // a network has anything to serve. Derived here rather than passed as the whole view map:
-        // the rule asks one yes-or-no question per domain, and handing the components a view
-        // catalogue would invite a second question nobody has asked for.
-        let projecting: BTreeSet<QualifiedName> = self
+        // The views each domain projects. This was the yes-or-no `projecting` set until a second
+        // question was asked of it: a network surface needs to know *whether* a domain projects a
+        // row, and a command tree needs to know *which*, so that a view served with no verb is a
+        // refusal rather than something somebody notices later.
+        let views: BTreeMap<QualifiedName, BTreeSet<QualifiedName>> = self
             .system
             .domains
             .iter()
-            .filter(|domain| {
-                domain
-                    .views
-                    .iter()
-                    .any(|view| self.views.contains_key(view))
+            .map(|domain| {
+                (
+                    domain.name.clone(),
+                    domain
+                        .views
+                        .iter()
+                        .filter(|view| self.views.contains_key(*view))
+                        .cloned()
+                        .collect(),
+                )
             })
-            .map(|domain| domain.name.clone())
             .collect();
         errors.extend(crate::component::validate_components(
             &self.components,
             &domain_names,
             &command_names,
             &event_names,
-            &projecting,
+            &views,
         ));
 
         // The payload construct's cross-declaration half, beside the binding's for the reason the

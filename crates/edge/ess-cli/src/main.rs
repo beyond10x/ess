@@ -374,6 +374,7 @@ enum SynthesisTarget {
     Rust,
     Go,
     Web,
+    Clap,
 }
 
 impl SynthesisTarget {
@@ -382,6 +383,7 @@ impl SynthesisTarget {
             Self::Rust => ess_synth::Target::Rust,
             Self::Go => ess_synth::Target::Go,
             Self::Web => ess_synth::Target::Web,
+            Self::Clap => ess_synth::Target::Clap,
         }
     }
 }

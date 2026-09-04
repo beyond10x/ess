@@ -40,6 +40,7 @@
 //! construction — and reuses `ess-gen`'s [`Artifact`] and provenance conventions rather than
 //! growing parallel ones.
 
+pub mod clap;
 pub mod go;
 pub mod plan;
 pub mod rust;
@@ -75,8 +76,8 @@ pub const TARGET_JSON: &str = "target.json";
 
 /// What a synthesis emits.
 ///
-/// Three, and the enum is not an abstraction over "targets in general": each variant names a
-/// sibling module that consumes the plan, and adding a fourth means writing a fourth emitter, not
+/// Four, and the enum is not an abstraction over "targets in general": each variant names a
+/// sibling module that consumes the plan, and adding a fifth means writing a fifth emitter, not
 /// registering one.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Target {
@@ -91,6 +92,13 @@ pub enum Target {
     /// JSON out — plus a catalogue of the model that the page builds itself from. What it cannot
     /// carry is a browser's limit rather than a language's, and it is in `TARGET.md` all the same.
     Web,
+    /// A `clap` command tree and the completion scripts generated from it — the fourth, and the
+    /// first one a person types at.
+    ///
+    /// Not a fourth language either: it is the *grammar* around a component that declared
+    /// `reached_by: command_line`, derived from the `cli:` block that component writes. It emits no
+    /// type layer, because the Rust target already emits one, and says so in `TARGET.md`.
+    Clap,
 }
 
 impl Target {
@@ -100,6 +108,7 @@ impl Target {
             Self::Rust => "rust",
             Self::Go => go::TARGET,
             Self::Web => web::TARGET,
+            Self::Clap => clap::TARGET,
         }
     }
 }
@@ -286,6 +295,13 @@ pub fn synthesize_for(ir: &EssIr, target: Target) -> Synthesis {
         }
         Target::Web => {
             let emission = web::workspace(ir, &plan);
+            for artifact in emission.artifacts {
+                insert(&mut artifacts, artifact);
+            }
+            Some(emission.report)
+        }
+        Target::Clap => {
+            let emission = clap::workspace(ir, &plan);
             for artifact in emission.artifacts {
                 insert(&mut artifacts, artifact);
             }

@@ -93,6 +93,12 @@ pub struct RawComponentSpec {
     /// existed, and the one a reader assumes when nothing says otherwise.
     #[serde(default)]
     pub reached_by: Reach,
+    /// Where each accepted command sits in the command tree, when this is a command-line surface.
+    ///
+    /// Unstated is absent, and absent digests as it did before the key existed. Only meaningful
+    /// beside [`Reach::CommandLine`]; anywhere else it is refused.
+    #[serde(default)]
+    pub cli: Option<RawCommandLineSurface>,
     /// What it is called on the wire and shown as.
     #[serde(default)]
     pub naming: Naming,
@@ -153,17 +159,30 @@ pub enum Reach {
     /// documentary: something outside has to issue these commands, and the only way it can is over
     /// the contract.
     Network,
+    /// Every caller is a person at a terminal, typing.
+    ///
+    /// Deployed with it, like [`Self::InProcess`], and yet the surface does leave the process: it
+    /// leaves as a *grammar* rather than a call, and a grammar is a contract a person reads. That
+    /// is the fact neither other variant can state, and the reason this one exists.
+    ///
+    /// Which contract follows is derived here too. [`Self::Network`] derives an `OpenAPI` document
+    /// because that is the one contract this repository projects for a command surface on a wire;
+    /// `command_line` derives the `clap` tree and completion scripts `ess generate synthesize
+    /// --target clap` writes, for the same reason. No variant names a wire, a port, a path or a
+    /// verb, and this one does not either.
+    CommandLine,
 }
 
 impl Reach {
-    /// The two words `reached_by:` accepts, in the order [`Reach`] declares them.
-    pub const ALL: &'static [Reach] = &[Reach::InProcess, Reach::Network];
+    /// The three words `reached_by:` accepts, in the order [`Reach`] declares them.
+    pub const ALL: &'static [Reach] = &[Reach::InProcess, Reach::Network, Reach::CommandLine];
 
     /// The word a document writes.
     pub fn as_str(self) -> &'static str {
         match self {
             Self::InProcess => "in_process",
             Self::Network => "network",
+            Self::CommandLine => "command_line",
         }
     }
 
@@ -201,6 +220,142 @@ pub struct RawComponentSurface {
     pub events: Vec<QualifiedName>,
 }
 
+/// Where a command-line surface puts each command it accepts, as a document says it.
+///
+/// # Why this is declared and paths are not
+///
+/// A command's own path is derived, the way an `OpenAPI` path already is: `naming.wire` gives it
+/// one token. Which *activity* it belongs under cannot be derived from anything — `doctor` and
+/// `providers` are both reads, `init` and `connect` are both first-run, and no field in the model
+/// says so. That judgement is the whole content of this block, and writing it here is what lets a
+/// checker answer "does every command have exactly one place" at all.
+#[derive(Debug, Clone, serde::Deserialize, schemars::JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct RawCommandLineSurface {
+    /// What the binary is called, as typed.
+    pub binary: String,
+    /// Commands that sit at the top level, under no group.
+    #[serde(default)]
+    pub commands: Vec<QualifiedName>,
+    /// Views read at the top level, under no group.
+    #[serde(default)]
+    pub views: Vec<QualifiedName>,
+    /// The groups, each a first-level word with commands under it.
+    #[serde(default)]
+    pub groups: Vec<RawCommandGroup>,
+}
+
+/// One first-level word in a command tree, as a document says it.
+#[derive(Debug, Clone, serde::Deserialize, schemars::JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct RawCommandGroup {
+    /// The word, as typed.
+    pub name: String,
+    /// What the group is, in one line. Becomes the group's `--help` text.
+    #[serde(default)]
+    pub summary: Option<String>,
+    /// The commands under it.
+    #[serde(default)]
+    pub commands: Vec<QualifiedName>,
+    /// The views read under it.
+    #[serde(default)]
+    pub views: Vec<QualifiedName>,
+}
+
+/// A word a person types: a binary name, or a group.
+///
+/// The same charset as [`ComponentName`] and a separate type, because these are different things
+/// that happen to be spelt alike — a component becomes a workload name, and this becomes an
+/// argument. Sharing the type would make a rename of one look like a rename of the other.
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, serde::Serialize)]
+#[serde(transparent)]
+pub struct CliName(String);
+
+impl CliName {
+    /// What a typed word looks like.
+    pub const PATTERN: &'static str = "^[a-z][a-z0-9]*(-[a-z0-9]+)*$";
+
+    /// Parses one.
+    pub fn new(value: impl AsRef<str>) -> Result<Self, ess_primitives::error::ParseError> {
+        let value = value.as_ref();
+        let valid = !value.is_empty()
+            && value.starts_with(|c: char| c.is_ascii_lowercase())
+            && !value.ends_with('-')
+            && !value.contains("--")
+            && value
+                .chars()
+                .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '-');
+        if !valid {
+            return Err(ess_primitives::error::ParseError::identifier(
+                "command-line name",
+                value,
+                "a binary or group is lower-case words joined by single hyphens, such as \
+                 `serve-hosted`; it is typed at a shell"
+                    .to_owned(),
+            ));
+        }
+        Ok(Self(value.to_owned()))
+    }
+
+    /// The name as text.
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
+}
+
+impl std::fmt::Display for CliName {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(&self.0)
+    }
+}
+
+impl schemars::JsonSchema for CliName {
+    fn schema_name() -> String {
+        "CliName".to_owned()
+    }
+
+    fn json_schema(_: &mut schemars::gen::SchemaGenerator) -> schemars::schema::Schema {
+        let mut schema = schemars::schema::SchemaObject {
+            instance_type: Some(schemars::schema::InstanceType::String.into()),
+            ..Default::default()
+        };
+        schema.string().pattern = Some(Self::PATTERN.to_owned());
+        schema.metadata().description =
+            Some("A word typed at a shell, such as `inspect`.".to_owned());
+        schema.into()
+    }
+}
+
+/// Where a command-line surface puts each command it accepts.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
+pub struct CommandLineSurface {
+    /// What the binary is called.
+    pub binary: CliName,
+    /// Commands at the top level, under no group.
+    pub commands: BTreeSet<QualifiedName>,
+    /// Views read at the top level, under no group.
+    pub views: BTreeSet<QualifiedName>,
+    /// The groups, in the order the document wrote them.
+    ///
+    /// Ordered as written rather than sorted: a command tree's first level is read top to bottom by
+    /// a person, and alphabetising it would put `admin` above the verb they came for.
+    pub groups: Vec<CommandGroup>,
+}
+
+/// One first-level word in a command tree.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
+pub struct CommandGroup {
+    /// The word.
+    pub name: CliName,
+    /// What the group is, in one line.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub summary: Option<String>,
+    /// The commands under it.
+    pub commands: BTreeSet<QualifiedName>,
+    /// The views read under it.
+    pub views: BTreeSet<QualifiedName>,
+}
+
 /// A component: one unit of ownership.
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
 pub struct ComponentSpec {
@@ -214,6 +369,12 @@ pub struct ComponentSpec {
     pub publishes: BTreeSet<QualifiedName>,
     /// Where the callers of its surface are.
     pub reached_by: Reach,
+    /// Where each accepted command sits in the command tree.
+    ///
+    /// `None` for every component that is not a command-line surface, and skipped when it is, so a
+    /// specification written before this key existed digests exactly as it did.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub cli: Option<CommandLineSurface>,
     /// What it is called on the wire, and what a person is shown.
     pub naming: Naming,
     /// The records outside this model that explain it, such as `jira:DEV-630`.
@@ -303,12 +464,24 @@ impl TryFrom<RawComponentSpec> for ComponentSpec {
             }
         };
 
+        let cli = match raw.cli {
+            None => None,
+            Some(cli) => match resolve_command_line(&raw.name, cli) {
+                Ok(cli) => Some(cli),
+                Err(refusals) => {
+                    errors.extend(refusals);
+                    None
+                }
+            },
+        };
+
         let component = Self {
             name,
             owns: raw.owns.domains.into_iter().collect(),
             accepts: raw.accepts.commands.into_iter().collect(),
             publishes: raw.publishes.events.into_iter().collect(),
             reached_by: raw.reached_by,
+            cli,
             naming: Naming {
                 summary: raw.naming.summary.or(raw.summary),
                 ..raw.naming
@@ -318,6 +491,54 @@ impl TryFrom<RawComponentSpec> for ComponentSpec {
 
         errors.extend(component.validate());
         errors.into_result(component)
+    }
+}
+
+/// Turns a written `cli:` block into the resolved one, or names every word that is not a word.
+///
+/// Separate from [`ComponentSpec::validate_command_line`] because the two answer different
+/// questions: this one is *is this spelt like something a person types*, and that one is *does the
+/// tree it describes cover the commands exactly once*. A name that failed here would make the
+/// second check report a second, derived problem about a name nobody can type anyway.
+fn resolve_command_line(
+    component: &str,
+    raw: RawCommandLineSurface,
+) -> Result<CommandLineSurface, ValidationErrors> {
+    let mut errors = ValidationErrors::new();
+    let mut named = |value: &str| match CliName::new(value) {
+        Ok(name) => Some(name),
+        Err(error) => {
+            errors.push(ValidationError::new(
+                ValidationCode::TypeMismatch,
+                format!("component {component}"),
+                error.to_string(),
+            ));
+            None
+        }
+    };
+
+    let binary = named(&raw.binary);
+    let groups: Vec<_> = raw
+        .groups
+        .into_iter()
+        .filter_map(|group| {
+            named(&group.name).map(|name| CommandGroup {
+                name,
+                summary: group.summary,
+                commands: group.commands.into_iter().collect(),
+                views: group.views.into_iter().collect(),
+            })
+        })
+        .collect();
+
+    match binary {
+        Some(binary) if errors.is_empty() => Ok(CommandLineSurface {
+            binary,
+            commands: raw.commands.into_iter().collect(),
+            views: raw.views.into_iter().collect(),
+            groups,
+        }),
+        _ => Err(errors),
     }
 }
 
@@ -340,6 +561,149 @@ impl ComponentSpec {
                 ),
             );
         }
+        errors.extend(self.validate_command_line());
+        errors
+    }
+
+    /// Checks that a command tree names every accepted command exactly once, and nothing else.
+    ///
+    /// Five refusals, and they are the reason the tree is declared here rather than written beside
+    /// the parser. A document beside a parser is checked by nobody; these are checked by
+    /// `ess validate` before anything is generated from it.
+    ///
+    /// | refused | why |
+    /// |---|---|
+    /// | `cli:` without [`Reach::CommandLine`] | it describes a surface the component does not have |
+    /// | [`Reach::CommandLine`] without `cli:` | there is nothing to generate a tree from |
+    /// | a placed command the component does not accept | the same unknown-target refusal `relations:` gives |
+    /// | an accepted command placed nowhere | the tree would be missing a command, and nothing else would say so |
+    /// | an accepted command placed twice | a command has one path, and two answers is an undecided question written down twice |
+    pub fn validate_command_line(&self) -> ValidationErrors {
+        let mut errors = ValidationErrors::new();
+        let at = || format!("component {}", self.name);
+        let cli = match (&self.cli, self.reached_by) {
+            (None, Reach::CommandLine) => {
+                errors.push(
+                    ValidationError::new(
+                        ValidationCode::MissingDeclaration,
+                        at(),
+                        format!(
+                            "`{}` is reached from a command line and says nothing about its \
+                             command tree",
+                            self.name
+                        ),
+                    )
+                    .with_hint(
+                        "give it a `cli:` block naming the binary and where each accepted \
+                         command sits, or say `reached_by: in_process`",
+                    ),
+                );
+                return errors;
+            }
+            (Some(_), reach) if reach != Reach::CommandLine => {
+                errors.push(
+                    ValidationError::new(
+                        ValidationCode::ConflictingDeclaration,
+                        at(),
+                        format!(
+                            "`{}` declares a command tree and is `reached_by: {}`",
+                            self.name,
+                            reach.as_str()
+                        ),
+                    )
+                    .with_hint(
+                        "a command tree is what `reached_by: command_line` produces; say that, \
+                         or delete the `cli:` block",
+                    ),
+                );
+                return errors;
+            }
+            (None, _) => return errors,
+            (Some(cli), _) => cli,
+        };
+        errors.extend(self.validate_command_placement(cli));
+        errors
+    }
+
+    /// The half of [`Self::validate_command_line`] about the tree rather than about declaring one.
+    ///
+    /// Split out because the two answer different questions and the first has to settle before the
+    /// second can be asked: a component that should not have a tree at all, or has none where one
+    /// is required, has no placement to check.
+    fn validate_command_placement(&self, cli: &CommandLineSurface) -> ValidationErrors {
+        let mut errors = ValidationErrors::new();
+        let at = || format!("component {}", self.name);
+        // Where each command was placed, and how often. Ordered, so the refusals below come out in
+        // the same order on every run.
+        let mut placements: BTreeMap<&QualifiedName, Vec<String>> = BTreeMap::new();
+        for command in &cli.commands {
+            placements
+                .entry(command)
+                .or_default()
+                .push("the top level".to_owned());
+        }
+        for group in &cli.groups {
+            for command in &group.commands {
+                placements
+                    .entry(command)
+                    .or_default()
+                    .push(format!("`{}`", group.name));
+            }
+        }
+
+        for (command, places) in &placements {
+            if !self.accepts.contains(*command) {
+                errors.push(
+                    ValidationError::new(
+                        ValidationCode::UndeclaredReference,
+                        at(),
+                        format!(
+                            "the command tree places `{command}`, which `{}` does not accept",
+                            self.name
+                        ),
+                    )
+                    .with_hint(
+                        "a tree can only place a command the component accepts; add it to \
+                         `accepts.commands`, or remove it from the tree",
+                    ),
+                );
+            }
+            if places.len() > 1 {
+                errors.push(
+                    ValidationError::new(
+                        ValidationCode::DuplicateDeclaration,
+                        at(),
+                        format!(
+                            "the command tree places `{command}` under {}",
+                            places.join(" and ")
+                        ),
+                    )
+                    .with_hint(
+                        "a command has one path; keep the place it belongs and drop the other",
+                    ),
+                );
+            }
+        }
+
+        for command in &self.accepts {
+            if !placements.contains_key(command) {
+                errors.push(
+                    ValidationError::new(
+                        ValidationCode::MissingDeclaration,
+                        at(),
+                        format!(
+                            "`{}` accepts `{command}` and the command tree gives it no place",
+                            self.name
+                        ),
+                    )
+                    .with_hint(
+                        "put it under a group or at the top level; a command with no place is one \
+                         the generated tree would not carry",
+                    ),
+                );
+            }
+        }
+
         errors
     }
 
@@ -442,6 +806,108 @@ impl ComponentSpec {
     }
 }
 
+impl ComponentSpec {
+    /// Checks that the command tree reaches every view the component's own domains project.
+    ///
+    /// The half of the tree that cannot be answered without the rest of the specification: a view
+    /// is declared inside a domain document, and a component holds only the domain's name.
+    ///
+    /// # The defect this exists for
+    ///
+    /// A surface that is served and has no verb is invisible, and nothing reports it. `connectors`
+    /// found this the long way round: its personal-local Kubernetes backend answers
+    /// `b10x.connector-datasource.v0alpha1` for `kubernetes.workloads`, the daemon serves it, and
+    /// the command tree has no verb that reads a datasource at all — so an operator on that machine
+    /// cannot reach a projection the process beside them is already publishing. Nobody wrote that
+    /// down until somebody noticed. Here it is a refusal at `ess validate`, before a tree is
+    /// generated from a declaration that forgot it.
+    pub fn validate_command_line_views(
+        &self,
+        views: &BTreeMap<QualifiedName, BTreeSet<QualifiedName>>,
+    ) -> ValidationErrors {
+        let mut errors = ValidationErrors::new();
+        let Some(cli) = &self.cli else {
+            return errors;
+        };
+
+        let mut placements: BTreeMap<&QualifiedName, Vec<String>> = BTreeMap::new();
+        for view in &cli.views {
+            placements
+                .entry(view)
+                .or_default()
+                .push("the top level".to_owned());
+        }
+        for group in &cli.groups {
+            for view in &group.views {
+                placements
+                    .entry(view)
+                    .or_default()
+                    .push(format!("`{}`", group.name));
+            }
+        }
+
+        let owned: BTreeSet<&QualifiedName> = self
+            .owns
+            .iter()
+            .filter_map(|domain| views.get(domain))
+            .flatten()
+            .collect();
+
+        for (view, places) in &placements {
+            if !owned.contains(*view) {
+                errors.push(
+                    ValidationError::new(
+                        ValidationCode::UndeclaredReference,
+                        format!("component {}", self.name),
+                        format!(
+                            "the command tree reads `{view}`, which no domain `{}` owns projects",
+                            self.name
+                        ),
+                    )
+                    .with_hint(
+                        "a tree can only read a view from a domain the component owns; own that \
+                         domain, or drop the view from the tree",
+                    ),
+                );
+            }
+            if places.len() > 1 {
+                errors.push(
+                    ValidationError::new(
+                        ValidationCode::DuplicateDeclaration,
+                        format!("component {}", self.name),
+                        format!(
+                            "the command tree reads `{view}` under {}",
+                            places.join(" and ")
+                        ),
+                    )
+                    .with_hint("a view has one path; keep the place it belongs and drop the other"),
+                );
+            }
+        }
+
+        for view in owned {
+            if !placements.contains_key(view) {
+                errors.push(
+                    ValidationError::new(
+                        ValidationCode::MissingDeclaration,
+                        format!("component {}", self.name),
+                        format!(
+                            "`{}` projects `{view}` and the command tree gives it no place",
+                            self.name
+                        ),
+                    )
+                    .with_hint(
+                        "give it a verb, or stop projecting it; a view served with no way to \
+                         read it is one nobody can reach",
+                    ),
+                );
+            }
+        }
+
+        errors
+    }
+}
+
 /// Everything checkable only against the rest of the specification.
 ///
 /// Every rule in the module table except the empty-component one, which conversion already spent —
@@ -453,6 +919,10 @@ impl ComponentSpec {
 /// bindings cross contexts, so resolving a component's references against its own domains only
 /// would refuse the design's own example.
 ///
+/// `views` is the catalogue by domain rather than the yes-or-no `projecting` set it used to be. Two
+/// questions are asked of it now, not one: whether a network surface has anything to serve, and
+/// whether a command tree gives every view it projects a verb — and the second needs the names.
+///
 /// Errors accumulate. One pass reports every broken reference and every conflict, so a document is
 /// fixed once rather than four times.
 pub fn validate_components(
@@ -460,12 +930,18 @@ pub fn validate_components(
     domains: &BTreeSet<QualifiedName>,
     commands: &BTreeSet<QualifiedName>,
     events: &BTreeSet<QualifiedName>,
-    projecting: &BTreeSet<QualifiedName>,
+    views: &BTreeMap<QualifiedName, BTreeSet<QualifiedName>>,
 ) -> ValidationErrors {
     let mut errors = ValidationErrors::new();
+    let projecting: BTreeSet<QualifiedName> = views
+        .iter()
+        .filter(|(_, projected)| !projected.is_empty())
+        .map(|(domain, _)| domain.clone())
+        .collect();
     for component in components.values() {
         errors.extend(component.validate_references(domains, commands, events));
-        errors.extend(component.validate_reach(projecting));
+        errors.extend(component.validate_reach(&projecting));
+        errors.extend(component.validate_command_line_views(views));
     }
 
     let ownership = ownership(components, domains);
@@ -679,7 +1155,7 @@ publishes:
             &domains(),
             &commands(),
             &events(),
-            &projecting(),
+            &view_catalogue(),
         )
     }
 
@@ -687,6 +1163,26 @@ publishes:
     /// reach rule's refusal reachable at all.
     fn projecting() -> BTreeSet<QualifiedName> {
         names(["billing.invoice"])
+    }
+
+    /// The same fact as [`projecting`], by name rather than by yes-or-no.
+    ///
+    /// `billing.email` is present and empty on purpose: a domain that projects nothing is a
+    /// different statement from a domain nobody declared, and the derived `projecting` set has to
+    /// come out the same either way.
+    fn view_catalogue() -> BTreeMap<QualifiedName, BTreeSet<QualifiedName>> {
+        [
+            (
+                QualifiedName::new("billing.invoice").expect("a valid name"),
+                names(["billing.invoice.OutstandingInvoices"]),
+            ),
+            (
+                QualifiedName::new("billing.email").expect("a valid name"),
+                BTreeSet::new(),
+            ),
+        ]
+        .into_iter()
+        .collect()
     }
 
     #[test]
@@ -1132,8 +1628,13 @@ accepts:
 ",
             ),
         ]);
-        let errors =
-            validate_components(&components, &domains, &commands, &events(), &projecting());
+        let errors = validate_components(
+            &components,
+            &domains,
+            &commands,
+            &events(),
+            &view_catalogue(),
+        );
         assert!(
             errors.is_empty(),
             "`billing.invoice.draft.SubmitDraft` sits in both namespaces, and the inner one owns \
@@ -1204,6 +1705,234 @@ own:
             error.to_string().contains("own"),
             "a misspelt key would otherwise be an ownership claim that silently does not exist: \
              {error}"
+        );
+    }
+
+    // ---- the command-line surface --------------------------------------------------------
+
+    /// A written `cli:` block, refused or not, without `try_from`'s `expect`.
+    fn command_line(yaml: &str) -> Result<ComponentSpec, ValidationErrors> {
+        let raw: RawComponentSpec =
+            serde_yaml::from_str(yaml).expect("the document is well formed");
+        ComponentSpec::try_from(raw)
+    }
+
+    /// The shape every refusal below is one edit away from.
+    const CLI: &str = "\
+component: connectors-cli
+reached_by: command_line
+accepts:
+  commands:
+    - billing.invoice.CreateInvoice
+    - billing.email.SendEmail
+cli:
+  binary: connectors
+  commands:
+    - billing.invoice.CreateInvoice
+  groups:
+    - name: inspect
+      summary: What is configured, and what cannot work
+      commands:
+        - billing.email.SendEmail
+";
+
+    #[test]
+    fn a_command_tree_places_every_accepted_command_exactly_once() {
+        let component = command_line(CLI).expect("the tree covers what the component accepts");
+        let cli = component.cli.expect("the block is carried through");
+        assert_eq!(cli.binary.as_str(), "connectors");
+        assert_eq!(cli.groups.len(), 1);
+        assert_eq!(cli.groups[0].name.as_str(), "inspect");
+        assert_eq!(
+            cli.groups[0].summary.as_deref(),
+            Some("What is configured, and what cannot work")
+        );
+    }
+
+    #[test]
+    fn a_command_tree_on_a_component_reached_another_way_is_refused() {
+        let errors = command_line(&CLI.replace("reached_by: command_line", "reached_by: network"))
+            .expect_err("a tree describes a surface a network component does not have");
+        assert_eq!(
+            errors.as_slice()[0].code,
+            ValidationCode::ConflictingDeclaration
+        );
+    }
+
+    #[test]
+    fn a_command_line_surface_without_a_tree_is_refused() {
+        let yaml = CLI.split("cli:").next().expect("the block is last");
+        let errors =
+            command_line(yaml).expect_err("a command-line surface with no tree projects nothing");
+        assert_eq!(
+            errors.as_slice()[0].code,
+            ValidationCode::MissingDeclaration
+        );
+    }
+
+    #[test]
+    fn a_tree_placing_a_command_the_component_does_not_accept_is_refused() {
+        let errors = command_line(&CLI.replace(
+            "    - billing.invoice.CreateInvoice\n  groups:",
+            "    - billing.invoice.MarkInvoicePaid\n  groups:",
+        ))
+        .expect_err("a tree can only place a command the component accepts");
+        assert!(
+            errors
+                .as_slice()
+                .iter()
+                .any(|error| error.code == ValidationCode::UndeclaredReference),
+            "{errors:?}"
+        );
+    }
+
+    #[test]
+    fn a_command_placed_twice_is_refused() {
+        let errors = command_line(&CLI.replace(
+            "      commands:\n        - billing.email.SendEmail",
+            "      commands:\n        - billing.email.SendEmail\n        - \
+             billing.invoice.CreateInvoice",
+        ))
+        .expect_err("a command has one path");
+        assert!(
+            errors
+                .as_slice()
+                .iter()
+                .any(|error| error.code == ValidationCode::DuplicateDeclaration),
+            "{errors:?}"
+        );
+    }
+
+    #[test]
+    fn an_accepted_command_the_tree_places_nowhere_is_refused() {
+        let errors = command_line(&CLI.replace(
+            "  commands:\n    - billing.invoice.CreateInvoice\n  groups:",
+            "  groups:",
+        ))
+        .expect_err("a command with no place is one the generated tree would not carry");
+        let error = errors
+            .as_slice()
+            .iter()
+            .find(|error| error.code == ValidationCode::MissingDeclaration)
+            .unwrap_or_else(|| panic!("{errors:?}"));
+        assert!(
+            error.message.contains("billing.invoice.CreateInvoice"),
+            "the refusal names the command with no place: {}",
+            error.message
+        );
+    }
+
+    #[test]
+    fn a_group_that_is_not_a_typed_word_is_refused() {
+        let errors = command_line(&CLI.replace("name: inspect", "name: Inspect_It"))
+            .expect_err("a group is typed at a shell");
+        assert_eq!(errors.as_slice()[0].code, ValidationCode::TypeMismatch);
+    }
+
+    /// The old-reader guarantee, stated as a test rather than as a claim in a changelog.
+    ///
+    /// `ess/AGENTS.md` requires this before any persisted field: a specification that says nothing
+    /// about the addition has to serialise exactly as it did before it existed. `cli` is skipped
+    /// when unset, so the bytes below carry no such key — and if that ever stops being true, every
+    /// committed digest in every consuming repository moves for a statement no author made.
+    ///
+    /// The digest itself is the IR's, not this type's, and `ess-compiler` skips the field there for
+    /// the same reason. This is the half that can be checked without a whole specification.
+    #[test]
+    fn a_component_saying_nothing_about_a_command_line_serialises_as_it_did_before() {
+        let serialised = serde_json::to_string(&invoice_service()).expect("a component serialises");
+        assert!(
+            !serialised.contains("\"cli\""),
+            "an unstated command tree must leave no key behind: {serialised}"
+        );
+    }
+
+    /// The `connectors` defect, as a test: a projection served with no verb.
+    #[test]
+    fn a_view_the_command_tree_gives_no_place_is_refused() {
+        let component = component(
+            "\
+component: reader
+reached_by: command_line
+owns:
+  domains:
+    - billing.invoice
+accepts:
+  commands:
+    - billing.invoice.CreateInvoice
+cli:
+  binary: reader
+  commands:
+    - billing.invoice.CreateInvoice
+",
+        );
+        let errors = component.validate_command_line_views(&view_catalogue());
+        let error = errors
+            .as_slice()
+            .iter()
+            .find(|error| error.code == ValidationCode::MissingDeclaration)
+            .unwrap_or_else(|| panic!("{errors:?}"));
+        assert!(
+            error
+                .message
+                .contains("billing.invoice.OutstandingInvoices"),
+            "the refusal names the view nobody can read: {}",
+            error.message
+        );
+    }
+
+    #[test]
+    fn a_view_the_command_tree_places_is_accepted() {
+        let component = component(
+            "\
+component: reader
+reached_by: command_line
+owns:
+  domains:
+    - billing.invoice
+accepts:
+  commands:
+    - billing.invoice.CreateInvoice
+cli:
+  binary: reader
+  commands:
+    - billing.invoice.CreateInvoice
+  views:
+    - billing.invoice.OutstandingInvoices
+",
+        );
+        assert!(
+            component
+                .validate_command_line_views(&view_catalogue())
+                .is_empty(),
+            "a view with a verb is reachable"
+        );
+    }
+
+    #[test]
+    fn a_tree_reading_a_view_from_a_domain_it_does_not_own_is_refused() {
+        let component = component(
+            "\
+component: reader
+reached_by: command_line
+accepts:
+  commands:
+    - billing.invoice.CreateInvoice
+cli:
+  binary: reader
+  commands:
+    - billing.invoice.CreateInvoice
+  views:
+    - billing.invoice.OutstandingInvoices
+",
+        );
+        let errors = component.validate_command_line_views(&view_catalogue());
+        assert!(
+            errors
+                .as_slice()
+                .iter()
+                .any(|error| error.code == ValidationCode::UndeclaredReference),
+            "{errors:?}"
         );
     }
 }
