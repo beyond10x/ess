@@ -6,9 +6,11 @@ use std::path::{Path, PathBuf};
 use ess_compiler::resolve::compile;
 use ess_compiler::source::SourceMap;
 use ess_deployment::{
-    compile_build, compile_deployment, compile_runtime, project_build_mermaid, project_buildkit,
-    project_helm, resolve_stack, verify_release, BuildIr, BuildSpec, DeploymentIr, DiagnosticCode,
-    EnvironmentSpec, ReleaseCatalog, ReleaseManifest, RuntimeIr, RuntimeSpec, StackLock, StackSpec,
+    bundle_release, compile_build, compile_component, compile_deployment, compile_runtime,
+    project_build_mermaid, project_buildkit, project_helm, resolve_stack, verify_release,
+    verify_release_bundle, BuildIr, BuildSpec, ComponentSpec, DeploymentIr, DiagnosticCode,
+    EnvironmentSpec, ReleaseBundle, ReleaseCatalog, ReleaseManifest, RuntimeIr, RuntimeSpec,
+    StackLock, StackSpec,
 };
 use ess_domain::spec::{RawSpecFile, Specification};
 use ess_domain::system::Source;
@@ -105,6 +107,27 @@ fn build() -> BuildIr {
     compile_build(&build_spec()).expect("build compiles")
 }
 
+fn component() -> ess_deployment::ComponentIr {
+    let specification = ComponentSpec::from_yaml(
+        r"
+format: ess-component/1
+component: oracle
+system: oracle
+semantic_version: v1
+inputs:
+  specification: spec/oracle
+  realization: ess/realization.yaml
+  build: ess/build.yaml
+  runtime: ess/runtime.yaml
+release_units:
+  runtime: oracle-runtime
+  chart: oracle-chart
+",
+    )
+    .expect("component fixture parses");
+    compile_component(&specification).expect("component compiles")
+}
+
 fn physical_realization(semantic: &ess_compiler::EssIr) -> ess_realization::RealizationIr {
     let source = format!(
         r"type: ess-realization/1
@@ -184,12 +207,24 @@ containers:
       - name: carrier-api
         environment: CARRIER_URL
         system: carrier
+        endpoint: api
+    volume_mounts:
+      - volume: data
+        mount_path: /var/lib/oracle
     audiences: [urn:example:oracle]
 workloads:
   - name: oracle
     components: [order-service, dispatch-service]
     containers: [server]
     replicas: 1
+    volumes:
+      - name: data
+        size: 1Gi
+provided_endpoints:
+  - name: api
+    workload: oracle
+    container: server
+    scheme: http
 ",
         semantic_digest = semantic.source_digest(),
         realization_digest = physical.realization_digest(),
@@ -377,8 +412,6 @@ releases:
       database-password:
         name: oracle-database
         key: password
-    endpoints:
-      carrier-api: https://carrier.example.test
 external_systems:
   - system: carrier
     endpoints:
@@ -392,14 +425,42 @@ external_systems:
         serde_json::from_str(&deployment.to_canonical_json()).expect("deployment reads back");
     assert_eq!(deployment, read_back);
     assert_eq!(deployment.rollout_order.len(), 1);
+    assert_eq!(
+        deployment.releases[&"oracle".parse().unwrap()].endpoints[&"carrier-api".parse().unwrap()],
+        "https://carrier.example.test"
+    );
 
     let chart = project_helm(
         &realization,
         &"oracle".parse().unwrap(),
         &"1.0.0".parse().unwrap(),
     );
-    assert!(chart.files()["templates/workloads.yaml"].contains("kind: Deployment"));
+    assert!(chart.files()["templates/workloads.yaml"].contains("kind: StatefulSet"));
     assert!(chart.files()["templates/workloads.yaml"].contains("secretKeyRef"));
+    assert!(chart.files()["templates/workloads.yaml"].contains("volumeClaimTemplates"));
+    assert!(chart.files()["templates/workloads.yaml"].contains("mountPath: \"/var/lib/oracle\""));
+    assert!(chart.files()["templates/services.yaml"].contains("kind: Service"));
+    assert!(chart.files()["templates/services.yaml"].contains("-api"));
+}
+
+#[test]
+fn component_release_bundle_is_canonical_and_revalidates_after_transport() {
+    let semantic = semantic();
+    let build = build();
+    let runtime = runtime(&semantic, &build);
+    let bundle = bundle_release(
+        component(),
+        build.clone(),
+        runtime.clone(),
+        vec![
+            release_manifest(&build, &runtime, false),
+            release_manifest(&build, &runtime, true),
+        ],
+    )
+    .expect("component release bundle verifies");
+    let transported = ReleaseBundle::from_json(&bundle.to_canonical_json()).expect("bundle reads");
+    let verified = verify_release_bundle(transported).expect("transported bundle re-verifies");
+    assert_eq!(verified.digest(), bundle.digest());
 }
 
 fn indent_yaml(yaml: &str, spaces: usize) -> String {

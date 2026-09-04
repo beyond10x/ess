@@ -88,7 +88,7 @@ impl Digest {
     }
 
     /// Hashes canonical bytes.
-    pub(crate) fn of_bytes(bytes: &[u8]) -> Self {
+    pub fn of_bytes(bytes: &[u8]) -> Self {
         use sha2::{Digest as _, Sha256};
         let hash = Sha256::digest(bytes);
         let mut value = String::with_capacity(71);

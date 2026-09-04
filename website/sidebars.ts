@@ -12,7 +12,7 @@ const sidebars: SidebarsConfig = {
       type: 'category',
       label: 'Concepts',
       collapsed: false,
-      items: ['concepts/overview', 'concepts/ess'],
+      items: ['concepts/overview', 'concepts/ess', 'concepts/component-delivery'],
     },
     {
       type: 'category',

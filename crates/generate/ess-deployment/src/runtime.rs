@@ -61,6 +61,54 @@ pub struct EndpointSlot {
     pub environment: String,
     /// Stack service or typed external-system identity.
     pub system: Identifier,
+    /// Named endpoint exposed by the target system. When present, composition may bind it
+    /// directly to another component-owned Service instead of requiring an environment URL.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub endpoint: Option<Identifier>,
+}
+
+/// Network protocol exposed by a component-owned endpoint.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum EndpointScheme {
+    /// Plain HTTP inside the deployment boundary.
+    Http,
+    /// TLS-protected HTTP.
+    Https,
+}
+
+impl EndpointScheme {
+    /// URI scheme spelling used by generated endpoint bindings.
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Http => "http",
+            Self::Https => "https",
+        }
+    }
+}
+
+/// A stable network endpoint provided by one workload container.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ProvidedEndpoint {
+    /// Endpoint identity consumed by other systems.
+    pub name: Identifier,
+    /// Workload whose pods back the generated Kubernetes Service.
+    pub workload: Identifier,
+    /// Container role whose HTTP port is exposed.
+    pub container: Identifier,
+    /// Protocol used to construct in-cluster URLs.
+    pub scheme: EndpointScheme,
+}
+
+/// One persistent volume mounted by a container role.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct VolumeMount {
+    /// Workload volume identity.
+    pub volume: Identifier,
+    /// Absolute path inside the container.
+    pub mount_path: String,
 }
 
 /// One executable process realized by an OCI image output.
@@ -105,9 +153,22 @@ pub struct ContainerRole {
     /// Required service endpoints.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub endpoints: Vec<EndpointSlot>,
+    /// Persistent workload volumes mounted by this container.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub volume_mounts: Vec<VolumeMount>,
     /// Required workload-token audiences.
     #[serde(default, skip_serializing_if = "BTreeSet::is_empty")]
     pub audiences: BTreeSet<String>,
+}
+
+/// One named persistent volume owned by a stateful workload.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct PersistentVolume {
+    /// Stable volume identity used by container mounts.
+    pub name: Identifier,
+    /// Kubernetes storage quantity, such as `1Gi`.
+    pub size: String,
 }
 
 /// Deployment-neutral runtime controller intent.
@@ -125,6 +186,9 @@ pub struct Workload {
     /// Persistent volume size, when the workload is stateful.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub storage: Option<String>,
+    /// Named persistent volumes. This supersedes the legacy single `storage` marker.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub volumes: Vec<PersistentVolume>,
 }
 
 /// Human-authored mapping from semantic ESS to built runtime artifacts.
@@ -146,6 +210,9 @@ pub struct RuntimeSpec {
     pub containers: Vec<ContainerRole>,
     /// Workloads.
     pub workloads: Vec<Workload>,
+    /// Stable network endpoints supplied by this runtime.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub provided_endpoints: Vec<ProvidedEndpoint>,
 }
 
 impl RuntimeSpec {
@@ -172,6 +239,7 @@ pub struct RuntimeIr {
     processes: BTreeMap<Identifier, Process>,
     containers: BTreeMap<Identifier, ContainerRole>,
     workloads: BTreeMap<Identifier, Workload>,
+    provided_endpoints: BTreeMap<Identifier, ProvidedEndpoint>,
 }
 
 impl RuntimeIr {
@@ -213,6 +281,11 @@ impl RuntimeIr {
     /// Workloads by stable identity.
     pub fn workloads(&self) -> &BTreeMap<Identifier, Workload> {
         &self.workloads
+    }
+
+    /// Network endpoints provided by the runtime.
+    pub fn provided_endpoints(&self) -> &BTreeMap<Identifier, ProvidedEndpoint> {
+        &self.provided_endpoints
     }
 
     /// Canonical JSON with a trailing newline.
@@ -410,7 +483,10 @@ pub fn compile_runtime(
                         ),
                     ));
                 }
-                if !requirement.stateless && workload.storage.is_none() {
+                if !requirement.stateless
+                    && workload.storage.is_none()
+                    && workload.volumes.is_empty()
+                {
                     diagnostics.push(Diagnostic::new(
                         Stage::Runtime,
                         DiagnosticCode::MissingBinding,
@@ -420,6 +496,7 @@ pub fn compile_runtime(
                 }
             }
         }
+        validate_workload_volumes(workload, &containers, &mut diagnostics);
     }
     for component in semantic_components.keys() {
         if !realized_components.contains(component) {
@@ -428,6 +505,51 @@ pub fn compile_runtime(
                 DiagnosticCode::MissingComponent,
                 Some(component.clone()),
                 format!("semantic component {component} has no realized workload"),
+            ));
+        }
+    }
+
+    let provided_endpoints = unique_map(
+        &specification.provided_endpoints,
+        |endpoint| &endpoint.name,
+        "provided endpoint",
+        &mut diagnostics,
+    );
+    for endpoint in provided_endpoints.values() {
+        let Some(workload) = workloads.get(&endpoint.workload) else {
+            diagnostics.push(Diagnostic::new(
+                Stage::Runtime,
+                DiagnosticCode::UnknownReference,
+                Some(endpoint.name.clone()),
+                format!(
+                    "provided endpoint selects unknown workload {}",
+                    endpoint.workload
+                ),
+            ));
+            continue;
+        };
+        if !workload.containers.contains(&endpoint.container) {
+            diagnostics.push(Diagnostic::new(
+                Stage::Runtime,
+                DiagnosticCode::UnknownReference,
+                Some(endpoint.name.clone()),
+                format!(
+                    "provided endpoint container {} is not part of workload {}",
+                    endpoint.container, endpoint.workload
+                ),
+            ));
+            continue;
+        }
+        if containers
+            .get(&endpoint.container)
+            .and_then(|container| container.http_port)
+            .is_none()
+        {
+            diagnostics.push(Diagnostic::new(
+                Stage::Runtime,
+                DiagnosticCode::MissingBinding,
+                Some(endpoint.name.clone()),
+                "provided endpoint container must declare an HTTP port",
             ));
         }
     }
@@ -442,6 +564,7 @@ pub fn compile_runtime(
             processes,
             containers,
             workloads,
+            provided_endpoints,
         })
     } else {
         Err(Diagnostics::from(diagnostics))
@@ -514,6 +637,31 @@ fn validate_container(container: &ContainerRole, diagnostics: &mut Vec<Diagnosti
             ));
         }
     }
+    let mut mounted_volumes = BTreeSet::new();
+    let mut mount_paths = BTreeSet::new();
+    for mount in &container.volume_mounts {
+        if !mounted_volumes.insert(mount.volume.clone())
+            || !mount_paths.insert(mount.mount_path.clone())
+        {
+            diagnostics.push(Diagnostic::new(
+                Stage::Runtime,
+                DiagnosticCode::DuplicateIdentifier,
+                Some(container.name.clone()),
+                "volume identities and mount paths must be unique within a container",
+            ));
+        }
+        if !mount.mount_path.starts_with('/') || mount.mount_path.contains("/../") {
+            diagnostics.push(Diagnostic::new(
+                Stage::Runtime,
+                DiagnosticCode::InvalidValue,
+                Some(container.name.clone()),
+                format!(
+                    "volume mount path {:?} must be absolute and may not traverse parents",
+                    mount.mount_path
+                ),
+            ));
+        }
+    }
     if (container.readiness_path.is_some() || container.liveness_path.is_some())
         && container.http_port.is_none()
     {
@@ -523,5 +671,57 @@ fn validate_container(container: &ContainerRole, diagnostics: &mut Vec<Diagnosti
             Some(container.name.clone()),
             "HTTP probes require an HTTP port",
         ));
+    }
+}
+
+fn validate_workload_volumes(
+    workload: &Workload,
+    containers: &BTreeMap<Identifier, ContainerRole>,
+    diagnostics: &mut Vec<Diagnostic>,
+) {
+    let mut volumes = BTreeSet::new();
+    if workload.storage.is_some() && !workload.volumes.is_empty() {
+        diagnostics.push(Diagnostic::new(
+            Stage::Runtime,
+            DiagnosticCode::InvalidValue,
+            Some(workload.name.clone()),
+            "legacy storage and named volumes may not be declared together",
+        ));
+    }
+    for volume in &workload.volumes {
+        if !volumes.insert(volume.name.clone()) {
+            diagnostics.push(Diagnostic::new(
+                Stage::Runtime,
+                DiagnosticCode::DuplicateIdentifier,
+                Some(workload.name.clone()),
+                format!("volume {} is declared more than once", volume.name),
+            ));
+        }
+        if volume.size.is_empty() {
+            diagnostics.push(Diagnostic::new(
+                Stage::Runtime,
+                DiagnosticCode::InvalidValue,
+                Some(volume.name.clone()),
+                "persistent volume size must not be empty",
+            ));
+        }
+    }
+    for container_name in &workload.containers {
+        let Some(container) = containers.get(container_name) else {
+            continue;
+        };
+        for mount in &container.volume_mounts {
+            if !volumes.contains(&mount.volume) {
+                diagnostics.push(Diagnostic::new(
+                    Stage::Runtime,
+                    DiagnosticCode::UnknownReference,
+                    Some(container.name.clone()),
+                    format!(
+                        "container mounts volume {} absent from workload {}",
+                        mount.volume, workload.name
+                    ),
+                ));
+            }
+        }
     }
 }

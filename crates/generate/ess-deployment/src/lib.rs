@@ -6,6 +6,7 @@
 //! and lowers private environment bindings to an independent Helm release set.
 
 mod build;
+mod component;
 mod diagnostic;
 mod environment;
 mod identity;
@@ -18,6 +19,11 @@ pub use build::{
     BuildOutput, BuildOutputKind, BuildSpec, BuildkitProjection, ImageConfig, NetworkMode,
     Platform, BUILD_FORMAT, BUILD_IR_FORMAT,
 };
+pub use component::{
+    bundle_release, compile_component, verify_release_bundle, ComponentInputs, ComponentIr,
+    ComponentReleaseUnits, ComponentSpec, ReleaseBundle, COMPONENT_FORMAT, COMPONENT_IR_FORMAT,
+    RELEASE_BUNDLE_FORMAT,
+};
 pub use diagnostic::{Diagnostic, DiagnosticCode, Diagnostics, Stage};
 pub use environment::{
     compile_deployment, project_helm, DeploymentIr, DeploymentRelease, EnvironmentSpec,
@@ -29,11 +35,12 @@ pub use release::{
     verify_release, Artifact, ArtifactKind, Evidence, EvidenceKind, ReleaseManifest, RELEASE_FORMAT,
 };
 pub use runtime::{
-    compile_runtime, ConfigKind, ConfigSlot, ContainerRole, EndpointSlot, Process, RuntimeIr,
-    RuntimeSpec, SecretSlot, Workload, RUNTIME_FORMAT, RUNTIME_IR_FORMAT,
+    compile_runtime, ConfigKind, ConfigSlot, ContainerRole, EndpointScheme, EndpointSlot,
+    PersistentVolume, Process, ProvidedEndpoint, RuntimeIr, RuntimeSpec, SecretSlot, VolumeMount,
+    Workload, RUNTIME_FORMAT, RUNTIME_IR_FORMAT,
 };
 pub use stack::{
-    resolve_stack, ExternalSystem, LockedSystem, ReleaseCandidate, ReleaseCatalog,
-    RuntimeRequirements, StackLock, StackSpec, SystemRequirement, RELEASE_CATALOG_FORMAT,
-    STACK_FORMAT, STACK_LOCK_FORMAT,
+    resolve_stack, ExternalSystem, LockedSystem, ProvidedEndpointRequirement, ReleaseCandidate,
+    ReleaseCatalog, RuntimeRequirements, StackLock, StackSpec, SystemRequirement,
+    RELEASE_CATALOG_FORMAT, STACK_FORMAT, STACK_LOCK_FORMAT,
 };

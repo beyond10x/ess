@@ -1,5 +1,28 @@
 # Changelog
 
+## [0.13.0] — 2026-09-04
+
+### Added
+
+- `ess-component/1` and canonical `ess-component-ir/1` make the implementation repository the
+  owner of its semantic, realization, build, runtime, and independent runtime/chart release units.
+- `ess-release-bundle/1` carries the complete verified release chain as one OCI payload. `ess
+  generate release publish` uses ORAS at the credential edge; `ess generate release fetch` requires
+  a digest-pinned source, revalidates canonical bytes, and caches them by OCI manifest digest.
+- `ess generate build execute` retains the deterministic BuildKit projection and invokes Docker
+  Buildx Bake. `ess generate deployment reconcile` computes the affected release set, follows the
+  rollout DAG, fetches charts by digest, and invokes Helm only for changed releases. It refuses
+  implicit removal.
+- Runtime models can declare component-owned HTTP endpoints, named persistent volumes, and explicit
+  container mounts. Helm projection now emits Services, workload-specific selectors, stateful
+  governing Services, claims, and mounts. Named required endpoints can be derived from locked
+  component or external-system providers without duplicating URLs in environment bindings.
+
+### Changed
+
+- Side effects are an explicit CLI executor boundary. The deployment compiler and every projection
+  remain deterministic and offline while BuildKit, OCI, and Helm execution reuse their exact IR.
+
 ## [0.12.0] — 2026-09-04
 
 ### Changed
@@ -64,7 +87,6 @@
   areas, and every literal `crates/<crate>/…` path this repository writes down — a fixture argument
   in `Taskfile.yml`, a source path a test reads, a path named in prose — resolves to something that
   exists. The paths that break on a move are the ones no compiler reads.
-
 ## [0.11.0] — 2026-09-03
 
 ### Added

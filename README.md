@@ -96,8 +96,9 @@ approval-required hosted interfaces. `ess specify realization compile` emits
 Markdown generator turns the same IR into a drift-checkable run-mode guide.
 
 Build and deployment use another explicit lowering chain. `ess-build/1` is a typed, content-addressed
-transformation DAG which projects to `BuildKit` inputs and a deterministic Mermaid graph but never
-executes them. `ess-realization/1`
+transformation DAG which projects to `BuildKit` inputs and a deterministic Mermaid graph.
+Compiler APIs stay pure; explicit CLI executor commands perform credentialed BuildKit, ORAS, and
+Helm operations at the edge. `ess-realization/1`
 binds exact semantic components to immutable implementation artifacts and entrypoints.
 `ess-runtime/1` maps those components to processes, container roles, and workloads. Executor-produced
 `ess-release/1` manifests bind those inputs to immutable artifacts and evidence. Generic
@@ -105,6 +106,13 @@ binds exact semantic components to immutable implementation artifacts and entryp
 `ess-environment/1` then lowers to `ess-deployment/1`, one independently deployable Helm release per
 system. Chart and runtime releases are selected and pinned separately. Secret bytes have no field in
 any of these documents.
+
+`ess-component/1` joins those documents as the release boundary owned by an implementation
+repository. Runtime and chart manifests are bundled as canonical `ess-release-bundle/1`, published
+and fetched through OCI by digest, then revalidated before entering the local cache. Runtime models
+can expose named Services and persistent volumes, and `ess deployment reconcile` applies only the
+release units changed from an optional previous deployment IR. See the
+[independent component delivery concept](website/docs/concepts/component-delivery.md).
 
 A construct is a design page before it is code. The binding designs live in `docs/design/`; entity
 relations shipped in `0.5.0` and their
