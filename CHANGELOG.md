@@ -36,6 +36,14 @@
 
 ## [0.17.0] — 2026-09-04
 
+> **No release was published for this version, and the tag does not carry what is written below.**
+> `0.17.0` was cut from a branch off 0.16.0 holding the scenario player, while the halt assertion
+> described here was on `main`; neither commit is an ancestor of the other, and `halts_after`
+> appears zero times at the tag. The release workflow for it produced no assets. **Everything in
+> this section first ships in 0.18.0**, which is the first release to hold both. A binary that
+> calls itself 0.17.0 has one of the two features and which one depends on where it was built —
+> check it for `halts_after` rather than trusting the number.
+
 ### Added
 
 - **An authored scenario can claim that a consumer halted an ordered scan.** The six assertion forms
@@ -89,7 +97,7 @@
   meant in `3`. The committed suites under `suites/generated/` are regenerated at the new number and
   are otherwise byte-identical.
 
-Releases 0.17.0.
+Written as 0.17.0; released in 0.18.0. See the note at the top of this section.
 
 ## [0.16.0] — 2026-09-04
 

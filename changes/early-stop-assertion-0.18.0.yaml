@@ -1,5 +1,5 @@
 schema: b10x-change/v1
-id: ess/early-stop-assertion-0.17.0
+id: ess/early-stop-assertion-0.18.0
 repository: ess
 # `publishedAt` and `source` are filled when the tag exists. Neither is knowable now, and a
 # guessed timestamp or a release URL for a version nobody cut is a fact this file would be
