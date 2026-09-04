@@ -107,6 +107,20 @@ fn build() -> BuildIr {
     compile_build(&build_spec()).expect("build compiles")
 }
 
+#[test]
+fn canonical_build_ir_restores_an_omitted_empty_secret_set() {
+    let source = build_spec_yaml().replace("secrets: [registry-token]\n", "");
+    let specification = BuildSpec::from_yaml(&source).expect("build without secrets parses");
+    let compiled = compile_build(&specification).expect("build without secrets compiles");
+    let canonical = compiled.to_canonical_json();
+    assert!(canonical.contains("\"platforms\""));
+    assert!(!canonical.contains("\"secrets\""));
+    assert_eq!(
+        BuildIr::from_json(&canonical).expect("canonical build IR reads back"),
+        compiled
+    );
+}
+
 fn component() -> ess_deployment::ComponentIr {
     let specification = ComponentSpec::from_yaml(
         r"

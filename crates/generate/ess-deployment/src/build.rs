@@ -272,7 +272,7 @@ pub struct BuildIr {
     build: Identifier,
     #[serde(skip_serializing_if = "BTreeSet::is_empty")]
     platforms: BTreeSet<Platform>,
-    #[serde(skip_serializing_if = "BTreeSet::is_empty")]
+    #[serde(default, skip_serializing_if = "BTreeSet::is_empty")]
     secrets: BTreeSet<Identifier>,
     nodes: BTreeMap<Identifier, BuildNode>,
     order: Vec<Identifier>,
