@@ -98,4 +98,4 @@ runs:
         CHART_NAMESPACE: ${{ inputs.chart-namespace }}
         EVIDENCE_REPOSITORY: ${{ inputs.evidence-repository }}
         BUNDLE_REPOSITORY: ${{ inputs.bundle-repository }}
-      run: "$GITHUB_ACTION_PATH/release.sh"
+      run: bash "$GITHUB_ACTION_PATH/release.sh"

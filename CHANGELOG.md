@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.13.4] — 2026-09-04
+
+### Fixed
+
+- The component-release composite action invokes its packaged script through Bash, so clean GitHub
+  Actions checkouts do not depend on a repository executable bit.
+
 ## [0.13.3] — 2026-09-04
 
 ### Fixed

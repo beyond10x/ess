@@ -95,6 +95,9 @@ tasks:
       - "grep -q '^name: Release ESS component$' .github/actions/release-component/action.yml"
       - "grep -q 'build-image:' .github/actions/release-component/action.yml"
       - "grep -q 'generate release bundle' .github/actions/release-component/release.sh"
+      - >-
+        grep -q 'run: bash "$GITHUB_ACTION_PATH/release.sh"'
+        .github/actions/release-component/action.yml
       - "grep -q 'helm push .*2>&1' .github/actions/release-component/release.sh"
       - >-
         test "$(printf 'Pushed: example.invalid/charts/service:1.2.3\nDigest: sha256:%064d\n' 0 |
