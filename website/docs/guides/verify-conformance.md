@@ -12,7 +12,7 @@ checked against.
 ## Generate the suite
 
 ```shell-session
-$ ess conform synthesize \
+$ ess verify conform synthesize \
     --path examples/billing \
     --out target/billing-suite.json
 ```
@@ -23,7 +23,7 @@ derived.
 ## Run a supported target
 
 ```shell-session
-$ ess conform run \
+$ ess verify conform run \
     --suite target/billing-suite.json \
     --target billing \
     --report-out target/billing-conformance.json
@@ -35,7 +35,7 @@ The report uses the standalone `ess-conformance-report/1` format and records eac
 To run directly from a specification instead of a pre-generated suite:
 
 ```shell-session
-$ ess conform run \
+$ ess verify conform run \
     --path examples/billing \
     --target billing \
     --format json

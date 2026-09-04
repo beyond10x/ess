@@ -8,7 +8,7 @@ use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 
 use anyhow::{bail, Context, Result};
-use clap::{Parser, Subcommand, ValueEnum};
+use clap::{CommandFactory, FromArgMatches, Parser, Subcommand, ValueEnum};
 use ess_compiler::EssIr;
 use ess_gen::graph::SystemGraph;
 
@@ -20,8 +20,60 @@ struct Cli {
     command: Command,
 }
 
+/// The four areas the first level of `ess` is made of.
+///
+/// One per `crates/<area>/` directory: the command surface says what the crate tree says.
+const AREAS: &[&str] = &["specify", "generate", "verify", "infra"];
+
 #[derive(Debug, Subcommand)]
 enum Command {
+    /// Author a system, resolve what it says, and inspect the result.
+    Specify {
+        #[command(subcommand)]
+        command: SpecifyCommand,
+    },
+    /// Turn a resolved system into artifacts, and never apply one to anything running.
+    ///
+    /// The options below belong to the `generate` verb, which is spelled either way:
+    /// `ess generate --path …` is `ess generate generate --path …`. They cannot be written beside
+    /// one of the other verbs, which would say two things at once.
+    // `ess generate --path X synthesize` names a specification for a verb that takes one and then
+    // runs it against `.`. The flat surface refused that before the areas existed — `--path` was
+    // no argument of `ess synthesize`'s parent — and this keeps the refusal, exit 2 and all.
+    #[command(args_conflicts_with_subcommands = true)]
+    Generate {
+        #[command(subcommand)]
+        command: Option<GenerateAreaCommand>,
+        #[command(flatten)]
+        direct: GenerateArgs,
+    },
+    /// Hold an implementation, or a later revision, to what a system says.
+    Verify {
+        #[command(subcommand)]
+        command: VerifyCommand,
+    },
+    /// Read an observed cluster, and import a concrete source through a declared adapter.
+    Infra {
+        #[command(subcommand)]
+        command: InfraAreaCommand,
+    },
+    /// The flat spellings of the `specify` verbs. Hidden by [`command`], never deprecated.
+    #[command(flatten)]
+    FlatSpecify(SpecifyCommand),
+    /// The flat spellings of the `generate` verbs other than `generate` itself, hidden likewise.
+    #[command(flatten)]
+    FlatGenerate(GenerateCommand),
+    /// The flat spellings of the `verify` verbs, hidden likewise.
+    #[command(flatten)]
+    FlatVerify(VerifyCommand),
+    /// The flat spelling of `ess infra import`, hidden likewise.
+    #[command(flatten)]
+    FlatImport(ImportCommand),
+}
+
+/// `ess specify`: an authored system becomes a validated, resolved IR — `crates/specify/`.
+#[derive(Debug, Subcommand)]
+enum SpecifyCommand {
     /// Validate and resolve an ESS specification.
     Validate(SpecPath),
     /// Compile a specification into canonical typed IR.
@@ -53,10 +105,19 @@ enum Command {
         #[arg(long, value_enum, default_value_t = Format::Text)]
         format: Format,
     },
-    /// Compile and inspect canonical build graphs.
-    Build {
-        #[command(subcommand)]
-        command: BuildCommand,
+    /// Inspect one declaration in resolved IR.
+    Inspect {
+        #[command(flatten)]
+        input: SpecPath,
+        /// Fully qualified declaration name or binding/component identifier.
+        name: String,
+    },
+    /// Render the interaction graph.
+    Graph {
+        #[command(flatten)]
+        input: SpecLocation,
+        #[arg(long, value_enum, default_value_t = GraphFormat::Mermaid)]
+        format: GraphFormat,
     },
     /// Validate, compile, or document a physical realization of one exact ESS.
     Realization {
@@ -67,6 +128,75 @@ enum Command {
     Runtime {
         #[command(subcommand)]
         command: RuntimeCommand,
+    },
+}
+
+/// `ess generate`: what the area offers, which is the `generate` verb and its siblings.
+///
+/// The verb and the area share a name, so the verb sits below itself — `ess generate generate` —
+/// and its flat spelling is the area with no subcommand at all, `ess generate --path …`. Both
+/// reach [`generate_projections`], which is what makes them the same bytes.
+#[derive(Debug, Subcommand)]
+enum GenerateAreaCommand {
+    /// Generate deterministic documentation, schemas, and interface contracts.
+    ///
+    /// `--kind site` opens on the `README.md` beside the specification, where there is one, and
+    /// takes any number of `--include` pages beside the generated ones — a plan board another tool
+    /// rendered, a runbook. Both are markdown somebody wrote, read into the document and styled
+    /// like every other page.
+    Generate(GenerateArgs),
+    /// Everything else the area offers, which is also spelled flat at the top level.
+    #[command(flatten)]
+    Other(GenerateCommand),
+}
+
+/// What `ess generate` generates, from what, and where to put it.
+#[derive(Debug, clap::Args)]
+struct GenerateArgs {
+    #[command(flatten)]
+    input: SpecLocation,
+    #[arg(long, value_enum)]
+    kind: Option<Projection>,
+    /// A markdown page to publish beside the generated ones, written `<page-id>=<path>`.
+    ///
+    /// The id is where the page is filed and what links to it — `plan/board`. Repeat for more
+    /// than one.
+    #[arg(long, value_name = "PAGE=PATH")]
+    include: Vec<String>,
+    #[arg(long)]
+    out: Option<PathBuf>,
+    #[arg(long, value_enum, default_value_t = Format::Text)]
+    format: Format,
+}
+
+/// `ess generate`: IR becomes artifacts, and nothing here applies one — `crates/generate/`.
+#[derive(Debug, Subcommand)]
+enum GenerateCommand {
+    /// Synthesize implementation artifacts and explicit obligations.
+    Synthesize {
+        #[command(flatten)]
+        input: SpecLocation,
+        #[arg(long, value_enum, default_value_t = SynthesisTarget::Rust)]
+        target: SynthesisTarget,
+        #[arg(long)]
+        out: Option<PathBuf>,
+        #[arg(long, value_enum, default_value_t = Format::Text)]
+        format: Format,
+    },
+    /// Project typed IR into concrete artifacts; never apply them.
+    Project {
+        #[command(subcommand)]
+        adapter: ProjectAdapter,
+    },
+    /// Validate adopter-owned JSON Schema contracts or project their TypeScript types.
+    Schema {
+        #[command(subcommand)]
+        command: schema::SchemaCommand,
+    },
+    /// Compile and inspect canonical build graphs.
+    Build {
+        #[command(subcommand)]
+        command: BuildCommand,
     },
     /// Verify immutable executor-produced releases.
     Release {
@@ -83,19 +213,15 @@ enum Command {
         #[command(subcommand)]
         command: DeploymentCommand,
     },
-    /// Inspect one declaration in resolved IR.
-    Inspect {
-        #[command(flatten)]
-        input: SpecPath,
-        /// Fully qualified declaration name or binding/component identifier.
-        name: String,
-    },
-    /// Render the interaction graph.
-    Graph {
-        #[command(flatten)]
-        input: SpecLocation,
-        #[arg(long, value_enum, default_value_t = GraphFormat::Mermaid)]
-        format: GraphFormat,
+}
+
+/// `ess verify`: an implementation held to the specification — `crates/verify/`.
+#[derive(Debug, Subcommand)]
+enum VerifyCommand {
+    /// Generate or execute a semantic conformance suite.
+    Conform {
+        #[command(subcommand)]
+        command: ConformCommand,
     },
     /// Compare two revisions semantically.
     Diff {
@@ -117,63 +243,35 @@ enum Command {
         #[arg(long, value_enum, default_value_t = MachineFormat::Text)]
         format: MachineFormat,
     },
-    /// Generate deterministic documentation, schemas, and interface contracts.
-    ///
-    /// `--kind site` opens on the `README.md` beside the specification, where there is one, and
-    /// takes any number of `--include` pages beside the generated ones — a plan board another tool
-    /// rendered, a runbook. Both are markdown somebody wrote, read into the document and styled
-    /// like every other page.
-    Generate {
-        #[command(flatten)]
-        input: SpecLocation,
-        #[arg(long, value_enum)]
-        kind: Option<Projection>,
-        /// A markdown page to publish beside the generated ones, written `<page-id>=<path>`.
-        ///
-        /// The id is where the page is filed and what links to it — `plan/board`. Repeat for more
-        /// than one.
-        #[arg(long, value_name = "PAGE=PATH")]
-        include: Vec<String>,
-        #[arg(long)]
-        out: Option<PathBuf>,
-        #[arg(long, value_enum, default_value_t = Format::Text)]
-        format: Format,
-    },
-    /// Synthesize implementation artifacts and explicit obligations.
-    Synthesize {
-        #[command(flatten)]
-        input: SpecLocation,
-        #[arg(long, value_enum, default_value_t = SynthesisTarget::Rust)]
-        target: SynthesisTarget,
-        #[arg(long)]
-        out: Option<PathBuf>,
-        #[arg(long, value_enum, default_value_t = Format::Text)]
-        format: Format,
-    },
-    /// Generate or execute a semantic conformance suite.
-    Conform {
-        #[command(subcommand)]
-        command: ConformCommand,
-    },
-    /// Import a concrete source through a declared adapter.
-    Import {
-        #[command(subcommand)]
-        adapter: ImportAdapter,
-    },
-    /// Project typed IR into concrete artifacts; never apply them.
-    Project {
-        #[command(subcommand)]
-        adapter: ProjectAdapter,
-    },
-    /// Validate adopter-owned JSON Schema contracts or project their TypeScript types.
-    Schema {
-        #[command(subcommand)]
-        command: schema::SchemaCommand,
-    },
+}
+
+/// `ess infra`: the observed cluster, and the adapters that read a concrete source.
+///
+/// The verb and the area share a name here too, so `ess infra infra diagnose` is the area path and
+/// `ess infra diagnose` is the flat spelling — the same [`InfraCommand`], mounted twice, with the
+/// flat one hidden by [`command`].
+#[derive(Debug, Subcommand)]
+enum InfraAreaCommand {
     /// Inspect and compare sanitized infrastructure IR.
     Infra {
         #[command(subcommand)]
         command: InfraCommand,
+    },
+    /// Import a concrete source through a declared adapter.
+    #[command(flatten)]
+    Import(ImportCommand),
+    /// The flat spellings of the `infra` verb's own operations.
+    #[command(flatten)]
+    Flat(InfraCommand),
+}
+
+/// The `import` verb, in an enum of its own so it can be mounted under `infra` and at the top.
+#[derive(Debug, Subcommand)]
+enum ImportCommand {
+    /// Import a concrete source through a declared adapter.
+    Import {
+        #[command(subcommand)]
+        adapter: ImportAdapter,
     },
 }
 
@@ -598,8 +696,75 @@ enum DeploymentCommand {
     },
 }
 
+/// The `ess` command tree as it is parsed and as `--help` renders it.
+///
+/// The derive mounts every verb twice from one definition — once under its area and once as the
+/// flat spelling a pinned caller already uses — so the two cannot drift apart in arguments or in
+/// what they run. What tells them apart is this function, and only this function: a command
+/// `--help` offers is one of the four areas or something under one, and every other spelling that
+/// still parses is a flat one, hidden rather than deprecated. `main` and the tests both ask here,
+/// so what is checked is what an adopter runs.
+///
+/// Only whole commands are hidden. An **argument** is never hidden: `ess generate` carries the
+/// `generate` verb's five options so its flat spelling parses, and a help or a usage line that
+/// left them out would describe a command that does not exist — which is how a mistyped `--kind`
+/// came to be answered with a usage line saying `ess generate` takes no options at all.
+fn command() -> clap::Command {
+    let command = <Cli as CommandFactory>::command();
+    let flat: Vec<String> = command
+        .get_subcommands()
+        .map(|sub| sub.get_name().to_owned())
+        .filter(|name| !AREAS.contains(&name.as_str()))
+        .collect();
+    let command = flat.into_iter().fold(command, |command, name| {
+        command.mut_subcommand(name, |sub| sub.hide(true))
+    });
+    // `mut_subcommand` moves what it touches to the end of the list, so the areas are ordered
+    // here rather than left to the order they were declared in.
+    let command = AREAS
+        .iter()
+        .enumerate()
+        .fold(command, |command, (position, area)| {
+            command.mut_subcommand(area, |sub| sub.display_order(position))
+        });
+    let command = command.mut_subcommand("infra", hide_infra_flat_spellings);
+    command.mut_subcommand("generate", state_generate_usage)
+}
+
+/// `ess generate` is a verb with options and an area with subcommands, and its usage says both.
+///
+/// clap renders that pair correctly for `--help` and not for an error: a mistyped `--kidn` is
+/// answered with `Usage: ess generate --kind <KIND>`, which reads as the only thing the command
+/// takes. The string here is the one clap writes for `--help`, said once so every refusal of this
+/// command uses it too.
+fn state_generate_usage(area: clap::Command) -> clap::Command {
+    area.override_usage("ess generate [OPTIONS]\n       ess generate <COMMAND>")
+}
+
+/// `ess infra diagnose` is the flat spelling of `ess infra infra diagnose`: one level up, hidden.
+///
+/// Which names those are is asked of the `infra` verb itself rather than written down, so a
+/// fourth operation under it is hidden the day it is added.
+fn hide_infra_flat_spellings(area: clap::Command) -> clap::Command {
+    let flat: Vec<String> = area
+        .find_subcommand("infra")
+        .expect("the infra area carries the infra verb")
+        .get_subcommands()
+        .map(|sub| sub.get_name().to_owned())
+        .collect();
+    flat.into_iter().fold(area, |area, name| {
+        area.mut_subcommand(name, |sub| sub.hide(true))
+    })
+}
+
 fn main() -> ExitCode {
-    match run(Cli::parse()) {
+    let mut parser = command();
+    let matches = parser.clone().get_matches();
+    let cli = match Cli::from_arg_matches(&matches) {
+        Ok(cli) => cli,
+        Err(error) => error.format(&mut parser).exit(),
+    };
+    match run(cli) {
         Ok(code) => code,
         Err(error) => {
             eprintln!("error: {error:#}");
@@ -610,9 +775,27 @@ fn main() -> ExitCode {
 
 fn run(cli: Cli) -> Result<ExitCode> {
     match cli.command {
-        Command::Validate(input) => validate(&input.path, input.format),
-        Command::Compile { input, out } => compile(&input.path, out.as_deref(), input.format),
-        Command::Compose {
+        Command::Specify { command } | Command::FlatSpecify(command) => specify_area(command),
+        Command::Generate { command, direct } => match command {
+            None => generate_projections(&direct),
+            Some(GenerateAreaCommand::Generate(spelled)) => generate_projections(&spelled),
+            Some(GenerateAreaCommand::Other(command)) => generate_area(command),
+        },
+        Command::FlatGenerate(command) => generate_area(command),
+        Command::Verify { command } | Command::FlatVerify(command) => verify_area(command),
+        Command::Infra { command } => infra_area(command),
+        Command::FlatImport(command) => import_area(command),
+    }
+}
+
+/// `ess specify …`, and the same verbs spelled flat.
+fn specify_area(command: SpecifyCommand) -> Result<ExitCode> {
+    match command {
+        SpecifyCommand::Validate(input) => validate(&input.path, input.format),
+        SpecifyCommand::Compile { input, out } => {
+            compile(&input.path, out.as_deref(), input.format)
+        }
+        SpecifyCommand::Compose {
             path,
             services,
             out,
@@ -627,39 +810,68 @@ fn run(cli: Cli) -> Result<ExitCode> {
             client_rust_out.as_deref(),
             format,
         ),
-        Command::Realization { command } => realization(&command),
-        Command::Build { command } => build(command),
-        Command::Runtime { command } => runtime(command),
-        Command::Release { command } => release(command),
-        Command::Stack { command } => stack(command),
-        Command::Deployment { command } => deployment(command),
-        Command::Inspect { input, name } => inspect(&input.path, &name, input.format),
-        Command::Graph { input, format } => graph(&input.path, format),
-        Command::Diff { from, to, format } => diff(&from, &to, format),
-        Command::Impact {
-            from,
-            to,
-            suite,
-            format,
-        } => impact(&from, &to, suite.as_deref(), format),
-        Command::Generate {
-            input,
-            kind,
-            include,
-            out,
-            format,
-        } => generate(&input.path, kind, &include, out.as_deref(), format),
-        Command::Synthesize {
+        SpecifyCommand::Inspect { input, name } => inspect(&input.path, &name, input.format),
+        SpecifyCommand::Graph { input, format } => graph(&input.path, format),
+        SpecifyCommand::Realization { command } => realization(&command),
+        SpecifyCommand::Runtime { command } => runtime(command),
+    }
+}
+
+/// `ess generate …` other than the `generate` verb, and the same verbs spelled flat.
+fn generate_area(command: GenerateCommand) -> Result<ExitCode> {
+    match command {
+        GenerateCommand::Synthesize {
             input,
             target,
             out,
             format,
         } => synthesize(&input.path, target, out.as_deref(), format),
-        Command::Conform { command } => conform(command),
-        Command::Import { adapter } => import(adapter),
-        Command::Project { adapter } => project(adapter),
-        Command::Schema { command } => schema::run(command),
-        Command::Infra { command } => infra(command),
+        GenerateCommand::Project { adapter } => project(adapter),
+        GenerateCommand::Schema { command } => schema::run(command),
+        GenerateCommand::Build { command } => build(command),
+        GenerateCommand::Release { command } => release(command),
+        GenerateCommand::Stack { command } => stack(command),
+        GenerateCommand::Deployment { command } => deployment(command),
+    }
+}
+
+/// `ess generate generate …` and `ess generate …`: one verb, two spellings, one call.
+fn generate_projections(arguments: &GenerateArgs) -> Result<ExitCode> {
+    generate(
+        &arguments.input.path,
+        arguments.kind,
+        &arguments.include,
+        arguments.out.as_deref(),
+        arguments.format,
+    )
+}
+
+/// `ess verify …`, and the same verbs spelled flat.
+fn verify_area(command: VerifyCommand) -> Result<ExitCode> {
+    match command {
+        VerifyCommand::Conform { command } => conform(command),
+        VerifyCommand::Diff { from, to, format } => diff(&from, &to, format),
+        VerifyCommand::Impact {
+            from,
+            to,
+            suite,
+            format,
+        } => impact(&from, &to, suite.as_deref(), format),
+    }
+}
+
+/// `ess infra …`, including `ess infra infra …` and the flat spelling of both verbs.
+fn infra_area(command: InfraAreaCommand) -> Result<ExitCode> {
+    match command {
+        InfraAreaCommand::Infra { command } | InfraAreaCommand::Flat(command) => infra(command),
+        InfraAreaCommand::Import(command) => import_area(command),
+    }
+}
+
+/// `ess infra import …`, and `ess import …`.
+fn import_area(command: ImportCommand) -> Result<ExitCode> {
+    match command {
+        ImportCommand::Import { adapter } => import(adapter),
     }
 }
 
@@ -2004,11 +2216,216 @@ fn infra(command: InfraCommand) -> Result<ExitCode> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use clap::CommandFactory;
+    use std::collections::BTreeSet;
 
     #[test]
     fn every_command_and_argument_name_is_unambiguous() {
-        Cli::command().debug_assert();
+        command().debug_assert();
+    }
+
+    /// Every leaf of the tree, as the path of names that reaches it.
+    ///
+    /// A leaf is a command with nothing below it — the thing that actually does the work. The
+    /// tree carries each one twice, once under its area and once as a flat spelling, and the
+    /// cases below are about that pairing, so the enumeration has to come from the tree rather
+    /// than from a list somebody keeps up to date.
+    fn leaf_paths(command: &clap::Command) -> Vec<Vec<String>> {
+        fn walk(command: &clap::Command, prefix: &[String], leaves: &mut Vec<Vec<String>>) {
+            let mut children = command.get_subcommands().peekable();
+            if children.peek().is_none() {
+                if !prefix.is_empty() {
+                    leaves.push(prefix.to_vec());
+                }
+                return;
+            }
+            for child in children {
+                let mut path = prefix.to_vec();
+                path.push(child.get_name().to_owned());
+                walk(child, &path, leaves);
+            }
+        }
+
+        let mut leaves = Vec::new();
+        walk(command, &[], &mut leaves);
+        leaves
+    }
+
+    /// The command one path names, or `None` when nothing answers to that spelling.
+    fn node<'a>(root: &'a clap::Command, path: &[String]) -> Option<&'a clap::Command> {
+        let mut current = root;
+        for name in path {
+            current = current.find_subcommand(name)?;
+        }
+        Some(current)
+    }
+
+    /// Whether every command along `path` is listed in its parent's `--help`.
+    fn listed(root: &clap::Command, path: &[String]) -> bool {
+        let mut current = root;
+        for name in path {
+            let Some(child) = current.find_subcommand(name) else {
+                return false;
+            };
+            if child.is_hide_set() {
+                return false;
+            }
+            current = child;
+        }
+        true
+    }
+
+    /// What an invocation of this command can carry: its arguments, and everything below it.
+    ///
+    /// Deliberately not whether it is hidden. A grouped path is listed and its flat alias is not,
+    /// and that difference is the point rather than a drift.
+    fn shape(command: &clap::Command) -> String {
+        use std::fmt::Write as _;
+
+        let mut rendered = String::new();
+        for argument in command.get_arguments() {
+            let id = argument.get_id().as_str();
+            if id == "help" {
+                continue;
+            }
+            let long = argument.get_long();
+            let short = argument.get_short();
+            let required = argument.is_required_set();
+            let values = argument.get_num_args();
+            let defaults = argument.get_default_values();
+            let _ = write!(
+                rendered,
+                "<{id} long={long:?} short={short:?} required={required} values={values:?} \
+                 defaults={defaults:?}>"
+            );
+        }
+        for child in command.get_subcommands() {
+            let name = child.get_name();
+            let below = shape(child);
+            let _ = write!(rendered, "[{name} {below}]");
+        }
+        rendered
+    }
+
+    /// How many leaves the four areas carry between them.
+    ///
+    /// Written down on purpose. A verb added to the tree and to no area would otherwise be
+    /// counted by the enumeration it is missing from and pass every case below.
+    const AREA_LEAVES: usize = 33;
+
+    /// The order they are offered in is checked where it is rendered, in
+    /// `tests/command_surface.rs`: `mut_subcommand` moves what it touches to the end of the list,
+    /// so this order is not the one `--help` prints and asserting on it would say nothing.
+    #[test]
+    fn the_first_level_is_exactly_the_four_areas() {
+        let command = command();
+        let listed: BTreeSet<&str> = command
+            .get_subcommands()
+            .filter(|sub| !sub.is_hide_set())
+            .map(clap::Command::get_name)
+            .collect();
+        assert_eq!(listed, AREAS.iter().copied().collect::<BTreeSet<_>>());
+    }
+
+    #[test]
+    fn every_leaf_is_reachable_by_its_area_path_and_by_its_flat_spelling() {
+        let command = command();
+        let leaves = leaf_paths(&command);
+        let (grouped, flat): (Vec<Vec<String>>, Vec<Vec<String>>) = leaves
+            .iter()
+            .cloned()
+            .partition(|path| listed(&command, path));
+
+        assert_eq!(grouped.len(), AREA_LEAVES, "grouped leaves: {grouped:?}");
+        assert_eq!(
+            flat.len(),
+            AREA_LEAVES - 1,
+            "`ess generate` is the one flat spelling that is not a leaf of the tree, because the \
+             area of that name carries the verb's arguments itself: {flat:?}"
+        );
+
+        for path in &grouped {
+            assert!(
+                AREAS.contains(&path[0].as_str()),
+                "`ess {}` is listed and is under no area",
+                path.join(" ")
+            );
+            let spelled = path.join(" ");
+            let alias = &path[1..];
+            let flat_spelling = alias.join(" ");
+            let leaf = node(&command, path).expect("the path came from the tree");
+
+            if alias == ["generate"] {
+                let area = node(&command, alias).expect("the generate area is the first level");
+                assert!(
+                    !area.is_subcommand_required_set(),
+                    "`ess generate --path …` must parse without a subcommand"
+                );
+                for argument in leaf.get_arguments() {
+                    let id = argument.get_id().as_str();
+                    if id == "help" {
+                        continue;
+                    }
+                    let carried = area
+                        .get_arguments()
+                        .find(|candidate| candidate.get_id() == id)
+                        .unwrap_or_else(|| panic!("`ess generate` does not carry `--{id}`"));
+                    assert!(
+                        !carried.is_hide_set(),
+                        "`ess generate` accepts `--{id}` and must offer it: a command is not \
+                         allowed to hide an argument it takes, however it is spelled"
+                    );
+                }
+                let combined = command.clone().try_get_matches_from([
+                    "ess",
+                    "generate",
+                    "--path",
+                    "examples/billing",
+                    "synthesize",
+                ]);
+                assert!(
+                    combined.is_err(),
+                    "`ess generate --path … synthesize` says two things at once and must be \
+                     refused, as it was before `{spelled}` had an area to sit in"
+                );
+                continue;
+            }
+
+            let aliased = node(&command, alias).unwrap_or_else(|| {
+                panic!("`ess {spelled}` has no flat spelling `ess {flat_spelling}`")
+            });
+            assert_eq!(
+                shape(leaf),
+                shape(aliased),
+                "`ess {spelled}` and `ess {flat_spelling}` are not the same command"
+            );
+            assert!(
+                !listed(&command, alias),
+                "the flat spelling `ess {flat_spelling}` is listed in `--help`"
+            );
+        }
+
+        let mut spellings: BTreeSet<Vec<String>> =
+            grouped.iter().map(|path| path[1..].to_vec()).collect();
+        assert!(spellings.remove(&vec!["generate".to_owned()]));
+        assert_eq!(
+            spellings,
+            flat.iter().cloned().collect::<BTreeSet<_>>(),
+            "the hidden leaves are not exactly the area leaves with the area dropped"
+        );
+    }
+
+    #[test]
+    fn the_generate_area_answers_to_the_flat_spelling_and_to_its_own() {
+        for arguments in [
+            ["ess", "generate", "--path", "examples/billing"].as_slice(),
+            ["ess", "generate", "generate", "--path", "examples/billing"].as_slice(),
+        ] {
+            let matches = command()
+                .try_get_matches_from(arguments)
+                .unwrap_or_else(|error| panic!("{arguments:?} is refused: {error}"));
+            Cli::from_arg_matches(&matches)
+                .unwrap_or_else(|error| panic!("{arguments:?} does not build a Cli: {error}"));
+        }
     }
 
     #[test]

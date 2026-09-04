@@ -25,21 +25,21 @@ one or more typed entrypoints. Each entrypoint names:
 Validate and compile it against the specification:
 
 ```shell-session
-$ ess realization validate --path realization.yaml --spec specification/
+$ ess specify realization validate --path realization.yaml --spec specification/
 my-realization — 4 entrypoint(s), valid
-$ ess realization compile --path realization.yaml --spec specification/ --out realization.ir.json
+$ ess specify realization compile --path realization.yaml --spec specification/ --out realization.ir.json
 my-realization — 4 entrypoint(s), compiled to realization.ir.json
 ```
 
 Generate the user-facing comparison from the same resolved data:
 
 ```shell-session
-$ ess realization generate \
+$ ess specify realization generate \
     --path realization.yaml \
     --spec specification/ \
     --out docs/running-modes.md
 docs/running-modes.md — generated
-$ ess realization generate \
+$ ess specify realization generate \
     --path realization.yaml \
     --spec specification/ \
     --out docs/running-modes.md \

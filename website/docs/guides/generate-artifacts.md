@@ -68,7 +68,7 @@ system such as Docusaurus consumes these files and owns those presentation decis
 
 ## The graph, without generating a tree
 
-`ess graph` prints the actor/command/event picture the generated docs open with:
+`ess specify graph` prints the actor/command/event picture the generated docs open with:
 
 | `--format` | Output |
 |---|---|
@@ -76,7 +76,7 @@ system such as Docusaurus consumes these files and owns those presentation decis
 | `mermaid` (default) | a `flowchart`, unfenced — redirect into a Markdown file or paste into a PR |
 | `json`, `yaml` | the nodes, edges and groups themselves — 13 nodes, 7 edges and 3 groups for `examples/billing` |
 
-One renderer produces both the CLI's diagram and the documentation's: `ess graph --path
+One renderer produces both the CLI's diagram and the documentation's: `ess specify graph --path
 examples/billing --format mermaid` emits exactly the bytes fenced under *The system as a graph* in
 `generated/docs/index.md`, and a test compares them, so the two cannot drift.
 

@@ -4,30 +4,38 @@ ESS is a standalone Rust workspace for describing systems as typed data, compili
 descriptions into deterministic IR, projecting concrete artifacts, and checking implementations or
 infrastructure against what was declared.
 
-The canonical command is `ess`:
+The canonical command is `ess`, and its first level is the four areas the crates are grouped into:
+`specify`, `generate`, `verify`, `infra`.
 
 ```console
-cargo run --bin ess -- validate --path examples/billing
-cargo run --bin ess -- compile --path examples/billing --format json
+cargo run --bin ess -- specify validate --path examples/billing
+cargo run --bin ess -- specify compile --path examples/billing --format json
+cargo run --bin ess -- specify realization validate --path realization.yaml --spec path/to/spec
+cargo run --bin ess -- specify realization generate --path realization.yaml --spec path/to/spec --out running-modes.md
+cargo run --bin ess -- specify runtime compile --path ess/runtime.yaml --system ess/system --realization ess/realization.yaml --build-ir generated/ess/build.json --out generated/ess/runtime.json
 cargo run --bin ess -- generate --path examples/billing --kind docs --out generated
 cargo run --bin ess -- generate --path examples/billing --kind site --out generated
 cargo run --bin ess -- generate --path examples/billing --kind openapi --out generated
-cargo run --bin ess -- conform synthesize --path examples/billing --out suite.json
-cargo run --bin ess -- conform run --suite suite.json --target billing --report-out report.json
-cargo run --bin ess -- import openapi --path api.yaml --out interface.json
-cargo run --bin ess -- project openapi --ir interface.json --out normalized-api.yaml
-cargo run --bin ess -- build compile --path ess/build.yaml --out generated/ess/build.json
-cargo run --bin ess -- build graph --path ess/build.yaml --out generated/ess/build.mmd
-cargo run --bin ess -- project buildkit --ir generated/ess/build.json --out generated/build
-cargo run --bin ess -- runtime compile --path ess/runtime.yaml --system ess/system --realization ess/realization.yaml --build-ir generated/ess/build.json --out generated/ess/runtime.json
-cargo run --bin ess -- project helm --ir generated/ess/runtime.json --chart example --version 1.0.0 --out generated/chart
-cargo run --bin ess -- stack resolve --path ess/stack.yaml --catalog releases.json --out stack.lock.json
-cargo run --bin ess -- deployment compile --path environment.yaml --stack-lock stack.lock.json --out deployment.json
-cargo run --bin ess -- schema validate instances --schemas schemas
-cargo run --bin ess -- schema typescript urn:example:registry:1 --root Registry --schemas schemas
-cargo run --bin ess -- realization validate --path realization.yaml --spec path/to/spec
-cargo run --bin ess -- realization generate --path realization.yaml --spec path/to/spec --out running-modes.md
+cargo run --bin ess -- generate build compile --path ess/build.yaml --out generated/ess/build.json
+cargo run --bin ess -- generate build graph --path ess/build.yaml --out generated/ess/build.mmd
+cargo run --bin ess -- generate project buildkit --ir generated/ess/build.json --out generated/build
+cargo run --bin ess -- generate project helm --ir generated/ess/runtime.json --chart example --version 1.0.0 --out generated/chart
+cargo run --bin ess -- generate project openapi --ir interface.json --out normalized-api.yaml
+cargo run --bin ess -- generate stack resolve --path ess/stack.yaml --catalog releases.json --out stack.lock.json
+cargo run --bin ess -- generate deployment compile --path environment.yaml --stack-lock stack.lock.json --out deployment.json
+cargo run --bin ess -- generate schema validate instances --schemas schemas
+cargo run --bin ess -- generate schema typescript urn:example:registry:1 --root Registry --schemas schemas
+cargo run --bin ess -- verify conform synthesize --path examples/billing --out suite.json
+cargo run --bin ess -- verify conform run --suite suite.json --target billing --report-out report.json
+cargo run --bin ess -- infra import openapi --path api.yaml --out interface.json
+cargo run --bin ess -- infra infra diagnose --path observation.json
 ```
+
+Every verb is also spelled flat at the top level, exactly as it was before the areas existed:
+`ess validate --path examples/billing`, `ess conform run …`, `ess schema validate …`. A flat
+spelling runs the same command and prints the same bytes on both streams with the same exit status,
+with no notice of any kind; it is left out of `--help` so the listing stays the four areas. Nothing
+is deprecated, and a pinned caller needs no change.
 
 ## Install the command
 
@@ -64,10 +72,10 @@ cargo build --locked --release --bin ess
 
 Adapters use one explicit contract:
 
-- `ess import <adapter>` reads a concrete source and reports coverage, diagnostics, and unresolved
-  references while producing typed IR where the adapter supports the source.
-- `ess project <adapter>` writes reviewable artifacts, obligations, and refusals. It never applies
-  infrastructure or mutates an external system.
+- `ess infra import <adapter>` reads a concrete source and reports coverage, diagnostics, and
+  unresolved references while producing typed IR where the adapter supports the source.
+- `ess generate project <adapter>` writes reviewable artifacts, obligations, and refusals. It never
+  applies infrastructure or mutates an external system.
 - Kubernetes import accepts a sanitized bundle or performs a live scan at the credential edge.
   Secret values are digested before any serialization or filesystem write.
 - OpenAPI import produces `ess-service-interface/1`: typed service, operation, JSON-message, local
@@ -83,7 +91,8 @@ establishes their semantics; there is no generic property bag or facet registry.
 `ess-realization/1` describes one physical implementation of an exact `EssIr` without changing the
 semantic system. It binds the ESS digest to immutable implementation artifacts and typed
 entrypoints, including local CLIs, loopback browser surfaces, model-backed agent loops, or
-approval-required hosted interfaces. `ess realization compile` emits `ess-realization-ir/1`; the
+approval-required hosted interfaces. `ess specify realization compile` emits
+`ess-realization-ir/1`; the
 Markdown generator turns the same IR into a drift-checkable run-mode guide.
 
 Build and deployment use another explicit lowering chain. `ess-build/1` is a typed, content-addressed
@@ -103,14 +112,15 @@ relations shipped in `0.5.0` and their
 and references, what that refuses, and how one extension key (`x-ess-relation`) carries a relation
 into JSON Schema, OpenAPI and Rust.
 
-`generate --kind docs` emits repository Markdown and Mermaid. The `site` projection, introduced in
+`ess generate --kind docs` emits repository Markdown and Mermaid. The `site` projection, introduced in
 `0.4.0`, adds frontmatter and `sidebar.json` to the same pages so a static site generator can consume
 them. It does not accept prose as its specification and does not emit HTML, a theme, or hosting.
 
 ## The crate tree
 
-Crates sit under the area they serve. The name of a crate is its identity and no move changed one;
-the directory says which half of the pipeline it belongs to.
+Crates sit under the area they serve, and the command surface says the same thing: one area of
+`ess` per directory here. The name of a crate is its identity and no move changed one; the
+directory says which half of the pipeline it belongs to.
 
 - **`crates/specify/`** — `ess-primitives`, `ess-domain`, `ess-compiler`, `ess-composition`,
   `ess-realization`: an authored system becomes a validated, resolved IR.

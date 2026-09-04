@@ -22,7 +22,7 @@ This page tracks the current `0.9.1` source tag. The `site` projection itself wa
 <LabLaunch />
 
 What the lab runs is this specification, executing in your browser. It fetches
-`billing_web_realized.wasm` — the module `ess synthesize --target web` emits from
+`billing_web_realized.wasm` — the module `ess generate synthesize --target web` emits from
 `examples/billing/`, linked with the hand-written behaviour in `examples/billing-realization/` and
 built for `wasm32-unknown-unknown` — and sends five commands over its boundary: one accepted, two
 declared moves, one move the lifecycle does not have, and one refusal a guard decides. That is every
@@ -174,7 +174,7 @@ carries two digests, not one: `source_digest` is the whole model this file was g
 over everything they rest on.
 
 The second digest is what stops a one-word change costing a full regeneration. When the
-specification moves, `ess impact` compares each artifact's committed `contract_digest`
+specification moves, `ess verify impact` compares each artifact's committed `contract_digest`
 against the digest its slice computes, and names only the artifacts whose slice actually moved.
 Without it, every change owes the whole generated tree.
 

@@ -1,5 +1,53 @@
 # Changelog
 
+## [Unreleased]
+
+### Changed
+
+- **`ess --help` lists four commands, one per area, and every verb keeps the spelling it had.**
+  The crates moved under `crates/{specify,generate,verify,infra}/` in 0.11.1; the command surface
+  now says the same thing, so where a thing is implemented and how it is spelled are one fact
+  instead of two. The first level is `specify`, `generate`, `verify`, `infra` and nothing else.
+- **Every flat spelling is a hidden alias of its area path.** `ess validate --path .` is
+  `ess specify validate --path .`: the same arguments, and when the command runs, the same stdout,
+  the same stderr and the same exit status, with no deprecation line anywhere. For a refusal clap
+  writes — a missing required argument — and for `--help`, only the `Usage:` line differs, because
+  it names the path that was typed, which is what the flat spelling has always printed. The alias
+  is left out of `--help` only so the listing stays the four areas. Both spellings are mounted from
+  one definition in the derive, so they cannot drift apart, and a test enumerates every leaf of the
+  clap tree and asserts the pairing rather than a list somebody keeps up to date. Nothing is
+  deprecated and no pinned caller — agentide's gate invokes `ess compile` and `ess generate` by
+  name — needs changing.
+
+  | Flat spelling | Area path |
+  |---|---|
+  | `ess validate` | `ess specify validate` |
+  | `ess compile` | `ess specify compile` |
+  | `ess compose` | `ess specify compose` |
+  | `ess inspect` | `ess specify inspect` |
+  | `ess graph` | `ess specify graph` |
+  | `ess realization` | `ess specify realization` |
+  | `ess runtime` | `ess specify runtime` |
+  | `ess generate` | `ess generate generate` |
+  | `ess synthesize` | `ess generate synthesize` |
+  | `ess project` | `ess generate project` |
+  | `ess schema` | `ess generate schema` |
+  | `ess build` | `ess generate build` |
+  | `ess release` | `ess generate release` |
+  | `ess stack` | `ess generate stack` |
+  | `ess deployment` | `ess generate deployment` |
+  | `ess conform` | `ess verify conform` |
+  | `ess diff` | `ess verify diff` |
+  | `ess impact` | `ess verify impact` |
+  | `ess infra <operation>` | `ess infra infra <operation>` |
+  | `ess import` | `ess infra import` |
+
+  Two verbs share the name of their area. `ess generate --path …` is the flat spelling of
+  `ess generate generate --path …`, and `ess infra diagnose …` of `ess infra infra diagnose …`.
+  The `generate` area therefore offers the verb's five options beside its eight subcommands, and
+  refuses the two written together — `ess generate --path X synthesize` says two things at once and
+  exits 2, as it did before the area existed.
+
 ## [0.11.1] — 2026-09-04
 
 ### Changed

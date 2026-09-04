@@ -59,7 +59,7 @@ would be a second place for the truth to live, and the two would eventually disa
 **`Account` owns its invoices, and says so.** The `relations:` block on `billing.invoice.Account`
 declares that it `owns` `many` `billing.invoice.Invoice`, carried by the invoice's own `account_id`
 field — one declaration, on the owner, rather than a typed id on the child plus an invariant nobody
-wrote. `ess validate` refuses that relation if the target is not an entity, if `account_id` is
+wrote. `ess specify validate` refuses that relation if the target is not an entity, if `account_id` is
 missing or typed as anything but `billing.invoice.AccountId`, or if a second entity claims to own
 invoices too. Every projection carries it under `x-ess-relation`, on the property holding
 `account_id`: see `generated/schema/entities/billing.invoice.Invoice.schema.json`, the

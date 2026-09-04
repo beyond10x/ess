@@ -1,9 +1,9 @@
 # A revision pair
 
-Two revisions of one specification, for `ess diff` and `ess impact`.
+Two revisions of one specification, for `ess verify diff` and `ess verify impact`.
 
 ```console
-ess diff --from examples/revision-pair/before --to examples/revision-pair/after
+ess verify diff --from examples/revision-pair/before --to examples/revision-pair/after
 ```
 
 Not a system anybody would run — a fixture, like [`oracle-fixture/`](../oracle-fixture/). It exists so
@@ -66,9 +66,9 @@ byte-for-byte identical in meaning across the two revisions, so neither reaches 
 | `Headline`, a newtype wrapping the `Money` struct | it keeps `Currency` out of everything the entity names directly, so a scenario that never mentions `Currency` is reached transitively — and the path, not the answer, is what a reader checks. Since the `floor` field arrived the *shortest* such path runs `Currency ← Money ← PriceList`, two hops, and that is the one the report explains |
 
 ```console
-ess conform synthesize --path examples/revision-pair/before --out /tmp/catalog
-ess impact --from examples/revision-pair/before --to examples/revision-pair/after \
-  --suite /tmp/catalog/suite.json
+ess verify conform synthesize --path examples/revision-pair/before --out target/catalog-suite.json
+ess verify impact --from examples/revision-pair/before --to examples/revision-pair/after \
+  --suite target/catalog-suite.json
 ```
 
 All ten are owed again, and the counts per change are not the same: the two `Currency` changes and

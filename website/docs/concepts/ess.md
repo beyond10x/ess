@@ -70,7 +70,7 @@ projection of it. ESS does not infer model semantics from an existing Markdown d
 `site` projection, introduced in `0.4.0`, also stops at static-site-ready Markdown and sidebar data;
 it deliberately emits no HTML, theme, or hosted site.
 
-### The conformance suite (`ess conform`)
+### The conformance suite (`ess verify conform`)
 
 The specification acts as an oracle: `synthesize` derives one scenario per obligation the
 specification states — each declared outcome, each lifecycle move, each move that must *not* be
@@ -83,7 +83,7 @@ refusal prints beside the scenarios, because a suite quietly holding fewer check
 specification requires is the one failure a passing run cannot show. See
 [Verify an implementation](../guides/verify-conformance.md).
 
-### The semantic delta (`ess diff`, `ess impact`)
+### The semantic delta (`ess verify diff`, `ess verify impact`)
 
 `diff` compares two compiled revisions: moving declarations between files, renaming files,
 reordering blocks and rewriting comments report **nothing**; removing a currency variant reports one
@@ -92,7 +92,7 @@ and which generated artifacts are owed regeneration, each with the hop-by-hop de
 explains it. It narrows what a change owes; it never claims a result still holds. See
 [Track specification change](../guides/track-change.md).
 
-### Structural synthesis (`ess synthesize`)
+### Structural synthesis (`ess generate synthesize`)
 
 A language-neutral **synthesis plan** gives every capability of the specification exactly one
 disposition: *generated*, *obligation* (a named piece of work a human must implement — every

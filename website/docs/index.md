@@ -14,10 +14,10 @@ conformance scenarios an implementation must satisfy.
 The canonical command is `ess`.
 
 ```shell-session
-$ ess validate --path examples/billing
-$ ess compile --path examples/billing --out target/billing.ir.json
+$ ess specify validate --path examples/billing
+$ ess specify compile --path examples/billing --out target/billing.ir.json
 $ ess generate --path examples/billing --kind site --out target/projections
-$ ess conform synthesize --path examples/billing --out target/suite.json
+$ ess verify conform synthesize --path examples/billing --out target/suite.json
 ```
 
 ## What ESS owns

@@ -71,6 +71,19 @@ tasks:
         --schemas crates/edge/ess-cli/tests/fixtures/schema-contract/registry
         --out crates/edge/ess-cli/tests/fixtures/schema-contract/expected/widget.ts
         --check
+      # Every invocation above is a flat spelling, which is what a pinned caller and every
+      # published example say and what the hidden top-level aliases keep working. These four are
+      # the area paths the reference page teaches, one per area, including the two areas whose
+      # name is also a verb — `ess generate …` and `ess infra infra …`.
+      - cargo run --quiet --locked --bin ess -- specify validate --path examples/billing
+      - >-
+        cargo run --quiet --locked --bin ess -- generate schema validate
+        crates/edge/ess-cli/tests/fixtures/schema-contract/instances
+        --schemas crates/edge/ess-cli/tests/fixtures/schema-contract/registry
+      - cargo run --quiet --locked --bin ess -- verify conform synthesize --path examples/billing
+      - >-
+        cargo run --quiet --locked --bin ess -- infra infra diagnose
+        --path examples/k3d-dev-cluster/observation.json
 
   release-check:
     cmds:

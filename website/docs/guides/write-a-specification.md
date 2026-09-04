@@ -23,7 +23,7 @@ topology.yaml          what the system needs at runtime to be correct
 
 Those five files are `examples/billing/`, and the `5 file(s)` in every validate line below is them.
 
-One file works too: `ess validate --path spec.yaml` reads a single file carrying the header
+One file works too: `ess specify validate --path spec.yaml` reads a single file carrying the header
 and the members, and splitting into a directory later changes nothing about invocation. A file names
 at most one `domain:`, so the one-file form is for a one-domain system; `components:`, `bindings:`
 and `topology:` can sit in it as well.
@@ -42,7 +42,7 @@ offline gate is `task check`, which exercises the schema contract alongside the 
 ## Validate early, read the refusals
 
 ```shell-session
-$ ess validate --path examples/billing
+$ ess specify validate --path examples/billing
 billing v3 — 5 file(s), valid
 ```
 
@@ -54,7 +54,7 @@ those two occurrences only, not every one in the file — and run it:
 $ COPY=$(mktemp -d)/billing && cp -r examples/billing "$COPY"
 $ # in $COPY/domains/invoice.yaml, rename `InvoiceCreated` to `InvoiceRaised` in the
 $ # `accepted` outcome's `emits:` list and its `payload:` key
-$ ess validate --path "$COPY"
+$ ess specify validate --path "$COPY"
 …/billing was refused:
   - [undeclared_reference] command.billing.invoice.CreateInvoice.outcomes.accepted.emits: `billing.invoice.InvoiceRaised` is not a declared event (hint: declared events: `billing.email.DeliveryEscalated`, `billing.email.EmailSent`, `billing.invoice.InvoiceCancelled`, `billing.invoice.InvoiceCreated`, `billing.invoice.InvoiceIssued`, `billing.invoice.InvoicePaid`)
   - [undeclared_reference] command.billing.invoice.CreateInvoice.outcomes.accepted.instance: outcome `accepted` of `billing.invoice.CreateInvoice` acts on the instance named by `invoice_id`, which is no field of an emitted event of it (hint: the field of an emitted event must be typed `billing.invoice.InvoiceId` — declared: none are declared)
@@ -237,7 +237,7 @@ conversions:
 
 `because:` is required, and conversions are directional — declaring `Email → EmailAddress` does not
 grant the reverse, which is usually the unsafe one. The reason is not decoration: it is what
-`ess inspect` prints back at the crossing, so the person reading the binding a year later reads the
+`ess specify inspect` prints back at the crossing, so the person reading the binding a year later reads the
 argument for it rather than reconstructing one.
 
 ## Three layers above the domains
@@ -259,12 +259,13 @@ declares `reached_by: network`, which is why that example has a served contract 
 
 ## Check what you just wrote resolved
 
-`ess validate` says the document holds together. `ess inspect` shows what one declaration *became*,
+`ess specify validate` says the document holds together. `ess specify inspect` shows what one
+declaration *became*,
 with every reference in it resolved — the fastest way to find out whether the thing you meant is the
 thing the model read:
 
 ```shell-session
-$ ess inspect --path examples/billing billing.invoice.CreateInvoice
+$ ess specify inspect --path examples/billing billing.invoice.CreateInvoice
 commands:
   domain: billing.invoice
   input:
@@ -305,7 +306,7 @@ records as well; the excerpt above keeps only the fields relevant to that questi
 On a binding it resolves the crossing as well, reason included:
 
 ```shell-session
-$ ess inspect --path examples/billing notify-on-invoice-created
+$ ess specify inspect --path examples/billing notify-on-invoice-created
 bindings:
   command: billing.email.SendEmail
   delivery: at_least_once

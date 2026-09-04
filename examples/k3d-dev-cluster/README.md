@@ -9,8 +9,8 @@ A small, deterministic `infra-observation/1` bundle and the `infra-ir/1` documen
 | `expected.yaml` | input: the desired state, as somebody would write it (`infra-spec/1`) |
 | `cluster.ir.json` | output: typed infrastructure IR compiled from `observation.json` |
 | `simulation.json` | output: the infrastructure simulation of `expected.yaml` against `observation.json` |
-| `drift.json` | output: what `ess infra diff --from observation.json --to observation.drifted.json` produces |
-| `projection/` | output: what `ess project kubernetes --spec expected.yaml --path observation.json --out projection` writes |
+| `drift.json` | output: what `ess infra infra diff --from observation.json --to observation.drifted.json` produces |
+| `projection/` | output: what `ess generate project kubernetes --spec expected.yaml --ir cluster.ir.json --out projection` writes |
 
 The four outputs are committed and drift-checked by `cargo xtask infra --check`. Never edit one by
 hand; regenerate all four with `cargo xtask infra`. The three inputs *are* hand-maintained — they
@@ -95,7 +95,7 @@ this repository refuses a bundle where they are anything else (`INFRA-SECRET-001
 The compiled IR carries exactly four unresolved references — the optional `coredns-custom`
 configmap, the `lost-lookup` selector, the `retired-api` backend, and `flaky-agent`'s required
 `agent-credentials` secret — as typed facts, not errors: they are true statements about the
-observed cluster, and `ess infra diagnose` turns each into a coded finding.
+observed cluster, and `ess infra infra diagnose` turns each into a coded finding.
 
 ## `expected.yaml` — the desired state
 
@@ -131,7 +131,7 @@ what makes `shop-resources` a patch below where `shop-probes` is an obligation.
 
 ## `projection/` — what would have to change
 
-The tree `ess project kubernetes` writes from the same intent and observation. **Nothing in
+The tree `ess generate project kubernetes` writes from the same intent and observation. **Nothing in
 it has been applied**; it is a diff a person reviews, edits and applies with their own credentials.
 
 | file | what it is |

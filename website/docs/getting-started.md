@@ -50,16 +50,21 @@ The walkthrough uses the source-checkout form so every path names a file in the 
 replace `cargo run --quiet --locked --bin ess --` with the verified `ess` binary in every command
 below.
 
+The first level of `ess` is the four areas the tool is built out of — `specify`, `generate`,
+`verify`, `infra` — and every verb is also spelled flat at the top level as a hidden alias, so
+`ess validate --path .` still runs `ess specify validate --path .` and prints the same bytes. See
+[Flat spellings](./reference/cli.md#flat-spellings).
+
 ## Validate and compile a real specification
 
 The billing example is split into a system document and domain documents. Validation resolves the
 whole set before reporting success:
 
 ```shell-session
-$ cargo run --quiet --locked --bin ess -- validate --path examples/billing
+$ cargo run --quiet --locked --bin ess -- specify validate --path examples/billing
 billing v3 — 5 file(s), valid
 
-$ cargo run --quiet --locked --bin ess -- compile \
+$ cargo run --quiet --locked --bin ess -- specify compile \
     --path examples/billing --out target/billing.ir.json
 billing v3 — 5 file(s), 26 declaration(s), compiled to target/billing.ir.json
 ```
@@ -70,10 +75,10 @@ bytes.
 ## Inspect the model
 
 ```shell-session
-$ cargo run --quiet --locked --bin ess -- graph \
+$ cargo run --quiet --locked --bin ess -- specify graph \
     --path examples/billing --format mermaid
 
-$ cargo run --quiet --locked --bin ess -- inspect \
+$ cargo run --quiet --locked --bin ess -- specify inspect \
     --path examples/billing billing.invoice.Invoice
 ```
 
@@ -121,10 +126,10 @@ these commands write beneath `target/projections/openapi/` and
 ## Generate and run conformance
 
 ```shell-session
-$ cargo run --quiet --locked --bin ess -- conform synthesize \
+$ cargo run --quiet --locked --bin ess -- verify conform synthesize \
     --path examples/billing --out target/billing-suite.json
 
-$ cargo run --quiet --locked --bin ess -- conform run \
+$ cargo run --quiet --locked --bin ess -- verify conform run \
     --suite target/billing-suite.json --target billing
 ```
 

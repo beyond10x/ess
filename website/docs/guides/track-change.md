@@ -1,24 +1,24 @@
 ---
 title: Track specification change
 sidebar_position: 6
-description: Compare two revisions semantically with ess diff, and compute what the change invalidates — scenarios and generated artifacts — with ess impact.
+description: Compare two revisions semantically with ess verify diff, and compute what the change invalidates — scenarios and generated artifacts — with ess verify impact.
 ---
 
 # Track specification change
 
 Conformance reports are bound to the specification digest they attest, so the moment a specification
-moves, every result produced for the old digest becomes stale. That is correct and blunt. `ess diff` and
-`ess impact` make it proportionate: a typed statement of what moved, and a narrowing of what the
+moves, every result produced for the old digest becomes stale. That is correct and blunt.
+`ess verify diff` and `ess verify impact` make it proportionate: a typed statement of what moved, and a narrowing of what the
 move actually invalidates.
 
-## What moved: `ess diff`
+## What moved: `ess verify diff`
 
 The comparison is over two **compiled** models, not text. Moving declarations between files,
 renaming files, reordering blocks and rewriting every comment report nothing; one line that removes
 a currency reports one narrowing:
 
 ```shell-session
-$ ess diff --from examples/revision-pair/before --to examples/revision-pair/after
+$ ess verify diff --from examples/revision-pair/before --to examples/revision-pair/after
 catalog v2 → v2
   before  9aa886fb68a2447af40c92cf53ed260af0d102507ac87e73a8e31fb7d20a0916
   after   2dcf59ba04dd2fb953218bf8c60146d4efd4fca8282af8cd53c2063f4f4616be
@@ -64,7 +64,7 @@ Rules the report follows:
 `ess-diff/1` document — byte-identical for the same pair, each change carrying an id derived from its
 own content, so a review comment can quote one and still mean the same change later.
 
-## What that invalidates: `ess impact`
+## What that invalidates: `ess verify impact`
 
 A delta says what moved; `impact` says what **stood on** what moved — which conformance scenarios
 are owed again, and which generated artifacts are owed regeneration. This repository ships one
@@ -75,7 +75,7 @@ another.
 $ NEXT=$(mktemp -d)/billing && cp -r examples/billing "$NEXT"
 $ # in $NEXT/domains/invoice.yaml, move `billing.invoice.CreateInvoice`
 $ # from actor `billing.invoice.Customer`'s `may:` list to `billing.invoice.Auditor`'s
-$ ess impact --from examples/billing --to "$NEXT" \
+$ ess verify impact --from examples/billing --to "$NEXT" \
     --suite suites/generated/billing/suite.json | head -18
 billing v3 → v3
   before  aacdc2fe065d462cc4f9ba51e6740f88809b6b17ce006ef846b488f957005da3
@@ -119,8 +119,8 @@ you can synthesise on the spot:
 
 ```shell-session
 $ SUITE=$(mktemp -d)/suite.json
-$ ess conform synthesize --path examples/revision-pair/before --out "$SUITE" >/dev/null
-$ ess impact --from examples/revision-pair/before --to examples/revision-pair/after \
+$ ess verify conform synthesize --path examples/revision-pair/before --out "$SUITE" >/dev/null
+$ ess verify impact --from examples/revision-pair/before --to examples/revision-pair/after \
     --suite "$SUITE" | grep -A 3 'PublishPriceList/outcome/published'
   catalog.pricing.PublishPriceList/outcome/published
     transitively-impacted entity catalog.pricing.PriceList — type/catalog.pricing.Currency/variant-added/CHF

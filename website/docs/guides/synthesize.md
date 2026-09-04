@@ -12,7 +12,7 @@ as a **named obligation**. Behaviour is never generated: every algorithm is an o
 implements.
 
 ```shell-session
-$ ess synthesize --path examples/billing --target rust --out out/
+$ ess generate synthesize --path examples/billing --target rust --out out/
 ```
 
 `--target` is `rust`, `go` or `web`; `--out` writes the tree, and without it the artifacts are
@@ -35,7 +35,7 @@ The command summarizes the plan and the artifact inventory. `PLAN.md` and `plan.
 carry each disposition and its reason:
 
 ```shell-session
-$ ess synthesize --path examples/billing --target rust | head -2
+$ ess generate synthesize --path examples/billing --target rust | head -2
 48 capabilities: 36 generated, 8 obligation(s), 4 refused
 15 artifact(s), nothing written
 ```
@@ -86,7 +86,7 @@ candidate implementations; ambiguity is an error.
 The generated code is judged by the suite the same specification generated
 (see [Verify an implementation](./verify-conformance.md)), and the repository's `task check` gate
 runs the source-workspace tests and realization checks on every commit. Use the public
-`ess synthesize` command to write a target and review its output:
+`ess generate synthesize` command to write a target and review its output:
 
 * The committed billing suite, **unchanged**, passes the generated workspace linked with the
   hand-written realization — 29 of 29 scenarios — and a deliberately corrupted linkage fails
