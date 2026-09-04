@@ -119,8 +119,8 @@ Run `ess verify conform <command> --help` for target-specific arguments.
 | `ess generate project openapi …` | ESS service/interface IR → OpenAPI. |
 | `ess generate project kubernetes …` | infrastructure intent and observation → manifests and obligations. |
 
-The commands under `ess project` write artifacts only. They do not call `kubectl`, apply a manifest,
-or mutate a target.
+The commands under `ess generate project` write artifacts only. They do not call `kubectl`, apply a
+manifest, or mutate a target.
 
 `ess infra infra` contains `diagnose`, `graph`, and `diff` operations over sanitized infrastructure
 IR — the same three as `ess infra diagnose`, `ess infra graph` and `ess infra diff`, which are their

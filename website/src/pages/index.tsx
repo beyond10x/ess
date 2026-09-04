@@ -140,13 +140,15 @@ function HonestStatus() {
         <p className={styles.ledgerBuilt}>
           ESS validates and compiles system specifications; inspects, graphs, diffs, and analyzes
           impact; generates documentation and interface contracts; synthesizes structural code;
-          runs conformance suites; imports OpenAPI and sanitized Kubernetes observations; and
-          projects supported IR to OpenAPI and Kubernetes manifests.
+          runs conformance suites; imports OpenAPI and sanitized Kubernetes observations; projects
+          supported IR; and carries independently released components through verified OCI bundles
+          to affected-only Helm reconciliation.
         </p>
         <p className={styles.ledgerNot}>
-          Projection never applies infrastructure. Importers do not invent missing semantics.
-          Unsupported constructs remain coverage gaps, obligations, unresolved references, or
-          refusals—not silently successful conversions.
+          Deterministic compilation and projection do not apply infrastructure. Live imports and
+          commands named execute, publish, fetch, or reconcile are explicit credential edges.
+          Importers do not invent missing semantics; unsupported constructs remain coverage gaps,
+          obligations, unresolved references, or refusals—not silently successful conversions.
         </p>
       </div>
       <p className={styles.panelMore}>

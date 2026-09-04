@@ -8,7 +8,7 @@ description: Author an ESS document — the layout, the constructs the model ins
 
 This guide covers authoring an Executable System Specification. The normative example is
 `examples/billing/` in the repository — deliberately the smallest system that exercises the
-current `0.9.1` model. Concepts are covered in [ESS](../concepts/ess.md); this page is about writing
+current `0.13.2` model. Concepts are covered in [ESS](../concepts/ess.md); this page is about writing
 one.
 
 ## Layout

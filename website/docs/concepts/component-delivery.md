@@ -45,15 +45,18 @@ runtime, and executor-produced release manifests; it contains neither credential
 configuration. Consumers fetch it by manifest digest, verify the complete chain again, and admit
 only canonical bytes to their content-addressed cache.
 
-`ess build execute`, `ess release publish`, `ess release fetch`, and
-`ess deployment reconcile` are explicit executor commands. They are the only parts of this flow
-that invoke BuildKit, ORAS, Helm, or a cluster. The compiler APIs remain deterministic and offline.
-Reconciliation compares desired deployment IR with the last applied IR, follows the declared
-rollout DAG, and touches only added or changed releases. Removal is a separate reviewed operation;
-it is refused unless explicitly enabled.
+`ess generate build execute`, `ess generate release publish`, `ess generate release fetch`, and
+`ess generate deployment reconcile` are explicit executor commands. They are the only parts of
+this flow that invoke BuildKit, ORAS, Helm, or a cluster. The compiler APIs remain deterministic
+and offline. Reconciliation compares desired deployment IR with the last applied IR, follows the
+declared rollout DAG, and touches only added or changed releases. Removal is a separate reviewed
+operation; it is refused unless explicitly enabled.
 
 Runtime models expose named endpoints and persistent volumes. ESS therefore generates the Service,
 stateful controller, claims, and mounts once for every adopter. When a required endpoint names a
 provided endpoint of another locked component—or a typed external-system endpoint—the environment
 compiler derives the URL. A private environment can still override it explicitly.
 
+Configuration-neutral generated charts set the service account to `default`, satisfying the
+generated values schema and allowing a fresh chart to pass `helm lint` before a private environment
+supplies its own binding.
