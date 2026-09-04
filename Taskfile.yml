@@ -94,6 +94,10 @@ tasks:
       - bash -n .github/actions/release-component/release.sh
       - "grep -q '^name: Release ESS component$' .github/actions/release-component/action.yml"
       - "grep -q 'build-image:' .github/actions/release-component/action.yml"
+      - "grep -q 'rust-toolchain:' .github/actions/release-component/action.yml"
+      - "grep -q \"if: inputs.node-version != ''\" .github/actions/release-component/action.yml"
+      - "grep -q \"if: inputs.pnpm-version != ''\" .github/actions/release-component/action.yml"
+      - "grep -q 'pnpm-version requires node-version' .github/actions/release-component/action.yml"
       - "grep -q 'generate release bundle' .github/actions/release-component/release.sh"
       - >-
         grep -q 'run: bash "$GITHUB_ACTION_PATH/release.sh"'
