@@ -102,7 +102,7 @@ pub struct ReleaseCandidate {
 }
 
 /// Explicit offline input to stack resolution.
-#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct ReleaseCatalog {
     format: String,
@@ -110,7 +110,40 @@ pub struct ReleaseCatalog {
     pub releases: Vec<ReleaseCandidate>,
 }
 
+crate::validation::checked_deserialize!(ReleaseCatalog {
+    format: String,
+    /// Available releases in arbitrary input order.
+    pub releases: Vec<ReleaseCandidate>,
+});
+
 impl ReleaseCatalog {
+    /// Validate every candidate before selection, including unselected nested documents.
+    pub fn validate(&self) -> Result<(), Diagnostics> {
+        let mut diagnostics = Vec::new();
+        if self.format != RELEASE_CATALOG_FORMAT {
+            diagnostics.push(Diagnostic::new(
+                Stage::Composition,
+                DiagnosticCode::UnsupportedFormat,
+                None,
+                format!("release catalogue format must be {RELEASE_CATALOG_FORMAT:?}"),
+            ));
+        }
+        for candidate in &self.releases {
+            diagnostics.extend(verify_release_document(&candidate.release));
+            crate::validation::check(
+                &mut diagnostics,
+                candidate.release.runtime_digest == candidate.runtime.digest()
+                    && candidate.release.semantic_digest == *candidate.runtime.semantic_digest()
+                    && candidate.release.build_digest == *candidate.runtime.build_digest(),
+                Stage::Composition,
+                DiagnosticCode::DigestMismatch,
+                &candidate.release.release_unit,
+                "catalogue runtime does not match its release manifest",
+            );
+        }
+        crate::validation::finish(diagnostics)
+    }
+
     /// Reads a strict JSON release catalogue.
     pub fn from_json(text: &str) -> Result<Self, serde_json::Error> {
         serde_json::from_str(text)
@@ -127,16 +160,20 @@ impl ReleaseCatalog {
 #[serde(deny_unknown_fields)]
 pub struct RuntimeRequirements {
     /// Required non-secret configuration slots.
+    #[serde(deserialize_with = "crate::validation::unique_map")]
     pub config: BTreeMap<Identifier, ConfigKind>,
     /// Required secret slot names.
     pub secrets: BTreeSet<Identifier>,
     /// Required endpoint slots and target systems.
+    #[serde(deserialize_with = "crate::validation::unique_map")]
     pub endpoints: BTreeMap<Identifier, Identifier>,
     /// Required endpoint slots and the named endpoint expected from their target system.
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    #[serde(deserialize_with = "crate::validation::unique_map")]
     pub endpoint_names: BTreeMap<Identifier, Identifier>,
     /// Component-owned endpoints available for automatic in-cluster binding.
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    #[serde(deserialize_with = "crate::validation::unique_map")]
     pub provided_endpoints: BTreeMap<Identifier, ProvidedEndpointRequirement>,
     /// Required workload token audiences.
     pub audiences: BTreeSet<String>,
@@ -173,6 +210,7 @@ pub struct LockedSystem {
     /// Exact runtime digest.
     pub runtime_digest: Digest,
     /// Immutable runtime artifacts.
+    #[serde(deserialize_with = "crate::validation::unique_map")]
     pub runtime_artifacts: BTreeMap<Identifier, Artifact>,
     /// Independent chart release-unit identity.
     pub chart_release_unit: Identifier,
@@ -189,7 +227,7 @@ pub struct LockedSystem {
 }
 
 /// Exact, reviewable resolution of a generic stack.
-#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct StackLock {
     format: String,
@@ -200,12 +238,148 @@ pub struct StackLock {
     /// Exact semantic composition digest.
     pub composition_digest: Digest,
     /// Exact releases by composition-local service identity.
+    #[serde(deserialize_with = "crate::validation::unique_map")]
     pub systems: BTreeMap<Identifier, LockedSystem>,
     /// Typed external requirements copied from the stack.
+    #[serde(deserialize_with = "crate::validation::unique_map")]
     pub external_systems: BTreeMap<Identifier, ExternalSystem>,
 }
 
+crate::validation::checked_deserialize!(StackLock {
+    format: String,
+    /// Stable stack identity.
+    pub stack: Identifier,
+    /// Digest of the authored stack specification.
+    pub stack_digest: Digest,
+    /// Exact semantic composition digest.
+    pub composition_digest: Digest,
+    /// Exact releases by composition-local service identity.
+    #[serde(deserialize_with = "crate::validation::unique_map")]
+    pub systems: BTreeMap<Identifier, LockedSystem>,
+    /// Typed external requirements copied from the stack.
+    #[serde(deserialize_with = "crate::validation::unique_map")]
+    pub external_systems: BTreeMap<Identifier, ExternalSystem>,
+});
+
 impl StackLock {
+    /// Validate recoverable lock invariants after mutation; omitted inputs cannot prove selection.
+    pub fn validate(&self) -> Result<(), Diagnostics> {
+        use crate::validation::check;
+        let mut diagnostics = Vec::new();
+        check(
+            &mut diagnostics,
+            self.format == STACK_LOCK_FORMAT,
+            Stage::Composition,
+            DiagnosticCode::UnsupportedFormat,
+            &self.stack,
+            format!("stack lock format must be {STACK_LOCK_FORMAT:?}"),
+        );
+        for (name, external) in &self.external_systems {
+            check(
+                &mut diagnostics,
+                name == &external.system,
+                Stage::Composition,
+                DiagnosticCode::InvalidValue,
+                name,
+                "external-system key must match its system",
+            );
+        }
+        for (service, system) in &self.systems {
+            // `service` is composition-local. It deliberately need not equal `system.system`.
+            check(
+                &mut diagnostics,
+                system.chart.kind == crate::release::ArtifactKind::HelmChart,
+                Stage::Composition,
+                DiagnosticCode::InvalidValue,
+                service,
+                "locked chart must be a Helm chart artifact",
+            );
+            check(
+                &mut diagnostics,
+                system
+                    .runtime_artifacts
+                    .values()
+                    .any(|artifact| artifact.kind == crate::release::ArtifactKind::OciImage),
+                Stage::Composition,
+                DiagnosticCode::MissingOutput,
+                service,
+                "locked runtime must contain an OCI image",
+            );
+            crate::release::validate_artifacts(
+                &system.runtime_artifacts,
+                Stage::Composition,
+                &mut diagnostics,
+            );
+            for dependency in &system.depends_on {
+                check(
+                    &mut diagnostics,
+                    self.systems.contains_key(dependency),
+                    Stage::Composition,
+                    DiagnosticCode::UnknownReference,
+                    service,
+                    "rollout dependency is not a stack service",
+                );
+            }
+            check(
+                &mut diagnostics,
+                system
+                    .runtime
+                    .config
+                    .values()
+                    .all(|kind| *kind != ConfigKind::Literal),
+                Stage::Composition,
+                DiagnosticCode::InvalidValue,
+                service,
+                "locked runtime configuration requirements cannot contain literal slots",
+            );
+            check(
+                &mut diagnostics,
+                system
+                    .runtime
+                    .endpoint_names
+                    .keys()
+                    .all(|name| system.runtime.endpoints.contains_key(name)),
+                Stage::Composition,
+                DiagnosticCode::UnknownReference,
+                service,
+                "named endpoint requirements must select an endpoint slot",
+            );
+        }
+        self.validate_rollout_graph(&mut diagnostics);
+        crate::validation::finish(diagnostics)
+    }
+
+    fn validate_rollout_graph(&self, diagnostics: &mut Vec<Diagnostic>) {
+        use crate::validation::check;
+        let mut remaining: BTreeSet<_> = self.systems.keys().collect();
+        loop {
+            let ready: Vec<_> = remaining
+                .iter()
+                .copied()
+                .filter(|name| {
+                    self.systems[*name]
+                        .depends_on
+                        .iter()
+                        .all(|dependency| !remaining.contains(dependency))
+                })
+                .collect();
+            if ready.is_empty() {
+                break;
+            }
+            for name in ready {
+                remaining.remove(name);
+            }
+        }
+        check(
+            diagnostics,
+            remaining.is_empty(),
+            Stage::Composition,
+            DiagnosticCode::DependencyCycle,
+            &self.stack,
+            "stack rollout graph contains a cycle",
+        );
+    }
+
     /// Reads a strict exact stack lock.
     pub fn from_json(text: &str) -> Result<Self, serde_json::Error> {
         serde_json::from_str(text)
@@ -228,6 +402,7 @@ pub fn resolve_stack(
     specification: &StackSpec,
     catalog: &ReleaseCatalog,
 ) -> Result<StackLock, Diagnostics> {
+    catalog.validate()?;
     let mut diagnostics = Vec::new();
     if specification.format != STACK_FORMAT {
         diagnostics.push(Diagnostic::new(

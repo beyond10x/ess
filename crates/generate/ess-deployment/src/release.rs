@@ -51,6 +51,7 @@ pub struct Artifact {
     pub digest: Digest,
     /// Exact OCI child manifests by platform.
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    #[serde(deserialize_with = "crate::validation::unique_map")]
     pub platforms: BTreeMap<String, Digest>,
 }
 
@@ -81,7 +82,7 @@ pub struct Evidence {
 }
 
 /// Executor-produced immutable release record.
-#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct ReleaseManifest {
     format: String,
@@ -100,12 +101,43 @@ pub struct ReleaseManifest {
     /// Exact compiled runtime digest.
     pub runtime_digest: Digest,
     /// Published artifacts by stable output name.
+    #[serde(deserialize_with = "crate::validation::unique_map")]
     pub artifacts: BTreeMap<Identifier, Artifact>,
     /// Release evidence by required kind.
+    #[serde(deserialize_with = "crate::validation::unique_map")]
     pub evidence: BTreeMap<EvidenceKind, Evidence>,
 }
 
+crate::validation::checked_deserialize!(ReleaseManifest {
+    format: String,
+    /// Independently versioned release unit.
+    pub release_unit: Identifier,
+    /// System whose implementation is released.
+    pub system: Identifier,
+    /// Release version, separate from the ESS semantic major.
+    pub version: Version,
+    /// Exact source revision.
+    pub source_commit: String,
+    /// Exact compiled ESS semantic digest.
+    pub semantic_digest: Digest,
+    /// Exact compiled build digest.
+    pub build_digest: Digest,
+    /// Exact compiled runtime digest.
+    pub runtime_digest: Digest,
+    /// Published artifacts by stable output name.
+    #[serde(deserialize_with = "crate::validation::unique_map")]
+    pub artifacts: BTreeMap<Identifier, Artifact>,
+    /// Release evidence by required kind.
+    #[serde(deserialize_with = "crate::validation::unique_map")]
+    pub evidence: BTreeMap<EvidenceKind, Evidence>,
+});
+
 impl ReleaseManifest {
+    /// Recheck manifest-local rules after mutation; attachments do not prove authenticity.
+    pub fn validate(&self) -> Result<(), Diagnostics> {
+        crate::validation::finish(verify_release_document(self))
+    }
+
     /// Reads a strict release manifest.
     pub fn from_json(text: &str) -> Result<Self, serde_json::Error> {
         serde_json::from_str(text)
@@ -139,6 +171,10 @@ pub fn verify_release(
     runtime: &RuntimeIr,
 ) -> Result<(), Diagnostics> {
     let mut diagnostics = verify_release_document(release);
+    if let Err(errors) = runtime.validate_against_build(build) {
+        diagnostics.extend_from_slice(errors.as_slice());
+    }
+
     if release.build_digest != build.digest() {
         diagnostics.push(Diagnostic::new(
             Stage::Release,
@@ -240,24 +276,8 @@ pub(crate) fn verify_release_document(release: &ReleaseManifest) -> Vec<Diagnost
             "a release must contain at least one immutable artifact",
         ));
     }
-    for (name, artifact) in &release.artifacts {
-        if name != &artifact.build_output {
-            diagnostics.push(Diagnostic::new(
-                Stage::Release,
-                DiagnosticCode::DigestMismatch,
-                Some(name.clone()),
-                "artifact map key must equal its build_output identity",
-            ));
-        }
-        if artifact.kind == ArtifactKind::OciImage && artifact.platforms.is_empty() {
-            diagnostics.push(Diagnostic::new(
-                Stage::Release,
-                DiagnosticCode::MissingOutput,
-                Some(name.clone()),
-                "an OCI image release must record exact per-platform child manifests",
-            ));
-        }
-    }
+    validate_artifacts(&release.artifacts, Stage::Release, &mut diagnostics);
+
     let required = BTreeSet::from([
         EvidenceKind::Provenance,
         EvidenceKind::Sbom,
@@ -275,4 +295,30 @@ pub(crate) fn verify_release_document(release: &ReleaseManifest) -> Vec<Diagnost
         }
     }
     diagnostics
+}
+
+/// Rules shared by manifest, lock and deployment artifact maps.
+pub(crate) fn validate_artifacts(
+    artifacts: &BTreeMap<Identifier, Artifact>,
+    stage: Stage,
+    diagnostics: &mut Vec<Diagnostic>,
+) {
+    for (name, artifact) in artifacts {
+        if name != &artifact.build_output {
+            diagnostics.push(Diagnostic::new(
+                stage,
+                DiagnosticCode::DigestMismatch,
+                Some(name.clone()),
+                "artifact map key must equal its build_output identity",
+            ));
+        }
+        if artifact.kind == ArtifactKind::OciImage && artifact.platforms.is_empty() {
+            diagnostics.push(Diagnostic::new(
+                stage,
+                DiagnosticCode::MissingOutput,
+                Some(name.clone()),
+                "an OCI image release must record exact per-platform child manifests",
+            ));
+        }
+    }
 }

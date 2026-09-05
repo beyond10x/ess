@@ -96,6 +96,7 @@ pub struct ImageConfig {
     pub workdir: Option<String>,
     /// Public, non-secret image environment.
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    #[serde(deserialize_with = "crate::validation::unique_map")]
     pub environment: BTreeMap<String, String>,
 }
 
@@ -128,6 +129,7 @@ pub enum BuildNode {
         workdir: Option<String>,
         /// Public, content-affecting environment.
         #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+        #[serde(deserialize_with = "crate::validation::unique_map")]
         environment: BTreeMap<String, String>,
         /// Typed ephemeral mounts.
         #[serde(default, skip_serializing_if = "Vec::is_empty")]
@@ -265,7 +267,7 @@ impl BuildSpec {
 }
 
 /// Validated, canonical build graph.
-#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct BuildIr {
     format: String,
@@ -274,12 +276,78 @@ pub struct BuildIr {
     platforms: BTreeSet<Platform>,
     #[serde(default, skip_serializing_if = "BTreeSet::is_empty")]
     secrets: BTreeSet<Identifier>,
+    #[serde(deserialize_with = "crate::validation::unique_map")]
     nodes: BTreeMap<Identifier, BuildNode>,
     order: Vec<Identifier>,
+    #[serde(deserialize_with = "crate::validation::unique_map")]
     outputs: BTreeMap<Identifier, BuildOutput>,
 }
 
+crate::validation::checked_deserialize!(BuildIr {
+    format: String,
+    build: Identifier,
+    #[serde(skip_serializing_if = "BTreeSet::is_empty")]
+    platforms: BTreeSet<Platform>,
+    #[serde(default, skip_serializing_if = "BTreeSet::is_empty")]
+    secrets: BTreeSet<Identifier>,
+    #[serde(deserialize_with = "crate::validation::unique_map")]
+    nodes: BTreeMap<Identifier, BuildNode>,
+    order: Vec<Identifier>,
+    #[serde(deserialize_with = "crate::validation::unique_map")]
+    outputs: BTreeMap<Identifier, BuildOutput>,
+});
+
 impl BuildIr {
+    /// Recheck the byte-local invariants established by `compile_build`.
+    pub fn validate(&self) -> Result<(), Diagnostics> {
+        let mut diagnostics = Vec::new();
+        crate::validation::check(
+            &mut diagnostics,
+            self.format == BUILD_IR_FORMAT,
+            Stage::Build,
+            DiagnosticCode::UnsupportedFormat,
+            &self.build,
+            format!("build IR format must be {BUILD_IR_FORMAT:?}"),
+        );
+        for (name, output) in &self.outputs {
+            crate::validation::check(
+                &mut diagnostics,
+                name == &output.name,
+                Stage::Build,
+                DiagnosticCode::InvalidValue,
+                name,
+                "build output map key must match its name",
+            );
+        }
+        let specification = BuildSpec {
+            format: BUILD_FORMAT.to_owned(),
+            build: self.build.clone(),
+            platforms: self.platforms.clone(),
+            secrets: self.secrets.clone(),
+            nodes: self
+                .nodes
+                .iter()
+                .map(|(id, node)| NamedBuildNode {
+                    id: id.clone(),
+                    node: node.clone(),
+                })
+                .collect(),
+            outputs: self.outputs.values().cloned().collect(),
+        };
+        match compile_build(&specification) {
+            Ok(compiled) => crate::validation::check(
+                &mut diagnostics,
+                self.order == compiled.order,
+                Stage::Build,
+                DiagnosticCode::InvalidValue,
+                &self.build,
+                "build order must equal the complete canonical compiler order",
+            ),
+            Err(errors) => diagnostics.extend_from_slice(errors.as_slice()),
+        }
+        crate::validation::finish(diagnostics)
+    }
+
     /// Reads compiler-owned JSON and rejects incompatible formats or invalid graphs.
     pub fn from_json(text: &str) -> Result<Self, serde_json::Error> {
         serde_json::from_str(text)

@@ -107,17 +107,21 @@ pub struct DeploymentRelease {
     /// Exact independently versioned chart artifact.
     pub chart: Artifact,
     /// Exact image artifacts by build-output identity.
+    #[serde(deserialize_with = "crate::validation::unique_map")]
     pub images: BTreeMap<Identifier, Artifact>,
     /// Kubernetes `ServiceAccount` name.
     pub service_account: String,
     /// Non-secret configuration.
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    #[serde(deserialize_with = "crate::validation::unique_map")]
     pub config: BTreeMap<Identifier, String>,
     /// Secret references, never values.
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    #[serde(deserialize_with = "crate::validation::unique_map")]
     pub secrets: BTreeMap<Identifier, SecretBinding>,
     /// Bound endpoint URLs.
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    #[serde(deserialize_with = "crate::validation::unique_map")]
     pub endpoints: BTreeMap<Identifier, String>,
     /// Required workload-token audiences.
     #[serde(default, skip_serializing_if = "BTreeSet::is_empty")]
@@ -128,7 +132,7 @@ pub struct DeploymentRelease {
 }
 
 /// Compiler-owned exact deployment and rollout DAG.
-#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct DeploymentIr {
     format: String,
@@ -139,12 +143,131 @@ pub struct DeploymentIr {
     /// Executor-selected kubeconfig context.
     pub cluster: String,
     /// Independent releases by stack service identity.
+    #[serde(deserialize_with = "crate::validation::unique_map")]
     pub releases: BTreeMap<Identifier, DeploymentRelease>,
     /// Stable topological rollout order. Executors may parallelize adjacent independent entries.
     pub rollout_order: Vec<Identifier>,
 }
 
+crate::validation::checked_deserialize!(DeploymentIr {
+    format: String,
+    /// Stable target environment.
+    pub environment: Identifier,
+    /// Exact stack lock digest.
+    pub stack_digest: Digest,
+    /// Executor-selected kubeconfig context.
+    pub cluster: String,
+    /// Independent releases by stack service identity.
+    #[serde(deserialize_with = "crate::validation::unique_map")]
+    pub releases: BTreeMap<Identifier, DeploymentRelease>,
+    /// Stable topological rollout order. Executors may parallelize adjacent independent entries.
+    pub rollout_order: Vec<Identifier>,
+});
+
 impl DeploymentIr {
+    /// Validate the entire persisted plan before analysis or execution, including after mutation.
+    /// Required bindings absent from the original stack cannot be inferred from digest strings.
+    pub fn validate(&self) -> Result<(), Diagnostics> {
+        use crate::validation::check;
+        let mut diagnostics = Vec::new();
+        check(
+            &mut diagnostics,
+            self.format == DEPLOYMENT_FORMAT,
+            Stage::Deployment,
+            DiagnosticCode::UnsupportedFormat,
+            &self.environment,
+            format!("deployment format must be {DEPLOYMENT_FORMAT:?}"),
+        );
+        check(
+            &mut diagnostics,
+            !self.cluster.is_empty(),
+            Stage::Deployment,
+            DiagnosticCode::MissingBinding,
+            &self.environment,
+            "cluster binding must not be empty",
+        );
+        for (service, release) in &self.releases {
+            check(
+                &mut diagnostics,
+                service == &release.service,
+                Stage::Deployment,
+                DiagnosticCode::InvalidValue,
+                service,
+                "release map key must match its service",
+            );
+            check(
+                &mut diagnostics,
+                !release.release_name.is_empty() && !release.namespace.is_empty(),
+                Stage::Deployment,
+                DiagnosticCode::MissingBinding,
+                service,
+                "release name and namespace bindings must not be empty",
+            );
+            check(
+                &mut diagnostics,
+                release.audiences.is_empty() || !release.service_account.is_empty(),
+                Stage::Deployment,
+                DiagnosticCode::AuthorityUnbound,
+                service,
+                "workload-token audiences require a service-account binding",
+            );
+            check(
+                &mut diagnostics,
+                release.chart.kind == ArtifactKind::HelmChart,
+                Stage::Deployment,
+                DiagnosticCode::InvalidValue,
+                service,
+                "release must select a Helm chart artifact",
+            );
+            check(
+                &mut diagnostics,
+                !release.images.is_empty()
+                    && release
+                        .images
+                        .values()
+                        .all(|artifact| artifact.kind == ArtifactKind::OciImage),
+                Stage::Deployment,
+                DiagnosticCode::MissingOutput,
+                service,
+                "release images must contain OCI image artifacts",
+            );
+            crate::release::validate_artifacts(
+                &release.images,
+                Stage::Deployment,
+                &mut diagnostics,
+            );
+            for dependency in &release.depends_on {
+                check(
+                    &mut diagnostics,
+                    self.releases.contains_key(dependency),
+                    Stage::Deployment,
+                    DiagnosticCode::UnknownReference,
+                    service,
+                    "rollout dependency must select a release",
+                );
+            }
+        }
+        match rollout_order(&self.releases) {
+            Some(order) => check(
+                &mut diagnostics,
+                self.rollout_order == order,
+                Stage::Deployment,
+                DiagnosticCode::InvalidValue,
+                &self.environment,
+                "rollout order must equal the complete canonical compiler order",
+            ),
+            None => check(
+                &mut diagnostics,
+                false,
+                Stage::Deployment,
+                DiagnosticCode::DependencyCycle,
+                &self.environment,
+                "deployment rollout graph contains a cycle",
+            ),
+        }
+        crate::validation::finish(diagnostics)
+    }
+
     /// Reads strict deployment IR JSON.
     pub fn from_json(text: &str) -> Result<Self, serde_json::Error> {
         serde_json::from_str(text)
@@ -167,6 +290,7 @@ pub fn compile_deployment(
     environment: &EnvironmentSpec,
     stack: &StackLock,
 ) -> Result<DeploymentIr, Diagnostics> {
+    stack.validate()?;
     let mut diagnostics = Vec::new();
     if environment.format != ENVIRONMENT_FORMAT {
         diagnostics.push(Diagnostic::new(
