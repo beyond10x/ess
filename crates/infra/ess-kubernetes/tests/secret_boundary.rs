@@ -380,6 +380,95 @@ fn successful_context_listing_preserves_output_bytes() {
     assert!(output.stderr.is_empty());
 }
 
+fn adversary_failure(operation: &str, mode: &str, preserve_existing: bool) -> (Output, PathBuf) {
+    let root = fixture_root();
+    let destination = root.join(format!("adversary-{mode}-{operation}.json"));
+    if preserve_existing {
+        std::fs::write(&destination, PREVIOUS).expect("previous sanitized observation");
+    }
+    let mut command = Command::new(env!("CARGO_BIN_EXE_ess-kubernetes"));
+    if operation == "contexts" {
+        command.arg("contexts");
+    } else {
+        command.args(["scan", "--out"]).arg(&destination);
+        if operation != "current-context" {
+            command.args(["--context", "synthetic-context"]);
+        }
+    }
+    let output = command
+        .env("PATH", root.join("bin"))
+        .env("ESS_TEST_SECRET_RESPONSE", "{\"items\":[]}")
+        .env("ESS_TEST_FAILURE_OPERATION", operation)
+        .env("ESS_TEST_FAILURE_DIAGNOSTIC", SENTINEL)
+        .env("ESS_TEST_ADVERSARY_FAILURE_MODE", mode)
+        .env("ESS_TEST_CALL_LOG", destination.with_extension("calls"))
+        .output()
+        .expect("run synthetic adversarial subprocess");
+    (output, destination)
+}
+
+#[test]
+#[cfg(target_os = "linux")]
+fn signal_terminated_kubectl_discards_both_streams_before_refusing() {
+    for operation in ["contexts", "current-context", "secrets"] {
+        let (output, destination) = adversary_failure(operation, "signal", true);
+        assert_eq!(output.status.code(), Some(1));
+        assert!(output.stdout.is_empty());
+        let stderr = String::from_utf8(output.stderr).expect("safe diagnostic UTF-8");
+        assert!(!stderr.contains(SENTINEL), "signal path leaked: {stderr}");
+        assert!(
+            stderr.contains("signal: 15 (SIGTERM)"),
+            "termination must remain actionable: {stderr}"
+        );
+        assert_eq!(
+            std::fs::read(&destination).expect("preserved output"),
+            PREVIOUS
+        );
+        let calls = std::fs::read_to_string(destination.with_extension("calls"))
+            .expect("recorded signal invocations");
+        if operation == "secrets" {
+            assert!(calls.ends_with("secrets:all_namespaces=true\nsecrets:all_namespaces=false\n"));
+        } else {
+            assert_eq!(calls, format!("{operation}:all_namespaces=false\n"));
+        }
+    }
+}
+
+#[test]
+fn retry_failure_reports_the_final_exit_status_without_child_values() {
+    let (output, destination) = adversary_failure("secrets", "statuses", true);
+    assert_eq!(output.status.code(), Some(1));
+    assert!(output.stdout.is_empty());
+    let stderr = String::from_utf8(output.stderr).expect("safe diagnostic UTF-8");
+    assert!(!stderr.contains(SENTINEL));
+    assert!(stderr.ends_with("error: kubectl get resources failed: exit status: 254\n"));
+    assert!(!stderr.contains("exit status: 23"));
+    assert_eq!(
+        std::fs::read(&destination).expect("preserved output"),
+        PREVIOUS
+    );
+    let calls = std::fs::read_to_string(destination.with_extension("calls"))
+        .expect("recorded retry invocations");
+    assert!(calls.ends_with("secrets:all_namespaces=true\nsecrets:all_namespaces=false\n"));
+}
+
+#[test]
+fn failed_payloads_larger_than_pipe_capacity_are_not_partially_reported_or_written() {
+    for operation in ["contexts", "secrets"] {
+        let (output, destination) = adversary_failure(operation, "large", false);
+        assert_eq!(output.status.code(), Some(1));
+        assert!(output.stdout.is_empty());
+        let stderr = String::from_utf8(output.stderr).expect("safe diagnostic UTF-8");
+        assert!(!stderr.contains(SENTINEL), "large response leaked");
+        assert!(stderr.len() < 4096, "diagnostic grew with child output");
+        assert!(stderr.ends_with("failed: exit status: 73\n"));
+        assert!(
+            !destination.exists(),
+            "failed response created an observation"
+        );
+    }
+}
+
 #[test]
 fn invalid_json_after_secret_values_is_refused_without_leaking_or_replacing_output() {
     let responses = [

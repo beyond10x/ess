@@ -58,6 +58,28 @@ fn main() {
             std::io::stdout()
                 .write_all(diagnostic.as_bytes())
                 .expect("failed response");
+            match std::env::var("ESS_TEST_ADVERSARY_FAILURE_MODE").as_deref() {
+                Ok("signal") => {
+                    std::process::Command::new("/bin/kill")
+                        .args(["-TERM", &std::process::id().to_string()])
+                        .status()
+                        .expect("terminate this synthetic child only");
+                    panic!("SIGTERM must terminate the synthetic child");
+                }
+                Ok("large") => {
+                    for _ in 0..8192 {
+                        stderr
+                            .write_all(diagnostic.as_bytes())
+                            .expect("large synthetic stderr");
+                        std::io::stdout()
+                            .write_all(diagnostic.as_bytes())
+                            .expect("large synthetic stdout");
+                    }
+                    std::process::exit(73);
+                }
+                Ok("statuses") => std::process::exit(if all_namespaces { 23 } else { 254 }),
+                _ => {}
+            }
             std::process::exit(1);
         }
         match args.as_slice() {
