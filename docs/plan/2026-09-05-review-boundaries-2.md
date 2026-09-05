@@ -1,6 +1,6 @@
 # Review boundaries wave 2 — 2026-09-05
 
-**Both units ready for integrated verification.** This wave fixes untrusted kubectl failure diagnostics and output path containment. Both stories serve `vision:O2`.
+**Implemented and verified; publication and unit cleanup in progress.** This wave fixes untrusted kubectl failure diagnostics and output path containment. Both stories serve `vision:O2`.
 
 Skill version 0.7.0. Coordinator: `wave/review-boundaries-2`, managed record `wt-752828a285ba`. Published base: `0f80f71e7ef997e8a3c7d2ad19e9997090e8e769`.
 
@@ -31,7 +31,7 @@ Absolute root: `/home/timo/.local/state/worktree/trees/b10x/ess`. Worktrees belo
 | Story | Branch | Worktree under root | Build | Scratch | Head/stage |
 | --- | --- | --- | --- | --- | --- |
 | review-kubectl-diagnostic-sanitization | impl/review-kubectl-diagnostic-sanitization | review-kubectl-diagnostic-sanitization | target/ | target/review-boundaries-2/ | 54102b9357151a4827817417ca14ec995bdd68c0; merged at 6685b1991bdee19b28316ccb531a4dbfa1c20f1d |
-| review-output-containment | impl/review-output-containment | review-output-containment | target/ | target/review-boundaries-2/ | f05048be88b2cc14612d34f9cef0044ab7335641; ready to integrate |
+| review-output-containment | impl/review-output-containment | review-output-containment | target/ | target/review-boundaries-2/ | f05048be88b2cc14612d34f9cef0044ab7335641; merged at 98defa1b361e053e7fe586b24d777b9843e2f9b5 |
 
 File-backed briefs will bind exact opening SHA, assignments, package gates and scope confirmation. Coordinator owns AEP, source staging, bot commits, integration, gates, publication and managed cleanup. Each green implementation goes to a tests-only adversary. Max two full attack passes; routing preserves original reports verbatim. Each offline gate step reports its own exit code and runner output; applicable site build follows. No terminal move before those results.
 
@@ -1559,3 +1559,23 @@ Four new isolated cases passed immediately after tool recovery; a fifth lacked a
 The CLI findings comparison reports carried=[], new=[], and the one first-pass compose blocker resolved. No finding remains for this unit; the original immutable report and its fixed outcome remain intact.
 
 Second-review tests are committed at f05048be88b2cc14612d34f9cef0044ab7335641 with exact bot author and committer. Atlas remote advanced again; the existing clean managed authority wt-90ec680c6073 was reused at exact remote 7b00adf3b1004e0cdd8dd12aa4fa8cc8435a0432, with clean HEAD/remote equality verified. Its AGENTS, bot wrapper and fence script bytes did not change in that advance.
+
+## Integrated verification and closure
+
+verification-report:review-boundaries-2-integrated records clean source 98defa1b361e053e7fe586b24d777b9843e2f9b5. All eight underlying task check steps exited 0, and the workspace produced 108 runner summaries totaling **1,475 passed, 0 failed, 0 ignored**. Task site-build also exited 0 after WASM/browser checks, pinned dependency installation and Docusaurus. The baseline npm advisories remain outside these fixes. Exact exit status output:
+
+```text
+fmt-check 0
+clippy 0
+test 0
+doc-check 0
+example-check 0
+projection-check 0
+release-check 0
+action-check 0
+site-build 0
+```
+
+Both stories moved active→implemented using test_result evidence against that integration SHA, observed 2026-09-05T12:34:37Z. The epic stays active with 27 draft stories remaining. Source and test bytes remain unchanged after the gate; closing edits record evidence and lifecycle. No tag or version bump was made.
+
+Before retirement, all wanted raw unit scratch was copied into coordinator target/review-boundaries-2/archive/<unit>/ and compared byte-for-byte: containment 106 files/552,302 bytes, diagnostic 28 files/56,019 bytes. Portable reports and test patches remain committed engineering evidence. Publication must precede worktree finish and fresh exact-id GC.

@@ -8,7 +8,7 @@ Owner: [`epic:review-boundary-remediation`](../../.engineering/planning/epic/rev
 
 ## Current progress
 
-There are 31 remediation stories: two implemented, two active and 27 remaining draft/proposed. [Wave 1](2026-09-05-review-boundaries-1.md) is published on main at 0f80f71e7ef997e8a3c7d2ad19e9997090e8e769; both unit worktrees were removed after remote recovery proof. [Wave 2](2026-09-05-review-boundaries-2.md) has integrated diagnostic sanitization and is correcting the containment attack's compose output collision before its second attack and full integration gate. The user has separately approved publication of green remediation waves and managed cleanup in approval-record:review-remediation-standing-publication; release tags/version bumps remain separately authorized.
+There are 31 remediation stories: four implemented and 27 remaining drafts. [Wave 1](2026-09-05-review-boundaries-1.md) is published on main at 0f80f71e7ef997e8a3c7d2ad19e9997090e8e769; both unit worktrees were removed after remote recovery proof. [Wave 2](2026-09-05-review-boundaries-2.md) has implemented diagnostic sanitization and output containment, passed all eight offline gate steps with 1,475 tests and passed the site build. Publication and managed unit cleanup are in progress. The user has separately approved publication of green remediation waves and managed cleanup in approval-record:review-remediation-standing-publication; release tags/version bumps remain separately authorized.
 
 The next selection will use the store after this wave closes. Read-only scoping has prepared persisted delivery validation, TypeScript namespace feasibility and the conformance migration design. Design completion alone does not close their dependent implementation findings.
 

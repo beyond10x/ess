@@ -2,7 +2,7 @@
 format: aep.planning-md/1
 id: story:review-kubectl-diagnostic-sanitization
 kind: story
-status: active
+status: implemented
 title: Keep untrusted kubectl stderr out of ESS diagnostics
 tags:
 - P0
@@ -20,7 +20,7 @@ scope:
   path: crates/infra/ess-kubernetes/tests/fixtures/fake_command.rs
 - confidence: cited
   path: crates/infra/ess-kubernetes/tests/secret_boundary.rs
-revision: 9
+revision: 10
 ---
 ## Finding and source
 
