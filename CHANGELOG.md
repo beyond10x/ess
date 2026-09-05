@@ -72,7 +72,10 @@
 - Rust/Web feasibility checks reject generated name, path, recursive layout and
   incompatible binding representations. Web dependency-module and outcome-arm
   buffer/encoder collisions are checked in their actual scopes; legal names elsewhere
-  remain valid. Web workspaces with no published events emit a valid empty event log.
+  remain valid. Delivery-arm checks also account for the actual ordering of local
+  bindings without rejecting legal first-input transformations. Web workspaces with
+  no published events emit a valid empty event log. Supported Integer, Boolean and
+  Bytes map-key decoders borrow nested diagnostic paths correctly in HTTP/Web output.
 
 - Specification validation refuses colliding effective wire field names across structs,
   entity identity/state/fields, command inputs, event/error payloads, view rows and

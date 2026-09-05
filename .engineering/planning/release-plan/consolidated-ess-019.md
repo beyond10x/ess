@@ -4,7 +4,7 @@ id: release-plan:consolidated-ess-019
 kind: release-plan
 status: active
 title: Consolidate ESS worktrees and release 0.19.0
-revision: 3
+revision: 4
 ---
 ## Authorization
 
@@ -81,3 +81,35 @@ review. Its latest observed committed checkpoint is
 11bbaeff7398c7a73e785c199e335a5bdd6beac8. Final review, source publication and the
 last canonical planning-state reconciliation remain pending. No release tag or
 GitHub Release has been created and no worktree has been removed.
+
+## Final Correction Verification
+
+The final full review is now preserved as
+review-result:review-boundaries-5-rust-adversary-pass-2, imported through AEP's
+body-only interface from coordinator checkpoint
+3770ef908f5e2123ccbc3516dd1c19158a81ceec. The imported body was compared byte-for-byte.
+Both findings retain their measured pre-existing origins.
+
+The integration candidate adopted the original implementor's exact working-tree
+correction to delivery initializer scopes and borrowed map-key diagnostic paths,
+together with both complete adversary test files. All four files matched the
+implementor's source byte-for-byte after transfer. The binding design retains the
+source-wire admission note and incorporates the final correction's lexical and
+collection contracts. Release notes and the internal catalogue now account for
+the repaired HTTP/Web map decoders. No independent alternative fix was introduced.
+
+Observed on this combined source:
+
+- 39 feasibility, 14 synthesis adversary and 4 CLI adversary tests passed.
+- CARGO_NET_OFFLINE=true CARGO_BUILD_JOBS=4 task check exited 0.
+- CARGO_BUILD_JOBS=4 task site-build exited 0, including the WASM browser lab.
+- The existing site dependency audit still reports 9 moderate and 21 high findings.
+
+Two fixed review outcomes are recorded against the immutable final review, with
+the affected production paths as references. These observations establish the
+combined correction result, not completion of the independent coordinator's
+handoff. Its correction tree still had HEAD a2ff04d and uncommitted final changes
+at the last check. Before publication, compare these files to its frozen final
+commit, reconcile the final planning state and preserve that branch ancestry.
+The agreed Wave 5-first publication order remains in effect. No version tag,
+GitHub Release or worktree cleanup has occurred.

@@ -1,6 +1,7 @@
 //! Independent generated-compiler attacks on actual target allocation scopes.
 
 use std::collections::BTreeMap;
+use std::fmt::Write as _;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Output};
 use std::sync::atomic::{AtomicUsize, Ordering};
@@ -229,4 +230,145 @@ fn multiple_causes_keep_a_complete_unchanged_plan_and_canonical_order() {
         .expect("same prerequisite failures");
     assert_eq!(web.causes(), error.causes());
     assert_eq!(web.plan(), error.plan());
+}
+
+fn binding_model(names: &[&str]) -> EssIr {
+    let body = "events:\n  - name: demo.core.Fired\n  - name: demo.core.Handled\ncommands:\n  - name: demo.core.Handle\n    outcomes:\n      - name: done\n        emits: [demo.core.Handled]\n";
+    let mut wiring = "components:\n  - component: worker\n    owns:\n      domains: [demo.core]\n    accepts:\n      commands: [demo.core.Handle]\n    publishes:\n      events: [demo.core.Fired, demo.core.Handled]\nbindings:\n".to_owned();
+    for name in names {
+        write!(wiring, "  - id: {name}\n    when:\n      event: demo.core.Fired\n    invoke:\n      command: demo.core.Handle\n    mapping: {{}}\n    delivery: at_least_once\n    on_failure: drop\n").unwrap();
+    }
+    let directory = scratch("pass-2-binding-source");
+    std::fs::write(
+        directory.join("system.yaml"),
+        "format: ess/1\nsystem: demo\nversion: v1\ndomains: [demo.core]\n",
+    )
+    .unwrap();
+    std::fs::write(
+        directory.join("core.yaml"),
+        format!("domain: demo.core\n{body}"),
+    )
+    .unwrap();
+    std::fs::write(directory.join("wiring.yaml"), &wiring).unwrap();
+    eprintln!("source witness: {}", directory.display());
+    fixture(body, &wiring)
+}
+
+#[test]
+fn binding_function_cannot_be_hidden_by_the_delivery_event_parameter() {
+    let ir = binding_model(&["event"]);
+    match synthesize(&ir) {
+        Err(failure) => checked_failure(&ir, Target::Rust, &failure),
+        Ok(synthesis) => compile_emitted(&scratch("pass-2-binding-event"), &synthesis, false),
+    }
+}
+
+#[test]
+fn a_later_binding_function_cannot_be_hidden_by_a_prior_input_local() {
+    let ir = binding_model(&["alpha", "input"]);
+    match synthesize(&ir) {
+        Err(failure) => checked_failure(&ir, Target::Rust, &failure),
+        Ok(synthesis) => compile_emitted(&scratch("pass-2-binding-input-later"), &synthesis, false),
+    }
+}
+
+#[test]
+fn a_first_binding_named_input_remains_compilable_on_both_targets() {
+    let ir = binding_model(&["input"]);
+    let directory = scratch("pass-2-binding-input-first");
+    let rust = synthesize(&ir).expect("a let binding does not capture its own initializer");
+    compile_emitted(&directory.join("generated/rust/demo"), &rust, false);
+    let web = synthesize_for(&ir, Target::Web).expect("Web preserves the same legal binding scope");
+    compile_emitted(&directory.join("generated/web/demo"), &web, true);
+}
+
+#[test]
+fn error_encoder_names_in_separate_outcome_arms_remain_compilable() {
+    let ir = fixture("events:\n  - name: demo.core.EncodeErrorDemoCoreBroken\nerrors:\n  - name: demo.core.Broken\ncommands:\n  - name: demo.core.Fire\n    outcomes:\n      - name: done\n        emits: [demo.core.EncodeErrorDemoCoreBroken]\n      - name: refused\n        external: the external operation is refused\n        error: demo.core.Broken\n", "components:\n  - component: worker\n    owns:\n      domains: [demo.core]\n    accepts:\n      commands: [demo.core.Fire]\n    publishes:\n      events: [demo.core.EncodeErrorDemoCoreBroken]\n    reached_by: network\n");
+    compile_emitted(
+        &scratch("pass-2-error-encoder-separate-arms"),
+        &synthesize(&ir).expect("an encoder used by a different match arm is not captured"),
+        false,
+    );
+}
+
+fn primitive_map_compiles(key: &str) {
+    let body = format!("types:\n  - name: demo.core.Record\n    kind: struct\n    fields:\n      - name: lookup\n        type: Map<{key}, String>\n");
+    let ir = fixture(&body, "components: []\n");
+    let directory = scratch(&format!("pass-2-map-{key}"));
+    let source = directory.join("spec");
+    std::fs::create_dir_all(&source).unwrap();
+    std::fs::write(
+        source.join("system.yaml"),
+        "format: ess/1\nsystem: demo\nversion: v1\ndomains: [demo.core]\n",
+    )
+    .unwrap();
+    std::fs::write(
+        source.join("core.yaml"),
+        format!("domain: demo.core\n{body}"),
+    )
+    .unwrap();
+    compile_emitted(
+        &directory.join("generated/rust/demo"),
+        &synthesize(&ir).expect("primitive-key maps compile as Rust types"),
+        false,
+    );
+    let synthesis =
+        synthesize_for(&ir, Target::Web).expect("primitive-key maps retain their supported codec");
+    compile_emitted(&directory.join("generated/web/demo"), &synthesis, true);
+}
+
+#[test]
+fn boolean_map_decoder_path_is_borrowed_in_the_supported_codec() {
+    primitive_map_compiles("Boolean");
+}
+
+#[test]
+fn bytes_map_decoder_path_is_borrowed_in_the_supported_codec() {
+    primitive_map_compiles("Bytes");
+}
+
+#[test]
+fn a_string_map_key_keeps_its_compilable_codec() {
+    let ir = fixture("types:\n  - name: demo.core.Record\n    kind: struct\n    fields:\n      - name: lookup\n        type: Map<String, String>\n", "components: []\n");
+    let directory = scratch("pass-2-map-string");
+    compile_emitted(
+        &directory.join("generated/rust/demo"),
+        &synthesize(&ir).unwrap(),
+        false,
+    );
+    let synthesis = synthesize_for(&ir, Target::Web)
+        .expect("String keys do not call a fallible parser with a path");
+    compile_emitted(&directory.join("generated/web/demo"), &synthesis, true);
+}
+
+#[test]
+fn an_unaccepted_outcome_binding_has_no_web_codec_local_scope() {
+    let ir = fixture("events:\n  - name: demo.core.Out\ncommands:\n  - name: demo.core.Fire\n    outcomes:\n      - name: done\n        emits: [demo.core.Out]\n", "components:\n  - component: worker\n    owns:\n      domains: [demo.core]\n    publishes:\n      events: [demo.core.Out]\n");
+    let directory = scratch("pass-2-unaccepted-out");
+    compile_emitted(
+        &directory.join("generated/rust/demo"),
+        &synthesize(&ir).unwrap(),
+        false,
+    );
+    let web =
+        synthesize_for(&ir, Target::Web).expect("unaccepted commands retain their partial report");
+    assert!(!web.target.as_ref().unwrap().refusals.is_empty());
+    compile_emitted(&directory.join("generated/web/demo"), &web, true);
+}
+
+#[test]
+fn optional_recursion_behind_nested_collections_keeps_its_size_break() {
+    let ir = fixture("types:\n  - name: demo.core.Node\n    kind: struct\n    fields:\n      - name: children\n        type: Optional<Map<Integer, List<Optional<demo.core.Node>>>>\n", "components: []\n");
+    let directory = scratch("pass-2-map-recursion");
+    compile_emitted(
+        &directory.join("generated/rust/demo"),
+        &synthesize(&ir).expect("map and list break the size cycle"),
+        false,
+    );
+    compile_emitted(
+        &directory.join("generated/web/demo"),
+        &synthesize_for(&ir, Target::Web).expect("nested recursive codecs must compile"),
+        true,
+    );
 }

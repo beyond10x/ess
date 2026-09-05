@@ -145,9 +145,27 @@ preserve zero-delivery replay's missing-occurrence response. The distinct worker
 compile paired Rust/Web and execute observation/redelivery through the real WASM exports; this
 is a correction to previously invalid Web bytes, not a new target refusal or an invented event.
 
+The final full review at `a2ff04d` measured two further pre-existing cases, both owned by this
+story's actual lexical scopes and supported collection representations. In a delivery match arm,
+the pattern binds `event`; each reacting delivery then binds `input` after evaluating its
+initializer. Check only actual bare generated-transformation calls, in the renderer's binding
+order and separately for each reacting event. `event` is already bound for every call; `input`
+is bound only after a preceding delivery in that same arm, including an obligated transformation.
+A first binding named `input` remains valid, as do qualified obligation calls and bindings whose
+delivery is not emitted. Refuse a captured function with the existing `symbol-collision` cause
+and actual binding/event identities; preserve the renderer's names and every valid output byte.
+
+The supported map decoder separately emits an owned `nestedN` diagnostic path where the Integer,
+Boolean and Bytes key parsers require `&str`. Pass the borrowed path expression to `decode_key`,
+as already done for the adjacent value decoder. This fixes only previously compiler-invalid
+HTTP/Web codec bytes; String and wrapper-key branches do not consume that path expression and
+their emitted bytes remain unchanged. Keep supported Optional/Map/List recursion admitted and
+preserve the primitive parsers, JSON identity, neutral plan and failure vocabulary. No Map
+refusal, source restriction or collection representation change is part of this correction.
+
 - The neutral plan, its JSON/Markdown, source/model/contract provenance, capability names and dispositions are unchanged for every input.
 - Every previously valid and compilable Rust artifact path and content is immutable, including manifests, comments, public signatures and helper spellings. Admitted Rust retains target=None and no target metadata. Do not run rustfmt over generated fixtures.
-- Admitted Go/Clap bytes and existing Web reports/catalogs remain unchanged. Web bytes change only for the specifically broken zero-delivery replay, missing catalog-only export buffers and empty-event log branches; full prerequisite refusal affects newly detected undeliverable workspaces, not a renamed valid API.
+- Admitted Go/Clap bytes and existing Web reports/catalogs remain unchanged. Web bytes change only for the specifically broken zero-delivery replay, missing catalog-only export buffers, empty-event log and shared map-key decoder path branches; the same decoder correction applies to previously invalid HTTP output. Full prerequisite refusal affects newly detected undeliverable workspaces, not a renamed valid API.
 - Existing deterministic name fallback/repair rules remain. A newly discovered collision receives a refusal instead of a newly allocated name. No silent namespace migration, import qualification rewrite or broadened helper blacklist.
 - Complete Rust/Web failures use ess-target-failure/1 and checked API; existing successful/partial TargetReport bytes are frozen. No new capability kind or neutral disposition is permitted.
 

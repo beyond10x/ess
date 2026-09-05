@@ -7,7 +7,8 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use ess_compiler::ir::{
-    EssIr, ResolvedBody, ResolvedCommand, ResolvedField, ResolvedMappingValue, ResolvedTypeRef,
+    EssIr, ResolvedBinding, ResolvedBody, ResolvedCommand, ResolvedField, ResolvedMappingValue,
+    ResolvedTypeRef,
 };
 use ess_domain::name::QualifiedName;
 use ess_domain::types::Primitive;
@@ -502,6 +503,34 @@ fn domain_obligations(inventory: &mut Inventory, plan: &SynthesisPlan, layout: &
     }
 }
 
+fn delivery_initializers(
+    inventory: &mut Inventory,
+    plan: &SynthesisPlan,
+    delivered: &[&ResolvedBinding],
+) {
+    // deliver_fn groups this ordered list by event. Each arm starts with its event pattern,
+    // and every delivery (including an obligated transformation) introduces input only after
+    // evaluating its initializer. A later bare call can therefore see a prior input local.
+    let mut prior_inputs: BTreeMap<&QualifiedName, String> = BTreeMap::new();
+    for binding in delivered {
+        let source = binding.name.to_string();
+        if plan.is_generated(CapabilityKind::BindingTransformation, &source) {
+            let scope = format!("delivery initializer:{source}");
+            inventory.symbol(
+                &scope,
+                &name::value_ident(&source),
+                &source,
+                "transformation function reference",
+            );
+            inventory.helper(&scope, "event", &binding.event.to_string());
+            if let Some(prior) = prior_inputs.get(binding.event.name()) {
+                inventory.helper(&scope, "input", prior);
+            }
+        }
+        prior_inputs.insert(binding.event.name(), source);
+    }
+}
+
 fn components_and_system(
     inventory: &mut Inventory,
     ir: &EssIr,
@@ -516,6 +545,7 @@ fn components_and_system(
             plan.is_generated(CapabilityKind::BindingDelivery, &binding.name.to_string())
         })
         .collect::<Vec<_>>();
+    delivery_initializers(inventory, plan, &delivered);
     let has_obligations = delivered.iter().any(|binding| {
         !plan.is_generated(
             CapabilityKind::BindingTransformation,
