@@ -1525,3 +1525,11 @@ The adversary disclosed an extra read-only cargo fmt --all --check outside its p
 ## Organization authority refresh
 
 The organization fence at clean Atlas 6035d6e1209686ca474a3f43975fde7d8621ba48 exited 1 after wave-1 publication. Rust (115 tests), catalog, projection, Markdown and brand checks passed; documentation delivery checks and the organization map check failed on sibling state outside this ESS wave. The raw private fence evidence is retained only in coordinator target/review-boundaries-2/atlas-authority-6035d6e/. During the run, Atlas remote main advanced. A new managed authority wt-90ec680c6073 was created at 9f3b42f6d990d849be918936039d7dd5567653c8, and its clean HEAD was verified against git ls-remote origin refs/heads/main before use. The authority's current fence is being rerun; no organization-wide green claim is made.
+
+## Current organization fence result
+
+At authority 9f3b42f6d990d849be918936039d7dd5567653c8, scripts/fences.sh completed with exit 1. Catalog, public Pages delivery (36 repository states, 25 Pages repositories and 50 delivery routes), projection, Markdown and brand passed. Documentation manifest and portal checks refused sibling schema/pin disagreement; the map check reported one sibling without objective grounding. Rust executed 115 cases with 114 passing and one timeout case failing (HTTP 202 observed where 200 was expected). A subsequent isolated execution of that exact case passed 1/1, exit 0; this does not replace the failed full fence. Raw private logs and exit files are preserved in coordinator target/review-boundaries-2/atlas-authority-9f3b42f/. No source in Atlas or those siblings was changed.
+
+## Superseded authority cleanup
+
+After archiving its private fence evidence, cargo clean removed 492.5 MiB of disposable build output from task authority wt-c67acb2e23e6. worktree finish initially refused ignored target output; after the clean it succeeded. A fresh GC dry-run marked that exact record eligible. Exact-id apply removed it with recovery through advertised origin main and pull-request refs; filesystem absence and Git's linked-tree inventory confirmed removal. No other eligible record was selected. The merged wave/review-boundaries-1 branch was deleted with git branch -d.

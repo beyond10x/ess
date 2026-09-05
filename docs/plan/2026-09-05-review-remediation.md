@@ -6,6 +6,12 @@
 
 Owner: [`epic:review-boundary-remediation`](../../.engineering/planning/epic/review-boundary-remediation.md), serving [`vision:O2`](../../.engineering/planning/vision/O2.md), decisions as data with evidence. The original decomposition had **27 new stories and 3 reused stories**; wave 1 added one P0 story for a baseline-reproduced kubectl diagnostic disclosure. The first two stories are implemented and passed the integrated 1,438-test gate plus site build. The remaining 3 legacy drafts were scoped for honest wave computation, not pulled into remediation.
 
+## Current progress
+
+There are 31 remediation stories: two implemented, two active and 27 remaining draft/proposed. [Wave 1](2026-09-05-review-boundaries-1.md) is published on main at 0f80f71e7ef997e8a3c7d2ad19e9997090e8e769; both unit worktrees were removed after remote recovery proof. [Wave 2](2026-09-05-review-boundaries-2.md) has integrated diagnostic sanitization and is correcting the containment attack's compose output collision before its second attack and full integration gate. The user has separately approved publication of green remediation waves and managed cleanup in approval-record:review-remediation-standing-publication; release tags/version bumps remain separately authorized.
+
+The next selection will use the store after this wave closes. Read-only scoping has prepared persisted delivery validation, TypeScript namespace feasibility and the conformance migration design. Design completion alone does not close their dependent implementation findings.
+
 ## Evidence and scope of the plan
 
 [The unchanged review](../reviews/2026-09-05-architecture-review.md) supplies F01–F17 and their classifications at ESS `fd06a4d61bfb7b4990617810655dc181d6a3ab00`. Its SHA-256 is `fecce053b6633546f10613c580eba1b5c48be3315d70c6b4369f26143020f828`. Primary ESS main was clean and equal to remote main at this revision during planning. This session copied only the detailed review as a portable source; the earlier review checkout and its unpublished outlook remain intact.
