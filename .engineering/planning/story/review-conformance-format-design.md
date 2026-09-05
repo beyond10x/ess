@@ -8,9 +8,9 @@ relations:
 - decomposes: epic:review-boundary-remediation
 - serves: vision:O2
 scope:
-- confidence: inferred
+- confidence: cited
   path: docs/design/review-conformance-coverage.md
-revision: 6
+revision: 7
 ---
 ## Finding and source
 

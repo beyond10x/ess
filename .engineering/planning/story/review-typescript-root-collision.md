@@ -13,13 +13,15 @@ relations:
 scope:
 - confidence: cited
   path: crates/generate/schema-contract
-- confidence: inferred
+- confidence: cited
   path: crates/generate/schema-contract/Cargo.toml
 - confidence: cited
   path: crates/generate/schema-contract/src/typescript.rs
-- confidence: inferred
+- confidence: cited
+  path: crates/generate/schema-contract/tests/fixtures/registry.ts
+- confidence: cited
   path: crates/generate/schema-contract/tests/typescript_typecheck.rs
-revision: 8
+revision: 9
 ---
 ## Finding and source
 

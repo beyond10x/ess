@@ -37,14 +37,22 @@ Worktree root: /home/timo/.local/state/worktree/trees/b10x/ess. Every unit branc
 | Story | Branch | Managed worktree under root | Build/temp | Logs/reports | Stage |
 | --- | --- | --- | --- | --- | --- |
 | review-persisted-delivery-validation | impl/review-persisted-delivery-validation | review-persisted-delivery-validation | target/ | target/review-boundaries-3/ | implementing |
-| review-typescript-root-collision | impl/review-typescript-root-collision | review-typescript-root-collision | target/ | target/review-boundaries-3/ | implementing |
-| review-conformance-format-design | impl/review-conformance-format-design | review-conformance-format-design | target/ | target/review-boundaries-3/ | implementing |
+| review-typescript-root-collision | impl/review-typescript-root-collision | review-typescript-root-collision | target/ | target/review-boundaries-3/ | adversary pass 1 |
+| review-conformance-format-design | impl/review-conformance-format-design | review-conformance-format-design | target/ | target/review-boundaries-3/ | implementation returned; review pending |
 
 All units were provisioned at exact opening commit 45832cc885377b2d61845ee33af14f0293d99e67, branched as above, and assigned active leases <story>-wave3. Full briefs and the compiler-cache resource supplement live in each assigned scratch root. Implementor threads are impl_containment (delivery), impl_diagnostic (TypeScript), and scope_conformance_design (design).
 
 File-backed briefs bind exact base, scope, acceptance, gates and reporting. Coordinator owns all AEP mutations, commits, shared files, gate evidence, publication and lifecycle. Implementation agents leave uncommitted assigned files. Reviews preserve original assertions and reports; maximum two full passes per unit. No story moves terminal before the complete integrated gate.
 
 Delivery package checks cover ess-deployment and ess-cli, with real compiler-generated valid fixtures and local fake executors only. TypeScript checks cover schema-contract plus an explicit compiler lane using the installed TypeScript 6.0.3; a selected lane must fail if the compiler is unavailable, and no default-CI coverage claim is made until its wiring is established. Conformance design uses source-backed producer/reader and migration matrices; it creates no new writer, makes no compatibility execution claim, and needs no meaningless prose test. The integrated coordinator runs all eight offline gate steps and site build, plus any selected compiler-specific lane.
+
+## Implementation handoffs
+
+TypeScript implementation 7a73ce9bf741a98f82c7141f4a80340451a704ed is bot-authored and clean before review. Default package cases rose 9 to 16; the separately selected real TypeScript 6.0.3 lane executes 3. Both pass, as do package formatting and default/feature Clippy. Four unique new Rust cases were first observed red; the compiler exposed additional strict-module keywords after the initial mechanism. Missing compiler selects and fails all three cases. The new successful-output fixture passed on unchanged production first. Full original implementation report and patch are preserved under docs/reviews/2026-09-05-review-boundaries-3-typescript-implementation.*. Scope stays in schema-contract; inferred manifest/test paths are now cited from the diff. The design implementor thread is assigned its test-only adversary pass through a file-backed brief.
+
+Conformance design implementation 5148543b57c855cb4ccca92e2368e566801e9c36 is bot-authored and clean before review. Its 246-line design includes 36 source-backed matrix rows; no executable compatibility case was run or claimed. Original report and patch are preserved under docs/reviews/2026-09-05-review-boundaries-3-conformance-design-implementation.*. The only tracked edit is the reserved design file, now cited in scope. The first review brief includes a coordinator-observed impact-format citation mismatch to check; the document has not passed review.
+
+Neither handoff is an integrated acceptance or completed story. Delivery remains under implementation. The coordinator also records read-only preparation for the future infrastructure and Rust feasibility stories; these draft refinements authorize no additional implementation in this wave.
 
 ## Full draft computation
 
