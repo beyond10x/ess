@@ -30,15 +30,20 @@ At dispatch, the long delivery-unit temporary path prevented sccache from creati
 
 Current Atlas authority is managed wt-90ec680c6073 at clean exact remote 7b00adf3b1004e0cdd8dd12aa4fa8cc8435a0432. Its last organization fence is red on separately recorded sibling issues; this wave changes no Atlas source or public documentation allowlist. Bot commits and publishing use the current verified authority.
 
+
+## Cache idle restart
+
+The original foreground cache session63151 was observed complete with exit0 after its default idle timeout. Its stale socket was present but had no listener; the first delivery-adversary isolated attempt executed zero tests and failed at rustc -vV startup. Coordinator restarted the same exact socket in foreground session44216 with SCCACHE_IDLE_TIMEOUT=0, keeping all previous resource restrictions. The new server answered --show-stats with exit0 before review resumed. Its log is coordinator target/review-boundaries-3/cache-server-restart.log. No default server was stopped, no cache was purged and no target is shared. Coordinator will stop this exact task-owned socket and observe foreground termination after the final gates.
+
 ## Unit records
 
 Worktree root: /home/timo/.local/state/worktree/trees/b10x/ess. Every unit branches from the same opening commit and owns its recorded triple.
 
 | Story | Branch | Managed worktree under root | Build/temp | Logs/reports | Stage |
 | --- | --- | --- | --- | --- | --- |
-| review-persisted-delivery-validation | impl/review-persisted-delivery-validation | review-persisted-delivery-validation | target/ | target/review-boundaries-3/ | implementation returned; review pending |
-| review-typescript-root-collision | impl/review-typescript-root-collision | review-typescript-root-collision | target/ | target/review-boundaries-3/ | reviewed; ready for integration |
-| review-conformance-format-design | impl/review-conformance-format-design | review-conformance-format-design | target/ | target/review-boundaries-3/ | implementation returned; review pending |
+| review-persisted-delivery-validation | impl/review-persisted-delivery-validation | review-persisted-delivery-validation | target/ | target/review-boundaries-3/ | implementation returned; reviewed at 4289e3eb636a97b73f8261dd6d68f3027afe9f65; integration pending |
+| review-typescript-root-collision | impl/review-typescript-root-collision | review-typescript-root-collision | target/ | target/review-boundaries-3/ | reviewed; merged at 0d267e25739ca495ad1a229393181ad1b75182f3 |
+| review-conformance-format-design | impl/review-conformance-format-design | review-conformance-format-design | target/ | target/review-boundaries-3/ | corrected at dc746cfab0e628ad28911cbee32c1031a9efb6dd; final review running |
 
 All units were provisioned at exact opening commit 45832cc885377b2d61845ee33af14f0293d99e67, branched as above, and assigned active leases <story>-wave3. Full briefs and the compiler-cache resource supplement live in each assigned scratch root. Implementor threads are impl_containment (delivery), impl_diagnostic (TypeScript), and scope_conformance_design (design).
 
@@ -55,6 +60,10 @@ Conformance design implementation 5148543b57c855cb4ccca92e2368e566801e9c36 is bo
 TypeScript adversary pass 1 is preserved verbatim in review-result:review-boundaries-3-typescript-adversary-pass-1. Six cases were authored before isolated execution and all passed: default package 16 to 19, real compiler lane 3 to 6. Package formatting and feature-enabled strict Clippy pass. The report finds nothing and contains an explicit empty findings list. Its test-only changes are committed on the unit, preserving every original assertion; its original test patch is in docs/reviews/2026-09-05-review-boundaries-3-typescript-adversary-tests.patch.
 
 Delivery implementation f1baa9051be7d6cfc48ec1dcd302d0c87ac21a15 is bot-authored and clean before review. Its default package totals rose 53 to 67 (deployment 7 to 18, CLI 46 to 49); both test, format and strict Clippy package gates pass. Meaningful initial cases executed 11 with 9 failures; compiler/setup failures are explicitly separate. The full original report and patch are preserved under docs/reviews/2026-09-05-review-boundaries-3-delivery-implementation.*. Its first adversary brief is ready.
+
+Conformance design adversary pass1 is preserved verbatim in review-result:review-boundaries-3-conformance-design-adversary-pass-1. It found two introduced blockers and one introduced warning: refusal/scenario coexistence, undefined suite5/report1 pairing, and an incorrect current impact label. Original implementor corrected all three at dc746cfab0e628ad28911cbee32c1031a9efb6dd; the sole tracked design now has 58 matrix rows and 10 pairing rows. The correction report and patch are preserved separately under docs/reviews/2026-09-05-review-boundaries-3-conformance-design-correction-1.*. A review_outcome records fixed; a different nonimplementor thread is running the second and last full source-backed design attack. No runtime compatibility results are claimed.
+
+Delivery adversary pass 1 is preserved verbatim in review-result:review-boundaries-3-delivery-adversary-pass-1. Six new cases passed in isolation; package totals rose 67 to 73, deployment 21 plus CLI 52. Both package formatting and strict Clippy pass. Nothing was found; no second attack is justified by an unresolved concern. The 209 added test lines preserve existing assertions and are bot-committed at 4289e3eb636a97b73f8261dd6d68f3027afe9f65; the original patch is preserved in docs/reviews/2026-09-05-review-boundaries-3-delivery-adversary-tests.patch. The cache startup attempt executed zero cases and is recorded separately.
 
 No handoff is an integrated acceptance or completed story. The coordinator also records read-only preparation for the future infrastructure and Rust feasibility stories; these draft refinements authorize no additional implementation in this wave.
 
