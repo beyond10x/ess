@@ -1854,3 +1854,46 @@ F01 generator semantic. The resulting source patch also changes JSON whitespace.
 exit and leaf comparison are in `target/review-boundaries-4/base-http-*`; the retained
 old map is 180,681 bytes, SHA-256
 `c6d1d6953423d415565357cd2415e5c565b995184dd5bc2ee6af8641e33d2fa9`.
+
+The finished InfraIR unit's 57 scratch files (407,939 bytes) were archived and every archived
+member compared byte-for-byte with its source before cleanup. The archive is
+`target/review-boundaries-4/archives/infra-unit-scratch.tar.gz` (83,634 bytes), SHA-256
+`bb2bffce84680ed4c409c4f364e8bdc8c4269b510c3648d3c77a1734e8ee0115`; its complete file/hash
+manifest and cleanup log are beside it. `cargo clean` in that unit returned 0 and removed
+2,351 files / 1.1 GiB; its exact target root is absent and tracked source remains clean.
+The lease and managed tree remain active until the merged commits are published. No
+worktree finish or removal is claimed yet.
+
+## Semantic adversary pass 1 and correction routing
+
+The independent pass added ten tests and the complete pre-F01 Billing suite fixture, with
+no production or existing test changes. Four package suites executed 493 cases: 489 passed
+and four meaningful counterexamples failed. Formatting and strict Clippy returned 0. The
+full report is preserved verbatim as
+`review-result:review-boundaries-4-semantic-adversary-pass-1`, SHA-256
+`0b8e6db3e43c1edda9637ab8235513cd5f4a801c083a8c9664733a31a184cded`.
+
+Two confirmed findings block this unit: residual comparison loses the owning outcome when
+an existing reference moves, and the structured reader treats an actual schema with its
+system attribution removed as current. The report distinguishes the four measured reds
+from their public diff/impact and CLI callers. Origins remain undecided because no complete
+base execution was performed for those cases; this does not discharge their acceptance
+failures. The supplied complete suite/4 vector and roundtrip match exactly, and the six
+other independent controls pass.
+
+The three-file test/fixture commit is `1e6acedc40591250d89299c9d13deb97c9bc144e`, with exact
+bot identities. Its portable patch is
+`docs/reviews/2026-09-05-review-boundaries-4-semantic-adversary-tests-pass-1.patch`,
+173,308 bytes, SHA-256
+`2712ee3f473ef141d50de69c38446d7e7c6fd391a7ba70f3ad0bad6e887a5129`.
+The immutable review was recorded and its full body compared with the report before routing
+the same implementor to correct both findings without changing those assertions.
+
+The correction also includes a separately identified compatibility probe: actual synthesized
+Cargo manifests have generated `#` provenance headers, but the new stamp reader requires a
+structured YAML body after any such header. This is source-backed writer/public-API scope;
+no current impact caller for individual manifests was found. The implementor must execute
+the actual-emission probe before a framing correction, preserve its first result, and retain
+paired OpenAPI/AsyncAPI agreement. It is separate from the adversary's four measured reds.
+The corrected source will receive the second and final full adversarial pass before SDK
+candidate execution and integration.

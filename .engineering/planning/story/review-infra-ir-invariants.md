@@ -23,9 +23,9 @@ scope:
   path: crates/infra/infra-project
 - confidence: cited
   path: crates/infra/infra-spec
-- confidence: inferred
+- confidence: cited
   path: docs/design/review-infra-ir-invariants.md
-revision: 12
+revision: 14
 ---
 ## Finding and source
 
@@ -78,6 +78,17 @@ Derived 2026-09-05 by independent story-scoper at coordinator 7fc7025740796ede6d
 - **Collisions:** infra-compiler, infra-analyze, infra-spec, infra-project, ess-cli main and proposed design; reserve together even though CLI migration is small.
 
 The independent scoper ran no builds and made no file/store/Git/lifecycle writes. Old/new bytes and compile-fail behavior are scoped validation, not executed evidence. The design must choose a transform and settle projector failure before implementation.
+
+Implementation confirmation at b7c3258cf8668cb3d5c8a1f01e362c4092292069 and independent test commit 12d99b1414eea710e56a9776d32e898ff028f33a (source: docs/reviews/2026-09-05-review-boundaries-4-infra-implementation.md §1–2; review-result:review-boundaries-4-infra-adversary-pass-1):
+
+- cited — all five reserved packages and the exact CLI main surface were needed. The CLI change also propagates the deliberately fallible projector before writing artifacts; the original import-query-only inference was incomplete.
+- cited — docs/design/review-infra-ir-invariants.md was newly authored before implementation. The formerly inferred design scope is now a committed file. It chooses the shared model query, checked detached try_transform through read_document and Result<Projection, ValidationErrors>; four narrow mutation capabilities were considered but not selected.
+- cited — public owner privacy and shared queries replace direct access. Detached InfraModel remains editable. Validation preserves provenance, rejects invalid membership, remints all six handle classes and leaves the original owner usable. Persisted infra-ir/1 fields, bytes and digest algorithm are unchanged.
+- cited — no loader, infra-domain, scanner, root manifest/lock, example, generated fixture or public guide edit was required. The initial exclusions were confirmed.
+- cited — package cases increased 244→265 in implementation and 265→270 under independent test-only review; all 270 passed, as did formatting and strict Clippy. Nine initial public-mutation reds and two separate admission/ordering mutation reds are preserved in the implementation report.
+- cited — the adversary did not find a publicly valid input forcing the projector's internal candidate-admission error. The transaction mutation guard is separate evidence, not an external caller reproduction. Full domain admission, unresolved accounting, cross-owner generativity and external Rust consumers remain explicit limits.
+
+The initial scoper's inferences and citations above are preserved as history; these confirmations are the current measured scope. Integrated validation and story closure remain pending.
 
 ## Pre-dispatch inventory
 
