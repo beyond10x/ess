@@ -33,12 +33,30 @@ N=2 implementors within three worker slots and the previously established defaul
 
 | Unit | Branch | Reserved managed ID | Build/temp | Scratch | Stage |
 | --- | --- | --- | --- | --- | --- |
-| scenarios-directory-compiles-nothing | impl/scenarios-directory-compiles-nothing | review-empty-scenarios | target | target/review-boundaries-6 | active; opening gate pending |
-| review-execution-recovery-design | impl/review-execution-recovery-design | review-execution-recovery-design | target | target/review-boundaries-6 | active; opening gate pending |
+| scenarios-directory-compiles-nothing | impl/scenarios-directory-compiles-nothing | review-empty-scenarios | target | target/review-boundaries-6 | active; subject75db774; adversary pass1;106 package cases |
+| review-execution-recovery-design | impl/review-execution-recovery-design | review-execution-recovery-design | target | target/review-boundaries-6 | active; corrected subject9c18eb0; adversary pass2 |
 
 The existing coordinator is reused at its manager-returned wt-752828a285ba path on wave/review-boundaries-6. Units will fork from the same frozen opening commit. Root records their actual full path/build/scratch triples before dispatch, owns all AEP/Git/lifecycle operations, and gates the opening metadata with cheap applicable checks before creating trees. Implementors leave uncommitted handoffs; each independent adversary receives its own unit and may add tests, never production edits. Maximum two full attacks, with every immutable result and outcome recorded.
 
 The final merged source must pass every task check lane, site build and planning validation; capture actual executed case counts and each exit. No failing check or missing receipt contract is bypassed. Root keeps current delivery observations separate from the source-only unit acceptance.
+
+## Opening and actual managed resources
+
+Opening commit009bf3cad2f01eaf1717ea737fa045ffb52d7f12 passed formatting, action validation and planning validation (117 artifacts), with git diff --check zero. Both author and committer are the exact organization bot. The first shell setup attempt found a missing preflight log directory and executed no gate; after creating the owned directory, all applicable checks ran to completion. Raw records are target/review-boundaries-6/preflight.
+
+The manager returned /home/timo/.local/state/worktree/trees/b10x/ess/review-empty-scenarios at the opening SHA. Its build/temp is /home/timo/.local/state/worktree/trees/b10x/ess/review-empty-scenarios/target and scratch is /home/timo/.local/state/worktree/trees/b10x/ess/review-empty-scenarios/target/review-boundaries-6, leased to ess-review-wave6-scenarios. The manager returned /home/timo/.local/state/worktree/trees/b10x/ess/review-execution-recovery-design at the same SHA; its build/temp is /home/timo/.local/state/worktree/trees/b10x/ess/review-execution-recovery-design/target and scratch is /home/timo/.local/state/worktree/trees/b10x/ess/review-execution-recovery-design/target/review-boundaries-6, leased to ess-review-wave6-recovery. Root created both branches and wrote each unit-brief.md under its scratch before dispatch. Shared compiler-cache access is explicit; no build target is shared. The design unit has no executable test lane.
+
+## Current integration checkpoint
+
+The format catalog and summary-only delivery companion are implemented after the exact live24-source candidate passed99 tests and independent356-route/1327-file verification. Atlas f4f2b51bdbe18c188055d70e9762b9c520d3a9f1 publishes the reader migration, delivery observations, preserved concurrent Extensions history and explicit full-fence baseline failures. Eleven of the original31 remediation stories are implemented; these two Wave6 units remain active and18 remain draft. The prior support worktrees are finished after verified evidence archives; exact-id GC is in progress, with raw evidence retained under the remediation cache's retained-evidence support directories.
+
+ESS main advanced to f0cbf56a1e3985a08effffc88a3e7f5b17893a9b during review, adding versioned ordered/binary64 normalization and its tests, design, public format row and release notes. It changes neither unit's assigned production surface. Its journal appends seven normalization events to the shared dcb84be prefix; the coordinator currently has30 independent local events. Root will checkpoint those records, preserve incoming canonical journal bytes and replay its own operations through AEP before integrating. No text-merged journal or source-only ancestry claim substitutes for the final combined gate. The new normalization/2 internal catalog entry will receive a bounded correspondence update under a separate coordinator-owned artifact.
+
+The F10 implementor reported81→106 full CLI cases and25 focused cases, with ten baseline/current command pairs preserving both streams/status and30 artifact files. Root caught and corrected an intermediate filter that silently omitted matching directory entries; the final helper preserves read refusal for directories and directory symlinks. Both red observations and the earlier candidate remain in the immutable2784520-byte implementor report (SHA256d3d37edef40775be5904f61e155513c2bd477fc5067d0cd4c532ba0000c5aa5f). The first adversary has run nine additional cases, yielding115 passing package cases; its formal handoff is pending.
+
+Recovery subject0a1be79 received one introduced warning in immutable review-result:review-boundaries-6-recovery-adversary-pass-1 (report SHA256065f8a3f8f2e4eff98f0b20c944b53fa17eefb925d947536afa2c18e9c66143a). R25 implied that current observed absence could end historical attribution uncertainty. Correction9c18eb0 preserves that uncertainty even when fresh observation establishes present absence, leaving R26 and all modeling prerequisites unchanged. The second full review is running. No recovery implementation or executable proof is claimed.
+
+A separate managed AEP reader checkout at00c742e contains draft story:admit-ess-conformance-v2-counts with typed scope. The bounded byte/readback proposal now identifies every typed entry and restore path, a pure optional reader boundary and independently supplied task expectations. Binding acceptance, Atlas count-migration ADR, implementation and actual reader compatibility gates remain outstanding. This is preparation for the open P0 count unit, not reader readiness.
 
 ## Complete draft computation
 
