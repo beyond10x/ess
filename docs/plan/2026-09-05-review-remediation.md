@@ -4,7 +4,7 @@
 
 **Skill version 0.7.0** — the version in `.claude-plugin/plugin.json`; the stage-1 proposal quotes it.
 
-Owner: [`epic:review-boundary-remediation`](../../.engineering/planning/epic/review-boundary-remediation.md), serving [`vision:O2`](../../.engineering/planning/vision/O2.md), decisions as data with evidence. The governed decomposition has **27 new stories and 3 reused stories**; the remaining 3 legacy drafts were scoped for honest wave computation, not pulled into remediation.
+Owner: [`epic:review-boundary-remediation`](../../.engineering/planning/epic/review-boundary-remediation.md), serving [`vision:O2`](../../.engineering/planning/vision/O2.md), decisions as data with evidence. The original decomposition had **27 new stories and 3 reused stories**; wave 1 added one P0 story for a baseline-reproduced kubectl diagnostic disclosure. The first two stories are implemented and passed the integrated 1,438-test gate plus site build. The remaining 3 legacy drafts were scoped for honest wave computation, not pulled into remediation.
 
 ## Evidence and scope of the plan
 
@@ -24,7 +24,7 @@ Each linked story contains a single observable acceptance, reproduction/validati
 | F02 | P0 | [`story:review-persisted-delivery-validation`](../../.engineering/planning/story/review-persisted-delivery-validation.md), [`story:review-infra-ir-invariants`](../../.engineering/planning/story/review-infra-ir-invariants.md) | Validate persisted delivery graphs; protect infrastructure IR handles. |
 | F03 | P0 | [`story:review-report-reader-validation`](../../.engineering/planning/story/review-report-reader-validation.md), [`story:review-conformance-format-design`](../../.engineering/planning/story/review-conformance-format-design.md), [`story:a-skipped-scenario-is-not-a-failed-one`](../../.engineering/planning/story/a-skipped-scenario-is-not-a-failed-one.md), [`story:review-conformance-coverage`](../../.engineering/planning/story/review-conformance-coverage.md) | Validate v1 now; design and migrate category/coverage/exact-suite evidence without reinterpreting v1. |
 | F04 | P1 | [`story:review-openapi-semantic-accounting`](../../.engineering/planning/story/review-openapi-semantic-accounting.md) | Preserve meaning or persist a gap/refusal by dialect. |
-| F05 | P0 | [`story:review-secret-sanitization`](../../.engineering/planning/story/review-secret-sanitization.md) | Refuse malformed secret-bearing shapes before output. |
+| F05 | P0 | [`story:review-secret-sanitization`](../../.engineering/planning/story/review-secret-sanitization.md), [`story:review-kubectl-diagnostic-sanitization`](../../.engineering/planning/story/review-kubectl-diagnostic-sanitization.md) | Malformed shape refusal is implemented; the additional baseline-reproduced subprocess diagnostic disclosure remains P0 work. |
 | F06 | P1 | [`story:review-observation-completeness`](../../.engineering/planning/story/review-observation-completeness.md) | Retain collection scope and selector uncertainty through consumers. |
 | F07 | P1 | [`story:review-rust-target-feasibility`](../../.engineering/planning/story/review-rust-target-feasibility.md), [`story:review-typescript-root-collision`](../../.engineering/planning/story/review-typescript-root-collision.md) | Validate target symbol/layout feasibility and compile emitted counterexamples. |
 | F08 | P1 | [`story:review-primitive-semantics`](../../.engineering/planning/story/review-primitive-semantics.md) | Use one normative value-domain contract and exact numeric migration. |

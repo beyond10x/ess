@@ -2,7 +2,7 @@
 format: aep.planning-md/1
 id: story:review-report-reader-validation
 kind: story
-status: active
+status: implemented
 title: Validate standalone conformance report claims on read
 tags:
 - P0
@@ -13,7 +13,7 @@ relations:
 scope:
 - confidence: cited
   path: crates/verify/ess-conformance
-revision: 5
+revision: 7
 ---
 ## Finding and source
 
@@ -37,21 +37,17 @@ No new fields, suite/report format bump, source coverage guarantee or downstream
 
 ## Scope
 
-Derived 2026-09-05 by `aep-drive:story-scoper` from the story and current tree — cited.
+Confirmed at implementation head `6b887663736d088307b4f8957de8488740110e6a` from the implementor's confirmation table, final diff and package runner outputs.
 
-- **Primary surface:** `crates/verify/ess-conformance` — cited; the story names its standalone report reader and package-local validation command.
-- **Reader and serialization boundary:** `src/evidence.rs:17`, `src/evidence.rs:52` within the primary surface — cited; `StandaloneConformanceReport` derives `Deserialize`, and `from_json` directly delegates to Serde.
-- **Symbols:** `StandaloneConformanceReport`, `StandaloneConformanceReport::from_json`, `STANDALONE_REPORT_FORMAT`, `ConformanceReport::standalone`, `report_status` — cited; declared in `src/evidence.rs:11`.
-- **Rust producer semantics:** `src/evidence.rs:59`, `src/report.rs:556`, `src/report.rs:587` within the primary surface — cited; counts and lists contain every non-pass, unsupported scenarios make the overall status failed, and error-only reports become inconclusive.
-- **Generated Go producer semantics:** `src/go/runtime.go:599` within the primary surface — cited; failed and skipped scenarios both contribute to the non-pass count and list; skipped-only reports are inconclusive.
-- **Suite-version authority:** `SuiteFormat::parse` and `SuiteFormat::is_supported` in `src/scenario.rs:374` within the primary surface — cited; syntax parsing and support checking are separate operations.
-- **Tests:** extend reader mutation and canonical round-trip coverage beside `src/evidence.rs:180`, with package-local fixtures covering Rust and generated Go output — inferred; exact fixture filenames and placement remain implementation choices.
-- **Documents:** no separate document change is required by this story's acceptance — inferred; the work validates the existing format and preserves valid canonical bytes.
-- **Additional surfaces:** none established — inferred; producer definitions, version handling and the read boundary all reside in the primary crate.
-- **Confidence:** high — cited; the story identifies the defect site, and the current tree places the required reader, producer semantics and existing tests in one crate.
-- **Would collide with:** any unit recording `crates/verify/ess-conformance` — inferred; use this single crate-directory token for collision computation, including its tests and fixtures.
+- **Primary surface:** `crates/verify/ess-conformance` — cited; reader, Rust/Go producer semantics and suite-format authority all reside in this crate.
+- **Implementation:** `src/evidence.rs`, `StandaloneConformanceReport::deserialize` and private claim validation — cited; every public Serde read route passes through the closed wire DTO and the same semantic checks.
+- **Tests:** existing `src/evidence.rs` test module plus `tests/report_reader_adversary.rs` — cited; the proposal's inferred test placement is now confirmed. Inline Go bytes preserve the current writer's field order and v1 count semantics.
+- **Documents:** no separate package document edit — cited; the implementor confirmed that this is an existing-format reader repair. Engineering reports and planning remain coordinator-owned.
+- **Scope correction:** no additional package was needed and no prior inferred package/document boundary proved wrong — cited; the generator, CLI and downstream workflow adapter were untouched.
+- **Limits:** serialization field order, valid v1 canonical bytes, opaque identity strings, zero-scenario execution summaries and the union of Rust/Go non-pass semantics are preserved — cited.
+- **Confidence:** high — cited; final committed source and tests establish the scope.
+- **Would collide with:** any unit touching `crates/verify/ess-conformance` — inferred; retain the existing crate-directory typed scope for future computation.
 
 ## Scoping decisions
 
 Validate every public deserialization route used by callers. Because v1 persists no producer identity, accept the union of valid Rust and Go producer cases and refuse only contradictions derivable from the document; do not guess the producer from one status token.
-

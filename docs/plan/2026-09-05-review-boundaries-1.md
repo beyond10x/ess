@@ -1,12 +1,12 @@
 # Review boundaries wave 1 — 2026-09-05
 
-**Verification paused for shared disk capacity.** Both implementations have bot-authored commits and passing package gates. Adversarial testing is recorded below; no unit has merged and no story is terminal. Standing implementation approval remains valid. The active resource record is `resource-blocker:review-wave-storage-capacity`.
+**Implementation and integrated verification complete; publication-backed cleanup pending.** Both stories are implemented with recorded evidence. All eight offline gate steps exited 0, with 1,438 tests passed, no failures and no ignored tests; the site build also exited 0. `resource-blocker:review-wave-storage-capacity` preserves the earlier interruption and clearance. The rest of the remediation epic remains active.
 
 Skill version 0.7.0. Integration branch: `wave/review-boundaries-1`, managed record `wt-752828a285ba`; base `fd06a4d61bfb7b4990617810655dc181d6a3ab00`. Both units serve `vision:O2`.
 
 ## Approval and selection
 
-The operator said: “i approve you handling all wave impls your own, start”. `approval-record:review-remediation-standing-implementation` records standing implementation approval. It authorizes the opening planning commit, two unit commits, their integration merges, closing evidence/store commit and the merge to local main. Publication and release remain outside this grant.
+The operator said: “i approve you handling all wave impls your own, start”. `approval-record:review-remediation-standing-implementation` records standing implementation approval. It covers the opening planning commit, the two units, their integration merges, closing evidence/store commit and the merge to local main. Each unit has an implementation commit followed by an adversarial-test commit so the immutable reviews' original commit references remain reachable; the resource interruption also required an evidence checkpoint. These commits are confined to the approved units and their governed records. Publication and release remain outside this grant.
 
 The [saved proposal](2026-09-05-review-remediation.md) contains the complete draft and exact proposed-set wave computations, including all collisions, unassessed ids and cycles. Its selected set has two cited, high-confidence, disjoint crate scopes and no dependencies or blockers. The approved stories are now active. Other P0 candidates require broader shared surfaces and will be independently scoped at the next replan.
 
@@ -26,8 +26,8 @@ Paths use `<ess-managed-root>` for the managed ESS trees directory. The ignored 
 
 | Unit | Branch | Head | Worktree | Build | Scratch | Stage |
 | --- | --- | --- | --- | --- | --- | --- |
-| `story:review-secret-sanitization` | `impl/review-secret-sanitization` | `4851c9301a06a9557a36b23086aeee48ded26b03` | `<ess-managed-root>/review-secret-sanitization` | worktree `target/` | worktree `target/review-boundaries-1/review-secret-sanitization/` | pass 1 recorded; pre-existing finding routed; test additions remain uncommitted |
-| `story:review-report-reader-validation` | `impl/review-report-reader-validation` | `ebe5e9dd7aeb1737fd7d5a2671d56824b5824eb5` | `<ess-managed-root>/review-report-reader-validation` | worktree `target/` | worktree `target/review-boundaries-1/review-report-reader-validation/` | pass 1 recorded; remaining gates blocked; test addition remains uncommitted |
+| `story:review-secret-sanitization` | `impl/review-secret-sanitization` | `7130468ce5baa8178407bc02df557f27a7cae7ee` | `<ess-managed-root>/review-secret-sanitization` | worktree `target/` | worktree `target/review-boundaries-1/review-secret-sanitization/` | implemented; merged at `c332e7236cf2568e08ef2210bbabbdd7f7ccc6e8`; awaiting publication-backed cleanup |
+| `story:review-report-reader-validation` | `impl/review-report-reader-validation` | `6b887663736d088307b4f8957de8488740110e6a` | `<ess-managed-root>/review-report-reader-validation` | worktree `target/` | worktree `target/review-boundaries-1/review-report-reader-validation/` | implemented; merged at `aefdc330089fd9a96baf39179857a84686efa944`; awaiting publication-backed cleanup |
 
 Only the coordinator writes planning artifacts or commits. Implementors establish red acceptance cases, run their package tests, formatter and Clippy, then return uncommitted source/test changes. Each green result receives an independent test-only adversary pass. Closing requires every offline gate step's own exit code, applicable site build, scope confirmation and evidence before terminal story moves.
 
@@ -50,7 +50,7 @@ Logs and reports will be read and recorded before any managed cleanup. A local-o
 - `review-result:review-boundaries-1-secret-adversary-pass-1` preserves the returned pass verbatim. It executed 5→8 package cases, with one red; formatter and Clippy exited 0. The added malformed JSON and late malformed annotation cases passed. The failing subprocess-stderr case also reproduced in a newly built opening-baseline binary, with an empty package source diff against `3d8d6c6b287ce1c462cc50ea74f1ba5c171b827b`. Coordinator classification is therefore pre-existing, independent of the pass's recorded undecided origin. It is owned by `story:review-kubectl-diagnostic-sanitization`; the original story records review outcome no-op because this finding was filed separately. The original red assertion remains in the unit tree and in the [saved test patch](../reviews/2026-09-05-review-boundaries-1-secret-adversary-tests.patch).
 - `review-result:review-boundaries-1-report-adversary-pass-1` preserves the returned resource-limited pass verbatim. Its four new tests executed directly from the already-built binary: three passed, one red. Full package after-count and Clippy are unavailable; standalone formatting passed. The YAML null-identity case is INFEASIBLE/undecided: no repository YAML-report caller was established. Coordinator contract assessment: the story promises report/version/count/status validation and preserves opaque identity strings; no evidence establishes that YAML scalar coercion to the string `null` violates that acceptance. This finding does not justify changing the implementation. The original case is preserved in its unit tree and [saved test patch](../reviews/2026-09-05-review-boundaries-1-report-adversary-tests.patch); review outcome no-op records the assessment without rewriting the immutable pass.
 
-No new failing case was deleted, ignored or weakened. Before either branch can merge, the coordinator must resolve its added tests under the wave's routing rule: retain the Secret diagnostic reproduction in its new story and explicitly characterize the current known behavior if shipping the existing unit first; correct the YAML case to the established contract rather than imposing an unsupported one. Then rerun package checks. The original patches preserve exactly what the adversaries tested.
+Coordinator resolution after storage recovered: the Secret case now explicitly characterizes the single known failure-diagnostic disclosure, retains refusal/destination/stdout checks, names its new P0 story and directs that story to restore the preserved no-disclosure assertion when fixed. The YAML case still refuses JSON nulls and missing/unknown fields; it explicitly checks YAML's string `null` only for the two unconstrained identity fields. These are documented expectation changes under the wave's pre-existing/wrong-case routing rows; no test was ignored or deleted. The original patches preserve exactly what the adversaries tested. Complete package tests then executed 8 and 242 cases with no failures, and both formatter and strict Clippy checks exited 0. A Clippy warning in the new report test was corrected by adding numeric separators without changing its timestamp value. No second attack was needed because implementation code did not change after the first attacks.
 
 ## Resource incident and resumption
 
@@ -60,4 +60,27 @@ Resume after the resource blocker is cleared from fresh stable capacity evidence
 
 Checkpoint incident: copying the planning validation record and staging Git objects both returned `No space left on device`. The commit attempt produced no commit because staging had failed. The coordinator then removed only its generated rustdoc output with `cargo clean --doc` (2,170 files, 56.3 MiB) to preserve the handoff; this output must be regenerated by the eventual full gate. The original raw planning log remained intact. The [validation output](../reviews/2026-09-05-review-boundaries-1-planning-validation.txt) records 79 valid artifacts and the same six empty-findings advisories from planning.
 
-Agent metrics: Secret implementor measured 8m 11s from its first persisted timestamp to source review; its full turn duration was not exposed. Other per-agent measured intervals are in the returned reports. The collaboration harness exposes no token/tool-count totals, so those figures are unavailable. This wave has made no release, push or main merge.
+The storage blocker was cleared from fresh readings of 54,895,435,776 and 53,885,259,776 free bytes. Resumption reused all existing unit state and kept one Cargo unit at a time. The integrated source is `aefdc330089fd9a96baf39179857a84686efa944`; free bytes at full gate launch were 30,672,695,296.
+
+## Closing evidence
+
+[`verification-report:review-boundaries-1-integrated`](../../.engineering/planning/verification-report/review-boundaries-1-integrated.md) records the final package and integrated checks, the tested source commit, test routing and limitations. Exact gate step statuses:
+
+```text
+fmt-check 0
+clippy 0
+test 0
+doc-check 0
+example-check 0
+projection-check 0
+release-check 0
+action-check 0
+```
+
+Workspace runner totals: 1,438 passed, 0 failed, 0 ignored. `task site-build` exited 0 after WASM/browser checks and Docusaurus generation. Its baseline npm dependency advisories remain outside these two fixes. [Final planning validation](../reviews/2026-09-05-review-boundaries-1-final-planning-validation.txt) is preserved verbatim: 80 artifacts, the six previously explained empty-findings advisories, `valid`. Both implemented stories have final scope confirmation and evidence against the integrated source commit. No source or test changed after these gate runs; closing edits record evidence and lifecycle state.
+
+Raw unit scratch reports/logs were copied to the coordinator's ignored `target/review-boundaries-1/archive/<unit>/` before any retirement attempt. Original adversarial patches and portable reports are committed engineering evidence. The local main merge is the authorized integration step; publication is a separate grant. The worktree manager requires wanted commits to be published before finishing a unit, and the wave skill requires the previous units to be retired before the next wave. Retain the trees and branch heads until that recovery proof exists; no force removal or cleanup bypass is permitted.
+
+Next work: the newly observed kubectl stderr disclosure is P0 and scoped to its existing package. Output containment has independent scope ready for the next replan. Semantic diff needs its newly identified persisted-vocabulary/contract-digest compatibility decision before implementation. Recompute readiness and collisions after cleanup and recheck shared disk capacity; standing implementation approval remains in force.
+
+Agent metrics: Secret implementor measured 8m 11s from its first persisted timestamp to source review; its full turn duration was not exposed. Report implementor, both adversaries and both read-only scopers have no exposed full-turn duration. The collaboration harness exposes no per-agent token/tool-count totals, so those figures are unavailable. No tag, release or publication is part of this wave.

@@ -2,7 +2,7 @@
 format: aep.planning-md/1
 id: story:review-secret-sanitization
 kind: story
-status: active
+status: implemented
 title: Refuse malformed Secret shapes before serialization
 tags:
 - P0
@@ -13,7 +13,7 @@ relations:
 scope:
 - confidence: cited
   path: crates/infra/ess-kubernetes
-revision: 5
+revision: 7
 ---
 ## Finding and source
 
@@ -37,18 +37,17 @@ Collection scope/retry semantics belong to review-observation-completeness (F06)
 
 ## Scope
 
-Derived 2026-09-05 by `aep-drive:story-scoper` from the story, review and repository tree — cited.
+Confirmed at implementation head `7130468ce5baa8178407bc02df557f27a7cae7ee` from the implementor's confirmation table, final diff and package runner outputs.
 
-- **Primary surface:** `crates/infra/ess-kubernetes` — cited; the story names this package's sanitizer and credential-boundary contract.
-- **Files:** `crates/infra/ess-kubernetes/src/lib.rs:107` contains the sanitizer; `crates/infra/ess-kubernetes/src/lib.rs:60` contains collection, serialization and output writing; `crates/infra/ess-kubernetes/src/lib.rs:160` and `crates/infra/ess-kubernetes/src/lib.rs:194` contain existing redaction and malformed-list tests — cited.
-- **Symbols:** `sanitize_secret_list`, `scan`, `secret_values_and_last_applied_configuration_never_survive_sanitization`, and `malformed_secret_lists_are_refused_before_any_output_can_be_written` — cited.
-- **Additional package-local work:** extend the malformed-shape corpus and add fake-kubectl coverage for diagnostics, preserved destination contents on refusal, and valid-output compatibility; exact test placement remains an implementation choice within the primary surface — inferred.
-- **Documents:** no documentation edit is required by this story's acceptance; the review and package contract provide evidence and constraints — inferred.
-- **Scope limits:** preserve digest/length records, annotation removal, the collected kind list and observation format; collection scope and retry semantics are explicitly assigned elsewhere by the story — cited.
-- **Confidence:** high — cited; both the story and F05 identify the sanitizer, and its caller plus existing tests reside in the same package.
-- **Would collide with:** any unit touching `crates/infra/ess-kubernetes`, including collection/retry changes in `scan`; use this exact crate-directory token for collision computation, without narrower test tokens — inferred.
+- **Primary surface:** `crates/infra/ess-kubernetes` — cited; all implementation and test edits remained inside the approved package.
+- **Implementation:** `src/lib.rs`, `sanitize_secret_list` — cited; item, data/stringData, metadata and annotation shape validation, with fixed value-free diagnostic text.
+- **Tests and fixtures:** `tests/secret_boundary.rs`, `tests/fixtures/fake_command.rs`, `tests/fixtures/valid-observation.json` — cited; the proposal's inferred package-local corpus/fake-process work is now confirmed. The original two library tests remain.
+- **Documents:** no package document edit — cited; the implementor confirmed that the existing credential contract covers this repair. Engineering reports and planning remain coordinator-owned.
+- **Scope correction:** none of the proposal's inferred package or document boundaries proved wrong — cited; exact test placement is now recorded instead of left inferred.
+- **Limits:** kind list, retry policy, observation format and valid canonical bytes remained unchanged — cited; the adversarial stderr finding was replayed on the baseline and filed as `story:review-kubectl-diagnostic-sanitization`.
+- **Confidence:** high — cited; final committed source and tests establish the scope.
+- **Would collide with:** any unit touching `crates/infra/ess-kubernetes` — inferred; retain the existing crate-directory typed scope for future computation.
 
 ## Scoping decisions
 
 Coordinator clarification: absent optional fields remain allowed; explicitly present unsupported shapes must be refused or removed under a stated test contract, never echoed. Freeze the fake clock/date response when comparing full observation bytes. The fake kubectl harness stays in this crate.
-
