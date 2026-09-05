@@ -2,7 +2,7 @@
 format: aep.planning-md/1
 id: story:review-semantic-diff-coverage
 kind: story
-status: draft
+status: active
 title: Propagate every reviewed semantic change into diff and impact
 tags:
 - P0
@@ -40,7 +40,7 @@ scope:
   path: generated/schema
 - confidence: inferred
   path: generated/site
-revision: 18
+revision: 20
 ---
 ## Finding and source
 

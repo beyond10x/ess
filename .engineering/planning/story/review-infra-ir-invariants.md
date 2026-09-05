@@ -2,7 +2,7 @@
 format: aep.planning-md/1
 id: story:review-infra-ir-invariants
 kind: story
-status: draft
+status: active
 title: Keep resolved infrastructure handles valid for the IR lifetime
 tags:
 - P0
@@ -25,7 +25,7 @@ scope:
   path: crates/infra/infra-spec
 - confidence: inferred
   path: docs/design/review-infra-ir-invariants.md
-revision: 10
+revision: 12
 ---
 ## Finding and source
 
