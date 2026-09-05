@@ -1,15 +1,16 @@
 schema: b10x-change/v1
 id: ess/command-line-surface-0.14.0
 repository: ess
-# `publishedAt` and `source` are filled when the tag exists. Neither is knowable now, and a
-# guessed timestamp or a release URL for a version nobody cut is a fact this file would be
-# asserting on nothing.
+publishedAt: 2026-09-04T10:01:53Z
 title: A component can declare a command-line surface, and ESS synthesizes its parser
 summary: >-
   `reached_by: command_line` and a `cli:` block state that a component's callers are people at a
   terminal and where each command sits in the tree. `ess generate synthesize --target clap` emits
   the parser, the handler obligations and the completion scripts from that declaration.
-kind: feature
+kind: capability
 impact: significant
+source:
+  url: https://github.com/beyond10x/ess/releases/tag/0.14.0
+  version: 0.14.0
 journeys: [specify, operate-services]
-affectedSurfaces: [ess/docs, ess/schema]
+affectedSurfaces: [ess/docs]

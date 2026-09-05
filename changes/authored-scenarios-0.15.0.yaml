@@ -1,16 +1,17 @@
 schema: b10x-change/v1
 id: ess/authored-scenarios-0.15.0
 repository: ess
-# `publishedAt` and `source` are filled when the tag exists. Neither is knowable now, and a
-# guessed timestamp or a release URL for a version nobody cut is a fact this file would be
-# asserting on nothing.
+# The 0.15.0 tag has no published GitHub Release. The published 0.16.0 release includes this capability.
+publishedAt: 2026-09-04T13:13:51Z
 title: A specification carries the scenarios an author wrote, not only the ones it obliges
 summary: >-
-  `ess-scenario/1` is a document a person writes: an arrangement of modelled instances, a timeline
-  of modelled commands, and expectations in the vocabulary a suite already has. It compiles into
-  the same `ess-conformance/2` suite synthesis emits, under an id of its own so the two populations
-  cannot be confused, and twenty-seven refusals hold every name it uses to what the model declares.
-kind: feature
+  Authors can declare modelled instances, command timelines, and expectations in `ess-scenario/1`.
+  These scenarios compile into `ess-conformance/2` with identities distinct from synthesized suites.
+  Twenty-seven refusals check their names against the model. Included in the published 0.16.0 release.
+kind: capability
 impact: significant
-journeys: [specify, verify]
+source:
+  url: https://github.com/beyond10x/ess/releases/tag/0.16.0
+  version: 0.16.0
+journeys: [specify]
 affectedSurfaces: [ess/docs]

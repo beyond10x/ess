@@ -1,18 +1,16 @@
 schema: b10x-change/v1
 id: ess/early-stop-assertion-0.18.0
 repository: ess
-# `publishedAt` and `source` are filled when the tag exists. Neither is knowable now, and a
-# guessed timestamp or a release URL for a version nobody cut is a fact this file would be
-# asserting on nothing.
+publishedAt: 2026-09-04T14:08:16Z
 title: An authored scenario can claim that a consumer halted an ordered scan
 summary: >-
-  `ess-scenario/1` gains `halts_after: <n>` — a reader of an ordered view takes `n` rows, says
-  stop, and the producer stops too. It is the seventh claim key and not a seventh row shape,
-  because two implementations returning the same rows differ on it and no predicate over rows can
-  decide it. The target reports how many rows its ordered source produced and whether the reader's
-  stop is what ended the read; a target that cannot read a view a row at a time reports
-  `unsupported` rather than agreeing. `ess-conformance/4`, one new refusal, two new steps.
-kind: feature
+  `halts_after: <n>` lets an authored scenario require a consumer to stop an ordered scan after
+  n rows. The target reports rows produced and whether the consumer ended the read. Targets without
+  incremental reads report `unsupported`. This adds a claim to `ess-conformance/4`.
+kind: capability
 impact: significant
-journeys: [specify, verify]
+source:
+  url: https://github.com/beyond10x/ess/releases/tag/0.18.0
+  version: 0.18.0
+journeys: [specify]
 affectedSurfaces: [ess/docs]
