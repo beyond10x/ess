@@ -68,6 +68,22 @@ pub struct Document {
 }
 
 impl Document {
+    /// Checks page identities before a renderer can discard duplicate pages.
+    ///
+    /// Construction and deserialization remain compatible. Consumers of authored or deserialized
+    /// documents must call this check, and validate the renderer's complete artifact set as well.
+    /// A page may have child pages: `plan` and `plan/board` are distinct identities.
+    pub fn validate_page_ids(&self) -> Result<(), String> {
+        let mut ids = std::collections::BTreeSet::new();
+        for page in &self.pages {
+            page.id.validate()?;
+            if !ids.insert(page.id.as_str().to_ascii_lowercase()) {
+                return Err(format!("duplicate page identity `{}`", page.id.as_str()));
+            }
+        }
+        Ok(())
+    }
+
     /// A document of these pages.
     pub fn new(system: impl Into<String>, version: impl Into<String>, pages: Vec<Page>) -> Self {
         Self {
@@ -96,6 +112,11 @@ impl Document {
 pub struct PageId(pub String);
 
 impl PageId {
+    /// Checks that this identity is a canonical portable relative path.
+    pub fn validate(&self) -> Result<(), String> {
+        crate::artifact::validate_path(&self.0)
+    }
+
     /// The id as written.
     pub fn as_str(&self) -> &str {
         &self.0

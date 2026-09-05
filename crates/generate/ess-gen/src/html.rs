@@ -163,6 +163,21 @@ pub struct Site {
 }
 
 impl Site {
+    /// Renders a document only if all page and artifact destinations are valid and distinct.
+    ///
+    /// Use this entry point for authored or deserialized documents. It checks the complete
+    /// sequence before callers can collect it into a map, including collisions with site assets.
+    pub fn try_render(
+        &self,
+        document: &Document,
+        whole: &Provenance,
+    ) -> Result<Vec<Artifact>, String> {
+        document.validate_page_ids()?;
+        let artifacts = self.render(document, whole);
+        crate::artifact::validate_paths(artifacts.iter().map(|artifact| artifact.path.as_str()))?;
+        Ok(artifacts)
+    }
+
     /// A site in the default style, with no adopter front page.
     pub fn new() -> Self {
         Self::default()
@@ -179,6 +194,9 @@ impl Site {
     }
 
     /// Every page of the document, plus the assets they refer to.
+    ///
+    /// This compatibility entry point assumes validated page identities. Use [`Self::try_render`]
+    /// for untrusted documents and before collecting results into a map.
     ///
     /// `whole` is the **whole-model** provenance. The stylesheet, the diagram renderer and its
     /// licence derive from no construct at all, and [`crate::artifact::run`] checks every
@@ -669,6 +687,48 @@ mod tests {
 
     fn empty() -> ConstructIndex {
         ConstructIndex::default()
+    }
+
+    #[test]
+    fn checked_rendering_validates_deserialized_page_identities_before_map_collection() {
+        for ids in [
+            vec!["index", "index"],
+            vec!["index", "INDEX"],
+            vec!["../escape"],
+            vec!["a//b"],
+            vec!["plan", "plan.html/child"],
+            vec!["assets/style.css/child"],
+        ] {
+            let document = Document::new(
+                "billing",
+                "v3",
+                ids.iter().map(|id| page(id, Vec::new())).collect(),
+            );
+            let encoded = serde_json::to_string(&document).unwrap();
+            let decoded: Document = serde_json::from_str(&encoded).unwrap();
+            assert!(
+                Site::new().try_render(&decoded, &provenance()).is_err(),
+                "{ids:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn checked_rendering_preserves_valid_parent_and_nested_page_bytes() {
+        let document = Document::new(
+            "billing",
+            "v3",
+            vec![
+                page("index", Vec::new()),
+                page("plan", Vec::new()),
+                page("plan/board", Vec::new()),
+                page("plan.page/board", Vec::new()),
+            ],
+        );
+        assert_eq!(
+            Site::new().try_render(&document, &provenance()).unwrap(),
+            Site::new().render(&document, &provenance())
+        );
     }
 
     #[test]
