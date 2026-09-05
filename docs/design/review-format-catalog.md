@@ -3,7 +3,8 @@
 Status: inventory for `story:review-format-catalog`; this document changes no format or reader.
 Source baseline: `4b66aac7b608b1deee9de88942390d4a6c5ec745` (production through
 `acb7859e3202ffdc1ca840dde67f7ca4da33c746`). Source citations identify implementations, not a
-released or deployed consumer inventory.
+released or deployed consumer inventory. The Rust/Web checked APIs and target-failure entries
+additionally use frozen producer `f9a7cf7fcca79448a34b2754adb12f1a411573bd`.
 
 ## Reading the catalog
 
@@ -94,7 +95,8 @@ payload identity and evidence attachment identity must remain separate.
 | Browser catalog: `format: ess-browser-catalog/1` | System/specification version and plan provenance | Web synthesis writes the catalog; generated browser code consumes its data. No general ESS catalog-admission API. [Writer](../../crates/generate/ess-synth/src/web/catalog.rs), [browser](../../crates/generate/ess-synth/src/web/page.rs). | K; whole-model provenance, no catalog-content hash. |
 | Imported interface: `format: ess-service-interface/1` | `source_openapi` dialect and independent `service.version` | OpenAPI importer → `ServiceInterface`; closed generic Deserialize, then explicit `validate` for format and interface invariants. [Owner](../../crates/generate/ess-openapi/src/lib.rs). | P; no interface digest API. |
 | Synthesis `plan.json`: **unversioned** `SynthesisPlan` | Specification provenance; no target-specific semantic version | `SynthesisPlan::of` / synthesis → Serialize-only neutral plan; target emitters consume the typed plan. [Owner](../../crates/generate/ess-synth/src/plan.rs). | P and `PLAN.md`; source/whole provenance, not a hash of the plan file. |
-| Synthesis `target.json`: **unversioned** `TargetReport` | Specification provenance plus target name | `synthesize_for` and target emitters → Serialize-only report of refusals/weakenings; optional by target. [Owner](../../crates/generate/ess-synth/src/lib.rs). | P and `TARGET.md`; source/whole provenance, no target-report digest. Target support is not the neutral plan's meaning. |
+| Synthesis `target.json`: **unversioned** `TargetReport` | Specification provenance plus target name | Successful Go/Web/Clap synthesis includes this Serialize-only report of refusals/weakenings; successful Rust has `target: None` and no target metadata. No persisted report reader. [Owner](../../crates/generate/ess-synth/src/lib.rs). | Unchanged P and `TARGET.md`; source/whole provenance, no target-report digest. Partial reports remain successful values. |
+| Complete target failure: `format: ess-target-failure/1` | `target: rust` or `web`; unchanged neutral `plan` with specification provenance | Checked synthesis/Rust/Web APIs return private-constructed, Serialize-only `TargetFailure`: `format`, `target`, `plan`, nonempty `causes`. No Deserialize or persisted admission reader. [Envelope](../../crates/generate/ess-synth/src/failure.rs), [facade](../../crates/generate/ess-synth/src/lib.rs). | P via `to_canonical_json`; CLI also presents Y/text. Causes and their nonempty source identities are sorted/deduplicated. Plan provenance is referenced; no failure-document digest or artifacts. |
 | ESS contract JSON Schema: `$schema: https://json-schema.org/draft/2020-12/schema` | `$id` and ESS specification version/provenance | `ess-gen` schema/types projection; external JSON Schema consumers, not a new ESS envelope. [Schema](../../crates/generate/ess-gen/src/schema.rs), [writer](../../crates/generate/ess-gen/src/types.rs). | Deterministic pretty JSON+LF; source/sliced provenance. Resource identity is separate from its content hash. |
 | ESS-generated OpenAPI: `openapi: 3.1.0` | `info.version` is specification `vN`; `x-ess-provenance` is separate | `ess-gen::openapi`, also embedded by HTTP synthesis; consumers are OpenAPI tooling. [Owner](../../crates/generate/ess-gen/src/openapi.rs). | Deterministic YAML with comment plus structured provenance, or pretty JSON+LF for HTTP output; source/sliced digests. |
 | Imported-interface OpenAPI projection: `openapi: 3.1.0` | Interface `service.version`, retained source dialect separate | `ess_openapi::project` from validated service interface; external consumers. It is not the `ess-gen` producer/ESS provenance envelope. [Owner](../../crates/generate/ess-openapi/src/lib.rs). | Y from ordered JSON Value; no ESS semantic digest is invented for imported input. |
@@ -102,6 +104,44 @@ payload identity and evidence attachment identity must remain separate.
 | ESS source schema: `$schema: http://json-schema.org/draft-07/schema#` | Schema describes `RawSpecFile`, including format/version syntax | `cargo xtask schema` derives Schemars schema; editors/schema validators consume it. It does not run whole-system validation or resolution. [Owner](../../crates/edge/ess-xtask/src/main.rs), [fixture](../../schemas/generated/ess.schema.json). | P; committed schema is compared as complete bytes; no embedded semantic digest. |
 | Generated Rust HTTP startup records: `log: ess/1` | Specification/contract and runtime address/port/language | Rust HTTP emitter builds facts; generated server completes and prints JSON lines. This is **not authored specification input**. [Owner](../../crates/generate/ess-synth/src/rust/http.rs). | Compact runtime JSON lines; dynamic runtime facts, no whole-record canonical hash. |
 | Generated Go HTTP startup records: `log: ess/1` | Same shared startup facts, Go runtime fields | Go emitter reuses Rust `startup_facts`; generated Go server prints records. No ESS log-reader contract. [Owner](../../crates/generate/ess-synth/src/go/http.rs). | Compact runtime JSON lines; no whole-record hash or cross-language byte-equivalence promise. |
+
+### Checked synthesis APIs and failure limits
+
+| Public call | Current result |
+|---|---|
+| `ess_synth::synthesize(ir)` and `synthesize_for(ir, target)` | `Result<Synthesis, TargetFailure>`; `synthesize` selects Rust. [Facade](../../crates/generate/ess-synth/src/lib.rs). |
+| `ess_synth::rust::workspace(ir, plan)` | `Result<Vec<Artifact>, TargetFailure>`; allocation/representation checks precede rendering. [Rust](../../crates/generate/ess-synth/src/rust/mod.rs). |
+| `ess_synth::web::workspace(ir, plan)` | `Result<web::Emission, TargetFailure>`; checks the Rust prerequisite and actual Web codec allocation. [Web](../../crates/generate/ess-synth/src/web/mod.rs). |
+
+Each cause carries `code`, nonempty sorted unique `sources`, and nonempty human-readable `detail`.
+The current closed kebab-case codes are `invalid-identifier`, `symbol-collision`, `path-collision`,
+`recursive-layout`, `binding-assignment`, `missing-type-owner`, `wire-collision` and
+`missing-representation`. A failure can carry a plan with zero capabilities; causes are independent
+of capability accounting. The error implements `Display` and `std::error::Error` with read-only
+accessors. [Error type](../../crates/generate/ess-synth/src/failure.rs).
+
+`Err` returns no `Synthesis`, code/manifest vector or diagnostic artifact tree. It withholds the
+whole requested workspace, including individually feasible modules. Successful `Synthesis` retains
+its typed `plan`, `artifacts` and optional `target` fields; that container has no own Serialize
+envelope. Neutral plan bytes and successful/partial `TargetReport` bytes retain their contracts.
+The direct APIs expect the plan for the supplied IR; a fabricated mismatched plan is outside the
+compiler-admitted-input guarantee. Internal coverage assertions remain, so the finite checks are
+not a universal compiler proof or a promise that programming defects cannot panic.
+[Facade](../../crates/generate/ess-synth/src/lib.rs), [decision](review-rust-target-feasibility.md).
+
+On target failure the CLI writes text or the JSON/YAML envelope to stdout, then exits 1 before
+`write_artifacts`: it creates no output directory and leaves an existing destination untouched.
+Successful text output still counts the neutral plan; partial target notes remain in
+`TARGET.md`/`target.json`. This early refusal does not add rollback for later I/O failures.
+[CLI](../../crates/edge/ess-cli/src/main.rs).
+
+`web::browser_catalog(ir, plan) -> BrowserCatalog` remains a separate semantic API with unchanged
+`ess-browser-catalog/1` bytes. It does not run the workspace's fatal feasibility gate. Its equality
+with a generated catalog applies when the Web workspace is emitted; catalog availability does not
+establish code feasibility. Previously valid Rust output is preserved. Web code changes are limited
+to the previously broken zero-delivery replay branch and missing catalog-only export buffers;
+existing report/catalog contracts remain unchanged.
+[Catalog API](../../crates/generate/ess-synth/src/web/mod.rs), [decision](review-rust-target-feasibility.md).
 
 ## Infrastructure
 
@@ -211,9 +251,10 @@ not demonstrated byte-verifying report readers. Existing F01 coordination record
 complete generated files and Atlas ADR 0036, not an external delta/impact parser. ESS has no AEP
 dependency, and this catalog creates none.
 
-The parallel Rust feasibility unit may change the Rust emitter's API and produce target refusals.
-Integration must verify this catalog's unversioned plan/target-report rows against its final source;
-this inventory does not preannounce its implementation, an SDK/AgentIDE upgrade or a release.
+The frozen Rust/Web producer introduces checked Result APIs and `ess-target-failure/1` while
+retaining the successful plan/report/catalog contracts above. External callers must handle the
+checked result when upgrading. Coordinator-owned reader integration and delivery remain separate;
+this inventory establishes no SDK/AgentIDE upgrade, release or deployed-consumer compatibility.
 
 No schema resource identity redesign, mass format rename, `ess-ir/2`, new universal registry or
 normalization of historical bytes is part of this documentation change.

@@ -46,7 +46,32 @@ the row says otherwise; it does not imply that those bytes are hashed.
 | Authored realization: **`type: ess-realization/1`** | Realization id and specification/synthesis identities | Closed JSON/YAML DTO, then compilation against supplied ESS authority. No raw-document digest contract. [Source][realization] |
 | Compiled realization: **`type: ess-realization-ir/1`** | Same identities plus realization digest | Serialize-only compiled output. Pretty JSON; **realization** tuple digest. [Source][realization] |
 | `plan.json`: **unversioned** `SynthesisPlan` | Specification provenance | Neutral generated plan, consumed as a typed value by emitters. Pretty JSON and `PLAN.md`; **compiled-model/whole-contract** references, no plan-file hash. [Source][plan] |
-| `target.json`: **unversioned** `TargetReport` | Target name and specification provenance | Optional generated refusal/weakening report; no persisted admission reader. Pretty JSON and `TARGET.md`; provenance references, no report-file hash. [Source][synthesis] |
+| `target.json`: **unversioned** `TargetReport` | Target name and specification provenance | Successful Go/Web/Clap synthesis includes this refusal/weakening report; successful Rust has `target: None` and no target metadata. No persisted admission reader. Unchanged pretty JSON and `TARGET.md`; provenance references, no report-file hash. [Source][synthesis] |
+| Complete failure: `format: ess-target-failure/1` | Target `rust` or `web`; unchanged neutral plan and its provenance | Serialize-only `TargetFailure` has `format`, `target`, `plan`, nonempty `causes`; private construction, read-only accessors, no Deserialize/admission reader. Typed pretty JSON+LF or CLI YAML; no failure-file digest or artifacts. [Source][target-failure] |
+
+`ess_synth::synthesize` and `synthesize_for` return `Result<Synthesis, TargetFailure>`.
+The direct `rust::workspace` and `web::workspace` APIs return `Result<Vec<Artifact>, TargetFailure>`
+and `Result<web::Emission, TargetFailure>` respectively. Rust checks allocation and representation
+before rendering; Web checks its Rust prerequisite and Web codec allocation. `Err` withholds the
+whole requested workspace, even if some modules could be emitted. `Ok` retains the existing
+`Synthesis` fields and neutral plan bytes; partial Go/Web/Clap reports remain successful values.
+`Synthesis` itself has no serialized envelope.
+[Facade][synthesis], [Rust][rust-workspace], [Web][web-workspace].
+
+Each failure cause has a `code`, nonempty sorted unique `sources`, and nonempty `detail`; causes
+are also sorted and deduplicated. Current codes are `invalid-identifier`, `symbol-collision`,
+`path-collision`, `recursive-layout`, `binding-assignment`, `missing-type-owner`, `wire-collision`
+and `missing-representation`. A plan with zero capabilities can still fail. The typed error
+implements `Display` and `std::error::Error`; it carries no independent digest.
+These checks do not constitute a universal compiler proof; internal coverage assertions remain,
+and direct workspace calls require the plan for the supplied IR.
+[Error][target-failure], [API limits][synthesis].
+
+For a complete target failure, `ess synthesize` prints the text error or JSON/YAML envelope to
+stdout and exits 1 before writing artifacts. It creates no output directory and leaves an existing
+destination untouched. Successful text output still counts the neutral plan; partial target notes
+are in `TARGET.md`/`target.json`. Later I/O failures have no new rollback guarantee.
+[CLI][cli].
 
 ## Component delivery
 
@@ -106,6 +131,11 @@ and the [impact implementation][impact].
 | ESS authoring schema, draft-07 | Describes source format/version syntax | `cargo xtask schema`; pretty JSON, complete-byte drift check. Schema validation does not resolve a whole specification. [Source][xtask] |
 | Rust HTTP startup JSON lines: **`log: ess/1`** | Specification facts plus runtime language/address/port | Generated server output; compact lines, no whole-record hash. This shared marker value does not make the log a specification document. [Source][rust-http] |
 | Go HTTP startup JSON lines: **`log: ess/1`** | Shared specification facts plus Go runtime fields | Separate generated writer using shared startup facts; no log-admission reader or cross-language byte promise. [Source][go-http] |
+
+`web::browser_catalog(ir, plan) -> BrowserCatalog` remains a separate semantic catalog API with
+unchanged `ess-browser-catalog/1` bytes. It does not run the workspace's fatal feasibility gate;
+catalog availability does not establish that a Rust/Web workspace can be emitted. When a Web
+workspace is emitted, its catalog uses the same bytes. [Catalog API][web-workspace].
 
 Generated artifact maps, validation/refusal/adapter summaries, inspected declarations, interaction
 graphs, delivery/composition/realization diagnostics, infrastructure diagnoses and schema-validation
@@ -172,6 +202,9 @@ suite-byte identity. A format catalog alone does not establish an external consu
 [detailed-report]: https://github.com/beyond10x/ess/blob/main/crates/verify/ess-conformance/src/report.rs
 [plan]: https://github.com/beyond10x/ess/blob/main/crates/generate/ess-synth/src/plan.rs
 [synthesis]: https://github.com/beyond10x/ess/blob/main/crates/generate/ess-synth/src/lib.rs
+[target-failure]: https://github.com/beyond10x/ess/blob/main/crates/generate/ess-synth/src/failure.rs
+[rust-workspace]: https://github.com/beyond10x/ess/blob/main/crates/generate/ess-synth/src/rust/mod.rs
+[web-workspace]: https://github.com/beyond10x/ess/blob/main/crates/generate/ess-synth/src/web/mod.rs
 [docs-ir]: https://github.com/beyond10x/ess/blob/main/crates/generate/ess-gen/src/document.rs
 [browser-catalog]: https://github.com/beyond10x/ess/blob/main/crates/generate/ess-synth/src/web/catalog.rs
 [interface]: https://github.com/beyond10x/ess/blob/main/crates/generate/ess-openapi/src/lib.rs
