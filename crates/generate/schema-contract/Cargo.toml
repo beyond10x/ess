@@ -8,6 +8,14 @@ license.workspace = true
 repository.workspace = true
 authors.workspace = true
 
+[features]
+# Explicit external-tool lane; selecting it requires ESS_TYPESCRIPT_COMPILER.
+typescript-typecheck = []
+
+[[test]]
+name = "typescript_typecheck"
+required-features = ["typescript-typecheck"]
+
 [dependencies]
 serde_json.workspace = true
 thiserror.workspace = true
