@@ -110,13 +110,19 @@ fn sanitize_secret_list(list: &mut serde_json::Value) -> Result<(), String> {
         .and_then(serde_json::Value::as_array_mut)
         .ok_or("secret list has no items array")?;
     for item in items {
+        let item = item
+            .as_object_mut()
+            .ok_or("secret list item is not an object")?;
         for field in ["data", "stringData"] {
-            if let Some(values) = item
-                .get_mut(field)
-                .and_then(serde_json::Value::as_object_mut)
-            {
+            if let Some(values) = item.get_mut(field) {
+                let values = values
+                    .as_object_mut()
+                    .ok_or_else(|| format!("secret {field} is not an object"))?;
                 for value in values.values_mut() {
-                    let original = value.as_str().unwrap_or_default().as_bytes();
+                    let original = value
+                        .as_str()
+                        .ok_or_else(|| format!("secret {field} value is not a string"))?
+                        .as_bytes();
                     *value = serde_json::json!({
                         "sha256": hex(&sha2::Sha256::digest(original)),
                         "length": original.len(),
@@ -124,11 +130,19 @@ fn sanitize_secret_list(list: &mut serde_json::Value) -> Result<(), String> {
                 }
             }
         }
-        if let Some(annotations) = item
-            .pointer_mut("/metadata/annotations")
-            .and_then(serde_json::Value::as_object_mut)
-        {
-            annotations.remove("kubectl.kubernetes.io/last-applied-configuration");
+        if let Some(metadata) = item.get_mut("metadata") {
+            let metadata = metadata
+                .as_object_mut()
+                .ok_or("secret metadata is not an object")?;
+            if let Some(annotations) = metadata.get_mut("annotations") {
+                let annotations = annotations
+                    .as_object_mut()
+                    .ok_or("secret annotations is not an object")?;
+                if !annotations.values().all(serde_json::Value::is_string) {
+                    return Err("secret annotation value is not a string".to_owned());
+                }
+                annotations.remove("kubectl.kubernetes.io/last-applied-configuration");
+            }
         }
     }
     Ok(())
