@@ -1,0 +1,1369 @@
+# ESS review boundary remediation — wave 6
+
+Standing-approved selection of two independent units serving vision:O2. The original epic currently has ten implemented stories, one active format-catalog story awaiting public delivery, and twenty other stories; the selected two are moving from draft through proposed to active. This wave does not close all seventeen findings.
+
+**Skill version 0.7.0** — aep-drive:wave. Dispatch roles are aep-drive:implementor and aep-drive:adversary; scoping uses aep-drive:story-scoper. Native plugin agent types are unavailable, so collaboration threads read the exact installed charters as the recorded adapter deviation. No model override or additional approval claim is made.
+
+## Current source and retained delivery work
+
+Clean primary ESS main and the managed coordinator were both at advertised dcb84be861d2f906b3dd95254f03701cb264faa2 before opening this branch. That published merge retains both our ba43fda source and the other session's release evidence. Compared with ba43fda, it changes only four planning paths. Code, tests, binding designs and public source remain byte-identical. The exact ba43fda gate passed all ten lanes at 2026-09-05T22:42:51Z, including 1710 Rust cases with zero failures or ignored tests and the site build. Its records remain target/review-boundaries-5/integration-consolidated.
+
+The source-driven 0.19.0 integration has landed. The post-integration backlog audit distinguishes its schema/model-type/normalization/Markdown selection paths from still-open service OpenAPI, Fact Number, predicate admission and scenario discovery defects. Audit SHA256: 854179e068fdec6ea0a45fab240996a409884633bd26c2b047db9d05088e5f23. The bounded catalog correspondence found no new mismatch; SHA256 d4488073e61db5ef183578ec22a639a435fa0d04db3c43a3030f210cd2ebea34. These source inspections are not new executable evidence.
+
+Both Wave 5 implementation worktrees, the SDK support tree and producer fixture are removed after reviewed exact-id GC. Their published local branches are removed without force. Their compiled products were disposed; byte-checked archives, raw reports and standalone fixtures remain under the user-cache ess-review/2026-09-06/remediation-wave-5 tree. No prior implementation build directory is reused.
+
+The coordinator and clean Atlas authority are intentionally reused for the overall remediation. Atlas governance, Website and Docs System support trees remain explicitly leased for unfinished catalog delivery, rather than forgotten implementation work. Standing instructions to continue independent implementations and clean task-owned resources cover this retention. Format remains active; no successful live delivery is fabricated to satisfy pre-flight. Its source passed the combined gate and the 23-source Website candidate passed99 cases, build and publication verification. A separate newly merged Extensions catalog selected24 sources while pinning the old23-source Website runtime, producing an exact-roster refusal. The other session owns task:extensions-documentation-runtime-pin and has now published Atlas858420b with Website build runtimefc457153 while preserving stable facade controls815fad1. Root consumes that correction through the standard resolver; no duplicate catalog/runtime implementation is part of this wave.
+
+## Selection and scope
+
+- story:scenarios-directory-compiles-nothing: refuse an explicitly selected directory with zero immediate scenario inputs before any output or runner call. Preserve omitted --scenarios, direct-file behavior, shallow lowercase YAML selection, sorting, committed-suite bypass and ordinary valid bytes. The production/helper/help path is cited; the focused subprocess test file is inferred. All four discovery paths share the same helper. A diagnostic may identify present subdirectories and explain shallow selection; it must not claim uninspected descendants are valid scenarios. Recursive/typed mixed-document discovery remains a separate story.
+- story:review-execution-recovery-design: one internal binding document describing finite execution, desired/observed/applied distinctions, interruptions, retry/removal behavior, manual drift and per-release versus multi-release atomicity. Existing strict delivery types do not own applied-state evidence. Define observable failure-matrix requirements and exact follow-on seams; leave new evidence identity, ownership, cardinality and authority UNMAPPED until grounded. Concrete receipt fields or an implementation decomposition require separately scoped, validated ESS modeling. The existing recovery implementation obligation remains open.
+
+The whole draft computation was rerun after independently scoping every unassessed imported story. The historical architecture review, enum-invariant follow-up and release-status follow-up remain draft and excluded; scope is not implementation or closure. All complete computed waves,110 collisions, empty unassessed list and empty cycle list are retained verbatim below. The selected proposed-set computation contains both units together with no collision. Existing broad CLI tokens are retained, so narrower added paths cannot hide a collision.
+
+Counts remains the highest-priority open P0 migration. Its freshly rechecked AEP main is00c742e; both reader paths remain report/1-only. The current launch packet requires a bound AEP/Atlas exact-u64, original-byte/readback and same-record qualification contract, followed by a green reader publication before an opt-in ESS report/2 writer. This downstream work is prepared in parallel by the coordinator; it is not ready by virtue of the earlier ESS design story. Coverage/suite5, primitive numeric migration and browser fidelity remain separate. Selecting the immediate F10 refusal while that handoff is prepared does not waive the counts requirement.
+
+The other source-driven, native-realization, release-status and historical review stories retain their ownership and lifecycle. No release/tag or package version change is selected. Public support/glossary/schema-identity work waits for its newly expanded consumer inventory and exact source scope.
+
+## Authorization, resources and commits
+
+Approval-record:review-remediation-standing-implementation and approval-record:review-remediation-standing-publication authorize the two unit/correction commits, integration merges, opening/closing governed records, merge to main, green source publication, required delivery follow-through and task-owned managed cleanup. They do not supply test evidence or a release/tag authorization.
+
+N=2 implementors within three worker slots and the previously established default model budget4; no numeric budget was supplied after the earlier request. Launch measurements:75447541760 free bytes against an8589934592-byte floor; available memory48795604 KiB; reusable coordinator target4564052 KiB. Prior unit targets measured approximately0.9 GiB and0.3 GiB, while the recent root integration occupies about4.4 GiB. One new CLI build is required; the design unit has no invented executable lane. The existing shared compiler cache answered successfully, bounded at10 GiB. Only cache access is shared; each implementation target and TMPDIR stays inside its own managed checkout, with CARGO_TARGET_DIR unset.
+
+| Unit | Branch | Reserved managed ID | Build/temp | Scratch | Stage |
+| --- | --- | --- | --- | --- | --- |
+| scenarios-directory-compiles-nothing | impl/scenarios-directory-compiles-nothing | review-empty-scenarios | target | target/review-boundaries-6 | active; opening gate pending |
+| review-execution-recovery-design | impl/review-execution-recovery-design | review-execution-recovery-design | target | target/review-boundaries-6 | active; opening gate pending |
+
+The existing coordinator is reused at its manager-returned wt-752828a285ba path on wave/review-boundaries-6. Units will fork from the same frozen opening commit. Root records their actual full path/build/scratch triples before dispatch, owns all AEP/Git/lifecycle operations, and gates the opening metadata with cheap applicable checks before creating trees. Implementors leave uncommitted handoffs; each independent adversary receives its own unit and may add tests, never production edits. Maximum two full attacks, with every immutable result and outcome recorded.
+
+The final merged source must pass every task check lane, site build and planning validation; capture actual executed case counts and each exit. No failing check or missing receipt contract is bypassed. Root keeps current delivery observations separate from the source-only unit acceptance.
+
+## Complete draft computation
+
+```json
+{
+  "waves": [
+    {
+      "wave": 1,
+      "artifacts": [
+        {
+          "id": "story:a-skipped-scenario-is-not-a-failed-one",
+          "inferred": true,
+          "scope": [
+            {
+              "confidence": "inferred",
+              "path": "Cargo.lock"
+            },
+            {
+              "confidence": "cited",
+              "path": "crates/edge/ess-cli"
+            },
+            {
+              "confidence": "cited",
+              "path": "crates/verify/ess-conformance"
+            },
+            {
+              "confidence": "inferred",
+              "path": "website/docs"
+            },
+            {
+              "confidence": "cited",
+              "path": "website/docs/guides/verify-conformance.md"
+            }
+          ]
+        },
+        {
+          "id": "story:architecture-review-and-outlook",
+          "inferred": false,
+          "scope": [
+            {
+              "confidence": "cited",
+              "path": "docs/reviews/2026-09-05-architecture-review.md"
+            },
+            {
+              "confidence": "cited",
+              "path": "website/docs/status/outlook.md"
+            },
+            {
+              "confidence": "cited",
+              "path": "website/docs/status/roadmap.md"
+            },
+            {
+              "confidence": "cited",
+              "path": "website/sidebars.ts"
+            }
+          ]
+        },
+        {
+          "id": "story:component-declares-its-settings",
+          "inferred": false,
+          "scope": [
+            {
+              "confidence": "cited",
+              "path": "crates/generate/ess-deployment/src/runtime.rs"
+            },
+            {
+              "confidence": "cited",
+              "path": "crates/specify/ess-compiler/src/ir.rs"
+            },
+            {
+              "confidence": "cited",
+              "path": "crates/specify/ess-domain/src/component.rs"
+            },
+            {
+              "confidence": "cited",
+              "path": "schemas/generated/ess.schema.json"
+            }
+          ]
+        },
+        {
+          "id": "story:enum-variant-in-an-entity-invariant",
+          "inferred": true,
+          "scope": [
+            {
+              "confidence": "inferred",
+              "path": "crates/specify/ess-compiler/tests/billing.rs"
+            },
+            {
+              "confidence": "cited",
+              "path": "crates/specify/ess-domain"
+            },
+            {
+              "confidence": "cited",
+              "path": "crates/specify/ess-domain/src/entity.rs"
+            },
+            {
+              "confidence": "inferred",
+              "path": "crates/specify/ess-domain/src/view.rs"
+            }
+          ]
+        },
+        {
+          "id": "story:fuzz-the-specification-surface",
+          "inferred": false,
+          "scope": [
+            {
+              "confidence": "cited",
+              "path": "fuzz"
+            }
+          ]
+        },
+        {
+          "id": "story:integrate-source-driven-realizations",
+          "inferred": false,
+          "scope": [
+            {
+              "confidence": "cited",
+              "path": "CHANGELOG.md"
+            },
+            {
+              "confidence": "cited",
+              "path": "crates/edge/ess-cli/src/main.rs"
+            },
+            {
+              "confidence": "cited",
+              "path": "crates/generate/ess-synth/tests/feasibility.rs"
+            },
+            {
+              "confidence": "cited",
+              "path": "docs/design/review-format-catalog.md"
+            },
+            {
+              "confidence": "cited",
+              "path": "docs/design/review-rust-target-feasibility.md"
+            },
+            {
+              "confidence": "cited",
+              "path": "website/docs/reference/formats.md"
+            }
+          ]
+        },
+        {
+          "id": "story:native-realization-ci",
+          "inferred": false,
+          "scope": [
+            {
+              "confidence": "cited",
+              "path": ".github/workflows/ci.yml"
+            },
+            {
+              "confidence": "cited",
+              "path": "Taskfile.yml"
+            },
+            {
+              "confidence": "cited",
+              "path": "crates/generate/schema-contract/Cargo.toml"
+            }
+          ]
+        },
+        {
+          "id": "story:release-status-publication-state",
+          "inferred": false,
+          "scope": [
+            {
+              "confidence": "cited",
+              "path": "crates/edge/ess-xtask/src/main.rs"
+            }
+          ]
+        },
+        {
+          "id": "story:review-execution-recovery-design",
+          "inferred": true,
+          "scope": [
+            {
+              "confidence": "inferred",
+              "path": "docs/design/review-execution-recovery.md"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "wave": 2,
+      "artifacts": [
+        {
+          "id": "story:create-only-command-cannot-refuse",
+          "inferred": true,
+          "scope": [
+            {
+              "confidence": "inferred",
+              "path": "crates/generate/ess-gen"
+            },
+            {
+              "confidence": "inferred",
+              "path": "crates/generate/ess-synth"
+            },
+            {
+              "confidence": "cited",
+              "path": "crates/specify/ess-compiler"
+            },
+            {
+              "confidence": "cited",
+              "path": "crates/specify/ess-domain"
+            },
+            {
+              "confidence": "cited",
+              "path": "crates/verify/ess-conformance"
+            },
+            {
+              "confidence": "inferred",
+              "path": "crates/verify/ess-diff"
+            },
+            {
+              "confidence": "inferred",
+              "path": "docs/design"
+            }
+          ]
+        },
+        {
+          "id": "story:review-cache-origin",
+          "inferred": false,
+          "scope": [
+            {
+              "confidence": "cited",
+              "path": "crates/edge/ess-cli"
+            }
+          ]
+        },
+        {
+          "id": "story:review-composition-contract",
+          "inferred": true,
+          "scope": [
+            {
+              "confidence": "cited",
+              "path": "crates/specify/ess-composition"
+            },
+            {
+              "confidence": "inferred",
+              "path": "website/docs"
+            }
+          ]
+        },
+        {
+          "id": "story:review-consumer-coverage",
+          "inferred": true,
+          "scope": [
+            {
+              "confidence": "inferred",
+              "path": "Cargo.lock"
+            },
+            {
+              "confidence": "cited",
+              "path": "Taskfile.yml"
+            },
+            {
+              "confidence": "cited",
+              "path": "crates/edge/ess-xtask"
+            },
+            {
+              "confidence": "inferred",
+              "path": "docs/design/review-consumer-coverage.md"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "wave": 3,
+      "artifacts": [
+        {
+          "id": "story:java-conformance-target",
+          "inferred": false,
+          "scope": [
+            {
+              "confidence": "cited",
+              "path": "crates/edge/ess-cli"
+            },
+            {
+              "confidence": "cited",
+              "path": "crates/verify/ess-conformance"
+            }
+          ]
+        },
+        {
+          "id": "story:review-glossary-boundaries",
+          "inferred": true,
+          "scope": [
+            {
+              "confidence": "inferred",
+              "path": "docs/design/review-concept-boundaries.md"
+            },
+            {
+              "confidence": "inferred",
+              "path": "website/docs"
+            }
+          ]
+        },
+        {
+          "id": "story:review-typed-diagnostics",
+          "inferred": true,
+          "scope": [
+            {
+              "confidence": "cited",
+              "path": "crates/specify/ess-compiler"
+            },
+            {
+              "confidence": "inferred",
+              "path": "crates/specify/ess-domain"
+            },
+            {
+              "confidence": "inferred",
+              "path": "docs/design/review-typed-diagnostics.md"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "wave": 4,
+      "artifacts": [
+        {
+          "id": "story:review-browser-replay-fidelity",
+          "inferred": true,
+          "scope": [
+            {
+              "confidence": "cited",
+              "path": "crates/verify/ess-conformance"
+            },
+            {
+              "confidence": "inferred",
+              "path": "docs/design/review-replay-subset.md"
+            }
+          ]
+        },
+        {
+          "id": "story:review-delivery-trust-contract",
+          "inferred": true,
+          "scope": [
+            {
+              "confidence": "cited",
+              "path": ".github/actions/release-component"
+            },
+            {
+              "confidence": "inferred",
+              "path": "crates/edge/ess-cli"
+            },
+            {
+              "confidence": "cited",
+              "path": "crates/generate/ess-deployment"
+            },
+            {
+              "confidence": "inferred",
+              "path": "docs/design/review-delivery-trust.md"
+            },
+            {
+              "confidence": "inferred",
+              "path": "website/docs"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "wave": 5,
+      "artifacts": [
+        {
+          "id": "story:review-expression-typechecking",
+          "inferred": true,
+          "scope": [
+            {
+              "confidence": "cited",
+              "path": "crates/specify/ess-compiler"
+            },
+            {
+              "confidence": "cited",
+              "path": "crates/specify/ess-domain"
+            },
+            {
+              "confidence": "cited",
+              "path": "crates/verify/ess-conformance"
+            },
+            {
+              "confidence": "inferred",
+              "path": "docs/design/review-expression-typechecking.md"
+            }
+          ]
+        },
+        {
+          "id": "story:review-observation-completeness",
+          "inferred": true,
+          "scope": [
+            {
+              "confidence": "cited",
+              "path": "crates/edge/ess-cli"
+            },
+            {
+              "confidence": "cited",
+              "path": "crates/infra/ess-kubernetes"
+            },
+            {
+              "confidence": "cited",
+              "path": "crates/infra/infra-analyze"
+            },
+            {
+              "confidence": "cited",
+              "path": "crates/infra/infra-compiler"
+            },
+            {
+              "confidence": "cited",
+              "path": "crates/infra/infra-domain"
+            },
+            {
+              "confidence": "cited",
+              "path": "crates/infra/infra-project"
+            },
+            {
+              "confidence": "cited",
+              "path": "crates/infra/infra-spec"
+            },
+            {
+              "confidence": "inferred",
+              "path": "docs/design/review-observation-completeness.md"
+            },
+            {
+              "confidence": "inferred",
+              "path": "examples/k3d-dev-cluster"
+            }
+          ]
+        },
+        {
+          "id": "story:review-public-support-claims",
+          "inferred": true,
+          "scope": [
+            {
+              "confidence": "inferred",
+              "path": "Taskfile.yml"
+            },
+            {
+              "confidence": "inferred",
+              "path": "crates/edge/ess-xtask"
+            },
+            {
+              "confidence": "cited",
+              "path": "website/docs"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "wave": 6,
+      "artifacts": [
+        {
+          "id": "story:review-openapi-semantic-accounting",
+          "inferred": true,
+          "scope": [
+            {
+              "confidence": "cited",
+              "path": "crates/edge/ess-cli"
+            },
+            {
+              "confidence": "cited",
+              "path": "crates/generate/ess-openapi"
+            },
+            {
+              "confidence": "inferred",
+              "path": "docs/design/review-openapi-accounting.md"
+            }
+          ]
+        },
+        {
+          "id": "story:review-primitive-semantics",
+          "inferred": true,
+          "scope": [
+            {
+              "confidence": "cited",
+              "path": "crates/generate/ess-gen"
+            },
+            {
+              "confidence": "cited",
+              "path": "crates/generate/ess-synth"
+            },
+            {
+              "confidence": "cited",
+              "path": "crates/specify/ess-primitives"
+            },
+            {
+              "confidence": "cited",
+              "path": "crates/verify/ess-conformance"
+            },
+            {
+              "confidence": "inferred",
+              "path": "docs/design/review-primitive-semantics.md"
+            }
+          ]
+        },
+        {
+          "id": "story:review-schema-resource-identity",
+          "inferred": true,
+          "scope": [
+            {
+              "confidence": "inferred",
+              "path": "docs/design/review-schema-resource-identity.md"
+            },
+            {
+              "confidence": "inferred",
+              "path": "website/docs"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "wave": 7,
+      "artifacts": [
+        {
+          "id": "story:review-output-ownership",
+          "inferred": true,
+          "scope": [
+            {
+              "confidence": "cited",
+              "path": "crates/edge/ess-cli"
+            },
+            {
+              "confidence": "inferred",
+              "path": "docs/design/review-output-ownership.md"
+            }
+          ]
+        },
+        {
+          "id": "story:the-generated-go-runtime-is-gofmt-clean",
+          "inferred": true,
+          "scope": [
+            {
+              "confidence": "cited",
+              "path": "Taskfile.yml"
+            },
+            {
+              "confidence": "inferred",
+              "path": "crates/edge/ess-xtask"
+            },
+            {
+              "confidence": "cited",
+              "path": "crates/verify/ess-conformance"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "wave": 8,
+      "artifacts": [
+        {
+          "id": "story:scenarios-directory-compiles-nothing",
+          "inferred": true,
+          "scope": [
+            {
+              "confidence": "cited",
+              "path": "crates/edge/ess-cli"
+            },
+            {
+              "confidence": "cited",
+              "path": "crates/edge/ess-cli/src/main.rs"
+            },
+            {
+              "confidence": "inferred",
+              "path": "crates/edge/ess-cli/tests/authored_scenarios.rs"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "wave": 9,
+      "artifacts": [
+        {
+          "id": "story:review-authored-discovery",
+          "inferred": true,
+          "scope": [
+            {
+              "confidence": "cited",
+              "path": "crates/edge/ess-cli"
+            },
+            {
+              "confidence": "inferred",
+              "path": "docs/design/review-authored-discovery.md"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "wave": 10,
+      "artifacts": [
+        {
+          "id": "story:review-conformance-coverage",
+          "inferred": true,
+          "scope": [
+            {
+              "confidence": "cited",
+              "path": "crates/edge/ess-cli"
+            },
+            {
+              "confidence": "cited",
+              "path": "crates/verify/ess-conformance"
+            },
+            {
+              "confidence": "inferred",
+              "path": "docs/design/review-conformance-coverage.md"
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "collisions": [
+    {
+      "a": "story:a-skipped-scenario-is-not-a-failed-one",
+      "b": "story:create-only-command-cannot-refuse",
+      "path": "crates/verify/ess-conformance",
+      "confidence": "cited"
+    },
+    {
+      "a": "story:a-skipped-scenario-is-not-a-failed-one",
+      "b": "story:java-conformance-target",
+      "path": "crates/edge/ess-cli",
+      "confidence": "cited"
+    },
+    {
+      "a": "story:a-skipped-scenario-is-not-a-failed-one",
+      "b": "story:java-conformance-target",
+      "path": "crates/verify/ess-conformance",
+      "confidence": "cited"
+    },
+    {
+      "a": "story:a-skipped-scenario-is-not-a-failed-one",
+      "b": "story:review-authored-discovery",
+      "path": "crates/edge/ess-cli",
+      "confidence": "cited"
+    },
+    {
+      "a": "story:a-skipped-scenario-is-not-a-failed-one",
+      "b": "story:review-browser-replay-fidelity",
+      "path": "crates/verify/ess-conformance",
+      "confidence": "cited"
+    },
+    {
+      "a": "story:a-skipped-scenario-is-not-a-failed-one",
+      "b": "story:review-cache-origin",
+      "path": "crates/edge/ess-cli",
+      "confidence": "cited"
+    },
+    {
+      "a": "story:a-skipped-scenario-is-not-a-failed-one",
+      "b": "story:review-composition-contract",
+      "path": "website/docs",
+      "confidence": "inferred"
+    },
+    {
+      "a": "story:a-skipped-scenario-is-not-a-failed-one",
+      "b": "story:review-conformance-coverage",
+      "path": "crates/edge/ess-cli",
+      "confidence": "cited"
+    },
+    {
+      "a": "story:a-skipped-scenario-is-not-a-failed-one",
+      "b": "story:review-conformance-coverage",
+      "path": "crates/verify/ess-conformance",
+      "confidence": "cited"
+    },
+    {
+      "a": "story:a-skipped-scenario-is-not-a-failed-one",
+      "b": "story:review-consumer-coverage",
+      "path": "Cargo.lock",
+      "confidence": "inferred"
+    },
+    {
+      "a": "story:a-skipped-scenario-is-not-a-failed-one",
+      "b": "story:review-delivery-trust-contract",
+      "path": "crates/edge/ess-cli",
+      "confidence": "inferred"
+    },
+    {
+      "a": "story:a-skipped-scenario-is-not-a-failed-one",
+      "b": "story:review-delivery-trust-contract",
+      "path": "website/docs",
+      "confidence": "inferred"
+    },
+    {
+      "a": "story:a-skipped-scenario-is-not-a-failed-one",
+      "b": "story:review-expression-typechecking",
+      "path": "crates/verify/ess-conformance",
+      "confidence": "cited"
+    },
+    {
+      "a": "story:a-skipped-scenario-is-not-a-failed-one",
+      "b": "story:review-glossary-boundaries",
+      "path": "website/docs",
+      "confidence": "inferred"
+    },
+    {
+      "a": "story:a-skipped-scenario-is-not-a-failed-one",
+      "b": "story:review-observation-completeness",
+      "path": "crates/edge/ess-cli",
+      "confidence": "cited"
+    },
+    {
+      "a": "story:a-skipped-scenario-is-not-a-failed-one",
+      "b": "story:review-openapi-semantic-accounting",
+      "path": "crates/edge/ess-cli",
+      "confidence": "cited"
+    },
+    {
+      "a": "story:a-skipped-scenario-is-not-a-failed-one",
+      "b": "story:review-output-ownership",
+      "path": "crates/edge/ess-cli",
+      "confidence": "cited"
+    },
+    {
+      "a": "story:a-skipped-scenario-is-not-a-failed-one",
+      "b": "story:review-primitive-semantics",
+      "path": "crates/verify/ess-conformance",
+      "confidence": "cited"
+    },
+    {
+      "a": "story:a-skipped-scenario-is-not-a-failed-one",
+      "b": "story:review-public-support-claims",
+      "path": "website/docs",
+      "confidence": "inferred"
+    },
+    {
+      "a": "story:a-skipped-scenario-is-not-a-failed-one",
+      "b": "story:review-schema-resource-identity",
+      "path": "website/docs",
+      "confidence": "inferred"
+    },
+    {
+      "a": "story:a-skipped-scenario-is-not-a-failed-one",
+      "b": "story:scenarios-directory-compiles-nothing",
+      "path": "crates/edge/ess-cli",
+      "confidence": "cited"
+    },
+    {
+      "a": "story:a-skipped-scenario-is-not-a-failed-one",
+      "b": "story:the-generated-go-runtime-is-gofmt-clean",
+      "path": "crates/verify/ess-conformance",
+      "confidence": "cited"
+    },
+    {
+      "a": "story:create-only-command-cannot-refuse",
+      "b": "story:enum-variant-in-an-entity-invariant",
+      "path": "crates/specify/ess-domain",
+      "confidence": "cited"
+    },
+    {
+      "a": "story:create-only-command-cannot-refuse",
+      "b": "story:java-conformance-target",
+      "path": "crates/verify/ess-conformance",
+      "confidence": "cited"
+    },
+    {
+      "a": "story:create-only-command-cannot-refuse",
+      "b": "story:review-browser-replay-fidelity",
+      "path": "crates/verify/ess-conformance",
+      "confidence": "cited"
+    },
+    {
+      "a": "story:create-only-command-cannot-refuse",
+      "b": "story:review-conformance-coverage",
+      "path": "crates/verify/ess-conformance",
+      "confidence": "cited"
+    },
+    {
+      "a": "story:create-only-command-cannot-refuse",
+      "b": "story:review-expression-typechecking",
+      "path": "crates/specify/ess-compiler",
+      "confidence": "cited"
+    },
+    {
+      "a": "story:create-only-command-cannot-refuse",
+      "b": "story:review-expression-typechecking",
+      "path": "crates/specify/ess-domain",
+      "confidence": "cited"
+    },
+    {
+      "a": "story:create-only-command-cannot-refuse",
+      "b": "story:review-expression-typechecking",
+      "path": "crates/verify/ess-conformance",
+      "confidence": "cited"
+    },
+    {
+      "a": "story:create-only-command-cannot-refuse",
+      "b": "story:review-primitive-semantics",
+      "path": "crates/generate/ess-gen",
+      "confidence": "inferred"
+    },
+    {
+      "a": "story:create-only-command-cannot-refuse",
+      "b": "story:review-primitive-semantics",
+      "path": "crates/generate/ess-synth",
+      "confidence": "inferred"
+    },
+    {
+      "a": "story:create-only-command-cannot-refuse",
+      "b": "story:review-primitive-semantics",
+      "path": "crates/verify/ess-conformance",
+      "confidence": "cited"
+    },
+    {
+      "a": "story:create-only-command-cannot-refuse",
+      "b": "story:review-typed-diagnostics",
+      "path": "crates/specify/ess-compiler",
+      "confidence": "cited"
+    },
+    {
+      "a": "story:create-only-command-cannot-refuse",
+      "b": "story:review-typed-diagnostics",
+      "path": "crates/specify/ess-domain",
+      "confidence": "inferred"
+    },
+    {
+      "a": "story:create-only-command-cannot-refuse",
+      "b": "story:the-generated-go-runtime-is-gofmt-clean",
+      "path": "crates/verify/ess-conformance",
+      "confidence": "cited"
+    },
+    {
+      "a": "story:enum-variant-in-an-entity-invariant",
+      "b": "story:review-expression-typechecking",
+      "path": "crates/specify/ess-domain",
+      "confidence": "cited"
+    },
+    {
+      "a": "story:enum-variant-in-an-entity-invariant",
+      "b": "story:review-typed-diagnostics",
+      "path": "crates/specify/ess-domain",
+      "confidence": "inferred"
+    },
+    {
+      "a": "story:integrate-source-driven-realizations",
+      "b": "story:scenarios-directory-compiles-nothing",
+      "path": "crates/edge/ess-cli/src/main.rs",
+      "confidence": "cited"
+    },
+    {
+      "a": "story:java-conformance-target",
+      "b": "story:review-authored-discovery",
+      "path": "crates/edge/ess-cli",
+      "confidence": "cited"
+    },
+    {
+      "a": "story:java-conformance-target",
+      "b": "story:review-browser-replay-fidelity",
+      "path": "crates/verify/ess-conformance",
+      "confidence": "cited"
+    },
+    {
+      "a": "story:java-conformance-target",
+      "b": "story:review-cache-origin",
+      "path": "crates/edge/ess-cli",
+      "confidence": "cited"
+    },
+    {
+      "a": "story:java-conformance-target",
+      "b": "story:review-conformance-coverage",
+      "path": "crates/edge/ess-cli",
+      "confidence": "cited"
+    },
+    {
+      "a": "story:java-conformance-target",
+      "b": "story:review-conformance-coverage",
+      "path": "crates/verify/ess-conformance",
+      "confidence": "cited"
+    },
+    {
+      "a": "story:java-conformance-target",
+      "b": "story:review-delivery-trust-contract",
+      "path": "crates/edge/ess-cli",
+      "confidence": "inferred"
+    },
+    {
+      "a": "story:java-conformance-target",
+      "b": "story:review-expression-typechecking",
+      "path": "crates/verify/ess-conformance",
+      "confidence": "cited"
+    },
+    {
+      "a": "story:java-conformance-target",
+      "b": "story:review-observation-completeness",
+      "path": "crates/edge/ess-cli",
+      "confidence": "cited"
+    },
+    {
+      "a": "story:java-conformance-target",
+      "b": "story:review-openapi-semantic-accounting",
+      "path": "crates/edge/ess-cli",
+      "confidence": "cited"
+    },
+    {
+      "a": "story:java-conformance-target",
+      "b": "story:review-output-ownership",
+      "path": "crates/edge/ess-cli",
+      "confidence": "cited"
+    },
+    {
+      "a": "story:java-conformance-target",
+      "b": "story:review-primitive-semantics",
+      "path": "crates/verify/ess-conformance",
+      "confidence": "cited"
+    },
+    {
+      "a": "story:java-conformance-target",
+      "b": "story:scenarios-directory-compiles-nothing",
+      "path": "crates/edge/ess-cli",
+      "confidence": "cited"
+    },
+    {
+      "a": "story:java-conformance-target",
+      "b": "story:the-generated-go-runtime-is-gofmt-clean",
+      "path": "crates/verify/ess-conformance",
+      "confidence": "cited"
+    },
+    {
+      "a": "story:native-realization-ci",
+      "b": "story:review-consumer-coverage",
+      "path": "Taskfile.yml",
+      "confidence": "cited"
+    },
+    {
+      "a": "story:native-realization-ci",
+      "b": "story:review-public-support-claims",
+      "path": "Taskfile.yml",
+      "confidence": "inferred"
+    },
+    {
+      "a": "story:native-realization-ci",
+      "b": "story:the-generated-go-runtime-is-gofmt-clean",
+      "path": "Taskfile.yml",
+      "confidence": "cited"
+    },
+    {
+      "a": "story:review-authored-discovery",
+      "b": "story:review-cache-origin",
+      "path": "crates/edge/ess-cli",
+      "confidence": "cited"
+    },
+    {
+      "a": "story:review-authored-discovery",
+      "b": "story:review-conformance-coverage",
+      "path": "crates/edge/ess-cli",
+      "confidence": "cited"
+    },
+    {
+      "a": "story:review-authored-discovery",
+      "b": "story:review-delivery-trust-contract",
+      "path": "crates/edge/ess-cli",
+      "confidence": "inferred"
+    },
+    {
+      "a": "story:review-authored-discovery",
+      "b": "story:review-observation-completeness",
+      "path": "crates/edge/ess-cli",
+      "confidence": "cited"
+    },
+    {
+      "a": "story:review-authored-discovery",
+      "b": "story:review-openapi-semantic-accounting",
+      "path": "crates/edge/ess-cli",
+      "confidence": "cited"
+    },
+    {
+      "a": "story:review-authored-discovery",
+      "b": "story:review-output-ownership",
+      "path": "crates/edge/ess-cli",
+      "confidence": "cited"
+    },
+    {
+      "a": "story:review-authored-discovery",
+      "b": "story:scenarios-directory-compiles-nothing",
+      "path": "crates/edge/ess-cli",
+      "confidence": "cited"
+    },
+    {
+      "a": "story:review-browser-replay-fidelity",
+      "b": "story:review-conformance-coverage",
+      "path": "crates/verify/ess-conformance",
+      "confidence": "cited"
+    },
+    {
+      "a": "story:review-browser-replay-fidelity",
+      "b": "story:review-expression-typechecking",
+      "path": "crates/verify/ess-conformance",
+      "confidence": "cited"
+    },
+    {
+      "a": "story:review-browser-replay-fidelity",
+      "b": "story:review-primitive-semantics",
+      "path": "crates/verify/ess-conformance",
+      "confidence": "cited"
+    },
+    {
+      "a": "story:review-browser-replay-fidelity",
+      "b": "story:the-generated-go-runtime-is-gofmt-clean",
+      "path": "crates/verify/ess-conformance",
+      "confidence": "cited"
+    },
+    {
+      "a": "story:review-cache-origin",
+      "b": "story:review-conformance-coverage",
+      "path": "crates/edge/ess-cli",
+      "confidence": "cited"
+    },
+    {
+      "a": "story:review-cache-origin",
+      "b": "story:review-delivery-trust-contract",
+      "path": "crates/edge/ess-cli",
+      "confidence": "inferred"
+    },
+    {
+      "a": "story:review-cache-origin",
+      "b": "story:review-observation-completeness",
+      "path": "crates/edge/ess-cli",
+      "confidence": "cited"
+    },
+    {
+      "a": "story:review-cache-origin",
+      "b": "story:review-openapi-semantic-accounting",
+      "path": "crates/edge/ess-cli",
+      "confidence": "cited"
+    },
+    {
+      "a": "story:review-cache-origin",
+      "b": "story:review-output-ownership",
+      "path": "crates/edge/ess-cli",
+      "confidence": "cited"
+    },
+    {
+      "a": "story:review-cache-origin",
+      "b": "story:scenarios-directory-compiles-nothing",
+      "path": "crates/edge/ess-cli",
+      "confidence": "cited"
+    },
+    {
+      "a": "story:review-composition-contract",
+      "b": "story:review-delivery-trust-contract",
+      "path": "website/docs",
+      "confidence": "inferred"
+    },
+    {
+      "a": "story:review-composition-contract",
+      "b": "story:review-glossary-boundaries",
+      "path": "website/docs",
+      "confidence": "inferred"
+    },
+    {
+      "a": "story:review-composition-contract",
+      "b": "story:review-public-support-claims",
+      "path": "website/docs",
+      "confidence": "inferred"
+    },
+    {
+      "a": "story:review-composition-contract",
+      "b": "story:review-schema-resource-identity",
+      "path": "website/docs",
+      "confidence": "inferred"
+    },
+    {
+      "a": "story:review-conformance-coverage",
+      "b": "story:review-delivery-trust-contract",
+      "path": "crates/edge/ess-cli",
+      "confidence": "inferred"
+    },
+    {
+      "a": "story:review-conformance-coverage",
+      "b": "story:review-expression-typechecking",
+      "path": "crates/verify/ess-conformance",
+      "confidence": "cited"
+    },
+    {
+      "a": "story:review-conformance-coverage",
+      "b": "story:review-observation-completeness",
+      "path": "crates/edge/ess-cli",
+      "confidence": "cited"
+    },
+    {
+      "a": "story:review-conformance-coverage",
+      "b": "story:review-openapi-semantic-accounting",
+      "path": "crates/edge/ess-cli",
+      "confidence": "cited"
+    },
+    {
+      "a": "story:review-conformance-coverage",
+      "b": "story:review-output-ownership",
+      "path": "crates/edge/ess-cli",
+      "confidence": "cited"
+    },
+    {
+      "a": "story:review-conformance-coverage",
+      "b": "story:review-primitive-semantics",
+      "path": "crates/verify/ess-conformance",
+      "confidence": "cited"
+    },
+    {
+      "a": "story:review-conformance-coverage",
+      "b": "story:scenarios-directory-compiles-nothing",
+      "path": "crates/edge/ess-cli",
+      "confidence": "cited"
+    },
+    {
+      "a": "story:review-conformance-coverage",
+      "b": "story:the-generated-go-runtime-is-gofmt-clean",
+      "path": "crates/verify/ess-conformance",
+      "confidence": "cited"
+    },
+    {
+      "a": "story:review-consumer-coverage",
+      "b": "story:review-public-support-claims",
+      "path": "Taskfile.yml",
+      "confidence": "inferred"
+    },
+    {
+      "a": "story:review-consumer-coverage",
+      "b": "story:review-public-support-claims",
+      "path": "crates/edge/ess-xtask",
+      "confidence": "inferred"
+    },
+    {
+      "a": "story:review-consumer-coverage",
+      "b": "story:the-generated-go-runtime-is-gofmt-clean",
+      "path": "Taskfile.yml",
+      "confidence": "cited"
+    },
+    {
+      "a": "story:review-consumer-coverage",
+      "b": "story:the-generated-go-runtime-is-gofmt-clean",
+      "path": "crates/edge/ess-xtask",
+      "confidence": "inferred"
+    },
+    {
+      "a": "story:review-delivery-trust-contract",
+      "b": "story:review-glossary-boundaries",
+      "path": "website/docs",
+      "confidence": "inferred"
+    },
+    {
+      "a": "story:review-delivery-trust-contract",
+      "b": "story:review-observation-completeness",
+      "path": "crates/edge/ess-cli",
+      "confidence": "inferred"
+    },
+    {
+      "a": "story:review-delivery-trust-contract",
+      "b": "story:review-openapi-semantic-accounting",
+      "path": "crates/edge/ess-cli",
+      "confidence": "inferred"
+    },
+    {
+      "a": "story:review-delivery-trust-contract",
+      "b": "story:review-output-ownership",
+      "path": "crates/edge/ess-cli",
+      "confidence": "inferred"
+    },
+    {
+      "a": "story:review-delivery-trust-contract",
+      "b": "story:review-public-support-claims",
+      "path": "website/docs",
+      "confidence": "inferred"
+    },
+    {
+      "a": "story:review-delivery-trust-contract",
+      "b": "story:review-schema-resource-identity",
+      "path": "website/docs",
+      "confidence": "inferred"
+    },
+    {
+      "a": "story:review-delivery-trust-contract",
+      "b": "story:scenarios-directory-compiles-nothing",
+      "path": "crates/edge/ess-cli",
+      "confidence": "inferred"
+    },
+    {
+      "a": "story:review-expression-typechecking",
+      "b": "story:review-primitive-semantics",
+      "path": "crates/verify/ess-conformance",
+      "confidence": "cited"
+    },
+    {
+      "a": "story:review-expression-typechecking",
+      "b": "story:review-typed-diagnostics",
+      "path": "crates/specify/ess-compiler",
+      "confidence": "cited"
+    },
+    {
+      "a": "story:review-expression-typechecking",
+      "b": "story:review-typed-diagnostics",
+      "path": "crates/specify/ess-domain",
+      "confidence": "inferred"
+    },
+    {
+      "a": "story:review-expression-typechecking",
+      "b": "story:the-generated-go-runtime-is-gofmt-clean",
+      "path": "crates/verify/ess-conformance",
+      "confidence": "cited"
+    },
+    {
+      "a": "story:review-glossary-boundaries",
+      "b": "story:review-public-support-claims",
+      "path": "website/docs",
+      "confidence": "inferred"
+    },
+    {
+      "a": "story:review-glossary-boundaries",
+      "b": "story:review-schema-resource-identity",
+      "path": "website/docs",
+      "confidence": "inferred"
+    },
+    {
+      "a": "story:review-observation-completeness",
+      "b": "story:review-openapi-semantic-accounting",
+      "path": "crates/edge/ess-cli",
+      "confidence": "cited"
+    },
+    {
+      "a": "story:review-observation-completeness",
+      "b": "story:review-output-ownership",
+      "path": "crates/edge/ess-cli",
+      "confidence": "cited"
+    },
+    {
+      "a": "story:review-observation-completeness",
+      "b": "story:scenarios-directory-compiles-nothing",
+      "path": "crates/edge/ess-cli",
+      "confidence": "cited"
+    },
+    {
+      "a": "story:review-openapi-semantic-accounting",
+      "b": "story:review-output-ownership",
+      "path": "crates/edge/ess-cli",
+      "confidence": "cited"
+    },
+    {
+      "a": "story:review-openapi-semantic-accounting",
+      "b": "story:scenarios-directory-compiles-nothing",
+      "path": "crates/edge/ess-cli",
+      "confidence": "cited"
+    },
+    {
+      "a": "story:review-output-ownership",
+      "b": "story:scenarios-directory-compiles-nothing",
+      "path": "crates/edge/ess-cli",
+      "confidence": "cited"
+    },
+    {
+      "a": "story:review-primitive-semantics",
+      "b": "story:the-generated-go-runtime-is-gofmt-clean",
+      "path": "crates/verify/ess-conformance",
+      "confidence": "cited"
+    },
+    {
+      "a": "story:review-public-support-claims",
+      "b": "story:review-schema-resource-identity",
+      "path": "website/docs",
+      "confidence": "inferred"
+    },
+    {
+      "a": "story:review-public-support-claims",
+      "b": "story:the-generated-go-runtime-is-gofmt-clean",
+      "path": "Taskfile.yml",
+      "confidence": "inferred"
+    },
+    {
+      "a": "story:review-public-support-claims",
+      "b": "story:the-generated-go-runtime-is-gofmt-clean",
+      "path": "crates/edge/ess-xtask",
+      "confidence": "inferred"
+    }
+  ],
+  "unassessed": [],
+  "cycles": []
+}
+
+```
+
+## Selected proposed computation
+
+```json
+{
+  "waves": [
+    {
+      "wave": 1,
+      "artifacts": [
+        {
+          "id": "story:review-execution-recovery-design",
+          "inferred": true,
+          "scope": [
+            {
+              "confidence": "inferred",
+              "path": "docs/design/review-execution-recovery.md"
+            }
+          ]
+        },
+        {
+          "id": "story:scenarios-directory-compiles-nothing",
+          "inferred": true,
+          "scope": [
+            {
+              "confidence": "cited",
+              "path": "crates/edge/ess-cli"
+            },
+            {
+              "confidence": "cited",
+              "path": "crates/edge/ess-cli/src/main.rs"
+            },
+            {
+              "confidence": "inferred",
+              "path": "crates/edge/ess-cli/tests/authored_scenarios.rs"
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "collisions": [],
+  "unassessed": [],
+  "cycles": []
+}
+
+```

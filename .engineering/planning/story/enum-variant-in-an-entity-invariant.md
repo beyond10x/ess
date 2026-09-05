@@ -6,7 +6,16 @@ status: draft
 title: An entity invariant may name an enum variant that does not exist, and validate accepts it
 relations:
 - informed_by: story:review-expression-typechecking
-revision: 1
+scope:
+- confidence: inferred
+  path: crates/specify/ess-compiler/tests/billing.rs
+- confidence: cited
+  path: crates/specify/ess-domain
+- confidence: cited
+  path: crates/specify/ess-domain/src/entity.rs
+- confidence: inferred
+  path: crates/specify/ess-domain/src/view.rs
+revision: 6
 ---
 ## What is wrong
 
@@ -57,3 +66,18 @@ right-hand side is not established here and should be checked while fixing this,
 ## Integration Provenance
 
 Reconciled through AEP from wt-e46db550dce9 at original revision 1 and status draft. Source artifact SHA-256: 3a90e2d966fdab5e49f7f4655b3fbe80d294a78d181c9c31d0db8e7039850cf9. Original journal history remains with its source recovery snapshot; this store records the reconciliation as new governed operations.
+
+## Scope
+
+Derived 2026-09-06 by `aep-drive:story-scoper` against clean ESS `dcb84be861d2f906b3dd95254f03701cb264faa2` — cited.
+
+- **Primary surface:** `crates/specify/ess-domain` — cited; entity invariant admission and the existing view enum-literal checker both live here.
+- **Entity implementation and unit tests:** `crates/specify/ess-domain/src/entity.rs` — cited; `EntitySpec::validate` at line 826 checks fact paths but not their compared literals, and the existing invariant regressions are inline.
+- **Shared checking and view regression:** `crates/specify/ess-domain/src/view.rs` — inferred; reuse or extract its existing `validate_filter_values`, `enumeration`, and `compared_values` machinery so entity and view equality checks share enum membership behavior, while retaining the view's existing negative and positive cases.
+- **Diagnostic integration tests:** `crates/specify/ess-compiler/tests/billing.rs` — inferred; extend its existing assembly-to-diagnostic test pattern to assert the entity refusal code, source filename, enum name and declared variants.
+- **Symbols:** `EntitySpec::validate`, `observable_fields`, `state_type`, `ViewSpec::validate_filter_values`, `enumeration`, `compared_values`, and `collect_compared_values` — cited; these provide the entity environment, enum registry lookup and existing predicate traversal.
+- **Bounded change:** reject equality between an enum-typed entity field and an undeclared literal; preserve declared literals, optional enum fields, lifecycle state access and the equivalent view-filter behavior — inferred; these are focused controls around the demonstrated defect.
+- **Diagnostics:** the existing `UndeclaredReference` bridge can yield `ESS-ENTITY-001` for entity invariants and `ESS-VIEW-001` for view filters, retaining the domain message and hint — cited; no new refusal code or persisted format is established as necessary.
+- **Documents:** none independently required by this imported defect story — inferred; the related expression-typechecking design must govern any broader resolver extraction.
+- **Confidence:** high for the validation defect and existing reuse surface — cited; source-attribution completeness and the eventual shared helper placement remain unresolved.
+- **Would collide with:** entity/view predicate validation and their inline tests, compiler billing diagnostic tests, and broader expression-typechecking work in ess-domain — inferred; this story remains outside the immediate wave.

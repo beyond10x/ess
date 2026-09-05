@@ -2,7 +2,7 @@
 format: aep.planning-md/1
 id: story:review-execution-recovery-design
 kind: story
-status: draft
+status: active
 title: Specify the recovery contract for finite deployment execution
 tags:
 - P1
@@ -13,7 +13,7 @@ relations:
 scope:
 - confidence: inferred
   path: docs/design/review-execution-recovery.md
-revision: 2
+revision: 5
 ---
 ## Finding and source
 
@@ -39,10 +39,14 @@ No continuous controller or live deployment. This design alone does not close F1
 
 ## Scope
 
-Derived 2026-09-05 by the coordinator from review citations; independently re-scope before future dispatch. Directory tokens cover source and tests within the named package; references used only as evidence are excluded.
+Derived 2026-09-06 by `aep-drive:story-scoper` against clean ESS `ba43fda29de637ad9323d96c4bb9aac10f48ae64` — cited.
 
-- `docs/design/review-execution-recovery.md` — inferred; planned edit surface, verify before dispatch.
-- Confidence: medium — inferred; exact package-local test filenames remain an implementation choice.
-- Would collide with: stories sharing any of these exact tokens — inferred; see the complete pair list in `docs/plan/2026-09-05-review-remediation.md` before concurrent scheduling.
-- Shared integration files: planning journal, wave page and final change record belong to the coordinator — inferred execution assignment.
-
+- **Primary surface:** design documentation only; define finite deployment recovery, distinguish desired/observed/applied claims, and specify observable outcomes and fake-executor verification for partial failure, interruption, drift, retries and removals — cited.
+- **Documents/edit token:** `docs/design/review-execution-recovery.md` — inferred; the story names this proposed binding document, which does not yet exist.
+- **Existing symbols to ground the design:** `DeploymentCommand::Reconcile`, `deployment`, `reconcile_release`, `fetch_helm_chart`, `run_external`, `DeploymentIr`, `DeploymentRelease`, `ReleaseManifest`, `Evidence`, `EvidenceKind`, `Identifier` and `Digest`; these are read-only evidence, not implementation scope — cited.
+- **Typed-contract boundary:** existing delivery types establish validated intent and release-artifact evidence; they do not establish a deployment execution receipt or applied-state authority. Preserve this distinction rather than adding receipt fields to existing envelopes — cited.
+- **Modeling prerequisite:** any concrete new execution-evidence model requires an explicitly scoped ESS modeling step, resolved identity/ownership/cardinality/authority semantics, and successful validation before receipt fields or implementation decomposition are admitted. Unresolved semantics remain `UNMAPPED` — cited.
+- **Implementation follow-through:** identify the process/filesystem seams and a complete failure/retry matrix, but leave `obligation:review-execution-recovery-implementation` open until that matrix passes against an integrated implementation commit — cited.
+- **Exclusions:** no executor, persisted format, test, live deployment, continuous controller or public Website change in this unit; ESS acquires no AEP dependency — cited.
+- **Confidence:** high — the acceptance explicitly requires a binding design, and the current finite executor and validated delivery boundaries were inspected — cited.
+- **Would collide with:** another writer of `docs/design/review-execution-recovery.md`; the planning journal, wave page and change record remain coordinator-owned. Read-only CLI references do not reserve the CLI package against the separate empty-scenarios unit — inferred.
