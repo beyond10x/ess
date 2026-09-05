@@ -109,3 +109,86 @@ fn http_codec_local_collision_is_refused_before_cli_output() {
 fn web_dependency_module_collision_is_refused_before_cli_output() {
     refuses_before_writes("web");
 }
+
+fn binding_refuses_before_writes(target: &str) {
+    let root = fixture(&format!("pass-2-binding-{target}"));
+    std::fs::write(root.join("spec/core.yaml"), "domain: demo.core\nevents:\n  - name: demo.core.Fired\n  - name: demo.core.Handled\ncommands:\n  - name: demo.core.Handle\n    outcomes:\n      - name: done\n        emits: [demo.core.Handled]\n").unwrap();
+    std::fs::write(root.join("spec/wiring.yaml"), "components:\n  - component: worker\n    owns:\n      domains: [demo.core]\n    accepts:\n      commands: [demo.core.Handle]\n    publishes:\n      events: [demo.core.Fired, demo.core.Handled]\nbindings:\n  - id: event\n    when:\n      event: demo.core.Fired\n    invoke:\n      command: demo.core.Handle\n    mapping: {}\n    delivery: at_least_once\n    on_failure: drop\n").unwrap();
+    let mut missed = Vec::new();
+    for existing in [false, true] {
+        let label = if existing { "existing" } else { "absent" };
+        let out = root.join(label);
+        if existing {
+            std::fs::create_dir_all(&out).unwrap();
+            std::fs::write(out.join("sentinel.txt"), "must stay unchanged\n").unwrap();
+        }
+        let mut command = Command::new(env!("CARGO_BIN_EXE_ess"));
+        command
+            .args(["synthesize", "--target", target, "--format", "json"])
+            .arg("--path")
+            .arg(root.join("spec"))
+            .arg("--out")
+            .arg(&out);
+        let output = command.output().unwrap();
+        std::fs::write(
+            root.join(format!("{label}.command")),
+            format!("{command:?}\n"),
+        )
+        .unwrap();
+        std::fs::write(root.join(format!("{label}.stdout")), &output.stdout).unwrap();
+        std::fs::write(root.join(format!("{label}.stderr")), &output.stderr).unwrap();
+        std::fs::write(
+            root.join(format!("{label}.exit")),
+            output.status.to_string(),
+        )
+        .unwrap();
+        let mut entries = if out.exists() {
+            std::fs::read_dir(&out)
+                .unwrap()
+                .map(|entry| entry.unwrap().file_name())
+                .collect::<Vec<_>>()
+        } else {
+            Vec::new()
+        };
+        entries.sort();
+        std::fs::write(
+            root.join(format!("{label}.inventory")),
+            format!("{entries:?}\n"),
+        )
+        .unwrap();
+        eprintln!("{command:?}\n{}; output entries {entries:?}; complete streams: {}/{label}.stdout and .stderr", output.status, root.display());
+        if output.status.code() != Some(1) {
+            missed.push(format!("{label}: expected exit 1, got {}", output.status));
+        }
+        let parsed: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+        if parsed["format"] != "ess-target-failure/1" || parsed["target"] != target {
+            missed.push(format!("{label}: no typed {target} failure"));
+        }
+        if existing {
+            assert_eq!(
+                std::fs::read(out.join("sentinel.txt")).unwrap(),
+                b"must stay unchanged\n"
+            );
+            if entries.len() != 1 {
+                missed.push(format!("{label}: destination gained files"));
+            }
+        } else if out.exists() {
+            missed.push(format!("{label}: destination was created"));
+        }
+    }
+    assert!(
+        missed.is_empty(),
+        "binding collision reached CLI writes:\n{}",
+        missed.join("\n")
+    );
+}
+
+#[test]
+fn a_binding_function_capture_is_refused_before_rust_cli_writes() {
+    binding_refuses_before_writes("rust");
+}
+
+#[test]
+fn a_binding_function_capture_is_refused_before_web_cli_writes() {
+    binding_refuses_before_writes("web");
+}
