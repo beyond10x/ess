@@ -2,7 +2,7 @@
 format: aep.planning-md/1
 id: story:review-typescript-root-collision
 kind: story
-status: active
+status: implemented
 title: Allocate TypeScript roots and definitions in one symbol space
 tags:
 - P1
@@ -23,7 +23,7 @@ scope:
   path: crates/generate/schema-contract/tests/typescript_bindings.rs
 - confidence: cited
   path: crates/generate/schema-contract/tests/typescript_typecheck.rs
-revision: 10
+revision: 11
 ---
 ## Finding and source
 

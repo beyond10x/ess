@@ -2,7 +2,7 @@
 format: aep.planning-md/1
 id: story:review-persisted-delivery-validation
 kind: story
-status: active
+status: implemented
 title: Restore delivery IR invariants at persisted read boundaries
 tags:
 - P0
@@ -21,7 +21,7 @@ scope:
   path: crates/generate/ess-deployment
 - confidence: cited
   path: crates/generate/ess-deployment/src/validation.rs
-revision: 7
+revision: 8
 ---
 ## Finding and source
 

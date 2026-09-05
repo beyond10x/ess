@@ -2,7 +2,7 @@
 format: aep.planning-md/1
 id: story:review-conformance-format-design
 kind: story
-status: active
+status: implemented
 title: Design the conformance suite and report migration
 relations:
 - decomposes: epic:review-boundary-remediation
@@ -10,7 +10,7 @@ relations:
 scope:
 - confidence: cited
   path: docs/design/review-conformance-coverage.md
-revision: 7
+revision: 8
 ---
 ## Finding and source
 

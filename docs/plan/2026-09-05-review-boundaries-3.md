@@ -1,6 +1,6 @@
 # Review boundaries wave 3 — 2026-09-05
 
-**Approved under standing authorization; implementing.** This wave restores persisted delivery validation, makes TypeScript declarations feasible in one namespace, and writes the binding conformance migration design. Each story serves vision:O2.
+**Integrated and verified under standing authorization; publication and cleanup pending.** This wave restores persisted delivery validation, makes TypeScript declarations feasible in one namespace, and writes the binding conformance migration design. Each story serves vision:O2.
 
 Skill version 0.7.0. Integration branch wave/review-boundaries-3, coordinator managed record wt-752828a285ba. Published base 98ea8abeeaf80846f525b5def8b531c139ed7071.
 
@@ -43,7 +43,7 @@ Worktree root: /home/timo/.local/state/worktree/trees/b10x/ess. Every unit branc
 | --- | --- | --- | --- | --- | --- |
 | review-persisted-delivery-validation | impl/review-persisted-delivery-validation | review-persisted-delivery-validation | target/ | target/review-boundaries-3/ | implementation returned; reviewed; merged at 170fdfa1f3061af33f4de558d22de4711ab6194d |
 | review-typescript-root-collision | impl/review-typescript-root-collision | review-typescript-root-collision | target/ | target/review-boundaries-3/ | reviewed; merged at 0d267e25739ca495ad1a229393181ad1b75182f3 |
-| review-conformance-format-design | impl/review-conformance-format-design | review-conformance-format-design | target/ | target/review-boundaries-3/ | corrected and personally verified at 6acd811a8f53a3e5ab56ec7a68a13fd0a727ba2b; integration pending |
+| review-conformance-format-design | impl/review-conformance-format-design | review-conformance-format-design | target/ | target/review-boundaries-3/ | implemented; merged at 1ef817ea9d51b2e927febce18eb2d540256e8e76 |
 
 All units were provisioned at exact opening commit 45832cc885377b2d61845ee33af14f0293d99e67, branched as above, and assigned active leases <story>-wave3. Full briefs and the compiler-cache resource supplement live in each assigned scratch root. Implementor threads are impl_containment (delivery), impl_diagnostic (TypeScript), and scope_conformance_design (design).
 
@@ -1625,3 +1625,22 @@ Exact CLI comparison:
 ## Personal verification after the final design correction
 
 Original implementor committed the bounded correction at6acd811a8f53a3e5ab56ec7a68a13fd0a727ba2b with exact bot author and committer. Coordinator read the full bounded diff and affected timestamp/coverage sections against the source-backed findings. No assertion was dropped or relaxed: a direct comparison verified all68 prior matrix/pairing rows unchanged, with17 new rows. Final design has75 matrix rows and10 pairing rows. Repeated producer refusals now retain multiplicity without extra execution results; new timestamp wire/adaptation rules are exact u64 with checked conversion and frozen legacy behavior. The second review has a fixed outcome, and its exact correction SHA is recorded here. This is personal bounded verification, not a third full adversary pass or runtime compatibility evidence. Both correction reports and patches are preserved separately.
+
+## Integrated verification and closure
+
+verification-report:review-boundaries-3-integrated records clean source1ef817ea9d51b2e927febce18eb2d540256e8e76. All eight offline task steps exited0, with1505 workspace tests passed and none failed or ignored. Site build exited0. Explicit TypeScript feature run passed25 cases, including6 additional compiler cases and19 overlapping workspace cases. Completion was2026-09-05T14:26:23.918501Z; the CLI rejected fractional seconds, so evidence uses the next whole second14:26:24Z supported by this build. All three stories moved active→implemented against that exact source. Production, test and design bytes remain unchanged after the gate; closing records also retain read-only scope improvements for future waves.
+
+```text
+fmt-check 0
+clippy 0
+test 0
+doc-check 0
+example-check 0
+projection-check 0
+release-check 0
+action-check 0
+site-build 0
+typescript-compiler 0
+```
+
+Raw unit scratch is archived and byte-compared: TypeScript50 files/130782 bytes, delivery66 files/307256 bytes, design11 files/141659 bytes. Portable reports/patches are committed. Publication precedes managed retirement. No release or public-source delivery is part of this wave.
