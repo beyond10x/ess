@@ -1652,3 +1652,12 @@ Exact final full-review findings ledger:
   ]
 }
 ```
+
+
+## Final correction frozen
+
+The final Rust correction is bot commit `028cd015877ce5c2255c840eb39a2764b159981e`. Root verified both bot identities, the clean unit, all 22 paths against the complete source manifest, all five correction paths, and the unchanged adversary report and test hashes. The final package logs execute 201 cases: 201 passed, zero failed or ignored. Formatting, strict Clippy and the additional actual HTTP map compile all exit zero. All 21 String-map and 26 first-input artifact entries were independently byte-checked on both retained sides.
+
+The two production changes check actual ordered delivery-arm locals and borrow the nested diagnostic path in the shared HTTP/Web map decoder. The binding explicitly retains earlier obligated deliveries as input-producing locals while checking only bare generated calls. No existing assertion was dropped, weakened or re-pinned; the two final adversary files add 225 lines with zero deletions. Complete final-correction-report.md is 220017 bytes, SHA256 `a63413e226e015535af06a36e4978610e7bed8b46e2571e112f8383acd4eba61`; complete and correction manifests are `e93ccc1b41a8117ad26a65d9b70311248eed1c5b41983140e65f981ef583a8e8` and `b22a83ff1576331254f000fcb5e526dc8379f7a7e20a79c31479d46f0a23c8eb`.
+
+The final reviewer is assigned bounded verification of these two corrections and the corresponding internal catalog/Unreleased sentences. This is not a third full attack. The two full review reports and their 0 carried / 2 new / 2 resolved ledger remain immutable. The integrated ESS/site gate, exact final producer SDK proof, source publication and public delivery remain pending; the story stays active.

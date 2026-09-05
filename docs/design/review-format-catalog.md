@@ -138,10 +138,11 @@ Successful text output still counts the neutral plan; partial target notes remai
 `web::browser_catalog(ir, plan) -> BrowserCatalog` remains a separate semantic API with unchanged
 `ess-browser-catalog/1` bytes. It does not run the workspace's fatal feasibility gate. Its equality
 with a generated catalog applies when the Web workspace is emitted; catalog availability does not
-establish code feasibility. Previously valid Rust output is preserved. Web code changes are limited
-to the previously broken zero-delivery replay branch, empty-event log branch and missing
-catalog-only export buffers;
-existing report/catalog contracts remain unchanged.
+establish code feasibility. Previously valid Rust output is preserved. Shared HTTP/Web codec
+changes borrow map-key diagnostic paths in the previously compiler-invalid Integer, Boolean and
+Bytes decoder branches. Other Web code changes are limited to the previously broken zero-delivery
+replay branch, empty-event log branch and missing catalog-only export buffers. Existing
+report/catalog contracts remain unchanged.
 [Catalog API](../../crates/generate/ess-synth/src/web/mod.rs), [decision](review-rust-target-feasibility.md).
 
 ## Infrastructure

@@ -21,7 +21,7 @@ scope:
   path: crates/generate/ess-synth
 - confidence: inferred
   path: docs/design/review-rust-target-feasibility.md
-revision: 15
+revision: 17
 ---
 ## Finding and source
 
@@ -104,3 +104,15 @@ Root routing decision: this existing F07 story owns both new findings under its 
 2. Repair the existing supported map decoder path argument borrow at rust/wire.rs::decode_value/decode_key. The key parsers for Integer, Boolean and Bytes take a borrowed path, but generated code currently passes the owned nested String. Keep supported nested collection recursion admitted; do not turn the positive compiler regression into a Map refusal. Preserve String and other previously compiling key paths, existing primitive/JSON semantics, canonical profiles and valid artifact maps. A bounded borrowed-path emission repair is authorized only for these previously compiler-invalid codec bytes, including the shared HTTP/Web producer; no source restriction or new failure code is needed.
 
 Write the binding clarification before production. Preserve all201 tests, earlier source/report evidence and exact valid controls. Run each retained seven red assertion and the relevant four positive controls individually after correction, then package test/fmt/strict-Clippy. The final report must distinguish corrected invalid codec bytes from unchanged valid maps and cite actual source scope. Root will freeze, request only bounded verification of these fixes, then run the full merged gate. Do not schedule another full attack. Root will make the corresponding narrow internal catalog/Unreleased wording update after source evidence exists.
+
+## Delivery-local clarification
+
+The final implementation correctly distinguishes an emitted bare transformation call from the locals introduced by earlier deliveries. An emitted obligated transformation has no bare helper call to inspect, but it still introduces an input local for later deliveries reacting to the same event. Only entirely non-emitted deliveries contribute no such local. Root's earlier phrase about non-emitted/obligated transformations not sharing the scope was ambiguous; this paragraph clarifies the intended per-event lexical rule. The single first input call remains legal because its new let binding is out of scope in its own initializer. The current delivery_initializers implementation tracks every emitted delivery and checks only the actual bare calls. No new implementation or test expansion is requested by this clarification.
+
+## Final correction frozen
+
+The final Rust correction is bot commit `028cd015877ce5c2255c840eb39a2764b159981e`. Root verified both bot identities, the clean unit, all 22 paths against the complete source manifest, all five correction paths, and the unchanged adversary report and test hashes. The final package logs execute 201 cases: 201 passed, zero failed or ignored. Formatting, strict Clippy and the additional actual HTTP map compile all exit zero. All 21 String-map and 26 first-input artifact entries were independently byte-checked on both retained sides.
+
+The two production changes check actual ordered delivery-arm locals and borrow the nested diagnostic path in the shared HTTP/Web map decoder. The binding explicitly retains earlier obligated deliveries as input-producing locals while checking only bare generated calls. No existing assertion was dropped, weakened or re-pinned; the two final adversary files add 225 lines with zero deletions. Complete final-correction-report.md is 220017 bytes, SHA256 `a63413e226e015535af06a36e4978610e7bed8b46e2571e112f8383acd4eba61`; complete and correction manifests are `e93ccc1b41a8117ad26a65d9b70311248eed1c5b41983140e65f981ef583a8e8` and `b22a83ff1576331254f000fcb5e526dc8379f7a7e20a79c31479d46f0a23c8eb`.
+
+The final reviewer is assigned bounded verification of these two corrections and the corresponding internal catalog/Unreleased sentences. This is not a third full attack. The two full review reports and their 0 carried / 2 new / 2 resolved ledger remain immutable. The integrated ESS/site gate, exact final producer SDK proof, source publication and public delivery remain pending; the story stays active.
