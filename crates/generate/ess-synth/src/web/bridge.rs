@@ -51,6 +51,13 @@ pub(super) fn module(bridge: &Bridge<'_>) -> String {
         // is nothing to install and nothing to dispatch. The catalogue and the wire renderings
         // still stand on their own, and the page says so rather than offering a form that leads
         // nowhere.
+        out.push_str(
+            "\nthread_local! {\n    /// The buffer the page writes a request \
+             into.\n    static INPUT: RefCell<Vec<u8>> = const { RefCell::new(Vec::new()) };\n    \
+             /// The response the last dispatch produced, held so its address stays \
+             valid.\n    static OUTPUT: RefCell<String> = const { RefCell::new(String::new()) \
+             };\n}\n",
+        );
         out.push_str(NO_SYSTEM);
         exports(&mut out);
         return out;
@@ -329,6 +336,16 @@ fn run_method(out: &mut String, bridge: &Bridge<'_>) {
 /// Redelivery, by index into the log the page is already showing.
 fn replay_method(out: &mut String, bridge: &Bridge<'_>) {
     let system = bridge.system();
+    if deliveries(bridge).is_empty() {
+        let _ = write!(
+            out,
+            "\n    fn replay(&mut self, occurrence: usize) -> Result<(), BridgeError> {{\n        \
+             if {system}::System::published(self).get(occurrence).is_none() {{\n            \
+             return Err(BridgeError::NoSuchOccurrence(occurrence));\n        }}\n        \
+             self.pump()?;\n        Ok(())\n    }}\n"
+        );
+        return;
+    }
     let _ = write!(
         out,
         "\n    fn replay(&mut self, occurrence: usize) -> Result<(), BridgeError> {{\n        let \
@@ -358,6 +375,13 @@ fn logged<'a>(bridge: &'a Bridge<'a>) -> BTreeMap<&'a EventHandle, String> {
 
 /// The log, with each occurrence's index — which is also the handle redelivery takes.
 fn log_method(out: &mut String, bridge: &Bridge<'_>) {
+    let events = logged(bridge);
+    if events.is_empty() {
+        // This is the same empty event set that defines SystemEvent in the Rust prerequisite.
+        // Matching &SystemEvent is not exhaustive even when that enum has no variants.
+        out.push_str("\n    fn log(&self) -> String {\n        \"[]\".to_owned()\n    }\n");
+        return;
+    }
     let system = bridge.system();
     let _ = write!(
         out,
@@ -369,7 +393,7 @@ fn log_method(out: &mut String, bridge: &Bridge<'_>) {
          json::push_integer(&mut out, occurrence as i64);\n            json::member(&mut out, \
          \"event\");\n            match event {{\n"
     );
-    for (event, variant) in logged(bridge) {
+    for (event, variant) in events {
         let name = event.name().to_string();
         let _ = write!(
             out,

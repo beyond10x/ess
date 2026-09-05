@@ -2391,7 +2391,17 @@ fn synthesize(
     let Ok((ir, _)) = resolved(path, format)? else {
         return Ok(ExitCode::from(1));
     };
-    let synthesis = ess_synth::synthesize_for(&ir, target.target());
+    let synthesis = match ess_synth::synthesize_for(&ir, target.target()) {
+        Ok(synthesis) => synthesis,
+        Err(failure) => {
+            if matches!(format, Format::Text) {
+                println!("{failure}");
+            } else {
+                render(&failure, format)?;
+            }
+            return Ok(ExitCode::from(1));
+        }
+    };
     write_artifacts(out, &synthesis.artifacts)?;
     if matches!(format, Format::Text) {
         let counts = synthesis.plan.counts();

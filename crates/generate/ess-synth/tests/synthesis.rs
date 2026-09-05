@@ -362,7 +362,7 @@ fn a_mapping_through_a_non_mechanical_crossing_makes_the_transformation_an_oblig
         "delivery has exactly one declared acceptor"
     );
     // And the emitted system routes through the owed seam rather than inventing a computation.
-    let synthesis = synthesize(&ir);
+    let synthesis = synthesize(&ir).expect("the fixture has a realizable target");
     let system = artifact(&synthesis, "crates/relay-system/src/lib.rs");
     assert!(
         system.contains("self.obligations.relay_on_fired_input(event)?"),
@@ -510,7 +510,7 @@ fn the_plan_never_names_the_emission_language() {
     // The operator's constraint, pinned: the plan and its renderings are language-neutral, so a
     // Go emitter can consume the same document. `trust` contains `rust`, so the scan respects
     // word boundaries instead of substrings.
-    let synthesis = synthesize(&billing());
+    let synthesis = synthesize(&billing()).expect("the fixture has a realizable target");
     for rendering in [
         synthesis.plan.to_markdown(),
         synthesis.plan.to_canonical_json(),
@@ -539,8 +539,8 @@ fn the_plan_never_names_the_emission_language() {
 fn emitting_twice_is_byte_identical() {
     // Invariant 9 in the only form it is worth anything: two independent compilations and
     // syntheses of the same source, compared byte for byte across every artifact.
-    let first = synthesize(&billing());
-    let second = synthesize(&billing());
+    let first = synthesize(&billing()).expect("the fixture has a realizable target");
+    let second = synthesize(&billing()).expect("the fixture has a realizable target");
     assert_eq!(
         first.plan, second.plan,
         "two plans of one specification differ"
@@ -560,7 +560,7 @@ fn emitting_twice_is_byte_identical() {
 
 #[test]
 fn the_legal_transitions_are_the_whole_transition_api() {
-    let synthesis = synthesize(&billing());
+    let synthesis = synthesize(&billing()).expect("the fixture has a realizable target");
     let invoice = artifact(&synthesis, "crates/billing-types/src/invoice.rs");
 
     // Every declared move exists, on exactly the state it starts from.
@@ -611,7 +611,7 @@ fn only_the_initial_state_can_be_constructed() {
     // The other half of "an illegal transition does not compile": if `Invoice<Paid>` could be
     // built directly, refusing the method would refuse nothing. One constructor, on `Draft`; every
     // other typed instance comes from `refine`, whose arms are the declared states.
-    let synthesis = synthesize(&billing());
+    let synthesis = synthesize(&billing()).expect("the fixture has a realizable target");
     let invoice = artifact(&synthesis, "crates/billing-types/src/invoice.rs");
     assert_eq!(
         invoice.matches("pub fn new").count(),
@@ -630,7 +630,7 @@ fn only_the_initial_state_can_be_constructed() {
 
 #[test]
 fn a_command_outcome_enum_keeps_the_refusal_beside_the_success() {
-    let synthesis = synthesize(&billing());
+    let synthesis = synthesize(&billing()).expect("the fixture has a realizable target");
     let invoice = artifact(&synthesis, "crates/billing-types/src/invoice.rs");
     assert!(
         invoice.contains("pub enum CreateInvoiceOutcome"),
@@ -648,7 +648,7 @@ fn a_command_outcome_enum_keeps_the_refusal_beside_the_success() {
 
 #[test]
 fn newtypes_stay_distinct_and_the_declared_crossing_is_the_only_bridge() {
-    let synthesis = synthesize(&billing());
+    let synthesis = synthesize(&billing()).expect("the fixture has a realizable target");
     let invoice = artifact(&synthesis, "crates/billing-types/src/invoice.rs");
     let email = artifact(&synthesis, "crates/billing-types/src/email.rs");
     assert!(
@@ -704,7 +704,7 @@ fn the_plans_obligations_and_the_workspaces_stubs_are_the_same_list() {
     // W6.2's acceptance criterion, executed: an obligation is visible twice — a plan entry and a
     // typed stub — and the two lists are one list. A missing stub is a hole the plan promised
     // would not exist; an extra stub is a refusal the plan cannot explain.
-    let synthesis = synthesize(&billing());
+    let synthesis = synthesize(&billing()).expect("the fixture has a realizable target");
     let stubs = stubs_in(&synthesis);
     let mut owed: Vec<(String, String)> = synthesis
         .plan
@@ -731,7 +731,7 @@ fn a_stub_refuses_with_a_value_never_a_panic_and_never_a_todo() {
     // The stub rule at its bluntest: nothing in a generated workspace panics or defers with
     // `todo!`, because a hole that detonates at runtime is the exact failure a typed refusal
     // exists to replace.
-    let synthesis = synthesize(&billing());
+    let synthesis = synthesize(&billing()).expect("the fixture has a realizable target");
     for (path, emitted) in &synthesis.artifacts {
         for banned in ["todo!", "unimplemented!", "panic!", "unreachable!"] {
             assert!(
@@ -744,7 +744,7 @@ fn a_stub_refuses_with_a_value_never_a_panic_and_never_a_todo() {
 
 #[test]
 fn a_component_port_is_typed_against_the_generated_types() {
-    let synthesis = synthesize(&billing());
+    let synthesis = synthesize(&billing()).expect("the fixture has a realizable target");
     let port = artifact(&synthesis, "crates/invoice-service/src/lib.rs");
     // The handler: typed input, typed outcome, and the refusal channel is the obligation type —
     // not a string, not a panic.
@@ -788,7 +788,7 @@ fn the_transport_is_the_one_the_billing_binding_requires() {
     // Derived, not chosen: `delivery: at_least_once` and `on_failure: escalate` in the binding,
     // plus who accepts `SendEmail`, fully determine an in-process at-least-once dispatch with the
     // declared escalation — and that is everything the system crate contains.
-    let synthesis = synthesize(&billing());
+    let synthesis = synthesize(&billing()).expect("the fixture has a realizable target");
     let system = artifact(&synthesis, "crates/billing-system/src/lib.rs");
 
     // The transformation: the event field crosses by the declared `From`, and the literal lands
@@ -861,7 +861,7 @@ fn the_transport_records_its_invocations_and_can_deliver_an_occurrence_twice() {
     // bindings a second time (the only claim `at_least_once` makes). Both are the transport's to
     // expose — reading either out of a component would be instrumentation the specification never
     // asked of it.
-    let synthesis = synthesize(&billing());
+    let synthesis = synthesize(&billing()).expect("the fixture has a realizable target");
     let system = artifact(&synthesis, "crates/billing-system/src/lib.rs");
 
     assert!(
@@ -909,7 +909,7 @@ fn colliding_event_names_become_full_name_variants_by_rule_not_by_luck() {
              duo.alpha.Ping\n        - duo.beta.Ping\n",
         ),
     ]);
-    let synthesis = synthesize(&ir);
+    let synthesis = synthesize(&ir).expect("the fixture has a realizable target");
     let port = artifact(&synthesis, "crates/fanout/src/lib.rs");
     assert!(
         port.contains("AlphaPing(duo_types::alpha::Ping)")
@@ -937,7 +937,7 @@ fn a_component_named_like_a_reserved_package_is_renamed_by_rule() {
              demo.core.Pinged\n",
         ),
     ]);
-    let synthesis = synthesize(&ir);
+    let synthesis = synthesize(&ir).expect("the fixture has a realizable target");
     assert!(
         synthesis
             .artifacts
@@ -970,7 +970,7 @@ fn a_domain_named_obligation_cannot_shadow_the_refusal_module() {
              demo.obligation.Ponged\n",
         ),
     ]);
-    let synthesis = synthesize(&ir);
+    let synthesis = synthesize(&ir).expect("the fixture has a realizable target");
     assert!(
         synthesis
             .artifacts
@@ -987,7 +987,7 @@ fn a_domain_named_obligation_cannot_shadow_the_refusal_module() {
 
 #[test]
 fn every_artifact_names_its_specification_and_the_verb_that_rewrites_it() {
-    let synthesis = synthesize(&billing());
+    let synthesis = synthesize(&billing()).expect("the fixture has a realizable target");
     for (path, emitted) in &synthesis.artifacts {
         if path == ess_synth::PLAN_JSON {
             // JSON has no comments; this one carries provenance as data instead, and the verb is
@@ -1031,7 +1031,7 @@ fn colliding_domain_modules_are_renamed_by_rule_not_by_luck() {
              of: String\n",
         ),
     ]);
-    let synthesis = synthesize(&ir);
+    let synthesis = synthesize(&ir).expect("the fixture has a realizable target");
     assert!(
         synthesis
             .artifacts
@@ -1057,7 +1057,7 @@ fn a_domain_named_primitives_cannot_shadow_the_representation_module() {
              newtype\n    of: String\n",
         ),
     ]);
-    let synthesis = synthesize(&ir);
+    let synthesis = synthesize(&ir).expect("the fixture has a realizable target");
     assert!(
         synthesis
             .artifacts

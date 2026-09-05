@@ -110,7 +110,7 @@ fn is_json(path: &str) -> bool {
 
 /// The Go module the billing specification determines.
 fn go() -> Synthesis {
-    synthesize_for(&billing(), Target::Go)
+    synthesize_for(&billing(), Target::Go).expect("the fixture has a realizable target")
 }
 
 /// One generated artifact's contents, by path.
@@ -135,7 +135,7 @@ fn the_plan_is_byte_identical_in_both_targets_trees() {
     // W7.3's central claim, and the cheapest possible test of it: if the plan had to change to
     // admit a second emitter, these bytes would differ. They are the *same document*, rendered
     // from the same planner, and each target's tree carries a copy.
-    let rust = synthesize(&billing());
+    let rust = synthesize(&billing()).expect("the fixture has a realizable target");
     let go = go();
     for plan in [ess_synth::PLAN_MARKDOWN, ess_synth::PLAN_JSON] {
         assert_eq!(
@@ -155,7 +155,10 @@ fn the_rust_target_reports_nothing_and_the_go_target_reports_its_weakenings() {
     // The asymmetry is the finding, not a defect: Rust carried the plan whole, Go did not, and
     // "did not" is a document rather than an absence.
     assert!(
-        synthesize(&billing()).target.is_none(),
+        synthesize(&billing())
+            .expect("the fixture has a realizable target")
+            .target
+            .is_none(),
         "the first target carried the plan whole, so it has no target report to write"
     );
     let report = go().target.expect("the Go target writes a report");
@@ -497,7 +500,8 @@ fn an_owed_crossing_gets_its_own_package_because_go_refuses_an_import_cycle() {
     // Rust files an owed conversion beside the refusal type; Go cannot, because a bounded
     // context's package must import that type and an owed crossing names both contexts. The file
     // moves; the plan entry does not.
-    let synthesis = synthesize_for(&relay(), Target::Go);
+    let synthesis =
+        synthesize_for(&relay(), Target::Go).expect("the fixture has a realizable target");
     let conversion = artifact(&synthesis, "types/conversion/conversion.go");
     assert!(
         conversion.contains("type RelayCoreAccountIdToRelayCoreAccountRefConversion interface {"),
@@ -518,7 +522,10 @@ fn an_owed_crossing_gets_its_own_package_because_go_refuses_an_import_cycle() {
 
 #[test]
 fn an_owed_transformation_and_a_retry_policy_are_emitted_the_way_the_binding_declares_them() {
-    let system = artifact(&synthesize_for(&relay(), Target::Go), "system/system.go");
+    let system = artifact(
+        &synthesize_for(&relay(), Target::Go).expect("the fixture has a realizable target"),
+        "system/system.go",
+    );
     assert!(
         system.contains("input, unmet := s.obligations.RelayOnFiredInput(event)"),
         "an undetermined mapping is routed through the owed seam, never guessed:\n{system}"
@@ -563,7 +570,8 @@ fn bytes_keyed() -> EssIr {
 fn a_map_keyed_by_bytes_is_refused_at_the_target_stage_and_never_emitted() {
     // The one thing Go cannot spell, and the reason a second target was worth building: Rust's
     // `BTreeMap<Vec<u8>, V>` is ordinary, and a Go map key must be comparable.
-    let synthesis = synthesize_for(&bytes_keyed(), Target::Go);
+    let synthesis =
+        synthesize_for(&bytes_keyed(), Target::Go).expect("the fixture has a realizable target");
     let report = synthesis
         .target
         .as_ref()
@@ -645,7 +653,8 @@ fn two_seams_of_one_component_that_derive_one_method_name_are_refused_not_rename
     // Go gives a type one method set, and Rust disambiguates a trait method by its trait. A
     // rename would be this emitter choosing a name the specification did not, which is the
     // guessing the whole design refuses; the honest answer is a target-stage refusal.
-    let synthesis = synthesize_for(&colliding_seams(), Target::Go);
+    let synthesis = synthesize_for(&colliding_seams(), Target::Go)
+        .expect("the fixture has a realizable target");
     let report = synthesis
         .target
         .as_ref()
@@ -678,8 +687,10 @@ fn two_seams_of_one_component_that_derive_one_method_name_are_refused_not_rename
 fn emitting_twice_is_byte_identical() {
     // Invariant 9 in the only form it is worth anything: two independent compilations and
     // syntheses of the same source, compared byte for byte across every artifact.
-    let first = synthesize_for(&billing(), Target::Go);
-    let second = synthesize_for(&billing(), Target::Go);
+    let first =
+        synthesize_for(&billing(), Target::Go).expect("the fixture has a realizable target");
+    let second =
+        synthesize_for(&billing(), Target::Go).expect("the fixture has a realizable target");
     assert_eq!(
         first.artifacts.keys().collect::<Vec<_>>(),
         second.artifacts.keys().collect::<Vec<_>>(),

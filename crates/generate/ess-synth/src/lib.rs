@@ -41,10 +41,13 @@
 //! growing parallel ones.
 
 pub mod clap;
+mod failure;
 pub mod go;
 pub mod plan;
 pub mod rust;
 pub mod web;
+
+pub use failure::{TargetFailure, TargetFailureCause, TargetFailureCode};
 
 use std::collections::BTreeMap;
 use std::fmt::Write as _;
@@ -253,7 +256,11 @@ impl TargetReport {
 /// Deterministic: same IR, byte-identical artifacts, asserted by tests that run it twice. The plan
 /// travels *inside* the output tree — `PLAN.md` for a person, `plan.json` for a tool — so the list
 /// of what was deliberately not generated is committed and drift-checked with the code it is about.
-pub fn synthesize(ir: &EssIr) -> Synthesis {
+///
+/// # Errors
+///
+/// Returns a [`TargetFailure`] without artifacts when the Rust target cannot represent the source.
+pub fn synthesize(ir: &EssIr) -> Result<Synthesis, TargetFailure> {
     synthesize_for(ir, Target::Rust)
 }
 
@@ -263,12 +270,17 @@ pub fn synthesize(ir: &EssIr) -> Synthesis {
 /// What differs between trees is the code and — for a target that could not carry everything — the
 /// [`TargetReport`] beside it.
 ///
+/// # Errors
+///
+/// A complete Rust/Web feasibility failure returns [`TargetFailure`], with the unchanged neutral
+/// plan and source-addressed causes. Existing partial target reports remain successful values.
+///
 /// # Panics
 ///
 /// If an emitter emits a different set of capabilities than the plan marks generated minus what
 /// that target refused. That is a defect in this crate, not in any specification, and shipping it
 /// would make `PLAN.md` a lie about the tree beside it.
-pub fn synthesize_for(ir: &EssIr, target: Target) -> Synthesis {
+pub fn synthesize_for(ir: &EssIr, target: Target) -> Result<Synthesis, TargetFailure> {
     let plan = SynthesisPlan::of(ir);
     let mut artifacts = BTreeMap::new();
     insert(
@@ -281,7 +293,7 @@ pub fn synthesize_for(ir: &EssIr, target: Target) -> Synthesis {
     );
     let report = match target {
         Target::Rust => {
-            for artifact in rust::workspace(ir, &plan) {
+            for artifact in rust::workspace(ir, &plan)? {
                 insert(&mut artifacts, artifact);
             }
             None
@@ -294,7 +306,7 @@ pub fn synthesize_for(ir: &EssIr, target: Target) -> Synthesis {
             Some(emission.report)
         }
         Target::Web => {
-            let emission = web::workspace(ir, &plan);
+            let emission = web::workspace(ir, &plan)?;
             for artifact in emission.artifacts {
                 insert(&mut artifacts, artifact);
             }
@@ -318,11 +330,11 @@ pub fn synthesize_for(ir: &EssIr, target: Target) -> Synthesis {
             Artifact::new(TARGET_JSON, report.to_canonical_json()),
         );
     }
-    Synthesis {
+    Ok(Synthesis {
         plan,
         artifacts,
         target: report,
-    }
+    })
 }
 
 /// Keyed insertion that refuses a duplicate path: two artifacts claiming one file means the second

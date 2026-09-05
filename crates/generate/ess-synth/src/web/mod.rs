@@ -291,11 +291,19 @@ impl crate::rust::wire::Surface for Bridge<'_> {
 /// If what was presented is not exactly what the plan marks generated *minus* what this target
 /// refused — a defect in this crate, and the one lie neither the plan nor the target report may be
 /// allowed to tell.
-pub fn workspace(ir: &EssIr, plan: &SynthesisPlan) -> Emission {
-    let layout = Layout::of(ir);
+/// # Errors
+///
+/// Returns [`crate::TargetFailure`] when the Rust prerequisite or Web codec allocation cannot be
+/// emitted. A partial browser target report still accompanies a successful [`Emission`].
+pub fn workspace(ir: &EssIr, plan: &SynthesisPlan) -> Result<Emission, crate::TargetFailure> {
+    let rust = crate::rust::feasibility::checked(ir, plan, crate::Target::Web)?;
+    let layout = Layout::with_rust(ir, rust);
     let acceptors = refusal::acceptors(ir);
     let refusals = TargetRefusals::of(ir, plan, &acceptors);
     let bridge = Bridge::new(ir, plan, &layout, &refusals);
+    crate::rust::feasibility::web_codecs(ir, plan, layout.rust(), |command| {
+        bridge.presents_command(command)
+    })?;
     let provenance = &plan.provenance;
 
     present_catalog_surfaces(&bridge);
@@ -337,7 +345,7 @@ pub fn workspace(ir: &EssIr, plan: &SynthesisPlan) -> Emission {
          make PLAN.md a lie about the page"
     );
 
-    Emission {
+    Ok(Emission {
         artifacts,
         report: TargetReport {
             provenance: provenance.clone(),
@@ -351,7 +359,7 @@ pub fn workspace(ir: &EssIr, plan: &SynthesisPlan) -> Emission {
                 })
                 .collect(),
         },
-    }
+    })
 }
 
 /// Builds the exact versioned catalogue used by the browser target without emitting a web tree.

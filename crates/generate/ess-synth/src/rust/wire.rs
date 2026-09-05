@@ -667,7 +667,7 @@ fn decode_value(
                  object\")? {{\n                    let {nested} = json::nested({at}, \
                  {entry});\n                    {entries}.insert({}, {});\n                \
                  }}\n                {entries}\n            }}",
-                decode_key(surface, *key, &entry, &nested),
+                decode_key(surface, *key, &entry, &format!("&{nested}")),
                 decode_value(surface, &element, &format!("&{nested}"), held, depth + 1)
             )
         }

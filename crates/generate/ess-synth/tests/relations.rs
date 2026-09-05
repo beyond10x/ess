@@ -62,7 +62,7 @@ fn billing() -> EssIr {
 
 /// The synthesised Rust module holding the invoice domain's types.
 fn invoice_module() -> String {
-    let synthesis = ess_synth::synthesize(&billing());
+    let synthesis = ess_synth::synthesize(&billing()).expect("the fixture has a realizable target");
     synthesis
         .artifacts
         .get("crates/billing-types/src/invoice.rs")

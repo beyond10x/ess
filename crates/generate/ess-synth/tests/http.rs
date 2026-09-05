@@ -79,7 +79,7 @@ fn billing() -> EssIr {
 
 /// One synthesis, by target.
 fn synthesized(ir: &EssIr, target: Target) -> Synthesis {
-    synthesize_for(ir, target)
+    synthesize_for(ir, target).expect("the fixture has a realizable target")
 }
 
 /// One artifact's contents, by path.

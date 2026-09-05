@@ -30,6 +30,7 @@
 //! (AGENTS.md § Dependencies).
 
 mod entity;
+pub(crate) mod feasibility;
 pub(crate) mod http;
 pub(crate) mod items;
 pub(crate) mod json;
@@ -88,12 +89,17 @@ impl Emit<'_> {
 /// Emits the generated workspace a plan determines: manifests, the primitives module, and one
 /// module per bounded context.
 ///
+/// # Errors
+///
+/// Returns [`crate::TargetFailure`] before rendering when the existing Rust allocation or
+/// representation cannot carry the compiler-admitted source. No artifacts accompany the failure.
+///
 /// # Panics
 ///
 /// If what was emitted is not exactly what the plan marks generated — a defect in this crate, and
 /// the one lie the plan document must never be allowed to tell.
-pub fn workspace(ir: &EssIr, plan: &SynthesisPlan) -> Vec<Artifact> {
-    let layout = Layout::of(ir);
+pub fn workspace(ir: &EssIr, plan: &SynthesisPlan) -> Result<Vec<Artifact>, crate::TargetFailure> {
+    let layout = feasibility::checked(ir, plan, crate::Target::Rust)?;
     let provenance = &plan.provenance;
 
     let mut covered: BTreeSet<Capability> = BTreeSet::new();
@@ -152,7 +158,7 @@ pub fn workspace(ir: &EssIr, plan: &SynthesisPlan) -> Vec<Artifact> {
          ess-synth, and shipping it would break the promise that every owed capability is visible \
          twice — in the plan, and as a typed refusal in the workspace"
     );
-    artifacts
+    Ok(artifacts)
 }
 
 /// One enum variant name per event of a set, collision-free by rule rather than by luck.
