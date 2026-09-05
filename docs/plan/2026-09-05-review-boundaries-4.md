@@ -1784,3 +1784,73 @@ defaults. It reserves conformance, CLI, the public guide and a possible root loc
 suite/5 inventory and qualification remain the dependent coverage story. Actual AEP adapter,
 planning reader and domain/fact boundaries are separately identified. No conformance
 implementation, downstream compatibility or new wave selection occurred in this scoping.
+
+## Integration and governance checkpoint
+
+The reviewed infrastructure unit merged cleanly as
+`09474bdf84e29e5facb1e7b72628685dad9d11d1`, after a clean merge-tree probe. Both introduced
+unit commits and the merge have exact bot identities. Full wave validation still waits for
+the semantic unit.
+
+Atlas published ADR 0036, the support story, the explicit consumer catalog obligation and
+ESS-only observations as `974b2a2bc4896bd76293a734f36ac254895221c4`. The clean managed
+authority was advanced to that exact advertised main commit before subsequent bot operations.
+Its post-observation fence retained three known unrelated workspace failures and a relay
+timing failure; that exact case and the complete 115-case Rust suite passed on separate
+recorded reruns, the latter serially. The complete workspace fence is not described as green.
+
+The read-only `ess-agentide-pin-observation` tree is finished and removed. Its first finish
+refused the empty ignored scratch directories; after inspecting that they contained no files,
+only those two empty directories were removed with rmdir. A fresh dry-run inspected all
+26 finished-record assessments. Only this task's exact ID was selected; three eligible
+unrelated connector-delivery trees and every other refused record were left untouched.
+The apply result confirms recovery through advertised AgentIDE main and PR 12, and filesystem
+absence was checked. Raw results are `target/review-boundaries-4/agentide-gc-*.json`.
+
+The SDK actual generated-service baseline first encountered a nested-workspace fixture setup
+refusal. A scratch parent workspace wrapper isolates the generated package without editing its
+files. Offline resolution then identified the exact published SDK revision missing from Cargo's
+Git cache; local patching did not avoid that source prerequisite. The coordinator authorized
+normal Cargo fetching of the wrapper's declared fixed-revision dependencies, followed by a
+return to offline checks. Original output and all refusal logs remain preserved. No successful
+generated-service compilation or new candidate comparison is claimed at this checkpoint.
+
+## Additional baseline evidence and semantic handoff
+
+The old SDK generated-service compilation subsequently passed
+`cargo check --all-targets --locked --offline` (exit 0, 12.274 seconds) with the recorded
+scratch wrapper and exact source patches. Its complete 256-package graph contains twelve
+local SDK packages at the clean published `48833c6d14ec37cb3b614fca05cf7dd78f63b743`,
+seven ESS packages at the original 0.13.1 pin, and the recorded registry and sibling Git
+dependencies. All 63 original and copied generated files remained byte-identical, including
+the generated manifest; the SDK root lock and tracked source remained unchanged. This is a
+synthetic service compilation with its default features, not execution or deployment evidence.
+The additional checkpoint SHA-256 is
+`86af4251cec4a1790c5c03ac5e8c70374cc1e0ad8a3602e281e0bb230aebe3e2`.
+
+F01 implementation `25580795fa0fef04563a94f9864745377b871ee1` has verified bot identities.
+Its full report and exact patch are preserved as the semantic implementation files under
+`docs/reviews/2026-09-05-review-boundaries-4-*`, respectively SHA-256
+`bdb48893cfd039a702412ce90b847b93246b863419700ad6fd76f85cf4592b5b` and
+`edf6e95cccd31be889dd8712a5c286b75c915adea0fbfdc1dc8c0ad14d9854bd`.
+The four package suites increased from 459 to 483 executed cases, all passing, with 15
+meaningful initial red cases. The first independent adversarial pass is in progress; no
+semantic merge, integration validation or SDK candidate result is claimed here.
+
+The coordinator captured a complete pre-F01 Billing suite from source
+`09474bdf84e29e5facb1e7b72628685dad9d11d1`, with no source differences in Cargo manifests,
+lock, crates or xtask. The actual CLI emitted 30 scenarios (one authored), zero refusals,
+and `provenance.suite_version: ess-conformance/4`. The 154,846-byte JSON vector has SHA-256
+`508b6a3d75d6dabd6fa686b67dcb6c7c881374375aaed9dd8921445a5edc894e` and was copied
+byte-exact to the adversary scratch for a complete compatibility assertion. Command, source,
+exit 0, log and bytes are preserved under `target/review-boundaries-4/base-suite-*`.
+
+The same pre-F01 CLI generated the Gatepass Rust artifact map successfully. Parsed comparison
+of `crates/gatepass-server/src/pass-service.openapi.json` with the candidate generator found
+only `/info/x-ess-provenance/contract_digest` changed, from the bare digest to the new prefix
+with identical digest content. The added `/x-ess-entities` table in the committed regeneration
+already appears in the old generator's output: it is pre-existing output drift, not a new
+F01 generator semantic. The resulting source patch also changes JSON whitespace. Raw maps,
+exit and leaf comparison are in `target/review-boundaries-4/base-http-*`; the retained
+old map is 180,681 bytes, SHA-256
+`c6d1d6953423d415565357cd2415e5c565b995184dd5bc2ee6af8641e33d2fa9`.

@@ -1,0 +1,3840 @@
+diff --git a/crates/generate/ess-gen/src/provenance.rs b/crates/generate/ess-gen/src/provenance.rs
+index eb57149..463d8e3 100644
+--- a/crates/generate/ess-gen/src/provenance.rs
++++ b/crates/generate/ess-gen/src/provenance.rs
+@@ -250,7 +250,7 @@ impl<'a> ProvenanceMint<'a> {
+             ModelSlice::WholeModel => slice_digest(self.ir, None),
+             ModelSlice::Constructs { seeds } => {
+                 let members = self.graph.slice(seeds);
+-                slice_digest(self.ir, Some(&members))
++                format!("slice-sha256/2:{}", slice_digest(self.ir, Some(&members)))
+             }
+         }
+     }
+@@ -400,49 +400,18 @@ pub struct ArtifactDigests {
+ }
+ 
+ impl Provenance {
+-    /// Reads the two digests back off an artifact's text, whatever form the stamp took.
++    /// Reads a complete authoritative stamp, validating its digest profile and framing.
+     ///
+-    /// The inverse of this type's own emissions and of nothing else: the comment-line forms
+-    /// (`model digest …` / `contract digest …`, behind `#`, `//` or inside an HTML comment) and the
+-    /// serialized-field forms (`"source_digest": "…"`, `"spec_digest": "…"`,
+-    /// `"contract_digest": "…"`). One reader beside the writer, so a committed artifact's claim of
+-    /// derivation is checked against exactly what was stamped — a second parser somewhere else is
+-    /// how the check and the stamp drift apart.
+-    ///
+-    /// `None` when either digest is missing or is not 64 lower-case hex characters. That is the
+-    /// fail-closed answer on purpose: an artifact whose provenance cannot be read is an artifact
+-    /// whose claims cannot be checked, and every caller treats it as owed.
++    /// Recognizes the comment envelopes and structured attribution locations this crate writes.
++    /// Arbitrary model strings are never searched. Unsupported/malformed profiles, conflicting
++    /// copies and duplicate mapping keys return `None`, which every verifier treats as owed.
++    /// Bare hashes retain whole/legacy meaning; expected-slice comparison decides whether a
++    /// legacy bare stamp is current. Generic `Provenance::deserialize` does not perform this check.
+     #[must_use]
+     pub fn read_digests(text: &str) -> Option<ArtifactDigests> {
+-        let source = digest_after(
+-            text,
+-            &[
+-                "model digest ",
+-                "\"source_digest\": \"",
+-                "\"spec_digest\": \"",
+-            ],
+-        )?;
+-        let contract = digest_after(text, &["contract digest ", "\"contract_digest\": \""])?;
+-        Some(ArtifactDigests {
+-            source_digest: source,
+-            contract_digest: contract,
+-        })
++        stamp::read(text)
+     }
+ }
+ 
+-/// The first well-formed digest following any of these markers, or `None`.
+-fn digest_after(text: &str, markers: &[&str]) -> Option<String> {
+-    for marker in markers {
+-        let Some(at) = text.find(marker) else {
+-            continue;
+-        };
+-        let candidate: String = text[at + marker.len()..]
+-            .chars()
+-            .take_while(|c| c.is_ascii_hexdigit() && !c.is_ascii_uppercase())
+-            .collect();
+-        if candidate.len() == 64 {
+-            return Some(candidate);
+-        }
+-    }
+-    None
+-}
++#[path = "stamp.rs"]
++mod stamp;
+diff --git a/crates/generate/ess-gen/src/stamp.rs b/crates/generate/ess-gen/src/stamp.rs
+new file mode 100644
+index 0000000..8b70c33
+--- /dev/null
++++ b/crates/generate/ess-gen/src/stamp.rs
+@@ -0,0 +1,141 @@
++//! Admission of the writer's stamp envelopes; never a substring search through model content.
++
++use super::ArtifactDigests;
++
++const LICENSE_SUFFIX: &str =
++    "\n--\nThe licence of `assets/mermaid.min.js`, redistributed with this site.\n";
++
++pub(super) fn read(text: &str) -> Option<ArtifactDigests> {
++    let text = text.trim_start();
++    let text = text.strip_prefix("<!DOCTYPE html>\n").unwrap_or(text);
++    if is_comment(text) {
++        let (stamp, rest) = comment(text)?;
++        if is_comment(rest.trim_start()) {
++            return None;
++        }
++        // OpenAPI and AsyncAPI emit both copies. Neither can override the other.
++        if text.starts_with("# ") && !rest.trim().is_empty() && structured(rest)? != stamp {
++            return None;
++        }
++        return Some(stamp);
++    }
++    let license = include_str!("../assets/mermaid.LICENSE");
++    if let Some(rest) = text.strip_prefix(license) {
++        let rest = if license.ends_with('\n') {
++            rest
++        } else {
++            rest.strip_prefix('\n')?
++        };
++        return lines(rest.strip_prefix(LICENSE_SUFFIX)?.lines());
++    }
++    structured(text)
++}
++
++fn is_comment(text: &str) -> bool {
++    text.starts_with("# generated from ")
++        || text.starts_with("// generated from ")
++        || text
++            .strip_prefix("<!--\n")
++            .is_some_and(|rest| rest.trim_start().starts_with("generated from "))
++        || text
++            .strip_prefix("/*\n")
++            .is_some_and(|rest| rest.trim_start().starts_with("* generated from "))
++}
++
++fn comment(text: &str) -> Option<(ArtifactDigests, &str)> {
++    for prefix in ["# ", "// "] {
++        if text.starts_with(prefix) {
++            let mut rest = text;
++            let mut block = Vec::new();
++            for _ in 0..4 {
++                let (line, tail) = rest.split_once('\n')?;
++                block.push(line.strip_prefix(prefix)?);
++                rest = tail;
++            }
++            return Some((lines(block.into_iter())?, rest));
++        }
++    }
++    for (open, close, prefix) in [("<!--\n", "-->\n", ""), ("/*\n", " */\n", "*")] {
++        if let Some(content) = text.strip_prefix(open) {
++            let (block, rest) = content.split_once(close)?;
++            let normalized: Option<Vec<_>> = block
++                .lines()
++                .map(|line| line.trim().strip_prefix(prefix).map(str::trim_start))
++                .collect();
++            return Some((lines(normalized?.into_iter())?, rest));
++        }
++    }
++    None
++}
++
++fn lines<'a>(mut lines: impl Iterator<Item = &'a str>) -> Option<ArtifactDigests> {
++    let origin = lines.next()?.strip_prefix("generated from ")?;
++    if origin.is_empty() {
++        return None;
++    }
++    let source = lines.next()?.strip_prefix("model digest ")?;
++    let contract = lines.next()?.strip_prefix("contract digest ")?;
++    let regenerate = lines
++        .next()?
++        .strip_prefix("do not edit: regenerate with `")?;
++    if !regenerate.ends_with('`') || regenerate.len() < 2 || lines.next().is_some() {
++        return None;
++    }
++    digests(source, contract)
++}
++
++fn hash(value: &str) -> bool {
++    value.len() == 64
++        && value
++            .bytes()
++            .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte))
++}
++
++fn digests(source: &str, contract: &str) -> Option<ArtifactDigests> {
++    let contract_hash = contract.strip_prefix("slice-sha256/2:").unwrap_or(contract);
++    (hash(source) && hash(contract_hash)).then(|| ArtifactDigests {
++        source_digest: source.to_owned(),
++        contract_digest: contract.to_owned(),
++    })
++}
++
++/// `serde_yaml`'s mapping visitor rejects duplicate keys, including in JSON input. JSON's generic
++/// Value visitor overwrites them, so it cannot establish this envelope's uniqueness guarantee.
++fn structured(text: &str) -> Option<ArtifactDigests> {
++    let document: serde_yaml::Value = serde_yaml::from_str(text).ok()?;
++    let root = document.as_mapping()?;
++    // A docs document has per-page stamps and no single artifact stamp. Do not pick its first page.
++    if root.get("format").and_then(serde_yaml::Value::as_str) == Some("ess-docs/1") {
++        return None;
++    }
++    let mut candidates = Vec::new();
++    if ["source_digest", "spec_digest", "contract_digest"]
++        .iter()
++        .any(|key| root.contains_key(*key))
++    {
++        candidates.push(&document);
++    }
++    for key in ["provenance", "x-ess-provenance"] {
++        if let Some(value) = root.get(key) {
++            candidates.push(value);
++        }
++    }
++    if let Some(value) = root
++        .get("info")
++        .and_then(serde_yaml::Value::as_mapping)
++        .and_then(|info| info.get("x-ess-provenance"))
++    {
++        candidates.push(value);
++    }
++    // One structured location per document. Unlike the paired YAML comment, two locations are
++    // ambiguous even if they currently agree; no writer emits that shape.
++    if candidates.len() != 1 {
++        return None;
++    }
++    let stamp = candidates[0].as_mapping()?;
++    let source = match (stamp.get("source_digest"), stamp.get("spec_digest")) {
++        (Some(value), None) | (None, Some(value)) => value.as_str()?,
++        _ => return None,
++    };
++    digests(source, stamp.get("contract_digest")?.as_str()?)
++}
+diff --git a/crates/generate/ess-gen/tests/corpus/billing/docs/domains/billing-email.md b/crates/generate/ess-gen/tests/corpus/billing/docs/domains/billing-email.md
+index 12a3f94..cffc5bc 100644
+--- a/crates/generate/ess-gen/tests/corpus/billing/docs/domains/billing-email.md
++++ b/crates/generate/ess-gen/tests/corpus/billing/docs/domains/billing-email.md
+@@ -1,7 +1,7 @@
+ <!--
+ generated from billing v3
+ model digest 56090788443a14b4a51ad151eb5cb3ebded2b98f6defe9ac50826296ac5d0942
+-contract digest 1ccd0afca5f71d3c3c98894259751819e5313bcd73222af85bb80774dbe83e6f
++contract digest slice-sha256/2:6885abd57db28f85bf636a59960c5e76be692eb6d69ce48089f10ca44cc9130f
+ do not edit: regenerate with `ess generate`
+ -->
+ 
+@@ -93,4 +93,4 @@ Every crossing in the system is on one page: [Type crossings](../crossings.md).
+ 
+ ---
+ 
+-Generated from billing v3 · model digest `56090788443a14b4a51ad151eb5cb3ebded2b98f6defe9ac50826296ac5d0942` · contract digest `1ccd0afca5f71d3c3c98894259751819e5313bcd73222af85bb80774dbe83e6f`. Do not edit this file; change the specification and regenerate it with `ess generate`.
++Generated from billing v3 · model digest `56090788443a14b4a51ad151eb5cb3ebded2b98f6defe9ac50826296ac5d0942` · contract digest `slice-sha256/2:6885abd57db28f85bf636a59960c5e76be692eb6d69ce48089f10ca44cc9130f`. Do not edit this file; change the specification and regenerate it with `ess generate`.
+diff --git a/crates/generate/ess-gen/tests/corpus/billing/docs/domains/billing-invoice.md b/crates/generate/ess-gen/tests/corpus/billing/docs/domains/billing-invoice.md
+index c48c55a..b117801 100644
+--- a/crates/generate/ess-gen/tests/corpus/billing/docs/domains/billing-invoice.md
++++ b/crates/generate/ess-gen/tests/corpus/billing/docs/domains/billing-invoice.md
+@@ -1,7 +1,7 @@
+ <!--
+ generated from billing v3
+ model digest 56090788443a14b4a51ad151eb5cb3ebded2b98f6defe9ac50826296ac5d0942
+-contract digest cb634bd5e6f1afa6ebc8e9dca752e9901a9a68a2e51fc5009d099f155680606c
++contract digest slice-sha256/2:cb634bd5e6f1afa6ebc8e9dca752e9901a9a68a2e51fc5009d099f155680606c
+ do not edit: regenerate with `ess generate`
+ -->
+ 
+@@ -372,4 +372,4 @@ Every crossing in the system is on one page: [Type crossings](../crossings.md).
+ 
+ ---
+ 
+-Generated from billing v3 · model digest `56090788443a14b4a51ad151eb5cb3ebded2b98f6defe9ac50826296ac5d0942` · contract digest `cb634bd5e6f1afa6ebc8e9dca752e9901a9a68a2e51fc5009d099f155680606c`. Do not edit this file; change the specification and regenerate it with `ess generate`.
++Generated from billing v3 · model digest `56090788443a14b4a51ad151eb5cb3ebded2b98f6defe9ac50826296ac5d0942` · contract digest `slice-sha256/2:cb634bd5e6f1afa6ebc8e9dca752e9901a9a68a2e51fc5009d099f155680606c`. Do not edit this file; change the specification and regenerate it with `ess generate`.
+diff --git a/crates/generate/ess-gen/tests/corpus/gatepass/docs/domains/gatepass-visit.md b/crates/generate/ess-gen/tests/corpus/gatepass/docs/domains/gatepass-visit.md
+index a0f1fea..946f1d5 100644
+--- a/crates/generate/ess-gen/tests/corpus/gatepass/docs/domains/gatepass-visit.md
++++ b/crates/generate/ess-gen/tests/corpus/gatepass/docs/domains/gatepass-visit.md
+@@ -1,7 +1,7 @@
+ <!--
+ generated from gatepass v1
+ model digest f2e0f8ff51c077fa1c713d8151544379bafac36a5a927e71c685042d53ab6e61
+-contract digest e6e58e055d24f8f494dcff274f55e723d967f9d1f9aea16641bb8dacbb71171e
++contract digest slice-sha256/2:e6e58e055d24f8f494dcff274f55e723d967f9d1f9aea16641bb8dacbb71171e
+ do not edit: regenerate with `ess generate`
+ -->
+ 
+@@ -299,4 +299,4 @@ It may invoke nothing: it observes. "Who is in this picture" is part of what a s
+ 
+ ---
+ 
+-Generated from gatepass v1 · model digest `f2e0f8ff51c077fa1c713d8151544379bafac36a5a927e71c685042d53ab6e61` · contract digest `e6e58e055d24f8f494dcff274f55e723d967f9d1f9aea16641bb8dacbb71171e`. Do not edit this file; change the specification and regenerate it with `ess generate`.
++Generated from gatepass v1 · model digest `f2e0f8ff51c077fa1c713d8151544379bafac36a5a927e71c685042d53ab6e61` · contract digest `slice-sha256/2:e6e58e055d24f8f494dcff274f55e723d967f9d1f9aea16641bb8dacbb71171e`. Do not edit this file; change the specification and regenerate it with `ess generate`.
+diff --git a/crates/generate/ess-gen/tests/corpus/oracle-fixture/docs/domains/oracle-dispatch.md b/crates/generate/ess-gen/tests/corpus/oracle-fixture/docs/domains/oracle-dispatch.md
+index f55e3bb..f8c56d3 100644
+--- a/crates/generate/ess-gen/tests/corpus/oracle-fixture/docs/domains/oracle-dispatch.md
++++ b/crates/generate/ess-gen/tests/corpus/oracle-fixture/docs/domains/oracle-dispatch.md
+@@ -1,7 +1,7 @@
+ <!--
+ generated from oracle v1
+ model digest 4288d50a003fa7d5b39743327880aa7e2f97ff6d9408f8a5ddb908c8b6af79ee
+-contract digest e4417ff3378e2edc8b6ef43d12299606cac561b5a4510b27af3106da521d2511
++contract digest slice-sha256/2:e4417ff3378e2edc8b6ef43d12299606cac561b5a4510b27af3106da521d2511
+ do not edit: regenerate with `ess generate`
+ -->
+ 
+@@ -93,4 +93,4 @@ Every crossing in the system is on one page: [Type crossings](../crossings.md).
+ 
+ ---
+ 
+-Generated from oracle v1 · model digest `4288d50a003fa7d5b39743327880aa7e2f97ff6d9408f8a5ddb908c8b6af79ee` · contract digest `e4417ff3378e2edc8b6ef43d12299606cac561b5a4510b27af3106da521d2511`. Do not edit this file; change the specification and regenerate it with `ess generate`.
++Generated from oracle v1 · model digest `4288d50a003fa7d5b39743327880aa7e2f97ff6d9408f8a5ddb908c8b6af79ee` · contract digest `slice-sha256/2:e4417ff3378e2edc8b6ef43d12299606cac561b5a4510b27af3106da521d2511`. Do not edit this file; change the specification and regenerate it with `ess generate`.
+diff --git a/crates/generate/ess-gen/tests/corpus/oracle-fixture/docs/domains/oracle-order.md b/crates/generate/ess-gen/tests/corpus/oracle-fixture/docs/domains/oracle-order.md
+index 2d810e9..fe656c1 100644
+--- a/crates/generate/ess-gen/tests/corpus/oracle-fixture/docs/domains/oracle-order.md
++++ b/crates/generate/ess-gen/tests/corpus/oracle-fixture/docs/domains/oracle-order.md
+@@ -1,7 +1,7 @@
+ <!--
+ generated from oracle v1
+ model digest 4288d50a003fa7d5b39743327880aa7e2f97ff6d9408f8a5ddb908c8b6af79ee
+-contract digest 9c8f1b65057d7378da54f3072e27e6bb046abd22265bbdf1c1caadb94ecaa1bd
++contract digest slice-sha256/2:9c8f1b65057d7378da54f3072e27e6bb046abd22265bbdf1c1caadb94ecaa1bd
+ do not edit: regenerate with `ess generate`
+ -->
+ 
+@@ -300,4 +300,4 @@ Every crossing in the system is on one page: [Type crossings](../crossings.md).
+ 
+ ---
+ 
+-Generated from oracle v1 · model digest `4288d50a003fa7d5b39743327880aa7e2f97ff6d9408f8a5ddb908c8b6af79ee` · contract digest `9c8f1b65057d7378da54f3072e27e6bb046abd22265bbdf1c1caadb94ecaa1bd`. Do not edit this file; change the specification and regenerate it with `ess generate`.
++Generated from oracle v1 · model digest `4288d50a003fa7d5b39743327880aa7e2f97ff6d9408f8a5ddb908c8b6af79ee` · contract digest `slice-sha256/2:9c8f1b65057d7378da54f3072e27e6bb046abd22265bbdf1c1caadb94ecaa1bd`. Do not edit this file; change the specification and regenerate it with `ess generate`.
+diff --git a/crates/generate/ess-gen/tests/openapi.rs b/crates/generate/ess-gen/tests/openapi.rs
+index 62f3305..951224a 100644
+--- a/crates/generate/ess-gen/tests/openapi.rs
++++ b/crates/generate/ess-gen/tests/openapi.rs
+@@ -455,9 +455,14 @@ fn every_document_carries_its_provenance_as_a_comment_and_as_data() {
+         // Its own slice's digest, not the whole model's, so only the shape is asserted here —
+         // `run` re-derives it from the recorded slice and refuses a stamp that disagrees.
+         assert!(
+-            carried["contract_digest"].as_str().is_some_and(
+-                |digest| digest.len() == 64 && digest.chars().all(|c| c.is_ascii_hexdigit())
+-            ),
++            carried["contract_digest"]
++                .as_str()
++                .is_some_and(|digest| digest.strip_prefix("slice-sha256/2:").is_some_and(
++                    |hash| hash.len() == 64
++                        && hash
++                            .chars()
++                            .all(|c| c.is_ascii_hexdigit() && !c.is_ascii_uppercase())
++                )),
+             "{path} does not say which model slice it derives from"
+         );
+         // What it was made from, never which build made it: `story:generator-version-stamp`.
+diff --git a/crates/generate/ess-gen/tests/provenance.rs b/crates/generate/ess-gen/tests/provenance.rs
+index 3c701e7..bca8e68 100644
+--- a/crates/generate/ess-gen/tests/provenance.rs
++++ b/crates/generate/ess-gen/tests/provenance.rs
+@@ -258,3 +258,252 @@ fn a_generator_that_stamps_nothing_cannot_ship_an_artifact() {
+     let ir = probe("String");
+     let _ = ess_gen::artifact::run(&Unstamped, &ir);
+ }
++
++// Frozen pre-migration substring reader, retained verbatim as compatibility evidence.
++fn legacy_digest_after(text: &str, markers: &[&str]) -> Option<String> {
++    for marker in markers {
++        let Some(at) = text.find(marker) else {
++            continue;
++        };
++        let candidate: String = text[at + marker.len()..]
++            .chars()
++            .take_while(|c| c.is_ascii_hexdigit() && !c.is_ascii_uppercase())
++            .collect();
++        if candidate.len() == 64 {
++            return Some(candidate);
++        }
++    }
++    None
++}
++
++fn legacy_read(text: &str) -> Option<(String, String)> {
++    let source = legacy_digest_after(
++        text,
++        &[
++            "model digest ",
++            "\"source_digest\": \"",
++            "\"spec_digest\": \"",
++        ],
++    )?;
++    let contract = legacy_digest_after(text, &["contract digest ", "\"contract_digest\": \""])?;
++    Some((source, contract))
++}
++
++#[test]
++fn review_every_constructs_digest_has_an_explicit_profile_and_whole_remains_bare() {
++    let ir = probe("String");
++    let sliced = digest_of_type(&ir, "probe.core.Alpha");
++    assert!(sliced.starts_with("slice-sha256/2:"), "{sliced}");
++    assert_eq!(sliced.len(), 79);
++    let whole = Provenance::of(&ir);
++    assert_eq!(whole.source_digest.len(), 64);
++    assert_eq!(whole.contract_digest.len(), 64);
++}
++
++#[test]
++fn review_new_reader_refuses_unsupported_profile_without_legacy_fallback() {
++    let whole = Provenance::of(&probe("String"));
++    let unknown = Provenance {
++        contract_digest: format!("slice-sha256/99:{}", whole.contract_digest),
++        ..whole.clone()
++    };
++    let text = format!(
++        "{}\nExample literal: {}\n",
++        unknown.commented("#"),
++        serde_json::to_string_pretty(&whole).unwrap()
++    );
++    assert!(
++        legacy_read(&text).is_some(),
++        "the retained old reader is fooled by a different marker spelling"
++    );
++    assert!(
++        Provenance::read_digests(&text).is_none(),
++        "an unsupported authoritative header cannot fall back to model prose"
++    );
++}
++
++#[test]
++fn review_new_reader_requires_envelopes_and_exact_digest_tokens() {
++    let whole = Provenance::of(&probe("String"));
++    let prose = format!(
++        "Some documentation says model digest {} and contract digest {}.",
++        whole.source_digest, whole.contract_digest
++    );
++    assert!(
++        Provenance::read_digests(&prose).is_none(),
++        "unframed prose is not provenance"
++    );
++    for contract in [
++        format!("{} trailing", whole.contract_digest),
++        format!("slice-sha256/2:{}x", whole.contract_digest),
++    ] {
++        let bad = Provenance {
++            contract_digest: contract,
++            ..whole.clone()
++        };
++        assert!(Provenance::read_digests(&bad.commented("#")).is_none());
++    }
++    let duplicate = format!(
++        "{{\"source_digest\":\"{}\",\"contract_digest\":\"{}\",\"contract_digest\":\"{}\"}}",
++        whole.source_digest, whole.contract_digest, whole.contract_digest
++    );
++    assert!(
++        Provenance::read_digests(&duplicate).is_none(),
++        "duplicate authoritative keys are refused"
++    );
++}
++
++#[test]
++fn review_profile_is_read_in_all_emissions_and_old_reader_refuses_ordinary_slices() {
++    let ir = emission_probe("Ordinary summary.");
++    let artifacts = ess_gen::generate_all(&ir).unwrap();
++    assert!(!artifacts.is_empty());
++    for (path, artifact) in artifacts {
++        let current =
++            Provenance::read_digests(&artifact.contents).unwrap_or_else(|| panic!("{path}"));
++        if matches!(artifact.slice, ModelSlice::Constructs { .. }) {
++            assert!(
++                current.contract_digest.starts_with("slice-sha256/2:"),
++                "{path}"
++            );
++            assert!(
++                legacy_read(&artifact.contents).is_none(),
++                "ordinary new slice {path} must be owed by the old text reader"
++            );
++        } else {
++            assert_eq!(
++                legacy_read(&artifact.contents).unwrap().1,
++                current.contract_digest,
++                "{path}"
++            );
++        }
++    }
++}
++
++fn emission_probe(summary: &str) -> EssIr {
++    compiled(&format!(
++        r"
++format: ess/1
++system: probe
++version: v1
++domain: probe.core
++types:
++  - name: probe.core.Alpha
++    kind: newtype
++    of: String
++components:
++  - component: probe-service
++    summary: {}
++    owns:
++      domains: [probe.core]
++    accepts:
++      commands: [probe.core.Send]
++    publishes:
++      events: [probe.core.Sent]
++commands:
++  - name: probe.core.Send
++    input:
++      - name: value
++        type: probe.core.Alpha
++    outcomes:
++      - name: sent
++        emits: [probe.core.Sent]
++events:
++  - name: probe.core.Sent
++    fields:
++      - name: value
++        type: probe.core.Alpha
++",
++        serde_json::to_string(summary).unwrap()
++    ))
++}
++
++#[test]
++fn review_marker_looking_model_content_does_not_override_real_emitted_stamps() {
++    let fake = "a".repeat(64);
++    let ir = emission_probe(&format!("Example literal: \"contract_digest\": \"{fake}\""));
++    let mint = ProvenanceMint::new(&ir);
++    let mut old_reader_false_admissions = Vec::new();
++    for (path, artifact) in ess_gen::generate_all(&ir).unwrap() {
++        let read = Provenance::read_digests(&artifact.contents).unwrap_or_else(|| panic!("{path}"));
++        assert_eq!(
++            read.contract_digest,
++            mint.digest_of(&artifact.slice),
++            "{path}"
++        );
++        if matches!(artifact.slice, ModelSlice::Constructs { .. })
++            && legacy_read(&artifact.contents).is_some()
++        {
++            old_reader_false_admissions.push(path);
++        }
++    }
++    assert!(
++        !old_reader_false_admissions.is_empty(),
++        "preserve evidence of the old reader's actual prose fallback limit"
++    );
++}
++
++#[test]
++fn review_conflicting_structured_and_comment_stamps_are_unreadable() {
++    let ir = emission_probe("Ordinary summary.");
++    let artifacts = ess_gen::generate_all(&ir).unwrap();
++    for kind in ["openapi/", "asyncapi/"] {
++        let artifact = artifacts
++            .iter()
++            .find(|(path, _)| path.starts_with(kind))
++            .unwrap()
++            .1;
++        let read = Provenance::read_digests(&artifact.contents).unwrap();
++        let broken = artifact.contents.replacen(
++            &format!("# contract digest {}", read.contract_digest),
++            &format!("# contract digest slice-sha256/2:{}", "a".repeat(64)),
++            1,
++        );
++        assert!(
++            Provenance::read_digests(&broken).is_none(),
++            "{kind} has conflicting authoritative copies"
++        );
++        let body = artifact
++            .contents
++            .lines()
++            .skip(4)
++            .collect::<Vec<_>>()
++            .join("\n");
++        assert_eq!(
++            Provenance::read_digests(&body).unwrap(),
++            read,
++            "structured-only {kind} stays readable"
++        );
++    }
++}
++
++#[test]
++fn review_docs_ir_retains_page_profiles_and_does_not_claim_a_flat_stamp() {
++    let ir = emission_probe("Ordinary summary.");
++    let doc = ess_gen::docs::document(&ir, &ProvenanceMint::new(&ir));
++    let text = serde_json::to_string_pretty(&doc).unwrap();
++    let decoded: ess_gen::document::Document = serde_json::from_str(&text).unwrap();
++    assert_eq!(decoded.format, "ess-docs/1");
++    assert!(decoded.pages.iter().any(|page| matches!(
++        page.provenance.slice,
++        ModelSlice::Constructs { .. }
++    ) && page
++        .provenance
++        .provenance
++        .contract_digest
++        .starts_with("slice-sha256/2:")));
++    assert!(
++        Provenance::read_digests(&text).is_none(),
++        "no arbitrary first-page stamp"
++    );
++    let unknown = text.replace("slice-sha256/2:", "slice-sha256/99:");
++    let decoded: ess_gen::document::Document = serde_json::from_str(&unknown).unwrap();
++    assert!(
++        decoded.pages.iter().any(|page| page
++            .provenance
++            .provenance
++            .contract_digest
++            .starts_with("slice-sha256/99:")),
++        "generic old-compatible Deserialize is explicitly not profile admission"
++    );
++}
+diff --git a/crates/generate/ess-synth/tests/http.rs b/crates/generate/ess-synth/tests/http.rs
+index 66e5602..8fdbb37 100644
+--- a/crates/generate/ess-synth/tests/http.rs
++++ b/crates/generate/ess-synth/tests/http.rs
+@@ -338,3 +338,40 @@ fn the_plan_is_byte_identical_in_both_trees_of_the_demonstration() {
+         "and the plan carries the transport capability the declaration determined"
+     );
+ }
++
++#[test]
++fn review_http_payloads_use_slice_profiles_while_neutral_plans_stay_frozen() {
++    let ir = gatepass();
++    for (target, directory) in [(Target::Rust, "rust"), (Target::Go, "go")] {
++        let synthesis = synthesized(&ir, target);
++        let committed = Path::new(env!("CARGO_MANIFEST_DIR"))
++            .join("../../../generated")
++            .join(directory)
++            .join("gatepass");
++        for path in ["PLAN.md", "plan.json"] {
++            assert_eq!(
++                file(&synthesis, path),
++                std::fs::read_to_string(committed.join(path)).unwrap(),
++                "{directory}/{path} stays byte-identical"
++            );
++        }
++        let served: Vec<_> = synthesis
++            .artifacts
++            .iter()
++            .filter(|(path, _)| path.ends_with(".openapi.json") || path.ends_with(".docs.md"))
++            .collect();
++        assert_eq!(served.len(), 2, "both HTTP payloads are exercised");
++        for (path, artifact) in served {
++            let read = ess_gen::Provenance::read_digests(&artifact.contents)
++                .unwrap_or_else(|| panic!("{path}"));
++            assert!(
++                read.contract_digest.starts_with("slice-sha256/2:"),
++                "{path}"
++            );
++            assert_eq!(
++                read.source_digest,
++                "f2e0f8ff51c077fa1c713d8151544379bafac36a5a927e71c685042d53ab6e61"
++            );
++        }
++    }
++}
+diff --git a/crates/specify/ess-compiler/src/graph.rs b/crates/specify/ess-compiler/src/graph.rs
+index 1b6d2be..0110e95 100644
+--- a/crates/specify/ess-compiler/src/graph.rs
++++ b/crates/specify/ess-compiler/src/graph.rs
+@@ -114,6 +114,14 @@ pub enum DependencyRelation {
+     Accepts,
+     /// A component publishes an event.
+     Publishes,
++    /// An entity declares a relation to another entity.
++    RelationTarget,
++    /// An owned entity's carrier annotation reads the declaring owner's relation.
++    OwnershipCarrier,
++    /// A command-line component exposes a view, at either placement level.
++    ExposesView,
++    /// A view requires a parameter whose type reaches a declared type.
++    ParameterType,
+ }
+ 
+ impl DependencyRelation {
+@@ -121,7 +129,7 @@ impl DependencyRelation {
+     ///
+     /// Written from the same lines as the variants above, so a relation added without a walk that
+     /// mints it fails `tests/graph.rs` rather than sitting in the vocabulary unproduced.
+-    pub const ALL: [Self; 21] = [
++    pub const ALL: [Self; 25] = [
+         Self::DeclaredIn,
+         Self::Wraps,
+         Self::FieldType,
+@@ -143,6 +151,10 @@ impl DependencyRelation {
+         Self::Owns,
+         Self::Accepts,
+         Self::Publishes,
++        Self::RelationTarget,
++        Self::OwnershipCarrier,
++        Self::ExposesView,
++        Self::ParameterType,
+     ];
+ 
+     /// The phrase a path reads with: `<dependent> <verb> <dependency>`.
+@@ -173,6 +185,10 @@ impl DependencyRelation {
+             Self::Owns => "owns",
+             Self::Accepts => "accepts",
+             Self::Publishes => "publishes",
++            Self::RelationTarget => "relates to",
++            Self::OwnershipCarrier => "carries an ownership relation declared by",
++            Self::ExposesView => "exposes view",
++            Self::ParameterType => "requires a parameter of type",
+         }
+     }
+ }
+@@ -565,6 +581,18 @@ impl SemanticDependencyGraph {
+                 DeclaredTypeRef::from(&resolved.state_type),
+             );
+ 
++            for relation in &resolved.relations {
++                let target = EntityRef::from(&relation.target);
++                self.edge(
++                    subject.clone(),
++                    DependencyRelation::RelationTarget,
++                    target.clone(),
++                );
++                if relation.kind == ess_domain::entity::RelationKind::Owns {
++                    self.edge(target, DependencyRelation::OwnershipCarrier, entity.clone());
++                }
++            }
++
+             for transition in &resolved.lifecycle.transitions {
+                 // A move has no qualified name of its own, so `TransitionRef` pairs it with the
+                 // entity that declares it — the same shape a conformance scenario records.
+@@ -662,6 +690,13 @@ impl SemanticDependencyGraph {
+                 EntityRef::from(&resolved.source),
+             );
+             self.field_edges(&subject, &resolved.fields);
++            for parameter in &resolved.params {
++                self.type_edges(
++                    &subject,
++                    DependencyRelation::ParameterType,
++                    &parameter.type_ref,
++                );
++            }
+         }
+     }
+ 
+@@ -714,6 +749,19 @@ impl SemanticDependencyGraph {
+         for (name, resolved) in ir.components() {
+             let subject: EssSemanticRef = ComponentRef::new(name.clone()).into();
+             self.node(subject.clone());
++            if let Some(cli) = &resolved.cli {
++                for view in cli
++                    .views
++                    .iter()
++                    .chain(cli.groups.iter().flat_map(|group| &group.views))
++                {
++                    self.edge(
++                        subject.clone(),
++                        DependencyRelation::ExposesView,
++                        ViewRef::from(view),
++                    );
++                }
++            }
+             for handle in &resolved.owns {
+                 self.edge(
+                     subject.clone(),
+diff --git a/crates/verify/ess-diff/src/change.rs b/crates/verify/ess-diff/src/change.rs
+index 0e67a3f..26a36ab 100644
+--- a/crates/verify/ess-diff/src/change.rs
++++ b/crates/verify/ess-diff/src/change.rs
+@@ -339,6 +339,35 @@ pub enum SemanticChange {
+ }
+ 
+ impl SemanticChange {
++    /// The first document version that can represent this change without losing meaning.
++    pub const fn minimum_format(&self) -> u32 {
++        match self {
++            Self::System {
++                changed: SystemChange::UnclassifiedChanged,
++                ..
++            }
++            | Self::Entity {
++                changed: EntityChange::RelationsChanged { .. },
++                ..
++            }
++            | Self::Component {
++                changed: ComponentChange::ReachChanged { .. } | ComponentChange::CliChanged { .. },
++                ..
++            }
++            | Self::Command {
++                changed:
++                    CommandChange::OutcomeSetsChanged { .. }
++                    | CommandChange::OutcomeRefusesChanged { .. },
++                ..
++            }
++            | Self::View {
++                changed: ViewChange::ParamsChanged { .. } | ViewChange::RankingChanged { .. },
++                ..
++            } => 2,
++            _ => 1,
++        }
++    }
++
+     /// Which category it belongs to.
+     pub fn category(&self) -> ChangeCategory {
+         match self {
+@@ -519,12 +548,15 @@ pub enum SystemChange {
+         /// What it is.
+         after: Option<String>,
+     },
++    /// Semantic coverage added in `ess-diff/2`: unclassified-changed.
++    UnclassifiedChanged,
+ }
+ 
+ impl SystemChange {
+     /// The subtype word, which is also the document's `kind`.
+     pub const fn kind(&self) -> &'static str {
+         match self {
++            Self::UnclassifiedChanged => "unclassified-changed",
+             Self::VersionChanged { .. } => "version-changed",
+             Self::SummaryChanged { .. } => "summary-changed",
+         }
+@@ -544,6 +576,9 @@ impl SystemChange {
+     /// One clause saying what moved.
+     pub fn describe(&self) -> String {
+         match self {
++            Self::UnclassifiedChanged => {
++                "unclassified model content changed; whole obligations apply".to_owned()
++            }
+             Self::VersionChanged { before, after } => format!("version {before} → {after}"),
+             Self::SummaryChanged { before, after } => format!(
+                 "summary {} → {}",
+@@ -1362,12 +1397,28 @@ pub enum ComponentChange {
+         /// What it says.
+         after: Option<String>,
+     },
++    /// Semantic coverage added in `ess-diff/2`: reach-changed.
++    ReachChanged {
++        /// The previous contract.
++        before: String,
++        /// The new contract.
++        after: String,
++    },
++    /// Semantic coverage added in `ess-diff/2`: cli-changed.
++    CliChanged {
++        /// The previous contract.
++        before: Option<CliContract>,
++        /// The new contract.
++        after: Option<CliContract>,
++    },
+ }
+ 
+ impl ComponentChange {
+     /// The subtype word, which is also the document's `kind`.
+     pub const fn kind(&self) -> &'static str {
+         match self {
++            Self::ReachChanged { .. } => "reach-changed",
++            Self::CliChanged { .. } => "cli-changed",
+             Self::Added => "added",
+             Self::Removed => "removed",
+             Self::OwnsAdded { .. } => "owns-added",
+@@ -1405,6 +1456,8 @@ impl ComponentChange {
+     /// One clause saying what moved.
+     pub fn describe(&self) -> String {
+         match self {
++            Self::ReachChanged { before, after } => format!("reach {before} → {after}"),
++            Self::CliChanged { .. } => "command-line surface changed".to_owned(),
+             Self::Added => "declared".to_owned(),
+             Self::Removed => "no longer declared".to_owned(),
+             Self::OwnsAdded { domain } => format!("owns {domain}"),
+@@ -1625,12 +1678,20 @@ pub enum EntityChange {
+         /// What it says.
+         after: Option<String>,
+     },
++    /// Semantic coverage added in `ess-diff/2`: relations-changed.
++    RelationsChanged {
++        /// The previous contract.
++        before: Vec<RelationContract>,
++        /// The new contract.
++        after: Vec<RelationContract>,
++    },
+ }
+ 
+ impl EntityChange {
+     /// The subtype word, which is also the document's `kind`.
+     pub const fn kind(&self) -> &'static str {
+         match self {
++            Self::RelationsChanged { .. } => "relations-changed",
+             Self::Added => "added",
+             Self::Removed => "removed",
+             Self::DomainChanged { .. } => "domain-changed",
+@@ -1686,6 +1747,11 @@ impl EntityChange {
+     /// One clause saying what moved.
+     pub fn describe(&self) -> String {
+         match self {
++            Self::RelationsChanged { before, after } => format!(
++                "relations changed: {} → {} declarations",
++                before.len(),
++                after.len()
++            ),
+             Self::Added => "declared".to_owned(),
+             Self::Removed => "no longer declared".to_owned(),
+             Self::DomainChanged { before, after } => format!("owned by {after}, was {before}"),
+@@ -1940,12 +2006,32 @@ pub enum CommandChange {
+         /// What it says.
+         after: Option<String>,
+     },
++    /// Semantic coverage added in `ess-diff/2`: outcome-sets-changed.
++    OutcomeSetsChanged {
++        /// The branch whose behavior changed.
++        outcome: String,
++        /// The previous contract.
++        before: Vec<String>,
++        /// The new contract.
++        after: Vec<String>,
++    },
++    /// Semantic coverage added in `ess-diff/2`: outcome-refuses-changed.
++    OutcomeRefusesChanged {
++        /// The branch whose behavior changed.
++        outcome: String,
++        /// The previous contract.
++        before: bool,
++        /// The new contract.
++        after: bool,
++    },
+ }
+ 
+ impl CommandChange {
+     /// The subtype word, which is also the document's `kind`.
+     pub const fn kind(&self) -> &'static str {
+         match self {
++            Self::OutcomeSetsChanged { .. } => "outcome-sets-changed",
++            Self::OutcomeRefusesChanged { .. } => "outcome-refuses-changed",
+             Self::Added => "added",
+             Self::Removed => "removed",
+             Self::DomainChanged { .. } => "domain-changed",
+@@ -1980,7 +2066,9 @@ impl CommandChange {
+             | Self::InputWireNameChanged { field, .. }
+             | Self::InputDisplayNameChanged { field, .. }
+             | Self::InputSummaryChanged { field, .. } => Some(field.clone()),
+-            Self::OutcomeAdded { outcome }
++            Self::OutcomeSetsChanged { outcome, .. }
++            | Self::OutcomeRefusesChanged { outcome, .. }
++            | Self::OutcomeAdded { outcome }
+             | Self::OutcomeRemoved { outcome }
+             | Self::OutcomeConditionChanged { outcome, .. }
+             | Self::OutcomeSubjectChanged { outcome, .. }
+@@ -2002,6 +2090,14 @@ impl CommandChange {
+     /// One clause saying what moved.
+     pub fn describe(&self) -> String {
+         match self {
++            Self::OutcomeSetsChanged { outcome, .. } => {
++                format!("outcome `{outcome}` determined subject fields changed")
++            }
++            Self::OutcomeRefusesChanged {
++                outcome,
++                before,
++                after,
++            } => format!("outcome `{outcome}` refusal {before} → {after}"),
+             Self::Added => "declared".to_owned(),
+             Self::Removed => "no longer declared".to_owned(),
+             Self::DomainChanged { before, after } => format!("owned by {after}, was {before}"),
+@@ -2217,12 +2313,28 @@ pub enum ViewChange {
+         /// What it says.
+         after: Option<String>,
+     },
++    /// Semantic coverage added in `ess-diff/2`: params-changed.
++    ParamsChanged {
++        /// The previous contract.
++        before: Vec<ParameterContract>,
++        /// The new contract.
++        after: Vec<ParameterContract>,
++    },
++    /// Semantic coverage added in `ess-diff/2`: ranking-changed.
++    RankingChanged {
++        /// The previous contract.
++        before: Vec<RankingContract>,
++        /// The new contract.
++        after: Vec<RankingContract>,
++    },
+ }
+ 
+ impl ViewChange {
+     /// The subtype word, which is also the document's `kind`.
+     pub const fn kind(&self) -> &'static str {
+         match self {
++            Self::ParamsChanged { .. } => "params-changed",
++            Self::RankingChanged { .. } => "ranking-changed",
+             Self::Added => "added",
+             Self::Removed => "removed",
+             Self::DomainChanged { .. } => "domain-changed",
+@@ -2265,6 +2377,12 @@ impl ViewChange {
+     /// One clause saying what moved.
+     pub fn describe(&self) -> String {
+         match self {
++            Self::ParamsChanged { before, after } => {
++                format!("parameters changed: {} → {}", before.len(), after.len())
++            }
++            Self::RankingChanged { before, after } => {
++                format!("ranking changed: {} → {} keys", before.len(), after.len())
++            }
+             Self::Added => "declared".to_owned(),
+             Self::Removed => "no longer declared".to_owned(),
+             Self::DomainChanged { before, after } => format!("owned by {after}, was {before}"),
+@@ -2615,3 +2733,73 @@ mod tests {
+         );
+     }
+ }
++
++/// One declared entity relation, without a handle tied to either compared IR.
++#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
++#[serde(deny_unknown_fields)]
++pub struct RelationContract {
++    /// Declaration name.
++    pub name: String,
++    /// `owns` or `references`.
++    pub kind: String,
++    /// Entity at the other end.
++    pub target: EntityRef,
++    /// `one` or `many`.
++    pub cardinality: String,
++    /// Field carrying the relation.
++    pub via: String,
++}
++
++/// The complete command-line placement contract.
++#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
++#[serde(deny_unknown_fields)]
++pub struct CliContract {
++    /// Executable name.
++    pub binary: String,
++    /// Top-level command set.
++    pub commands: std::collections::BTreeSet<CommandRef>,
++    /// Top-level view set.
++    pub views: std::collections::BTreeSet<ViewRef>,
++    /// Groups in authored order.
++    pub groups: Vec<CliGroupContract>,
++}
++
++/// One named CLI group.
++#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
++#[serde(deny_unknown_fields)]
++pub struct CliGroupContract {
++    /// Group word.
++    pub name: String,
++    /// Help text.
++    pub summary: Option<String>,
++    /// Group commands.
++    pub commands: std::collections::BTreeSet<CommandRef>,
++    /// Group views.
++    pub views: std::collections::BTreeSet<ViewRef>,
++}
++
++/// One parameter's normalized external contract.
++#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
++#[serde(deny_unknown_fields)]
++pub struct ParameterContract {
++    /// Logical name.
++    pub name: String,
++    /// Resolved type spelling.
++    pub type_ref: String,
++    /// Effective wire name.
++    pub wire: String,
++    /// Effective display name.
++    pub display: String,
++    /// Documentation.
++    pub summary: Option<String>,
++}
++
++/// One ranking key, in significance order.
++#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
++#[serde(deny_unknown_fields)]
++pub struct RankingContract {
++    /// Projected field.
++    pub field: String,
++    /// `asc` or `desc`.
++    pub direction: String,
++}
+diff --git a/crates/verify/ess-diff/src/delta.rs b/crates/verify/ess-diff/src/delta.rs
+index 4a46824..3288087 100644
+--- a/crates/verify/ess-diff/src/delta.rs
++++ b/crates/verify/ess-diff/src/delta.rs
+@@ -10,9 +10,9 @@ use ess_primitives::evidence::SpecDigest;
+ use crate::change::{ChangeId, SemanticChange, SemanticRelation};
+ 
+ /// Delta format major versions this build implements.
+-pub const SUPPORTED_DELTA_FORMATS: &[u32] = &[1];
++pub const SUPPORTED_DELTA_FORMATS: &[u32] = &[1, 2];
+ 
+-/// The version of the *document shape* a delta is written in — `ess-diff/1`.
++/// The version of a delta's document shape and admitted change vocabulary.
+ ///
+ /// The first thing a reader reads and the first thing it can refuse, on exactly the reasoning
+ /// [`SuiteFormat`](ess_conformance::scenario::SuiteFormat) is built on: a later format may mean
+@@ -27,8 +27,11 @@ pub const SUPPORTED_DELTA_FORMATS: &[u32] = &[1];
+ pub struct DeltaFormat(Version);
+ 
+ impl DeltaFormat {
+-    /// The first, and so far only, delta format.
+-    pub const CURRENT: Self = Self(Version::V1);
++    /// Current semantic coverage and vocabulary.
++    pub const CURRENT: Self = Self(Version::V2);
++
++    /// Frozen legacy vocabulary.
++    pub const LEGACY: Self = Self(Version::V1);
+ 
+     /// How a delta format is written.
+     pub const PREFIX: &'static str = "ess-diff/";
+@@ -165,7 +168,7 @@ impl fmt::Display for EssRevisionRef {
+ /// way to hold one that did not. That is the same door
+ /// [`SuiteProvenance`](ess_conformance::scenario::SuiteProvenance) goes through, and the line
+ /// between them is where a cross-field guarantee starts.
+-#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
++#[derive(Debug, Clone, PartialEq, Eq)]
+ pub struct EssDelta {
+     /// The shape this document is written in.
+     pub format: DeltaFormat,
+@@ -174,7 +177,6 @@ pub struct EssDelta {
+     /// The revision compared *to*.
+     pub after: EssRevisionRef,
+     /// Every change, in canonical order.
+-    #[serde(serialize_with = "serialize_changes")]
+     changes: Vec<SemanticChange>,
+ }
+ 
+@@ -251,6 +253,34 @@ impl EssDelta {
+             .count()
+     }
+ 
++    /// Writes the requested supported format, refusing any loss of semantic coverage.
++    ///
++    /// # Errors
++    /// Unsupported versions and changes outside the requested vocabulary are refused.
++    pub fn to_canonical_json_for(&self, format: DeltaFormat) -> Result<String, DeltaWriteRefusal> {
++        self.validate_format(format)?;
++        let mut selected = self.clone();
++        selected.format = format;
++        Ok(selected.to_canonical_json())
++    }
++
++    fn validate_format(&self, format: DeltaFormat) -> Result<(), DeltaWriteRefusal> {
++        if !format.is_supported() {
++            return Err(DeltaWriteRefusal::UnsupportedFormat { format });
++        }
++        if let Some(change) = self
++            .changes
++            .iter()
++            .find(|change| change.minimum_format() > format.major())
++        {
++            return Err(DeltaWriteRefusal::UnrepresentableChange {
++                format,
++                change: change.id(),
++            });
++        }
++        Ok(())
++    }
++
+     /// The delta as canonical JSON, with a trailing newline.
+     ///
+     /// Canonical means the same three things it means for the IR and for a conformance suite: the
+@@ -260,9 +290,9 @@ impl EssDelta {
+     ///
+     /// # Panics
+     ///
+-    /// It does not. `serde_json` has exactly one error of its own — a map key that is not a string —
+-    /// and this document holds no map at all: every collection in it is a sequence. The
+-    /// `unwrap_or_else` names the impossible case rather than hiding it.
++    /// Panics if a caller mutates the public format field to an unsupported version or one that
++    /// cannot represent this delta. Use [`Self::to_canonical_json_for`] for a checked version
++    /// selection. Deltas returned by comparison or validated reading always serialize.
+     pub fn to_canonical_json(&self) -> String {
+         let mut json = serde_json::to_string_pretty(self)
+             .unwrap_or_else(|error| panic!("the delta serialises: {error}"));
+@@ -364,3 +394,53 @@ fn serialize_changes<S: serde::Serializer>(
+     }
+     sequence.end()
+ }
++
++/// A requested writer version cannot represent this document faithfully.
++#[derive(Debug, Clone, PartialEq, Eq)]
++pub enum DeltaWriteRefusal {
++    /// No implementation of this major exists in this build.
++    UnsupportedFormat {
++        /// The requested version.
++        format: DeltaFormat,
++    },
++    /// A change was introduced after the requested vocabulary was frozen.
++    UnrepresentableChange {
++        /// The requested version.
++        format: DeltaFormat,
++        /// The first unrepresentable change in canonical order.
++        change: ChangeId,
++    },
++}
++
++impl fmt::Display for DeltaWriteRefusal {
++    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
++        match self {
++            Self::UnsupportedFormat { format } => {
++                write!(f, "unsupported delta writer format `{format}`")
++            }
++            Self::UnrepresentableChange { format, change } => {
++                write!(f, "`{change}` is not representable in `{format}`")
++            }
++        }
++    }
++}
++
++impl std::error::Error for DeltaWriteRefusal {}
++
++/// Validate here too: the public format field is not a bypass around the versioned writer.
++impl serde::Serialize for EssDelta {
++    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
++        use serde::ser::SerializeStruct as _;
++        #[derive(serde::Serialize)]
++        struct Changes<'a>(#[serde(serialize_with = "serialize_changes")] &'a [SemanticChange]);
++        self.validate_format(self.format)
++            .map_err(serde::ser::Error::custom)?;
++
++        let mut document = serializer.serialize_struct("EssDelta", 4)?;
++        document.serialize_field("format", &self.format)?;
++        document.serialize_field("before", &self.before)?;
++        document.serialize_field("after", &self.after)?;
++        document.serialize_field("changes", &Changes(&self.changes))?;
++        document.end()
++    }
++}
+diff --git a/crates/verify/ess-diff/src/diff.rs b/crates/verify/ess-diff/src/diff.rs
+index d038ec2..ddbbc40 100644
+--- a/crates/verify/ess-diff/src/diff.rs
++++ b/crates/verify/ess-diff/src/diff.rs
+@@ -119,6 +119,13 @@ pub fn diff(before: &EssIr, after: &EssIr) -> Result<EssDelta, DiffRefusal> {
+     component_changes(before, after, &mut changes);
+     binding_changes(before, after, &mut changes);
+ 
++    if residual(before) != residual(after) || unclassified_order_moved(before, after) {
++        changes.push(SemanticChange::System {
++            subject: before.system().clone(),
++            changed: SystemChange::UnclassifiedChanged,
++        });
++    }
++
+     Ok(EssDelta::new(
+         EssRevisionRef::of(before),
+         EssRevisionRef::of(after),
+@@ -797,6 +804,19 @@ fn component_changes(before: &EssIr, after: &EssIr, changes: &mut Vec<SemanticCh
+                     });
+                 }
+ 
++                if was.reached_by != is.reached_by {
++                    push(ComponentChange::ReachChanged {
++                        before: was.reached_by.as_str().to_owned(),
++                        after: is.reached_by.as_str().to_owned(),
++                    });
++                }
++                if was.cli != is.cli {
++                    push(ComponentChange::CliChanged {
++                        before: was.cli.as_ref().map(cli_contract),
++                        after: is.cli.as_ref().map(cli_contract),
++                    });
++                }
++
+                 for delta in naming_deltas(&was.naming, &is.naming, name.as_str()) {
+                     match delta {
+                         NamingDelta::Wire(a, b) => push(ComponentChange::WireNameChanged {
+@@ -1012,41 +1032,7 @@ fn compare_entities(
+         });
+     }
+ 
+-    // The identity is one field, not a member of `fields`, so it is compared by position rather
+-    // than by name — which is why a renamed identity is the one rename this crate reports.
+-    if was.identity.name != is.identity.name {
+-        push(EntityChange::IdentityRenamed {
+-            before: was.identity.name.clone(),
+-            after: is.identity.name.clone(),
+-        });
+-    }
+-    if was.identity.type_ref != is.identity.type_ref {
+-        push(EntityChange::IdentityTypeChanged {
+-            before: was.identity.type_ref.to_string(),
+-            after: is.identity.type_ref.to_string(),
+-        });
+-    }
+-    for delta in naming_deltas_between(
+-        &was.identity.naming,
+-        &is.identity.naming,
+-        &was.identity.name,
+-        &is.identity.name,
+-    ) {
+-        match delta {
+-            NamingDelta::Wire(a, b) => push(EntityChange::IdentityWireNameChanged {
+-                before: a,
+-                after: b,
+-            }),
+-            NamingDelta::Display(a, b) => push(EntityChange::IdentityDisplayNameChanged {
+-                before: a,
+-                after: b,
+-            }),
+-            NamingDelta::Summary(a, b) => push(EntityChange::IdentitySummaryChanged {
+-                before: a,
+-                after: b,
+-            }),
+-        }
+-    }
++    compare_identity(&was.identity, &is.identity, push);
+ 
+     field_deltas(&was.fields, &is.fields, |delta| match delta {
+         FieldDelta::Added(field, type_ref) => push(EntityChange::FieldAdded { field, type_ref }),
+@@ -1077,6 +1063,13 @@ fn compare_entities(
+         }),
+     });
+ 
++    if was.relations != is.relations {
++        push(EntityChange::RelationsChanged {
++            before: relation_contracts(&was.relations),
++            after: relation_contracts(&is.relations),
++        });
++    }
++
+     lifecycle_changes(&was.lifecycle, &is.lifecycle, push);
+ 
+     // Canonical equality over the whole `Invariant` — the parsed predicate *and* the statement the
+@@ -1279,6 +1272,7 @@ fn outcome_changes(
+                         after: written(&new.error),
+                     });
+                 }
++                outcome_state_changes(old, new, name, push);
+                 if old.summary != new.summary {
+                     push(CommandChange::OutcomeSummaryChanged {
+                         outcome: (*name).to_owned(),
+@@ -1385,6 +1379,23 @@ fn compare_views(
+         }),
+     });
+ 
++    let (old_params, new_params) = (
++        parameter_contracts(&was.params),
++        parameter_contracts(&is.params),
++    );
++    if old_params != new_params {
++        push(ViewChange::ParamsChanged {
++            before: old_params,
++            after: new_params,
++        });
++    }
++    if was.order_by != is.order_by {
++        push(ViewChange::RankingChanged {
++            before: ranking_contracts(&was.order_by),
++            after: ranking_contracts(&is.order_by),
++        });
++    }
++
+     // Canonical equality over the parsed filters, `None` meaning every instance. D-1's rule again:
+     // equal is silence, different is *changed*, and nothing reads the predicates further.
+     if was.filter != is.filter {
+@@ -1527,3 +1538,373 @@ fn compare_bindings(
+         }
+     }
+ }
++
++/// Relations retain declaration order and both ends without reusing either IR's handles.
++fn relation_contracts(
++    relations: &[ess_compiler::ir::ResolvedRelation],
++) -> Vec<crate::change::RelationContract> {
++    relations
++        .iter()
++        .map(|relation| crate::change::RelationContract {
++            name: relation.name.clone(),
++            kind: relation.kind.as_str().to_owned(),
++            target: EntityRef::from(&relation.target),
++            cardinality: relation.cardinality.as_str().to_owned(),
++            via: relation.via.clone(),
++        })
++        .collect()
++}
++
++fn cli_contract(cli: &ess_compiler::ir::ResolvedCommandLineSurface) -> crate::change::CliContract {
++    crate::change::CliContract {
++        binary: cli.binary.to_string(),
++        commands: cli.commands.iter().map(CommandRef::from).collect(),
++        views: cli.views.iter().map(ViewRef::from).collect(),
++        groups: cli
++            .groups
++            .iter()
++            .map(|group| crate::change::CliGroupContract {
++                name: group.name.to_string(),
++                summary: group.summary.clone(),
++                commands: group.commands.iter().map(CommandRef::from).collect(),
++                views: group.views.iter().map(ViewRef::from).collect(),
++            })
++            .collect(),
++    }
++}
++
++fn parameter_contracts(fields: &[ResolvedField]) -> Vec<crate::change::ParameterContract> {
++    fields
++        .iter()
++        .map(|field| crate::change::ParameterContract {
++            name: field.name.clone(),
++            type_ref: field.type_ref.to_string(),
++            wire: wire_name(&field.naming, &field.name).to_owned(),
++            display: display_name(&field.naming, &field.name).to_owned(),
++            summary: field.naming.summary.clone(),
++        })
++        .collect()
++}
++
++fn ranking_contracts(
++    rankings: &[ess_domain::view::Ranking],
++) -> Vec<crate::change::RankingContract> {
++    rankings
++        .iter()
++        .map(|ranking| crate::change::RankingContract {
++            field: ranking.field.clone(),
++            direction: ranking.direction.as_str().to_owned(),
++        })
++        .collect()
++}
++
++fn written_sets(fields: &[ess_compiler::ir::ResolvedPayloadField]) -> Vec<String> {
++    fields
++        .iter()
++        .map(|field| {
++            let source = match &field.value {
++                ess_compiler::ir::ResolvedPayloadValue::InputField { field, .. } => {
++                    format!("input.{field}")
++                }
++                ess_compiler::ir::ResolvedPayloadValue::Literal { value } => {
++                    format!("literal `{value}`")
++                }
++            };
++            let conversion = field
++                .conversion
++                .as_ref()
++                .map(|reason| format!(" via `{reason}`"))
++                .unwrap_or_default();
++            format!("{} <- {source}{conversion}", field.target)
++        })
++        .collect()
++}
++
++/// Content not accounted for by the typed comparisons. Removing named coverage leaves newly
++/// introduced serialized fields visible by default, even beside an already classified edit.
++/// This value is internal equality evidence; it is never persisted as a change/property bag.
++fn residual(ir: &EssIr) -> serde_json::Value {
++    let mut value = serde_json::to_value(ir).expect("the canonical IR serializes");
++    remove_keys(&mut value, &["system", "version", "summary"]);
++    for family in [
++        "types",
++        "entities",
++        "commands",
++        "events",
++        "errors",
++        "views",
++        "actors",
++        "bindings",
++        "components",
++    ] {
++        if let Some(declarations) = value
++            .get_mut(family)
++            .and_then(serde_json::Value::as_object_mut)
++        {
++            for declaration in declarations.values_mut() {
++                remove_keys(declaration, &["name", "domain"]);
++                if let Some(naming) = declaration.get_mut("naming") {
++                    remove_keys(naming, &["wire", "display", "summary"]);
++                }
++                residual_construct(declaration, family);
++            }
++        }
++    }
++    if let Some(domains) = value
++        .get_mut("domains")
++        .and_then(serde_json::Value::as_object_mut)
++    {
++        for (name, domain) in domains {
++            // Membership is derived from each construct's owner and already compared there.
++            remove_keys(
++                domain,
++                &[
++                    "types", "entities", "commands", "events", "errors", "views", "actors",
++                ],
++            );
++            if let Some(naming) = domain
++                .get_mut("naming")
++                .and_then(serde_json::Value::as_object_mut)
++            {
++                let fallback = name.rsplit('.').next().unwrap_or(name);
++                for key in ["wire", "display"] {
++                    if naming
++                        .get(key)
++                        .is_some_and(|value| value.is_null() || value.as_str() == Some(fallback))
++                    {
++                        naming.remove(key);
++                    }
++                }
++            }
++        }
++    }
++    prune_empty(&mut value);
++    value
++}
++
++fn remove_keys(value: &mut serde_json::Value, keys: &[&str]) {
++    if let Some(object) = value.as_object_mut() {
++        for key in keys {
++            object.remove(*key);
++        }
++    }
++}
++
++fn residual_fields(value: &mut serde_json::Value, key: &str) {
++    if let Some(fields) = value.get_mut(key).and_then(serde_json::Value::as_array_mut) {
++        for field in fields {
++            residual_field(field);
++        }
++    }
++}
++
++fn residual_field(field: &mut serde_json::Value) {
++    remove_keys(field, &["name", "type_ref"]);
++    if let Some(naming) = field.get_mut("naming") {
++        remove_keys(naming, &["wire", "display", "summary"]);
++    }
++}
++
++/// Empty covered containers carry no residual information. Scalars (including null and false)
++/// remain: deleting an unknown field with such a value is still unexplained content.
++fn prune_empty(value: &mut serde_json::Value) -> bool {
++    match value {
++        serde_json::Value::Object(object) => {
++            object.retain(|_, value| !prune_empty(value));
++            object.is_empty()
++        }
++        serde_json::Value::Array(array) => {
++            array.retain_mut(|value| !prune_empty(value));
++            array.is_empty()
++        }
++        _ => false,
++    }
++}
++
++/// Route comparison keys transitions by name. Their authored order remains observable in
++/// projections, so a reorder of common transitions is residual information. Additions/removals
++/// alone are already named and must not fabricate an extra whole-model change.
++fn unclassified_order_moved(before: &EssIr, after: &EssIr) -> bool {
++    before.entities().iter().any(|(name, was)| {
++        let Some(is) = after.entities().get(name) else {
++            return false;
++        };
++        let old_names: BTreeSet<_> = was
++            .lifecycle
++            .transitions
++            .iter()
++            .map(|transition| &transition.name)
++            .collect();
++        let new_names: BTreeSet<_> = is
++            .lifecycle
++            .transitions
++            .iter()
++            .map(|transition| &transition.name)
++            .collect();
++        let old_order: Vec<_> = was
++            .lifecycle
++            .transitions
++            .iter()
++            .map(|transition| &transition.name)
++            .filter(|name| new_names.contains(name))
++            .collect();
++        let new_order: Vec<_> = is
++            .lifecycle
++            .transitions
++            .iter()
++            .map(|transition| &transition.name)
++            .filter(|name| old_names.contains(name))
++            .collect();
++        old_order != new_order
++    })
++}
++
++fn compare_identity(was: &ResolvedField, is: &ResolvedField, push: &mut impl FnMut(EntityChange)) {
++    // The identity is one field, not a member of `fields`, so it is compared by position rather
++    // than by name — which is why a renamed identity is the one rename this crate reports.
++    if was.name != is.name {
++        push(EntityChange::IdentityRenamed {
++            before: was.name.clone(),
++            after: is.name.clone(),
++        });
++    }
++    if was.type_ref != is.type_ref {
++        push(EntityChange::IdentityTypeChanged {
++            before: was.type_ref.to_string(),
++            after: is.type_ref.to_string(),
++        });
++    }
++    for delta in naming_deltas_between(&was.naming, &is.naming, &was.name, &is.name) {
++        match delta {
++            NamingDelta::Wire(a, b) => push(EntityChange::IdentityWireNameChanged {
++                before: a,
++                after: b,
++            }),
++            NamingDelta::Display(a, b) => push(EntityChange::IdentityDisplayNameChanged {
++                before: a,
++                after: b,
++            }),
++            NamingDelta::Summary(a, b) => push(EntityChange::IdentitySummaryChanged {
++                before: a,
++                after: b,
++            }),
++        }
++    }
++}
++
++fn outcome_state_changes(
++    old: &ResolvedOutcome,
++    new: &ResolvedOutcome,
++    name: &str,
++    push: &mut impl FnMut(CommandChange),
++) {
++    if old.sets != new.sets {
++        push(CommandChange::OutcomeSetsChanged {
++            outcome: name.to_owned(),
++            before: written_sets(&old.sets),
++            after: written_sets(&new.sets),
++        });
++    }
++    if old.refuses != new.refuses {
++        push(CommandChange::OutcomeRefusesChanged {
++            outcome: name.to_owned(),
++            before: old.refuses,
++            after: new.refuses,
++        });
++    }
++}
++
++fn residual_construct(declaration: &mut serde_json::Value, family: &str) {
++    match family {
++        "types" => {
++            if let Some(body) = declaration.get_mut("body") {
++                residual_fields(body, "fields");
++                remove_keys(body, &["kind", "of", "invariants", "variants", "tag"]);
++            }
++        }
++        "entities" => residual_entity(declaration),
++        "commands" => residual_command(declaration),
++        "events" => residual_fields(declaration, "fields"),
++        "errors" => {
++            residual_fields(declaration, "fields");
++            remove_keys(declaration, &["summary"]);
++        }
++        "views" => {
++            residual_fields(declaration, "fields");
++            residual_fields(declaration, "params");
++            remove_keys(
++                declaration,
++                &[
++                    "source",
++                    "filter",
++                    "order_by",
++                    "consistency",
++                    "assertion_style",
++                ],
++            );
++        }
++        "actors" => remove_keys(declaration, &["may"]),
++        "bindings" => remove_keys(
++            declaration,
++            &[
++                "event",
++                "command",
++                "mapping",
++                "delivery",
++                "failure",
++                "escalation",
++            ],
++        ),
++        "components" => remove_keys(
++            declaration,
++            &["owns", "accepts", "publishes", "reached_by", "cli"],
++        ),
++        _ => unreachable!("closed coverage family list"),
++    }
++}
++
++fn residual_entity(declaration: &mut serde_json::Value) {
++    if let Some(identity) = declaration.get_mut("identity") {
++        residual_field(identity);
++    }
++    residual_fields(declaration, "fields");
++    remove_keys(declaration, &["state_type", "invariants", "relations"]);
++    if let Some(lifecycle) = declaration.get_mut("lifecycle") {
++        remove_keys(lifecycle, &["initial", "states", "terminal"]);
++        if let Some(transitions) = lifecycle
++            .get_mut("transitions")
++            .and_then(serde_json::Value::as_array_mut)
++        {
++            for transition in transitions {
++                remove_keys(transition, &["name", "from", "to"]);
++            }
++        }
++    }
++}
++
++fn residual_command(declaration: &mut serde_json::Value) {
++    residual_fields(declaration, "input");
++    if let Some(outcomes) = declaration
++        .get_mut("outcomes")
++        .and_then(serde_json::Value::as_array_mut)
++    {
++        for outcome in outcomes {
++            // test_strategy is a function of condition; refs deliberately remain.
++            remove_keys(
++                outcome,
++                &[
++                    "name",
++                    "condition",
++                    "subject",
++                    "test_strategy",
++                    "emits",
++                    "payload",
++                    "error",
++                    "refuses",
++                    "summary",
++                    "sets",
++                ],
++            );
++        }
++    }
++}
+diff --git a/crates/verify/ess-diff/src/impact.rs b/crates/verify/ess-diff/src/impact.rs
+index b198cf3..138a1fd 100644
+--- a/crates/verify/ess-diff/src/impact.rs
++++ b/crates/verify/ess-diff/src/impact.rs
+@@ -89,11 +89,12 @@ use crate::graph::{DependencyEdge, ImpactClass, Reach, SemanticDependencyGraph};
+ /// back — see the module documentation — so a parser here would be a refusal that cannot fire, and
+ /// the word is carried anyway because a consumer keying on it costs nothing.
+ ///
+-/// `/2` since wave 7: the document gained an `artifacts` section, and `suite` plus
++/// `/3` versions the corrected dependency vocabulary and embedded `ess-diff/2` delta.
++/// `/2` introduced the `artifacts` section, and `suite` plus
+ /// `invalidation` became optional — a report can now be about the generated tree alone. The label
+ /// still has no parser, for the reason above, and it is bumped anyway because a label that stays
+ /// at `/1` across a shape change is a label that lies to the one consumer who does key on it.
+-pub const IMPACT_FORMAT: &str = "ess-impact/2";
++pub const IMPACT_FORMAT: &str = "ess-impact/3";
+ 
+ /// Why a delta and a suite cannot be compared at all.
+ ///
+@@ -332,18 +333,9 @@ pub enum WholeAnswer {
+         /// What the suite named.
+         construct: EssSemanticRef,
+     },
+-    /// The model moved in a family this comparison does not read.
+-    ///
+-    /// The delta compares ten families since W7.2 — entities, commands, views and bindings joined
+-    /// wave 5's six, so an outcome's guard, a payload mapping and a lifecycle now arrive as change
+-    /// entries instead of landing here. What is left with no family is the conversions, the
+-    /// workloads, and each domain's naming. For those, this engine checks canonical **equality**
+-    /// only: equal means nothing there moved and the narrowing stands, different means *something*
+-    /// moved that no change entry can name, and a closure cannot be seeded at a construct the
+-    /// delta does not know changed. So it is not narrowed at all. When a later slice teaches the
+-    /// delta one of the remaining families, changes there start arriving as entries and stop
+-    /// landing here — the arm shrinks by construction rather than by being remembered. If nothing
+-    /// remains one day, the arm stays: it is the backstop for the construct the model gains next.
++    /// Residual model content moved outside the typed comparisons, including an unclassified
++    /// family or a field within a classified family. The delta records `unclassified-changed`,
++    /// without pretending it names a construct whose closure can safely narrow obligations.
+     UncomparedFamilyChanged,
+ }
+ 
+@@ -362,9 +354,8 @@ impl fmt::Display for WholeAnswer {
+                  the one way a narrowing is wrong and looks right"
+             ),
+             Self::UncomparedFamilyChanged => f.write_str(
+-                "the model moved in a family this delta does not compare — a conversion, the \
+-                 topology, or a domain's naming — so no change entry can name what moved, and no \
+-                 closure can be seeded at it",
++                "unclassified model content changed; no attributed dependency closure can safely \
++                 narrow its obligations",
+             ),
+         }
+     }
+@@ -808,7 +799,15 @@ pub fn impact(
+     // any difference owes everything: an empty delta over two different models would otherwise be
+     // a narrowing to nothing, which is a survival claim nothing here is entitled to make. One
+     // comparison feeds both answers — the suite's and the artifacts' — because it is one fact.
+-    let uncompared_moved = uncompared_families(before) != uncompared_families(after);
++    let uncompared_moved = delta.changes().iter().any(|change| {
++        matches!(
++            change,
++            SemanticChange::System {
++                changed: crate::change::SystemChange::UnclassifiedChanged,
++                ..
++            }
++        )
++    });
+ 
+     let mut impacts = Vec::new();
+     let invalidation = suite.map(|suite| {
+@@ -849,42 +848,6 @@ pub fn impact(
+     })
+ }
+ 
+-/// The canonical form of everything the delta does not compare, for mechanism 6's equality check.
+-///
+-/// Serialisation is the comparison because equality is all that is asked: which construct differs
+-/// and in which direction is exactly the question the delta deliberately does not answer for what
+-/// is left here, and D-1 already settled that canonical equality is the decidable, cheap fragment.
+-/// The keys and every map inside are ordered (`BTreeMap` throughout the IR), so two calls over
+-/// equal models produce equal bytes.
+-///
+-/// W7.2 shrank this from six families to what remains uncompared:
+-///
+-/// * **conversions** and **workloads** — no change family reads them yet;
+-/// * each **domain's naming** — a domain document can set a wire name, a display name and a
+-///   summary, and no family compares a domain. Only the naming: a domain's *membership* sets are
+-///   derived from the constructs' own `domain:` declarations, every one of which is compared by
+-///   its own family, so serialising them here would send every construct added or removed to
+-///   `Whole` and erase the narrowing this module exists to produce.
+-///
+-/// Entities, commands, views and bindings left this list the day their families started producing
+-/// change entries — the arm shrank by construction, exactly as the `UncomparedFamilyChanged`
+-/// documentation said it would.
+-fn uncompared_families(ir: &EssIr) -> String {
+-    let domain_namings: BTreeMap<&QualifiedName, &ess_domain::name::Naming> = ir
+-        .domains()
+-        .iter()
+-        .map(|(name, domain)| (name, &domain.naming))
+-        .collect();
+-    serde_json::to_string(&serde_json::json!({
+-        "conversions": ir.conversions(),
+-        "domain_namings": domain_namings,
+-        "workloads": ir.workloads(),
+-    }))
+-    .unwrap_or_else(|error| {
+-        panic!("the IR serialises, as every projection already relies on: {error}")
+-    })
+-}
+-
+ /// The closure itself: one walk per change, joined.
+ ///
+ /// Crate-private and taking its three inputs explicitly, so a test can reach the two fail-closed
+@@ -914,9 +877,18 @@ pub(crate) fn analyse(
+         // Mechanism 3. A change to the specification itself names no construct, so there is nothing
+         // to seed a closure at — and the alternative to owing everything is owing nothing.
+         let Some(subject) = change.subject() else {
+-            invalidation = invalidation.joined(Invalidation::Whole {
+-                because: WholeAnswer::SystemChanged { change: id },
+-            });
++            let because = if matches!(
++                change,
++                SemanticChange::System {
++                    changed: crate::change::SystemChange::UnclassifiedChanged,
++                    ..
++                }
++            ) {
++                WholeAnswer::UncomparedFamilyChanged
++            } else {
++                WholeAnswer::SystemChanged { change: id }
++            };
++            invalidation = invalidation.joined(Invalidation::Whole { because });
+             continue;
+         };
+ 
+diff --git a/crates/verify/ess-diff/src/lib.rs b/crates/verify/ess-diff/src/lib.rs
+index 9789141..f800847 100644
+--- a/crates/verify/ess-diff/src/lib.rs
++++ b/crates/verify/ess-diff/src/lib.rs
+@@ -129,7 +129,9 @@ pub use change::{
+     EntityChange, ErrorChange, EventChange, SemanticChange, SemanticRelation, SystemChange,
+     TypeChange, ViewChange,
+ };
+-pub use delta::{DeltaFormat, EssDelta, EssRevisionRef, SUPPORTED_DELTA_FORMATS};
++pub use delta::{
++    DeltaFormat, DeltaWriteRefusal, EssDelta, EssRevisionRef, SUPPORTED_DELTA_FORMATS,
++};
+ pub use diff::{diff, DiffRefusal};
+ pub use graph::{DependencyEdge, DependencyRelation, ImpactClass, Reach, SemanticDependencyGraph};
+ pub use impact::{
+diff --git a/crates/verify/ess-diff/src/raw.rs b/crates/verify/ess-diff/src/raw.rs
+index ba00433..a40bee9 100644
+--- a/crates/verify/ess-diff/src/raw.rs
++++ b/crates/verify/ess-diff/src/raw.rs
+@@ -102,6 +102,17 @@ impl TryFrom<RawEssDelta> for EssDelta {
+         // and a string comparison here would call a correctly ordered delta out of order.
+         let mut previous: Option<ChangeId> = None;
+         for (index, written) in raw.changes.iter().enumerate() {
++            if written.change.minimum_format() > raw.format.major() {
++                errors.push(ValidationError::new(
++                    ValidationCode::UnsupportedFormatVersion,
++                    format!("delta.changes[{index}].change"),
++                    format!(
++                        "`{}` is outside the vocabulary of `{}`",
++                        written.change.kind(),
++                        raw.format
++                    ),
++                ));
++            }
+             let id = written.change.id();
+             let derived = id.to_string();
+             if written.id != derived {
+diff --git a/crates/verify/ess-diff/tests/artifacts.rs b/crates/verify/ess-diff/tests/artifacts.rs
+index 72eb7ac..e5e3a64 100644
+--- a/crates/verify/ess-diff/tests/artifacts.rs
++++ b/crates/verify/ess-diff/tests/artifacts.rs
+@@ -348,7 +348,13 @@ fn a_committed_artifact_with_a_false_contract_digest_is_owed_as_a_false_claim()
+         committed,
+         "0000000000000000000000000000000000000000000000000000000000000000"
+     );
+-    assert_eq!(expected.len(), 64);
++    assert_eq!(
++        expected
++            .strip_prefix("slice-sha256/2:")
++            .expect("the expected slice carries its profile")
++            .len(),
++        64
++    );
+ }
+ 
+ #[test]
+@@ -411,3 +417,65 @@ fn the_artifact_answer_is_byte_identical_between_runs() {
+         "the document carries the artifact section"
+     );
+ }
++
++#[test]
++fn review_legacy_slice_stamps_are_owed_even_when_raw_hashes_match() {
++    let ir = compiled("examples/revision-pair/before");
++    let artifacts = ess_gen::generate_all(&ir).unwrap();
++    let slice_paths: Vec<_> = artifacts
++        .iter()
++        .filter(|(_, artifact)| {
++            matches!(
++                artifact.slice,
++                ess_gen::provenance::ModelSlice::Constructs { .. }
++            )
++        })
++        .map(|(path, _)| path.clone())
++        .collect();
++    assert!(!slice_paths.is_empty());
++    let current = GeneratedTree {
++        files: artifacts
++            .iter()
++            .map(|(path, artifact)| (path.clone(), artifact.contents.clone()))
++            .collect(),
++    };
++    assert!(owed(&impact(&ir, &ir, None, Some(&current)).unwrap()).is_empty());
++    let legacy = GeneratedTree {
++        files: current
++            .files
++            .iter()
++            .map(|(path, contents)| (path.clone(), contents.replace("slice-sha256/2:", "")))
++            .collect(),
++    };
++    let report = impact(&ir, &ir, None, Some(&legacy)).unwrap();
++    let debt = owed(&report);
++    for path in slice_paths {
++        assert!(
++            matches!(
++                debt.get(&projection(&path)),
++                Some(ArtifactObligation::ContractMismatch { .. })
++            ),
++            "legacy {path} must be owed despite identical raw hash"
++        );
++    }
++}
++
++#[test]
++fn review_whole_model_hashes_and_index_bytes_remain_frozen() {
++    let ir = compiled("examples/billing");
++    let whole = ess_gen::Provenance::of(&ir);
++    assert_eq!(
++        whole.source_digest,
++        "56090788443a14b4a51ad151eb5cb3ebded2b98f6defe9ac50826296ac5d0942"
++    );
++    assert_eq!(
++        whole.contract_digest,
++        "cb634bd5e6f1afa6ebc8e9dca752e9901a9a68a2e51fc5009d099f155680606c"
++    );
++    assert_eq!(
++        ess_gen::generate_all(&ir).unwrap()["docs/index.md"].contents,
++        include_str!("../../../../generated/docs/index.md")
++    );
++    let suite = ess_conformance::scenario::SuiteProvenance::of(&ir);
++    assert_eq!(suite.contract_digest.as_str(), whole.contract_digest);
++}
+diff --git a/crates/verify/ess-diff/tests/canonical.rs b/crates/verify/ess-diff/tests/canonical.rs
+index c51d3ea..1f51e7e 100644
+--- a/crates/verify/ess-diff/tests/canonical.rs
++++ b/crates/verify/ess-diff/tests/canonical.rs
+@@ -1053,7 +1053,7 @@ fn a_delta_whose_relation_was_edited_is_refused() {
+ #[test]
+ fn a_delta_written_in_a_format_this_build_does_not_read_is_refused() {
+     let mut document = document();
+-    document["format"] = serde_json::json!("ess-diff/2");
++    document["format"] = serde_json::json!("ess-diff/3");
+ 
+     let errors = refused(&document);
+ 
+@@ -1132,3 +1132,56 @@ fn a_delta_this_build_wrote_is_read_back_without_complaint() {
+ 
+     EssDelta::try_from(raw).expect("an unedited document validates");
+ }
++
++#[test]
++fn review_freeze_legacy_delta_bytes() {
++    let frozen = include_str!("fixtures/legacy-delta-v1.json");
++    let read = EssDelta::try_from(serde_json::from_str::<RawEssDelta>(frozen).unwrap()).unwrap();
++    assert_eq!(read.to_canonical_json(), frozen);
++}
++
++#[test]
++fn review_new_default_delta_format_is_version_two() {
++    assert_eq!(delta().format.to_string(), "ess-diff/2");
++}
++
++#[test]
++fn review_version_admission_refuses_new_vocabulary_in_legacy_envelopes() {
++    let frozen = include_str!("fixtures/legacy-delta-v1.json");
++    let old = EssDelta::try_from(serde_json::from_str::<RawEssDelta>(frozen).unwrap()).unwrap();
++    assert_eq!(
++        old.to_canonical_json_for(ess_diff::DeltaFormat::LEGACY)
++            .unwrap(),
++        frozen
++    );
++    assert!(old
++        .to_canonical_json_for(ess_diff::DeltaFormat::parse("ess-diff/99").unwrap())
++        .is_err());
++    let mut document: serde_json::Value = serde_json::from_str(frozen).unwrap();
++    document["format"] = serde_json::json!("ess-diff/2");
++    document["changes"] = serde_json::json!([{
++        "id": "system/catalog/unclassified-changed", "relation": "changed",
++        "change": {"category":"system", "subject":"catalog", "changed":{"kind":"unclassified-changed"}}
++    }]);
++    let new = EssDelta::try_from(serde_json::from_value::<RawEssDelta>(document.clone()).unwrap())
++        .unwrap();
++    assert!(matches!(
++        new.to_canonical_json_for(ess_diff::DeltaFormat::LEGACY),
++        Err(ess_diff::DeltaWriteRefusal::UnrepresentableChange { .. })
++    ));
++    let mut mutated = new.clone();
++    mutated.format = ess_diff::DeltaFormat::LEGACY;
++    assert!(
++        serde_json::to_string(&mutated).is_err(),
++        "public format mutation cannot bypass admission"
++    );
++    document["format"] = serde_json::json!("ess-diff/1");
++    assert!(refused(&document).contains(ValidationCode::UnsupportedFormatVersion));
++    document["format"] = serde_json::json!("ess-diff/2");
++    assert_eq!(
++        new.to_canonical_json(),
++        EssDelta::try_from(serde_json::from_value::<RawEssDelta>(document).unwrap())
++            .unwrap()
++            .to_canonical_json()
++    );
++}
+diff --git a/crates/verify/ess-diff/tests/families.rs b/crates/verify/ess-diff/tests/families.rs
+index 8d157fb..74d73e3 100644
+--- a/crates/verify/ess-diff/tests/families.rs
++++ b/crates/verify/ess-diff/tests/families.rs
+@@ -30,6 +30,8 @@ use ess_diff::{diff, SemanticRelation};
+ use ess_domain::spec::{RawSpecFile, Specification};
+ use ess_domain::system::Source;
+ 
++mod support;
++
+ /// The header, and the one component: a file that names no domain of its own.
+ const SYSTEM: &str = r"
+ format: ess/1
+@@ -1775,3 +1777,213 @@ fn a_bindings_naming_is_compared_key_by_key() {
+         ]
+     );
+ }
++
++// Review F01: exercise compiled inputs, the public delta, and artifact obligations together.
++fn review_change(before: &EssIr, after: &EssIr, kind: &str) {
++    assert_ne!(
++        before.source_digest(),
++        after.source_digest(),
++        "the mutation changes input"
++    );
++    let report = ess_diff::impact(before, after, None, None).expect("one system");
++    let encoded = report.delta.to_canonical_json();
++    let decoded = ess_diff::EssDelta::try_from(
++        serde_json::from_str::<ess_diff::RawEssDelta>(&encoded).unwrap(),
++    )
++    .unwrap();
++    assert_eq!(
++        decoded, report.delta,
++        "every new variant survives the checked v2 reader"
++    );
++    assert!(
++        matches!(
++            report
++                .delta
++                .to_canonical_json_for(ess_diff::DeltaFormat::LEGACY),
++            Err(ess_diff::DeltaWriteRefusal::UnrepresentableChange { .. })
++        ),
++        "no new variant may leak into the legacy writer"
++    );
++    for change in report.delta.changes() {
++        assert_eq!(
++            serde_json::to_value(change).unwrap()["changed"]["kind"],
++            change.kind()
++        );
++    }
++
++    assert!(
++        report
++            .delta
++            .changes()
++            .iter()
++            .any(|change| change.kind() == kind),
++        "missing {kind}: {}",
++        report.delta.to_canonical_json()
++    );
++    assert!(
++        report.artifacts.owed().is_none_or(|owed| !owed.is_empty()),
++        "{kind} must owe artifacts: {:?}",
++        report.artifacts
++    );
++}
++
++#[test]
++fn review_relation_cardinality_name_and_removal_are_changes() {
++    let before = support::compiled("examples/billing");
++    for mutation in 0..3 {
++        let after = support::compiled_with("examples/billing", |files| {
++            let account = files
++                .iter_mut()
++                .flat_map(|(_, file)| &mut file.entities)
++                .find(|entity| !entity.relations.is_empty())
++                .expect("the ownership relation");
++            match mutation {
++                0 => account.relations[0].cardinality = ess_domain::entity::Cardinality::One,
++                1 => account.relations[0].name = "owned_invoices".to_owned(),
++                _ => account.relations.clear(),
++            }
++        });
++        review_change(&before, &after, "relations-changed");
++    }
++}
++
++#[test]
++fn review_reach_is_a_change_without_an_unrelated_surface_edit() {
++    let before = compiled(&base());
++    let after = compiled(&[
++        (
++            "system",
++            &edited_system(
++                "    summary: Runs orders.",
++                "    summary: Runs orders.\n    reached_by: network",
++            ),
++        ),
++        ("domain", DOMAIN),
++    ]);
++    review_change(&before, &after, "reach-changed");
++}
++
++fn review_cli(grouped: bool, binary: &str) -> String {
++    let views = if grouped {
++        "      groups:\n        - name: read\n          views: [witness.orders.OrderById]"
++    } else {
++        "      views: [witness.orders.OrderById]"
++    };
++    edited_system("    summary: Runs orders.", &format!(
++        "    summary: Runs orders.\n    reached_by: command_line\n    cli:\n      binary: {binary}\n      commands: [witness.orders.CloseOrder]\n{views}"))
++}
++
++#[test]
++fn review_cli_top_level_grouped_views_and_binary_are_changes() {
++    let before = compiled(&[("system", &review_cli(false, "orders")), ("domain", DOMAIN)]);
++    for system in [review_cli(true, "orders"), review_cli(false, "orders-next")] {
++        let after = compiled(&[("system", &system), ("domain", DOMAIN)]);
++        review_change(&before, &after, "cli-changed");
++    }
++}
++
++#[test]
++fn review_outcome_sets_are_independent_of_event_payload() {
++    let before = support::compiled("examples/billing");
++    let after = support::compiled_with("examples/billing", |files| {
++        let outcome = files
++            .iter_mut()
++            .flat_map(|(_, file)| &mut file.commands)
++            .flat_map(|command| &mut command.outcomes)
++            .find(|outcome| !outcome.sets.is_empty())
++            .expect("billing determines subject fields");
++        outcome.sets.0.clear();
++    });
++    review_change(&before, &after, "outcome-sets-changed");
++}
++
++#[test]
++fn review_outcome_refusal_is_independent_of_its_error() {
++    let before = compiled(&base());
++    let after = compiled(&[
++        ("system", SYSTEM),
++        (
++            "domain",
++            &edited(
++                "        wrong_state: true\n        error: witness.orders.OrderStateConflict",
++                "        wrong_state: true\n        refuses: false",
++            ),
++        ),
++    ]);
++    review_change(&before, &after, "outcome-refuses-changed");
++}
++
++#[test]
++fn review_view_parameter_naming_is_compared_without_a_filter_edit() {
++    let domain = edited("    filter: state == Open", "    params:\n      - name: wanted\n        type: witness.orders.OrderId\n    filter: order_id == param.wanted");
++    let before = compiled(&[("system", SYSTEM), ("domain", &domain)]);
++    let after_domain = domain.replace(
++        "      - name: wanted\n",
++        "      - name: wanted\n        summary: The requested order.\n",
++    );
++    let after = compiled(&[("system", SYSTEM), ("domain", &after_domain)]);
++    review_change(&before, &after, "params-changed");
++    let explicit = domain.replace(
++        "      - name: wanted\n",
++        "      - name: wanted\n        wire: wanted\n        display: wanted\n",
++    );
++    let equivalent = compiled(&[("system", SYSTEM), ("domain", &explicit)]);
++    assert!(
++        diff(&before, &equivalent).unwrap().is_empty(),
++        "effective parameter naming defaults are equivalent"
++    );
++}
++
++#[test]
++fn review_view_ranking_is_compared_without_a_filter_edit() {
++    let before = support::compiled("examples/billing");
++    let after = support::compiled_with("examples/billing", |files| {
++        let view = files
++            .iter_mut()
++            .flat_map(|(_, file)| &mut file.views)
++            .find(|view| !view.order_by.is_empty())
++            .expect("billing has a ranked view");
++        view.order_by.clear();
++    });
++    review_change(&before, &after, "ranking-changed");
++}
++
++#[test]
++fn review_residual_refs_cannot_hide_beside_a_classified_change() {
++    let before = compiled(&base());
++    for classified in [false, true] {
++        let mut system = edited_system(
++            "    summary: Runs orders.",
++            "    summary: Runs orders.\n    refs: [jira:DEV-630]",
++        );
++        if classified {
++            system = system.replace("Runs orders.", "Runs revised orders.");
++        }
++        let after = compiled(&[("system", &system), ("domain", DOMAIN)]);
++        review_change(&before, &after, "unclassified-changed");
++        let report = ess_diff::impact(&before, &after, None, None).unwrap();
++        assert!(matches!(
++            report.artifacts,
++            ess_diff::impact::ArtifactAnswer::Whole { .. }
++        ));
++    }
++}
++
++#[test]
++fn review_unclassified_transition_order_cannot_hide_beside_a_classified_edit() {
++    let before = support::compiled("examples/billing");
++    for classified in [false, true] {
++        let after = support::compiled_with("examples/billing", |files| {
++            let entity = files
++                .iter_mut()
++                .flat_map(|(_, file)| &mut file.entities)
++                .find(|entity| entity.states.transitions.len() > 1)
++                .expect("billing declares multiple moves");
++            entity.states.transitions.swap(0, 1);
++            if classified {
++                entity.naming.summary = Some("Revised explanation.".to_owned());
++            }
++        });
++        review_change(&before, &after, "unclassified-changed");
++    }
++}
+diff --git a/crates/verify/ess-diff/tests/fixtures/legacy-delta-v1.json b/crates/verify/ess-diff/tests/fixtures/legacy-delta-v1.json
+new file mode 100644
+index 0000000..d74e9e5
+--- /dev/null
++++ b/crates/verify/ess-diff/tests/fixtures/legacy-delta-v1.json
+@@ -0,0 +1,94 @@
++{
++  "format": "ess-diff/1",
++  "before": {
++    "system": "catalog",
++    "specification_version": 2,
++    "spec_digest": "9aa886fb68a2447af40c92cf53ed260af0d102507ac87e73a8e31fb7d20a0916"
++  },
++  "after": {
++    "system": "catalog",
++    "specification_version": 2,
++    "spec_digest": "2dcf59ba04dd2fb953218bf8c60146d4efd4fca8282af8cd53c2063f4f4616be"
++  },
++  "changes": [
++    {
++      "id": "type/catalog.pricing.Currency/variant-added/CHF",
++      "relation": "expanded",
++      "change": {
++        "category": "type",
++        "subject": "catalog.pricing.Currency",
++        "changed": {
++          "kind": "variant-added",
++          "variant": "CHF"
++        }
++      }
++    },
++    {
++      "id": "type/catalog.pricing.Currency/variant-removed/GBP",
++      "relation": "narrowed",
++      "change": {
++        "category": "type",
++        "subject": "catalog.pricing.Currency",
++        "changed": {
++          "kind": "variant-removed",
++          "variant": "GBP"
++        }
++      }
++    },
++    {
++      "id": "entity/catalog.pricing.PriceList/invariants-changed",
++      "relation": "changed",
++      "change": {
++        "category": "entity",
++        "subject": "catalog.pricing.PriceList",
++        "changed": {
++          "kind": "invariants-changed",
++          "before": [
++            "floor.amount >= 0"
++          ],
++          "after": [
++            "floor.amount > 0"
++          ]
++        }
++      }
++    },
++    {
++      "id": "command/catalog.pricing.CreatePriceList/outcome-condition-changed/created",
++      "relation": "changed",
++      "change": {
++        "category": "command",
++        "subject": "catalog.pricing.CreatePriceList",
++        "changed": {
++          "kind": "outcome-condition-changed",
++          "outcome": "created",
++          "before": "when floor.amount > 0",
++          "after": "when floor.amount >= 1"
++        }
++      }
++    },
++    {
++      "id": "actor/catalog.pricing.Auditor/grant-removed/catalog.pricing.RetirePriceList",
++      "relation": "narrowed",
++      "change": {
++        "category": "actor",
++        "subject": "catalog.pricing.Auditor",
++        "changed": {
++          "kind": "grant-removed",
++          "command": "catalog.pricing.RetirePriceList"
++        }
++      }
++    },
++    {
++      "id": "actor/catalog.pricing.PricingManager/grant-added/catalog.pricing.RetirePriceList",
++      "relation": "expanded",
++      "change": {
++        "category": "actor",
++        "subject": "catalog.pricing.PricingManager",
++        "changed": {
++          "kind": "grant-added",
++          "command": "catalog.pricing.RetirePriceList"
++        }
++      }
++    }
++  ]
++}
+diff --git a/crates/verify/ess-diff/tests/graph.rs b/crates/verify/ess-diff/tests/graph.rs
+index f24dea5..eaad98b 100644
+--- a/crates/verify/ess-diff/tests/graph.rs
++++ b/crates/verify/ess-diff/tests/graph.rs
+@@ -47,6 +47,14 @@ fn every_relation_in_the_vocabulary_is_minted_by_a_specification_this_repository
+         minted.extend(graph.edges().map(|edge| edge.relation));
+     }
+ 
++    // The legacy examples retain all their production obligations; this valid compiled extension
++    // exercises the two new CLI/parameter declarations that those examples do not yet publish.
++    minted.extend(
++        SemanticDependencyGraph::of(&review_cli_parameter_fixture(false))
++            .edges()
++            .map(|edge| edge.relation),
++    );
++
+     let missing: Vec<DependencyRelation> = DependencyRelation::ALL
+         .into_iter()
+         .filter(|relation| !minted.contains(relation))
+@@ -186,3 +194,125 @@ fn a_closure_over_the_whole_model_terminates_and_stays_inside_it() {
+         assert!(reach.reaches(node), "every construct is in its own closure");
+     }
+ }
++
++#[test]
++fn review_relation_edges_include_the_reverse_owns_carrier_and_old_graph_union() {
++    let before = support::compiled("examples/billing");
++    let after = support::compiled_with("examples/billing", |files| {
++        for entity in files.iter_mut().flat_map(|(_, file)| &mut file.entities) {
++            entity.relations.clear();
++        }
++    });
++    let graph = SemanticDependencyGraph::of(&before);
++    let account: EssSemanticRef = EntityRef::new(name("billing.invoice.Account")).into();
++    let invoice: EssSemanticRef = EntityRef::new(name("billing.invoice.Invoice")).into();
++    let edges: Vec<_> = graph
++        .edges()
++        .map(|edge| {
++            (
++                edge.dependent.clone(),
++                serde_json::to_value(edge.relation).unwrap(),
++                edge.dependency.clone(),
++            )
++        })
++        .collect();
++    assert!(edges.contains(&(
++        account.clone(),
++        serde_json::json!("relation-target"),
++        invoice.clone()
++    )));
++    assert!(edges.contains(&(
++        invoice.clone(),
++        serde_json::json!("ownership-carrier"),
++        account.clone()
++    )));
++    assert!(graph
++        .slice(&[invoice.clone()].into_iter().collect())
++        .contains_key(&account));
++    let union = graph.merged(&SemanticDependencyGraph::of(&after));
++    assert!(
++        union.closure(&account).reaches(&invoice),
++        "removed relation still affects its old carrier"
++    );
++}
++
++fn review_cli_parameter_fixture(grouped: bool) -> ess_compiler::EssIr {
++    support::compiled_with("examples/billing", |files| {
++        for (_, file) in files {
++            for view in &mut file.views {
++                if view.name == name("billing.invoice.InvoiceById") {
++                    view.params = vec![serde_json::from_value(
++                        serde_json::json!({"name":"wanted", "type":"billing.invoice.InvoiceId"}),
++                    )
++                    .unwrap()];
++                    view.filter = Some(
++                        ess_primitives::predicate::Predicate::parse_expression(
++                            "invoice_id == param.wanted",
++                        )
++                        .unwrap(),
++                    );
++                }
++            }
++            for component in &mut file.components {
++                if component.name == "invoice-service" {
++                    component.reached_by = ess_domain::component::Reach::CommandLine;
++                    let views = vec![
++                        name("billing.invoice.InvoiceById"),
++                        name("billing.invoice.OutstandingInvoices"),
++                    ];
++                    component.cli = Some(ess_domain::component::RawCommandLineSurface {
++                        binary: "invoices".to_owned(),
++                        commands: component.accepts.commands.clone(),
++                        views: if grouped { Vec::new() } else { views.clone() },
++                        groups: if grouped {
++                            vec![ess_domain::component::RawCommandGroup {
++                                name: "read".to_owned(),
++                                summary: None,
++                                commands: Vec::new(),
++                                views,
++                            }]
++                        } else {
++                            Vec::new()
++                        },
++                    });
++                }
++            }
++        }
++    })
++}
++
++#[test]
++fn review_cli_views_and_parameter_types_are_forward_slice_dependencies() {
++    for grouped in [false, true] {
++        let graph = SemanticDependencyGraph::of(&review_cli_parameter_fixture(grouped));
++        let component: EssSemanticRef =
++            ComponentRef::new(ComponentName::new("invoice-service").unwrap()).into();
++        let view: EssSemanticRef =
++            ess_compiler::refs::ViewRef::new(name("billing.invoice.InvoiceById")).into();
++        let id: EssSemanticRef = DeclaredTypeRef::new(name("billing.invoice.InvoiceId")).into();
++        let edges: Vec<_> = graph
++            .edges()
++            .map(|edge| {
++                (
++                    edge.dependent.clone(),
++                    serde_json::to_value(edge.relation).unwrap(),
++                    edge.dependency.clone(),
++                )
++            })
++            .collect();
++        assert!(edges.contains(&(
++            component.clone(),
++            serde_json::json!("exposes-view"),
++            view.clone()
++        )));
++        assert!(edges.contains(&(
++            view.clone(),
++            serde_json::json!("parameter-type"),
++            id.clone()
++        )));
++        assert!(graph
++            .slice(&[component.clone()].into_iter().collect())
++            .contains_key(&view));
++        assert!(graph.closure(&id).reaches(&component));
++    }
++}
+diff --git a/crates/verify/ess-diff/tests/impact.rs b/crates/verify/ess-diff/tests/impact.rs
+index 355b108..53384e5 100644
+--- a/crates/verify/ess-diff/tests/impact.rs
++++ b/crates/verify/ess-diff/tests/impact.rs
+@@ -443,10 +443,15 @@ fn a_change_in_a_family_the_delta_still_does_not_compare_owes_the_whole_suite()
+     let report = impact(&before, &after, Some(&suite), None)
+         .expect("one system, and the earlier one's suite");
+ 
+-    assert!(
+-        report.delta.is_empty(),
+-        "the delta has no entry for a topology change: {:?}",
+-        report.delta
++    assert_eq!(
++        report
++            .delta
++            .changes()
++            .iter()
++            .map(ess_diff::SemanticChange::kind)
++            .collect::<Vec<_>>(),
++        ["unclassified-changed"],
++        "v2 records the unclassified change while retaining whole invalidation"
+     );
+     let Some(Invalidation::Whole { because }) = &report.invalidation else {
+         panic!(
+@@ -485,10 +490,15 @@ fn a_domains_naming_moving_owes_the_whole_suite_because_no_family_compares_a_dom
+     let report = impact(&before, &after, Some(&suite), None)
+         .expect("one system, and the earlier one's suite");
+ 
+-    assert!(
+-        report.delta.is_empty(),
+-        "the delta has no entry for a domain naming change: {:?}",
+-        report.delta
++    assert_eq!(
++        report
++            .delta
++            .changes()
++            .iter()
++            .map(ess_diff::SemanticChange::kind)
++            .collect::<Vec<_>>(),
++        ["unclassified-changed"],
++        "v2 records the unclassified change while retaining whole invalidation"
+     );
+     let Some(Invalidation::Whole { because }) = &report.invalidation else {
+         panic!(
+diff --git a/docs/design/ess-semantic-diff-impact-evolution-design-v0.1.md b/docs/design/ess-semantic-diff-impact-evolution-design-v0.1.md
+index 6ae29da..6cda6a4 100644
+--- a/docs/design/ess-semantic-diff-impact-evolution-design-v0.1.md
++++ b/docs/design/ess-semantic-diff-impact-evolution-design-v0.1.md
+@@ -1,12 +1,178 @@
+ # ESS Semantic Diff, Impact Analysis & Evolution Planning - Design v0.1
+ 
+-> **Repository:** `beyond10x/aep`
+-> **Status:** Proposed follow-on / cross-cutting design  
++> **Repository:** `beyond10x/ess`
++> **Status:** Binding migration addendum below; historical proposal follows.
+ > **Audience:** Implementors extending ESS from single-revision specification and realization into semantic change analysis, proposal evaluation, and governed system evolution  
+ > **Relationship to existing work:** Additive. Semantic diff can be introduced as soon as `EssIr` is stable. Realization-aware evolution planning depends on later synthesis/realization work, but does not require waiting for every advanced verification wave.
+ 
+ ---
+ 
++## Binding correction: semantic coverage and sliced provenance (2026-09-05)
++
++This addendum supersedes the historical proposal's format spellings, graph direction,
++coverage assumptions and provenance admission rules in §§9–25, 58, 60–61 and 63.
++The historical AEP integration and evolution sections describe possible external
++consumers, not dependencies of ESS. ESS owns semantic comparison and impact;
++organization rollout decisions belong to Atlas. No AEP runtime dependency is added.
++
++### Delta and impact admission
++
++The default delta writer emits `ess-diff/2`. A new reader accepts supported
++`ess-diff/1` and `/2` through `RawEssDelta -> EssDelta`, retaining all existing
++system, derived-id, derived-relation, order and uniqueness checks. `/1` accepts
++exactly the previous change vocabulary; a new variant relabeled `/1` is refused
++even if its id and relation are otherwise correct. Unsupported majors are refused.
++Existing `/1` changes retain their previous field shapes, ids, classifications and
++canonical order. Frozen valid `/1` documents must read and write back identically.
++
++The explicit version-selecting canonical writer returns a typed refusal for an
++unsupported version or a change unrepresentable in the requested version. It never
++drops changes. Default comparison emits `/2`; a caller may request `/1` only when
++every change belongs to the frozen old vocabulary. Public format-field mutation
++must not provide an unchecked serialization bypass: serialization itself checks
++version admission. No writer manufactures an empty legacy delta for a new change.
++
++New vocabulary is confined to existing semantic families:
++
++| Family | New subtype | Detail and identity |
++|---|---|---|
++| Entity | `relations-changed` | Before/after ordered relation descriptors: name, kind, typed target entity reference, cardinality, via field. Whole relation-list comparison preserves order. |
++| Component | `reach-changed` | Before/after declared reach words. |
++| Component | `cli-changed` | Before/after optional CLI descriptor: binary, ordered command/view sets, ordered groups with name, summary and command/view sets. |
++| Command | `outcome-sets-changed` | Outcome member plus before/after determined-field descriptions, using the same canonical expression spelling as existing payload changes. |
++| Command | `outcome-refuses-changed` | Outcome member plus before/after booleans. |
++| View | `params-changed` | Before/after ordered parameter contracts, including name, resolved type and effective wire/display names and summary. |
++| View | `ranking-changed` | Before/after ordered field/direction pairs. |
++| System | `unclassified-changed` | No fabricated subject or direction; revision references identify the differing models. Forces whole obligations. |
++
++Every new subtype has relation `changed`. Ids keep the existing contract:
++category / subject / subtype / optional member; `unclassified-changed` uses the
++existing system category with the system name in the id and no graph subject/member. Category ordering is unchanged;
++within a category use the existing subject/subtype/member ordering. New subtype
++names are not aliases of old kinds. No arbitrary JSON property bag is persisted.
++
++The default impact writer emits `ess-impact/3`, embedding a `/2` delta and the
++extended edge vocabulary. There is no established impact reader, so this change
++does not invent one or claim reader rollout. Existing obligation reasons remain
++usable; a legacy stamp mismatch and unreadable stamp already have distinct
++reasons. Whole invalidation for unexplained residual content remains conservative.
++
++### Coverage and graph contract
++
++Compare each omitted field through its owning typed comparator. Entity relation
++comparison includes kind, target, cardinality, carrier field, name and order.
++CLI comparison includes top-level and grouped views as well as commands. Params
++include naming metadata as well as type and order. Sets and refusal behavior are
++compared independently of payload/error changes. Equal parsed predicates remain
++equal; explicitly writing an already effective naming default remains equivalent.
++
++Maintain an explicit coverage projection of the serialized IR: remove only fields
++whose complete semantics the typed comparators already compare, or whose value is
++a documented function of such a field. Retain all unknown residual fields,
++including refs, shape references, unclassified families and unknown nested fields.
++Normalize effective naming defaults before deciding equality. Prune empty residual
++containers so a classified addition/removal alone does not fabricate residual
++change. Compare residuals independently of whether classified changes exist. A
++difference emits `unclassified-changed` and forces whole artifact/scenario
++obligations. Reordering common lifecycle transitions is also retained as residual
++information: route comparison keys by name, while generated diagrams preserve
++order. Additions/removals alone remain accounted for by their typed changes. This is a coverage check, not a new JSON-diff output language. A source
++digest mismatch is neither sufficient to invalidate a known equivalence nor
++sufficiently explained merely because one classified change was found.
++
++Edges point dependent → dependency. Impact follows reverse edges over the union
++of before and after graphs; artifact slices follow forward edges in their own
++revision. Preserve all 21 existing relation variants and their production tests.
++Add explicit relations for entity relation targets, reverse ownership carriers,
++CLI view exposure and parameter types. Their exact spellings are `relation-target`,
++`ownership-carrier`, `exposes-view` and `parameter-type`, respectively. A relation source depends on its target;
++an `owns` target also depends on its declaring source because its generated field
++annotation reads that declaration. This deliberate cycle is finite under visited
++sets and is necessary to invalidate both schema ends. CLI components depend on
++every top-level/grouped view they expose. A view depends on its declared parameter
++types. New graph relations must each be reached from a valid compiled fixture.
++
++### Profiled sliced contract digests
++
++`Provenance.source_digest` remains the exact existing SHA-256 of compact serialized
++IR. Its algorithm, inputs and spelling do not change. `WholeModel` contract hashing
++continues enumerating every construct directly, bypassing the graph, with the
++exact existing payload and bare 64 lowercase hex spelling. Suite `/4`, neutral
++plans and whole-model index artifacts therefore retain their existing bytes for
++unchanged inputs. Tests freeze those bytes independently of new slice assertions.
++
++Every `ModelSlice::Constructs` contract digest is now the String
++`slice-sha256/2:<64 lowercase hex>`, including slices whose underlying digest did
++not change. The suffix uses the existing slice payload/hash algorithm with the
++corrected graph closure. The prefix is part of identity, not decoration: bare
++legacy slice stamps owe regeneration even if their old hash equals the suffix.
++Unknown profile versions, malformed hashes, uppercase, extra trailing text and
++conflicting authoritative stamps are unreadable, hence owed. Verification compares
++the complete validated string against `ProvenanceMint::digest_of` for the expected
++slice. No profile is inferred from coincident hashes and no fallback follows an
++unsupported authoritative profile.
++
++Public `Provenance` fields remain Strings; existing struct literals and generic
++Serde remain source compatible. Their deserialization does not prove profile
++admission. The stamp verifier is the admission boundary; generic old Serde readers
++will accept the new string and must not be described as safely rejecting it.
++
++### Authoritative stamp framing and legacy limits
++
++The new reader recognizes the writer's complete provenance envelope, not markers
++found anywhere in model prose. For comment forms, accept the generated four-line
++header at the beginning of the document (`#`, `//`, HTML comment, CSS/JS block
++comment), with the existing HTML doctype allowed before its comment. The existing
++redistributed-license suffix has its exact delimiter and explanatory sentence
++followed by the terminal four-line provenance block; it stays byte-identical.
++Complete envelope structure and exact digest tokens are required.
++
++For structured JSON, read direct provenance fields, root `provenance`, root
++`x-ess-provenance`, or `info.x-ess-provenance` in the corresponding emitted
++document shape. YAML OpenAPI/AsyncAPI comments and structured attribution must
++agree. Multiple authoritative candidate envelopes, duplicate authoritative keys,
++missing paired values and conflicting source/contract pairs are refused; model
++strings containing marker-looking text are not candidate envelopes. Identical
++comment/structured copies emitted by one writer are allowed after comparison.
++`ess-docs/1` is a multipage document, not one flattened artifact stamp; no search
++through arbitrary pages is permitted to guess its identity.
++
++`ess-docs/1` keeps its existing nested `SlicedProvenance` shape. Its per-page
++Constructs profile becomes `slice-sha256/2`; WholeModel pages stay bare. The
++document label still versions its page/section shape, not validated graph-slice
++semantics. Existing `Document`/`SlicedProvenance` Deserialize implementations accept
++Strings and do not validate the format field or profile. This is an explicit
++compatibility limit, not a claimed admission guarantee. A consumer comparing a
++page stamp must use the validated profile and expected slice; a consumer merely
++rendering a parsed document is not a digest verifier.
++
++Retain the exact old substring-reader implementation in compatibility tests. New
++ordinary sliced emissions cause that old reader to refuse because the profile
++starts before the hex; changing only comments or appending a suffix would not.
++However, the old reader searches unrelated text and may fall back to another
++marker spelling after encountering an unsupported stamp. Marker-looking model
++content can therefore fool it. Tests demonstrate both ordinary refusal and this
++real limitation; they do not claim retroactive protection for deployed old code.
++New-reader tests establish envelope isolation and no unsupported-profile fallback.
++
++### Validation and coordinated rollout boundary
++
++Red-first mutation tests cover every omission, reverse ownership propagation,
++mixed classified/residual edits, unchanged/equivalent controls and before/after
++union. Version vectors cover frozen `/1`, new `/2`, mislabeled new vocabulary,
++unsupported versions and legacy writer refusal. Emission tests cover every actual
++comment/JSON/YAML shape plus marker-looking content, old-reader behavior and
++docs-ir generic-reader limits. HTTP generator tests check embedded OpenAPI/docs
++and preserve neutral plan bytes. Regeneration measures actual changes; the four
++Gatepass Rust/Go HTTP payloads are source-derived expected scope until measured.
++
++Local package results establish implementation behavior only. Atlas owns the ADR,
++published reader inventory, current consumer pins and downstream byte checks
++before these defaults are published. No local test proves deployed admission or
++completion of that coordinated rollout.
++
++---
++
+ ## 1. Purpose
+ 
+ The current ESS/AEP architecture is primarily organized around one authoritative specification revision:
+diff --git a/generated/asyncapi/email-service.yaml b/generated/asyncapi/email-service.yaml
+index 2277101..f68cea6 100644
+--- a/generated/asyncapi/email-service.yaml
++++ b/generated/asyncapi/email-service.yaml
+@@ -1,6 +1,6 @@
+ # generated from billing v3
+ # model digest 56090788443a14b4a51ad151eb5cb3ebded2b98f6defe9ac50826296ac5d0942
+-# contract digest 1ccd0afca5f71d3c3c98894259751819e5313bcd73222af85bb80774dbe83e6f
++# contract digest slice-sha256/2:6885abd57db28f85bf636a59960c5e76be692eb6d69ce48089f10ca44cc9130f
+ # do not edit: regenerate with `ess generate`
+ asyncapi: 3.0.0
+ info:
+@@ -19,7 +19,7 @@ info:
+     system: billing
+     specification_version: v3
+     source_digest: 56090788443a14b4a51ad151eb5cb3ebded2b98f6defe9ac50826296ac5d0942
+-    contract_digest: 1ccd0afca5f71d3c3c98894259751819e5313bcd73222af85bb80774dbe83e6f
++    contract_digest: slice-sha256/2:6885abd57db28f85bf636a59960c5e76be692eb6d69ce48089f10ca44cc9130f
+ defaultContentType: application/json
+ channels:
+   billing.email.DeliveryEscalated:
+diff --git a/generated/asyncapi/invoice-service.yaml b/generated/asyncapi/invoice-service.yaml
+index ff9a8a0..3c8261d 100644
+--- a/generated/asyncapi/invoice-service.yaml
++++ b/generated/asyncapi/invoice-service.yaml
+@@ -1,6 +1,6 @@
+ # generated from billing v3
+ # model digest 56090788443a14b4a51ad151eb5cb3ebded2b98f6defe9ac50826296ac5d0942
+-# contract digest 1ccd0afca5f71d3c3c98894259751819e5313bcd73222af85bb80774dbe83e6f
++# contract digest slice-sha256/2:6885abd57db28f85bf636a59960c5e76be692eb6d69ce48089f10ca44cc9130f
+ # do not edit: regenerate with `ess generate`
+ asyncapi: 3.0.0
+ info:
+@@ -19,7 +19,7 @@ info:
+     system: billing
+     specification_version: v3
+     source_digest: 56090788443a14b4a51ad151eb5cb3ebded2b98f6defe9ac50826296ac5d0942
+-    contract_digest: 1ccd0afca5f71d3c3c98894259751819e5313bcd73222af85bb80774dbe83e6f
++    contract_digest: slice-sha256/2:6885abd57db28f85bf636a59960c5e76be692eb6d69ce48089f10ca44cc9130f
+ defaultContentType: application/json
+ channels:
+   billing.invoice.InvoiceCancelled:
+diff --git a/generated/docs/domains/billing-email.md b/generated/docs/domains/billing-email.md
+index 12a3f94..cffc5bc 100644
+--- a/generated/docs/domains/billing-email.md
++++ b/generated/docs/domains/billing-email.md
+@@ -1,7 +1,7 @@
+ <!--
+ generated from billing v3
+ model digest 56090788443a14b4a51ad151eb5cb3ebded2b98f6defe9ac50826296ac5d0942
+-contract digest 1ccd0afca5f71d3c3c98894259751819e5313bcd73222af85bb80774dbe83e6f
++contract digest slice-sha256/2:6885abd57db28f85bf636a59960c5e76be692eb6d69ce48089f10ca44cc9130f
+ do not edit: regenerate with `ess generate`
+ -->
+ 
+@@ -93,4 +93,4 @@ Every crossing in the system is on one page: [Type crossings](../crossings.md).
+ 
+ ---
+ 
+-Generated from billing v3 · model digest `56090788443a14b4a51ad151eb5cb3ebded2b98f6defe9ac50826296ac5d0942` · contract digest `1ccd0afca5f71d3c3c98894259751819e5313bcd73222af85bb80774dbe83e6f`. Do not edit this file; change the specification and regenerate it with `ess generate`.
++Generated from billing v3 · model digest `56090788443a14b4a51ad151eb5cb3ebded2b98f6defe9ac50826296ac5d0942` · contract digest `slice-sha256/2:6885abd57db28f85bf636a59960c5e76be692eb6d69ce48089f10ca44cc9130f`. Do not edit this file; change the specification and regenerate it with `ess generate`.
+diff --git a/generated/docs/domains/billing-invoice.md b/generated/docs/domains/billing-invoice.md
+index c48c55a..b117801 100644
+--- a/generated/docs/domains/billing-invoice.md
++++ b/generated/docs/domains/billing-invoice.md
+@@ -1,7 +1,7 @@
+ <!--
+ generated from billing v3
+ model digest 56090788443a14b4a51ad151eb5cb3ebded2b98f6defe9ac50826296ac5d0942
+-contract digest cb634bd5e6f1afa6ebc8e9dca752e9901a9a68a2e51fc5009d099f155680606c
++contract digest slice-sha256/2:cb634bd5e6f1afa6ebc8e9dca752e9901a9a68a2e51fc5009d099f155680606c
+ do not edit: regenerate with `ess generate`
+ -->
+ 
+@@ -372,4 +372,4 @@ Every crossing in the system is on one page: [Type crossings](../crossings.md).
+ 
+ ---
+ 
+-Generated from billing v3 · model digest `56090788443a14b4a51ad151eb5cb3ebded2b98f6defe9ac50826296ac5d0942` · contract digest `cb634bd5e6f1afa6ebc8e9dca752e9901a9a68a2e51fc5009d099f155680606c`. Do not edit this file; change the specification and regenerate it with `ess generate`.
++Generated from billing v3 · model digest `56090788443a14b4a51ad151eb5cb3ebded2b98f6defe9ac50826296ac5d0942` · contract digest `slice-sha256/2:cb634bd5e6f1afa6ebc8e9dca752e9901a9a68a2e51fc5009d099f155680606c`. Do not edit this file; change the specification and regenerate it with `ess generate`.
+diff --git a/generated/go/gatepass/server/pass-service.docs.md b/generated/go/gatepass/server/pass-service.docs.md
+index 72c31db..946f1d5 100644
+--- a/generated/go/gatepass/server/pass-service.docs.md
++++ b/generated/go/gatepass/server/pass-service.docs.md
+@@ -1,7 +1,7 @@
+ <!--
+ generated from gatepass v1
+ model digest f2e0f8ff51c077fa1c713d8151544379bafac36a5a927e71c685042d53ab6e61
+-contract digest e6e58e055d24f8f494dcff274f55e723d967f9d1f9aea16641bb8dacbb71171e
++contract digest slice-sha256/2:e6e58e055d24f8f494dcff274f55e723d967f9d1f9aea16641bb8dacbb71171e
+ do not edit: regenerate with `ess generate`
+ -->
+ 
+@@ -9,7 +9,7 @@ do not edit: regenerate with `ess generate`
+ 
+ Expecting a visitor, letting them in, and letting them out again.
+ 
+-`gatepass.visit` is one of gatepass's bounded contexts. [Back to the index](../README.md).
++`gatepass.visit` is one of gatepass's bounded contexts. [Back to the index](../index.md).
+ 
+ ## Types
+ 
+@@ -82,6 +82,8 @@ It holds:
+ - `badge` — `Optional<gatepass.visit.Badge>`, which may be absent
+ - `on_watchlist` — `Boolean`
+ 
++It declares no relation to another entity, and no other entity names it.
++
+ Every instance satisfies `deposit.amount >= 0` and `expected_minutes > 0` — a predicate over this entity's own fields, checked against them rather than stored as a sentence, so an invariant reading something the entity does not have is refused instead of documented.
+ 
+ Its state is a `gatepass.visit.Visit.State`, one of `Departed`, `Expected` and `OnSite`. That enum is synthesised from the lifecycle rather than declared beside it, so the states a view's filter compares and the states drawn below cannot disagree.
+@@ -131,6 +133,8 @@ It exposes:
+ - `building` — `gatepass.visit.Building`
+ - `deposit` — `gatepass.visit.Deposit`
+ 
++It declares no order, so the rows come back in whatever order the implementation has, and two reads may disagree.
++
+ **Read-your-writes**: it is current the moment the command that changed it returns. A caller that has just created an invoice and cannot see it in here has been told a lie about what it did.
+ 
+ A generated scenario asserts it once, immediately after the command: a view promising this and not keeping the promise has to fail the suite rather than be retried until it passes.
+@@ -152,6 +156,8 @@ It exposes:
+ - `notes` — `Map<String, String>`
+ - `badge` — `Optional<gatepass.visit.Badge>`, which may be absent
+ 
++It declares no order, so the rows come back in whatever order the implementation has, and two reads may disagree.
++
+ **Eventual**: it catches up some time after the command returns, so a caller that reads it immediately may legitimately not see its own write yet. Nothing here says how long that takes, so nothing here lets a caller wait a fixed time and call it correct.
+ 
+ A generated scenario therefore retries the assertion until the projection catches up, rather than asserting once and racing it. The repair everyone reaches for instead is a sleep, which turns the suite into a test of the machine it runs on.
+@@ -293,4 +299,4 @@ It may invoke nothing: it observes. "Who is in this picture" is part of what a s
+ 
+ ---
+ 
+-Generated from gatepass v1 · model digest `f2e0f8ff51c077fa1c713d8151544379bafac36a5a927e71c685042d53ab6e61` · contract digest `e6e58e055d24f8f494dcff274f55e723d967f9d1f9aea16641bb8dacbb71171e`. Do not edit this file; change the specification and regenerate it with `ess generate`.
++Generated from gatepass v1 · model digest `f2e0f8ff51c077fa1c713d8151544379bafac36a5a927e71c685042d53ab6e61` · contract digest `slice-sha256/2:e6e58e055d24f8f494dcff274f55e723d967f9d1f9aea16641bb8dacbb71171e`. Do not edit this file; change the specification and regenerate it with `ess generate`.
+diff --git a/generated/go/gatepass/server/pass-service.openapi.json b/generated/go/gatepass/server/pass-service.openapi.json
+index 8422499..cc82140 100644
+--- a/generated/go/gatepass/server/pass-service.openapi.json
++++ b/generated/go/gatepass/server/pass-service.openapi.json
+@@ -9,7 +9,7 @@
+       "system": "gatepass",
+       "specification_version": "v1",
+       "source_digest": "f2e0f8ff51c077fa1c713d8151544379bafac36a5a927e71c685042d53ab6e61",
+-      "contract_digest": "20853cb8a89aae494e4e0482cf050830b187d6ec3fe16e1df0ad24fc27112701"
++      "contract_digest": "slice-sha256/2:20853cb8a89aae494e4e0482cf050830b187d6ec3fe16e1df0ad24fc27112701"
+     },
+     "x-ess-reached-by": "network"
+   },
+@@ -681,5 +681,214 @@
+         "type": "string"
+       }
+     }
++  },
++  "x-ess-entities": {
++    "gatepass.visit.Badge": {
++      "title": "Badge",
++      "x-ess-name": "gatepass.visit.Badge",
++      "x-ess-kind": "struct",
++      "type": "object",
++      "properties": {
++        "serial": {
++          "type": "string"
++        },
++        "printed_at": {
++          "type": "string",
++          "format": "date-time"
++        },
++        "signature": {
++          "type": "string",
++          "pattern": "^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$",
++          "contentEncoding": "base64"
++        }
++      },
++      "required": [
++        "serial",
++        "signature"
++      ],
++      "additionalProperties": false
++    },
++    "gatepass.visit.Building": {
++      "title": "Building",
++      "x-ess-name": "gatepass.visit.Building",
++      "x-ess-kind": "enum",
++      "type": "string",
++      "enum": [
++        "North",
++        "South",
++        "Annex"
++      ]
++    },
++    "gatepass.visit.Deposit": {
++      "title": "Deposit",
++      "x-ess-name": "gatepass.visit.Deposit",
++      "x-ess-kind": "struct",
++      "type": "object",
++      "properties": {
++        "amount": {
++          "type": "string",
++          "format": "decimal",
++          "pattern": "^-?(0|[1-9][0-9]*)(\\.[0-9]+)?$"
++        },
++        "currency": {
++          "type": "string"
++        }
++      },
++      "required": [
++        "amount",
++        "currency"
++      ],
++      "additionalProperties": false,
++      "x-ess-invariants": [
++        "amount >= 0"
++      ]
++    },
++    "gatepass.visit.EmployeeId": {
++      "title": "EmployeeId",
++      "x-ess-name": "gatepass.visit.EmployeeId",
++      "x-ess-kind": "newtype",
++      "type": "string"
++    },
++    "gatepass.visit.Host": {
++      "title": "Host",
++      "x-ess-name": "gatepass.visit.Host",
++      "x-ess-kind": "union",
++      "oneOf": [
++        {
++          "title": "contractor",
++          "type": "object",
++          "properties": {
++            "kind": {
++              "type": "string",
++              "const": "contractor"
++            },
++            "value": {
++              "$ref": "#/x-ess-entities/gatepass.visit.VendorRef"
++            }
++          },
++          "required": [
++            "kind",
++            "value"
++          ],
++          "additionalProperties": false
++        },
++        {
++          "title": "employee",
++          "type": "object",
++          "properties": {
++            "kind": {
++              "type": "string",
++              "const": "employee"
++            },
++            "value": {
++              "$ref": "#/x-ess-entities/gatepass.visit.EmployeeId"
++            }
++          },
++          "required": [
++            "kind",
++            "value"
++          ],
++          "additionalProperties": false
++        }
++      ],
++      "x-ess-union-tag": "kind"
++    },
++    "gatepass.visit.VendorRef": {
++      "title": "VendorRef",
++      "x-ess-name": "gatepass.visit.VendorRef",
++      "x-ess-kind": "newtype",
++      "type": "string"
++    },
++    "gatepass.visit.Visit": {
++      "title": "Visit",
++      "x-ess-name": "gatepass.visit.Visit",
++      "x-ess-kind": "entity",
++      "type": "object",
++      "properties": {
++        "visit_id": {
++          "$ref": "#/x-ess-entities/gatepass.visit.VisitId"
++        },
++        "visitor": {
++          "$ref": "#/x-ess-entities/gatepass.visit.VisitorName"
++        },
++        "building": {
++          "$ref": "#/x-ess-entities/gatepass.visit.Building"
++        },
++        "host": {
++          "$ref": "#/x-ess-entities/gatepass.visit.Host"
++        },
++        "expected_minutes": {
++          "type": "integer"
++        },
++        "expected_stay": {
++          "type": "string",
++          "format": "duration"
++        },
++        "deposit": {
++          "$ref": "#/x-ess-entities/gatepass.visit.Deposit"
++        },
++        "escorts": {
++          "type": "array",
++          "items": {
++            "$ref": "#/x-ess-entities/gatepass.visit.VisitorName"
++          }
++        },
++        "notes": {
++          "type": "object",
++          "additionalProperties": {
++            "type": "string"
++          },
++          "x-ess-map-key": "String"
++        },
++        "badge": {
++          "$ref": "#/x-ess-entities/gatepass.visit.Badge"
++        },
++        "on_watchlist": {
++          "type": "boolean"
++        },
++        "state": {
++          "$ref": "#/x-ess-entities/gatepass.visit.Visit.State"
++        }
++      },
++      "required": [
++        "visit_id",
++        "visitor",
++        "building",
++        "host",
++        "expected_minutes",
++        "expected_stay",
++        "deposit",
++        "escorts",
++        "notes",
++        "on_watchlist",
++        "state"
++      ],
++      "additionalProperties": false
++    },
++    "gatepass.visit.Visit.State": {
++      "title": "State",
++      "x-ess-name": "gatepass.visit.Visit.State",
++      "x-ess-kind": "enum",
++      "type": "string",
++      "enum": [
++        "Departed",
++        "Expected",
++        "OnSite"
++      ]
++    },
++    "gatepass.visit.VisitId": {
++      "title": "VisitId",
++      "x-ess-name": "gatepass.visit.VisitId",
++      "x-ess-kind": "newtype",
++      "type": "string",
++      "format": "uuid",
++      "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$"
++    },
++    "gatepass.visit.VisitorName": {
++      "title": "VisitorName",
++      "x-ess-name": "gatepass.visit.VisitorName",
++      "x-ess-kind": "newtype",
++      "type": "string"
++    }
+   }
+ }
+diff --git a/generated/openapi/email-service.yaml b/generated/openapi/email-service.yaml
+index 51b9242..f26e841 100644
+--- a/generated/openapi/email-service.yaml
++++ b/generated/openapi/email-service.yaml
+@@ -1,6 +1,6 @@
+ # generated from billing v3
+ # model digest 56090788443a14b4a51ad151eb5cb3ebded2b98f6defe9ac50826296ac5d0942
+-# contract digest 9cd942cd8437f5f98a69fd1a8b3463112b7bcf84319ed10e04dd365f9872e92b
++# contract digest slice-sha256/2:790ac9eb34dc57a7d0e41c8b4bc744bcece93bdda06c856fe313012b7a22aa2f
+ # do not edit: regenerate with `ess generate`
+ openapi: 3.1.0
+ info:
+@@ -15,7 +15,7 @@ info:
+     system: billing
+     specification_version: v3
+     source_digest: 56090788443a14b4a51ad151eb5cb3ebded2b98f6defe9ac50826296ac5d0942
+-    contract_digest: 9cd942cd8437f5f98a69fd1a8b3463112b7bcf84319ed10e04dd365f9872e92b
++    contract_digest: slice-sha256/2:790ac9eb34dc57a7d0e41c8b4bc744bcece93bdda06c856fe313012b7a22aa2f
+ tags:
+ - name: email
+   description: Sending the notifications other contexts ask for.
+diff --git a/generated/openapi/invoice-service.yaml b/generated/openapi/invoice-service.yaml
+index db96f66..65f858c 100644
+--- a/generated/openapi/invoice-service.yaml
++++ b/generated/openapi/invoice-service.yaml
+@@ -1,6 +1,6 @@
+ # generated from billing v3
+ # model digest 56090788443a14b4a51ad151eb5cb3ebded2b98f6defe9ac50826296ac5d0942
+-# contract digest 4a8707523699f478d5d4e0068d6953a49cc0a36b9b026bab5ef7eeb6244f0fdd
++# contract digest slice-sha256/2:c8fefbb1c7bb7c761f120e779652a3febf75e3f89339f148f30c39c72717c897
+ # do not edit: regenerate with `ess generate`
+ openapi: 3.1.0
+ info:
+@@ -15,7 +15,7 @@ info:
+     system: billing
+     specification_version: v3
+     source_digest: 56090788443a14b4a51ad151eb5cb3ebded2b98f6defe9ac50826296ac5d0942
+-    contract_digest: 4a8707523699f478d5d4e0068d6953a49cc0a36b9b026bab5ef7eeb6244f0fdd
++    contract_digest: slice-sha256/2:c8fefbb1c7bb7c761f120e779652a3febf75e3f89339f148f30c39c72717c897
+ tags:
+ - name: invoices
+   description: Issuing invoices and tracking whether they are paid.
+diff --git a/generated/rust/gatepass/crates/gatepass-server/src/pass-service.docs.md b/generated/rust/gatepass/crates/gatepass-server/src/pass-service.docs.md
+index 72c31db..946f1d5 100644
+--- a/generated/rust/gatepass/crates/gatepass-server/src/pass-service.docs.md
++++ b/generated/rust/gatepass/crates/gatepass-server/src/pass-service.docs.md
+@@ -1,7 +1,7 @@
+ <!--
+ generated from gatepass v1
+ model digest f2e0f8ff51c077fa1c713d8151544379bafac36a5a927e71c685042d53ab6e61
+-contract digest e6e58e055d24f8f494dcff274f55e723d967f9d1f9aea16641bb8dacbb71171e
++contract digest slice-sha256/2:e6e58e055d24f8f494dcff274f55e723d967f9d1f9aea16641bb8dacbb71171e
+ do not edit: regenerate with `ess generate`
+ -->
+ 
+@@ -9,7 +9,7 @@ do not edit: regenerate with `ess generate`
+ 
+ Expecting a visitor, letting them in, and letting them out again.
+ 
+-`gatepass.visit` is one of gatepass's bounded contexts. [Back to the index](../README.md).
++`gatepass.visit` is one of gatepass's bounded contexts. [Back to the index](../index.md).
+ 
+ ## Types
+ 
+@@ -82,6 +82,8 @@ It holds:
+ - `badge` — `Optional<gatepass.visit.Badge>`, which may be absent
+ - `on_watchlist` — `Boolean`
+ 
++It declares no relation to another entity, and no other entity names it.
++
+ Every instance satisfies `deposit.amount >= 0` and `expected_minutes > 0` — a predicate over this entity's own fields, checked against them rather than stored as a sentence, so an invariant reading something the entity does not have is refused instead of documented.
+ 
+ Its state is a `gatepass.visit.Visit.State`, one of `Departed`, `Expected` and `OnSite`. That enum is synthesised from the lifecycle rather than declared beside it, so the states a view's filter compares and the states drawn below cannot disagree.
+@@ -131,6 +133,8 @@ It exposes:
+ - `building` — `gatepass.visit.Building`
+ - `deposit` — `gatepass.visit.Deposit`
+ 
++It declares no order, so the rows come back in whatever order the implementation has, and two reads may disagree.
++
+ **Read-your-writes**: it is current the moment the command that changed it returns. A caller that has just created an invoice and cannot see it in here has been told a lie about what it did.
+ 
+ A generated scenario asserts it once, immediately after the command: a view promising this and not keeping the promise has to fail the suite rather than be retried until it passes.
+@@ -152,6 +156,8 @@ It exposes:
+ - `notes` — `Map<String, String>`
+ - `badge` — `Optional<gatepass.visit.Badge>`, which may be absent
+ 
++It declares no order, so the rows come back in whatever order the implementation has, and two reads may disagree.
++
+ **Eventual**: it catches up some time after the command returns, so a caller that reads it immediately may legitimately not see its own write yet. Nothing here says how long that takes, so nothing here lets a caller wait a fixed time and call it correct.
+ 
+ A generated scenario therefore retries the assertion until the projection catches up, rather than asserting once and racing it. The repair everyone reaches for instead is a sleep, which turns the suite into a test of the machine it runs on.
+@@ -293,4 +299,4 @@ It may invoke nothing: it observes. "Who is in this picture" is part of what a s
+ 
+ ---
+ 
+-Generated from gatepass v1 · model digest `f2e0f8ff51c077fa1c713d8151544379bafac36a5a927e71c685042d53ab6e61` · contract digest `e6e58e055d24f8f494dcff274f55e723d967f9d1f9aea16641bb8dacbb71171e`. Do not edit this file; change the specification and regenerate it with `ess generate`.
++Generated from gatepass v1 · model digest `f2e0f8ff51c077fa1c713d8151544379bafac36a5a927e71c685042d53ab6e61` · contract digest `slice-sha256/2:e6e58e055d24f8f494dcff274f55e723d967f9d1f9aea16641bb8dacbb71171e`. Do not edit this file; change the specification and regenerate it with `ess generate`.
+diff --git a/generated/rust/gatepass/crates/gatepass-server/src/pass-service.openapi.json b/generated/rust/gatepass/crates/gatepass-server/src/pass-service.openapi.json
+index 8422499..cc82140 100644
+--- a/generated/rust/gatepass/crates/gatepass-server/src/pass-service.openapi.json
++++ b/generated/rust/gatepass/crates/gatepass-server/src/pass-service.openapi.json
+@@ -9,7 +9,7 @@
+       "system": "gatepass",
+       "specification_version": "v1",
+       "source_digest": "f2e0f8ff51c077fa1c713d8151544379bafac36a5a927e71c685042d53ab6e61",
+-      "contract_digest": "20853cb8a89aae494e4e0482cf050830b187d6ec3fe16e1df0ad24fc27112701"
++      "contract_digest": "slice-sha256/2:20853cb8a89aae494e4e0482cf050830b187d6ec3fe16e1df0ad24fc27112701"
+     },
+     "x-ess-reached-by": "network"
+   },
+@@ -681,5 +681,214 @@
+         "type": "string"
+       }
+     }
++  },
++  "x-ess-entities": {
++    "gatepass.visit.Badge": {
++      "title": "Badge",
++      "x-ess-name": "gatepass.visit.Badge",
++      "x-ess-kind": "struct",
++      "type": "object",
++      "properties": {
++        "serial": {
++          "type": "string"
++        },
++        "printed_at": {
++          "type": "string",
++          "format": "date-time"
++        },
++        "signature": {
++          "type": "string",
++          "pattern": "^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$",
++          "contentEncoding": "base64"
++        }
++      },
++      "required": [
++        "serial",
++        "signature"
++      ],
++      "additionalProperties": false
++    },
++    "gatepass.visit.Building": {
++      "title": "Building",
++      "x-ess-name": "gatepass.visit.Building",
++      "x-ess-kind": "enum",
++      "type": "string",
++      "enum": [
++        "North",
++        "South",
++        "Annex"
++      ]
++    },
++    "gatepass.visit.Deposit": {
++      "title": "Deposit",
++      "x-ess-name": "gatepass.visit.Deposit",
++      "x-ess-kind": "struct",
++      "type": "object",
++      "properties": {
++        "amount": {
++          "type": "string",
++          "format": "decimal",
++          "pattern": "^-?(0|[1-9][0-9]*)(\\.[0-9]+)?$"
++        },
++        "currency": {
++          "type": "string"
++        }
++      },
++      "required": [
++        "amount",
++        "currency"
++      ],
++      "additionalProperties": false,
++      "x-ess-invariants": [
++        "amount >= 0"
++      ]
++    },
++    "gatepass.visit.EmployeeId": {
++      "title": "EmployeeId",
++      "x-ess-name": "gatepass.visit.EmployeeId",
++      "x-ess-kind": "newtype",
++      "type": "string"
++    },
++    "gatepass.visit.Host": {
++      "title": "Host",
++      "x-ess-name": "gatepass.visit.Host",
++      "x-ess-kind": "union",
++      "oneOf": [
++        {
++          "title": "contractor",
++          "type": "object",
++          "properties": {
++            "kind": {
++              "type": "string",
++              "const": "contractor"
++            },
++            "value": {
++              "$ref": "#/x-ess-entities/gatepass.visit.VendorRef"
++            }
++          },
++          "required": [
++            "kind",
++            "value"
++          ],
++          "additionalProperties": false
++        },
++        {
++          "title": "employee",
++          "type": "object",
++          "properties": {
++            "kind": {
++              "type": "string",
++              "const": "employee"
++            },
++            "value": {
++              "$ref": "#/x-ess-entities/gatepass.visit.EmployeeId"
++            }
++          },
++          "required": [
++            "kind",
++            "value"
++          ],
++          "additionalProperties": false
++        }
++      ],
++      "x-ess-union-tag": "kind"
++    },
++    "gatepass.visit.VendorRef": {
++      "title": "VendorRef",
++      "x-ess-name": "gatepass.visit.VendorRef",
++      "x-ess-kind": "newtype",
++      "type": "string"
++    },
++    "gatepass.visit.Visit": {
++      "title": "Visit",
++      "x-ess-name": "gatepass.visit.Visit",
++      "x-ess-kind": "entity",
++      "type": "object",
++      "properties": {
++        "visit_id": {
++          "$ref": "#/x-ess-entities/gatepass.visit.VisitId"
++        },
++        "visitor": {
++          "$ref": "#/x-ess-entities/gatepass.visit.VisitorName"
++        },
++        "building": {
++          "$ref": "#/x-ess-entities/gatepass.visit.Building"
++        },
++        "host": {
++          "$ref": "#/x-ess-entities/gatepass.visit.Host"
++        },
++        "expected_minutes": {
++          "type": "integer"
++        },
++        "expected_stay": {
++          "type": "string",
++          "format": "duration"
++        },
++        "deposit": {
++          "$ref": "#/x-ess-entities/gatepass.visit.Deposit"
++        },
++        "escorts": {
++          "type": "array",
++          "items": {
++            "$ref": "#/x-ess-entities/gatepass.visit.VisitorName"
++          }
++        },
++        "notes": {
++          "type": "object",
++          "additionalProperties": {
++            "type": "string"
++          },
++          "x-ess-map-key": "String"
++        },
++        "badge": {
++          "$ref": "#/x-ess-entities/gatepass.visit.Badge"
++        },
++        "on_watchlist": {
++          "type": "boolean"
++        },
++        "state": {
++          "$ref": "#/x-ess-entities/gatepass.visit.Visit.State"
++        }
++      },
++      "required": [
++        "visit_id",
++        "visitor",
++        "building",
++        "host",
++        "expected_minutes",
++        "expected_stay",
++        "deposit",
++        "escorts",
++        "notes",
++        "on_watchlist",
++        "state"
++      ],
++      "additionalProperties": false
++    },
++    "gatepass.visit.Visit.State": {
++      "title": "State",
++      "x-ess-name": "gatepass.visit.Visit.State",
++      "x-ess-kind": "enum",
++      "type": "string",
++      "enum": [
++        "Departed",
++        "Expected",
++        "OnSite"
++      ]
++    },
++    "gatepass.visit.VisitId": {
++      "title": "VisitId",
++      "x-ess-name": "gatepass.visit.VisitId",
++      "x-ess-kind": "newtype",
++      "type": "string",
++      "format": "uuid",
++      "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$"
++    },
++    "gatepass.visit.VisitorName": {
++      "title": "VisitorName",
++      "x-ess-name": "gatepass.visit.VisitorName",
++      "x-ess-kind": "newtype",
++      "type": "string"
++    }
+   }
+ }
+diff --git a/generated/schema/commands/billing.email.SendEmail.schema.json b/generated/schema/commands/billing.email.SendEmail.schema.json
+index 07d4907..731d94e 100644
+--- a/generated/schema/commands/billing.email.SendEmail.schema.json
++++ b/generated/schema/commands/billing.email.SendEmail.schema.json
+@@ -21,7 +21,7 @@
+     "system": "billing",
+     "specification_version": "v3",
+     "source_digest": "56090788443a14b4a51ad151eb5cb3ebded2b98f6defe9ac50826296ac5d0942",
+-    "contract_digest": "8205939dd0e124501d626586d1036c78890ac7b84cd49fc1a1d1b5dd39b96b4d",
++    "contract_digest": "slice-sha256/2:8205939dd0e124501d626586d1036c78890ac7b84cd49fc1a1d1b5dd39b96b4d",
+     "regenerate": "ess generate"
+   },
+   "$defs": {
+diff --git a/generated/schema/commands/billing.invoice.CancelInvoice.schema.json b/generated/schema/commands/billing.invoice.CancelInvoice.schema.json
+index bfe3ef1..a4bc6a3 100644
+--- a/generated/schema/commands/billing.invoice.CancelInvoice.schema.json
++++ b/generated/schema/commands/billing.invoice.CancelInvoice.schema.json
+@@ -17,7 +17,7 @@
+     "system": "billing",
+     "specification_version": "v3",
+     "source_digest": "56090788443a14b4a51ad151eb5cb3ebded2b98f6defe9ac50826296ac5d0942",
+-    "contract_digest": "e0201e362dc9ba93988eb7d57709e2f0119e2ad9f911cc9db1daac973f50d18f",
++    "contract_digest": "slice-sha256/2:f32999b17c527ebdf7a98f9df4656a4530dfd80299727c2844de34bc72c826f0",
+     "regenerate": "ess generate"
+   },
+   "$defs": {
+diff --git a/generated/schema/commands/billing.invoice.CreateInvoice.schema.json b/generated/schema/commands/billing.invoice.CreateInvoice.schema.json
+index 4045ff0..fd7f087 100644
+--- a/generated/schema/commands/billing.invoice.CreateInvoice.schema.json
++++ b/generated/schema/commands/billing.invoice.CreateInvoice.schema.json
+@@ -25,7 +25,7 @@
+     "system": "billing",
+     "specification_version": "v3",
+     "source_digest": "56090788443a14b4a51ad151eb5cb3ebded2b98f6defe9ac50826296ac5d0942",
+-    "contract_digest": "65071df4666da7a181c241441c347f47f26e20d2261d87b2c83a6aaad356cde3",
++    "contract_digest": "slice-sha256/2:a57c8f31881d6cb24e5425e72419fab8cc200f949135f6c4e8a892fc4309ed0e",
+     "regenerate": "ess generate"
+   },
+   "$defs": {
+diff --git a/generated/schema/commands/billing.invoice.IssueInvoice.schema.json b/generated/schema/commands/billing.invoice.IssueInvoice.schema.json
+index 8335553..3224f67 100644
+--- a/generated/schema/commands/billing.invoice.IssueInvoice.schema.json
++++ b/generated/schema/commands/billing.invoice.IssueInvoice.schema.json
+@@ -17,7 +17,7 @@
+     "system": "billing",
+     "specification_version": "v3",
+     "source_digest": "56090788443a14b4a51ad151eb5cb3ebded2b98f6defe9ac50826296ac5d0942",
+-    "contract_digest": "a9e9fefe2d02ba6e0cb12c84be019c8619f36a945504aa7ea50f26e7208eaad0",
++    "contract_digest": "slice-sha256/2:4855a14e5e8154dda511af65d226de0cb1e81bd8d432a340b354cbadcae8e4b5",
+     "regenerate": "ess generate"
+   },
+   "$defs": {
+diff --git a/generated/schema/commands/billing.invoice.PayInvoice.schema.json b/generated/schema/commands/billing.invoice.PayInvoice.schema.json
+index 6873da4..7a32918 100644
+--- a/generated/schema/commands/billing.invoice.PayInvoice.schema.json
++++ b/generated/schema/commands/billing.invoice.PayInvoice.schema.json
+@@ -21,7 +21,7 @@
+     "system": "billing",
+     "specification_version": "v3",
+     "source_digest": "56090788443a14b4a51ad151eb5cb3ebded2b98f6defe9ac50826296ac5d0942",
+-    "contract_digest": "67011db6f768e18004aa97f427a1349eeb4c409fbfb9b533f4d3440598bebcdd",
++    "contract_digest": "slice-sha256/2:9face220dcca0b733794e566e300b1c51d97e8cd98c96ff2aa481deddbed1025",
+     "regenerate": "ess generate"
+   },
+   "$defs": {
+diff --git a/generated/schema/entities/billing.invoice.Account.schema.json b/generated/schema/entities/billing.invoice.Account.schema.json
+index 7098cf0..1a03b32 100644
+--- a/generated/schema/entities/billing.invoice.Account.schema.json
++++ b/generated/schema/entities/billing.invoice.Account.schema.json
+@@ -25,7 +25,7 @@
+     "system": "billing",
+     "specification_version": "v3",
+     "source_digest": "56090788443a14b4a51ad151eb5cb3ebded2b98f6defe9ac50826296ac5d0942",
+-    "contract_digest": "f7d09d13ef1fa3fe844ea2025e9ebc1c5b0399311a470aa9ba52baef33000b89",
++    "contract_digest": "slice-sha256/2:c73c1fc72ab0e24b9537d2c17696c64ae7848c270d691f3d547cc66b4a54320a",
+     "regenerate": "ess generate"
+   },
+   "$defs": {
+diff --git a/generated/schema/entities/billing.invoice.Invoice.schema.json b/generated/schema/entities/billing.invoice.Invoice.schema.json
+index 6f23dbe..581e518 100644
+--- a/generated/schema/entities/billing.invoice.Invoice.schema.json
++++ b/generated/schema/entities/billing.invoice.Invoice.schema.json
+@@ -86,7 +86,7 @@
+     "system": "billing",
+     "specification_version": "v3",
+     "source_digest": "56090788443a14b4a51ad151eb5cb3ebded2b98f6defe9ac50826296ac5d0942",
+-    "contract_digest": "c5272d486c9cdc1efc5b2580bc1170e2eed289723f5f7f9925453a9e75775612",
++    "contract_digest": "slice-sha256/2:c73c1fc72ab0e24b9537d2c17696c64ae7848c270d691f3d547cc66b4a54320a",
+     "regenerate": "ess generate"
+   },
+   "$defs": {
+diff --git a/generated/schema/errors/billing.email.Undeliverable.schema.json b/generated/schema/errors/billing.email.Undeliverable.schema.json
+index 0ab229e..11197b8 100644
+--- a/generated/schema/errors/billing.email.Undeliverable.schema.json
++++ b/generated/schema/errors/billing.email.Undeliverable.schema.json
+@@ -10,7 +10,7 @@
+     "system": "billing",
+     "specification_version": "v3",
+     "source_digest": "56090788443a14b4a51ad151eb5cb3ebded2b98f6defe9ac50826296ac5d0942",
+-    "contract_digest": "cc40514910b90b0be9e41067f137a5c3bd804b4338f6d45415fee199b8628e0b",
++    "contract_digest": "slice-sha256/2:cc40514910b90b0be9e41067f137a5c3bd804b4338f6d45415fee199b8628e0b",
+     "regenerate": "ess generate"
+   }
+ }
+diff --git a/generated/schema/errors/billing.invoice.InvalidAmount.schema.json b/generated/schema/errors/billing.invoice.InvalidAmount.schema.json
+index e9b1d2a..47a45ab 100644
+--- a/generated/schema/errors/billing.invoice.InvalidAmount.schema.json
++++ b/generated/schema/errors/billing.invoice.InvalidAmount.schema.json
+@@ -18,7 +18,7 @@
+     "system": "billing",
+     "specification_version": "v3",
+     "source_digest": "56090788443a14b4a51ad151eb5cb3ebded2b98f6defe9ac50826296ac5d0942",
+-    "contract_digest": "0539195c372508550a728446277daff9e95c4056d2d2f64211e4b5d907f83185",
++    "contract_digest": "slice-sha256/2:0539195c372508550a728446277daff9e95c4056d2d2f64211e4b5d907f83185",
+     "regenerate": "ess generate"
+   },
+   "$defs": {
+diff --git a/generated/schema/errors/billing.invoice.InvoiceStateConflict.schema.json b/generated/schema/errors/billing.invoice.InvoiceStateConflict.schema.json
+index 1635001..404207d 100644
+--- a/generated/schema/errors/billing.invoice.InvoiceStateConflict.schema.json
++++ b/generated/schema/errors/billing.invoice.InvoiceStateConflict.schema.json
+@@ -18,7 +18,7 @@
+     "system": "billing",
+     "specification_version": "v3",
+     "source_digest": "56090788443a14b4a51ad151eb5cb3ebded2b98f6defe9ac50826296ac5d0942",
+-    "contract_digest": "6081eab448b2778ac5e4b54e35c1537c0b022a00c0a537423ab4b8672a321167",
++    "contract_digest": "slice-sha256/2:6081eab448b2778ac5e4b54e35c1537c0b022a00c0a537423ab4b8672a321167",
+     "regenerate": "ess generate"
+   },
+   "$defs": {
+diff --git a/generated/schema/events/billing.email.DeliveryEscalated.schema.json b/generated/schema/events/billing.email.DeliveryEscalated.schema.json
+index 5c8f59c..1fbddcd 100644
+--- a/generated/schema/events/billing.email.DeliveryEscalated.schema.json
++++ b/generated/schema/events/billing.email.DeliveryEscalated.schema.json
+@@ -22,7 +22,7 @@
+     "system": "billing",
+     "specification_version": "v3",
+     "source_digest": "56090788443a14b4a51ad151eb5cb3ebded2b98f6defe9ac50826296ac5d0942",
+-    "contract_digest": "87e31790e218f2f2b9eb5c43877737117c234ac924934e7aab8d8ad6e56ffef4",
++    "contract_digest": "slice-sha256/2:87e31790e218f2f2b9eb5c43877737117c234ac924934e7aab8d8ad6e56ffef4",
+     "regenerate": "ess generate"
+   },
+   "$defs": {
+diff --git a/generated/schema/events/billing.email.EmailSent.schema.json b/generated/schema/events/billing.email.EmailSent.schema.json
+index 9b30b60..f5d672f 100644
+--- a/generated/schema/events/billing.email.EmailSent.schema.json
++++ b/generated/schema/events/billing.email.EmailSent.schema.json
+@@ -21,7 +21,7 @@
+     "system": "billing",
+     "specification_version": "v3",
+     "source_digest": "56090788443a14b4a51ad151eb5cb3ebded2b98f6defe9ac50826296ac5d0942",
+-    "contract_digest": "f618617479be29c43181d2ac41342ea844280d07f14444f6a4cba214a319f52e",
++    "contract_digest": "slice-sha256/2:f618617479be29c43181d2ac41342ea844280d07f14444f6a4cba214a319f52e",
+     "regenerate": "ess generate"
+   },
+   "$defs": {
+diff --git a/generated/schema/events/billing.invoice.InvoiceCancelled.schema.json b/generated/schema/events/billing.invoice.InvoiceCancelled.schema.json
+index 3447339..a517015 100644
+--- a/generated/schema/events/billing.invoice.InvoiceCancelled.schema.json
++++ b/generated/schema/events/billing.invoice.InvoiceCancelled.schema.json
+@@ -17,7 +17,7 @@
+     "system": "billing",
+     "specification_version": "v3",
+     "source_digest": "56090788443a14b4a51ad151eb5cb3ebded2b98f6defe9ac50826296ac5d0942",
+-    "contract_digest": "cf7b4039aace6a20a0cbb466e812dca077fb761bd53c092474db5763cd4001b7",
++    "contract_digest": "slice-sha256/2:cf7b4039aace6a20a0cbb466e812dca077fb761bd53c092474db5763cd4001b7",
+     "regenerate": "ess generate"
+   },
+   "$defs": {
+diff --git a/generated/schema/events/billing.invoice.InvoiceCreated.schema.json b/generated/schema/events/billing.invoice.InvoiceCreated.schema.json
+index c831511..084f79b 100644
+--- a/generated/schema/events/billing.invoice.InvoiceCreated.schema.json
++++ b/generated/schema/events/billing.invoice.InvoiceCreated.schema.json
+@@ -29,7 +29,7 @@
+     "system": "billing",
+     "specification_version": "v3",
+     "source_digest": "56090788443a14b4a51ad151eb5cb3ebded2b98f6defe9ac50826296ac5d0942",
+-    "contract_digest": "2a2646ad19cd728f290c0e8f88922be4f8acaedfd4a1de7855f9ed73aab6270b",
++    "contract_digest": "slice-sha256/2:2a2646ad19cd728f290c0e8f88922be4f8acaedfd4a1de7855f9ed73aab6270b",
+     "regenerate": "ess generate"
+   },
+   "$defs": {
+diff --git a/generated/schema/events/billing.invoice.InvoiceIssued.schema.json b/generated/schema/events/billing.invoice.InvoiceIssued.schema.json
+index c791388..540e8e7 100644
+--- a/generated/schema/events/billing.invoice.InvoiceIssued.schema.json
++++ b/generated/schema/events/billing.invoice.InvoiceIssued.schema.json
+@@ -17,7 +17,7 @@
+     "system": "billing",
+     "specification_version": "v3",
+     "source_digest": "56090788443a14b4a51ad151eb5cb3ebded2b98f6defe9ac50826296ac5d0942",
+-    "contract_digest": "971c308e72cec53a8e1db92dc2885e8cbaee17a5fd6d27dcfa25885e4b88252a",
++    "contract_digest": "slice-sha256/2:971c308e72cec53a8e1db92dc2885e8cbaee17a5fd6d27dcfa25885e4b88252a",
+     "regenerate": "ess generate"
+   },
+   "$defs": {
+diff --git a/generated/schema/events/billing.invoice.InvoicePaid.schema.json b/generated/schema/events/billing.invoice.InvoicePaid.schema.json
+index 002648b..e041248 100644
+--- a/generated/schema/events/billing.invoice.InvoicePaid.schema.json
++++ b/generated/schema/events/billing.invoice.InvoicePaid.schema.json
+@@ -21,7 +21,7 @@
+     "system": "billing",
+     "specification_version": "v3",
+     "source_digest": "56090788443a14b4a51ad151eb5cb3ebded2b98f6defe9ac50826296ac5d0942",
+-    "contract_digest": "ac8adc6a380d65a3cccc9c5e5b25aad886e523478dd4ca1f12682b6c9629f65d",
++    "contract_digest": "slice-sha256/2:ac8adc6a380d65a3cccc9c5e5b25aad886e523478dd4ca1f12682b6c9629f65d",
+     "regenerate": "ess generate"
+   },
+   "$defs": {
+diff --git a/generated/schema/types/billing.email.EmailAddress.schema.json b/generated/schema/types/billing.email.EmailAddress.schema.json
+index 3479b39..996ab85 100644
+--- a/generated/schema/types/billing.email.EmailAddress.schema.json
++++ b/generated/schema/types/billing.email.EmailAddress.schema.json
+@@ -5,7 +5,7 @@
+     "system": "billing",
+     "specification_version": "v3",
+     "source_digest": "56090788443a14b4a51ad151eb5cb3ebded2b98f6defe9ac50826296ac5d0942",
+-    "contract_digest": "147b10971b5154c6cd7c94497fe3c2915ee44a01cb9f727b1637ecf7b5b9d707",
++    "contract_digest": "slice-sha256/2:147b10971b5154c6cd7c94497fe3c2915ee44a01cb9f727b1637ecf7b5b9d707",
+     "regenerate": "ess generate"
+   },
+   "$defs": {
+diff --git a/generated/schema/types/billing.email.MessageId.schema.json b/generated/schema/types/billing.email.MessageId.schema.json
+index 1be01fb..ce19de1 100644
+--- a/generated/schema/types/billing.email.MessageId.schema.json
++++ b/generated/schema/types/billing.email.MessageId.schema.json
+@@ -5,7 +5,7 @@
+     "system": "billing",
+     "specification_version": "v3",
+     "source_digest": "56090788443a14b4a51ad151eb5cb3ebded2b98f6defe9ac50826296ac5d0942",
+-    "contract_digest": "9162091c683f894e1112c791791a83cce33cdad952a0797ee80eabcca7f06fe9",
++    "contract_digest": "slice-sha256/2:9162091c683f894e1112c791791a83cce33cdad952a0797ee80eabcca7f06fe9",
+     "regenerate": "ess generate"
+   },
+   "$defs": {
+diff --git a/generated/schema/types/billing.email.TemplateId.schema.json b/generated/schema/types/billing.email.TemplateId.schema.json
+index 3093478..33d9836 100644
+--- a/generated/schema/types/billing.email.TemplateId.schema.json
++++ b/generated/schema/types/billing.email.TemplateId.schema.json
+@@ -5,7 +5,7 @@
+     "system": "billing",
+     "specification_version": "v3",
+     "source_digest": "56090788443a14b4a51ad151eb5cb3ebded2b98f6defe9ac50826296ac5d0942",
+-    "contract_digest": "66254d8d748cfcc3f46c119f4e456a544681aad87dc4bb374c21625c4817c6d8",
++    "contract_digest": "slice-sha256/2:66254d8d748cfcc3f46c119f4e456a544681aad87dc4bb374c21625c4817c6d8",
+     "regenerate": "ess generate"
+   },
+   "$defs": {
+diff --git a/generated/schema/types/billing.invoice.Account.State.schema.json b/generated/schema/types/billing.invoice.Account.State.schema.json
+index de12a33..cb6bac2 100644
+--- a/generated/schema/types/billing.invoice.Account.State.schema.json
++++ b/generated/schema/types/billing.invoice.Account.State.schema.json
+@@ -5,7 +5,7 @@
+     "system": "billing",
+     "specification_version": "v3",
+     "source_digest": "56090788443a14b4a51ad151eb5cb3ebded2b98f6defe9ac50826296ac5d0942",
+-    "contract_digest": "a96d79d794918a19297540a5dc9a924122559023296713a920621d44f43a8601",
++    "contract_digest": "slice-sha256/2:a96d79d794918a19297540a5dc9a924122559023296713a920621d44f43a8601",
+     "regenerate": "ess generate"
+   },
+   "$defs": {
+diff --git a/generated/schema/types/billing.invoice.AccountId.schema.json b/generated/schema/types/billing.invoice.AccountId.schema.json
+index fb2f565..7025461 100644
+--- a/generated/schema/types/billing.invoice.AccountId.schema.json
++++ b/generated/schema/types/billing.invoice.AccountId.schema.json
+@@ -5,7 +5,7 @@
+     "system": "billing",
+     "specification_version": "v3",
+     "source_digest": "56090788443a14b4a51ad151eb5cb3ebded2b98f6defe9ac50826296ac5d0942",
+-    "contract_digest": "952142b21a05b7cf8c92635d30350e0e44c4d6e68e8a9c5401bbaf847c10312c",
++    "contract_digest": "slice-sha256/2:952142b21a05b7cf8c92635d30350e0e44c4d6e68e8a9c5401bbaf847c10312c",
+     "regenerate": "ess generate"
+   },
+   "$defs": {
+diff --git a/generated/schema/types/billing.invoice.Channel.schema.json b/generated/schema/types/billing.invoice.Channel.schema.json
+index b7e037f..1da2ca0 100644
+--- a/generated/schema/types/billing.invoice.Channel.schema.json
++++ b/generated/schema/types/billing.invoice.Channel.schema.json
+@@ -5,7 +5,7 @@
+     "system": "billing",
+     "specification_version": "v3",
+     "source_digest": "56090788443a14b4a51ad151eb5cb3ebded2b98f6defe9ac50826296ac5d0942",
+-    "contract_digest": "51db53bdfed3964dc4e6444986c73a1c559a217e5e8f3b1980a70c8e8a360741",
++    "contract_digest": "slice-sha256/2:51db53bdfed3964dc4e6444986c73a1c559a217e5e8f3b1980a70c8e8a360741",
+     "regenerate": "ess generate"
+   },
+   "$defs": {
+diff --git a/generated/schema/types/billing.invoice.CompanyRef.schema.json b/generated/schema/types/billing.invoice.CompanyRef.schema.json
+index 5beabab..a54e927 100644
+--- a/generated/schema/types/billing.invoice.CompanyRef.schema.json
++++ b/generated/schema/types/billing.invoice.CompanyRef.schema.json
+@@ -5,7 +5,7 @@
+     "system": "billing",
+     "specification_version": "v3",
+     "source_digest": "56090788443a14b4a51ad151eb5cb3ebded2b98f6defe9ac50826296ac5d0942",
+-    "contract_digest": "9ba4741a64188c154f9f388a42a31cb02289cf27e9dc625a1a32ea95173c0386",
++    "contract_digest": "slice-sha256/2:9ba4741a64188c154f9f388a42a31cb02289cf27e9dc625a1a32ea95173c0386",
+     "regenerate": "ess generate"
+   },
+   "$defs": {
+diff --git a/generated/schema/types/billing.invoice.Email.schema.json b/generated/schema/types/billing.invoice.Email.schema.json
+index 9f0e990..af085c0 100644
+--- a/generated/schema/types/billing.invoice.Email.schema.json
++++ b/generated/schema/types/billing.invoice.Email.schema.json
+@@ -5,7 +5,7 @@
+     "system": "billing",
+     "specification_version": "v3",
+     "source_digest": "56090788443a14b4a51ad151eb5cb3ebded2b98f6defe9ac50826296ac5d0942",
+-    "contract_digest": "6f872768b2193219fb713f788d81a5228969f9996c8b0ec945481ae9d5d0ce82",
++    "contract_digest": "slice-sha256/2:6f872768b2193219fb713f788d81a5228969f9996c8b0ec945481ae9d5d0ce82",
+     "regenerate": "ess generate"
+   },
+   "$defs": {
+diff --git a/generated/schema/types/billing.invoice.Invoice.State.schema.json b/generated/schema/types/billing.invoice.Invoice.State.schema.json
+index 4d12a4c..820d9c0 100644
+--- a/generated/schema/types/billing.invoice.Invoice.State.schema.json
++++ b/generated/schema/types/billing.invoice.Invoice.State.schema.json
+@@ -5,7 +5,7 @@
+     "system": "billing",
+     "specification_version": "v3",
+     "source_digest": "56090788443a14b4a51ad151eb5cb3ebded2b98f6defe9ac50826296ac5d0942",
+-    "contract_digest": "378e943b401206d1f2efe2a0acd595a8427831e9f911c55885605298a38d8259",
++    "contract_digest": "slice-sha256/2:378e943b401206d1f2efe2a0acd595a8427831e9f911c55885605298a38d8259",
+     "regenerate": "ess generate"
+   },
+   "$defs": {
+diff --git a/generated/schema/types/billing.invoice.InvoiceId.schema.json b/generated/schema/types/billing.invoice.InvoiceId.schema.json
+index ec7504f..e1f1257 100644
+--- a/generated/schema/types/billing.invoice.InvoiceId.schema.json
++++ b/generated/schema/types/billing.invoice.InvoiceId.schema.json
+@@ -5,7 +5,7 @@
+     "system": "billing",
+     "specification_version": "v3",
+     "source_digest": "56090788443a14b4a51ad151eb5cb3ebded2b98f6defe9ac50826296ac5d0942",
+-    "contract_digest": "2bf4ded83f333b7dacc9b33ff0af3183af989e36ef374c9a57b87b88535e4f8d",
++    "contract_digest": "slice-sha256/2:2bf4ded83f333b7dacc9b33ff0af3183af989e36ef374c9a57b87b88535e4f8d",
+     "regenerate": "ess generate"
+   },
+   "$defs": {
+diff --git a/generated/schema/types/billing.invoice.LineItem.schema.json b/generated/schema/types/billing.invoice.LineItem.schema.json
+index 218cc47..46516dd 100644
+--- a/generated/schema/types/billing.invoice.LineItem.schema.json
++++ b/generated/schema/types/billing.invoice.LineItem.schema.json
+@@ -5,7 +5,7 @@
+     "system": "billing",
+     "specification_version": "v3",
+     "source_digest": "56090788443a14b4a51ad151eb5cb3ebded2b98f6defe9ac50826296ac5d0942",
+-    "contract_digest": "8f021d1953d13b51f2c2fbb52f488dce75fc84fd999e75f1291c2c66bf7ce31a",
++    "contract_digest": "slice-sha256/2:8f021d1953d13b51f2c2fbb52f488dce75fc84fd999e75f1291c2c66bf7ce31a",
+     "regenerate": "ess generate"
+   },
+   "$defs": {
+diff --git a/generated/schema/types/billing.invoice.Money.schema.json b/generated/schema/types/billing.invoice.Money.schema.json
+index a13a4c2..a658f47 100644
+--- a/generated/schema/types/billing.invoice.Money.schema.json
++++ b/generated/schema/types/billing.invoice.Money.schema.json
+@@ -5,7 +5,7 @@
+     "system": "billing",
+     "specification_version": "v3",
+     "source_digest": "56090788443a14b4a51ad151eb5cb3ebded2b98f6defe9ac50826296ac5d0942",
+-    "contract_digest": "94c074e701b25882a231fe8301e9142019d97fad6607eeffce07c3ce3e4c0d7e",
++    "contract_digest": "slice-sha256/2:94c074e701b25882a231fe8301e9142019d97fad6607eeffce07c3ce3e4c0d7e",
+     "regenerate": "ess generate"
+   },
+   "$defs": {
+diff --git a/generated/schema/types/billing.invoice.Payee.schema.json b/generated/schema/types/billing.invoice.Payee.schema.json
+index e76205c..576b855 100644
+--- a/generated/schema/types/billing.invoice.Payee.schema.json
++++ b/generated/schema/types/billing.invoice.Payee.schema.json
+@@ -5,7 +5,7 @@
+     "system": "billing",
+     "specification_version": "v3",
+     "source_digest": "56090788443a14b4a51ad151eb5cb3ebded2b98f6defe9ac50826296ac5d0942",
+-    "contract_digest": "03e49640f097968676fded50ef5ce1926197b12f5ad00eaf6f407bb284578fa9",
++    "contract_digest": "slice-sha256/2:03e49640f097968676fded50ef5ce1926197b12f5ad00eaf6f407bb284578fa9",
+     "regenerate": "ess generate"
+   },
+   "$defs": {
+diff --git a/generated/site/domains/billing-email.html b/generated/site/domains/billing-email.html
+index ee82a70..3266899 100644
+--- a/generated/site/domains/billing-email.html
++++ b/generated/site/domains/billing-email.html
+@@ -2,7 +2,7 @@
+ <!--
+   generated from billing v3
+   model digest 56090788443a14b4a51ad151eb5cb3ebded2b98f6defe9ac50826296ac5d0942
+-  contract digest 1ccd0afca5f71d3c3c98894259751819e5313bcd73222af85bb80774dbe83e6f
++  contract digest slice-sha256/2:6885abd57db28f85bf636a59960c5e76be692eb6d69ce48089f10ca44cc9130f
+   do not edit: regenerate with `ess generate`
+ -->
+ <html lang="en">
+@@ -86,7 +86,7 @@
+ </ul>
+ </article>
+ <footer class="provenance">
+-Generated from billing v3 · model digest <code>56090788443a14b4a51ad151eb5cb3ebded2b98f6defe9ac50826296ac5d0942</code> · contract digest <code>1ccd0afca5f71d3c3c98894259751819e5313bcd73222af85bb80774dbe83e6f</code>. Do not edit this file; change the specification and regenerate it with <code>ess generate</code>.
++Generated from billing v3 · model digest <code>56090788443a14b4a51ad151eb5cb3ebded2b98f6defe9ac50826296ac5d0942</code> · contract digest <code>slice-sha256/2:6885abd57db28f85bf636a59960c5e76be692eb6d69ce48089f10ca44cc9130f</code>. Do not edit this file; change the specification and regenerate it with <code>ess generate</code>.
+ </footer>
+ </main>
+ </div>
+diff --git a/generated/site/domains/billing-invoice.html b/generated/site/domains/billing-invoice.html
+index 94c1d4a..f03d00d 100644
+--- a/generated/site/domains/billing-invoice.html
++++ b/generated/site/domains/billing-invoice.html
+@@ -2,7 +2,7 @@
+ <!--
+   generated from billing v3
+   model digest 56090788443a14b4a51ad151eb5cb3ebded2b98f6defe9ac50826296ac5d0942
+-  contract digest cb634bd5e6f1afa6ebc8e9dca752e9901a9a68a2e51fc5009d099f155680606c
++  contract digest slice-sha256/2:cb634bd5e6f1afa6ebc8e9dca752e9901a9a68a2e51fc5009d099f155680606c
+   do not edit: regenerate with `ess generate`
+ -->
+ <html lang="en">
+@@ -276,7 +276,7 @@
+ </ul>
+ </article>
+ <footer class="provenance">
+-Generated from billing v3 · model digest <code>56090788443a14b4a51ad151eb5cb3ebded2b98f6defe9ac50826296ac5d0942</code> · contract digest <code>cb634bd5e6f1afa6ebc8e9dca752e9901a9a68a2e51fc5009d099f155680606c</code>. Do not edit this file; change the specification and regenerate it with <code>ess generate</code>.
++Generated from billing v3 · model digest <code>56090788443a14b4a51ad151eb5cb3ebded2b98f6defe9ac50826296ac5d0942</code> · contract digest <code>slice-sha256/2:cb634bd5e6f1afa6ebc8e9dca752e9901a9a68a2e51fc5009d099f155680606c</code>. Do not edit this file; change the specification and regenerate it with <code>ess generate</code>.
+ </footer>
+ </main>
+ </div>
