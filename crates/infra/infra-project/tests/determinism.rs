@@ -15,7 +15,8 @@ fn two_projections_of_one_specification_and_snapshot_are_byte_identical() {
     let spec = support::example_spec();
     let ir = support::example_ir();
     let render = || {
-        let projection = infra_project::project(&spec, &ir);
+        let projection =
+            infra_project::project(&spec, &ir).expect("the projected candidate is admitted");
         (
             projection.to_json(),
             projection.artifacts(),
@@ -45,8 +46,12 @@ fn shuffling_a_bundles_items_changes_no_byte_of_the_tree() {
     let shuffled = support::compile(&document.to_string());
     let spec = support::example_spec();
     assert_eq!(
-        infra_project::project(&spec, &shuffled).to_json(),
-        infra_project::project(&spec, &support::example_ir()).to_json(),
+        infra_project::project(&spec, &shuffled)
+            .expect("the projected candidate is admitted")
+            .to_json(),
+        infra_project::project(&spec, &support::example_ir())
+            .expect("the projected candidate is admitted")
+            .to_json(),
         "a reversed bundle is the same cluster, and must project to the same bytes"
     );
 }
@@ -56,7 +61,8 @@ fn the_committed_projection_tree_is_what_the_library_produces_right_now() {
     // The gate's `cargo xtask infra --check` compares the CLI's stdout against the committed tree;
     // this asserts the *library* produces the same bytes, so a drift between the two producers
     // fails here rather than turning up as an unexplained diff under `projection/`.
-    let projection = infra_project::project(&support::example_spec(), &support::example_ir());
+    let projection = infra_project::project(&support::example_spec(), &support::example_ir())
+        .expect("the projected candidate is admitted");
     for (path, contents) in projection.artifacts() {
         let committed = support::read(&format!("examples/k3d-dev-cluster/projection/{path}"));
         assert_eq!(
@@ -72,7 +78,8 @@ fn every_file_in_the_committed_tree_is_one_the_library_still_produces() {
     // The other direction, which a comparison of what *is* generated can never see: a patch file
     // for an object nothing patches any more would sit in the repository looking like a proposal
     // somebody still stands behind.
-    let projection = infra_project::project(&support::example_spec(), &support::example_ir());
+    let projection = infra_project::project(&support::example_spec(), &support::example_ir())
+        .expect("the projected candidate is admitted");
     let produced = projection.artifacts();
     let root = support::root().join("examples/k3d-dev-cluster/projection");
     let mut committed = Vec::new();

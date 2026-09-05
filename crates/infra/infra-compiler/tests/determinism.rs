@@ -194,7 +194,7 @@ fn a_bundle_with_reordered_kinds_and_reordered_item_lists_compiles_to_the_identi
     // pass this test while breaking the property.
     let ir = infra_compiler::compile(&observe(&ordered));
     let workload_facts = ir
-        .model
+        .model()
         .unresolved
         .iter()
         .filter(|fact| fact.from.starts_with("workloads/"))

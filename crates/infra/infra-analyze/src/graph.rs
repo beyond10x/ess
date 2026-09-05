@@ -342,25 +342,25 @@ impl InfraGraph {
             underived: Vec::new(),
         };
 
-        for key in ir.model.nodes.keys() {
+        for key in ir.model().nodes.keys() {
             graph.node(NodeKind::Node, key);
         }
-        for key in ir.model.services.keys() {
+        for key in ir.model().services.keys() {
             graph.node(NodeKind::Service, key);
         }
-        for key in ir.model.ingresses.keys() {
+        for key in ir.model().ingresses.keys() {
             graph.node(NodeKind::Ingress, key);
         }
-        for key in ir.model.config_maps.keys() {
+        for key in ir.model().config_maps.keys() {
             graph.node(NodeKind::ConfigMap, key);
         }
-        for key in ir.model.secrets.keys() {
+        for key in ir.model().secrets.keys() {
             graph.node(NodeKind::Secret, key);
         }
-        for key in ir.model.service_accounts.keys() {
+        for key in ir.model().service_accounts.keys() {
             graph.node(NodeKind::ServiceAccount, key);
         }
-        for key in ir.model.claims.keys() {
+        for key in ir.model().claims.keys() {
             graph.node(NodeKind::Claim, key);
         }
 
@@ -461,7 +461,7 @@ impl InfraGraph {
 
     #[allow(clippy::too_many_lines)]
     fn walk_workloads(&mut self, ir: &InfraIr) {
-        for (key, workload) in &ir.model.workloads {
+        for (key, workload) in &ir.model().workloads {
             let subject = GraphNode::new(NodeKind::Workload, key);
             self.nodes.insert(subject.clone());
 
@@ -572,7 +572,7 @@ impl InfraGraph {
     /// namespace — the same match the compiler ran against *pods*, run against what pods are
     /// made from, so the edge exists even while a deployment is scaled to zero.
     fn walk_services(&mut self, ir: &InfraIr) {
-        for (service_key, service) in &ir.model.services {
+        for (service_key, service) in &ir.model().services {
             if service.selector.is_empty() {
                 continue;
             }
@@ -585,7 +585,7 @@ impl InfraGraph {
                     .collect::<Vec<_>>()
                     .join(",")
             );
-            for (workload_key, workload) in &ir.model.workloads {
+            for (workload_key, workload) in &ir.model().workloads {
                 if workload.identity.namespace != service.identity.namespace {
                     continue;
                 }
@@ -606,7 +606,7 @@ impl InfraGraph {
     }
 
     fn walk_ingresses(&mut self, ir: &InfraIr) {
-        for (key, ingress) in &ir.model.ingresses {
+        for (key, ingress) in &ir.model().ingresses {
             let subject = GraphNode::new(NodeKind::Ingress, key);
             for (rule_index, rule) in ingress.rules.iter().enumerate() {
                 for (path_index, path) in rule.paths.iter().enumerate() {
@@ -638,7 +638,7 @@ impl InfraGraph {
     /// `ownerReferences` — drawn for every observed controller, so a scaled-to-zero deployment
     /// keeps its replicaset's edge even with no pod alive to walk it from.
     fn walk_controllers(&mut self, ir: &InfraIr) {
-        if let Some(replica_sets) = &ir.model.replica_sets {
+        if let Some(replica_sets) = &ir.model().replica_sets {
             for (key, replica_set) in replica_sets {
                 self.node(NodeKind::ReplicaSet, key);
                 let Some(owner) = &replica_set.owner else {
@@ -653,7 +653,7 @@ impl InfraGraph {
                     .as_deref()
                     .unwrap_or_default();
                 let workload_key = format!("{namespace}/deployment/{}", owner.name);
-                if ir.model.workloads.contains_key(&workload_key) {
+                if ir.model().workloads.contains_key(&workload_key) {
                     self.edge(
                         GraphNode::new(NodeKind::ReplicaSet, key),
                         EdgeRelation::OwnedBy,
@@ -663,7 +663,7 @@ impl InfraGraph {
                 }
             }
         }
-        if let Some(jobs) = &ir.model.jobs {
+        if let Some(jobs) = &ir.model().jobs {
             for (key, job) in jobs {
                 self.node(NodeKind::Job, key);
                 let Some(owner) = &job.owner else { continue };
@@ -673,7 +673,7 @@ impl InfraGraph {
                 let namespace = job.identity.namespace.as_deref().unwrap_or_default();
                 let cron_key = format!("{namespace}/{}", owner.name);
                 if ir
-                    .model
+                    .model()
                     .cron_jobs
                     .as_ref()
                     .is_some_and(|cron_jobs| cron_jobs.contains_key(&cron_key))
@@ -687,17 +687,17 @@ impl InfraGraph {
                 }
             }
         }
-        if let Some(cron_jobs) = &ir.model.cron_jobs {
+        if let Some(cron_jobs) = &ir.model().cron_jobs {
             for key in cron_jobs.keys() {
                 self.node(NodeKind::CronJob, key);
             }
         }
-        if let Some(budgets) = &ir.model.pod_disruption_budgets {
+        if let Some(budgets) = &ir.model().pod_disruption_budgets {
             for key in budgets.keys() {
                 self.node(NodeKind::PodDisruptionBudget, key);
             }
         }
-        if let Some(autoscalers) = &ir.model.horizontal_pod_autoscalers {
+        if let Some(autoscalers) = &ir.model().horizontal_pod_autoscalers {
             for key in autoscalers.keys() {
                 self.node(NodeKind::HorizontalPodAutoscaler, key);
             }
@@ -706,7 +706,7 @@ impl InfraGraph {
 
     #[allow(clippy::too_many_lines)]
     fn walk_pods(&mut self, ir: &InfraIr) {
-        for (key, pod) in &ir.model.pods {
+        for (key, pod) in &ir.model().pods {
             let subject = GraphNode::new(NodeKind::Pod, key);
             self.nodes.insert(subject.clone());
 
@@ -746,7 +746,7 @@ impl InfraGraph {
                         };
                         let workload_key =
                             format!("{namespace}/{}/{}", workload_kind.as_str(), owner.name);
-                        if ir.model.workloads.contains_key(&workload_key) {
+                        if ir.model().workloads.contains_key(&workload_key) {
                             self.edge(
                                 subject.clone(),
                                 EdgeRelation::OwnedBy,
@@ -768,7 +768,7 @@ impl InfraGraph {
                     // A deployment pod: exactly through its observed replicaset when the kind
                     // was scanned, by the template-hash derivation when it was not.
                     "ReplicaSet" => {
-                        if let Some(replica_sets) = &ir.model.replica_sets {
+                        if let Some(replica_sets) = &ir.model().replica_sets {
                             let replicaset_key = format!("{namespace}/{}", owner.name);
                             let Some(replica_set) = replica_sets.get(&replicaset_key) else {
                                 refuse(
@@ -797,7 +797,7 @@ impl InfraGraph {
                             {
                                 let workload_key =
                                     format!("{namespace}/deployment/{}", rs_owner.name);
-                                if ir.model.workloads.contains_key(&workload_key) {
+                                if ir.model().workloads.contains_key(&workload_key) {
                                     self.pod_owners.insert(key.clone(), workload_key);
                                 } else {
                                     refuse(
@@ -825,7 +825,7 @@ impl InfraGraph {
                                 continue;
                             };
                             let workload_key = format!("{namespace}/deployment/{deployment}");
-                            if ir.model.workloads.contains_key(&workload_key) {
+                            if ir.model().workloads.contains_key(&workload_key) {
                                 self.edge(
                                     subject.clone(),
                                     EdgeRelation::OwnedBy,
@@ -851,7 +851,7 @@ impl InfraGraph {
                     // pod's readiness expectation is the job's completion arithmetic
                     // (`INFRA-DIAG-019`), not a replica count, so `INFRA-DIAG-010` stays
                     // scoped to workload-managed pods.
-                    "Job" => match &ir.model.jobs {
+                    "Job" => match &ir.model().jobs {
                         Some(jobs) => {
                             let job_key = format!("{namespace}/{}", owner.name);
                             if jobs.contains_key(&job_key) {

@@ -119,7 +119,8 @@ fn round_trip(
     corrupt: impl Fn(&mut BTreeMap<String, String>),
 ) -> Vec<String> {
     let ir = support::compile(bundle_text);
-    let projection = infra_project::project(spec, &ir);
+    let projection =
+        infra_project::project(spec, &ir).expect("the projected candidate is admitted");
     let mut files = projection.artifacts();
     corrupt(&mut files);
 
@@ -186,7 +187,8 @@ fn round_trip(
 fn applying_the_emitted_tree_closes_every_gap_it_claims_and_moves_nothing_else() {
     let spec = support::example_spec();
     let bundle = support::read("examples/k3d-dev-cluster/observation.json");
-    let projection = infra_project::project(&spec, &support::compile(&bundle));
+    let projection = infra_project::project(&spec, &support::compile(&bundle))
+        .expect("the projected candidate is admitted");
     // The fixture has to reach the state this test is about, or it proves nothing: something must
     // be generated, and something must be left owed.
     assert!(
@@ -243,7 +245,8 @@ fn a_container_patch_emitted_as_a_plain_merge_would_delete_the_containers_it_doe
     let spec = support::example_spec();
     let bundle_text = support::read("examples/k3d-dev-cluster/observation.json");
     let ir = support::compile(&bundle_text);
-    let projection = infra_project::project(&spec, &ir);
+    let projection =
+        infra_project::project(&spec, &ir).expect("the projected candidate is admitted");
     let files = projection.artifacts();
     let patch = projection
         .patches
@@ -276,4 +279,69 @@ fn a_container_patch_emitted_as_a_plain_merge_would_delete_the_containers_it_doe
         "applied as a plain merge patch the container list is replaced, so the image the cluster \
          was running is gone: {after:?}"
     );
+}
+
+#[test]
+fn checked_projection_round_trips_all_four_changes_including_probes_and_induced_budget() {
+    let bundle = support::bundle(
+        "checked-transform",
+        &[
+            (
+                "namespaces",
+                serde_json::json!([support::namespace("shop")]),
+            ),
+            (
+                "deployments",
+                serde_json::json!([support::deployment(
+                    "shop",
+                    "api",
+                    1,
+                    &serde_json::json!([support::container("main", "registry.example.com/api:1")])
+                )]),
+            ),
+            ("poddisruptionbudgets", serde_json::json!([])),
+        ],
+    );
+    let spec = support::spec(
+        r"  - id: replicas
+    scope: {namespace: shop}
+    expect:
+      replicas_within: {min: 2, max: 4}
+  - id: resources
+    scope: {namespace: shop}
+    expect: resources_declared
+    remedy:
+      resources:
+        requests: {cpu: 25m}
+        limits: {cpu: 500m}
+  - id: probes
+    scope: {namespace: shop}
+    expect:
+      probes_declared: {liveness: true}
+    remedy:
+      probes:
+        liveness:
+          http_get: {path: /healthz, port: 8080}
+          period_seconds: 10
+  - id: budgets
+    scope: {namespace: shop}
+    expect: pdb_covers_multi_replica
+",
+    );
+    let ir = support::compile(&bundle);
+    let before = serde_json::to_vec(&ir.document()).unwrap();
+    let projection = infra_project::project(&spec, &ir)
+        .expect("all four reference-preserving edits are admitted");
+    assert_eq!(projection.summary.generated, 4);
+    assert_eq!(projection.summary.gaps_induced, 1);
+    assert_eq!(projection.patches.len(), 1);
+    assert_eq!(projection.objects.len(), 1);
+    let patch = &projection.patches[0].patch;
+    assert_eq!(patch["spec"]["replicas"], 2);
+    let container = &patch["spec"]["template"]["spec"]["containers"][0];
+    assert_eq!(container["resources"]["requests"]["cpu"], "25m");
+    assert_eq!(container["livenessProbe"]["httpGet"]["path"], "/healthz");
+    assert_eq!(serde_json::to_vec(&ir.document()).unwrap(), before);
+    let failures = round_trip(&spec, &bundle, |_| {});
+    assert!(failures.is_empty(), "{}", failures.join("\n"));
 }

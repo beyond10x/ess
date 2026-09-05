@@ -105,7 +105,7 @@ fn namespaces_with_underived_pods(
 ) -> BTreeMap<String, UnknownReason> {
     let mut blind = BTreeMap::new();
     for underived in graph.underived_owners() {
-        let Some(pod) = ir.model.pods.get(&underived.pod) else {
+        let Some(pod) = ir.model().pods.get(&underived.pod) else {
             continue;
         };
         let Some(namespace) = pod.identity.namespace.clone() else {
@@ -129,7 +129,7 @@ fn project(
     let mut store = FactStore::new();
     let mut withheld = BTreeMap::new();
     let workload = ir
-        .model
+        .model()
         .workloads
         .get(&properties.workload)
         .expect("properties are extracted from the model's own workloads");
@@ -192,7 +192,7 @@ fn project(
 
     let prefix = format!("workloads/{}", properties.workload);
     let unresolved: Vec<_> = ir
-        .model
+        .model()
         .unresolved
         .iter()
         .filter(|reference| reference.from == prefix)
@@ -304,7 +304,7 @@ fn optional_count(
 /// properties sheet is the resource envelope, and widening it to satisfy one fact path would put
 /// the same field in two places.
 fn probe_counts(ir: &InfraIr, workload_key: &str) -> (usize, usize) {
-    let Some(workload) = ir.model.workloads.get(workload_key) else {
+    let Some(workload) = ir.model().workloads.get(workload_key) else {
         return (0, 0);
     };
     let liveness = workload

@@ -55,6 +55,7 @@ fn owed<'a>(projection: &'a Projection, expectation: &str, subject: &str) -> &'a
 /// The projection of the committed fixture.
 fn fixture() -> Projection {
     infra_project::project(&support::example_spec(), &support::example_ir())
+        .expect("the projected candidate is admitted")
 }
 
 // -------------------------------------------------------------------------------------------
@@ -100,7 +101,8 @@ fn a_replica_count_above_the_range_is_lowered_to_the_ceiling() {
         "  - id: ceiling\n    scope: {namespace: shop}\n    expect:\n      replicas_within: \
          {min: 2, max: 4}\n",
     );
-    let projection = infra_project::project(&spec, &support::compile(&bundle));
+    let projection = infra_project::project(&spec, &support::compile(&bundle))
+        .expect("the projected candidate is admitted");
     assert_eq!(
         generated(&projection, "ceiling", "workloads/shop/deployment/wide"),
         "spec.replicas: 9 -> 4"
@@ -150,7 +152,8 @@ fn the_same_gap_without_a_stated_value_is_an_obligation_that_names_what_is_missi
         "  - id: envelope\n    scope: {namespace: shop}\n    expect: resources_declared\n    \
          remedy:\n      resources:\n        requests: {cpu: 25m}\n        limits: {cpu: 500m}\n",
     );
-    let projection = infra_project::project(&stated, &ir);
+    let projection =
+        infra_project::project(&stated, &ir).expect("the projected candidate is admitted");
     assert!(matches!(
         disposition(&projection, "envelope", "workloads/shop/deployment/bare"),
         Disposition::Generated(_)
@@ -159,7 +162,8 @@ fn the_same_gap_without_a_stated_value_is_an_obligation_that_names_what_is_missi
     let unstated = support::spec(
         "  - id: envelope\n    scope: {namespace: shop}\n    expect: resources_declared\n",
     );
-    let projection = infra_project::project(&unstated, &ir);
+    let projection =
+        infra_project::project(&unstated, &ir).expect("the projected candidate is admitted");
     let reason = owed(&projection, "envelope", "workloads/shop/deployment/bare");
     assert_eq!(
         reason,
@@ -200,7 +204,8 @@ fn a_remedy_that_states_only_one_missing_half_leaves_the_whole_gap_owed() {
         "  - id: envelope\n    scope: {namespace: shop}\n    expect: resources_declared\n    \
          remedy:\n      resources:\n        limits: {cpu: 500m}\n",
     );
-    let projection = infra_project::project(&spec, &support::compile(&bundle));
+    let projection = infra_project::project(&spec, &support::compile(&bundle))
+        .expect("the projected candidate is admitted");
     assert_eq!(
         owed(&projection, "envelope", "workloads/shop/deployment/bare"),
         &ObligationReason::ValueUnstated {
@@ -246,7 +251,8 @@ fn a_stated_probe_is_written_into_the_container_that_lacks_it() {
           period_seconds: 10
 ",
     );
-    let projection = infra_project::project(&spec, &support::compile(&bundle));
+    let projection = infra_project::project(&spec, &support::compile(&bundle))
+        .expect("the projected candidate is admitted");
     assert_eq!(
         generated(&projection, "liveness", "workloads/shop/deployment/api"),
         "containers[main]: livenessProbe written"
@@ -339,7 +345,8 @@ fn a_budget_whose_name_is_taken_is_owed_rather_than_written_over() {
     let spec = support::spec(
         "  - id: budgets\n    scope: {namespace: shop}\n    expect: pdb_covers_multi_replica\n",
     );
-    let projection = infra_project::project(&spec, &support::compile(&bundle));
+    let projection = infra_project::project(&spec, &support::compile(&bundle))
+        .expect("the projected candidate is admitted");
     assert_eq!(
         owed(&projection, "budgets", "workloads/shop/deployment/api"),
         &ObligationReason::NameTaken {
@@ -454,7 +461,8 @@ fn a_false_predicate_is_refused_because_a_condition_names_no_field() {
         "  - id: sidecar\n    scope: {namespace: shop}\n    expect:\n      workload_predicate: \
          workload.containers == 2\n",
     );
-    let projection = infra_project::project(&spec, &support::compile(&bundle));
+    let projection = infra_project::project(&spec, &support::compile(&bundle))
+        .expect("the projected candidate is admitted");
     match disposition(&projection, "sidecar", "workloads/shop/deployment/api") {
         Disposition::Refused(refusal) => {
             assert_eq!(refusal.reason, RefusalReason::NotAField);
@@ -496,7 +504,8 @@ fn two_expectations_that_disagree_leave_one_of_them_refused_rather_than_silently
          {min: 2, max: 4}\n  - id: large\n    scope: {namespace: shop}\n    expect:\n      \
          replicas_within: {min: 6, max: 8}\n",
     );
-    let projection = infra_project::project(&spec, &support::compile(&bundle));
+    let projection = infra_project::project(&spec, &support::compile(&bundle))
+        .expect("the projected candidate is admitted");
     let refused: Vec<&str> = projection
         .entries
         .iter()
@@ -529,7 +538,8 @@ fn every_gap_the_snapshot_reports_gets_exactly_one_entry_and_no_gap_is_lost() {
     let spec = support::example_spec();
     let ir = support::example_ir();
     let simulation = infra_spec::simulate(&spec, &ir);
-    let projection = infra_project::project(&spec, &ir);
+    let projection =
+        infra_project::project(&spec, &ir).expect("the projected candidate is admitted");
 
     let reported: BTreeSet<(String, String)> = simulation
         .reports

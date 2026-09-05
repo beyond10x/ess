@@ -2815,7 +2815,7 @@ fn import(adapter: ImportAdapter) -> Result<ExitCode> {
                 coverage_gaps: Vec::new(),
                 obligations: Vec::new(),
                 refusals: Vec::new(),
-                unresolved_references: ir.model.unresolved.len(),
+                unresolved_references: ir.model().unresolved.len(),
                 output: out.as_ref().map(|path| path.display().to_string()),
             };
             if matches!(format, Format::Text) {
@@ -3233,7 +3233,8 @@ fn project_kubernetes(
     let spec = infra_spec::read_spec(&spec_text)
         .map_err(|errors| anyhow::anyhow!("infrastructure intent refused: {errors}"))?;
     let ir = resolved_infrastructure(ir_path)?;
-    let projection = infra_project::project(&spec, &ir);
+    let projection = infra_project::project(&spec, &ir)
+        .map_err(|errors| anyhow::anyhow!("infrastructure projection refused: {errors}"))?;
     let artifacts = projection.artifacts();
     if let Some(root) = out {
         write_projection_files(root, &artifacts)?;
