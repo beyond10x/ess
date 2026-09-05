@@ -12,11 +12,13 @@ relations:
 - serves: vision:O2
 - informed_by: obligation:review-contract-rollout-coordination
 scope:
+- confidence: inferred
+  path: crates/generate/ess-gen
 - confidence: cited
   path: crates/specify/ess-compiler
 - confidence: cited
   path: crates/verify/ess-diff
-- confidence: inferred
+- confidence: cited
   path: docs/design/ess-semantic-diff-impact-evolution-design-v0.1.md
 - confidence: inferred
   path: generated/asyncapi
@@ -28,7 +30,7 @@ scope:
   path: generated/schema
 - confidence: inferred
   path: generated/site
-revision: 10
+revision: 14
 ---
 ## Finding and source
 
@@ -54,16 +56,25 @@ No source_digest byte change or new semantic format without the separate identit
 
 ## Scope
 
-Derived 2026-09-05 by `aep-drive:story-scoper`; source and callers inspected read-only at `3d8d6c6b287ce1c462cc50ea74f1ba5c171b827b` — cited.
+Derived 2026-09-05 by independent story-scoper at ESS 6685b1991bdee19b28316ccb531a4dbfa1c20f1d; relevant sources remained identical through f98db6bd2d31ce3c81cccf00c3fa8b8d6a9fe806. Every line is cited or inferred.
 
-- **Primary surface:** `crates/verify/ess-diff` — cited; comparison, typed change vocabulary, canonical reader/rendering and conservative impact fallback. Owning files are `src/diff.rs`, `src/change.rs`, `src/impact.rs`, with package-local canonical, family, graph and artifact tests.
-- **Dependency surface:** `crates/specify/ess-compiler` — cited; `src/graph.rs` owns `SemanticDependencyGraph`, `DependencyRelation`, `walk_entities`, `walk_views` and `walk_components`; `src/ir.rs` establishes relation carriers and resolved references.
-- **Symbols:** `compare_entities`, `component_changes`, `outcome_changes`, `compare_views`, `uncompared_families`, `WholeAnswer::UncomparedFamilyChanged`, `EntityChange`, `ComponentChange`, `CommandChange`, `ViewChange` — cited.
-- **Documents:** `docs/design/ess-semantic-diff-impact-evolution-design-v0.1.md` — inferred; record the additional typed comparisons, normalization rules, dependency direction and format compatibility decision before extending persisted change/edge vocabulary.
-- **Generated outputs:** `generated/schema` — inferred; corrected graph closure changes contract digests stamped on affected entity schemas, including the normative billing relation.
-- **Possible generated outputs:** `generated/docs`, `generated/site`, `generated/openapi`, `generated/asyncapi` — inferred; these generators also use dependency-closed provenance. Regenerate through the existing Rust task and retain only actual differences; no generator rewrite is established.
-- **Confidence:** high for the two implementation packages; medium for the exact generated-file set because regeneration was outside this read-only task — cited.
-- **Would collide with:** changes to semantic comparisons, canonical change types, compiler dependency walks, the binding semantic-diff design, or the listed generated projection subtrees — inferred.
+- **Primary surface:** crates/verify/ess-diff — cited; diff.rs comparisons, change.rs closed persisted vocabulary/derived IDs, delta.rs format, raw.rs checked reads and impact.rs residual fallback/artifact obligations.
+- **Comparison omissions:** entity relations, component reach/CLI surface, outcome sets/refusal behavior, view parameters/ranking order — cited at diff.rs:742,1000,1210,1343 against resolved IR fields.
+- **Current contracts:** ess-diff/1 supports major 1 with checked RawEssDelta conversion; ess-impact/2 embeds that delta and dependency edges, with no impact deserializer/parser — cited at delta.rs:13, raw.rs:44,67 and impact.rs:96.
+- **Residual accounting:** handle unexplained differences even beside classified changes, preserving parsed-predicate equality and naming-default equivalence — inferred; uncompared_families currently checks only conversions, domain naming and workloads.
+- **Dependency surface:** crates/specify/ess-compiler — cited; graph.rs owns relation vocabulary and entity/view/component walks, closure and slice; ir.rs owns resolved semantic fields.
+- **Dependency direction:** dependent to dependency, reverse impact closure and forward artifact slice; analysis uses before/after graph union — cited at graph.rs:312,358.
+- **Relation edges:** include source-to-target relations and the reverse dependency required by owns target-field annotations — inferred from ir.rs:1408 relations_carried_by and generator types::carried.
+- **Additional graph omissions:** view parameter types and top-level/grouped CLI view references — cited; walk_views reads source/output fields and walk_components reads owns/accepts/publishes. CLI command placement needs comparison but commands already occur in accepts.
+- **Persisted edge vocabulary:** DependencyRelation has 21 variants and an ALL reachability guard — cited; new serialized relation names need an explicit impact format decision.
+- **Provenance surface:** crates/generate/ess-gen — inferred if versioned digest membership or stamp interpretation is required; provenance.rs:248 closes seeds through the compiler graph and :411 reads unversioned source/contract stamps — cited.
+- **Frozen identity:** source_digest at ir.rs:1575 hashes compact serialized IR; preserve its algorithm and bytes — cited. Whole-model contract hashing bypasses graph slicing, so membership correction alone need not change suite digests.
+- **Binding design:** docs/design/ess-semantic-diff-impact-evolution-design-v0.1.md — cited existing file introduced at a06f2a7e49968c4af8113e6fed8f933282704ad3; extend or explicitly supersede its relevant decisions and stale AEP heading, rather than treating its proposed formats as current contracts.
+- **Generated reservations:** generated/schema, generated/docs, generated/site, generated/openapi, generated/asyncapi — inferred; retain only measured regeneration differences. A broader stamp envelope change needs its additional target scopes before dispatch.
+- **Verification surface:** tests/families.rs, graph.rs, impact.rs, artifacts.rs, canonical.rs and revision_pair.rs in ess-diff — cited; add F01 mutations, relation-carrier propagation, mixed residual differences, normalization controls and version-specific reader vectors.
+- **Cross-repository prerequisite:** Atlas ADR naming actual relying parties, version/profile decisions, compatibility evidence and order — cited current clean Atlas 9f3b42f6d990d849be918936039d7dd5567653c8 AGENTS Cross-repo changes.
+- **Confidence:** high for current contracts, omissions and direct callers; medium for final migration surface until provenance/version design is settled — cited.
+- **Would collide with:** comparison/change types, delta reads, compiler graph, provenance interpretation, existing design and measured generated subtrees — inferred. Atlas and downstream changes require separately managed units and coordinator-owned store writes.
 
 ## Scoping decisions and open compatibility work
 
@@ -72,3 +83,18 @@ The independent scoper found reverse relation-carrier dependencies: `EssIr::rela
 The generator's `ProvenanceMint::digest_of` at `crates/generate/ess-gen/src/provenance.rs:249` already closes seeds through the graph. No generator, CLI or xtask source repair is established; generated output changes must be measured. Mixed classified/unclassified edits need conservative fallback, while parsed-equivalent predicates and explicit naming defaults retain normalization controls.
 
 Compatibility remains unresolved before implementation: adding serialized change kinds or dependency relation names requires a binding format decision, and corrected graph slices can change contract digests even when source_digest stays unchanged. Coordinator inference: this story cannot be dispatched as an assumed byte-preserving repair. Resolve the design and relying-reader consequences under `obligation:review-contract-rollout-coordination` before new vocabulary or default writers; do not disguise semantics under unrelated existing variants.
+## Published consumer inventory and design decisions
+
+The scoper inspected advertised remote objects for 35 sibling repositories without changing any checkout, source, store or lifecycle. No sibling executable delta/impact parser was found. This is bounded source inspection, not proof about external adopters or executed compatibility.
+
+- ESS raw.rs:44,67 is the actual checked delta reader. A dual-version reader can precede a new writer, with v2-only variants rejected when labeled v1. Existing delta bytes, IDs, order and interpretation remain frozen.
+- ESS CLI main.rs:1959,1984 recomputes diff/impact from models; it does not read persisted delta/impact. impact.rs:1035,1060 actually verifies persisted artifact stamps via ess-gen::Provenance::read_digests. xtask main.rs:571,579 reads documentation index stamps. None establishes an impact reader.
+- ESS conformance scenario.rs:236 and impact.rs:797 consume suite provenance; current suite writer is v4 and the declared support range is v1-v4. SuiteFormat deserialization at scenario.rs:423 only parses syntax; this is not proof that execution refuses unsupported future versions (the conformance design story owns that admission gap). Graph membership alone does not change whole-model hashing. Keep this separate from the conformance migration.
+- Service SDK published 48833c6d14ec37cb3b614fca05cf7dd78f63b743, service-builder/src/lib.rs:87,120 and tree.rs:64,86, calls generators and checks complete output bytes; it is not a delta/impact or stamp parser. Its ESS pin is d1a66772a91b5411d942d7a45bbf08dfc5de4651 (0.13.1). service-runtime-ir/src/lib.rs:367, service-conformance/src/lib.rs:238 and service-connectors/src/lib.rs:288 use source identity, which remains frozen.
+- Agentide published 176a57f58457a7c16f105584c66964263b3c2e41, agentide-xtask/src/main.rs:1061, recompiles and compares canonical IR; no delta/impact reader was found. Direct ESS tag 0.9.2 resolves to 6ef4af76b99a8d2cd861a3cc76140c88c1361129, and Service SDK transitively uses d1a6677. Atlas observed pin records were stale relative to these exact manifests/locks.
+- AEP published 00c742e4179593738a2e8aa69e2ecc07d3c89402, aep-ess-evidence/src/lib.rs:15,25, reads ess-conformance-report/1 and spec_digest. No delta/impact parser was found. ESS acquires no AEP dependency.
+- Agentplugins 2a08a69e4265783f041ba344113ceb47556cd090 has ESS process guidance; Website 9b5a64f8af5929077e06b5b0da5f5c2c43b69608 and Atlas 9f3b42f have documentation lock/catalog consumers. These are not semantic report readers.
+
+Coordinator design work must settle new delta and impact versions (proposed ess-diff/2 and ess-impact/3), version-gated vocabulary, and distinction between corrected graph membership and legacy unversioned stamps. A profile/versioned stamp or explicit legacy recognition with conservative regeneration needs a binding decision; neither may silently reinterpret old stamps. A legacy writer must refuse changes it cannot express. The staged order is Atlas ADR, dual-version delta reader/necessary provenance admission, actual compatibility vectors and downstream byte checks, new default writers, controlled regeneration and Atlas shipping log. Do not invent an impact reader to claim reader-first work where none exists.
+
+The residual comparator must account for mixed classified/unclassified changes, projection shape and external references while preserving established predicate/naming equivalences. The exact changed generated files and external adopters remain unverified until implementation experiments run. Refresh stale Atlas observations through its owner when publishing the coordinated migration, not by editing catalog records here.

@@ -31,7 +31,7 @@ Absolute root: `/home/timo/.local/state/worktree/trees/b10x/ess`. Worktrees belo
 | Story | Branch | Worktree under root | Build | Scratch | Head/stage |
 | --- | --- | --- | --- | --- | --- |
 | review-kubectl-diagnostic-sanitization | impl/review-kubectl-diagnostic-sanitization | review-kubectl-diagnostic-sanitization | target/ | target/review-boundaries-2/ | 54102b9357151a4827817417ca14ec995bdd68c0; merged at 6685b1991bdee19b28316ccb531a4dbfa1c20f1d |
-| review-output-containment | impl/review-output-containment | review-output-containment | target/ | target/review-boundaries-2/ | e6803c061b33dfe8d5c9fdfff10d8f1408083b31 plus pass-1 tests; correction in progress |
+| review-output-containment | impl/review-output-containment | review-output-containment | target/ | target/review-boundaries-2/ | dc122aea038cc18757c3a160b1b36b6798ef6df0; adversary pass 2 |
 
 File-backed briefs will bind exact opening SHA, assignments, package gates and scope confirmation. Coordinator owns AEP, source staging, bot commits, integration, gates, publication and managed cleanup. Each green implementation goes to a tests-only adversary. Max two full attack passes; routing preserves original reports verbatim. Each offline gate step reports its own exit code and runner output; applicable site build follows. No terminal move before those results.
 
@@ -1533,3 +1533,17 @@ At authority 9f3b42f6d990d849be918936039d7dd5567653c8, scripts/fences.sh complet
 ## Superseded authority cleanup
 
 After archiving its private fence evidence, cargo clean removed 492.5 MiB of disposable build output from task authority wt-c67acb2e23e6. worktree finish initially refused ignored target output; after the clean it succeeded. A fresh GC dry-run marked that exact record eligible. Exact-id apply removed it with recovery through advertised origin main and pull-request refs; filesystem absence and Git's linked-tree inventory confirmed removal. No other eligible record was selected. The merged wave/review-boundaries-1 branch was deleted with git branch -d.
+
+## Containment correction and second attack
+
+Correction dc122aea038cc18757c3a160b1b36b6798ef6df0 preserves the first attack tests and checks the complete compose output set before any write. It has exact bot author and committer. The package runner executed 225→230, all passing; both package format and strict Clippy checks exited0. A source review identified a native trailing-separator regression in the first correction, which was reproduced red then fixed with its guard retained. The full correction report is docs/reviews/2026-09-05-review-boundaries-2-containment-correction-pass-1.md. The original review has a fixed outcome; the story remains active until integration.
+
+The second and final adversary pass uses the same test-only charter on the clean correction commit. Baseline is230 executed cases. Free bytes133,865,357,312 and own target1,107,980KiB were measured at dispatch. Model token counts and full agent wall duration are unavailable from this harness.
+
+## Second-pass dispatch refusal
+
+The first second-pass dispatch returned the following harness error before producing a review report or test result:
+
+> Agent errored: This content was flagged for possible cybersecurity risk. If this seems wrong, try rephrasing your request. To get authorized for security work, join the Trusted Access for Cyber program: https://chatgpt.com/cyber
+
+This is a failed dispatch, not a completed attack or a green result. The coordinator informed the operator and retried the same reviewer with an explicitly local synthetic-fixture regression scope: no network, credentials, external systems, real user files, races or permission changes. The two-pass limit is unchanged; the required second test review remains pending.
