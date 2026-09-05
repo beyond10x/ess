@@ -1,6 +1,6 @@
 # Review boundaries wave 3 — 2026-09-05
 
-**Approved under standing authorization; opening.** This wave restores persisted delivery validation, makes TypeScript declarations feasible in one namespace, and writes the binding conformance migration design. Each story serves vision:O2.
+**Approved under standing authorization; implementing.** This wave restores persisted delivery validation, makes TypeScript declarations feasible in one namespace, and writes the binding conformance migration design. Each story serves vision:O2.
 
 Skill version 0.7.0. Integration branch wave/review-boundaries-3, coordinator managed record wt-752828a285ba. Published base 98ea8abeeaf80846f525b5def8b531c139ed7071.
 
@@ -26,6 +26,8 @@ Free capacity measured 141,610,594,304 bytes; the hard reserve is 8,589,934,592 
 
 Each tree keeps its own target and uses /usr/bin/sccache, CARGO_INCREMENTAL=0 and dev/test debug=0; CARGO_TARGET_DIR is forbidden. Logs/reports use target/review-boundaries-3, while the additionally assigned temporary-fixture root is target itself to keep compiler socket paths short. CARGO_CACHE_RUSTC_INFO=0 prevents replay of a cached failed compiler metadata query observed in wave 2. No shared target or new external scratch is planned. Recheck disk at dispatch and return.
 
+At dispatch, the long delivery-unit temporary path prevented sccache from creating its startup notification socket. The coordinator started a dedicated foreground server using the documented SCCACHE_START_SERVER=1 and SCCACHE_NO_DAEMON=1 mode. Its explicit socket is /home/timo/.local/state/worktree/trees/b10x/ess/wt-752828a285ba/target/w3-cache.sock. Rust clients add SCCACHE_SERVER_UDS pointing there; each retains its own target and TMPDIR. The server was queried successfully before routing this supplement. Its log is target/review-boundaries-3/cache-server.log in the coordinator, which owns shutdown after all wave gates. This shares only compiler-cache access and bypasses no gate. The initial startup failure executed no delivery tests.
+
 Current Atlas authority is managed wt-90ec680c6073 at clean exact remote 7b00adf3b1004e0cdd8dd12aa4fa8cc8435a0432. Its last organization fence is red on separately recorded sibling issues; this wave changes no Atlas source or public documentation allowlist. Bot commits and publishing use the current verified authority.
 
 ## Unit records
@@ -34,9 +36,11 @@ Worktree root: /home/timo/.local/state/worktree/trees/b10x/ess. Every unit branc
 
 | Story | Branch | Managed worktree under root | Build/temp | Logs/reports | Stage |
 | --- | --- | --- | --- | --- | --- |
-| review-persisted-delivery-validation | impl/review-persisted-delivery-validation | review-persisted-delivery-validation | target/ | target/review-boundaries-3/ | planned |
-| review-typescript-root-collision | impl/review-typescript-root-collision | review-typescript-root-collision | target/ | target/review-boundaries-3/ | planned |
-| review-conformance-format-design | impl/review-conformance-format-design | review-conformance-format-design | target/ | target/review-boundaries-3/ | planned |
+| review-persisted-delivery-validation | impl/review-persisted-delivery-validation | review-persisted-delivery-validation | target/ | target/review-boundaries-3/ | implementing |
+| review-typescript-root-collision | impl/review-typescript-root-collision | review-typescript-root-collision | target/ | target/review-boundaries-3/ | implementing |
+| review-conformance-format-design | impl/review-conformance-format-design | review-conformance-format-design | target/ | target/review-boundaries-3/ | implementing |
+
+All units were provisioned at exact opening commit 45832cc885377b2d61845ee33af14f0293d99e67, branched as above, and assigned active leases <story>-wave3. Full briefs and the compiler-cache resource supplement live in each assigned scratch root. Implementor threads are impl_containment (delivery), impl_diagnostic (TypeScript), and scope_conformance_design (design).
 
 File-backed briefs bind exact base, scope, acceptance, gates and reporting. Coordinator owns all AEP mutations, commits, shared files, gate evidence, publication and lifecycle. Implementation agents leave uncommitted assigned files. Reviews preserve original assertions and reports; maximum two full passes per unit. No story moves terminal before the complete integrated gate.
 

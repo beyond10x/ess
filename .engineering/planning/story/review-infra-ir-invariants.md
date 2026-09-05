@@ -21,7 +21,9 @@ scope:
   path: crates/infra/infra-project
 - confidence: inferred
   path: crates/infra/infra-spec
-revision: 6
+- confidence: inferred
+  path: docs/design/review-infra-ir-invariants.md
+revision: 8
 ---
 ## Finding and source
 
@@ -58,3 +60,16 @@ Derived 2026-09-05 by the coordinator from review citations; independently re-sc
 - Would collide with: stories sharing any of these exact tokens — inferred; see the complete pair list in `docs/plan/2026-09-05-review-remediation.md` before concurrent scheduling.
 - Shared integration files: planning journal, wave page and final change record belong to the coordinator — inferred execution assignment.
 
+## Pre-dispatch inventory
+
+Read-only coordinator inventory at wave 3 opening 45832cc885377b2d61845ee33af14f0293d99e67; this is preparation, not independent scoping or implementation evidence.
+
+- InfraIr exposes its owning model at crates/infra/infra-compiler/src/ir.rs:535. InfraModel's public maps and nested values are mutable through that field; the six handles remain privately minted. Keeping only the owner private with a shared model query can protect all nested collections without gratuitously privatizing detached data.
+- The supported reader is infra_compiler::read_document, not a Deserialize implementation on InfraIr. Its private mirrors reject unknown fields and remint six handle families after target checks. Its documented boundary deliberately does not revalidate all domain values or derive unresolved accounting; do not claim privacy fixes these separate semantics.
+- Actual in-workspace consumers are infra-analyze, infra-spec, infra-project and ess-cli. The projector is a writer, not just a read migration: project.rs:600 holds a cloned working InfraIr and :658 mutates its model for fixed-point simulation. Its four current changes are replicas, resources, probes and a new disruption budget. Replacing the public field with a public mutable accessor would retain the defect.
+- Define the smallest checked transformation required by that projector in a binding design before code. A candidate is a detached model edit followed by the existing relational admission into a new IR, leaving the source IR unchanged on failure; compare it with narrow capability methods before choosing. Preserve the single owner of reference validation, total lookups, projector patch/model parity and induced-obligation behavior. Do not expose a general unchecked replacement or mutable borrow.
+- The current handle documentation explicitly excludes mixing handles from different IRs. Do not silently expand this story to generative lifetimes or cross-IR identity redesign.
+- Existing read.rs fixture resolves all six families and tests rehashed dangling references. Extend positive coverage across compile/read/clone/valid transformation; public compile-fail probes must reject clear, replacement, nested mutation and unchecked construction for the actual owner surface. Preserve canonical infra-ir/1 fixture bytes/digest, independently comparing the old writer where possible rather than only a new self-round-trip.
+- infra-project's tests/round_trip.rs applies actual projected patches back to a bundle and recompiles; preserve that check for all supported transformations. A refused transform must leave the previous valid IR usable. No shared CLI collision with wave 3 is authorized.
+
+Independent story-scoper confirmation is still required before selection. A new docs/design/review-infra-ir-invariants.md is an inferred design surface, not an existing cited file.
