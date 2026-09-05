@@ -5,7 +5,13 @@ kind: story
 status: draft
 title: A --scenarios directory of directories compiles nothing and exits 0
 summary: The flag does not descend, and a corpus root silently yields a suite with none of the corpus
-revision: 1
+relations:
+- decomposes: epic:review-boundary-remediation
+- serves: vision:O2
+scope:
+- confidence: cited
+  path: crates/edge/ess-cli
+revision: 4
 ---
 ## The defect
 
@@ -45,3 +51,22 @@ should say so — that is the case somebody will actually hit.
 
 Whether the flag should recurse instead is a second question and a larger one; a suite whose
 contents depend on directory depth is its own hazard. The refusal is worth having either way.
+
+## Scope
+
+Derived 2026-09-05 by `aep-drive:story-scoper`; scope follows the immediate explicit-path refusal — cited.
+
+- **Primary surface:** `crates/edge/ess-cli` — cited; `authored_sources` discovers explicit scenario inputs and currently returns an empty successful collection for directories containing only subdirectories.
+- **Symbols:** `authored_sources`, `conform_synthesize`, `author_suite`, `conform_web`, and the `ConformCommand::Run` dispatch — cited; the shared discovery function feeds these conformance operations.
+- **Tests:** refusal, non-zero exit, and nested-document diagnostic regressions within the primary crate — inferred; existing CLI tests provide the subprocess pattern.
+- **Documents:** none required — cited; the story requests an operational refusal and diagnostic.
+- **Confidence:** high — cited; the shared function visibly accepts an empty directory result, and every relevant caller resides in the primary crate.
+- **Would collide with:** any unit changing the ess-cli crate, including its source-discovery code or CLI tests — inferred.
+
+## Acceptance
+
+An explicitly supplied scenario path resolving to zero authored ESS scenario documents exits non-zero with an actionable diagnostic rather than a successful empty collection.
+
+## Remediation ownership
+
+Owns the immediate F10 empty-result refusal. Omitted --scenarios retains its existing intentional behavior. Broader typed/recursive mixed-document discovery belongs to story:review-authored-discovery.

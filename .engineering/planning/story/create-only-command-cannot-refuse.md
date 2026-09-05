@@ -5,7 +5,22 @@ kind: story
 status: draft
 title: A command that only creates cannot declare a refusal
 summary: 'wrong_state: is the only refusal form and ESS-COMMAND-012 refuses it where nothing moves, so the claim survives only in a hand-written scenario'
-revision: 1
+scope:
+- confidence: inferred
+  path: crates/generate/ess-gen
+- confidence: inferred
+  path: crates/generate/ess-synth
+- confidence: cited
+  path: crates/specify/ess-compiler
+- confidence: cited
+  path: crates/specify/ess-domain
+- confidence: cited
+  path: crates/verify/ess-conformance
+- confidence: inferred
+  path: crates/verify/ess-diff
+- confidence: inferred
+  path: docs/design
+revision: 10
 ---
 ## The defect
 
@@ -66,3 +81,22 @@ Not proposed as a design, only as the shape of the gap: a create-only command ne
 have. A branch keyed on the creation conflicting with an existing instance would fit what both ACD
 implementations actually do, and would let the synthesiser derive the obligation rather than waiting
 for an author.
+
+## Scope
+
+Derived 2026-09-05 by `aep-drive:story-scoper` from the story and repository tree — cited.
+
+- **Primary surface:** `crates/specify/ess-domain` — cited; `src/entity.rs:1117` validates wrong-state reachability, while `src/command.rs:318` defines `OutcomeCondition` and `src/command.rs:384` defines its test strategy.
+- **Compiler surface:** `crates/specify/ess-compiler` — cited; `src/ir.rs:566` excludes creation from transitions, and `src/resolve.rs:1459` lowers each outcome's condition, subject, test strategy and error into the IR.
+- **Conformance surface:** `crates/verify/ess-conformance` — cited; `src/synthesize.rs:2723` implements `refused_here`, whose mover filter excludes creation; `src/authored.rs:1820` resolves authored error claims independently of command outcomes. The story's abbreviated synthesis citation resolves to this crate.
+- **Also likely:** `crates/generate/ess-gen` — inferred; a distinct refusal condition would require handling in the exhaustive HTTP-status and generated-document mappings at `src/http.rs:84`, `src/openapi.rs:852` and `src/docs.rs:1534`.
+- **Also likely:** `crates/generate/ess-synth` — inferred; a distinct condition would require updating the exhaustive `condition_phrase` match at `src/plan.rs:640`.
+- **Also likely:** `crates/verify/ess-diff` — inferred; a distinct condition would require updating the exhaustive `written_condition` match at `src/diff.rs:829` and checking semantic impact attribution.
+- **Documents:** `docs/design` — inferred; the story leaves its proposed conflict branch undesigned, and repository guidance requires a binding design before introducing a construct. The exact design page is unresolved.
+- **Tests:** domain parsing/validation, compiler lowering and conformance synthesis coverage belong within the corresponding crate surfaces above; downstream compatibility tests depend on the selected representation — inferred.
+- **Confidence:** medium — inferred; the existing limitation and core locations are explicit, but the story proposes a gap rather than selecting the semantics or persisted representation that would close it.
+- **Would collide with:** any work touching the exact directory tokens `crates/specify/ess-domain`, `crates/specify/ess-compiler`, `crates/verify/ess-conformance`, `crates/generate/ess-gen`, `crates/generate/ess-synth`, `crates/verify/ess-diff`, or `docs/design`; reassess conditional surfaces after the design is selected — inferred.
+
+## Current-source qualification
+
+The scoper found that `Outcome::is_refusal` is `error.is_some()` at `crates/specify/ess-domain/src/command.rs:954`; the historical claim that wrong_state is the only refusal form is broader than current source supports. The remaining gap is an existing-instance conflict for lifecycle-free creation; its lookup/identity semantics remain undecided. This item is excluded from review remediation scheduling.

@@ -5,7 +5,12 @@ kind: story
 status: draft
 title: A conformance suite can be emitted as a Java test package
 summary: ess verify conform synthesize --target offers ir and go; an adopter in Java reaches no runner
-revision: 1
+scope:
+- confidence: cited
+  path: crates/edge/ess-cli
+- confidence: cited
+  path: crates/verify/ess-conformance
+revision: 5
 ---
 ## What this is
 
@@ -44,7 +49,7 @@ An adopter in Java can read the JSON and write their own runner, which is the th
 exists to stop: a suite no runner can reach is a document, and two hand-written runners that agree
 only on the day the second was written are the duplication ESS removes everywhere else.
 
-## Scope
+## Earlier scope requirements
 
 In:
 
@@ -73,3 +78,16 @@ that names the defect. A second run over the same specification writes identical
 
 Asked for by the operator on 2026-09-04, while settling what `acd/specs` should generate for its
 67 authored scenarios.
+
+## Scope
+
+Derived 2026-09-05 by `aep-drive:story-scoper`; existing suite semantics remain the target contract — cited.
+
+- **Primary surface:** `crates/verify/ess-conformance` — cited; the story places the Java emitter, embedded runner, predicate evaluator, and target interface beside the existing Go target.
+- **CLI surface:** `crates/edge/ess-cli` — cited; adding `java` requires extending `SuiteTarget` and the `synthesize_suite` emission dispatch.
+- **Tests:** emitter determinism and Java billing fixtures with successful and deliberately defective implementations, within the two primary crates — inferred from the acceptance and existing Go integration pattern.
+- **Documents:** generated package build and adapter instructions within the emitter crate — inferred; no public documentation update is specified.
+- **Model semantics:** existing suite, scenario, target, and unsupported-operation contracts supply the typed semantics; the story explicitly introduces no model or compiler change — cited.
+- **External verification:** a JDK, JUnit, and Maven or Gradle are required to compile and execute the emitted package — cited; the story requests a JUnit package executable through an adopter's Java build.
+- **Confidence:** high — cited; the story names both owning crates, and their existing emitter and dispatch extension points are present.
+- **Would collide with:** any unit changing the ess-conformance or ess-cli crate, including runtime semantics and integration fixtures — inferred.

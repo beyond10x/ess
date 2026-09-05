@@ -4,7 +4,14 @@ id: story:the-generated-go-runtime-is-gofmt-clean
 kind: story
 status: draft
 title: The emitted Go runtime is not gofmt-stable, so an adopter's formatter changes it
-revision: 1
+scope:
+- confidence: cited
+  path: Taskfile.yml
+- confidence: inferred
+  path: crates/edge/ess-xtask
+- confidence: cited
+  path: crates/verify/ess-conformance
+revision: 6
 ---
 ## What is wrong
 
@@ -43,3 +50,16 @@ convention in a comment; emitting bytes `gofmt` already agrees with is a propert
   `crates/ess-conformance/src/go/` and refuses non-empty output. Go is not a build dependency of
   this workspace, so this step is skipped rather than failed where `gofmt` is absent, and says so.
 - The generated tree in `sbf/acd` is byte-identical before and after `gofmt -w`.
+
+## Scope
+
+Derived 2026-09-05 by `aep-drive:story-scoper` from the story and current repository tree — cited.
+
+- **Primary surface:** `crates/verify/ess-conformance` — cited; the story's pre-area paths now resolve to this crate's `src/go/runtime.go` and `src/go/predicate.go`.
+- **Emitter evidence:** `crates/verify/ess-conformance/src/go/mod.rs:49` defines `emit`; lines 56–57 copy both Go source files verbatim through `include_str!`, so formatting those sources directly changes the emitted bytes — cited.
+- **Gate surface:** `Taskfile.yml` — cited; the story explicitly requires `task check` to detect formatting drift and report a skip when `gofmt` is absent. Its current formatting task starts at line 4, and the complete gate starts at line 151.
+- **Also likely:** `crates/edge/ess-xtask` — inferred; repository guidance requires executable checking logic in Rust, and `src/main.rs:54` and `src/main.rs:105` provide the existing maintenance-command definition and dispatch. This is the likely home for the optional-tool lookup, `gofmt -l` invocation, and non-empty-output refusal.
+- **Tests:** any formatter-check coverage and emission-stability checks belong within the corresponding crate surfaces above; no narrower test token is needed — inferred.
+- **Documents:** no documentation edit is required by the acceptance — inferred.
+- **Confidence:** high — cited; the story identifies both embedded Go sources and the required gate change, and the current emitter confirms verbatim copying. The checker placement remains an implementation choice.
+- **Would collide with:** any unit touching the exact tokens `crates/verify/ess-conformance`, `Taskfile.yml`, or the likely checker surface `crates/edge/ess-xtask` — inferred.
