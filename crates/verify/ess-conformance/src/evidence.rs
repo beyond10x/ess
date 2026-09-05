@@ -6,6 +6,7 @@
 use ess_primitives::verification::VerificationStatus;
 
 use crate::report::{ConformanceReport, ConformanceStatus, Status};
+use crate::scenario::SuiteFormat;
 
 /// Persisted format for a standalone ESS conformance report.
 pub const STANDALONE_REPORT_FORMAT: &str = "ess-conformance-report/1";
@@ -14,8 +15,7 @@ pub const STANDALONE_REPORT_FORMAT: &str = "ess-conformance-report/1";
 ///
 /// This document contains only ESS vocabulary. AEP or another workflow system may adapt it into
 /// its own evidence model without making ESS depend on that model.
-#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
-#[serde(deny_unknown_fields)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
 pub struct StandaloneConformanceReport {
     /// Format claim, always [`STANDALONE_REPORT_FORMAT`].
     pub format: String,
@@ -39,7 +39,84 @@ pub struct StandaloneConformanceReport {
     pub completed_at: ess_primitives::time::Timestamp,
 }
 
+impl<'de> serde::Deserialize<'de> for StandaloneConformanceReport {
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        // Keep the unchecked wire shape private: every Serde entry point must validate the same
+        // claims before returning the public report, not only callers of `from_json`.
+        #[derive(serde::Deserialize)]
+        #[serde(deny_unknown_fields)]
+        struct WireReport {
+            format: String,
+            specification: String,
+            spec_digest: ess_primitives::evidence::SpecDigest,
+            implementation: String,
+            status: VerificationStatus,
+            scenarios_total: usize,
+            scenarios_failed: usize,
+            suite_version: String,
+            failed_scenarios: Vec<String>,
+            completed_at: ess_primitives::time::Timestamp,
+        }
+
+        let wire: WireReport = serde::Deserialize::deserialize(deserializer)?;
+        let report = Self {
+            format: wire.format,
+            specification: wire.specification,
+            spec_digest: wire.spec_digest,
+            implementation: wire.implementation,
+            status: wire.status,
+            scenarios_total: wire.scenarios_total,
+            scenarios_failed: wire.scenarios_failed,
+            suite_version: wire.suite_version,
+            failed_scenarios: wire.failed_scenarios,
+            completed_at: wire.completed_at,
+        };
+        report.validate().map_err(serde::de::Error::custom)?;
+        Ok(report)
+    }
+}
+
 impl StandaloneConformanceReport {
+    fn validate(&self) -> Result<(), &'static str> {
+        if self.format != STANDALONE_REPORT_FORMAT {
+            return Err("unsupported standalone conformance report format");
+        }
+        if !SuiteFormat::parse(&self.suite_version).is_ok_and(SuiteFormat::is_supported) {
+            return Err("suite_version is not a supported conformance-suite format");
+        }
+        if self.scenarios_failed > self.scenarios_total {
+            return Err("scenarios_failed exceeds scenarios_total");
+        }
+        if self.scenarios_failed != self.failed_scenarios.len() {
+            return Err("scenarios_failed disagrees with failed_scenarios length");
+        }
+
+        // In v1 this list and count contain every non-pass. Rust writes error/unsupported; Go
+        // writes skipped. The document has no producer identity, so retain both vocabularies.
+        let mut expected_status = VerificationStatus::Passed;
+        for entry in &self.failed_scenarios {
+            let (status, scenario) = entry
+                .split_once(' ')
+                .ok_or("failed_scenarios entry requires a status and scenario identity")?;
+            if scenario.trim().is_empty() {
+                return Err("failed_scenarios entry requires a scenario identity");
+            }
+            match status {
+                "failed" | "unsupported" => expected_status = VerificationStatus::Failed,
+                "error" | "skipped" => {
+                    if expected_status != VerificationStatus::Failed {
+                        expected_status = VerificationStatus::Inconclusive;
+                    }
+                }
+                _ => return Err("failed_scenarios entry requires a known non-pass status"),
+            }
+        }
+        if self.status != expected_status {
+            return Err("status contradicts the listed scenario outcomes");
+        }
+        Ok(())
+    }
+
     /// Canonical pretty JSON with a trailing newline.
     pub fn to_canonical_json(&self) -> String {
         let mut rendered = serde_json::to_string_pretty(self)
@@ -48,7 +125,7 @@ impl StandaloneConformanceReport {
         rendered
     }
 
-    /// Reads and validates the closed standalone report shape.
+    /// Reads and validates the closed standalone report shape, versions, counts, and status.
     pub fn from_json(text: &str) -> Result<Self, serde_json::Error> {
         serde_json::from_str(text)
     }
@@ -200,5 +277,217 @@ mod tests {
         let error = StandaloneConformanceReport::from_json(&value.to_string())
             .expect_err("unknown workflow coupling is refused");
         assert!(error.to_string().contains("unknown field"), "{error}");
+    }
+
+    fn assert_reader_refuses(value: serde_json::Value) {
+        let text = value.to_string();
+        let accepted = [
+            (
+                "report reader",
+                StandaloneConformanceReport::from_json(&text).is_ok(),
+            ),
+            (
+                "JSON value",
+                serde_json::from_value::<StandaloneConformanceReport>(value).is_ok(),
+            ),
+            (
+                "JSON reader",
+                serde_json::from_reader::<_, StandaloneConformanceReport>(text.as_bytes()).is_ok(),
+            ),
+            (
+                "YAML",
+                serde_yaml::from_str::<StandaloneConformanceReport>(&text).is_ok(),
+            ),
+        ];
+        assert!(
+            accepted.iter().all(|(_, accepted)| !accepted),
+            "invalid report accepted: {accepted:?}"
+        );
+    }
+
+    fn assert_reader_preserves(report: &StandaloneConformanceReport) {
+        let written = report.to_canonical_json();
+        let from_report = StandaloneConformanceReport::from_json(&written).expect("report reads");
+        let from_value = serde_json::from_value::<StandaloneConformanceReport>(
+            serde_json::to_value(report).expect("report serializes"),
+        )
+        .expect("value reads");
+        let from_reader =
+            serde_json::from_reader::<_, StandaloneConformanceReport>(written.as_bytes())
+                .expect("reader reads");
+        let from_yaml = serde_yaml::from_str::<StandaloneConformanceReport>(&written)
+            .expect("other Serde formats accept valid reports");
+        for read in [from_report, from_value, from_reader, from_yaml] {
+            assert_eq!(&read, report);
+            assert_eq!(read.to_canonical_json().as_bytes(), written.as_bytes());
+        }
+    }
+
+    #[test]
+    fn report_readers_refuse_unknown_report_formats() {
+        for format in [
+            "other/99",
+            "ess-conformance-report/2",
+            "ess-conformance-report/01",
+            "",
+        ] {
+            let mut value = serde_json::to_value(report(vec![]).standalone()).expect("report");
+            value["format"] = format.into();
+            assert_reader_refuses(value);
+        }
+    }
+
+    #[test]
+    fn report_readers_refuse_malformed_and_unsupported_suite_versions() {
+        for version in [
+            "other/99",
+            "ess-conformance/5",
+            "ess-conformance/99",
+            "ess-conformance/0",
+            "ess-conformance/01",
+            "ess-conformance/+1",
+            "ess-conformance/4294967296",
+            "",
+        ] {
+            let mut value = serde_json::to_value(report(vec![]).standalone()).expect("report");
+            value["suite_version"] = version.into();
+            assert_reader_refuses(value);
+        }
+    }
+
+    #[test]
+    fn report_readers_refuse_more_nonpasses_than_executed_scenarios() {
+        let mut value = serde_json::to_value(report(vec![scenario(Status::Failed)]).standalone())
+            .expect("report");
+        value["scenarios_total"] = 0.into();
+        assert_reader_refuses(value);
+    }
+
+    #[test]
+    fn report_readers_refuse_nonpass_count_and_list_disagreement() {
+        for count in [0, 2] {
+            let mut value = serde_json::to_value(
+                report(vec![scenario(Status::Passed), scenario(Status::Failed)]).standalone(),
+            )
+            .expect("report");
+            value["scenarios_failed"] = count.into();
+            assert_reader_refuses(value);
+        }
+    }
+
+    #[test]
+    fn report_readers_refuse_nonpass_entries_without_a_known_nonpass_status() {
+        for entry in [
+            "passed scenario",
+            "unknown scenario",
+            "failed",
+            "failed ",
+            "failed  \t",
+            " failed scenario",
+            "Failed scenario",
+            "",
+        ] {
+            let mut value =
+                serde_json::to_value(report(vec![scenario(Status::Failed)]).standalone())
+                    .expect("report");
+            value["failed_scenarios"] = serde_json::json!([entry]);
+            assert_reader_refuses(value);
+        }
+    }
+
+    #[test]
+    fn report_readers_refuse_status_claims_that_contradict_the_list() {
+        for (entries, expected) in [
+            (vec![], "passed"),
+            (vec!["failed scenario"], "failed"),
+            (vec!["unsupported scenario"], "failed"),
+            (vec!["error scenario"], "inconclusive"),
+            (vec!["skipped scenario"], "inconclusive"),
+            (vec!["failed scenario", "skipped other"], "failed"),
+            (vec!["unsupported scenario", "error other"], "failed"),
+            (vec!["error scenario", "skipped other"], "inconclusive"),
+        ] {
+            for status in ["passed", "failed", "inconclusive", "skipped"] {
+                if status == expected {
+                    continue;
+                }
+                let mut value = serde_json::to_value(report(vec![]).standalone()).expect("report");
+                value["status"] = status.into();
+                value["scenarios_total"] = entries.len().into();
+                value["scenarios_failed"] = entries.len().into();
+                value["failed_scenarios"] = serde_json::json!(entries);
+                assert_reader_refuses(value);
+            }
+        }
+    }
+
+    #[test]
+    fn report_readers_preserve_rust_producer_bytes_for_every_supported_suite() {
+        for version in [
+            "ess-conformance/1",
+            "ess-conformance/2",
+            "ess-conformance/3",
+            "ess-conformance/4",
+        ] {
+            for statuses in [
+                vec![],
+                vec![Status::Passed],
+                vec![Status::Failed],
+                vec![Status::Error],
+                vec![Status::Unsupported],
+                vec![
+                    Status::Passed,
+                    Status::Failed,
+                    Status::Error,
+                    Status::Unsupported,
+                ],
+            ] {
+                let mut report = report(statuses.into_iter().map(scenario).collect());
+                report.suite.suite_version =
+                    SuiteFormat::parse(version).expect("supported version");
+                assert_reader_preserves(&report.standalone());
+            }
+        }
+    }
+
+    #[test]
+    fn report_readers_preserve_go_producer_bytes_and_historical_nonpass_counts() {
+        // The generated Go runtime writes both failures and skips into this list and count.
+        // Freeze its field order and complete bytes independently of the Rust report writer.
+        let written = concat!(
+            "{\n",
+            "  \"format\": \"ess-conformance-report/1\",\n",
+            "  \"specification\": \"billing/v3\",\n",
+            "  \"spec_digest\": \"13577b3ce695932e980d418d5863bcde07f4c362516d53147870d31eaf2ed861\",\n",
+            "  \"implementation\": \"billing-go 0.1.0\",\n",
+            "  \"status\": \"inconclusive\",\n",
+            "  \"scenarios_total\": 2,\n",
+            "  \"scenarios_failed\": 1,\n",
+            "  \"suite_version\": \"ess-conformance/4\",\n",
+            "  \"failed_scenarios\": [\n",
+            "    \"skipped billing.invoice.CreateInvoice/outcome/accepted\"\n",
+            "  ],\n",
+            "  \"completed_at\": 1700000001000\n",
+            "}\n",
+        );
+        let skipped = StandaloneConformanceReport::from_json(written).expect("Go report reads");
+        assert_eq!(skipped.to_canonical_json(), written);
+        assert_reader_preserves(&skipped);
+
+        let mut failed = skipped;
+        failed.status = VerificationStatus::Failed;
+        failed.scenarios_failed = 2;
+        failed
+            .failed_scenarios
+            .push("failed billing.invoice.CreateInvoice/outcome/rejected".into());
+        assert_reader_preserves(&failed);
+    }
+
+    #[test]
+    fn report_readers_do_not_guess_a_producer_from_status_vocabulary() {
+        let mut report =
+            report(vec![scenario(Status::Error), scenario(Status::Error)]).standalone();
+        report.failed_scenarios[1] = "skipped an opaque scenario identity".into();
+        assert_reader_preserves(&report);
     }
 }
