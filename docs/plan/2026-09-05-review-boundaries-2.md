@@ -1,6 +1,6 @@
 # Review boundaries wave 2 — 2026-09-05
 
-**Approved and opening.** This wave fixes untrusted kubectl failure diagnostics and output path containment. Both stories serve `vision:O2`.
+**Implementing; diagnostic integrated, containment under correction.** This wave fixes untrusted kubectl failure diagnostics and output path containment. Both stories serve `vision:O2`.
 
 Skill version 0.7.0. Coordinator: `wave/review-boundaries-2`, managed record `wt-752828a285ba`. Published base: `0f80f71e7ef997e8a3c7d2ad19e9997090e8e769`.
 
@@ -30,8 +30,8 @@ Absolute root: `/home/timo/.local/state/worktree/trees/b10x/ess`. Worktrees belo
 
 | Story | Branch | Worktree under root | Build | Scratch | Head/stage |
 | --- | --- | --- | --- | --- | --- |
-| review-kubectl-diagnostic-sanitization | impl/review-kubectl-diagnostic-sanitization | review-kubectl-diagnostic-sanitization | target/ | target/review-boundaries-2/ | 54102b9357151a4827817417ca14ec995bdd68c0; green unit, ready for integration |
-| review-output-containment | impl/review-output-containment | review-output-containment | target/ | target/review-boundaries-2/ | c1c23b24cee8f527784b7f8467c21a609710c65e; implementation dispatched |
+| review-kubectl-diagnostic-sanitization | impl/review-kubectl-diagnostic-sanitization | review-kubectl-diagnostic-sanitization | target/ | target/review-boundaries-2/ | 54102b9357151a4827817417ca14ec995bdd68c0; merged at 6685b1991bdee19b28316ccb531a4dbfa1c20f1d |
+| review-output-containment | impl/review-output-containment | review-output-containment | target/ | target/review-boundaries-2/ | e6803c061b33dfe8d5c9fdfff10d8f1408083b31 plus pass-1 tests; correction in progress |
 
 File-backed briefs will bind exact opening SHA, assignments, package gates and scope confirmation. Coordinator owns AEP, source staging, bot commits, integration, gates, publication and managed cleanup. Each green implementation goes to a tests-only adversary. Max two full attack passes; routing preserves original reports verbatim. Each offline gate step reports its own exit code and runner output; applicable site build follows. No terminal move before those results.
 
@@ -1509,3 +1509,19 @@ The harness refused new agent creation with `agent thread limit reached` despite
 ## Diagnostic attack result
 
 review-result:review-boundaries-2-diagnostic-adversary-pass-1 preserves the report verbatim. Three additional tests passed on their first isolated runs, then the package executed 11→14 with zero failures/ignored cases; fmt/Clippy exited 0. No findings or corrections were recorded. Signal status, distinct retry codes and 286,720 additional synthetic bytes per child stream remained value-free in ESS diagnostics. Test commit 54102b9357151a4827817417ca14ec995bdd68c0 has exact bot author and committer. The original test patch is retained in docs/reviews.
+
+## Containment implementation
+
+Source commit e6803c061b33dfe8d5c9fdfff10d8f1408083b31 has exact bot author and committer. Package runners executed CLI 21→33 and ess-gen 183→187 (204→220 combined), zero failed/ignored; both package formatter/strict Clippy commands exited 0. The initial six-case lane had five genuine red refusal cases and a passing valid layout control. A coordinator source review caught overbroad rejection of caller-selected parent roots; a new case failed before correction, then requested-root resolution was fixed while preserving symlink refusal and avoiding creation of discarded directories. The portable implementation report preserves those observations in docs/reviews/2026-09-05-review-boundaries-2-containment-implementation.md.
+
+Current implementation limit: checks are preflight against stable filesystem entries, with Unix link counts. Other platforms refuse existing-file replacement because link-count verification is not implemented. No rollback, hostile mount or concurrent replacement guarantee is claimed. Legacy in-memory constructors/rendering remain source-compatible, with additive checked entrypoints and mandatory CLI sinks.
+
+## Containment attack 1 and correction routing
+
+review-result:review-boundaries-2-containment-adversary-pass-1 preserves the full returned report verbatim, including the one CONFIRMED acceptance blocker with undecided origin. The original test patch is retained in docs/reviews. Five new cases increased executed counts from 220 to 225: 224 passed, one failed. Both compose companion flags can alias a generated client file or directory; the invocation either overwrites one output or writes the companion before refusing. This is a discoverable command output-set collision, within the original acceptance. It was routed to the original implementor for class-wide preflight and a second attack, not deferred as a new story.
+
+The adversary disclosed an extra read-only cargo fmt --all --check outside its prescribed command scope. It exited 1 on untouched generated Rust files and changed nothing. Required package fmt and strict Clippy exited 0. The command-scope deviation is acknowledged; its red result is not an implementation verdict.
+
+## Organization authority refresh
+
+The organization fence at clean Atlas 6035d6e1209686ca474a3f43975fde7d8621ba48 exited 1 after wave-1 publication. Rust (115 tests), catalog, projection, Markdown and brand checks passed; documentation delivery checks and the organization map check failed on sibling state outside this ESS wave. The raw private fence evidence is retained only in coordinator target/review-boundaries-2/atlas-authority-6035d6e/. During the run, Atlas remote main advanced. A new managed authority wt-90ec680c6073 was created at 9f3b42f6d990d849be918936039d7dd5567653c8, and its clean HEAD was verified against git ls-remote origin refs/heads/main before use. The authority's current fence is being rerun; no organization-wide green claim is made.

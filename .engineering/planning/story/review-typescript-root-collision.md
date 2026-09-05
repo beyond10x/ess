@@ -13,7 +13,13 @@ relations:
 scope:
 - confidence: cited
   path: crates/generate/schema-contract
-revision: 2
+- confidence: inferred
+  path: crates/generate/schema-contract/Cargo.toml
+- confidence: cited
+  path: crates/generate/schema-contract/src/typescript.rs
+- confidence: inferred
+  path: crates/generate/schema-contract/tests/typescript_typecheck.rs
+revision: 6
 ---
 ## Finding and source
 
@@ -39,10 +45,24 @@ No schema $id namespace decision or Rust synthesis change is required.
 
 ## Scope
 
-Derived 2026-09-05 by the coordinator from review citations; independently re-scope before future dispatch. Directory tokens cover source and tests within the named package; references used only as evidence are excluded.
+Derived 2026-09-05 by `story-scoper`. Every line is cited or inferred.
 
-- `crates/generate/schema-contract` — cited; owning implementation or documented surface.
-- Confidence: high — cited; exact package-local test filenames remain an implementation choice.
-- Would collide with: stories sharing any of these exact tokens — inferred; see the complete pair list in `docs/plan/2026-09-05-review-remediation.md` before concurrent scheduling.
-- Shared integration files: planning journal, wave page and final change record belong to the coordinator — inferred execution assignment.
+- **Primary surface:** `crates/generate/schema-contract` — cited; TypeScript projection and tests.
+- **Implementation and existing tests:** `crates/generate/schema-contract/src/typescript.rs` — cited; project:65 checks the root separately from definition_names:262, then emits it at :91.
+- **Symbols:** `ProjectionError`, `project`, `definition_names`, `reference_type`, `typescript_identifier`, `pascal_case` and existing tests — cited.
+- **Allocation mechanism:** reserve the requested root alongside normalized definitions or deterministically refuse collision before rendering — inferred; the story permits refusal while preserving noncolliding bytes.
+- **Reserved binding mechanism:** account for generated Array references, language keywords and forbidden type-alias names using compiler-backed vectors — inferred; render_kind:170 emits Array and type-name validation currently checks spelling only.
+- **Wire boundary:** render_object:213 uses typescript_identifier for property quoting — cited; binding feasibility must be separate to preserve wire-property spelling and bytes.
+- **Compiler tests:** `crates/generate/schema-contract/tests/typescript_typecheck.rs` — inferred; a new Rust integration lane can keep generated inputs/configuration under its own target.
+- **Test feature:** `crates/generate/schema-contract/Cargo.toml` — inferred; an explicit feature may keep external compiler requirements out of the Rust-only default gate while making the selected target lane mandatory.
+- **Local tool evidence:** coordinator website TypeScript and /usr/lib/node_modules/typescript both report 6.0.3, matching website/package-lock.json; node and tsc exist — cited; no toolchain file edit is in this unit scope.
+- **Confidence:** high — cited; allocator, renderer, tests and refusal-propagating CLI caller were inspected.
+- **Would collide with:** this package's TypeScript code, tests and manifest — inferred; any shared gate provisioning change must be reserved separately before dispatch.
 
+## Scoping decisions for dispatch
+
+The scoper found no dependency and no nested AGENTS. CLI schema.rs:140 propagates projection refusal before output, so no CLI edit is established. Keep noncolliding projection bytes, structural vocabulary, insertion-order determinism and reference resolution controls.
+
+The current default CI gate provisions Rust and Go, without explicit TypeScript installation. Coordinator inference: use an explicitly selected compiler test lane that fails when its required compiler is missing, then record and execute that lane with the locally available pinned 6.0.3 compiler. Do not silently skip a selected compiler test or claim default task check runs it. A separate feature is allowed within manifest scope if needed; a shared Taskfile/CI change must be proposed as a coordinator patch before expanding scope. Generated compiler configuration should use noEmit, strict, types: [] and explicit fixture inputs.
+
+The installed compiler source rejects alias names any, unknown, never, number, bigint, boolean, string, symbol, void, object and undefined; this is evidence for vectors, not an exhaustive keyword policy. Also protect emitted Array references. Exact discovery configuration and complete feasibility rules must be measured before implementation. The scoper ran no compiler probes or builds.
