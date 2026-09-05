@@ -26,8 +26,8 @@ The reusable coordinator and clean authority targets are explicitly retained whi
 
 | Story | Branch | Managed ESS path suffix | Build/temp | Scratch | Stage |
 | --- | --- | --- | --- | --- | --- |
-| review-rust-target-feasibility | impl/review-rust-target-feasibility | review-rust-target-feasibility | target | target/review-boundaries-5 | selected; tree not yet created |
-| review-format-catalog | impl/review-format-catalog | review-format-catalog | target | target/review-boundaries-5 | selected; tree not yet created |
+| review-rust-target-feasibility | impl/review-rust-target-feasibility | review-rust-target-feasibility | target | target/review-boundaries-5 | implementing checked Result binding; compiler/replay controls running |
+| review-format-catalog | impl/review-format-catalog | review-format-catalog | target | target/review-boundaries-5 | implementation12d3dc2019af31683f626d570b0f66a0adb71a5f; independent pass1 running |
 
 All units fork from the same opening integration commit, recorded before creation. Root owns every AEP mutation and Git/worktree lifecycle. Implementors write only assigned source/tests/design files and leave uncommitted handoffs. Rust work runs package-scoped real compiler/regression checks; documentation work uses source-backed inventory/link checks with no invented prose tests. Adversaries use distinct threads, may add tests and never change production. Every full review is recorded immutably before routing; maximum2 full attacks. Root records any bounded final correction separately.
 
@@ -1379,3 +1379,101 @@ The opening commit receives all cheap applicable checks before unit creation. On
   "cycles": []
 }
 ```
+
+## Opening and dispatch
+
+Opening4b66aac7b608b1deee9de88942390d4a6c5ec745 has exact bot author/committer. Post-commit fmt, release, action, planning and diff checks all exited0; raw record is target/review-boundaries-5/opening-checks. Both managed unit trees were created from that exact opening, with leases ess-review-wave5-rust and ess-review-wave5-format. Full paths are the ESS managed tree root plus the table suffix; each build/scratch is nested inside that tree. Format brief is its assigned scratch/unit-brief.md; Rust binding proposal and consumer inventory were completed before code; the measured zero-capability failure required the corrected binding below.
+
+## Downstream reader coordination
+
+Fresh source inventory confirmed SDK advertised main48833c6d14ec37cb3b614fca05cf7dd78f63b743 and AgentIDE main176a57f58457a7c16f105584c66964263b3c2e41. Both primaries are clean but stale; exact Git objects, then managed SDK source, supply the evidence. SDK build_ess drops target; its existing ESS pin already exposes the report so a guard can land readers-first without a dependency upgrade. AgentIDE already propagates the builder Result before write/check, but its exact older SDK pin is not moved by updating SDK main. No direct external rust::workspace caller is established by the bounded inventory; unknown external callers remain unverified.
+
+Two coordinator-owned support trees were created and recorded before implementation. Atlas ess-rust-refusal-governance at a58a980 on docs/ess-rust-refusal-governance has lease ess-review-wave5-governance and story:ess-rust-target-refusal-migration (58-artifact store, valid with existing advisories). SDK ess-rust-refusal-reader at48833c6 on fix/ess-rust-refusal-reader has lease ess-review-wave5-sdk and story:reject-ess-rust-target-refusals (28-artifact store, valid). Their full roots are the manager's b10x/atlas and b10x/service-sdk roots plus these suffixes; each owns target and target/review-boundaries-5 scratch. No shared build directory or SDK pin upgrade is used.
+
+The support implementation increases the potential worker count to3 within the same4-agent budget/3-worker limit, with Atlas orchestration remaining at root. Resource reserve and cleanup rules apply to support trees as to ESS units. SDK source guard needs independent review, complete SDK task check and exact frozen ESS refusal/valid controls; unit-only synthetic reports are insufficient end-to-end evidence. Atlas ADR0037 records contract choices and move order before source publication. Public catalog delivery will use an additional managed Website tree only when its published ESS input exists.
+
+
+## Checked Rust failure decision and reader stage
+
+The source-only consumer inventory is target/review-boundaries-5/pre-scope-rust/consumer-inventory.md (SHA2565592979d6a49a55b459e0fff06bbdac7899fba053332457f467e2cb40a968f83). It inspected36 sibling HEADs, refreshed SDK/AgentIDE advertised refs, and established the actual SDK omission plus AgentIDE propagation order. It is a bounded inventory, not a claim about every external caller.
+
+The implementor's untouched-production regression an_empty_domain_cannot_overwrite_the_rust_crate_root compiled demo.lib with zero capabilities, then panicked on duplicate crates/demo-types/src/lib.rs (exit101, one executed/failed test). Raw zero-capabilities-red artifacts and the finding are in the Rust unit's scratch. The plan has no capability that could honestly carry this global refusal. The coordinator therefore replaced the initial metadata-only preference before the affected production edits: synthesize, synthesize_for, rust::workspace and web::workspace return checked Result with TargetFailure. Successful fields, canonical plan bytes, valid artifacts and existing reports remain unchanged. Fatal Rust/Web failure returns no synthesis or artifacts; CLI returns1 and admits failure before destination writes.
+
+The versioned Serialize-only ess-target-failure/1 envelope has target, unchanged plan and nonempty deterministic typed global causes. Its eight initial codes and actual allocation/type-layout/binding/codec checks are bound in docs/design/review-rust-target-feasibility.md. No empty TargetReport exception, fake capability or neutral semantic rewrite is used. Root CHANGELOG.md was added as inferred typed scope; the complete revised active computation follows below and still has no collision.
+
+Atlas ADR0037 was committed and published as3666a5091c0a13f3a8c1c5ad82a1ac5642acac56. Its source/docs/planning checks passed (140 Markdown files, zero findings). Full fences exited1 at2026-09-05T19:39:18.851795Z after198.075431676s with the same three independently observed sibling failures: primary AgentIDE's unsupported documentation manifest, primary Website's outdated Docs System pin, and Widgets' missing Serves. All other fence lanes were green. This is not an organization-wide green claim. Raw private evidence remains in the Atlas support target/review-boundaries-5/decision-fence; the clean authority was advanced to this exact advertised main.
+
+SDK implementationc6bd6e7e88f76196a228a76e9ad5fdbb3f937d7d keeps a private conversion for both direct Synthesis and checked Result, preserving original typed errors, then rejects any wrong target/refusal/weakening before projection or output construction. Its actual current-pin generation reproduced all63 files byte-for-byte. Independent pass1 added six cases (24 to30, zero red) and found nothing; immutable review-result:ess-rust-refusal-reader-pass-1 is recorded in the SDK store with exact report SHA256e6091f358865eb7c8d8e6eff6359e8d6176951fe5414b5766f5e2876e03b1333. The tests and Unreleased note are frozene9fcbb960b7a5283666c23c4e0478d4e7b7406d7; the full seven-lane SDK gate is running on that source. Actual corrected-producer CLI refusal and valid-byte checks remain pending a frozen ESS subject; none of these current-pin/synthetic cases substitutes for them. Existing SDK/AgentIDE pins are unchanged.
+
+## Revised active computation
+
+```json
+{
+  "waves": [
+    {
+      "wave": 1,
+      "artifacts": [
+        {
+          "id": "story:review-format-catalog",
+          "inferred": true,
+          "scope": [
+            {
+              "confidence": "inferred",
+              "path": "docs/design/review-format-catalog.md"
+            },
+            {
+              "confidence": "inferred",
+              "path": "website/docs"
+            },
+            {
+              "confidence": "cited",
+              "path": "website/docs/guides/track-change.md"
+            },
+            {
+              "confidence": "inferred",
+              "path": "website/docs/reference/formats.md"
+            },
+            {
+              "confidence": "cited",
+              "path": "website/sidebars.ts"
+            }
+          ]
+        },
+        {
+          "id": "story:review-rust-target-feasibility",
+          "inferred": true,
+          "scope": [
+            {
+              "confidence": "inferred",
+              "path": "CHANGELOG.md"
+            },
+            {
+              "confidence": "cited",
+              "path": "crates/edge/ess-cli"
+            },
+            {
+              "confidence": "cited",
+              "path": "crates/edge/ess-cli/src/main.rs"
+            },
+            {
+              "confidence": "cited",
+              "path": "crates/generate/ess-synth"
+            },
+            {
+              "confidence": "inferred",
+              "path": "docs/design/review-rust-target-feasibility.md"
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "collisions": [],
+  "unassessed": [],
+  "cycles": []
+}
+```
+
+## Public catalog delivery preparation
+
+Source-backed runbook target/review-boundaries-5/pre-scope-delivery/runbook.md established the current bundle source-set publication lane. It resolves every catalog source, derives a deterministic effective source lock, renders the Atlas snapshot with exact pinned Docs System/Website tooling, and verifies a self-contained v2 publication before root-only reconciliation. Neither the retained-lock updater nor the bundle resolver offers an ESS-only flag; any other source movement must be inspected explicitly. The pinned Website runtime and advertised Website main differ. Node24 and exact runtime gates, published source bundle identity, all changed inputs, current publication hold state and live provenance must be established before claiming delivery. No Website mutation, source pin promotion, legacy facade redeployment or delivery success has occurred at this checkpoint.
