@@ -30,7 +30,7 @@ Absolute root: `/home/timo/.local/state/worktree/trees/b10x/ess`. Worktrees belo
 
 | Story | Branch | Worktree under root | Build | Scratch | Head/stage |
 | --- | --- | --- | --- | --- | --- |
-| review-kubectl-diagnostic-sanitization | impl/review-kubectl-diagnostic-sanitization | review-kubectl-diagnostic-sanitization | target/ | target/review-boundaries-2/ | b26829a571c0569ba2f63a5da495b987397b43a4; adversary pass 1 |
+| review-kubectl-diagnostic-sanitization | impl/review-kubectl-diagnostic-sanitization | review-kubectl-diagnostic-sanitization | target/ | target/review-boundaries-2/ | 54102b9357151a4827817417ca14ec995bdd68c0; green unit, ready for integration |
 | review-output-containment | impl/review-output-containment | review-output-containment | target/ | target/review-boundaries-2/ | c1c23b24cee8f527784b7f8467c21a609710c65e; implementation dispatched |
 
 File-backed briefs will bind exact opening SHA, assignments, package gates and scope confirmation. Coordinator owns AEP, source staging, bot commits, integration, gates, publication and managed cleanup. Each green implementation goes to a tests-only adversary. Max two full attack passes; routing preserves original reports verbatim. Each offline gate step reports its own exit code and runner output; applicable site build follows. No terminal move before those results.
@@ -1505,3 +1505,7 @@ The superseded task-owned Atlas authority wt-1bb42c471901 was finished, assessed
 The diagnostic unit committed b26829a571c0569ba2f63a5da495b987397b43a4 with exact bot author/committer. Its package runner executed 8→11, final zero failures; two red disclosure tests preceded implementation and the credential mutation guard failed then was restored. Formatter and strict Clippy exited 0. The portable implementation report is docs/reviews/2026-09-05-review-boundaries-2-diagnostic-implementation.md. Target size was 145,964 KiB, free bytes 125,694,115,840.
 
 The harness refused new agent creation with `agent thread limit reached` despite a completed scoper. A completed read-only scoper thread was reused under the exact adversary charter for the diagnostic unit it did not implement. Its preceding conformance and delivery scoping results were written into their stories before the role change. This is a harness dispatch adaptation; attack count and test-only assignment are unchanged.
+
+## Diagnostic attack result
+
+review-result:review-boundaries-2-diagnostic-adversary-pass-1 preserves the report verbatim. Three additional tests passed on their first isolated runs, then the package executed 11→14 with zero failures/ignored cases; fmt/Clippy exited 0. No findings or corrections were recorded. Signal status, distinct retry codes and 286,720 additional synthetic bytes per child stream remained value-free in ESS diagnostics. Test commit 54102b9357151a4827817417ca14ec995bdd68c0 has exact bot author and committer. The original test patch is retained in docs/reviews.

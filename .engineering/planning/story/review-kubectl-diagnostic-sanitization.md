@@ -20,7 +20,7 @@ scope:
   path: crates/infra/ess-kubernetes/tests/fixtures/fake_command.rs
 - confidence: cited
   path: crates/infra/ess-kubernetes/tests/secret_boundary.rs
-revision: 8
+revision: 9
 ---
 ## Finding and source
 
@@ -48,14 +48,15 @@ Retain the adversary's original failing assertion as the red reproduction. Cover
 
 ## Scope
 
-Derived 2026-09-05 by `story-scoper`. Every line is **cited** (read from the story or tree) or **inferred** (an implementation judgment).
+Confirmed 2026-09-05 from the implementor table in docs/reviews/2026-09-05-review-boundaries-2-diagnostic-implementation.md.
 
-- **Primary surface:** `crates/infra/ess-kubernetes` — cited; the credential-edge subprocess helper and its offline process-boundary tests.
-- **Implementation file:** `crates/infra/ess-kubernetes/src/lib.rs:34` — cited; `kubectl` currently embeds raw stderr and complete arguments in its failure string.
-- **Test file:** `crates/infra/ess-kubernetes/tests/secret_boundary.rs:205` — cited; replace the explicitly temporary disclosure characterization with the preserved no-disclosure regression and extend the failure matrix.
-- **Fixture file:** `crates/infra/ess-kubernetes/tests/fixtures/fake_command.rs:6` — cited; the existing Rust fake currently supports failure of both Secret collection attempts, but needs configurable failure coverage for other helper callers and invalid UTF-8 stderr.
-- **Symbols:** `kubectl`, `contexts`, `scan`, `fixture_root`, and `known_kubectl_stderr_disclosure_is_confined_to_the_failure_diagnostic` — cited; all public collection and context operations reach the same helper.
-- **Diagnostic boundary:** use static operation context and subprocess exit status; avoid rendering complete arguments because the context argument may come from caller input or `current-context` subprocess output — inferred; this satisfies the story’s value-free refusal requirement without changing successful observations.
-- **Documents:** none require implementation changes; the original adversarial report and patch remain evidence — inferred; this is an existing credential-boundary repair with no persisted-format change.
-- **Confidence:** high — cited; the story contains a compiled baseline reproduction, and the complete helper, binary error-printing path, tests, and fake command establish the change surface.
-- **Would collide with:** other edits anywhere in the credential-edge adapter package, particularly its shared subprocess helper, Secret sanitizer tests, or process fixture — inferred; reserve the package for this unit.
+- **Primary surface:** crates/infra/ess-kubernetes — cited; actual production diff is src/lib.rs, with tests/secret_boundary.rs and tests/fixtures/fake_command.rs.
+- **Mechanism:** static adapter operation labels and exit status replace stderr and complete argument rendering at kubectl and its four call sites — cited; the direct mechanism measurement changed two disclosure failures into 11 package passes.
+- **Caller inventory correction:** cluster metadata uses the same KINDS resource loop, not a separate helper — cited; the regression matrix derives resource cases from KINDS and covers contexts/current-context separately.
+- **Persisted bytes and documents:** no new document/format needed — cited; valid observation golden bytes and successful retry output/order remain equal, with no sanitizer production diff.
+- **Confidence:** high — cited; package gates and actual changed paths confirm the earlier inferred mechanism and package reservation.
+- **Would collide with:** edits to this package, especially shared subprocess and fixture handling — inferred; typed package/file scopes remain reserved.
+
+## Wave 2 execution evidence
+
+Implementation commit b26829a571c0569ba2f63a5da495b987397b43a4. The implementor observed two initial red disclosure assertions, final package 8→11 with zero failures, fmt and strict Clippy exit 0; the credential mutation failed and was restored. review-result:review-boundaries-2-diagnostic-adversary-pass-1 preserves the tests-only attack verbatim: 11→14, no findings, formatter and Clippy exit 0. No adversarial correction was needed. The story remains active until the complete integrated gate is observed.
