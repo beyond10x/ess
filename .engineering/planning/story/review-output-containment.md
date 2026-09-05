@@ -14,8 +14,16 @@ scope:
 - confidence: cited
   path: crates/edge/ess-cli
 - confidence: cited
+  path: crates/edge/ess-cli/src/main.rs
+- confidence: cited
   path: crates/generate/ess-gen
-revision: 3
+- confidence: cited
+  path: crates/generate/ess-gen/src/artifact.rs
+- confidence: cited
+  path: crates/generate/ess-gen/src/document.rs
+- confidence: cited
+  path: crates/generate/ess-gen/src/html.rs
+revision: 8
 ---
 ## Finding and source
 
@@ -41,11 +49,22 @@ Atomic replacement, owned-file retirement and input discovery belong to separate
 
 ## Scope
 
-Derived 2026-09-05 by the coordinator from review citations; independently re-scope before future dispatch. Directory tokens cover source and tests within the named package; references used only as evidence are excluded.
+Derived 2026-09-05 by `story-scoper` from the complete story, its parent epic, review F10 and implementation at `3d8d6c6b287ce1c462cc50ea74f1ba5c171b827b`. Every line is cited or inferred.
 
-- `crates/edge/ess-cli` — cited; owning implementation or documented surface.
-- `crates/generate/ess-gen` — cited; owning implementation or documented surface.
-- Confidence: high — cited; exact package-local test filenames remain an implementation choice.
-- Would collide with: stories sharing any of these exact tokens — inferred; see the complete pair list in `docs/plan/2026-09-05-review-remediation.md` before concurrent scheduling.
-- Shared integration files: planning journal, wave page and final change record belong to the coordinator — inferred execution assignment.
+- **Primary surface:** `crates/edge/ess-cli` — cited; owns filesystem writes and caller-controlled included page identities.
+- **Secondary surface:** `crates/generate/ess-gen` — cited; owns artifact paths, page identities, rendering and duplicate-path detection.
+- **CLI file:** `crates/edge/ess-cli/src/main.rs` — cited; `write_artifacts` (2016), `included` (2054), `generate` (2063), `synthesize` (2137) and `conform_web` (2368). The special site branch collects rendered artifacts directly into a map before writing.
+- **Artifact file:** `crates/generate/ess-gen/src/artifact.rs` — cited; public `Artifact` fields, `Artifact::new`, `Artifact::sliced`, `run` and `DuplicatePath`. Current duplicate checking compares exact strings only.
+- **Page file:** `crates/generate/ess-gen/src/document.rs` — cited; public `PageId(String)`, `Document::new`, public page collections and derived deserialization currently permit unchecked identities.
+- **Site file:** `crates/generate/ess-gen/src/html.rs` — cited; `Site::render` (187) and `Site::page` (214) convert page identities into output paths and append assets.
+- **Tests:** regression cases within the two package scopes — inferred; CLI subprocess fixtures for traversal, duplicate includes/generated pages, symlink parents and destinations, unchanged sentinels and valid nested paths; library tests for artifact/page validation and collisions before map collection.
+- **Additional sinks within the CLI scope:** `compose` (1871), `synthesize_suite` (2300), `write_projection_files` (2725), and `project_kubernetes` (2997) each independently join generated relative paths to an output root — cited; they can adopt common preflight without changing their producer packages.
+- **Documents:** source API documentation should state accepted portable path forms, treatment of pre-existing symlinks and the exclusion of concurrent filesystem replacement attacks — inferred; a new typed construct would additionally require its binding design before implementation.
+- **Confidence:** high — cited; the review names the defect sites and the complete rendering-to-filesystem call chain was read.
+- **Would collide with:** changes to either package, particularly CLI dispatch/output handling, generation validation and document rendering — inferred; do not schedule another unit owning either package concurrently.
 
+## Scoping decisions
+
+The independent scoper confirmed the two-package boundary and found two places that need preflight before map construction: duplicate site pages can already have been discarded, and map keys carry a site/ prefix absent from Artifact.path. Validate actual destinations while preserving valid layouts.
+
+Coordinator inference for the future brief: reject noncanonical portable paths rather than silently normalize, detect aliases and ancestor/file collisions, and route the confirmed CLI generated-tree sinks through shared preflight. The implementation must state symlink/root handling and concurrency exclusions, rather than claim race-proof isolation. Additive checked APIs plus mandatory sink checks can preserve current infallible public constructors without widening to unrelated producer packages; the implementor must verify this mechanism with a red case. Exact platform and hard-link policy remains to be documented in that implementation.

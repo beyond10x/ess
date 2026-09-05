@@ -10,12 +10,25 @@ tags:
 relations:
 - decomposes: epic:review-boundary-remediation
 - serves: vision:O2
+- informed_by: obligation:review-contract-rollout-coordination
 scope:
 - confidence: cited
   path: crates/specify/ess-compiler
 - confidence: cited
   path: crates/verify/ess-diff
-revision: 3
+- confidence: inferred
+  path: docs/design/ess-semantic-diff-impact-evolution-design-v0.1.md
+- confidence: inferred
+  path: generated/asyncapi
+- confidence: inferred
+  path: generated/docs
+- confidence: inferred
+  path: generated/openapi
+- confidence: inferred
+  path: generated/schema
+- confidence: inferred
+  path: generated/site
+revision: 10
 ---
 ## Finding and source
 
@@ -41,11 +54,21 @@ No source_digest byte change or new semantic format without the separate identit
 
 ## Scope
 
-Derived 2026-09-05 by the coordinator from review citations; independently re-scope before future dispatch. Directory tokens cover source and tests within the named package; references used only as evidence are excluded.
+Derived 2026-09-05 by `aep-drive:story-scoper`; source and callers inspected read-only at `3d8d6c6b287ce1c462cc50ea74f1ba5c171b827b` — cited.
 
-- `crates/verify/ess-diff` — cited; owning implementation or documented surface.
-- `crates/specify/ess-compiler` — cited; owning implementation or documented surface.
-- Confidence: high — cited; exact package-local test filenames remain an implementation choice.
-- Would collide with: stories sharing any of these exact tokens — inferred; see the complete pair list in `docs/plan/2026-09-05-review-remediation.md` before concurrent scheduling.
-- Shared integration files: planning journal, wave page and final change record belong to the coordinator — inferred execution assignment.
+- **Primary surface:** `crates/verify/ess-diff` — cited; comparison, typed change vocabulary, canonical reader/rendering and conservative impact fallback. Owning files are `src/diff.rs`, `src/change.rs`, `src/impact.rs`, with package-local canonical, family, graph and artifact tests.
+- **Dependency surface:** `crates/specify/ess-compiler` — cited; `src/graph.rs` owns `SemanticDependencyGraph`, `DependencyRelation`, `walk_entities`, `walk_views` and `walk_components`; `src/ir.rs` establishes relation carriers and resolved references.
+- **Symbols:** `compare_entities`, `component_changes`, `outcome_changes`, `compare_views`, `uncompared_families`, `WholeAnswer::UncomparedFamilyChanged`, `EntityChange`, `ComponentChange`, `CommandChange`, `ViewChange` — cited.
+- **Documents:** `docs/design/ess-semantic-diff-impact-evolution-design-v0.1.md` — inferred; record the additional typed comparisons, normalization rules, dependency direction and format compatibility decision before extending persisted change/edge vocabulary.
+- **Generated outputs:** `generated/schema` — inferred; corrected graph closure changes contract digests stamped on affected entity schemas, including the normative billing relation.
+- **Possible generated outputs:** `generated/docs`, `generated/site`, `generated/openapi`, `generated/asyncapi` — inferred; these generators also use dependency-closed provenance. Regenerate through the existing Rust task and retain only actual differences; no generator rewrite is established.
+- **Confidence:** high for the two implementation packages; medium for the exact generated-file set because regeneration was outside this read-only task — cited.
+- **Would collide with:** changes to semantic comparisons, canonical change types, compiler dependency walks, the binding semantic-diff design, or the listed generated projection subtrees — inferred.
 
+## Scoping decisions and open compatibility work
+
+The independent scoper found reverse relation-carrier dependencies: `EssIr::relations_carried_by` at `crates/specify/ess-compiler/src/ir.rs:1408` places an owns annotation on the target field, consumed by `crates/generate/ess-gen/src/types.rs:905`. A forward source-to-target edge alone is insufficient. View parameter types and both grouped and top-level CLI view references also require graph coverage.
+
+The generator's `ProvenanceMint::digest_of` at `crates/generate/ess-gen/src/provenance.rs:249` already closes seeds through the graph. No generator, CLI or xtask source repair is established; generated output changes must be measured. Mixed classified/unclassified edits need conservative fallback, while parsed-equivalent predicates and explicit naming defaults retain normalization controls.
+
+Compatibility remains unresolved before implementation: adding serialized change kinds or dependency relation names requires a binding format decision, and corrected graph slices can change contract digests even when source_digest stays unchanged. Coordinator inference: this story cannot be dispatched as an assumed byte-preserving repair. Resolve the design and relying-reader consequences under `obligation:review-contract-rollout-coordination` before new vocabulary or default writers; do not disguise semantics under unrelated existing variants.
