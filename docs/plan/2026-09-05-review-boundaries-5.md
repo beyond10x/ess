@@ -1661,3 +1661,44 @@ The final Rust correction is bot commit `028cd015877ce5c2255c840eb39a2764b159981
 The two production changes check actual ordered delivery-arm locals and borrow the nested diagnostic path in the shared HTTP/Web map decoder. The binding explicitly retains earlier obligated deliveries as input-producing locals while checking only bare generated calls. No existing assertion was dropped, weakened or re-pinned; the two final adversary files add 225 lines with zero deletions. Complete final-correction-report.md is 220017 bytes, SHA256 `a63413e226e015535af06a36e4978610e7bed8b46e2571e112f8383acd4eba61`; complete and correction manifests are `e93ccc1b41a8117ad26a65d9b70311248eed1c5b41983140e65f981ef583a8e8` and `b22a83ff1576331254f000fcb5e526dc8379f7a7e20a79c31479d46f0a23c8eb`.
 
 The final reviewer is assigned bounded verification of these two corrections and the corresponding internal catalog/Unreleased sentences. This is not a third full attack. The two full review reports and their 0 carried / 2 new / 2 resolved ledger remain immutable. The integrated ESS/site gate, exact final producer SDK proof, source publication and public delivery remain pending; the story stays active.
+
+
+## Integrated gate and published source
+
+Both units merged cleanly to `87338bdef898bf4e4a9a3a0e971c4ec822e3dacd`; that exact clean commit passed all ten declared lanes at 2026-09-05T22:03:01.041867Z and is now published on ESS main. Workspace tests executed 1634 cases with zero failures or ignored tests. Formatting, strict Clippy, rustdoc, examples, projections, release/action checks, site build and planning validation all exit zero. The complete per-lane record is `target/review-boundaries-5/integration/results.json`, SHA256 `9b37a13ae8660e0c6392bc4eda7b7270f49f209611457558084e9745c03eb8f0`. Planning validation retains its known empty-findings advisories; no immutable report was altered.
+
+Bounded final verification found no unresolved issue in the two last repairs or exact catalog/Unreleased sentences. It checked the renderer correspondence, unchanged assertions, all 22 source paths and 94 retained-file hashes for 47 artifact entries. It ran no new tests and is not a third full attack. The full report is in the Rust unit's `target/review-boundaries-5/final-bounded-verification.md`, SHA256 `376ac2d29574f4abd16c4529028684456b360bb0c8c3a655ddf652289ff5b0e5`. Both pass-2 fixed outcomes refer to this same Rust unit's actual `final-correction-report.md`; earlier journal fragments are labels for the two repairs, not Markdown anchors.
+
+The published SDK reader `6e5141f` was built again against all seven ESS packages at exact final integration `87338bd`. There was no non-ESS resolution movement. Eight actual target-error generate/check calls preserved both absent and owned destinations; six valid controls passed their expected behavior. All 63 valid generated files remain byte-identical to published ESS `6616b26`; the historical old pin still differs in 14 files with 49 equal. The original lock and seven `d1a6677` Git packages were restored. This is producer/reader source compatibility evidence, not a dependency pin or deployment upgrade.
+
+Final SDK proof completed 2026-09-05T22:03:52.706889+00:00. Raw records:
+
+- /home/timo/.local/state/worktree/trees/b10x/service-sdk/ess-rust-refusal-reader/target/review-boundaries-5/exact-producer-final-87338bd/record.json: SHA256 `5499066b645737047b57cd82cea66344608f6a96ed1d412b8d03b6998f502473`.
+- /home/timo/.local/state/worktree/trees/b10x/service-sdk/ess-rust-refusal-reader/target/review-boundaries-5/exact-producer-final-87338bd/final-matrix/record.json: SHA256 `8408362d20b3ffc3b08f9eb06f19c02d68ec90c2c1fdb7ef0c3447e29436e44c`.
+
+Public catalog delivery and task-owned resource cleanup remain pending in their companion records. No version bump or tag was created.
+
+
+## Final concurrent integration checkpoint
+
+The read-only refresh captured feature `ddbe42ae92abf36ed7a8229db9e585eefa443bf7` and preview `db2b7fef00076db7839981110e94db17577152ac`. All four repaired production files and both adversary files in that preview are byte-identical to final review source `87338bd`. The current remaining non-planning conflicts are the changelog, appended feasibility test block, and additive internal/public catalog pages; the latest captured wave-plan copy equals `87338bd` and merges cleanly. The feature CLI merges cleanly. These are source comparisons, not a combined compatibility gate.
+
+Keep the already recorded wave-first order and the later source-level unique-wire-key rule. Preserve the final tests plus the feature's source-location rejection replacement, all five future format markers and their separate digest domains. Reconcile append-only AEP state through one CLI writer. The other session owns its combined source and exact gate; this session owns the review wave and will avoid further implementation in its reserved compiler/domain/schema/CLI/public-documentation surfaces until that boundary is reassessed. No other-session worktree was changed or selected for cleanup.
+
+Full refreshed report: Rust unit `target/review-boundaries-5/concurrent-final-merge-audit/report.md`, SHA256 `37a0b241e73382a5feeb2b01713e75577bb08cf77972aeacca9de2f30a2c41dc`, with before/copy/after hashes for the three planning files that changed during observation. The earlier dirty-overlay and five-conflict descriptions remain historical snapshots, not the current result.
+
+AEP initially refused the fractional-second evidence timestamp and consequently refused the implemented move without a test_result. Root retained the full subsecond finish in the gate record, recorded the supported whole-second representation `2026-09-05T22:03:01Z`, then the CLI admitted Rust active -> implemented at revision 19. No status or evidence store file was edited directly. Public format delivery and cleanup remain pending.
+
+
+## Reconciliation with the published source-driven integration
+
+The preceding integrated-gate, SDK and concurrent-preview observations retain their exact Wave 5 subject 87338bdef898bf4e4a9a3a0e971c4ec822e3dacd. Their publication and no-version/tag statements describe that wave operation and its observation time. They do not claim the independently combined source ran those same checks or that no later release tag exists.
+
+At reconciliation inspection, clean advertised main was 5201daf4ea6fe1e254d73a3e858abd06a8a71715, a merge retaining 87338bd ancestry and the source-driven 0.19.0 integration. Its synthesis production tree and complete adversary test files retain the reviewed final bytes. The canonical store already preserves all four immutable Wave 5 reviews and all seven review outcomes through CLI reconciliation; the format story additionally retains its Integration Provenance section. This replay adds only the Wave 5 final gate/body/status evidence. The combined integration and release remain separately owned by story:integrate-source-driven-realizations and release-plan:consolidated-ess-019.
+
+A read-only remote observation found annotated tag 0.19.0 (object e37991cdfa415e80b0403b6149ebd32dc8645f9e) peeling to 5201daf4ea6fe1e254d73a3e858abd06a8a71715. GitHub's release observation was isDraft=true and publishedAt=null. This records tag existence, not completed binary release or delivery. These are time-specific observations; publication completion must be verified separately.
+## Consolidated-source publication correction and unit cleanup
+
+The combined published source at `5201daf4ea6fe1e254d73a3e858abd06a8a71715` preserves both Wave 5 units and the independently developed 0.19.0 source-driven changes. Its new ecosystem change summary exceeded the pinned Docs System limit of 360 characters, so snapshot construction refused it. Companion `story:fit-source-driven-change-summary` owns the summary-only correction to 320 characters; the exact Docs System `1c8c316` validator now exits zero. All other metadata remains unchanged. The combined source gate and publication of a refreshed complete source set remain pending; the earlier green 87338bd evidence is retained as historical evidence for its exact subject.
+
+The four published unit/support trees `review-rust-target-feasibility`, `review-format-catalog`, `ess-rust-refusal-reader`, and `ess-rust-producer-compatibility` have been archived, finished, and removed by exact-id managed GC after review of all profile assessments. Their durable evidence and remaining build/scratch directories are retained under `/home/timo/.cache/ess-review/2026-09-06/remediation-wave-5/`; `gc-early-apply.json` records all four successful removals. The coordinator, delivery tooling and other sessions' worktrees remain active or untouched as appropriate.
