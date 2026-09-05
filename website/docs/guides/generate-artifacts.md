@@ -22,7 +22,7 @@ openapi/invoice-service.yaml — 21077 byte(s)
 | `--kind` | Output | Why it exists |
 |---|---|---|
 | `docs` | Markdown with Mermaid diagrams (lifecycles as state diagrams, bindings as flowcharts) | the cheapest completeness check: a construct with no rendering is a hole in a page a person reads |
-| `site` | the same Markdown with YAML frontmatter, plus `sidebar.json` | static-site-ready source without inventing presentation or hosting choices |
+| `site` | HTML pages, navigation, CSS and a locally bundled Mermaid renderer | a browsable projection of the same documentation model |
 | `schema` | JSON Schema for command inputs, messages, named types, and entities | the type system projected without losing its distinctions — newtypes stay separate definitions |
 | `openapi` | one OpenAPI 3.1 document per component | the specification *is* the HTTP contract, not a document beside it |
 | `asyncapi` | one AsyncAPI 3.0 document per component | the same for messaging, including what happens when a binding fails |
@@ -49,22 +49,223 @@ each generated document.
 
 ## What `site` means
 
-`site` was introduced in ESS `0.4.0`. It wraps the `docs` projection rather than creating a second
-description of the model: each `.md` page gains a title and deterministic sidebar position in YAML
-frontmatter, and `sidebar.json` lists the page ids in one stable order. For example:
+`site` renders the same document IR as `docs`, without parsing generated Markdown back
+into a second description of the model. It emits HTML pages and local presentation assets.
+For example:
 
 ```shell-session
 $ ess generate --path examples/billing --kind site --out target/projections
 ```
 
-produces `target/projections/site/index.md`, the domain pages, the interaction and topology pages,
-and `target/projections/site/sidebar.json`.
+produces `target/projections/index.html`, the domain pages, the interaction and topology pages,
+and `target/projections/assets/` with CSS, the bundled Mermaid renderer and its licence.
+
+The `README.md` beside the specification supplies the front-page introduction. Additional
+authored Markdown pages are explicitly included with `--include <page-id>=<path>`,
+for example `--include operations/runbook=docs/runbook.md`. The page id determines
+the output location, in this case `operations/runbook.html`.
+
+Authored `mermaid` fences and model-generated diagrams use the same local renderer.
+Their escaped source remains readable when JavaScript is disabled; non-Mermaid fences
+remain code listings. This authored-fence support is an unreleased change.
+
+The unreleased publisher resolves relative links using the included documents' source
+locations, even when their output paths differ. `--front-page docs/README.md` overrides
+the default front page without moving it. Declare UTF-8 downloads explicitly, for example
+`--asset contracts/api.json=contracts/api.json`; they are copied verbatim, and their
+destinations cannot collide with generated pages or assets. Binary downloads are refused.
+
+Use `--strict-links` to fail on local targets that are not included pages or declared
+downloads. Diagnostics name the authored file and line, and no output is written on this
+failure. Without that flag, unpublished links retain their original destinations for
+compatibility. The publisher never discovers or copies unselected sibling files. Queries
+and fragments survive source-to-output mapping; strict mode checks fragments against
+the generated and authored page headings. Download fragments retain their file-format
+meaning and are not interpreted as HTML anchors.
 
 This is **specification to documentation**, not documentation to specification. ESS still accepts a
 typed ESS YAML document or directory as input; it does not parse prose or Markdown into model
-semantics. “Ready for a static site” means Markdown, frontmatter, links, and sidebar data. The
-projection emits no HTML, CSS, theme, navigation shell, deployment, or hosted site. A documentation
-system such as Docusaurus consumes these files and owns those presentation decisions.
+semantics. The projection emits a static site, but does not deploy it or configure hosting.
+Use the `docs` projection instead when another documentation system owns presentation.
+
+## Schema-only Bundles
+
+The unreleased `schema import-bundle` adapter selects named structural contracts from
+`components/schemas` without asserting that the envelope is a valid HTTP service.
+Its structural dialect must be supplied explicitly:
+
+```sh
+ess generate schema import-bundle --path components.json --component Settings \
+  --dialect draft-2020-12 --out settings.bundle.json
+ess generate schema project-bundle --bundle settings.bundle.json --root Settings \
+  --schema-id urn:example:settings:1 --out settings.schema.json
+ess generate schema validate-bundle --bundle settings.bundle.json --root Settings value.json
+```
+
+Repeat `--component` to select additional roots. The import retains the original source
+bytes, their SHA-256, declared and selected dialects, explicit adapter accounting and
+the complete reference closure in `ess-schema-bundle/1`. Reload reimports that source
+and checks the entire result; changing a projected definition or dropping qualifications
+does not become a successful checked import. This checks integrity, not an author's signature.
+
+Projection emits only the chosen root's transitive closure. URI/JSON Pointer references
+are rewritten only at schema positions, never inside defaults or examples. Constraints,
+nullability, unions, tuple schemas and object openness retain JSON Schema 2020-12 semantics.
+Defaults and formats are annotations; validation neither fills missing fields nor enables
+the optional format-assertion vocabulary. `x-ess-source` records the projected contract's
+qualification. Unknown keywords, nested resource/anchor declarations and unresolved or
+references outside the selected source collection are refused without a partial successful artifact.
+
+When the source is a complete JSON Schema document, keep its root as well as its
+definitions. The unreleased document adapter assigns an explicit root identity:
+
+```sh
+ess generate schema import-document --path record.schema.json --root Record \
+  --definition Settings --dialect draft-2020-12 --out record.bundle.json
+ess generate schema project-bundle --bundle record.bundle.json --root Record \
+  --schema-id urn:example:record:1 --out projected.schema.json
+```
+
+`--definition` is optional and repeatable; it admits additional independently
+selectable `$defs` roots. References from the document root are included automatically.
+Local `#` recursion and `#/$defs/Name` references retain source identity. The root name
+must not collide with a source definition. `$id`, anchors, nested resources, external
+references and contradictory declared dialects refuse rather than change resolution.
+This adapter writes `ess-schema-bundle/2`, whose explicit `document_root` distinguishes
+the source root from its definitions. Component imports still write unchanged `/1`
+envelopes; old strict readers refuse `/2`. Both formats support replay, root-selected
+validation and all three data targets. Findings point to original schema positions,
+including the empty JSON Pointer for the document root.
+
+This does not generate application behavior or claim the separate TypeScript projector
+supports every imported construct. It also does not reinterpret the existing OpenAPI
+service importer, which keeps its own strict dialect and interface subset.
+
+## Accounted Data Types
+
+The unreleased bundle realization path selects roots and their complete closure
+before emitting declarations:
+
+```sh
+ess generate schema types-bundle --bundle settings.bundle.json --root Settings \
+  --target typescript --out target/settings-types
+ess generate schema types-bundle --bundle settings.bundle.json --root Settings \
+  --target rust --package settings_types --out target/settings-rust
+ess generate schema types-bundle --bundle settings.bundle.json --root Settings \
+  --target go --package settingstypes --module example.org/contracts/settings \
+  --out target/settings-go
+```
+
+Each target emits declarations (`types.ts`, `types.rs` or `types.go`),
+`types-report.json` and the replay-checked `source.bundle.json`. Native targets add
+`Cargo.toml` or `go.mod` for standalone library builds.
+Repeat `--root` for multiple admitted roots. The report carries source and bundle
+digests, generator version, typed target configuration, declaration names, retained annotations and source-located
+runtime obligations. Name collisions, unsupported shapes and unguarded alias cycles
+refuse before output is written. This path does not change the legacy
+`schema typescript` command or full application synthesis.
+
+TypeScript preserves required versus nullable fields, JSON wire keys, recursive
+objects, open objects, union/intersection shapes and prefix tuples. Use `strict`
+and `exactOptionalPropertyTypes`. The recursive JSON-value helper appears only as
+the meaning of unrestricted source JSON, not a fallback for unsupported semantics.
+Numeric precision, integer membership, exact object closure, exclusive unions and
+schema refinements remain explicit validation obligations. Defaults are not applied.
+
+Rust and Go supply typed JSON codecs with independent presence/null representations,
+exact JSON numbers, recursive records, retained typed extra fields, finite string enums,
+unions and fixed prefix tuples. Native unions select the first structurally decodable
+branch; schema exclusivity and refinements remain report obligations, not application
+dispatch. Unsupported native intersections, non-string literals and variable prefix
+layouts refuse before publication. Go uses only its standard library; Rust pins Serde
+and serde_json with arbitrary-precision number support in the generated manifest.
+
+The `ess-types-report/3` envelope records typed input provenance, the language and explicit native package/module
+configuration. These are data libraries, not complete schema validators or application
+decoders: defaults, aliases and external module dispatch are not applied.
+
+### Model Types
+
+Select qualified roots directly from a resolved ESS model using the same target options:
+
+```sh
+ess generate types --path examples/billing --root billing.invoice.Money \
+  --target rust --package billing_types --out target/billing-types
+ess generate types --path examples/billing --all-types \
+  --target typescript --out target/billing-typescript
+```
+
+Repeat `--root` for a shared closure, or explicitly choose `--all-types`, never both.
+The output directory must be outside the input specification tree. The model path
+reuses ESS's existing JSON wire mapping: decimal strings, wire field names, optional
+object properties, nullable collection values, map-key spellings and adjacent tagged
+unions. Missing roots and colliding wire field names refuse before output.
+
+`source.schema.json` retains the exact selected definitions and model provenance;
+the report identifies the system, specification version and model/contract/projection
+digests separately from bundle identity. This is a definitions document, not a root
+instance validator: choose the relevant `$defs` reference for schema validation.
+Invariant predicates and map-key grammars remain explicit validation obligations.
+TypeScript's structural aliases do not enforce nominal model identities, which its
+report names for each selected newtype. Full synthesis remains unchanged. Model-field
+bindings to imported schemas and application-specific decoder semantics remain pending.
+
+### Explicit Normalization
+
+The Rust library `schema_contract::realize::normalize` separates
+transformations from structural declarations. `Root::pin` identifies an admitted
+schema-bundle root by the complete canonical bundle digest. `Plan::read` checks a
+strict `ess-normalization/1` recipe against supplied checked bundles; `Plan::run`
+selects an explicitly named external branch and evaluates its ordered stages.
+
+Each stage validates input, checks authored requirements, constructs a new value and
+validates output. Missing fields remain distinct from null. Defaults apply only via
+explicit fallback or conditional expressions; zero, false and empty strings are not
+absence. Scalar equality, exact case-sensitive string-prefix selection,
+signed-integer arithmetic with explicit overflow policy,
+ordered choices, list mapping and distinct string-category counts have defined
+semantics. There is no trial dispatch or implicit default branch. Duplicate authored
+map keys refuse rather than overwrite earlier operations.
+
+Check a recipe and run one branch through the same library:
+
+```sh
+ess generate schema normalize-check --recipe settings.normalize.json \
+  --bundle stored.bundle.json --bundle runtime.bundle.json --out checked.normalize.json
+ess generate schema normalize-run --recipe checked.normalize.json \
+  --bundle stored.bundle.json --bundle runtime.bundle.json \
+  --branch primary --input settings.json --out normalized.json
+```
+
+Omit `--out` for JSON-only stdout. Repeat `--bundle` for all source identities used
+by the recipe; bundles are replay-checked, and missing or changed identities refuse.
+No successful value is written on a failed check, requirement or schema boundary.
+Outputs cannot replace the recipe, a bundle or the input instance. Existing output
+link/alias containment checks apply.
+
+The input JSON boundary rejects duplicate object keys, excessive nesting, trailing
+data, and numeric tokens that cannot round-trip through the reference representation
+without changing their decimal value. Integer literals within signed range retain
+their exact representation; fractional/exponent tokens are not silently made eligible
+for integer operations. This is precision-loss refusal, not arbitrary-precision
+arithmetic. Raw JSON library consumers use `Plan::run_json`; `Plan::run` accepts an
+already-decoded value and cannot recover precision lost by the caller's parser.
+
+The library API `Plan::rust(package)` emits a standalone Cargo normalization crate,
+with checked root schemas and the same recipe/execution/input logic as the reference
+engine. It has no ESS runtime dependency. `Normalizer::new()` prepares the embedded
+validators; `normalize(branch, input_json)` checks and executes one explicit branch.
+The `ess-normalization-target/1` report records the canonical recipe, source roots,
+schemas and emitted-file digests, excluding the report itself. Generated-crate checks
+cover default serde_json features and consumer-enabled arbitrary precision.
+
+Go/TypeScript normalization adapters and an adapter-generation CLI remain pending.
+Expanded recursive shapes, tuples and
+intersections refuse in its initial checker. Schema bounds and other refinements are
+checked at runtime boundaries, not proven by structural checking. Integer operations
+require exact signed-64-bit integral JSON tokens; equality is scalar-only, with no
+floating-point or cross-kind coercion. Full language-target normalization and
+source-adapter adoption remain unfinished.
 
 ## The graph, without generating a tree
 

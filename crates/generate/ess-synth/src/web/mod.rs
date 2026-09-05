@@ -301,7 +301,9 @@ pub fn workspace(ir: &EssIr, plan: &SynthesisPlan) -> Result<Emission, crate::Ta
     let acceptors = refusal::acceptors(ir);
     let refusals = TargetRefusals::of(ir, plan, &acceptors);
     let bridge = Bridge::new(ir, plan, &layout, &refusals);
-    crate::rust::feasibility::web_codecs(ir, plan, |command| bridge.presents_command(command))?;
+    crate::rust::feasibility::web_codecs(ir, plan, layout.rust(), |command| {
+        bridge.presents_command(command)
+    })?;
     let provenance = &plan.provenance;
 
     present_catalog_surfaces(&bridge);

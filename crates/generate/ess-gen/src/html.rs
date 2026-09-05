@@ -399,6 +399,11 @@ fn body(blocks: &[Block], here: &PageId, constructs: &ConstructIndex) -> String 
                 }
                 out.push_str("</tbody>\n</table>\n");
             }
+            // Authored fences have a language, not a model-derived DiagramKind. Recognize the
+            // declared renderer without inventing a semantic classification in the document IR.
+            Block::Code { language, text } if language.as_deref() == Some("mermaid") => {
+                let _ = writeln!(out, "<pre class=\"mermaid\">{}</pre>", escape(text));
+            }
             Block::Code { language, text } => {
                 let class = match language {
                     Some(language) => format!(" class=\"language-{}\"", escape(language)),
@@ -838,6 +843,32 @@ mod tests {
             body(&blocks.finish(), &here(), &empty()),
             "<pre><code class=\"language-yaml\">system: billing</code></pre>\n"
         );
+    }
+
+    #[test]
+    fn authored_mermaid_uses_the_bundled_renderer_without_guessing_its_kind() {
+        let source = "```mermaid\nflowchart LR\n    A[\"<source>\"] --> B\n```\n";
+        let parsed = crate::authored::blocks(source);
+        assert!(matches!(parsed.as_slice(), [Block::Code { .. }]));
+        let rendered = body(&parsed, &here(), &empty());
+        assert_eq!(
+            rendered,
+            "<pre class=\"mermaid\">flowchart LR\n    A[&quot;&lt;source&gt;&quot;] --&gt; B</pre>\n"
+        );
+        assert_eq!(rendered, body(&parsed, &here(), &empty()));
+    }
+
+    #[test]
+    fn mermaid_text_in_an_unlabelled_or_different_fence_remains_code() {
+        for source in [
+            "```\nflowchart LR\nA --> B\n```\n",
+            "```text\nflowchart LR\nA --> B\n```\n",
+            "```mermaid-example\nflowchart LR\nA --> B\n```\n",
+        ] {
+            let rendered = body(&crate::authored::blocks(source), &here(), &empty());
+            assert!(rendered.starts_with("<pre><code"), "{rendered}");
+            assert!(!rendered.contains("<pre class=\"mermaid\">"), "{rendered}");
+        }
     }
 
     #[test]

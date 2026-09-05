@@ -6,7 +6,9 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
-use ess_compiler::ir::{EssIr, ResolvedBody, ResolvedField, ResolvedMappingValue, ResolvedTypeRef};
+use ess_compiler::ir::{
+    EssIr, ResolvedBody, ResolvedCommand, ResolvedField, ResolvedMappingValue, ResolvedTypeRef,
+};
 use ess_domain::name::QualifiedName;
 use ess_domain::types::Primitive;
 
@@ -192,13 +194,32 @@ pub(crate) fn checked(
     size_cycles(&mut inventory, ir);
     bindings(&mut inventory, ir, plan);
     if !super::http::served(ir).is_empty() {
-        wire(&mut inventory, ir, plan, |_| true);
+        wire(&mut inventory, ir, plan, &layout, |_| true);
+    }
+    if target == Target::Web {
+        web_dependencies(&mut inventory, ir, &layout);
     }
     let causes = inventory.finish();
     if causes.is_empty() {
         Ok(layout)
     } else {
         Err(TargetFailure::new(target, plan, causes))
+    }
+}
+
+fn web_dependencies(inventory: &mut Inventory, ir: &EssIr, layout: &Layout) {
+    let scope = "web root";
+    for module in ["catalog", "json", "wire"] {
+        inventory.symbol(scope, module, &ir.system().to_string(), "fixed Web module");
+    }
+    // The bridge constructs every component by its final dependency path. A module in this
+    // root captures that path; a same-named value or a helper in another module does not.
+    for component in ir.components().keys() {
+        inventory.helper(
+            scope,
+            &Layout::crate_ident(layout.component_package(component)),
+            &component.to_string(),
+        );
     }
 }
 
@@ -798,6 +819,7 @@ fn wire(
     inventory: &mut Inventory,
     ir: &EssIr,
     plan: &SynthesisPlan,
+    layout: &Layout,
     command_present: impl Fn(&QualifiedName) -> bool,
 ) {
     for declared in ir.types().values() {
@@ -856,6 +878,47 @@ fn wire(
             );
         }
         wire_fields(inventory, &command.name, &command.input);
+        outcome_codec_locals(inventory, ir, layout, command);
+    }
+}
+
+fn outcome_codec_locals(
+    inventory: &mut Inventory,
+    ir: &EssIr,
+    layout: &Layout,
+    command: &ResolvedCommand,
+) {
+    let emit = Emit {
+        ir,
+        layout,
+        domain: &ir.domain(&command.domain).name,
+    };
+    for outcome in &command.outcomes {
+        let source = format!("{}.{}", command.name, outcome.name);
+        let scope = format!("outcome codec:{source}");
+        inventory.helper(&scope, "out", &source);
+        for carried in items::outcome_event_fields(&emit, outcome) {
+            let event = carried.event.name();
+            inventory.symbol(
+                &scope,
+                &carried.field,
+                &event.to_string(),
+                "event pattern binding",
+            );
+            inventory.helper(
+                &scope,
+                &format!("encode_event_{}", super::wire::ident(event)),
+                &event.to_string(),
+            );
+        }
+        if let Some(error) = &outcome.error {
+            inventory.symbol(&scope, "error", &error.to_string(), "error pattern binding");
+            inventory.helper(
+                &scope,
+                &format!("encode_error_{}", super::wire::ident(error.name())),
+                &error.to_string(),
+            );
+        }
     }
 }
 
@@ -863,10 +926,11 @@ fn wire(
 pub(crate) fn web_codecs(
     ir: &EssIr,
     plan: &SynthesisPlan,
+    layout: &Layout,
     command_present: impl Fn(&QualifiedName) -> bool,
 ) -> Result<(), TargetFailure> {
     let mut inventory = Inventory::default();
-    wire(&mut inventory, ir, plan, command_present);
+    wire(&mut inventory, ir, plan, layout, command_present);
     let causes = inventory.finish();
     if causes.is_empty() {
         Ok(())

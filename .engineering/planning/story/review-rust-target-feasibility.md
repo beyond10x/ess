@@ -11,6 +11,8 @@ relations:
 - decomposes: epic:review-boundary-remediation
 - serves: vision:O2
 scope:
+- confidence: inferred
+  path: CHANGELOG.md
 - confidence: cited
   path: crates/edge/ess-cli
 - confidence: cited
@@ -19,7 +21,7 @@ scope:
   path: crates/generate/ess-synth
 - confidence: inferred
   path: docs/design/review-rust-target-feasibility.md
-revision: 8
+revision: 10
 ---
 ## Finding and source
 
@@ -31,7 +33,7 @@ Valid models with colliding Rust symbols or recursive layouts yield compilable g
 
 ## Implementation boundary
 
-Allocate target symbols and output paths as one feasibility pass, checking normalized names, reserved words, field/wire-name collisions and recursive layout. Use indirection where it preserves the declared semantics; retain source-language freedom and report target limitations.
+Allocate target symbols and output paths as one feasibility pass, checking normalized names, reserved words, field/wire-name collisions and recursive layout. The final bound policy refuses by-value cycles without inventing boxing or changing declared semantics; retain source-language freedom and report target limitations.
 
 ## Validation
 
@@ -45,43 +47,54 @@ No new target and no general source-model restrictions to satisfy Rust; TypeScri
 
 ## Scope
 
-Derived 2026-09-05 by independent story-scoper at e0ea44383f00b05917bc24c828d3120d86afb3de. Relevant synth/CLI implementation sources remain unchanged through 0d267e25739ca495ad1a229393181ad1b75182f3. Every entry is cited or inferred.
+Derived 2026-09-05 from independent source scoping at ESS6616b26, source-caller inventory and the actual zero-capability regression at opening4b66aac. Detailed binding allocation/representation matrix lives in docs/design/review-rust-target-feasibility.md.
 
-- **Primary surfaces:** cited — crates/generate/ess-synth and crates/edge/ess-cli (including src/main.rs). Inferred new binding design docs/design/review-rust-target-feasibility.md. Current story has no dependency supplying additional scope.
-- **Target/neutral boundary:** cited — synth lib.rs:117/129/166/271 defines Synthesis, TargetReport, TargetRefusal and synthesize_for; Rust currently returns target=None. Go/Web carry separate target reports. plan.rs:540 marks domain types generated under the neutral contract; Rust restrictions must not change domain validity or PLAN.md/plan.json.
-- **Public emitter:** cited — rust/mod.rs:95 exposes workspace -> Vec<Artifact>; only synthesize_for calls it inside this repo, but it is public. Checking only the facade leaves it unchecked. Current workspace coverage assertions and lib.rs:332 duplicate-artifact assertion are not explicit target refusals.
-- **Checked seam:** inferred — settle a checked workspace result using existing TargetReport before rendering/inserting code artifacts, including direct public entrypoint behavior. External callers are not yet inventoried.
-- **Naming/layout:** cited — rust/name.rs owns Pascal/snake/fragments/keyword escape; layout.rs owns packages/modules/paths/crate identifiers/reference/type rendering. Final fallback and suffix repair can merge names; validate final names in actual Rust scopes instead of a global helper blacklist.
-- **Declarations:** cited — items.rs emits tuple-newtypes, structs, enums, unions, commands plus Outcome types, events/errors/views; no Rust alias renderer exists. entity.rs expands Data, Snapshot, Any<Entity>, states/modules/Marker/sealed, fixed new/state/data/into_data/refine/snapshot methods and normalized transition methods.
-- **Events and ports:** cited — items.rs:204 numbers repeated event-field bases, mod.rs:161 falls back to full names for variants; port.rs emits component types, PublishedEvent, handlers/queries/new/drain_outbox. Final numbering/full-name collisions and fixed outcome error fields need coverage.
-- **System and obligations:** cited — system.rs emits System, SystemEvent, BindingInvocation, traits/functions/generics/component fields beside fixed obligations/invocations/published/cursor/retries. obligation.rs derives conversion/behavior/query traits plus UnmetObligation, Unimplemented and obligations modules.
-- **Helpers and paths:** cited — layout emits bare String/Option/Vec/primitives and crate::primitives; codecs/obligations use Result and core/std. http.rs fixed lib/http/json/wire modules coexist with normalized component modules; wire.rs:54 derives global codec names. Inferred checks cover post-repair collisions, keyword module filenames, lib/helper paths, package-to-crate normalization and duplicate output paths. Check rustc filename behavior for raw identifiers, not merely filesystem acceptance.
-- **Wire identity:** cited — wire uses existing ess-gen schema::wire_field_name and union_content_key. Inferred policy: check normalized Rust members separately from wire overrides and adjacent-tag keys; reuse shared helpers without renaming authority or editing ess-gen. An ambiguous wire shape requires target refusal even if Rust compiles.
-- **Recursive layout:** cited — Optional emits Option, List emits Vec, Map emits BTreeMap; newtypes/structs/union payloads retain by-value references. Inferred graph covers all generated representation dependencies: Optional preserves size edges, List/Map break them. Detect self/mutual size cycles, keep legal collection recursion and acyclic controls.
-- **Indirection choice:** inferred — refusal is the smallest compatible answer for infeasible representations. Boxing requires explicit treatment of generated signatures/construction/conversions/codecs and must not silently change valid APIs.
-- **CLI:** cited — main.rs:2384 writes artifacts before target inspection, :2386 prints only neutral counts, then returns success. Inferred change: visible source/cause refusal and failure before writes for Rust; metadata-only TARGET artifacts do not prove this. Decide Go/Web/Clap behavior separately, preserve output containment.
-- **Shared consumers:** cited — Web uses Rust Layout/name/event/wire/JSON helpers; Clap is a sibling target. Preserve neutral-plan parity and admitted cross-target output; Rust helper changes are not isolated from Web.
-- **Existing package tests:** cited — synthesis.rs source fixtures/determinism/event/package/module cases, go.rs target=None valid billing assertion, http.rs/web.rs cross-target contracts, relations.rs committed Rust bytes.
-- **Actual gate:** cited — current ess-xtask has only Generate/Schema/Release. Test commentary naming cargo xtask synth is stale. Workspace gates compile committed billing/gatepass generated code via realization path dependencies, not fresh adversarial emission.
-- **Offline compiler lane:** inferred — package-local integration cases compile fresh isolated generated workspaces under the unit target. Generate lockfiles offline then cargo check --locked --offline --workspace --all-targets with fixture manifest and each fixture's own target, never shared CARGO_TARGET_DIR. Missing tooling fails, never skips. No root tooling edit established.
-- **Compiler matrix:** inferred — fresh red FooBar/Foo_Bar and optional/mutual recursion, normalized members/helpers/synthesized names/path repairs/keywords/wire collisions. Positive admitted collection recursion, separate namespaces and old valid fixtures must compile. Compare historical generated bytes and neutral plans, not only new self-round-trips.
-- **CLI matrix:** inferred — text/JSON/YAML and no-output invocation communicate refusal, fail, create no output tree and preserve an existing sentinel tree; keep valid controls.
-- **Binding design:** inferred — choose feasibility/public API ownership, symbol/path scopes, cycle semantics, refusal propagation, whole-workspace versus partial emission, CLI write/exit policy and successful-byte compatibility before code. Reuse Capability/TargetReport/TargetRefusal; no new persisted version established as necessary.
-- **Compatibility:** inferred — preserve target=None and no TARGET artifacts for prior admitted Rust models. New valid API changes or external-reader effects require the coordinated-migration obligation; external synthesis-library consumers were not inspected by this pass.
-- **Exclusions:** inferred — no domain/compiler restriction, TypeScript, ess-gen/realization, root manifest/Taskfile/workflow edit established. Evidence-only references are not write scope.
-- **Confidence:** high for actual ownership/public seams/CLI ordering/tooling/shared consumers; allocation/refusal choices remain binding-design decisions.
-- **Collisions:** cited — any ess-synth or ess-cli unit, specifically the InfraIr query migration in main.rs:2807. Distant hunks do not make common tokens disjoint.
+- crates/generate/ess-synth — cited: checked Rust/Web emitters, checked synthesis facades, concrete TargetFailure and its versioned serialization, existing successful Synthesis/TargetReport values, allocation/representation validation and generated compiler/replay tests.
+- crates/edge/ess-cli and crates/edge/ess-cli/src/main.rs — cited: the only qualified ess_synth production caller outside the synth package; actual pre-write Result handling and format/exit/destination tests.
+- docs/design/review-rust-target-feasibility.md — inferred new binding page, now written before production changes. Preserve valid generated bytes, neutral plans and separate semantic browser catalog. Use explicit fatal Result and ess-target-failure/1 for zero/nonzero capability plans; preserve historical partial target reports on Ok.
+- CHANGELOG.md — inferred coordinator-owned public source/API/new error-format note, with no version bump or tag.
+- Existing source references: rust/name.rs/layout.rs/items.rs/entity.rs/port.rs/system.rs/obligation.rs/wire.rs; web/mod.rs/bridge.rs/layout.rs; existing TargetReport/Synthesis in lib.rs. Compiler/domain/ess-gen are read-only authorities, not edit scopes.
+- Actual red evidence: empty demo.lib compiles with capabilities=[], then facade panics on duplicate crates/demo-types/src/lib.rs; exactly1 failed case, exit101. Existing report cannot encode it without inventing a capability. The bound new error carries unchanged plan and nonempty typed source causes.
+- Public source API changes: direct Rust and Web workspace plus both facades return checked Result. Successful structs and artifacts remain unchanged. Only assigned CLI outside-package ESS call needs adaptation; SDK has its own separately governed dual-form reader.
+- Web validation: actual Web source rejects host targets; compile with installed wasm32-unknown-unknown and a local Node/WASM replay harness. Host setup refusal is not a generator defect. Plain Rust fixtures compile offline in isolated fixture-owned targets.
+- Scope sensitivity: successful artifacts, root manifest/lock/Taskfile, compiler/domain/generator source and neutral plan/schema are not authorized edits. Any such need returns to coordinator scope/migration handling.
+- SDK source implementation belongs to SDK story:reject-ess-rust-target-refusals; Atlas ADR0037/story:ess-rust-target-refusal-migration governs API/error-format order. No SDK or AgentIDE pin upgrade or deployed-readiness claim follows.
+- Confidence: high for concrete source ownership/callers and measured zero-capability defect; finite rule completeness, new generated compilation results and exact candidate reader execution remain required evidence.
+- Collisions: any ess-synth/ess-cli source or tests, this binding page or shared CHANGELOG. Format catalog's public-doc tokens do not overlap; root validates its final format rows against the merged source.
 
-No files, scratch, tests, stores, Git state or lifecycle were changed and no builds ran. Fresh compiler outcomes, historical byte equality and external consumer compatibility remain unexecuted.
 
-## Pre-dispatch inventory
+## Implementation and reader checkpoint
 
-Read-only coordinator preparation at wave 3 opening 45832cc885377b2d61845ee33af14f0293d99e67, not independent scoping or executed evidence.
+Exact implementationf9a7cf7fcca79448a34b2754adb12f1a411573bd confirms the planned synth/CLI/design ownership. The handoff source manifest's19 files were independently byte-checked before root's bot commit. Package runner counts146 to178 with22 retained behavioral red cases, actual Rust/WASM compiles and Node replay, unchanged complete historical billing Rust/Web and gatepass Rust maps, fmt and strict Clippy are in target/review-boundaries-5/implementation-report.md (SHA25627dced0e7e530441e525de7b1169e27b42b99b1b0b6a717065e63df31835d4b3). The error privately boxes its unchanged plan only to bound Result size; serialized/accessor values remain the same. Finite actual renderer checks do not establish every future extension or arbitrary fabricated plan/IR state. First full independent review is in progress and this story remains active.
 
-- The existing public seam is synthesize_for -> Synthesis { plan, artifacts, target }. SynthesisPlan is language-neutral; all target constraints belong to a TargetReport. Existing Go/Web refusals are useful patterns. Do not put Rust-only restrictions into domain validity or change the shared plan to accommodate Rust.
-- rust/name.rs normalizes Pascal and snake names; path keywords get a suffix, so self and self_ can collide. rust/layout.rs reserves module/package names and allocates some collisions, but final post-normalization uniqueness still needs checking. Include type aliases, entities, synthesized state types, command/outcome/event/error/view names, methods/fields/variants, helper imports (Option, Vec, String, Result, primitive module), module names and package/file paths.
-- Review E0428 and E0072 are attributed reproduction evidence; run the real generated programs for fresh red-first evidence. Struct/alias/enum cycles through Optional preserve by-value size; List/Map introduce indirection and need positive controls. Refusal is permitted when representation cannot be preserved; do not silently rename source/wire properties or reject the source language.
-- The CLI synthesize function at crates/edge/ess-cli/src/main.rs:2374 writes all synthesis artifacts then prints only language-neutral plan counts, and returns success. A new target refusal must be visible in the actual CLI workflow, not just a hidden field. Determine whether the existing report artifact suffices for the acceptance or whether the CLI requires a scoped change; do not invent a no-write proof from generator-only tests.
-- The package's current tests mainly inspect emitted source. The existing generated-crate compile gate lives in the repository tooling. Add a real offline Rust compiler-backed lane with isolated generated fixtures, exact selected cases and no hidden missing-tool skips; reuse cached package dependencies and separate fixture targets within the owning unit. No shared CARGO_TARGET_DIR.
-- Preserve valid prior generated bytes when possible. If choosing a change to previously valid generated APIs or persisted vocabulary, stop for the existing coordinated-migration obligation instead of treating it as an incidental collision repair. Refusing an infeasible target can keep the successful-byte compatibility surface narrow.
-- A binding target-feasibility design and final edit scope require independent story-scoper confirmation before dispatch. Current CLI and new design paths remain inferred rather than reserved until that confirmation.
+The SDK reader is published at6e5141f3ead0e4d0c8f75787aec7051e2a1f41d0, with its story implemented on111 Rust+4 web gate cases,30 admission package cases and exact f9a7cf7 producer proof. Eight actual SDK CLI refusals preserved absent/existing destinations;63 complete valid files equal the published6616 ESS producer; all seven temporary path packages and the original restored git graph were verified. See SDK .engineering/planning/story/reject-ess-rust-target-refusals.md at that commit and the wave page. No dependency pin upgrade, final ESS gate or source publication is claimed here.
+
+
+## First adversarial pass and correction ownership
+
+Immutable review-result:review-boundaries-5-rust-adversary-pass-1 coversf9a7cf7 and retains597874 report bytes, SHA256344184edfa8144f2f8331dd690c173810babce29e0ca9f5225a90415b1915723. Seven new tests ran individually before the package suite;185 total cases yielded181 passes and4 failures (2 generated compiler witnesses and2 actual CLI no-write assertions). Final test formatting and strict Clippy passed.
+
+Both emitter defects reproduce at the exact opening4b66aac using a separately built clean base CLI, SHA25669f63f3addf84e59982701d8cfc6254b00ce34db378604b076863f3a5d330bf3. Web component json hides the generated json module/dependency reference and fails wasm32 E0433; pure Rust json compiles. An accepted network command emitting Out binds out inside the HTTP codec and hides its output buffer, causing E0308/E0599; the complete codec bytes match the base. The same event without HTTP and component core in Rust/Web are valid controls. Actual CLI calls currently return0 and write compiler-invalid artifact trees. Baseline Web also has its independent previously corrected redeliver failure, which is not counted as this finding.
+
+Coordinator routing decision: these are measured pre-existing emitter behaviors, and both already belong to this active F07 story's reserved symbol/helper and field/wire-name collision acceptance. Their immutable origins stay pre-existing. The existing story remains their owner; the original implementor will extend the new feasibility checks within the same declared source scope, preserving source-language freedom and all valid outputs. This is an in-scope correction under the standing implementation authorization. Do not rename generated valid APIs, change wire formats, blanket-blacklist source names or relax the seven new assertions. The two positive controls constrain the actual emitted scopes. Corrections re-enter the second full adversarial pass, followed by merged gates; no third full attack is authorized by this wave. No fixed outcome is recorded before a correction lands.
+
+## Correction-round extension and parallel landing
+
+Root accepted the separately measured empty-event Web log defect within the same F07 correction round and existing synth/Web scope. The current renderer emits an empty match over &SystemEvent, which is inhabited as a reference and fails rustc E0004. The implementor found the log_method body byte-identical at opening 4b66aac and candidate f9a7cf7; actual opening CLI reproduction is requested before the final origin claim. The bounded policy permits a constant empty JSON array only when the actual emitted/logged event variant set is empty, with a distinct Rust/WASM compiler and empty-log replay regression. All nonempty-log artifact bytes and existing runtime behavior remain frozen. The design must record this before the production branch changes. This adds no domain, compiler, generator, format, code-vocabulary or root manifest scope.
+
+The concurrent source-driven integration has a separate source-level unique wire-field invariant. Root accepts its wave-first landing order and that stronger source admission at the later combined feature boundary; this wave retains current source admission and independent Rust/Web target checks. See the concurrent coordination section in docs/plan/2026-09-05-review-boundaries-5.md. No correction is marked fixed or complete before its measured handoff, final review and merged gate.
+
+## Correction 1 frozen for final review
+
+Root froze correction 1 as a2ff04d70f70a691288b661e4d027eee5da74e42 through the bot wrapper, verified both identities and the clean unit. It independently verified the complete 21-path source manifest, seven correction paths and all final package summaries:190 passing,0 failed,0 ignored; formatting and strict Clippy exit0. Complete correction-report-1.md is598504 bytes, SHA256a6de385b57462880e04dfdbbeeb3c6e57c7d433864f864205a1b9273b71415ff. Both original adversary test files and immutable report are unchanged. Separate fixed outcomes record each original finding; no immutable origin was rewritten.
+
+The correction covers actual Web module/dependency capture, HTTP/Web outcome-arm bindings hiding their output buffer or an encoder actually used in that arm, and the separately base-reproduced empty-event Web log branch. Five new isolated regressions and harmless-name/paired compiler/Node controls remain in the suite. Root adopted only the bounded internal catalog and Unreleased wording that names the new empty-log branch. No source-driven domain or schema-contract changes enter this wave.
+
+Second and final full tests-only attack is assigned to impl_diagnostic on exact a2ff04d. The reviewer has a byte-verified standalone copy of the opening4b66aac CLI under its own scratch; root's separate producer fixture can therefore advance independently without invalidating origin evidence. No third full attack is authorized; any remaining finding receives a bounded final correction and verification. Integrated ESS/site gate, final source publication and public delivery remain pending.
+
+Actual SDK correction-subject recheck completed 2026-09-05T21:12:23.012539+00:00 against exact a2ff04d with published reader6e5141f. All7 ESS path packages resolved to the candidate, no non-ESS resolution changed, and the original lock was restored byte-for-byte. Eight real target-error generate/check calls preserved absent/owned destinations; six valid controls passed their exact expected success/drift behavior. All63 valid generated files remain byte-identical to the published ESS6616 baseline; older pinned output remains14 changed/49 equal. Records are in the SDK tree under target/review-boundaries-5/exact-producer-correction-1 and final-matrix. This candidate recheck is distinct from the final merged-source gate and does not upgrade any published dependency pin.
+
+
+## Integration Provenance
+
+Reconciled through AEP from frozen Wave 5 checkpoint 11bbaeff7398c7a73e785c199e335a5bdd6beac8 at original revision 14. Source artifact SHA-256: 6eeafa1896c8d3adcced218dbade5b400fd6e97de4f65f5f0d48ba32dc60a26c. Its original journal remains in that Git history; this store records CLI reconciliation operations. Final Wave 5 publication and later review state still require synchronization.

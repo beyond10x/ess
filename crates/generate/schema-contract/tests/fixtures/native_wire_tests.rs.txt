@@ -1,0 +1,39 @@
+use contract_types::*;
+use serde_json::{json, Value};
+
+fn round_trip<T: serde::de::DeserializeOwned + serde::Serialize>(text: &str) {
+    let before: Value = serde_json::from_str(text).unwrap();
+    let native: T = serde_json::from_str(text).unwrap();
+    let after = serde_json::to_value(native).unwrap();
+    assert_eq!(before, after);
+}
+
+#[test]
+fn record_presence_and_extra_values_round_trip() {
+    let absent: Record = serde_json::from_str(r#"{"requiredNullable":null,"requiredValue":true}"#).unwrap();
+    assert!(matches!(absent.optional_nullable, EssPresence::Absent));
+    assert!(matches!(absent.default_value, EssPresence::Absent));
+    let present: Record = serde_json::from_str(r#"{"requiredNullable":null,"requiredValue":true,"optionalNullable":null}"#).unwrap();
+    assert!(matches!(present.optional_nullable, EssPresence::Present(None)));
+    assert!(serde_json::from_str::<Record>(r#"{"requiredValue":true}"#).is_err());
+    assert!(serde_json::from_str::<Record>(r#"{"requiredNullable":null}"#).is_err());
+    round_trip::<Record>(r#"{"requiredNullable":null,"requiredValue":null,"optionalNullable":null,"defaultValue":"","large":12345678901234567890123456789012345678901234567890,"decimal":1.000000000000000000000000000000000000000000001}"#);
+    let mut collision = absent;
+    collision.ess_extra.insert("requiredValue".to_owned(), json!(false));
+    assert!(serde_json::to_value(collision).is_err());
+}
+
+#[test]
+fn native_alternatives_tuples_and_closed_records_preserve_wire_shape() {
+    round_trip::<Choice>(r#"{"requiredNullable":null,"requiredValue":null,"large":12345678901234567890123456789012345678901234567890}"#);
+    round_trip::<Choice>(r#"{"type":true}"#);
+    round_trip::<Tuple>(r#"["ready",{"large":12345678901234567890123456789012345678901234567890},"tail"]"#);
+    assert!(serde_json::from_str::<Tuple>(r#"["ready",true]"#).is_err());
+    assert!(serde_json::from_str::<Tuple>(r#"["ready",true,"tail",false]"#).is_err());
+    assert!(serde_json::from_str::<Closed>(r#"{"type":true,"extra":1}"#).is_err());
+    assert!(serde_json::from_str::<Narrow>(r#""paused""#).is_err());
+    round_trip::<Narrow>(r#""ready""#);
+    round_trip::<Node>(r#"{"children":[{"children":[]},{}]}"#);
+    round_trip::<Dictionary>(r#"{"huge":12345678901234567890123456789012345678901234567890}"#);
+    assert!(serde_json::from_str::<Impossible>("null").is_err());
+}

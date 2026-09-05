@@ -4,5 +4,7 @@
 //! [`typescript`] projects the structural types a TypeScript consumer needs. Neither operation
 //! reaches a network, reads a clock, or treats generated output as a second contract.
 
+pub mod bundle;
+pub mod realize;
 pub mod typescript;
 pub mod validate;

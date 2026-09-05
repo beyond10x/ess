@@ -1,7 +1,11 @@
 //! The `ess` command: a deterministic shell over the ESS libraries and explicit adapters.
 
 mod load;
+mod model_types;
+mod normalize;
 mod schema;
+mod schema_bundle;
+mod site;
 
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -157,12 +161,8 @@ struct GenerateArgs {
     input: SpecLocation,
     #[arg(long, value_enum)]
     kind: Option<Projection>,
-    /// A markdown page to publish beside the generated ones, written `<page-id>=<path>`.
-    ///
-    /// The id is where the page is filed and what links to it — `plan/board`. Repeat for more
-    /// than one.
-    #[arg(long, value_name = "PAGE=PATH")]
-    include: Vec<String>,
+    #[command(flatten)]
+    site: site::Options,
     #[arg(long)]
     out: Option<PathBuf>,
     #[arg(long, value_enum, default_value_t = Format::Text)]
@@ -172,6 +172,8 @@ struct GenerateArgs {
 /// `ess generate`: IR becomes artifacts; explicit executor verbs deliver them — `crates/generate/`.
 #[derive(Debug, Subcommand)]
 enum GenerateCommand {
+    /// Realize selected model types as standalone, accounted data libraries.
+    Types(model_types::Args),
     /// Synthesize implementation artifacts and explicit obligations.
     Synthesize {
         #[command(flatten)]
@@ -975,6 +977,7 @@ fn specify_area(command: SpecifyCommand) -> Result<ExitCode> {
 /// `ess generate …` other than the `generate` verb, and the same verbs spelled flat.
 fn generate_area(command: GenerateCommand) -> Result<ExitCode> {
     match command {
+        GenerateCommand::Types(args) => model_types::run(&args),
         GenerateCommand::Synthesize {
             input,
             target,
@@ -996,7 +999,7 @@ fn generate_projections(arguments: &GenerateArgs) -> Result<ExitCode> {
     generate(
         &arguments.input.path,
         arguments.kind,
-        &arguments.include,
+        &arguments.site,
         arguments.out.as_deref(),
         arguments.format,
     )
@@ -2274,46 +2277,22 @@ fn write_preflighted_files<'a>(files: impl IntoIterator<Item = (PathBuf, &'a str
     Ok(())
 }
 
-/// The `README.md` beside a specification, as blocks, or nothing where there is none.
-///
-/// Absent is the common case and is not an error: most models have no prose beside them, and a
-/// documentation build that failed for want of a file nobody promised would be a build nobody
-/// runs. `--path` may name one file rather than a directory, in which case its parent is where a
-/// README would sit.
-fn front_page(path: &Path) -> Vec<ess_gen::document::Block> {
-    let directory = if path.is_dir() {
-        path.to_path_buf()
-    } else {
-        path.parent().unwrap_or(Path::new(".")).to_path_buf()
-    };
-    fs::read_to_string(directory.join("README.md"))
-        .map(|markdown| ess_gen::authored::titled(&markdown, "").1)
-        .unwrap_or_default()
-}
-
-/// One `--include` argument, read into the page it names.
-///
-/// The id is the caller's: it is where the page is filed and what a link to it says, and deriving
-/// it from a filename would make `board.md` and `plan/board.md` two different sites.
-fn included(argument: &str) -> Result<(String, String)> {
-    let (id, path) = argument.split_once('=').with_context(|| {
-        format!("`--include {argument}` is not `<page-id>=<path>`, such as `plan/board=board.md`")
-    })?;
-    ess_gen::document::PageId::from(id)
-        .validate()
-        .map_err(anyhow::Error::msg)?;
-    let markdown =
-        fs::read_to_string(path).with_context(|| format!("reading the included page {path}"))?;
-    Ok((id.to_owned(), markdown))
-}
-
+/// Resolve once, then render the selected projection and preflight its complete output set.
 fn generate(
     path: &Path,
     kind: Option<Projection>,
-    include: &[String],
+    site_options: &site::Options,
     out: Option<&Path>,
     format: Format,
 ) -> Result<ExitCode> {
+    if !matches!(kind, Some(Projection::Site))
+        && (site_options.strict_links
+            || site_options.front_page.is_some()
+            || !site_options.asset.is_empty()
+            || !site_options.include.is_empty())
+    {
+        bail!("authored publication options require --kind site");
+    }
     let Ok((ir, _)) = resolved(path, format)? else {
         return Ok(ExitCode::from(1));
     };
@@ -2334,27 +2313,7 @@ fn generate(
         }
         // The site is the one projection an adopter contributes to, so it is built here rather
         // than fetched by name: a `Generator` is handed the model and nothing else.
-        Some(Projection::Site) => {
-            let mint = ess_gen::provenance::ProvenanceMint::new(&ir);
-            let mut document = ess_gen::docs::document(&ir, &mint);
-            for argument in include {
-                let (id, markdown) = included(argument)?;
-                let (title, blocks) = ess_gen::authored::titled(&markdown, &id);
-                document.pages.push(ess_gen::document::Page {
-                    id: ess_gen::document::PageId(id),
-                    title,
-                    about: None,
-                    provenance: mint.whole(),
-                    blocks,
-                });
-            }
-            let site = ess_gen::html::Site::new().with_front_page(front_page(path));
-            site.try_render(&document, &mint.whole().provenance)
-                .map_err(anyhow::Error::msg)?
-                .into_iter()
-                .map(|artifact| (format!("site/{}", artifact.path), artifact))
-                .collect()
-        }
+        Some(Projection::Site) => site::render(path, site_options, &ir)?,
         Some(kind) => {
             let generator = ess_gen::generator(kind.name()).context("projection unavailable")?;
             ess_gen::artifact::run(generator.as_ref(), &ir)?
@@ -2967,7 +2926,7 @@ fn project(adapter: ProjectAdapter) -> Result<ExitCode> {
             (Some(path), None) => generate(
                 &path,
                 Some(Projection::OpenApi),
-                &[],
+                &site::Options::default(),
                 out.as_deref(),
                 format,
             ),
@@ -3539,7 +3498,7 @@ mod tests {
     ///
     /// Written down on purpose. A verb added to the tree and to no area would otherwise be
     /// counted by the enumeration it is missing from and pass every case below.
-    const AREA_LEAVES: usize = 42;
+    const AREA_LEAVES: usize = 50;
 
     /// The order they are offered in is checked where it is rendered, in
     /// `tests/command_surface.rs`: `mut_subcommand` moves what it touches to the end of the list,
