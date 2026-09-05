@@ -6,6 +6,12 @@ use std::collections::BTreeMap;
 /// Authored behavior envelope, independent of schema and model formats.
 pub const FORMAT: &str = "ess-normalization/1";
 
+/// Ordered construction and explicitly declared binary64 input conversion.
+pub const FORMAT_V2: &str = "ess-normalization/2";
+
+/// Exact branch names mapped to explicit paths through their external input roots.
+pub type Binary64Inputs = BTreeMap<String, Vec<Vec<NumberPath>>>;
+
 /// One replay-checked bundle root, identified without filesystem or network authority.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -20,11 +26,70 @@ pub struct Root {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Recipe {
-    /// Must equal [`FORMAT`].
+    /// Must equal [`FORMAT`] or [`FORMAT_V2`]; extended operations require version 2.
     pub format: String,
     /// Exact external discriminator values; no trial decoding or implicit default branch.
     #[serde(deserialize_with = "unique_map")]
     pub branches: BTreeMap<String, Vec<Stage>>,
+    /// Version 2: branch-specific numeric paths decoded as binary64 at the input edge.
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "number_inputs"
+    )]
+    pub binary64_inputs: Option<Binary64Inputs>,
+}
+
+impl Recipe {
+    /// The selected branch's explicit numeric input paths, never inferred from values.
+    pub fn binary64_paths(&self, branch: &str) -> &[Vec<NumberPath>] {
+        self.binary64_inputs
+            .as_ref()
+            .and_then(|paths| paths.get(branch))
+            .map_or(&[], Vec::as_slice)
+    }
+}
+
+/// Typed traversal of the external input, with no wildcard object-member guessing.
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
+#[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
+pub enum NumberPath {
+    /// Traverse one declared object field.
+    Field {
+        /// Exact wire key.
+        name: String,
+    },
+    /// Traverse each element of a declared array.
+    Items,
+}
+
+/// One rounded binary64 operation, in source order.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(tag = "op", rename_all = "snake_case", deny_unknown_fields)]
+pub enum Binary64Step {
+    /// Multiply by a finite JSON numeric token, rounded to binary64.
+    Multiply {
+        /// Unrounded authored JSON numeric token.
+        value: String,
+    },
+    /// Clamp to an upper bound; negative zero wins over positive zero.
+    Minimum {
+        /// Unrounded authored JSON numeric token.
+        value: String,
+    },
+    /// Clamp to a lower bound; positive zero wins over negative zero.
+    Maximum {
+        /// Unrounded authored JSON numeric token.
+        value: String,
+    },
+}
+
+/// A floating-to-integer range policy, distinct from integer arithmetic overflow.
+#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum Binary64Range {
+    /// Refuse values outside [-2^63, 2^63); do not emulate a host-dependent cast.
+    Reject,
 }
 
 /// An immutable data boundary, with explicit checks before transformation.
@@ -162,6 +227,59 @@ pub enum Expr {
         /// String-valued category expression.
         key: Box<Expr>,
     },
+    /// Version 2: concatenate present strings without interpretation or normalization.
+    Concat {
+        /// String expressions in their required evaluation order.
+        parts: Vec<Expr>,
+    },
+    /// Version 2: join an ordered string list, preserving duplicate and empty entries.
+    Join {
+        /// List of strings.
+        list: Box<Expr>,
+        /// Exact separator between entries, never before or after the list.
+        separator: Box<Expr>,
+    },
+    /// Version 2: ordinary base-10 signed-integer text without locale or padding.
+    IntegerString {
+        /// An exact signed-64-bit integer.
+        value: Box<Expr>,
+    },
+    /// Version 2: concatenate lists without flattening their individual elements.
+    ConcatLists {
+        /// List-valued expressions evaluated in order.
+        lists: Vec<Expr>,
+    },
+    /// Version 2: original zero-based index of the innermost collection item.
+    ItemIndex,
+    /// Version 2: ordered filtering and mapping with original indices retained.
+    SelectMap {
+        /// Input list.
+        list: Box<Expr>,
+        /// Selects an item before its value expression is evaluated.
+        condition: Box<Condition>,
+        /// Required output value for each selected item.
+        value: Box<Expr>,
+    },
+    /// Version 2: evaluate the first matching item, or an enclosing-scope fallback.
+    Find {
+        /// Input list.
+        list: Box<Expr>,
+        /// Predicate evaluated in item/index scope.
+        condition: Box<Condition>,
+        /// Required value of the first matching item.
+        value: Box<Expr>,
+        /// Required fallback in the enclosing scope when no item matches.
+        otherwise: Box<Expr>,
+    },
+    /// Version 2: decode, apply rounded binary64 steps, then truncate toward zero.
+    Binary64ToInteger {
+        /// Required numeric expression, explicitly converted to binary64.
+        value: Box<Expr>,
+        /// Operations applied in exact declaration order.
+        steps: Vec<Binary64Step>,
+        /// Required range policy for the final integer conversion.
+        out_of_range: Binary64Range,
+    },
 }
 
 /// Explicit conditions; absence never compares equal to JSON null.
@@ -216,6 +334,13 @@ pub enum Condition {
         /// Child condition.
         condition: Box<Condition>,
     },
+}
+
+fn number_inputs<'de, D>(deserializer: D) -> Result<Option<Binary64Inputs>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    unique_map(deserializer).map(Some)
 }
 
 pub(super) fn unique_map<'de, D, V>(deserializer: D) -> Result<BTreeMap<String, V>, D::Error>

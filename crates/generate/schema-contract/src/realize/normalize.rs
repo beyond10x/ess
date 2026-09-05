@@ -4,6 +4,7 @@ mod check;
 mod eval;
 mod execute;
 mod input;
+mod numeric;
 mod recipe;
 mod target;
 
@@ -13,7 +14,10 @@ use std::collections::{BTreeMap, BTreeSet};
 use super::{finding, path, Finding, Plan as Types, Refused};
 use crate::bundle::{source_digest, Bundle};
 use recipe::unique_map;
-pub use recipe::{Condition, Expr, IntegerOp, Overflow, Recipe, Root, Scope, Stage, FORMAT};
+pub use recipe::{
+    Binary64Inputs, Binary64Range, Binary64Step, Condition, Expr, IntegerOp, NumberPath, Overflow,
+    Recipe, Root, Scope, Stage, FORMAT, FORMAT_V2,
+};
 pub use target::{Realization, Report};
 
 impl Root {
@@ -59,7 +63,7 @@ impl Plan {
             })?;
             retained.insert(source_digest(&bytes), bundle.clone());
         }
-        if recipe.format != FORMAT {
+        if recipe.format != FORMAT && recipe.format != FORMAT_V2 {
             found.push(finding(
                 "/format",
                 "recipe_format",
@@ -72,6 +76,24 @@ impl Plan {
                 "empty_dispatch",
                 "declare at least one dispatch branch",
             ));
+        }
+        if let Some(paths) = &recipe.binary64_inputs {
+            if recipe.format != FORMAT_V2 {
+                found.push(finding(
+                    "/binary64_inputs",
+                    "operation_version",
+                    "numeric input declarations require ess-normalization/2",
+                ));
+            }
+            for branch in paths.keys() {
+                if !recipe.branches.contains_key(branch) {
+                    found.push(finding(
+                        &path("/binary64_inputs", branch),
+                        "unknown_branch",
+                        "numeric input declaration names an unknown branch",
+                    ));
+                }
+            }
         }
         for (name, stages) in &recipe.branches {
             let at = super::path("/branches", name);
@@ -95,7 +117,23 @@ impl Plan {
                     &mut found,
                 );
                 if let (Some(input), Some(output)) = (input, output) {
-                    check::stage(stage, &input, &output, &at, &mut found);
+                    if index == 0 {
+                        check::input_numbers(
+                            recipe.binary64_paths(name),
+                            &input,
+                            &stage.input.root,
+                            &path("/binary64_inputs", name),
+                            &mut found,
+                        );
+                    }
+                    check::stage(
+                        stage,
+                        &input,
+                        &output,
+                        &at,
+                        recipe.format == FORMAT_V2,
+                        &mut found,
+                    );
                 }
             }
         }
@@ -119,12 +157,25 @@ impl Plan {
     /// Parse duplicate-free JSON without silently rounding numeric values, then execute.
     /// Fractional/exponent spellings remain nonintegral for integer operations.
     pub fn run_json(&self, branch: &str, input: &str) -> Result<Value, Refused> {
-        self.run(branch, &input::parse(input)?)
+        self.run_prepared(
+            branch,
+            &input::parse(input, self.recipe.binary64_paths(branch))?,
+        )
     }
 
     /// Evaluate a branch atomically with respect to caller data and observable result.
     /// The caller owns decoding precision; use [`Self::run_json`] for raw JSON bytes.
     pub fn run(&self, branch: &str, input: &Value) -> Result<Value, Refused> {
+        if self.recipe.binary64_paths(branch).is_empty() {
+            return self.run_prepared(branch, input);
+        }
+        self.run_prepared(
+            branch,
+            &input::prepare(input, self.recipe.binary64_paths(branch))?,
+        )
+    }
+
+    fn run_prepared(&self, branch: &str, input: &Value) -> Result<Value, Refused> {
         execute::run(&self.recipe, branch, input, |root, value, at| {
             self.validate(root, value, at)
         })

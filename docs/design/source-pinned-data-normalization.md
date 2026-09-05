@@ -142,3 +142,115 @@ stage-identity mismatch, unknown paths, invalid expression types, unsupported
 operations and invalid intermediate/final values. Preserve caller data on success
 and failure. Verify deterministic recipe bytes and replay; test every target against
 the reference behavior rather than merely compiling the declarations.
+
+## Ordered Collection and Text Extension
+
+The next authored envelope is `ess-normalization/2`. Readers continue to admit
+version 1 with its original operations and numeric policy. Version 1 recipes that
+use a version 2 operation refuse at that operation's recipe pointer; relabelling
+an extended recipe as version 1 is not a compatibility mechanism. Version 2
+preserves all existing operation meanings and adds the following concrete
+operations. Canonical version 1 bytes remain unchanged.
+
+- `concat {parts}` evaluates required strings in order and concatenates exact UTF-8
+  text. An empty parts list yields the empty string. No escaping, interpolation,
+  Unicode normalization or regular-expression interpretation occurs.
+- `join {list, separator}` requires a list of present strings and a present string
+  separator. It preserves order, duplicate and empty entries. An empty list yields
+  the empty string; separators occur only between entries.
+- `integer_string {value}` renders an exact signed 64-bit integer as ordinary base-10
+  digits, with a leading minus only for negative values. No locale, padding, plus
+  sign or floating conversion is used; zero renders as `0`.
+- `concat_lists {lists}` concatenates required lists in expression order. It does
+  not flatten their elements recursively, sort or deduplicate. An empty expression
+  list yields an empty list.
+- `item_index` reads the original zero-based index of the current collection item
+  as a signed integer. It is bound inside map, distinct-count, select-map and
+  find expressions only, and is rebound by nested collections. It never refers to
+  a filtered output index or a global counter. An unbound use refuses statically.
+- `select_map {list, condition, value}` examines items in source order, evaluates
+  the condition with item and original index bound, and evaluates the value only
+  for selected items. A selected missing value refuses rather than silently
+  shortening the result. Rejected items neither evaluate the value nor change
+  later source indices. All value and condition expressions still check upfront.
+- `find {list, condition, value, otherwise}` returns the value for the first
+  selected item. Later items and otherwise do not execute after a match. If no
+  item matches, otherwise executes in the enclosing scope, not in a leaked last
+  item scope. Both possible results must be present and structurally compatible
+  with the stage output. This realizes ordered declarative equality dispatch
+  without embedding source-language callbacks or collapsing duplicate keys.
+
+All branches, nested scopes and operand types must check before the sealed plan
+exists. Runtime schema refinements still apply at every stage boundary. These
+operations must flow through the shared Rust evaluator and every eventual target;
+adding them to the reference engine alone does not finish the normalization story.
+
+These collection operations do not change JSON numeric admission. The following
+numeric extension makes decoding an explicit declaration; no source float is
+silently coerced into the signed-integer arithmetic above. Runtime
+callback fields need an authored declarative representation and consumer mapping;
+the existence of `find` alone does not establish that mapping.
+
+## Declared Binary64 Conversion
+
+Version 2 is still unreleased. Its concrete numeric extension is bound here before
+implementation, alongside the ordered operations above. Version 1 keeps both its
+old canonical bytes and its precision-loss refusal. No published version 2 recipe
+is being migrated.
+
+An optional `binary64_inputs` map keys exact branch names to lists of typed paths
+through that branch's first input root. Each path is an ordered list of
+`{kind: field, name: KEY}` and `{kind: items}` selectors; the empty path selects a
+numeric root. Items traverses every array element, not a chosen index. Unknown
+branches, duplicate paths, undeclared fields, incompatible intermediate shapes
+and nonnumeric leaves refuse before execution. Optional/null values retain their
+presence: declarations neither create defaults nor turn null into a number.
+Intermediate nullable objects/lists may be absent or null and are not traversed.
+Version 1 refuses the declaration even when its map is empty; null is not a map.
+When absent, serialization omits the field, preserving old canonical bytes.
+
+At raw JSON admission, only numbers at the selected paths decode as IEEE binary64,
+rounded to nearest with ties to even. Underflow to signed zero is admitted;
+overflow to infinity refuses. Other numbers retain the exact existing admission
+policy, including unused fields. Duplicate keys, nesting and syntax guards remain.
+Branch identity selects the decode policy; it is not inferred from source values.
+The value-based API applies the declared conversion to its already-decoded numeric
+values but cannot reconstruct precision its caller discarded. Input schemas check
+the decoded value, as at an explicitly declared source decoder boundary; exact
+pre-decoding decimal validation is not claimed. Policies apply only at the external
+input edge, not silently again at each stage.
+
+`binary64_to_integer {value, steps, out_of_range: reject}` accepts a required
+non-null numeric expression, converts its numeric value to binary64 and executes
+ordered steps. Each step is `{op: multiply|minimum|maximum, value: TOKEN}`, with a
+finite JSON numeric token stored as text so authored decimal provenance is not
+rounded by the recipe parser. Every token and every step checks upfront, even in
+an unselected expression. Multiplication rounds to binary64 after each step;
+there is no reassociation or fused operation. Minimum and maximum preserve the
+IEEE signed-zero distinction: min(-0,+0) is -0; max(-0,+0) is +0. Nonfinite inputs,
+constants and intermediate results refuse rather than becoming JSON null.
+
+Finally truncate toward zero into signed 64-bit representation. The finite value
+must lie in [-2^63, 2^63); checking against a rounded representation of i64::MAX
+would incorrectly admit +2^63. Rejection is explicit and is not host-language
+saturation, wrapping or an implementation-dependent sentinel. Subsequent integer
+scaling uses the existing separately declared reject/wrap policy. This represents
+decode, clamp, binary scale, truncate, integer scale in their actual order instead
+of substituting exact decimal scaling. Consumers whose source has implementation-
+dependent out-of-range conversion must retain that compatibility qualification or
+declare a supported input range; ESS does not invent a portable result.
+
+The Rust reference and generated Rust share this code. Go and TypeScript targets
+must implement the same declared decoding and ordered operations before their
+normalization support can be claimed complete. Floating output serialization,
+general floating equality and arbitrary expression-language evaluation are not
+introduced by this integer-conversion operation.
+
+Language evidence: [Go numeric conversions](https://go.dev/ref/spec#Conversions_between_numeric_types)
+specify truncation and implementation-dependent out-of-range results;
+[Rust binary64 parsing](https://doc.rust-lang.org/std/primitive.f64.html#impl-FromStr-for-f64)
+specifies nearest-value rounding. Use the standard binary64 parser after JSON
+grammar validation, rather than relying on a JSON library's optional fast float
+parser. Verify signed boundaries, subnormal/underflow, halfway decimals, decoded
+integer tokens, lexical precision preservation outside declared paths, nested
+arrays/nulls and actual generated-library execution under both JSON feature modes.

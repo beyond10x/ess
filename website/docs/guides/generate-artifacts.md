@@ -227,6 +227,64 @@ ordered choices, list mapping and distinct string-category counts have defined
 semantics. There is no trial dispatch or implicit default branch. Duplicate authored
 map keys refuse rather than overwrite earlier operations.
 
+The unreleased `ess-normalization/2` format adds these explicit operations to both
+the reference engine and standalone Rust target:
+
+| Operation | Meaning |
+|---|---|
+| `concat {parts}` | Concatenate required strings in order; no escaping or normalization. |
+| `join {list, separator}` | Join required string elements, retaining duplicates and empty strings. |
+| `integer_string {value}` | Render an exact signed-64-bit integer as decimal text; negative zero renders as `0`. |
+| `concat_lists {lists}` | Concatenate lists in order, without recursive flattening or deduplication. |
+| `item_index` | Read the original zero-based index in the innermost collection scope. |
+| `select_map {list, condition, value}` | Map matching items in source order, without renumbering their indices or evaluating rejected values. |
+| `find {list, condition, value, otherwise}` | Return the first matching value, without evaluating later items; evaluate fallback only on no match, in the enclosing scope. |
+
+Empty text/list constructions return empty values. All branches and operand types
+still check before execution, including unselected branches. Nested collection scopes
+rebind the index; an unbound index refuses. Version 1 recipes cannot opt into these
+operations without explicitly changing their format. Numeric admission is unchanged:
+binary64 decoding must be explicitly declared as described below.
+
+#### Binary64 Inputs and Integer Conversion
+
+Version 2 optionally declares `binary64_inputs`, mapping exact branch names to
+paths through their first input root. A path uses `{kind: field, name: KEY}` for
+an object member and `{kind: items}` for every array element. An empty path selects
+a numeric root. Only selected numeric values round to binary64, nearest with ties
+to even; undeclared numbers retain the exact admission policy. Missing/null values
+are neither defaulted nor coerced. Unknown branches, duplicate paths, undeclared
+fields and nonnumeric leaves refuse. Underflow preserves signed zero; infinity
+refuses. The declaration is forbidden in version 1, even when empty.
+
+`binary64_to_integer {value, steps, out_of_range: reject}` explicitly converts a
+required numeric value to binary64, applies ordered `multiply`, `minimum` and
+`maximum` steps, then truncates toward zero into signed 64-bit representation.
+Each step has a `value` containing a finite JSON numeric token **as a string**,
+retaining authored decimal provenance. Multiplication rounds after each step;
+intermediate infinity refuses. Minimum/maximum retain signed-zero semantics.
+The final range is `[-2^63, 2^63)`, not host-dependent saturation or wrapping.
+Subsequent integer arithmetic separately declares its overflow policy.
+
+For example, a branch whose first input root is numeric can declare
+`"binary64_inputs": {"primary": [[]]}` and use this stage value:
+
+```json
+{
+  "op": "binary64_to_integer",
+  "value": {"op": "read", "scope": "input", "path": []},
+  "steps": [{"op": "multiply", "value": "1000"}],
+  "out_of_range": "reject"
+}
+```
+
+Input `1.001` yields integer `1000`: binary64 multiplication precedes truncation.
+Exact decimal multiplication would yield a different result and is not substituted.
+Schema boundaries validate the decoded value, not the original decimal token.
+The value-based API cannot restore precision already lost by a caller's parser;
+use the raw JSON API for declared decoding. All constants and paths check before
+execution, including those in an unselected branch.
+
 Check a recipe and run one branch through the same library:
 
 ```sh
@@ -248,13 +306,16 @@ data, and numeric tokens that cannot round-trip through the reference representa
 without changing their decimal value. Integer literals within signed range retain
 their exact representation; fractional/exponent tokens are not silently made eligible
 for integer operations. This is precision-loss refusal, not arbitrary-precision
-arithmetic. Raw JSON library consumers use `Plan::run_json`; `Plan::run` accepts an
+arithmetic. Only explicitly declared version 2 paths opt into binary64 rounding.
+Raw JSON library consumers use `Plan::run_json`; `Plan::run` accepts an
 already-decoded value and cannot recover precision lost by the caller's parser.
 
 The library API `Plan::rust(package)` emits a standalone Cargo normalization crate,
 with checked root schemas and the same recipe/execution/input logic as the reference
 engine. It has no ESS runtime dependency. `Normalizer::new()` prepares the embedded
 validators; `normalize(branch, input_json)` checks and executes one explicit branch.
+`normalize_value(branch, value)` also accepts decoded values with the same
+caller-owned precision qualification as the reference `Plan::run` API.
 The `ess-normalization-target/1` report records the canonical recipe, source roots,
 schemas and emitted-file digests, excluding the report itself. Generated-crate checks
 cover default serde_json features and consumer-enabled arbitrary precision.

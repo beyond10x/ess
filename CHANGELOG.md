@@ -1,5 +1,21 @@
 # Changelog
 
+## [Unreleased]
+
+### Added
+
+- Explicit `ess-normalization/2` ordered string concatenation/joining, exact integer
+  rendering, list concatenation, original collection indices, filtered mapping and
+  first-match selection. The reference engine and generated Rust libraries preserve
+  order, duplicate values and lazy selected-value evaluation. Version 1 refuses the
+  new operations and retains its existing semantics and canonical representation.
+  Go/TypeScript normalization and the adapter-generation CLI remain pending.
+- Version 2 branch-specific `binary64_inputs` declarations and ordered
+  `binary64_to_integer` conversion with finite multiply/minimum/maximum steps,
+  nearest-even decoding and explicit out-of-range refusal. Undeclared numbers
+  keep the exact JSON policy; signed integer scaling remains separately governed
+  by its reject/wrap policy. Reference, CLI and generated Rust share the semantics.
+
 ## [0.19.0] — 2026-09-05
 
 ### Changed

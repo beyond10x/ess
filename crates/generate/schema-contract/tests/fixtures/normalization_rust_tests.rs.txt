@@ -11,7 +11,12 @@ fn every_result_and_refusal_matches_the_reference() {
         let input = case["input"].as_str().unwrap();
         let before = input.to_owned();
         for _ in 0..2 {
-            match normalizer.normalize(branch, input) {
+            let result = if case.get("decoded") == Some(&Value::Bool(true)) {
+                normalizer.normalize_value(branch, &serde_json::from_str(input).unwrap())
+            } else {
+                normalizer.normalize(branch, input)
+            };
+            match result {
                 Ok(value) => assert_eq!(Some(&value), case.get("value"), "{case}"),
                 Err(error) => assert_eq!(Some(serde_json::to_value(error.0).unwrap()), case.get("errors").cloned(), "{case}"),
             }

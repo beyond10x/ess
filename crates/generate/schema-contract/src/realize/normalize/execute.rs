@@ -23,6 +23,7 @@ pub(super) fn run(
         let context = eval::Context {
             input: &current,
             item: None,
+            index: None,
         };
         for (index, condition) in stage.requires.iter().enumerate() {
             let at = format!("{at}/requires/{index}");

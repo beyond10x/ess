@@ -99,6 +99,44 @@ fn checked_recipe_and_run_are_deterministic_with_json_only_stdout() {
 }
 
 #[test]
+fn explicit_binary64_inputs_run_through_the_cli_without_weakening_version_one() {
+    let fixture = Fixture::new();
+    let input = Fixture::bundle("Input", &json!({"type":"number"}));
+    fs::write(
+        fixture.0.join("input.bundle.json"),
+        input.to_json().unwrap(),
+    )
+    .unwrap();
+    let mut recipe = fixture.recipe();
+    recipe["format"] = json!("ess-normalization/2");
+    recipe["binary64_inputs"] = json!({"primary":[[]]});
+    recipe["branches"]["primary"][0]["input"] =
+        serde_json::to_value(Root::pin(&input, "Input").unwrap()).unwrap();
+    recipe["branches"]["primary"][0]["value"] = json!({"op":"binary64_to_integer",
+        "value":{"op":"read","scope":"input","path":[]},
+        "steps":[{"op":"multiply","value":"1000"}],"out_of_range":"reject"});
+    fs::write(fixture.0.join("recipe.json"), recipe.to_string()).unwrap();
+    fs::write(fixture.0.join("instance.json"), "1.001").unwrap();
+    assert!(fixture.run("normalize-check", &[]).status.success());
+    let result = fixture.run("normalize-run", &[]);
+    assert!(result.status.success(), "{result:?}");
+    assert_eq!(result.stdout, b"1000\n");
+    fs::write(fixture.0.join("instance.json"), "9223372036854775807").unwrap();
+    let result = fixture.run("normalize-run", &["--out", "result.json"]);
+    assert!(!result.status.success());
+    assert!(String::from_utf8_lossy(&result.stderr).contains("binary64_range"));
+    assert_eq!(
+        fs::read(fixture.0.join("result.json")).unwrap(),
+        b"untouched"
+    );
+    recipe["format"] = json!("ess-normalization/1");
+    fs::write(fixture.0.join("recipe.json"), recipe.to_string()).unwrap();
+    let result = fixture.run("normalize-check", &[]);
+    assert!(!result.status.success());
+    assert!(String::from_utf8_lossy(&result.stderr).contains("operation_version"));
+}
+
+#[test]
 fn failed_check_or_execution_preserves_output_and_does_not_emit_a_result() {
     let fixture = Fixture::new();
     for input in [
