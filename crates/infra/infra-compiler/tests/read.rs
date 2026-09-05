@@ -382,3 +382,143 @@ fn privacy_and_noop_transform_preserve_the_frozen_base_writer_document() {
         assert_eq!(ir.digest(), original.digest());
     }
 }
+
+#[test]
+fn checked_retargeting_remints_a_new_owner_without_invalidating_the_source_handles() {
+    let source = compiled();
+    let old_handles = Handles::from_ir(&source);
+    let before = serde_json::to_vec(&source.document()).unwrap();
+    let replacement = source.model().ingresses["app/edge"].rules[0].paths[0]
+        .backend
+        .service
+        .clone();
+    let transformed = source
+        .try_transform(|model| {
+            model
+                .workloads
+                .get_mut("app/statefulset/db")
+                .unwrap()
+                .governing_service = Some(replacement);
+            model.services.remove("app/db-headless").unwrap();
+        })
+        .expect("the removed service has no remaining reference");
+    let new_handle = resolved(
+        transformed.model().workloads["app/statefulset/db"]
+            .governing_service
+            .as_ref()
+            .unwrap(),
+    );
+    assert_eq!(transformed.service(&new_handle).identity.name, "web");
+    let rejected = transformed
+        .try_transform(|model| {
+            model.services.remove("app/web").unwrap();
+        })
+        .expect_err("the reminted replacement remains checked on a second transform");
+    assert!(rejected.contains(InfraCode::IrDanglingHandle), "{rejected}");
+    assert_eq!(transformed.service(&new_handle).identity.name, "web");
+    assert_eq!(serde_json::to_vec(&source.document()).unwrap(), before);
+    old_handles.assert_usable(&source);
+}
+
+#[test]
+fn indirect_environment_and_volume_sites_cannot_lose_their_resolved_targets() {
+    for via_environment in [true, false] {
+        let mut value = bundle();
+        let pod = &mut value["kinds"]["deployments"]["items"][0]["spec"]["template"]["spec"];
+        pod["containers"][0]["env"] = serde_json::json!([]);
+        if via_environment {
+            pod["containers"][0]["envFrom"] = serde_json::json!([
+                {"configMapRef": {"name": "settings"}},
+                {"secretRef": {"name": "creds", "optional": true}}
+            ]);
+        } else {
+            pod["volumes"] = serde_json::json!([
+                {"name": "config", "configMap": {"name": "settings"}},
+                {"name": "credentials", "secret": {"secretName": "creds", "optional": true}}
+            ]);
+        }
+        let raw: RawBundle = serde_json::from_value(value).unwrap();
+        let source = infra_compiler::compile(&Observation::try_from(raw).unwrap());
+        let admitted = source.try_transform(|_| {}).unwrap();
+        let container = &admitted.model().workloads["app/deployment/web"].containers[0];
+        assert!(container.env.is_empty());
+        let (config, secret) = if via_environment {
+            let infra_compiler::ResolvedEnvFromSource::ConfigMap { config_map, .. } =
+                &container.env_from[0].source
+            else {
+                panic!("the first envFrom must carry the resolved configmap");
+            };
+            let infra_compiler::ResolvedEnvFromSource::Secret { secret, .. } =
+                &container.env_from[1].source
+            else {
+                panic!("the second envFrom must carry the resolved secret");
+            };
+            (resolved(config_map), resolved(secret))
+        } else {
+            let volumes = &admitted.model().workloads["app/deployment/web"].volumes;
+            let infra_compiler::ResolvedVolumeSource::ConfigMap { config_map, .. } =
+                &volumes[0].source
+            else {
+                panic!("the first volume must carry the resolved configmap");
+            };
+            let infra_compiler::ResolvedVolumeSource::Secret { secret, .. } = &volumes[1].source
+            else {
+                panic!("the second volume must carry the resolved secret");
+            };
+            (resolved(config_map), resolved(secret))
+        };
+        assert_eq!(admitted.config_map(&config).identity.name, "settings");
+        assert_eq!(admitted.secret(&secret).identity.name, "creds");
+        let before = serde_json::to_vec(&admitted.document()).unwrap();
+        for delete_config in [true, false] {
+            let errors = admitted
+                .try_transform(|model| {
+                    if delete_config {
+                        model.config_maps.clear();
+                    } else {
+                        model.secrets.clear();
+                    }
+                })
+                .expect_err("every resolved indirect site must retain target membership");
+            assert!(errors.contains(InfraCode::IrDanglingHandle), "{errors}");
+            assert!(!errors.contains(InfraCode::IrDigestMismatch), "{errors}");
+            assert_eq!(serde_json::to_vec(&admitted.document()).unwrap(), before);
+            assert_eq!(admitted.config_map(&config).identity.name, "settings");
+            assert_eq!(admitted.secret(&secret).identity.name, "creds");
+        }
+    }
+}
+
+#[test]
+fn captured_detached_edits_and_panics_cannot_mutate_existing_owners() {
+    let source = compiled();
+    let handles = Handles::from_ir(&source);
+    let before = serde_json::to_vec(&source.document()).unwrap();
+    let mut captured = None;
+    let admitted = source
+        .try_transform(|model| {
+            captured = Some(model.clone());
+        })
+        .unwrap();
+    let admitted_handles = Handles::from_ir(&admitted);
+    let mut detached = captured.unwrap();
+    detached.nodes.clear();
+    detached.services.clear();
+    detached.config_maps.clear();
+    detached.secrets.clear();
+    detached.service_accounts.clear();
+    detached.claims.clear();
+    assert_eq!(serde_json::to_vec(&admitted.document()).unwrap(), before);
+    admitted_handles.assert_usable(&admitted);
+
+    let panic = std::panic::catch_unwind(|| {
+        let _ = source.try_transform(|model| {
+            model.nodes.clear();
+            panic!("synthetic callback abort after detached mutation");
+        });
+    });
+    assert!(panic.is_err(), "the callback must actually abort");
+    assert_eq!(serde_json::to_vec(&source.document()).unwrap(), before);
+    assert_eq!(source.digest(), admitted.digest());
+    handles.assert_usable(&source);
+}

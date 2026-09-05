@@ -345,3 +345,203 @@ fn checked_projection_round_trips_all_four_changes_including_probes_and_induced_
     let failures = round_trip(&spec, &bundle, |_| {});
     assert!(failures.is_empty(), "{}", failures.join("\n"));
 }
+
+const PARTIAL_CONTAINER_EXPECTATIONS: &str = r"  - id: replicas
+    scope: {namespace: shop}
+    expect:
+      replicas_within: {min: 2, max: 4}
+  - id: resources
+    scope: {namespace: shop}
+    expect: resources_declared
+    remedy:
+      resources:
+        requests: {cpu: 999m}
+        limits: {cpu: 200m}
+  - id: readiness
+    scope: {namespace: shop}
+    expect:
+      probes_declared: {liveness: true, readiness: true}
+    remedy:
+      probes:
+        readiness:
+          tcp_socket: {port: ready}
+          initial_delay_seconds: 3
+          period_seconds: 7
+          timeout_seconds: 2
+          failure_threshold: 4
+  - id: budgets
+    scope: {namespace: shop}
+    expect: pdb_covers_multi_replica
+";
+
+#[test]
+fn admitted_patches_preserve_other_fields_for_statefulsets_and_daemonsets() {
+    for (bundle_key, workload_kind, generates_replicas) in [
+        ("statefulsets", "statefulset", true),
+        ("daemonsets", "daemonset", false),
+    ] {
+        let sidecar = serde_json::json!({
+            "name": "sidecar", "image": "registry.example.com/sidecar:1",
+            "resources": {"requests": {"cpu": "10m"}, "limits": {"cpu": "20m"}},
+            "livenessProbe": {"tcpSocket": {"port": "health"}},
+            "readinessProbe": {"tcpSocket": {"port": "ready"}},
+            "startupProbe": {"httpGet": {"path": "/startup", "port": 9000}}
+        });
+        let main = serde_json::json!({
+            "name": "main", "image": "registry.example.com/api:1",
+            "env": [{"name": "KEEP", "value": "unchanged"}],
+            "resources": {"requests": {"cpu": "50m"}},
+            "livenessProbe": {"httpGet": {"path": "/keep", "port": "health"}},
+            "startupProbe": {"tcpSocket": {"port": "boot"}}
+        });
+        let mut workload = support::deployment(
+            "shop",
+            "api",
+            1,
+            &serde_json::json!([sidecar.clone(), main.clone()]),
+        );
+        if generates_replicas {
+            workload["spec"]["serviceName"] = Value::from("headless");
+        } else {
+            workload["spec"].as_object_mut().unwrap().remove("replicas");
+        }
+        let bundle = support::bundle(
+            "patch-parity",
+            &[
+                (
+                    "namespaces",
+                    serde_json::json!([support::namespace("shop")]),
+                ),
+                (bundle_key, serde_json::json!([workload])),
+                ("poddisruptionbudgets", serde_json::json!([])),
+            ],
+        );
+        let spec = support::spec(PARTIAL_CONTAINER_EXPECTATIONS);
+        let ir = support::compile(&bundle);
+        let source_bytes = serde_json::to_vec(&ir.document()).unwrap();
+        let projection = infra_project::project(&spec, &ir).unwrap();
+        assert_eq!(
+            projection.summary.generated,
+            if generates_replicas { 4 } else { 2 }
+        );
+        assert_eq!(projection.patches.len(), 1);
+        assert_eq!(projection.objects.len(), usize::from(generates_replicas));
+        assert_eq!(
+            projection.patches[0].patch_type,
+            infra_project::PatchType::Strategic
+        );
+
+        let mut patched: Value = serde_json::from_str(&bundle).unwrap();
+        apply_projection(&mut patched, &projection, &projection.artifacts());
+        let containers =
+            &patched["kinds"][bundle_key]["items"][0]["spec"]["template"]["spec"]["containers"];
+        assert_eq!(containers.as_array().unwrap().len(), 2);
+        assert_eq!(
+            containers[0], sidecar,
+            "the untouched sidecar must retain every byte-level value"
+        );
+        assert_eq!(
+            containers[1]["resources"]["requests"],
+            main["resources"]["requests"]
+        );
+        assert_eq!(containers[1]["env"], main["env"]);
+        assert_eq!(containers[1]["image"], main["image"]);
+        assert_eq!(containers[1]["livenessProbe"], main["livenessProbe"]);
+        assert_eq!(containers[1]["startupProbe"], main["startupProbe"]);
+        assert_eq!(
+            containers[1]["readinessProbe"]["tcpSocket"]["port"],
+            "ready"
+        );
+        assert_eq!(containers[1]["readinessProbe"]["timeoutSeconds"], 2);
+        let rebuilt = support::compile(&patched.to_string());
+        assert!(rebuilt
+            .model()
+            .workloads
+            .contains_key(&format!("shop/{workload_kind}/api")));
+        assert_eq!(serde_json::to_vec(&ir.document()).unwrap(), source_bytes);
+        let failures = round_trip(&spec, &bundle, |_| {});
+        assert!(failures.is_empty(), "{bundle_key}: {}", failures.join("\n"));
+    }
+}
+
+#[test]
+fn same_named_workloads_in_two_namespaces_reach_distinct_budget_fixed_points() {
+    let bundle = support::bundle(
+        "namespace-fixed-points",
+        &[
+            (
+                "namespaces",
+                serde_json::json!([support::namespace("a"), support::namespace("b")]),
+            ),
+            (
+                "deployments",
+                serde_json::json!([
+                    support::deployment(
+                        "a",
+                        "api",
+                        1,
+                        &serde_json::json!([support::container("main", "api:1")])
+                    ),
+                    support::deployment(
+                        "b",
+                        "api",
+                        1,
+                        &serde_json::json!([support::container("main", "api:1")])
+                    )
+                ]),
+            ),
+            ("poddisruptionbudgets", serde_json::json!([])),
+        ],
+    );
+    let spec = support::spec(
+        r"  - id: replicas-a
+    scope: {namespace: a}
+    expect:
+      replicas_within: {min: 2, max: 4}
+  - id: budgets-a
+    scope: {namespace: a}
+    expect: pdb_covers_multi_replica
+  - id: replicas-b
+    scope: {namespace: b}
+    expect:
+      replicas_within: {min: 3, max: 4}
+  - id: budgets-b
+    scope: {namespace: b}
+    expect: pdb_covers_multi_replica
+",
+    );
+    let source = support::compile(&bundle);
+    let before = serde_json::to_vec(&source.document()).unwrap();
+    let projection = infra_project::project(&spec, &source).unwrap();
+    assert_eq!(projection.summary.generated, 4);
+    assert_eq!(projection.summary.gaps_induced, 2);
+    assert_eq!(projection.patches.len(), 2);
+    assert_eq!(projection.objects.len(), 2);
+    let namespaces: BTreeSet<_> = projection
+        .objects
+        .iter()
+        .map(|object| object.target.namespace.as_str())
+        .collect();
+    assert_eq!(namespaces, BTreeSet::from(["a", "b"]));
+    let paths: BTreeSet<_> = projection
+        .objects
+        .iter()
+        .map(|object| object.path.as_str())
+        .collect();
+    assert_eq!(
+        paths.len(),
+        2,
+        "equal names in distinct namespaces cannot share an output slot"
+    );
+    let failures = round_trip(&spec, &bundle, |_| {});
+    assert!(failures.is_empty(), "{}", failures.join("\n"));
+
+    let mut patched: Value = serde_json::from_str(&bundle).unwrap();
+    apply_projection(&mut patched, &projection, &projection.artifacts());
+    let rebuilt = support::compile(&patched.to_string());
+    let settled = infra_project::project(&spec, &rebuilt).unwrap();
+    assert_eq!(settled.summary.generated, 0);
+    assert!(settled.patches.is_empty());
+    assert!(settled.objects.is_empty());
+    assert_eq!(serde_json::to_vec(&source.document()).unwrap(), before);
+}
