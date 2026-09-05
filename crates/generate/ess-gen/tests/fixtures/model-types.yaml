@@ -1,0 +1,51 @@
+format: ess/1
+system: sample
+version: v1
+domains: [sample.data]
+domain: sample.data
+types:
+  - name: sample.data.Id
+    kind: newtype
+    of: String
+  - name: sample.data.OtherId
+    kind: newtype
+    of: String
+  - name: sample.data.Mode
+    kind: enum
+    variants: [ready, paused]
+  - name: sample.data.Choice
+    kind: union
+    tag: value
+    variants:
+      item: sample.data.Id
+      omitted: Optional<String>
+  - name: sample.data.Record
+    kind: struct
+    fields:
+      - name: id
+        type: sample.data.Id
+        wire: record-id
+      - name: score
+        type: Integer
+      - name: label
+        type: Optional<String>
+      - name: children
+        type: List<sample.data.Record>
+      - name: numbers
+        type: Map<Integer, Optional<Decimal>>
+      - name: samples
+        type: List<Optional<Boolean>>
+      - name: mode
+        type: sample.data.Mode
+      - name: choice
+        type: sample.data.Choice
+      - name: instant
+        type: Timestamp
+      - name: duration
+        type: Duration
+      - name: uuid
+        type: Uuid
+      - name: bytes
+        type: Bytes
+    invariants:
+      - score >= 0

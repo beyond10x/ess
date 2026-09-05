@@ -1,5 +1,33 @@
 //! Explicit compiler-backed projection checks, enabled by `typescript-typecheck`.
 
+#[path = "support/model.rs"]
+mod model;
+
+#[test]
+fn model_wire_mapping_and_explicit_nominal_limitations_typecheck() {
+    let plan = model::plan();
+    let result = plan.typescript();
+    let report = serde_json::to_value(&result.report).unwrap();
+    assert_eq!(report["input"]["kind"], "model");
+    assert!(report["obligations"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .any(|entry| entry["rule"] == "typescript_nominal_identity"));
+    let controls = r#"
+const choice: SampleDataChoice = {value: "item", content: "id"};
+const omitted: SampleDataChoice = {value: "omitted"};
+// @ts-expect-error: the tag's payload is required for this variant
+const missing: SampleDataChoice = {value: "item"};
+// @ts-expect-error: optional does not mean nullable at field position
+const nullPayload: SampleDataChoice = {value: "omitted", content: null};
+// @ts-expect-error: no undeclared union tag is admitted
+const invalid: SampleDataChoice = {value: "unknown", content: "id"};
+"#;
+    let output = typecheck(&[format!("{}\n{controls}", result.declarations)]);
+    assert!(output.status.success(), "{output:?}");
+}
+
 use std::path::{Path, PathBuf};
 use std::process::{Command, Output};
 use std::sync::atomic::{AtomicUsize, Ordering};
@@ -55,7 +83,7 @@ fn typecheck(sources: &[String]) -> Output {
     }
     let config = root.join("tsconfig.json");
     std::fs::write(&config, serde_json::to_vec_pretty(&json!({
-        "compilerOptions": {"strict": true, "noEmit": true, "types": [], "target": "ES2022", "module": "ESNext"},
+        "compilerOptions": {"strict": true, "exactOptionalPropertyTypes": true, "noEmit": true, "types": [], "target": "ES2022", "module": "ESNext"},
         "files": files
     })).expect("compiler configuration")).expect("write isolated compiler configuration");
     Command::new("node")
@@ -70,6 +98,75 @@ fn accepted(source: &Value, root: &str, output: &mut Vec<String>) {
     if let Ok(generated) = project(source, root) {
         output.push(generated);
     }
+}
+
+#[test]
+fn qualified_bundle_types_preserve_presence_tuple_and_sibling_constraints() {
+    use schema_contract::bundle::{import, Dialect};
+    use schema_contract::realize::Plan;
+    let source = json!({"components": {"schemas": {
+        "Record": {"type": "object", "required": ["nullable", "value"], "additionalProperties": false,
+            "properties": {"nullable": {"type": ["string", "null"]}, "optional": {"type": ["string", "null"]}, "value": true}},
+        "Tuple": {"type": "array", "prefixItems": [{"type": "string"}, true, {"type": "boolean"}], "minItems": 3, "maxItems": 3},
+        "OptionalTuple": {"type": "array", "prefixItems": [{"type": "string"}, {"type": "boolean"}], "minItems": 1, "items": {"type": "integer"}},
+        "Base": {"type": ["string", "null"]},
+        "Narrow": {"$ref": "#/components/schemas/Base", "type": "string", "enum": ["x", "y"], "const": "x"},
+        "Open": {"type": "object", "properties": {"label": {"type": "string"}}, "additionalProperties": {"type": "integer"}},
+        "Node": {"type": "object", "properties": {"children": {"type": "array", "items": {"$ref": "#/components/schemas/Node"}}}},
+        "Union": {"oneOf": [{"type": "string", "enum": ["ready"]}, {"type": "object", "required": ["Other"], "properties": {"Other": {"type": "string"}}, "additionalProperties": false}]}
+    }}});
+    let roots = [
+        "Record",
+        "Tuple",
+        "OptionalTuple",
+        "Narrow",
+        "Open",
+        "Node",
+        "Union",
+    ]
+    .into_iter()
+    .map(str::to_owned)
+    .collect();
+    let bundle = import(&source.to_string(), &roots, Dialect::Draft202012).unwrap();
+    let mut emitted = Plan::from_bundle(&bundle, &roots)
+        .unwrap()
+        .typescript()
+        .declarations;
+    emitted.push_str(
+        r#"
+const record: Record = {nullable: null, value: {arbitrary: [true, null]}};
+const optional: Record = {nullable: "x", optional: null, value: 2};
+const tuple: Tuple = ["entry", {nested: null}, true];
+const shortTuple: OptionalTuple = ["entry"];
+const longTuple: OptionalTuple = ["entry", true, 1, 2];
+const narrow: Narrow = "x";
+const open: Open = {label: "entry", count: 1};
+const node: Node = {children: [{children: []}]};
+const unionA: Union = "ready";
+const unionB: Union = {Other: "custom"};
+// @ts-expect-error required-nullable is still required
+const missing: Record = {value: 2};
+// @ts-expect-error absent does not mean present undefined
+const undefinedField: Record = {nullable: null, value: 2, optional: undefined};
+// @ts-expect-error unrestricted JSON excludes functions
+const functionField: Record = {nullable: null, value: () => 1};
+// @ts-expect-error exact tuple length
+const tooShort: Tuple = ["entry", null];
+// @ts-expect-error tuple position type
+const wrongSlot: Tuple = ["entry", null, 1];
+// @ts-expect-error reference siblings must not widen the constant
+const tooWide: Narrow = "y";
+// @ts-expect-error retain union alternatives
+const wrongUnion: Union = "missing";
+"#,
+    );
+    let checked = typecheck(&[emitted.clone()]);
+    assert!(checked.status.success(), "{checked:?}");
+    let control = typecheck(&[emitted.replace("// @ts-expect-error", "// negative control:")]);
+    assert!(
+        !control.status.success(),
+        "negative controls must be rejected"
+    );
 }
 
 // The pinned compiler's keyword vocabulary, plus ordinary, helper and contextual controls.

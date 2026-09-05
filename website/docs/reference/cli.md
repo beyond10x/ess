@@ -95,8 +95,16 @@ print the affected set without contacting external systems. See
 |---|---|
 | `ess generate schema validate PATH… --schemas DIR [--format text\|yaml\|json]` | Validate JSON instances against the offline `*.schema.json` registry they select by stable `schema` identity. |
 | `ess generate schema typescript SCHEMA_ID --root TYPE --schemas DIR [--out FILE] [--check]` | Project deterministic structural TypeScript from one authoritative JSON Schema. |
+| `ess generate schema import-bundle --path FILE --component NAME… --dialect draft-2020-12 [--out FILE]` | Retain and qualify a selected structural component closure without inventing an OpenAPI service. Unreleased. |
+| `ess generate schema import-document --path FILE --root NAME [--definition NAME…] --dialect draft-2020-12 [--out FILE]` | Retain a JSON Schema document root and local definition closure in a replay-checked `/2` bundle. Unreleased. |
+| `ess generate schema project-bundle --bundle FILE --root NAME --schema-id URI [--out FILE]` | Revalidate an import and emit one root's standalone JSON Schema and source qualification. Unreleased. |
+| `ess generate schema validate-bundle --bundle FILE --root NAME INSTANCE…` | Validate unmodified instances against one explicitly selected component. Unreleased. |
+| `ess generate schema types-bundle --bundle FILE --root NAME… --target typescript\|rust\|go [--package NAME] [--module PATH] --out DIR` | Emit root-selected data libraries, qualified source and target accounting. Rust/Go require package identity; Go also requires module identity. Not an application decoder. Unreleased. |
+| `ess generate schema normalize-check --recipe FILE --bundle FILE… [--out FILE]` | Replay-check source bundles, check every normalization branch, and emit the canonical recipe. Unreleased. |
+| `ess generate schema normalize-run --recipe FILE --bundle FILE… --branch NAME --input FILE [--out FILE]` | Execute an explicit branch with stage input/output validation; emit only a complete result. Refuse duplicate input keys, numeric precision loss and input/output aliases. Unreleased. |
+| `ess generate types --path SPEC (--root QUALIFIED_NAME… \| --all-types) --target typescript\|rust\|go [--package NAME] [--module PATH] --out DIR` | Realize checked ESS model types using the shared wire mapping and data targets. Retains model schema selection and typed provenance; output must be outside the specification tree. Unreleased. |
 
-Both operations are offline. Schema identity comes from `$id`; filenames only locate documents.
+These operations are offline. Schema identity comes from `$id`; filenames only locate documents.
 `--check` compares an existing generated module byte for byte without rewriting it.
 
 ## `ess verify` — held to what was declared

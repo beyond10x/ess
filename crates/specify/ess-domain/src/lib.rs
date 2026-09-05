@@ -69,6 +69,7 @@ pub mod system;
 pub mod topology;
 pub mod types;
 pub mod view;
+mod wire;
 
 pub use actor::ActorSpec;
 pub use command::{

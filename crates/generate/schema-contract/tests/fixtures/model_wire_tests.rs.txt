@@ -1,0 +1,29 @@
+#[cfg(test)]
+mod model_wire {
+    use model_types::*;
+    use serde_json::{json, Value};
+
+    #[test]
+    fn wire_mapping_retains_model_shapes_without_claiming_invariant_execution() {
+        let original = json!({"record-id":"id", "score":3, "children":[],
+            "numbers":{"1":"0.12345678901234567890123456789", "2":null},
+            "samples":[true,null,false], "mode":"ready", "choice":{"value":"item","content":"id"},
+            "instant":"2026-01-01T00:00:00Z", "duration":"PT1S",
+            "uuid":"00000000-0000-0000-0000-000000000000", "bytes":"YQ=="});
+        let decoded: SampleDataRecord = serde_json::from_value(original.clone()).unwrap();
+        assert!(matches!(decoded.label, EssPresence::Absent));
+        assert_eq!(serde_json::to_value(&decoded).unwrap(), original);
+        for (key, bad) in [("label", Value::Null), ("record-id", Value::Null),
+            ("unknown", json!(true)), ("choice", json!({"value":"invalid","content":"id"}))] {
+            let mut value = original.clone();
+            value[key] = bad;
+            assert!(serde_json::from_value::<SampleDataRecord>(value).is_err(), "{key}");
+        }
+        let mut missing = original.clone();
+        missing.as_object_mut().unwrap().remove("record-id");
+        assert!(serde_json::from_value::<SampleDataRecord>(missing).is_err());
+        let omitted = json!({"value":"omitted"});
+        let decoded: SampleDataChoice = serde_json::from_value(omitted.clone()).unwrap();
+        assert_eq!(serde_json::to_value(decoded).unwrap(), omitted);
+    }
+}

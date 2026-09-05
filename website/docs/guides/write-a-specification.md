@@ -341,6 +341,13 @@ bindings:
 Conflating any two costs a rename later: an HTTP path that changes because someone improved a domain
 term is an outage caused by a wording fix.
 
+Field `wire` overrides change JSON property keys, not logical field identities.
+Effective wire keys must be distinct within each object: structs, command inputs,
+event/error payloads, entity identity/fields/state and view rows. View parameters have
+their own namespace. An entity field or identity cannot use the reserved `state` wire
+key. Validation accumulates collisions before any projection can overwrite a property;
+display names and identical keys in separate objects do not conflict.
+
 ## Next
 
 * [Verify an implementation](./verify-conformance.md) — generate the suite this specification

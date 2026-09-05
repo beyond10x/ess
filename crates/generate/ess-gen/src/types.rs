@@ -608,8 +608,8 @@ pub(crate) fn wire_name(declared: &ResolvedField) -> &str {
 /// A closed object over these fields, with the non-`Optional` ones required.
 ///
 /// A field's property key is its wire name. Two fields with the same wire name would collapse into
-/// one property; the model validates field *names* for duplication and does not constrain wire names,
-/// so that is a gap in the model rather than something to paper over here.
+/// one property; specification validation refuses colliding effective wire keys before the
+/// compiler admits an IR, including an entity's identity and synthetic state property.
 pub(crate) fn object(fields: &[ResolvedField]) -> Node {
     object_with(fields, &BTreeMap::new())
 }

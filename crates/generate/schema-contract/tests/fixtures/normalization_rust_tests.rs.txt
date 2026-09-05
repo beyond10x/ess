@@ -1,0 +1,21 @@
+use normalization_adapter::Normalizer;
+use serde_json::Value;
+
+#[test]
+fn every_result_and_refusal_matches_the_reference() {
+    let normalizer = Normalizer::new().unwrap();
+    let cases: Vec<Value> = serde_json::from_str(include_str!("cases.json")).unwrap();
+    assert!(cases.len() >= 30);
+    for case in cases {
+        let branch = case["branch"].as_str().unwrap();
+        let input = case["input"].as_str().unwrap();
+        let before = input.to_owned();
+        for _ in 0..2 {
+            match normalizer.normalize(branch, input) {
+                Ok(value) => assert_eq!(Some(&value), case.get("value"), "{case}"),
+                Err(error) => assert_eq!(Some(serde_json::to_value(error.0).unwrap()), case.get("errors").cloned(), "{case}"),
+            }
+            assert_eq!(input, before);
+        }
+    }
+}

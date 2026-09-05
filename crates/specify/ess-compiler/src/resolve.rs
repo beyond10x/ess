@@ -641,6 +641,8 @@ const STRUCTURAL: &[&str] = &[
     "delivery",
     "input",
     "fields",
+    "params",
+    "shape",
     "outcomes",
     "emits",
     "error",

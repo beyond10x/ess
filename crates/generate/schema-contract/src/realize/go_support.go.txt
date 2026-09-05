@@ -1,0 +1,125 @@
+import (
+	"bytes"
+	"encoding/json"
+	"fmt"
+)
+
+// EssPresence distinguishes an absent object member from its value.
+type EssPresence[T any] struct {
+	Present bool
+	Value T
+}
+
+// EssNullable represents JSON null independently of field presence.
+type EssNullable[T any] struct {
+	Null bool
+	Value T
+}
+
+func (v EssNullable[T]) MarshalJSON() ([]byte, error) {
+	if v.Null {
+		return []byte("null"), nil
+	}
+	return essEncode(v.Value, false)
+}
+
+func (v *EssNullable[T]) UnmarshalJSON(data []byte) error {
+	var decoded EssNullable[T]
+	if bytes.Equal(bytes.TrimSpace(data), []byte("null")) {
+		decoded.Null = true
+	} else if err := essDecode(data, &decoded.Value, false); err != nil {
+		return err
+	}
+	*v = decoded
+	return nil
+}
+
+// EssJSON carries explicitly unrestricted source JSON without number conversion.
+type EssJSON struct {
+	Raw json.RawMessage
+}
+
+func (v EssJSON) MarshalJSON() ([]byte, error) {
+	if len(v.Raw) == 0 {
+		return []byte("null"), nil
+	}
+	if !json.Valid(v.Raw) {
+		return nil, fmt.Errorf("invalid JSON value")
+	}
+	return append([]byte(nil), v.Raw...), nil
+}
+
+func (v *EssJSON) UnmarshalJSON(data []byte) error {
+	if !json.Valid(data) {
+		return fmt.Errorf("invalid JSON value")
+	}
+	v.Raw = append([]byte(nil), data...)
+	return nil
+}
+
+// EssNumber preserves an exact JSON numeric token; integrality and bounds are separate.
+type EssNumber string
+
+func (v EssNumber) MarshalJSON() ([]byte, error) {
+	data := []byte(v)
+	if !essIsNumber(data) {
+		return nil, fmt.Errorf("invalid JSON number")
+	}
+	return data, nil
+}
+
+func (v *EssNumber) UnmarshalJSON(data []byte) error {
+	if !essIsNumber(data) {
+		return fmt.Errorf("expected a JSON number")
+	}
+	*v = EssNumber(bytes.TrimSpace(data))
+	return nil
+}
+
+func essIsNumber(data []byte) bool {
+	if !json.Valid(data) {
+		return false
+	}
+	decoder := json.NewDecoder(bytes.NewReader(data))
+	decoder.UseNumber()
+	var value any
+	if decoder.Decode(&value) != nil {
+		return false
+	}
+	_, number := value.(json.Number)
+	return number
+}
+
+// EssNull has precisely one wire value.
+type EssNull struct{}
+
+func (EssNull) MarshalJSON() ([]byte, error) { return []byte("null"), nil }
+
+func (*EssNull) UnmarshalJSON(data []byte) error {
+	if !bytes.Equal(bytes.TrimSpace(data), []byte("null")) {
+		return fmt.Errorf("expected JSON null")
+	}
+	return nil
+}
+
+// EssNever has no serializable value, including its native zero value.
+type EssNever struct{}
+
+func (EssNever) MarshalJSON() ([]byte, error) { return nil, fmt.Errorf("JSON Schema false has no value") }
+
+func (*EssNever) UnmarshalJSON([]byte) error { return fmt.Errorf("JSON Schema false has no value") }
+
+func essEncode[T any](value T, nullable bool) (json.RawMessage, error) {
+	data, err := json.Marshal(value)
+	if err == nil && !nullable && bytes.Equal(bytes.TrimSpace(data), []byte("null")) {
+		return nil, fmt.Errorf("non-nullable value encoded as null")
+	}
+	return data, err
+}
+
+func essDecode[T any](data []byte, value *T, nullable bool) error {
+	if !nullable && bytes.Equal(bytes.TrimSpace(data), []byte("null")) {
+		return fmt.Errorf("unexpected JSON null")
+	}
+	return json.Unmarshal(data, value)
+}

@@ -1,0 +1,72 @@
+package contract_types
+
+import (
+	"bytes"
+	"encoding/json"
+	"reflect"
+	"testing"
+)
+
+func normalized(t *testing.T, data []byte) any {
+	t.Helper()
+	decoder := json.NewDecoder(bytes.NewReader(data))
+	decoder.UseNumber()
+	var value any
+	if err := decoder.Decode(&value); err != nil { t.Fatal(err) }
+	return value
+}
+
+func roundTrip[T any](t *testing.T, text string) T {
+	t.Helper()
+	var value T
+	if err := json.Unmarshal([]byte(text), &value); err != nil { t.Fatal(err) }
+	data, err := json.Marshal(value)
+	if err != nil { t.Fatal(err) }
+	if !reflect.DeepEqual(normalized(t, []byte(text)), normalized(t, data)) { t.Fatalf("wire value changed: %s", data) }
+	return value
+}
+
+func TestRecordPresenceAndExactNumbers(t *testing.T) {
+	absent := roundTrip[Record](t, `{"requiredNullable":null,"requiredValue":true}`)
+	if absent.OptionalNullable.Present || absent.DefaultValue.Present { t.Fatal("absent/default fields materialized") }
+	present := roundTrip[Record](t, `{"requiredNullable":null,"requiredValue":true,"optionalNullable":null}`)
+	if !present.OptionalNullable.Present || !present.OptionalNullable.Value.Null { t.Fatal("present null collapsed") }
+	for _, text := range []string{`{"requiredValue":true}`, `{"requiredNullable":null}`, `null`} {
+		var value Record
+		if json.Unmarshal([]byte(text), &value) == nil { t.Fatal("missing required member accepted", text) }
+	}
+	roundTrip[Record](t, `{"requiredNullable":null,"requiredValue":null,"defaultValue":"","large":12345678901234567890123456789012345678901234567890,"decimal":1.000000000000000000000000000000000000000000001}`)
+	absent.EssExtra["requiredValue"] = EssJSON{Raw: json.RawMessage(`false`)}
+	if _, err := json.Marshal(absent); err == nil { t.Fatal("extra key collision accepted") }
+}
+
+func TestNativeShapesAndNegativeControls(t *testing.T) {
+	var nilVariant *ChoiceV0
+	if _, err := json.Marshal(Choice{Value: nilVariant}); err == nil { t.Fatal("typed nil variant widened a non-nullable union") }
+	roundTrip[Choice](t, `{"requiredNullable":null,"requiredValue":null,"large":12345678901234567890123456789012345678901234567890}`)
+	roundTrip[Choice](t, `{"type":true}`)
+	roundTrip[Tuple](t, `["ready",{"large":12345678901234567890123456789012345678901234567890},"tail"]`)
+	roundTrip[Node](t, `{"children":[{"children":[]},{}]}`)
+	roundTrip[Dictionary](t, `{"huge":12345678901234567890123456789012345678901234567890}`)
+	for _, text := range []string{`["ready",true]`, `["ready",true,"tail",false]`, `null`} {
+		var value Tuple
+		if json.Unmarshal([]byte(text), &value) == nil { t.Fatal("invalid tuple accepted", text) }
+	}
+	var closed Closed
+	if json.Unmarshal([]byte(`{"type":true,"extra":1}`), &closed) == nil { t.Fatal("closed object widened") }
+	if json.Unmarshal([]byte(`{"type":null}`), &closed) == nil { t.Fatal("null became false") }
+	var narrow Narrow
+	if json.Unmarshal([]byte(`"paused"`), &narrow) == nil { t.Fatal("reference siblings discarded") }
+	roundTrip[Narrow](t, `"ready"`)
+	var impossible Impossible
+	if json.Unmarshal([]byte(`null`), &impossible) == nil { t.Fatal("false schema accepted") }
+	if _, err := json.Marshal(impossible); err == nil { t.Fatal("false schema zero value serialized") }
+	var number EssNumber
+	if json.Unmarshal([]byte(`"1"`), &number) == nil { t.Fatal("numeric string coerced") }
+	if _, err := json.Marshal(number); err == nil { t.Fatal("invalid number zero value serialized") }
+	var list List
+	data, err := json.Marshal(list)
+	if err != nil || string(data) != "[]" { t.Fatal("nil slice did not remain an array", string(data), err) }
+	if json.Unmarshal([]byte(`null`), &list) == nil { t.Fatal("non-nullable list accepted null") }
+	if json.Unmarshal([]byte(`[null]`), &list) == nil { t.Fatal("non-nullable element accepted null") }
+}

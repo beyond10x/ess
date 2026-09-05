@@ -264,7 +264,7 @@ impl Specification {
 
     /// Checks every reference in the specification.
     pub fn validate(&self) -> ValidationErrors {
-        let mut errors = ValidationErrors::new();
+        let mut errors = crate::wire::validate(self);
 
         // Entities contribute the enum their lifecycle forms, so a view projecting `state` and a
         // filter comparing it are checked against the same set of names.

@@ -14,6 +14,20 @@ use crate::Format;
 /// Operations over adopter-owned JSON Schema contracts.
 #[derive(Debug, Subcommand)]
 pub(crate) enum SchemaCommand {
+    /// Extract a qualified structural component closure without inventing a service.
+    ImportBundle(crate::schema_bundle::ImportArgs),
+    /// Retain a JSON Schema document root and its local definitions without inventing a service.
+    ImportDocument(crate::schema_bundle::DocumentArgs),
+    /// Revalidate a qualified import and project one selected root as standalone JSON Schema.
+    ProjectBundle(crate::schema_bundle::ProjectArgs),
+    /// Validate unmodified JSON instances against one selected component root.
+    ValidateBundle(crate::schema_bundle::ValidateArgs),
+    /// Realize selected structural roots with source provenance and target accounting.
+    TypesBundle(crate::schema_bundle::TypesArgs),
+    /// Check every source-pinned normalization branch and emit the canonical recipe.
+    NormalizeCheck(crate::normalize::CheckArgs),
+    /// Execute one explicit normalization branch with checked input and output boundaries.
+    NormalizeRun(crate::normalize::RunArgs),
     /// Validate JSON instances against schemas selected by their `schema` property.
     Validate(ValidateArgs),
     /// Project a schema's structural types into a deterministic TypeScript module.
@@ -55,6 +69,13 @@ pub(crate) struct TypeScriptArgs {
 
 pub(crate) fn run(command: SchemaCommand) -> Result<ExitCode> {
     match command {
+        SchemaCommand::ImportBundle(args) => crate::schema_bundle::import(&args),
+        SchemaCommand::ImportDocument(args) => crate::schema_bundle::import_document(&args),
+        SchemaCommand::ProjectBundle(args) => crate::schema_bundle::project(&args),
+        SchemaCommand::ValidateBundle(args) => crate::schema_bundle::validate(&args),
+        SchemaCommand::TypesBundle(args) => crate::schema_bundle::types(&args),
+        SchemaCommand::NormalizeCheck(args) => crate::normalize::check(&args),
+        SchemaCommand::NormalizeRun(args) => crate::normalize::run(&args),
         SchemaCommand::Validate(args) => validate_instances(&args),
         SchemaCommand::Typescript(args) => typescript(&args),
     }

@@ -11,19 +11,33 @@ authors.workspace = true
 [features]
 # Explicit external-tool lane; selecting it requires ESS_TYPESCRIPT_COMPILER.
 typescript-typecheck = []
+# Explicit standard-library Go compiler lane; requires ESS_GO_COMPILER.
+go-typecheck = []
 
 [[test]]
 name = "typescript_typecheck"
 required-features = ["typescript-typecheck"]
 
+[[test]]
+name = "go_realization"
+required-features = ["go-typecheck"]
+
 [dependencies]
-serde_json.workspace = true
+ess-gen.workspace = true
+serde.workspace = true
+serde_json = { workspace = true, features = ["raw_value"] }
 thiserror.workspace = true
+sha2 = "0.11"
+fluent-uri = "0.4.1"
 
 # The same validator and version ESS generators test their published contracts with. It is
 # runtime here because adopter documents are inputs to ESS schema validation; default features
 # stay off so a reference cannot turn a local gate into network I/O.
 jsonschema = { version = "0.52.1", default-features = false }
+
+[dev-dependencies]
+ess-compiler.workspace = true
+ess-domain.workspace = true
 
 [lints]
 workspace = true

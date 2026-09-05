@@ -30,11 +30,27 @@ use crate::document::{Block, Inline, Target};
 /// somebody wrote for a person, and failing a documentation build over a construct in it would
 /// make the site hostage to the file least likely to be reviewed.
 pub fn blocks(markdown: &str) -> Vec<Block> {
+    blocks_with_links(markdown, |url, _| Target::External {
+        url: url.to_owned(),
+    })
+}
+
+/// Parses authored content while resolving links against caller-owned publication identities.
+///
+/// The callback receives the destination and its source byte offset. No filesystem access or
+/// guessed page identity belongs to this parser. A caller may collect diagnostics in the callback.
+pub fn blocks_with_links(
+    markdown: &str,
+    mut resolve: impl FnMut(&str, usize) -> Target,
+) -> Vec<Block> {
     let mut options = Options::empty();
     options.insert(Options::ENABLE_TABLES);
     options.insert(Options::ENABLE_STRIKETHROUGH);
 
-    Reader::default().read(Parser::new_ext(markdown, options))
+    Reader::default().read(
+        Parser::new_ext(markdown, options).into_offset_iter(),
+        &mut resolve,
+    )
 }
 
 /// Adopter-written markdown split into the title it opens with and the rest.
@@ -43,7 +59,18 @@ pub fn blocks(markdown: &str) -> Vec<Block> {
 /// titles — its own and that one. So the leading heading becomes the page's title and the blocks
 /// under it become its body; markdown that opens with anything else keeps `fallback`.
 pub fn titled(markdown: &str, fallback: &str) -> (Vec<Inline>, Vec<Block>) {
-    let mut blocks = blocks(markdown);
+    titled_with_links(markdown, fallback, |url, _| Target::External {
+        url: url.to_owned(),
+    })
+}
+
+/// As [`titled`], with source-located link resolution supplied by the publisher.
+pub fn titled_with_links(
+    markdown: &str,
+    fallback: &str,
+    resolve: impl FnMut(&str, usize) -> Target,
+) -> (Vec<Inline>, Vec<Block>) {
+    let mut blocks = blocks_with_links(markdown, resolve);
     if let Some(Block::Section {
         level: 2,
         title,
@@ -85,7 +112,7 @@ struct Reader {
     /// Inline runs belonging to an emphasis or a link that has not closed yet.
     nested: Vec<Vec<Inline>>,
     /// Where a link being read points.
-    links: Vec<String>,
+    links: Vec<Target>,
     /// Table state: the header cells, then each row.
     columns: Vec<Vec<Inline>>,
     rows: Vec<Vec<Vec<Inline>>>,
@@ -100,16 +127,25 @@ struct Reader {
 }
 
 impl Reader {
-    fn read<'a>(mut self, events: impl Iterator<Item = Event<'a>>) -> Vec<Block> {
-        for event in events {
-            self.event(event);
+    fn read<'a>(
+        mut self,
+        events: impl Iterator<Item = (Event<'a>, std::ops::Range<usize>)>,
+        resolve: &mut impl FnMut(&str, usize) -> Target,
+    ) -> Vec<Block> {
+        for (event, range) in events {
+            self.event(event, range.start, resolve);
         }
         self.blocks
     }
 
-    fn event(&mut self, event: Event<'_>) {
+    fn event(
+        &mut self,
+        event: Event<'_>,
+        offset: usize,
+        resolve: &mut impl FnMut(&str, usize) -> Target,
+    ) {
         match event {
-            Event::Start(tag) => self.start(tag),
+            Event::Start(tag) => self.start(tag, offset, resolve),
             Event::End(tag) => self.end(tag),
             Event::Text(text) => match &mut self.fence {
                 Some((_, body)) => body.push_str(&text),
@@ -125,7 +161,12 @@ impl Reader {
         }
     }
 
-    fn start(&mut self, tag: Tag<'_>) {
+    fn start(
+        &mut self,
+        tag: Tag<'_>,
+        offset: usize,
+        resolve: &mut impl FnMut(&str, usize) -> Target,
+    ) {
         match tag {
             Tag::Paragraph | Tag::Item | Tag::TableCell => self.inlines.clear(),
             Tag::Heading { level, .. } => {
@@ -149,7 +190,7 @@ impl Reader {
             }
             Tag::Emphasis | Tag::Strong | Tag::Link { .. } => {
                 if let Tag::Link { dest_url, .. } = &tag {
-                    self.links.push(dest_url.to_string());
+                    self.links.push(resolve(dest_url, offset));
                 }
                 self.nested.push(std::mem::take(&mut self.inlines));
             }
@@ -223,15 +264,9 @@ impl Reader {
             TagEnd::Link => {
                 let text = std::mem::take(&mut self.inlines);
                 self.inlines = self.nested.pop().unwrap_or_default();
-                let url = self.links.pop().unwrap_or_default();
-                // Every link an adopter wrote is external as far as this document is concerned.
-                // Resolving one into a `Target::Page` would mean guessing that their `./guide.md`
-                // is a page of *this* document, and a wrong guess is a link that opens the wrong
-                // page — which cannot be told from a right one by looking at it.
-                self.inlines.push(Inline::Link {
-                    to: Target::External { url },
-                    text,
-                });
+                if let Some(to) = self.links.pop() {
+                    self.inlines.push(Inline::Link { to, text });
+                }
             }
             TagEnd::TableHead => {
                 self.in_head = false;
