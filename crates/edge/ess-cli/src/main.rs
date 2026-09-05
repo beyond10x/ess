@@ -1566,6 +1566,8 @@ fn deployment(command: DeploymentCommand) -> Result<ExitCode> {
         DeploymentCommand::Diff { from, to, format } => {
             let from: ess_deployment::DeploymentIr = read_document(&from)?;
             let to: ess_deployment::DeploymentIr = read_document(&to)?;
+            from.validate().context("validating current deployment")?;
+            to.validate().context("validating desired deployment")?;
             let added: Vec<_> = to
                 .releases
                 .keys()
@@ -1616,6 +1618,15 @@ fn deployment(command: DeploymentCommand) -> Result<ExitCode> {
                 .as_deref()
                 .map(read_document::<ess_deployment::DeploymentIr>)
                 .transpose()?;
+            desired
+                .validate()
+                .context("validating desired deployment")?;
+            if let Some(current) = &current {
+                current
+                    .validate()
+                    .context("validating current deployment")?;
+            }
+
             if current
                 .as_ref()
                 .is_some_and(|current| current.cluster != desired.cluster)

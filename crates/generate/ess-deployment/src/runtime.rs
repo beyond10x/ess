@@ -228,7 +228,7 @@ impl RuntimeSpec {
 }
 
 /// Validated deployable-runtime IR.
-#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct RuntimeIr {
     format: String,
@@ -236,13 +236,191 @@ pub struct RuntimeIr {
     semantic_digest: Digest,
     realization_digest: Digest,
     build_digest: Digest,
+    #[serde(deserialize_with = "crate::validation::unique_map")]
     processes: BTreeMap<Identifier, Process>,
+    #[serde(deserialize_with = "crate::validation::unique_map")]
     containers: BTreeMap<Identifier, ContainerRole>,
+    #[serde(deserialize_with = "crate::validation::unique_map")]
     workloads: BTreeMap<Identifier, Workload>,
+    #[serde(deserialize_with = "crate::validation::unique_map")]
     provided_endpoints: BTreeMap<Identifier, ProvidedEndpoint>,
 }
 
+crate::validation::checked_deserialize!(RuntimeIr {
+    format: String,
+    runtime: Identifier,
+    semantic_digest: Digest,
+    realization_digest: Digest,
+    build_digest: Digest,
+    #[serde(deserialize_with = "crate::validation::unique_map")]
+    processes: BTreeMap<Identifier, Process>,
+    #[serde(deserialize_with = "crate::validation::unique_map")]
+    containers: BTreeMap<Identifier, ContainerRole>,
+    #[serde(deserialize_with = "crate::validation::unique_map")]
+    workloads: BTreeMap<Identifier, Workload>,
+    #[serde(deserialize_with = "crate::validation::unique_map")]
+    provided_endpoints: BTreeMap<Identifier, ProvidedEndpoint>,
+});
+
 impl RuntimeIr {
+    /// Validate relationships and compiler rules recoverable from these bytes alone.
+    /// Semantic coverage, replica bounds and statefulness need the original compiler inputs.
+    pub fn validate(&self) -> Result<(), Diagnostics> {
+        use crate::validation::check;
+        let mut diagnostics = Vec::new();
+        check(
+            &mut diagnostics,
+            self.format == RUNTIME_IR_FORMAT,
+            Stage::Runtime,
+            DiagnosticCode::UnsupportedFormat,
+            &self.runtime,
+            format!("runtime IR format must be {RUNTIME_IR_FORMAT:?}"),
+        );
+        for (name, process) in &self.processes {
+            check(
+                &mut diagnostics,
+                name == &process.name,
+                Stage::Runtime,
+                DiagnosticCode::InvalidValue,
+                name,
+                "process map key must match its name",
+            );
+        }
+        for (name, container) in &self.containers {
+            check(
+                &mut diagnostics,
+                name == &container.name,
+                Stage::Runtime,
+                DiagnosticCode::InvalidValue,
+                name,
+                "container map key must match its name",
+            );
+            check(
+                &mut diagnostics,
+                self.processes.contains_key(&container.process),
+                Stage::Runtime,
+                DiagnosticCode::UnknownReference,
+                name,
+                "container selects an unknown process",
+            );
+            validate_container(container, &mut diagnostics);
+        }
+        let mut components = BTreeSet::new();
+        for (name, workload) in &self.workloads {
+            check(
+                &mut diagnostics,
+                name == &workload.name,
+                Stage::Runtime,
+                DiagnosticCode::InvalidValue,
+                name,
+                "workload map key must match its name",
+            );
+            check(
+                &mut diagnostics,
+                workload.replicas > 0,
+                Stage::Runtime,
+                DiagnosticCode::InvalidValue,
+                name,
+                "workload replicas must be positive",
+            );
+            check(
+                &mut diagnostics,
+                !workload.containers.is_empty(),
+                Stage::Runtime,
+                DiagnosticCode::InvalidValue,
+                name,
+                "workload must select at least one container",
+            );
+            for container in &workload.containers {
+                check(
+                    &mut diagnostics,
+                    self.containers.contains_key(container),
+                    Stage::Runtime,
+                    DiagnosticCode::UnknownReference,
+                    name,
+                    "workload selects an unknown container",
+                );
+            }
+            for component in &workload.components {
+                check(
+                    &mut diagnostics,
+                    components.insert(component),
+                    Stage::Runtime,
+                    DiagnosticCode::DuplicateComponent,
+                    name,
+                    format!("component {component} is realized by more than one workload"),
+                );
+            }
+            validate_workload_volumes(workload, &self.containers, &mut diagnostics);
+        }
+        self.validate_endpoints(&mut diagnostics);
+        crate::validation::finish(diagnostics)
+    }
+
+    fn validate_endpoints(&self, diagnostics: &mut Vec<Diagnostic>) {
+        use crate::validation::check;
+        for (name, endpoint) in &self.provided_endpoints {
+            check(
+                diagnostics,
+                name == &endpoint.name,
+                Stage::Runtime,
+                DiagnosticCode::InvalidValue,
+                name,
+                "provided endpoint map key must match its name",
+            );
+            check(
+                diagnostics,
+                self.workloads
+                    .get(&endpoint.workload)
+                    .is_some_and(|workload| workload.containers.contains(&endpoint.container)),
+                Stage::Runtime,
+                DiagnosticCode::UnknownReference,
+                name,
+                "provided endpoint must select a container in its workload",
+            );
+            check(
+                diagnostics,
+                self.containers
+                    .get(&endpoint.container)
+                    .is_some_and(|container| container.http_port.is_some()),
+                Stage::Runtime,
+                DiagnosticCode::MissingBinding,
+                name,
+                "provided endpoint requires an HTTP port",
+            );
+        }
+    }
+
+    /// Validate the additional relationships for which a bundle supplies the build bytes.
+    pub fn validate_against_build(&self, build: &BuildIr) -> Result<(), Diagnostics> {
+        let mut diagnostics = self
+            .validate()
+            .err()
+            .map_or_else(Vec::new, |errors| errors.as_slice().to_vec());
+        crate::validation::check(
+            &mut diagnostics,
+            self.build_digest == build.digest(),
+            Stage::Runtime,
+            DiagnosticCode::DigestMismatch,
+            &self.runtime,
+            "runtime build_digest does not match the supplied build IR",
+        );
+        for process in self.processes.values() {
+            crate::validation::check(
+                &mut diagnostics,
+                build
+                    .outputs()
+                    .get(&process.image)
+                    .is_some_and(|output| output.kind == BuildOutputKind::OciImage),
+                Stage::Runtime,
+                DiagnosticCode::MissingOutput,
+                &process.name,
+                "process image must select an OCI image build output",
+            );
+        }
+        crate::validation::finish(diagnostics)
+    }
+
     /// Reads strict compiler-owned runtime JSON.
     pub fn from_json(text: &str) -> Result<Self, serde_json::Error> {
         serde_json::from_str(text)
