@@ -5,6 +5,18 @@ use super::ArtifactDigests;
 const LICENSE_SUFFIX: &str =
     "\n--\nThe licence of `assets/mermaid.min.js`, redistributed with this site.\n";
 
+#[derive(PartialEq, Eq)]
+struct Envelope {
+    system: String,
+    specification_version: String,
+    digests: ArtifactDigests,
+}
+
+struct Comment {
+    envelope: Envelope,
+    regenerate: String,
+}
+
 pub(super) fn read(text: &str) -> Option<ArtifactDigests> {
     let text = text.trim_start();
     let text = text.strip_prefix("<!DOCTYPE html>\n").unwrap_or(text);
@@ -13,11 +25,16 @@ pub(super) fn read(text: &str) -> Option<ArtifactDigests> {
         if is_comment(rest.trim_start()) {
             return None;
         }
-        // OpenAPI and AsyncAPI emit both copies. Neither can override the other.
-        if text.starts_with("# ") && !rest.trim().is_empty() && structured(rest)? != stamp {
+        // Cargo manifests carry only the comment. OpenAPI and AsyncAPI emit both copies;
+        // a missing or malformed YAML copy cannot become a comment-only artifact.
+        if text.starts_with("# ")
+            && !rest.trim().is_empty()
+            && !manifest_body(rest, &stamp.regenerate)
+            && structured(rest)? != stamp.envelope
+        {
             return None;
         }
-        return Some(stamp);
+        return Some(stamp.envelope.digests);
     }
     let license = include_str!("../assets/mermaid.LICENSE");
     if let Some(rest) = text.strip_prefix(license) {
@@ -26,9 +43,23 @@ pub(super) fn read(text: &str) -> Option<ArtifactDigests> {
         } else {
             rest.strip_prefix('\n')?
         };
-        return lines(rest.strip_prefix(LICENSE_SUFFIX)?.lines());
+        return lines(rest.strip_prefix(LICENSE_SUFFIX)?.lines())
+            .map(|stamp| stamp.envelope.digests);
     }
-    structured(text)
+    structured(text).map(|stamp| stamp.digests)
+}
+
+fn manifest_body(text: &str, regenerate: &str) -> bool {
+    // These are the existing synthesis writers' frames, not a TOML validity check. The
+    // projection command never emits a manifest and therefore always owes paired YAML.
+    let synthesis = regenerate == "ess synthesize"
+        || regenerate.starts_with("ess synthesize --")
+        || regenerate == "cargo xtask synth --target clap";
+    synthesis
+        && matches!(
+            text.trim_start().lines().next(),
+            Some("[workspace]" | "[package]")
+        )
 }
 
 fn is_comment(text: &str) -> bool {
@@ -42,7 +73,7 @@ fn is_comment(text: &str) -> bool {
             .is_some_and(|rest| rest.trim_start().starts_with("* generated from "))
 }
 
-fn comment(text: &str) -> Option<(ArtifactDigests, &str)> {
+fn comment(text: &str) -> Option<(Comment, &str)> {
     for prefix in ["# ", "// "] {
         if text.starts_with(prefix) {
             let mut rest = text;
@@ -68,9 +99,10 @@ fn comment(text: &str) -> Option<(ArtifactDigests, &str)> {
     None
 }
 
-fn lines<'a>(mut lines: impl Iterator<Item = &'a str>) -> Option<ArtifactDigests> {
+fn lines<'a>(mut lines: impl Iterator<Item = &'a str>) -> Option<Comment> {
     let origin = lines.next()?.strip_prefix("generated from ")?;
-    if origin.is_empty() {
+    let (system, specification_version) = origin.split_once(' ')?;
+    if system.is_empty() || specification_version.trim().is_empty() {
         return None;
     }
     let source = lines.next()?.strip_prefix("model digest ")?;
@@ -81,7 +113,14 @@ fn lines<'a>(mut lines: impl Iterator<Item = &'a str>) -> Option<ArtifactDigests
     if !regenerate.ends_with('`') || regenerate.len() < 2 || lines.next().is_some() {
         return None;
     }
-    digests(source, contract)
+    Some(Comment {
+        envelope: Envelope {
+            system: system.to_owned(),
+            specification_version: specification_version.to_owned(),
+            digests: digests(source, contract)?,
+        },
+        regenerate: regenerate.strip_suffix('`')?.to_owned(),
+    })
 }
 
 fn hash(value: &str) -> bool {
@@ -101,7 +140,7 @@ fn digests(source: &str, contract: &str) -> Option<ArtifactDigests> {
 
 /// `serde_yaml`'s mapping visitor rejects duplicate keys, including in JSON input. JSON's generic
 /// Value visitor overwrites them, so it cannot establish this envelope's uniqueness guarantee.
-fn structured(text: &str) -> Option<ArtifactDigests> {
+fn structured(text: &str) -> Option<Envelope> {
     let document: serde_yaml::Value = serde_yaml::from_str(text).ok()?;
     let root = document.as_mapping()?;
     // A docs document has per-page stamps and no single artifact stamp. Do not pick its first page.
@@ -113,11 +152,11 @@ fn structured(text: &str) -> Option<ArtifactDigests> {
         .iter()
         .any(|key| root.contains_key(*key))
     {
-        candidates.push(&document);
+        candidates.push((&document, false));
     }
     for key in ["provenance", "x-ess-provenance"] {
         if let Some(value) = root.get(key) {
-            candidates.push(value);
+            candidates.push((value, key == "x-ess-provenance"));
         }
     }
     if let Some(value) = root
@@ -125,17 +164,32 @@ fn structured(text: &str) -> Option<ArtifactDigests> {
         .and_then(serde_yaml::Value::as_mapping)
         .and_then(|info| info.get("x-ess-provenance"))
     {
-        candidates.push(value);
+        candidates.push((value, false));
     }
     // One structured location per document. Unlike the paired YAML comment, two locations are
     // ambiguous even if they currently agree; no writer emits that shape.
     if candidates.len() != 1 {
         return None;
     }
-    let stamp = candidates[0].as_mapping()?;
+    let (value, schema_attribution) = candidates[0];
+    let stamp = value.as_mapping()?;
+    // Schema Attribution adds regenerate; plain Provenance (including the info extension
+    // and a synthesis plan) does not. Require the fields each actual writer promises.
+    if schema_attribution {
+        required_text(stamp, "regenerate")?;
+    }
     let source = match (stamp.get("source_digest"), stamp.get("spec_digest")) {
         (Some(value), None) | (None, Some(value)) => value.as_str()?,
         _ => return None,
     };
-    digests(source, stamp.get("contract_digest")?.as_str()?)
+    Some(Envelope {
+        system: required_text(stamp, "system")?.to_owned(),
+        specification_version: required_text(stamp, "specification_version")?.to_owned(),
+        digests: digests(source, stamp.get("contract_digest")?.as_str()?)?,
+    })
+}
+
+fn required_text<'a>(stamp: &'a serde_yaml::Mapping, key: &str) -> Option<&'a str> {
+    let value = stamp.get(key)?.as_str()?;
+    (!value.trim().is_empty()).then_some(value)
 }

@@ -1699,9 +1699,27 @@ fn residual_fields(value: &mut serde_json::Value, key: &str) {
 }
 
 fn residual_field(field: &mut serde_json::Value) {
-    remove_keys(field, &["name", "type_ref"]);
-    if let Some(naming) = field.get_mut("naming") {
-        remove_keys(naming, &["wire", "display", "summary"]);
+    retain_residual_owner(field, |field| {
+        remove_keys(field, &["name", "type_ref"]);
+        if let Some(naming) = field.get_mut("naming") {
+            remove_keys(naming, &["wire", "display", "summary"]);
+        }
+    });
+}
+
+/// A named list member can disappear only when all its content is accounted for. Otherwise
+/// retain the owner alongside its residual content, even after empty siblings are pruned.
+fn retain_residual_owner(
+    value: &mut serde_json::Value,
+    remove_covered: impl FnOnce(&mut serde_json::Value),
+) {
+    let name = value.get("name").cloned();
+    remove_covered(value);
+    if prune_empty(value) {
+        return;
+    }
+    if let (Some(name), Some(object)) = (name, value.as_object_mut()) {
+        object.insert("name".to_owned(), name);
     }
 }
 
@@ -1876,7 +1894,9 @@ fn residual_entity(declaration: &mut serde_json::Value) {
             .and_then(serde_json::Value::as_array_mut)
         {
             for transition in transitions {
-                remove_keys(transition, &["name", "from", "to"]);
+                retain_residual_owner(transition, |transition| {
+                    remove_keys(transition, &["name", "from", "to"]);
+                });
             }
         }
     }
@@ -1890,21 +1910,23 @@ fn residual_command(declaration: &mut serde_json::Value) {
     {
         for outcome in outcomes {
             // test_strategy is a function of condition; refs deliberately remain.
-            remove_keys(
-                outcome,
-                &[
-                    "name",
-                    "condition",
-                    "subject",
-                    "test_strategy",
-                    "emits",
-                    "payload",
-                    "error",
-                    "refuses",
-                    "summary",
-                    "sets",
-                ],
-            );
+            retain_residual_owner(outcome, |outcome| {
+                remove_keys(
+                    outcome,
+                    &[
+                        "name",
+                        "condition",
+                        "subject",
+                        "test_strategy",
+                        "emits",
+                        "payload",
+                        "error",
+                        "refuses",
+                        "summary",
+                        "sets",
+                    ],
+                );
+            });
         }
     }
 }

@@ -478,6 +478,120 @@ fn review_conflicting_structured_and_comment_stamps_are_unreadable() {
 }
 
 #[test]
+fn correction_structured_envelopes_require_typed_attribution() {
+    let ir = emission_probe("Ordinary summary.");
+    let whole = Provenance::of(&ir);
+    let direct = serde_json::to_value(&whole).unwrap();
+    let artifacts = ess_gen::generate_all(&ir).unwrap();
+    let schema = artifacts
+        .iter()
+        .find(|(path, _)| path.starts_with("schema/"))
+        .unwrap()
+        .1;
+    let schema: serde_json::Value = serde_json::from_str(&schema.contents).unwrap();
+    for (label, document, location, fields) in [
+        (
+            "direct",
+            direct.clone(),
+            "",
+            vec!["system", "specification_version"],
+        ),
+        (
+            "plan",
+            serde_json::json!({"provenance": direct}),
+            "/provenance",
+            vec!["system", "specification_version"],
+        ),
+        (
+            "schema",
+            schema,
+            "/x-ess-provenance",
+            vec!["system", "specification_version", "regenerate"],
+        ),
+    ] {
+        assert!(
+            Provenance::read_digests(&document.to_string()).is_some(),
+            "{label}"
+        );
+        for field in fields {
+            for invalid in [
+                serde_json::Value::Null,
+                serde_json::json!(""),
+                serde_json::json!(42),
+                serde_json::json!([]),
+            ] {
+                let mut damaged = document.clone();
+                damaged.pointer_mut(location).unwrap()[field] = invalid.clone();
+                assert!(
+                    Provenance::read_digests(&damaged.to_string()).is_none(),
+                    "{label}/{field}: {invalid}"
+                );
+            }
+        }
+    }
+}
+
+#[test]
+fn correction_actual_yaml_requires_complete_matching_paired_attribution() {
+    let artifacts = ess_gen::generate_all(&emission_probe("Ordinary summary.")).unwrap();
+    for kind in ["openapi/", "asyncapi/"] {
+        let artifact = artifacts
+            .iter()
+            .find(|(path, _)| path.starts_with(kind))
+            .unwrap()
+            .1;
+        let header: String = artifact.contents.split_inclusive('\n').take(4).collect();
+        let body: serde_yaml::Value = serde_yaml::from_str(&artifact.contents).unwrap();
+        assert!(
+            Provenance::read_digests(&artifact.contents).is_some(),
+            "{kind}"
+        );
+        for field in [
+            "system",
+            "specification_version",
+            "source_digest",
+            "contract_digest",
+        ] {
+            let mut damaged = body.clone();
+            damaged["info"]["x-ess-provenance"]
+                .as_mapping_mut()
+                .unwrap()
+                .remove(field);
+            let text = format!("{header}{}", serde_yaml::to_string(&damaged).unwrap());
+            assert!(
+                Provenance::read_digests(&text).is_none(),
+                "{kind} missing {field}"
+            );
+        }
+        for field in ["system", "specification_version"] {
+            let mut damaged = body.clone();
+            damaged["info"]["x-ess-provenance"][field] =
+                serde_yaml::Value::String("different".into());
+            let text = format!("{header}{}", serde_yaml::to_string(&damaged).unwrap());
+            assert!(
+                Provenance::read_digests(&text).is_none(),
+                "{kind} conflicting {field}"
+            );
+        }
+        let mut missing = body;
+        missing["info"]
+            .as_mapping_mut()
+            .unwrap()
+            .remove("x-ess-provenance");
+        for invalid_body in [
+            serde_yaml::to_string(&missing).unwrap(),
+            "openapi: [unterminated".into(),
+            "[workspace]\nresolver = \"2\"\n".into(),
+        ] {
+            assert!(
+                Provenance::read_digests(&format!("{header}{invalid_body}")).is_none(),
+                "{kind}: {invalid_body}"
+            );
+        }
+    }
+}
+
+#[test]
 fn review_docs_ir_retains_page_profiles_and_does_not_claim_a_flat_stamp() {
     let ir = emission_probe("Ordinary summary.");
     let doc = ess_gen::docs::document(&ir, &ProvenanceMint::new(&ir));

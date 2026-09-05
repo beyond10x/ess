@@ -375,3 +375,34 @@ fn review_http_payloads_use_slice_profiles_while_neutral_plans_stay_frozen() {
         }
     }
 }
+
+#[test]
+fn correction_actual_cargo_manifests_keep_their_comment_provenance() {
+    let mut unreadable = Vec::new();
+    let mut examined = 0;
+    for (name, ir) in [("gatepass", gatepass()), ("billing", billing())] {
+        for target in [Target::Rust, Target::Web] {
+            let synthesis = synthesized(&ir, target);
+            for (path, artifact) in &synthesis.artifacts {
+                if path.ends_with("Cargo.toml") {
+                    examined += 1;
+                    let expected = ess_gen::Provenance::of(&ir);
+                    let read = ess_gen::Provenance::read_digests(&artifact.contents);
+                    println!("{name}/{}/{path}: {read:?}", target.name());
+                    if let Some(read) = read {
+                        assert_eq!(read.source_digest, expected.source_digest);
+                        assert_eq!(read.contract_digest, expected.contract_digest);
+                    } else {
+                        unreadable.push(format!("{name}/{}/{path}", target.name()));
+                    }
+                }
+            }
+        }
+    }
+    assert!(examined > 0, "actual emitted manifests must be selected");
+    println!("examined {examined} actual Cargo manifests");
+    assert!(
+        unreadable.is_empty(),
+        "unreadable manifests: {unreadable:?}"
+    );
+}
