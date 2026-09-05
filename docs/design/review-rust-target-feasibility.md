@@ -107,9 +107,35 @@ The implementation's fresh catalog-only wasm32 compiler lane also measured an ex
 
 ## Frozen compatibility surface
 
+The first adversarial pass measured two pre-existing allocation failures against opening
+`4b66aac`: a Web component dependency `json` is captured by the bridge's local `json` module,
+and an HTTP outcome event `Out` allocates an `out` pattern binding that captures the output
+buffer. Extend the existing inventory over those actual scopes before rendering. In Web's root,
+compare the final component dependency identifiers with all three emitted modules (`catalog`,
+`json`, `wire`); retain the measured compilable `core` dependency and pure Rust names. In each
+emitted outcome encoder arm, compare the shared `outcome_event_fields` allocation and optional
+`error` binding with the still-used `out` buffer and the event/error encoder functions called by
+that arm. A binding called `value` is harmless because the original argument is no longer used
+inside the arm; a local `json` value does not capture the module's type namespace. Enumerate
+actual callable references rather than banning every helper-like event name. These are existing
+`symbol-collision` causes with actual source identities; no renderer or valid artifact changes.
+
+The correction's separate `worker` component with no published events also establishes an older
+Web defect: `log_method` emits an empty match over `&SystemEvent`, rejected with E0004 even when
+the enum has no variants. The function is byte-identical at opening `4b66aac`; the exact opening
+CLI also produces that compiler failure, alongside its already-known missing `redeliver` method.
+`web/bridge.rs::logged` and `rust/system.rs::lib_module` both collect component publications plus
+the trigger/escalation events of plan-generated deliveries with one acceptor. The latter feeds
+the exact `SystemEvent` variant map. With an empty set, a safe typed system cannot publish a
+value. The coordinator therefore binds an early `log_method` branch returning the constant JSON
+array `[]` only when `logged(bridge)` is empty. Keep the nonempty renderer byte-for-byte and
+preserve zero-delivery replay's missing-occurrence response. The distinct worker regression must
+compile paired Rust/Web and execute observation/redelivery through the real WASM exports; this
+is a correction to previously invalid Web bytes, not a new target refusal or an invented event.
+
 - The neutral plan, its JSON/Markdown, source/model/contract provenance, capability names and dispositions are unchanged for every input.
 - Every previously valid and compilable Rust artifact path and content is immutable, including manifests, comments, public signatures and helper spellings. Admitted Rust retains target=None and no target metadata. Do not run rustfmt over generated fixtures.
-- Admitted Go/Clap bytes and existing Web reports/catalogs remain unchanged. Web bytes change only for the specifically broken zero-delivery code branch and missing catalog-only export buffers; full prerequisite refusal affects newly detected undeliverable workspaces, not a renamed valid API.
+- Admitted Go/Clap bytes and existing Web reports/catalogs remain unchanged. Web bytes change only for the specifically broken zero-delivery replay, missing catalog-only export buffers and empty-event log branches; full prerequisite refusal affects newly detected undeliverable workspaces, not a renamed valid API.
 - Existing deterministic name fallback/repair rules remain. A newly discovered collision receives a refusal instead of a newly allocated name. No silent namespace migration, import qualification rewrite or broadened helper blacklist.
 - Complete Rust/Web failures use ess-target-failure/1 and checked API; existing successful/partial TargetReport bytes are frozen. No new capability kind or neutral disposition is permitted.
 

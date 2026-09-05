@@ -6,6 +6,7 @@ use ess_compiler::source::SourceMap;
 use ess_domain::spec::{RawSpecFile, Specification};
 use ess_domain::system::Source;
 use ess_synth::{synthesize, synthesize_for, Synthesis, SynthesisPlan, Target};
+use std::fmt::Write as _;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::sync::atomic::{AtomicUsize, Ordering};
@@ -777,4 +778,142 @@ fn an_empty_domain_cannot_overwrite_the_rust_crate_root() {
     );
     eprintln!("neutral plan\n{}", plan.to_canonical_json());
     refusal(&ir, "path-collision", "zero-capabilities");
+}
+
+fn web_module_dependency(component: &str) {
+    let ir = core("events:\n  - name: demo.core.Fired\ncommands:\n  - name: demo.core.Fire\n    outcomes:\n      - name: done\n        emits: [demo.core.Fired]\n", &format!("components:\n  - component: {component}\n    owns:\n      domains: [demo.core]\n    accepts:\n      commands: [demo.core.Fire]\n    publishes:\n      events: [demo.core.Fired]\n"));
+    let directory = scratch(component);
+    let rust = synthesize(&ir).expect("a Web-only module must not restrict pure Rust");
+    write_emission(&directory.join("generated/rust/demo"), &rust);
+    check_generated(&directory.join("generated/rust/demo"));
+    let failure = match synthesize_for(&ir, Target::Web) {
+        Err(failure) => failure,
+        Ok(web) => {
+            let path = directory.join("generated/web/demo");
+            write_emission(&path, &web);
+            check_generated_for(&path, Some("wasm32-unknown-unknown"));
+            panic!("the Web root module captures the component dependency");
+        }
+    };
+    assert_eq!(failure.target(), "web");
+    assert_eq!(failure.plan(), &rust.plan);
+    assert!(failure.causes().iter().any(|cause| {
+        cause.code() == ess_synth::TargetFailureCode::SymbolCollision
+            && cause.sources().iter().any(|source| source == component)
+    }));
+}
+
+#[test]
+fn web_catalog_module_cannot_capture_a_component_dependency() {
+    web_module_dependency("catalog");
+}
+
+#[test]
+fn web_wire_module_cannot_capture_a_component_dependency() {
+    web_module_dependency("wire");
+}
+
+fn outcome_locals(events: &[&str]) -> EssIr {
+    let mut declarations = String::new();
+    for event in events {
+        writeln!(declarations, "  - name: demo.core.{event}").unwrap();
+    }
+    let names = events
+        .iter()
+        .map(|event| format!("demo.core.{event}"))
+        .collect::<Vec<_>>()
+        .join(", ");
+    core(&format!("events:\n{declarations}commands:\n  - name: demo.core.Fire\n    outcomes:\n      - name: done\n        emits: [{names}]\n"), &format!("components:\n  - component: worker\n    owns:\n      domains: [demo.core]\n    accepts:\n      commands: [demo.core.Fire]\n    publishes:\n      events: [{names}]\n    reached_by: network\n"))
+}
+
+#[test]
+fn outcome_bindings_cannot_capture_an_encoder_called_in_the_same_arm() {
+    refusal(
+        &outcome_locals(&["Fired", "EncodeEventDemoCoreFired"]),
+        "symbol-collision",
+        "outcome-encoder-capture",
+    );
+}
+
+#[test]
+fn outcome_bindings_in_other_namespaces_or_unused_helpers_compile() {
+    let ir = outcome_locals(&["Value", "Json", "EncodeEventDemoCoreAbsent"]);
+    let directory = scratch("outcome-locals-positive");
+    let rust = synthesize(&ir).expect("these local bindings capture no used value");
+    write_emission(&directory.join("generated/rust/demo"), &rust);
+    check_generated(&directory.join("generated/rust/demo"));
+    let web = synthesize_for(&ir, Target::Web).expect("the shared codec keeps separate namespaces");
+    write_emission(&directory.join("generated/web/demo"), &web);
+    check_generated_for(
+        &directory.join("generated/web/demo"),
+        Some("wasm32-unknown-unknown"),
+    );
+}
+
+#[test]
+fn a_web_system_without_any_published_event_has_an_empty_observation() {
+    let ir = core(
+        "types:\n  - name: demo.core.Code\n    kind: newtype\n    of: String\n",
+        "components:\n  - component: worker\n    owns:\n      domains: [demo.core]\n",
+    );
+    let directory = scratch("empty-event-web");
+    let rust = synthesize(&ir).expect("no source event is required for a component");
+    let web = synthesize_for(&ir, Target::Web).expect("an empty log is a valid Web observation");
+    assert_eq!(rust.plan, web.plan);
+    let rust_path = directory.join("generated/rust/demo");
+    let web_path = directory.join("generated/web/demo");
+    write_emission(&rust_path, &rust);
+    write_emission(&web_path, &web);
+    check_generated(&rust_path);
+    check_generated_for(&web_path, Some("wasm32-unknown-unknown"));
+    let before_rust = generated_bytes(&rust_path);
+    let before_web = generated_bytes(&web_path);
+    let build = cargo(
+        &web_path,
+        "empty-log-build",
+        &[
+            "build",
+            "--locked",
+            "--offline",
+            "--target",
+            "wasm32-unknown-unknown",
+            "--target-dir",
+            "target",
+        ],
+    );
+    assert!(
+        build.status.success(),
+        "the actual generated Web module builds"
+    );
+    let mut node = Command::new("node");
+    node.current_dir(&web_path).args(["-e", r"const fs=require('node:fs');
+WebAssembly.instantiate(fs.readFileSync('target/wasm32-unknown-unknown/debug/demo_web.wasm'),{}).then(({instance})=>{
+ const e=instance.exports;
+ function send(request){const input=Buffer.from(JSON.stringify(request));const p=e.ess_input_reserve(input.length);new Uint8Array(e.memory.buffer,p,input.length).set(input);const out=e.ess_dispatch();return JSON.parse(Buffer.from(e.memory.buffer,out,e.ess_output_len()).toString());}
+ const before=send({request:'observe'});if(!before.ok||JSON.stringify(before.log)!=='[]'||JSON.stringify(before.invocations)!=='[]')throw Error('nonempty observation');
+ const replay=send({request:'redeliver',occurrence:0});if(replay.ok||replay.error.kind!=='no-such-occurrence')throw Error('invented occurrence');
+ if(JSON.stringify(send({request:'observe'}))!==JSON.stringify(before))throw Error('observation changed');
+ console.log('empty-event system: log []; invocations []; redelivery reports no-such-occurrence; observation unchanged');
+}).catch(e=>{console.error(e);process.exit(1);});"]);
+    std::fs::write(
+        web_path.join("empty-log-node.command"),
+        format!("{node:?}\n"),
+    )
+    .unwrap();
+    let output = node.output().expect("required local Node/WASM execution");
+    std::fs::write(web_path.join("empty-log-node.stdout"), &output.stdout).unwrap();
+    std::fs::write(web_path.join("empty-log-node.stderr"), &output.stderr).unwrap();
+    std::fs::write(
+        web_path.join("empty-log-node.exit"),
+        output.status.to_string(),
+    )
+    .unwrap();
+    eprintln!(
+        "{node:?}\n{}\n{}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert!(output.status.success());
+    assert_eq!(before_rust, generated_bytes(&rust_path));
+    assert_eq!(before_web, generated_bytes(&web_path));
 }

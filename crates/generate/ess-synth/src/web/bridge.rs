@@ -375,6 +375,13 @@ fn logged<'a>(bridge: &'a Bridge<'a>) -> BTreeMap<&'a EventHandle, String> {
 
 /// The log, with each occurrence's index — which is also the handle redelivery takes.
 fn log_method(out: &mut String, bridge: &Bridge<'_>) {
+    let events = logged(bridge);
+    if events.is_empty() {
+        // This is the same empty event set that defines SystemEvent in the Rust prerequisite.
+        // Matching &SystemEvent is not exhaustive even when that enum has no variants.
+        out.push_str("\n    fn log(&self) -> String {\n        \"[]\".to_owned()\n    }\n");
+        return;
+    }
     let system = bridge.system();
     let _ = write!(
         out,
@@ -386,7 +393,7 @@ fn log_method(out: &mut String, bridge: &Bridge<'_>) {
          json::push_integer(&mut out, occurrence as i64);\n            json::member(&mut out, \
          \"event\");\n            match event {{\n"
     );
-    for (event, variant) in logged(bridge) {
+    for (event, variant) in events {
         let name = event.name().to_string();
         let _ = write!(
             out,
