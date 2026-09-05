@@ -24,8 +24,8 @@ Every unit owns its target and target/review-boundaries-4 scratch. TMPDIR is its
 
 | Story | Branch | Managed path under ESS trees | Build/temp | Scratch | Stage |
 | --- | --- | --- | --- | --- | --- |
-| review-semantic-diff-coverage | impl/review-semantic-diff-coverage | review-semantic-diff-coverage | target/ | target/review-boundaries-4/ | implemented; unit 21f2744 merged at acb7859, full gate and SDK checks passed |
-| review-infra-ir-invariants | impl/review-infra-ir-invariants | review-infra-ir-invariants | target/ removed after verified archive | archived under coordinator target/ | implemented; unit 12d99b1 merged at 09474bd, full gate passed |
+| review-semantic-diff-coverage | impl/review-semantic-diff-coverage removed | review-semantic-diff-coverage removed | target removed | verified coordinator archive | implemented; unit 21f2744 recovered from remote main and removed |
+| review-infra-ir-invariants | impl/review-infra-ir-invariants removed | review-infra-ir-invariants removed | target removed | verified coordinator archive | implemented; unit 12d99b1 recovered from remote main and removed |
 
 Coordinator owns every AEP mutation, Git/worktree lifecycle, shared file, Atlas coordination and integration gate. Implementors write only assigned source/tests/design/generated paths and return uncommitted handoffs. Adversaries write only assigned tests and scratch, add cases before isolated execution, and do not pre-run a baseline suite or edit production. Every review is preserved immutably before routing. Maximum two completed full passes; coordinator personally verifies any bounded final correction.
 
@@ -2068,3 +2068,74 @@ The final SDK report was copied byte-for-byte after handoff: 22,871 bytes, SHA-2
 The full candidate facts and raw hash inventory are respectively
 `4929a4cf0f98ac5c287653b29845bbb188bb83ea78b655d96d57567de32812b4` and
 `d7cff13a64dcd1875fd1d4fe23f99968401a5cf37050fa67f1b459c6c22674c2`.
+
+
+## Producer publication and completed unit cleanup
+
+The closing source `0d08e219a61cd1911b913d3da20c8e4b87993b94` is published and advertised
+on ESS main. All 18 introduced direct commits through that source have both exact bot
+identities. Main was fast-forwarded from 6cbe372; no release version or tag changed.
+
+Both SDK experiment archives preserve their raw command records, full package graphs,
+original/generated maps, binaries, reports and exact root locks. Only the separately
+identified generated-fixture build targets were excluded. Every archived member was
+compared byte-for-byte before Cargo cleaned the owning SDK target:
+
+- OLD: 182 files, 9,964,336 compressed bytes, SHA-256
+  `2eb2b5e955a39b3dd90b5275fff81f551516f28d917f402b3a7c2d8d49502a9a`.
+- NEW: 279 files, 11,266,079 compressed bytes, SHA-256
+  `d94107c303d9f9ddbcd3b9bffdf80cd0ba7fdab5bd7725b4a100caad6bb833f3`.
+
+The NEW Cargo-produced root lock was archived at
+`e828189fd54838468fe55b6ebae401fe6370403d5b333efac069fda8d5220ef6` and restored to the
+unchanged published lock
+`c1ea6417abe7af9175e61b650729bdbf88f5d62153fd6a9f20caf076bec9c746`.
+Both SDK source trees then matched their exact published SDK revision.
+
+The four task leases ended and all four clean trees finished through the manager.
+The fresh full-profile dry-run returned 26 assessments; the coordinator read every one.
+Only these four were selected for apply: review-semantic-diff-coverage,
+review-infra-ir-invariants, ess-sdk-compat-old and ess-sdk-compat-new. The other 22
+refused records were left untouched. Apply returned 0, re-established advertised recovery
+through ESS main and SDK main/PR 16, and removed all four paths. Both merged impl branches
+were deleted with non-forced branch deletion. Full dry-run, exact argv and apply evidence
+are under target/review-boundaries-4/cleanup-*.
+
+The Atlas coordination tree's final decision/publication log and full fence are in progress.
+The current clean Atlas authority and ESS coordinator are retained for the ongoing remediation
+and will be cleaned after their final use. The original review/outlook tree, PDF and unrelated
+active trees remain preserved.
+
+Two independent read-only scope refreshes used the final combined source after its API
+changes: format catalog now reserves the stale change-tracking guide, and observation
+completeness now records the checked-transform/provenance/frozen-fixture obligations.
+Their complete Scope sections were written through the CLI for the next fresh selection.
+No next wave or observation/conformance format implementation is implied by that preparation.
+
+
+## Atlas coordination finished
+
+Atlas published its final migration/compatibility record at
+`a58a98048d5adf60b96d86a00220aeb0f10f5218`, with verified bot identities. The clean
+managed authority advanced to that exact advertised main commit. Its coordination story
+is implemented; the separate consumer catalog-intent obligation remains open.
+
+The required full fence after ESS source publication completed at
+2026-09-05T18:08:24.392749Z, exit 1: all 115 Rust cases and catalog, public Pages,
+projection, Markdown and brand checks passed. Only the same three sibling baseline
+failures remained: AgentIDE's unsupported manifest version, Website's differing Docs
+System pin and Widgets' missing Serves heading. Final Atlas planning validation and
+Markdown checks passed after recording those results; 138 Markdown files had zero findings.
+
+The Atlas support tree's 38 scratch files were archived and byte-compared before Cargo
+clean removed its own target. Archive size 25,689 bytes; SHA-256
+`9c49f0828cfb827630a5cac0dae906ecea5456c32c38e78a88bab734dda1021a`.
+Its lease ended and manager finish succeeded. A new full-profile dry-run had 23
+assessments, all reviewed. Only ess-semantic-migration-governance was applied; the
+22 unrelated refused records remained untouched. Apply returned 0, re-established
+advertised main recovery and removed the exact path. The merged governance branch was
+deleted without force. Private Atlas raw evidence stays in the ignored coordinator archive.
+
+All five wave-4 unit/support trees and their build/scratch roots are now removed.
+The ongoing ESS coordinator and current clean Atlas authority remain in use for the
+remaining 22 remediation stories. There is no release tag or version bump.
