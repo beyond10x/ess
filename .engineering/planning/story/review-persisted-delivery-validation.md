@@ -14,8 +14,14 @@ scope:
 - confidence: cited
   path: crates/edge/ess-cli
 - confidence: cited
+  path: crates/edge/ess-cli/tests/persisted_delivery.rs
+- confidence: cited
+  path: crates/edge/ess-cli/tests/support/fake_delivery.rs
+- confidence: cited
   path: crates/generate/ess-deployment
-revision: 6
+- confidence: cited
+  path: crates/generate/ess-deployment/src/validation.rs
+revision: 7
 ---
 ## Finding and source
 

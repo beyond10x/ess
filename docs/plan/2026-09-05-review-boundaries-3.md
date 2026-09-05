@@ -36,8 +36,8 @@ Worktree root: /home/timo/.local/state/worktree/trees/b10x/ess. Every unit branc
 
 | Story | Branch | Managed worktree under root | Build/temp | Logs/reports | Stage |
 | --- | --- | --- | --- | --- | --- |
-| review-persisted-delivery-validation | impl/review-persisted-delivery-validation | review-persisted-delivery-validation | target/ | target/review-boundaries-3/ | implementing |
-| review-typescript-root-collision | impl/review-typescript-root-collision | review-typescript-root-collision | target/ | target/review-boundaries-3/ | adversary pass 1 |
+| review-persisted-delivery-validation | impl/review-persisted-delivery-validation | review-persisted-delivery-validation | target/ | target/review-boundaries-3/ | implementation returned; review pending |
+| review-typescript-root-collision | impl/review-typescript-root-collision | review-typescript-root-collision | target/ | target/review-boundaries-3/ | reviewed; ready for integration |
 | review-conformance-format-design | impl/review-conformance-format-design | review-conformance-format-design | target/ | target/review-boundaries-3/ | implementation returned; review pending |
 
 All units were provisioned at exact opening commit 45832cc885377b2d61845ee33af14f0293d99e67, branched as above, and assigned active leases <story>-wave3. Full briefs and the compiler-cache resource supplement live in each assigned scratch root. Implementor threads are impl_containment (delivery), impl_diagnostic (TypeScript), and scope_conformance_design (design).
@@ -52,7 +52,11 @@ TypeScript implementation 7a73ce9bf741a98f82c7141f4a80340451a704ed is bot-author
 
 Conformance design implementation 5148543b57c855cb4ccca92e2368e566801e9c36 is bot-authored and clean before review. Its 246-line design includes 36 source-backed matrix rows; no executable compatibility case was run or claimed. Original report and patch are preserved under docs/reviews/2026-09-05-review-boundaries-3-conformance-design-implementation.*. The only tracked edit is the reserved design file, now cited in scope. The first review brief includes a coordinator-observed impact-format citation mismatch to check; the document has not passed review.
 
-Neither handoff is an integrated acceptance or completed story. Delivery remains under implementation. The coordinator also records read-only preparation for the future infrastructure and Rust feasibility stories; these draft refinements authorize no additional implementation in this wave.
+TypeScript adversary pass 1 is preserved verbatim in review-result:review-boundaries-3-typescript-adversary-pass-1. Six cases were authored before isolated execution and all passed: default package 16 to 19, real compiler lane 3 to 6. Package formatting and feature-enabled strict Clippy pass. The report finds nothing and contains an explicit empty findings list. Its test-only changes are committed on the unit, preserving every original assertion; its original test patch is in docs/reviews/2026-09-05-review-boundaries-3-typescript-adversary-tests.patch.
+
+Delivery implementation f1baa9051be7d6cfc48ec1dcd302d0c87ac21a15 is bot-authored and clean before review. Its default package totals rose 53 to 67 (deployment 7 to 18, CLI 46 to 49); both test, format and strict Clippy package gates pass. Meaningful initial cases executed 11 with 9 failures; compiler/setup failures are explicitly separate. The full original report and patch are preserved under docs/reviews/2026-09-05-review-boundaries-3-delivery-implementation.*. Its first adversary brief is ready.
+
+No handoff is an integrated acceptance or completed story. The coordinator also records read-only preparation for the future infrastructure and Rust feasibility stories; these draft refinements authorize no additional implementation in this wave.
 
 ## Full draft computation
 

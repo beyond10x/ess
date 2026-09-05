@@ -20,8 +20,10 @@ scope:
 - confidence: cited
   path: crates/generate/schema-contract/tests/fixtures/registry.ts
 - confidence: cited
+  path: crates/generate/schema-contract/tests/typescript_bindings.rs
+- confidence: cited
   path: crates/generate/schema-contract/tests/typescript_typecheck.rs
-revision: 9
+revision: 10
 ---
 ## Finding and source
 

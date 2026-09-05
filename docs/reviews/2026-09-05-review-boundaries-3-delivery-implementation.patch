@@ -1,0 +1,1936 @@
+diff --git a/crates/edge/ess-cli/src/main.rs b/crates/edge/ess-cli/src/main.rs
+index 3a0f9f8..cbd1b19 100644
+--- a/crates/edge/ess-cli/src/main.rs
++++ b/crates/edge/ess-cli/src/main.rs
+@@ -1566,6 +1566,8 @@ fn deployment(command: DeploymentCommand) -> Result<ExitCode> {
+         DeploymentCommand::Diff { from, to, format } => {
+             let from: ess_deployment::DeploymentIr = read_document(&from)?;
+             let to: ess_deployment::DeploymentIr = read_document(&to)?;
++            from.validate().context("validating current deployment")?;
++            to.validate().context("validating desired deployment")?;
+             let added: Vec<_> = to
+                 .releases
+                 .keys()
+@@ -1616,6 +1618,15 @@ fn deployment(command: DeploymentCommand) -> Result<ExitCode> {
+                 .as_deref()
+                 .map(read_document::<ess_deployment::DeploymentIr>)
+                 .transpose()?;
++            desired
++                .validate()
++                .context("validating desired deployment")?;
++            if let Some(current) = &current {
++                current
++                    .validate()
++                    .context("validating current deployment")?;
++            }
++
+             if current
+                 .as_ref()
+                 .is_some_and(|current| current.cluster != desired.cluster)
+diff --git a/crates/edge/ess-cli/tests/persisted_delivery.rs b/crates/edge/ess-cli/tests/persisted_delivery.rs
+new file mode 100644
+index 0000000..73f636a
+--- /dev/null
++++ b/crates/edge/ess-cli/tests/persisted_delivery.rs
+@@ -0,0 +1,176 @@
++//! Persisted plans must be checked before analysis and before either external executor.
++use std::path::{Path, PathBuf};
++use std::process::{Command, Output};
++use std::sync::OnceLock;
++
++struct Fixture(PathBuf);
++impl Fixture {
++    fn new() -> Self {
++        static NEXT: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
++        let path = std::env::temp_dir().join(format!(
++            "ess-delivery-test-{}-{}",
++            std::process::id(),
++            NEXT.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
++        ));
++        std::fs::create_dir(&path).unwrap();
++        Self(path)
++    }
++    fn write(&self, name: &str, value: &serde_json::Value) -> PathBuf {
++        let path = self.0.join(name);
++        let text = if name.ends_with("yaml") {
++            serde_yaml::to_string(value).unwrap()
++        } else {
++            serde_json::to_string(value).unwrap()
++        };
++        std::fs::write(&path, text).unwrap();
++        path
++    }
++    fn command(&self) -> Command {
++        let mut command = Command::new(env!("CARGO_BIN_EXE_ess"));
++        command
++            .env("PATH", executors())
++            .env("ESS_TEST_DELIVERY_LOG", self.0.join("calls"));
++        command
++    }
++    fn reconcile(&self, desired: &Path, current: Option<&Path>, dry_run: bool) -> Output {
++        let mut command = self.command();
++        command
++            .args(["deployment", "reconcile", "--path"])
++            .arg(desired)
++            .arg("--cache")
++            .arg(self.0.join("cache"));
++        if let Some(current) = current {
++            command
++                .arg("--current")
++                .arg(current)
++                .arg("--allow-removals");
++        }
++        if dry_run {
++            command.arg("--dry-run");
++        }
++        command.output().unwrap()
++    }
++    fn assert_no_calls(&self) {
++        assert!(
++            !self.0.join("calls").exists(),
++            "executors ran: {}",
++            std::fs::read_to_string(self.0.join("calls")).unwrap_or_default()
++        );
++    }
++}
++impl Drop for Fixture {
++    fn drop(&mut self) {
++        std::fs::remove_dir_all(&self.0).unwrap();
++    }
++}
++
++fn executors() -> &'static Path {
++    static EXECUTORS: OnceLock<PathBuf> = OnceLock::new();
++    EXECUTORS
++        .get_or_init(|| {
++            let root = Fixture::new();
++            let output = Command::new("rustc")
++                .arg("--edition=2021")
++                .arg(Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/support/fake_delivery.rs"))
++                .arg("-o")
++                .arg(root.0.join("oras"))
++                .output()
++                .unwrap();
++            assert!(
++                output.status.success(),
++                "{}",
++                String::from_utf8_lossy(&output.stderr)
++            );
++            std::fs::copy(root.0.join("oras"), root.0.join("helm")).unwrap();
++            let path = root.0.clone();
++            // Shared process fixtures remain under TMPDIR for the duration of this test binary.
++            std::mem::forget(root);
++            path
++        })
++        .as_path()
++}
++
++fn plan() -> serde_json::Value {
++    let digest = format!("sha256:{}", "1".repeat(64));
++    serde_json::json!({
++        "format": "ess-deployment/1", "environment": "test", "stack_digest": digest,
++        "cluster": "test-cluster", "rollout_order": ["first", "last"],
++        "releases": {
++            "first": {"service":"first", "release_name":"first", "namespace":"test", "service_account":"default",
++                "chart":{"build_output":"chart", "kind":"helm_chart", "reference":"oci://example.invalid/chart", "digest":digest}, "images":{"app":{"build_output":"app", "kind":"oci_image", "reference":"example.invalid/app", "digest":digest, "platforms":{"linux/amd64":digest}}}},
++            "last": {"service":"last", "release_name":"last", "namespace":"test", "service_account":"default",
++                "chart":{"build_output":"chart", "kind":"helm_chart", "reference":"oci://example.invalid/chart", "digest":digest}, "images":{"app":{"build_output":"app", "kind":"oci_image", "reference":"example.invalid/app", "digest":digest, "platforms":{"linux/amd64":digest}}}}
++        }
++    })
++}
++
++#[test]
++fn entire_desired_plan_is_refused_before_oras_or_helm() {
++    for extension in ["json", "yaml"] {
++        for (pointer, value) in [
++            ("/releases/last/chart/kind", serde_json::json!("binary")),
++            ("/format", serde_json::json!("future/99")),
++            ("/rollout_order", serde_json::json!(["first"])),
++            ("/rollout_order", serde_json::json!(["first", "missing"])),
++            ("/releases/last/service", serde_json::json!("other")),
++        ] {
++            let fixture = Fixture::new();
++            let mut invalid = plan();
++            *invalid.pointer_mut(pointer).unwrap() = value;
++            let desired = fixture.write(&format!("desired.{extension}"), &invalid);
++            let output = fixture.reconcile(&desired, None, false);
++            assert!(
++                !output.status.success(),
++                "admitted {pointer}: {}",
++                String::from_utf8_lossy(&output.stdout)
++            );
++            fixture.assert_no_calls();
++        }
++    }
++}
++
++#[test]
++fn invalid_current_removal_is_refused_before_analysis_and_execution() {
++    for dry_run in [true, false] {
++        let fixture = Fixture::new();
++        let mut desired = plan();
++        desired["releases"] = serde_json::json!({});
++        desired["rollout_order"] = serde_json::json!([]);
++        let desired = fixture.write("desired.json", &desired);
++        let mut current = plan();
++        current["releases"]["last"]["chart"]["kind"] = serde_json::json!("binary");
++        let current = fixture.write("current.yaml", &current);
++        let output = fixture.reconcile(&desired, Some(&current), dry_run);
++        assert!(
++            !output.status.success(),
++            "invalid current state was admitted"
++        );
++        fixture.assert_no_calls();
++        let output = fixture
++            .command()
++            .args(["deployment", "diff", "--from"])
++            .arg(&current)
++            .arg("--to")
++            .arg(&desired)
++            .output()
++            .unwrap();
++        assert!(!output.status.success(), "invalid diff input was admitted");
++        fixture.assert_no_calls();
++    }
++}
++
++#[test]
++fn valid_plan_reaches_both_local_fake_executors_in_rollout_order() {
++    let fixture = Fixture::new();
++    let desired = fixture.write("desired.json", &plan());
++    let output = fixture.reconcile(&desired, None, false);
++    assert!(
++        output.status.success(),
++        "{}",
++        String::from_utf8_lossy(&output.stderr)
++    );
++    assert_eq!(
++        std::fs::read_to_string(fixture.0.join("calls")).unwrap(),
++        "oras\nhelm\nhelm\n"
++    );
++}
+diff --git a/crates/edge/ess-cli/tests/support/fake_delivery.rs b/crates/edge/ess-cli/tests/support/fake_delivery.rs
+new file mode 100644
+index 0000000..98230ce
+--- /dev/null
++++ b/crates/edge/ess-cli/tests/support/fake_delivery.rs
+@@ -0,0 +1,27 @@
++//! Local ORAS/Helm stand-in used only by delivery boundary tests.
++use std::io::Write;
++
++fn main() {
++    let arguments: Vec<_> = std::env::args().collect();
++    let executable = std::path::Path::new(&arguments[0])
++        .file_stem()
++        .unwrap()
++        .to_string_lossy();
++    let mut log = std::fs::OpenOptions::new()
++        .create(true)
++        .append(true)
++        .open(std::env::var_os("ESS_TEST_DELIVERY_LOG").unwrap())
++        .unwrap();
++    writeln!(log, "{executable}").unwrap();
++    if executable == "oras" {
++        let output = arguments
++            .windows(2)
++            .find(|pair| pair[0] == "--output")
++            .unwrap();
++        std::fs::write(
++            std::path::Path::new(&output[1]).join("chart.tgz"),
++            b"local fake chart",
++        )
++        .unwrap();
++    }
++}
+diff --git a/crates/generate/ess-deployment/src/build.rs b/crates/generate/ess-deployment/src/build.rs
+index d8ff1ba..e329369 100644
+--- a/crates/generate/ess-deployment/src/build.rs
++++ b/crates/generate/ess-deployment/src/build.rs
+@@ -96,6 +96,7 @@ pub struct ImageConfig {
+     pub workdir: Option<String>,
+     /// Public, non-secret image environment.
+     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
++    #[serde(deserialize_with = "crate::validation::unique_map")]
+     pub environment: BTreeMap<String, String>,
+ }
+ 
+@@ -128,6 +129,7 @@ pub enum BuildNode {
+         workdir: Option<String>,
+         /// Public, content-affecting environment.
+         #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
++        #[serde(deserialize_with = "crate::validation::unique_map")]
+         environment: BTreeMap<String, String>,
+         /// Typed ephemeral mounts.
+         #[serde(default, skip_serializing_if = "Vec::is_empty")]
+@@ -265,7 +267,7 @@ impl BuildSpec {
+ }
+ 
+ /// Validated, canonical build graph.
+-#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
++#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
+ #[serde(deny_unknown_fields)]
+ pub struct BuildIr {
+     format: String,
+@@ -274,12 +276,78 @@ pub struct BuildIr {
+     platforms: BTreeSet<Platform>,
+     #[serde(default, skip_serializing_if = "BTreeSet::is_empty")]
+     secrets: BTreeSet<Identifier>,
++    #[serde(deserialize_with = "crate::validation::unique_map")]
+     nodes: BTreeMap<Identifier, BuildNode>,
+     order: Vec<Identifier>,
++    #[serde(deserialize_with = "crate::validation::unique_map")]
+     outputs: BTreeMap<Identifier, BuildOutput>,
+ }
+ 
++crate::validation::checked_deserialize!(BuildIr {
++    format: String,
++    build: Identifier,
++    #[serde(skip_serializing_if = "BTreeSet::is_empty")]
++    platforms: BTreeSet<Platform>,
++    #[serde(default, skip_serializing_if = "BTreeSet::is_empty")]
++    secrets: BTreeSet<Identifier>,
++    #[serde(deserialize_with = "crate::validation::unique_map")]
++    nodes: BTreeMap<Identifier, BuildNode>,
++    order: Vec<Identifier>,
++    #[serde(deserialize_with = "crate::validation::unique_map")]
++    outputs: BTreeMap<Identifier, BuildOutput>,
++});
++
+ impl BuildIr {
++    /// Recheck the byte-local invariants established by `compile_build`.
++    pub fn validate(&self) -> Result<(), Diagnostics> {
++        let mut diagnostics = Vec::new();
++        crate::validation::check(
++            &mut diagnostics,
++            self.format == BUILD_IR_FORMAT,
++            Stage::Build,
++            DiagnosticCode::UnsupportedFormat,
++            &self.build,
++            format!("build IR format must be {BUILD_IR_FORMAT:?}"),
++        );
++        for (name, output) in &self.outputs {
++            crate::validation::check(
++                &mut diagnostics,
++                name == &output.name,
++                Stage::Build,
++                DiagnosticCode::InvalidValue,
++                name,
++                "build output map key must match its name",
++            );
++        }
++        let specification = BuildSpec {
++            format: BUILD_FORMAT.to_owned(),
++            build: self.build.clone(),
++            platforms: self.platforms.clone(),
++            secrets: self.secrets.clone(),
++            nodes: self
++                .nodes
++                .iter()
++                .map(|(id, node)| NamedBuildNode {
++                    id: id.clone(),
++                    node: node.clone(),
++                })
++                .collect(),
++            outputs: self.outputs.values().cloned().collect(),
++        };
++        match compile_build(&specification) {
++            Ok(compiled) => crate::validation::check(
++                &mut diagnostics,
++                self.order == compiled.order,
++                Stage::Build,
++                DiagnosticCode::InvalidValue,
++                &self.build,
++                "build order must equal the complete canonical compiler order",
++            ),
++            Err(errors) => diagnostics.extend_from_slice(errors.as_slice()),
++        }
++        crate::validation::finish(diagnostics)
++    }
++
+     /// Reads compiler-owned JSON and rejects incompatible formats or invalid graphs.
+     pub fn from_json(text: &str) -> Result<Self, serde_json::Error> {
+         serde_json::from_str(text)
+diff --git a/crates/generate/ess-deployment/src/component.rs b/crates/generate/ess-deployment/src/component.rs
+index aa5c269..eab11a3 100644
+--- a/crates/generate/ess-deployment/src/component.rs
++++ b/crates/generate/ess-deployment/src/component.rs
+@@ -68,7 +68,7 @@ impl ComponentSpec {
+ }
+ 
+ /// Validated, canonical component descriptor.
+-#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
++#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
+ #[serde(deny_unknown_fields)]
+ pub struct ComponentIr {
+     format: String,
+@@ -79,7 +79,41 @@ pub struct ComponentIr {
+     release_units: ComponentReleaseUnits,
+ }
+ 
++crate::validation::checked_deserialize!(ComponentIr {
++    format: String,
++    component: Identifier,
++    system: Identifier,
++    semantic_version: String,
++    inputs: ComponentInputs,
++    release_units: ComponentReleaseUnits,
++});
++
+ impl ComponentIr {
++    /// Recheck descriptor invariants without opening the referenced inputs.
++    pub fn validate(&self) -> Result<(), Diagnostics> {
++        let mut diagnostics = Vec::new();
++        crate::validation::check(
++            &mut diagnostics,
++            self.format == COMPONENT_IR_FORMAT,
++            Stage::Runtime,
++            DiagnosticCode::UnsupportedFormat,
++            &self.component,
++            format!("component IR format must be {COMPONENT_IR_FORMAT:?}"),
++        );
++        let specification = ComponentSpec {
++            format: COMPONENT_FORMAT.to_owned(),
++            component: self.component.clone(),
++            system: self.system.clone(),
++            semantic_version: self.semantic_version.clone(),
++            inputs: self.inputs.clone(),
++            release_units: self.release_units.clone(),
++        };
++        if let Err(errors) = compile_component(&specification) {
++            diagnostics.extend_from_slice(errors.as_slice());
++        }
++        crate::validation::finish(diagnostics)
++    }
++
+     /// Reads strict compiler-owned component IR.
+     pub fn from_json(text: &str) -> Result<Self, serde_json::Error> {
+         serde_json::from_str(text)
+@@ -193,7 +227,7 @@ fn safe_relative_path(value: &str) -> bool {
+ }
+ 
+ /// Canonical release metadata transported as one digest-addressed OCI artifact.
+-#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
++#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
+ #[serde(deny_unknown_fields)]
+ pub struct ReleaseBundle {
+     format: String,
+@@ -204,10 +238,57 @@ pub struct ReleaseBundle {
+     /// Exact compiled runtime realization.
+     pub runtime: RuntimeIr,
+     /// Runtime and chart release manifests by release-unit identity.
++    #[serde(deserialize_with = "crate::validation::unique_map")]
+     pub releases: BTreeMap<Identifier, ReleaseManifest>,
+ }
+ 
++crate::validation::checked_deserialize!(ReleaseBundle {
++    format: String,
++    /// Exact repository-owned component descriptor.
++    pub component: ComponentIr,
++    /// Exact compiled build graph.
++    pub build: BuildIr,
++    /// Exact compiled runtime realization.
++    pub runtime: RuntimeIr,
++    /// Runtime and chart release manifests by release-unit identity.
++    #[serde(deserialize_with = "crate::validation::unique_map")]
++    pub releases: BTreeMap<Identifier, ReleaseManifest>,
++});
++
+ impl ReleaseBundle {
++    /// Validate the complete included graphs and their relationships after public-field mutation.
++    /// Digests do not prove omitted semantic inputs or release authenticity.
++    pub fn validate(&self) -> Result<(), Diagnostics> {
++        let mut diagnostics = Vec::new();
++        crate::validation::check(
++            &mut diagnostics,
++            self.format == RELEASE_BUNDLE_FORMAT,
++            Stage::Release,
++            DiagnosticCode::UnsupportedFormat,
++            self.component.component(),
++            format!("release bundle format must be {RELEASE_BUNDLE_FORMAT:?}"),
++        );
++        for (name, release) in &self.releases {
++            crate::validation::check(
++                &mut diagnostics,
++                name == &release.release_unit,
++                Stage::Release,
++                DiagnosticCode::InvalidValue,
++                name,
++                "release map key must match its release unit",
++            );
++        }
++        if let Err(errors) = bundle_release(
++            self.component.clone(),
++            self.build.clone(),
++            self.runtime.clone(),
++            self.releases.values().cloned().collect(),
++        ) {
++            diagnostics.extend_from_slice(errors.as_slice());
++        }
++        crate::validation::finish(diagnostics)
++    }
++
+     /// Reads a strict JSON release bundle.
+     pub fn from_json(text: &str) -> Result<Self, serde_json::Error> {
+         serde_json::from_str(text)
+@@ -237,6 +318,10 @@ pub fn bundle_release(
+     releases: Vec<ReleaseManifest>,
+ ) -> Result<ReleaseBundle, Diagnostics> {
+     let mut diagnostics = Vec::new();
++    if let Err(errors) = runtime.validate_against_build(&build) {
++        diagnostics.extend_from_slice(errors.as_slice());
++    }
++
+     let mut indexed = BTreeMap::new();
+     for release in releases {
+         let release_unit = release.release_unit.clone();
+@@ -312,23 +397,8 @@ pub fn bundle_release(
+ 
+ /// Verify a bundle read from an untrusted OCI layer.
+ pub fn verify_release_bundle(bundle: ReleaseBundle) -> Result<ReleaseBundle, Diagnostics> {
+-    if bundle.format != RELEASE_BUNDLE_FORMAT {
+-        return Err(Diagnostics::from(vec![Diagnostic::new(
+-            Stage::Release,
+-            DiagnosticCode::UnsupportedFormat,
+-            Some(bundle.component.component.clone()),
+-            format!(
+-                "release bundle format {:?} is unsupported; expected {RELEASE_BUNDLE_FORMAT:?}",
+-                bundle.format
+-            ),
+-        )]));
+-    }
+-    bundle_release(
+-        bundle.component,
+-        bundle.build,
+-        bundle.runtime,
+-        bundle.releases.into_values().collect(),
+-    )
++    bundle.validate()?;
++    Ok(bundle)
+ }
+ 
+ fn verify_release_kind(
+diff --git a/crates/generate/ess-deployment/src/environment.rs b/crates/generate/ess-deployment/src/environment.rs
+index 6a47bdc..a6d883e 100644
+--- a/crates/generate/ess-deployment/src/environment.rs
++++ b/crates/generate/ess-deployment/src/environment.rs
+@@ -107,17 +107,21 @@ pub struct DeploymentRelease {
+     /// Exact independently versioned chart artifact.
+     pub chart: Artifact,
+     /// Exact image artifacts by build-output identity.
++    #[serde(deserialize_with = "crate::validation::unique_map")]
+     pub images: BTreeMap<Identifier, Artifact>,
+     /// Kubernetes `ServiceAccount` name.
+     pub service_account: String,
+     /// Non-secret configuration.
+     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
++    #[serde(deserialize_with = "crate::validation::unique_map")]
+     pub config: BTreeMap<Identifier, String>,
+     /// Secret references, never values.
+     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
++    #[serde(deserialize_with = "crate::validation::unique_map")]
+     pub secrets: BTreeMap<Identifier, SecretBinding>,
+     /// Bound endpoint URLs.
+     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
++    #[serde(deserialize_with = "crate::validation::unique_map")]
+     pub endpoints: BTreeMap<Identifier, String>,
+     /// Required workload-token audiences.
+     #[serde(default, skip_serializing_if = "BTreeSet::is_empty")]
+@@ -128,7 +132,7 @@ pub struct DeploymentRelease {
+ }
+ 
+ /// Compiler-owned exact deployment and rollout DAG.
+-#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
++#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
+ #[serde(deny_unknown_fields)]
+ pub struct DeploymentIr {
+     format: String,
+@@ -139,12 +143,131 @@ pub struct DeploymentIr {
+     /// Executor-selected kubeconfig context.
+     pub cluster: String,
+     /// Independent releases by stack service identity.
++    #[serde(deserialize_with = "crate::validation::unique_map")]
+     pub releases: BTreeMap<Identifier, DeploymentRelease>,
+     /// Stable topological rollout order. Executors may parallelize adjacent independent entries.
+     pub rollout_order: Vec<Identifier>,
+ }
+ 
++crate::validation::checked_deserialize!(DeploymentIr {
++    format: String,
++    /// Stable target environment.
++    pub environment: Identifier,
++    /// Exact stack lock digest.
++    pub stack_digest: Digest,
++    /// Executor-selected kubeconfig context.
++    pub cluster: String,
++    /// Independent releases by stack service identity.
++    #[serde(deserialize_with = "crate::validation::unique_map")]
++    pub releases: BTreeMap<Identifier, DeploymentRelease>,
++    /// Stable topological rollout order. Executors may parallelize adjacent independent entries.
++    pub rollout_order: Vec<Identifier>,
++});
++
+ impl DeploymentIr {
++    /// Validate the entire persisted plan before analysis or execution, including after mutation.
++    /// Required bindings absent from the original stack cannot be inferred from digest strings.
++    pub fn validate(&self) -> Result<(), Diagnostics> {
++        use crate::validation::check;
++        let mut diagnostics = Vec::new();
++        check(
++            &mut diagnostics,
++            self.format == DEPLOYMENT_FORMAT,
++            Stage::Deployment,
++            DiagnosticCode::UnsupportedFormat,
++            &self.environment,
++            format!("deployment format must be {DEPLOYMENT_FORMAT:?}"),
++        );
++        check(
++            &mut diagnostics,
++            !self.cluster.is_empty(),
++            Stage::Deployment,
++            DiagnosticCode::MissingBinding,
++            &self.environment,
++            "cluster binding must not be empty",
++        );
++        for (service, release) in &self.releases {
++            check(
++                &mut diagnostics,
++                service == &release.service,
++                Stage::Deployment,
++                DiagnosticCode::InvalidValue,
++                service,
++                "release map key must match its service",
++            );
++            check(
++                &mut diagnostics,
++                !release.release_name.is_empty() && !release.namespace.is_empty(),
++                Stage::Deployment,
++                DiagnosticCode::MissingBinding,
++                service,
++                "release name and namespace bindings must not be empty",
++            );
++            check(
++                &mut diagnostics,
++                release.audiences.is_empty() || !release.service_account.is_empty(),
++                Stage::Deployment,
++                DiagnosticCode::AuthorityUnbound,
++                service,
++                "workload-token audiences require a service-account binding",
++            );
++            check(
++                &mut diagnostics,
++                release.chart.kind == ArtifactKind::HelmChart,
++                Stage::Deployment,
++                DiagnosticCode::InvalidValue,
++                service,
++                "release must select a Helm chart artifact",
++            );
++            check(
++                &mut diagnostics,
++                !release.images.is_empty()
++                    && release
++                        .images
++                        .values()
++                        .all(|artifact| artifact.kind == ArtifactKind::OciImage),
++                Stage::Deployment,
++                DiagnosticCode::MissingOutput,
++                service,
++                "release images must contain OCI image artifacts",
++            );
++            crate::release::validate_artifacts(
++                &release.images,
++                Stage::Deployment,
++                &mut diagnostics,
++            );
++            for dependency in &release.depends_on {
++                check(
++                    &mut diagnostics,
++                    self.releases.contains_key(dependency),
++                    Stage::Deployment,
++                    DiagnosticCode::UnknownReference,
++                    service,
++                    "rollout dependency must select a release",
++                );
++            }
++        }
++        match rollout_order(&self.releases) {
++            Some(order) => check(
++                &mut diagnostics,
++                self.rollout_order == order,
++                Stage::Deployment,
++                DiagnosticCode::InvalidValue,
++                &self.environment,
++                "rollout order must equal the complete canonical compiler order",
++            ),
++            None => check(
++                &mut diagnostics,
++                false,
++                Stage::Deployment,
++                DiagnosticCode::DependencyCycle,
++                &self.environment,
++                "deployment rollout graph contains a cycle",
++            ),
++        }
++        crate::validation::finish(diagnostics)
++    }
++
+     /// Reads strict deployment IR JSON.
+     pub fn from_json(text: &str) -> Result<Self, serde_json::Error> {
+         serde_json::from_str(text)
+@@ -167,6 +290,7 @@ pub fn compile_deployment(
+     environment: &EnvironmentSpec,
+     stack: &StackLock,
+ ) -> Result<DeploymentIr, Diagnostics> {
++    stack.validate()?;
+     let mut diagnostics = Vec::new();
+     if environment.format != ENVIRONMENT_FORMAT {
+         diagnostics.push(Diagnostic::new(
+diff --git a/crates/generate/ess-deployment/src/lib.rs b/crates/generate/ess-deployment/src/lib.rs
+index 314d757..9e1d5b9 100644
+--- a/crates/generate/ess-deployment/src/lib.rs
++++ b/crates/generate/ess-deployment/src/lib.rs
+@@ -13,6 +13,7 @@ mod identity;
+ mod release;
+ mod runtime;
+ mod stack;
++mod validation;
+ 
+ pub use build::{
+     compile_build, project_build_mermaid, project_buildkit, BuildIr, BuildMount, BuildNode,
+diff --git a/crates/generate/ess-deployment/src/release.rs b/crates/generate/ess-deployment/src/release.rs
+index 44fea03..55aa0fd 100644
+--- a/crates/generate/ess-deployment/src/release.rs
++++ b/crates/generate/ess-deployment/src/release.rs
+@@ -51,6 +51,7 @@ pub struct Artifact {
+     pub digest: Digest,
+     /// Exact OCI child manifests by platform.
+     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
++    #[serde(deserialize_with = "crate::validation::unique_map")]
+     pub platforms: BTreeMap<String, Digest>,
+ }
+ 
+@@ -81,7 +82,7 @@ pub struct Evidence {
+ }
+ 
+ /// Executor-produced immutable release record.
+-#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
++#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
+ #[serde(deny_unknown_fields)]
+ pub struct ReleaseManifest {
+     format: String,
+@@ -100,12 +101,43 @@ pub struct ReleaseManifest {
+     /// Exact compiled runtime digest.
+     pub runtime_digest: Digest,
+     /// Published artifacts by stable output name.
++    #[serde(deserialize_with = "crate::validation::unique_map")]
+     pub artifacts: BTreeMap<Identifier, Artifact>,
+     /// Release evidence by required kind.
++    #[serde(deserialize_with = "crate::validation::unique_map")]
+     pub evidence: BTreeMap<EvidenceKind, Evidence>,
+ }
+ 
++crate::validation::checked_deserialize!(ReleaseManifest {
++    format: String,
++    /// Independently versioned release unit.
++    pub release_unit: Identifier,
++    /// System whose implementation is released.
++    pub system: Identifier,
++    /// Release version, separate from the ESS semantic major.
++    pub version: Version,
++    /// Exact source revision.
++    pub source_commit: String,
++    /// Exact compiled ESS semantic digest.
++    pub semantic_digest: Digest,
++    /// Exact compiled build digest.
++    pub build_digest: Digest,
++    /// Exact compiled runtime digest.
++    pub runtime_digest: Digest,
++    /// Published artifacts by stable output name.
++    #[serde(deserialize_with = "crate::validation::unique_map")]
++    pub artifacts: BTreeMap<Identifier, Artifact>,
++    /// Release evidence by required kind.
++    #[serde(deserialize_with = "crate::validation::unique_map")]
++    pub evidence: BTreeMap<EvidenceKind, Evidence>,
++});
++
+ impl ReleaseManifest {
++    /// Recheck manifest-local rules after mutation; attachments do not prove authenticity.
++    pub fn validate(&self) -> Result<(), Diagnostics> {
++        crate::validation::finish(verify_release_document(self))
++    }
++
+     /// Reads a strict release manifest.
+     pub fn from_json(text: &str) -> Result<Self, serde_json::Error> {
+         serde_json::from_str(text)
+@@ -139,6 +171,10 @@ pub fn verify_release(
+     runtime: &RuntimeIr,
+ ) -> Result<(), Diagnostics> {
+     let mut diagnostics = verify_release_document(release);
++    if let Err(errors) = runtime.validate_against_build(build) {
++        diagnostics.extend_from_slice(errors.as_slice());
++    }
++
+     if release.build_digest != build.digest() {
+         diagnostics.push(Diagnostic::new(
+             Stage::Release,
+@@ -240,24 +276,8 @@ pub(crate) fn verify_release_document(release: &ReleaseManifest) -> Vec<Diagnost
+             "a release must contain at least one immutable artifact",
+         ));
+     }
+-    for (name, artifact) in &release.artifacts {
+-        if name != &artifact.build_output {
+-            diagnostics.push(Diagnostic::new(
+-                Stage::Release,
+-                DiagnosticCode::DigestMismatch,
+-                Some(name.clone()),
+-                "artifact map key must equal its build_output identity",
+-            ));
+-        }
+-        if artifact.kind == ArtifactKind::OciImage && artifact.platforms.is_empty() {
+-            diagnostics.push(Diagnostic::new(
+-                Stage::Release,
+-                DiagnosticCode::MissingOutput,
+-                Some(name.clone()),
+-                "an OCI image release must record exact per-platform child manifests",
+-            ));
+-        }
+-    }
++    validate_artifacts(&release.artifacts, Stage::Release, &mut diagnostics);
++
+     let required = BTreeSet::from([
+         EvidenceKind::Provenance,
+         EvidenceKind::Sbom,
+@@ -276,3 +296,29 @@ pub(crate) fn verify_release_document(release: &ReleaseManifest) -> Vec<Diagnost
+     }
+     diagnostics
+ }
++
++/// Rules shared by manifest, lock and deployment artifact maps.
++pub(crate) fn validate_artifacts(
++    artifacts: &BTreeMap<Identifier, Artifact>,
++    stage: Stage,
++    diagnostics: &mut Vec<Diagnostic>,
++) {
++    for (name, artifact) in artifacts {
++        if name != &artifact.build_output {
++            diagnostics.push(Diagnostic::new(
++                stage,
++                DiagnosticCode::DigestMismatch,
++                Some(name.clone()),
++                "artifact map key must equal its build_output identity",
++            ));
++        }
++        if artifact.kind == ArtifactKind::OciImage && artifact.platforms.is_empty() {
++            diagnostics.push(Diagnostic::new(
++                stage,
++                DiagnosticCode::MissingOutput,
++                Some(name.clone()),
++                "an OCI image release must record exact per-platform child manifests",
++            ));
++        }
++    }
++}
+diff --git a/crates/generate/ess-deployment/src/runtime.rs b/crates/generate/ess-deployment/src/runtime.rs
+index 69c091b..f2b36bb 100644
+--- a/crates/generate/ess-deployment/src/runtime.rs
++++ b/crates/generate/ess-deployment/src/runtime.rs
+@@ -228,7 +228,7 @@ impl RuntimeSpec {
+ }
+ 
+ /// Validated deployable-runtime IR.
+-#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
++#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
+ #[serde(deny_unknown_fields)]
+ pub struct RuntimeIr {
+     format: String,
+@@ -236,13 +236,191 @@ pub struct RuntimeIr {
+     semantic_digest: Digest,
+     realization_digest: Digest,
+     build_digest: Digest,
++    #[serde(deserialize_with = "crate::validation::unique_map")]
+     processes: BTreeMap<Identifier, Process>,
++    #[serde(deserialize_with = "crate::validation::unique_map")]
+     containers: BTreeMap<Identifier, ContainerRole>,
++    #[serde(deserialize_with = "crate::validation::unique_map")]
+     workloads: BTreeMap<Identifier, Workload>,
++    #[serde(deserialize_with = "crate::validation::unique_map")]
+     provided_endpoints: BTreeMap<Identifier, ProvidedEndpoint>,
+ }
+ 
++crate::validation::checked_deserialize!(RuntimeIr {
++    format: String,
++    runtime: Identifier,
++    semantic_digest: Digest,
++    realization_digest: Digest,
++    build_digest: Digest,
++    #[serde(deserialize_with = "crate::validation::unique_map")]
++    processes: BTreeMap<Identifier, Process>,
++    #[serde(deserialize_with = "crate::validation::unique_map")]
++    containers: BTreeMap<Identifier, ContainerRole>,
++    #[serde(deserialize_with = "crate::validation::unique_map")]
++    workloads: BTreeMap<Identifier, Workload>,
++    #[serde(deserialize_with = "crate::validation::unique_map")]
++    provided_endpoints: BTreeMap<Identifier, ProvidedEndpoint>,
++});
++
+ impl RuntimeIr {
++    /// Validate relationships and compiler rules recoverable from these bytes alone.
++    /// Semantic coverage, replica bounds and statefulness need the original compiler inputs.
++    pub fn validate(&self) -> Result<(), Diagnostics> {
++        use crate::validation::check;
++        let mut diagnostics = Vec::new();
++        check(
++            &mut diagnostics,
++            self.format == RUNTIME_IR_FORMAT,
++            Stage::Runtime,
++            DiagnosticCode::UnsupportedFormat,
++            &self.runtime,
++            format!("runtime IR format must be {RUNTIME_IR_FORMAT:?}"),
++        );
++        for (name, process) in &self.processes {
++            check(
++                &mut diagnostics,
++                name == &process.name,
++                Stage::Runtime,
++                DiagnosticCode::InvalidValue,
++                name,
++                "process map key must match its name",
++            );
++        }
++        for (name, container) in &self.containers {
++            check(
++                &mut diagnostics,
++                name == &container.name,
++                Stage::Runtime,
++                DiagnosticCode::InvalidValue,
++                name,
++                "container map key must match its name",
++            );
++            check(
++                &mut diagnostics,
++                self.processes.contains_key(&container.process),
++                Stage::Runtime,
++                DiagnosticCode::UnknownReference,
++                name,
++                "container selects an unknown process",
++            );
++            validate_container(container, &mut diagnostics);
++        }
++        let mut components = BTreeSet::new();
++        for (name, workload) in &self.workloads {
++            check(
++                &mut diagnostics,
++                name == &workload.name,
++                Stage::Runtime,
++                DiagnosticCode::InvalidValue,
++                name,
++                "workload map key must match its name",
++            );
++            check(
++                &mut diagnostics,
++                workload.replicas > 0,
++                Stage::Runtime,
++                DiagnosticCode::InvalidValue,
++                name,
++                "workload replicas must be positive",
++            );
++            check(
++                &mut diagnostics,
++                !workload.containers.is_empty(),
++                Stage::Runtime,
++                DiagnosticCode::InvalidValue,
++                name,
++                "workload must select at least one container",
++            );
++            for container in &workload.containers {
++                check(
++                    &mut diagnostics,
++                    self.containers.contains_key(container),
++                    Stage::Runtime,
++                    DiagnosticCode::UnknownReference,
++                    name,
++                    "workload selects an unknown container",
++                );
++            }
++            for component in &workload.components {
++                check(
++                    &mut diagnostics,
++                    components.insert(component),
++                    Stage::Runtime,
++                    DiagnosticCode::DuplicateComponent,
++                    name,
++                    format!("component {component} is realized by more than one workload"),
++                );
++            }
++            validate_workload_volumes(workload, &self.containers, &mut diagnostics);
++        }
++        self.validate_endpoints(&mut diagnostics);
++        crate::validation::finish(diagnostics)
++    }
++
++    fn validate_endpoints(&self, diagnostics: &mut Vec<Diagnostic>) {
++        use crate::validation::check;
++        for (name, endpoint) in &self.provided_endpoints {
++            check(
++                diagnostics,
++                name == &endpoint.name,
++                Stage::Runtime,
++                DiagnosticCode::InvalidValue,
++                name,
++                "provided endpoint map key must match its name",
++            );
++            check(
++                diagnostics,
++                self.workloads
++                    .get(&endpoint.workload)
++                    .is_some_and(|workload| workload.containers.contains(&endpoint.container)),
++                Stage::Runtime,
++                DiagnosticCode::UnknownReference,
++                name,
++                "provided endpoint must select a container in its workload",
++            );
++            check(
++                diagnostics,
++                self.containers
++                    .get(&endpoint.container)
++                    .is_some_and(|container| container.http_port.is_some()),
++                Stage::Runtime,
++                DiagnosticCode::MissingBinding,
++                name,
++                "provided endpoint requires an HTTP port",
++            );
++        }
++    }
++
++    /// Validate the additional relationships for which a bundle supplies the build bytes.
++    pub fn validate_against_build(&self, build: &BuildIr) -> Result<(), Diagnostics> {
++        let mut diagnostics = self
++            .validate()
++            .err()
++            .map_or_else(Vec::new, |errors| errors.as_slice().to_vec());
++        crate::validation::check(
++            &mut diagnostics,
++            self.build_digest == build.digest(),
++            Stage::Runtime,
++            DiagnosticCode::DigestMismatch,
++            &self.runtime,
++            "runtime build_digest does not match the supplied build IR",
++        );
++        for process in self.processes.values() {
++            crate::validation::check(
++                &mut diagnostics,
++                build
++                    .outputs()
++                    .get(&process.image)
++                    .is_some_and(|output| output.kind == BuildOutputKind::OciImage),
++                Stage::Runtime,
++                DiagnosticCode::MissingOutput,
++                &process.name,
++                "process image must select an OCI image build output",
++            );
++        }
++        crate::validation::finish(diagnostics)
++    }
++
+     /// Reads strict compiler-owned runtime JSON.
+     pub fn from_json(text: &str) -> Result<Self, serde_json::Error> {
+         serde_json::from_str(text)
+diff --git a/crates/generate/ess-deployment/src/stack.rs b/crates/generate/ess-deployment/src/stack.rs
+index 1ae58ae..bea0afa 100644
+--- a/crates/generate/ess-deployment/src/stack.rs
++++ b/crates/generate/ess-deployment/src/stack.rs
+@@ -102,7 +102,7 @@ pub struct ReleaseCandidate {
+ }
+ 
+ /// Explicit offline input to stack resolution.
+-#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
++#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
+ #[serde(deny_unknown_fields)]
+ pub struct ReleaseCatalog {
+     format: String,
+@@ -110,7 +110,40 @@ pub struct ReleaseCatalog {
+     pub releases: Vec<ReleaseCandidate>,
+ }
+ 
++crate::validation::checked_deserialize!(ReleaseCatalog {
++    format: String,
++    /// Available releases in arbitrary input order.
++    pub releases: Vec<ReleaseCandidate>,
++});
++
+ impl ReleaseCatalog {
++    /// Validate every candidate before selection, including unselected nested documents.
++    pub fn validate(&self) -> Result<(), Diagnostics> {
++        let mut diagnostics = Vec::new();
++        if self.format != RELEASE_CATALOG_FORMAT {
++            diagnostics.push(Diagnostic::new(
++                Stage::Composition,
++                DiagnosticCode::UnsupportedFormat,
++                None,
++                format!("release catalogue format must be {RELEASE_CATALOG_FORMAT:?}"),
++            ));
++        }
++        for candidate in &self.releases {
++            diagnostics.extend(verify_release_document(&candidate.release));
++            crate::validation::check(
++                &mut diagnostics,
++                candidate.release.runtime_digest == candidate.runtime.digest()
++                    && candidate.release.semantic_digest == *candidate.runtime.semantic_digest()
++                    && candidate.release.build_digest == *candidate.runtime.build_digest(),
++                Stage::Composition,
++                DiagnosticCode::DigestMismatch,
++                &candidate.release.release_unit,
++                "catalogue runtime does not match its release manifest",
++            );
++        }
++        crate::validation::finish(diagnostics)
++    }
++
+     /// Reads a strict JSON release catalogue.
+     pub fn from_json(text: &str) -> Result<Self, serde_json::Error> {
+         serde_json::from_str(text)
+@@ -127,16 +160,20 @@ impl ReleaseCatalog {
+ #[serde(deny_unknown_fields)]
+ pub struct RuntimeRequirements {
+     /// Required non-secret configuration slots.
++    #[serde(deserialize_with = "crate::validation::unique_map")]
+     pub config: BTreeMap<Identifier, ConfigKind>,
+     /// Required secret slot names.
+     pub secrets: BTreeSet<Identifier>,
+     /// Required endpoint slots and target systems.
++    #[serde(deserialize_with = "crate::validation::unique_map")]
+     pub endpoints: BTreeMap<Identifier, Identifier>,
+     /// Required endpoint slots and the named endpoint expected from their target system.
+     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
++    #[serde(deserialize_with = "crate::validation::unique_map")]
+     pub endpoint_names: BTreeMap<Identifier, Identifier>,
+     /// Component-owned endpoints available for automatic in-cluster binding.
+     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
++    #[serde(deserialize_with = "crate::validation::unique_map")]
+     pub provided_endpoints: BTreeMap<Identifier, ProvidedEndpointRequirement>,
+     /// Required workload token audiences.
+     pub audiences: BTreeSet<String>,
+@@ -173,6 +210,7 @@ pub struct LockedSystem {
+     /// Exact runtime digest.
+     pub runtime_digest: Digest,
+     /// Immutable runtime artifacts.
++    #[serde(deserialize_with = "crate::validation::unique_map")]
+     pub runtime_artifacts: BTreeMap<Identifier, Artifact>,
+     /// Independent chart release-unit identity.
+     pub chart_release_unit: Identifier,
+@@ -189,7 +227,7 @@ pub struct LockedSystem {
+ }
+ 
+ /// Exact, reviewable resolution of a generic stack.
+-#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
++#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
+ #[serde(deny_unknown_fields)]
+ pub struct StackLock {
+     format: String,
+@@ -200,12 +238,148 @@ pub struct StackLock {
+     /// Exact semantic composition digest.
+     pub composition_digest: Digest,
+     /// Exact releases by composition-local service identity.
++    #[serde(deserialize_with = "crate::validation::unique_map")]
+     pub systems: BTreeMap<Identifier, LockedSystem>,
+     /// Typed external requirements copied from the stack.
++    #[serde(deserialize_with = "crate::validation::unique_map")]
+     pub external_systems: BTreeMap<Identifier, ExternalSystem>,
+ }
+ 
++crate::validation::checked_deserialize!(StackLock {
++    format: String,
++    /// Stable stack identity.
++    pub stack: Identifier,
++    /// Digest of the authored stack specification.
++    pub stack_digest: Digest,
++    /// Exact semantic composition digest.
++    pub composition_digest: Digest,
++    /// Exact releases by composition-local service identity.
++    #[serde(deserialize_with = "crate::validation::unique_map")]
++    pub systems: BTreeMap<Identifier, LockedSystem>,
++    /// Typed external requirements copied from the stack.
++    #[serde(deserialize_with = "crate::validation::unique_map")]
++    pub external_systems: BTreeMap<Identifier, ExternalSystem>,
++});
++
+ impl StackLock {
++    /// Validate recoverable lock invariants after mutation; omitted inputs cannot prove selection.
++    pub fn validate(&self) -> Result<(), Diagnostics> {
++        use crate::validation::check;
++        let mut diagnostics = Vec::new();
++        check(
++            &mut diagnostics,
++            self.format == STACK_LOCK_FORMAT,
++            Stage::Composition,
++            DiagnosticCode::UnsupportedFormat,
++            &self.stack,
++            format!("stack lock format must be {STACK_LOCK_FORMAT:?}"),
++        );
++        for (name, external) in &self.external_systems {
++            check(
++                &mut diagnostics,
++                name == &external.system,
++                Stage::Composition,
++                DiagnosticCode::InvalidValue,
++                name,
++                "external-system key must match its system",
++            );
++        }
++        for (service, system) in &self.systems {
++            // `service` is composition-local. It deliberately need not equal `system.system`.
++            check(
++                &mut diagnostics,
++                system.chart.kind == crate::release::ArtifactKind::HelmChart,
++                Stage::Composition,
++                DiagnosticCode::InvalidValue,
++                service,
++                "locked chart must be a Helm chart artifact",
++            );
++            check(
++                &mut diagnostics,
++                system
++                    .runtime_artifacts
++                    .values()
++                    .any(|artifact| artifact.kind == crate::release::ArtifactKind::OciImage),
++                Stage::Composition,
++                DiagnosticCode::MissingOutput,
++                service,
++                "locked runtime must contain an OCI image",
++            );
++            crate::release::validate_artifacts(
++                &system.runtime_artifacts,
++                Stage::Composition,
++                &mut diagnostics,
++            );
++            for dependency in &system.depends_on {
++                check(
++                    &mut diagnostics,
++                    self.systems.contains_key(dependency),
++                    Stage::Composition,
++                    DiagnosticCode::UnknownReference,
++                    service,
++                    "rollout dependency is not a stack service",
++                );
++            }
++            check(
++                &mut diagnostics,
++                system
++                    .runtime
++                    .config
++                    .values()
++                    .all(|kind| *kind != ConfigKind::Literal),
++                Stage::Composition,
++                DiagnosticCode::InvalidValue,
++                service,
++                "locked runtime configuration requirements cannot contain literal slots",
++            );
++            check(
++                &mut diagnostics,
++                system
++                    .runtime
++                    .endpoint_names
++                    .keys()
++                    .all(|name| system.runtime.endpoints.contains_key(name)),
++                Stage::Composition,
++                DiagnosticCode::UnknownReference,
++                service,
++                "named endpoint requirements must select an endpoint slot",
++            );
++        }
++        self.validate_rollout_graph(&mut diagnostics);
++        crate::validation::finish(diagnostics)
++    }
++
++    fn validate_rollout_graph(&self, diagnostics: &mut Vec<Diagnostic>) {
++        use crate::validation::check;
++        let mut remaining: BTreeSet<_> = self.systems.keys().collect();
++        loop {
++            let ready: Vec<_> = remaining
++                .iter()
++                .copied()
++                .filter(|name| {
++                    self.systems[*name]
++                        .depends_on
++                        .iter()
++                        .all(|dependency| !remaining.contains(dependency))
++                })
++                .collect();
++            if ready.is_empty() {
++                break;
++            }
++            for name in ready {
++                remaining.remove(name);
++            }
++        }
++        check(
++            diagnostics,
++            remaining.is_empty(),
++            Stage::Composition,
++            DiagnosticCode::DependencyCycle,
++            &self.stack,
++            "stack rollout graph contains a cycle",
++        );
++    }
++
+     /// Reads a strict exact stack lock.
+     pub fn from_json(text: &str) -> Result<Self, serde_json::Error> {
+         serde_json::from_str(text)
+@@ -228,6 +402,7 @@ pub fn resolve_stack(
+     specification: &StackSpec,
+     catalog: &ReleaseCatalog,
+ ) -> Result<StackLock, Diagnostics> {
++    catalog.validate()?;
+     let mut diagnostics = Vec::new();
+     if specification.format != STACK_FORMAT {
+         diagnostics.push(Diagnostic::new(
+diff --git a/crates/generate/ess-deployment/src/validation.rs b/crates/generate/ess-deployment/src/validation.rs
+new file mode 100644
+index 0000000..c738adb
+--- /dev/null
++++ b/crates/generate/ess-deployment/src/validation.rs
+@@ -0,0 +1,75 @@
++//! Checked decoding shared by existing persisted delivery envelopes.
++use std::collections::BTreeMap;
++use std::fmt;
++use std::marker::PhantomData;
++
++use serde::de::{Deserialize, Deserializer, Error, MapAccess, Visitor};
++
++use crate::diagnostic::{Diagnostic, DiagnosticCode, Diagnostics, Stage};
++use crate::Identifier;
++
++/// Decode maps directly, before duplicate keys could be discarded by collection.
++pub(crate) fn unique_map<'de, D, K, V>(deserializer: D) -> Result<BTreeMap<K, V>, D::Error>
++where
++    D: Deserializer<'de>,
++    K: Deserialize<'de> + Ord,
++    V: Deserialize<'de>,
++{
++    struct UniqueMap<K, V>(PhantomData<(K, V)>);
++    impl<'de, K: Deserialize<'de> + Ord, V: Deserialize<'de>> Visitor<'de> for UniqueMap<K, V> {
++        type Value = BTreeMap<K, V>;
++        fn expecting(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
++            formatter.write_str("a map with unique keys")
++        }
++        fn visit_map<M: MapAccess<'de>>(self, mut map: M) -> Result<Self::Value, M::Error> {
++            let mut result = BTreeMap::new();
++            while let Some((key, value)) = map.next_entry()? {
++                if result.insert(key, value).is_some() {
++                    return Err(M::Error::custom("duplicate map key"));
++                }
++            }
++            Ok(result)
++        }
++    }
++    deserializer.deserialize_map(UniqueMap(PhantomData))
++}
++
++// The wire fields retain their existing names/defaults. Every Serde route, including nested
++// decoding, crosses the same validation boundary without a JSON Value intermediate.
++macro_rules! checked_deserialize {
++    ($name:ident { $( $(#[$attribute:meta])* $visibility:vis $field:ident: $type:ty, )* }) => {
++        impl<'de> serde::Deserialize<'de> for $name {
++            fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
++                #[derive(serde::Deserialize)]
++                #[serde(deny_unknown_fields)]
++                struct Wire { $( $(#[$attribute])* $field: $type, )* }
++                let wire = <Wire as serde::Deserialize>::deserialize(deserializer)?;
++                let value = Self { $( $field: wire.$field, )* };
++                value.validate().map_err(serde::de::Error::custom)?;
++                Ok(value)
++            }
++        }
++    };
++}
++pub(crate) use checked_deserialize;
++
++pub(crate) fn check(
++    diagnostics: &mut Vec<Diagnostic>,
++    valid: bool,
++    stage: Stage,
++    code: DiagnosticCode,
++    subject: &Identifier,
++    detail: impl Into<String>,
++) {
++    if !valid {
++        diagnostics.push(Diagnostic::new(stage, code, Some(subject.clone()), detail));
++    }
++}
++
++pub(crate) fn finish(diagnostics: Vec<Diagnostic>) -> Result<(), Diagnostics> {
++    if diagnostics.is_empty() {
++        Ok(())
++    } else {
++        Err(Diagnostics::from(diagnostics))
++    }
++}
+diff --git a/crates/generate/ess-deployment/tests/deployment.rs b/crates/generate/ess-deployment/tests/deployment.rs
+index 763ed02..0ba0867 100644
+--- a/crates/generate/ess-deployment/tests/deployment.rs
++++ b/crates/generate/ess-deployment/tests/deployment.rs
+@@ -519,3 +519,565 @@ fn input_order_does_not_change_locked_bytes() {
+     let names: BTreeSet<_> = build.outputs().keys().cloned().collect();
+     assert_eq!(names.len(), 2);
+ }
++
++fn persisted_bundle() -> ReleaseBundle {
++    let build = build();
++    let runtime = runtime(&semantic(), &build);
++    bundle_release(
++        component(),
++        build.clone(),
++        runtime.clone(),
++        vec![
++            release_manifest(&build, &runtime, false),
++            release_manifest(&build, &runtime, true),
++        ],
++    )
++    .unwrap()
++}
++
++fn persisted_lock_and_deployment() -> (StackLock, DeploymentIr) {
++    let bundle = persisted_bundle();
++    let catalog: ReleaseCatalog = serde_json::from_value(serde_json::json!({
++        "format": "ess-release-catalog/1",
++        "releases": bundle.releases.values().map(|release| serde_json::json!({
++            "semantic_version": "v1", "release": release, "runtime": bundle.runtime,
++        })).collect::<Vec<_>>()
++    }))
++    .unwrap();
++    let stack: StackSpec = serde_json::from_value(serde_json::json!({
++        "format": "ess-stack/1", "stack": "example", "composition_digest": bundle.digest(),
++        "systems": (["frontend", "worker"].map(|service| serde_json::json!({
++            "service": service, "system": "oracle", "semantic_version": "v1",
++            "runtime_release": "^1", "chart_release": "^4",
++        }))),
++        "external_systems": [{"system": "carrier", "contract": "carrier-http/v1"}],
++    }))
++    .unwrap();
++    let lock = resolve_stack(&stack, &catalog).unwrap();
++    let environment: EnvironmentSpec = serde_json::from_value(serde_json::json!({
++        "format": "ess-environment/1", "environment": "test", "stack_digest": lock.digest(),
++        "cluster": "test-cluster", "namespace": "test",
++        "releases": (["frontend", "worker"].map(|service| serde_json::json!({
++            "service": service, "release_name": service, "service_account": service,
++            "secrets": {"database-password": {"name": "database", "key": "password"}},
++            "endpoints": {"carrier-api": "https://example.invalid"},
++        }))),
++        "external_systems": [{"system": "carrier"}],
++    }))
++    .unwrap();
++    let deployment = compile_deployment(&environment, &lock).unwrap();
++    (lock, deployment)
++}
++
++fn assert_persisted_refused<T: serde::de::DeserializeOwned>(value: &serde_json::Value) {
++    let json = serde_json::to_string(value).unwrap();
++    assert!(
++        serde_json::from_str::<T>(&json).is_err(),
++        "JSON admitted {json}"
++    );
++    assert!(
++        serde_json::from_value::<T>(value.clone()).is_err(),
++        "JSON value admitted {json}"
++    );
++    let yaml = serde_yaml::to_string(value).unwrap();
++    assert!(
++        serde_yaml::from_str::<T>(&yaml).is_err(),
++        "YAML admitted {json}"
++    );
++    assert!(
++        serde_json::from_str::<Vec<T>>(&format!("[{json}]")).is_err(),
++        "nested JSON admitted {json}"
++    );
++    assert!(
++        serde_yaml::from_str::<Vec<T>>(&format!("- {}", indent_yaml(&yaml, 2).trim_start()))
++            .is_err(),
++        "nested YAML admitted {json}"
++    );
++}
++
++fn assert_mutations_refused<T: serde::Serialize + serde::de::DeserializeOwned>(
++    valid: &T,
++    mutations: &[(&str, serde_json::Value)],
++) {
++    let mut admitted = Vec::new();
++    for (pointer, replacement) in mutations {
++        let mut invalid = serde_json::to_value(valid).unwrap();
++        *invalid
++            .pointer_mut(pointer)
++            .unwrap_or_else(|| panic!("missing fixture field {pointer}")) = replacement.clone();
++        if serde_json::from_value::<T>(invalid.clone()).is_ok() {
++            admitted.push(format!("{pointer}: {replacement}"));
++        } else {
++            assert_persisted_refused::<T>(&invalid);
++        }
++    }
++    assert!(admitted.is_empty(), "admitted mutations: {admitted:?}");
++}
++
++#[test]
++fn persisted_build_readers_refuse_invalid_graphs_and_compiler_constraints() {
++    use serde_json::json;
++    assert_mutations_refused(
++        &build(),
++        &[
++            ("/format", json!("future/99")),
++            ("/platforms", json!([])),
++            ("/platforms/0/os", json!("")),
++            ("/platforms/0/architecture", json!("")),
++            ("/order", json!([])),
++            ("/order", json!(["base", "base"])),
++            (
++                "/order",
++                json!(["source", "base", "compile", "chart-file", "runtime-image"]),
++            ),
++            ("/nodes/compile/base", json!("missing")),
++            ("/nodes/compile/base", json!("runtime-image")),
++            ("/nodes/source/path", json!("../escape")),
++            ("/nodes/source/destination", json!("relative")),
++            ("/nodes/base/reference", json!("alpine:latest")),
++            ("/nodes/compile/argv", json!([])),
++            ("/nodes/compile/argv", json!([""])),
++            (
++                "/nodes/compile/mounts",
++                json!([{"kind":"secret", "secret":"missing", "target":"/secret"}]),
++            ),
++            ("/nodes/compile/mounts/0/target", json!("relative")),
++            ("/nodes/chart-file/path", json!("relative")),
++            ("/outputs/app/name", json!("renamed")),
++            ("/outputs/app/node", json!("missing")),
++            ("/outputs/app/node", json!("chart-file")),
++            ("/outputs/app/repository", json!(null)),
++            ("/outputs", json!({})),
++        ],
++    );
++}
++
++#[test]
++fn persisted_runtime_readers_refuse_local_relationship_and_slot_defects() {
++    use serde_json::json;
++    let runtime = runtime(&semantic(), &build());
++    assert_mutations_refused(
++        &runtime,
++        &[
++            ("/format", json!("future/99")),
++            ("/processes/server/name", json!("other")),
++            ("/containers/server/name", json!("other")),
++            ("/containers/server/process", json!("missing")),
++            ("/workloads/oracle/name", json!("other")),
++            ("/workloads/oracle/replicas", json!(0)),
++            ("/workloads/oracle/containers", json!([])),
++            ("/workloads/oracle/containers", json!(["missing"])),
++            ("/containers/server/http_port", json!(null)),
++            ("/containers/server/config/0/kind", json!("literal")),
++            (
++                "/containers/server/secrets/0/environment",
++                json!("LOG_LEVEL"),
++            ),
++            ("/containers/server/secrets/0/name", json!("log-level")),
++            (
++                "/containers/server/volume_mounts/0/mount_path",
++                json!("/var/../escape"),
++            ),
++            (
++                "/containers/server/volume_mounts/0/volume",
++                json!("missing"),
++            ),
++            ("/workloads/oracle/volumes/0/size", json!("")),
++            ("/provided_endpoints/api/name", json!("other")),
++            ("/provided_endpoints/api/workload", json!("missing")),
++            ("/provided_endpoints/api/container", json!("missing")),
++        ],
++    );
++    let mut repeated = serde_json::to_value(&runtime).unwrap();
++    repeated["workloads"]["another"] = repeated["workloads"]["oracle"].clone();
++    repeated["workloads"]["another"]["name"] = json!("another");
++    assert_persisted_refused::<RuntimeIr>(&repeated);
++}
++
++#[test]
++fn persisted_component_and_release_readers_refuse_invalid_local_documents() {
++    use serde_json::json;
++    assert_mutations_refused(
++        &component(),
++        &[
++            ("/format", json!("future/99")),
++            ("/semantic_version", json!("1.0")),
++            ("/inputs/runtime", json!("../escape")),
++            ("/inputs/build", json!("")),
++            ("/release_units/chart", json!("oracle-runtime")),
++        ],
++    );
++    let bundle = persisted_bundle();
++    assert_mutations_refused(
++        bundle.releases.values().next().unwrap(),
++        &[
++            ("/format", json!("future/99")),
++            ("/source_commit", json!("main")),
++            ("/artifacts/chart/build_output", json!("other")),
++            ("/artifacts", json!({})),
++            ("/evidence", json!({})),
++        ],
++    );
++    let mut image_release =
++        serde_json::to_value(&bundle.releases[&"oracle-runtime".parse().unwrap()]).unwrap();
++    image_release["artifacts"]["app"]["platforms"] = json!({});
++    assert_persisted_refused::<ReleaseManifest>(&image_release);
++}
++
++#[test]
++fn persisted_lock_readers_preserve_local_service_identity_and_reject_invariants() {
++    use serde_json::json;
++    let (lock, _) = persisted_lock_and_deployment();
++    assert_ne!(
++        lock.systems[&"frontend".parse().unwrap()].system.as_str(),
++        "frontend"
++    );
++    assert_mutations_refused(
++        &lock,
++        &[
++            ("/format", json!("future/99")),
++            ("/external_systems/carrier/system", json!("other")),
++            ("/systems/frontend/depends_on", json!(["missing"])),
++            ("/systems/frontend/depends_on", json!(["frontend"])),
++            ("/systems/frontend/chart/kind", json!("binary")),
++            (
++                "/systems/frontend/runtime_artifacts/app/build_output",
++                json!("other"),
++            ),
++            (
++                "/systems/frontend/runtime_artifacts/app/platforms",
++                json!({}),
++            ),
++            ("/systems/frontend/runtime_artifacts", json!({})),
++            (
++                "/systems/frontend/runtime/config/log-level",
++                json!("literal"),
++            ),
++            (
++                "/systems/frontend/runtime/endpoint_names",
++                json!({"absent":"api"}),
++            ),
++        ],
++    );
++    let mut cycle = serde_json::to_value(&lock).unwrap();
++    cycle["systems"]["frontend"]["depends_on"] = json!(["worker"]);
++    cycle["systems"]["worker"]["depends_on"] = json!(["frontend"]);
++    assert_persisted_refused::<StackLock>(&cycle);
++}
++
++#[test]
++fn persisted_deployment_readers_reject_invalid_release_sets_and_canonical_order() {
++    use serde_json::json;
++    let (_, deployment) = persisted_lock_and_deployment();
++    assert_mutations_refused(
++        &deployment,
++        &[
++            ("/format", json!("future/99")),
++            ("/cluster", json!("")),
++            ("/rollout_order", json!([])),
++            ("/rollout_order", json!(["frontend"])),
++            ("/rollout_order", json!(["frontend", "frontend"])),
++            ("/rollout_order", json!(["frontend", "missing"])),
++            ("/rollout_order", json!(["worker", "frontend"])),
++            ("/releases/frontend/service", json!("other")),
++            ("/releases/frontend/release_name", json!("")),
++            ("/releases/frontend/namespace", json!("")),
++            ("/releases/frontend/service_account", json!("")),
++            ("/releases/frontend/chart/kind", json!("binary")),
++            ("/releases/frontend/images/app/build_output", json!("other")),
++            ("/releases/frontend/images/app/kind", json!("binary")),
++            ("/releases/frontend/images/app/platforms", json!({})),
++        ],
++    );
++    let mut invalid = serde_json::to_value(&deployment).unwrap();
++    invalid["releases"]["frontend"]["depends_on"] = json!(["missing"]);
++    assert_persisted_refused::<DeploymentIr>(&invalid);
++    invalid["releases"]["frontend"]["depends_on"] = json!(["worker"]);
++    invalid["releases"]["worker"]["depends_on"] = json!(["frontend"]);
++    assert_persisted_refused::<DeploymentIr>(&invalid);
++}
++
++#[test]
++fn persisted_bundle_checks_original_keys_and_consistently_rehashed_nested_graphs() {
++    use serde_json::json;
++    let bundle = persisted_bundle();
++    assert_mutations_refused(&bundle, &[("/format", json!("future/99"))]);
++    let mut renamed = bundle.clone();
++    let release = renamed
++        .releases
++        .remove(&"oracle-chart".parse().unwrap())
++        .unwrap();
++    renamed.releases.insert("renamed".parse().unwrap(), release);
++    assert!(verify_release_bundle(renamed.clone()).is_err());
++    assert_persisted_refused::<ReleaseBundle>(&serde_json::to_value(&renamed).unwrap());
++
++    for pointer in [
++        "/runtime/containers/server/process",
++        "/runtime/processes/server/image",
++    ] {
++        let mut invalid = serde_json::to_value(&bundle).unwrap();
++        *invalid.pointer_mut(pointer).unwrap() = json!("missing");
++        // Preserve field order when hashing by replacing inside compiler-produced bytes.
++        let runtime_json = if pointer.contains("containers") {
++            bundle
++                .runtime
++                .to_canonical_json()
++                .replace("\"process\": \"server\"", "\"process\": \"missing\"")
++        } else {
++            bundle
++                .runtime
++                .to_canonical_json()
++                .replace("\"image\": \"app\"", "\"image\": \"missing\"")
++        };
++        let digest = ess_deployment::Digest::of_bytes(runtime_json.as_bytes());
++        for release in invalid["releases"].as_object_mut().unwrap().values_mut() {
++            release["runtime_digest"] = json!(digest);
++        }
++        assert_persisted_refused::<ReleaseBundle>(&invalid);
++    }
++    let mut mismatch = serde_json::to_value(&bundle).unwrap();
++    mismatch["runtime"]["build_digest"] = json!(ess_deployment::Digest::of_bytes(b"other build"));
++    assert_persisted_refused::<ReleaseBundle>(&mismatch);
++}
++
++#[test]
++fn persisted_documents_preserve_compiler_bytes_across_all_public_reader_routes() {
++    fn roundtrip<T: serde::Serialize + serde::de::DeserializeOwned>(value: &T) {
++        let json = serde_json::to_string_pretty(value).unwrap();
++        let from_json: T = serde_json::from_str(&json).unwrap();
++        assert_eq!(serde_json::to_string_pretty(&from_json).unwrap(), json);
++        let from_yaml: T = serde_yaml::from_str(&serde_yaml::to_string(value).unwrap()).unwrap();
++        assert_eq!(serde_json::to_string_pretty(&from_yaml).unwrap(), json);
++    }
++    let bundle = persisted_bundle();
++    roundtrip(&bundle.build);
++    roundtrip(&bundle.runtime);
++    roundtrip(&bundle.component);
++    for release in bundle.releases.values() {
++        roundtrip(release);
++    }
++    roundtrip(&bundle);
++    let (lock, deployment) = persisted_lock_and_deployment();
++    roundtrip(&lock);
++    roundtrip(&deployment);
++}
++
++#[test]
++fn persisted_readers_reject_duplicate_map_keys_before_collection() {
++    fn duplicate<T: serde::Serialize + serde::de::DeserializeOwned>(
++        value: &T,
++        key: &str,
++        entry: &serde_json::Value,
++    ) {
++        let json = serde_json::to_string(value).unwrap();
++        let needle = format!("\"{key}\":");
++        let duplicate = format!("\"{key}\":{entry},\"{key}\":");
++        let invalid = json.replacen(&needle, &duplicate, 1);
++        assert_ne!(invalid, json);
++        assert!(
++            serde_json::from_str::<T>(&invalid).is_err(),
++            "duplicate key admitted {invalid}"
++        );
++        assert!(serde_json::from_str::<Vec<T>>(&format!("[{invalid}]")).is_err());
++    }
++    let bundle = persisted_bundle();
++    duplicate(
++        &bundle.build,
++        "app",
++        &serde_json::to_value(&bundle.build).unwrap()["outputs"]["app"],
++    );
++    duplicate(
++        &bundle.runtime,
++        "server",
++        &serde_json::to_value(&bundle.runtime).unwrap()["processes"]["server"],
++    );
++    let release = &bundle.releases[&"oracle-runtime".parse().unwrap()];
++    duplicate(
++        release,
++        "app",
++        &serde_json::to_value(release).unwrap()["artifacts"]["app"],
++    );
++    duplicate(
++        release,
++        "linux/amd64",
++        &serde_json::to_value(release).unwrap()["artifacts"]["app"]["platforms"]["linux/amd64"],
++    );
++    duplicate(
++        &bundle,
++        "oracle-chart",
++        &serde_json::to_value(&bundle).unwrap()["releases"]["oracle-chart"],
++    );
++    let (lock, deployment) = persisted_lock_and_deployment();
++    duplicate(
++        &lock,
++        "frontend",
++        &serde_json::to_value(&lock).unwrap()["systems"]["frontend"],
++    );
++    duplicate(
++        &deployment,
++        "frontend",
++        &serde_json::to_value(&deployment).unwrap()["releases"]["frontend"],
++    );
++    duplicate(
++        &deployment,
++        "database-password",
++        &serde_json::to_value(&deployment).unwrap()["releases"]["frontend"]["secrets"]
++            ["database-password"],
++    );
++}
++
++#[test]
++fn persisted_convenience_readers_and_catalogs_use_the_checked_boundary() {
++    fn future<T: serde::Serialize>(value: &T) -> String {
++        let mut value = serde_json::to_value(value).unwrap();
++        value["format"] = serde_json::json!("future/99");
++        serde_json::to_string(&value).unwrap()
++    }
++    let bundle = persisted_bundle();
++    assert!(BuildIr::from_json(&future(&bundle.build)).is_err());
++    assert!(RuntimeIr::from_json(&future(&bundle.runtime)).is_err());
++    assert!(ess_deployment::ComponentIr::from_json(&future(&bundle.component)).is_err());
++    let release = bundle.releases.values().next().unwrap();
++    assert!(ReleaseManifest::from_json(&future(release)).is_err());
++    assert!(ReleaseManifest::from_yaml(&future(release)).is_err());
++    assert!(ReleaseBundle::from_json(&future(&bundle)).is_err());
++    assert!(ReleaseBundle::from_yaml(&future(&bundle)).is_err());
++    let (lock, deployment) = persisted_lock_and_deployment();
++    assert!(StackLock::from_json(&future(&lock)).is_err());
++    assert!(DeploymentIr::from_json(&future(&deployment)).is_err());
++    let catalog = serde_json::json!({
++        "format": "ess-release-catalog/1",
++        "releases": [{"semantic_version":"v1", "release":release, "runtime":bundle.runtime}],
++    });
++    let valid: ReleaseCatalog = serde_json::from_value(catalog.clone()).unwrap();
++    assert!(ReleaseCatalog::from_json(&future(&valid)).is_err());
++    assert!(ReleaseCatalog::from_yaml(&future(&valid)).is_err());
++    assert_mutations_refused(
++        &valid,
++        &[
++            ("/format", serde_json::json!("future/99")),
++            (
++                "/releases/0/release/runtime_digest",
++                serde_json::json!(bundle.build.digest()),
++            ),
++            (
++                "/releases/0/runtime/containers/server/process",
++                serde_json::json!("absent"),
++            ),
++        ],
++    );
++}
++
++#[test]
++fn mutable_public_documents_are_rechecked_at_consuming_entrypoints() {
++    let bundle = persisted_bundle();
++    let mut release = bundle.releases.values().next().unwrap().clone();
++    release.evidence.clear();
++    assert!(verify_release(&release, &bundle.build, &bundle.runtime).is_err());
++    let (mut lock, mut deployment) = persisted_lock_and_deployment();
++    lock.systems
++        .get_mut(&"frontend".parse().unwrap())
++        .unwrap()
++        .chart
++        .kind = ess_deployment::ArtifactKind::Binary;
++    let environment: EnvironmentSpec = serde_json::from_value(serde_json::json!({
++        "format": "ess-environment/1", "environment":"test", "stack_digest": lock.digest(),
++        "cluster":"test", "namespace":"test", "releases":[],
++    }))
++    .unwrap();
++    assert!(compile_deployment(&environment, &lock)
++        .unwrap_err()
++        .contains(DiagnosticCode::InvalidValue));
++    deployment.rollout_order.clear();
++    assert!(deployment.validate().is_err());
++    let mut catalog: ReleaseCatalog = serde_json::from_value(serde_json::json!({
++        "format":"ess-release-catalog/1", "releases": [{
++            "semantic_version":"v1", "runtime":bundle.runtime,
++            "release":bundle.releases.values().next().unwrap(),
++        }],
++    }))
++    .unwrap();
++    catalog.releases[0].release.evidence.clear();
++    let stack: StackSpec = serde_json::from_value(serde_json::json!({
++        "format":"ess-stack/1", "stack":"empty", "composition_digest":bundle.digest(), "systems":[],
++    }))
++    .unwrap();
++    assert!(resolve_stack(&stack, &catalog)
++        .unwrap_err()
++        .contains(DiagnosticCode::MissingEvidence));
++}
++
++#[test]
++fn persisted_duplicate_keys_are_rejected_at_every_populated_nested_map() {
++    fn walk(value: &serde_json::Value, path: &str, paths: &mut Vec<String>) {
++        match value {
++            serde_json::Value::Object(map) => {
++                if !map.is_empty() {
++                    paths.push(path.to_owned());
++                }
++                for (key, value) in map {
++                    walk(
++                        value,
++                        &format!("{path}/{}", key.replace('~', "~0").replace('/', "~1")),
++                        paths,
++                    );
++                }
++            }
++            serde_json::Value::Array(values) => {
++                for (index, value) in values.iter().enumerate() {
++                    walk(value, &format!("{path}/{index}"), paths);
++                }
++            }
++            _ => {}
++        }
++    }
++    fn check<T: serde::Serialize + serde::de::DeserializeOwned>(document: &T) {
++        let document = serde_json::to_value(document).unwrap();
++        let mut paths = Vec::new();
++        walk(&document, "", &mut paths);
++        assert!(!paths.is_empty());
++        for pointer in paths {
++            let parent = document.pointer(&pointer).unwrap();
++            let (key, value) = parent.as_object().unwrap().iter().next().unwrap();
++            let raw = serde_json::to_string(parent).unwrap().replacen(
++                '{',
++                &format!("{{{}:{value},", serde_json::to_string(key).unwrap()),
++                1,
++            );
++            let mut invalid = document.clone();
++            *invalid.pointer_mut(&pointer).unwrap() =
++                serde_json::json!("__duplicate_map_fixture__");
++            let json = serde_json::to_string(&invalid)
++                .unwrap()
++                .replace("\"__duplicate_map_fixture__\"", &raw);
++            assert!(
++                serde_json::from_str::<T>(&json).is_err(),
++                "JSON duplicate admitted at {pointer}"
++            );
++            assert!(
++                serde_yaml::from_str::<T>(&json).is_err(),
++                "YAML duplicate admitted at {pointer}"
++            );
++        }
++    }
++    let mut source = build_spec();
++    for node in &mut source.nodes {
++        if let ess_deployment::BuildNode::Run { environment, .. } = &mut node.node {
++            environment.insert("LANG".to_owned(), "C".to_owned());
++        }
++        if let ess_deployment::BuildNode::Image { config, .. } = &mut node.node {
++            config.environment.insert("LANG".to_owned(), "C".to_owned());
++        }
++    }
++    check(&compile_build(&source).unwrap());
++    check(&persisted_bundle());
++    let (lock, mut deployment) = persisted_lock_and_deployment();
++    deployment
++        .releases
++        .get_mut(&"frontend".parse().unwrap())
++        .unwrap()
++        .config
++        .insert("log-level".parse().unwrap(), "debug".to_owned());
++    check(&lock);
++    check(&deployment);
++}

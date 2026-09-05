@@ -1,0 +1,212 @@
+diff --git a/crates/generate/schema-contract/tests/typescript_typecheck.rs b/crates/generate/schema-contract/tests/typescript_typecheck.rs
+index 0cb1c7f..a98b69d 100644
+--- a/crates/generate/schema-contract/tests/typescript_typecheck.rs
++++ b/crates/generate/schema-contract/tests/typescript_typecheck.rs
+@@ -245,3 +245,116 @@ fn compiler_rejects_a_known_duplicate_binding() {
+         "expected duplicate-identifier diagnostics: {output:?}"
+     );
+ }
++
++#[test]
++fn nested_nullable_arrays_and_global_looking_aliases_typecheck() {
++    let source = json!({
++        "$id": "urn:example:adversary:nested",
++        "$defs": {
++            "leaf~node": {"type": "string"},
++            "branch/node": {
++                "type": "object", "additionalProperties": false,
++                "properties": {
++                    "next": {"type": ["null", "array"], "items": {"$ref": "#/$defs/leaf~0node"}}
++                }
++            }
++        },
++        "type": ["null", "array"],
++        "items": {"type": "array", "items": {"$ref": "#/$defs/branch~1node"}}
++    });
++    let mut declarations = Vec::new();
++    for root in [
++        "array",
++        "$Array",
++        "_Array",
++        "ReadonlyArray",
++        "Object",
++        "Promise",
++        "globalThis",
++    ] {
++        let generated = project(&source, root).expect("distinct bindings remain feasible");
++        assert!(generated.contains("export type BranchNode"));
++        assert!(generated.contains("export type LeafNode"));
++        assert!(generated.contains("Array<Array<BranchNode>>"));
++        declarations.push(generated);
++    }
++    let output = typecheck(&declarations);
++    assert!(
++        output.status.success(),
++        "accepted nested helper cases: {output:?}"
++    );
++}
++
++#[test]
++fn contextual_roots_and_keyword_properties_keep_compilable_spelling() {
++    let source = json!({
++        "$id": "urn:example:adversary:context",
++        "$defs": {"array": {"type": "string", "items": {
++            "type": "array", "items": {"type": "string"}
++        }}},
++        "type": "object", "additionalProperties": false,
++        "properties": {
++            "Array": {"$ref": "#/$defs/array"},
++            "await": {"type": "string"},
++            "constructor": {"type": "string"},
++            "__proto__": {"type": "string"},
++            "readonly": {"type": "string"},
++            "foo/bar": {"type": "string"}
++        },
++        "required": ["Array", "__proto__"]
++    });
++    let mut declarations = Vec::new();
++    for root in [
++        "namespace",
++        "type",
++        "satisfies",
++        "infer",
++        "using",
++        "constructor",
++    ] {
++        let generated = project(&source, root).expect("contextual root stays valid");
++        assert!(generated.contains("  Array: Array;\n"));
++        assert!(generated.contains("  __proto__: string;\n"));
++        assert!(generated.contains("  readonly?: string;\n"));
++        assert!(generated.contains("  \"foo/bar\"?: string;\n"));
++        declarations.push(generated);
++    }
++    let output = typecheck(&declarations);
++    assert!(
++        output.status.success(),
++        "property/binding separation: {output:?}"
++    );
++}
++
++#[test]
++fn multiple_normalized_definitions_keep_references_and_binding_order() {
++    let source = json!({
++        "$id": "urn:example:adversary:order",
++        "$defs": {
++            "z-last": {"type": "boolean"},
++            "foo/bar": {"type": "string"},
++            "a~b": {"type": "object", "additionalProperties": false,
++                "properties": {"ref": {"$ref": "#/$defs/foo~1bar"}}}
++        },
++        "type": "object", "additionalProperties": false,
++        "properties": {
++            "a~b": {"$ref": "#/$defs/a~0b"},
++            "foo/bar": {"$ref": "#/$defs/foo~1bar"},
++            "z-last": {"$ref": "#/$defs/z-last"}
++        }
++    });
++    let generated = project(&source, "$Root").expect("noncolliding normalized definitions");
++    let first = generated.find("export type AB").unwrap();
++    let middle = generated.find("export type FooBar").unwrap();
++    let last = generated.find("export type ZLast").unwrap();
++    let root = generated.find("export type $Root").unwrap();
++    assert!(first < middle && middle < last && last < root);
++    assert!(generated.contains("  \"a~b\"?: AB;\n"));
++    assert!(generated.contains("  \"foo/bar\"?: FooBar;\n"));
++    assert_eq!(project(&source, "$Root").unwrap(), generated);
++    let output = typecheck(&[generated]);
++    assert!(
++        output.status.success(),
++        "normalized declaration references: {output:?}"
++    );
++}
+diff --git a/crates/generate/schema-contract/tests/typescript_bindings.rs b/crates/generate/schema-contract/tests/typescript_bindings.rs
+new file mode 100644
+index 0000000..a622776
+--- /dev/null
++++ b/crates/generate/schema-contract/tests/typescript_bindings.rs
+@@ -0,0 +1,84 @@
++//! Boundary cases for the public declaration allocator, without requiring an external compiler.
++
++use schema_contract::typescript::{project, ProjectionError};
++use serde_json::json;
++
++#[test]
++fn escaped_and_non_ascii_definition_keys_refuse_root_collisions_deterministically() {
++    for (key, root) in [
++        ("a~b", "AB"),
++        ("node/name", "NodeName"),
++        ("__item__", "Item"),
++        ("café", "Caf"),
++        ("foo.$bar", "FooBar"),
++    ] {
++        let reference = key.replace('~', "~0").replace('/', "~1");
++        let source = json!({
++            "$id": "urn:example:adversary:bindings",
++            "$defs": {
++                "other": {"type": "number"},
++                key: {"type": "string"},
++                "z-final": {"type": "boolean"}
++            },
++            "$ref": format!("#/$defs/{reference}")
++        });
++        let before = serde_json::to_vec(&source).unwrap();
++        let first = project(&source, root).expect_err("normalized root collision");
++        assert!(
++            matches!(&first, ProjectionError::InvalidShape { pointer, message }
++            if pointer == &format!("/$defs/{reference}") && message.contains(root))
++        );
++        assert_eq!(project(&source, root), Err(first));
++        assert_eq!(serde_json::to_vec(&source).unwrap(), before);
++    }
++}
++
++#[test]
++fn array_helpers_in_alternatives_and_unused_definitions_cannot_be_shadowed() {
++    for definition in [
++        json!({"type": ["null", "array"], "items": {"type": "string"}}),
++        json!({"type": "object", "additionalProperties": false,
++        "properties": {"children": {"type": "array", "items": {
++            "type": "array", "items": {"type": "number"}
++        }}}}),
++    ] {
++        let source = json!({
++            "$id": "urn:example:adversary:array",
++            "$defs": {"unused": definition},
++            "type": "string"
++        });
++        let first = project(&source, "Array").expect_err("root shadows a rendered helper");
++        assert_eq!(project(&source, "Array"), Err(first));
++        let mut named = source;
++        named["$defs"]["_array_"] = json!({"type": "string"});
++        let first = project(&named, "Root").expect_err("normalized definition shadows helper");
++        assert_eq!(project(&named, "Root"), Err(first));
++    }
++}
++
++#[test]
++fn property_names_and_unemitted_items_do_not_reserve_bindings() {
++    let source = json!({
++        "$id": "urn:example:adversary:properties",
++        "$defs": {"array": {"type": "string", "items": {
++            "type": "array", "items": {"type": "string"}
++        }}},
++        "type": "object",
++        "additionalProperties": false,
++        "properties": {
++            "Array": {"$ref": "#/$defs/array"},
++            "await": {"type": "string"},
++            "constructor": {"type": "string"},
++            "foo/bar": {"type": "string"}
++        }
++    });
++    let before = source.clone();
++    let rendered = project(&source, "namespace").expect("unused items do not emit a helper");
++    assert!(rendered.contains("export type Array = string;\n"));
++    assert!(rendered.contains("  Array?: Array;\n"));
++    assert!(rendered.contains("  await?: string;\n"));
++    assert!(rendered.contains("  constructor?: string;\n"));
++    assert!(rendered.contains("  \"foo/bar\"?: string;\n"));
++    assert_eq!(source, before);
++    assert_eq!(project(&source, "namespace").unwrap(), rendered);
++}
+
