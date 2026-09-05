@@ -245,3 +245,116 @@ fn compiler_rejects_a_known_duplicate_binding() {
         "expected duplicate-identifier diagnostics: {output:?}"
     );
 }
+
+#[test]
+fn nested_nullable_arrays_and_global_looking_aliases_typecheck() {
+    let source = json!({
+        "$id": "urn:example:adversary:nested",
+        "$defs": {
+            "leaf~node": {"type": "string"},
+            "branch/node": {
+                "type": "object", "additionalProperties": false,
+                "properties": {
+                    "next": {"type": ["null", "array"], "items": {"$ref": "#/$defs/leaf~0node"}}
+                }
+            }
+        },
+        "type": ["null", "array"],
+        "items": {"type": "array", "items": {"$ref": "#/$defs/branch~1node"}}
+    });
+    let mut declarations = Vec::new();
+    for root in [
+        "array",
+        "$Array",
+        "_Array",
+        "ReadonlyArray",
+        "Object",
+        "Promise",
+        "globalThis",
+    ] {
+        let generated = project(&source, root).expect("distinct bindings remain feasible");
+        assert!(generated.contains("export type BranchNode"));
+        assert!(generated.contains("export type LeafNode"));
+        assert!(generated.contains("Array<Array<BranchNode>>"));
+        declarations.push(generated);
+    }
+    let output = typecheck(&declarations);
+    assert!(
+        output.status.success(),
+        "accepted nested helper cases: {output:?}"
+    );
+}
+
+#[test]
+fn contextual_roots_and_keyword_properties_keep_compilable_spelling() {
+    let source = json!({
+        "$id": "urn:example:adversary:context",
+        "$defs": {"array": {"type": "string", "items": {
+            "type": "array", "items": {"type": "string"}
+        }}},
+        "type": "object", "additionalProperties": false,
+        "properties": {
+            "Array": {"$ref": "#/$defs/array"},
+            "await": {"type": "string"},
+            "constructor": {"type": "string"},
+            "__proto__": {"type": "string"},
+            "readonly": {"type": "string"},
+            "foo/bar": {"type": "string"}
+        },
+        "required": ["Array", "__proto__"]
+    });
+    let mut declarations = Vec::new();
+    for root in [
+        "namespace",
+        "type",
+        "satisfies",
+        "infer",
+        "using",
+        "constructor",
+    ] {
+        let generated = project(&source, root).expect("contextual root stays valid");
+        assert!(generated.contains("  Array: Array;\n"));
+        assert!(generated.contains("  __proto__: string;\n"));
+        assert!(generated.contains("  readonly?: string;\n"));
+        assert!(generated.contains("  \"foo/bar\"?: string;\n"));
+        declarations.push(generated);
+    }
+    let output = typecheck(&declarations);
+    assert!(
+        output.status.success(),
+        "property/binding separation: {output:?}"
+    );
+}
+
+#[test]
+fn multiple_normalized_definitions_keep_references_and_binding_order() {
+    let source = json!({
+        "$id": "urn:example:adversary:order",
+        "$defs": {
+            "z-last": {"type": "boolean"},
+            "foo/bar": {"type": "string"},
+            "a~b": {"type": "object", "additionalProperties": false,
+                "properties": {"ref": {"$ref": "#/$defs/foo~1bar"}}}
+        },
+        "type": "object", "additionalProperties": false,
+        "properties": {
+            "a~b": {"$ref": "#/$defs/a~0b"},
+            "foo/bar": {"$ref": "#/$defs/foo~1bar"},
+            "z-last": {"$ref": "#/$defs/z-last"}
+        }
+    });
+    let generated = project(&source, "$Root").expect("noncolliding normalized definitions");
+    let first = generated.find("export type AB").unwrap();
+    let middle = generated.find("export type FooBar").unwrap();
+    let last = generated.find("export type ZLast").unwrap();
+    let root = generated.find("export type $Root").unwrap();
+    assert!(first < middle && middle < last && last < root);
+    assert!(generated.contains("  \"a~b\"?: AB;\n"));
+    assert!(generated.contains("  \"foo/bar\"?: FooBar;\n"));
+    assert_eq!(project(&source, "$Root").unwrap(), generated);
+    let output = typecheck(&[generated]);
+    assert!(
+        output.status.success(),
+        "normalized declaration references: {output:?}"
+    );
+}
