@@ -1,0 +1,94 @@
+{
+  "format": "ess-diff/1",
+  "before": {
+    "system": "catalog",
+    "specification_version": 2,
+    "spec_digest": "9aa886fb68a2447af40c92cf53ed260af0d102507ac87e73a8e31fb7d20a0916"
+  },
+  "after": {
+    "system": "catalog",
+    "specification_version": 2,
+    "spec_digest": "2dcf59ba04dd2fb953218bf8c60146d4efd4fca8282af8cd53c2063f4f4616be"
+  },
+  "changes": [
+    {
+      "id": "type/catalog.pricing.Currency/variant-added/CHF",
+      "relation": "expanded",
+      "change": {
+        "category": "type",
+        "subject": "catalog.pricing.Currency",
+        "changed": {
+          "kind": "variant-added",
+          "variant": "CHF"
+        }
+      }
+    },
+    {
+      "id": "type/catalog.pricing.Currency/variant-removed/GBP",
+      "relation": "narrowed",
+      "change": {
+        "category": "type",
+        "subject": "catalog.pricing.Currency",
+        "changed": {
+          "kind": "variant-removed",
+          "variant": "GBP"
+        }
+      }
+    },
+    {
+      "id": "entity/catalog.pricing.PriceList/invariants-changed",
+      "relation": "changed",
+      "change": {
+        "category": "entity",
+        "subject": "catalog.pricing.PriceList",
+        "changed": {
+          "kind": "invariants-changed",
+          "before": [
+            "floor.amount >= 0"
+          ],
+          "after": [
+            "floor.amount > 0"
+          ]
+        }
+      }
+    },
+    {
+      "id": "command/catalog.pricing.CreatePriceList/outcome-condition-changed/created",
+      "relation": "changed",
+      "change": {
+        "category": "command",
+        "subject": "catalog.pricing.CreatePriceList",
+        "changed": {
+          "kind": "outcome-condition-changed",
+          "outcome": "created",
+          "before": "when floor.amount > 0",
+          "after": "when floor.amount >= 1"
+        }
+      }
+    },
+    {
+      "id": "actor/catalog.pricing.Auditor/grant-removed/catalog.pricing.RetirePriceList",
+      "relation": "narrowed",
+      "change": {
+        "category": "actor",
+        "subject": "catalog.pricing.Auditor",
+        "changed": {
+          "kind": "grant-removed",
+          "command": "catalog.pricing.RetirePriceList"
+        }
+      }
+    },
+    {
+      "id": "actor/catalog.pricing.PricingManager/grant-added/catalog.pricing.RetirePriceList",
+      "relation": "expanded",
+      "change": {
+        "category": "actor",
+        "subject": "catalog.pricing.PricingManager",
+        "changed": {
+          "kind": "grant-added",
+          "command": "catalog.pricing.RetirePriceList"
+        }
+      }
+    }
+  ]
+}

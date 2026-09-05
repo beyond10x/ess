@@ -47,6 +47,14 @@ fn every_relation_in_the_vocabulary_is_minted_by_a_specification_this_repository
         minted.extend(graph.edges().map(|edge| edge.relation));
     }
 
+    // The legacy examples retain all their production obligations; this valid compiled extension
+    // exercises the two new CLI/parameter declarations that those examples do not yet publish.
+    minted.extend(
+        SemanticDependencyGraph::of(&review_cli_parameter_fixture(false))
+            .edges()
+            .map(|edge| edge.relation),
+    );
+
     let missing: Vec<DependencyRelation> = DependencyRelation::ALL
         .into_iter()
         .filter(|relation| !minted.contains(relation))
@@ -184,5 +192,127 @@ fn a_closure_over_the_whole_model_terminates_and_stays_inside_it() {
             );
         }
         assert!(reach.reaches(node), "every construct is in its own closure");
+    }
+}
+
+#[test]
+fn review_relation_edges_include_the_reverse_owns_carrier_and_old_graph_union() {
+    let before = support::compiled("examples/billing");
+    let after = support::compiled_with("examples/billing", |files| {
+        for entity in files.iter_mut().flat_map(|(_, file)| &mut file.entities) {
+            entity.relations.clear();
+        }
+    });
+    let graph = SemanticDependencyGraph::of(&before);
+    let account: EssSemanticRef = EntityRef::new(name("billing.invoice.Account")).into();
+    let invoice: EssSemanticRef = EntityRef::new(name("billing.invoice.Invoice")).into();
+    let edges: Vec<_> = graph
+        .edges()
+        .map(|edge| {
+            (
+                edge.dependent.clone(),
+                serde_json::to_value(edge.relation).unwrap(),
+                edge.dependency.clone(),
+            )
+        })
+        .collect();
+    assert!(edges.contains(&(
+        account.clone(),
+        serde_json::json!("relation-target"),
+        invoice.clone()
+    )));
+    assert!(edges.contains(&(
+        invoice.clone(),
+        serde_json::json!("ownership-carrier"),
+        account.clone()
+    )));
+    assert!(graph
+        .slice(&[invoice.clone()].into_iter().collect())
+        .contains_key(&account));
+    let union = graph.merged(&SemanticDependencyGraph::of(&after));
+    assert!(
+        union.closure(&account).reaches(&invoice),
+        "removed relation still affects its old carrier"
+    );
+}
+
+fn review_cli_parameter_fixture(grouped: bool) -> ess_compiler::EssIr {
+    support::compiled_with("examples/billing", |files| {
+        for (_, file) in files {
+            for view in &mut file.views {
+                if view.name == name("billing.invoice.InvoiceById") {
+                    view.params = vec![serde_json::from_value(
+                        serde_json::json!({"name":"wanted", "type":"billing.invoice.InvoiceId"}),
+                    )
+                    .unwrap()];
+                    view.filter = Some(
+                        ess_primitives::predicate::Predicate::parse_expression(
+                            "invoice_id == param.wanted",
+                        )
+                        .unwrap(),
+                    );
+                }
+            }
+            for component in &mut file.components {
+                if component.name == "invoice-service" {
+                    component.reached_by = ess_domain::component::Reach::CommandLine;
+                    let views = vec![
+                        name("billing.invoice.InvoiceById"),
+                        name("billing.invoice.OutstandingInvoices"),
+                    ];
+                    component.cli = Some(ess_domain::component::RawCommandLineSurface {
+                        binary: "invoices".to_owned(),
+                        commands: component.accepts.commands.clone(),
+                        views: if grouped { Vec::new() } else { views.clone() },
+                        groups: if grouped {
+                            vec![ess_domain::component::RawCommandGroup {
+                                name: "read".to_owned(),
+                                summary: None,
+                                commands: Vec::new(),
+                                views,
+                            }]
+                        } else {
+                            Vec::new()
+                        },
+                    });
+                }
+            }
+        }
+    })
+}
+
+#[test]
+fn review_cli_views_and_parameter_types_are_forward_slice_dependencies() {
+    for grouped in [false, true] {
+        let graph = SemanticDependencyGraph::of(&review_cli_parameter_fixture(grouped));
+        let component: EssSemanticRef =
+            ComponentRef::new(ComponentName::new("invoice-service").unwrap()).into();
+        let view: EssSemanticRef =
+            ess_compiler::refs::ViewRef::new(name("billing.invoice.InvoiceById")).into();
+        let id: EssSemanticRef = DeclaredTypeRef::new(name("billing.invoice.InvoiceId")).into();
+        let edges: Vec<_> = graph
+            .edges()
+            .map(|edge| {
+                (
+                    edge.dependent.clone(),
+                    serde_json::to_value(edge.relation).unwrap(),
+                    edge.dependency.clone(),
+                )
+            })
+            .collect();
+        assert!(edges.contains(&(
+            component.clone(),
+            serde_json::json!("exposes-view"),
+            view.clone()
+        )));
+        assert!(edges.contains(&(
+            view.clone(),
+            serde_json::json!("parameter-type"),
+            id.clone()
+        )));
+        assert!(graph
+            .slice(&[component.clone()].into_iter().collect())
+            .contains_key(&view));
+        assert!(graph.closure(&id).reaches(&component));
     }
 }

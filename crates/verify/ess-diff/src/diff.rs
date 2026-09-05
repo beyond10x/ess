@@ -119,6 +119,13 @@ pub fn diff(before: &EssIr, after: &EssIr) -> Result<EssDelta, DiffRefusal> {
     component_changes(before, after, &mut changes);
     binding_changes(before, after, &mut changes);
 
+    if residual(before) != residual(after) || unclassified_order_moved(before, after) {
+        changes.push(SemanticChange::System {
+            subject: before.system().clone(),
+            changed: SystemChange::UnclassifiedChanged,
+        });
+    }
+
     Ok(EssDelta::new(
         EssRevisionRef::of(before),
         EssRevisionRef::of(after),
@@ -797,6 +804,19 @@ fn component_changes(before: &EssIr, after: &EssIr, changes: &mut Vec<SemanticCh
                     });
                 }
 
+                if was.reached_by != is.reached_by {
+                    push(ComponentChange::ReachChanged {
+                        before: was.reached_by.as_str().to_owned(),
+                        after: is.reached_by.as_str().to_owned(),
+                    });
+                }
+                if was.cli != is.cli {
+                    push(ComponentChange::CliChanged {
+                        before: was.cli.as_ref().map(cli_contract),
+                        after: is.cli.as_ref().map(cli_contract),
+                    });
+                }
+
                 for delta in naming_deltas(&was.naming, &is.naming, name.as_str()) {
                     match delta {
                         NamingDelta::Wire(a, b) => push(ComponentChange::WireNameChanged {
@@ -1012,41 +1032,7 @@ fn compare_entities(
         });
     }
 
-    // The identity is one field, not a member of `fields`, so it is compared by position rather
-    // than by name — which is why a renamed identity is the one rename this crate reports.
-    if was.identity.name != is.identity.name {
-        push(EntityChange::IdentityRenamed {
-            before: was.identity.name.clone(),
-            after: is.identity.name.clone(),
-        });
-    }
-    if was.identity.type_ref != is.identity.type_ref {
-        push(EntityChange::IdentityTypeChanged {
-            before: was.identity.type_ref.to_string(),
-            after: is.identity.type_ref.to_string(),
-        });
-    }
-    for delta in naming_deltas_between(
-        &was.identity.naming,
-        &is.identity.naming,
-        &was.identity.name,
-        &is.identity.name,
-    ) {
-        match delta {
-            NamingDelta::Wire(a, b) => push(EntityChange::IdentityWireNameChanged {
-                before: a,
-                after: b,
-            }),
-            NamingDelta::Display(a, b) => push(EntityChange::IdentityDisplayNameChanged {
-                before: a,
-                after: b,
-            }),
-            NamingDelta::Summary(a, b) => push(EntityChange::IdentitySummaryChanged {
-                before: a,
-                after: b,
-            }),
-        }
-    }
+    compare_identity(&was.identity, &is.identity, push);
 
     field_deltas(&was.fields, &is.fields, |delta| match delta {
         FieldDelta::Added(field, type_ref) => push(EntityChange::FieldAdded { field, type_ref }),
@@ -1076,6 +1062,13 @@ fn compare_entities(
             after: b,
         }),
     });
+
+    if was.relations != is.relations {
+        push(EntityChange::RelationsChanged {
+            before: relation_contracts(&was.relations),
+            after: relation_contracts(&is.relations),
+        });
+    }
 
     lifecycle_changes(&was.lifecycle, &is.lifecycle, push);
 
@@ -1279,6 +1272,7 @@ fn outcome_changes(
                         after: written(&new.error),
                     });
                 }
+                outcome_state_changes(old, new, name, push);
                 if old.summary != new.summary {
                     push(CommandChange::OutcomeSummaryChanged {
                         outcome: (*name).to_owned(),
@@ -1384,6 +1378,23 @@ fn compare_views(
             after: b,
         }),
     });
+
+    let (old_params, new_params) = (
+        parameter_contracts(&was.params),
+        parameter_contracts(&is.params),
+    );
+    if old_params != new_params {
+        push(ViewChange::ParamsChanged {
+            before: old_params,
+            after: new_params,
+        });
+    }
+    if was.order_by != is.order_by {
+        push(ViewChange::RankingChanged {
+            before: ranking_contracts(&was.order_by),
+            after: ranking_contracts(&is.order_by),
+        });
+    }
 
     // Canonical equality over the parsed filters, `None` meaning every instance. D-1's rule again:
     // equal is silence, different is *changed*, and nothing reads the predicates further.
@@ -1524,6 +1535,376 @@ fn compare_bindings(
                 before: a,
                 after: b,
             }),
+        }
+    }
+}
+
+/// Relations retain declaration order and both ends without reusing either IR's handles.
+fn relation_contracts(
+    relations: &[ess_compiler::ir::ResolvedRelation],
+) -> Vec<crate::change::RelationContract> {
+    relations
+        .iter()
+        .map(|relation| crate::change::RelationContract {
+            name: relation.name.clone(),
+            kind: relation.kind.as_str().to_owned(),
+            target: EntityRef::from(&relation.target),
+            cardinality: relation.cardinality.as_str().to_owned(),
+            via: relation.via.clone(),
+        })
+        .collect()
+}
+
+fn cli_contract(cli: &ess_compiler::ir::ResolvedCommandLineSurface) -> crate::change::CliContract {
+    crate::change::CliContract {
+        binary: cli.binary.to_string(),
+        commands: cli.commands.iter().map(CommandRef::from).collect(),
+        views: cli.views.iter().map(ViewRef::from).collect(),
+        groups: cli
+            .groups
+            .iter()
+            .map(|group| crate::change::CliGroupContract {
+                name: group.name.to_string(),
+                summary: group.summary.clone(),
+                commands: group.commands.iter().map(CommandRef::from).collect(),
+                views: group.views.iter().map(ViewRef::from).collect(),
+            })
+            .collect(),
+    }
+}
+
+fn parameter_contracts(fields: &[ResolvedField]) -> Vec<crate::change::ParameterContract> {
+    fields
+        .iter()
+        .map(|field| crate::change::ParameterContract {
+            name: field.name.clone(),
+            type_ref: field.type_ref.to_string(),
+            wire: wire_name(&field.naming, &field.name).to_owned(),
+            display: display_name(&field.naming, &field.name).to_owned(),
+            summary: field.naming.summary.clone(),
+        })
+        .collect()
+}
+
+fn ranking_contracts(
+    rankings: &[ess_domain::view::Ranking],
+) -> Vec<crate::change::RankingContract> {
+    rankings
+        .iter()
+        .map(|ranking| crate::change::RankingContract {
+            field: ranking.field.clone(),
+            direction: ranking.direction.as_str().to_owned(),
+        })
+        .collect()
+}
+
+fn written_sets(fields: &[ess_compiler::ir::ResolvedPayloadField]) -> Vec<String> {
+    fields
+        .iter()
+        .map(|field| {
+            let source = match &field.value {
+                ess_compiler::ir::ResolvedPayloadValue::InputField { field, .. } => {
+                    format!("input.{field}")
+                }
+                ess_compiler::ir::ResolvedPayloadValue::Literal { value } => {
+                    format!("literal `{value}`")
+                }
+            };
+            let conversion = field
+                .conversion
+                .as_ref()
+                .map(|reason| format!(" via `{reason}`"))
+                .unwrap_or_default();
+            format!("{} <- {source}{conversion}", field.target)
+        })
+        .collect()
+}
+
+/// Content not accounted for by the typed comparisons. Removing named coverage leaves newly
+/// introduced serialized fields visible by default, even beside an already classified edit.
+/// This value is internal equality evidence; it is never persisted as a change/property bag.
+fn residual(ir: &EssIr) -> serde_json::Value {
+    let mut value = serde_json::to_value(ir).expect("the canonical IR serializes");
+    remove_keys(&mut value, &["system", "version", "summary"]);
+    for family in [
+        "types",
+        "entities",
+        "commands",
+        "events",
+        "errors",
+        "views",
+        "actors",
+        "bindings",
+        "components",
+    ] {
+        if let Some(declarations) = value
+            .get_mut(family)
+            .and_then(serde_json::Value::as_object_mut)
+        {
+            for declaration in declarations.values_mut() {
+                remove_keys(declaration, &["name", "domain"]);
+                if let Some(naming) = declaration.get_mut("naming") {
+                    remove_keys(naming, &["wire", "display", "summary"]);
+                }
+                residual_construct(declaration, family);
+            }
+        }
+    }
+    if let Some(domains) = value
+        .get_mut("domains")
+        .and_then(serde_json::Value::as_object_mut)
+    {
+        for (name, domain) in domains {
+            // Membership is derived from each construct's owner and already compared there.
+            remove_keys(
+                domain,
+                &[
+                    "types", "entities", "commands", "events", "errors", "views", "actors",
+                ],
+            );
+            if let Some(naming) = domain
+                .get_mut("naming")
+                .and_then(serde_json::Value::as_object_mut)
+            {
+                let fallback = name.rsplit('.').next().unwrap_or(name);
+                for key in ["wire", "display"] {
+                    if naming
+                        .get(key)
+                        .is_some_and(|value| value.is_null() || value.as_str() == Some(fallback))
+                    {
+                        naming.remove(key);
+                    }
+                }
+            }
+        }
+    }
+    prune_empty(&mut value);
+    value
+}
+
+fn remove_keys(value: &mut serde_json::Value, keys: &[&str]) {
+    if let Some(object) = value.as_object_mut() {
+        for key in keys {
+            object.remove(*key);
+        }
+    }
+}
+
+fn residual_fields(value: &mut serde_json::Value, key: &str) {
+    if let Some(fields) = value.get_mut(key).and_then(serde_json::Value::as_array_mut) {
+        for field in fields {
+            residual_field(field);
+        }
+    }
+}
+
+fn residual_field(field: &mut serde_json::Value) {
+    remove_keys(field, &["name", "type_ref"]);
+    if let Some(naming) = field.get_mut("naming") {
+        remove_keys(naming, &["wire", "display", "summary"]);
+    }
+}
+
+/// Empty covered containers carry no residual information. Scalars (including null and false)
+/// remain: deleting an unknown field with such a value is still unexplained content.
+fn prune_empty(value: &mut serde_json::Value) -> bool {
+    match value {
+        serde_json::Value::Object(object) => {
+            object.retain(|_, value| !prune_empty(value));
+            object.is_empty()
+        }
+        serde_json::Value::Array(array) => {
+            array.retain_mut(|value| !prune_empty(value));
+            array.is_empty()
+        }
+        _ => false,
+    }
+}
+
+/// Route comparison keys transitions by name. Their authored order remains observable in
+/// projections, so a reorder of common transitions is residual information. Additions/removals
+/// alone are already named and must not fabricate an extra whole-model change.
+fn unclassified_order_moved(before: &EssIr, after: &EssIr) -> bool {
+    before.entities().iter().any(|(name, was)| {
+        let Some(is) = after.entities().get(name) else {
+            return false;
+        };
+        let old_names: BTreeSet<_> = was
+            .lifecycle
+            .transitions
+            .iter()
+            .map(|transition| &transition.name)
+            .collect();
+        let new_names: BTreeSet<_> = is
+            .lifecycle
+            .transitions
+            .iter()
+            .map(|transition| &transition.name)
+            .collect();
+        let old_order: Vec<_> = was
+            .lifecycle
+            .transitions
+            .iter()
+            .map(|transition| &transition.name)
+            .filter(|name| new_names.contains(name))
+            .collect();
+        let new_order: Vec<_> = is
+            .lifecycle
+            .transitions
+            .iter()
+            .map(|transition| &transition.name)
+            .filter(|name| old_names.contains(name))
+            .collect();
+        old_order != new_order
+    })
+}
+
+fn compare_identity(was: &ResolvedField, is: &ResolvedField, push: &mut impl FnMut(EntityChange)) {
+    // The identity is one field, not a member of `fields`, so it is compared by position rather
+    // than by name — which is why a renamed identity is the one rename this crate reports.
+    if was.name != is.name {
+        push(EntityChange::IdentityRenamed {
+            before: was.name.clone(),
+            after: is.name.clone(),
+        });
+    }
+    if was.type_ref != is.type_ref {
+        push(EntityChange::IdentityTypeChanged {
+            before: was.type_ref.to_string(),
+            after: is.type_ref.to_string(),
+        });
+    }
+    for delta in naming_deltas_between(&was.naming, &is.naming, &was.name, &is.name) {
+        match delta {
+            NamingDelta::Wire(a, b) => push(EntityChange::IdentityWireNameChanged {
+                before: a,
+                after: b,
+            }),
+            NamingDelta::Display(a, b) => push(EntityChange::IdentityDisplayNameChanged {
+                before: a,
+                after: b,
+            }),
+            NamingDelta::Summary(a, b) => push(EntityChange::IdentitySummaryChanged {
+                before: a,
+                after: b,
+            }),
+        }
+    }
+}
+
+fn outcome_state_changes(
+    old: &ResolvedOutcome,
+    new: &ResolvedOutcome,
+    name: &str,
+    push: &mut impl FnMut(CommandChange),
+) {
+    if old.sets != new.sets {
+        push(CommandChange::OutcomeSetsChanged {
+            outcome: name.to_owned(),
+            before: written_sets(&old.sets),
+            after: written_sets(&new.sets),
+        });
+    }
+    if old.refuses != new.refuses {
+        push(CommandChange::OutcomeRefusesChanged {
+            outcome: name.to_owned(),
+            before: old.refuses,
+            after: new.refuses,
+        });
+    }
+}
+
+fn residual_construct(declaration: &mut serde_json::Value, family: &str) {
+    match family {
+        "types" => {
+            if let Some(body) = declaration.get_mut("body") {
+                residual_fields(body, "fields");
+                remove_keys(body, &["kind", "of", "invariants", "variants", "tag"]);
+            }
+        }
+        "entities" => residual_entity(declaration),
+        "commands" => residual_command(declaration),
+        "events" => residual_fields(declaration, "fields"),
+        "errors" => {
+            residual_fields(declaration, "fields");
+            remove_keys(declaration, &["summary"]);
+        }
+        "views" => {
+            residual_fields(declaration, "fields");
+            residual_fields(declaration, "params");
+            remove_keys(
+                declaration,
+                &[
+                    "source",
+                    "filter",
+                    "order_by",
+                    "consistency",
+                    "assertion_style",
+                ],
+            );
+        }
+        "actors" => remove_keys(declaration, &["may"]),
+        "bindings" => remove_keys(
+            declaration,
+            &[
+                "event",
+                "command",
+                "mapping",
+                "delivery",
+                "failure",
+                "escalation",
+            ],
+        ),
+        "components" => remove_keys(
+            declaration,
+            &["owns", "accepts", "publishes", "reached_by", "cli"],
+        ),
+        _ => unreachable!("closed coverage family list"),
+    }
+}
+
+fn residual_entity(declaration: &mut serde_json::Value) {
+    if let Some(identity) = declaration.get_mut("identity") {
+        residual_field(identity);
+    }
+    residual_fields(declaration, "fields");
+    remove_keys(declaration, &["state_type", "invariants", "relations"]);
+    if let Some(lifecycle) = declaration.get_mut("lifecycle") {
+        remove_keys(lifecycle, &["initial", "states", "terminal"]);
+        if let Some(transitions) = lifecycle
+            .get_mut("transitions")
+            .and_then(serde_json::Value::as_array_mut)
+        {
+            for transition in transitions {
+                remove_keys(transition, &["name", "from", "to"]);
+            }
+        }
+    }
+}
+
+fn residual_command(declaration: &mut serde_json::Value) {
+    residual_fields(declaration, "input");
+    if let Some(outcomes) = declaration
+        .get_mut("outcomes")
+        .and_then(serde_json::Value::as_array_mut)
+    {
+        for outcome in outcomes {
+            // test_strategy is a function of condition; refs deliberately remain.
+            remove_keys(
+                outcome,
+                &[
+                    "name",
+                    "condition",
+                    "subject",
+                    "test_strategy",
+                    "emits",
+                    "payload",
+                    "error",
+                    "refuses",
+                    "summary",
+                    "sets",
+                ],
+            );
         }
     }
 }

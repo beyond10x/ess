@@ -338,3 +338,40 @@ fn the_plan_is_byte_identical_in_both_trees_of_the_demonstration() {
         "and the plan carries the transport capability the declaration determined"
     );
 }
+
+#[test]
+fn review_http_payloads_use_slice_profiles_while_neutral_plans_stay_frozen() {
+    let ir = gatepass();
+    for (target, directory) in [(Target::Rust, "rust"), (Target::Go, "go")] {
+        let synthesis = synthesized(&ir, target);
+        let committed = Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../../../generated")
+            .join(directory)
+            .join("gatepass");
+        for path in ["PLAN.md", "plan.json"] {
+            assert_eq!(
+                file(&synthesis, path),
+                std::fs::read_to_string(committed.join(path)).unwrap(),
+                "{directory}/{path} stays byte-identical"
+            );
+        }
+        let served: Vec<_> = synthesis
+            .artifacts
+            .iter()
+            .filter(|(path, _)| path.ends_with(".openapi.json") || path.ends_with(".docs.md"))
+            .collect();
+        assert_eq!(served.len(), 2, "both HTTP payloads are exercised");
+        for (path, artifact) in served {
+            let read = ess_gen::Provenance::read_digests(&artifact.contents)
+                .unwrap_or_else(|| panic!("{path}"));
+            assert!(
+                read.contract_digest.starts_with("slice-sha256/2:"),
+                "{path}"
+            );
+            assert_eq!(
+                read.source_digest,
+                "f2e0f8ff51c077fa1c713d8151544379bafac36a5a927e71c685042d53ab6e61"
+            );
+        }
+    }
+}

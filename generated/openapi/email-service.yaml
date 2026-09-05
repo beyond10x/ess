@@ -1,6 +1,6 @@
 # generated from billing v3
 # model digest 56090788443a14b4a51ad151eb5cb3ebded2b98f6defe9ac50826296ac5d0942
-# contract digest 9cd942cd8437f5f98a69fd1a8b3463112b7bcf84319ed10e04dd365f9872e92b
+# contract digest slice-sha256/2:790ac9eb34dc57a7d0e41c8b4bc744bcece93bdda06c856fe313012b7a22aa2f
 # do not edit: regenerate with `ess generate`
 openapi: 3.1.0
 info:
@@ -15,7 +15,7 @@ info:
     system: billing
     specification_version: v3
     source_digest: 56090788443a14b4a51ad151eb5cb3ebded2b98f6defe9ac50826296ac5d0942
-    contract_digest: 9cd942cd8437f5f98a69fd1a8b3463112b7bcf84319ed10e04dd365f9872e92b
+    contract_digest: slice-sha256/2:790ac9eb34dc57a7d0e41c8b4bc744bcece93bdda06c856fe313012b7a22aa2f
 tags:
 - name: email
   description: Sending the notifications other contexts ask for.

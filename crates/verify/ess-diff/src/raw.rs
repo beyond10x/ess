@@ -102,6 +102,17 @@ impl TryFrom<RawEssDelta> for EssDelta {
         // and a string comparison here would call a correctly ordered delta out of order.
         let mut previous: Option<ChangeId> = None;
         for (index, written) in raw.changes.iter().enumerate() {
+            if written.change.minimum_format() > raw.format.major() {
+                errors.push(ValidationError::new(
+                    ValidationCode::UnsupportedFormatVersion,
+                    format!("delta.changes[{index}].change"),
+                    format!(
+                        "`{}` is outside the vocabulary of `{}`",
+                        written.change.kind(),
+                        raw.format
+                    ),
+                ));
+            }
             let id = written.change.id();
             let derived = id.to_string();
             if written.id != derived {

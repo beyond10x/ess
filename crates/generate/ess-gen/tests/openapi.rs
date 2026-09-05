@@ -455,9 +455,14 @@ fn every_document_carries_its_provenance_as_a_comment_and_as_data() {
         // Its own slice's digest, not the whole model's, so only the shape is asserted here —
         // `run` re-derives it from the recorded slice and refuses a stamp that disagrees.
         assert!(
-            carried["contract_digest"].as_str().is_some_and(
-                |digest| digest.len() == 64 && digest.chars().all(|c| c.is_ascii_hexdigit())
-            ),
+            carried["contract_digest"]
+                .as_str()
+                .is_some_and(|digest| digest.strip_prefix("slice-sha256/2:").is_some_and(
+                    |hash| hash.len() == 64
+                        && hash
+                            .chars()
+                            .all(|c| c.is_ascii_hexdigit() && !c.is_ascii_uppercase())
+                )),
             "{path} does not say which model slice it derives from"
         );
         // What it was made from, never which build made it: `story:generator-version-stamp`.

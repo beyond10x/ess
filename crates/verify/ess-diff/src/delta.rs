@@ -10,9 +10,9 @@ use ess_primitives::evidence::SpecDigest;
 use crate::change::{ChangeId, SemanticChange, SemanticRelation};
 
 /// Delta format major versions this build implements.
-pub const SUPPORTED_DELTA_FORMATS: &[u32] = &[1];
+pub const SUPPORTED_DELTA_FORMATS: &[u32] = &[1, 2];
 
-/// The version of the *document shape* a delta is written in — `ess-diff/1`.
+/// The version of a delta's document shape and admitted change vocabulary.
 ///
 /// The first thing a reader reads and the first thing it can refuse, on exactly the reasoning
 /// [`SuiteFormat`](ess_conformance::scenario::SuiteFormat) is built on: a later format may mean
@@ -27,8 +27,11 @@ pub const SUPPORTED_DELTA_FORMATS: &[u32] = &[1];
 pub struct DeltaFormat(Version);
 
 impl DeltaFormat {
-    /// The first, and so far only, delta format.
-    pub const CURRENT: Self = Self(Version::V1);
+    /// Current semantic coverage and vocabulary.
+    pub const CURRENT: Self = Self(Version::V2);
+
+    /// Frozen legacy vocabulary.
+    pub const LEGACY: Self = Self(Version::V1);
 
     /// How a delta format is written.
     pub const PREFIX: &'static str = "ess-diff/";
@@ -165,7 +168,7 @@ impl fmt::Display for EssRevisionRef {
 /// way to hold one that did not. That is the same door
 /// [`SuiteProvenance`](ess_conformance::scenario::SuiteProvenance) goes through, and the line
 /// between them is where a cross-field guarantee starts.
-#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct EssDelta {
     /// The shape this document is written in.
     pub format: DeltaFormat,
@@ -174,7 +177,6 @@ pub struct EssDelta {
     /// The revision compared *to*.
     pub after: EssRevisionRef,
     /// Every change, in canonical order.
-    #[serde(serialize_with = "serialize_changes")]
     changes: Vec<SemanticChange>,
 }
 
@@ -251,6 +253,34 @@ impl EssDelta {
             .count()
     }
 
+    /// Writes the requested supported format, refusing any loss of semantic coverage.
+    ///
+    /// # Errors
+    /// Unsupported versions and changes outside the requested vocabulary are refused.
+    pub fn to_canonical_json_for(&self, format: DeltaFormat) -> Result<String, DeltaWriteRefusal> {
+        self.validate_format(format)?;
+        let mut selected = self.clone();
+        selected.format = format;
+        Ok(selected.to_canonical_json())
+    }
+
+    fn validate_format(&self, format: DeltaFormat) -> Result<(), DeltaWriteRefusal> {
+        if !format.is_supported() {
+            return Err(DeltaWriteRefusal::UnsupportedFormat { format });
+        }
+        if let Some(change) = self
+            .changes
+            .iter()
+            .find(|change| change.minimum_format() > format.major())
+        {
+            return Err(DeltaWriteRefusal::UnrepresentableChange {
+                format,
+                change: change.id(),
+            });
+        }
+        Ok(())
+    }
+
     /// The delta as canonical JSON, with a trailing newline.
     ///
     /// Canonical means the same three things it means for the IR and for a conformance suite: the
@@ -260,9 +290,9 @@ impl EssDelta {
     ///
     /// # Panics
     ///
-    /// It does not. `serde_json` has exactly one error of its own — a map key that is not a string —
-    /// and this document holds no map at all: every collection in it is a sequence. The
-    /// `unwrap_or_else` names the impossible case rather than hiding it.
+    /// Panics if a caller mutates the public format field to an unsupported version or one that
+    /// cannot represent this delta. Use [`Self::to_canonical_json_for`] for a checked version
+    /// selection. Deltas returned by comparison or validated reading always serialize.
     pub fn to_canonical_json(&self) -> String {
         let mut json = serde_json::to_string_pretty(self)
             .unwrap_or_else(|error| panic!("the delta serialises: {error}"));
@@ -363,4 +393,54 @@ fn serialize_changes<S: serde::Serializer>(
         })?;
     }
     sequence.end()
+}
+
+/// A requested writer version cannot represent this document faithfully.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum DeltaWriteRefusal {
+    /// No implementation of this major exists in this build.
+    UnsupportedFormat {
+        /// The requested version.
+        format: DeltaFormat,
+    },
+    /// A change was introduced after the requested vocabulary was frozen.
+    UnrepresentableChange {
+        /// The requested version.
+        format: DeltaFormat,
+        /// The first unrepresentable change in canonical order.
+        change: ChangeId,
+    },
+}
+
+impl fmt::Display for DeltaWriteRefusal {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::UnsupportedFormat { format } => {
+                write!(f, "unsupported delta writer format `{format}`")
+            }
+            Self::UnrepresentableChange { format, change } => {
+                write!(f, "`{change}` is not representable in `{format}`")
+            }
+        }
+    }
+}
+
+impl std::error::Error for DeltaWriteRefusal {}
+
+/// Validate here too: the public format field is not a bypass around the versioned writer.
+impl serde::Serialize for EssDelta {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        use serde::ser::SerializeStruct as _;
+        #[derive(serde::Serialize)]
+        struct Changes<'a>(#[serde(serialize_with = "serialize_changes")] &'a [SemanticChange]);
+        self.validate_format(self.format)
+            .map_err(serde::ser::Error::custom)?;
+
+        let mut document = serializer.serialize_struct("EssDelta", 4)?;
+        document.serialize_field("format", &self.format)?;
+        document.serialize_field("before", &self.before)?;
+        document.serialize_field("after", &self.after)?;
+        document.serialize_field("changes", &Changes(&self.changes))?;
+        document.end()
+    }
 }
