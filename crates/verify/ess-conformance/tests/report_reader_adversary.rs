@@ -1,0 +1,194 @@
+//! Adversarial checks of the closed v1 execution summary, without a source-coverage claim.
+
+use ess_conformance::StandaloneConformanceReport;
+use serde::Deserialize;
+use serde_json::{json, Value};
+
+fn report(entries: &[String], total: usize, status: &str) -> Value {
+    json!({
+        "format": "ess-conformance-report/1",
+        "specification": "billing/v3",
+        "spec_digest": "13577b3ce695932e980d418d5863bcde07f4c362516d53147870d31eaf2ed861",
+        "implementation": "adversary-fixture 1",
+        "status": status,
+        "scenarios_total": total,
+        "scenarios_failed": entries.len(),
+        "suite_version": "ess-conformance/4",
+        "failed_scenarios": entries,
+        "completed_at": 1_700_000_001_000_i64
+    })
+}
+
+fn assert_routes(value: &Value, expected: bool) {
+    assert_routes_with_yaml(value, expected, expected);
+}
+
+fn assert_routes_with_yaml(value: &Value, expected: bool, yaml_expected: bool) {
+    let text = value.to_string();
+    let yaml = serde_yaml::to_string(value).expect("fixture is YAML");
+    let seed = report(&[], 0, "passed");
+    let mut destination: StandaloneConformanceReport =
+        serde_json::from_value(seed).expect("valid in-place destination");
+    let mut deserializer = serde_json::Deserializer::from_str(&text);
+    let routes = [
+        (
+            "standalone reader",
+            StandaloneConformanceReport::from_json(&text).is_ok(),
+        ),
+        (
+            "JSON value",
+            serde_json::from_value::<StandaloneConformanceReport>(value.clone()).is_ok(),
+        ),
+        (
+            "JSON reader",
+            serde_json::from_reader::<_, StandaloneConformanceReport>(text.as_bytes()).is_ok(),
+        ),
+        (
+            "YAML mapping",
+            serde_yaml::from_str::<StandaloneConformanceReport>(&yaml).is_ok(),
+        ),
+        (
+            "JSON stream",
+            serde_json::Deserializer::from_str(&text)
+                .into_iter::<StandaloneConformanceReport>()
+                .next()
+                .expect("one report was selected")
+                .is_ok(),
+        ),
+        (
+            "deserialize_in_place",
+            StandaloneConformanceReport::deserialize_in_place(&mut deserializer, &mut destination)
+                .is_ok(),
+        ),
+    ];
+    for (route, accepted) in routes {
+        let route_expected = if route == "YAML mapping" {
+            yaml_expected
+        } else {
+            expected
+        };
+        assert_eq!(accepted, route_expected, "{route} disagrees for {text}");
+    }
+    if expected {
+        assert_eq!(
+            serde_json::to_value(destination).expect("report writes"),
+            *value
+        );
+    }
+}
+
+#[test]
+fn aggregate_status_does_not_depend_on_nonpass_order_or_multiplicity() {
+    // Each code enumerates a sequence of the four historical non-pass tokens. Repeated ids
+    // deliberately remain legal: the v1 document does not prove source-suite membership.
+    let tokens = ["failed", "unsupported", "error", "skipped"];
+    for length in 0..=3_u32 {
+        for mut code in 0..4_usize.pow(length) {
+            let mut entries = Vec::new();
+            let mut definitive = false;
+            for _ in 0..length {
+                let token = tokens[code % 4];
+                code /= 4;
+                definitive |= matches!(token, "failed" | "unsupported");
+                entries.push(format!("{token} opaque identity with spaces/λ"));
+            }
+            let expected = if definitive {
+                "failed"
+            } else if entries.is_empty() {
+                "passed"
+            } else {
+                "inconclusive"
+            };
+            for total in [entries.len(), entries.len() + 1] {
+                for status in ["passed", "failed", "inconclusive", "skipped"] {
+                    assert_routes(&report(&entries, total, status), status == expected);
+                }
+            }
+        }
+    }
+}
+
+#[test]
+fn count_extremes_refuse_contradictions_without_inventing_coverage() {
+    for total in [0, 1, usize::MAX] {
+        assert_routes(&report(&[], total, "passed"), true);
+        for count in [1, usize::MAX] {
+            let mut value = report(&[], total, "passed");
+            value["scenarios_failed"] = count.into();
+            assert_routes(&value, false);
+        }
+        let value = report(&["error opaque".into()], total, "inconclusive");
+        assert_routes(&value, total != 0);
+    }
+    for malformed in [json!(-1), json!(0.5), json!("1"), Value::Null] {
+        for field in ["scenarios_total", "scenarios_failed"] {
+            let mut value = report(&[], 0, "passed");
+            value[field] = malformed.clone();
+            assert_routes(&value, false);
+        }
+    }
+}
+
+#[test]
+fn closed_wire_fields_preserve_their_formats_scalar_contracts() {
+    let valid = report(&[], 0, "passed");
+    for field in valid.as_object().expect("report map").keys() {
+        let mut missing = valid.clone();
+        missing.as_object_mut().expect("report map").remove(field);
+        assert_routes(&missing, false);
+        let mut null = valid.clone();
+        null[field] = Value::Null;
+        // YAML's String deserializer accepts a plain null scalar as the string "null".
+        // Opaque identity strings have no further v1 semantic constraint; JSON still refuses.
+        let opaque_identity = matches!(field.as_str(), "specification" | "implementation");
+        assert_routes_with_yaml(&null, false, opaque_identity);
+        if opaque_identity {
+            let yaml = serde_yaml::to_string(&null).expect("YAML fixture");
+            let read: StandaloneConformanceReport =
+                serde_yaml::from_str(&yaml).expect("YAML string coercion remains compatible");
+            assert_eq!(
+                serde_json::to_value(read).expect("report writes")[field],
+                "null"
+            );
+        }
+    }
+    for field in ["workflow_evidence", "WireReport", "validated", "coverage"] {
+        let mut extra = valid.clone();
+        extra[field] = true.into();
+        assert_routes(&extra, false);
+    }
+}
+
+#[test]
+fn duplicate_claims_cannot_hide_behind_a_valid_last_value() {
+    let valid = report(&[], 0, "passed").to_string();
+    for prefix in [
+        "\"format\":\"other/99\",",
+        "\"suite_version\":\"ess-conformance/99\",",
+        "\"status\":\"failed\",",
+        "\"scenarios_failed\":1,",
+        "\"failed_scenarios\":[\"failed opaque\"],",
+    ] {
+        let text = format!("{{{prefix}{}", &valid[1..]);
+        assert!(
+            StandaloneConformanceReport::from_json(&text).is_err(),
+            "standalone reader accepted duplicate claim: {text}"
+        );
+        assert!(
+            serde_json::from_reader::<_, StandaloneConformanceReport>(text.as_bytes()).is_err(),
+            "reader accepted duplicate claim: {text}"
+        );
+        assert!(
+            serde_yaml::from_str::<StandaloneConformanceReport>(&text).is_err(),
+            "YAML accepted duplicate claim: {text}"
+        );
+        assert!(
+            serde_json::Deserializer::from_str(&text)
+                .into_iter::<StandaloneConformanceReport>()
+                .next()
+                .expect("one report was selected")
+                .is_err(),
+            "stream accepted duplicate claim: {text}"
+        );
+    }
+}
