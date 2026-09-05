@@ -21,7 +21,7 @@ scope:
   path: crates/generate/ess-synth
 - confidence: inferred
   path: docs/design/review-rust-target-feasibility.md
-revision: 14
+revision: 15
 ---
 ## Finding and source
 
@@ -93,3 +93,14 @@ The correction covers actual Web module/dependency capture, HTTP/Web outcome-arm
 Second and final full tests-only attack is assigned to impl_diagnostic on exact a2ff04d. The reviewer has a byte-verified standalone copy of the opening4b66aac CLI under its own scratch; root's separate producer fixture can therefore advance independently without invalidating origin evidence. No third full attack is authorized; any remaining finding receives a bounded final correction and verification. Integrated ESS/site gate, final source publication and public delivery remain pending.
 
 Actual SDK correction-subject recheck completed 2026-09-05T21:12:23.012539+00:00 against exact a2ff04d with published reader6e5141f. All7 ESS path packages resolved to the candidate, no non-ESS resolution changed, and the original lock was restored byte-for-byte. Eight real target-error generate/check calls preserved absent/owned destinations; six valid controls passed their exact expected success/drift behavior. All63 valid generated files remain byte-identical to the published ESS6616 baseline; older pinned output remains14 changed/49 equal. Records are in the SDK tree under target/review-boundaries-5/exact-producer-correction-1 and final-matrix. This candidate recheck is distinct from the final merged-source gate and does not upgrade any published dependency pin.
+
+## Final full review and bounded correction ownership
+
+Immutable review-result:review-boundaries-5-rust-adversary-pass-2 contains the complete197206-byte report, SHA256a84eb1f6e37ef537dae6a0a5397cc1c94cd507d02c6139ef86faa5deedd2e98e, checked byte-for-byte after CLI creation. Exact subjecta2ff04d. Eleven new tests ran individually before package suites; final201 executed,194 passed,7 failed,0 ignored. Formatting/strict Clippy exit0. Both first-pass signatures are resolved. Formal ledger has0 carried,2 new,2 resolved; the two new classes are measured pre-existing on exact4b66aac, with five failing generated files byte-identical between base and candidate. The first-input positive control compiles at both sources. Test delta is225 insertions and0 deletions across the two retained adversary files.
+
+Root routing decision: this existing F07 story owns both new findings under its actual emitted-symbol scope and supported collection compiler controls. Keep their immutable pre-existing origins. This is the final bounded correction after two full attacks, not permission for a third full attack or a generic expansion.
+
+1. Extend feasibility over actual emitted delivery-arm calls and lexical ordering. The `event` pattern parameter captures a bare event transformation function. A prior local input captures a later transformation function named input. A single first input binding compiles and must remain valid; unrelated event arms and non-emitted/obligated transformations do not share that local scope. Refuse actual collisions with existing typed source-addressed symbol-collision causes before either CLI target writes. Preserve renderer names and valid bytes; do not blanket-blacklist input.
+2. Repair the existing supported map decoder path argument borrow at rust/wire.rs::decode_value/decode_key. The key parsers for Integer, Boolean and Bytes take a borrowed path, but generated code currently passes the owned nested String. Keep supported nested collection recursion admitted; do not turn the positive compiler regression into a Map refusal. Preserve String and other previously compiling key paths, existing primitive/JSON semantics, canonical profiles and valid artifact maps. A bounded borrowed-path emission repair is authorized only for these previously compiler-invalid codec bytes, including the shared HTTP/Web producer; no source restriction or new failure code is needed.
+
+Write the binding clarification before production. Preserve all201 tests, earlier source/report evidence and exact valid controls. Run each retained seven red assertion and the relevant four positive controls individually after correction, then package test/fmt/strict-Clippy. The final report must distinguish corrected invalid codec bytes from unchanged valid maps and cite actual source scope. Root will freeze, request only bounded verification of these fixes, then run the full merged gate. Do not schedule another full attack. Root will make the corresponding narrow internal catalog/Unreleased wording update after source evidence exists.

@@ -1586,3 +1586,69 @@ Actual SDK correction-subject recheck completed 2026-09-05T21:12:23.012539+00:00
 ## Bounded correction-source wording verification
 
 After the two full catalog passes, Rust correction a2ff04d added a separately reproduced empty-event Web log branch. Root extended one internal catalog sentence and the existing Unreleased note to name that exact exception. A bounded read-only check by the prior catalog reviewer compared the clean a2ff04d producer fixture with Git-object bytes and the measured correction report; both sentences accurately describe the third compiler-invalid branch without adding an API, format or browser-catalog contract change. This was source-conformance verification of those sentences only, not a third full catalog attack. Exact full-file hashes and evidence are in the original format unit target/review-boundaries-5/empty-log-doc-follow-through.md, SHA25643b322d9ed340ab0a5846b8c72213231499a26dba77cd0af877b75c566a558cd. Source scope is unchanged and final combined gate/public delivery remain pending.
+
+
+## Final full review and bounded correction ownership
+
+Immutable review-result:review-boundaries-5-rust-adversary-pass-2 contains the complete197206-byte report, SHA256a84eb1f6e37ef537dae6a0a5397cc1c94cd507d02c6139ef86faa5deedd2e98e, checked byte-for-byte after CLI creation. Exact subjecta2ff04d. Eleven new tests ran individually before package suites; final201 executed,194 passed,7 failed,0 ignored. Formatting/strict Clippy exit0. Both first-pass signatures are resolved. Formal ledger has0 carried,2 new,2 resolved; the two new classes are measured pre-existing on exact4b66aac, with five failing generated files byte-identical between base and candidate. The first-input positive control compiles at both sources. Test delta is225 insertions and0 deletions across the two retained adversary files.
+
+Root routing decision: this existing F07 story owns both new findings under its actual emitted-symbol scope and supported collection compiler controls. Keep their immutable pre-existing origins. This is the final bounded correction after two full attacks, not permission for a third full attack or a generic expansion.
+
+1. Extend feasibility over actual emitted delivery-arm calls and lexical ordering. The `event` pattern parameter captures a bare event transformation function. A prior local input captures a later transformation function named input. A single first input binding compiles and must remain valid; unrelated event arms and non-emitted/obligated transformations do not share that local scope. Refuse actual collisions with existing typed source-addressed symbol-collision causes before either CLI target writes. Preserve renderer names and valid bytes; do not blanket-blacklist input.
+2. Repair the existing supported map decoder path argument borrow at rust/wire.rs::decode_value/decode_key. The key parsers for Integer, Boolean and Bytes take a borrowed path, but generated code currently passes the owned nested String. Keep supported nested collection recursion admitted; do not turn the positive compiler regression into a Map refusal. Preserve String and other previously compiling key paths, existing primitive/JSON semantics, canonical profiles and valid artifact maps. A bounded borrowed-path emission repair is authorized only for these previously compiler-invalid codec bytes, including the shared HTTP/Web producer; no source restriction or new failure code is needed.
+
+Write the binding clarification before production. Preserve all201 tests, earlier source/report evidence and exact valid controls. Run each retained seven red assertion and the relevant four positive controls individually after correction, then package test/fmt/strict-Clippy. The final report must distinguish corrected invalid codec bytes from unchanged valid maps and cite actual source scope. Root will freeze, request only bounded verification of these fixes, then run the full merged gate. Do not schedule another full attack. Root will make the corresponding narrow internal catalog/Unreleased wording update after source evidence exists.
+
+Exact final full-review findings ledger:
+
+```json
+{
+  "artifact": "story:review-rust-target-feasibility",
+  "reviews": 10,
+  "from": "review-result:review-boundaries-5-rust-adversary-pass-1",
+  "from_reviewer": "impl_diagnostic",
+  "to": "review-result:review-boundaries-5-rust-adversary-pass-2",
+  "to_reviewer": "impl_diagnostic",
+  "carried": [],
+  "new": [
+    {
+      "file": "crates/generate/ess-synth/src/rust/feasibility.rs",
+      "line": 583,
+      "category": "acceptance",
+      "severity": "blocker",
+      "verdict": "NEEDS-CHANGE",
+      "origin": "pre-existing",
+      "message": "Binding feasibility omits delivery-arm locals, allowing event and later input transformation calls to be captured while Rust and Web CLI output succeeds."
+    },
+    {
+      "file": "crates/generate/ess-synth/src/rust/wire.rs",
+      "line": 670,
+      "category": "acceptance",
+      "severity": "blocker",
+      "verdict": "NEEDS-CHANGE",
+      "origin": "pre-existing",
+      "message": "Supported Integer, Boolean and Bytes map decoders pass an owned nested path to a borrowed parser parameter, so admitted Web output fails compilation."
+    }
+  ],
+  "resolved": [
+    {
+      "file": "crates/generate/ess-synth/src/web/mod.rs",
+      "line": 304,
+      "category": "acceptance",
+      "severity": "blocker",
+      "verdict": "NEEDS-CHANGE",
+      "origin": "pre-existing",
+      "message": "Web feasibility admits a json component whose dependency is hidden by the generated json module, so the CLI writes a workspace that fails wasm32 compilation."
+    },
+    {
+      "file": "crates/generate/ess-synth/src/rust/feasibility.rs",
+      "line": 845,
+      "category": "acceptance",
+      "severity": "blocker",
+      "verdict": "NEEDS-CHANGE",
+      "origin": "pre-existing",
+      "message": "Codec feasibility omits outcome pattern bindings, allowing an Out event to shadow the output buffer and the CLI to write compiler-invalid Rust HTTP code."
+    }
+  ]
+}
+```
