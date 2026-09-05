@@ -43,7 +43,7 @@ const sidebars: SidebarsConfig = {
       type: 'category',
       label: 'Project status',
       collapsed: false,
-      items: ['status/where-this-stands', 'status/limitations', 'status/roadmap'],
+      items: ['status/where-this-stands', 'status/limitations', 'status/roadmap', 'status/outlook'],
     },
   ],
 };

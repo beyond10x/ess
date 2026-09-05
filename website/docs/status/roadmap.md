@@ -7,6 +7,10 @@ description: The evidence-driven direction for new ESS model kinds and adapters.
 
 ESS grows from concrete adapter needs rather than a universal meta-model.
 
+The [maturity outlook](./outlook.md) proposes the reliability, compatibility, naming, and
+verification work needed to make the existing toolchain dependable. It describes improvement
+criteria rather than a release commitment.
+
 Near-term work extends the existing typed model where a real importer or projector establishes the
 semantics: richer service and interface coverage, then CLI, repository, organization, team, role,
 and ownership structures as their first adapters require them.
