@@ -1,0 +1,252 @@
+diff --git a/docs/design/review-conformance-coverage.md b/docs/design/review-conformance-coverage.md
+new file mode 100644
+index 0000000..be48b5a
+--- /dev/null
++++ b/docs/design/review-conformance-coverage.md
+@@ -0,0 +1,246 @@
++# Conformance coverage and report migration
++
++Status: binding design for the next implementation; no new writer, reader release, downstream migration, or compatibility execution is established by this document.
++
++Decision date: 2026-09-05. Owner: ESS. Planning authority: story:review-conformance-format-design; implementation is split between story:a-skipped-scenario-is-not-a-failed-one and story:review-conformance-coverage. This decision answers review F03.
++
++## Decision
++
++Freeze the bytes and meanings of standalone report **ess-conformance-report/1** and suite **ess-conformance/1–4**. Introduce **ess-conformance-report/2** for explicit, producer-specific outcome partitions and exact-suite binding, and **ess-conformance/5** for durable coverage and selection. New reports can describe admitted legacy suites, but their coverage remains unknown and cannot qualify as complete. A report's execution verdict remains the producer's verdict; coverage qualification is a separate, explicit result.
++
++Move readers and consumers before writers. Do not enable a new default until the Atlas migration ADR, every relying reader, generated-runtime regeneration, cross-language fixtures, and the shipped-version record are complete. Increasing a version string does not make today's suite readers refuse it.
++
++This is an ESS contract. AEP transcribes and adapts it at its own boundary; ESS gains no AEP dependency. The specification skill's Rust-owned type and explicit-coverage rules apply. This document defines persisted contract types; it does not introduce an authored ESS business domain or implement those types.
++
++## Source baseline and relying readers
++
++ESS citations below are at 45832cc885377b2d61845ee33af14f0293d99e67. Line numbers distinguish code observations from the decisions in later sections. Searches covered production code in crates/, browser assets, CLI output paths, fixtures/tests that parse the contracts, and repository gate/workflow sources.
++
++AEP citations are Git-object reads at **00c742e4179593738a2e8aa69e2ecc07d3c89402**, the later advertised revision available locally. Both report-reader files have an empty diff from the previously inspected **cc321f31fa0120b32a5b9f5e7b8c8fdfa55f69f9**. No dirty sibling working-tree file was used as authority. This does not claim a fresh remote-main or deployed-version check.
++
++| Ref | Inspected owner and source | Existing behavior and required disposition |
++| --- | --- | --- |
++| S1 | [evidence.rs](../../crates/verify/ess-conformance/src/evidence.rs), lines 12–164 | Rust standalone v1 writer counts every non-pass in scenarios_failed and writes status-prefixed strings. The current validated Serde reader is closed, admits report/1 and supported suite majors 1–4, and checks counts/list length and aggregate status. Preserve its valid v1 bytes and meanings. Add a separate v2 type/admission path. |
++| S2 | [report.rs](../../crates/verify/ess-conformance/src/report.rs), lines 40–80 and 535–611 | Rust scenario precedence and whole-run aggregation differ; detailed ConformanceReport is a separate serializable structure. Preserve both execution rules and the legacy detailed CLI surface. |
++| S3 | [scenario.rs](../../crates/verify/ess-conformance/src/scenario.rs), lines 101–208, 236–309 and 365–427 | Suites have provenance and an ordered scenario map. component is omitted when absent. CURRENT is 4, supported majors are 1–4, but SuiteFormat deserialization checks syntax rather than membership. from_json does not add admission. Add supported-version/vocabulary checks at every execution entry, including generic Serde routes. |
++| S4 | [runner.rs](../../crates/verify/ess-conformance/src/runner.rs), lines 286–310 | Runner::run accepts a typed suite without checking its version, records every scenario, and aggregates their final statuses. Add an admitted-suite boundary before target identity or scenario callbacks. |
++| S5 | [Go emitter](../../crates/verify/ess-conformance/src/go/mod.rs), lines 49–77; [runtime.go](../../crates/verify/ess-conformance/src/go/runtime.go), lines 383–406, 499–639, 686–704, 759, 1082 and 1344–1356 | Emitter embeds exact suite.json. Runtime decodes a reduced struct, omitting scenario dependency and other metadata, and never checks SuiteVersion. It uses passed/failed/skipped, ordinary errors fail, unsupported observations or unknown step vocabulary skip, and teardown can turn a skip into failed. Regenerate adopter runtimes, add pre-execution admission, and hash retained complete input bytes. |
++| S6 | [main.rs](../../crates/edge/ess-cli/src/main.rs), lines 2007–2013, 2435–2488, 2493–2558, 2602–2625 and 2640 onward | impact reads an optional suite; conform run --suite reads one; conform run --path discards synthesis refusals by taking .suite before merging authored scenarios. synthesize prints refusals/outside separately. author/web form authored-only suites. --report-out writes standalone JSON; --format json/yaml serializes the detailed report. These are separate contracts and each needs explicit dispatch. |
++| S7 | [synthesize.rs](../../crates/verify/ess-conformance/src/synthesize.rs), lines 197–246 and 1024–1030; [authored.rs](../../crates/verify/ess-conformance/src/authored.rs), lines 715–750 | Synthesis holds suite/refusals/outside; Authoring holds scenarios/refusals. A refusal may have no scenario ID. Outside means the scenario exists but needs another component. Persist these distinctions; a refusal-record count is not a failed-scenario count. |
++| S8 | [web.rs](../../crates/verify/ess-conformance/src/web.rs), lines 54–65; [player.js](../../crates/verify/ess-conformance/assets/player.js), lines 28–31, 96 and 273 | Web emits suite.json and the player fetches parsed JSON directly. There is no version/digest admission. Player is a replay UI, not an implementation report producer. Update model/suite checks and selection display; regenerate the player and suite as one set. |
++| S9 | [impact.rs](../../crates/verify/ess-diff/src/impact.rs), lines 775–851 and 893–930 | Impact compares system/model/contract provenance and intersects scenario dependencies. It does not verify an execution report or establish full coverage. Preserve existing impact/1 bytes; admit v5 suites through an internal view, carry selection in diagnostics, and conservatively refuse evidence reuse when the exact selected suite is unavailable. |
++| S10 | [ess-realization/lib.rs](../../crates/specify/ess-realization/src/lib.rs), lines 375–390 | ConformanceEvidence contains suite_digest/report_digest artifact references and a status. No parser verifying the referenced suite/report bytes was established. These remain existing artifact identities; do not reinterpret them as the new digest profile or call them a migrated report reader. A future byte-verifying bridge needs its own design/version and owner. |
++| A1 | [AEP optional adapter](https://github.com/beyond10x/aep/blob/00c742e4179593738a2e8aa69e2ecc07d3c89402/crates/observe/aep-ess-evidence/src/lib.rs#L15), lines 15–32 and 138–167 | aep-ess-evidence transcribes a closed report/1, checks count consistency, and transfers scenarios_failed unchanged into AEP's existing result. Versioned v2 parsing and domain mapping are separately required. |
++| A2 | [AEP planning reader](https://github.com/beyond10x/aep/blob/00c742e4179593738a2e8aa69e2ecc07d3c89402/crates/edge/aep-cli/src/planning.rs#L5907), lines 5907–5985 | recorded_from_report independently reads JSON Value, requires report/1, refuses zero total, and incorporates scenarios_failed into recorded prose. It does not call A1 or preserve all execution facts. It must gain its own strict version dispatch and truthful category/coverage wording; updating A1 alone does not migrate it. |
++| A3 | [AEP domain evidence](https://github.com/beyond10x/aep/blob/00c742e4179593738a2e8aa69e2ecc07d3c89402/crates/govern/aep-domain/src/evidence.rs#L1006), lines 1006–1051 and 1862–1889 | EssConformanceResult is closed. Existing facts define ess_conformance.passed from status.is_pass() && scenarios_failed == 0 and expose scenarios.failed. Preserve those historical meanings. A new domain result/fact namespace and predicate migration are required; wire parsing alone cannot change this boundary. |
++| T1 | [CLI Go tests](../../crates/edge/ess-cli/tests/go_conformance.rs), lines 109–112; [conformance tests](../../crates/verify/ess-conformance/tests/); [impact tests](../../crates/verify/ess-diff/tests/impact.rs) | Go reports are read through S1; suite serialization, execution, fault matrices, impact, generated examples and browser bundles rely on the existing shapes. Keep legacy golden fixtures and add paired new fixtures. No separate production report parser was found in repository workflow/xtask sources. |
++
++An external adopter may retain an older generated Go package indefinitely. That relying party is not upgraded by releasing ESS. The Atlas ADR must enumerate the actual repositories and deployed consumers discovered at rollout, including their pinned generated packages and automation reading detailed CLI JSON/YAML; this source inventory is the known minimum, not an assertion that every external adopter has been discovered.
++
++## Frozen execution semantics
++
++For the following table, one terminal scenario contributes one to total. A v1 list entry is exactly the status word, one ASCII space, then the opaque scenario identity. It is not parsed by splitting the identity into words. scenarios_failed is the length of the entire non-pass list, regardless of its misleading name. Rust and Go both preserve this meaning. No skipped/error/unsupported category is retroactively relabeled failed. [S1, S2, S5]
++
++| Producer scenario result | v1 count/list contribution | v2 category contribution | Producer aggregate contribution |
++| --- | --- | --- | --- |
++| Rust passed | total +1; no failure entry | passed +1 | No adverse contribution |
++| Rust failed | non-pass +1; "failed ID" | failed +1 | failed |
++| Rust error | non-pass +1; "error ID" | error +1 | inconclusive unless any scenario is failed or unsupported |
++| Rust unsupported | non-pass +1; "unsupported ID" | unsupported +1 | failed, including beside a separate error scenario |
++| Go passed | total +1; no failure entry | passed +1 | No adverse contribution |
++| Go failed | non-pass +1; "failed ID" | failed +1 | failed |
++| Go skipped | non-pass +1; "skipped ID" | skipped +1 | inconclusive unless some scenario failed |
++| Go ordinary command/begin/end error | failed as the final result, not a new error category | failed +1 | failed |
++| Go ErrUnsupported/unsupported step or expectation | skipped, unless teardown overrides it | skipped +1 | inconclusive absent a failure |
++| Go skipped followed by EndScenario error | final result failed; no additional skipped entry | failed +1 | failed |
++
++Rust check aggregation within one scenario remains **failed > error > unsupported > passed**. Therefore an error and unsupported check in the *same* scenario yield error, while separate error and unsupported scenarios yield a failed run. Go teardown failure remains a failure even when its error happens to be ErrUnsupported. The v2 producer profiles below record these existing distinctions rather than promise identical semantics. Unsupported vocabulary in an admitted new-format suite is a document/reader refusal *before* execution; the legacy fallback behavior in the table remains relevant to old runtimes only.
++
++For either producer, zero terminal scenarios currently aggregates to passed. Freeze that execution fact in v1; do not infer complete conformance from it. Rust detailed status error maps to standalone inconclusive. Rust CLI currently exits 0/1/3 for passed/failed/error. Go's test process may exit zero when all selected subtests skip while its standalone report says inconclusive; Go test success is not conformance qualification. [S2, S5, S6]
++
++The current validated v1 reader accepts both non-pass vocabularies because v1 carries no producer profile. It does not establish exact-suite binding, complete coverage, or uniqueness of opaque listed scenario IDs. Do not strengthen those unknown historical claims by upgrading a report. Keep the existing v1 shape and admitted meanings separate from v2's stronger invariants. [S1]
++
++## New suite: ess-conformance/5
++
++The closed top-level object has exactly **provenance**, **scenarios**, and **coverage**. provenance has the existing fields in S3, with suite_version fixed to ess-conformance/5. scenarios retains the v4 scenario/step/dependency vocabulary and its ID-keyed map. Version 5 adds no execution step semantics. Unknown fields are refused throughout typed envelopes and tagged variants; arbitrary keys inside an existing declared payload Node remain payload data, not unknown envelope fields.
++
++coverage has exactly the following fields. Every field is emitted, including empty lists; nullable values are JSON null. Existing nested v4 scenario fields retain their declared optional/default rules.
++
++| Field | Closed type and meaning |
++| --- | --- |
++| selection | Selection object defined below; the boundary against which completeness is assessed |
++| knowledge | complete_inventory or unknown; complete_inventory means the builder enumerated the selected obligation/source inventory, not that execution passed |
++| generated | Sorted distinct selected generated ScenarioIds |
++| authored | Sorted distinct selected authored ScenarioIds |
++| outside | Sorted list of Outside records |
++| refused | Sorted list of Refusal records |
++| authored_sources | Map from repository/input-root-relative source identity to sha256: plus 64 lowercase hex digits, hashing each exact authored file's bytes |
++| counts | Object with generated, authored, outside, refused; unsigned counts equal the corresponding list lengths |
++
++Selection is exactly:
++
++- scope: tagged object {kind: system}, or {kind: component, component: ComponentName}. A component name must resolve against the model when building the suite and agree with provenance.component.
++- origins: one of generated, authored, generated_and_authored.
++- filter: {kind: all}, or {kind: explicit, ids: [ScenarioId], parent: SuiteReference}. Explicit IDs are sorted/distinct; parent is the exact admitted parent suite, not merely its model digest.
++
++For generated or combined selections, the inventory includes every generated obligation within the stated component/system boundary. For authored or combined selections, authored_sources includes every requested source file, including files whose compilation was refused. Selecting zero authored files is explicit; it does not claim the repository has no authored requirements. The builder must record the actual resolved source set instead of relying on a later process's working directory.
++
++An Outside record is exactly {scenario, origin, reason, needs}: scenario is a ScenarioId; origin is generated or authored; reason is other_component or selection_filter; needs is a sorted/distinct list of existing EssSemanticRefs, empty only for selection_filter. It represents a known executable candidate intentionally outside the selection, not an adapter failure. Explicit filtering records omitted parent IDs as selection_filter and retains the parent's existing outside/refusal inventory. A filter must not hide an in-scope refusal or turn unknown parent knowledge into complete_inventory.
++
++A Refusal record is exactly {origin, scenario, subject, source, code, message}. origin is generated or authored; scenario is ScenarioId or null; subject is EssSemanticRef or null; source is an authored-source identity or null; code is the closed code vocabulary of the corresponding existing synthesis/authored diagnostic producer at the baseline; message is nonempty diagnostic text. Generated refusals require subject and null source; authored refusals require source and may have null subject. Persist the existing diagnostic code spelling, not a newly guessed cause. The implementation must exhaustively map every variant of the baseline RefusalCause/Cause code-producing match; a later unrecognized code requires a new supported vocabulary/format, not silent omission. This is a typed diagnostic summary, with no arbitrary details bag. It deliberately does not pretend all refusal records have one scenario identity. [S7]
++
++The following invariants are binding:
++
++1. generated and authored are disjoint and their union is exactly the scenario-map keys. Every selected scenario has one origin; adding an authored scenario under a generated ID is a refusal, not replacement.
++2. IDs in outside are unique and absent from selected IDs. A refused scenario ID, when present, is absent from selected/outside IDs. Multiple distinct refusal records can concern the same refused ID; their count measures records. Exact duplicate refusal records are refused. Sort outside by scenario then origin/reason; sort refused by origin, source, subject, scenario, code, message, with null before text.
++3. counts.generated + counts.authored equals the suite's scenario count. outside/refused do **not** contribute to execution total. Do not sum refusal-record counts into a supposed scenario universe: one construct may have no single ID or several diagnostic records.
++4. Complete coverage of the declared selection requires complete_inventory and zero refused records within that selection. Intentional outside entries do not make a correctly declared component/explicit selection incomplete.
++5. Generated-only, authored-only, component, and filtered selections never become whole-system combined coverage merely because their own inventory is complete.
++6. An imported legacy suite cannot acquire complete_inventory from its nonzero scenario count or its provenance. Keep its legacy suite version and use unknown coverage in a diagnostic v2 report; do not manufacture v5 generated/authored origins by conversion. Rebuilding from the source/model inventory creates a new v5 suite and digest. An external v5 producer that knows scenario origins but cannot establish the full inventory must use unknown.
++7. Unknown component, duplicate scenario IDs or JSON object keys, inconsistent inventory/counts, unrecognized vocabulary, and an explicit filter whose parent/IDs cannot be validated refuse suite admission. Coverage claims are builder claims; bytes alone cannot prove that a builder enumerated all semantic obligations. Qualification additionally requires the caller's approved exact suite/selection.
++
++These obligations are owned by story:review-conformance-coverage. Fresh synthesis, authored-only compilation, component filtering, CLI --path merging, Go emission and web emission must each preserve the same inventory. Legacy diagnostic execution retains the legacy suite and makes no inventory claim.
++
++## Exact-suite digest and serialization
++
++A SuiteReference is the closed object **{version, digest_profile, digest}**. version is the admitted suite format. digest_profile is exactly **sha256-json-bytes/1**. digest is sha256: followed by 64 lowercase hexadecimal digits.
++
++The digest is SHA-256 over **every byte of the actual UTF-8 JSON suite document issued to the runner**, including the final newline when present. It excludes file names, build stamps, transport headers and enclosing report bytes. It is not spec_digest, contract_digest, a scenario-ID hash, a reduced Go struct hash, or a hash of YAML output. The suite does not contain its own digest; the runner/report, optional parent reference, and expected-suite policy carry it.
++
++This decision intentionally binds an exact serialized artifact. Reformatting equivalent JSON, changing field order, replacing 1 with 1.0, changing Unicode escape spelling, omitting an explicitly written default, or changing LF to CRLF yields a **different digest**. Readers never parse and reserialize before hashing. An expected-digest mismatch refuses execution/adaptation; a missing suite can be archived as an unverified report but cannot qualify as exact-suite evidence.
++
++Canonical generation is a writer requirement, distinct from byte identity:
++
++| Concern | Frozen legacy writers | v5 writer rule |
++| --- | --- | --- |
++| Object fields | Existing typed field order and BTreeMap order; no rewrite | All object keys, including typed objects and payload maps, sorted by UTF-8 byte order |
++| Layout | Existing serde_json pretty form plus trailing LF | Two-space indentation, colon followed by one space, LF line endings, nonempty arrays/objects on multiple lines, empty arrays/objects as []/{}, exactly one trailing LF, no BOM |
++| Omission | Existing optional/default omissions, including absent provenance.component | Existing nested scenario/provenance omission rules remain; every newly defined coverage field is present and nullable fields use null |
++| Counts and integer fields | Existing valid spellings preserved | Unsigned decimal integers without exponent, sign or leading zero; bounded to u64 and checked before arithmetic |
++| Payload numbers | Existing admitted finite Number semantics preserved | Finite binary64 values only for existing Node numbers; retain the numeric rendering behavior of serde_json 1.0.151 and its locked formatter at this baseline, including signed zero and integral-float spelling; do not coerce to integer or string |
++| Strings | Existing bytes preserved | UTF-8, no Unicode normalization; quote/backslash/control escapes as the baseline serde_json JSON encoder, printable Unicode literal, slash and HTML punctuation unescaped |
++| Ordered arrays | Existing order | Scenario steps retain execution order; sets/coverage lists use the orders stated here; no sorting of semantic sequences |
++
++The v5 numeric/string spelling is tied to the inspected encoder behavior, not to a vague "whatever JSON library is current": Cargo.lock pins serde_json 1.0.151 and zmij 1.0.23. A dependency change that changes output fails byte fixtures and requires an intentional format decision. The implementation must pin golden vectors for 1.0, -0.0, fractional/exponent boundaries, Unicode combining sequences and escaped control characters before releasing a writer. This document does not claim those vectors have run. [S3; crates/specify/ess-primitives/src/node.rs:35–57 and facts.rs:22–61]
++
++Readers admit valid noncanonical JSON spellings only after complete version/schema/semantic checks and duplicate-key detection; their exact digest remains the digest of the admitted original bytes. Thus a reader need not implement another language's canonical formatter to verify identity. For in-memory Rust suites, serialize once into an immutable byte buffer, admit/hash that buffer, and execute the corresponding admitted value. For Go, hash the complete embedded suiteJSON bytes before decoding into execution views; retain/validate the full envelope and coverage/dependency fields even if execution does not consume them. Never marshal the existing reduced Suite struct to calculate identity. Browser code retains response bytes before JSON parsing and verifies the selected suite/model before replay. [S4, S5, S8]
++
++New report and detailed-report writers use the same v5 layout/scalar rules for their own bytes, but their hashes, if any, are report-artifact hashes and never substitutes for SuiteReference.digest. Existing realization artifact digests retain their original profile. [S10]
++
++## New standalone report: ess-conformance-report/2
++
++The closed object has the following fields; all are required. Unknown fields, unknown enum values, duplicate object keys, invalid numeric ranges and contradictory claims refuse admission. No v1 field is repurposed: v2 replaces the ambiguous flat failed count and status-prefixed list.
++
++| Field | Meaning |
++| --- | --- |
++| format | Exactly ess-conformance-report/2 |
++| specification, spec_digest, implementation | Existing label/model-digest/implementation meanings; spec_digest stays the existing 64-hex model digest |
++| producer_profile | rust-scenario-status/1 or go-scenario-status/1, preserving the execution rules above; not a compiler build version |
++| suite | SuiteReference for the exact document executed |
++| execution_status | passed, failed or inconclusive, derived solely by the selected producer profile |
++| counts | Exactly total, passed, failed, error, unsupported, skipped; nonnegative u64 |
++| outcomes | Exactly passed, failed, error, unsupported, skipped; each is a sorted/distinct array of plain ScenarioIds, with no status prefix |
++| coverage | {knowledge: unknown} for legacy suites, or {knowledge: complete_inventory or unknown, selection, counts, refused} copied exactly from the admitted v5 suite; refused is the full refusal list |
++| conformance_status | passed, failed or inconclusive under complete-selection/1 below |
++| policy | Exactly complete-selection/1 |
++| completed_at | Existing signed epoch-millisecond timestamp meaning |
++
++counts.total = passed + failed + error + unsupported + skipped. Each count equals the corresponding outcomes array length; the five arrays are pairwise disjoint. Their union must equal the exact suite's selected scenario IDs. Rust requires skipped = 0; Go requires error = unsupported = 0. An unknown/mixed producer profile or an outcome inadmissible for that profile is a malformed v2 report, not an inferred translation.
++
++counts.failed means only final failed scenarios. Rust errors and unsupported scenarios remain separate; Go's ordinary runner/target errors remain failed because that is its existing scenario result. The former v1 aggregate can be displayed as **non_pass = total - passed**, calculated with checked arithmetic, but is not stored as scenarios_failed in v2.
++
++execution_status follows the frozen profile table. For a complete report, every selected scenario must have a terminal result. Cancellation, process termination, a host test filter that never invokes a selected Go subtest, or report I/O failure must not fabricate passed results for unexecuted IDs. Such an invocation may emit diagnostics, but cannot publish a complete v2 report. To run a subset and report it, select and bind a new explicit suite before execution; runtime filtering is not coverage selection.
++
++complete-selection/1 determines conformance_status in this order:
++
++1. execution_status failed yields failed, even if coverage is incomplete.
++2. Otherwise execution_status inconclusive yields inconclusive.
++3. Otherwise unknown inventory, any in-scope refusal, or total = 0 yields inconclusive.
++4. Otherwise it yields passed **for the declared selection only**.
++
++An evidence consumer must additionally match its expected model digest, exact SuiteReference and selection. An authored-only passed result cannot satisfy a consumer asking for system generated_and_authored; a component passed result cannot satisfy a whole-system requirement. A report with unknown coverage is useful diagnostic history, never proof of complete coverage. Paired report admission recomputes counts/outcome-ID membership and v5 coverage equality from the exact suite; structural report parsing alone must expose an unverified state and must not yield a qualifying evidence value.
++
++No missing-suite or missing-coverage inference is allowed. Report v2 over legacy suite majors 1–4 is permitted for diagnostic category accounting when paired with its exact bytes; coverage is unknown and conformance_status cannot be passed. Report v1 is never silently upconverted to a qualifying v2 report.
++
++## CLI surfaces, strict mode and version admission
++
++The implementation will add explicit opt-ins **--suite-format 5** on suite-producing verbs and **--report-format 2** on conform run. Generated Go report selection uses **ESS_REPORT_FORMAT=2**. These select versions, not JSON versus YAML. Until the final rollout step, defaults remain suite/4 and report/1.
++
++The current conform run --format json/yaml output is the detailed S2 report, not S1 standalone output. Preserve that legacy structure and output bytes under report-format 1. For report-format 2, detailed output is a closed **ess-conformance-run/2** object with exactly format, summary, started_at, scenarios. summary is the complete v2 standalone report; scenarios is the existing ordered detailed scenario-result sequence with the chosen producer vocabulary, whose IDs/statuses must agree with summary.outcomes. JSON/YAML is presentation of that object; --report-out always writes the standalone JSON summary. No consumer may identify the surface solely from --format json. Update help, fixtures and downstream detailed-output consumers before switching defaults. Go produces only standalone output; browser replay produces neither form.
++
++Strict mode is **--strict** for the CLI and **ESS_CONFORMANCE_STRICT=1** for generated Go. It requires report v2 and a paired exact suite. It succeeds only for conformance_status passed and the caller's expected selection. In strict Rust mode, exits are 0 for passed, 1 for failed, 3 for inconclusive; admission/refused input exits nonzero before target execution. In strict Go mode, an inconclusive report must fail the enclosing test run even if all subtests were skipped. Existing report-format 1 behavior remains unchanged.
++
++Opt-in v2 without strict mode may execute incomplete/legacy selections diagnostically and return the producer execution exit behavior; its conformance_status remains truthful. Once the governed default moves to suite/5 and report/2, strict mode becomes the default; **--allow-incomplete** or **ESS_CONFORMANCE_ALLOW_INCOMPLETE=1** is an explicit diagnostic override. Conflicting strict/allow-incomplete choices refuse. This override never changes a report's qualification fields.
++
++Before any target callback, every new reader must check exact supported membership, vocabulary appropriate to that suite major, closed envelopes, duplicate keys/IDs, semantic invariants, and expected byte digest where supplied. The supported set is 1, 2, 3, 4, 5; a syntactically valid 6 or 99 is refused. Known newer steps under a falsely older major are refused. Legacy fixture admission remains version-specific and keeps the earlier meanings/omissions; legacy Node payload maps remain open data. Unknown typed fields on legacy input are refused by the new admitted-execution path, although historical readers sometimes ignored them.
++
++## Validation matrix and implementation owners
++
++These are specified expected outcomes, **not executed compatibility results**. R = ESS count/report owner (story:a-skipped-scenario-is-not-a-failed-one); C = ESS suite/coverage/admission owner (story:review-conformance-coverage), including Rust/Go/browser/impact integrations; A = AEP owners for both readers/domain/predicates; O = Atlas/coordinator and adopter owners for rollout. All rows require fixtures/tests before a new default.
++
++| ID | Input or scenario | One required result | Owner/stage |
++| --- | --- | --- | --- |
++| M01 | Valid existing Rust v1 passed/failed/error/unsupported reports | Admit unchanged under v1 rules and preserve bytes; do not infer coverage | R, reader stage |
++| M02 | Valid existing Go v1 passed/failed/skipped reports | Admit unchanged; scenarios_failed remains all non-passes | R/A, reader stage |
++| M03 | A v1 report with category fields added without changing format | Closed v1 reader refuses | R/A |
++| M04 | v2 presented to an existing v1 report reader | Refuse report/2; no count reinterpretation | R/A fixtures using retained old reader |
++| M05 | Valid paired v2 Rust unsupported + separate error scenarios | unsupported=1, error=1, failed=0; execution_status and conformance_status failed | R |
++| M06 | Rust error + unsupported checks within one scenario | One error result; execution_status inconclusive | R |
++| M07 | Go skipped-only run | skipped equals total, failed=0; execution_status/conformance_status inconclusive; strict process fails | R |
++| M08 | Go ordinary error or skipped followed by teardown error | One final failed result; no error/unsupported/skipped contribution for it | R |
++| M09 | Unknown profile, outcome word, report field, or report/3 | Refuse before adaptation; never coerce to failed/skipped/passed | R/A |
++| M10 | Counts do not sum, overflow, duplicate IDs, list/count disagreement, or mixed profile vocabulary | Refuse v2 report | R/A |
++| M11 | Paired v2 with an omitted or extra scenario result | Refuse complete report, including results fabricated for filtered Go subtests | R/C |
++| M12 | Valid old suite/1–4 with its own supported vocabulary | New readers admit legacy execution; v2 exact report remains unknown coverage | C |
++| M13 | New suite/5 with complete inventory and every selected scenario passed | Paired v2 conformance_status passed for that selection | C/R |
++| M14 | Future suite/6 or /99 using only familiar steps | New readers refuse before any target callback or browser replay | C |
++| M15 | New vocabulary mislabeled with an earlier suite major | New readers refuse before execution | C |
++| M16 | Unknown typed suite field/step/coverage code or duplicate JSON key | New readers refuse before execution; payload-map keys remain data | C |
++| M17 | Today's Rust runner or generated Go runtime receives suite/5 | Do not claim version-based refusal: these sources lack the check; deployment pairing is prohibited until upgraded/regenerated | C/O retained-runtime fixture |
++| M18 | Today's browser player receives new suite metadata | Do not claim coverage/digest verification; publish the updated player with the matching suite first | C/O browser fixture |
++| M19 | Empty suite and zero outcomes | execution_status passed may remain; conformance_status inconclusive; strict refuses qualification | R/C/A |
++| M20 | Whole-system generated_and_authored, complete inventory, no refusals | Nonempty all-pass execution qualifies for that exact selection | C/R |
++| M21 | Component selection, complete in-scope inventory, known outside scenarios | Can qualify for the named component; cannot satisfy a system expectation | C/A |
++| M22 | Authored-only or generated-only selection | Can qualify only for the same declared origin selection; combined requirement refuses it | C/A |
++| M23 | Explicit subset with admitted parent, requested IDs and accounted omissions | Can qualify only for that explicit selection; broader requirement refuses it | C/A |
++| M24 | Explicit subset hides a refusal or loses parent/ID binding | Refuse suite admission; cannot claim complete inventory | C |
++| M25 | Nonempty all-pass selected suite with an in-scope synthesis/authored refusal | execution_status passed, conformance_status inconclusive; strict fails | C/R |
++| M26 | Legacy suite rebuilt without original inventory, or unknown coverage | Diagnostic execution allowed; complete qualification refuses | C/R/A |
++| M27 | Same spec_digest but changed authored step, dependency, selection, refusal or coverage list | Exact suite digest changes; old expected/report binding refuses | C/R/A |
++| M28 | Correct report with a different exact suite, missing suite, or model digest mismatch | No qualifying evidence; paired mismatch refuses, missing bytes remains unverified | C/R/A |
++| M29 | Whitespace/key order/default omission/number or Unicode escape/newline rewrite | Exact byte digest changes even if decoded values compare equal | C/R |
++| M30 | Go reduced execution struct is marshaled to calculate digest | Fixture must fail; only retained complete suiteJSON may be hashed | C/R |
++| M31 | Numeric precision edge, signed zero, combining Unicode, escaped controls | Golden canonical bytes and raw-byte hash match the specified profile; no silent normalization | C/R |
++| M32 | Detailed CLI JSON/YAML treated as standalone report | Format/surface admission refuses the mismatch | R/A |
++| M33 | Impact on a v5 component/subset suite with matching model provenance | Compute scenario invalidation within that selection; do not claim whole-system execution coverage | C |
++| M34 | Existing realization digest reference without referenced bytes/profile bridge | Remain an artifact reference, not verified exact-suite conformance | C/O |
++| M35 | New report sent through old AEP domain result/predicates | Refuse v2 adaptation until the new domain/policy route exists; do not narrow the old failed fact | A |
++| M36 | Report/1 and suite/1–4 explicitly requested after default movement | Preserve documented legacy behavior/bytes and mark coverage unavailable | R/C/O |
++
++M17/M18 have a deployment outcome, not a invented statement that old code refuses. Their retained-runtime tests must demonstrate actual old behavior; a green test of a freshly regenerated runtime cannot stand in for that test.
++
++## AEP mapping, impact and cross-repository movement
++
++AEP owns a new versioned evidence result and fact namespace for v2. Its old EssConformanceResult, ess_conformance.scenarios.failed and historical predicates retain their meanings. The new result must retain the five categories, execution_status, conformance_status, exact suite reference and declared selection. New qualification predicates require conformance_status passed, exact expected suite/model, matching selection and nonzero total. They must not merely replace the old failed count with the narrower v2 failed count. There is no automatic lossy downcast from v2 to the old evidence variant. This is a required AEP contract migration; the exact AEP schema/version is governed by its own ADR implementation, not invented as already shipped here. [A1–A3]
++
++Both aep-ess-evidence::adapt_json and aep-cli::recorded_from_report require version dispatch. The planning route must report the correct category counts and coverage scope, preserve exact references, and state when it records only descriptive evidence rather than qualifying facts. Updating prose must not claim that a lifecycle records count now evaluates conformance predicates; that is independently owned AEP behavior.
++
++Impact continues using semantic dependencies for invalidation. A v5 admitted-suite view supplies the same dependency graph plus its selection; missing coverage cannot be interpreted as an empty dependency set. No new field is added silently to impact/1 or its serialized SuiteProvenance. To issue a future persisted impact result that binds exact suites, the impact owner must version that envelope separately; until then callers pair the original suite externally and cannot reuse a report solely from model/contract provenance. [S9]
++
++Before new default bytes cross repositories, Atlas requires an ADR here in its own repository: **"ESS conformance report v2 and exact-suite coverage migration"**. The coordinator must allocate its ADR number. It must name R/C/A and the actual adopter repositories, generated Go runtimes, browser bundles, AEP detailed-output automation, and any discovered digest consumers; record the contract versions, fixtures, deployed/pinned versions and rollback path. This ADR and shipped log are required by [Atlas AGENTS.md at 6035d6e](https://github.com/beyond10x/atlas/blob/6035d6e1209686ca474a3f43975fde7d8621ba48/AGENTS.md#L297). No ADR approval or downstream completion is claimed here.
++
++The mandatory movement order is:
++
++1. **O: govern and inventory.** Record the Atlas ADR, relying parties, pinned old suites/reports/runtimes and exact upgrade dependencies. Keep legacy goldens and establish the matrix fixtures.
++2. **R/C: release readers first.** Ship strict version-specific admission and opt-in v2/v5 parsing with defaults still report/1 and suite/4. Update Rust entry points, Go template, browser, CLI detailed output, and impact's internal view; prove pre-execution refusal.
++3. **A: migrate both readers and policy.** Land the new AEP domain evidence contract/facts and predicates, then optional adapter and planning route, with legacy behavior retained. Consumer-side fixtures must cover skipped/error/unsupported, incomplete and empty coverage, and exact digest mismatch. Do not enable v2 adaptation before its domain representation is available.
++4. **C/O: regenerate and deploy consumers.** Regenerate adopter Go packages and web player/model/suite sets from the admitted-reader release; update automation using detailed CLI outputs. Inventory exact deployed versions. Old embedded runtimes remain on legacy suites until their own regeneration is verified.
++5. **R/C: enable opt-in writers.** Count migration implements the v2 outcome/profile contract; coverage migration implements v5 inventory and exact byte binding. Counts-only v2 output against legacy suites is diagnostic/unknown coverage. No default changes yet. Execute all matrix rows, legacy byte checks, paired cross-language vectors and required repository gates.
++6. **O/A/R/C: move defaults last.** After every mandatory relying party is ready and the ADR/shipped log records actual versions, release suite/5, report/2 and strict default behavior together. Publish migration instructions and explicit legacy-format opt-outs. Keep old bytes and format meanings frozen.
++7. **O: observe and retain rollback.** Roll back writer defaults, not contract meanings or previously issued documents, if a relying reader is missed. Never relabel new data as v1 or feed v5 to unupgraded generated code to make a gate green.
++
++The existing planning stories own implementation, not this document. Missing Atlas/AEP/adopter work must become explicit coordinator-owned dependencies before step 6. This design closes the choice of ESS contracts and migration policy; it does not discharge those obligations.
++
++## Validation status
++
++This unit reviewed the source inventory and all 36 matrix rows for explicit outcomes and implementation owners. No compatibility fixture, canonicalization test, package test, formatter, Clippy run, browser check, AEP adaptation or downstream release was executed for this document. The sole repository check required here is git diff --check; its actual result is retained in the implementation report. The integration coordinator owns full gates and any required site build. Implementation acceptance requires the matrix to become executed checks rather than treating this design review as that evidence.

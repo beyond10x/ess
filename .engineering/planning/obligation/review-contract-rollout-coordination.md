@@ -6,7 +6,7 @@ status: open
 title: Coordinate relying readers before changed ESS formats become defaults
 relations:
 - decomposes: epic:review-boundary-remediation
-revision: 2
+revision: 4
 ---
 ## Outstanding outcome
 
@@ -20,11 +20,11 @@ Recorded compatibility and rollout evidence shows that every affected relying re
 
 For each selected migration, inventory exact reader/writer revisions, create the Atlas ADR and governed work in each affected repository, prove old/new compatibility using actual adapters, then enable the default writer only in the approved rollout order. Record the checked commits and release evidence. If a remediation preserves bytes and meaning, document that result explicitly instead of manufacturing a migration.
 
-For each selected migration, inventory exact reader/writer revisions, create the Atlas ADR and governed work in each affected repository, prove old/new compatibility using actual adapters, then enable the default writer only in the approved rollout order. Record the checked commits and release evidence. If a remediation preserves bytes and meaning, document that result explicitly instead of manufacturing a migration.
-
 ## Known scope
 
-F03 suite/report coverage and count semantics, F06 observation completeness and F08 exact numbers are migration candidates; F04 persisted import accounting and F11 evidence-kind meaning may also require coordination. This list is provisional until each design inventories consumers. The scoper's local AEP inspection is a lead, not proof of its current remote revision.
+F01 semantic delta/impact vocabulary and artifact provenance, F03 suite/report coverage and count semantics, F06 observation completeness and F08 exact numbers are migration candidates; F04 persisted import accounting and F11 evidence-kind meaning may also require coordination. This list remains subject to each design's actual reader inventory.
+
+Current F03 inspection establishes both AEP aep-ess-evidence::adapt_json and aep-cli::recorded_from_report, plus the closed domain result and predicates, at advertised Git object 00c742e4179593738a2e8aa69e2ecc07d3c89402. The F01 scoper found no external executable delta/impact parser in inspected published siblings, but Service SDK consumes generator APIs and verifies complete output bytes. Source inspection is not execution or deployment evidence. Detailed source/revision inventory is in the owning stories; refresh relying revisions at rollout.
 
 ## Scheduling limit
 

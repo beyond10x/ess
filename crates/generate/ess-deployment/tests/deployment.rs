@@ -519,3 +519,673 @@ fn input_order_does_not_change_locked_bytes() {
     let names: BTreeSet<_> = build.outputs().keys().cloned().collect();
     assert_eq!(names.len(), 2);
 }
+
+fn persisted_bundle() -> ReleaseBundle {
+    let build = build();
+    let runtime = runtime(&semantic(), &build);
+    bundle_release(
+        component(),
+        build.clone(),
+        runtime.clone(),
+        vec![
+            release_manifest(&build, &runtime, false),
+            release_manifest(&build, &runtime, true),
+        ],
+    )
+    .unwrap()
+}
+
+fn persisted_lock_and_deployment() -> (StackLock, DeploymentIr) {
+    let bundle = persisted_bundle();
+    let catalog: ReleaseCatalog = serde_json::from_value(serde_json::json!({
+        "format": "ess-release-catalog/1",
+        "releases": bundle.releases.values().map(|release| serde_json::json!({
+            "semantic_version": "v1", "release": release, "runtime": bundle.runtime,
+        })).collect::<Vec<_>>()
+    }))
+    .unwrap();
+    let stack: StackSpec = serde_json::from_value(serde_json::json!({
+        "format": "ess-stack/1", "stack": "example", "composition_digest": bundle.digest(),
+        "systems": (["frontend", "worker"].map(|service| serde_json::json!({
+            "service": service, "system": "oracle", "semantic_version": "v1",
+            "runtime_release": "^1", "chart_release": "^4",
+        }))),
+        "external_systems": [{"system": "carrier", "contract": "carrier-http/v1"}],
+    }))
+    .unwrap();
+    let lock = resolve_stack(&stack, &catalog).unwrap();
+    let environment: EnvironmentSpec = serde_json::from_value(serde_json::json!({
+        "format": "ess-environment/1", "environment": "test", "stack_digest": lock.digest(),
+        "cluster": "test-cluster", "namespace": "test",
+        "releases": (["frontend", "worker"].map(|service| serde_json::json!({
+            "service": service, "release_name": service, "service_account": service,
+            "secrets": {"database-password": {"name": "database", "key": "password"}},
+            "endpoints": {"carrier-api": "https://example.invalid"},
+        }))),
+        "external_systems": [{"system": "carrier"}],
+    }))
+    .unwrap();
+    let deployment = compile_deployment(&environment, &lock).unwrap();
+    (lock, deployment)
+}
+
+fn assert_persisted_refused<T: serde::de::DeserializeOwned>(value: &serde_json::Value) {
+    let json = serde_json::to_string(value).unwrap();
+    assert!(
+        serde_json::from_str::<T>(&json).is_err(),
+        "JSON admitted {json}"
+    );
+    assert!(
+        serde_json::from_value::<T>(value.clone()).is_err(),
+        "JSON value admitted {json}"
+    );
+    let yaml = serde_yaml::to_string(value).unwrap();
+    assert!(
+        serde_yaml::from_str::<T>(&yaml).is_err(),
+        "YAML admitted {json}"
+    );
+    assert!(
+        serde_json::from_str::<Vec<T>>(&format!("[{json}]")).is_err(),
+        "nested JSON admitted {json}"
+    );
+    assert!(
+        serde_yaml::from_str::<Vec<T>>(&format!("- {}", indent_yaml(&yaml, 2).trim_start()))
+            .is_err(),
+        "nested YAML admitted {json}"
+    );
+}
+
+fn assert_mutations_refused<T: serde::Serialize + serde::de::DeserializeOwned>(
+    valid: &T,
+    mutations: &[(&str, serde_json::Value)],
+) {
+    let mut admitted = Vec::new();
+    for (pointer, replacement) in mutations {
+        let mut invalid = serde_json::to_value(valid).unwrap();
+        *invalid
+            .pointer_mut(pointer)
+            .unwrap_or_else(|| panic!("missing fixture field {pointer}")) = replacement.clone();
+        if serde_json::from_value::<T>(invalid.clone()).is_ok() {
+            admitted.push(format!("{pointer}: {replacement}"));
+        } else {
+            assert_persisted_refused::<T>(&invalid);
+        }
+    }
+    assert!(admitted.is_empty(), "admitted mutations: {admitted:?}");
+}
+
+#[test]
+fn persisted_build_readers_refuse_invalid_graphs_and_compiler_constraints() {
+    use serde_json::json;
+    assert_mutations_refused(
+        &build(),
+        &[
+            ("/format", json!("future/99")),
+            ("/platforms", json!([])),
+            ("/platforms/0/os", json!("")),
+            ("/platforms/0/architecture", json!("")),
+            ("/order", json!([])),
+            ("/order", json!(["base", "base"])),
+            (
+                "/order",
+                json!(["source", "base", "compile", "chart-file", "runtime-image"]),
+            ),
+            ("/nodes/compile/base", json!("missing")),
+            ("/nodes/compile/base", json!("runtime-image")),
+            ("/nodes/source/path", json!("../escape")),
+            ("/nodes/source/destination", json!("relative")),
+            ("/nodes/base/reference", json!("alpine:latest")),
+            ("/nodes/compile/argv", json!([])),
+            ("/nodes/compile/argv", json!([""])),
+            (
+                "/nodes/compile/mounts",
+                json!([{"kind":"secret", "secret":"missing", "target":"/secret"}]),
+            ),
+            ("/nodes/compile/mounts/0/target", json!("relative")),
+            ("/nodes/chart-file/path", json!("relative")),
+            ("/outputs/app/name", json!("renamed")),
+            ("/outputs/app/node", json!("missing")),
+            ("/outputs/app/node", json!("chart-file")),
+            ("/outputs/app/repository", json!(null)),
+            ("/outputs", json!({})),
+        ],
+    );
+}
+
+#[test]
+fn persisted_runtime_readers_refuse_local_relationship_and_slot_defects() {
+    use serde_json::json;
+    let runtime = runtime(&semantic(), &build());
+    assert_mutations_refused(
+        &runtime,
+        &[
+            ("/format", json!("future/99")),
+            ("/processes/server/name", json!("other")),
+            ("/containers/server/name", json!("other")),
+            ("/containers/server/process", json!("missing")),
+            ("/workloads/oracle/name", json!("other")),
+            ("/workloads/oracle/replicas", json!(0)),
+            ("/workloads/oracle/containers", json!([])),
+            ("/workloads/oracle/containers", json!(["missing"])),
+            ("/containers/server/http_port", json!(null)),
+            ("/containers/server/config/0/kind", json!("literal")),
+            (
+                "/containers/server/secrets/0/environment",
+                json!("LOG_LEVEL"),
+            ),
+            ("/containers/server/secrets/0/name", json!("log-level")),
+            (
+                "/containers/server/volume_mounts/0/mount_path",
+                json!("/var/../escape"),
+            ),
+            (
+                "/containers/server/volume_mounts/0/volume",
+                json!("missing"),
+            ),
+            ("/workloads/oracle/volumes/0/size", json!("")),
+            ("/provided_endpoints/api/name", json!("other")),
+            ("/provided_endpoints/api/workload", json!("missing")),
+            ("/provided_endpoints/api/container", json!("missing")),
+        ],
+    );
+    let mut repeated = serde_json::to_value(&runtime).unwrap();
+    repeated["workloads"]["another"] = repeated["workloads"]["oracle"].clone();
+    repeated["workloads"]["another"]["name"] = json!("another");
+    assert_persisted_refused::<RuntimeIr>(&repeated);
+}
+
+#[test]
+fn persisted_component_and_release_readers_refuse_invalid_local_documents() {
+    use serde_json::json;
+    assert_mutations_refused(
+        &component(),
+        &[
+            ("/format", json!("future/99")),
+            ("/semantic_version", json!("1.0")),
+            ("/inputs/runtime", json!("../escape")),
+            ("/inputs/build", json!("")),
+            ("/release_units/chart", json!("oracle-runtime")),
+        ],
+    );
+    let bundle = persisted_bundle();
+    assert_mutations_refused(
+        bundle.releases.values().next().unwrap(),
+        &[
+            ("/format", json!("future/99")),
+            ("/source_commit", json!("main")),
+            ("/artifacts/chart/build_output", json!("other")),
+            ("/artifacts", json!({})),
+            ("/evidence", json!({})),
+        ],
+    );
+    let mut image_release =
+        serde_json::to_value(&bundle.releases[&"oracle-runtime".parse().unwrap()]).unwrap();
+    image_release["artifacts"]["app"]["platforms"] = json!({});
+    assert_persisted_refused::<ReleaseManifest>(&image_release);
+}
+
+#[test]
+fn persisted_lock_readers_preserve_local_service_identity_and_reject_invariants() {
+    use serde_json::json;
+    let (lock, _) = persisted_lock_and_deployment();
+    assert_ne!(
+        lock.systems[&"frontend".parse().unwrap()].system.as_str(),
+        "frontend"
+    );
+    assert_mutations_refused(
+        &lock,
+        &[
+            ("/format", json!("future/99")),
+            ("/external_systems/carrier/system", json!("other")),
+            ("/systems/frontend/depends_on", json!(["missing"])),
+            ("/systems/frontend/depends_on", json!(["frontend"])),
+            ("/systems/frontend/chart/kind", json!("binary")),
+            (
+                "/systems/frontend/runtime_artifacts/app/build_output",
+                json!("other"),
+            ),
+            (
+                "/systems/frontend/runtime_artifacts/app/platforms",
+                json!({}),
+            ),
+            ("/systems/frontend/runtime_artifacts", json!({})),
+            (
+                "/systems/frontend/runtime/config/log-level",
+                json!("literal"),
+            ),
+            (
+                "/systems/frontend/runtime/endpoint_names",
+                json!({"absent":"api"}),
+            ),
+        ],
+    );
+    let mut cycle = serde_json::to_value(&lock).unwrap();
+    cycle["systems"]["frontend"]["depends_on"] = json!(["worker"]);
+    cycle["systems"]["worker"]["depends_on"] = json!(["frontend"]);
+    assert_persisted_refused::<StackLock>(&cycle);
+}
+
+#[test]
+fn persisted_deployment_readers_reject_invalid_release_sets_and_canonical_order() {
+    use serde_json::json;
+    let (_, deployment) = persisted_lock_and_deployment();
+    assert_mutations_refused(
+        &deployment,
+        &[
+            ("/format", json!("future/99")),
+            ("/cluster", json!("")),
+            ("/rollout_order", json!([])),
+            ("/rollout_order", json!(["frontend"])),
+            ("/rollout_order", json!(["frontend", "frontend"])),
+            ("/rollout_order", json!(["frontend", "missing"])),
+            ("/rollout_order", json!(["worker", "frontend"])),
+            ("/releases/frontend/service", json!("other")),
+            ("/releases/frontend/release_name", json!("")),
+            ("/releases/frontend/namespace", json!("")),
+            ("/releases/frontend/service_account", json!("")),
+            ("/releases/frontend/chart/kind", json!("binary")),
+            ("/releases/frontend/images/app/build_output", json!("other")),
+            ("/releases/frontend/images/app/kind", json!("binary")),
+            ("/releases/frontend/images/app/platforms", json!({})),
+        ],
+    );
+    let mut invalid = serde_json::to_value(&deployment).unwrap();
+    invalid["releases"]["frontend"]["depends_on"] = json!(["missing"]);
+    assert_persisted_refused::<DeploymentIr>(&invalid);
+    invalid["releases"]["frontend"]["depends_on"] = json!(["worker"]);
+    invalid["releases"]["worker"]["depends_on"] = json!(["frontend"]);
+    assert_persisted_refused::<DeploymentIr>(&invalid);
+}
+
+#[test]
+fn persisted_bundle_checks_original_keys_and_consistently_rehashed_nested_graphs() {
+    use serde_json::json;
+    let bundle = persisted_bundle();
+    assert_mutations_refused(&bundle, &[("/format", json!("future/99"))]);
+    let mut renamed = bundle.clone();
+    let release = renamed
+        .releases
+        .remove(&"oracle-chart".parse().unwrap())
+        .unwrap();
+    renamed.releases.insert("renamed".parse().unwrap(), release);
+    assert!(verify_release_bundle(renamed.clone()).is_err());
+    assert_persisted_refused::<ReleaseBundle>(&serde_json::to_value(&renamed).unwrap());
+
+    for pointer in [
+        "/runtime/containers/server/process",
+        "/runtime/processes/server/image",
+    ] {
+        let mut invalid = serde_json::to_value(&bundle).unwrap();
+        *invalid.pointer_mut(pointer).unwrap() = json!("missing");
+        // Preserve field order when hashing by replacing inside compiler-produced bytes.
+        let runtime_json = if pointer.contains("containers") {
+            bundle
+                .runtime
+                .to_canonical_json()
+                .replace("\"process\": \"server\"", "\"process\": \"missing\"")
+        } else {
+            bundle
+                .runtime
+                .to_canonical_json()
+                .replace("\"image\": \"app\"", "\"image\": \"missing\"")
+        };
+        let digest = ess_deployment::Digest::of_bytes(runtime_json.as_bytes());
+        for release in invalid["releases"].as_object_mut().unwrap().values_mut() {
+            release["runtime_digest"] = json!(digest);
+        }
+        assert_persisted_refused::<ReleaseBundle>(&invalid);
+    }
+    let mut mismatch = serde_json::to_value(&bundle).unwrap();
+    mismatch["runtime"]["build_digest"] = json!(ess_deployment::Digest::of_bytes(b"other build"));
+    assert_persisted_refused::<ReleaseBundle>(&mismatch);
+}
+
+#[test]
+fn persisted_documents_preserve_compiler_bytes_across_all_public_reader_routes() {
+    fn roundtrip<T: serde::Serialize + serde::de::DeserializeOwned>(value: &T) {
+        let json = serde_json::to_string_pretty(value).unwrap();
+        let from_json: T = serde_json::from_str(&json).unwrap();
+        assert_eq!(serde_json::to_string_pretty(&from_json).unwrap(), json);
+        let from_yaml: T = serde_yaml::from_str(&serde_yaml::to_string(value).unwrap()).unwrap();
+        assert_eq!(serde_json::to_string_pretty(&from_yaml).unwrap(), json);
+    }
+    let bundle = persisted_bundle();
+    roundtrip(&bundle.build);
+    roundtrip(&bundle.runtime);
+    roundtrip(&bundle.component);
+    for release in bundle.releases.values() {
+        roundtrip(release);
+    }
+    roundtrip(&bundle);
+    let (lock, deployment) = persisted_lock_and_deployment();
+    roundtrip(&lock);
+    roundtrip(&deployment);
+}
+
+#[test]
+fn persisted_readers_reject_duplicate_map_keys_before_collection() {
+    fn duplicate<T: serde::Serialize + serde::de::DeserializeOwned>(
+        value: &T,
+        key: &str,
+        entry: &serde_json::Value,
+    ) {
+        let json = serde_json::to_string(value).unwrap();
+        let needle = format!("\"{key}\":");
+        let duplicate = format!("\"{key}\":{entry},\"{key}\":");
+        let invalid = json.replacen(&needle, &duplicate, 1);
+        assert_ne!(invalid, json);
+        assert!(
+            serde_json::from_str::<T>(&invalid).is_err(),
+            "duplicate key admitted {invalid}"
+        );
+        assert!(serde_json::from_str::<Vec<T>>(&format!("[{invalid}]")).is_err());
+    }
+    let bundle = persisted_bundle();
+    duplicate(
+        &bundle.build,
+        "app",
+        &serde_json::to_value(&bundle.build).unwrap()["outputs"]["app"],
+    );
+    duplicate(
+        &bundle.runtime,
+        "server",
+        &serde_json::to_value(&bundle.runtime).unwrap()["processes"]["server"],
+    );
+    let release = &bundle.releases[&"oracle-runtime".parse().unwrap()];
+    duplicate(
+        release,
+        "app",
+        &serde_json::to_value(release).unwrap()["artifacts"]["app"],
+    );
+    duplicate(
+        release,
+        "linux/amd64",
+        &serde_json::to_value(release).unwrap()["artifacts"]["app"]["platforms"]["linux/amd64"],
+    );
+    duplicate(
+        &bundle,
+        "oracle-chart",
+        &serde_json::to_value(&bundle).unwrap()["releases"]["oracle-chart"],
+    );
+    let (lock, deployment) = persisted_lock_and_deployment();
+    duplicate(
+        &lock,
+        "frontend",
+        &serde_json::to_value(&lock).unwrap()["systems"]["frontend"],
+    );
+    duplicate(
+        &deployment,
+        "frontend",
+        &serde_json::to_value(&deployment).unwrap()["releases"]["frontend"],
+    );
+    duplicate(
+        &deployment,
+        "database-password",
+        &serde_json::to_value(&deployment).unwrap()["releases"]["frontend"]["secrets"]
+            ["database-password"],
+    );
+}
+
+#[test]
+fn persisted_convenience_readers_and_catalogs_use_the_checked_boundary() {
+    fn future<T: serde::Serialize>(value: &T) -> String {
+        let mut value = serde_json::to_value(value).unwrap();
+        value["format"] = serde_json::json!("future/99");
+        serde_json::to_string(&value).unwrap()
+    }
+    let bundle = persisted_bundle();
+    assert!(BuildIr::from_json(&future(&bundle.build)).is_err());
+    assert!(RuntimeIr::from_json(&future(&bundle.runtime)).is_err());
+    assert!(ess_deployment::ComponentIr::from_json(&future(&bundle.component)).is_err());
+    let release = bundle.releases.values().next().unwrap();
+    assert!(ReleaseManifest::from_json(&future(release)).is_err());
+    assert!(ReleaseManifest::from_yaml(&future(release)).is_err());
+    assert!(ReleaseBundle::from_json(&future(&bundle)).is_err());
+    assert!(ReleaseBundle::from_yaml(&future(&bundle)).is_err());
+    let (lock, deployment) = persisted_lock_and_deployment();
+    assert!(StackLock::from_json(&future(&lock)).is_err());
+    assert!(DeploymentIr::from_json(&future(&deployment)).is_err());
+    let catalog = serde_json::json!({
+        "format": "ess-release-catalog/1",
+        "releases": [{"semantic_version":"v1", "release":release, "runtime":bundle.runtime}],
+    });
+    let valid: ReleaseCatalog = serde_json::from_value(catalog.clone()).unwrap();
+    assert!(ReleaseCatalog::from_json(&future(&valid)).is_err());
+    assert!(ReleaseCatalog::from_yaml(&future(&valid)).is_err());
+    assert_mutations_refused(
+        &valid,
+        &[
+            ("/format", serde_json::json!("future/99")),
+            (
+                "/releases/0/release/runtime_digest",
+                serde_json::json!(bundle.build.digest()),
+            ),
+            (
+                "/releases/0/runtime/containers/server/process",
+                serde_json::json!("absent"),
+            ),
+        ],
+    );
+}
+
+#[test]
+fn mutable_public_documents_are_rechecked_at_consuming_entrypoints() {
+    let bundle = persisted_bundle();
+    let mut release = bundle.releases.values().next().unwrap().clone();
+    release.evidence.clear();
+    assert!(verify_release(&release, &bundle.build, &bundle.runtime).is_err());
+    let (mut lock, mut deployment) = persisted_lock_and_deployment();
+    lock.systems
+        .get_mut(&"frontend".parse().unwrap())
+        .unwrap()
+        .chart
+        .kind = ess_deployment::ArtifactKind::Binary;
+    let environment: EnvironmentSpec = serde_json::from_value(serde_json::json!({
+        "format": "ess-environment/1", "environment":"test", "stack_digest": lock.digest(),
+        "cluster":"test", "namespace":"test", "releases":[],
+    }))
+    .unwrap();
+    assert!(compile_deployment(&environment, &lock)
+        .unwrap_err()
+        .contains(DiagnosticCode::InvalidValue));
+    deployment.rollout_order.clear();
+    assert!(deployment.validate().is_err());
+    let mut catalog: ReleaseCatalog = serde_json::from_value(serde_json::json!({
+        "format":"ess-release-catalog/1", "releases": [{
+            "semantic_version":"v1", "runtime":bundle.runtime,
+            "release":bundle.releases.values().next().unwrap(),
+        }],
+    }))
+    .unwrap();
+    catalog.releases[0].release.evidence.clear();
+    let stack: StackSpec = serde_json::from_value(serde_json::json!({
+        "format":"ess-stack/1", "stack":"empty", "composition_digest":bundle.digest(), "systems":[],
+    }))
+    .unwrap();
+    assert!(resolve_stack(&stack, &catalog)
+        .unwrap_err()
+        .contains(DiagnosticCode::MissingEvidence));
+}
+
+#[test]
+fn persisted_duplicate_keys_are_rejected_at_every_populated_nested_map() {
+    fn walk(value: &serde_json::Value, path: &str, paths: &mut Vec<String>) {
+        match value {
+            serde_json::Value::Object(map) => {
+                if !map.is_empty() {
+                    paths.push(path.to_owned());
+                }
+                for (key, value) in map {
+                    walk(
+                        value,
+                        &format!("{path}/{}", key.replace('~', "~0").replace('/', "~1")),
+                        paths,
+                    );
+                }
+            }
+            serde_json::Value::Array(values) => {
+                for (index, value) in values.iter().enumerate() {
+                    walk(value, &format!("{path}/{index}"), paths);
+                }
+            }
+            _ => {}
+        }
+    }
+    fn check<T: serde::Serialize + serde::de::DeserializeOwned>(document: &T) {
+        let document = serde_json::to_value(document).unwrap();
+        let mut paths = Vec::new();
+        walk(&document, "", &mut paths);
+        assert!(!paths.is_empty());
+        for pointer in paths {
+            let parent = document.pointer(&pointer).unwrap();
+            let (key, value) = parent.as_object().unwrap().iter().next().unwrap();
+            let raw = serde_json::to_string(parent).unwrap().replacen(
+                '{',
+                &format!("{{{}:{value},", serde_json::to_string(key).unwrap()),
+                1,
+            );
+            let mut invalid = document.clone();
+            *invalid.pointer_mut(&pointer).unwrap() =
+                serde_json::json!("__duplicate_map_fixture__");
+            let json = serde_json::to_string(&invalid)
+                .unwrap()
+                .replace("\"__duplicate_map_fixture__\"", &raw);
+            assert!(
+                serde_json::from_str::<T>(&json).is_err(),
+                "JSON duplicate admitted at {pointer}"
+            );
+            assert!(
+                serde_yaml::from_str::<T>(&json).is_err(),
+                "YAML duplicate admitted at {pointer}"
+            );
+        }
+    }
+    let mut source = build_spec();
+    for node in &mut source.nodes {
+        if let ess_deployment::BuildNode::Run { environment, .. } = &mut node.node {
+            environment.insert("LANG".to_owned(), "C".to_owned());
+        }
+        if let ess_deployment::BuildNode::Image { config, .. } = &mut node.node {
+            config.environment.insert("LANG".to_owned(), "C".to_owned());
+        }
+    }
+    check(&compile_build(&source).unwrap());
+    check(&persisted_bundle());
+    let (lock, mut deployment) = persisted_lock_and_deployment();
+    deployment
+        .releases
+        .get_mut(&"frontend".parse().unwrap())
+        .unwrap()
+        .config
+        .insert("log-level".parse().unwrap(), "debug".to_owned());
+    check(&lock);
+    check(&deployment);
+}
+
+#[test]
+fn adversary_runtime_readers_match_compiler_slot_and_volume_refusals() {
+    let semantic = semantic();
+    let build = build();
+    let physical = physical_realization(&semantic);
+    let valid = runtime_spec(&semantic, &physical, &build);
+    let compiled = compile_runtime(&valid, &semantic, &physical, &build).unwrap();
+    assert_eq!(
+        RuntimeIr::from_json(&compiled.to_canonical_json())
+            .unwrap()
+            .to_canonical_json(),
+        compiled.to_canonical_json()
+    );
+    let mut variants = Vec::new();
+    let mut invalid = valid.clone();
+    invalid.containers[0].config[0].value = Some("forbidden optional literal".to_owned());
+    variants.push(invalid);
+    let mut invalid = valid.clone();
+    invalid.containers[0].endpoints[0].environment = "DATABASE_PASSWORD".to_owned();
+    variants.push(invalid);
+    let mut invalid = valid.clone();
+    invalid.containers[0]
+        .volume_mounts
+        .push(valid.containers[0].volume_mounts[0].clone());
+    variants.push(invalid);
+    let mut invalid = valid.clone();
+    invalid.workloads[0].storage = Some("1Gi".to_owned());
+    variants.push(invalid);
+    let mut invalid = valid.clone();
+    invalid.workloads[0]
+        .volumes
+        .push(valid.workloads[0].volumes[0].clone());
+    variants.push(invalid);
+
+    for invalid in variants {
+        assert!(compile_runtime(&invalid, &semantic, &physical, &build).is_err());
+        let mut persisted = serde_json::to_value(&compiled).unwrap();
+        persisted["containers"]["server"] = serde_json::to_value(&invalid.containers[0]).unwrap();
+        persisted["workloads"]["oracle"] = serde_json::to_value(&invalid.workloads[0]).unwrap();
+        assert_persisted_refused::<RuntimeIr>(&persisted);
+    }
+}
+
+#[test]
+fn adversary_rehashed_bundle_cannot_launder_a_build_cycle() {
+    let bundle = persisted_bundle();
+    let canonical = bundle.to_canonical_json();
+    assert_eq!(
+        ReleaseBundle::from_json(&canonical)
+            .unwrap()
+            .to_canonical_json(),
+        canonical
+    );
+    let invalid_build = bundle
+        .build
+        .to_canonical_json()
+        .replace("\"base\": \"base\"", "\"base\": \"runtime-image\"");
+    assert_ne!(invalid_build, bundle.build.to_canonical_json());
+    let build_digest = ess_deployment::Digest::of_bytes(invalid_build.as_bytes());
+    let invalid_runtime = bundle
+        .runtime
+        .to_canonical_json()
+        .replace(bundle.build.digest().as_str(), build_digest.as_str());
+    // The standalone runtime is locally valid; the included build makes the graph provable.
+    let runtime = RuntimeIr::from_json(&invalid_runtime).unwrap();
+    let mut invalid = serde_json::to_value(&bundle).unwrap();
+    invalid["build"] = serde_json::from_str(&invalid_build).unwrap();
+    invalid["runtime"] = serde_json::to_value(&runtime).unwrap();
+    for release in invalid["releases"].as_object_mut().unwrap().values_mut() {
+        release["build_digest"] = serde_json::json!(build_digest);
+        release["runtime_digest"] = serde_json::json!(runtime.digest());
+    }
+    assert_eq!(runtime.build_digest(), &build_digest);
+    assert_persisted_refused::<ReleaseBundle>(&invalid);
+}
+
+#[test]
+fn adversary_unselected_catalog_candidate_mutation_is_revalidated() {
+    let bundle = persisted_bundle();
+    let catalog: ReleaseCatalog = serde_json::from_value(serde_json::json!({
+        "format":"ess-release-catalog/1",
+        "releases": bundle.releases.values().map(|release| serde_json::json!({
+            "semantic_version":"v1", "release":release, "runtime":bundle.runtime,
+        })).collect::<Vec<_>>(),
+    }))
+    .unwrap();
+    let stack: StackSpec = serde_json::from_value(serde_json::json!({
+        "format":"ess-stack/1", "stack":"empty", "systems":[],
+        "composition_digest":bundle.digest(),
+    }))
+    .unwrap();
+    assert!(resolve_stack(&stack, &catalog).is_ok());
+    for field in ["build_digest", "semantic_digest", "runtime_digest"] {
+        let mut invalid = catalog.clone();
+        let digest = ess_deployment::Digest::of_bytes(b"other input");
+        match field {
+            "build_digest" => invalid.releases[1].release.build_digest = digest,
+            "semantic_digest" => invalid.releases[1].release.semantic_digest = digest,
+            "runtime_digest" => invalid.releases[1].release.runtime_digest = digest,
+            _ => unreachable!(),
+        }
+        assert!(resolve_stack(&stack, &invalid)
+            .unwrap_err()
+            .contains(DiagnosticCode::DigestMismatch));
+        assert_persisted_refused::<ReleaseCatalog>(&serde_json::to_value(&invalid).unwrap());
+    }
+}

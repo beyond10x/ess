@@ -68,7 +68,7 @@ impl ComponentSpec {
 }
 
 /// Validated, canonical component descriptor.
-#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct ComponentIr {
     format: String,
@@ -79,7 +79,41 @@ pub struct ComponentIr {
     release_units: ComponentReleaseUnits,
 }
 
+crate::validation::checked_deserialize!(ComponentIr {
+    format: String,
+    component: Identifier,
+    system: Identifier,
+    semantic_version: String,
+    inputs: ComponentInputs,
+    release_units: ComponentReleaseUnits,
+});
+
 impl ComponentIr {
+    /// Recheck descriptor invariants without opening the referenced inputs.
+    pub fn validate(&self) -> Result<(), Diagnostics> {
+        let mut diagnostics = Vec::new();
+        crate::validation::check(
+            &mut diagnostics,
+            self.format == COMPONENT_IR_FORMAT,
+            Stage::Runtime,
+            DiagnosticCode::UnsupportedFormat,
+            &self.component,
+            format!("component IR format must be {COMPONENT_IR_FORMAT:?}"),
+        );
+        let specification = ComponentSpec {
+            format: COMPONENT_FORMAT.to_owned(),
+            component: self.component.clone(),
+            system: self.system.clone(),
+            semantic_version: self.semantic_version.clone(),
+            inputs: self.inputs.clone(),
+            release_units: self.release_units.clone(),
+        };
+        if let Err(errors) = compile_component(&specification) {
+            diagnostics.extend_from_slice(errors.as_slice());
+        }
+        crate::validation::finish(diagnostics)
+    }
+
     /// Reads strict compiler-owned component IR.
     pub fn from_json(text: &str) -> Result<Self, serde_json::Error> {
         serde_json::from_str(text)
@@ -193,7 +227,7 @@ fn safe_relative_path(value: &str) -> bool {
 }
 
 /// Canonical release metadata transported as one digest-addressed OCI artifact.
-#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct ReleaseBundle {
     format: String,
@@ -204,10 +238,57 @@ pub struct ReleaseBundle {
     /// Exact compiled runtime realization.
     pub runtime: RuntimeIr,
     /// Runtime and chart release manifests by release-unit identity.
+    #[serde(deserialize_with = "crate::validation::unique_map")]
     pub releases: BTreeMap<Identifier, ReleaseManifest>,
 }
 
+crate::validation::checked_deserialize!(ReleaseBundle {
+    format: String,
+    /// Exact repository-owned component descriptor.
+    pub component: ComponentIr,
+    /// Exact compiled build graph.
+    pub build: BuildIr,
+    /// Exact compiled runtime realization.
+    pub runtime: RuntimeIr,
+    /// Runtime and chart release manifests by release-unit identity.
+    #[serde(deserialize_with = "crate::validation::unique_map")]
+    pub releases: BTreeMap<Identifier, ReleaseManifest>,
+});
+
 impl ReleaseBundle {
+    /// Validate the complete included graphs and their relationships after public-field mutation.
+    /// Digests do not prove omitted semantic inputs or release authenticity.
+    pub fn validate(&self) -> Result<(), Diagnostics> {
+        let mut diagnostics = Vec::new();
+        crate::validation::check(
+            &mut diagnostics,
+            self.format == RELEASE_BUNDLE_FORMAT,
+            Stage::Release,
+            DiagnosticCode::UnsupportedFormat,
+            self.component.component(),
+            format!("release bundle format must be {RELEASE_BUNDLE_FORMAT:?}"),
+        );
+        for (name, release) in &self.releases {
+            crate::validation::check(
+                &mut diagnostics,
+                name == &release.release_unit,
+                Stage::Release,
+                DiagnosticCode::InvalidValue,
+                name,
+                "release map key must match its release unit",
+            );
+        }
+        if let Err(errors) = bundle_release(
+            self.component.clone(),
+            self.build.clone(),
+            self.runtime.clone(),
+            self.releases.values().cloned().collect(),
+        ) {
+            diagnostics.extend_from_slice(errors.as_slice());
+        }
+        crate::validation::finish(diagnostics)
+    }
+
     /// Reads a strict JSON release bundle.
     pub fn from_json(text: &str) -> Result<Self, serde_json::Error> {
         serde_json::from_str(text)
@@ -237,6 +318,10 @@ pub fn bundle_release(
     releases: Vec<ReleaseManifest>,
 ) -> Result<ReleaseBundle, Diagnostics> {
     let mut diagnostics = Vec::new();
+    if let Err(errors) = runtime.validate_against_build(&build) {
+        diagnostics.extend_from_slice(errors.as_slice());
+    }
+
     let mut indexed = BTreeMap::new();
     for release in releases {
         let release_unit = release.release_unit.clone();
@@ -312,23 +397,8 @@ pub fn bundle_release(
 
 /// Verify a bundle read from an untrusted OCI layer.
 pub fn verify_release_bundle(bundle: ReleaseBundle) -> Result<ReleaseBundle, Diagnostics> {
-    if bundle.format != RELEASE_BUNDLE_FORMAT {
-        return Err(Diagnostics::from(vec![Diagnostic::new(
-            Stage::Release,
-            DiagnosticCode::UnsupportedFormat,
-            Some(bundle.component.component.clone()),
-            format!(
-                "release bundle format {:?} is unsupported; expected {RELEASE_BUNDLE_FORMAT:?}",
-                bundle.format
-            ),
-        )]));
-    }
-    bundle_release(
-        bundle.component,
-        bundle.build,
-        bundle.runtime,
-        bundle.releases.into_values().collect(),
-    )
+    bundle.validate()?;
+    Ok(bundle)
 }
 
 fn verify_release_kind(

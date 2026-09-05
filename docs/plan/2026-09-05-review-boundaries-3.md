@@ -1,41 +1,73 @@
-# Review boundaries wave 2 — 2026-09-05
+# Review boundaries wave 3 — 2026-09-05
 
-**Implemented, verified, published and unit worktrees removed.** This wave fixes untrusted kubectl failure diagnostics and output path containment. Both stories serve `vision:O2`.
+**Integrated and verified under standing authorization; publication and cleanup pending.** This wave restores persisted delivery validation, makes TypeScript declarations feasible in one namespace, and writes the binding conformance migration design. Each story serves vision:O2.
 
-Skill version 0.7.0. Coordinator: `wave/review-boundaries-2`, managed record `wt-752828a285ba`. Published base: `0f80f71e7ef997e8a3c7d2ad19e9997090e8e769`.
+Skill version 0.7.0. Integration branch wave/review-boundaries-3, coordinator managed record wt-752828a285ba. Published base 98ea8abeeaf80846f525b5def8b531c139ed7071.
 
-## Authority and selection
+## Authorization and selection
 
-The user granted all implementation waves, then explicitly approved publishing this and subsequent green remediation waves and requested cleanup. The actual grants are `approval-record:review-remediation-standing-implementation` and `approval-record:review-remediation-standing-publication`. This is an interactive session with standing authorization; no bypass is inferred.
+This is an interactive session with standing implementation and publication authorization in approval-record:review-remediation-standing-implementation and approval-record:review-remediation-standing-publication. The user also explicitly requested managed cleanup. No approval bypass is inferred and no further permission is needed for these authorized waves. Release versions/tags remain separately authorized.
 
-Authorized commits: opening scope/approval/page commit, two unit implementations and their adversarial tests, serial integration merges, closing store/evidence commit, merge to main, publication of the green wave and cleanup records. Releases and tags require a separate grant.
+Authorized commits: opening scope/page/store commit; three unit implementations and their review tests/corrections where required; serial integration merges; closing store/evidence commit; merge to main; publication of the green wave and cleanup records. No unrelated work is granted by this selection.
 
-The store was read afresh after wave 1; both selected stories have no dependencies or blockers. Independent scope is high-confidence and cited. Full store computation and exact selected-set computation follow verbatim below. The selected set has no collision, unassessed story or cycle.
+The store was read afresh after wave 2 closed. All three selected stories have no dependencies or blockers. Independent scoping is recorded in their bodies and typed entries. The full draft/proposed computation below preserves every returned wave, collision, unassessed entry and cycle. The selected proposed set is one computed wave with no collision, unassessed entry or cycle.
 
-Prioritize the newly reproduced credential diagnostic disclosure and the original P0 output escape. Semantic diff is left for a binding compatibility decision about persisted vocabulary and dependency-closed digests. Persisted delivery and InfraIr validation compete for the CLI surface; further conformance work needs its migration design. Remaining ready stories are deferred to keep N=2 and shorten integration feedback. No review item is silently closed by selection.
+Prioritize P0 persisted delivery documents reaching analysis/execution. TypeScript naming is an independent single-package defect with a real local compiler available. The design-only conformance unit resolves decisions needed before its two dependent implementation stories can migrate counts/coverage. The latter's new file path is inferred, but its reserved document-only edit surface is high-confidence. TypeScript's package/source scope is cited and its new compiler-test lane is inferred. Delivery owns two cited packages because the read invariant must survive the CLI boundary.
 
-Native `aep-drive:story-scoper`, `aep-drive:implementor` and `aep-drive:adversary` types are not exposed by this harness. Collaboration agents read their exact plugin charters; inherited model, no override. This adapter deviation is explicit.
+InfraIr validation competes for the CLI package. Semantic diff needs the version/provenance decision and Atlas coordination recorded in its refined scope; it is deferred from this set. Other ready stories are left for the next fresh selection. No design completion alone closes its dependent implementation findings or the full review.
 
-## Preflight and prior cleanup
+Native aep-drive:story-scoper, aep-drive:implementor and aep-drive:adversary types are unavailable in this harness. Collaboration threads use their exact plugin charters with inherited model and no override. Completed threads must be reused because the four-thread cap counts them. The prior containment review's two automatic dispatch rejections and local completion are recorded in wave 2; each new unit retains its required review and no green outcome is assumed.
 
-ESS primary is clean on main, now published at the base. After fresh GC marked both records eligible, exact-id managed GC removed `review-secret-sanitization` and `review-report-reader-validation`, with recovery proof through advertised origin main. Their unit branches were deleted with git branch -d. git worktree list and filesystem existence checks confirm both gone; no impl/* branch remains. Their scratch was archived before the previous cargo clean. Unrelated ESS trees remain untouched. The reusable coordinator has its own target (1,863,996 KiB) and website node_modules (661,116 KiB).
+## Preflight and resources
 
-Free space before selection: 115,393,671,168 bytes. Revised hard reserve remains 8,589,934,592 bytes. Prior measured unit targets were 171 MiB and 313 MiB; the complete reused integration target is about 1.8 GiB. N=2 is a conservative coordinator estimate at this capacity; remeasure at dispatch and return. Each tree builds in its own target, with /usr/bin/sccache, CARGO_INCREMENTAL=0 and dev/test debug=0. Numeric model budget was already requested and not supplied; N=2 is within the default and four-slot harness limit.
+Primary ESS is clean on main and matches advertised remote 98ea8abeeaf80846f525b5def8b531c139ed7071. Both previous unit worktrees, build directories and unit branches are gone; only their archived raw evidence remains under the reusable coordinator target. Unrelated review/feature/release trees remain untouched. The original architecture review/outlook worktree and PDF are preserved.
 
-Atlas authority is clean at remote main `6035d6e1209686ca474a3f43975fde7d8621ba48` in the current managed authority tree. All commits/pushes use its bot wrapper and identity verification.
+Free capacity measured 141,610,594,304 bytes; the hard reserve is 8,589,934,592 bytes. Current integration target is 1,890,048 KiB and website/node_modules is 661,020 KiB. Prior measured units were 183,580 KiB for diagnostics and 1,108,376 KiB for the CLI/generator unit. N=3 is a coordinator resource estimate: two Rust implementations plus one document-only unit fit comfortably at this capacity, within three worker slots and the default model budget of four. A numeric budget was previously requested but not supplied. Token counts and complete agent duration are unavailable from this harness.
+
+Each tree keeps its own target and uses /usr/bin/sccache, CARGO_INCREMENTAL=0 and dev/test debug=0; CARGO_TARGET_DIR is forbidden. Logs/reports use target/review-boundaries-3, while the additionally assigned temporary-fixture root is target itself to keep compiler socket paths short. CARGO_CACHE_RUSTC_INFO=0 prevents replay of a cached failed compiler metadata query observed in wave 2. No shared target or new external scratch is planned. Recheck disk at dispatch and return.
+
+At dispatch, the long delivery-unit temporary path prevented sccache from creating its startup notification socket. The coordinator started a dedicated foreground server using the documented SCCACHE_START_SERVER=1 and SCCACHE_NO_DAEMON=1 mode. Its explicit socket is /home/timo/.local/state/worktree/trees/b10x/ess/wt-752828a285ba/target/w3-cache.sock. Rust clients add SCCACHE_SERVER_UDS pointing there; each retains its own target and TMPDIR. The server was queried successfully before routing this supplement. Its log is target/review-boundaries-3/cache-server.log in the coordinator, which owns shutdown after all wave gates. This shares only compiler-cache access and bypasses no gate. The initial startup failure executed no delivery tests.
+
+Current Atlas authority is managed wt-90ec680c6073 at clean exact remote 7b00adf3b1004e0cdd8dd12aa4fa8cc8435a0432. Its last organization fence is red on separately recorded sibling issues; this wave changes no Atlas source or public documentation allowlist. Bot commits and publishing use the current verified authority.
+
+
+## Cache idle restart
+
+The original foreground cache session63151 was observed complete with exit0 after its default idle timeout. Its stale socket was present but had no listener; the first delivery-adversary isolated attempt executed zero tests and failed at rustc -vV startup. Coordinator restarted the same exact socket in foreground session44216 with SCCACHE_IDLE_TIMEOUT=0, keeping all previous resource restrictions. The new server answered --show-stats with exit0 before review resumed. Its log is coordinator target/review-boundaries-3/cache-server-restart.log. No default server was stopped, no cache was purged and no target is shared. Coordinator will stop this exact task-owned socket and observe foreground termination after the final gates.
 
 ## Unit records
 
-Absolute root: `/home/timo/.local/state/worktree/trees/b10x/ess`. Worktrees below are created from the opening commit; build and scratch paths are relative to each unit tree. No shared target directory.
+Worktree root: /home/timo/.local/state/worktree/trees/b10x/ess. Every unit branches from the same opening commit and owns its recorded triple.
 
-| Story | Branch | Worktree under root | Build | Scratch | Head/stage |
+| Story | Branch | Managed worktree under root | Build/temp | Logs/reports | Stage |
 | --- | --- | --- | --- | --- | --- |
-| review-kubectl-diagnostic-sanitization | impl/review-kubectl-diagnostic-sanitization | review-kubectl-diagnostic-sanitization | target/ | target/review-boundaries-2/ | 54102b9357151a4827817417ca14ec995bdd68c0; merged at 6685b1991bdee19b28316ccb531a4dbfa1c20f1d |
-| review-output-containment | impl/review-output-containment | review-output-containment | target/ | target/review-boundaries-2/ | f05048be88b2cc14612d34f9cef0044ab7335641; merged at 98defa1b361e053e7fe586b24d777b9843e2f9b5 |
+| review-persisted-delivery-validation | impl/review-persisted-delivery-validation | review-persisted-delivery-validation | target/ | target/review-boundaries-3/ | implementation returned; reviewed; merged at 170fdfa1f3061af33f4de558d22de4711ab6194d |
+| review-typescript-root-collision | impl/review-typescript-root-collision | review-typescript-root-collision | target/ | target/review-boundaries-3/ | reviewed; merged at 0d267e25739ca495ad1a229393181ad1b75182f3 |
+| review-conformance-format-design | impl/review-conformance-format-design | review-conformance-format-design | target/ | target/review-boundaries-3/ | implemented; merged at 1ef817ea9d51b2e927febce18eb2d540256e8e76 |
 
-File-backed briefs will bind exact opening SHA, assignments, package gates and scope confirmation. Coordinator owns AEP, source staging, bot commits, integration, gates, publication and managed cleanup. Each green implementation goes to a tests-only adversary. Max two full attack passes; routing preserves original reports verbatim. Each offline gate step reports its own exit code and runner output; applicable site build follows. No terminal move before those results.
+All units were provisioned at exact opening commit 45832cc885377b2d61845ee33af14f0293d99e67, branched as above, and assigned active leases <story>-wave3. Full briefs and the compiler-cache resource supplement live in each assigned scratch root. Implementor threads are impl_containment (delivery), impl_diagnostic (TypeScript), and scope_conformance_design (design).
 
-## Draft-store computation
+File-backed briefs bind exact base, scope, acceptance, gates and reporting. Coordinator owns all AEP mutations, commits, shared files, gate evidence, publication and lifecycle. Implementation agents leave uncommitted assigned files. Reviews preserve original assertions and reports; maximum two full passes per unit. No story moves terminal before the complete integrated gate.
+
+Delivery package checks cover ess-deployment and ess-cli, with real compiler-generated valid fixtures and local fake executors only. TypeScript checks cover schema-contract plus an explicit compiler lane using the installed TypeScript 6.0.3; a selected lane must fail if the compiler is unavailable, and no default-CI coverage claim is made until its wiring is established. Conformance design uses source-backed producer/reader and migration matrices; it creates no new writer, makes no compatibility execution claim, and needs no meaningless prose test. The integrated coordinator runs all eight offline gate steps and site build, plus any selected compiler-specific lane.
+
+## Implementation handoffs
+
+TypeScript implementation 7a73ce9bf741a98f82c7141f4a80340451a704ed is bot-authored and clean before review. Default package cases rose 9 to 16; the separately selected real TypeScript 6.0.3 lane executes 3. Both pass, as do package formatting and default/feature Clippy. Four unique new Rust cases were first observed red; the compiler exposed additional strict-module keywords after the initial mechanism. Missing compiler selects and fails all three cases. The new successful-output fixture passed on unchanged production first. Full original implementation report and patch are preserved under docs/reviews/2026-09-05-review-boundaries-3-typescript-implementation.*. Scope stays in schema-contract; inferred manifest/test paths are now cited from the diff. The design implementor thread is assigned its test-only adversary pass through a file-backed brief.
+
+Conformance design implementation 5148543b57c855cb4ccca92e2368e566801e9c36 is bot-authored and clean before review. Its 246-line design includes 36 source-backed matrix rows; no executable compatibility case was run or claimed. Original report and patch are preserved under docs/reviews/2026-09-05-review-boundaries-3-conformance-design-implementation.*. The only tracked edit is the reserved design file, now cited in scope. The first review brief includes a coordinator-observed impact-format citation mismatch to check; the document has not passed review.
+
+TypeScript adversary pass 1 is preserved verbatim in review-result:review-boundaries-3-typescript-adversary-pass-1. Six cases were authored before isolated execution and all passed: default package 16 to 19, real compiler lane 3 to 6. Package formatting and feature-enabled strict Clippy pass. The report finds nothing and contains an explicit empty findings list. Its test-only changes are committed on the unit, preserving every original assertion; its original test patch is in docs/reviews/2026-09-05-review-boundaries-3-typescript-adversary-tests.patch.
+
+Delivery implementation f1baa9051be7d6cfc48ec1dcd302d0c87ac21a15 is bot-authored and clean before review. Its default package totals rose 53 to 67 (deployment 7 to 18, CLI 46 to 49); both test, format and strict Clippy package gates pass. Meaningful initial cases executed 11 with 9 failures; compiler/setup failures are explicitly separate. The full original report and patch are preserved under docs/reviews/2026-09-05-review-boundaries-3-delivery-implementation.*. Its first adversary brief is ready.
+
+Conformance design adversary pass1 is preserved verbatim in review-result:review-boundaries-3-conformance-design-adversary-pass-1. It found two introduced blockers and one introduced warning: refusal/scenario coexistence, undefined suite5/report1 pairing, and an incorrect current impact label. Original implementor corrected all three at dc746cfab0e628ad28911cbee32c1031a9efb6dd; the sole tracked design now has 58 matrix rows and 10 pairing rows. The correction report and patch are preserved separately under docs/reviews/2026-09-05-review-boundaries-3-conformance-design-correction-1.*. A review_outcome records fixed; a different nonimplementor thread is running the second and last full source-backed design attack. No runtime compatibility results are claimed.
+
+Delivery adversary pass 1 is preserved verbatim in review-result:review-boundaries-3-delivery-adversary-pass-1. Six new cases passed in isolation; package totals rose 67 to 73, deployment 21 plus CLI 52. Both package formatting and strict Clippy pass. Nothing was found; no second attack is justified by an unresolved concern. The 209 added test lines preserve existing assertions and are bot-committed at 4289e3eb636a97b73f8261dd6d68f3027afe9f65; the original patch is preserved in docs/reviews/2026-09-05-review-boundaries-3-delivery-adversary-tests.patch. The cache startup attempt executed zero cases and is recorded separately.
+
+No handoff is an integrated acceptance or completed story. The coordinator also records read-only preparation for the future infrastructure and Rust feasibility stories; these draft refinements authorize no additional implementation in this wave.
+
+## Full draft computation
 
 ```json
 {
@@ -149,11 +181,23 @@ File-backed briefs will bind exact opening SHA, assignments, package gates and s
         },
         {
           "id": "story:review-typescript-root-collision",
-          "inferred": false,
+          "inferred": true,
           "scope": [
             {
               "confidence": "cited",
               "path": "crates/generate/schema-contract"
+            },
+            {
+              "confidence": "inferred",
+              "path": "crates/generate/schema-contract/Cargo.toml"
+            },
+            {
+              "confidence": "cited",
+              "path": "crates/generate/schema-contract/src/typescript.rs"
+            },
+            {
+              "confidence": "inferred",
+              "path": "crates/generate/schema-contract/tests/typescript_typecheck.rs"
             }
           ]
         }
@@ -239,6 +283,10 @@ File-backed briefs will bind exact opening SHA, assignments, package gates and s
           "inferred": true,
           "scope": [
             {
+              "confidence": "inferred",
+              "path": "crates/generate/ess-gen"
+            },
+            {
               "confidence": "cited",
               "path": "crates/specify/ess-compiler"
             },
@@ -247,7 +295,7 @@ File-backed briefs will bind exact opening SHA, assignments, package gates and s
               "path": "crates/verify/ess-diff"
             },
             {
-              "confidence": "inferred",
+              "confidence": "cited",
               "path": "docs/design/ess-semantic-diff-impact-evolution-design-v0.1.md"
             },
             {
@@ -836,6 +884,12 @@ File-backed briefs will bind exact opening SHA, assignments, package gates and s
     {
       "a": "story:create-only-command-cannot-refuse",
       "b": "story:review-semantic-diff-coverage",
+      "path": "crates/generate/ess-gen",
+      "confidence": "inferred"
+    },
+    {
+      "a": "story:create-only-command-cannot-refuse",
+      "b": "story:review-semantic-diff-coverage",
       "path": "crates/specify/ess-compiler",
       "confidence": "cited"
     },
@@ -1387,6 +1441,12 @@ File-backed briefs will bind exact opening SHA, assignments, package gates and s
     },
     {
       "a": "story:review-primitive-semantics",
+      "b": "story:review-semantic-diff-coverage",
+      "path": "crates/generate/ess-gen",
+      "confidence": "inferred"
+    },
+    {
+      "a": "story:review-primitive-semantics",
       "b": "story:the-generated-go-runtime-is-gofmt-clean",
       "path": "crates/verify/ess-conformance",
       "confidence": "cited"
@@ -1419,10 +1479,20 @@ File-backed briefs will bind exact opening SHA, assignments, package gates and s
   "unassessed": [],
   "cycles": []
 }
-
 ```
 
-## Selected proposed-set computation
+## Full proposed computation before selection
+
+```json
+{
+  "waves": [],
+  "collisions": [],
+  "unassessed": [],
+  "cycles": []
+}
+```
+
+## Selected proposed computation
 
 ```json
 {
@@ -1431,29 +1501,17 @@ File-backed briefs will bind exact opening SHA, assignments, package gates and s
       "wave": 1,
       "artifacts": [
         {
-          "id": "story:review-kubectl-diagnostic-sanitization",
-          "inferred": false,
+          "id": "story:review-conformance-format-design",
+          "inferred": true,
           "scope": [
             {
-              "confidence": "cited",
-              "path": "crates/infra/ess-kubernetes"
-            },
-            {
-              "confidence": "cited",
-              "path": "crates/infra/ess-kubernetes/src/lib.rs"
-            },
-            {
-              "confidence": "cited",
-              "path": "crates/infra/ess-kubernetes/tests/fixtures/fake_command.rs"
-            },
-            {
-              "confidence": "cited",
-              "path": "crates/infra/ess-kubernetes/tests/secret_boundary.rs"
+              "confidence": "inferred",
+              "path": "docs/design/review-conformance-coverage.md"
             }
           ]
         },
         {
-          "id": "story:review-output-containment",
+          "id": "story:review-persisted-delivery-validation",
           "inferred": false,
           "scope": [
             {
@@ -1462,23 +1520,29 @@ File-backed briefs will bind exact opening SHA, assignments, package gates and s
             },
             {
               "confidence": "cited",
-              "path": "crates/edge/ess-cli/src/main.rs"
+              "path": "crates/generate/ess-deployment"
+            }
+          ]
+        },
+        {
+          "id": "story:review-typescript-root-collision",
+          "inferred": true,
+          "scope": [
+            {
+              "confidence": "cited",
+              "path": "crates/generate/schema-contract"
+            },
+            {
+              "confidence": "inferred",
+              "path": "crates/generate/schema-contract/Cargo.toml"
             },
             {
               "confidence": "cited",
-              "path": "crates/generate/ess-gen"
+              "path": "crates/generate/schema-contract/src/typescript.rs"
             },
             {
-              "confidence": "cited",
-              "path": "crates/generate/ess-gen/src/artifact.rs"
-            },
-            {
-              "confidence": "cited",
-              "path": "crates/generate/ess-gen/src/document.rs"
-            },
-            {
-              "confidence": "cited",
-              "path": "crates/generate/ess-gen/src/html.rs"
+              "confidence": "inferred",
+              "path": "crates/generate/schema-contract/tests/typescript_typecheck.rs"
             }
           ]
         }
@@ -1489,80 +1553,82 @@ File-backed briefs will bind exact opening SHA, assignments, package gates and s
   "unassessed": [],
   "cycles": []
 }
-
 ```
 
-## Dispatch
+## Conformance final review and bounded correction
 
-Opening commit c1c23b24cee8f527784b7f8467c21a609710c65e has exact bot author and committer. Both triples were provisioned through worktree create from primary; file-backed briefs are target/review-boundaries-2/brief.md in each. Free bytes immediately before dispatch: 113,092,632,576. Package gates use separate compact targets and the 8 GiB reserve.
+The immutable second pass is review-result:review-boundaries-3-conformance-design-adversary-pass-2 at dc746cfab0e628ad28911cbee32c1031a9efb6dd. Findings fell from3 to2: carried0, new2, resolved3. The new source-backed issues are identical refusal multiplicity and unsigned/signed timestamp ambiguity; no earlier correction regressed. Under standing authorization the coordinator bound a sorted refusal list preserving every occurrence and exact u64 timestamps for new report/run contracts with checked adapters and frozen legacy behavior. Original implementor receives only these correction classes. Coordinator will personally inspect the diff and preservation of earlier assertions; no third full attack. These are document-only findings, with no runtime case claim.
 
-## Additional cleanup and preparation
+Exact CLI comparison:
 
-The superseded task-owned Atlas authority wt-1bb42c471901 was finished, assessed in a fresh exact-id dry-run and removed by exact-id managed GC with advertised remote recovery proof; filesystem absence was verified. The current authority remains in use. Read-only preparation found two independent report reader paths in exact AEP remote cc321f31fa0120b32a5b9f5e7b8c8fdfa55f69f9. The conformance migration story records them; no AEP change or compatibility test is claimed.
+```json
+{
+  "artifact": "story:review-conformance-format-design",
+  "reviews": 10,
+  "from": "review-result:review-boundaries-3-conformance-design-adversary-pass-1",
+  "from_reviewer": "unattributed",
+  "to": "review-result:review-boundaries-3-conformance-design-adversary-pass-2",
+  "to_reviewer": "unattributed",
+  "carried": [],
+  "new": [
+    {
+      "file": "docs/design/review-conformance-coverage.md",
+      "line": 116,
+      "category": "acceptance",
+      "severity": "blocker",
+      "verdict": "NEEDS-CHANGE",
+      "origin": "introduced",
+      "message": "The design forbids duplicate refusal records and omitted refusals without defining how to preserve repeated identical refusals that current generated and authored producers emit."
+    },
+    {
+      "file": "docs/design/review-conformance-coverage.md",
+      "line": 167,
+      "category": "contract-drift",
+      "severity": "warning",
+      "verdict": "CONFIRMED",
+      "origin": "introduced",
+      "message": "The report timestamp is described as an existing signed value although Rust uses u64 and Go uses int64, while the shared new writer rules require unsigned integer fields, leaving the v2 timestamp range and conversion contract contradictory."
+    }
+  ],
+  "resolved": [
+    {
+      "file": "docs/design/review-conformance-coverage.md",
+      "line": 95,
+      "category": "acceptance",
+      "severity": "blocker",
+      "verdict": "NEEDS-CHANGE",
+      "origin": "introduced",
+      "message": "The refusal-ID disjointness rule cannot preserve existing synthesis results that retain a runnable scenario beside a refusal for an unimplemented check, or an accepted authored scenario beside a duplicate-source refusal."
+    },
+    {
+      "file": "docs/design/review-conformance-coverage.md",
+      "line": 167,
+      "category": "boundary",
+      "severity": "blocker",
+      "verdict": "NEEDS-CHANGE",
+      "origin": "introduced",
+      "message": "Independent suite-v5 and report-v1 selections have no specified writer outcome even though the frozen report-v1 reader rejects suite major 5, leaving the advertised opt-in rollout without a complete version-pairing contract."
+    },
+    {
+      "file": "docs/design/review-conformance-coverage.md",
+      "line": 31,
+      "category": "contract-drift",
+      "severity": "warning",
+      "verdict": "CONFIRMED",
+      "origin": "introduced",
+      "message": "The impact compatibility rules name impact/1 although the cited ESS baseline writes ess-impact/2, so the frozen contract and its migration target are identified incorrectly."
+    }
+  ]
+}
+```
 
-## Diagnostic implementation and dispatch adapter
+## Personal verification after the final design correction
 
-The diagnostic unit committed b26829a571c0569ba2f63a5da495b987397b43a4 with exact bot author/committer. Its package runner executed 8→11, final zero failures; two red disclosure tests preceded implementation and the credential mutation guard failed then was restored. Formatter and strict Clippy exited 0. The portable implementation report is docs/reviews/2026-09-05-review-boundaries-2-diagnostic-implementation.md. Target size was 145,964 KiB, free bytes 125,694,115,840.
-
-The harness refused new agent creation with `agent thread limit reached` despite a completed scoper. A completed read-only scoper thread was reused under the exact adversary charter for the diagnostic unit it did not implement. Its preceding conformance and delivery scoping results were written into their stories before the role change. This is a harness dispatch adaptation; attack count and test-only assignment are unchanged.
-
-## Diagnostic attack result
-
-review-result:review-boundaries-2-diagnostic-adversary-pass-1 preserves the report verbatim. Three additional tests passed on their first isolated runs, then the package executed 11→14 with zero failures/ignored cases; fmt/Clippy exited 0. No findings or corrections were recorded. Signal status, distinct retry codes and 286,720 additional synthetic bytes per child stream remained value-free in ESS diagnostics. Test commit 54102b9357151a4827817417ca14ec995bdd68c0 has exact bot author and committer. The original test patch is retained in docs/reviews.
-
-## Containment implementation
-
-Source commit e6803c061b33dfe8d5c9fdfff10d8f1408083b31 has exact bot author and committer. Package runners executed CLI 21→33 and ess-gen 183→187 (204→220 combined), zero failed/ignored; both package formatter/strict Clippy commands exited 0. The initial six-case lane had five genuine red refusal cases and a passing valid layout control. A coordinator source review caught overbroad rejection of caller-selected parent roots; a new case failed before correction, then requested-root resolution was fixed while preserving symlink refusal and avoiding creation of discarded directories. The portable implementation report preserves those observations in docs/reviews/2026-09-05-review-boundaries-2-containment-implementation.md.
-
-Current implementation limit: checks are preflight against stable filesystem entries, with Unix link counts. Other platforms refuse existing-file replacement because link-count verification is not implemented. No rollback, hostile mount or concurrent replacement guarantee is claimed. Legacy in-memory constructors/rendering remain source-compatible, with additive checked entrypoints and mandatory CLI sinks.
-
-## Containment attack 1 and correction routing
-
-review-result:review-boundaries-2-containment-adversary-pass-1 preserves the full returned report verbatim, including the one CONFIRMED acceptance blocker with undecided origin. The original test patch is retained in docs/reviews. Five new cases increased executed counts from 220 to 225: 224 passed, one failed. Both compose companion flags can alias a generated client file or directory; the invocation either overwrites one output or writes the companion before refusing. This is a discoverable command output-set collision, within the original acceptance. It was routed to the original implementor for class-wide preflight and a second attack, not deferred as a new story.
-
-The adversary disclosed an extra read-only cargo fmt --all --check outside its prescribed command scope. It exited 1 on untouched generated Rust files and changed nothing. Required package fmt and strict Clippy exited 0. The command-scope deviation is acknowledged; its red result is not an implementation verdict.
-
-## Organization authority refresh
-
-The organization fence at clean Atlas 6035d6e1209686ca474a3f43975fde7d8621ba48 exited 1 after wave-1 publication. Rust (115 tests), catalog, projection, Markdown and brand checks passed; documentation delivery checks and the organization map check failed on sibling state outside this ESS wave. The raw private fence evidence is retained only in coordinator target/review-boundaries-2/atlas-authority-6035d6e/. During the run, Atlas remote main advanced. A new managed authority wt-90ec680c6073 was created at 9f3b42f6d990d849be918936039d7dd5567653c8, and its clean HEAD was verified against git ls-remote origin refs/heads/main before use. The authority's current fence is being rerun; no organization-wide green claim is made.
-
-## Current organization fence result
-
-At authority 9f3b42f6d990d849be918936039d7dd5567653c8, scripts/fences.sh completed with exit 1. Catalog, public Pages delivery (36 repository states, 25 Pages repositories and 50 delivery routes), projection, Markdown and brand passed. Documentation manifest and portal checks refused sibling schema/pin disagreement; the map check reported one sibling without objective grounding. Rust executed 115 cases with 114 passing and one timeout case failing (HTTP 202 observed where 200 was expected). A subsequent isolated execution of that exact case passed 1/1, exit 0; this does not replace the failed full fence. Raw private logs and exit files are preserved in coordinator target/review-boundaries-2/atlas-authority-9f3b42f/. No source in Atlas or those siblings was changed.
-
-## Superseded authority cleanup
-
-After archiving its private fence evidence, cargo clean removed 492.5 MiB of disposable build output from task authority wt-c67acb2e23e6. worktree finish initially refused ignored target output; after the clean it succeeded. A fresh GC dry-run marked that exact record eligible. Exact-id apply removed it with recovery through advertised origin main and pull-request refs; filesystem absence and Git's linked-tree inventory confirmed removal. No other eligible record was selected. The merged wave/review-boundaries-1 branch was deleted with git branch -d.
-
-## Containment correction and second attack
-
-Correction dc122aea038cc18757c3a160b1b36b6798ef6df0 preserves the first attack tests and checks the complete compose output set before any write. It has exact bot author and committer. The package runner executed 225→230, all passing; both package format and strict Clippy checks exited0. A source review identified a native trailing-separator regression in the first correction, which was reproduced red then fixed with its guard retained. The full correction report is docs/reviews/2026-09-05-review-boundaries-2-containment-correction-pass-1.md. The original review has a fixed outcome; the story remains active until integration.
-
-The second and final adversary pass uses the same test-only charter on the clean correction commit. Baseline is230 executed cases. Free bytes133,865,357,312 and own target1,107,980KiB were measured at dispatch. Model token counts and full agent wall duration are unavailable from this harness.
-
-## Second-pass dispatch refusal
-
-The first second-pass dispatch returned the following harness error before producing a review report or test result:
-
-> Agent errored: This content was flagged for possible cybersecurity risk. If this seems wrong, try rephrasing your request. To get authorized for security work, join the Trusted Access for Cyber program: https://chatgpt.com/cyber
-
-This is a failed dispatch, not a completed attack or a green result. The coordinator informed the operator and retried the same reviewer with an explicitly local synthetic-fixture regression scope: no network, credentials, external systems, real user files, races or permission changes. The two-pass limit is unchanged; the required second test review remains pending.
-
-## Second review completion and operational adaptations
-
-The restricted delegated retry also ended with the same automatic content rejection. It left five added integration cases and startup-failure logs; no test had executed because sccache failed before rustc. The coordinator completed the same second review locally, preserving all additions and initial logs. The report is preserved verbatim as review-result:review-boundaries-2-containment-adversary-pass-2. This is a documented delegation adaptation, not a third attack or an independent/human approval claim. No production file was edited during this review.
-
-Cargo had cached the failed rustc metadata query. The failed metadata and socket trace were preserved before removing only target/.rustc_info.json. A task-specific sccache socket remained inside the unit target and used the existing shared cache; its stop command returned0 and its socket no longer accepted a connection. A temporary external scratch root /home/timo/.cache/ess-w2-ctmp held only the first actual case's synthetic files; fixture cleanup and rmdir removed it. The briefly assigned target/t root was also removed. No compiler target was shared and no unrelated cache server or worktree was changed.
-
-Four new isolated cases passed immediately after tool recovery; a fifth lacked a required platform in its synthetic BuildSpec. Adding that fixture field preserved every assertion and its isolated execution passed. Complete package suites then executed235 cases (CLI46, gen189), all passing, no ignored cases; package fmt and strict Clippy exited0. The new cases cover native caller filenames, nested disjoint companions, normalized parent links, four generation sinks and two projection sinks with valid/repeat controls and late conflicts. The preserved patch is docs/reviews/2026-09-05-review-boundaries-2-containment-adversary-pass-2-tests.patch.
-
-The CLI findings comparison reports carried=[], new=[], and the one first-pass compose blocker resolved. No finding remains for this unit; the original immutable report and its fixed outcome remain intact.
-
-Second-review tests are committed at f05048be88b2cc14612d34f9cef0044ab7335641 with exact bot author and committer. Atlas remote advanced again; the existing clean managed authority wt-90ec680c6073 was reused at exact remote 7b00adf3b1004e0cdd8dd12aa4fa8cc8435a0432, with clean HEAD/remote equality verified. Its AGENTS, bot wrapper and fence script bytes did not change in that advance.
+Original implementor committed the bounded correction at6acd811a8f53a3e5ab56ec7a68a13fd0a727ba2b with exact bot author and committer. Coordinator read the full bounded diff and affected timestamp/coverage sections against the source-backed findings. No assertion was dropped or relaxed: a direct comparison verified all68 prior matrix/pairing rows unchanged, with17 new rows. Final design has75 matrix rows and10 pairing rows. Repeated producer refusals now retain multiplicity without extra execution results; new timestamp wire/adaptation rules are exact u64 with checked conversion and frozen legacy behavior. The second review has a fixed outcome, and its exact correction SHA is recorded here. This is personal bounded verification, not a third full adversary pass or runtime compatibility evidence. Both correction reports and patches are preserved separately.
 
 ## Integrated verification and closure
 
-verification-report:review-boundaries-2-integrated records clean source 98defa1b361e053e7fe586b24d777b9843e2f9b5. All eight underlying task check steps exited 0, and the workspace produced 108 runner summaries totaling **1,475 passed, 0 failed, 0 ignored**. Task site-build also exited 0 after WASM/browser checks, pinned dependency installation and Docusaurus. The baseline npm advisories remain outside these fixes. Exact exit status output:
+verification-report:review-boundaries-3-integrated records clean source1ef817ea9d51b2e927febce18eb2d540256e8e76. All eight offline task steps exited0, with1505 workspace tests passed and none failed or ignored. Site build exited0. Explicit TypeScript feature run passed25 cases, including6 additional compiler cases and19 overlapping workspace cases. Completion was2026-09-05T14:26:23.918501Z; the CLI rejected fractional seconds, so evidence uses the next whole second14:26:24Z supported by this build. All three stories moved active→implemented against that exact source. Production, test and design bytes remain unchanged after the gate; closing records also retain read-only scope improvements for future waves.
 
 ```text
 fmt-check 0
@@ -1574,14 +1640,7 @@ projection-check 0
 release-check 0
 action-check 0
 site-build 0
+typescript-compiler 0
 ```
 
-Both stories moved active→implemented using test_result evidence against that integration SHA, observed 2026-09-05T12:34:37Z. The epic stays active with 27 draft stories remaining. Source and test bytes remain unchanged after the gate; closing edits record evidence and lifecycle. No tag or version bump was made.
-
-Before retirement, all wanted raw unit scratch was copied into coordinator target/review-boundaries-2/archive/<unit>/ and compared byte-for-byte: containment 106 files/552,302 bytes, diagnostic 28 files/56,019 bytes. Portable reports and test patches remain committed engineering evidence. Publication must precede worktree finish and fresh exact-id GC.
-
-## Publication and managed cleanup
-
-The bot wrapper published main at 98ea8abeeaf80846f525b5def8b531c139ed7071; git ls-remote returned that exact SHA. All 16 directly introduced commits had exact bot author and committer before publishing. After source publication and archival, cargo clean removed the containment target (1.1 GiB) and diagnostic target (179.9 MiB), and both leases ended and worktree finish succeeded. A fresh GC dry-run marked only the two selected unit records for this task eligible; exact-id apply removed them with origin main as recovery proof. Filesystem absence was verified and both merged impl branches were deleted with git branch -d. The merged wave branch was deleted when the coordinator advanced to the next wave; the reusable coordinator and current authority remain active.
-
-The required organization fence reran after the ESS primary moved, at clean Atlas 7b00adf3b1004e0cdd8dd12aa4fa8cc8435a0432, and exited 1. Catalog, live Pages, projection, Markdown and brand were green. The same sibling manifest/portal/map issues and timeout test remained red (114/115 Rust cases passed). Raw private logs are retained only in coordinator target/review-boundaries-2/atlas-authority-7b00adf/. This is not a claim of organization-wide convergence.
+Raw unit scratch is archived and byte-compared: TypeScript50 files/130782 bytes, delivery66 files/307256 bytes, design11 files/141659 bytes. Portable reports/patches are committed. Publication precedes managed retirement. No release or public-source delivery is part of this wave.

@@ -13,6 +13,7 @@ mod identity;
 mod release;
 mod runtime;
 mod stack;
+mod validation;
 
 pub use build::{
     compile_build, project_build_mermaid, project_buildkit, BuildIr, BuildMount, BuildNode,

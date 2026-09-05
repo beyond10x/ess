@@ -1,0 +1,225 @@
+diff --git a/crates/edge/ess-cli/tests/persisted_delivery.rs b/crates/edge/ess-cli/tests/persisted_delivery.rs
+index 73f636a..73c249a 100644
+--- a/crates/edge/ess-cli/tests/persisted_delivery.rs
++++ b/crates/edge/ess-cli/tests/persisted_delivery.rs
+@@ -174,3 +174,104 @@ fn valid_plan_reaches_both_local_fake_executors_in_rollout_order() {
+         "oras\nhelm\nhelm\n"
+     );
+ }
++
++#[test]
++fn adversary_duplicate_desired_keys_are_refused_before_any_executor() {
++    for extension in ["json", "yaml"] {
++        let fixture = Fixture::new();
++        let desired = fixture.write(&format!("valid.{extension}"), &plan());
++        let valid = fixture.reconcile(&desired, None, true);
++        assert!(valid.status.success(), "{:?}", valid.stderr);
++        fixture.assert_no_calls();
++        // Both duplicated releases are individually valid. Refusal must retain original keys.
++        let raw = serde_json::to_string(&plan()).unwrap();
++        let duplicate = raw.replacen(
++            "\"releases\":{",
++            &format!("\"releases\":{{\"last\":{},", plan()["releases"]["last"]),
++            1,
++        );
++        assert_ne!(duplicate, raw);
++        let desired = fixture.0.join(format!("duplicate.{extension}"));
++        std::fs::write(&desired, duplicate).unwrap();
++        let output = fixture.reconcile(&desired, None, false);
++        assert!(!output.status.success(), "{:?}", output.stdout);
++        assert!(
++            String::from_utf8_lossy(&output.stderr).contains("duplicate map key"),
++            "{:?}",
++            output.stderr
++        );
++        fixture.assert_no_calls();
++    }
++}
++
++#[test]
++fn adversary_duplicate_current_keys_block_removal_and_diff() {
++    for extension in ["json", "yaml"] {
++        let fixture = Fixture::new();
++        let mut empty = plan();
++        empty["releases"] = serde_json::json!({});
++        empty["rollout_order"] = serde_json::json!([]);
++        let desired = fixture.write("desired.json", &empty);
++        let current = fixture.write(&format!("valid.{extension}"), &plan());
++        let valid = fixture.reconcile(&desired, Some(&current), true);
++        assert!(valid.status.success(), "{:?}", valid.stderr);
++        assert!(String::from_utf8_lossy(&valid.stdout).contains("remove: last, first"));
++        fixture.assert_no_calls();
++        let raw = serde_json::to_string(&plan()).unwrap();
++        let duplicate = raw.replacen(
++            "\"images\":{",
++            &format!(
++                "\"images\":{{\"app\":{},",
++                plan()["releases"]["first"]["images"]["app"]
++            ),
++            1,
++        );
++        assert_ne!(duplicate, raw);
++        let current = fixture.0.join(format!("duplicate.{extension}"));
++        std::fs::write(&current, duplicate).unwrap();
++        let reconcile = fixture.reconcile(&desired, Some(&current), false);
++        let diff = fixture
++            .command()
++            .args(["deployment", "diff", "--from"])
++            .arg(&current)
++            .arg("--to")
++            .arg(&desired)
++            .output()
++            .unwrap();
++        for output in [reconcile, diff] {
++            assert!(!output.status.success(), "{:?}", output.stdout);
++            assert!(
++                String::from_utf8_lossy(&output.stderr).contains("duplicate map key"),
++                "{:?}",
++                output.stderr
++            );
++        }
++        fixture.assert_no_calls();
++    }
++}
++
++#[test]
++fn adversary_noncanonical_topological_order_is_refused_before_execution() {
++    let fixture = Fixture::new();
++    let mut desired = plan();
++    desired["releases"]["middle"] = desired["releases"]["first"].clone();
++    desired["releases"]["middle"]["service"] = serde_json::json!("middle");
++    desired["releases"]["middle"]["release_name"] = serde_json::json!("middle");
++    desired["releases"]["last"]["depends_on"] = serde_json::json!(["first"]);
++    desired["rollout_order"] = serde_json::json!(["first", "last", "middle"]);
++    let valid = fixture.write("valid.json", &desired);
++    let output = fixture.reconcile(&valid, None, true);
++    assert!(output.status.success(), "{:?}", output.stderr);
++    assert!(String::from_utf8_lossy(&output.stdout).contains("apply: first, last, middle"));
++    // This respects the dependency but delays a newly ready lexical predecessor.
++    desired["rollout_order"] = serde_json::json!(["first", "middle", "last"]);
++    let invalid = fixture.write("invalid.yaml", &desired);
++    let output = fixture.reconcile(&invalid, None, false);
++    assert!(!output.status.success(), "{:?}", output.stdout);
++    assert!(
++        String::from_utf8_lossy(&output.stderr).contains("canonical compiler order"),
++        "{:?}",
++        output.stderr
++    );
++    fixture.assert_no_calls();
++}
+diff --git a/crates/generate/ess-deployment/tests/deployment.rs b/crates/generate/ess-deployment/tests/deployment.rs
+index 0ba0867..3c725fa 100644
+--- a/crates/generate/ess-deployment/tests/deployment.rs
++++ b/crates/generate/ess-deployment/tests/deployment.rs
+@@ -1081,3 +1081,111 @@ fn persisted_duplicate_keys_are_rejected_at_every_populated_nested_map() {
+     check(&lock);
+     check(&deployment);
+ }
++
++#[test]
++fn adversary_runtime_readers_match_compiler_slot_and_volume_refusals() {
++    let semantic = semantic();
++    let build = build();
++    let physical = physical_realization(&semantic);
++    let valid = runtime_spec(&semantic, &physical, &build);
++    let compiled = compile_runtime(&valid, &semantic, &physical, &build).unwrap();
++    assert_eq!(
++        RuntimeIr::from_json(&compiled.to_canonical_json())
++            .unwrap()
++            .to_canonical_json(),
++        compiled.to_canonical_json()
++    );
++    let mut variants = Vec::new();
++    let mut invalid = valid.clone();
++    invalid.containers[0].config[0].value = Some("forbidden optional literal".to_owned());
++    variants.push(invalid);
++    let mut invalid = valid.clone();
++    invalid.containers[0].endpoints[0].environment = "DATABASE_PASSWORD".to_owned();
++    variants.push(invalid);
++    let mut invalid = valid.clone();
++    invalid.containers[0]
++        .volume_mounts
++        .push(valid.containers[0].volume_mounts[0].clone());
++    variants.push(invalid);
++    let mut invalid = valid.clone();
++    invalid.workloads[0].storage = Some("1Gi".to_owned());
++    variants.push(invalid);
++    let mut invalid = valid.clone();
++    invalid.workloads[0]
++        .volumes
++        .push(valid.workloads[0].volumes[0].clone());
++    variants.push(invalid);
++
++    for invalid in variants {
++        assert!(compile_runtime(&invalid, &semantic, &physical, &build).is_err());
++        let mut persisted = serde_json::to_value(&compiled).unwrap();
++        persisted["containers"]["server"] = serde_json::to_value(&invalid.containers[0]).unwrap();
++        persisted["workloads"]["oracle"] = serde_json::to_value(&invalid.workloads[0]).unwrap();
++        assert_persisted_refused::<RuntimeIr>(&persisted);
++    }
++}
++
++#[test]
++fn adversary_rehashed_bundle_cannot_launder_a_build_cycle() {
++    let bundle = persisted_bundle();
++    let canonical = bundle.to_canonical_json();
++    assert_eq!(
++        ReleaseBundle::from_json(&canonical)
++            .unwrap()
++            .to_canonical_json(),
++        canonical
++    );
++    let invalid_build = bundle
++        .build
++        .to_canonical_json()
++        .replace("\"base\": \"base\"", "\"base\": \"runtime-image\"");
++    assert_ne!(invalid_build, bundle.build.to_canonical_json());
++    let build_digest = ess_deployment::Digest::of_bytes(invalid_build.as_bytes());
++    let invalid_runtime = bundle
++        .runtime
++        .to_canonical_json()
++        .replace(bundle.build.digest().as_str(), build_digest.as_str());
++    // The standalone runtime is locally valid; the included build makes the graph provable.
++    let runtime = RuntimeIr::from_json(&invalid_runtime).unwrap();
++    let mut invalid = serde_json::to_value(&bundle).unwrap();
++    invalid["build"] = serde_json::from_str(&invalid_build).unwrap();
++    invalid["runtime"] = serde_json::to_value(&runtime).unwrap();
++    for release in invalid["releases"].as_object_mut().unwrap().values_mut() {
++        release["build_digest"] = serde_json::json!(build_digest);
++        release["runtime_digest"] = serde_json::json!(runtime.digest());
++    }
++    assert_eq!(runtime.build_digest(), &build_digest);
++    assert_persisted_refused::<ReleaseBundle>(&invalid);
++}
++
++#[test]
++fn adversary_unselected_catalog_candidate_mutation_is_revalidated() {
++    let bundle = persisted_bundle();
++    let catalog: ReleaseCatalog = serde_json::from_value(serde_json::json!({
++        "format":"ess-release-catalog/1",
++        "releases": bundle.releases.values().map(|release| serde_json::json!({
++            "semantic_version":"v1", "release":release, "runtime":bundle.runtime,
++        })).collect::<Vec<_>>(),
++    }))
++    .unwrap();
++    let stack: StackSpec = serde_json::from_value(serde_json::json!({
++        "format":"ess-stack/1", "stack":"empty", "systems":[],
++        "composition_digest":bundle.digest(),
++    }))
++    .unwrap();
++    assert!(resolve_stack(&stack, &catalog).is_ok());
++    for field in ["build_digest", "semantic_digest", "runtime_digest"] {
++        let mut invalid = catalog.clone();
++        let digest = ess_deployment::Digest::of_bytes(b"other input");
++        match field {
++            "build_digest" => invalid.releases[1].release.build_digest = digest,
++            "semantic_digest" => invalid.releases[1].release.semantic_digest = digest,
++            "runtime_digest" => invalid.releases[1].release.runtime_digest = digest,
++            _ => unreachable!(),
++        }
++        assert!(resolve_stack(&stack, &invalid)
++            .unwrap_err()
++            .contains(DiagnosticCode::DigestMismatch));
++        assert_persisted_refused::<ReleaseCatalog>(&serde_json::to_value(&invalid).unwrap());
++    }
++}
