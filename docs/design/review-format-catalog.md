@@ -139,7 +139,8 @@ Successful text output still counts the neutral plan; partial target notes remai
 `ess-browser-catalog/1` bytes. It does not run the workspace's fatal feasibility gate. Its equality
 with a generated catalog applies when the Web workspace is emitted; catalog availability does not
 establish code feasibility. Previously valid Rust output is preserved. Web code changes are limited
-to the previously broken zero-delivery replay branch and missing catalog-only export buffers;
+to the previously broken zero-delivery replay branch, empty-event log branch and missing
+catalog-only export buffers;
 existing report/catalog contracts remain unchanged.
 [Catalog API](../../crates/generate/ess-synth/src/web/mod.rs), [decision](review-rust-target-feasibility.md).
 

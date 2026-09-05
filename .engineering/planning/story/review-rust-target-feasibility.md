@@ -21,7 +21,7 @@ scope:
   path: crates/generate/ess-synth
 - confidence: inferred
   path: docs/design/review-rust-target-feasibility.md
-revision: 12
+revision: 14
 ---
 ## Finding and source
 
@@ -77,3 +77,19 @@ Immutable review-result:review-boundaries-5-rust-adversary-pass-1 coversf9a7cf7 
 Both emitter defects reproduce at the exact opening4b66aac using a separately built clean base CLI, SHA25669f63f3addf84e59982701d8cfc6254b00ce34db378604b076863f3a5d330bf3. Web component json hides the generated json module/dependency reference and fails wasm32 E0433; pure Rust json compiles. An accepted network command emitting Out binds out inside the HTTP codec and hides its output buffer, causing E0308/E0599; the complete codec bytes match the base. The same event without HTTP and component core in Rust/Web are valid controls. Actual CLI calls currently return0 and write compiler-invalid artifact trees. Baseline Web also has its independent previously corrected redeliver failure, which is not counted as this finding.
 
 Coordinator routing decision: these are measured pre-existing emitter behaviors, and both already belong to this active F07 story's reserved symbol/helper and field/wire-name collision acceptance. Their immutable origins stay pre-existing. The existing story remains their owner; the original implementor will extend the new feasibility checks within the same declared source scope, preserving source-language freedom and all valid outputs. This is an in-scope correction under the standing implementation authorization. Do not rename generated valid APIs, change wire formats, blanket-blacklist source names or relax the seven new assertions. The two positive controls constrain the actual emitted scopes. Corrections re-enter the second full adversarial pass, followed by merged gates; no third full attack is authorized by this wave. No fixed outcome is recorded before a correction lands.
+
+## Correction-round extension and parallel landing
+
+Root accepted the separately measured empty-event Web log defect within the same F07 correction round and existing synth/Web scope. The current renderer emits an empty match over &SystemEvent, which is inhabited as a reference and fails rustc E0004. The implementor found the log_method body byte-identical at opening 4b66aac and candidate f9a7cf7; actual opening CLI reproduction is requested before the final origin claim. The bounded policy permits a constant empty JSON array only when the actual emitted/logged event variant set is empty, with a distinct Rust/WASM compiler and empty-log replay regression. All nonempty-log artifact bytes and existing runtime behavior remain frozen. The design must record this before the production branch changes. This adds no domain, compiler, generator, format, code-vocabulary or root manifest scope.
+
+The concurrent source-driven integration has a separate source-level unique wire-field invariant. Root accepts its wave-first landing order and that stronger source admission at the later combined feature boundary; this wave retains current source admission and independent Rust/Web target checks. See the concurrent coordination section in docs/plan/2026-09-05-review-boundaries-5.md. No correction is marked fixed or complete before its measured handoff, final review and merged gate.
+
+## Correction 1 frozen for final review
+
+Root froze correction 1 as a2ff04d70f70a691288b661e4d027eee5da74e42 through the bot wrapper, verified both identities and the clean unit. It independently verified the complete 21-path source manifest, seven correction paths and all final package summaries:190 passing,0 failed,0 ignored; formatting and strict Clippy exit0. Complete correction-report-1.md is598504 bytes, SHA256a6de385b57462880e04dfdbbeeb3c6e57c7d433864f864205a1b9273b71415ff. Both original adversary test files and immutable report are unchanged. Separate fixed outcomes record each original finding; no immutable origin was rewritten.
+
+The correction covers actual Web module/dependency capture, HTTP/Web outcome-arm bindings hiding their output buffer or an encoder actually used in that arm, and the separately base-reproduced empty-event Web log branch. Five new isolated regressions and harmless-name/paired compiler/Node controls remain in the suite. Root adopted only the bounded internal catalog and Unreleased wording that names the new empty-log branch. No source-driven domain or schema-contract changes enter this wave.
+
+Second and final full tests-only attack is assigned to impl_diagnostic on exact a2ff04d. The reviewer has a byte-verified standalone copy of the opening4b66aac CLI under its own scratch; root's separate producer fixture can therefore advance independently without invalidating origin evidence. No third full attack is authorized; any remaining finding receives a bounded final correction and verification. Integrated ESS/site gate, final source publication and public delivery remain pending.
+
+Actual SDK correction-subject recheck completed 2026-09-05T21:12:23.012539+00:00 against exact a2ff04d with published reader6e5141f. All7 ESS path packages resolved to the candidate, no non-ESS resolution changed, and the original lock was restored byte-for-byte. Eight real target-error generate/check calls preserved absent/owned destinations; six valid controls passed their exact expected success/drift behavior. All63 valid generated files remain byte-identical to the published ESS6616 baseline; older pinned output remains14 changed/49 equal. Records are in the SDK tree under target/review-boundaries-5/exact-producer-correction-1 and final-matrix. This candidate recheck is distinct from the final merged-source gate and does not upgrade any published dependency pin.

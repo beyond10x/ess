@@ -21,7 +21,7 @@ scope:
   path: website/docs/reference/formats.md
 - confidence: cited
   path: website/sidebars.ts
-revision: 11
+revision: 12
 ---
 ## Finding and source
 
@@ -80,3 +80,7 @@ Derived 2026-09-05 by aep-drive:story-scoper from exact story:review-format-cata
 Final documentation source f2c81b8ed07a6b522bb97b1e6709a9f2d0a3be57 changes only docs/design/review-format-catalog.md, website/docs/reference/formats.md, website/docs/guides/track-change.md and website/sidebars.ts, confirming the reserved source scope. The two full reviews and exact formal ledger are recorded in docs/plan/2026-09-05-review-boundaries-5.md. Pass 2 has no findings; both pass-1 documentation findings are fixed. The final source-backed link inventory has 209 links and 17 sidebar entries. This is documentation verification, not an invented executable-case count. No producer, reader, bytes or persisted version changed in this unit.
 
 The story remains active until the integrated ESS gate/site build and public bundle delivery complete. Newly discovered parallel source-driven work introduces five additional format markers and an earlier source wire-identity admission check; its own integration story depends on this wave and lands afterward. The coordinator reviewed and accepted that order, with exact source/merge evidence in target/review-boundaries-5/concurrent-merge-audit and a durable coordination section in the wave plan. Its future formats are not silently added as current formats before that source lands. The feature integration must refresh this catalog and rerun combined gates on the final source.
+
+## Bounded correction-source wording verification
+
+After the two full catalog passes, Rust correction a2ff04d added a separately reproduced empty-event Web log branch. Root extended one internal catalog sentence and the existing Unreleased note to name that exact exception. A bounded read-only check by the prior catalog reviewer compared the clean a2ff04d producer fixture with Git-object bytes and the measured correction report; both sentences accurately describe the third compiler-invalid branch without adding an API, format or browser-catalog contract change. This was source-conformance verification of those sentences only, not a third full catalog attack. Exact full-file hashes and evidence are in the original format unit target/review-boundaries-5/empty-log-doc-follow-through.md, SHA25643b322d9ed340ab0a5846b8c72213231499a26dba77cd0af877b75c566a558cd. Source scope is unchanged and final combined gate/public delivery remain pending.
