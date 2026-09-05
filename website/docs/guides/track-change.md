@@ -1,151 +1,90 @@
 ---
 title: Track specification change
 sidebar_position: 6
-description: Compare two revisions semantically with ess verify diff, and compute what the change invalidates — scenarios and generated artifacts — with ess verify impact.
+description: Compare compiled specification revisions and explain which scenarios and generated artifacts need another check.
 ---
 
 # Track specification change
 
-Conformance reports are bound to the specification digest they attest, so the moment a specification
-moves, every result produced for the old digest becomes stale. That is correct and blunt.
-`ess verify diff` and `ess verify impact` make it proportionate: a typed statement of what moved, and a narrowing of what the
-move actually invalidates.
+`ess verify diff` describes changes between two compiled models. `ess verify impact` follows their
+dependencies to identify conformance scenarios owed another run and generated artifacts owed
+regeneration. Neither command establishes that an earlier conformance result still holds.
 
-## What moved: `ess verify diff`
+## Compare revisions
 
-The comparison is over two **compiled** models, not text. Moving declarations between files,
-renaming files, reordering blocks and rewriting every comment report nothing; one line that removes
-a currency reports one narrowing:
-
-```shell-session
-$ ess verify diff --from examples/revision-pair/before --to examples/revision-pair/after
-catalog v2 → v2
-  before  9aa886fb68a2447af40c92cf53ed260af0d102507ac87e73a8e31fb7d20a0916
-  after   2dcf59ba04dd2fb953218bf8c60146d4efd4fca8282af8cd53c2063f4f4616be
-
-6 change(s): 2 widening, 2 narrowing, 2 other
-
-  widens   type catalog.pricing.Currency: variant `CHF` added
-           type/catalog.pricing.Currency/variant-added/CHF
-  narrows  type catalog.pricing.Currency: variant `GBP` removed
-           type/catalog.pricing.Currency/variant-removed/GBP
-  changes  entity catalog.pricing.PriceList: invariants [floor.amount >= 0] → [floor.amount > 0]
-           entity/catalog.pricing.PriceList/invariants-changed
-  changes  command catalog.pricing.CreatePriceList: outcome `created` is decided by `when floor.amount >= 1`, was `when floor.amount > 0`
-           command/catalog.pricing.CreatePriceList/outcome-condition-changed/created
-  narrows  actor catalog.pricing.Auditor: may no longer invoke `catalog.pricing.RetirePriceList`
-           actor/catalog.pricing.Auditor/grant-removed/catalog.pricing.RetirePriceList
-  widens   actor catalog.pricing.PricingManager: may invoke `catalog.pricing.RetirePriceList`
-           actor/catalog.pricing.PricingManager/grant-added/catalog.pricing.RetirePriceList
+```sh
+ess verify diff --from examples/revision-pair/before --to examples/revision-pair/after
+ess verify diff --from examples/revision-pair/before --to examples/revision-pair/after --format json
 ```
 
-`examples/revision-pair/` is that pair: exactly these six semantic changes buried under renamed
-files, reordered blocks and rewritten comments.
+The committed example pair changes currency variants, an entity invariant, an outcome condition
+and actor grants while also moving files and reordering declarations. The comparison uses the
+compiled models, so comments and source-file layout do not themselves produce changes.
 
-Rules the report follows:
+The report follows these rules:
 
-* **Ten construct families are compared:** system header, types, entities, commands, events,
-  errors, views, actors, components, bindings.
-* **Only set-membership changes carry a direction.** A grant or variant added *widens*, one removed
-  *narrows*. Everything else is *changed* — a rewritten invariant is `changed` even when the new one
-  is strictly stronger, because deriving that would be a proof, not a comparison. Predicates are
-  compared for canonical equality only; implication is refused.
-* **Nothing is inferred to be a rename.** `InvoiceCreated` removed and `InvoiceIssued` added is a
-  removal and an addition, because a rename and a delete-plus-create have different consequences for
-  everything already deployed.
-* **One refusal:** two specifications naming different systems. The delta would be enormous,
-  plausible, and an answer to a question nobody asked, so the answer is exit 1 and one line:
+- Ten typed construct families are compared: system header, types, entities, commands, events,
+  errors, views, actors, components and bindings. Residual model changes outside those typed
+  comparisons produce `unclassified-changed`; they are not silently treated as equality.
+- Changes carry stable content-derived ids and a relation: widening, narrowing or changed.
+  Predicate comparison uses canonical equality, not a proof that one predicate implies another.
+- Renames are not inferred. A removed declaration and an added declaration remain two changes.
+- Inputs must describe revisions of the same system. A different system identity is refused.
 
-  ```text
-  refused: these are two systems, not two revisions: `billing` and `catalog`
-  ```
+`--format` accepts `text` or `json`. JSON output now uses **`ess-diff/2`**. The library retains
+the frozen `/1` vocabulary and reader support; explicit legacy writing refuses changes outside that
+vocabulary. The endpoint digests identify compact compiled models, not raw YAML or the pretty JSON
+shown by `ess compile`.
+[Delta writer](https://github.com/beyond10x/ess/blob/main/crates/verify/ess-diff/src/delta.rs),
+[comparison](https://github.com/beyond10x/ess/blob/main/crates/verify/ess-diff/src/diff.rs).
 
-`--format` takes `text` or `json`, and nothing else. `--format json` writes the canonical
-`ess-diff/1` document — byte-identical for the same pair, each change carrying an id derived from its
-own content, so a review comment can quote one and still mean the same change later.
+## Find the work owed again
 
-## What that invalidates: `ess verify impact`
+Without `--suite`, impact reports construct dependencies and generated-artifact obligations:
 
-A delta says what moved; `impact` says what **stood on** what moved — which conformance scenarios
-are owed again, and which generated artifacts are owed regeneration. This repository ships one
-revision of billing, so make the second one: copy it and move a single grant from one actor to
-another.
-
-```shell-session
-$ NEXT=$(mktemp -d)/billing && cp -r examples/billing "$NEXT"
-$ # in $NEXT/domains/invoice.yaml, move `billing.invoice.CreateInvoice`
-$ # from actor `billing.invoice.Customer`'s `may:` list to `billing.invoice.Auditor`'s
-$ ess verify impact --from examples/billing --to "$NEXT" \
-    --suite suites/generated/billing/suite.json | head -18
-billing v3 → v3
-  before  aacdc2fe065d462cc4f9ba51e6740f88809b6b17ce006ef846b488f957005da3
-  after   d3598193e8d2a0066993b7e2e9b9d09ceafde5e4989c4389f9f09c3d7e968257
-
-2 change(s): 1 widening, 1 narrowing, 0 other
-
-  widens   actor billing.invoice.Auditor: may invoke `billing.invoice.CreateInvoice`
-           actor/billing.invoice.Auditor/grant-added/billing.invoice.CreateInvoice
-  narrows  actor billing.invoice.Customer: may no longer invoke `billing.invoice.CreateInvoice`
-           actor/billing.invoice.Customer/grant-removed/billing.invoice.CreateInvoice
-
-suite billing v3 (aacdc2fe065d462cc4f9ba51e6740f88809b6b17ce006ef846b488f957005da3): 7 of 29 scenario(s) owed again
-2 construct(s) reached: 2 changed, 0 depend on one directly, 0 through another
-15 of 48 generated artifact(s) owed regeneration
-
-  billing.invoice.CreateInvoice/outcome/accepted
-    directly-changed actor billing.invoice.Customer — actor/billing.invoice.Customer/grant-removed/billing.invoice.CreateInvoice
-  billing.invoice.CreateInvoice/outcome/rejected
+```sh
+ess verify impact --from examples/revision-pair/before --to examples/revision-pair/after
 ```
 
-The delta comes first and in full; the suite section follows it. `head -18` above cuts the remaining
-five scenarios and the artifact section, each of which reads like the two shown.
+To include scenarios, supply a suite for the **before** revision. For example, generate one from
+the committed pair and then compare:
 
-Without this, moving one grant re-runs all 29 scenarios. Seven is the same answer, proportionate.
-
-`--suite` is what adds the scenario section. **Without it, the report answers for the generated
-artifacts alone** — the same two-line count and the same explained paths, and no claim about any
-suite. `--generated generated/` goes further and checks each committed artifact's stamped contract
-digest against what its model slice computes; an artifact whose claim cannot be read or does not hold
-is owed outright — *its committed contract digest is `e6e58e0…`, and its slice computes `d2b4806…`: a
-false claim about derivation* — rather than counted as reached.
-
-`--format json` writes the canonical `ess-impact/2` document — a different document from `diff`'s,
-which is why `impact` is a verb and not a flag.
-
-**Every impact carries the path that explains it** — not "these eleven things are affected" but
-*this is affected because it references that, which references what you changed*. The
-`examples/revision-pair/` pair shows it without any editing, because its `before/` obliges a suite
-you can synthesise on the spot:
-
-```shell-session
-$ SUITE=$(mktemp -d)/suite.json
-$ ess verify conform synthesize --path examples/revision-pair/before --out "$SUITE" >/dev/null
-$ ess verify impact --from examples/revision-pair/before --to examples/revision-pair/after \
-    --suite "$SUITE" | grep -A 3 'PublishPriceList/outcome/published'
-  catalog.pricing.PublishPriceList/outcome/published
-    transitively-impacted entity catalog.pricing.PriceList — type/catalog.pricing.Currency/variant-added/CHF
-      -> type catalog.pricing.Money has a field of type type catalog.pricing.Currency
-      -> entity catalog.pricing.PriceList has a field of type type catalog.pricing.Money
+```sh
+ess verify conform synthesize --path examples/revision-pair/before --out before-suite.json
+ess verify impact --from examples/revision-pair/before --to examples/revision-pair/after \
+  --suite before-suite.json
 ```
 
-That scenario never mentions `Currency`. The two hops are why it is owed again anyway, and they are
-what a reviewer checks — the path, not the verdict.
+The report starts with the delta and explains each reached construct, scenario and artifact.
+A scenario about a price list can be affected by a currency change through the price list's money
+field. The dependency path explains why it is owed even when the scenario does not mention the
+currency type directly. Adding `--format json` writes **`ess-impact/3`**, with its embedded `/2`
+delta and current dependency-relation vocabulary.
+[Impact implementation](https://github.com/beyond10x/ess/blob/main/crates/verify/ess-diff/src/impact.rs),
+[dependency graph](https://github.com/beyond10x/ess/blob/main/crates/specify/ess-compiler/src/graph.rs).
 
-## What it will never tell you
+The CLI computes artifact obligations from the generators' output for the compared models. It
+does **not** read your committed generated directory, and there is no `--generated` CLI option.
+Library callers can supply a `GeneratedTree` to `ess_diff::impact` for the separate committed-stamp
+check. An unreadable, mismatching or obsolete slice-profile claim then owes regeneration. A command
+that runs without that input has not performed that check.
+[CLI entry point](https://github.com/beyond10x/ess/blob/main/crates/edge/ess-cli/src/main.rs).
 
-The analysis **narrows; it never says a result still holds**. A scenario absent from the output was
-not reached by the closure — which is not a claim that its evidence stands. The two error directions
-are not comparable: failing closed costs a re-run that was not needed; failing open costs a task
-closing on evidence produced against a specification that has since moved. So the report has no
-vocabulary for survival, and three situations put the whole suite back to owed:
+## When narrowing is unavailable
 
-| Situation | Why nothing narrows |
+| Situation | Result |
 |---|---|
-| the specification header itself changed — version, summary | no scenario names the system as a dependency, so no closure can start |
-| the suite depends on a construct the dependency graph has no node for (conversions, workloads, a domain's naming have no compared family yet) | a closure could never reach it, and silently dropping it is the one wrong narrowing that looks right |
-| the suite was produced from another revision or another system | **refused** rather than answered: *the suite checks `billing` and these are two revisions of `catalog`* — exit 1, no report |
+| A system-wide change has no construct from which to start a dependency walk | Whole obligations apply. |
+| Residual model content changes outside the typed comparisons | `unclassified-changed` makes whole obligations apply. |
+| A scenario or artifact depends on a construct absent from both dependency graphs | The answer stays whole rather than silently omitting that dependency. |
+| The supplied suite belongs to another system or does not match the before model/contract digest | The comparison is refused. |
 
-And one thing it does not look at all: **prose**. A design doc, a runbook or a README that quotes a
-specification is not in the model, so no closure reaches it and no count includes it. Tracking the
-freshness of prose claims belongs to the workflow or documentation system that owns those claims,
-not to ESS.
+An item absent from the narrowed answer was not reached by this analysis. That is not a claim that
+its prior evidence remains valid or that the suite has complete coverage. Suite/4 carries model and
+whole-contract identities; it does not carry an exact digest of the complete suite bytes.
+
+Design documents, runbooks and prose references outside the compiled model are not part of the
+dependency walk. Their owner must track their freshness separately.
+
+See [Formats and digests](../reference/formats.md) for current version markers, reader boundaries
+and the distinct compiled-model, whole-contract and sliced-contract digest profiles.
