@@ -40,7 +40,7 @@ scope:
   path: generated/schema
 - confidence: inferred
   path: generated/site
-revision: 20
+revision: 21
 ---
 ## Finding and source
 
@@ -129,3 +129,17 @@ The recommended smallest contract is a versioned sliced digest string, proposed 
 - Required checks: freeze prior source/whole/suite4/neutral-plan/index bytes; legacy Constructs stamps are owed even for equal hashes; observe actual old-reader behavior for every new emission and marker-confusion case; verify new profiles against corrected slices and reject unknown/mismatched profiles; retain F01 relation/view/component/residual regressions; keep only measured regenerated files; coordinate actual consumers through Atlas — inferred.
 
 Coordinator disposition: use the profiled string as the recommended binding-design input with old-reader limits explicit. Reader-first migration remains mandatory; old substring parsing and generic Serde cannot become profile-aware retrospectively. Before default writers, the binding design and Atlas ADR must settle exact vocabulary, authoritative framing, docs-IR nested meaning, versioned delta/impact and actual mandatory reader/pin movement. This scoping work changes no default and establishes no deployed readiness or executed compatibility.
+
+## Binding checkpoint and downstream experiment
+
+The coordinator inspected and confirmed the unit's binding addendum before production edits. Earlier proposed/unresolved choices in the scoping record are superseded by this decision, not erased as though they had already been settled at dispatch.
+
+- Default delta `ess-diff/2`, default impact `ess-impact/3`; frozen valid delta /1 admission and bytes, typed legacy-writer refusal and no relabeling bypass.
+- Explicit new graph relations: `relation-target`, `ownership-carrier`, `exposes-view`, `parameter-type`. Preserve dependent-to-dependency orientation, before/after reverse impact and forward slice closure.
+- Every Constructs digest carries the full `slice-sha256/2:<64 lowercase hex>` identity. Source and whole-model digest bytes remain frozen. The new reader binds authoritative emitted envelopes and refuses ambiguous/conflicting profiles or unsupported-profile fallback.
+- Generic old String readers, including the existing docs-ir nested shape, do not prove profile admission. The exact old substring reader's marker-fallback limitation must be demonstrated as well as ordinary new-prefix refusal.
+- A separate residual coverage projection detects unexplained content even alongside classified changes while preserving established predicate/naming equivalences.
+- Atlas `story:ess-semantic-diff-provenance-migration` is active and ADR 0036 is prepared in its managed governance branch. The decision is not yet a published migration or executed downstream compatibility result.
+- Service SDK advertised `48833c6d14ec37cb3b614fca05cf7dd78f63b743` remains pinned to ESS `d1a66772a91b5411d942d7a45bbf08dfc5de4651`. Independent scoping established linked generation plus whole-file/ownership-manifest checking, with no executable delta, impact or sliced-stamp parser. Two managed test-only SDK trees are recorded in the wave page; the old side prepares its baseline, and the new side must wait for a frozen ESS candidate. No SDK source or published dependency update is included in that experiment.
+
+Publication still requires completed implementation/adversarial/integration gates, actual SDK candidate output comparison, measured regeneration, Atlas coordination and truthful shipping evidence. Existing pinned SDK consumers can continue generating/checking their own old bytes; local tests do not establish external deployment readiness.

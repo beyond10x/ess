@@ -1702,3 +1702,85 @@ Constructs, with whole/source identity frozen and explicit old-reader fallback l
 InfraIR binds a shared model query and checked detached transformation through its existing
 reader. Its projector returns a typed admission error before recording or writing a partial
 result. This fixes owner reference membership, without claiming observation completeness.
+
+## Exact source observations for Atlas
+
+The F01 story also requires stale consumer observations to be refreshed through Atlas's
+own catalog command. ESS primary is clean at published
+`6cbe372ea68487f11fa6d53500f2033a95f29b79`; the old SDK compatibility tree is clean at its
+advertised source and retains its actual pin. AgentIDE primary is clean but stale, so a
+read-only source tree is reserved before creation: ID `ess-agentide-pin-observation`,
+detached base `176a57f58457a7c16f105584c66964263b3c2e41`, checkout
+`/home/timo/.local/state/worktree/trees/b10x/agentide/ess-agentide-pin-observation`, own
+`target` build root (no build planned), scratch `target/ess-review-observation`. It is used
+only as an exact catalog input and receives no AgentIDE source or dependency change.
+
+The coordinator extends the Atlas support story to its existing catalog store and generated
+catalog/architecture projections before running bounded refresh for ESS, SDK and AgentIDE.
+Actual pin observations are local source evidence, not GitHub release or deployment proof.
+Unscoped organization convergence remains unclaimed while unrelated primary fences fail.
+
+## Infrastructure unit handoff
+
+Implementation commit `b7c3258cf8668cb3d5c8a1f01e362c4092292069` has verified bot
+author and committer. It changes 18 assigned source/test/design files, 690 insertions and
+160 deletions. Its five package suites increased from 244 to 265 executed cases, all green;
+package formatting and strict Clippy returned 0. Nine original public mutation probes went
+red with valid compiler controls. Two additional intentional admission/order mutations also
+failed their guards and were restored. Setup-only compiler failures are recorded separately.
+
+The full immutable implementation report is preserved in
+`docs/reviews/2026-09-05-review-boundaries-4-infra-implementation.md`, SHA-256
+`ca7279d76d070601bfc39b5d527de2a94add9acb478e9dcdead90691f30e9403`, with its exact committed
+source patch beside it, SHA-256
+`f22535a8b409f7e584b0b1d42e621bf04ab822f699f9bb85b3b7775eb834e749`.
+The unit is under first independent test-only adversarial review; it has not been merged
+or closed on integration evidence.
+
+## SDK old-side checkpoint and catalog limitation
+
+The SDK old side passed all three selected cases, one execution each, and generated and
+checked a retained 63-file output. Its metadata resolves all seven ESS packages to 0.13.1
+at `d1a66772a91b5411d942d7a45bbf08dfc5de4651`. The checkpoint report SHA-256 is
+`149a285b9a1cdd59a62ec2f5b1dba9c826ba0d88f15019c48083de6ccdcca967`; raw data remains in
+the two recorded SDK scratch roots. Candidate work is paused until the exact frozen ESS
+handoff. The same third thread is temporarily assigned to InfraIR review, with SDK writes
+relinquished, and will resume the candidate experiment afterward.
+
+Atlas's bounded ESS/SDK/AgentIDE refresh refused 19 undeclared component dependencies in
+the already published consumer sources before any mutation. The exact refusal and discharge
+criteria are retained in its open `obligation:ess-consumer-catalog-intent-reconciliation`.
+The independent ESS-only refresh succeeded with one local-tag release observation and 59
+dependency pin observations; validation and deterministic rendering passed. Consumer pins
+remain stale in the catalog, whose automatic promotion is not claimed. The exact source
+inventory and actual local compatibility experiment remain separate evidence. No release,
+SDK dependency update or deployment is implied.
+
+## Infrastructure adversary pass 1
+
+The independent adversary reported `nothing found` with explicit empty findings and added
+five cases, each executed in isolation before the package suites. All 270 package cases,
+formatting and strict Clippy passed. The tests cover indirect environment/volume references,
+service retargeting and later refusal, captured or panicking detached edits, actual
+StatefulSet/DaemonSet patches, and namespace-distinct fixed points. No publicly valid input
+was found that forces the projector's internal candidate-admission error; that limit is
+explicit, and the implementation's transaction mutation guard remains separate evidence.
+
+Full report SHA-256
+`0a10b3a20903d4829cf1aa76612668cc2abfe5ed9d8db4fb3adc82848745f805` was preserved before
+routing as immutable `review-result:review-boundaries-4-infra-adversary-pass-1`.
+The exact two-test-file patch is retained in
+`docs/reviews/2026-09-05-review-boundaries-4-infra-adversary-tests.patch`, SHA-256
+`69d5d2f16f52506e5005ab3a34a7c98007b729d51f83c4d0fe791894b27d4137`.
+Test commit `12d99b1414eea710e56a9776d32e898ff028f33a` has verified bot identities.
+No correction pass is required; integration and its closing evidence remain pending.
+
+## Next-stage scoping
+
+Independent read-only scoping updated `story:a-skipped-scenario-is-not-a-failed-one` to
+revision 11 against the completed conformance design. The smallest next stage is explicit
+report/2 and run/2 against admitted legacy suite bytes, with unknown coverage and unchanged
+defaults. It reserves conformance, CLI, the public guide and a possible root lock change;
+suite/5 inventory and qualification remain the dependent coverage story. Actual AEP adapter,
+planning reader and domain/fact boundaries are separately identified. No conformance
+implementation, downstream compatibility or new wave selection occurred in this scoping.

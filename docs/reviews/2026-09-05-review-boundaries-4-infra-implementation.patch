@@ -1,0 +1,1734 @@
+diff --git a/crates/edge/ess-cli/src/main.rs b/crates/edge/ess-cli/src/main.rs
+index cbd1b19..799f57d 100644
+--- a/crates/edge/ess-cli/src/main.rs
++++ b/crates/edge/ess-cli/src/main.rs
+@@ -2815,7 +2815,7 @@ fn import(adapter: ImportAdapter) -> Result<ExitCode> {
+                 coverage_gaps: Vec::new(),
+                 obligations: Vec::new(),
+                 refusals: Vec::new(),
+-                unresolved_references: ir.model.unresolved.len(),
++                unresolved_references: ir.model().unresolved.len(),
+                 output: out.as_ref().map(|path| path.display().to_string()),
+             };
+             if matches!(format, Format::Text) {
+@@ -3233,7 +3233,8 @@ fn project_kubernetes(
+     let spec = infra_spec::read_spec(&spec_text)
+         .map_err(|errors| anyhow::anyhow!("infrastructure intent refused: {errors}"))?;
+     let ir = resolved_infrastructure(ir_path)?;
+-    let projection = infra_project::project(&spec, &ir);
++    let projection = infra_project::project(&spec, &ir)
++        .map_err(|errors| anyhow::anyhow!("infrastructure projection refused: {errors}"))?;
+     let artifacts = projection.artifacts();
+     if let Some(root) = out {
+         write_projection_files(root, &artifacts)?;
+diff --git a/crates/infra/infra-analyze/src/diagnose.rs b/crates/infra/infra-analyze/src/diagnose.rs
+index 818c9bd..276bc92 100644
+--- a/crates/infra/infra-analyze/src/diagnose.rs
++++ b/crates/infra/infra-analyze/src/diagnose.rs
+@@ -150,7 +150,7 @@ pub fn diagnose_with(ir: &InfraIr, graph: &InfraGraph) -> Diagnosis {
+ /// `INFRA-DIAG-001` — a service selector that matches no pod, read off the IR's unresolved
+ /// facts, where the compiler already ran the match.
+ fn rule_dangling_selector(ir: &InfraIr, findings: &mut Vec<Finding>) {
+-    for fact in &ir.model.unresolved {
++    for fact in &ir.model().unresolved {
+         if let UnresolvedTarget::PodsMatchingSelector { selector } = &fact.target {
+             let rendered = selector
+                 .iter()
+@@ -172,7 +172,7 @@ fn rule_dangling_selector(ir: &InfraIr, findings: &mut Vec<Finding>) {
+ /// reference site declared itself optional. The kinds that cannot declare optionality —
+ /// service account, claim, service, node, namespace — are required by construction.
+ fn rule_missing_references(ir: &InfraIr, findings: &mut Vec<Finding>) {
+-    for fact in &ir.model.unresolved {
++    for fact in &ir.model().unresolved {
+         let (what, name, optional) = match &fact.target {
+             UnresolvedTarget::PodsMatchingSelector { .. } => continue,
+             UnresolvedTarget::ConfigMap { name, optional } => {
+@@ -220,7 +220,7 @@ fn rule_missing_references(ir: &InfraIr, findings: &mut Vec<Finding>) {
+ 
+ /// `INFRA-DIAG-004` — a container without requests, limits, or either.
+ fn rule_resource_bounds(ir: &InfraIr, findings: &mut Vec<Finding>) {
+-    for (key, workload) in &ir.model.workloads {
++    for (key, workload) in &ir.model().workloads {
+         for container in &workload.containers {
+             let mut missing = Vec::new();
+             if container.resources.requests.is_empty() {
+@@ -249,7 +249,7 @@ fn rule_resource_bounds(ir: &InfraIr, findings: &mut Vec<Finding>) {
+ 
+ /// `INFRA-DIAG-005` — a container without a liveness probe, a readiness probe, or either.
+ fn rule_probes(ir: &InfraIr, findings: &mut Vec<Finding>) {
+-    for (key, workload) in &ir.model.workloads {
++    for (key, workload) in &ir.model().workloads {
+         for container in &workload.containers {
+             let mut missing = Vec::new();
+             if container.probes.liveness.is_none() {
+@@ -275,7 +275,7 @@ fn rule_probes(ir: &InfraIr, findings: &mut Vec<Finding>) {
+ 
+ /// `INFRA-DIAG-006` — `:latest`, untagged, and not digest-pinned images.
+ fn rule_unpinned_image(ir: &InfraIr, findings: &mut Vec<Finding>) {
+-    for (key, workload) in &ir.model.workloads {
++    for (key, workload) in &ir.model().workloads {
+         for container in &workload.containers {
+             let image = parse_image(&container.image);
+             if image.digest.is_some() {
+@@ -304,7 +304,7 @@ fn rule_unpinned_image(ir: &InfraIr, findings: &mut Vec<Finding>) {
+ /// `INFRA-DIAG-007` — a workload that wants exactly one replica. Daemonsets have no replica
+ /// count and cannot fire.
+ fn rule_single_replica(ir: &InfraIr, findings: &mut Vec<Finding>) {
+-    for (key, workload) in &ir.model.workloads {
++    for (key, workload) in &ir.model().workloads {
+         if workload.replicas == Some(1) {
+             findings.push(Finding::new(
+                 DiagCode::SingleReplica,
+@@ -319,7 +319,7 @@ fn rule_single_replica(ir: &InfraIr, findings: &mut Vec<Finding>) {
+ 
+ /// `INFRA-DIAG-008` — a container waiting for a reason that is not part of normal startup.
+ fn rule_stuck_waiting(ir: &InfraIr, findings: &mut Vec<Finding>) {
+-    for (key, pod) in &ir.model.pods {
++    for (key, pod) in &ir.model().pods {
+         for container in &pod.containers {
+             let Some(reason) = &container.waiting_reason else {
+                 continue;
+@@ -340,7 +340,7 @@ fn rule_stuck_waiting(ir: &InfraIr, findings: &mut Vec<Finding>) {
+ 
+ /// `INFRA-DIAG-009` — a container at or above the restart threshold.
+ fn rule_high_restarts(ir: &InfraIr, findings: &mut Vec<Finding>) {
+-    for (key, pod) in &ir.model.pods {
++    for (key, pod) in &ir.model().pods {
+         for container in &pod.containers {
+             if container.restart_count < HIGH_RESTART_THRESHOLD {
+                 continue;
+@@ -367,7 +367,7 @@ fn rule_high_restarts(ir: &InfraIr, findings: &mut Vec<Finding>) {
+ fn rule_pod_not_ready(ir: &InfraIr, graph: &InfraGraph, findings: &mut Vec<Finding>) {
+     use infra_domain::observation::PodPhase;
+ 
+-    for (key, pod) in &ir.model.pods {
++    for (key, pod) in &ir.model().pods {
+         if pod.ready || pod.phase == PodPhase::Succeeded {
+             continue;
+         }
+@@ -403,7 +403,7 @@ fn referenced_targets(graph: &InfraGraph) -> BTreeSet<GraphNode> {
+ /// exempted by type for exactly that reason.
+ fn rule_orphaned_config(ir: &InfraIr, graph: &InfraGraph, findings: &mut Vec<Finding>) {
+     let referenced = referenced_targets(graph);
+-    for key in ir.model.config_maps.keys() {
++    for key in ir.model().config_maps.keys() {
+         let node = GraphNode {
+             kind: NodeKind::ConfigMap,
+             key: key.clone(),
+@@ -418,7 +418,7 @@ fn rule_orphaned_config(ir: &InfraIr, graph: &InfraGraph, findings: &mut Vec<Fin
+             ));
+         }
+     }
+-    for (key, secret) in &ir.model.secrets {
++    for (key, secret) in &ir.model().secrets {
+         if secret.secret_type == SERVICE_ACCOUNT_TOKEN {
+             continue;
+         }
+@@ -445,7 +445,7 @@ fn rule_orphaned_config(ir: &InfraIr, graph: &InfraGraph, findings: &mut Vec<Fin
+ fn rule_unbound_claim(ir: &InfraIr, findings: &mut Vec<Finding>) {
+     use infra_domain::observation::ClaimPhase;
+ 
+-    for (key, claim) in &ir.model.claims {
++    for (key, claim) in &ir.model().claims {
+         let phase = match claim.phase {
+             ClaimPhase::Pending => "pending",
+             ClaimPhase::Lost => "lost",
+@@ -467,7 +467,7 @@ fn rule_unbound_claim(ir: &InfraIr, findings: &mut Vec<Finding>) {
+ /// so such a claim fires here with the wording scoped to what was checked.
+ fn rule_orphaned_claim(ir: &InfraIr, graph: &InfraGraph, findings: &mut Vec<Finding>) {
+     let referenced = referenced_targets(graph);
+-    for key in ir.model.claims.keys() {
++    for key in ir.model().claims.keys() {
+         let node = GraphNode {
+             kind: NodeKind::Claim,
+             key: key.clone(),
+@@ -504,14 +504,14 @@ pub fn pdb_covers(selector: &BTreeMap<String, String>, labels: &BTreeMap<String,
+ /// Skips empty selectors (they select the whole namespace — a different statement, not a
+ /// dangling one) and cannot fire on a bundle that did not scan budgets.
+ fn rule_pdb_selects_nothing(ir: &InfraIr, findings: &mut Vec<Finding>) {
+-    let Some(budgets) = &ir.model.pod_disruption_budgets else {
++    let Some(budgets) = &ir.model().pod_disruption_budgets else {
+         return;
+     };
+     for (key, budget) in budgets {
+         if budget.selector.is_empty() {
+             continue;
+         }
+-        let guards_something = ir.model.pods.values().any(|pod| {
++        let guards_something = ir.model().pods.values().any(|pod| {
+             pod.identity.namespace == budget.identity.namespace
+                 && pdb_covers(&budget.selector, &pod.labels)
+         });
+@@ -540,10 +540,10 @@ fn rule_pdb_selects_nothing(ir: &InfraIr, findings: &mut Vec<Finding>) {
+ /// workload is scaled down; the rule cannot fire on a bundle that did not scan budgets,
+ /// because unobserved is not uncovered.
+ fn rule_no_pdb_coverage(ir: &InfraIr, findings: &mut Vec<Finding>) {
+-    let Some(budgets) = &ir.model.pod_disruption_budgets else {
++    let Some(budgets) = &ir.model().pod_disruption_budgets else {
+         return;
+     };
+-    for (key, workload) in &ir.model.workloads {
++    for (key, workload) in &ir.model().workloads {
+         let Some(replicas) = workload.replicas else {
+             continue;
+         };
+@@ -573,7 +573,7 @@ fn rule_no_pdb_coverage(ir: &InfraIr, findings: &mut Vec<Finding>) {
+ /// `INFRA-DIAG-017` — an autoscaler pinned to one size. An absent `minReplicas` is the API's
+ /// default of one, resolved here because the comparison needs a number.
+ fn rule_hpa_fixed_range(ir: &InfraIr, findings: &mut Vec<Finding>) {
+-    let Some(autoscalers) = &ir.model.horizontal_pod_autoscalers else {
++    let Some(autoscalers) = &ir.model().horizontal_pod_autoscalers else {
+         return;
+     };
+     for (key, autoscaler) in autoscalers {
+@@ -603,7 +603,7 @@ fn rule_hpa_fixed_range(ir: &InfraIr, findings: &mut Vec<Finding>) {
+ /// an Argo `Rollout`, say — is outside the observed subset, and claiming it missing would
+ /// manufacture a defect out of a gap.
+ fn rule_hpa_target_missing(ir: &InfraIr, findings: &mut Vec<Finding>) {
+-    let Some(autoscalers) = &ir.model.horizontal_pod_autoscalers else {
++    let Some(autoscalers) = &ir.model().horizontal_pod_autoscalers else {
+         return;
+     };
+     for (key, autoscaler) in autoscalers {
+@@ -614,7 +614,7 @@ fn rule_hpa_target_missing(ir: &InfraIr, findings: &mut Vec<Finding>) {
+         };
+         let namespace = autoscaler.identity.namespace.as_deref().unwrap_or_default();
+         let workload_key = format!("{namespace}/{kind}/{}", autoscaler.target.name);
+-        if ir.model.workloads.contains_key(&workload_key) {
++        if ir.model().workloads.contains_key(&workload_key) {
+             continue;
+         }
+         findings.push(Finding::new(
+@@ -639,7 +639,7 @@ fn rule_hpa_target_missing(ir: &InfraIr, findings: &mut Vec<Finding>) {
+ /// completed does not fire: reaching the target is the job succeeding, whatever the retries
+ /// cost.
+ fn rule_job_failed(ir: &InfraIr, findings: &mut Vec<Finding>) {
+-    let Some(jobs) = &ir.model.jobs else { return };
++    let Some(jobs) = &ir.model().jobs else { return };
+     for (key, job) in jobs {
+         let target = job.completions.unwrap_or(1);
+         if job.failed == 0 || job.succeeded >= target {
+@@ -664,7 +664,7 @@ fn rule_job_failed(ir: &InfraIr, findings: &mut Vec<Finding>) {
+ 
+ /// `INFRA-DIAG-020` — a cronjob told not to run.
+ fn rule_cronjob_suspended(ir: &InfraIr, findings: &mut Vec<Finding>) {
+-    let Some(cron_jobs) = &ir.model.cron_jobs else {
++    let Some(cron_jobs) = &ir.model().cron_jobs else {
+         return;
+     };
+     for (key, cron_job) in cron_jobs {
+diff --git a/crates/infra/infra-analyze/src/graph.rs b/crates/infra/infra-analyze/src/graph.rs
+index 5cc4437..c9896b4 100644
+--- a/crates/infra/infra-analyze/src/graph.rs
++++ b/crates/infra/infra-analyze/src/graph.rs
+@@ -342,25 +342,25 @@ impl InfraGraph {
+             underived: Vec::new(),
+         };
+ 
+-        for key in ir.model.nodes.keys() {
++        for key in ir.model().nodes.keys() {
+             graph.node(NodeKind::Node, key);
+         }
+-        for key in ir.model.services.keys() {
++        for key in ir.model().services.keys() {
+             graph.node(NodeKind::Service, key);
+         }
+-        for key in ir.model.ingresses.keys() {
++        for key in ir.model().ingresses.keys() {
+             graph.node(NodeKind::Ingress, key);
+         }
+-        for key in ir.model.config_maps.keys() {
++        for key in ir.model().config_maps.keys() {
+             graph.node(NodeKind::ConfigMap, key);
+         }
+-        for key in ir.model.secrets.keys() {
++        for key in ir.model().secrets.keys() {
+             graph.node(NodeKind::Secret, key);
+         }
+-        for key in ir.model.service_accounts.keys() {
++        for key in ir.model().service_accounts.keys() {
+             graph.node(NodeKind::ServiceAccount, key);
+         }
+-        for key in ir.model.claims.keys() {
++        for key in ir.model().claims.keys() {
+             graph.node(NodeKind::Claim, key);
+         }
+ 
+@@ -461,7 +461,7 @@ impl InfraGraph {
+ 
+     #[allow(clippy::too_many_lines)]
+     fn walk_workloads(&mut self, ir: &InfraIr) {
+-        for (key, workload) in &ir.model.workloads {
++        for (key, workload) in &ir.model().workloads {
+             let subject = GraphNode::new(NodeKind::Workload, key);
+             self.nodes.insert(subject.clone());
+ 
+@@ -572,7 +572,7 @@ impl InfraGraph {
+     /// namespace — the same match the compiler ran against *pods*, run against what pods are
+     /// made from, so the edge exists even while a deployment is scaled to zero.
+     fn walk_services(&mut self, ir: &InfraIr) {
+-        for (service_key, service) in &ir.model.services {
++        for (service_key, service) in &ir.model().services {
+             if service.selector.is_empty() {
+                 continue;
+             }
+@@ -585,7 +585,7 @@ impl InfraGraph {
+                     .collect::<Vec<_>>()
+                     .join(",")
+             );
+-            for (workload_key, workload) in &ir.model.workloads {
++            for (workload_key, workload) in &ir.model().workloads {
+                 if workload.identity.namespace != service.identity.namespace {
+                     continue;
+                 }
+@@ -606,7 +606,7 @@ impl InfraGraph {
+     }
+ 
+     fn walk_ingresses(&mut self, ir: &InfraIr) {
+-        for (key, ingress) in &ir.model.ingresses {
++        for (key, ingress) in &ir.model().ingresses {
+             let subject = GraphNode::new(NodeKind::Ingress, key);
+             for (rule_index, rule) in ingress.rules.iter().enumerate() {
+                 for (path_index, path) in rule.paths.iter().enumerate() {
+@@ -638,7 +638,7 @@ impl InfraGraph {
+     /// `ownerReferences` — drawn for every observed controller, so a scaled-to-zero deployment
+     /// keeps its replicaset's edge even with no pod alive to walk it from.
+     fn walk_controllers(&mut self, ir: &InfraIr) {
+-        if let Some(replica_sets) = &ir.model.replica_sets {
++        if let Some(replica_sets) = &ir.model().replica_sets {
+             for (key, replica_set) in replica_sets {
+                 self.node(NodeKind::ReplicaSet, key);
+                 let Some(owner) = &replica_set.owner else {
+@@ -653,7 +653,7 @@ impl InfraGraph {
+                     .as_deref()
+                     .unwrap_or_default();
+                 let workload_key = format!("{namespace}/deployment/{}", owner.name);
+-                if ir.model.workloads.contains_key(&workload_key) {
++                if ir.model().workloads.contains_key(&workload_key) {
+                     self.edge(
+                         GraphNode::new(NodeKind::ReplicaSet, key),
+                         EdgeRelation::OwnedBy,
+@@ -663,7 +663,7 @@ impl InfraGraph {
+                 }
+             }
+         }
+-        if let Some(jobs) = &ir.model.jobs {
++        if let Some(jobs) = &ir.model().jobs {
+             for (key, job) in jobs {
+                 self.node(NodeKind::Job, key);
+                 let Some(owner) = &job.owner else { continue };
+@@ -673,7 +673,7 @@ impl InfraGraph {
+                 let namespace = job.identity.namespace.as_deref().unwrap_or_default();
+                 let cron_key = format!("{namespace}/{}", owner.name);
+                 if ir
+-                    .model
++                    .model()
+                     .cron_jobs
+                     .as_ref()
+                     .is_some_and(|cron_jobs| cron_jobs.contains_key(&cron_key))
+@@ -687,17 +687,17 @@ impl InfraGraph {
+                 }
+             }
+         }
+-        if let Some(cron_jobs) = &ir.model.cron_jobs {
++        if let Some(cron_jobs) = &ir.model().cron_jobs {
+             for key in cron_jobs.keys() {
+                 self.node(NodeKind::CronJob, key);
+             }
+         }
+-        if let Some(budgets) = &ir.model.pod_disruption_budgets {
++        if let Some(budgets) = &ir.model().pod_disruption_budgets {
+             for key in budgets.keys() {
+                 self.node(NodeKind::PodDisruptionBudget, key);
+             }
+         }
+-        if let Some(autoscalers) = &ir.model.horizontal_pod_autoscalers {
++        if let Some(autoscalers) = &ir.model().horizontal_pod_autoscalers {
+             for key in autoscalers.keys() {
+                 self.node(NodeKind::HorizontalPodAutoscaler, key);
+             }
+@@ -706,7 +706,7 @@ impl InfraGraph {
+ 
+     #[allow(clippy::too_many_lines)]
+     fn walk_pods(&mut self, ir: &InfraIr) {
+-        for (key, pod) in &ir.model.pods {
++        for (key, pod) in &ir.model().pods {
+             let subject = GraphNode::new(NodeKind::Pod, key);
+             self.nodes.insert(subject.clone());
+ 
+@@ -746,7 +746,7 @@ impl InfraGraph {
+                         };
+                         let workload_key =
+                             format!("{namespace}/{}/{}", workload_kind.as_str(), owner.name);
+-                        if ir.model.workloads.contains_key(&workload_key) {
++                        if ir.model().workloads.contains_key(&workload_key) {
+                             self.edge(
+                                 subject.clone(),
+                                 EdgeRelation::OwnedBy,
+@@ -768,7 +768,7 @@ impl InfraGraph {
+                     // A deployment pod: exactly through its observed replicaset when the kind
+                     // was scanned, by the template-hash derivation when it was not.
+                     "ReplicaSet" => {
+-                        if let Some(replica_sets) = &ir.model.replica_sets {
++                        if let Some(replica_sets) = &ir.model().replica_sets {
+                             let replicaset_key = format!("{namespace}/{}", owner.name);
+                             let Some(replica_set) = replica_sets.get(&replicaset_key) else {
+                                 refuse(
+@@ -797,7 +797,7 @@ impl InfraGraph {
+                             {
+                                 let workload_key =
+                                     format!("{namespace}/deployment/{}", rs_owner.name);
+-                                if ir.model.workloads.contains_key(&workload_key) {
++                                if ir.model().workloads.contains_key(&workload_key) {
+                                     self.pod_owners.insert(key.clone(), workload_key);
+                                 } else {
+                                     refuse(
+@@ -825,7 +825,7 @@ impl InfraGraph {
+                                 continue;
+                             };
+                             let workload_key = format!("{namespace}/deployment/{deployment}");
+-                            if ir.model.workloads.contains_key(&workload_key) {
++                            if ir.model().workloads.contains_key(&workload_key) {
+                                 self.edge(
+                                     subject.clone(),
+                                     EdgeRelation::OwnedBy,
+@@ -851,7 +851,7 @@ impl InfraGraph {
+                     // pod's readiness expectation is the job's completion arithmetic
+                     // (`INFRA-DIAG-019`), not a replica count, so `INFRA-DIAG-010` stays
+                     // scoped to workload-managed pods.
+-                    "Job" => match &ir.model.jobs {
++                    "Job" => match &ir.model().jobs {
+                         Some(jobs) => {
+                             let job_key = format!("{namespace}/{}", owner.name);
+                             if jobs.contains_key(&job_key) {
+diff --git a/crates/infra/infra-analyze/src/invariants.rs b/crates/infra/infra-analyze/src/invariants.rs
+index b0788bd..5f0e5bf 100644
+--- a/crates/infra/infra-analyze/src/invariants.rs
++++ b/crates/infra/infra-analyze/src/invariants.rs
+@@ -137,7 +137,7 @@ fn majority(holds_for: usize, population: usize) -> bool {
+ /// default registry, spelled `(default)` — a real place images come from, not a gap.
+ fn candidate_uniform_registry(ir: &InfraIr, found: &mut Vec<InvariantCandidate>) {
+     let mut by_registry: BTreeMap<String, Vec<Exception>> = BTreeMap::new();
+-    for (key, workload) in &ir.model.workloads {
++    for (key, workload) in &ir.model().workloads {
+         for container in &workload.containers {
+             let registry = parse_image(&container.image)
+                 .registry
+@@ -180,13 +180,13 @@ fn candidate_uniform_registry(ir: &InfraIr, found: &mut Vec<InvariantCandidate>)
+ /// Silent when the bundle did not scan budgets or holds no multi-replica workload: a candidate
+ /// about a population nobody observed would be manufactured uniformity.
+ fn candidate_uniform_pdb_coverage(ir: &InfraIr, found: &mut Vec<InvariantCandidate>) {
+-    let Some(budgets) = &ir.model.pod_disruption_budgets else {
++    let Some(budgets) = &ir.model().pod_disruption_budgets else {
+         return;
+     };
+     let mut holds_for = 0u32;
+     let mut population = 0u32;
+     let mut exceptions = Vec::new();
+-    for (key, workload) in &ir.model.workloads {
++    for (key, workload) in &ir.model().workloads {
+         let Some(replicas) = workload.replicas else {
+             continue;
+         };
+@@ -226,7 +226,7 @@ fn candidate_uniform_resource_bounds(ir: &InfraIr, found: &mut Vec<InvariantCand
+     let mut holds_for = 0u32;
+     let mut population = 0u32;
+     let mut exceptions = Vec::new();
+-    for (key, workload) in &ir.model.workloads {
++    for (key, workload) in &ir.model().workloads {
+         for container in &workload.containers {
+             population += 1;
+             let mut missing = Vec::new();
+diff --git a/crates/infra/infra-analyze/src/properties.rs b/crates/infra/infra-analyze/src/properties.rs
+index f1e353c..0f12f73 100644
+--- a/crates/infra/infra-analyze/src/properties.rs
++++ b/crates/infra/infra-analyze/src/properties.rs
+@@ -120,7 +120,7 @@ pub fn properties(ir: &InfraIr) -> Vec<WorkloadProperties> {
+ pub fn properties_with(ir: &InfraIr, graph: &InfraGraph) -> Vec<WorkloadProperties> {
+     // One pass over the pods, not one per workload: the derived owner is on the graph.
+     let mut observed: BTreeMap<&str, (u32, u32)> = BTreeMap::new();
+-    for (pod_key, pod) in &ir.model.pods {
++    for (pod_key, pod) in &ir.model().pods {
+         let Some(workload) = graph.owner_of(pod_key) else {
+             continue;
+         };
+@@ -131,23 +131,24 @@ pub fn properties_with(ir: &InfraIr, graph: &InfraGraph) -> Vec<WorkloadProperti
+         }
+     }
+ 
+-    ir.model
++    ir.model()
+         .workloads
+         .iter()
+         .map(|(key, workload)| {
+             let (observed_pods, ready_pods) = observed.get(key.as_str()).copied().unwrap_or((0, 0));
+-            let pod_disruption_budgets = ir.model.pod_disruption_budgets.as_ref().map(|budgets| {
+-                budgets
+-                    .iter()
+-                    .filter(|(_, budget)| {
+-                        budget.identity.namespace == workload.identity.namespace
+-                            && pdb_covers(&budget.selector, &workload.template_labels)
+-                    })
+-                    .map(|(budget_key, _)| budget_key.clone())
+-                    .collect()
+-            });
++            let pod_disruption_budgets =
++                ir.model().pod_disruption_budgets.as_ref().map(|budgets| {
++                    budgets
++                        .iter()
++                        .filter(|(_, budget)| {
++                            budget.identity.namespace == workload.identity.namespace
++                                && pdb_covers(&budget.selector, &workload.template_labels)
++                        })
++                        .map(|(budget_key, _)| budget_key.clone())
++                        .collect()
++                });
+             let horizontal_pod_autoscalers =
+-                ir.model
++                ir.model()
+                     .horizontal_pod_autoscalers
+                     .as_ref()
+                     .map(|autoscalers| {
+diff --git a/crates/infra/infra-compiler/src/ir.rs b/crates/infra/infra-compiler/src/ir.rs
+index 35275bd..e61f439 100644
+--- a/crates/infra/infra-compiler/src/ir.rs
++++ b/crates/infra/infra-compiler/src/ir.rs
+@@ -531,12 +531,104 @@ pub struct Provenance {
+ }
+ 
+ /// The compiled IR: the model, its provenance, and the total lookups.
++///
++/// The owning model cannot be mutated through public Rust APIs. A detached copy remains editable:
++///
++/// ```
++/// # fn detached(ir: &infra_compiler::InfraIr) {
++/// let mut model = ir.document().model.clone();
++/// model.nodes.clear();
++/// # }
++/// ```
++///
++/// Each handle-bearing collection is protected:
++///
++/// ```compile_fail,E0616
++/// # fn attack(ir: &mut infra_compiler::InfraIr) {
++/// ir.model.nodes.clear();
++/// # }
++/// ```
++///
++/// ```compile_fail,E0616
++/// # fn attack(ir: &mut infra_compiler::InfraIr) {
++/// ir.model.services.clear();
++/// # }
++/// ```
++///
++/// ```compile_fail,E0616
++/// # fn attack(ir: &mut infra_compiler::InfraIr) {
++/// ir.model.config_maps.clear();
++/// # }
++/// ```
++///
++/// ```compile_fail,E0616
++/// # fn attack(ir: &mut infra_compiler::InfraIr) {
++/// ir.model.secrets.clear();
++/// # }
++/// ```
++///
++/// ```compile_fail,E0616
++/// # fn attack(ir: &mut infra_compiler::InfraIr) {
++/// ir.model.service_accounts.clear();
++/// # }
++/// ```
++///
++/// ```compile_fail,E0616
++/// # fn attack(ir: &mut infra_compiler::InfraIr) {
++/// ir.model.claims.clear();
++/// # }
++/// ```
++///
++/// Neither replacement nor nested mutation can bypass that boundary:
++///
++/// ```compile_fail,E0616
++/// # fn attack(ir: &mut infra_compiler::InfraIr) {
++/// ir.model = ir.model.clone();
++/// # }
++/// ```
++///
++/// ```compile_fail,E0616
++/// # fn attack(ir: &mut infra_compiler::InfraIr) {
++/// ir.model.workloads.values_mut().next().unwrap().containers.clear();
++/// # }
++/// ```
++///
++/// A document borrows the model immutably, and raw owner construction is unavailable:
++///
++/// ```compile_fail,E0596
++/// # fn attack(ir: &mut infra_compiler::InfraIr) {
++/// ir.document().model.nodes.clear();
++/// # }
++/// ```
++///
++/// ```compile_fail,E0451
++/// # fn attack(ir: &infra_compiler::InfraIr) -> infra_compiler::InfraIr {
++/// infra_compiler::InfraIr {
++///     provenance: ir.provenance.clone(),
++///     model: ir.document().model.clone(),
++/// }
++/// # }
++/// ```
++///
++/// Persisted admission stays checked; neither owners nor handles deserialize unchecked:
++///
++/// ```
++/// let _: u32 = serde_json::from_value(serde_json::json!(3)).unwrap();
++/// ```
++///
++/// ```compile_fail,E0277
++/// let _: infra_compiler::InfraIr = serde_json::from_value(serde_json::json!({})).unwrap();
++/// ```
++///
++/// ```compile_fail,E0277
++/// let _: infra_compiler::NodeHandle = serde_json::from_value(serde_json::json!("node")).unwrap();
++/// ```
+ #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+ pub struct InfraIr {
+     /// Where the observation came from.
+     pub provenance: Provenance,
+     /// The digested content.
+-    pub model: InfraModel,
++    pub(crate) model: InfraModel,
+ }
+ 
+ /// The persisted form emitted by the ESS infrastructure compiler.
+@@ -554,6 +646,52 @@ pub struct InfraIrDocument<'a> {
+ }
+ 
+ impl InfraIr {
++    /// The owned model, borrowed without a mutation path into its collections.
++    ///
++    /// ```
++    /// # fn inspect(ir: &infra_compiler::InfraIr) {
++    /// let _: &infra_compiler::InfraModel = ir.model();
++    /// let mut detached = ir.model().clone();
++    /// detached.nodes.clear();
++    /// # }
++    /// ```
++    ///
++    /// ```compile_fail,E0596
++    /// # fn attack(ir: &mut infra_compiler::InfraIr) {
++    /// ir.model().nodes.clear();
++    /// # }
++    /// ```
++    #[must_use]
++    pub fn model(&self) -> &InfraModel {
++        &self.model
++    }
++
++    /// Edits a detached model and admits it as a new owner through [`crate::read_document`].
++    ///
++    /// Source provenance is retained. The source owner is unchanged on success or refusal;
++    /// callers obtain any handles for the returned owner from its own resolved sites.
++    /// Admission checks the persisted shape and reference membership, not all original domain
++    /// values or the derivation of unresolved facts. See [`crate::read`] for that boundary.
++    ///
++    /// # Errors
++    ///
++    /// Returns the reader's [`infra_domain::ValidationErrors`] when the edited candidate cannot
++    /// be admitted, including a resolved reference whose target was removed.
++    pub fn try_transform(
++        &self,
++        edit: impl FnOnce(&mut InfraModel),
++    ) -> Result<Self, infra_domain::ValidationErrors> {
++        let mut model = self.model.clone();
++        edit(&mut model);
++        let candidate = Self {
++            provenance: self.provenance.clone(),
++            model,
++        };
++        let document = serde_json::to_value(candidate.document())
++            .expect("the model has no non-serializable state");
++        crate::read_document(&document)
++    }
++
+     /// The content digest: the full SHA-256, 64 hex characters, over the model's canonical JSON.
+     ///
+     /// The full width and not a truncation, for the reason gap register D-4 settled for the
+diff --git a/crates/infra/infra-compiler/tests/determinism.rs b/crates/infra/infra-compiler/tests/determinism.rs
+index ff8c699..63a7355 100644
+--- a/crates/infra/infra-compiler/tests/determinism.rs
++++ b/crates/infra/infra-compiler/tests/determinism.rs
+@@ -194,7 +194,7 @@ fn a_bundle_with_reordered_kinds_and_reordered_item_lists_compiles_to_the_identi
+     // pass this test while breaking the property.
+     let ir = infra_compiler::compile(&observe(&ordered));
+     let workload_facts = ir
+-        .model
++        .model()
+         .unresolved
+         .iter()
+         .filter(|fact| fact.from.starts_with("workloads/"))
+diff --git a/crates/infra/infra-compiler/tests/read.rs b/crates/infra/infra-compiler/tests/read.rs
+index 9945140..7fe6a5b 100644
+--- a/crates/infra/infra-compiler/tests/read.rs
++++ b/crates/infra/infra-compiler/tests/read.rs
+@@ -224,3 +224,161 @@ fn a_document_that_does_not_read_as_the_shape_is_refused_as_malformed() {
+         "expected INFRA-IR-003, got: {errors}"
+     );
+ }
++
++struct Handles {
++    node: infra_compiler::NodeHandle,
++    service: infra_compiler::ServiceHandle,
++    config_map: infra_compiler::ConfigMapHandle,
++    secret: infra_compiler::SecretHandle,
++    service_account: infra_compiler::ServiceAccountHandle,
++    claim: infra_compiler::ClaimHandle,
++}
++
++fn resolved<H: Clone>(reference: &infra_compiler::Reference<H>) -> H {
++    let infra_compiler::Reference::Resolved { key } = reference else {
++        panic!("the fixture must actually resolve this handle");
++    };
++    key.clone()
++}
++
++impl Handles {
++    fn from_ir(ir: &infra_compiler::InfraIr) -> Self {
++        use infra_compiler::{ResolvedEnvSource, ResolvedVolumeSource};
++        let model = ir.document().model;
++        let web = &model.workloads["app/deployment/web"];
++        let ResolvedEnvSource::ConfigMapKey { config_map, .. } = &web.containers[0].env[0].source
++        else {
++            panic!("MODE references the configmap");
++        };
++        let ResolvedEnvSource::SecretKey { secret, .. } = &web.containers[0].env[1].source else {
++            panic!("TOKEN references the secret");
++        };
++        let ResolvedVolumeSource::Claim { claim } = &web.volumes[0].source else {
++            panic!("the volume references the claim");
++        };
++        Self {
++            node: resolved(
++                model.pods["app/web-1"]
++                    .node
++                    .as_ref()
++                    .expect("scheduled pod"),
++            ),
++            service: resolved(
++                model.workloads["app/statefulset/db"]
++                    .governing_service
++                    .as_ref()
++                    .expect("governing service"),
++            ),
++            config_map: resolved(config_map),
++            secret: resolved(secret),
++            service_account: resolved(&web.service_account),
++            claim: resolved(claim),
++        }
++    }
++
++    fn assert_usable(&self, ir: &infra_compiler::InfraIr) {
++        assert_eq!(ir.node(&self.node).identity.name, "node-a");
++        assert_eq!(ir.service(&self.service).identity.name, "db-headless");
++        assert_eq!(ir.config_map(&self.config_map).identity.name, "settings");
++        assert_eq!(ir.secret(&self.secret).identity.name, "creds");
++        assert_eq!(
++            ir.service_account(&self.service_account).identity.name,
++            "runner"
++        );
++        assert_eq!(ir.claim(&self.claim).identity.name, "data");
++    }
++}
++
++#[test]
++fn every_handle_lookup_stays_total_after_compile_read_clone_and_checked_transform() {
++    let original = compiled();
++    let read =
++        infra_compiler::read_document(&persisted()).expect("the persisted owner is admitted");
++    let cloned = original.clone();
++    let transformed = original
++        .try_transform(|model| {
++            model
++                .workloads
++                .get_mut("app/deployment/web")
++                .expect("the workload exists")
++                .replicas = Some(4);
++        })
++        .expect("replica changes preserve reference membership");
++    for ir in [&original, &read, &cloned, &transformed] {
++        Handles::from_ir(ir).assert_usable(ir);
++    }
++    assert_eq!(
++        original.document().model.workloads["app/deployment/web"].replicas,
++        Some(2)
++    );
++    assert_eq!(
++        transformed.document().model.workloads["app/deployment/web"].replicas,
++        Some(4)
++    );
++    assert_eq!(transformed.provenance, original.provenance);
++    assert_ne!(transformed.digest(), original.digest());
++    let reread =
++        infra_compiler::read_document(&serde_json::to_value(transformed.document()).unwrap())
++            .expect("transformed bytes read back");
++    assert_eq!(reread, transformed);
++    Handles::from_ir(&reread).assert_usable(&reread);
++}
++
++#[test]
++fn deleting_any_referenced_target_is_refused_without_changing_the_source_owner() {
++    let original = compiled();
++    let handles = Handles::from_ir(&original);
++    let bytes = serde_json::to_vec(&original.document()).unwrap();
++    let digest = original.digest();
++    let provenance = original.provenance.clone();
++    let deletions: [fn(&mut infra_compiler::InfraModel); 6] = [
++        |model| model.nodes.clear(),
++        |model| model.services.clear(),
++        |model| model.config_maps.clear(),
++        |model| model.secrets.clear(),
++        |model| model.service_accounts.clear(),
++        |model| model.claims.clear(),
++    ];
++    for delete in deletions {
++        let errors = original
++            .try_transform(delete)
++            .expect_err("a live reference cannot lose its target");
++        assert!(errors.contains(InfraCode::IrDanglingHandle), "{errors}");
++        assert!(
++            !errors.contains(InfraCode::IrDigestMismatch),
++            "the candidate stamps its actual bytes: {errors}"
++        );
++        assert_eq!(serde_json::to_vec(&original.document()).unwrap(), bytes);
++        assert_eq!(original.digest(), digest);
++        assert_eq!(original.provenance, provenance);
++        handles.assert_usable(&original);
++    }
++}
++
++#[test]
++fn privacy_and_noop_transform_preserve_the_frozen_base_writer_document() {
++    // Captured with the unmodified base CLI at 28e97095d9e06c8b4585876a681a5eda5278c1ab;
++    // it exactly matched this committed example, including the final newline.
++    let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../..");
++    let raw: RawBundle = serde_json::from_str(
++        &std::fs::read_to_string(root.join("examples/k3d-dev-cluster/observation.json")).unwrap(),
++    )
++    .unwrap();
++    let original = infra_compiler::compile(&Observation::try_from(raw).unwrap());
++    let frozen =
++        std::fs::read_to_string(root.join("examples/k3d-dev-cluster/cluster.ir.json")).unwrap();
++    let transformed = original
++        .try_transform(|_| {})
++        .expect("a no-op preserves validity");
++    let read = infra_compiler::read_document(&serde_json::from_str(&frozen).unwrap()).unwrap();
++    for ir in [&original, &transformed, &read] {
++        assert_eq!(
++            format!(
++                "{}\n",
++                serde_json::to_string_pretty(&ir.document()).unwrap()
++            ),
++            frozen
++        );
++        assert_eq!(ir.digest(), original.digest());
++    }
++}
+diff --git a/crates/infra/infra-compiler/tests/resolution.rs b/crates/infra/infra-compiler/tests/resolution.rs
+index 6d5790a..c597dcd 100644
+--- a/crates/infra/infra-compiler/tests/resolution.rs
++++ b/crates/infra/infra-compiler/tests/resolution.rs
+@@ -103,7 +103,7 @@ fn a_dangling_reference_is_carried_as_a_fact_and_never_refuses_compilation() {
+     // The four deliberate danglings, and nothing else: an IR that also flagged healthy
+     // references would bury IW2 in noise.
+     let targets: Vec<&UnresolvedTarget> = ir
+-        .model
++        .model()
+         .unresolved
+         .iter()
+         .map(|fact| &fact.target)
+@@ -112,7 +112,7 @@ fn a_dangling_reference_is_carried_as_a_fact_and_never_refuses_compilation() {
+         targets.len(),
+         4,
+         "exactly the four deliberate danglings: {:#?}",
+-        ir.model.unresolved
++        ir.model().unresolved
+     );
+     assert!(
+         targets.iter().any(|target| matches!(target,
+@@ -141,7 +141,7 @@ fn a_dangling_reference_is_carried_as_a_fact_and_never_refuses_compilation() {
+ #[test]
+ fn a_resolved_reference_is_a_handle_whose_lookup_is_total() {
+     let ir = compiled();
+-    let workload = &ir.model.workloads["app/deployment/web"];
++    let workload = &ir.model().workloads["app/deployment/web"];
+     let ResolvedEnvSource::ConfigMapKey {
+         config_map: Reference::Resolved { key },
+         ..
+@@ -160,7 +160,7 @@ fn a_resolved_reference_is_a_handle_whose_lookup_is_total() {
+ #[test]
+ fn the_unresolved_site_keeps_the_declared_name_so_the_ir_reads_on_its_own() {
+     let ir = compiled();
+-    let workload = &ir.model.workloads["app/deployment/web"];
++    let workload = &ir.model().workloads["app/deployment/web"];
+     let ResolvedEnvFromSource::ConfigMap {
+         config_map: Reference::Unresolved { name },
+         ..
+@@ -174,7 +174,7 @@ fn the_unresolved_site_keeps_the_declared_name_so_the_ir_reads_on_its_own() {
+ #[test]
+ fn an_absent_service_account_name_resolves_as_default_because_that_is_what_the_kubelet_does() {
+     let ir = compiled();
+-    let workload = &ir.model.workloads["app/deployment/web"];
++    let workload = &ir.model().workloads["app/deployment/web"];
+     let Reference::Resolved { key } = &workload.service_account else {
+         panic!("`default` exists in the fixture and must resolve");
+     };
+@@ -184,7 +184,7 @@ fn an_absent_service_account_name_resolves_as_default_because_that_is_what_the_k
+ #[test]
+ fn volume_claims_and_optional_secret_references_resolve_with_their_flags_kept() {
+     let ir = compiled();
+-    let workload = &ir.model.workloads["app/deployment/web"];
++    let workload = &ir.model().workloads["app/deployment/web"];
+     assert!(
+         matches!(
+             &workload.volumes[0].source,
+diff --git a/crates/infra/infra-project/src/project.rs b/crates/infra/infra-project/src/project.rs
+index ebfe385..27e90e0 100644
+--- a/crates/infra/infra-project/src/project.rs
++++ b/crates/infra/infra-project/src/project.rs
+@@ -53,6 +53,7 @@ use infra_compiler::ir::{InfraIr, InfraModel};
+ use infra_domain::observation::Identity;
+ use infra_domain::policy::PodDisruptionBudget;
+ use infra_domain::workload::{Probe, ProbeHandler, Probes, Resources};
++use infra_domain::ValidationErrors;
+ use infra_spec::{
+     simulate, Expectation, Gap, InfraSpec, Outcome, Port, ProbeHandlerRemedy, ProbeRemedy, Remedy,
+     Simulation, Summary,
+@@ -542,14 +543,17 @@ fn render_labels(labels: &BTreeMap<String, String>) -> String {
+ 
+ /// Projects `spec`'s gaps against `ir` into the changes that would close them.
+ ///
+-/// Total: there is no failure mode. A validated specification and a compiled IR are both
+-/// well-formed by construction, so everything left to say is a disposition.
+-#[must_use]
+-pub fn project(spec: &InfraSpec, ir: &InfraIr) -> Projection {
++/// Every hypothetical model is admitted before its corresponding change is recorded.
++///
++/// # Errors
++///
++/// Returns checked IR admission errors if a generated candidate cannot preserve the reader's
++/// invariants. No partial projection is returned and the observed owner remains unchanged.
++pub fn project(spec: &InfraSpec, ir: &InfraIr) -> Result<Projection, ValidationErrors> {
+     let observed = simulate(spec, ir);
+     let mut bench = Workbench::new(ir);
+ 
+-    bench.reach_fixed_point(spec, &observed);
++    bench.reach_fixed_point(spec, &observed)?;
+     // What the tree would leave behind. Obligations are read off *this* simulation and not the
+     // observed one, so a gap the patches happened to close never arrives as an obligation nobody
+     // owes any more.
+@@ -574,7 +578,7 @@ pub fn project(spec: &InfraSpec, ir: &InfraIr) -> Projection {
+         verdicts_after: settled.summary,
+     };
+ 
+-    Projection {
++    Ok(Projection {
+         format: PROJECTION_FORMAT,
+         specification: spec.name.clone(),
+         provenance: ProjectionProvenance {
+@@ -586,7 +590,7 @@ pub fn project(spec: &InfraSpec, ir: &InfraIr) -> Projection {
+         patches,
+         objects,
+         summary,
+-    }
++    })
+ }
+ 
+ /// The mutable state of one projection while it is being computed.
+@@ -629,7 +633,11 @@ impl Workbench {
+     /// Each round disposes what that round's simulation reports and applies it; the next round
+     /// sees the world those changes made. It ends when a round generates nothing, which it must,
+     /// because `disposed` only grows and (expectation, subject) is finite.
+-    fn reach_fixed_point(&mut self, spec: &InfraSpec, observed: &Simulation) {
++    fn reach_fixed_point(
++        &mut self,
++        spec: &InfraSpec,
++        observed: &Simulation,
++    ) -> Result<(), ValidationErrors> {
+         loop {
+             let current = simulate(spec, &self.working);
+             let mut progressed = false;
+@@ -652,10 +660,9 @@ impl Workbench {
+                     ) else {
+                         continue;
+                     };
+-                    let target = change.target(&self.working.model);
+-                    let slot = record(&change, &target, &mut self.drafts, &mut self.created);
++                    let candidate = self.working.try_transform(|model| apply(model, &change));
++                    let slot = self.record_admitted(&change, candidate)?;
+                     let describes = change.describes();
+-                    apply(&mut self.working.model, &change);
+                     self.generated_by.insert(key.clone(), report.id.clone());
+                     self.slots.insert(key.clone(), slot);
+                     self.disposed.insert(
+@@ -676,11 +683,24 @@ impl Workbench {
+                 }
+             }
+             if !progressed {
+-                return;
++                return Ok(());
+             }
+         }
+     }
+ 
++    /// Commits no model or artifact state until the candidate's admission succeeded.
++    fn record_admitted(
++        &mut self,
++        change: &Change,
++        candidate: Result<InfraIr, ValidationErrors>,
++    ) -> Result<ArtifactSlot, ValidationErrors> {
++        let candidate = candidate?;
++        let target = change.target(self.working.model());
++        let slot = record(change, &target, &mut self.drafts, &mut self.created);
++        self.working = candidate;
++        Ok(slot)
++    }
++
+     /// Disposes every gap the tree does not close, and answers with the set of them.
+     fn owe_the_rest(
+         &mut self,
+@@ -1008,7 +1028,7 @@ fn generate(
+         }
+         Gap::DisruptionBudgetAbsent { .. } => {
+             let key = workload?;
+-            let resolved = ir.model.workloads.get(&key)?;
++            let resolved = ir.model().workloads.get(&key)?;
+             let namespace = resolved.identity.namespace.clone()?;
+             // An empty selector would make a budget over the whole namespace, which is a
+             // different statement from "cover this workload" and not one the gap asked for.
+@@ -1025,7 +1045,7 @@ fn generate(
+             if created.contains_key(&budget_key) {
+                 return None;
+             }
+-            if let Some(budgets) = &ir.model.pod_disruption_budgets {
++            if let Some(budgets) = &ir.model().pod_disruption_budgets {
+                 if budgets.contains_key(&budget_key) {
+                     return None;
+                 }
+@@ -1264,7 +1284,7 @@ fn disruption_budget_obligation(
+             "this gap names no workload to write a budget for".to_owned(),
+         );
+     };
+-    let Some(workload) = ir.model.workloads.get(key) else {
++    let Some(workload) = ir.model().workloads.get(key) else {
+         return obligation(
+             ObligationReason::TargetUnknown,
+             format!("`{key}` is not a workload this snapshot holds"),
+@@ -1275,7 +1295,7 @@ fn disruption_budget_obligation(
+     let budget_key = format!("{namespace}/{name}");
+     let taken = created.contains_key(&budget_key)
+         || ir
+-            .model
++            .model()
+             .pod_disruption_budgets
+             .as_ref()
+             .is_some_and(|budgets| budgets.contains_key(&budget_key));
+@@ -1564,6 +1584,50 @@ fn container_mut<'a>(
+ mod tests {
+     use super::*;
+ 
++    #[test]
++    fn failed_candidate_admission_records_nothing_and_preserves_the_working_owner() {
++        let raw: infra_domain::RawBundle = serde_json::from_str(include_str!(
++            "../../../../examples/k3d-dev-cluster/observation.json"
++        ))
++        .unwrap();
++        let ir = infra_compiler::compile(&infra_domain::Observation::try_from(raw).unwrap());
++        let mut bench = Workbench::new(&ir);
++        let before = serde_json::to_vec(&bench.working.document()).unwrap();
++        let change = Change::Replicas {
++            workload: "shop/deployment/flaky-agent".to_owned(),
++            from: 1,
++            to: 2,
++        };
++        let candidate = bench.working.try_transform(|model| model.nodes.clear());
++        assert!(candidate
++            .as_ref()
++            .unwrap_err()
++            .contains(infra_domain::InfraCode::IrDanglingHandle));
++        bench
++            .record_admitted(&change, candidate)
++            .expect_err("a rejected candidate cannot record its proposed change");
++        assert_eq!(
++            serde_json::to_vec(&bench.working.document()).unwrap(),
++            before
++        );
++        assert!(bench.drafts.is_empty());
++        assert!(bench.created.is_empty());
++        assert!(bench.disposed.is_empty());
++        assert!(bench.slots.is_empty());
++        assert!(bench.generated_by.is_empty());
++
++        let candidate = bench.working.try_transform(|model| apply(model, &change));
++        bench
++            .record_admitted(&change, candidate)
++            .expect("the same intended change can be admitted and recorded");
++        assert_eq!(
++            bench.working.model().workloads["shop/deployment/flaky-agent"].replicas,
++            Some(2)
++        );
++        assert_eq!(bench.drafts.len(), 1);
++        assert_eq!(serde_json::to_vec(&ir.document()).unwrap(), before);
++    }
++
+     #[test]
+     fn the_nearest_bound_of_a_range_is_the_bound_the_count_is_outside_of() {
+         // The one value this crate derives without a human stating it, so it is worth pinning:
+diff --git a/crates/infra/infra-project/tests/determinism.rs b/crates/infra/infra-project/tests/determinism.rs
+index eb39273..c9a2254 100644
+--- a/crates/infra/infra-project/tests/determinism.rs
++++ b/crates/infra/infra-project/tests/determinism.rs
+@@ -15,7 +15,8 @@ fn two_projections_of_one_specification_and_snapshot_are_byte_identical() {
+     let spec = support::example_spec();
+     let ir = support::example_ir();
+     let render = || {
+-        let projection = infra_project::project(&spec, &ir);
++        let projection =
++            infra_project::project(&spec, &ir).expect("the projected candidate is admitted");
+         (
+             projection.to_json(),
+             projection.artifacts(),
+@@ -45,8 +46,12 @@ fn shuffling_a_bundles_items_changes_no_byte_of_the_tree() {
+     let shuffled = support::compile(&document.to_string());
+     let spec = support::example_spec();
+     assert_eq!(
+-        infra_project::project(&spec, &shuffled).to_json(),
+-        infra_project::project(&spec, &support::example_ir()).to_json(),
++        infra_project::project(&spec, &shuffled)
++            .expect("the projected candidate is admitted")
++            .to_json(),
++        infra_project::project(&spec, &support::example_ir())
++            .expect("the projected candidate is admitted")
++            .to_json(),
+         "a reversed bundle is the same cluster, and must project to the same bytes"
+     );
+ }
+@@ -56,7 +61,8 @@ fn the_committed_projection_tree_is_what_the_library_produces_right_now() {
+     // The gate's `cargo xtask infra --check` compares the CLI's stdout against the committed tree;
+     // this asserts the *library* produces the same bytes, so a drift between the two producers
+     // fails here rather than turning up as an unexplained diff under `projection/`.
+-    let projection = infra_project::project(&support::example_spec(), &support::example_ir());
++    let projection = infra_project::project(&support::example_spec(), &support::example_ir())
++        .expect("the projected candidate is admitted");
+     for (path, contents) in projection.artifacts() {
+         let committed = support::read(&format!("examples/k3d-dev-cluster/projection/{path}"));
+         assert_eq!(
+@@ -72,7 +78,8 @@ fn every_file_in_the_committed_tree_is_one_the_library_still_produces() {
+     // The other direction, which a comparison of what *is* generated can never see: a patch file
+     // for an object nothing patches any more would sit in the repository looking like a proposal
+     // somebody still stands behind.
+-    let projection = infra_project::project(&support::example_spec(), &support::example_ir());
++    let projection = infra_project::project(&support::example_spec(), &support::example_ir())
++        .expect("the projected candidate is admitted");
+     let produced = projection.artifacts();
+     let root = support::root().join("examples/k3d-dev-cluster/projection");
+     let mut committed = Vec::new();
+diff --git a/crates/infra/infra-project/tests/projection.rs b/crates/infra/infra-project/tests/projection.rs
+index ff5c852..cb11b63 100644
+--- a/crates/infra/infra-project/tests/projection.rs
++++ b/crates/infra/infra-project/tests/projection.rs
+@@ -55,6 +55,7 @@ fn owed<'a>(projection: &'a Projection, expectation: &str, subject: &str) -> &'a
+ /// The projection of the committed fixture.
+ fn fixture() -> Projection {
+     infra_project::project(&support::example_spec(), &support::example_ir())
++        .expect("the projected candidate is admitted")
+ }
+ 
+ // -------------------------------------------------------------------------------------------
+@@ -100,7 +101,8 @@ fn a_replica_count_above_the_range_is_lowered_to_the_ceiling() {
+         "  - id: ceiling\n    scope: {namespace: shop}\n    expect:\n      replicas_within: \
+          {min: 2, max: 4}\n",
+     );
+-    let projection = infra_project::project(&spec, &support::compile(&bundle));
++    let projection = infra_project::project(&spec, &support::compile(&bundle))
++        .expect("the projected candidate is admitted");
+     assert_eq!(
+         generated(&projection, "ceiling", "workloads/shop/deployment/wide"),
+         "spec.replicas: 9 -> 4"
+@@ -150,7 +152,8 @@ fn the_same_gap_without_a_stated_value_is_an_obligation_that_names_what_is_missi
+         "  - id: envelope\n    scope: {namespace: shop}\n    expect: resources_declared\n    \
+          remedy:\n      resources:\n        requests: {cpu: 25m}\n        limits: {cpu: 500m}\n",
+     );
+-    let projection = infra_project::project(&stated, &ir);
++    let projection =
++        infra_project::project(&stated, &ir).expect("the projected candidate is admitted");
+     assert!(matches!(
+         disposition(&projection, "envelope", "workloads/shop/deployment/bare"),
+         Disposition::Generated(_)
+@@ -159,7 +162,8 @@ fn the_same_gap_without_a_stated_value_is_an_obligation_that_names_what_is_missi
+     let unstated = support::spec(
+         "  - id: envelope\n    scope: {namespace: shop}\n    expect: resources_declared\n",
+     );
+-    let projection = infra_project::project(&unstated, &ir);
++    let projection =
++        infra_project::project(&unstated, &ir).expect("the projected candidate is admitted");
+     let reason = owed(&projection, "envelope", "workloads/shop/deployment/bare");
+     assert_eq!(
+         reason,
+@@ -200,7 +204,8 @@ fn a_remedy_that_states_only_one_missing_half_leaves_the_whole_gap_owed() {
+         "  - id: envelope\n    scope: {namespace: shop}\n    expect: resources_declared\n    \
+          remedy:\n      resources:\n        limits: {cpu: 500m}\n",
+     );
+-    let projection = infra_project::project(&spec, &support::compile(&bundle));
++    let projection = infra_project::project(&spec, &support::compile(&bundle))
++        .expect("the projected candidate is admitted");
+     assert_eq!(
+         owed(&projection, "envelope", "workloads/shop/deployment/bare"),
+         &ObligationReason::ValueUnstated {
+@@ -246,7 +251,8 @@ fn a_stated_probe_is_written_into_the_container_that_lacks_it() {
+           period_seconds: 10
+ ",
+     );
+-    let projection = infra_project::project(&spec, &support::compile(&bundle));
++    let projection = infra_project::project(&spec, &support::compile(&bundle))
++        .expect("the projected candidate is admitted");
+     assert_eq!(
+         generated(&projection, "liveness", "workloads/shop/deployment/api"),
+         "containers[main]: livenessProbe written"
+@@ -339,7 +345,8 @@ fn a_budget_whose_name_is_taken_is_owed_rather_than_written_over() {
+     let spec = support::spec(
+         "  - id: budgets\n    scope: {namespace: shop}\n    expect: pdb_covers_multi_replica\n",
+     );
+-    let projection = infra_project::project(&spec, &support::compile(&bundle));
++    let projection = infra_project::project(&spec, &support::compile(&bundle))
++        .expect("the projected candidate is admitted");
+     assert_eq!(
+         owed(&projection, "budgets", "workloads/shop/deployment/api"),
+         &ObligationReason::NameTaken {
+@@ -454,7 +461,8 @@ fn a_false_predicate_is_refused_because_a_condition_names_no_field() {
+         "  - id: sidecar\n    scope: {namespace: shop}\n    expect:\n      workload_predicate: \
+          workload.containers == 2\n",
+     );
+-    let projection = infra_project::project(&spec, &support::compile(&bundle));
++    let projection = infra_project::project(&spec, &support::compile(&bundle))
++        .expect("the projected candidate is admitted");
+     match disposition(&projection, "sidecar", "workloads/shop/deployment/api") {
+         Disposition::Refused(refusal) => {
+             assert_eq!(refusal.reason, RefusalReason::NotAField);
+@@ -496,7 +504,8 @@ fn two_expectations_that_disagree_leave_one_of_them_refused_rather_than_silently
+          {min: 2, max: 4}\n  - id: large\n    scope: {namespace: shop}\n    expect:\n      \
+          replicas_within: {min: 6, max: 8}\n",
+     );
+-    let projection = infra_project::project(&spec, &support::compile(&bundle));
++    let projection = infra_project::project(&spec, &support::compile(&bundle))
++        .expect("the projected candidate is admitted");
+     let refused: Vec<&str> = projection
+         .entries
+         .iter()
+@@ -529,7 +538,8 @@ fn every_gap_the_snapshot_reports_gets_exactly_one_entry_and_no_gap_is_lost() {
+     let spec = support::example_spec();
+     let ir = support::example_ir();
+     let simulation = infra_spec::simulate(&spec, &ir);
+-    let projection = infra_project::project(&spec, &ir);
++    let projection =
++        infra_project::project(&spec, &ir).expect("the projected candidate is admitted");
+ 
+     let reported: BTreeSet<(String, String)> = simulation
+         .reports
+diff --git a/crates/infra/infra-project/tests/round_trip.rs b/crates/infra/infra-project/tests/round_trip.rs
+index 56fbbca..f6b526e 100644
+--- a/crates/infra/infra-project/tests/round_trip.rs
++++ b/crates/infra/infra-project/tests/round_trip.rs
+@@ -119,7 +119,8 @@ fn round_trip(
+     corrupt: impl Fn(&mut BTreeMap<String, String>),
+ ) -> Vec<String> {
+     let ir = support::compile(bundle_text);
+-    let projection = infra_project::project(spec, &ir);
++    let projection =
++        infra_project::project(spec, &ir).expect("the projected candidate is admitted");
+     let mut files = projection.artifacts();
+     corrupt(&mut files);
+ 
+@@ -186,7 +187,8 @@ fn round_trip(
+ fn applying_the_emitted_tree_closes_every_gap_it_claims_and_moves_nothing_else() {
+     let spec = support::example_spec();
+     let bundle = support::read("examples/k3d-dev-cluster/observation.json");
+-    let projection = infra_project::project(&spec, &support::compile(&bundle));
++    let projection = infra_project::project(&spec, &support::compile(&bundle))
++        .expect("the projected candidate is admitted");
+     // The fixture has to reach the state this test is about, or it proves nothing: something must
+     // be generated, and something must be left owed.
+     assert!(
+@@ -243,7 +245,8 @@ fn a_container_patch_emitted_as_a_plain_merge_would_delete_the_containers_it_doe
+     let spec = support::example_spec();
+     let bundle_text = support::read("examples/k3d-dev-cluster/observation.json");
+     let ir = support::compile(&bundle_text);
+-    let projection = infra_project::project(&spec, &ir);
++    let projection =
++        infra_project::project(&spec, &ir).expect("the projected candidate is admitted");
+     let files = projection.artifacts();
+     let patch = projection
+         .patches
+@@ -277,3 +280,68 @@ fn a_container_patch_emitted_as_a_plain_merge_would_delete_the_containers_it_doe
+          was running is gone: {after:?}"
+     );
+ }
++
++#[test]
++fn checked_projection_round_trips_all_four_changes_including_probes_and_induced_budget() {
++    let bundle = support::bundle(
++        "checked-transform",
++        &[
++            (
++                "namespaces",
++                serde_json::json!([support::namespace("shop")]),
++            ),
++            (
++                "deployments",
++                serde_json::json!([support::deployment(
++                    "shop",
++                    "api",
++                    1,
++                    &serde_json::json!([support::container("main", "registry.example.com/api:1")])
++                )]),
++            ),
++            ("poddisruptionbudgets", serde_json::json!([])),
++        ],
++    );
++    let spec = support::spec(
++        r"  - id: replicas
++    scope: {namespace: shop}
++    expect:
++      replicas_within: {min: 2, max: 4}
++  - id: resources
++    scope: {namespace: shop}
++    expect: resources_declared
++    remedy:
++      resources:
++        requests: {cpu: 25m}
++        limits: {cpu: 500m}
++  - id: probes
++    scope: {namespace: shop}
++    expect:
++      probes_declared: {liveness: true}
++    remedy:
++      probes:
++        liveness:
++          http_get: {path: /healthz, port: 8080}
++          period_seconds: 10
++  - id: budgets
++    scope: {namespace: shop}
++    expect: pdb_covers_multi_replica
++",
++    );
++    let ir = support::compile(&bundle);
++    let before = serde_json::to_vec(&ir.document()).unwrap();
++    let projection = infra_project::project(&spec, &ir)
++        .expect("all four reference-preserving edits are admitted");
++    assert_eq!(projection.summary.generated, 4);
++    assert_eq!(projection.summary.gaps_induced, 1);
++    assert_eq!(projection.patches.len(), 1);
++    assert_eq!(projection.objects.len(), 1);
++    let patch = &projection.patches[0].patch;
++    assert_eq!(patch["spec"]["replicas"], 2);
++    let container = &patch["spec"]["template"]["spec"]["containers"][0];
++    assert_eq!(container["resources"]["requests"]["cpu"], "25m");
++    assert_eq!(container["livenessProbe"]["httpGet"]["path"], "/healthz");
++    assert_eq!(serde_json::to_vec(&ir.document()).unwrap(), before);
++    let failures = round_trip(&spec, &bundle, |_| {});
++    assert!(failures.is_empty(), "{}", failures.join("\n"));
++}
+diff --git a/crates/infra/infra-project/tests/secrets.rs b/crates/infra/infra-project/tests/secrets.rs
+index d6e5e10..ca49c19 100644
+--- a/crates/infra/infra-project/tests/secrets.rs
++++ b/crates/infra/infra-project/tests/secrets.rs
+@@ -23,7 +23,7 @@ use infra_compiler::InfraIr;
+ fn secret_material(ir: &InfraIr) -> (Vec<String>, Vec<String>) {
+     let mut digests = Vec::new();
+     let mut keys = Vec::new();
+-    for secret in ir.model.secrets.values() {
++    for secret in ir.model().secrets.values() {
+         for (key, digest) in &secret.keys {
+             keys.push(key.clone());
+             digests.push(digest.sha256.clone());
+@@ -46,7 +46,8 @@ fn no_emitted_byte_carries_a_secrets_digest_or_key_name() {
+         "the IR is supposed to hold `{{sha256, length}}` and nothing else: {digests:?}"
+     );
+ 
+-    let projection = infra_project::project(&support::example_spec(), &ir);
++    let projection = infra_project::project(&support::example_spec(), &ir)
++        .expect("the projected candidate is admitted");
+     let mut leaks = Vec::new();
+     for (path, contents) in projection.artifacts() {
+         for digest in &digests {
+@@ -76,7 +77,8 @@ fn a_dangling_secret_reference_is_owed_and_the_obligation_says_why_nothing_can_w
+     // secret nobody observed. The honest answer is an obligation that names the reason — the
+     // snapshot holds a digest, not a value — rather than an empty secret manifest that would look
+     // like progress and break the pod differently.
+-    let projection = infra_project::project(&support::example_spec(), &support::example_ir());
++    let projection = infra_project::project(&support::example_spec(), &support::example_ir())
++        .expect("the projected candidate is admitted");
+     let entry = projection
+         .entries
+         .iter()
+diff --git a/crates/infra/infra-spec/src/drift.rs b/crates/infra/infra-spec/src/drift.rs
+index dfb579c..ffde5ca 100644
+--- a/crates/infra/infra-spec/src/drift.rs
++++ b/crates/infra/infra-spec/src/drift.rs
+@@ -468,20 +468,20 @@ pub fn drift(from: &InfraIr, to: &InfraIr) -> Result<InfraDrift, DriftRefusal> {
+     let mut changes = Vec::new();
+     membership(
+         MemberKind::Namespace,
+-        &keys(&from.model.namespaces),
+-        &keys(&to.model.namespaces),
++        &keys(&from.model().namespaces),
++        &keys(&to.model().namespaces),
+         &mut changes,
+     );
+     membership(
+         MemberKind::Node,
+-        &keys(&from.model.nodes),
+-        &keys(&to.model.nodes),
++        &keys(&from.model().nodes),
++        &keys(&to.model().nodes),
+         &mut changes,
+     );
+     membership(
+         MemberKind::Claim,
+-        &keys(&from.model.claims),
+-        &keys(&to.model.claims),
++        &keys(&from.model().claims),
++        &keys(&to.model().claims),
+         &mut changes,
+     );
+     workloads(from, to, &mut changes);
+@@ -538,12 +538,12 @@ fn membership(
+ fn workloads(from: &InfraIr, to: &InfraIr, changes: &mut Vec<InfraChange>) {
+     membership(
+         MemberKind::Workload,
+-        &keys(&from.model.workloads),
+-        &keys(&to.model.workloads),
++        &keys(&from.model().workloads),
++        &keys(&to.model().workloads),
+         changes,
+     );
+-    for (key, before) in &from.model.workloads {
+-        let Some(after) = to.model.workloads.get(key) else {
++    for (key, before) in &from.model().workloads {
++        let Some(after) = to.model().workloads.get(key) else {
+             continue;
+         };
+         workload_fields(key, before, after, changes);
+@@ -661,12 +661,12 @@ fn containers(
+ fn services(from: &InfraIr, to: &InfraIr, changes: &mut Vec<InfraChange>) {
+     membership(
+         MemberKind::Service,
+-        &keys(&from.model.services),
+-        &keys(&to.model.services),
++        &keys(&from.model().services),
++        &keys(&to.model().services),
+         changes,
+     );
+-    for (key, before) in &from.model.services {
+-        let Some(after) = to.model.services.get(key) else {
++    for (key, before) in &from.model().services {
++        let Some(after) = to.model().services.get(key) else {
+             continue;
+         };
+         service_fields(key, before, after, changes);
+@@ -697,12 +697,12 @@ fn service_fields(key: &str, before: &Service, after: &Service, changes: &mut Ve
+ fn ingresses(from: &InfraIr, to: &InfraIr, changes: &mut Vec<InfraChange>) {
+     membership(
+         MemberKind::Ingress,
+-        &keys(&from.model.ingresses),
+-        &keys(&to.model.ingresses),
++        &keys(&from.model().ingresses),
++        &keys(&to.model().ingresses),
+         changes,
+     );
+-    for (key, before) in &from.model.ingresses {
+-        let Some(after) = to.model.ingresses.get(key) else {
++    for (key, before) in &from.model().ingresses {
++        let Some(after) = to.model().ingresses.get(key) else {
+             continue;
+         };
+         // Routing only: an ingress's labels move without a request going anywhere else, and
+@@ -720,12 +720,12 @@ fn ingresses(from: &InfraIr, to: &InfraIr, changes: &mut Vec<InfraChange>) {
+ fn config_maps(from: &InfraIr, to: &InfraIr, changes: &mut Vec<InfraChange>) {
+     membership(
+         MemberKind::ConfigMap,
+-        &keys(&from.model.config_maps),
+-        &keys(&to.model.config_maps),
++        &keys(&from.model().config_maps),
++        &keys(&to.model().config_maps),
+         changes,
+     );
+-    for (key, before) in &from.model.config_maps {
+-        let Some(after) = to.model.config_maps.get(key) else {
++    for (key, before) in &from.model().config_maps {
++        let Some(after) = to.model().config_maps.get(key) else {
+             continue;
+         };
+         content(
+@@ -742,12 +742,12 @@ fn config_maps(from: &InfraIr, to: &InfraIr, changes: &mut Vec<InfraChange>) {
+ fn secrets(from: &InfraIr, to: &InfraIr, changes: &mut Vec<InfraChange>) {
+     membership(
+         MemberKind::Secret,
+-        &keys(&from.model.secrets),
+-        &keys(&to.model.secrets),
++        &keys(&from.model().secrets),
++        &keys(&to.model().secrets),
+         changes,
+     );
+-    for (key, before) in &from.model.secrets {
+-        let Some(after) = to.model.secrets.get(key) else {
++    for (key, before) in &from.model().secrets {
++        let Some(after) = to.model().secrets.get(key) else {
+             continue;
+         };
+         content(
+@@ -815,8 +815,8 @@ fn content(
+ 
+ /// A claim's binding phase.
+ fn claims(from: &InfraIr, to: &InfraIr, changes: &mut Vec<InfraChange>) {
+-    for (key, before) in &from.model.claims {
+-        let Some(after) = to.model.claims.get(key) else {
++    for (key, before) in &from.model().claims {
++        let Some(after) = to.model().claims.get(key) else {
+             continue;
+         };
+         if before.phase != after.phase {
+@@ -836,8 +836,8 @@ fn phase(claim: &PersistentVolumeClaim) -> String {
+ 
+ /// References that broke and references that healed.
+ fn references(from: &InfraIr, to: &InfraIr, changes: &mut Vec<InfraChange>) {
+-    let before: BTreeSet<_> = from.model.unresolved.iter().collect();
+-    let after: BTreeSet<_> = to.model.unresolved.iter().collect();
++    let before: BTreeSet<_> = from.model().unresolved.iter().collect();
++    let after: BTreeSet<_> = to.model().unresolved.iter().collect();
+     // Both directions are scoped to holders present in *both* snapshots, and for the same
+     // reason: an object that arrived brings its references with it and an object that left took
+     // its references with it, so the membership change already says what happened. Reporting the
+@@ -871,15 +871,15 @@ fn still_present(ir: &InfraIr, path: &str) -> bool {
+         return false;
+     };
+     match map {
+-        "workloads" => ir.model.workloads.contains_key(key),
+-        "services" => ir.model.services.contains_key(key),
+-        "ingresses" => ir.model.ingresses.contains_key(key),
+-        "pods" => ir.model.pods.contains_key(key),
+-        "configmaps" => ir.model.config_maps.contains_key(key),
+-        "secrets" => ir.model.secrets.contains_key(key),
+-        "claims" => ir.model.claims.contains_key(key),
+-        "namespaces" => ir.model.namespaces.contains_key(key),
+-        "nodes" => ir.model.nodes.contains_key(key),
++        "workloads" => ir.model().workloads.contains_key(key),
++        "services" => ir.model().services.contains_key(key),
++        "ingresses" => ir.model().ingresses.contains_key(key),
++        "pods" => ir.model().pods.contains_key(key),
++        "configmaps" => ir.model().config_maps.contains_key(key),
++        "secrets" => ir.model().secrets.contains_key(key),
++        "claims" => ir.model().claims.contains_key(key),
++        "namespaces" => ir.model().namespaces.contains_key(key),
++        "nodes" => ir.model().nodes.contains_key(key),
+         _ => false,
+     }
+ }
+diff --git a/crates/infra/infra-spec/src/facts.rs b/crates/infra/infra-spec/src/facts.rs
+index f7b52ea..0ea67a6 100644
+--- a/crates/infra/infra-spec/src/facts.rs
++++ b/crates/infra/infra-spec/src/facts.rs
+@@ -105,7 +105,7 @@ fn namespaces_with_underived_pods(
+ ) -> BTreeMap<String, UnknownReason> {
+     let mut blind = BTreeMap::new();
+     for underived in graph.underived_owners() {
+-        let Some(pod) = ir.model.pods.get(&underived.pod) else {
++        let Some(pod) = ir.model().pods.get(&underived.pod) else {
+             continue;
+         };
+         let Some(namespace) = pod.identity.namespace.clone() else {
+@@ -129,7 +129,7 @@ fn project(
+     let mut store = FactStore::new();
+     let mut withheld = BTreeMap::new();
+     let workload = ir
+-        .model
++        .model()
+         .workloads
+         .get(&properties.workload)
+         .expect("properties are extracted from the model's own workloads");
+@@ -192,7 +192,7 @@ fn project(
+ 
+     let prefix = format!("workloads/{}", properties.workload);
+     let unresolved: Vec<_> = ir
+-        .model
++        .model()
+         .unresolved
+         .iter()
+         .filter(|reference| reference.from == prefix)
+@@ -304,7 +304,7 @@ fn optional_count(
+ /// properties sheet is the resource envelope, and widening it to satisfy one fact path would put
+ /// the same field in two places.
+ fn probe_counts(ir: &InfraIr, workload_key: &str) -> (usize, usize) {
+-    let Some(workload) = ir.model.workloads.get(workload_key) else {
++    let Some(workload) = ir.model().workloads.get(workload_key) else {
+         return (0, 0);
+     };
+     let liveness = workload
+diff --git a/crates/infra/infra-spec/src/simulate.rs b/crates/infra/infra-spec/src/simulate.rs
+index 14076a1..92d437e 100644
+--- a/crates/infra/infra-spec/src/simulate.rs
++++ b/crates/infra/infra-spec/src/simulate.rs
+@@ -435,7 +435,7 @@ fn evaluate(
+     {
+         let key = format!("{namespace}/{}/{name}", kind.as_str());
+         let subject = format!("workloads/{key}");
+-        let outcome = if ir.model.workloads.contains_key(&key) {
++        let outcome = if ir.model().workloads.contains_key(&key) {
+             Outcome::Holds
+         } else {
+             Outcome::Gap(Gap::WorkloadAbsent {
+@@ -485,7 +485,7 @@ fn evaluate(
+     let outcomes = selected
+         .into_iter()
+         .map(|key| {
+-            let workload = &ir.model.workloads[&key];
++            let workload = &ir.model().workloads[&key];
+             SubjectOutcome {
+                 subject: format!("workloads/{key}"),
+                 outcome: workload_outcome(&expectation.kind, ir, &key, workload, properties, facts),
+@@ -510,14 +510,14 @@ fn undecidable_scope(scope: &Scope, reason: UnknownReason) -> (Vec<String>, Vec<
+ /// Every workload key a scope selects, or the reason the scope cannot be resolved at all.
+ fn select_workloads(ir: &InfraIr, scope: &Scope) -> Result<Vec<String>, UnknownReason> {
+     if let Some(namespace) = scope.namespace() {
+-        if !ir.model.namespaces.contains_key(namespace) {
++        if !ir.model().namespaces.contains_key(namespace) {
+             return Err(UnknownReason::NamespaceUnobserved {
+                 namespace: namespace.to_owned(),
+             });
+         }
+     }
+     Ok(ir
+-        .model
++        .model()
+         .workloads
+         .iter()
+         .filter(|(_, workload)| match scope {
+@@ -537,14 +537,14 @@ fn select_services<'a>(
+     scope: &Scope,
+ ) -> Result<Vec<(String, &'a Service)>, UnknownReason> {
+     if let Some(namespace) = scope.namespace() {
+-        if !ir.model.namespaces.contains_key(namespace) {
++        if !ir.model().namespaces.contains_key(namespace) {
+             return Err(UnknownReason::NamespaceUnobserved {
+                 namespace: namespace.to_owned(),
+             });
+         }
+     }
+     let selected: Vec<(String, &Service)> = ir
+-        .model
++        .model()
+         .services
+         .iter()
+         .filter(|(_, service)| match scope {
+@@ -571,7 +571,7 @@ fn selector_outcome(ir: &InfraIr, key: &str, service: &Service) -> Outcome {
+         });
+     }
+     let from = format!("services/{key}");
+-    let dangling = ir.model.unresolved.iter().any(|reference| {
++    let dangling = ir.model().unresolved.iter().any(|reference| {
+         reference.from == from
+             && matches!(
+                 reference.target,
+@@ -672,7 +672,7 @@ fn workload_outcome(
+             }
+         }
+         ExpectationKind::ConfigReferencesResolve => ir
+-            .model
++            .model()
+             .unresolved
+             .iter()
+             .filter(|reference| reference.from == subject)
+diff --git a/docs/design/review-infra-ir-invariants.md b/docs/design/review-infra-ir-invariants.md
+new file mode 100644
+index 0000000..7b18da0
+--- /dev/null
++++ b/docs/design/review-infra-ir-invariants.md
+@@ -0,0 +1,81 @@
++# Infrastructure IR ownership and checked transformations
++
++Status: binding for `story:review-infra-ir-invariants`.
++
++## Problem and ownership boundary
++
++`InfraIr.model` currently lets a consumer remove a referenced map entry after obtaining one of
++the six private handles. The owning IR then cannot honor its total lookup contract. The owning
++model becomes crate-private, with `model(&self) -> &InfraModel` as the public query. Detached
++`InfraModel` values remain ordinary editable data. Neither a mutable model query, unchecked
++public constructor/replacement, nor `Deserialize` on `InfraIr` or its handles is introduced.
++Provenance remains public: editing it cannot invalidate a handle.
++
++The six classes are node, service, configmap, secret, service account and persistent volume claim.
++Handles belong to the owner that minted them; the existing prohibition on using a handle against
++another IR remains. This change does not add generative lifetimes or cross-owner branding.
++
++## Checked transformation
++
++Add `InfraIr::try_transform(&self, edit: impl FnOnce(&mut InfraModel)) ->
++Result<InfraIr, infra_domain::ValidationErrors>`. It clones the model, invokes the edit on that
++detached candidate, preserves source provenance, computes the candidate document using the existing
++writer, and admits it through `read_document`. That reader remains the single owner of closed
++document shape and reference membership validation and remints all six handle classes. The source
++owner is never modified, including when candidate admission fails. No candidate owner is returned
++before successful admission.
++
++Four narrow compiler capabilities for replicas, resources, probes and disruption budgets would
++avoid serialization but duplicate projector concepts and introduce four privileged mutation paths.
++The checked detached transformation uses existing model types and admission without importing
++`infra-project::Change` into the compiler. Its cost is a model clone plus a serialize/read pass per
++candidate; this is acceptable for the existing offline projection loop. No performance improvement
++is claimed.
++
++This admission protects reference membership, not every original domain-value rule. In particular,
++`read_document` does not rederive unresolved facts or observation completeness. Callers editing those
++semantics retain those obligations; this story does not silently expand the reader's meaning.
++
++## Projector transaction and failure
++
++The projector keeps its four existing `Change` variants and applies each to a detached candidate.
++Candidate admission must succeed before recording an artifact, generated disposition, slot,
++created object or fixed-point progress. Only then does the workbench replace its working owner and
++record the corresponding change. The same `Change` still drives the model edit and emitted patch.
++
++Make `project(&InfraSpec, &InfraIr)` return `Result<Projection, infra_domain::ValidationErrors>`.
++An admission error aborts the projection and returns the existing typed reader errors. The CLI
++propagates that error before writing any projection files. There is no partial successful
++projection, silent fallback to the old working model, or new serialized refusal reason. Existing
++successful projection documents and artifact bytes remain unchanged. This is a deliberate Rust
++API migration for all current callers in `infra-project` and `ess-cli`.
++
++## Persisted compatibility
++
++Keep `infra-ir/1`, its envelope, field order, reference encoding, canonical model bytes and digest
++algorithm unchanged. `InfraIr` continues to serialize identically despite field privacy; its
++persisted document retains the existing borrowed model representation. Successful simulation,
++drift and projection products likewise retain their bytes. This is an ownership/API change, not
++an observation-format or unresolved-accounting migration.
++
++Freeze output from the unmodified base writer before implementation and compare the corrected
++writer and reader against it. Retain the committed example products and their actual package
++determinism tests. A new writer reading itself is not the old-byte comparison.
++
++## Verification
++
++External Rust probes exercise direct clearing, replacement, nested mutation, shared-query mutation,
++unchecked owner construction and deserialization; valid public read/detached-data controls must
++compile with the same compiler and dependency selection. The direct old-model mutations must
++demonstrably compile before correction, causing their rejection tests to fail.
++
++Runtime tests call all six total lookups after compilation, persisted reading, cloning and a valid
++transformation. For each referenced target family, candidate deletion must be refused without
++changing the source document, digest, provenance or already obtained handles. Successful and failed
++edits exercise the actual public transform rather than a second test validator.
++
++Projector tests retain real emitted patch/object application to observation bundles, recompilation,
++outcome comparison and corrupted-patch controls. Cover replicas, resources, explicitly stated
++probes, disruption budgets and induced fixed-point gaps. Test that rejected candidate admission
++leaves all workbench recording state unchanged. Run the five assigned package suites, their
++formatting and strict Clippy; integration and site gates belong to the coordinator.

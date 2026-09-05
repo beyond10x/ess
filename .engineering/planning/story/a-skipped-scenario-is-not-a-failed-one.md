@@ -11,16 +11,16 @@ relations:
 - depends_on: story:review-report-reader-validation
 scope:
 - confidence: inferred
+  path: Cargo.lock
+- confidence: cited
   path: crates/edge/ess-cli
 - confidence: cited
   path: crates/verify/ess-conformance
 - confidence: inferred
-  path: docs/design
-- confidence: inferred
   path: website/docs
-- confidence: inferred
+- confidence: cited
   path: website/docs/guides/verify-conformance.md
-revision: 8
+revision: 11
 ---
 ## What is wrong
 
@@ -92,20 +92,29 @@ the artifact cannot honestly be moved to `conforming` and the reason is two-thir
 
 ## Scope
 
-Derived 2026-09-05 by `aep-drive:story-scoper` from the story and current tree — cited.
+Derived 2026-09-05 by independent story-scoper from revision 8 at coordinator f353eaffcddcb923d047666cad5893f38c90a4d7, final binding design (75 rows and P1–P10), implemented dependency stories and actual source. No builds or compatibility execution ran. Coordinator condensed the returned scope below; the binding design remains authority.
 
-- **Primary surface:** `crates/verify/ess-conformance` — cited; the standalone report type, Rust producer and emitted Go producer own the count semantics being migrated.
-- **Rust boundary:** `src/evidence.rs:11`, `src/evidence.rs:19`, `src/evidence.rs:59` within the primary surface — cited; `STANDALONE_REPORT_FORMAT`, `StandaloneConformanceReport` and `ConformanceReport::standalone` currently publish v1, with `scenarios_failed` counting every non-pass.
-- **Go boundary:** `src/go/runtime.go:581`, `src/go/runtime.go:606`, `src/go/runtime.go:627` within the primary surface — cited; `report` and `writeReport` publish skips in both `ScenariosFailed` and `FailedScenarios`.
-- **Status semantics:** `src/report.rs:46`, `src/report.rs:556`, `src/evidence.rs:82`, `src/go/runtime.go:619` within the primary surface — cited; Rust distinguishes failed, error and unsupported, while Go distinguishes failed and skipped; this migration must preserve their existing aggregate verdicts.
-- **Reader and compatibility tests:** package-local tests beside `src/evidence.rs:180` — inferred; introduce version-specific accounting and old/new reader fixtures while preserving the meaning and canonical bytes of valid v1 reports.
-- **Additional crate:** `crates/edge/ess-cli` — inferred; update the v1-specific report-output help at `src/main.rs:473` and extend emitted-Go report integration coverage in `tests/go_conformance.rs:109`, including a skip-only report.
-- **Binding design:** `docs/design` — inferred; the versioned count contract and compatibility behavior need a binding design under the location required by `AGENTS.md:107`; the exact document remains to be selected.
-- **Public documentation:** `website/docs/guides/verify-conformance.md` — inferred; its line 33 currently describes report output as v1 and must reflect the selected migration behavior.
-- **Version consequence:** a separately versioned report contract is required — cited; the acceptance changes count meaning and adds a persisted field, which falls under `AGENTS.md:47` and the ESS specification skill's format-change rule.
-- **Downstream boundary:** AEP adaptation is separate coordinated work — cited; the story names its conformance principle, and the inspected AEP adapter contains an independent strict v1 wire transcription.
-- **Confidence:** high for the primary crate, medium for the complete migration footprint — inferred; producer sites are established, while the design document, compatibility policy and downstream delivery order remain unresolved.
-- **Would collide with:** units recording `crates/verify/ess-conformance`, `crates/edge/ess-cli`, `docs/design` or `website/docs/guides/verify-conformance.md` — inferred; crate tokens include their package-local tests and fixtures.
+- **Primary surface — cited:** crates/verify/ess-conformance. src/evidence.rs:12,19,44,139 owns the v1 discriminator, strict reader and Rust producer. Add separate report/2 admission/production, bound producer profiles, five outcome partitions, checked u64 counts, SuiteReference, execution/conformance status and unknown legacy coverage. Keep v1 meanings and bytes frozen.
+- **Rust aggregation — cited:** src/report.rs:46,62,535,556,583 owns scenario precedence, detailed ConformanceReport, whole-run verdict and counts. Preserve failed > error > unsupported > passed inside a scenario; across scenarios failed or unsupported dominates error. Separate unsupported/error scenarios can produce failed=0 with a failed execution verdict. Rust skipped stays zero. Detailed run/2 is a separate envelope; legacy serialization remains.
+- **Smallest stage — inferred:** opt-in report/2 and run/2 against admitted legacy suites 1–4, coverage exactly unknown. An execution pass is still inconclusive conformance. Preserve suite/4, report/1 and diagnostic defaults. Suite/5 builders, source/refusal inventory, filters and qualification remain review-conformance-coverage, which depends on this story.
+- **Exact legacy-suite admission — cited:** src/scenario.rs:190,204,308,374,423 and src/runner.rs:286 currently parse/execute typed suites without supported-membership enforcement at execution. Retain original bytes for sha256-json-bytes/1 and exact selected outcome-ID membership. In-memory input serializes once, admits/hashes those bytes and executes the admitted value. Version/pairing admission precedes target identity and callbacks. Report/1's allowlist stays explicitly 1–4 regardless of future general support helpers.
+- **Go generator — cited:** src/go/mod.rs:49 embeds runtime.go and suite.json; this belongs to ess-conformance, not ess-gen. runtime.go:499,541,581,600 owns execution, terminal collection and report writing. Add ESS_REPORT_FORMAT dispatch and bound v2 output, retaining the v1 writer. Ordinary Go errors remain failed, unsupported observations skip, and EndScenario errors override skips at :686–704.
+- **Missing Go execution — cited:** runtime.go:541–557 initializes passed outside t.Run and appends a result even when a host filter omits the subtest callback. V2 must distinguish invoked terminal scenarios from unexecuted ones and refuse complete publication when selected outcomes are missing, including when no report destination was requested. Do not turn count correction into a false pass.
+- **Exact timestamps — cited:** ess-primitives/src/time.rs:25–58 is Timestamp(u64), report.rs:541 uses it; legacy Go runtime.go:591,637 uses int64/UnixMilli. New report/run tokens are exact unsigned decimal u64. Preserve 9007199254740993, i64::MAX+1 and u64::MAX; refuse negative, overflow, fraction, exponent, signed and quoted tokens. New Go fields are uint64 with checked nonnegative clock conversion. Keep legacy producer domains frozen.
+- **Arithmetic boundary — inferred:** put new wire admission/conversion inside ess-conformance, with no shared Timestamp change. The scoper identified saturating runner arithmetic at src/runner.rs:153,353–367 for inspection. Coordinator clarification: design M75 governs new reader/adaptation arithmetic; do not change legacy virtual-clock execution merely because its timestamps can reach a new report. Every arithmetic operation introduced by v2 must use checked failure rather than saturation, wrapping or narrowing.
+- **CLI — cited:** crates/edge/ess-cli/src/main.rs:460–480,2444–2498 owns acquisition, target invocation, detailed JSON/YAML, --report-out and exits. Add --report-format 1|2, strict/allow-incomplete controls and stage-appropriate pairing before execution. Report/2 detailed output is run/2; --report-out stays standalone JSON. No automatic promotion, strictness downgrade or v5-to-v1 conversion.
+- **Tests — cited:** ess-cli/tests/go_conformance.rs:57,109–146 actually invokes generated Go and reads reports through Rust. Cover skip-only, ordinary error, teardown override, omitted subtests, invalid configuration and negative clock, plus exact integer/partition/paired-ID and detailed-versus-standalone admission and legacy bytes in package tests. Test applicable legacy P1–P4 and configuration refusals; suite/5 remains unsupported until coverage admission exists, preserving P5's explicit report/1 prohibition. Do not claim all 75 rows or P1–P10 executed by this stage.
+- **Public guide — cited:** website/docs/guides/verify-conformance.md:33 currently describes report/1. Explain explicit opt-in, separate run/2, legacy unknown coverage and unchanged defaults without announcing suite/5 or completed downstream rollout.
+- **Parent collision token — inferred:** retain website/docs to match existing collision granularity.
+- **Root lock — inferred:** Cargo.lock likely changes because ess-conformance needs the existing locked SHA-256 dependency directly for original suite bytes; ess-gen's model-slice hashing is a different profile. Package manifest falls under the crate scope. Coordinator owns any actual root lock update.
+- **Design input — cited:** docs/design/review-conformance-coverage.md already binds shapes, semantics, timestamps, hashing, strictness and rollout. Remove obsolete broad docs/design edit scope; no design revision is scheduled here.
+- **Coverage overlap — cited:** review-conformance-coverage shares evidence/report/scenario/runner/Go/CLI sources and must follow this stage. New shared report types, exact legacy bytes, ID membership and configuration checks must land coherently. Suite/5 inventory/refusal multiplicity/filtering/qualification, browser and impact remain its work. These are not parallel disjoint units.
+- **Actual AEP boundary — cited:** local published object 00c742e4179593738a2e8aa69e2ecc07d3c89402 has independent readers in crates/observe/aep-ess-evidence/src/lib.rs:15–32,138–167 and crates/edge/aep-cli/src/planning.rs:5907–5985; crates/govern/aep-domain/src/evidence.rs:1006–1051,1862–1889 owns closed results/facts. Adapter Timestamp is u64 but planning recorded_from_report uses Value::as_i64. Separate governed domain/reader/policy migration must preserve exact wire values and explicitly refuse narrower adaptation, never call a valid upper-u64 wire timestamp missing or wrap it.
+- **SDK distinction — cited:** object 48833c6d14ec37cb3b614fca05cf7dd78f63b743 pins six ESS source APIs at d1a6677, but has no discovered ess-conformance dependency or report/run parser. service-builder/src/ess.rs:102 compiles source; service-conformance/src/lib.rs:25,84 owns the separate service-conformance-report/1. Its type name alone does not establish an ESS report migration.
+- **Rollout — cited:** the two dependency stories are implemented; Atlas inventory/ADR, readers before opt-in writers, separately governed AEP domain/readers/policy, regenerated adopter runtimes and defaults last remain binding. This scoping establishes no deployed versions or compatibility. Source objects were inspected without refreshing remote claims in this pass.
+- **Excluded — cited:** no ess-gen, ess-primitives, ess-realization, ess-diff, browser/player or SDK edit is established for the count stage. Source/whole-contract digest contracts stay frozen.
+- **Confidence — cited:** high for actual producer/reader/generator/CLI/guide/downstream boundaries; internal admitted-byte API and root lock remain inferred.
+- **Collisions — cited/inferred separated:** cited packages ess-conformance, ess-cli and exact guide; inferred root Cargo.lock and website/docs parent token. Planning, Atlas work, publication and lifecycle stay coordinator-owned.
 
 ## Acceptance
 

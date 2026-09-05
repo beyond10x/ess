@@ -1,0 +1,357 @@
+diff --git a/crates/infra/infra-compiler/tests/read.rs b/crates/infra/infra-compiler/tests/read.rs
+index 7fe6a5b..5b89570 100644
+--- a/crates/infra/infra-compiler/tests/read.rs
++++ b/crates/infra/infra-compiler/tests/read.rs
+@@ -382,3 +382,143 @@ fn privacy_and_noop_transform_preserve_the_frozen_base_writer_document() {
+         assert_eq!(ir.digest(), original.digest());
+     }
+ }
++
++#[test]
++fn checked_retargeting_remints_a_new_owner_without_invalidating_the_source_handles() {
++    let source = compiled();
++    let old_handles = Handles::from_ir(&source);
++    let before = serde_json::to_vec(&source.document()).unwrap();
++    let replacement = source.model().ingresses["app/edge"].rules[0].paths[0]
++        .backend
++        .service
++        .clone();
++    let transformed = source
++        .try_transform(|model| {
++            model
++                .workloads
++                .get_mut("app/statefulset/db")
++                .unwrap()
++                .governing_service = Some(replacement);
++            model.services.remove("app/db-headless").unwrap();
++        })
++        .expect("the removed service has no remaining reference");
++    let new_handle = resolved(
++        transformed.model().workloads["app/statefulset/db"]
++            .governing_service
++            .as_ref()
++            .unwrap(),
++    );
++    assert_eq!(transformed.service(&new_handle).identity.name, "web");
++    let rejected = transformed
++        .try_transform(|model| {
++            model.services.remove("app/web").unwrap();
++        })
++        .expect_err("the reminted replacement remains checked on a second transform");
++    assert!(rejected.contains(InfraCode::IrDanglingHandle), "{rejected}");
++    assert_eq!(transformed.service(&new_handle).identity.name, "web");
++    assert_eq!(serde_json::to_vec(&source.document()).unwrap(), before);
++    old_handles.assert_usable(&source);
++}
++
++#[test]
++fn indirect_environment_and_volume_sites_cannot_lose_their_resolved_targets() {
++    for via_environment in [true, false] {
++        let mut value = bundle();
++        let pod = &mut value["kinds"]["deployments"]["items"][0]["spec"]["template"]["spec"];
++        pod["containers"][0]["env"] = serde_json::json!([]);
++        if via_environment {
++            pod["containers"][0]["envFrom"] = serde_json::json!([
++                {"configMapRef": {"name": "settings"}},
++                {"secretRef": {"name": "creds", "optional": true}}
++            ]);
++        } else {
++            pod["volumes"] = serde_json::json!([
++                {"name": "config", "configMap": {"name": "settings"}},
++                {"name": "credentials", "secret": {"secretName": "creds", "optional": true}}
++            ]);
++        }
++        let raw: RawBundle = serde_json::from_value(value).unwrap();
++        let source = infra_compiler::compile(&Observation::try_from(raw).unwrap());
++        let admitted = source.try_transform(|_| {}).unwrap();
++        let container = &admitted.model().workloads["app/deployment/web"].containers[0];
++        assert!(container.env.is_empty());
++        let (config, secret) = if via_environment {
++            let infra_compiler::ResolvedEnvFromSource::ConfigMap { config_map, .. } =
++                &container.env_from[0].source
++            else {
++                panic!("the first envFrom must carry the resolved configmap");
++            };
++            let infra_compiler::ResolvedEnvFromSource::Secret { secret, .. } =
++                &container.env_from[1].source
++            else {
++                panic!("the second envFrom must carry the resolved secret");
++            };
++            (resolved(config_map), resolved(secret))
++        } else {
++            let volumes = &admitted.model().workloads["app/deployment/web"].volumes;
++            let infra_compiler::ResolvedVolumeSource::ConfigMap { config_map, .. } =
++                &volumes[0].source
++            else {
++                panic!("the first volume must carry the resolved configmap");
++            };
++            let infra_compiler::ResolvedVolumeSource::Secret { secret, .. } = &volumes[1].source
++            else {
++                panic!("the second volume must carry the resolved secret");
++            };
++            (resolved(config_map), resolved(secret))
++        };
++        assert_eq!(admitted.config_map(&config).identity.name, "settings");
++        assert_eq!(admitted.secret(&secret).identity.name, "creds");
++        let before = serde_json::to_vec(&admitted.document()).unwrap();
++        for delete_config in [true, false] {
++            let errors = admitted
++                .try_transform(|model| {
++                    if delete_config {
++                        model.config_maps.clear();
++                    } else {
++                        model.secrets.clear();
++                    }
++                })
++                .expect_err("every resolved indirect site must retain target membership");
++            assert!(errors.contains(InfraCode::IrDanglingHandle), "{errors}");
++            assert!(!errors.contains(InfraCode::IrDigestMismatch), "{errors}");
++            assert_eq!(serde_json::to_vec(&admitted.document()).unwrap(), before);
++            assert_eq!(admitted.config_map(&config).identity.name, "settings");
++            assert_eq!(admitted.secret(&secret).identity.name, "creds");
++        }
++    }
++}
++
++#[test]
++fn captured_detached_edits_and_panics_cannot_mutate_existing_owners() {
++    let source = compiled();
++    let handles = Handles::from_ir(&source);
++    let before = serde_json::to_vec(&source.document()).unwrap();
++    let mut captured = None;
++    let admitted = source
++        .try_transform(|model| {
++            captured = Some(model.clone());
++        })
++        .unwrap();
++    let admitted_handles = Handles::from_ir(&admitted);
++    let mut detached = captured.unwrap();
++    detached.nodes.clear();
++    detached.services.clear();
++    detached.config_maps.clear();
++    detached.secrets.clear();
++    detached.service_accounts.clear();
++    detached.claims.clear();
++    assert_eq!(serde_json::to_vec(&admitted.document()).unwrap(), before);
++    admitted_handles.assert_usable(&admitted);
++
++    let panic = std::panic::catch_unwind(|| {
++        let _ = source.try_transform(|model| {
++            model.nodes.clear();
++            panic!("synthetic callback abort after detached mutation");
++        });
++    });
++    assert!(panic.is_err(), "the callback must actually abort");
++    assert_eq!(serde_json::to_vec(&source.document()).unwrap(), before);
++    assert_eq!(source.digest(), admitted.digest());
++    handles.assert_usable(&source);
++}
+diff --git a/crates/infra/infra-project/tests/round_trip.rs b/crates/infra/infra-project/tests/round_trip.rs
+index f6b526e..ee2dd04 100644
+--- a/crates/infra/infra-project/tests/round_trip.rs
++++ b/crates/infra/infra-project/tests/round_trip.rs
+@@ -345,3 +345,203 @@ fn checked_projection_round_trips_all_four_changes_including_probes_and_induced_
+     let failures = round_trip(&spec, &bundle, |_| {});
+     assert!(failures.is_empty(), "{}", failures.join("\n"));
+ }
++
++const PARTIAL_CONTAINER_EXPECTATIONS: &str = r"  - id: replicas
++    scope: {namespace: shop}
++    expect:
++      replicas_within: {min: 2, max: 4}
++  - id: resources
++    scope: {namespace: shop}
++    expect: resources_declared
++    remedy:
++      resources:
++        requests: {cpu: 999m}
++        limits: {cpu: 200m}
++  - id: readiness
++    scope: {namespace: shop}
++    expect:
++      probes_declared: {liveness: true, readiness: true}
++    remedy:
++      probes:
++        readiness:
++          tcp_socket: {port: ready}
++          initial_delay_seconds: 3
++          period_seconds: 7
++          timeout_seconds: 2
++          failure_threshold: 4
++  - id: budgets
++    scope: {namespace: shop}
++    expect: pdb_covers_multi_replica
++";
++
++#[test]
++fn admitted_patches_preserve_other_fields_for_statefulsets_and_daemonsets() {
++    for (bundle_key, workload_kind, generates_replicas) in [
++        ("statefulsets", "statefulset", true),
++        ("daemonsets", "daemonset", false),
++    ] {
++        let sidecar = serde_json::json!({
++            "name": "sidecar", "image": "registry.example.com/sidecar:1",
++            "resources": {"requests": {"cpu": "10m"}, "limits": {"cpu": "20m"}},
++            "livenessProbe": {"tcpSocket": {"port": "health"}},
++            "readinessProbe": {"tcpSocket": {"port": "ready"}},
++            "startupProbe": {"httpGet": {"path": "/startup", "port": 9000}}
++        });
++        let main = serde_json::json!({
++            "name": "main", "image": "registry.example.com/api:1",
++            "env": [{"name": "KEEP", "value": "unchanged"}],
++            "resources": {"requests": {"cpu": "50m"}},
++            "livenessProbe": {"httpGet": {"path": "/keep", "port": "health"}},
++            "startupProbe": {"tcpSocket": {"port": "boot"}}
++        });
++        let mut workload = support::deployment(
++            "shop",
++            "api",
++            1,
++            &serde_json::json!([sidecar.clone(), main.clone()]),
++        );
++        if generates_replicas {
++            workload["spec"]["serviceName"] = Value::from("headless");
++        } else {
++            workload["spec"].as_object_mut().unwrap().remove("replicas");
++        }
++        let bundle = support::bundle(
++            "patch-parity",
++            &[
++                (
++                    "namespaces",
++                    serde_json::json!([support::namespace("shop")]),
++                ),
++                (bundle_key, serde_json::json!([workload])),
++                ("poddisruptionbudgets", serde_json::json!([])),
++            ],
++        );
++        let spec = support::spec(PARTIAL_CONTAINER_EXPECTATIONS);
++        let ir = support::compile(&bundle);
++        let source_bytes = serde_json::to_vec(&ir.document()).unwrap();
++        let projection = infra_project::project(&spec, &ir).unwrap();
++        assert_eq!(
++            projection.summary.generated,
++            if generates_replicas { 4 } else { 2 }
++        );
++        assert_eq!(projection.patches.len(), 1);
++        assert_eq!(projection.objects.len(), usize::from(generates_replicas));
++        assert_eq!(
++            projection.patches[0].patch_type,
++            infra_project::PatchType::Strategic
++        );
++
++        let mut patched: Value = serde_json::from_str(&bundle).unwrap();
++        apply_projection(&mut patched, &projection, &projection.artifacts());
++        let containers =
++            &patched["kinds"][bundle_key]["items"][0]["spec"]["template"]["spec"]["containers"];
++        assert_eq!(containers.as_array().unwrap().len(), 2);
++        assert_eq!(
++            containers[0], sidecar,
++            "the untouched sidecar must retain every byte-level value"
++        );
++        assert_eq!(
++            containers[1]["resources"]["requests"],
++            main["resources"]["requests"]
++        );
++        assert_eq!(containers[1]["env"], main["env"]);
++        assert_eq!(containers[1]["image"], main["image"]);
++        assert_eq!(containers[1]["livenessProbe"], main["livenessProbe"]);
++        assert_eq!(containers[1]["startupProbe"], main["startupProbe"]);
++        assert_eq!(
++            containers[1]["readinessProbe"]["tcpSocket"]["port"],
++            "ready"
++        );
++        assert_eq!(containers[1]["readinessProbe"]["timeoutSeconds"], 2);
++        let rebuilt = support::compile(&patched.to_string());
++        assert!(rebuilt
++            .model()
++            .workloads
++            .contains_key(&format!("shop/{workload_kind}/api")));
++        assert_eq!(serde_json::to_vec(&ir.document()).unwrap(), source_bytes);
++        let failures = round_trip(&spec, &bundle, |_| {});
++        assert!(failures.is_empty(), "{bundle_key}: {}", failures.join("\n"));
++    }
++}
++
++#[test]
++fn same_named_workloads_in_two_namespaces_reach_distinct_budget_fixed_points() {
++    let bundle = support::bundle(
++        "namespace-fixed-points",
++        &[
++            (
++                "namespaces",
++                serde_json::json!([support::namespace("a"), support::namespace("b")]),
++            ),
++            (
++                "deployments",
++                serde_json::json!([
++                    support::deployment(
++                        "a",
++                        "api",
++                        1,
++                        &serde_json::json!([support::container("main", "api:1")])
++                    ),
++                    support::deployment(
++                        "b",
++                        "api",
++                        1,
++                        &serde_json::json!([support::container("main", "api:1")])
++                    )
++                ]),
++            ),
++            ("poddisruptionbudgets", serde_json::json!([])),
++        ],
++    );
++    let spec = support::spec(
++        r"  - id: replicas-a
++    scope: {namespace: a}
++    expect:
++      replicas_within: {min: 2, max: 4}
++  - id: budgets-a
++    scope: {namespace: a}
++    expect: pdb_covers_multi_replica
++  - id: replicas-b
++    scope: {namespace: b}
++    expect:
++      replicas_within: {min: 3, max: 4}
++  - id: budgets-b
++    scope: {namespace: b}
++    expect: pdb_covers_multi_replica
++",
++    );
++    let source = support::compile(&bundle);
++    let before = serde_json::to_vec(&source.document()).unwrap();
++    let projection = infra_project::project(&spec, &source).unwrap();
++    assert_eq!(projection.summary.generated, 4);
++    assert_eq!(projection.summary.gaps_induced, 2);
++    assert_eq!(projection.patches.len(), 2);
++    assert_eq!(projection.objects.len(), 2);
++    let namespaces: BTreeSet<_> = projection
++        .objects
++        .iter()
++        .map(|object| object.target.namespace.as_str())
++        .collect();
++    assert_eq!(namespaces, BTreeSet::from(["a", "b"]));
++    let paths: BTreeSet<_> = projection
++        .objects
++        .iter()
++        .map(|object| object.path.as_str())
++        .collect();
++    assert_eq!(
++        paths.len(),
++        2,
++        "equal names in distinct namespaces cannot share an output slot"
++    );
++    let failures = round_trip(&spec, &bundle, |_| {});
++    assert!(failures.is_empty(), "{}", failures.join("\n"));
++
++    let mut patched: Value = serde_json::from_str(&bundle).unwrap();
++    apply_projection(&mut patched, &projection, &projection.artifacts());
++    let rebuilt = support::compile(&patched.to_string());
++    let settled = infra_project::project(&spec, &rebuilt).unwrap();
++    assert_eq!(settled.summary.generated, 0);
++    assert!(settled.patches.is_empty());
++    assert!(settled.objects.is_empty());
++    assert_eq!(serde_json::to_vec(&source.document()).unwrap(), before);
++}
+
