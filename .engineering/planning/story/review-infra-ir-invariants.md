@@ -2,7 +2,7 @@
 format: aep.planning-md/1
 id: story:review-infra-ir-invariants
 kind: story
-status: active
+status: implemented
 title: Keep resolved infrastructure handles valid for the IR lifetime
 tags:
 - P0
@@ -25,7 +25,7 @@ scope:
   path: crates/infra/infra-spec
 - confidence: cited
   path: docs/design/review-infra-ir-invariants.md
-revision: 14
+revision: 16
 ---
 ## Finding and source
 
@@ -103,3 +103,7 @@ Read-only coordinator inventory at wave 3 opening 45832cc885377b2d61845ee33af14f
 - infra-project's tests/round_trip.rs applies actual projected patches back to a bundle and recompiles; preserve that check for all supported transformations. A refused transform must leave the previous valid IR usable. No shared CLI collision with wave 3 is authorized.
 
 Independent story-scoper confirmation is still required before selection. A new docs/design/review-infra-ir-invariants.md is an inferred design surface, not an existing cited file.
+
+## Integrated completion
+
+Clean combined source acb7859e3202ffdc1ca840dde67f7ca4da33c746 passed all eight offline task check steps, the required site build and planning validation, with 1,579 workspace tests, zero failed and zero ignored. The SDK candidate compatibility experiment against this frozen source also passed its named cases, selected package checks and actual generated-service compilation. Complete scope and limits are recorded in verification-report:review-boundaries-4-integrated. Unit reports, immutable reviews and bounded corrections are retained. This closes this story's implemented outcome; publication and managed cleanup are recorded separately on the wave page.

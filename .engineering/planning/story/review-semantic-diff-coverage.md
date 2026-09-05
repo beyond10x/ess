@@ -2,7 +2,7 @@
 format: aep.planning-md/1
 id: story:review-semantic-diff-coverage
 kind: story
-status: active
+status: implemented
 title: Propagate every reviewed semantic change into diff and impact
 tags:
 - P0
@@ -40,7 +40,7 @@ scope:
   path: generated/schema
 - confidence: cited
   path: generated/site
-revision: 24
+revision: 26
 ---
 ## Finding and source
 
@@ -168,3 +168,7 @@ The coordinator inspected and confirmed the unit's binding addendum before produ
 - Service SDK advertised `48833c6d14ec37cb3b614fca05cf7dd78f63b743` remains pinned to ESS `d1a66772a91b5411d942d7a45bbf08dfc5de4651`. Independent scoping established linked generation plus whole-file/ownership-manifest checking, with no executable delta, impact or sliced-stamp parser. Two managed test-only SDK trees are recorded in the wave page; the old side prepares its baseline, and the new side must wait for a frozen ESS candidate. No SDK source or published dependency update is included in that experiment.
 
 Publication still requires completed implementation/adversarial/integration gates, actual SDK candidate output comparison, measured regeneration, Atlas coordination and truthful shipping evidence. Existing pinned SDK consumers can continue generating/checking their own old bytes; local tests do not establish external deployment readiness.
+
+## Integrated completion
+
+Clean combined source acb7859e3202ffdc1ca840dde67f7ca4da33c746 passed all eight offline task check steps, the required site build and planning validation, with 1,579 workspace tests, zero failed and zero ignored. The SDK candidate compatibility experiment against this frozen source also passed its named cases, selected package checks and actual generated-service compilation. Complete scope and limits are recorded in verification-report:review-boundaries-4-integrated. Unit reports, immutable reviews and bounded corrections are retained. This closes this story's implemented outcome; publication and managed cleanup are recorded separately on the wave page.

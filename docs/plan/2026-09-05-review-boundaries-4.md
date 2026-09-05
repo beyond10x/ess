@@ -24,8 +24,8 @@ Every unit owns its target and target/review-boundaries-4 scratch. TMPDIR is its
 
 | Story | Branch | Managed path under ESS trees | Build/temp | Scratch | Stage |
 | --- | --- | --- | --- | --- | --- |
-| review-semantic-diff-coverage | impl/review-semantic-diff-coverage | review-semantic-diff-coverage | target/ | target/review-boundaries-4/ | active; final correction 21f2744 verified, merge pending |
-| review-infra-ir-invariants | impl/review-infra-ir-invariants | review-infra-ir-invariants | target/ removed after verified archive | archived under coordinator target/ | active; unit 12d99b1 merged at 09474bd, integration pending |
+| review-semantic-diff-coverage | impl/review-semantic-diff-coverage | review-semantic-diff-coverage | target/ | target/review-boundaries-4/ | implemented; unit 21f2744 merged at acb7859, full gate and SDK checks passed |
+| review-infra-ir-invariants | impl/review-infra-ir-invariants | review-infra-ir-invariants | target/ removed after verified archive | archived under coordinator target/ | implemented; unit 12d99b1 merged at 09474bd, full gate passed |
 
 Coordinator owns every AEP mutation, Git/worktree lifecycle, shared file, Atlas coordination and integration gate. Implementors write only assigned source/tests/design/generated paths and return uncommitted handoffs. Adversaries write only assigned tests and scratch, add cases before isolated execution, and do not pre-run a baseline suite or edit production. Every review is preserved immutably before routing. Maximum two completed full passes; coordinator personally verifies any bounded final correction.
 
@@ -2000,3 +2000,71 @@ SHA-256 is now `d4b07f0af6ce720c3fa87e22a62b51dc26288041f57afd42879a1112b526ef19
 
 The semantic merge, frozen SDK candidate experiment and full integrated gate are next.
 Neither story is implemented yet; no ESS default or SDK pin has been published for this wave.
+
+
+## Integrated verification and SDK compatibility
+
+Both stories are implemented on the record of clean combined source
+`acb7859e3202ffdc1ca840dde67f7ca4da33c746`. The semantic merge dry-run returned a clean
+tree `7ebe606ebe62cc0dab7734ac8e4c983ff2b2ed1b`; its real merge and all 17 introduced
+direct commits through that source have verified bot author and committer identities.
+
+The eight underlying offline task check steps, site build and planning validation each
+returned 0. The workspace emitted 114 summaries totaling 1,579 passed, zero failed,
+zero ignored. Gate completion was observed at 2026-09-05T17:48:39.524976Z; AEP records
+the next supported whole-second instant, 17:48:40Z. Full evidence is
+`verification-report:review-boundaries-4-integrated`; raw individual logs and exits remain
+under target/review-boundaries-4/integration. Production, tests and binding designs remain
+unchanged after this tested source.
+
+The SDK compatibility experiment used identical SDK source
+`48833c6d14ec37cb3b614fca05cf7dd78f63b743` on both sides. The old graph retains seven ESS
+0.13.1 packages at `d1a66772a91b5411d942d7a45bbf08dfc5de4651`; the candidate's seven ESS
+0.18.0 packages resolve to the exact frozen combined source. The full SDK graph has 260
+packages, and the separate generated-service graph has 256. The targeted resolution
+changes only those seven ESS package identities; no other package identity or record changes.
+
+Both sides passed the three named SDK cases. Candidate selected package tests passed 26
+cases, with formatting and strict Clippy exit zero. Both old and candidate generated services
+passed actual offline, locked, all-targets Cargo checks in separate scratch workspace fixtures.
+All 63 emitted files and the four generated Rust files were preserved. These are compilation
+checks on a synthetic fixture, not generated-service execution or deployment.
+
+Old-check-old, new-check-new and new-check-regenerated succeeded. Both cross-checkers
+reported whole-file drift. The candidate changed 14 of 63 files, preserved 49, and added or
+removed none. Regenerating a distinct copy of the old tree matched all 63 fresh candidate
+files exactly. Canonical ESS IR, neutral synthesis plans, SDK runtime and realization data,
+client/connectors/conformance controls, SDK HTTP OpenAPI and whole-model topology output
+remained byte-identical. The upgrade spans ESS 0.13.1 to the current 0.18.0 source; the
+deployment chart schema difference is not attributed solely to F01.
+
+The first candidate metadata invocation retained the old locked graph and unused patches;
+an explicitly authorized targeted offline update resolved the exact candidate. The first
+strict Clippy invocation refused its lock before checking. Forwarding the same scratch
+configuration after clippy passed with --locked, --offline and -D warnings and an unchanged
+lock. That configuration adjustment worked; no child-process argument trace was captured
+to establish the initial subcommand's internal forwarding. Both setup
+attempts and successful invocations are retained separately. No source or dependency pin
+was published in SDK. The compact compatibility report and exact raw evidence are retained
+as `docs/reviews/2026-09-05-review-boundaries-4-sdk-compatibility.md` and the verified scratch
+archives described by the wave page.
+
+The two unit scratch archives were verified before their own targets were cleaned.
+Infrastructure: 57 files, 83,634 compressed bytes, SHA-256
+`bb2bffce84680ed4c409c4f364e8bdc8c4269b510c3648d3c77a1734e8ee0115`.
+Semantic: 196 files, 2,628,790 compressed bytes, SHA-256
+`02582e161d1588cf9643ad17967d06d5e9243ac3333531f88f403f4a486f5eed`.
+The clean unit trees remain active until publication supplies remote recovery proof.
+SDK scratch is next to archive before its Cargo-produced candidate lock is restored.
+The coordinator and current Atlas authority remain owned by the ongoing remediation task.
+
+The source publication is pending. Nine of 31 remediation stories are implemented;
+22 remain draft. The F01 migration is measured, while the broad contract-rollout and
+separate Atlas consumer catalog-intent obligations remain open for their remaining scope.
+No version bump, release, deployment or public Website source change is part of this wave.
+
+The final SDK report was copied byte-for-byte after handoff: 22,871 bytes, SHA-256
+`75bbe159dda283c0c9ae1d92f8eeb4361995429ab5f7068f3694eb712149c657`.
+The full candidate facts and raw hash inventory are respectively
+`4929a4cf0f98ac5c287653b29845bbb188bb83ea78b655d96d57567de32812b4` and
+`d7cff13a64dcd1875fd1d4fe23f99968401a5cf37050fa67f1b459c6c22674c2`.
