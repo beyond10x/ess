@@ -21,7 +21,7 @@ scope:
   path: website/docs/reference/formats.md
 - confidence: cited
   path: website/sidebars.ts
-revision: 10
+revision: 11
 ---
 ## Finding and source
 
@@ -74,3 +74,9 @@ Derived 2026-09-05 by aep-drive:story-scoper from exact story:review-format-cata
 - **Website delivery:** both selected public pages are inside the existing website-root docs/**/*.md allowlist, so b10x.docs.yaml and workflow edits are unnecessary (b10x.docs.yaml:83–90). Engineering catalog stays outside that public source root. Workspace/repository instructions require ESS source publication first, then coordinator-owned managed Website deterministic source-lock refresh, Atlas snapshot rendering and Website/Atlas delivery gates; a local site build does not establish publication (AGENTS.md Public documentation operations; workspace AGENTS.md) — cited.
 - **Would collide with:** the exact catalog, reference page, change-tracking guide and sidebar files; public stories reserving the same website/docs token; coordinator-owned Website source-lock/Atlas snapshot work at delivery. Source owners cited as inventory evidence are read-only, not package edit reservations; no schema identity/primitive semantics implementation or conformance/F01 production work is admitted by this scope — inferred.
 - **Confidence:** high for documentation-only scope and the frozen source version/default/reader findings because the story and actual owners establish them; no complete external/deployed inventory or newly executed compatibility claim is implied — cited.
+
+## Implementation confirmation and integration boundary
+
+Final documentation source f2c81b8ed07a6b522bb97b1e6709a9f2d0a3be57 changes only docs/design/review-format-catalog.md, website/docs/reference/formats.md, website/docs/guides/track-change.md and website/sidebars.ts, confirming the reserved source scope. The two full reviews and exact formal ledger are recorded in docs/plan/2026-09-05-review-boundaries-5.md. Pass 2 has no findings; both pass-1 documentation findings are fixed. The final source-backed link inventory has 209 links and 17 sidebar entries. This is documentation verification, not an invented executable-case count. No producer, reader, bytes or persisted version changed in this unit.
+
+The story remains active until the integrated ESS gate/site build and public bundle delivery complete. Newly discovered parallel source-driven work introduces five additional format markers and an earlier source wire-identity admission check; its own integration story depends on this wave and lands afterward. The coordinator reviewed and accepted that order, with exact source/merge evidence in target/review-boundaries-5/concurrent-merge-audit and a durable coordination section in the wave plan. Its future formats are not silently added as current formats before that source lands. The feature integration must refresh this catalog and rerun combined gates on the final source.

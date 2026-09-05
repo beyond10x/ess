@@ -21,7 +21,7 @@ scope:
   path: crates/generate/ess-synth
 - confidence: inferred
   path: docs/design/review-rust-target-feasibility.md
-revision: 11
+revision: 12
 ---
 ## Finding and source
 
@@ -68,3 +68,12 @@ Derived 2026-09-05 from independent source scoping at ESS6616b26, source-caller 
 Exact implementationf9a7cf7fcca79448a34b2754adb12f1a411573bd confirms the planned synth/CLI/design ownership. The handoff source manifest's19 files were independently byte-checked before root's bot commit. Package runner counts146 to178 with22 retained behavioral red cases, actual Rust/WASM compiles and Node replay, unchanged complete historical billing Rust/Web and gatepass Rust maps, fmt and strict Clippy are in target/review-boundaries-5/implementation-report.md (SHA25627dced0e7e530441e525de7b1169e27b42b99b1b0b6a717065e63df31835d4b3). The error privately boxes its unchanged plan only to bound Result size; serialized/accessor values remain the same. Finite actual renderer checks do not establish every future extension or arbitrary fabricated plan/IR state. First full independent review is in progress and this story remains active.
 
 The SDK reader is published at6e5141f3ead0e4d0c8f75787aec7051e2a1f41d0, with its story implemented on111 Rust+4 web gate cases,30 admission package cases and exact f9a7cf7 producer proof. Eight actual SDK CLI refusals preserved absent/existing destinations;63 complete valid files equal the published6616 ESS producer; all seven temporary path packages and the original restored git graph were verified. See SDK .engineering/planning/story/reject-ess-rust-target-refusals.md at that commit and the wave page. No dependency pin upgrade, final ESS gate or source publication is claimed here.
+
+
+## First adversarial pass and correction ownership
+
+Immutable review-result:review-boundaries-5-rust-adversary-pass-1 coversf9a7cf7 and retains597874 report bytes, SHA256344184edfa8144f2f8331dd690c173810babce29e0ca9f5225a90415b1915723. Seven new tests ran individually before the package suite;185 total cases yielded181 passes and4 failures (2 generated compiler witnesses and2 actual CLI no-write assertions). Final test formatting and strict Clippy passed.
+
+Both emitter defects reproduce at the exact opening4b66aac using a separately built clean base CLI, SHA25669f63f3addf84e59982701d8cfc6254b00ce34db378604b076863f3a5d330bf3. Web component json hides the generated json module/dependency reference and fails wasm32 E0433; pure Rust json compiles. An accepted network command emitting Out binds out inside the HTTP codec and hides its output buffer, causing E0308/E0599; the complete codec bytes match the base. The same event without HTTP and component core in Rust/Web are valid controls. Actual CLI calls currently return0 and write compiler-invalid artifact trees. Baseline Web also has its independent previously corrected redeliver failure, which is not counted as this finding.
+
+Coordinator routing decision: these are measured pre-existing emitter behaviors, and both already belong to this active F07 story's reserved symbol/helper and field/wire-name collision acceptance. Their immutable origins stay pre-existing. The existing story remains their owner; the original implementor will extend the new feasibility checks within the same declared source scope, preserving source-language freedom and all valid outputs. This is an in-scope correction under the standing implementation authorization. Do not rename generated valid APIs, change wire formats, blanket-blacklist source names or relax the seven new assertions. The two positive controls constrain the actual emitted scopes. Corrections re-enter the second full adversarial pass, followed by merged gates; no third full attack is authorized by this wave. No fixed outcome is recorded before a correction lands.

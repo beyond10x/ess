@@ -1500,3 +1500,62 @@ Rust implementationf9a7cf7fcca79448a34b2754adb12f1a411573bd was committed after 
 SDK source6e5141f3ead0e4d0c8f75787aec7051e2a1f41d0 was published to main through the bot wrapper and its clean primary advanced non-forcibly. SDK story:reject-ess-rust-target-refusals is implemented revision11 on its full gate, immutable admission review and actual frozen producer compatibility. ESS and AgentIDE dependency pins are unchanged. The exact-source consumer fixture is /home/timo/.local/state/worktree/trees/b10x/ess/ess-rust-producer-compatibility, first at published6616b26 then at frozenf9a7cf7; each source was clean during its own comparison. Both real SDK CLI builds resolved all7 ESS packages to that exact0.18.0 path graph, with no non-ESS resolution movement. The corrected producer returned the actual collision or recursive-layout error for eight generate/check attempts across absent/owned-sentinel outputs. Every rejected destination inventory remained identical. Six valid controls distinguished ordinary drift, exercised successful owned-sentinel replacement and verified all63 valid files exactly equal to the published6616 producer. The older SDK-pinned d1a6677 tree still has the previously observed14/49 changed/equal split; candidate checking records that drift without writes. Original lock/manifest/source/planning state was restored; locked offline metadata again resolved all7 historical packages at d1a6677/0.13.1.
 
 SDK's detailed result is committed in its story at6e5141f, with complete raw configs/graphs/locks/maps/argv/exits under its target/review-boundaries-5/exact-producer* and a standalone frozen-producer-compatibility.md report. First setup attempts retained an unused patch selection and an overly short expected recursive source path; the actual graph check stopped before compiling stale dependencies, and the exact field-path diagnostic was corrected without production changes. Those setup failures are not hidden or counted as target regressions. The final14-command matrix completed2026-09-05T20:07:39.556686Z. A full clean Atlas fence is running after SDK publication; no new organization-wide green claim is made.
+
+
+## Concurrent ESS work: reviewed landing boundary
+
+On 2026-09-05 the review coordinator fetched ESS origin and confirmed remote main remains `6616b26fe41548af9cb7ff9cf833ae977883f625`. Clean Atlas authority `3666a5091c0a13f3a8c1c5ad82a1ac5642acac56` also equals its advertised main. This is the review-remediation session; the separate source-driven work remains owned by its existing session.
+
+Read-only inventory found source-driven imports, types-only realizations, normalization, authored-site work and unique wire-field validation in managed `wt-46ef382d9f07`, based on `6cbe372`. Its separate `wt-6525314b6daa` preview is based on our Rust candidate `f9a7cf7`, with both feature source and older catalog changes overlaid. The source session already records `story:integrate-source-driven-realizations` revision 5 with explicit dependencies on this wave's Rust and catalog stories. Its proposed order is wave 5 first, source-driven integration afterward. The review coordinator adopts that order. No other session's source, branch, journal, lifecycle or evidence was modified by this audit.
+
+The independent source preview records a combined `task check` and `task site-build` exit 0 after reconciling duplicate wire-field admission; those are attributed reports, not a fresh gate executed or certified by this coordinator. Its actual adopter regeneration reports 73 files with 51 accounted provenance/digest differences, so this is not a clean adopter drift result or final producer adoption.
+
+Our fresh six three-way file checks retain exact input/output hashes under `target/review-boundaries-5/concurrent-merge-audit/three-way-records.json`. CLI wiring against both published main and Rust candidate exits 0. Public catalog, current Rust binding correction and current Rust test correction also merge without text conflicts. The latest internal catalog versus the older preview has one conflict, confined to the final checked-result compatibility paragraph. A scratch-only resolved proposal retains the newer reviewed paragraph and the separate feature format inventory. Neither scratch proposal nor the live uncommitted preview is a frozen combined publication candidate.
+
+The semantic conflict is explicit: the new domain validation rejects duplicate effective JSON object keys before any target runs because schema projection would otherwise overwrite declarations. This supersedes the current Rust test's source-admission assumption for pure Rust when the feature lands. The review coordinator accepts that source invariant at the combined integration boundary; it is not a Rust target blanket blacklist or a reason to remove target-only codec collision, distinct-wire, name-allocation or representation regressions. Current wave 5 does not introduce domain source validation, so its existing target test remains correct on this wave's own source. Integration must replace that source-admission expectation with precise source-location rejection and retain the independent target checks.
+
+Landing obligations: complete and publish wave 5 first; refresh the feature integration from its exact published main; reconcile CLI/changelog, the five new format markers and distinct source/bundle/model/recipe/file digest contracts; reconcile AEP through its CLI with one journal writer; rerun full ESS, site and actual affected consumers on the exact combined source. Recheck remote ancestry immediately before each publication and do not force-push. Do not schedule new review implementations in the feature-owned compiler/domain/schema-contract/ess-gen/CLI/public-doc surfaces until the integration boundary is reassessed. Count/coverage preparation remains read-only and needs fresh scoping before selection. All other sessions' managed trees remain outside our cleanup set.
+
+The other session's plan says cross-root messaging is unavailable. This document records this coordinator's acknowledgement and decisions in its own repository; it is not a claim that a message was delivered to another root session.
+
+
+## Review checkpoint and format integration
+
+Format final subject `f2c81b8ed07a6b522bb97b1e6709a9f2d0a3be57` passed its second and final full adversarial review by scope_conformance_design. Immutable `review-result:review-boundaries-5-format-adversary-pass-2` contains the complete 14,228-byte report with SHA256 `b3a63197aa40e349ef9a140e36e8130bafc04fd0a7f8d3a1b9eaf4cb8780cf7c`. Both original findings are resolved; no carried or new findings. The exact formal findings-ledger output follows. The unit owns four documentation/navigation files and its final link inventory checks 209 links and 17 sidebar entries, with exact frozen Git-object fallback for new Rust source not present in the documentation-only tree. It is ready for source integration; story completion still requires the combined gate and public delivery.
+
+```json
+{
+  "artifact": "story:review-format-catalog",
+  "reviews": 10,
+  "from": "review-result:review-boundaries-5-format-adversary-pass-1",
+  "from_reviewer": "impl_diagnostic",
+  "to": "review-result:review-boundaries-5-format-adversary-pass-2",
+  "to_reviewer": "scope_conformance_design",
+  "carried": [],
+  "new": [],
+  "resolved": [
+    {
+      "file": "docs/design/review-format-catalog.md",
+      "line": 115,
+      "category": "contract-drift",
+      "severity": "blocker",
+      "verdict": "NEEDS-CHANGE",
+      "origin": "introduced",
+      "message": "The intent row denies an existing InfraSpec::digest API and the catalogs omit the separate compact typed-intent digest persisted as projection provenance.specification_digest."
+    },
+    {
+      "file": "docs/design/review-format-catalog.md",
+      "line": 82,
+      "category": "contract-drift",
+      "severity": "warning",
+      "verdict": "CONFIRMED",
+      "origin": "introduced",
+      "message": "The impact row names ImpactReport, but the public producer returns and exports EssImpact."
+    }
+  ]
+}
+```
+
+Rust pass 1 is immutable `review-result:review-boundaries-5-rust-adversary-pass-1`, complete 597,874-byte report SHA256 `344184edfa8144f2f8331dd690c173810babce29e0ca9f5225a90415b1915723`. It measured 185 cases, 181 passes and four new failures, tracing both underlying Web dependency-module and HTTP outcome-binding collisions to exact opening source `4b66aac`. The active Rust story remains their owner; correction and second review are pending. The correction implementor additionally measured an empty-event Web match compiler failure while constructing a types-only fixture; this must be separately classified before changing the bounded correction. No new correction production edit or green claim exists at this checkpoint.
+
+The SDK post-publication Atlas fence completed 2026-09-05T20:14:55.493803Z on clean authority `3666a50`: exit 1, 115 Rust cases passed, 51 live route observations, and the same three recorded baseline failures. Full raw evidence remains private under the Atlas support tree's `target/review-boundaries-5/sdk-publication-fence`. This is not an organization-wide green result.
