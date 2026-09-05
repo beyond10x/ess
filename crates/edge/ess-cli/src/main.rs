@@ -1856,26 +1856,37 @@ fn compose(
         }
     };
 
-    let composition_json = composition.to_canonical_json();
-    if let Some(out) = out {
-        fs::write(out, &composition_json).with_context(|| format!("writing {}", out.display()))?;
-    }
     let client_plan = composition.client_plan();
-    let client_plan_json = client_plan.to_canonical_json();
-    if let Some(out) = client_plan_out {
-        fs::write(out, &client_plan_json).with_context(|| format!("writing {}", out.display()))?;
-    }
     let client_artifacts = client_plan.rust_artifacts();
-    if let Some(root) = client_rust_out {
-        for artifact in client_artifacts.values() {
-            let path = root.join(artifact.path());
-            if let Some(parent) = path.parent() {
-                fs::create_dir_all(parent)?;
-            }
-            fs::write(&path, artifact.contents())
-                .with_context(|| format!("writing {}", path.display()))?;
+    let composition_json = composition.to_canonical_json();
+    let client_plan_json = client_plan.to_canonical_json();
+    let mut outputs = Vec::new();
+    for (path, contents) in [
+        (out, &composition_json),
+        (client_plan_out, &client_plan_json),
+    ] {
+        if let Some(path) = path {
+            outputs.push((preflight_named_output(path)?, contents.as_str()));
         }
     }
+    if let Some(root) = client_rust_out {
+        let root = preflight_generated_files(
+            root,
+            &client_artifacts
+                .values()
+                .map(ess_composition::ClientArtifact::path)
+                .collect::<Vec<_>>(),
+        )?;
+        outputs.extend(
+            client_artifacts
+                .values()
+                .map(|artifact| (root.join(artifact.path()), artifact.contents())),
+        );
+    }
+    // All three destinations belong to this invocation. Checking only the generated subset
+    // would let either companion overwrite a client file or create a file where it needs a parent.
+    preflight_output_set(outputs.iter().map(|(path, _)| path.as_path()))?;
+    write_preflighted_files(outputs)?;
 
     match format {
         Format::Text => println!(
@@ -2017,15 +2028,237 @@ fn write_artifacts(
     out: Option<&Path>,
     artifacts: &std::collections::BTreeMap<String, ess_gen::Artifact>,
 ) -> Result<()> {
+    ess_gen::artifact::validate_paths(artifacts.values().map(|artifact| artifact.path.as_str()))
+        .map_err(anyhow::Error::msg)?;
     if let Some(root) = out {
-        for artifact in artifacts.values() {
-            let path = root.join(&artifact.path);
-            if let Some(parent) = path.parent() {
-                fs::create_dir_all(parent)?;
-            }
-            fs::write(&path, &artifact.contents)
-                .with_context(|| format!("writing {}", path.display()))?;
+        write_generated_files(
+            root,
+            artifacts
+                .values()
+                .map(|artifact| (artifact.path.as_str(), artifact.contents.as_str())),
+        )?;
+    }
+    Ok(())
+}
+
+/// Resolves the requested directory for output preflight.
+///
+/// Relative artifact paths obey `ess_gen::artifact::validate_paths`. The requested root may be
+/// absolute or relative, including `..`, but cannot traverse a pre-existing symlink. Its components
+/// are inspected before resolving `..`; writes use the resolved root so discarded missing
+/// directories are never created. A Windows root must be fully qualified or have no drive/root
+/// prefix, rather than depend on a drive's separate current directory. Every existing
+/// root ancestor must be a directory. The remaining preflight checks require a regular file with one
+/// hard link on Unix. On other platforms replacing an existing file is refused because this
+/// implementation cannot verify its hard-link count. Case aliases in existing destination
+/// directories are refused even on a case-sensitive host.
+///
+/// The caller must control the root and its ancestors for the duration of the operation. This
+/// preflight does not defend against concurrent replacement, hostile mounts or filesystem-specific
+/// aliases beyond the portable path rules. It provides no rollback for later I/O failures and does
+/// not retire old files. Those require a separate output ownership/transaction contract.
+fn resolve_output_directory(root: &Path) -> Result<PathBuf> {
+    let absolute = if root.is_absolute() {
+        root.to_path_buf()
+    } else {
+        if root.has_root()
+            || matches!(
+                root.components().next(),
+                Some(std::path::Component::Prefix(_))
+            )
+        {
+            bail!(
+                "output root must be fully qualified or relative: {}",
+                root.display()
+            );
         }
+        std::env::current_dir()
+            .context("resolving the current directory for the output root")?
+            .join(root)
+    };
+    let mut current = PathBuf::new();
+    for component in absolute.components() {
+        match component {
+            std::path::Component::Prefix(_) => {
+                current.push(component.as_os_str());
+                // `C:` alone consults that drive's current directory. Inspect only after the
+                // following root component makes this fully qualified absolute path complete.
+                continue;
+            }
+            std::path::Component::ParentDir => {
+                current.pop();
+            }
+            std::path::Component::CurDir => {}
+            _ => current.push(component.as_os_str()),
+        }
+        inspect_output_entry(&current, false)?;
+    }
+    Ok(current)
+}
+
+fn preflight_generated_files(root: &Path, paths: &[&str]) -> Result<PathBuf> {
+    ess_gen::artifact::validate_paths(paths.iter().copied()).map_err(anyhow::Error::msg)?;
+    let absolute = resolve_output_directory(root)?;
+    for relative in paths {
+        let mut destination = absolute.clone();
+        let mut components = relative.split('/').peekable();
+        while let Some(component) = components.next() {
+            match fs::read_dir(&destination) {
+                Ok(entries) => {
+                    for entry in entries {
+                        let name = entry?.file_name();
+                        if name.to_str().is_some_and(|name| {
+                            name.eq_ignore_ascii_case(component) && name != component
+                        }) {
+                            bail!(
+                                "output path `{relative}` aliases an existing entry in {}",
+                                destination.display()
+                            );
+                        }
+                    }
+                }
+                Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+                Err(error) => {
+                    return Err(error)
+                        .with_context(|| format!("inspecting {}", destination.display()))
+                }
+            }
+            destination.push(component);
+            inspect_output_entry(&destination, components.peek().is_none())?;
+        }
+    }
+    Ok(absolute)
+}
+
+/// A caller-selected file is resolved against its selected parent, without imposing the
+/// generated-name alphabet on it. Parent directories must already exist, as for the original
+/// single-file writer. Existing links and incompatible file types are refused before any output.
+fn preflight_named_output(path: &Path) -> Result<PathBuf> {
+    // Path::file_name drops trailing separators. Keep a caller's directory request a directory
+    // request: `report/` must not become a successful write to a new file called `report`.
+    let last = path
+        .as_os_str()
+        .as_encoded_bytes()
+        .rsplit(|byte| std::path::is_separator(char::from(*byte)))
+        .next()
+        .unwrap_or_default();
+    if last.is_empty() || last == b"." || last == b".." {
+        bail!(
+            "output must name a file, not a directory: {}",
+            path.display()
+        );
+    }
+    let name = path
+        .file_name()
+        .with_context(|| format!("output must name a file: {}", path.display()))?;
+    let parent = resolve_output_directory(path.parent().unwrap_or(Path::new(".")))?;
+    for entry in fs::read_dir(&parent)
+        .with_context(|| format!("inspecting output parent {}", parent.display()))?
+    {
+        let existing = entry?.file_name();
+        if existing != name && existing.eq_ignore_ascii_case(name) {
+            bail!("output path aliases an existing entry: {}", path.display());
+        }
+    }
+    let destination = parent.join(name);
+    inspect_output_entry(&destination, true)?;
+    Ok(destination)
+}
+
+/// Checks the whole command's resolved absolute file set, including independently selected
+/// companion outputs. No path spellings are rewritten: folding ASCII case detects aliases,
+/// and recording all ancestors detects file/directory conflicts in either declaration order.
+/// Unicode and other caller-selected filename characters remain admitted. Filesystem-specific
+/// aliases beyond ASCII case, concurrent replacement and rollback remain outside this preflight.
+fn preflight_output_set<'a>(paths: impl IntoIterator<Item = &'a Path>) -> Result<()> {
+    let mut entries: std::collections::BTreeMap<PathBuf, (PathBuf, bool)> =
+        std::collections::BTreeMap::new();
+    for path in paths {
+        let mut original = PathBuf::new();
+        let mut folded = PathBuf::new();
+        let mut components = path.components().peekable();
+        while let Some(component) = components.next() {
+            original.push(component.as_os_str());
+            folded.push(component.as_os_str().to_ascii_lowercase());
+            let file = components.peek().is_none();
+            if let Some((previous, previous_file)) = entries.get(&folded) {
+                if previous != &original || file || *previous_file {
+                    bail!(
+                        "colliding command output paths: {} and {}",
+                        previous.display(),
+                        path.display()
+                    );
+                }
+            } else {
+                entries.insert(folded.clone(), (original.clone(), file));
+            }
+        }
+    }
+    Ok(())
+}
+
+fn inspect_output_entry(path: &Path, file: bool) -> Result<()> {
+    let metadata = match fs::symlink_metadata(path) {
+        Ok(metadata) => metadata,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(()),
+        Err(error) => return Err(error).with_context(|| format!("inspecting {}", path.display())),
+    };
+    if metadata.file_type().is_symlink()
+        || if file {
+            !metadata.is_file()
+        } else {
+            !metadata.is_dir()
+        }
+    {
+        bail!(
+            "output path has an incompatible file type or symlink: {}",
+            path.display()
+        );
+    }
+    if file {
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::MetadataExt;
+            if metadata.nlink() != 1 {
+                bail!(
+                    "output destination has multiple hard links: {}",
+                    path.display()
+                );
+            }
+        }
+        #[cfg(not(unix))]
+        bail!(
+            "cannot verify hard-link count for existing output destination: {}",
+            path.display()
+        );
+    }
+    Ok(())
+}
+
+fn write_generated_files<'a>(
+    root: &Path,
+    files: impl IntoIterator<Item = (&'a str, &'a str)>,
+) -> Result<()> {
+    let files: Vec<_> = files.into_iter().collect();
+    let root = preflight_generated_files(
+        root,
+        &files.iter().map(|(path, _)| *path).collect::<Vec<_>>(),
+    )?;
+    write_preflighted_files(
+        files
+            .into_iter()
+            .map(|(relative, contents)| (root.join(relative), contents)),
+    )
+}
+
+/// Writes only paths returned by preflight. All destinations in the command must have passed
+/// preflight before this starts; this loop does not roll back a subsequent I/O failure.
+fn write_preflighted_files<'a>(files: impl IntoIterator<Item = (PathBuf, &'a str)>) -> Result<()> {
+    for (path, contents) in files {
+        if let Some(parent) = path.parent() {
+            fs::create_dir_all(parent)?;
+        }
+        fs::write(&path, contents).with_context(|| format!("writing {}", path.display()))?;
     }
     Ok(())
 }
@@ -2055,6 +2288,9 @@ fn included(argument: &str) -> Result<(String, String)> {
     let (id, path) = argument.split_once('=').with_context(|| {
         format!("`--include {argument}` is not `<page-id>=<path>`, such as `plan/board=board.md`")
     })?;
+    ess_gen::document::PageId::from(id)
+        .validate()
+        .map_err(anyhow::Error::msg)?;
     let markdown =
         fs::read_to_string(path).with_context(|| format!("reading the included page {path}"))?;
     Ok((id.to_owned(), markdown))
@@ -2102,7 +2338,8 @@ fn generate(
                 });
             }
             let site = ess_gen::html::Site::new().with_front_page(front_page(path));
-            site.render(&document, &mint.whole().provenance)
+            site.try_render(&document, &mint.whole().provenance)
+                .map_err(anyhow::Error::msg)?
                 .into_iter()
                 .map(|artifact| (format!("site/{}", artifact.path), artifact))
                 .collect()
@@ -2296,15 +2533,12 @@ fn synthesize_suite(
         }
         (SuiteTarget::Go, Some(out)) => {
             let files = ess_conformance::go::emit(&synthesis.suite);
-            for file in &files {
-                let path = out.join(&file.path);
-                if let Some(parent) = path.parent() {
-                    fs::create_dir_all(parent)
-                        .with_context(|| format!("creating {}", parent.display()))?;
-                }
-                fs::write(&path, &file.contents)
-                    .with_context(|| format!("writing {}", path.display()))?;
-            }
+            write_generated_files(
+                out,
+                files
+                    .iter()
+                    .map(|file| (file.path.as_str(), file.contents.as_str())),
+            )?;
             Some(format!(
                 "{} file(s) written to {}",
                 files.len(),
@@ -2726,14 +2960,12 @@ fn write_projection_files(
     root: &Path,
     files: &std::collections::BTreeMap<String, String>,
 ) -> Result<()> {
-    for (relative, contents) in files {
-        let path = root.join(relative);
-        if let Some(parent) = path.parent() {
-            fs::create_dir_all(parent)?;
-        }
-        fs::write(&path, contents).with_context(|| format!("writing {}", path.display()))?;
-    }
-    Ok(())
+    write_generated_files(
+        root,
+        files
+            .iter()
+            .map(|(path, contents)| (path.as_str(), contents.as_str())),
+    )
 }
 
 fn run_external(process: &mut ProcessCommand, operation: &str) -> Result<()> {
@@ -2993,13 +3225,7 @@ fn project_kubernetes(
     let projection = infra_project::project(&spec, &ir);
     let artifacts = projection.artifacts();
     if let Some(root) = out {
-        for (relative, contents) in &artifacts {
-            let path = root.join(relative);
-            if let Some(parent) = path.parent() {
-                fs::create_dir_all(parent)?;
-            }
-            fs::write(&path, contents)?;
-        }
+        write_projection_files(root, &artifacts)?;
     }
     match format {
         Format::Text => print!("{}", infra_project::projection_to_text(&projection)),
@@ -3072,6 +3298,132 @@ fn infra(command: InfraCommand) -> Result<ExitCode> {
 mod tests {
     use super::*;
     use std::collections::BTreeSet;
+
+    #[test]
+    fn every_artifact_destination_is_checked_before_the_first_write() {
+        for invalid in [
+            "../escaped",
+            "/absolute",
+            "a/../escaped",
+            "A.txt",
+            "a.txt/child",
+        ] {
+            let scratch = TemporaryDirectory::create("ess-artifact-preflight").unwrap();
+            let root = scratch.path().join("out");
+            fs::create_dir(&root).unwrap();
+            fs::write(root.join("a.txt"), "sentinel").unwrap();
+            let artifacts = [
+                (
+                    "first-map-key".to_owned(),
+                    ess_gen::Artifact::new("a.txt", "changed"),
+                ),
+                (
+                    "last-map-key".to_owned(),
+                    ess_gen::Artifact::new(invalid, "bad"),
+                ),
+            ]
+            .into_iter()
+            .collect();
+            assert!(
+                write_artifacts(Some(&root), &artifacts).is_err(),
+                "{invalid}"
+            );
+            assert_eq!(fs::read_to_string(root.join("a.txt")).unwrap(), "sentinel");
+            assert!(!scratch.path().join("escaped").exists());
+        }
+    }
+
+    #[test]
+    fn projection_files_and_existing_aliases_are_checked_as_one_set() {
+        let scratch = TemporaryDirectory::create("ess-projection-preflight").unwrap();
+        fs::write(scratch.path().join("a.txt"), "sentinel").unwrap();
+        let files = [
+            ("a.txt".to_owned(), "changed".to_owned()),
+            ("z/../../escaped".to_owned(), "bad".to_owned()),
+        ]
+        .into_iter()
+        .collect();
+        assert!(write_projection_files(scratch.path(), &files).is_err());
+        assert_eq!(
+            fs::read_to_string(scratch.path().join("a.txt")).unwrap(),
+            "sentinel"
+        );
+        fs::create_dir(scratch.path().join("PLAN")).unwrap();
+        assert!(write_generated_files(
+            scratch.path(),
+            [("a.txt", "changed"), ("plan/board.html", "bad")]
+        )
+        .is_err());
+        assert_eq!(
+            fs::read_to_string(scratch.path().join("a.txt")).unwrap(),
+            "sentinel"
+        );
+    }
+
+    #[test]
+    fn generated_file_conflicts_are_refused_before_new_directories_are_created() {
+        let scratch = TemporaryDirectory::create("ess-parent-preflight").unwrap();
+        let root = scratch.path().join("absent");
+        for paths in [["z/board", "z"], ["z", "z/board"], ["Z/one", "z/two"]] {
+            assert!(write_generated_files(&root, paths.map(|path| (path, "bad"))).is_err());
+            assert!(!root.exists());
+        }
+        write_generated_files(
+            &root,
+            [
+                ("plan/board.txt", "nested bytes"),
+                ("index.txt", "index bytes"),
+            ],
+        )
+        .unwrap();
+        assert_eq!(
+            fs::read(root.join("plan/board.txt")).unwrap(),
+            b"nested bytes"
+        );
+        assert_eq!(fs::read(root.join("index.txt")).unwrap(), b"index bytes");
+    }
+
+    #[test]
+    fn caller_selected_parent_roots_resolve_without_creating_discarded_directories() {
+        let scratch = TemporaryDirectory::create("ess-parent-root").unwrap();
+        fs::create_dir(scratch.path().join("existing")).unwrap();
+        for discarded in ["existing", "absent"] {
+            let root = scratch.path().join(discarded).join("../generated");
+            write_generated_files(&root, [("nested/file.txt", "requested bytes")]).unwrap();
+            assert_eq!(
+                fs::read(scratch.path().join("generated/nested/file.txt")).unwrap(),
+                b"requested bytes"
+            );
+        }
+        assert!(!scratch.path().join("absent").exists());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn normalizing_a_requested_root_does_not_hide_a_symlink_traversal() {
+        let scratch = TemporaryDirectory::create("ess-symlink-parent-root").unwrap();
+        fs::create_dir(scratch.path().join("outside")).unwrap();
+        std::os::unix::fs::symlink(scratch.path().join("outside"), scratch.path().join("alias"))
+            .unwrap();
+        assert!(write_generated_files(
+            &scratch.path().join("alias/../generated"),
+            [("file.txt", "bad")]
+        )
+        .is_err());
+        assert!(!scratch.path().join("generated").exists());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_symlink_above_the_requested_root_is_refused() {
+        let scratch = TemporaryDirectory::create("ess-root-preflight").unwrap();
+        let outside = scratch.path().join("outside");
+        fs::create_dir(&outside).unwrap();
+        let alias = scratch.path().join("alias");
+        std::os::unix::fs::symlink(&outside, &alias).unwrap();
+        assert!(write_generated_files(&alias.join("new-root"), [("nested/file", "bad")]).is_err());
+        assert!(!outside.join("new-root").exists());
+    }
 
     #[test]
     fn every_command_and_argument_name_is_unambiguous() {
