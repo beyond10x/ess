@@ -1926,3 +1926,50 @@ The second and final full test-only adversarial pass is dispatched against the e
 opening-base-to-corrected-commit diff. SDK candidate preparation is complete and checked
 for missing/abbreviated/mismatched-subject refusal, but no candidate Cargo resolution or
 build has run. Its actual experiment still requires the final frozen source handoff.
+
+## Semantic adversary pass 2 and final bounded correction
+
+The second and final full review is immutable
+`review-result:review-boundaries-4-semantic-adversary-pass-2`, 86,527 bytes, SHA-256
+`97cbcbe685c63349071ee4b91059cfcff7a108c28a939aa9afd6a377467c3d9c`. Its full body was
+compared byte-for-byte with the returned report before routing. Nine cases were added across
+three test files; the final packages executed 505 cases, with 502 passing and three failing.
+Formatting, strict Clippy and whitespace checks returned 0. Both setup errors remain separate.
+
+The two final findings are preserved verbatim:
+
+- Network-served views are absent from their component dependency slice, so changed OpenAPI
+  view content keeps its old profiled contract digest and is not owed by impact.
+- Reusable row shapes are absent from view dependency slices, so a changed row invariant
+  retains the view digest and leaves changed OpenAPI content without a regeneration obligation.
+
+The actual OpenAPI bodies changed after provenance was removed for comparison. A directly
+seeded view isolated the reusable row type from the missing component link. Components own
+domains; the actual emitter selects their views only for network reach. The public library
+received and checked the complete old generated tree. The current CLI impact route passes no
+generated tree, so no CLI committed-tree check is claimed. Origins remain undecided without
+base execution. The CLI findings comparison records carried 0, new 2 and resolved 2; its raw
+JSON is `target/review-boundaries-4/semantic-findings-comparison.json`.
+
+The new actual clap manifest test also passes, turning the earlier source-only framing limit
+into an executed writer/reader check. It neither compiles that project nor establishes an
+individual-manifest impact caller. The earlier ten adversary cases, full suite fixture,
+source/whole controls and neutral plans all pass unchanged.
+
+Test commit `0333681dbbbbf79a380e6f95e21536de0c1166c8` has exact bot identities. The retained
+317-line patch is
+`docs/reviews/2026-09-05-review-boundaries-4-semantic-adversary-tests-pass-2.patch`,
+12,480 bytes, SHA-256
+`7c563c0821402c62b4960739011102bdfe6a5a2cf0263119bc0aa1b22473dc1c`.
+
+After preserving the result, the coordinator bound the final repair in Atlas ADR 0036 and
+its support story revision 8: `exposes-view` covers actual CLI and network-owned-domain
+views, and `row-shape` connects a view to its complete named reusable row type. The pending
+impact /3 has 26 relations, preserving the original 21 and adding five. No impact /3 default
+or SDK candidate has shipped or run. The Atlas clarification must be published before the
+corrected ESS defaults. The implementor updates the ESS binding design before code, repairs
+both links within the existing source scope and remeasures reserved generated output.
+
+This is a bounded final correction, followed by the coordinator's inspection and named
+regression/package/integration verification. There will be no third full adversarial pass.
+SDK candidate execution and source publication remain pending successful repair.
