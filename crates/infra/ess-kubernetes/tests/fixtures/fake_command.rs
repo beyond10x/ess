@@ -7,6 +7,18 @@ fn main() {
     let executable = std::env::args().next().expect("executable name");
     let args: Vec<String> = std::env::args().skip(1).collect();
     let args: Vec<&str> = args.iter().map(String::as_str).collect();
+    if Path::new(&executable).file_stem().expect("command name") != "date"
+        && std::env::var_os("ESS_TEST_SECRET_FAILURE").is_some()
+        && matches!(
+            args.as_slice(),
+            ["--context", "synthetic-context", "get", "secrets", "-A", "-o", "json"]
+                | ["--context", "synthetic-context", "get", "secrets", "-o", "json"]
+        )
+    {
+        let diagnostic = std::env::var("ESS_TEST_SECRET_FAILURE").expect("synthetic diagnostic");
+        eprintln!("malformed synthetic Secret response: {diagnostic}");
+        std::process::exit(1);
+    }
     let response = if Path::new(&executable).file_stem().expect("command name") == "date" {
         assert_eq!(args, ["-u", "+%Y-%m-%dT%H:%M:%SZ"]);
         "2026-09-05T00:00:00Z\n".to_owned()

@@ -200,3 +200,84 @@ fn absent_optional_secret_fields_and_empty_maps_remain_allowed() {
         })
     );
 }
+
+#[test]
+fn known_kubectl_stderr_disclosure_is_confined_to_the_failure_diagnostic() {
+    let root = fixture_root();
+    let destination = root.join("failed-secret-observation.json");
+    std::fs::write(&destination, PREVIOUS).expect("existing sanitized observation");
+    let output = Command::new(env!("CARGO_BIN_EXE_ess-kubernetes"))
+        .args(["scan", "--context", "synthetic-context", "--out"])
+        .arg(&destination)
+        .env("PATH", root.join("bin"))
+        .env("ESS_TEST_SECRET_FAILURE", SENTINEL)
+        .output()
+        .expect("scan against synthetic failing subprocess");
+    assert!(
+        !output.status.success(),
+        "subprocess failure must refuse scan"
+    );
+    assert_eq!(
+        std::fs::read(destination).expect("preserved observation"),
+        PREVIOUS
+    );
+    // story:review-kubectl-diagnostic-sanitization owns this baseline-reproduced defect.
+    // When it lands, replace this characterization with the preserved no-disclosure assertion.
+    assert!(
+        output.stdout.is_empty(),
+        "a failed scan must not print a response"
+    );
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    let expected = format!(
+        "error: kubectl --context synthetic-context get secrets -o json failed: \
+         malformed synthetic Secret response: {SENTINEL}\n"
+    );
+    assert_eq!(stderr.rsplit('\r').next(), Some(expected.as_str()));
+    assert_eq!(stderr.matches(SENTINEL).count(), 1);
+}
+
+#[test]
+fn invalid_json_after_secret_values_is_refused_without_leaking_or_replacing_output() {
+    let responses = [
+        format!("{{\"items\":[{{\"data\":{{\"token\":\"{SENTINEL}\"}}}}]"),
+        format!("{{\"items\":[{{\"stringData\":{{\"token\":\"{SENTINEL}\\q\"}}}}]}}"),
+        format!("{{\"items\":[{{\"data\":{{\"token\":\"{SENTINEL}\"}}}}]}} trailing"),
+    ];
+    for response in responses {
+        let (output, destination) = scan(&response, true);
+        assert!(!output.status.success(), "invalid JSON must refuse scan");
+        assert_eq!(
+            std::fs::read(destination).expect("preserved observation"),
+            PREVIOUS
+        );
+        assert!(
+            !String::from_utf8_lossy(&output.stdout).contains(SENTINEL)
+                && !String::from_utf8_lossy(&output.stderr).contains(SENTINEL),
+            "invalid JSON diagnostic leaked the synthetic sentinel"
+        );
+    }
+}
+
+#[test]
+fn malformed_late_annotations_with_sentinel_keys_refuse_before_any_write() {
+    let response = json!({"items": [
+        {"data": {"first": "synthetic-first-secret"}},
+        {"stringData": {"second": "synthetic-second-secret"}, "metadata": {
+            "annotations": {
+                "kubectl.kubernetes.io/last-applied-configuration": SENTINEL,
+                SENTINEL: {"nested": [SENTINEL]}
+            }
+        }}
+    ]});
+    for existing in [false, true] {
+        let (output, destination) = scan(&response.to_string(), existing);
+        assert!(!output.status.success(), "malformed annotation must refuse");
+        let contents = std::fs::read(destination).ok();
+        assert_eq!(contents.as_deref(), existing.then_some(PREVIOUS));
+        assert!(
+            !String::from_utf8_lossy(&output.stdout).contains(SENTINEL)
+                && !String::from_utf8_lossy(&output.stderr).contains(SENTINEL),
+            "malformed annotation diagnostic leaked a synthetic key or value"
+        );
+    }
+}
