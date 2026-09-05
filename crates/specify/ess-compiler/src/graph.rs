@@ -114,6 +114,16 @@ pub enum DependencyRelation {
     Accepts,
     /// A component publishes an event.
     Publishes,
+    /// An entity declares a relation to another entity.
+    RelationTarget,
+    /// An owned entity's carrier annotation reads the declaring owner's relation.
+    OwnershipCarrier,
+    /// A component exposes a declared CLI view or a view of its network-served owned domain.
+    ExposesView,
+    /// A view requires a parameter whose type reaches a declared type.
+    ParameterType,
+    /// A view uses a named reusable type as its complete row contract.
+    RowShape,
 }
 
 impl DependencyRelation {
@@ -121,7 +131,7 @@ impl DependencyRelation {
     ///
     /// Written from the same lines as the variants above, so a relation added without a walk that
     /// mints it fails `tests/graph.rs` rather than sitting in the vocabulary unproduced.
-    pub const ALL: [Self; 21] = [
+    pub const ALL: [Self; 26] = [
         Self::DeclaredIn,
         Self::Wraps,
         Self::FieldType,
@@ -143,6 +153,11 @@ impl DependencyRelation {
         Self::Owns,
         Self::Accepts,
         Self::Publishes,
+        Self::RelationTarget,
+        Self::OwnershipCarrier,
+        Self::ExposesView,
+        Self::ParameterType,
+        Self::RowShape,
     ];
 
     /// The phrase a path reads with: `<dependent> <verb> <dependency>`.
@@ -173,6 +188,11 @@ impl DependencyRelation {
             Self::Owns => "owns",
             Self::Accepts => "accepts",
             Self::Publishes => "publishes",
+            Self::RelationTarget => "relates to",
+            Self::OwnershipCarrier => "carries an ownership relation declared by",
+            Self::ExposesView => "exposes view",
+            Self::ParameterType => "requires a parameter of type",
+            Self::RowShape => "uses the row shape",
         }
     }
 }
@@ -565,6 +585,18 @@ impl SemanticDependencyGraph {
                 DeclaredTypeRef::from(&resolved.state_type),
             );
 
+            for relation in &resolved.relations {
+                let target = EntityRef::from(&relation.target);
+                self.edge(
+                    subject.clone(),
+                    DependencyRelation::RelationTarget,
+                    target.clone(),
+                );
+                if relation.kind == ess_domain::entity::RelationKind::Owns {
+                    self.edge(target, DependencyRelation::OwnershipCarrier, entity.clone());
+                }
+            }
+
             for transition in &resolved.lifecycle.transitions {
                 // A move has no qualified name of its own, so `TransitionRef` pairs it with the
                 // entity that declares it — the same shape a conformance scenario records.
@@ -662,6 +694,20 @@ impl SemanticDependencyGraph {
                 EntityRef::from(&resolved.source),
             );
             self.field_edges(&subject, &resolved.fields);
+            if let Some(shape) = &resolved.shape {
+                self.edge(
+                    subject.clone(),
+                    DependencyRelation::RowShape,
+                    DeclaredTypeRef::from(shape),
+                );
+            }
+            for parameter in &resolved.params {
+                self.type_edges(
+                    &subject,
+                    DependencyRelation::ParameterType,
+                    &parameter.type_ref,
+                );
+            }
         }
     }
 
@@ -714,6 +760,32 @@ impl SemanticDependencyGraph {
         for (name, resolved) in ir.components() {
             let subject: EssSemanticRef = ComponentRef::new(name.clone()).into();
             self.node(subject.clone());
+            if let Some(cli) = &resolved.cli {
+                for view in cli
+                    .views
+                    .iter()
+                    .chain(cli.groups.iter().flat_map(|group| &group.views))
+                {
+                    self.edge(
+                        subject.clone(),
+                        DependencyRelation::ExposesView,
+                        ViewRef::from(view),
+                    );
+                }
+            }
+            // Match the existing HTTP surface: a network component serves the views in its
+            // owned domains. Domain ownership alone does not expose views for other reaches.
+            if resolved.reached_by == ess_domain::component::Reach::Network {
+                for domain in &resolved.owns {
+                    for view in &ir.domain(domain).views {
+                        self.edge(
+                            subject.clone(),
+                            DependencyRelation::ExposesView,
+                            ViewRef::from(view),
+                        );
+                    }
+                }
+            }
             for handle in &resolved.owns {
                 self.edge(
                     subject.clone(),

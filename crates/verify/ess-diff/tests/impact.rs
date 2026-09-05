@@ -443,10 +443,15 @@ fn a_change_in_a_family_the_delta_still_does_not_compare_owes_the_whole_suite() 
     let report = impact(&before, &after, Some(&suite), None)
         .expect("one system, and the earlier one's suite");
 
-    assert!(
-        report.delta.is_empty(),
-        "the delta has no entry for a topology change: {:?}",
-        report.delta
+    assert_eq!(
+        report
+            .delta
+            .changes()
+            .iter()
+            .map(ess_diff::SemanticChange::kind)
+            .collect::<Vec<_>>(),
+        ["unclassified-changed"],
+        "v2 records the unclassified change while retaining whole invalidation"
     );
     let Some(Invalidation::Whole { because }) = &report.invalidation else {
         panic!(
@@ -485,10 +490,15 @@ fn a_domains_naming_moving_owes_the_whole_suite_because_no_family_compares_a_dom
     let report = impact(&before, &after, Some(&suite), None)
         .expect("one system, and the earlier one's suite");
 
-    assert!(
-        report.delta.is_empty(),
-        "the delta has no entry for a domain naming change: {:?}",
-        report.delta
+    assert_eq!(
+        report
+            .delta
+            .changes()
+            .iter()
+            .map(ess_diff::SemanticChange::kind)
+            .collect::<Vec<_>>(),
+        ["unclassified-changed"],
+        "v2 records the unclassified change while retaining whole invalidation"
     );
     let Some(Invalidation::Whole { because }) = &report.invalidation else {
         panic!(

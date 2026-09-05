@@ -250,7 +250,7 @@ impl<'a> ProvenanceMint<'a> {
             ModelSlice::WholeModel => slice_digest(self.ir, None),
             ModelSlice::Constructs { seeds } => {
                 let members = self.graph.slice(seeds);
-                slice_digest(self.ir, Some(&members))
+                format!("slice-sha256/2:{}", slice_digest(self.ir, Some(&members)))
             }
         }
     }
@@ -400,49 +400,18 @@ pub struct ArtifactDigests {
 }
 
 impl Provenance {
-    /// Reads the two digests back off an artifact's text, whatever form the stamp took.
+    /// Reads a complete authoritative stamp, validating its digest profile and framing.
     ///
-    /// The inverse of this type's own emissions and of nothing else: the comment-line forms
-    /// (`model digest …` / `contract digest …`, behind `#`, `//` or inside an HTML comment) and the
-    /// serialized-field forms (`"source_digest": "…"`, `"spec_digest": "…"`,
-    /// `"contract_digest": "…"`). One reader beside the writer, so a committed artifact's claim of
-    /// derivation is checked against exactly what was stamped — a second parser somewhere else is
-    /// how the check and the stamp drift apart.
-    ///
-    /// `None` when either digest is missing or is not 64 lower-case hex characters. That is the
-    /// fail-closed answer on purpose: an artifact whose provenance cannot be read is an artifact
-    /// whose claims cannot be checked, and every caller treats it as owed.
+    /// Recognizes the comment envelopes and structured attribution locations this crate writes.
+    /// Arbitrary model strings are never searched. Unsupported/malformed profiles, conflicting
+    /// copies and duplicate mapping keys return `None`, which every verifier treats as owed.
+    /// Bare hashes retain whole/legacy meaning; expected-slice comparison decides whether a
+    /// legacy bare stamp is current. Generic `Provenance::deserialize` does not perform this check.
     #[must_use]
     pub fn read_digests(text: &str) -> Option<ArtifactDigests> {
-        let source = digest_after(
-            text,
-            &[
-                "model digest ",
-                "\"source_digest\": \"",
-                "\"spec_digest\": \"",
-            ],
-        )?;
-        let contract = digest_after(text, &["contract digest ", "\"contract_digest\": \""])?;
-        Some(ArtifactDigests {
-            source_digest: source,
-            contract_digest: contract,
-        })
+        stamp::read(text)
     }
 }
 
-/// The first well-formed digest following any of these markers, or `None`.
-fn digest_after(text: &str, markers: &[&str]) -> Option<String> {
-    for marker in markers {
-        let Some(at) = text.find(marker) else {
-            continue;
-        };
-        let candidate: String = text[at + marker.len()..]
-            .chars()
-            .take_while(|c| c.is_ascii_hexdigit() && !c.is_ascii_uppercase())
-            .collect();
-        if candidate.len() == 64 {
-            return Some(candidate);
-        }
-    }
-    None
-}
+#[path = "stamp.rs"]
+mod stamp;

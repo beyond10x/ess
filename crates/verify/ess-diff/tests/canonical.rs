@@ -1053,7 +1053,7 @@ fn a_delta_whose_relation_was_edited_is_refused() {
 #[test]
 fn a_delta_written_in_a_format_this_build_does_not_read_is_refused() {
     let mut document = document();
-    document["format"] = serde_json::json!("ess-diff/2");
+    document["format"] = serde_json::json!("ess-diff/3");
 
     let errors = refused(&document);
 
@@ -1131,4 +1131,57 @@ fn a_delta_this_build_wrote_is_read_back_without_complaint() {
     let raw: RawEssDelta = serde_json::from_value(document()).expect("parses");
 
     EssDelta::try_from(raw).expect("an unedited document validates");
+}
+
+#[test]
+fn review_freeze_legacy_delta_bytes() {
+    let frozen = include_str!("fixtures/legacy-delta-v1.json");
+    let read = EssDelta::try_from(serde_json::from_str::<RawEssDelta>(frozen).unwrap()).unwrap();
+    assert_eq!(read.to_canonical_json(), frozen);
+}
+
+#[test]
+fn review_new_default_delta_format_is_version_two() {
+    assert_eq!(delta().format.to_string(), "ess-diff/2");
+}
+
+#[test]
+fn review_version_admission_refuses_new_vocabulary_in_legacy_envelopes() {
+    let frozen = include_str!("fixtures/legacy-delta-v1.json");
+    let old = EssDelta::try_from(serde_json::from_str::<RawEssDelta>(frozen).unwrap()).unwrap();
+    assert_eq!(
+        old.to_canonical_json_for(ess_diff::DeltaFormat::LEGACY)
+            .unwrap(),
+        frozen
+    );
+    assert!(old
+        .to_canonical_json_for(ess_diff::DeltaFormat::parse("ess-diff/99").unwrap())
+        .is_err());
+    let mut document: serde_json::Value = serde_json::from_str(frozen).unwrap();
+    document["format"] = serde_json::json!("ess-diff/2");
+    document["changes"] = serde_json::json!([{
+        "id": "system/catalog/unclassified-changed", "relation": "changed",
+        "change": {"category":"system", "subject":"catalog", "changed":{"kind":"unclassified-changed"}}
+    }]);
+    let new = EssDelta::try_from(serde_json::from_value::<RawEssDelta>(document.clone()).unwrap())
+        .unwrap();
+    assert!(matches!(
+        new.to_canonical_json_for(ess_diff::DeltaFormat::LEGACY),
+        Err(ess_diff::DeltaWriteRefusal::UnrepresentableChange { .. })
+    ));
+    let mut mutated = new.clone();
+    mutated.format = ess_diff::DeltaFormat::LEGACY;
+    assert!(
+        serde_json::to_string(&mutated).is_err(),
+        "public format mutation cannot bypass admission"
+    );
+    document["format"] = serde_json::json!("ess-diff/1");
+    assert!(refused(&document).contains(ValidationCode::UnsupportedFormatVersion));
+    document["format"] = serde_json::json!("ess-diff/2");
+    assert_eq!(
+        new.to_canonical_json(),
+        EssDelta::try_from(serde_json::from_value::<RawEssDelta>(document).unwrap())
+            .unwrap()
+            .to_canonical_json()
+    );
 }

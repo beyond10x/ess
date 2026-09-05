@@ -348,7 +348,13 @@ fn a_committed_artifact_with_a_false_contract_digest_is_owed_as_a_false_claim() 
         committed,
         "0000000000000000000000000000000000000000000000000000000000000000"
     );
-    assert_eq!(expected.len(), 64);
+    assert_eq!(
+        expected
+            .strip_prefix("slice-sha256/2:")
+            .expect("the expected slice carries its profile")
+            .len(),
+        64
+    );
 }
 
 #[test]
@@ -410,4 +416,66 @@ fn the_artifact_answer_is_byte_identical_between_runs() {
         first.contains("\"artifact\""),
         "the document carries the artifact section"
     );
+}
+
+#[test]
+fn review_legacy_slice_stamps_are_owed_even_when_raw_hashes_match() {
+    let ir = compiled("examples/revision-pair/before");
+    let artifacts = ess_gen::generate_all(&ir).unwrap();
+    let slice_paths: Vec<_> = artifacts
+        .iter()
+        .filter(|(_, artifact)| {
+            matches!(
+                artifact.slice,
+                ess_gen::provenance::ModelSlice::Constructs { .. }
+            )
+        })
+        .map(|(path, _)| path.clone())
+        .collect();
+    assert!(!slice_paths.is_empty());
+    let current = GeneratedTree {
+        files: artifacts
+            .iter()
+            .map(|(path, artifact)| (path.clone(), artifact.contents.clone()))
+            .collect(),
+    };
+    assert!(owed(&impact(&ir, &ir, None, Some(&current)).unwrap()).is_empty());
+    let legacy = GeneratedTree {
+        files: current
+            .files
+            .iter()
+            .map(|(path, contents)| (path.clone(), contents.replace("slice-sha256/2:", "")))
+            .collect(),
+    };
+    let report = impact(&ir, &ir, None, Some(&legacy)).unwrap();
+    let debt = owed(&report);
+    for path in slice_paths {
+        assert!(
+            matches!(
+                debt.get(&projection(&path)),
+                Some(ArtifactObligation::ContractMismatch { .. })
+            ),
+            "legacy {path} must be owed despite identical raw hash"
+        );
+    }
+}
+
+#[test]
+fn review_whole_model_hashes_and_index_bytes_remain_frozen() {
+    let ir = compiled("examples/billing");
+    let whole = ess_gen::Provenance::of(&ir);
+    assert_eq!(
+        whole.source_digest,
+        "56090788443a14b4a51ad151eb5cb3ebded2b98f6defe9ac50826296ac5d0942"
+    );
+    assert_eq!(
+        whole.contract_digest,
+        "cb634bd5e6f1afa6ebc8e9dca752e9901a9a68a2e51fc5009d099f155680606c"
+    );
+    assert_eq!(
+        ess_gen::generate_all(&ir).unwrap()["docs/index.md"].contents,
+        include_str!("../../../../generated/docs/index.md")
+    );
+    let suite = ess_conformance::scenario::SuiteProvenance::of(&ir);
+    assert_eq!(suite.contract_digest.as_str(), whole.contract_digest);
 }

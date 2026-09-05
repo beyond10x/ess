@@ -89,11 +89,12 @@ use crate::graph::{DependencyEdge, ImpactClass, Reach, SemanticDependencyGraph};
 /// back — see the module documentation — so a parser here would be a refusal that cannot fire, and
 /// the word is carried anyway because a consumer keying on it costs nothing.
 ///
-/// `/2` since wave 7: the document gained an `artifacts` section, and `suite` plus
+/// `/3` versions the corrected dependency vocabulary and embedded `ess-diff/2` delta.
+/// `/2` introduced the `artifacts` section, and `suite` plus
 /// `invalidation` became optional — a report can now be about the generated tree alone. The label
 /// still has no parser, for the reason above, and it is bumped anyway because a label that stays
 /// at `/1` across a shape change is a label that lies to the one consumer who does key on it.
-pub const IMPACT_FORMAT: &str = "ess-impact/2";
+pub const IMPACT_FORMAT: &str = "ess-impact/3";
 
 /// Why a delta and a suite cannot be compared at all.
 ///
@@ -332,18 +333,9 @@ pub enum WholeAnswer {
         /// What the suite named.
         construct: EssSemanticRef,
     },
-    /// The model moved in a family this comparison does not read.
-    ///
-    /// The delta compares ten families since W7.2 — entities, commands, views and bindings joined
-    /// wave 5's six, so an outcome's guard, a payload mapping and a lifecycle now arrive as change
-    /// entries instead of landing here. What is left with no family is the conversions, the
-    /// workloads, and each domain's naming. For those, this engine checks canonical **equality**
-    /// only: equal means nothing there moved and the narrowing stands, different means *something*
-    /// moved that no change entry can name, and a closure cannot be seeded at a construct the
-    /// delta does not know changed. So it is not narrowed at all. When a later slice teaches the
-    /// delta one of the remaining families, changes there start arriving as entries and stop
-    /// landing here — the arm shrinks by construction rather than by being remembered. If nothing
-    /// remains one day, the arm stays: it is the backstop for the construct the model gains next.
+    /// Residual model content moved outside the typed comparisons, including an unclassified
+    /// family or a field within a classified family. The delta records `unclassified-changed`,
+    /// without pretending it names a construct whose closure can safely narrow obligations.
     UncomparedFamilyChanged,
 }
 
@@ -362,9 +354,8 @@ impl fmt::Display for WholeAnswer {
                  the one way a narrowing is wrong and looks right"
             ),
             Self::UncomparedFamilyChanged => f.write_str(
-                "the model moved in a family this delta does not compare — a conversion, the \
-                 topology, or a domain's naming — so no change entry can name what moved, and no \
-                 closure can be seeded at it",
+                "unclassified model content changed; no attributed dependency closure can safely \
+                 narrow its obligations",
             ),
         }
     }
@@ -808,7 +799,15 @@ pub fn impact(
     // any difference owes everything: an empty delta over two different models would otherwise be
     // a narrowing to nothing, which is a survival claim nothing here is entitled to make. One
     // comparison feeds both answers — the suite's and the artifacts' — because it is one fact.
-    let uncompared_moved = uncompared_families(before) != uncompared_families(after);
+    let uncompared_moved = delta.changes().iter().any(|change| {
+        matches!(
+            change,
+            SemanticChange::System {
+                changed: crate::change::SystemChange::UnclassifiedChanged,
+                ..
+            }
+        )
+    });
 
     let mut impacts = Vec::new();
     let invalidation = suite.map(|suite| {
@@ -849,42 +848,6 @@ pub fn impact(
     })
 }
 
-/// The canonical form of everything the delta does not compare, for mechanism 6's equality check.
-///
-/// Serialisation is the comparison because equality is all that is asked: which construct differs
-/// and in which direction is exactly the question the delta deliberately does not answer for what
-/// is left here, and D-1 already settled that canonical equality is the decidable, cheap fragment.
-/// The keys and every map inside are ordered (`BTreeMap` throughout the IR), so two calls over
-/// equal models produce equal bytes.
-///
-/// W7.2 shrank this from six families to what remains uncompared:
-///
-/// * **conversions** and **workloads** — no change family reads them yet;
-/// * each **domain's naming** — a domain document can set a wire name, a display name and a
-///   summary, and no family compares a domain. Only the naming: a domain's *membership* sets are
-///   derived from the constructs' own `domain:` declarations, every one of which is compared by
-///   its own family, so serialising them here would send every construct added or removed to
-///   `Whole` and erase the narrowing this module exists to produce.
-///
-/// Entities, commands, views and bindings left this list the day their families started producing
-/// change entries — the arm shrank by construction, exactly as the `UncomparedFamilyChanged`
-/// documentation said it would.
-fn uncompared_families(ir: &EssIr) -> String {
-    let domain_namings: BTreeMap<&QualifiedName, &ess_domain::name::Naming> = ir
-        .domains()
-        .iter()
-        .map(|(name, domain)| (name, &domain.naming))
-        .collect();
-    serde_json::to_string(&serde_json::json!({
-        "conversions": ir.conversions(),
-        "domain_namings": domain_namings,
-        "workloads": ir.workloads(),
-    }))
-    .unwrap_or_else(|error| {
-        panic!("the IR serialises, as every projection already relies on: {error}")
-    })
-}
-
 /// The closure itself: one walk per change, joined.
 ///
 /// Crate-private and taking its three inputs explicitly, so a test can reach the two fail-closed
@@ -914,9 +877,18 @@ pub(crate) fn analyse(
         // Mechanism 3. A change to the specification itself names no construct, so there is nothing
         // to seed a closure at — and the alternative to owing everything is owing nothing.
         let Some(subject) = change.subject() else {
-            invalidation = invalidation.joined(Invalidation::Whole {
-                because: WholeAnswer::SystemChanged { change: id },
-            });
+            let because = if matches!(
+                change,
+                SemanticChange::System {
+                    changed: crate::change::SystemChange::UnclassifiedChanged,
+                    ..
+                }
+            ) {
+                WholeAnswer::UncomparedFamilyChanged
+            } else {
+                WholeAnswer::SystemChanged { change: id }
+            };
+            invalidation = invalidation.joined(Invalidation::Whole { because });
             continue;
         };
 

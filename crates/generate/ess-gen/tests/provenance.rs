@@ -258,3 +258,366 @@ fn a_generator_that_stamps_nothing_cannot_ship_an_artifact() {
     let ir = probe("String");
     let _ = ess_gen::artifact::run(&Unstamped, &ir);
 }
+
+// Frozen pre-migration substring reader, retained verbatim as compatibility evidence.
+fn legacy_digest_after(text: &str, markers: &[&str]) -> Option<String> {
+    for marker in markers {
+        let Some(at) = text.find(marker) else {
+            continue;
+        };
+        let candidate: String = text[at + marker.len()..]
+            .chars()
+            .take_while(|c| c.is_ascii_hexdigit() && !c.is_ascii_uppercase())
+            .collect();
+        if candidate.len() == 64 {
+            return Some(candidate);
+        }
+    }
+    None
+}
+
+fn legacy_read(text: &str) -> Option<(String, String)> {
+    let source = legacy_digest_after(
+        text,
+        &[
+            "model digest ",
+            "\"source_digest\": \"",
+            "\"spec_digest\": \"",
+        ],
+    )?;
+    let contract = legacy_digest_after(text, &["contract digest ", "\"contract_digest\": \""])?;
+    Some((source, contract))
+}
+
+#[test]
+fn review_every_constructs_digest_has_an_explicit_profile_and_whole_remains_bare() {
+    let ir = probe("String");
+    let sliced = digest_of_type(&ir, "probe.core.Alpha");
+    assert!(sliced.starts_with("slice-sha256/2:"), "{sliced}");
+    assert_eq!(sliced.len(), 79);
+    let whole = Provenance::of(&ir);
+    assert_eq!(whole.source_digest.len(), 64);
+    assert_eq!(whole.contract_digest.len(), 64);
+}
+
+#[test]
+fn review_new_reader_refuses_unsupported_profile_without_legacy_fallback() {
+    let whole = Provenance::of(&probe("String"));
+    let unknown = Provenance {
+        contract_digest: format!("slice-sha256/99:{}", whole.contract_digest),
+        ..whole.clone()
+    };
+    let text = format!(
+        "{}\nExample literal: {}\n",
+        unknown.commented("#"),
+        serde_json::to_string_pretty(&whole).unwrap()
+    );
+    assert!(
+        legacy_read(&text).is_some(),
+        "the retained old reader is fooled by a different marker spelling"
+    );
+    assert!(
+        Provenance::read_digests(&text).is_none(),
+        "an unsupported authoritative header cannot fall back to model prose"
+    );
+}
+
+#[test]
+fn review_new_reader_requires_envelopes_and_exact_digest_tokens() {
+    let whole = Provenance::of(&probe("String"));
+    let prose = format!(
+        "Some documentation says model digest {} and contract digest {}.",
+        whole.source_digest, whole.contract_digest
+    );
+    assert!(
+        Provenance::read_digests(&prose).is_none(),
+        "unframed prose is not provenance"
+    );
+    for contract in [
+        format!("{} trailing", whole.contract_digest),
+        format!("slice-sha256/2:{}x", whole.contract_digest),
+    ] {
+        let bad = Provenance {
+            contract_digest: contract,
+            ..whole.clone()
+        };
+        assert!(Provenance::read_digests(&bad.commented("#")).is_none());
+    }
+    let duplicate = format!(
+        "{{\"source_digest\":\"{}\",\"contract_digest\":\"{}\",\"contract_digest\":\"{}\"}}",
+        whole.source_digest, whole.contract_digest, whole.contract_digest
+    );
+    assert!(
+        Provenance::read_digests(&duplicate).is_none(),
+        "duplicate authoritative keys are refused"
+    );
+}
+
+#[test]
+fn review_profile_is_read_in_all_emissions_and_old_reader_refuses_ordinary_slices() {
+    let ir = emission_probe("Ordinary summary.");
+    let artifacts = ess_gen::generate_all(&ir).unwrap();
+    assert!(!artifacts.is_empty());
+    for (path, artifact) in artifacts {
+        let current =
+            Provenance::read_digests(&artifact.contents).unwrap_or_else(|| panic!("{path}"));
+        if matches!(artifact.slice, ModelSlice::Constructs { .. }) {
+            assert!(
+                current.contract_digest.starts_with("slice-sha256/2:"),
+                "{path}"
+            );
+            assert!(
+                legacy_read(&artifact.contents).is_none(),
+                "ordinary new slice {path} must be owed by the old text reader"
+            );
+        } else {
+            assert_eq!(
+                legacy_read(&artifact.contents).unwrap().1,
+                current.contract_digest,
+                "{path}"
+            );
+        }
+    }
+}
+
+fn emission_probe(summary: &str) -> EssIr {
+    compiled(&format!(
+        r"
+format: ess/1
+system: probe
+version: v1
+domain: probe.core
+types:
+  - name: probe.core.Alpha
+    kind: newtype
+    of: String
+components:
+  - component: probe-service
+    summary: {}
+    owns:
+      domains: [probe.core]
+    accepts:
+      commands: [probe.core.Send]
+    publishes:
+      events: [probe.core.Sent]
+commands:
+  - name: probe.core.Send
+    input:
+      - name: value
+        type: probe.core.Alpha
+    outcomes:
+      - name: sent
+        emits: [probe.core.Sent]
+events:
+  - name: probe.core.Sent
+    fields:
+      - name: value
+        type: probe.core.Alpha
+",
+        serde_json::to_string(summary).unwrap()
+    ))
+}
+
+#[test]
+fn review_marker_looking_model_content_does_not_override_real_emitted_stamps() {
+    let fake = "a".repeat(64);
+    let ir = emission_probe(&format!("Example literal: \"contract_digest\": \"{fake}\""));
+    let mint = ProvenanceMint::new(&ir);
+    let mut old_reader_false_admissions = Vec::new();
+    for (path, artifact) in ess_gen::generate_all(&ir).unwrap() {
+        let read = Provenance::read_digests(&artifact.contents).unwrap_or_else(|| panic!("{path}"));
+        assert_eq!(
+            read.contract_digest,
+            mint.digest_of(&artifact.slice),
+            "{path}"
+        );
+        if matches!(artifact.slice, ModelSlice::Constructs { .. })
+            && legacy_read(&artifact.contents).is_some()
+        {
+            old_reader_false_admissions.push(path);
+        }
+    }
+    assert!(
+        !old_reader_false_admissions.is_empty(),
+        "preserve evidence of the old reader's actual prose fallback limit"
+    );
+}
+
+#[test]
+fn review_conflicting_structured_and_comment_stamps_are_unreadable() {
+    let ir = emission_probe("Ordinary summary.");
+    let artifacts = ess_gen::generate_all(&ir).unwrap();
+    for kind in ["openapi/", "asyncapi/"] {
+        let artifact = artifacts
+            .iter()
+            .find(|(path, _)| path.starts_with(kind))
+            .unwrap()
+            .1;
+        let read = Provenance::read_digests(&artifact.contents).unwrap();
+        let broken = artifact.contents.replacen(
+            &format!("# contract digest {}", read.contract_digest),
+            &format!("# contract digest slice-sha256/2:{}", "a".repeat(64)),
+            1,
+        );
+        assert!(
+            Provenance::read_digests(&broken).is_none(),
+            "{kind} has conflicting authoritative copies"
+        );
+        let body = artifact
+            .contents
+            .lines()
+            .skip(4)
+            .collect::<Vec<_>>()
+            .join("\n");
+        assert_eq!(
+            Provenance::read_digests(&body).unwrap(),
+            read,
+            "structured-only {kind} stays readable"
+        );
+    }
+}
+
+#[test]
+fn correction_structured_envelopes_require_typed_attribution() {
+    let ir = emission_probe("Ordinary summary.");
+    let whole = Provenance::of(&ir);
+    let direct = serde_json::to_value(&whole).unwrap();
+    let artifacts = ess_gen::generate_all(&ir).unwrap();
+    let schema = artifacts
+        .iter()
+        .find(|(path, _)| path.starts_with("schema/"))
+        .unwrap()
+        .1;
+    let schema: serde_json::Value = serde_json::from_str(&schema.contents).unwrap();
+    for (label, document, location, fields) in [
+        (
+            "direct",
+            direct.clone(),
+            "",
+            vec!["system", "specification_version"],
+        ),
+        (
+            "plan",
+            serde_json::json!({"provenance": direct}),
+            "/provenance",
+            vec!["system", "specification_version"],
+        ),
+        (
+            "schema",
+            schema,
+            "/x-ess-provenance",
+            vec!["system", "specification_version", "regenerate"],
+        ),
+    ] {
+        assert!(
+            Provenance::read_digests(&document.to_string()).is_some(),
+            "{label}"
+        );
+        for field in fields {
+            for invalid in [
+                serde_json::Value::Null,
+                serde_json::json!(""),
+                serde_json::json!(42),
+                serde_json::json!([]),
+            ] {
+                let mut damaged = document.clone();
+                damaged.pointer_mut(location).unwrap()[field] = invalid.clone();
+                assert!(
+                    Provenance::read_digests(&damaged.to_string()).is_none(),
+                    "{label}/{field}: {invalid}"
+                );
+            }
+        }
+    }
+}
+
+#[test]
+fn correction_actual_yaml_requires_complete_matching_paired_attribution() {
+    let artifacts = ess_gen::generate_all(&emission_probe("Ordinary summary.")).unwrap();
+    for kind in ["openapi/", "asyncapi/"] {
+        let artifact = artifacts
+            .iter()
+            .find(|(path, _)| path.starts_with(kind))
+            .unwrap()
+            .1;
+        let header: String = artifact.contents.split_inclusive('\n').take(4).collect();
+        let body: serde_yaml::Value = serde_yaml::from_str(&artifact.contents).unwrap();
+        assert!(
+            Provenance::read_digests(&artifact.contents).is_some(),
+            "{kind}"
+        );
+        for field in [
+            "system",
+            "specification_version",
+            "source_digest",
+            "contract_digest",
+        ] {
+            let mut damaged = body.clone();
+            damaged["info"]["x-ess-provenance"]
+                .as_mapping_mut()
+                .unwrap()
+                .remove(field);
+            let text = format!("{header}{}", serde_yaml::to_string(&damaged).unwrap());
+            assert!(
+                Provenance::read_digests(&text).is_none(),
+                "{kind} missing {field}"
+            );
+        }
+        for field in ["system", "specification_version"] {
+            let mut damaged = body.clone();
+            damaged["info"]["x-ess-provenance"][field] =
+                serde_yaml::Value::String("different".into());
+            let text = format!("{header}{}", serde_yaml::to_string(&damaged).unwrap());
+            assert!(
+                Provenance::read_digests(&text).is_none(),
+                "{kind} conflicting {field}"
+            );
+        }
+        let mut missing = body;
+        missing["info"]
+            .as_mapping_mut()
+            .unwrap()
+            .remove("x-ess-provenance");
+        for invalid_body in [
+            serde_yaml::to_string(&missing).unwrap(),
+            "openapi: [unterminated".into(),
+            "[workspace]\nresolver = \"2\"\n".into(),
+        ] {
+            assert!(
+                Provenance::read_digests(&format!("{header}{invalid_body}")).is_none(),
+                "{kind}: {invalid_body}"
+            );
+        }
+    }
+}
+
+#[test]
+fn review_docs_ir_retains_page_profiles_and_does_not_claim_a_flat_stamp() {
+    let ir = emission_probe("Ordinary summary.");
+    let doc = ess_gen::docs::document(&ir, &ProvenanceMint::new(&ir));
+    let text = serde_json::to_string_pretty(&doc).unwrap();
+    let decoded: ess_gen::document::Document = serde_json::from_str(&text).unwrap();
+    assert_eq!(decoded.format, "ess-docs/1");
+    assert!(decoded.pages.iter().any(|page| matches!(
+        page.provenance.slice,
+        ModelSlice::Constructs { .. }
+    ) && page
+        .provenance
+        .provenance
+        .contract_digest
+        .starts_with("slice-sha256/2:")));
+    assert!(
+        Provenance::read_digests(&text).is_none(),
+        "no arbitrary first-page stamp"
+    );
+    let unknown = text.replace("slice-sha256/2:", "slice-sha256/99:");
+    let decoded: ess_gen::document::Document = serde_json::from_str(&unknown).unwrap();
+    assert!(
+        decoded.pages.iter().any(|page| page
+            .provenance
+            .provenance
+            .contract_digest
+            .starts_with("slice-sha256/99:")),
+        "generic old-compatible Deserialize is explicitly not profile admission"
+    );
+}

@@ -339,6 +339,35 @@ pub enum SemanticChange {
 }
 
 impl SemanticChange {
+    /// The first document version that can represent this change without losing meaning.
+    pub const fn minimum_format(&self) -> u32 {
+        match self {
+            Self::System {
+                changed: SystemChange::UnclassifiedChanged,
+                ..
+            }
+            | Self::Entity {
+                changed: EntityChange::RelationsChanged { .. },
+                ..
+            }
+            | Self::Component {
+                changed: ComponentChange::ReachChanged { .. } | ComponentChange::CliChanged { .. },
+                ..
+            }
+            | Self::Command {
+                changed:
+                    CommandChange::OutcomeSetsChanged { .. }
+                    | CommandChange::OutcomeRefusesChanged { .. },
+                ..
+            }
+            | Self::View {
+                changed: ViewChange::ParamsChanged { .. } | ViewChange::RankingChanged { .. },
+                ..
+            } => 2,
+            _ => 1,
+        }
+    }
+
     /// Which category it belongs to.
     pub fn category(&self) -> ChangeCategory {
         match self {
@@ -519,12 +548,15 @@ pub enum SystemChange {
         /// What it is.
         after: Option<String>,
     },
+    /// Semantic coverage added in `ess-diff/2`: unclassified-changed.
+    UnclassifiedChanged,
 }
 
 impl SystemChange {
     /// The subtype word, which is also the document's `kind`.
     pub const fn kind(&self) -> &'static str {
         match self {
+            Self::UnclassifiedChanged => "unclassified-changed",
             Self::VersionChanged { .. } => "version-changed",
             Self::SummaryChanged { .. } => "summary-changed",
         }
@@ -544,6 +576,9 @@ impl SystemChange {
     /// One clause saying what moved.
     pub fn describe(&self) -> String {
         match self {
+            Self::UnclassifiedChanged => {
+                "unclassified model content changed; whole obligations apply".to_owned()
+            }
             Self::VersionChanged { before, after } => format!("version {before} → {after}"),
             Self::SummaryChanged { before, after } => format!(
                 "summary {} → {}",
@@ -1362,12 +1397,28 @@ pub enum ComponentChange {
         /// What it says.
         after: Option<String>,
     },
+    /// Semantic coverage added in `ess-diff/2`: reach-changed.
+    ReachChanged {
+        /// The previous contract.
+        before: String,
+        /// The new contract.
+        after: String,
+    },
+    /// Semantic coverage added in `ess-diff/2`: cli-changed.
+    CliChanged {
+        /// The previous contract.
+        before: Option<CliContract>,
+        /// The new contract.
+        after: Option<CliContract>,
+    },
 }
 
 impl ComponentChange {
     /// The subtype word, which is also the document's `kind`.
     pub const fn kind(&self) -> &'static str {
         match self {
+            Self::ReachChanged { .. } => "reach-changed",
+            Self::CliChanged { .. } => "cli-changed",
             Self::Added => "added",
             Self::Removed => "removed",
             Self::OwnsAdded { .. } => "owns-added",
@@ -1405,6 +1456,8 @@ impl ComponentChange {
     /// One clause saying what moved.
     pub fn describe(&self) -> String {
         match self {
+            Self::ReachChanged { before, after } => format!("reach {before} → {after}"),
+            Self::CliChanged { .. } => "command-line surface changed".to_owned(),
             Self::Added => "declared".to_owned(),
             Self::Removed => "no longer declared".to_owned(),
             Self::OwnsAdded { domain } => format!("owns {domain}"),
@@ -1625,12 +1678,20 @@ pub enum EntityChange {
         /// What it says.
         after: Option<String>,
     },
+    /// Semantic coverage added in `ess-diff/2`: relations-changed.
+    RelationsChanged {
+        /// The previous contract.
+        before: Vec<RelationContract>,
+        /// The new contract.
+        after: Vec<RelationContract>,
+    },
 }
 
 impl EntityChange {
     /// The subtype word, which is also the document's `kind`.
     pub const fn kind(&self) -> &'static str {
         match self {
+            Self::RelationsChanged { .. } => "relations-changed",
             Self::Added => "added",
             Self::Removed => "removed",
             Self::DomainChanged { .. } => "domain-changed",
@@ -1686,6 +1747,11 @@ impl EntityChange {
     /// One clause saying what moved.
     pub fn describe(&self) -> String {
         match self {
+            Self::RelationsChanged { before, after } => format!(
+                "relations changed: {} → {} declarations",
+                before.len(),
+                after.len()
+            ),
             Self::Added => "declared".to_owned(),
             Self::Removed => "no longer declared".to_owned(),
             Self::DomainChanged { before, after } => format!("owned by {after}, was {before}"),
@@ -1940,12 +2006,32 @@ pub enum CommandChange {
         /// What it says.
         after: Option<String>,
     },
+    /// Semantic coverage added in `ess-diff/2`: outcome-sets-changed.
+    OutcomeSetsChanged {
+        /// The branch whose behavior changed.
+        outcome: String,
+        /// The previous contract.
+        before: Vec<String>,
+        /// The new contract.
+        after: Vec<String>,
+    },
+    /// Semantic coverage added in `ess-diff/2`: outcome-refuses-changed.
+    OutcomeRefusesChanged {
+        /// The branch whose behavior changed.
+        outcome: String,
+        /// The previous contract.
+        before: bool,
+        /// The new contract.
+        after: bool,
+    },
 }
 
 impl CommandChange {
     /// The subtype word, which is also the document's `kind`.
     pub const fn kind(&self) -> &'static str {
         match self {
+            Self::OutcomeSetsChanged { .. } => "outcome-sets-changed",
+            Self::OutcomeRefusesChanged { .. } => "outcome-refuses-changed",
             Self::Added => "added",
             Self::Removed => "removed",
             Self::DomainChanged { .. } => "domain-changed",
@@ -1980,7 +2066,9 @@ impl CommandChange {
             | Self::InputWireNameChanged { field, .. }
             | Self::InputDisplayNameChanged { field, .. }
             | Self::InputSummaryChanged { field, .. } => Some(field.clone()),
-            Self::OutcomeAdded { outcome }
+            Self::OutcomeSetsChanged { outcome, .. }
+            | Self::OutcomeRefusesChanged { outcome, .. }
+            | Self::OutcomeAdded { outcome }
             | Self::OutcomeRemoved { outcome }
             | Self::OutcomeConditionChanged { outcome, .. }
             | Self::OutcomeSubjectChanged { outcome, .. }
@@ -2002,6 +2090,14 @@ impl CommandChange {
     /// One clause saying what moved.
     pub fn describe(&self) -> String {
         match self {
+            Self::OutcomeSetsChanged { outcome, .. } => {
+                format!("outcome `{outcome}` determined subject fields changed")
+            }
+            Self::OutcomeRefusesChanged {
+                outcome,
+                before,
+                after,
+            } => format!("outcome `{outcome}` refusal {before} → {after}"),
             Self::Added => "declared".to_owned(),
             Self::Removed => "no longer declared".to_owned(),
             Self::DomainChanged { before, after } => format!("owned by {after}, was {before}"),
@@ -2217,12 +2313,28 @@ pub enum ViewChange {
         /// What it says.
         after: Option<String>,
     },
+    /// Semantic coverage added in `ess-diff/2`: params-changed.
+    ParamsChanged {
+        /// The previous contract.
+        before: Vec<ParameterContract>,
+        /// The new contract.
+        after: Vec<ParameterContract>,
+    },
+    /// Semantic coverage added in `ess-diff/2`: ranking-changed.
+    RankingChanged {
+        /// The previous contract.
+        before: Vec<RankingContract>,
+        /// The new contract.
+        after: Vec<RankingContract>,
+    },
 }
 
 impl ViewChange {
     /// The subtype word, which is also the document's `kind`.
     pub const fn kind(&self) -> &'static str {
         match self {
+            Self::ParamsChanged { .. } => "params-changed",
+            Self::RankingChanged { .. } => "ranking-changed",
             Self::Added => "added",
             Self::Removed => "removed",
             Self::DomainChanged { .. } => "domain-changed",
@@ -2265,6 +2377,12 @@ impl ViewChange {
     /// One clause saying what moved.
     pub fn describe(&self) -> String {
         match self {
+            Self::ParamsChanged { before, after } => {
+                format!("parameters changed: {} → {}", before.len(), after.len())
+            }
+            Self::RankingChanged { before, after } => {
+                format!("ranking changed: {} → {} keys", before.len(), after.len())
+            }
             Self::Added => "declared".to_owned(),
             Self::Removed => "no longer declared".to_owned(),
             Self::DomainChanged { before, after } => format!("owned by {after}, was {before}"),
@@ -2614,4 +2732,74 @@ mod tests {
              slice has no rule that tells them apart"
         );
     }
+}
+
+/// One declared entity relation, without a handle tied to either compared IR.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct RelationContract {
+    /// Declaration name.
+    pub name: String,
+    /// `owns` or `references`.
+    pub kind: String,
+    /// Entity at the other end.
+    pub target: EntityRef,
+    /// `one` or `many`.
+    pub cardinality: String,
+    /// Field carrying the relation.
+    pub via: String,
+}
+
+/// The complete command-line placement contract.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct CliContract {
+    /// Executable name.
+    pub binary: String,
+    /// Top-level command set.
+    pub commands: std::collections::BTreeSet<CommandRef>,
+    /// Top-level view set.
+    pub views: std::collections::BTreeSet<ViewRef>,
+    /// Groups in authored order.
+    pub groups: Vec<CliGroupContract>,
+}
+
+/// One named CLI group.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct CliGroupContract {
+    /// Group word.
+    pub name: String,
+    /// Help text.
+    pub summary: Option<String>,
+    /// Group commands.
+    pub commands: std::collections::BTreeSet<CommandRef>,
+    /// Group views.
+    pub views: std::collections::BTreeSet<ViewRef>,
+}
+
+/// One parameter's normalized external contract.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ParameterContract {
+    /// Logical name.
+    pub name: String,
+    /// Resolved type spelling.
+    pub type_ref: String,
+    /// Effective wire name.
+    pub wire: String,
+    /// Effective display name.
+    pub display: String,
+    /// Documentation.
+    pub summary: Option<String>,
+}
+
+/// One ranking key, in significance order.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct RankingContract {
+    /// Projected field.
+    pub field: String,
+    /// `asc` or `desc`.
+    pub direction: String,
 }

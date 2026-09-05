@@ -132,6 +132,37 @@ fn emitted() -> Synthesis {
     synthesize_for(&ir, Target::Clap)
 }
 
+#[test]
+fn review_second_pass_actual_clap_manifest_retains_complete_comment_admission() {
+    let synthesis = emitted();
+    let manifests: Vec<_> = synthesis
+        .artifacts
+        .iter()
+        .filter(|(path, _)| path.ends_with("Cargo.toml"))
+        .collect();
+    assert_eq!(manifests.len(), 1);
+    for (path, artifact) in manifests {
+        let read = ess_gen::Provenance::read_digests(&artifact.contents)
+            .unwrap_or_else(|| panic!("{path}"));
+        let plan: serde_json::Value =
+            serde_json::from_str(&synthesis.artifacts["plan.json"].contents).unwrap();
+        assert_eq!(
+            read.source_digest,
+            plan["provenance"]["source_digest"].as_str().unwrap()
+        );
+        assert_eq!(
+            read.contract_digest,
+            plan["provenance"]["contract_digest"].as_str().unwrap()
+        );
+        let incomplete =
+            artifact
+                .contents
+                .replacen("# generated from desk v1\n", "# generated from desk\n", 1);
+        assert_ne!(incomplete, artifact.contents);
+        assert!(ess_gen::Provenance::read_digests(&incomplete).is_none());
+    }
+}
+
 fn source(synthesis: &Synthesis, path: &str) -> String {
     synthesis
         .artifacts

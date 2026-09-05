@@ -5,7 +5,7 @@
     "system": "billing",
     "specification_version": "v3",
     "source_digest": "56090788443a14b4a51ad151eb5cb3ebded2b98f6defe9ac50826296ac5d0942",
-    "contract_digest": "6f872768b2193219fb713f788d81a5228969f9996c8b0ec945481ae9d5d0ce82",
+    "contract_digest": "slice-sha256/2:6f872768b2193219fb713f788d81a5228969f9996c8b0ec945481ae9d5d0ce82",
     "regenerate": "ess generate"
   },
   "$defs": {

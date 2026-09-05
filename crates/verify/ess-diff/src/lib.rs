@@ -129,7 +129,9 @@ pub use change::{
     EntityChange, ErrorChange, EventChange, SemanticChange, SemanticRelation, SystemChange,
     TypeChange, ViewChange,
 };
-pub use delta::{DeltaFormat, EssDelta, EssRevisionRef, SUPPORTED_DELTA_FORMATS};
+pub use delta::{
+    DeltaFormat, DeltaWriteRefusal, EssDelta, EssRevisionRef, SUPPORTED_DELTA_FORMATS,
+};
 pub use diff::{diff, DiffRefusal};
 pub use graph::{DependencyEdge, DependencyRelation, ImpactClass, Reach, SemanticDependencyGraph};
 pub use impact::{

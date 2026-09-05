@@ -9,7 +9,7 @@
       "system": "gatepass",
       "specification_version": "v1",
       "source_digest": "f2e0f8ff51c077fa1c713d8151544379bafac36a5a927e71c685042d53ab6e61",
-      "contract_digest": "20853cb8a89aae494e4e0482cf050830b187d6ec3fe16e1df0ad24fc27112701"
+      "contract_digest": "slice-sha256/2:e6e58e055d24f8f494dcff274f55e723d967f9d1f9aea16641bb8dacbb71171e"
     },
     "x-ess-reached-by": "network"
   },
@@ -680,6 +680,215 @@
         "x-ess-kind": "newtype",
         "type": "string"
       }
+    }
+  },
+  "x-ess-entities": {
+    "gatepass.visit.Badge": {
+      "title": "Badge",
+      "x-ess-name": "gatepass.visit.Badge",
+      "x-ess-kind": "struct",
+      "type": "object",
+      "properties": {
+        "serial": {
+          "type": "string"
+        },
+        "printed_at": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "signature": {
+          "type": "string",
+          "pattern": "^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$",
+          "contentEncoding": "base64"
+        }
+      },
+      "required": [
+        "serial",
+        "signature"
+      ],
+      "additionalProperties": false
+    },
+    "gatepass.visit.Building": {
+      "title": "Building",
+      "x-ess-name": "gatepass.visit.Building",
+      "x-ess-kind": "enum",
+      "type": "string",
+      "enum": [
+        "North",
+        "South",
+        "Annex"
+      ]
+    },
+    "gatepass.visit.Deposit": {
+      "title": "Deposit",
+      "x-ess-name": "gatepass.visit.Deposit",
+      "x-ess-kind": "struct",
+      "type": "object",
+      "properties": {
+        "amount": {
+          "type": "string",
+          "format": "decimal",
+          "pattern": "^-?(0|[1-9][0-9]*)(\\.[0-9]+)?$"
+        },
+        "currency": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "amount",
+        "currency"
+      ],
+      "additionalProperties": false,
+      "x-ess-invariants": [
+        "amount >= 0"
+      ]
+    },
+    "gatepass.visit.EmployeeId": {
+      "title": "EmployeeId",
+      "x-ess-name": "gatepass.visit.EmployeeId",
+      "x-ess-kind": "newtype",
+      "type": "string"
+    },
+    "gatepass.visit.Host": {
+      "title": "Host",
+      "x-ess-name": "gatepass.visit.Host",
+      "x-ess-kind": "union",
+      "oneOf": [
+        {
+          "title": "contractor",
+          "type": "object",
+          "properties": {
+            "kind": {
+              "type": "string",
+              "const": "contractor"
+            },
+            "value": {
+              "$ref": "#/x-ess-entities/gatepass.visit.VendorRef"
+            }
+          },
+          "required": [
+            "kind",
+            "value"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "title": "employee",
+          "type": "object",
+          "properties": {
+            "kind": {
+              "type": "string",
+              "const": "employee"
+            },
+            "value": {
+              "$ref": "#/x-ess-entities/gatepass.visit.EmployeeId"
+            }
+          },
+          "required": [
+            "kind",
+            "value"
+          ],
+          "additionalProperties": false
+        }
+      ],
+      "x-ess-union-tag": "kind"
+    },
+    "gatepass.visit.VendorRef": {
+      "title": "VendorRef",
+      "x-ess-name": "gatepass.visit.VendorRef",
+      "x-ess-kind": "newtype",
+      "type": "string"
+    },
+    "gatepass.visit.Visit": {
+      "title": "Visit",
+      "x-ess-name": "gatepass.visit.Visit",
+      "x-ess-kind": "entity",
+      "type": "object",
+      "properties": {
+        "visit_id": {
+          "$ref": "#/x-ess-entities/gatepass.visit.VisitId"
+        },
+        "visitor": {
+          "$ref": "#/x-ess-entities/gatepass.visit.VisitorName"
+        },
+        "building": {
+          "$ref": "#/x-ess-entities/gatepass.visit.Building"
+        },
+        "host": {
+          "$ref": "#/x-ess-entities/gatepass.visit.Host"
+        },
+        "expected_minutes": {
+          "type": "integer"
+        },
+        "expected_stay": {
+          "type": "string",
+          "format": "duration"
+        },
+        "deposit": {
+          "$ref": "#/x-ess-entities/gatepass.visit.Deposit"
+        },
+        "escorts": {
+          "type": "array",
+          "items": {
+            "$ref": "#/x-ess-entities/gatepass.visit.VisitorName"
+          }
+        },
+        "notes": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string"
+          },
+          "x-ess-map-key": "String"
+        },
+        "badge": {
+          "$ref": "#/x-ess-entities/gatepass.visit.Badge"
+        },
+        "on_watchlist": {
+          "type": "boolean"
+        },
+        "state": {
+          "$ref": "#/x-ess-entities/gatepass.visit.Visit.State"
+        }
+      },
+      "required": [
+        "visit_id",
+        "visitor",
+        "building",
+        "host",
+        "expected_minutes",
+        "expected_stay",
+        "deposit",
+        "escorts",
+        "notes",
+        "on_watchlist",
+        "state"
+      ],
+      "additionalProperties": false
+    },
+    "gatepass.visit.Visit.State": {
+      "title": "State",
+      "x-ess-name": "gatepass.visit.Visit.State",
+      "x-ess-kind": "enum",
+      "type": "string",
+      "enum": [
+        "Departed",
+        "Expected",
+        "OnSite"
+      ]
+    },
+    "gatepass.visit.VisitId": {
+      "title": "VisitId",
+      "x-ess-name": "gatepass.visit.VisitId",
+      "x-ess-kind": "newtype",
+      "type": "string",
+      "format": "uuid",
+      "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$"
+    },
+    "gatepass.visit.VisitorName": {
+      "title": "VisitorName",
+      "x-ess-name": "gatepass.visit.VisitorName",
+      "x-ess-kind": "newtype",
+      "type": "string"
     }
   }
 }

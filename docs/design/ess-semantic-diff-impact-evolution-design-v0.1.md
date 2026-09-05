@@ -1,9 +1,201 @@
 # ESS Semantic Diff, Impact Analysis & Evolution Planning - Design v0.1
 
-> **Repository:** `beyond10x/aep`
-> **Status:** Proposed follow-on / cross-cutting design  
+> **Repository:** `beyond10x/ess`
+> **Status:** Binding migration addendum below; historical proposal follows.
 > **Audience:** Implementors extending ESS from single-revision specification and realization into semantic change analysis, proposal evaluation, and governed system evolution  
 > **Relationship to existing work:** Additive. Semantic diff can be introduced as soon as `EssIr` is stable. Realization-aware evolution planning depends on later synthesis/realization work, but does not require waiting for every advanced verification wave.
+
+---
+
+## Binding correction: semantic coverage and sliced provenance (2026-09-05)
+
+This addendum supersedes the historical proposal's format spellings, graph direction,
+coverage assumptions and provenance admission rules in §§9–25, 58, 60–61 and 63.
+The historical AEP integration and evolution sections describe possible external
+consumers, not dependencies of ESS. ESS owns semantic comparison and impact;
+organization rollout decisions belong to Atlas. No AEP runtime dependency is added.
+
+### Delta and impact admission
+
+The default delta writer emits `ess-diff/2`. A new reader accepts supported
+`ess-diff/1` and `/2` through `RawEssDelta -> EssDelta`, retaining all existing
+system, derived-id, derived-relation, order and uniqueness checks. `/1` accepts
+exactly the previous change vocabulary; a new variant relabeled `/1` is refused
+even if its id and relation are otherwise correct. Unsupported majors are refused.
+Existing `/1` changes retain their previous field shapes, ids, classifications and
+canonical order. Frozen valid `/1` documents must read and write back identically.
+
+The explicit version-selecting canonical writer returns a typed refusal for an
+unsupported version or a change unrepresentable in the requested version. It never
+drops changes. Default comparison emits `/2`; a caller may request `/1` only when
+every change belongs to the frozen old vocabulary. Public format-field mutation
+must not provide an unchecked serialization bypass: serialization itself checks
+version admission. No writer manufactures an empty legacy delta for a new change.
+
+New vocabulary is confined to existing semantic families:
+
+| Family | New subtype | Detail and identity |
+|---|---|---|
+| Entity | `relations-changed` | Before/after ordered relation descriptors: name, kind, typed target entity reference, cardinality, via field. Whole relation-list comparison preserves order. |
+| Component | `reach-changed` | Before/after declared reach words. |
+| Component | `cli-changed` | Before/after optional CLI descriptor: binary, ordered command/view sets, ordered groups with name, summary and command/view sets. |
+| Command | `outcome-sets-changed` | Outcome member plus before/after determined-field descriptions, using the same canonical expression spelling as existing payload changes. |
+| Command | `outcome-refuses-changed` | Outcome member plus before/after booleans. |
+| View | `params-changed` | Before/after ordered parameter contracts, including name, resolved type and effective wire/display names and summary. |
+| View | `ranking-changed` | Before/after ordered field/direction pairs. |
+| System | `unclassified-changed` | No fabricated subject or direction; revision references identify the differing models. Forces whole obligations. |
+
+Every new subtype has relation `changed`. Ids keep the existing contract:
+category / subject / subtype / optional member; `unclassified-changed` uses the
+existing system category with the system name in the id and no graph subject/member. Category ordering is unchanged;
+within a category use the existing subject/subtype/member ordering. New subtype
+names are not aliases of old kinds. No arbitrary JSON property bag is persisted.
+
+The default impact writer emits `ess-impact/3`, embedding a `/2` delta and the
+extended 26-relation vocabulary. This completes the unpublished migration decision
+recorded by the coordinator in Atlas ADR 0036 and its migration story revision 8;
+no `ess-impact/4` is introduced and no frozen `/2` meaning is rewritten.
+There is no established impact reader, so this change
+does not invent one or claim reader rollout. Existing obligation reasons remain
+usable; a legacy stamp mismatch and unreadable stamp already have distinct
+reasons. Whole invalidation for unexplained residual content remains conservative.
+
+### Coverage and graph contract
+
+Compare each omitted field through its owning typed comparator. Entity relation
+comparison includes kind, target, cardinality, carrier field, name and order.
+CLI comparison includes top-level and grouped views as well as commands. Params
+include naming metadata as well as type and order. Sets and refusal behavior are
+compared independently of payload/error changes. Equal parsed predicates remain
+equal; explicitly writing an already effective naming default remains equivalent.
+
+Maintain an explicit coverage projection of the serialized IR: remove only fields
+whose complete semantics the typed comparators already compare, or whose value is
+a documented function of such a field. Retain all unknown residual fields,
+including refs, shape references, unclassified families and unknown nested fields.
+Normalize effective naming defaults before deciding equality. Prune empty residual
+containers so a classified addition/removal alone does not fabricate residual
+change. A named list member with remaining content retains its name before empty
+siblings are pruned: relocating identical residual content between owners must
+remain visible. Apply this rule to outcomes, fields and lifecycle transitions;
+top-level declarations already retain their map keys. Compare residuals independently of whether classified changes exist. A
+difference emits `unclassified-changed` and forces whole artifact/scenario
+obligations. Reordering common lifecycle transitions is also retained as residual
+information: route comparison keys by name, while generated diagrams preserve
+order. Additions/removals alone remain accounted for by their typed changes. This is a coverage check, not a new JSON-diff output language. A source
+digest mismatch is neither sufficient to invalidate a known equivalence nor
+sufficiently explained merely because one classified change was found.
+
+Edges point dependent → dependency. Impact follows reverse edges over the union
+of before and after graphs; artifact slices follow forward edges in their own
+revision. Preserve all 21 existing relation variants and their production tests.
+Add explicit relations for entity relation targets, reverse ownership carriers,
+view exposure, parameter types and reusable row shapes. Their exact spellings are
+`relation-target`, `ownership-carrier`, `exposes-view`, `parameter-type` and
+`row-shape`, respectively. A relation source depends on its target;
+an `owns` target also depends on its declaring source because its generated field
+annotation reads that declaration. This deliberate cycle is finite under visited
+sets and is necessary to invalidate both schema ends. CLI components depend on
+every top-level/grouped view they expose. `ExposesView` also links a network
+component to exactly the views in its owned domains, matching the selection in
+`ess-gen::http::routes`: gate that derived exposure on `reached_by == Reach::Network`.
+Components own domain handles, and unrelated domains or non-network components
+gain no derived exposure. A view depends on its declared parameter types and,
+through `RowShape`, on the complete named reusable type supplying its row. Copied
+resolved fields do not replace that row type's constraints and metadata. This is
+a distinct view-to-TypeHandle dependency, not a parameter or field-leaf relation.
+All 26 graph relations must each be reached from a valid compiled fixture.
+
+### Profiled sliced contract digests
+
+`Provenance.source_digest` remains the exact existing SHA-256 of compact serialized
+IR. Its algorithm, inputs and spelling do not change. `WholeModel` contract hashing
+continues enumerating every construct directly, bypassing the graph, with the
+exact existing payload and bare 64 lowercase hex spelling. Suite `/4`, neutral
+plans and whole-model index artifacts therefore retain their existing bytes for
+unchanged inputs. Tests freeze those bytes independently of new slice assertions.
+
+Every `ModelSlice::Constructs` contract digest is now the String
+`slice-sha256/2:<64 lowercase hex>`, including slices whose underlying digest did
+not change. The suffix uses the existing slice payload/hash algorithm with the
+corrected graph closure. The prefix is part of identity, not decoration: bare
+legacy slice stamps owe regeneration even if their old hash equals the suffix.
+Unknown profile versions, malformed hashes, uppercase, extra trailing text and
+conflicting authoritative stamps are unreadable, hence owed. Verification compares
+the complete validated string against `ProvenanceMint::digest_of` for the expected
+slice. No profile is inferred from coincident hashes and no fallback follows an
+unsupported authoritative profile.
+
+Public `Provenance` fields remain Strings; existing struct literals and generic
+Serde remain source compatible. Their deserialization does not prove profile
+admission. The stamp verifier is the admission boundary; generic old Serde readers
+will accept the new string and must not be described as safely rejecting it.
+
+### Authoritative stamp framing and legacy limits
+
+The new reader recognizes the writer's complete provenance envelope, not markers
+found anywhere in model prose. For comment forms, accept the generated four-line
+header at the beginning of the document (`#`, `//`, HTML comment, CSS/JS block
+comment), with the existing HTML doctype allowed before its comment. The existing
+redistributed-license suffix has its exact delimiter and explanatory sentence
+followed by the terminal four-line provenance block; it stays byte-identical.
+Complete envelope structure and exact digest tokens are required.
+
+For structured JSON, read direct provenance fields, root `provenance`, root
+`x-ess-provenance`, or `info.x-ess-provenance` in the corresponding emitted
+document shape. YAML OpenAPI/AsyncAPI comments and structured attribution must
+agree. Multiple authoritative candidate envelopes, duplicate authoritative keys,
+missing paired values and conflicting source/contract pairs are refused; model
+strings containing marker-looking text are not candidate envelopes. Identical
+comment/structured copies emitted by one writer are allowed after comparison.
+Each structured provenance requires nonempty string `system` and
+`specification_version` as well as the validated digest pair. The schema root
+`x-ess-provenance` is `Attribution` and also requires nonempty string `regenerate`;
+plain `Provenance`, plan provenance and API `info.x-ess-provenance` do not emit that
+field. Paired YAML copies agree on system, specification version and both digests.
+The existing Cargo writer frame is a `#` header naming `ess synthesize` (including
+its target options) or `cargo xtask synth --target clap`, followed by a `[workspace]`
+or `[package]` body. That frame has no structured attribution; admitting its header
+does not validate TOML. Projection headers naming `ess generate` continue requiring
+the complete paired YAML whenever a body follows, including when that body is
+malformed or its attribution was removed. This clarifies existing writer frames
+without changing generated bytes or claiming an impact caller for each manifest.
+`ess-docs/1` is a multipage document, not one flattened artifact stamp; no search
+through arbitrary pages is permitted to guess its identity.
+
+`ess-docs/1` keeps its existing nested `SlicedProvenance` shape. Its per-page
+Constructs profile becomes `slice-sha256/2`; WholeModel pages stay bare. The
+document label still versions its page/section shape, not validated graph-slice
+semantics. Existing `Document`/`SlicedProvenance` Deserialize implementations accept
+Strings and do not validate the format field or profile. This is an explicit
+compatibility limit, not a claimed admission guarantee. A consumer comparing a
+page stamp must use the validated profile and expected slice; a consumer merely
+rendering a parsed document is not a digest verifier.
+
+Retain the exact old substring-reader implementation in compatibility tests. New
+ordinary sliced emissions cause that old reader to refuse because the profile
+starts before the hex; changing only comments or appending a suffix would not.
+However, the old reader searches unrelated text and may fall back to another
+marker spelling after encountering an unsupported stamp. Marker-looking model
+content can therefore fool it. Tests demonstrate both ordinary refusal and this
+real limitation; they do not claim retroactive protection for deployed old code.
+New-reader tests establish envelope isolation and no unsupported-profile fallback.
+
+### Validation and coordinated rollout boundary
+
+Red-first mutation tests cover every omission, reverse ownership propagation,
+mixed classified/residual edits, unchanged/equivalent controls and before/after
+union. Version vectors cover frozen `/1`, new `/2`, mislabeled new vocabulary,
+unsupported versions and legacy writer refusal. Emission tests cover every actual
+comment/JSON/YAML shape plus marker-looking content, old-reader behavior and
+docs-ir generic-reader limits. HTTP generator tests check embedded OpenAPI/docs
+and preserve neutral plan bytes. Regeneration measures actual changes; the four
+Gatepass Rust/Go HTTP payloads are source-derived expected scope until measured.
+
+Local package results establish implementation behavior only. Atlas owns the ADR,
+published reader inventory, current consumer pins and downstream byte checks
+before these defaults are published. No local test proves deployed admission or
+completion of that coordinated rollout.
 
 ---
 

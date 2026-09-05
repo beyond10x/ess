@@ -30,6 +30,8 @@ use ess_diff::{diff, SemanticRelation};
 use ess_domain::spec::{RawSpecFile, Specification};
 use ess_domain::system::Source;
 
+mod support;
+
 /// The header, and the one component: a file that names no domain of its own.
 const SYSTEM: &str = r"
 format: ess/1
@@ -1774,4 +1776,214 @@ fn a_bindings_naming_is_compared_key_by_key() {
             "binding/note-on-close/wire-name-changed".to_owned(),
         ]
     );
+}
+
+// Review F01: exercise compiled inputs, the public delta, and artifact obligations together.
+fn review_change(before: &EssIr, after: &EssIr, kind: &str) {
+    assert_ne!(
+        before.source_digest(),
+        after.source_digest(),
+        "the mutation changes input"
+    );
+    let report = ess_diff::impact(before, after, None, None).expect("one system");
+    let encoded = report.delta.to_canonical_json();
+    let decoded = ess_diff::EssDelta::try_from(
+        serde_json::from_str::<ess_diff::RawEssDelta>(&encoded).unwrap(),
+    )
+    .unwrap();
+    assert_eq!(
+        decoded, report.delta,
+        "every new variant survives the checked v2 reader"
+    );
+    assert!(
+        matches!(
+            report
+                .delta
+                .to_canonical_json_for(ess_diff::DeltaFormat::LEGACY),
+            Err(ess_diff::DeltaWriteRefusal::UnrepresentableChange { .. })
+        ),
+        "no new variant may leak into the legacy writer"
+    );
+    for change in report.delta.changes() {
+        assert_eq!(
+            serde_json::to_value(change).unwrap()["changed"]["kind"],
+            change.kind()
+        );
+    }
+
+    assert!(
+        report
+            .delta
+            .changes()
+            .iter()
+            .any(|change| change.kind() == kind),
+        "missing {kind}: {}",
+        report.delta.to_canonical_json()
+    );
+    assert!(
+        report.artifacts.owed().is_none_or(|owed| !owed.is_empty()),
+        "{kind} must owe artifacts: {:?}",
+        report.artifacts
+    );
+}
+
+#[test]
+fn review_relation_cardinality_name_and_removal_are_changes() {
+    let before = support::compiled("examples/billing");
+    for mutation in 0..3 {
+        let after = support::compiled_with("examples/billing", |files| {
+            let account = files
+                .iter_mut()
+                .flat_map(|(_, file)| &mut file.entities)
+                .find(|entity| !entity.relations.is_empty())
+                .expect("the ownership relation");
+            match mutation {
+                0 => account.relations[0].cardinality = ess_domain::entity::Cardinality::One,
+                1 => account.relations[0].name = "owned_invoices".to_owned(),
+                _ => account.relations.clear(),
+            }
+        });
+        review_change(&before, &after, "relations-changed");
+    }
+}
+
+#[test]
+fn review_reach_is_a_change_without_an_unrelated_surface_edit() {
+    let before = compiled(&base());
+    let after = compiled(&[
+        (
+            "system",
+            &edited_system(
+                "    summary: Runs orders.",
+                "    summary: Runs orders.\n    reached_by: network",
+            ),
+        ),
+        ("domain", DOMAIN),
+    ]);
+    review_change(&before, &after, "reach-changed");
+}
+
+fn review_cli(grouped: bool, binary: &str) -> String {
+    let views = if grouped {
+        "      groups:\n        - name: read\n          views: [witness.orders.OrderById]"
+    } else {
+        "      views: [witness.orders.OrderById]"
+    };
+    edited_system("    summary: Runs orders.", &format!(
+        "    summary: Runs orders.\n    reached_by: command_line\n    cli:\n      binary: {binary}\n      commands: [witness.orders.CloseOrder]\n{views}"))
+}
+
+#[test]
+fn review_cli_top_level_grouped_views_and_binary_are_changes() {
+    let before = compiled(&[("system", &review_cli(false, "orders")), ("domain", DOMAIN)]);
+    for system in [review_cli(true, "orders"), review_cli(false, "orders-next")] {
+        let after = compiled(&[("system", &system), ("domain", DOMAIN)]);
+        review_change(&before, &after, "cli-changed");
+    }
+}
+
+#[test]
+fn review_outcome_sets_are_independent_of_event_payload() {
+    let before = support::compiled("examples/billing");
+    let after = support::compiled_with("examples/billing", |files| {
+        let outcome = files
+            .iter_mut()
+            .flat_map(|(_, file)| &mut file.commands)
+            .flat_map(|command| &mut command.outcomes)
+            .find(|outcome| !outcome.sets.is_empty())
+            .expect("billing determines subject fields");
+        outcome.sets.0.clear();
+    });
+    review_change(&before, &after, "outcome-sets-changed");
+}
+
+#[test]
+fn review_outcome_refusal_is_independent_of_its_error() {
+    let before = compiled(&base());
+    let after = compiled(&[
+        ("system", SYSTEM),
+        (
+            "domain",
+            &edited(
+                "        wrong_state: true\n        error: witness.orders.OrderStateConflict",
+                "        wrong_state: true\n        refuses: false",
+            ),
+        ),
+    ]);
+    review_change(&before, &after, "outcome-refuses-changed");
+}
+
+#[test]
+fn review_view_parameter_naming_is_compared_without_a_filter_edit() {
+    let domain = edited("    filter: state == Open", "    params:\n      - name: wanted\n        type: witness.orders.OrderId\n    filter: order_id == param.wanted");
+    let before = compiled(&[("system", SYSTEM), ("domain", &domain)]);
+    let after_domain = domain.replace(
+        "      - name: wanted\n",
+        "      - name: wanted\n        summary: The requested order.\n",
+    );
+    let after = compiled(&[("system", SYSTEM), ("domain", &after_domain)]);
+    review_change(&before, &after, "params-changed");
+    let explicit = domain.replace(
+        "      - name: wanted\n",
+        "      - name: wanted\n        wire: wanted\n        display: wanted\n",
+    );
+    let equivalent = compiled(&[("system", SYSTEM), ("domain", &explicit)]);
+    assert!(
+        diff(&before, &equivalent).unwrap().is_empty(),
+        "effective parameter naming defaults are equivalent"
+    );
+}
+
+#[test]
+fn review_view_ranking_is_compared_without_a_filter_edit() {
+    let before = support::compiled("examples/billing");
+    let after = support::compiled_with("examples/billing", |files| {
+        let view = files
+            .iter_mut()
+            .flat_map(|(_, file)| &mut file.views)
+            .find(|view| !view.order_by.is_empty())
+            .expect("billing has a ranked view");
+        view.order_by.clear();
+    });
+    review_change(&before, &after, "ranking-changed");
+}
+
+#[test]
+fn review_residual_refs_cannot_hide_beside_a_classified_change() {
+    let before = compiled(&base());
+    for classified in [false, true] {
+        let mut system = edited_system(
+            "    summary: Runs orders.",
+            "    summary: Runs orders.\n    refs: [jira:DEV-630]",
+        );
+        if classified {
+            system = system.replace("Runs orders.", "Runs revised orders.");
+        }
+        let after = compiled(&[("system", &system), ("domain", DOMAIN)]);
+        review_change(&before, &after, "unclassified-changed");
+        let report = ess_diff::impact(&before, &after, None, None).unwrap();
+        assert!(matches!(
+            report.artifacts,
+            ess_diff::impact::ArtifactAnswer::Whole { .. }
+        ));
+    }
+}
+
+#[test]
+fn review_unclassified_transition_order_cannot_hide_beside_a_classified_edit() {
+    let before = support::compiled("examples/billing");
+    for classified in [false, true] {
+        let after = support::compiled_with("examples/billing", |files| {
+            let entity = files
+                .iter_mut()
+                .flat_map(|(_, file)| &mut file.entities)
+                .find(|entity| entity.states.transitions.len() > 1)
+                .expect("billing declares multiple moves");
+            entity.states.transitions.swap(0, 1);
+            if classified {
+                entity.naming.summary = Some("Revised explanation.".to_owned());
+            }
+        });
+        review_change(&before, &after, "unclassified-changed");
+    }
 }
