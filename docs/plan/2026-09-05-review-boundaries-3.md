@@ -41,9 +41,9 @@ Worktree root: /home/timo/.local/state/worktree/trees/b10x/ess. Every unit branc
 
 | Story | Branch | Managed worktree under root | Build/temp | Logs/reports | Stage |
 | --- | --- | --- | --- | --- | --- |
-| review-persisted-delivery-validation | impl/review-persisted-delivery-validation | review-persisted-delivery-validation | target/ | target/review-boundaries-3/ | implementation returned; reviewed at 4289e3eb636a97b73f8261dd6d68f3027afe9f65; integration pending |
+| review-persisted-delivery-validation | impl/review-persisted-delivery-validation | review-persisted-delivery-validation | target/ | target/review-boundaries-3/ | implementation returned; reviewed; merged at 170fdfa1f3061af33f4de558d22de4711ab6194d |
 | review-typescript-root-collision | impl/review-typescript-root-collision | review-typescript-root-collision | target/ | target/review-boundaries-3/ | reviewed; merged at 0d267e25739ca495ad1a229393181ad1b75182f3 |
-| review-conformance-format-design | impl/review-conformance-format-design | review-conformance-format-design | target/ | target/review-boundaries-3/ | corrected at dc746cfab0e628ad28911cbee32c1031a9efb6dd; final review running |
+| review-conformance-format-design | impl/review-conformance-format-design | review-conformance-format-design | target/ | target/review-boundaries-3/ | final review complete; bounded correction running |
 
 All units were provisioned at exact opening commit 45832cc885377b2d61845ee33af14f0293d99e67, branched as above, and assigned active leases <story>-wave3. Full briefs and the compiler-cache resource supplement live in each assigned scratch root. Implementor threads are impl_containment (delivery), impl_diagnostic (TypeScript), and scope_conformance_design (design).
 
@@ -1552,5 +1552,72 @@ No handoff is an integrated acceptance or completed story. The coordinator also 
   "collisions": [],
   "unassessed": [],
   "cycles": []
+}
+```
+
+## Conformance final review and bounded correction
+
+The immutable second pass is review-result:review-boundaries-3-conformance-design-adversary-pass-2 at dc746cfab0e628ad28911cbee32c1031a9efb6dd. Findings fell from3 to2: carried0, new2, resolved3. The new source-backed issues are identical refusal multiplicity and unsigned/signed timestamp ambiguity; no earlier correction regressed. Under standing authorization the coordinator bound a sorted refusal list preserving every occurrence and exact u64 timestamps for new report/run contracts with checked adapters and frozen legacy behavior. Original implementor receives only these correction classes. Coordinator will personally inspect the diff and preservation of earlier assertions; no third full attack. These are document-only findings, with no runtime case claim.
+
+Exact CLI comparison:
+
+```json
+{
+  "artifact": "story:review-conformance-format-design",
+  "reviews": 10,
+  "from": "review-result:review-boundaries-3-conformance-design-adversary-pass-1",
+  "from_reviewer": "unattributed",
+  "to": "review-result:review-boundaries-3-conformance-design-adversary-pass-2",
+  "to_reviewer": "unattributed",
+  "carried": [],
+  "new": [
+    {
+      "file": "docs/design/review-conformance-coverage.md",
+      "line": 116,
+      "category": "acceptance",
+      "severity": "blocker",
+      "verdict": "NEEDS-CHANGE",
+      "origin": "introduced",
+      "message": "The design forbids duplicate refusal records and omitted refusals without defining how to preserve repeated identical refusals that current generated and authored producers emit."
+    },
+    {
+      "file": "docs/design/review-conformance-coverage.md",
+      "line": 167,
+      "category": "contract-drift",
+      "severity": "warning",
+      "verdict": "CONFIRMED",
+      "origin": "introduced",
+      "message": "The report timestamp is described as an existing signed value although Rust uses u64 and Go uses int64, while the shared new writer rules require unsigned integer fields, leaving the v2 timestamp range and conversion contract contradictory."
+    }
+  ],
+  "resolved": [
+    {
+      "file": "docs/design/review-conformance-coverage.md",
+      "line": 95,
+      "category": "acceptance",
+      "severity": "blocker",
+      "verdict": "NEEDS-CHANGE",
+      "origin": "introduced",
+      "message": "The refusal-ID disjointness rule cannot preserve existing synthesis results that retain a runnable scenario beside a refusal for an unimplemented check, or an accepted authored scenario beside a duplicate-source refusal."
+    },
+    {
+      "file": "docs/design/review-conformance-coverage.md",
+      "line": 167,
+      "category": "boundary",
+      "severity": "blocker",
+      "verdict": "NEEDS-CHANGE",
+      "origin": "introduced",
+      "message": "Independent suite-v5 and report-v1 selections have no specified writer outcome even though the frozen report-v1 reader rejects suite major 5, leaving the advertised opt-in rollout without a complete version-pairing contract."
+    },
+    {
+      "file": "docs/design/review-conformance-coverage.md",
+      "line": 31,
+      "category": "contract-drift",
+      "severity": "warning",
+      "verdict": "CONFIRMED",
+      "origin": "introduced",
+      "message": "The impact compatibility rules name impact/1 although the cited ESS baseline writes ess-impact/2, so the frozen contract and its migration target are identified incorrectly."
+    }
+  ]
 }
 ```
