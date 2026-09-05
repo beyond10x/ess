@@ -24,6 +24,7 @@ that major as a number. Delivery release versions and constraints use SemVer ind
 | **Delivery document**: `Digest` | `sha256:<64 lowercase hex>`. Canonical delivery `digest()` methods hash pretty JSON including its final LF. Artifact/OCI digests can use the same spelling for different bytes. [Source][delivery-identity] |
 | **Realization**: `realization_digest` | Prefixed SHA-256 of the compact specification/synthesis/implementations tuple, not the entire realization document. [Source][realization] |
 | **Infrastructure model**: InfraIR `digest` | Bare SHA-256 of compact, key-sorted `model` JSON, excluding the envelope and observation provenance. [Source][infra-ir] |
+| **Infrastructure intent**: `InfraSpec::digest()`, projection `provenance.specification_digest` | Bare 64 lowercase SHA-256 of compact, key-sorted serialized typed `InfraSpec`: `format`, `name` and `expectations`, with no appended newline. Array order, including declared expectation order, remains significant. This differs from authored-file, InfraIR-model and whole-projection identity. [Digest][infra-spec-digest], [consumer][infra-project] |
 
 A digest field identifies only the bytes its producer defines. Matching syntax does not establish
 that two digest domains are interchangeable, that a report covers its exact suite, or that a remote
@@ -79,7 +80,7 @@ inputs are supplied; they do not prove remote artifact contents or authenticity.
 |---|---|---|
 | `format: ess-diff/1` | Before/after compiled-model digests and specification majors | Legacy vocabulary/bytes retained; raw closed DTO → validated delta. Explicit legacy writing refuses new-only kinds. Pretty JSON; no delta-file hash. [Writer][delta], [reader][delta-reader] |
 | **Default** `format: ess-diff/2` | Same endpoint identities | Supported delta majors are 1 and 2. Admission checks ids, relations, order, uniqueness and same-system identity; serialization checks the selected vocabulary. Pretty JSON. [Source][delta] |
-| **Current** `format: ess-impact/3` | Embedded /2 delta, optional suite and artifact identities | Generated report with 26 dependency relations; no persisted report reader. Pretty JSON; references input digests. [Source][impact] |
+| **Current** `format: ess-impact/3` | Embedded /2 delta, optional suite and artifact identities | `ess_diff::impact` returns `EssImpact` with 26 dependency relations; no persisted report reader. Pretty JSON; references input digests. [Source][impact] |
 | Authored **`type: ess-scenario/1`** | Domain/scenario identity and purpose | Closed authored DTO, then compilation against IR. No raw-source canonical digest. [Source][authored] |
 | Suite **`provenance.suite_version: ess-conformance/4`** | Specification `vN`, model and whole-contract digests | Derived Deserialize/from_json parses a suite. Declared support `[1,2,3,4]` is not uniform execution admission: syntax parsing alone can accept an unsupported major. Pretty JSON; no digest of exact suite bytes. [Source][suite] |
 | Rust `format: ess-conformance-report/1` | Model digest, implementation and suite-version claim | Checked closed reader validates version/counts/list/status; it does not establish exact-suite coverage or unique opaque result ids. Pretty JSON; unsigned u64 `completed_at`. [Source][report] |
@@ -123,12 +124,12 @@ schema resource independently of any digest.
 |---|---|---|
 | `format: infra-observation/1` | Context, scan time, scanner release | Sanitized scanner output; permissive raw DTO → observation validation. Pretty JSON without an appended LF; scanner-reported hash covers those file bytes. It does not prove complete collection scope. [Writer][scanner], [reader][observation] |
 | `format: infra-ir/1` | Observation provenance and model digest | `read_document` checks exact format, closed mirrors, hash and resolved-reference membership. CLI pretty envelope; **infrastructure-model** digest. Checked model transformations add no wire version or completeness proof. [API][infra-ir], [reader][infra-reader] |
-| `format: infra-spec/1` | Human-readable intent name | JSON/YAML → raw shapes → validated intent. No canonical authored-file digest. [Source][infra-spec] |
+| `format: infra-spec/1` | Human-readable intent name and typed-intent digest | JSON/YAML → raw shapes → validated `InfraSpec`. `digest()` hashes the compact sorted typed intent; no canonical authored-file digest. [Reader][infra-spec], [digest][infra-spec-digest] |
 | `format: infra-drift/1` | Before/after context and model digests | Serialize-only typed comparison; key-sorted pretty JSON. Context agreement does not prove equal collection scope. [Source][infra-drift] |
 | `format: infra-simulation/1` | Intent name and snapshot digest | Serialize-only simulation with unknown outcomes; key-sorted pretty JSON, no simulation hash. [Source][infra-simulation] |
 | `format: infra-graph/1` | Context/namespace and `source_digest` | Serialize-only graph; pretty JSON. Its source digest names the **InfraIR model**, not EssIr. [Source][infra-graph] |
-| `format: infra-projection/1` JSON, **artifacts list** | Intent and projection provenance | `ProjectionDocument` contains emitted file contents; key-sorted pretty JSON, no reader or whole-output hash. [Source][infra-project] |
-| `format: infra-projection/1` YAML, **patches/objects lists** | Same intent/provenance | CLI serializes `Projection` directly. This differs from the JSON document despite the shared marker; no persisted reader. [Type][infra-project], [CLI][cli] |
+| `format: infra-projection/1` JSON, **artifacts list** | Intent name; `provenance.snapshot_digest` names InfraIR model, `provenance.specification_digest` names typed InfraSpec | `ProjectionDocument` contains emitted file contents and both input digests; key-sorted pretty JSON, no reader or whole-output hash. [Source][infra-project] |
+| `format: infra-projection/1` YAML, **patches/objects lists** | Same intent name, snapshot digest and typed-intent `specification_digest` | CLI serializes `Projection` directly, retaining both input digests. This differs from the JSON document despite the shared marker; no persisted reader. [Type][infra-project], [CLI][cli] |
 
 ## Compatibility boundaries
 
@@ -187,6 +188,7 @@ suite-byte identity. A format catalog alone does not establish an external consu
 [infra-ir]: https://github.com/beyond10x/ess/blob/main/crates/infra/infra-compiler/src/ir.rs
 [infra-reader]: https://github.com/beyond10x/ess/blob/main/crates/infra/infra-compiler/src/read.rs
 [infra-spec]: https://github.com/beyond10x/ess/blob/main/crates/infra/infra-spec/src/raw.rs
+[infra-spec-digest]: https://github.com/beyond10x/ess/blob/main/crates/infra/infra-spec/src/spec.rs
 [infra-drift]: https://github.com/beyond10x/ess/blob/main/crates/infra/infra-spec/src/drift.rs
 [infra-simulation]: https://github.com/beyond10x/ess/blob/main/crates/infra/infra-spec/src/simulate.rs
 [infra-graph]: https://github.com/beyond10x/ess/blob/main/crates/infra/infra-analyze/src/graph.rs
