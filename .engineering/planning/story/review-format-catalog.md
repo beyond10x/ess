@@ -2,7 +2,7 @@
 format: aep.planning-md/1
 id: story:review-format-catalog
 kind: story
-status: draft
+status: active
 title: Catalog format identities and canonical byte contracts
 tags:
 - P1
@@ -21,7 +21,7 @@ scope:
   path: website/docs/reference/formats.md
 - confidence: cited
   path: website/sidebars.ts
-revision: 8
+revision: 10
 ---
 ## Finding and source
 

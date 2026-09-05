@@ -2,7 +2,7 @@
 format: aep.planning-md/1
 id: story:review-rust-target-feasibility
 kind: story
-status: draft
+status: active
 title: Check Rust target feasibility before claiming generated output
 tags:
 - P1
@@ -19,7 +19,7 @@ scope:
   path: crates/generate/ess-synth
 - confidence: inferred
   path: docs/design/review-rust-target-feasibility.md
-revision: 6
+revision: 8
 ---
 ## Finding and source
 
