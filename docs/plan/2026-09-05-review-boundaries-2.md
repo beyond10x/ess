@@ -1,6 +1,6 @@
 # Review boundaries wave 2 — 2026-09-05
 
-**Implementing; diagnostic integrated, containment under correction.** This wave fixes untrusted kubectl failure diagnostics and output path containment. Both stories serve `vision:O2`.
+**Both units ready for integrated verification.** This wave fixes untrusted kubectl failure diagnostics and output path containment. Both stories serve `vision:O2`.
 
 Skill version 0.7.0. Coordinator: `wave/review-boundaries-2`, managed record `wt-752828a285ba`. Published base: `0f80f71e7ef997e8a3c7d2ad19e9997090e8e769`.
 
@@ -31,7 +31,7 @@ Absolute root: `/home/timo/.local/state/worktree/trees/b10x/ess`. Worktrees belo
 | Story | Branch | Worktree under root | Build | Scratch | Head/stage |
 | --- | --- | --- | --- | --- | --- |
 | review-kubectl-diagnostic-sanitization | impl/review-kubectl-diagnostic-sanitization | review-kubectl-diagnostic-sanitization | target/ | target/review-boundaries-2/ | 54102b9357151a4827817417ca14ec995bdd68c0; merged at 6685b1991bdee19b28316ccb531a4dbfa1c20f1d |
-| review-output-containment | impl/review-output-containment | review-output-containment | target/ | target/review-boundaries-2/ | dc122aea038cc18757c3a160b1b36b6798ef6df0; adversary pass 2 |
+| review-output-containment | impl/review-output-containment | review-output-containment | target/ | target/review-boundaries-2/ | f05048be88b2cc14612d34f9cef0044ab7335641; ready to integrate |
 
 File-backed briefs will bind exact opening SHA, assignments, package gates and scope confirmation. Coordinator owns AEP, source staging, bot commits, integration, gates, publication and managed cleanup. Each green implementation goes to a tests-only adversary. Max two full attack passes; routing preserves original reports verbatim. Each offline gate step reports its own exit code and runner output; applicable site build follows. No terminal move before those results.
 
@@ -1547,3 +1547,15 @@ The first second-pass dispatch returned the following harness error before produ
 > Agent errored: This content was flagged for possible cybersecurity risk. If this seems wrong, try rephrasing your request. To get authorized for security work, join the Trusted Access for Cyber program: https://chatgpt.com/cyber
 
 This is a failed dispatch, not a completed attack or a green result. The coordinator informed the operator and retried the same reviewer with an explicitly local synthetic-fixture regression scope: no network, credentials, external systems, real user files, races or permission changes. The two-pass limit is unchanged; the required second test review remains pending.
+
+## Second review completion and operational adaptations
+
+The restricted delegated retry also ended with the same automatic content rejection. It left five added integration cases and startup-failure logs; no test had executed because sccache failed before rustc. The coordinator completed the same second review locally, preserving all additions and initial logs. The report is preserved verbatim as review-result:review-boundaries-2-containment-adversary-pass-2. This is a documented delegation adaptation, not a third attack or an independent/human approval claim. No production file was edited during this review.
+
+Cargo had cached the failed rustc metadata query. The failed metadata and socket trace were preserved before removing only target/.rustc_info.json. A task-specific sccache socket remained inside the unit target and used the existing shared cache; its stop command returned0 and its socket no longer accepted a connection. A temporary external scratch root /home/timo/.cache/ess-w2-ctmp held only the first actual case's synthetic files; fixture cleanup and rmdir removed it. The briefly assigned target/t root was also removed. No compiler target was shared and no unrelated cache server or worktree was changed.
+
+Four new isolated cases passed immediately after tool recovery; a fifth lacked a required platform in its synthetic BuildSpec. Adding that fixture field preserved every assertion and its isolated execution passed. Complete package suites then executed235 cases (CLI46, gen189), all passing, no ignored cases; package fmt and strict Clippy exited0. The new cases cover native caller filenames, nested disjoint companions, normalized parent links, four generation sinks and two projection sinks with valid/repeat controls and late conflicts. The preserved patch is docs/reviews/2026-09-05-review-boundaries-2-containment-adversary-pass-2-tests.patch.
+
+The CLI findings comparison reports carried=[], new=[], and the one first-pass compose blocker resolved. No finding remains for this unit; the original immutable report and its fixed outcome remain intact.
+
+Second-review tests are committed at f05048be88b2cc14612d34f9cef0044ab7335641 with exact bot author and committer. Atlas remote advanced again; the existing clean managed authority wt-90ec680c6073 was reused at exact remote 7b00adf3b1004e0cdd8dd12aa4fa8cc8435a0432, with clean HEAD/remote equality verified. Its AGENTS, bot wrapper and fence script bytes did not change in that advance.
