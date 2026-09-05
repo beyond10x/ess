@@ -202,7 +202,7 @@ fn absent_optional_secret_fields_and_empty_maps_remain_allowed() {
 }
 
 #[test]
-fn known_kubectl_stderr_disclosure_is_confined_to_the_failure_diagnostic() {
+fn failed_secret_subprocess_diagnostics_do_not_echo_secret_values() {
     let root = fixture_root();
     let destination = root.join("failed-secret-observation.json");
     std::fs::write(&destination, PREVIOUS).expect("existing sanitized observation");
@@ -221,19 +221,163 @@ fn known_kubectl_stderr_disclosure_is_confined_to_the_failure_diagnostic() {
         std::fs::read(destination).expect("preserved observation"),
         PREVIOUS
     );
-    // story:review-kubectl-diagnostic-sanitization owns this baseline-reproduced defect.
-    // When it lands, replace this characterization with the preserved no-disclosure assertion.
+    assert!(
+        !String::from_utf8_lossy(&output.stdout).contains(SENTINEL)
+            && !String::from_utf8_lossy(&output.stderr).contains(SENTINEL),
+        "the failed Secret subprocess diagnostic leaked the synthetic sentinel"
+    );
     assert!(
         output.stdout.is_empty(),
         "a failed scan must not print a response"
     );
     let stderr = String::from_utf8_lossy(&output.stderr);
-    let expected = format!(
-        "error: kubectl --context synthetic-context get secrets -o json failed: \
-         malformed synthetic Secret response: {SENTINEL}\n"
-    );
-    assert_eq!(stderr.rsplit('\r').next(), Some(expected.as_str()));
-    assert_eq!(stderr.matches(SENTINEL).count(), 1);
+    assert!(stderr.contains("kubectl get resources failed"));
+    assert!(stderr.contains('1'), "exit status must remain visible");
+}
+
+#[test]
+fn every_kubectl_caller_uses_value_free_failure_diagnostics() {
+    const CONTEXT: &str = "SYNTHETIC-UNTRUSTED-CONTEXT";
+    let root = fixture_root();
+    let operations = ["contexts", "current-context"]
+        .into_iter()
+        .chain(ess_kubernetes::KINDS.iter().copied());
+    for operation in operations {
+        for invalid_utf8 in [false, true] {
+            for explicit_context in [false, true] {
+                let destination = root.join(format!(
+                    "failure-{operation}-{invalid_utf8}-{explicit_context}.json"
+                ));
+                let call_log = destination.with_extension("calls");
+                std::fs::write(&destination, PREVIOUS).expect("previous observation");
+                let mut command = Command::new(env!("CARGO_BIN_EXE_ess-kubernetes"));
+                if operation == "contexts" {
+                    command.arg("contexts");
+                } else {
+                    command.args(["scan", "--out"]).arg(&destination);
+                    if explicit_context && operation != "current-context" {
+                        command.args(["--context", CONTEXT]);
+                    }
+                }
+                command
+                    .env("PATH", root.join("bin"))
+                    .env("ESS_TEST_CONTEXT", CONTEXT)
+                    .env("ESS_TEST_CALL_LOG", &call_log)
+                    .env("ESS_TEST_SECRET_RESPONSE", "{\"items\":[]}")
+                    .env("ESS_TEST_FAILURE_OPERATION", operation)
+                    .env("ESS_TEST_FAILURE_DIAGNOSTIC", SENTINEL);
+                if invalid_utf8 {
+                    command.env("ESS_TEST_INVALID_UTF8_STDERR", "1");
+                }
+                let output = command.output().expect("synthetic subprocess failure");
+                assert!(!output.status.success(), "{operation} must refuse");
+                assert!(
+                    output.stdout.is_empty(),
+                    "failed response must be discarded"
+                );
+                assert_eq!(
+                    std::fs::read(&destination).expect("prior observation"),
+                    PREVIOUS
+                );
+                let stderr = String::from_utf8(output.stderr).expect("value-free UTF-8 diagnostic");
+                assert!(
+                    !stderr.contains(SENTINEL),
+                    "{operation} leaked process output"
+                );
+                assert!(
+                    !stderr.contains(CONTEXT),
+                    "{operation} leaked context argument"
+                );
+                let label = match operation {
+                    "contexts" => "list contexts",
+                    "current-context" => "read current context",
+                    _ => "get resources",
+                };
+                assert!(
+                    stderr.contains(&format!("kubectl {label} failed")),
+                    "{stderr}"
+                );
+                assert!(stderr.contains('1'), "exit status must remain visible");
+                let calls = std::fs::read_to_string(call_log).expect("recorded operations");
+                if ess_kubernetes::KINDS.contains(&operation) {
+                    assert!(
+                        calls.ends_with(&format!(
+                            "{operation}:all_namespaces=true\n{operation}:all_namespaces=false\n"
+                        )),
+                        "both resource attempts must be preserved: {calls}"
+                    );
+                } else {
+                    assert_eq!(calls, format!("{operation}:all_namespaces=false\n"));
+                }
+            }
+        }
+    }
+}
+
+#[test]
+fn successful_resource_retry_preserves_context_order_and_observation_bytes() {
+    let root = fixture_root();
+    let (baseline, baseline_path) = scan("{\"items\":[]}", false);
+    assert!(baseline.status.success());
+    let baseline_bytes = std::fs::read(baseline_path).expect("baseline observation");
+    for explicit_context in [false, true] {
+        let destination = root.join(format!("successful-retry-{explicit_context}.json"));
+        let call_log = destination.with_extension("calls");
+        let mut command = Command::new(env!("CARGO_BIN_EXE_ess-kubernetes"));
+        command.args(["scan", "--out"]).arg(&destination);
+        if explicit_context {
+            command.args(["--context", "synthetic-context"]);
+        }
+        let output = command
+            .env("PATH", root.join("bin"))
+            .env("ESS_TEST_CALL_LOG", &call_log)
+            .env("ESS_TEST_SECRET_RESPONSE", "{\"items\":[]}")
+            .env("ESS_TEST_FAILURE_OPERATION", "all-resources")
+            .env("ESS_TEST_FAILURE_DIAGNOSTIC", SENTINEL)
+            .env("ESS_TEST_FAILURE_FIRST_ATTEMPT_ONLY", "1")
+            .env("ESS_TEST_INVALID_UTF8_STDERR", "1")
+            .output()
+            .expect("successful retry");
+        assert!(
+            output.status.success(),
+            "successful fallback must complete scan"
+        );
+        assert!(output.stdout.is_empty());
+        assert!(!String::from_utf8_lossy(&output.stderr).contains(SENTINEL));
+        assert_eq!(
+            std::fs::read(destination).expect("retry observation"),
+            baseline_bytes
+        );
+        let mut expected = if explicit_context {
+            String::new()
+        } else {
+            "current-context:all_namespaces=false\n".to_owned()
+        };
+        for kind in ess_kubernetes::KINDS {
+            use std::fmt::Write as _;
+            write!(
+                expected,
+                "{kind}:all_namespaces=true\n{kind}:all_namespaces=false\n"
+            )
+            .expect("render expected invocation");
+        }
+        assert_eq!(
+            std::fs::read_to_string(call_log).expect("recorded retry order"),
+            expected
+        );
+    }
+}
+
+#[test]
+fn successful_context_listing_preserves_output_bytes() {
+    let output = Command::new(env!("CARGO_BIN_EXE_ess-kubernetes"))
+        .arg("contexts")
+        .env("PATH", fixture_root().join("bin"))
+        .output()
+        .expect("synthetic context listing");
+    assert!(output.status.success());
+    assert_eq!(output.stdout, b"synthetic-context\nsecond-context\n");
+    assert!(output.stderr.is_empty());
 }
 
 #[test]
