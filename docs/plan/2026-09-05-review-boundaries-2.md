@@ -1,6 +1,6 @@
 # Review boundaries wave 2 — 2026-09-05
 
-**Implemented and verified; publication and unit cleanup in progress.** This wave fixes untrusted kubectl failure diagnostics and output path containment. Both stories serve `vision:O2`.
+**Implemented, verified, published and unit worktrees removed.** This wave fixes untrusted kubectl failure diagnostics and output path containment. Both stories serve `vision:O2`.
 
 Skill version 0.7.0. Coordinator: `wave/review-boundaries-2`, managed record `wt-752828a285ba`. Published base: `0f80f71e7ef997e8a3c7d2ad19e9997090e8e769`.
 
@@ -1579,3 +1579,9 @@ site-build 0
 Both stories moved active→implemented using test_result evidence against that integration SHA, observed 2026-09-05T12:34:37Z. The epic stays active with 27 draft stories remaining. Source and test bytes remain unchanged after the gate; closing edits record evidence and lifecycle. No tag or version bump was made.
 
 Before retirement, all wanted raw unit scratch was copied into coordinator target/review-boundaries-2/archive/<unit>/ and compared byte-for-byte: containment 106 files/552,302 bytes, diagnostic 28 files/56,019 bytes. Portable reports and test patches remain committed engineering evidence. Publication must precede worktree finish and fresh exact-id GC.
+
+## Publication and managed cleanup
+
+The bot wrapper published main at 98ea8abeeaf80846f525b5def8b531c139ed7071; git ls-remote returned that exact SHA. All 16 directly introduced commits had exact bot author and committer before publishing. After source publication and archival, cargo clean removed the containment target (1.1 GiB) and diagnostic target (179.9 MiB), and both leases ended and worktree finish succeeded. A fresh GC dry-run marked only the two selected unit records for this task eligible; exact-id apply removed them with origin main as recovery proof. Filesystem absence was verified and both merged impl branches were deleted with git branch -d. The merged wave branch was deleted when the coordinator advanced to the next wave; the reusable coordinator and current authority remain active.
+
+The required organization fence reran after the ESS primary moved, at clean Atlas 7b00adf3b1004e0cdd8dd12aa4fa8cc8435a0432, and exited 1. Catalog, live Pages, projection, Markdown and brand were green. The same sibling manifest/portal/map issues and timeout test remained red (114/115 Rust cases passed). Raw private logs are retained only in coordinator target/review-boundaries-2/atlas-authority-7b00adf/. This is not a claim of organization-wide convergence.
