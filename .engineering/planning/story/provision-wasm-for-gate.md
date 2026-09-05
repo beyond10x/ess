@@ -2,7 +2,7 @@
 format: aep.planning-md/1
 id: story:provision-wasm-for-gate
 kind: story
-status: active
+status: implemented
 title: Provision the mandatory WASM compiler target in CI
 relations:
 - serves: vision:O2
@@ -10,7 +10,7 @@ relations:
 scope:
 - confidence: cited
   path: .github/workflows/ci.yml
-revision: 4
+revision: 5
 ---
 ## Evidence
 

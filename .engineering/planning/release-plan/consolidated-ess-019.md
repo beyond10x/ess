@@ -4,7 +4,7 @@ id: release-plan:consolidated-ess-019
 kind: release-plan
 status: active
 title: Consolidate ESS worktrees and release 0.19.0
-revision: 5
+revision: 8
 ---
 ## Authorization
 
@@ -142,3 +142,119 @@ unchanged. A fresh documentation contract check with this ESS candidate selected
 still refuses the previously recorded AgentIDE b10x-docs/v4 collection mismatch.
 This is not an ESS site-build failure or an organization-wide green result, and
 no unrelated source or documentation authority was changed to bypass it.
+
+## Main Integration and Tag Verification
+
+The consolidated source is published on main at
+5201daf4ea6fe1e254d73a3e858abd06a8a71715, with published Wave 5 commit
+87338bdef898bf4e4a9a3a0e971c4ec822e3dacd retained as an ancestor. The canonical
+checkout is clean. Four original source/planning checkpoints remain reachable.
+
+Exact-main GitHub observations:
+
+- CI 33995345139: success.
+- Documentation validation 33995345146: success.
+- Documentation source bundle 33995345171: success.
+
+The previous main CI failure was the missing wasm32-unknown-unknown standard
+library, not a failing source assertion. The one-line toolchain prerequisite fix
+is tracked by story:provision-wasm-for-gate, now implemented after the actual
+corrected CI passed. Cache cleanup emitted ENOENT annotations in the successful
+run; this is not represented as a warning-free run.
+
+The annotated bare tag 0.19.0 resolves to 5201daf and was published with the
+organization bot identity. GitHub draft release 383390739 was created by
+b10x-bot[bot]. Release workflow 33995624881 has passed its full gate and public
+documentation build; its four native package jobs are running. This paragraph
+records preparation, not a completed public binary release.
+
+Older renderer commits 4ca7b63e and a155edc2 are patch-equivalent to integrated
+main changes. Their original bot-authored commits are now retained remotely as
+archive/html-site-renderer and archive/document-ir-renderer, respectively,
+because cleanup correctly refused them without advertised recovery proof.
+
+The independent coordinator and three related verification trees remain reserved
+pending an ownership handoff. No adopter specification has been changed in this
+release phase. The full source-specific mapping and Go/TypeScript normalization
+targets are still unfinished and are not claimed as delivered by 0.19.0.
+
+## Historical Release Ancestry Audit
+
+The first post-tag release-status check exited 201 because historical tag 0.17.0
+at 1c85689d77acdae2ffb2fc68579104b98d65c424 was not an ancestor of remote main.
+Only that one commit is absent from main's ancestry. The tag and its public
+GitHub release predate this consolidation; neither is moved or rewritten.
+
+The feature was revised and integrated at 43c0b79, the 0.18.0 release baseline.
+`git range-diff 1c85689^..1c85689 43c0b79^..43c0b79` accounts for the changes:
+version/feed/changelog updates, removal of device-specific skin CSS and stronger
+neutrality assertions. The intervening early-stop assertion explains the
+ess-conformance/4 CLI help, additional ordered-scan exports and older-base
+planning journal difference. The epic, binding design, player JavaScript and
+vendored Vue asset/license are byte-identical between the two feature commits.
+The revised feature and subsequent repairs are already in the released source.
+
+Preserve 1c85689 as an additional ancestor using an explicitly tree-preserving
+merge after the final evidence commit. This is not permission to restore its
+old workspace version, retired CSS, old public feed identity or divergent
+journal snapshot. Verify tree equality and remote-main reachability afterwards.
+
+The same check incorrectly called the then-draft 0.19.0 release published.
+That separate defect is tracked by story:release-status-publication-state.
+
+## Published Release and Cleanup Result
+
+Release 0.19.0 is public at https://github.com/beyond10x/ess/releases/tag/0.19.0,
+published 2026-09-05T22:36:33Z by b10x-bot[bot]. GitHub readback confirms
+isDraft=false and all four native archives plus SHA256SUMS. Release workflow
+33995624881 passed all jobs. All four downloaded archive checksums match; the
+downloaded x86_64 Linux binary reports ess 0.19.0. The annotated tag remains on
+5201daf4ea6fe1e254d73a3e858abd06a8a71715 and is not moved by later evidence edits.
+
+The final evidence checkout passed task check and task site-build again. The
+documentation handoff ba43fda contributes the exact final Wave 5 narrative and
+320-character feed summary. Its Rust story body/status and new feed story,
+scope and observed validator evidence were reconciled through AEP, not by
+concatenating its journal. The feed story remains active because Website
+delivery is separately owned and not proven by an ESS site build.
+
+Managed GC removed these ten exact reviewed ESS ids after refreshing remote
+recovery proof:
+
+- wt-37a7d77f8f76
+- wt-ece544778ed1
+- wt-b04819074c6e
+- wt-b2a2189b9ecc
+- wt-ce6e143e1fe5
+- wt-34496b6990aa
+- wt-e46db550dce9
+- wt-340546c4af89
+- wt-780a9b306a76
+- wt-46ef382d9f07
+
+Five trees initially refused cleanup because of ignored Cargo/Docusaurus output.
+Only exact dry-run-reviewed generated paths documented by .gitignore and Taskfile
+were cleared before retrying finish. No source or active coordinator evidence
+was removed. Original source and planning checkpoints remain published.
+
+Three old trees remain explicitly retained: wt-3726210974f1,
+wt-1f0716ada0f4 and wt-8850a8418f1f. Worktree 0.3.4 repeatedly reports
+worktree-locked at finish, while its own repository listing reports locked=false;
+Git's locked files are absent and historical operation metadata remains. No
+metadata was deleted and no refusal was bypassed. All three heads are already
+ancestors of main, so this is a cleanup limitation, not missing source integration.
+
+The independent coordinator wt-752828a285ba remains reserved for public delivery.
+Its three implementation/compatibility trees were retired by that owner during
+this operation, not selected by this session. The release checkout wt-6525314b6daa
+is retained only until its final evidence commits are published and checked; its
+own finish/GC is the last local operation. The temporary clean Atlas authority is
+likewise reserved until bot publication is complete. ACD and IVR specs remain
+unchanged throughout this release phase.
+
+The historical 0.17.0 ancestry reconciliation and final handoff are audited above;
+their original commits will be retained without replacing the integrated tree.
+Re-run task release-status against the resulting remote main. The initial exit201
+and draft-reporting defect remain recorded rather than replaced by a clean-history
+claim. Full IVR mapping, Go/TypeScript normalization and the separate Website
+delivery are not claimed complete by this release plan.

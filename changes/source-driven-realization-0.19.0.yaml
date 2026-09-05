@@ -4,11 +4,10 @@ repository: ess
 publishedAt: 2026-09-05T21:00:00Z
 title: Checked schema imports and structural data realizations
 summary: >-
-  Import complete JSON Schema roots with retained source identity, generate structural
-  Go, Rust and TypeScript libraries, and execute explicit source-pinned normalization
-  recipes. Rust normalization libraries are available through the library API;
-  Go and TypeScript normalization remain pending. Rust/Web synthesis now returns
-  checked failures, and sliced provenance carries an explicit digest profile.
+  Import complete JSON Schema roots with source identity; generate structural Go, Rust
+  and TypeScript libraries; and run source-pinned normalization recipes. Rust
+  normalization has a library API; Go/TypeScript support is pending. Rust/Web synthesis
+  returns checked failures, and sliced provenance names its digest profile.
 kind: capability
 impact: significant
 source:
