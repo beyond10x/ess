@@ -31,7 +31,7 @@ const sidebars: SidebarsConfig = {
       type: 'category',
       label: 'Reference',
       collapsed: false,
-      items: ['reference/cli'],
+      items: ['reference/cli', 'reference/formats'],
     },
     {
       type: 'category',
