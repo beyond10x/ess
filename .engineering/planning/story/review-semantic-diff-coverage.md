@@ -40,7 +40,7 @@ scope:
   path: generated/schema
 - confidence: cited
   path: generated/site
-revision: 23
+revision: 24
 ---
 ## Finding and source
 
@@ -100,6 +100,16 @@ Implementation confirmation at 25580795fa0fef04563a94f9864745377b871ee1 and corr
 - cited — four package cases rose459→483 during implementation,483→493 under independent review,493→496 during correction. The final correction has496 passed,0 failed,0 ignored, formatter/strict Clippy exit0. The second full review, integrated gate and rollout evidence remain pending.
 
 The original inferences above are retained as history. All previously inferred typed paths are now backed by actual changed files, as measured with git diff --name-only 28e97095d9e06c8b4585876a681a5eda5278c1ab...5c009bfc2f2d306b445d86505099eb88af1df23b. Confidence is high for this measured implementation surface; the listed validation/rollout limits are not converted into completed evidence.
+
+Final implementation confirmation at `21f274476c644be35bd9c7905d72211ae5f8682c` (sources:
+semantic-correction-2.md, semantic-final-verification.md and
+review-result:review-boundaries-4-semantic-adversary-pass-2):
+
+- cited — the final unpublished impact/3 vocabulary has 26 relations. ExposesView covers actual CLI views and network-served views of owned domains; RowShape retains a view's complete named row type. Exact HTTP-route comparison, unrelated-domain/non-network controls and before/after graph union pass. Atlas ADR 0036's final decision is published at 7b67e8e2437ec9956135930435875a8a76139c3f.
+- cited — the second full review added nine cases: 502 passed and three failed. Both findings were repaired without changing the adversary assertions. The correction added two boundary cases, bringing the full package result to 507 passed, zero failed and zero ignored. Formatter and strict Clippy returned 0. The coordinator inspected the complete diff and independently reran 17 named regression cases on the clean final correction commit, all passing. No third full adversarial pass ran.
+- cited — actual emitted clap manifest provenance is now exercised by a passing writer/reader case. This supersedes the earlier source-only limit; generated clap compilation and an individual-manifest impact caller remain unestablished.
+- cited — final regeneration compared 97 committed counterparts. Only the two reserved Gatepass OpenAPI contract_digest leaves changed; the other 95 files, including neutral plans, are unchanged. Complete inventories, old/new hashes, commands and raw results are in the correction report. The complete suite/4 vector and source/whole identity controls pass unchanged.
+- cited — SDK candidate execution and the full integration gate remain pending the frozen merged subject. The open consumer catalog-intent obligation is unchanged. Scope confidence remains high for the measured four-package/design/generated surface; no root manifest, lock, CLI/xtask, conformance production, composition production or public website source change was introduced.
 
 ## Scoping decisions and open compatibility work
 

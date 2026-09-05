@@ -24,8 +24,8 @@ Every unit owns its target and target/review-boundaries-4 scratch. TMPDIR is its
 
 | Story | Branch | Managed path under ESS trees | Build/temp | Scratch | Stage |
 | --- | --- | --- | --- | --- | --- |
-| review-semantic-diff-coverage | impl/review-semantic-diff-coverage | review-semantic-diff-coverage | target/ | target/review-boundaries-4/ | active; implementation dispatched |
-| review-infra-ir-invariants | impl/review-infra-ir-invariants | review-infra-ir-invariants | target/ | target/review-boundaries-4/ | active; implementation dispatched |
+| review-semantic-diff-coverage | impl/review-semantic-diff-coverage | review-semantic-diff-coverage | target/ | target/review-boundaries-4/ | active; final correction 21f2744 verified, merge pending |
+| review-infra-ir-invariants | impl/review-infra-ir-invariants | review-infra-ir-invariants | target/ removed after verified archive | archived under coordinator target/ | active; unit 12d99b1 merged at 09474bd, integration pending |
 
 Coordinator owns every AEP mutation, Git/worktree lifecycle, shared file, Atlas coordination and integration gate. Implementors write only assigned source/tests/design/generated paths and return uncommitted handoffs. Adversaries write only assigned tests and scratch, add cases before isolated execution, and do not pre-run a baseline suite or edit production. Every review is preserved immutably before routing. Maximum two completed full passes; coordinator personally verifies any bounded final correction.
 
@@ -1973,3 +1973,30 @@ both links within the existing source scope and remeasures reserved generated ou
 This is a bounded final correction, followed by the coordinator's inspection and named
 regression/package/integration verification. There will be no third full adversarial pass.
 SDK candidate execution and source publication remain pending successful repair.
+
+
+## Final semantic correction verified
+
+The bounded correction is committed at `21f274476c644be35bd9c7905d72211ae5f8682c`, with
+both bot identities verified. The complete correction report and exact patch are retained as
+`docs/reviews/2026-09-05-review-boundaries-4-semantic-correction-2.{md,patch}`: report
+149,186 bytes, SHA-256 `60f83e84d3da767f74f4279311a121ca0deb7007665262c7198d42a11f3de2e3`;
+patch 12,892 bytes, SHA-256 `1ed6aa0ec8fe5944a9a587eb4f9770ff745fc678bcdaae6e0c7297ee00d46787`.
+
+The coordinator inspected the complete correction, confirmed no dropped or weakened
+assertions, independently checked both generated JSON differences and executed 17 named
+regression cases on that exact clean commit: all passed, zero failed, zero ignored. The
+separate full package run passed 507 cases with formatter and strict Clippy exit 0.
+`docs/reviews/2026-09-05-review-boundaries-4-semantic-final-verification.md` retains the
+coordinator's exact commands and output. Both final findings have a fixed outcome in the
+store. No third full adversarial pass ran.
+
+The final graph matches the published Atlas decision at
+`7b67e8e2437ec9956135930435875a8a76139c3f`: 26 relations under the pending impact/3,
+including actual network view exposure and complete reusable row shapes. Regeneration
+measured 97 committed counterparts. Exactly two Gatepass OpenAPI contract digest leaves
+changed; all other 95 files, including neutral plans, are unchanged. Each changed file's
+SHA-256 is now `d4b07f0af6ce720c3fa87e22a62b51dc26288041f57afd42879a1112b526ef19`.
+
+The semantic merge, frozen SDK candidate experiment and full integrated gate are next.
+Neither story is implemented yet; no ESS default or SDK pin has been published for this wave.

@@ -1,0 +1,282 @@
+diff --git a/crates/specify/ess-compiler/src/graph.rs b/crates/specify/ess-compiler/src/graph.rs
+index 0110e95..3129753 100644
+--- a/crates/specify/ess-compiler/src/graph.rs
++++ b/crates/specify/ess-compiler/src/graph.rs
+@@ -118,10 +118,12 @@ pub enum DependencyRelation {
+     RelationTarget,
+     /// An owned entity's carrier annotation reads the declaring owner's relation.
+     OwnershipCarrier,
+-    /// A command-line component exposes a view, at either placement level.
++    /// A component exposes a declared CLI view or a view of its network-served owned domain.
+     ExposesView,
+     /// A view requires a parameter whose type reaches a declared type.
+     ParameterType,
++    /// A view uses a named reusable type as its complete row contract.
++    RowShape,
+ }
+ 
+ impl DependencyRelation {
+@@ -129,7 +131,7 @@ impl DependencyRelation {
+     ///
+     /// Written from the same lines as the variants above, so a relation added without a walk that
+     /// mints it fails `tests/graph.rs` rather than sitting in the vocabulary unproduced.
+-    pub const ALL: [Self; 25] = [
++    pub const ALL: [Self; 26] = [
+         Self::DeclaredIn,
+         Self::Wraps,
+         Self::FieldType,
+@@ -155,6 +157,7 @@ impl DependencyRelation {
+         Self::OwnershipCarrier,
+         Self::ExposesView,
+         Self::ParameterType,
++        Self::RowShape,
+     ];
+ 
+     /// The phrase a path reads with: `<dependent> <verb> <dependency>`.
+@@ -189,6 +192,7 @@ impl DependencyRelation {
+             Self::OwnershipCarrier => "carries an ownership relation declared by",
+             Self::ExposesView => "exposes view",
+             Self::ParameterType => "requires a parameter of type",
++            Self::RowShape => "uses the row shape",
+         }
+     }
+ }
+@@ -690,6 +694,13 @@ impl SemanticDependencyGraph {
+                 EntityRef::from(&resolved.source),
+             );
+             self.field_edges(&subject, &resolved.fields);
++            if let Some(shape) = &resolved.shape {
++                self.edge(
++                    subject.clone(),
++                    DependencyRelation::RowShape,
++                    DeclaredTypeRef::from(shape),
++                );
++            }
+             for parameter in &resolved.params {
+                 self.type_edges(
+                     &subject,
+@@ -762,6 +773,19 @@ impl SemanticDependencyGraph {
+                     );
+                 }
+             }
++            // Match the existing HTTP surface: a network component serves the views in its
++            // owned domains. Domain ownership alone does not expose views for other reaches.
++            if resolved.reached_by == ess_domain::component::Reach::Network {
++                for domain in &resolved.owns {
++                    for view in &ir.domain(domain).views {
++                        self.edge(
++                            subject.clone(),
++                            DependencyRelation::ExposesView,
++                            ViewRef::from(view),
++                        );
++                    }
++                }
++            }
+             for handle in &resolved.owns {
+                 self.edge(
+                     subject.clone(),
+diff --git a/crates/verify/ess-diff/tests/graph.rs b/crates/verify/ess-diff/tests/graph.rs
+index eaad98b..0166d9f 100644
+--- a/crates/verify/ess-diff/tests/graph.rs
++++ b/crates/verify/ess-diff/tests/graph.rs
+@@ -54,6 +54,11 @@ fn every_relation_in_the_vocabulary_is_minted_by_a_specification_this_repository
+             .edges()
+             .map(|edge| edge.relation),
+     );
++    minted.extend(
++        SemanticDependencyGraph::of(&correction2_row_fixture(true))
++            .edges()
++            .map(|edge| edge.relation),
++    );
+ 
+     let missing: Vec<DependencyRelation> = DependencyRelation::ALL
+         .into_iter()
+@@ -316,3 +321,120 @@ fn review_cli_views_and_parameter_types_are_forward_slice_dependencies() {
+         assert!(graph.closure(&id).reaches(&component));
+     }
+ }
++
++#[test]
++fn correction2_network_exposure_matches_actual_routes_and_owned_domains() {
++    for reach in [
++        ess_domain::component::Reach::InProcess,
++        ess_domain::component::Reach::Network,
++    ] {
++        let ir = support::compiled_with("examples/billing", |files| {
++            for component in files.iter_mut().flat_map(|(_, file)| &mut file.components) {
++                component.reached_by = reach;
++            }
++        });
++        let graph = SemanticDependencyGraph::of(&ir);
++        let mut served = 0;
++        for (name, component) in ir.components() {
++            let subject: EssSemanticRef = ComponentRef::new(name.clone()).into();
++            let expected: BTreeSet<EssSemanticRef> = ess_gen::http::routes(&ir, component)
++                .iter()
++                .filter_map(|route| match route.serves {
++                    ess_gen::http::Served::View(view) => {
++                        Some(ess_compiler::refs::ViewRef::from(view).into())
++                    }
++                    ess_gen::http::Served::Command(_) => None,
++                })
++                .collect();
++            served += expected.len();
++            let actual: BTreeSet<_> = graph
++                .edges()
++                .filter(|edge| {
++                    edge.dependent == subject && edge.relation == DependencyRelation::ExposesView
++                })
++                .map(|edge| edge.dependency.clone())
++                .collect();
++            assert_eq!(
++                actual, expected,
++                "{name} with {reach:?}: only actual served views"
++            );
++            let slice = graph.slice(&[subject.clone()].into());
++            for view in expected {
++                assert!(slice.contains_key(&view));
++                assert!(graph.closure(&view).reaches(&subject));
++            }
++        }
++        assert_eq!(
++            served,
++            if reach == ess_domain::component::Reach::Network {
++                2
++            } else {
++                0
++            }
++        );
++    }
++}
++
++fn correction2_row_fixture(shaped: bool) -> ess_compiler::EssIr {
++    let row = if shaped {
++        "shape: probe.core.Row"
++    } else {
++        "fields: [{name: item_id, type: Uuid}, {name: amount, type: Integer}]"
++    };
++    let text = format!(
++        r"
++format: ess/1
++system: probe
++version: v1
++domain: probe.core
++types:
++  - name: probe.core.Row
++    kind: struct
++    fields: [{{name: item_id, type: Uuid}}, {{name: amount, type: Integer}}]
++    invariants: [amount >= 0]
++entities:
++  - name: probe.core.Item
++    identity: {{name: item_id, type: Uuid}}
++    fields: [{{name: amount, type: Integer}}]
++    lifecycle:
++      initial: Ready
++      states: [Ready]
++      terminal: [Ready]
++views:
++  - name: probe.core.Items
++    source: probe.core.Item
++    {row}
++    consistency: read_your_writes
++"
++    );
++    let raw = ess_domain::spec::RawSpecFile::parse(&text).unwrap();
++    let spec = ess_domain::spec::Specification::assemble(vec![(
++        ess_domain::system::Source::new("row.yaml"),
++        raw,
++    )])
++    .unwrap();
++    ess_compiler::compile(&spec, &ess_compiler::source::SourceMap::new()).unwrap()
++}
++
++#[test]
++fn correction2_row_shape_is_a_distinct_dependency_and_survives_graph_union() {
++    let before = SemanticDependencyGraph::of(&correction2_row_fixture(true));
++    let after = SemanticDependencyGraph::of(&correction2_row_fixture(false));
++    let view: EssSemanticRef = ess_compiler::refs::ViewRef::new(name("probe.core.Items")).into();
++    let row: EssSemanticRef = DeclaredTypeRef::new(name("probe.core.Row")).into();
++    let edges: Vec<_> = before
++        .edges()
++        .filter(|edge| edge.dependent == view && edge.dependency == row)
++        .collect();
++    assert_eq!(edges.len(), 1, "the named row is its own dependency");
++    assert_eq!(
++        serde_json::to_value(edges[0].relation).unwrap(),
++        "row-shape"
++    );
++    assert!(before.slice(&[view.clone()].into()).contains_key(&row));
++    assert!(
++        !after.slice(&[view.clone()].into()).contains_key(&row),
++        "inline fields do not consume the reusable definition"
++    );
++    assert!(before.merged(&after).closure(&row).reaches(&view));
++}
+diff --git a/docs/design/ess-semantic-diff-impact-evolution-design-v0.1.md b/docs/design/ess-semantic-diff-impact-evolution-design-v0.1.md
+index 5bba544..f99f9b6 100644
+--- a/docs/design/ess-semantic-diff-impact-evolution-design-v0.1.md
++++ b/docs/design/ess-semantic-diff-impact-evolution-design-v0.1.md
+@@ -52,7 +52,10 @@ within a category use the existing subject/subtype/member ordering. New subtype
+ names are not aliases of old kinds. No arbitrary JSON property bag is persisted.
+ 
+ The default impact writer emits `ess-impact/3`, embedding a `/2` delta and the
+-extended edge vocabulary. There is no established impact reader, so this change
++extended 26-relation vocabulary. This completes the unpublished migration decision
++recorded by the coordinator in Atlas ADR 0036 and its migration story revision 8;
++no `ess-impact/4` is introduced and no frozen `/2` meaning is rewritten.
++There is no established impact reader, so this change
+ does not invent one or claim reader rollout. Existing obligation reasons remain
+ usable; a legacy stamp mismatch and unreadable stamp already have distinct
+ reasons. Whole invalidation for unexplained residual content remains conservative.
+@@ -87,13 +90,21 @@ Edges point dependent → dependency. Impact follows reverse edges over the unio
+ of before and after graphs; artifact slices follow forward edges in their own
+ revision. Preserve all 21 existing relation variants and their production tests.
+ Add explicit relations for entity relation targets, reverse ownership carriers,
+-CLI view exposure and parameter types. Their exact spellings are `relation-target`,
+-`ownership-carrier`, `exposes-view` and `parameter-type`, respectively. A relation source depends on its target;
++view exposure, parameter types and reusable row shapes. Their exact spellings are
++`relation-target`, `ownership-carrier`, `exposes-view`, `parameter-type` and
++`row-shape`, respectively. A relation source depends on its target;
+ an `owns` target also depends on its declaring source because its generated field
+ annotation reads that declaration. This deliberate cycle is finite under visited
+ sets and is necessary to invalidate both schema ends. CLI components depend on
+-every top-level/grouped view they expose. A view depends on its declared parameter
+-types. New graph relations must each be reached from a valid compiled fixture.
++every top-level/grouped view they expose. `ExposesView` also links a network
++component to exactly the views in its owned domains, matching the selection in
++`ess-gen::http::routes`: gate that derived exposure on `reached_by == Reach::Network`.
++Components own domain handles, and unrelated domains or non-network components
++gain no derived exposure. A view depends on its declared parameter types and,
++through `RowShape`, on the complete named reusable type supplying its row. Copied
++resolved fields do not replace that row type's constraints and metadata. This is
++a distinct view-to-TypeHandle dependency, not a parameter or field-leaf relation.
++All 26 graph relations must each be reached from a valid compiled fixture.
+ 
+ ### Profiled sliced contract digests
+ 
+diff --git a/generated/go/gatepass/server/pass-service.openapi.json b/generated/go/gatepass/server/pass-service.openapi.json
+index cc82140..a56698e 100644
+--- a/generated/go/gatepass/server/pass-service.openapi.json
++++ b/generated/go/gatepass/server/pass-service.openapi.json
+@@ -9,7 +9,7 @@
+       "system": "gatepass",
+       "specification_version": "v1",
+       "source_digest": "f2e0f8ff51c077fa1c713d8151544379bafac36a5a927e71c685042d53ab6e61",
+-      "contract_digest": "slice-sha256/2:20853cb8a89aae494e4e0482cf050830b187d6ec3fe16e1df0ad24fc27112701"
++      "contract_digest": "slice-sha256/2:e6e58e055d24f8f494dcff274f55e723d967f9d1f9aea16641bb8dacbb71171e"
+     },
+     "x-ess-reached-by": "network"
+   },
+diff --git a/generated/rust/gatepass/crates/gatepass-server/src/pass-service.openapi.json b/generated/rust/gatepass/crates/gatepass-server/src/pass-service.openapi.json
+index cc82140..a56698e 100644
+--- a/generated/rust/gatepass/crates/gatepass-server/src/pass-service.openapi.json
++++ b/generated/rust/gatepass/crates/gatepass-server/src/pass-service.openapi.json
+@@ -9,7 +9,7 @@
+       "system": "gatepass",
+       "specification_version": "v1",
+       "source_digest": "f2e0f8ff51c077fa1c713d8151544379bafac36a5a927e71c685042d53ab6e61",
+-      "contract_digest": "slice-sha256/2:20853cb8a89aae494e4e0482cf050830b187d6ec3fe16e1df0ad24fc27112701"
++      "contract_digest": "slice-sha256/2:e6e58e055d24f8f494dcff274f55e723d967f9d1f9aea16641bb8dacbb71171e"
+     },
+     "x-ess-reached-by": "network"
+   },
