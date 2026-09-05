@@ -52,7 +52,10 @@ within a category use the existing subject/subtype/member ordering. New subtype
 names are not aliases of old kinds. No arbitrary JSON property bag is persisted.
 
 The default impact writer emits `ess-impact/3`, embedding a `/2` delta and the
-extended edge vocabulary. There is no established impact reader, so this change
+extended 26-relation vocabulary. This completes the unpublished migration decision
+recorded by the coordinator in Atlas ADR 0036 and its migration story revision 8;
+no `ess-impact/4` is introduced and no frozen `/2` meaning is rewritten.
+There is no established impact reader, so this change
 does not invent one or claim reader rollout. Existing obligation reasons remain
 usable; a legacy stamp mismatch and unreadable stamp already have distinct
 reasons. Whole invalidation for unexplained residual content remains conservative.
@@ -87,13 +90,21 @@ Edges point dependent → dependency. Impact follows reverse edges over the unio
 of before and after graphs; artifact slices follow forward edges in their own
 revision. Preserve all 21 existing relation variants and their production tests.
 Add explicit relations for entity relation targets, reverse ownership carriers,
-CLI view exposure and parameter types. Their exact spellings are `relation-target`,
-`ownership-carrier`, `exposes-view` and `parameter-type`, respectively. A relation source depends on its target;
+view exposure, parameter types and reusable row shapes. Their exact spellings are
+`relation-target`, `ownership-carrier`, `exposes-view`, `parameter-type` and
+`row-shape`, respectively. A relation source depends on its target;
 an `owns` target also depends on its declaring source because its generated field
 annotation reads that declaration. This deliberate cycle is finite under visited
 sets and is necessary to invalidate both schema ends. CLI components depend on
-every top-level/grouped view they expose. A view depends on its declared parameter
-types. New graph relations must each be reached from a valid compiled fixture.
+every top-level/grouped view they expose. `ExposesView` also links a network
+component to exactly the views in its owned domains, matching the selection in
+`ess-gen::http::routes`: gate that derived exposure on `reached_by == Reach::Network`.
+Components own domain handles, and unrelated domains or non-network components
+gain no derived exposure. A view depends on its declared parameter types and,
+through `RowShape`, on the complete named reusable type supplying its row. Copied
+resolved fields do not replace that row type's constraints and metadata. This is
+a distinct view-to-TypeHandle dependency, not a parameter or field-leaf relation.
+All 26 graph relations must each be reached from a valid compiled fixture.
 
 ### Profiled sliced contract digests
 

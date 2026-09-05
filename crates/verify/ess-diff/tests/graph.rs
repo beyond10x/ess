@@ -54,6 +54,11 @@ fn every_relation_in_the_vocabulary_is_minted_by_a_specification_this_repository
             .edges()
             .map(|edge| edge.relation),
     );
+    minted.extend(
+        SemanticDependencyGraph::of(&correction2_row_fixture(true))
+            .edges()
+            .map(|edge| edge.relation),
+    );
 
     let missing: Vec<DependencyRelation> = DependencyRelation::ALL
         .into_iter()
@@ -315,4 +320,121 @@ fn review_cli_views_and_parameter_types_are_forward_slice_dependencies() {
             .contains_key(&view));
         assert!(graph.closure(&id).reaches(&component));
     }
+}
+
+#[test]
+fn correction2_network_exposure_matches_actual_routes_and_owned_domains() {
+    for reach in [
+        ess_domain::component::Reach::InProcess,
+        ess_domain::component::Reach::Network,
+    ] {
+        let ir = support::compiled_with("examples/billing", |files| {
+            for component in files.iter_mut().flat_map(|(_, file)| &mut file.components) {
+                component.reached_by = reach;
+            }
+        });
+        let graph = SemanticDependencyGraph::of(&ir);
+        let mut served = 0;
+        for (name, component) in ir.components() {
+            let subject: EssSemanticRef = ComponentRef::new(name.clone()).into();
+            let expected: BTreeSet<EssSemanticRef> = ess_gen::http::routes(&ir, component)
+                .iter()
+                .filter_map(|route| match route.serves {
+                    ess_gen::http::Served::View(view) => {
+                        Some(ess_compiler::refs::ViewRef::from(view).into())
+                    }
+                    ess_gen::http::Served::Command(_) => None,
+                })
+                .collect();
+            served += expected.len();
+            let actual: BTreeSet<_> = graph
+                .edges()
+                .filter(|edge| {
+                    edge.dependent == subject && edge.relation == DependencyRelation::ExposesView
+                })
+                .map(|edge| edge.dependency.clone())
+                .collect();
+            assert_eq!(
+                actual, expected,
+                "{name} with {reach:?}: only actual served views"
+            );
+            let slice = graph.slice(&[subject.clone()].into());
+            for view in expected {
+                assert!(slice.contains_key(&view));
+                assert!(graph.closure(&view).reaches(&subject));
+            }
+        }
+        assert_eq!(
+            served,
+            if reach == ess_domain::component::Reach::Network {
+                2
+            } else {
+                0
+            }
+        );
+    }
+}
+
+fn correction2_row_fixture(shaped: bool) -> ess_compiler::EssIr {
+    let row = if shaped {
+        "shape: probe.core.Row"
+    } else {
+        "fields: [{name: item_id, type: Uuid}, {name: amount, type: Integer}]"
+    };
+    let text = format!(
+        r"
+format: ess/1
+system: probe
+version: v1
+domain: probe.core
+types:
+  - name: probe.core.Row
+    kind: struct
+    fields: [{{name: item_id, type: Uuid}}, {{name: amount, type: Integer}}]
+    invariants: [amount >= 0]
+entities:
+  - name: probe.core.Item
+    identity: {{name: item_id, type: Uuid}}
+    fields: [{{name: amount, type: Integer}}]
+    lifecycle:
+      initial: Ready
+      states: [Ready]
+      terminal: [Ready]
+views:
+  - name: probe.core.Items
+    source: probe.core.Item
+    {row}
+    consistency: read_your_writes
+"
+    );
+    let raw = ess_domain::spec::RawSpecFile::parse(&text).unwrap();
+    let spec = ess_domain::spec::Specification::assemble(vec![(
+        ess_domain::system::Source::new("row.yaml"),
+        raw,
+    )])
+    .unwrap();
+    ess_compiler::compile(&spec, &ess_compiler::source::SourceMap::new()).unwrap()
+}
+
+#[test]
+fn correction2_row_shape_is_a_distinct_dependency_and_survives_graph_union() {
+    let before = SemanticDependencyGraph::of(&correction2_row_fixture(true));
+    let after = SemanticDependencyGraph::of(&correction2_row_fixture(false));
+    let view: EssSemanticRef = ess_compiler::refs::ViewRef::new(name("probe.core.Items")).into();
+    let row: EssSemanticRef = DeclaredTypeRef::new(name("probe.core.Row")).into();
+    let edges: Vec<_> = before
+        .edges()
+        .filter(|edge| edge.dependent == view && edge.dependency == row)
+        .collect();
+    assert_eq!(edges.len(), 1, "the named row is its own dependency");
+    assert_eq!(
+        serde_json::to_value(edges[0].relation).unwrap(),
+        "row-shape"
+    );
+    assert!(before.slice(&[view.clone()].into()).contains_key(&row));
+    assert!(
+        !after.slice(&[view.clone()].into()).contains_key(&row),
+        "inline fields do not consume the reusable definition"
+    );
+    assert!(before.merged(&after).closure(&row).reaches(&view));
 }

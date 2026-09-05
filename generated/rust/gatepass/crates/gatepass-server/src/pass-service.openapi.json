@@ -9,7 +9,7 @@
       "system": "gatepass",
       "specification_version": "v1",
       "source_digest": "f2e0f8ff51c077fa1c713d8151544379bafac36a5a927e71c685042d53ab6e61",
-      "contract_digest": "slice-sha256/2:20853cb8a89aae494e4e0482cf050830b187d6ec3fe16e1df0ad24fc27112701"
+      "contract_digest": "slice-sha256/2:e6e58e055d24f8f494dcff274f55e723d967f9d1f9aea16641bb8dacbb71171e"
     },
     "x-ess-reached-by": "network"
   },
