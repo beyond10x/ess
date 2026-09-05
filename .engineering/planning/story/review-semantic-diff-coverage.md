@@ -12,8 +12,10 @@ relations:
 - serves: vision:O2
 - informed_by: obligation:review-contract-rollout-coordination
 scope:
-- confidence: inferred
+- confidence: cited
   path: crates/generate/ess-gen
+- confidence: inferred
+  path: crates/generate/ess-synth
 - confidence: cited
   path: crates/specify/ess-compiler
 - confidence: cited
@@ -25,12 +27,20 @@ scope:
 - confidence: inferred
   path: generated/docs
 - confidence: inferred
+  path: generated/go/gatepass/server/pass-service.docs.md
+- confidence: inferred
+  path: generated/go/gatepass/server/pass-service.openapi.json
+- confidence: inferred
   path: generated/openapi
+- confidence: inferred
+  path: generated/rust/gatepass/crates/gatepass-server/src/pass-service.docs.md
+- confidence: inferred
+  path: generated/rust/gatepass/crates/gatepass-server/src/pass-service.openapi.json
 - confidence: inferred
   path: generated/schema
 - confidence: inferred
   path: generated/site
-revision: 14
+revision: 18
 ---
 ## Finding and source
 
@@ -98,3 +108,24 @@ The scoper inspected advertised remote objects for 35 sibling repositories witho
 Coordinator design work must settle new delta and impact versions (proposed ess-diff/2 and ess-impact/3), version-gated vocabulary, and distinction between corrected graph membership and legacy unversioned stamps. A profile/versioned stamp or explicit legacy recognition with conservative regeneration needs a binding decision; neither may silently reinterpret old stamps. A legacy writer must refuse changes it cannot express. The staged order is Atlas ADR, dual-version delta reader/necessary provenance admission, actual compatibility vectors and downstream byte checks, new default writers, controlled regeneration and Atlas shipping log. Do not invent an impact reader to claim reader-first work where none exists.
 
 The residual comparator must account for mixed classified/unclassified changes, projection shape and external references while preserving established predicate/naming equivalences. The exact changed generated files and external adopters remain unverified until implementation experiments run. Refresh stale Atlas observations through its owner when publishing the coordinated migration, not by editing catalog records here.
+
+## Provenance scoping supplement
+
+Independent read-only provenance scoping supplement, 2026-09-05. Sources are unchanged by wave3 delivery and TypeScript edits. No builds or regeneration ran; generated paths below are expected scope derived from source, not measured changes.
+
+The recommended smallest contract is a versioned sliced digest string, proposed slice-sha256/2:<64 lowercase hexadecimal digits>. Preserve source_digest, Provenance::of, the whole mint and digest_of(WholeModel) exactly. The profile names corrected graph membership plus existing slice serialization and hashing. Prefix every Constructs digest, even when its underlying hash happens to remain unchanged. Keep the public String field; centralize strict parsing and compare profile plus hash. Bare legacy stamps for Constructs inventory entries are owed regeneration; whole entries retain their frozen bare hash. Unknown, malformed or conflicting profiles are unreadable. Never issue corrected slice membership under the legacy bare form.
+
+- Old read_digests (ess-gen provenance.rs:416–451) scans two markers and consumes leading lowercase hex. A prefix beginning with s prevents extraction from that occurrence; a suffix after64 hexadecimal characters is unsafe. An extra profile field is ignored, and changing only the comment marker fails when a legacy JSON copy remains — cited.
+- The old parser scans the entire document, tries another marker after an invalid occurrence and does not bind source/contract values to one envelope. A prefix therefore cannot prove every old reader rejects arbitrary new documents. Retain the real old parser in compatibility tests across all emitted forms and marker-looking content. The new reader must recognize authoritative stamp boundaries, reject conflicts and avoid fallback from an unsupported profile into unrelated text. Generic old Provenance Serde still accepts String and is not profile-aware — cited/inferred.
+- ess-diff impact.rs:1060–1074 already has ProvenanceUnreadable and ContractMismatch obligations; profile admission needs no invented impact parser. ess-gen artifact.rs:167–180 reads emitted stamps and compares the mint digest, so it must understand the same profile — cited.
+- xtask main.rs:570–583 reads only whole-model docs/index.md. Conformance scenario.rs:272–297 and synth plan.rs:364 use Provenance::of. No xtask or conformance source change is established; suite4, neutral plans and whole-index bytes can remain frozen — cited.
+- ess-docs/1 Document embeds per-page SlicedProvenance (document.rs:55–61,157). Its derived reader accepts a String and does not validate the format label. A profiled string changes nested values without forcing old Serde rejection. Renderers carry the provenance text; no independent hash verifier was established. The binding design must identify the new nested contract profile and old generic-reader limits explicitly — cited.
+- The string option touches ess-gen provenance and possibly artifact admission, its provenance/OpenAPI/AsyncAPI/schema/docs tests, ess-diff impact/artifact tests and the existing design. HTML/Markdown writers need source edits only if authoritative framing changes — inferred.
+- A conditional {profile,digest} object for slices would reject old String Serde but requires more wire/writer changes. A public field-type change reaches synth/conformance literals; keeping the Rust String with custom serialization avoids that source break but introduces two representations. A separate sliced envelope is larger still. Either requires an explicit docs-IR format and admission decision: a label bump alone cannot stop an old derived reader — inferred.
+- Retain generated/schema, generated/openapi, generated/asyncapi, generated/docs and generated/site reservations. Domain pages are sliced; index/interactions/crossings/topology and site assets are whole-model. Measure actual regeneration — cited/inferred.
+- Add expected payload reservations: generated/rust/gatepass/crates/gatepass-server/src/pass-service.openapi.json; generated/rust/gatepass/crates/gatepass-server/src/pass-service.docs.md; generated/go/gatepass/server/pass-service.openapi.json; generated/go/gatepass/server/pass-service.docs.md. Rust/http.rs:172–176 and Go/http.rs:103–107 call ess-gen::openapi::json and docs::served, both sliced. Adjacent plans, source files and whole stamps can remain unchanged — cited/inferred.
+- Add ess-synth HTTP tests (tests/http.rs); no synth production edit is established for the string option. Keep its package collision token so Rust feasibility and other generator units cannot edit concurrently — inferred.
+- CLI --kind docs-ir (main.rs:2323) emits changed per-page values; compatibility coverage is required, but there is no committed generated/docs-ir tree to reserve — cited.
+- Required checks: freeze prior source/whole/suite4/neutral-plan/index bytes; legacy Constructs stamps are owed even for equal hashes; observe actual old-reader behavior for every new emission and marker-confusion case; verify new profiles against corrected slices and reject unknown/mismatched profiles; retain F01 relation/view/component/residual regressions; keep only measured regenerated files; coordinate actual consumers through Atlas — inferred.
+
+Coordinator disposition: use the profiled string as the recommended binding-design input with old-reader limits explicit. Reader-first migration remains mandatory; old substring parsing and generic Serde cannot become profile-aware retrospectively. Before default writers, the binding design and Atlas ADR must settle exact vocabulary, authoritative framing, docs-IR nested meaning, versioned delta/impact and actual mandatory reader/pin movement. This scoping work changes no default and establishes no deployed readiness or executed compatibility.

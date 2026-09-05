@@ -43,7 +43,7 @@ Worktree root: /home/timo/.local/state/worktree/trees/b10x/ess. Every unit branc
 | --- | --- | --- | --- | --- | --- |
 | review-persisted-delivery-validation | impl/review-persisted-delivery-validation | review-persisted-delivery-validation | target/ | target/review-boundaries-3/ | implementation returned; reviewed; merged at 170fdfa1f3061af33f4de558d22de4711ab6194d |
 | review-typescript-root-collision | impl/review-typescript-root-collision | review-typescript-root-collision | target/ | target/review-boundaries-3/ | reviewed; merged at 0d267e25739ca495ad1a229393181ad1b75182f3 |
-| review-conformance-format-design | impl/review-conformance-format-design | review-conformance-format-design | target/ | target/review-boundaries-3/ | final review complete; bounded correction running |
+| review-conformance-format-design | impl/review-conformance-format-design | review-conformance-format-design | target/ | target/review-boundaries-3/ | corrected and personally verified at 6acd811a8f53a3e5ab56ec7a68a13fd0a727ba2b; integration pending |
 
 All units were provisioned at exact opening commit 45832cc885377b2d61845ee33af14f0293d99e67, branched as above, and assigned active leases <story>-wave3. Full briefs and the compiler-cache resource supplement live in each assigned scratch root. Implementor threads are impl_containment (delivery), impl_diagnostic (TypeScript), and scope_conformance_design (design).
 
@@ -1621,3 +1621,7 @@ Exact CLI comparison:
   ]
 }
 ```
+
+## Personal verification after the final design correction
+
+Original implementor committed the bounded correction at6acd811a8f53a3e5ab56ec7a68a13fd0a727ba2b with exact bot author and committer. Coordinator read the full bounded diff and affected timestamp/coverage sections against the source-backed findings. No assertion was dropped or relaxed: a direct comparison verified all68 prior matrix/pairing rows unchanged, with17 new rows. Final design has75 matrix rows and10 pairing rows. Repeated producer refusals now retain multiplicity without extra execution results; new timestamp wire/adaptation rules are exact u64 with checked conversion and frozen legacy behavior. The second review has a fixed outcome, and its exact correction SHA is recorded here. This is personal bounded verification, not a third full adversary pass or runtime compatibility evidence. Both correction reports and patches are preserved separately.
