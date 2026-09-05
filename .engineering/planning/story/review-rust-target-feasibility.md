@@ -21,7 +21,7 @@ scope:
   path: crates/generate/ess-synth
 - confidence: inferred
   path: docs/design/review-rust-target-feasibility.md
-revision: 10
+revision: 11
 ---
 ## Finding and source
 
@@ -94,7 +94,25 @@ Second and final full tests-only attack is assigned to impl_diagnostic on exact 
 
 Actual SDK correction-subject recheck completed 2026-09-05T21:12:23.012539+00:00 against exact a2ff04d with published reader6e5141f. All7 ESS path packages resolved to the candidate, no non-ESS resolution changed, and the original lock was restored byte-for-byte. Eight real target-error generate/check calls preserved absent/owned destinations; six valid controls passed their exact expected success/drift behavior. All63 valid generated files remain byte-identical to the published ESS6616 baseline; older pinned output remains14 changed/49 equal. Records are in the SDK tree under target/review-boundaries-5/exact-producer-correction-1 and final-matrix. This candidate recheck is distinct from the final merged-source gate and does not upgrade any published dependency pin.
 
+## Final full review and bounded correction ownership
 
-## Integration Provenance
+Immutable review-result:review-boundaries-5-rust-adversary-pass-2 contains the complete197206-byte report, SHA256a84eb1f6e37ef537dae6a0a5397cc1c94cd507d02c6139ef86faa5deedd2e98e, checked byte-for-byte after CLI creation. Exact subjecta2ff04d. Eleven new tests ran individually before package suites; final201 executed,194 passed,7 failed,0 ignored. Formatting/strict Clippy exit0. Both first-pass signatures are resolved. Formal ledger has0 carried,2 new,2 resolved; the two new classes are measured pre-existing on exact4b66aac, with five failing generated files byte-identical between base and candidate. The first-input positive control compiles at both sources. Test delta is225 insertions and0 deletions across the two retained adversary files.
 
-Reconciled through AEP from frozen Wave 5 checkpoint 11bbaeff7398c7a73e785c199e335a5bdd6beac8 at original revision 14. Source artifact SHA-256: 6eeafa1896c8d3adcced218dbade5b400fd6e97de4f65f5f0d48ba32dc60a26c. Its original journal remains in that Git history; this store records CLI reconciliation operations. Final Wave 5 publication and later review state still require synchronization.
+Root routing decision: this existing F07 story owns both new findings under its actual emitted-symbol scope and supported collection compiler controls. Keep their immutable pre-existing origins. This is the final bounded correction after two full attacks, not permission for a third full attack or a generic expansion.
+
+1. Extend feasibility over actual emitted delivery-arm calls and lexical ordering. The `event` pattern parameter captures a bare event transformation function. A prior local input captures a later transformation function named input. A single first input binding compiles and must remain valid; unrelated event arms and non-emitted/obligated transformations do not share that local scope. Refuse actual collisions with existing typed source-addressed symbol-collision causes before either CLI target writes. Preserve renderer names and valid bytes; do not blanket-blacklist input.
+2. Repair the existing supported map decoder path argument borrow at rust/wire.rs::decode_value/decode_key. The key parsers for Integer, Boolean and Bytes take a borrowed path, but generated code currently passes the owned nested String. Keep supported nested collection recursion admitted; do not turn the positive compiler regression into a Map refusal. Preserve String and other previously compiling key paths, existing primitive/JSON semantics, canonical profiles and valid artifact maps. A bounded borrowed-path emission repair is authorized only for these previously compiler-invalid codec bytes, including the shared HTTP/Web producer; no source restriction or new failure code is needed.
+
+Write the binding clarification before production. Preserve all201 tests, earlier source/report evidence and exact valid controls. Run each retained seven red assertion and the relevant four positive controls individually after correction, then package test/fmt/strict-Clippy. The final report must distinguish corrected invalid codec bytes from unchanged valid maps and cite actual source scope. Root will freeze, request only bounded verification of these fixes, then run the full merged gate. Do not schedule another full attack. Root will make the corresponding narrow internal catalog/Unreleased wording update after source evidence exists.
+
+## Delivery-local clarification
+
+The final implementation correctly distinguishes an emitted bare transformation call from the locals introduced by earlier deliveries. An emitted obligated transformation has no bare helper call to inspect, but it still introduces an input local for later deliveries reacting to the same event. Only entirely non-emitted deliveries contribute no such local. Root's earlier phrase about non-emitted/obligated transformations not sharing the scope was ambiguous; this paragraph clarifies the intended per-event lexical rule. The single first input call remains legal because its new let binding is out of scope in its own initializer. The current delivery_initializers implementation tracks every emitted delivery and checks only the actual bare calls. No new implementation or test expansion is requested by this clarification.
+
+## Final correction frozen
+
+The final Rust correction is bot commit `028cd015877ce5c2255c840eb39a2764b159981e`. Root verified both bot identities, the clean unit, all 22 paths against the complete source manifest, all five correction paths, and the unchanged adversary report and test hashes. The final package logs execute 201 cases: 201 passed, zero failed or ignored. Formatting, strict Clippy and the additional actual HTTP map compile all exit zero. All 21 String-map and 26 first-input artifact entries were independently byte-checked on both retained sides.
+
+The two production changes check actual ordered delivery-arm locals and borrow the nested diagnostic path in the shared HTTP/Web map decoder. The binding explicitly retains earlier obligated deliveries as input-producing locals while checking only bare generated calls. No existing assertion was dropped, weakened or re-pinned; the two final adversary files add 225 lines with zero deletions. Complete final-correction-report.md is 220017 bytes, SHA256 `a63413e226e015535af06a36e4978610e7bed8b46e2571e112f8383acd4eba61`; complete and correction manifests are `e93ccc1b41a8117ad26a65d9b70311248eed1c5b41983140e65f981ef583a8e8` and `b22a83ff1576331254f000fcb5e526dc8379f7a7e20a79c31479d46f0a23c8eb`.
+
+The final reviewer is assigned bounded verification of these two corrections and the corresponding internal catalog/Unreleased sentences. This is not a third full attack. The two full review reports and their 0 carried / 2 new / 2 resolved ledger remain immutable. The integrated ESS/site gate, exact final producer SDK proof, source publication and public delivery remain pending; the story stays active.

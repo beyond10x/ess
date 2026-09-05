@@ -4,7 +4,7 @@ id: release-plan:consolidated-ess-019
 kind: release-plan
 status: active
 title: Consolidate ESS worktrees and release 0.19.0
-revision: 4
+revision: 5
 ---
 ## Authorization
 
@@ -113,3 +113,32 @@ at the last check. Before publication, compare these files to its frozen final
 commit, reconcile the final planning state and preserve that branch ancestry.
 The agreed Wave 5-first publication order remains in effect. No version tag,
 GitHub Release or worktree cleanup has occurred.
+
+## Frozen Source Handoff
+
+The original final correction is frozen as
+028cd015877ce5c2255c840eb39a2764b159981e, with both bot identities verified.
+All synthesis production files and both complete adversary test files match the
+integration candidate exactly. The only synthesis test difference is the agreed
+source-wire admission replacement plus three supplemental scope regressions.
+The already successful combined gate and site build therefore cover these exact
+production bytes. The native release build also exited 0 and reports ess 0.19.0.
+
+Wave 5 locally merged the correction as
+87338bdef898bf4e4a9a3a0e971c4ec822e3dacd. Its committed Rust story body and complete
+wave narrative have now been reconciled into this candidate. Its final bounded
+verification, exact SDK producer check and main publication remain owned by that
+coordinator; final publication state must be synchronized before release.
+
+An authoritative live session was identified for that coordinator. The existing
+codex queue command accepted the release handoff and a reply address, followed by
+confirmation of the exact frozen-source comparison. No daemon, restart, session
+interruption or takeover was used. Earlier no-channel statements describe the
+previous discovery state, not the current communication route.
+
+The clean Atlas authority checkout was fast-forwarded to published
+dfe353cba37ce072d118d0a67634fb78e59a5276; its instructions and bot tooling are
+unchanged. A fresh documentation contract check with this ESS candidate selected
+still refuses the previously recorded AgentIDE b10x-docs/v4 collection mismatch.
+This is not an ESS site-build failure or an organization-wide green result, and
+no unrelated source or documentation authority was changed to bypass it.

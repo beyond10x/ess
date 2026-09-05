@@ -60,6 +60,8 @@
 
 ### Fixed
 
+- CI explicitly provisions the WASM compiler target required by generated-workspace
+  feasibility checks, including the shared release gate.
 - Kubernetes imports reject malformed Secret shapes and redact failed subprocess
   diagnostics before credential-bearing values reach output.
 - CLI generation preflights complete destination sets, including composed outputs,
