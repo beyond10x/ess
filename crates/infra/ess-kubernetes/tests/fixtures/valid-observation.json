@@ -1,0 +1,88 @@
+{
+  "context": "synthetic-context",
+  "format": "infra-observation/1",
+  "kinds": {
+    "configmaps": {
+      "items": []
+    },
+    "cronjobs": {
+      "items": []
+    },
+    "daemonsets": {
+      "items": []
+    },
+    "deployments": {
+      "items": []
+    },
+    "horizontalpodautoscalers": {
+      "items": []
+    },
+    "ingresses": {
+      "items": []
+    },
+    "jobs": {
+      "items": []
+    },
+    "namespaces": {
+      "items": []
+    },
+    "nodes": {
+      "items": []
+    },
+    "persistentvolumeclaims": {
+      "items": []
+    },
+    "poddisruptionbudgets": {
+      "items": []
+    },
+    "pods": {
+      "items": []
+    },
+    "replicasets": {
+      "items": []
+    },
+    "secrets": {
+      "items": [
+        {
+          "apiVersion": "v1",
+          "data": {
+            "password": {
+              "length": 22,
+              "sha256": "ea56c8f3588a640a046c4ff8a5fa408d60ca5c16ebb987759b257223be0f0821"
+            }
+          },
+          "kind": "Secret",
+          "metadata": {
+            "annotations": {
+              "kept": "visible"
+            },
+            "name": "synthetic",
+            "namespace": "default"
+          },
+          "stringData": {
+            "token": {
+              "length": 22,
+              "sha256": "f229539faa0b3f66cb7bacb1b2f59a277e0503fdd59de8bb402792902bcb4b26"
+            },
+            "unicode": {
+              "length": 12,
+              "sha256": "a48cd6cd2f477f62c703e1cdf85a9ea7480e2831600018eaaa2b5a32757c9186"
+            }
+          },
+          "type": "Opaque"
+        }
+      ]
+    },
+    "serviceaccounts": {
+      "items": []
+    },
+    "services": {
+      "items": []
+    },
+    "statefulsets": {
+      "items": []
+    }
+  },
+  "scanned_at": "2026-09-05T00:00:00Z",
+  "scout_version": "@SCOUT_VERSION@"
+}
