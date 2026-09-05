@@ -21,7 +21,7 @@ scope:
   path: crates/generate/ess-synth
 - confidence: inferred
   path: docs/design/review-rust-target-feasibility.md
-revision: 10
+revision: 11
 ---
 ## Finding and source
 
@@ -33,7 +33,7 @@ Valid models with colliding Rust symbols or recursive layouts yield compilable g
 
 ## Implementation boundary
 
-Allocate target symbols and output paths as one feasibility pass, checking normalized names, reserved words, field/wire-name collisions and recursive layout. Use indirection where it preserves the declared semantics; retain source-language freedom and report target limitations.
+Allocate target symbols and output paths as one feasibility pass, checking normalized names, reserved words, field/wire-name collisions and recursive layout. The final bound policy refuses by-value cycles without inventing boxing or changing declared semantics; retain source-language freedom and report target limitations.
 
 ## Validation
 
@@ -61,3 +61,10 @@ Derived 2026-09-05 from independent source scoping at ESS6616b26, source-caller 
 - SDK source implementation belongs to SDK story:reject-ess-rust-target-refusals; Atlas ADR0037/story:ess-rust-target-refusal-migration governs API/error-format order. No SDK or AgentIDE pin upgrade or deployed-readiness claim follows.
 - Confidence: high for concrete source ownership/callers and measured zero-capability defect; finite rule completeness, new generated compilation results and exact candidate reader execution remain required evidence.
 - Collisions: any ess-synth/ess-cli source or tests, this binding page or shared CHANGELOG. Format catalog's public-doc tokens do not overlap; root validates its final format rows against the merged source.
+
+
+## Implementation and reader checkpoint
+
+Exact implementationf9a7cf7fcca79448a34b2754adb12f1a411573bd confirms the planned synth/CLI/design ownership. The handoff source manifest's19 files were independently byte-checked before root's bot commit. Package runner counts146 to178 with22 retained behavioral red cases, actual Rust/WASM compiles and Node replay, unchanged complete historical billing Rust/Web and gatepass Rust maps, fmt and strict Clippy are in target/review-boundaries-5/implementation-report.md (SHA25627dced0e7e530441e525de7b1169e27b42b99b1b0b6a717065e63df31835d4b3). The error privately boxes its unchanged plan only to bound Result size; serialized/accessor values remain the same. Finite actual renderer checks do not establish every future extension or arbitrary fabricated plan/IR state. First full independent review is in progress and this story remains active.
+
+The SDK reader is published at6e5141f3ead0e4d0c8f75787aec7051e2a1f41d0, with its story implemented on111 Rust+4 web gate cases,30 admission package cases and exact f9a7cf7 producer proof. Eight actual SDK CLI refusals preserved absent/existing destinations;63 complete valid files equal the published6616 ESS producer; all seven temporary path packages and the original restored git graph were verified. See SDK .engineering/planning/story/reject-ess-rust-target-refusals.md at that commit and the wave page. No dependency pin upgrade, final ESS gate or source publication is claimed here.
