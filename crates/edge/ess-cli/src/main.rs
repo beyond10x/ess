@@ -1858,31 +1858,35 @@ fn compose(
 
     let client_plan = composition.client_plan();
     let client_artifacts = client_plan.rust_artifacts();
+    let composition_json = composition.to_canonical_json();
+    let client_plan_json = client_plan.to_canonical_json();
+    let mut outputs = Vec::new();
+    for (path, contents) in [
+        (out, &composition_json),
+        (client_plan_out, &client_plan_json),
+    ] {
+        if let Some(path) = path {
+            outputs.push((preflight_named_output(path)?, contents.as_str()));
+        }
+    }
     if let Some(root) = client_rust_out {
-        preflight_generated_files(
+        let root = preflight_generated_files(
             root,
             &client_artifacts
                 .values()
                 .map(ess_composition::ClientArtifact::path)
                 .collect::<Vec<_>>(),
         )?;
-    }
-    let composition_json = composition.to_canonical_json();
-    if let Some(out) = out {
-        fs::write(out, &composition_json).with_context(|| format!("writing {}", out.display()))?;
-    }
-    let client_plan_json = client_plan.to_canonical_json();
-    if let Some(out) = client_plan_out {
-        fs::write(out, &client_plan_json).with_context(|| format!("writing {}", out.display()))?;
-    }
-    if let Some(root) = client_rust_out {
-        write_generated_files(
-            root,
+        outputs.extend(
             client_artifacts
                 .values()
-                .map(|artifact| (artifact.path(), artifact.contents())),
-        )?;
+                .map(|artifact| (root.join(artifact.path()), artifact.contents())),
+        );
     }
+    // All three destinations belong to this invocation. Checking only the generated subset
+    // would let either companion overwrite a client file or create a file where it needs a parent.
+    preflight_output_set(outputs.iter().map(|(path, _)| path.as_path()))?;
+    write_preflighted_files(outputs)?;
 
     match format {
         Format::Text => println!(
@@ -2037,14 +2041,14 @@ fn write_artifacts(
     Ok(())
 }
 
-/// Checks a complete generated tree before changing any output.
+/// Resolves the requested directory for output preflight.
 ///
 /// Relative artifact paths obey `ess_gen::artifact::validate_paths`. The requested root may be
 /// absolute or relative, including `..`, but cannot traverse a pre-existing symlink. Its components
 /// are inspected before resolving `..`; writes use the resolved root so discarded missing
 /// directories are never created. A Windows root must be fully qualified or have no drive/root
 /// prefix, rather than depend on a drive's separate current directory. Every existing
-/// root ancestor must be a directory; every existing destination must be a regular file with one
+/// root ancestor must be a directory. The remaining preflight checks require a regular file with one
 /// hard link on Unix. On other platforms replacing an existing file is refused because this
 /// implementation cannot verify its hard-link count. Case aliases in existing destination
 /// directories are refused even on a case-sensitive host.
@@ -2053,8 +2057,7 @@ fn write_artifacts(
 /// preflight does not defend against concurrent replacement, hostile mounts or filesystem-specific
 /// aliases beyond the portable path rules. It provides no rollback for later I/O failures and does
 /// not retire old files. Those require a separate output ownership/transaction contract.
-fn preflight_generated_files(root: &Path, paths: &[&str]) -> Result<PathBuf> {
-    ess_gen::artifact::validate_paths(paths.iter().copied()).map_err(anyhow::Error::msg)?;
+fn resolve_output_directory(root: &Path) -> Result<PathBuf> {
     let absolute = if root.is_absolute() {
         root.to_path_buf()
     } else {
@@ -2090,7 +2093,12 @@ fn preflight_generated_files(root: &Path, paths: &[&str]) -> Result<PathBuf> {
         }
         inspect_output_entry(&current, false)?;
     }
-    let absolute = current;
+    Ok(current)
+}
+
+fn preflight_generated_files(root: &Path, paths: &[&str]) -> Result<PathBuf> {
+    ess_gen::artifact::validate_paths(paths.iter().copied()).map_err(anyhow::Error::msg)?;
+    let absolute = resolve_output_directory(root)?;
     for relative in paths {
         let mut destination = absolute.clone();
         let mut components = relative.split('/').peekable();
@@ -2120,6 +2128,73 @@ fn preflight_generated_files(root: &Path, paths: &[&str]) -> Result<PathBuf> {
         }
     }
     Ok(absolute)
+}
+
+/// A caller-selected file is resolved against its selected parent, without imposing the
+/// generated-name alphabet on it. Parent directories must already exist, as for the original
+/// single-file writer. Existing links and incompatible file types are refused before any output.
+fn preflight_named_output(path: &Path) -> Result<PathBuf> {
+    // Path::file_name drops trailing separators. Keep a caller's directory request a directory
+    // request: `report/` must not become a successful write to a new file called `report`.
+    let last = path
+        .as_os_str()
+        .as_encoded_bytes()
+        .rsplit(|byte| std::path::is_separator(char::from(*byte)))
+        .next()
+        .unwrap_or_default();
+    if last.is_empty() || last == b"." || last == b".." {
+        bail!(
+            "output must name a file, not a directory: {}",
+            path.display()
+        );
+    }
+    let name = path
+        .file_name()
+        .with_context(|| format!("output must name a file: {}", path.display()))?;
+    let parent = resolve_output_directory(path.parent().unwrap_or(Path::new(".")))?;
+    for entry in fs::read_dir(&parent)
+        .with_context(|| format!("inspecting output parent {}", parent.display()))?
+    {
+        let existing = entry?.file_name();
+        if existing != name && existing.eq_ignore_ascii_case(name) {
+            bail!("output path aliases an existing entry: {}", path.display());
+        }
+    }
+    let destination = parent.join(name);
+    inspect_output_entry(&destination, true)?;
+    Ok(destination)
+}
+
+/// Checks the whole command's resolved absolute file set, including independently selected
+/// companion outputs. No path spellings are rewritten: folding ASCII case detects aliases,
+/// and recording all ancestors detects file/directory conflicts in either declaration order.
+/// Unicode and other caller-selected filename characters remain admitted. Filesystem-specific
+/// aliases beyond ASCII case, concurrent replacement and rollback remain outside this preflight.
+fn preflight_output_set<'a>(paths: impl IntoIterator<Item = &'a Path>) -> Result<()> {
+    let mut entries: std::collections::BTreeMap<PathBuf, (PathBuf, bool)> =
+        std::collections::BTreeMap::new();
+    for path in paths {
+        let mut original = PathBuf::new();
+        let mut folded = PathBuf::new();
+        let mut components = path.components().peekable();
+        while let Some(component) = components.next() {
+            original.push(component.as_os_str());
+            folded.push(component.as_os_str().to_ascii_lowercase());
+            let file = components.peek().is_none();
+            if let Some((previous, previous_file)) = entries.get(&folded) {
+                if previous != &original || file || *previous_file {
+                    bail!(
+                        "colliding command output paths: {} and {}",
+                        previous.display(),
+                        path.display()
+                    );
+                }
+            } else {
+                entries.insert(folded.clone(), (original.clone(), file));
+            }
+        }
+    }
+    Ok(())
 }
 
 fn inspect_output_entry(path: &Path, file: bool) -> Result<()> {
@@ -2169,8 +2244,17 @@ fn write_generated_files<'a>(
         root,
         &files.iter().map(|(path, _)| *path).collect::<Vec<_>>(),
     )?;
-    for (relative, contents) in files {
-        let path = root.join(relative);
+    write_preflighted_files(
+        files
+            .into_iter()
+            .map(|(relative, contents)| (root.join(relative), contents)),
+    )
+}
+
+/// Writes only paths returned by preflight. All destinations in the command must have passed
+/// preflight before this starts; this loop does not roll back a subsequent I/O failure.
+fn write_preflighted_files<'a>(files: impl IntoIterator<Item = (PathBuf, &'a str)>) -> Result<()> {
+    for (path, contents) in files {
         if let Some(parent) = path.parent() {
             fs::create_dir_all(parent)?;
         }
