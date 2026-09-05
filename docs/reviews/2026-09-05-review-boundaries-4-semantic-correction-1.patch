@@ -1,0 +1,450 @@
+diff --git a/crates/generate/ess-gen/src/stamp.rs b/crates/generate/ess-gen/src/stamp.rs
+index 8b70c33..a6ec878 100644
+--- a/crates/generate/ess-gen/src/stamp.rs
++++ b/crates/generate/ess-gen/src/stamp.rs
+@@ -5,6 +5,18 @@ use super::ArtifactDigests;
+ const LICENSE_SUFFIX: &str =
+     "\n--\nThe licence of `assets/mermaid.min.js`, redistributed with this site.\n";
+ 
++#[derive(PartialEq, Eq)]
++struct Envelope {
++    system: String,
++    specification_version: String,
++    digests: ArtifactDigests,
++}
++
++struct Comment {
++    envelope: Envelope,
++    regenerate: String,
++}
++
+ pub(super) fn read(text: &str) -> Option<ArtifactDigests> {
+     let text = text.trim_start();
+     let text = text.strip_prefix("<!DOCTYPE html>\n").unwrap_or(text);
+@@ -13,11 +25,16 @@ pub(super) fn read(text: &str) -> Option<ArtifactDigests> {
+         if is_comment(rest.trim_start()) {
+             return None;
+         }
+-        // OpenAPI and AsyncAPI emit both copies. Neither can override the other.
+-        if text.starts_with("# ") && !rest.trim().is_empty() && structured(rest)? != stamp {
++        // Cargo manifests carry only the comment. OpenAPI and AsyncAPI emit both copies;
++        // a missing or malformed YAML copy cannot become a comment-only artifact.
++        if text.starts_with("# ")
++            && !rest.trim().is_empty()
++            && !manifest_body(rest, &stamp.regenerate)
++            && structured(rest)? != stamp.envelope
++        {
+             return None;
+         }
+-        return Some(stamp);
++        return Some(stamp.envelope.digests);
+     }
+     let license = include_str!("../assets/mermaid.LICENSE");
+     if let Some(rest) = text.strip_prefix(license) {
+@@ -26,9 +43,23 @@ pub(super) fn read(text: &str) -> Option<ArtifactDigests> {
+         } else {
+             rest.strip_prefix('\n')?
+         };
+-        return lines(rest.strip_prefix(LICENSE_SUFFIX)?.lines());
++        return lines(rest.strip_prefix(LICENSE_SUFFIX)?.lines())
++            .map(|stamp| stamp.envelope.digests);
+     }
+-    structured(text)
++    structured(text).map(|stamp| stamp.digests)
++}
++
++fn manifest_body(text: &str, regenerate: &str) -> bool {
++    // These are the existing synthesis writers' frames, not a TOML validity check. The
++    // projection command never emits a manifest and therefore always owes paired YAML.
++    let synthesis = regenerate == "ess synthesize"
++        || regenerate.starts_with("ess synthesize --")
++        || regenerate == "cargo xtask synth --target clap";
++    synthesis
++        && matches!(
++            text.trim_start().lines().next(),
++            Some("[workspace]" | "[package]")
++        )
+ }
+ 
+ fn is_comment(text: &str) -> bool {
+@@ -42,7 +73,7 @@ fn is_comment(text: &str) -> bool {
+             .is_some_and(|rest| rest.trim_start().starts_with("* generated from "))
+ }
+ 
+-fn comment(text: &str) -> Option<(ArtifactDigests, &str)> {
++fn comment(text: &str) -> Option<(Comment, &str)> {
+     for prefix in ["# ", "// "] {
+         if text.starts_with(prefix) {
+             let mut rest = text;
+@@ -68,9 +99,10 @@ fn comment(text: &str) -> Option<(ArtifactDigests, &str)> {
+     None
+ }
+ 
+-fn lines<'a>(mut lines: impl Iterator<Item = &'a str>) -> Option<ArtifactDigests> {
++fn lines<'a>(mut lines: impl Iterator<Item = &'a str>) -> Option<Comment> {
+     let origin = lines.next()?.strip_prefix("generated from ")?;
+-    if origin.is_empty() {
++    let (system, specification_version) = origin.split_once(' ')?;
++    if system.is_empty() || specification_version.trim().is_empty() {
+         return None;
+     }
+     let source = lines.next()?.strip_prefix("model digest ")?;
+@@ -81,7 +113,14 @@ fn lines<'a>(mut lines: impl Iterator<Item = &'a str>) -> Option<ArtifactDigests
+     if !regenerate.ends_with('`') || regenerate.len() < 2 || lines.next().is_some() {
+         return None;
+     }
+-    digests(source, contract)
++    Some(Comment {
++        envelope: Envelope {
++            system: system.to_owned(),
++            specification_version: specification_version.to_owned(),
++            digests: digests(source, contract)?,
++        },
++        regenerate: regenerate.strip_suffix('`')?.to_owned(),
++    })
+ }
+ 
+ fn hash(value: &str) -> bool {
+@@ -101,7 +140,7 @@ fn digests(source: &str, contract: &str) -> Option<ArtifactDigests> {
+ 
+ /// `serde_yaml`'s mapping visitor rejects duplicate keys, including in JSON input. JSON's generic
+ /// Value visitor overwrites them, so it cannot establish this envelope's uniqueness guarantee.
+-fn structured(text: &str) -> Option<ArtifactDigests> {
++fn structured(text: &str) -> Option<Envelope> {
+     let document: serde_yaml::Value = serde_yaml::from_str(text).ok()?;
+     let root = document.as_mapping()?;
+     // A docs document has per-page stamps and no single artifact stamp. Do not pick its first page.
+@@ -113,11 +152,11 @@ fn structured(text: &str) -> Option<ArtifactDigests> {
+         .iter()
+         .any(|key| root.contains_key(*key))
+     {
+-        candidates.push(&document);
++        candidates.push((&document, false));
+     }
+     for key in ["provenance", "x-ess-provenance"] {
+         if let Some(value) = root.get(key) {
+-            candidates.push(value);
++            candidates.push((value, key == "x-ess-provenance"));
+         }
+     }
+     if let Some(value) = root
+@@ -125,17 +164,32 @@ fn structured(text: &str) -> Option<ArtifactDigests> {
+         .and_then(serde_yaml::Value::as_mapping)
+         .and_then(|info| info.get("x-ess-provenance"))
+     {
+-        candidates.push(value);
++        candidates.push((value, false));
+     }
+     // One structured location per document. Unlike the paired YAML comment, two locations are
+     // ambiguous even if they currently agree; no writer emits that shape.
+     if candidates.len() != 1 {
+         return None;
+     }
+-    let stamp = candidates[0].as_mapping()?;
++    let (value, schema_attribution) = candidates[0];
++    let stamp = value.as_mapping()?;
++    // Schema Attribution adds regenerate; plain Provenance (including the info extension
++    // and a synthesis plan) does not. Require the fields each actual writer promises.
++    if schema_attribution {
++        required_text(stamp, "regenerate")?;
++    }
+     let source = match (stamp.get("source_digest"), stamp.get("spec_digest")) {
+         (Some(value), None) | (None, Some(value)) => value.as_str()?,
+         _ => return None,
+     };
+-    digests(source, stamp.get("contract_digest")?.as_str()?)
++    Some(Envelope {
++        system: required_text(stamp, "system")?.to_owned(),
++        specification_version: required_text(stamp, "specification_version")?.to_owned(),
++        digests: digests(source, stamp.get("contract_digest")?.as_str()?)?,
++    })
++}
++
++fn required_text<'a>(stamp: &'a serde_yaml::Mapping, key: &str) -> Option<&'a str> {
++    let value = stamp.get(key)?.as_str()?;
++    (!value.trim().is_empty()).then_some(value)
+ }
+diff --git a/crates/generate/ess-gen/tests/provenance.rs b/crates/generate/ess-gen/tests/provenance.rs
+index bca8e68..877168e 100644
+--- a/crates/generate/ess-gen/tests/provenance.rs
++++ b/crates/generate/ess-gen/tests/provenance.rs
+@@ -477,6 +477,120 @@ fn review_conflicting_structured_and_comment_stamps_are_unreadable() {
+     }
+ }
+ 
++#[test]
++fn correction_structured_envelopes_require_typed_attribution() {
++    let ir = emission_probe("Ordinary summary.");
++    let whole = Provenance::of(&ir);
++    let direct = serde_json::to_value(&whole).unwrap();
++    let artifacts = ess_gen::generate_all(&ir).unwrap();
++    let schema = artifacts
++        .iter()
++        .find(|(path, _)| path.starts_with("schema/"))
++        .unwrap()
++        .1;
++    let schema: serde_json::Value = serde_json::from_str(&schema.contents).unwrap();
++    for (label, document, location, fields) in [
++        (
++            "direct",
++            direct.clone(),
++            "",
++            vec!["system", "specification_version"],
++        ),
++        (
++            "plan",
++            serde_json::json!({"provenance": direct}),
++            "/provenance",
++            vec!["system", "specification_version"],
++        ),
++        (
++            "schema",
++            schema,
++            "/x-ess-provenance",
++            vec!["system", "specification_version", "regenerate"],
++        ),
++    ] {
++        assert!(
++            Provenance::read_digests(&document.to_string()).is_some(),
++            "{label}"
++        );
++        for field in fields {
++            for invalid in [
++                serde_json::Value::Null,
++                serde_json::json!(""),
++                serde_json::json!(42),
++                serde_json::json!([]),
++            ] {
++                let mut damaged = document.clone();
++                damaged.pointer_mut(location).unwrap()[field] = invalid.clone();
++                assert!(
++                    Provenance::read_digests(&damaged.to_string()).is_none(),
++                    "{label}/{field}: {invalid}"
++                );
++            }
++        }
++    }
++}
++
++#[test]
++fn correction_actual_yaml_requires_complete_matching_paired_attribution() {
++    let artifacts = ess_gen::generate_all(&emission_probe("Ordinary summary.")).unwrap();
++    for kind in ["openapi/", "asyncapi/"] {
++        let artifact = artifacts
++            .iter()
++            .find(|(path, _)| path.starts_with(kind))
++            .unwrap()
++            .1;
++        let header: String = artifact.contents.split_inclusive('\n').take(4).collect();
++        let body: serde_yaml::Value = serde_yaml::from_str(&artifact.contents).unwrap();
++        assert!(
++            Provenance::read_digests(&artifact.contents).is_some(),
++            "{kind}"
++        );
++        for field in [
++            "system",
++            "specification_version",
++            "source_digest",
++            "contract_digest",
++        ] {
++            let mut damaged = body.clone();
++            damaged["info"]["x-ess-provenance"]
++                .as_mapping_mut()
++                .unwrap()
++                .remove(field);
++            let text = format!("{header}{}", serde_yaml::to_string(&damaged).unwrap());
++            assert!(
++                Provenance::read_digests(&text).is_none(),
++                "{kind} missing {field}"
++            );
++        }
++        for field in ["system", "specification_version"] {
++            let mut damaged = body.clone();
++            damaged["info"]["x-ess-provenance"][field] =
++                serde_yaml::Value::String("different".into());
++            let text = format!("{header}{}", serde_yaml::to_string(&damaged).unwrap());
++            assert!(
++                Provenance::read_digests(&text).is_none(),
++                "{kind} conflicting {field}"
++            );
++        }
++        let mut missing = body;
++        missing["info"]
++            .as_mapping_mut()
++            .unwrap()
++            .remove("x-ess-provenance");
++        for invalid_body in [
++            serde_yaml::to_string(&missing).unwrap(),
++            "openapi: [unterminated".into(),
++            "[workspace]\nresolver = \"2\"\n".into(),
++        ] {
++            assert!(
++                Provenance::read_digests(&format!("{header}{invalid_body}")).is_none(),
++                "{kind}: {invalid_body}"
++            );
++        }
++    }
++}
++
+ #[test]
+ fn review_docs_ir_retains_page_profiles_and_does_not_claim_a_flat_stamp() {
+     let ir = emission_probe("Ordinary summary.");
+diff --git a/crates/generate/ess-synth/tests/http.rs b/crates/generate/ess-synth/tests/http.rs
+index 8fdbb37..fb67063 100644
+--- a/crates/generate/ess-synth/tests/http.rs
++++ b/crates/generate/ess-synth/tests/http.rs
+@@ -375,3 +375,34 @@ fn review_http_payloads_use_slice_profiles_while_neutral_plans_stay_frozen() {
+         }
+     }
+ }
++
++#[test]
++fn correction_actual_cargo_manifests_keep_their_comment_provenance() {
++    let mut unreadable = Vec::new();
++    let mut examined = 0;
++    for (name, ir) in [("gatepass", gatepass()), ("billing", billing())] {
++        for target in [Target::Rust, Target::Web] {
++            let synthesis = synthesized(&ir, target);
++            for (path, artifact) in &synthesis.artifacts {
++                if path.ends_with("Cargo.toml") {
++                    examined += 1;
++                    let expected = ess_gen::Provenance::of(&ir);
++                    let read = ess_gen::Provenance::read_digests(&artifact.contents);
++                    println!("{name}/{}/{path}: {read:?}", target.name());
++                    if let Some(read) = read {
++                        assert_eq!(read.source_digest, expected.source_digest);
++                        assert_eq!(read.contract_digest, expected.contract_digest);
++                    } else {
++                        unreadable.push(format!("{name}/{}/{path}", target.name()));
++                    }
++                }
++            }
++        }
++    }
++    assert!(examined > 0, "actual emitted manifests must be selected");
++    println!("examined {examined} actual Cargo manifests");
++    assert!(
++        unreadable.is_empty(),
++        "unreadable manifests: {unreadable:?}"
++    );
++}
+diff --git a/crates/verify/ess-diff/src/diff.rs b/crates/verify/ess-diff/src/diff.rs
+index ddbbc40..f930180 100644
+--- a/crates/verify/ess-diff/src/diff.rs
++++ b/crates/verify/ess-diff/src/diff.rs
+@@ -1699,9 +1699,27 @@ fn residual_fields(value: &mut serde_json::Value, key: &str) {
+ }
+ 
+ fn residual_field(field: &mut serde_json::Value) {
+-    remove_keys(field, &["name", "type_ref"]);
+-    if let Some(naming) = field.get_mut("naming") {
+-        remove_keys(naming, &["wire", "display", "summary"]);
++    retain_residual_owner(field, |field| {
++        remove_keys(field, &["name", "type_ref"]);
++        if let Some(naming) = field.get_mut("naming") {
++            remove_keys(naming, &["wire", "display", "summary"]);
++        }
++    });
++}
++
++/// A named list member can disappear only when all its content is accounted for. Otherwise
++/// retain the owner alongside its residual content, even after empty siblings are pruned.
++fn retain_residual_owner(
++    value: &mut serde_json::Value,
++    remove_covered: impl FnOnce(&mut serde_json::Value),
++) {
++    let name = value.get("name").cloned();
++    remove_covered(value);
++    if prune_empty(value) {
++        return;
++    }
++    if let (Some(name), Some(object)) = (name, value.as_object_mut()) {
++        object.insert("name".to_owned(), name);
+     }
+ }
+ 
+@@ -1876,7 +1894,9 @@ fn residual_entity(declaration: &mut serde_json::Value) {
+             .and_then(serde_json::Value::as_array_mut)
+         {
+             for transition in transitions {
+-                remove_keys(transition, &["name", "from", "to"]);
++                retain_residual_owner(transition, |transition| {
++                    remove_keys(transition, &["name", "from", "to"]);
++                });
+             }
+         }
+     }
+@@ -1890,21 +1910,23 @@ fn residual_command(declaration: &mut serde_json::Value) {
+     {
+         for outcome in outcomes {
+             // test_strategy is a function of condition; refs deliberately remain.
+-            remove_keys(
+-                outcome,
+-                &[
+-                    "name",
+-                    "condition",
+-                    "subject",
+-                    "test_strategy",
+-                    "emits",
+-                    "payload",
+-                    "error",
+-                    "refuses",
+-                    "summary",
+-                    "sets",
+-                ],
+-            );
++            retain_residual_owner(outcome, |outcome| {
++                remove_keys(
++                    outcome,
++                    &[
++                        "name",
++                        "condition",
++                        "subject",
++                        "test_strategy",
++                        "emits",
++                        "payload",
++                        "error",
++                        "refuses",
++                        "summary",
++                        "sets",
++                    ],
++                );
++            });
+         }
+     }
+ }
+diff --git a/docs/design/ess-semantic-diff-impact-evolution-design-v0.1.md b/docs/design/ess-semantic-diff-impact-evolution-design-v0.1.md
+index 6cda6a4..5bba544 100644
+--- a/docs/design/ess-semantic-diff-impact-evolution-design-v0.1.md
++++ b/docs/design/ess-semantic-diff-impact-evolution-design-v0.1.md
+@@ -72,7 +72,10 @@ a documented function of such a field. Retain all unknown residual fields,
+ including refs, shape references, unclassified families and unknown nested fields.
+ Normalize effective naming defaults before deciding equality. Prune empty residual
+ containers so a classified addition/removal alone does not fabricate residual
+-change. Compare residuals independently of whether classified changes exist. A
++change. A named list member with remaining content retains its name before empty
++siblings are pruned: relocating identical residual content between owners must
++remain visible. Apply this rule to outcomes, fields and lifecycle transitions;
++top-level declarations already retain their map keys. Compare residuals independently of whether classified changes exist. A
+ difference emits `unclassified-changed` and forces whole artifact/scenario
+ obligations. Reordering common lifecycle transitions is also retained as residual
+ information: route comparison keys by name, while generated diagrams preserve
+@@ -134,6 +137,18 @@ agree. Multiple authoritative candidate envelopes, duplicate authoritative keys,
+ missing paired values and conflicting source/contract pairs are refused; model
+ strings containing marker-looking text are not candidate envelopes. Identical
+ comment/structured copies emitted by one writer are allowed after comparison.
++Each structured provenance requires nonempty string `system` and
++`specification_version` as well as the validated digest pair. The schema root
++`x-ess-provenance` is `Attribution` and also requires nonempty string `regenerate`;
++plain `Provenance`, plan provenance and API `info.x-ess-provenance` do not emit that
++field. Paired YAML copies agree on system, specification version and both digests.
++The existing Cargo writer frame is a `#` header naming `ess synthesize` (including
++its target options) or `cargo xtask synth --target clap`, followed by a `[workspace]`
++or `[package]` body. That frame has no structured attribution; admitting its header
++does not validate TOML. Projection headers naming `ess generate` continue requiring
++the complete paired YAML whenever a body follows, including when that body is
++malformed or its attribution was removed. This clarifies existing writer frames
++without changing generated bytes or claiming an impact caller for each manifest.
+ `ess-docs/1` is a multipage document, not one flattened artifact stamp; no search
+ through arbitrary pages is permitted to guess its identity.
+ 

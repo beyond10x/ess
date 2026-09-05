@@ -1897,3 +1897,32 @@ the actual-emission probe before a framing correction, preserve its first result
 paired OpenAPI/AsyncAPI agreement. It is separate from the adversary's four measured reds.
 The corrected source will receive the second and final full adversarial pass before SDK
 candidate execution and integration.
+
+The first correction is committed as `5c009bfc2f2d306b445d86505099eb88af1df23b`, with
+verified bot identities. It changes five assigned files, 271 insertions and 35 deletions.
+All ten adversary cases and their full suite fixture remain unchanged. Both confirmed
+findings were corrected and the store records their review outcome as fixed against this
+commit. Full report and patch are preserved as
+`docs/reviews/2026-09-05-review-boundaries-4-semantic-correction-1.*`, respectively SHA-256
+`a3c2068bbdc3d594bae7a874ee41b9765cc6db24d6f7621c7a7834725c465f03` and
+`a00014e97f1c0148fdc896c00b8532e73812563cba741f6f9986fe0e4aa98280`.
+
+Residual owner retention now applies to each named-list identity erasure, keeping names
+only while unexplained content survives; classified-only controls remain green. Structured
+attribution requires its corresponding writer's fields, and paired API copies compare system,
+version and both digests. Missing specification version and regeneration fields, previously
+unreached after the first missing-system failure, now execute and refuse. The actual impact
+reader reports `ProvenanceUnreadable` for incomplete schema attribution.
+
+Three new correction cases first failed: actual Cargo frames (all 14 Rust/Web manifests
+rejected), typed attribution and paired YAML completeness. They now pass. The final full
+four-package run emitted 36 summaries totaling 496 passed, zero failed and zero ignored;
+formatting, strict Clippy and whitespace checks returned 0. Intermediate lint failures and
+their repairs are preserved separately. Generated/corpus bytes did not change. Clap framing
+is source-backed, without an executed clap compatibility claim; the Cargo frame does not
+validate TOML or establish an individual-manifest impact caller.
+
+The second and final full test-only adversarial pass is dispatched against the entire
+opening-base-to-corrected-commit diff. SDK candidate preparation is complete and checked
+for missing/abbreviated/mismatched-subject refusal, but no candidate Cargo resolution or
+build has run. Its actual experiment still requires the final frozen source handoff.
