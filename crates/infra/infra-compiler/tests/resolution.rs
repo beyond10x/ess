@@ -103,7 +103,7 @@ fn a_dangling_reference_is_carried_as_a_fact_and_never_refuses_compilation() {
     // The four deliberate danglings, and nothing else: an IR that also flagged healthy
     // references would bury IW2 in noise.
     let targets: Vec<&UnresolvedTarget> = ir
-        .model
+        .model()
         .unresolved
         .iter()
         .map(|fact| &fact.target)
@@ -112,7 +112,7 @@ fn a_dangling_reference_is_carried_as_a_fact_and_never_refuses_compilation() {
         targets.len(),
         4,
         "exactly the four deliberate danglings: {:#?}",
-        ir.model.unresolved
+        ir.model().unresolved
     );
     assert!(
         targets.iter().any(|target| matches!(target,
@@ -141,7 +141,7 @@ fn a_dangling_reference_is_carried_as_a_fact_and_never_refuses_compilation() {
 #[test]
 fn a_resolved_reference_is_a_handle_whose_lookup_is_total() {
     let ir = compiled();
-    let workload = &ir.model.workloads["app/deployment/web"];
+    let workload = &ir.model().workloads["app/deployment/web"];
     let ResolvedEnvSource::ConfigMapKey {
         config_map: Reference::Resolved { key },
         ..
@@ -160,7 +160,7 @@ fn a_resolved_reference_is_a_handle_whose_lookup_is_total() {
 #[test]
 fn the_unresolved_site_keeps_the_declared_name_so_the_ir_reads_on_its_own() {
     let ir = compiled();
-    let workload = &ir.model.workloads["app/deployment/web"];
+    let workload = &ir.model().workloads["app/deployment/web"];
     let ResolvedEnvFromSource::ConfigMap {
         config_map: Reference::Unresolved { name },
         ..
@@ -174,7 +174,7 @@ fn the_unresolved_site_keeps_the_declared_name_so_the_ir_reads_on_its_own() {
 #[test]
 fn an_absent_service_account_name_resolves_as_default_because_that_is_what_the_kubelet_does() {
     let ir = compiled();
-    let workload = &ir.model.workloads["app/deployment/web"];
+    let workload = &ir.model().workloads["app/deployment/web"];
     let Reference::Resolved { key } = &workload.service_account else {
         panic!("`default` exists in the fixture and must resolve");
     };
@@ -184,7 +184,7 @@ fn an_absent_service_account_name_resolves_as_default_because_that_is_what_the_k
 #[test]
 fn volume_claims_and_optional_secret_references_resolve_with_their_flags_kept() {
     let ir = compiled();
-    let workload = &ir.model.workloads["app/deployment/web"];
+    let workload = &ir.model().workloads["app/deployment/web"];
     assert!(
         matches!(
             &workload.volumes[0].source,

@@ -435,7 +435,7 @@ fn evaluate(
     {
         let key = format!("{namespace}/{}/{name}", kind.as_str());
         let subject = format!("workloads/{key}");
-        let outcome = if ir.model.workloads.contains_key(&key) {
+        let outcome = if ir.model().workloads.contains_key(&key) {
             Outcome::Holds
         } else {
             Outcome::Gap(Gap::WorkloadAbsent {
@@ -485,7 +485,7 @@ fn evaluate(
     let outcomes = selected
         .into_iter()
         .map(|key| {
-            let workload = &ir.model.workloads[&key];
+            let workload = &ir.model().workloads[&key];
             SubjectOutcome {
                 subject: format!("workloads/{key}"),
                 outcome: workload_outcome(&expectation.kind, ir, &key, workload, properties, facts),
@@ -510,14 +510,14 @@ fn undecidable_scope(scope: &Scope, reason: UnknownReason) -> (Vec<String>, Vec<
 /// Every workload key a scope selects, or the reason the scope cannot be resolved at all.
 fn select_workloads(ir: &InfraIr, scope: &Scope) -> Result<Vec<String>, UnknownReason> {
     if let Some(namespace) = scope.namespace() {
-        if !ir.model.namespaces.contains_key(namespace) {
+        if !ir.model().namespaces.contains_key(namespace) {
             return Err(UnknownReason::NamespaceUnobserved {
                 namespace: namespace.to_owned(),
             });
         }
     }
     Ok(ir
-        .model
+        .model()
         .workloads
         .iter()
         .filter(|(_, workload)| match scope {
@@ -537,14 +537,14 @@ fn select_services<'a>(
     scope: &Scope,
 ) -> Result<Vec<(String, &'a Service)>, UnknownReason> {
     if let Some(namespace) = scope.namespace() {
-        if !ir.model.namespaces.contains_key(namespace) {
+        if !ir.model().namespaces.contains_key(namespace) {
             return Err(UnknownReason::NamespaceUnobserved {
                 namespace: namespace.to_owned(),
             });
         }
     }
     let selected: Vec<(String, &Service)> = ir
-        .model
+        .model()
         .services
         .iter()
         .filter(|(_, service)| match scope {
@@ -571,7 +571,7 @@ fn selector_outcome(ir: &InfraIr, key: &str, service: &Service) -> Outcome {
         });
     }
     let from = format!("services/{key}");
-    let dangling = ir.model.unresolved.iter().any(|reference| {
+    let dangling = ir.model().unresolved.iter().any(|reference| {
         reference.from == from
             && matches!(
                 reference.target,
@@ -672,7 +672,7 @@ fn workload_outcome(
             }
         }
         ExpectationKind::ConfigReferencesResolve => ir
-            .model
+            .model()
             .unresolved
             .iter()
             .filter(|reference| reference.from == subject)

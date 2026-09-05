@@ -120,7 +120,7 @@ pub fn properties(ir: &InfraIr) -> Vec<WorkloadProperties> {
 pub fn properties_with(ir: &InfraIr, graph: &InfraGraph) -> Vec<WorkloadProperties> {
     // One pass over the pods, not one per workload: the derived owner is on the graph.
     let mut observed: BTreeMap<&str, (u32, u32)> = BTreeMap::new();
-    for (pod_key, pod) in &ir.model.pods {
+    for (pod_key, pod) in &ir.model().pods {
         let Some(workload) = graph.owner_of(pod_key) else {
             continue;
         };
@@ -131,23 +131,24 @@ pub fn properties_with(ir: &InfraIr, graph: &InfraGraph) -> Vec<WorkloadProperti
         }
     }
 
-    ir.model
+    ir.model()
         .workloads
         .iter()
         .map(|(key, workload)| {
             let (observed_pods, ready_pods) = observed.get(key.as_str()).copied().unwrap_or((0, 0));
-            let pod_disruption_budgets = ir.model.pod_disruption_budgets.as_ref().map(|budgets| {
-                budgets
-                    .iter()
-                    .filter(|(_, budget)| {
-                        budget.identity.namespace == workload.identity.namespace
-                            && pdb_covers(&budget.selector, &workload.template_labels)
-                    })
-                    .map(|(budget_key, _)| budget_key.clone())
-                    .collect()
-            });
+            let pod_disruption_budgets =
+                ir.model().pod_disruption_budgets.as_ref().map(|budgets| {
+                    budgets
+                        .iter()
+                        .filter(|(_, budget)| {
+                            budget.identity.namespace == workload.identity.namespace
+                                && pdb_covers(&budget.selector, &workload.template_labels)
+                        })
+                        .map(|(budget_key, _)| budget_key.clone())
+                        .collect()
+                });
             let horizontal_pod_autoscalers =
-                ir.model
+                ir.model()
                     .horizontal_pod_autoscalers
                     .as_ref()
                     .map(|autoscalers| {

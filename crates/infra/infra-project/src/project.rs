@@ -53,6 +53,7 @@ use infra_compiler::ir::{InfraIr, InfraModel};
 use infra_domain::observation::Identity;
 use infra_domain::policy::PodDisruptionBudget;
 use infra_domain::workload::{Probe, ProbeHandler, Probes, Resources};
+use infra_domain::ValidationErrors;
 use infra_spec::{
     simulate, Expectation, Gap, InfraSpec, Outcome, Port, ProbeHandlerRemedy, ProbeRemedy, Remedy,
     Simulation, Summary,
@@ -542,14 +543,17 @@ fn render_labels(labels: &BTreeMap<String, String>) -> String {
 
 /// Projects `spec`'s gaps against `ir` into the changes that would close them.
 ///
-/// Total: there is no failure mode. A validated specification and a compiled IR are both
-/// well-formed by construction, so everything left to say is a disposition.
-#[must_use]
-pub fn project(spec: &InfraSpec, ir: &InfraIr) -> Projection {
+/// Every hypothetical model is admitted before its corresponding change is recorded.
+///
+/// # Errors
+///
+/// Returns checked IR admission errors if a generated candidate cannot preserve the reader's
+/// invariants. No partial projection is returned and the observed owner remains unchanged.
+pub fn project(spec: &InfraSpec, ir: &InfraIr) -> Result<Projection, ValidationErrors> {
     let observed = simulate(spec, ir);
     let mut bench = Workbench::new(ir);
 
-    bench.reach_fixed_point(spec, &observed);
+    bench.reach_fixed_point(spec, &observed)?;
     // What the tree would leave behind. Obligations are read off *this* simulation and not the
     // observed one, so a gap the patches happened to close never arrives as an obligation nobody
     // owes any more.
@@ -574,7 +578,7 @@ pub fn project(spec: &InfraSpec, ir: &InfraIr) -> Projection {
         verdicts_after: settled.summary,
     };
 
-    Projection {
+    Ok(Projection {
         format: PROJECTION_FORMAT,
         specification: spec.name.clone(),
         provenance: ProjectionProvenance {
@@ -586,7 +590,7 @@ pub fn project(spec: &InfraSpec, ir: &InfraIr) -> Projection {
         patches,
         objects,
         summary,
-    }
+    })
 }
 
 /// The mutable state of one projection while it is being computed.
@@ -629,7 +633,11 @@ impl Workbench {
     /// Each round disposes what that round's simulation reports and applies it; the next round
     /// sees the world those changes made. It ends when a round generates nothing, which it must,
     /// because `disposed` only grows and (expectation, subject) is finite.
-    fn reach_fixed_point(&mut self, spec: &InfraSpec, observed: &Simulation) {
+    fn reach_fixed_point(
+        &mut self,
+        spec: &InfraSpec,
+        observed: &Simulation,
+    ) -> Result<(), ValidationErrors> {
         loop {
             let current = simulate(spec, &self.working);
             let mut progressed = false;
@@ -652,10 +660,9 @@ impl Workbench {
                     ) else {
                         continue;
                     };
-                    let target = change.target(&self.working.model);
-                    let slot = record(&change, &target, &mut self.drafts, &mut self.created);
+                    let candidate = self.working.try_transform(|model| apply(model, &change));
+                    let slot = self.record_admitted(&change, candidate)?;
                     let describes = change.describes();
-                    apply(&mut self.working.model, &change);
                     self.generated_by.insert(key.clone(), report.id.clone());
                     self.slots.insert(key.clone(), slot);
                     self.disposed.insert(
@@ -676,9 +683,22 @@ impl Workbench {
                 }
             }
             if !progressed {
-                return;
+                return Ok(());
             }
         }
+    }
+
+    /// Commits no model or artifact state until the candidate's admission succeeded.
+    fn record_admitted(
+        &mut self,
+        change: &Change,
+        candidate: Result<InfraIr, ValidationErrors>,
+    ) -> Result<ArtifactSlot, ValidationErrors> {
+        let candidate = candidate?;
+        let target = change.target(self.working.model());
+        let slot = record(change, &target, &mut self.drafts, &mut self.created);
+        self.working = candidate;
+        Ok(slot)
     }
 
     /// Disposes every gap the tree does not close, and answers with the set of them.
@@ -1008,7 +1028,7 @@ fn generate(
         }
         Gap::DisruptionBudgetAbsent { .. } => {
             let key = workload?;
-            let resolved = ir.model.workloads.get(&key)?;
+            let resolved = ir.model().workloads.get(&key)?;
             let namespace = resolved.identity.namespace.clone()?;
             // An empty selector would make a budget over the whole namespace, which is a
             // different statement from "cover this workload" and not one the gap asked for.
@@ -1025,7 +1045,7 @@ fn generate(
             if created.contains_key(&budget_key) {
                 return None;
             }
-            if let Some(budgets) = &ir.model.pod_disruption_budgets {
+            if let Some(budgets) = &ir.model().pod_disruption_budgets {
                 if budgets.contains_key(&budget_key) {
                     return None;
                 }
@@ -1264,7 +1284,7 @@ fn disruption_budget_obligation(
             "this gap names no workload to write a budget for".to_owned(),
         );
     };
-    let Some(workload) = ir.model.workloads.get(key) else {
+    let Some(workload) = ir.model().workloads.get(key) else {
         return obligation(
             ObligationReason::TargetUnknown,
             format!("`{key}` is not a workload this snapshot holds"),
@@ -1275,7 +1295,7 @@ fn disruption_budget_obligation(
     let budget_key = format!("{namespace}/{name}");
     let taken = created.contains_key(&budget_key)
         || ir
-            .model
+            .model()
             .pod_disruption_budgets
             .as_ref()
             .is_some_and(|budgets| budgets.contains_key(&budget_key));
@@ -1563,6 +1583,50 @@ fn container_mut<'a>(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn failed_candidate_admission_records_nothing_and_preserves_the_working_owner() {
+        let raw: infra_domain::RawBundle = serde_json::from_str(include_str!(
+            "../../../../examples/k3d-dev-cluster/observation.json"
+        ))
+        .unwrap();
+        let ir = infra_compiler::compile(&infra_domain::Observation::try_from(raw).unwrap());
+        let mut bench = Workbench::new(&ir);
+        let before = serde_json::to_vec(&bench.working.document()).unwrap();
+        let change = Change::Replicas {
+            workload: "shop/deployment/flaky-agent".to_owned(),
+            from: 1,
+            to: 2,
+        };
+        let candidate = bench.working.try_transform(|model| model.nodes.clear());
+        assert!(candidate
+            .as_ref()
+            .unwrap_err()
+            .contains(infra_domain::InfraCode::IrDanglingHandle));
+        bench
+            .record_admitted(&change, candidate)
+            .expect_err("a rejected candidate cannot record its proposed change");
+        assert_eq!(
+            serde_json::to_vec(&bench.working.document()).unwrap(),
+            before
+        );
+        assert!(bench.drafts.is_empty());
+        assert!(bench.created.is_empty());
+        assert!(bench.disposed.is_empty());
+        assert!(bench.slots.is_empty());
+        assert!(bench.generated_by.is_empty());
+
+        let candidate = bench.working.try_transform(|model| apply(model, &change));
+        bench
+            .record_admitted(&change, candidate)
+            .expect("the same intended change can be admitted and recorded");
+        assert_eq!(
+            bench.working.model().workloads["shop/deployment/flaky-agent"].replicas,
+            Some(2)
+        );
+        assert_eq!(bench.drafts.len(), 1);
+        assert_eq!(serde_json::to_vec(&ir.document()).unwrap(), before);
+    }
 
     #[test]
     fn the_nearest_bound_of_a_range_is_the_bound_the_count_is_outside_of() {

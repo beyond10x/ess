@@ -531,12 +531,104 @@ pub struct Provenance {
 }
 
 /// The compiled IR: the model, its provenance, and the total lookups.
+///
+/// The owning model cannot be mutated through public Rust APIs. A detached copy remains editable:
+///
+/// ```
+/// # fn detached(ir: &infra_compiler::InfraIr) {
+/// let mut model = ir.document().model.clone();
+/// model.nodes.clear();
+/// # }
+/// ```
+///
+/// Each handle-bearing collection is protected:
+///
+/// ```compile_fail,E0616
+/// # fn attack(ir: &mut infra_compiler::InfraIr) {
+/// ir.model.nodes.clear();
+/// # }
+/// ```
+///
+/// ```compile_fail,E0616
+/// # fn attack(ir: &mut infra_compiler::InfraIr) {
+/// ir.model.services.clear();
+/// # }
+/// ```
+///
+/// ```compile_fail,E0616
+/// # fn attack(ir: &mut infra_compiler::InfraIr) {
+/// ir.model.config_maps.clear();
+/// # }
+/// ```
+///
+/// ```compile_fail,E0616
+/// # fn attack(ir: &mut infra_compiler::InfraIr) {
+/// ir.model.secrets.clear();
+/// # }
+/// ```
+///
+/// ```compile_fail,E0616
+/// # fn attack(ir: &mut infra_compiler::InfraIr) {
+/// ir.model.service_accounts.clear();
+/// # }
+/// ```
+///
+/// ```compile_fail,E0616
+/// # fn attack(ir: &mut infra_compiler::InfraIr) {
+/// ir.model.claims.clear();
+/// # }
+/// ```
+///
+/// Neither replacement nor nested mutation can bypass that boundary:
+///
+/// ```compile_fail,E0616
+/// # fn attack(ir: &mut infra_compiler::InfraIr) {
+/// ir.model = ir.model.clone();
+/// # }
+/// ```
+///
+/// ```compile_fail,E0616
+/// # fn attack(ir: &mut infra_compiler::InfraIr) {
+/// ir.model.workloads.values_mut().next().unwrap().containers.clear();
+/// # }
+/// ```
+///
+/// A document borrows the model immutably, and raw owner construction is unavailable:
+///
+/// ```compile_fail,E0596
+/// # fn attack(ir: &mut infra_compiler::InfraIr) {
+/// ir.document().model.nodes.clear();
+/// # }
+/// ```
+///
+/// ```compile_fail,E0451
+/// # fn attack(ir: &infra_compiler::InfraIr) -> infra_compiler::InfraIr {
+/// infra_compiler::InfraIr {
+///     provenance: ir.provenance.clone(),
+///     model: ir.document().model.clone(),
+/// }
+/// # }
+/// ```
+///
+/// Persisted admission stays checked; neither owners nor handles deserialize unchecked:
+///
+/// ```
+/// let _: u32 = serde_json::from_value(serde_json::json!(3)).unwrap();
+/// ```
+///
+/// ```compile_fail,E0277
+/// let _: infra_compiler::InfraIr = serde_json::from_value(serde_json::json!({})).unwrap();
+/// ```
+///
+/// ```compile_fail,E0277
+/// let _: infra_compiler::NodeHandle = serde_json::from_value(serde_json::json!("node")).unwrap();
+/// ```
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct InfraIr {
     /// Where the observation came from.
     pub provenance: Provenance,
     /// The digested content.
-    pub model: InfraModel,
+    pub(crate) model: InfraModel,
 }
 
 /// The persisted form emitted by the ESS infrastructure compiler.
@@ -554,6 +646,52 @@ pub struct InfraIrDocument<'a> {
 }
 
 impl InfraIr {
+    /// The owned model, borrowed without a mutation path into its collections.
+    ///
+    /// ```
+    /// # fn inspect(ir: &infra_compiler::InfraIr) {
+    /// let _: &infra_compiler::InfraModel = ir.model();
+    /// let mut detached = ir.model().clone();
+    /// detached.nodes.clear();
+    /// # }
+    /// ```
+    ///
+    /// ```compile_fail,E0596
+    /// # fn attack(ir: &mut infra_compiler::InfraIr) {
+    /// ir.model().nodes.clear();
+    /// # }
+    /// ```
+    #[must_use]
+    pub fn model(&self) -> &InfraModel {
+        &self.model
+    }
+
+    /// Edits a detached model and admits it as a new owner through [`crate::read_document`].
+    ///
+    /// Source provenance is retained. The source owner is unchanged on success or refusal;
+    /// callers obtain any handles for the returned owner from its own resolved sites.
+    /// Admission checks the persisted shape and reference membership, not all original domain
+    /// values or the derivation of unresolved facts. See [`crate::read`] for that boundary.
+    ///
+    /// # Errors
+    ///
+    /// Returns the reader's [`infra_domain::ValidationErrors`] when the edited candidate cannot
+    /// be admitted, including a resolved reference whose target was removed.
+    pub fn try_transform(
+        &self,
+        edit: impl FnOnce(&mut InfraModel),
+    ) -> Result<Self, infra_domain::ValidationErrors> {
+        let mut model = self.model.clone();
+        edit(&mut model);
+        let candidate = Self {
+            provenance: self.provenance.clone(),
+            model,
+        };
+        let document = serde_json::to_value(candidate.document())
+            .expect("the model has no non-serializable state");
+        crate::read_document(&document)
+    }
+
     /// The content digest: the full SHA-256, 64 hex characters, over the model's canonical JSON.
     ///
     /// The full width and not a truncation, for the reason gap register D-4 settled for the

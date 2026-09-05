@@ -137,7 +137,7 @@ fn majority(holds_for: usize, population: usize) -> bool {
 /// default registry, spelled `(default)` — a real place images come from, not a gap.
 fn candidate_uniform_registry(ir: &InfraIr, found: &mut Vec<InvariantCandidate>) {
     let mut by_registry: BTreeMap<String, Vec<Exception>> = BTreeMap::new();
-    for (key, workload) in &ir.model.workloads {
+    for (key, workload) in &ir.model().workloads {
         for container in &workload.containers {
             let registry = parse_image(&container.image)
                 .registry
@@ -180,13 +180,13 @@ fn candidate_uniform_registry(ir: &InfraIr, found: &mut Vec<InvariantCandidate>)
 /// Silent when the bundle did not scan budgets or holds no multi-replica workload: a candidate
 /// about a population nobody observed would be manufactured uniformity.
 fn candidate_uniform_pdb_coverage(ir: &InfraIr, found: &mut Vec<InvariantCandidate>) {
-    let Some(budgets) = &ir.model.pod_disruption_budgets else {
+    let Some(budgets) = &ir.model().pod_disruption_budgets else {
         return;
     };
     let mut holds_for = 0u32;
     let mut population = 0u32;
     let mut exceptions = Vec::new();
-    for (key, workload) in &ir.model.workloads {
+    for (key, workload) in &ir.model().workloads {
         let Some(replicas) = workload.replicas else {
             continue;
         };
@@ -226,7 +226,7 @@ fn candidate_uniform_resource_bounds(ir: &InfraIr, found: &mut Vec<InvariantCand
     let mut holds_for = 0u32;
     let mut population = 0u32;
     let mut exceptions = Vec::new();
-    for (key, workload) in &ir.model.workloads {
+    for (key, workload) in &ir.model().workloads {
         for container in &workload.containers {
             population += 1;
             let mut missing = Vec::new();

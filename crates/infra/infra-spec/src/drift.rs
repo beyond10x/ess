@@ -468,20 +468,20 @@ pub fn drift(from: &InfraIr, to: &InfraIr) -> Result<InfraDrift, DriftRefusal> {
     let mut changes = Vec::new();
     membership(
         MemberKind::Namespace,
-        &keys(&from.model.namespaces),
-        &keys(&to.model.namespaces),
+        &keys(&from.model().namespaces),
+        &keys(&to.model().namespaces),
         &mut changes,
     );
     membership(
         MemberKind::Node,
-        &keys(&from.model.nodes),
-        &keys(&to.model.nodes),
+        &keys(&from.model().nodes),
+        &keys(&to.model().nodes),
         &mut changes,
     );
     membership(
         MemberKind::Claim,
-        &keys(&from.model.claims),
-        &keys(&to.model.claims),
+        &keys(&from.model().claims),
+        &keys(&to.model().claims),
         &mut changes,
     );
     workloads(from, to, &mut changes);
@@ -538,12 +538,12 @@ fn membership(
 fn workloads(from: &InfraIr, to: &InfraIr, changes: &mut Vec<InfraChange>) {
     membership(
         MemberKind::Workload,
-        &keys(&from.model.workloads),
-        &keys(&to.model.workloads),
+        &keys(&from.model().workloads),
+        &keys(&to.model().workloads),
         changes,
     );
-    for (key, before) in &from.model.workloads {
-        let Some(after) = to.model.workloads.get(key) else {
+    for (key, before) in &from.model().workloads {
+        let Some(after) = to.model().workloads.get(key) else {
             continue;
         };
         workload_fields(key, before, after, changes);
@@ -661,12 +661,12 @@ fn containers(
 fn services(from: &InfraIr, to: &InfraIr, changes: &mut Vec<InfraChange>) {
     membership(
         MemberKind::Service,
-        &keys(&from.model.services),
-        &keys(&to.model.services),
+        &keys(&from.model().services),
+        &keys(&to.model().services),
         changes,
     );
-    for (key, before) in &from.model.services {
-        let Some(after) = to.model.services.get(key) else {
+    for (key, before) in &from.model().services {
+        let Some(after) = to.model().services.get(key) else {
             continue;
         };
         service_fields(key, before, after, changes);
@@ -697,12 +697,12 @@ fn service_fields(key: &str, before: &Service, after: &Service, changes: &mut Ve
 fn ingresses(from: &InfraIr, to: &InfraIr, changes: &mut Vec<InfraChange>) {
     membership(
         MemberKind::Ingress,
-        &keys(&from.model.ingresses),
-        &keys(&to.model.ingresses),
+        &keys(&from.model().ingresses),
+        &keys(&to.model().ingresses),
         changes,
     );
-    for (key, before) in &from.model.ingresses {
-        let Some(after) = to.model.ingresses.get(key) else {
+    for (key, before) in &from.model().ingresses {
+        let Some(after) = to.model().ingresses.get(key) else {
             continue;
         };
         // Routing only: an ingress's labels move without a request going anywhere else, and
@@ -720,12 +720,12 @@ fn ingresses(from: &InfraIr, to: &InfraIr, changes: &mut Vec<InfraChange>) {
 fn config_maps(from: &InfraIr, to: &InfraIr, changes: &mut Vec<InfraChange>) {
     membership(
         MemberKind::ConfigMap,
-        &keys(&from.model.config_maps),
-        &keys(&to.model.config_maps),
+        &keys(&from.model().config_maps),
+        &keys(&to.model().config_maps),
         changes,
     );
-    for (key, before) in &from.model.config_maps {
-        let Some(after) = to.model.config_maps.get(key) else {
+    for (key, before) in &from.model().config_maps {
+        let Some(after) = to.model().config_maps.get(key) else {
             continue;
         };
         content(
@@ -742,12 +742,12 @@ fn config_maps(from: &InfraIr, to: &InfraIr, changes: &mut Vec<InfraChange>) {
 fn secrets(from: &InfraIr, to: &InfraIr, changes: &mut Vec<InfraChange>) {
     membership(
         MemberKind::Secret,
-        &keys(&from.model.secrets),
-        &keys(&to.model.secrets),
+        &keys(&from.model().secrets),
+        &keys(&to.model().secrets),
         changes,
     );
-    for (key, before) in &from.model.secrets {
-        let Some(after) = to.model.secrets.get(key) else {
+    for (key, before) in &from.model().secrets {
+        let Some(after) = to.model().secrets.get(key) else {
             continue;
         };
         content(
@@ -815,8 +815,8 @@ fn content(
 
 /// A claim's binding phase.
 fn claims(from: &InfraIr, to: &InfraIr, changes: &mut Vec<InfraChange>) {
-    for (key, before) in &from.model.claims {
-        let Some(after) = to.model.claims.get(key) else {
+    for (key, before) in &from.model().claims {
+        let Some(after) = to.model().claims.get(key) else {
             continue;
         };
         if before.phase != after.phase {
@@ -836,8 +836,8 @@ fn phase(claim: &PersistentVolumeClaim) -> String {
 
 /// References that broke and references that healed.
 fn references(from: &InfraIr, to: &InfraIr, changes: &mut Vec<InfraChange>) {
-    let before: BTreeSet<_> = from.model.unresolved.iter().collect();
-    let after: BTreeSet<_> = to.model.unresolved.iter().collect();
+    let before: BTreeSet<_> = from.model().unresolved.iter().collect();
+    let after: BTreeSet<_> = to.model().unresolved.iter().collect();
     // Both directions are scoped to holders present in *both* snapshots, and for the same
     // reason: an object that arrived brings its references with it and an object that left took
     // its references with it, so the membership change already says what happened. Reporting the
@@ -871,15 +871,15 @@ fn still_present(ir: &InfraIr, path: &str) -> bool {
         return false;
     };
     match map {
-        "workloads" => ir.model.workloads.contains_key(key),
-        "services" => ir.model.services.contains_key(key),
-        "ingresses" => ir.model.ingresses.contains_key(key),
-        "pods" => ir.model.pods.contains_key(key),
-        "configmaps" => ir.model.config_maps.contains_key(key),
-        "secrets" => ir.model.secrets.contains_key(key),
-        "claims" => ir.model.claims.contains_key(key),
-        "namespaces" => ir.model.namespaces.contains_key(key),
-        "nodes" => ir.model.nodes.contains_key(key),
+        "workloads" => ir.model().workloads.contains_key(key),
+        "services" => ir.model().services.contains_key(key),
+        "ingresses" => ir.model().ingresses.contains_key(key),
+        "pods" => ir.model().pods.contains_key(key),
+        "configmaps" => ir.model().config_maps.contains_key(key),
+        "secrets" => ir.model().secrets.contains_key(key),
+        "claims" => ir.model().claims.contains_key(key),
+        "namespaces" => ir.model().namespaces.contains_key(key),
+        "nodes" => ir.model().nodes.contains_key(key),
         _ => false,
     }
 }

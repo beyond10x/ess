@@ -150,7 +150,7 @@ pub fn diagnose_with(ir: &InfraIr, graph: &InfraGraph) -> Diagnosis {
 /// `INFRA-DIAG-001` — a service selector that matches no pod, read off the IR's unresolved
 /// facts, where the compiler already ran the match.
 fn rule_dangling_selector(ir: &InfraIr, findings: &mut Vec<Finding>) {
-    for fact in &ir.model.unresolved {
+    for fact in &ir.model().unresolved {
         if let UnresolvedTarget::PodsMatchingSelector { selector } = &fact.target {
             let rendered = selector
                 .iter()
@@ -172,7 +172,7 @@ fn rule_dangling_selector(ir: &InfraIr, findings: &mut Vec<Finding>) {
 /// reference site declared itself optional. The kinds that cannot declare optionality —
 /// service account, claim, service, node, namespace — are required by construction.
 fn rule_missing_references(ir: &InfraIr, findings: &mut Vec<Finding>) {
-    for fact in &ir.model.unresolved {
+    for fact in &ir.model().unresolved {
         let (what, name, optional) = match &fact.target {
             UnresolvedTarget::PodsMatchingSelector { .. } => continue,
             UnresolvedTarget::ConfigMap { name, optional } => {
@@ -220,7 +220,7 @@ fn rule_missing_references(ir: &InfraIr, findings: &mut Vec<Finding>) {
 
 /// `INFRA-DIAG-004` — a container without requests, limits, or either.
 fn rule_resource_bounds(ir: &InfraIr, findings: &mut Vec<Finding>) {
-    for (key, workload) in &ir.model.workloads {
+    for (key, workload) in &ir.model().workloads {
         for container in &workload.containers {
             let mut missing = Vec::new();
             if container.resources.requests.is_empty() {
@@ -249,7 +249,7 @@ fn rule_resource_bounds(ir: &InfraIr, findings: &mut Vec<Finding>) {
 
 /// `INFRA-DIAG-005` — a container without a liveness probe, a readiness probe, or either.
 fn rule_probes(ir: &InfraIr, findings: &mut Vec<Finding>) {
-    for (key, workload) in &ir.model.workloads {
+    for (key, workload) in &ir.model().workloads {
         for container in &workload.containers {
             let mut missing = Vec::new();
             if container.probes.liveness.is_none() {
@@ -275,7 +275,7 @@ fn rule_probes(ir: &InfraIr, findings: &mut Vec<Finding>) {
 
 /// `INFRA-DIAG-006` — `:latest`, untagged, and not digest-pinned images.
 fn rule_unpinned_image(ir: &InfraIr, findings: &mut Vec<Finding>) {
-    for (key, workload) in &ir.model.workloads {
+    for (key, workload) in &ir.model().workloads {
         for container in &workload.containers {
             let image = parse_image(&container.image);
             if image.digest.is_some() {
@@ -304,7 +304,7 @@ fn rule_unpinned_image(ir: &InfraIr, findings: &mut Vec<Finding>) {
 /// `INFRA-DIAG-007` — a workload that wants exactly one replica. Daemonsets have no replica
 /// count and cannot fire.
 fn rule_single_replica(ir: &InfraIr, findings: &mut Vec<Finding>) {
-    for (key, workload) in &ir.model.workloads {
+    for (key, workload) in &ir.model().workloads {
         if workload.replicas == Some(1) {
             findings.push(Finding::new(
                 DiagCode::SingleReplica,
@@ -319,7 +319,7 @@ fn rule_single_replica(ir: &InfraIr, findings: &mut Vec<Finding>) {
 
 /// `INFRA-DIAG-008` — a container waiting for a reason that is not part of normal startup.
 fn rule_stuck_waiting(ir: &InfraIr, findings: &mut Vec<Finding>) {
-    for (key, pod) in &ir.model.pods {
+    for (key, pod) in &ir.model().pods {
         for container in &pod.containers {
             let Some(reason) = &container.waiting_reason else {
                 continue;
@@ -340,7 +340,7 @@ fn rule_stuck_waiting(ir: &InfraIr, findings: &mut Vec<Finding>) {
 
 /// `INFRA-DIAG-009` — a container at or above the restart threshold.
 fn rule_high_restarts(ir: &InfraIr, findings: &mut Vec<Finding>) {
-    for (key, pod) in &ir.model.pods {
+    for (key, pod) in &ir.model().pods {
         for container in &pod.containers {
             if container.restart_count < HIGH_RESTART_THRESHOLD {
                 continue;
@@ -367,7 +367,7 @@ fn rule_high_restarts(ir: &InfraIr, findings: &mut Vec<Finding>) {
 fn rule_pod_not_ready(ir: &InfraIr, graph: &InfraGraph, findings: &mut Vec<Finding>) {
     use infra_domain::observation::PodPhase;
 
-    for (key, pod) in &ir.model.pods {
+    for (key, pod) in &ir.model().pods {
         if pod.ready || pod.phase == PodPhase::Succeeded {
             continue;
         }
@@ -403,7 +403,7 @@ fn referenced_targets(graph: &InfraGraph) -> BTreeSet<GraphNode> {
 /// exempted by type for exactly that reason.
 fn rule_orphaned_config(ir: &InfraIr, graph: &InfraGraph, findings: &mut Vec<Finding>) {
     let referenced = referenced_targets(graph);
-    for key in ir.model.config_maps.keys() {
+    for key in ir.model().config_maps.keys() {
         let node = GraphNode {
             kind: NodeKind::ConfigMap,
             key: key.clone(),
@@ -418,7 +418,7 @@ fn rule_orphaned_config(ir: &InfraIr, graph: &InfraGraph, findings: &mut Vec<Fin
             ));
         }
     }
-    for (key, secret) in &ir.model.secrets {
+    for (key, secret) in &ir.model().secrets {
         if secret.secret_type == SERVICE_ACCOUNT_TOKEN {
             continue;
         }
@@ -445,7 +445,7 @@ fn rule_orphaned_config(ir: &InfraIr, graph: &InfraGraph, findings: &mut Vec<Fin
 fn rule_unbound_claim(ir: &InfraIr, findings: &mut Vec<Finding>) {
     use infra_domain::observation::ClaimPhase;
 
-    for (key, claim) in &ir.model.claims {
+    for (key, claim) in &ir.model().claims {
         let phase = match claim.phase {
             ClaimPhase::Pending => "pending",
             ClaimPhase::Lost => "lost",
@@ -467,7 +467,7 @@ fn rule_unbound_claim(ir: &InfraIr, findings: &mut Vec<Finding>) {
 /// so such a claim fires here with the wording scoped to what was checked.
 fn rule_orphaned_claim(ir: &InfraIr, graph: &InfraGraph, findings: &mut Vec<Finding>) {
     let referenced = referenced_targets(graph);
-    for key in ir.model.claims.keys() {
+    for key in ir.model().claims.keys() {
         let node = GraphNode {
             kind: NodeKind::Claim,
             key: key.clone(),
@@ -504,14 +504,14 @@ pub fn pdb_covers(selector: &BTreeMap<String, String>, labels: &BTreeMap<String,
 /// Skips empty selectors (they select the whole namespace — a different statement, not a
 /// dangling one) and cannot fire on a bundle that did not scan budgets.
 fn rule_pdb_selects_nothing(ir: &InfraIr, findings: &mut Vec<Finding>) {
-    let Some(budgets) = &ir.model.pod_disruption_budgets else {
+    let Some(budgets) = &ir.model().pod_disruption_budgets else {
         return;
     };
     for (key, budget) in budgets {
         if budget.selector.is_empty() {
             continue;
         }
-        let guards_something = ir.model.pods.values().any(|pod| {
+        let guards_something = ir.model().pods.values().any(|pod| {
             pod.identity.namespace == budget.identity.namespace
                 && pdb_covers(&budget.selector, &pod.labels)
         });
@@ -540,10 +540,10 @@ fn rule_pdb_selects_nothing(ir: &InfraIr, findings: &mut Vec<Finding>) {
 /// workload is scaled down; the rule cannot fire on a bundle that did not scan budgets,
 /// because unobserved is not uncovered.
 fn rule_no_pdb_coverage(ir: &InfraIr, findings: &mut Vec<Finding>) {
-    let Some(budgets) = &ir.model.pod_disruption_budgets else {
+    let Some(budgets) = &ir.model().pod_disruption_budgets else {
         return;
     };
-    for (key, workload) in &ir.model.workloads {
+    for (key, workload) in &ir.model().workloads {
         let Some(replicas) = workload.replicas else {
             continue;
         };
@@ -573,7 +573,7 @@ fn rule_no_pdb_coverage(ir: &InfraIr, findings: &mut Vec<Finding>) {
 /// `INFRA-DIAG-017` — an autoscaler pinned to one size. An absent `minReplicas` is the API's
 /// default of one, resolved here because the comparison needs a number.
 fn rule_hpa_fixed_range(ir: &InfraIr, findings: &mut Vec<Finding>) {
-    let Some(autoscalers) = &ir.model.horizontal_pod_autoscalers else {
+    let Some(autoscalers) = &ir.model().horizontal_pod_autoscalers else {
         return;
     };
     for (key, autoscaler) in autoscalers {
@@ -603,7 +603,7 @@ fn rule_hpa_fixed_range(ir: &InfraIr, findings: &mut Vec<Finding>) {
 /// an Argo `Rollout`, say — is outside the observed subset, and claiming it missing would
 /// manufacture a defect out of a gap.
 fn rule_hpa_target_missing(ir: &InfraIr, findings: &mut Vec<Finding>) {
-    let Some(autoscalers) = &ir.model.horizontal_pod_autoscalers else {
+    let Some(autoscalers) = &ir.model().horizontal_pod_autoscalers else {
         return;
     };
     for (key, autoscaler) in autoscalers {
@@ -614,7 +614,7 @@ fn rule_hpa_target_missing(ir: &InfraIr, findings: &mut Vec<Finding>) {
         };
         let namespace = autoscaler.identity.namespace.as_deref().unwrap_or_default();
         let workload_key = format!("{namespace}/{kind}/{}", autoscaler.target.name);
-        if ir.model.workloads.contains_key(&workload_key) {
+        if ir.model().workloads.contains_key(&workload_key) {
             continue;
         }
         findings.push(Finding::new(
@@ -639,7 +639,7 @@ fn rule_hpa_target_missing(ir: &InfraIr, findings: &mut Vec<Finding>) {
 /// completed does not fire: reaching the target is the job succeeding, whatever the retries
 /// cost.
 fn rule_job_failed(ir: &InfraIr, findings: &mut Vec<Finding>) {
-    let Some(jobs) = &ir.model.jobs else { return };
+    let Some(jobs) = &ir.model().jobs else { return };
     for (key, job) in jobs {
         let target = job.completions.unwrap_or(1);
         if job.failed == 0 || job.succeeded >= target {
@@ -664,7 +664,7 @@ fn rule_job_failed(ir: &InfraIr, findings: &mut Vec<Finding>) {
 
 /// `INFRA-DIAG-020` — a cronjob told not to run.
 fn rule_cronjob_suspended(ir: &InfraIr, findings: &mut Vec<Finding>) {
-    let Some(cron_jobs) = &ir.model.cron_jobs else {
+    let Some(cron_jobs) = &ir.model().cron_jobs else {
         return;
     };
     for (key, cron_job) in cron_jobs {

@@ -23,7 +23,7 @@ use infra_compiler::InfraIr;
 fn secret_material(ir: &InfraIr) -> (Vec<String>, Vec<String>) {
     let mut digests = Vec::new();
     let mut keys = Vec::new();
-    for secret in ir.model.secrets.values() {
+    for secret in ir.model().secrets.values() {
         for (key, digest) in &secret.keys {
             keys.push(key.clone());
             digests.push(digest.sha256.clone());
@@ -46,7 +46,8 @@ fn no_emitted_byte_carries_a_secrets_digest_or_key_name() {
         "the IR is supposed to hold `{{sha256, length}}` and nothing else: {digests:?}"
     );
 
-    let projection = infra_project::project(&support::example_spec(), &ir);
+    let projection = infra_project::project(&support::example_spec(), &ir)
+        .expect("the projected candidate is admitted");
     let mut leaks = Vec::new();
     for (path, contents) in projection.artifacts() {
         for digest in &digests {
@@ -76,7 +77,8 @@ fn a_dangling_secret_reference_is_owed_and_the_obligation_says_why_nothing_can_w
     // secret nobody observed. The honest answer is an obligation that names the reason — the
     // snapshot holds a digest, not a value — rather than an empty secret manifest that would look
     // like progress and break the pod differently.
-    let projection = infra_project::project(&support::example_spec(), &support::example_ir());
+    let projection = infra_project::project(&support::example_spec(), &support::example_ir())
+        .expect("the projected candidate is admitted");
     let entry = projection
         .entries
         .iter()
