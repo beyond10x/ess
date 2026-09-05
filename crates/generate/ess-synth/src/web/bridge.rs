@@ -51,6 +51,13 @@ pub(super) fn module(bridge: &Bridge<'_>) -> String {
         // is nothing to install and nothing to dispatch. The catalogue and the wire renderings
         // still stand on their own, and the page says so rather than offering a form that leads
         // nowhere.
+        out.push_str(
+            "\nthread_local! {\n    /// The buffer the page writes a request \
+             into.\n    static INPUT: RefCell<Vec<u8>> = const { RefCell::new(Vec::new()) };\n    \
+             /// The response the last dispatch produced, held so its address stays \
+             valid.\n    static OUTPUT: RefCell<String> = const { RefCell::new(String::new()) \
+             };\n}\n",
+        );
         out.push_str(NO_SYSTEM);
         exports(&mut out);
         return out;
@@ -329,6 +336,16 @@ fn run_method(out: &mut String, bridge: &Bridge<'_>) {
 /// Redelivery, by index into the log the page is already showing.
 fn replay_method(out: &mut String, bridge: &Bridge<'_>) {
     let system = bridge.system();
+    if deliveries(bridge).is_empty() {
+        let _ = write!(
+            out,
+            "\n    fn replay(&mut self, occurrence: usize) -> Result<(), BridgeError> {{\n        \
+             if {system}::System::published(self).get(occurrence).is_none() {{\n            \
+             return Err(BridgeError::NoSuchOccurrence(occurrence));\n        }}\n        \
+             self.pump()?;\n        Ok(())\n    }}\n"
+        );
+        return;
+    }
     let _ = write!(
         out,
         "\n    fn replay(&mut self, occurrence: usize) -> Result<(), BridgeError> {{\n        let \

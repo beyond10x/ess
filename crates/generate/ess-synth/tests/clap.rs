@@ -129,7 +129,7 @@ fn emitted() -> Synthesis {
         ("domains/pass.yaml", DOMAIN),
         ("components.yaml", COMPONENTS),
     ]);
-    synthesize_for(&ir, Target::Clap)
+    synthesize_for(&ir, Target::Clap).expect("the fixture has a realizable target")
 }
 
 #[test]
@@ -300,7 +300,7 @@ components:
 ",
         ),
     ]);
-    let synthesis = synthesize_for(&ir, Target::Clap);
+    let synthesis = synthesize_for(&ir, Target::Clap).expect("the fixture has a realizable target");
     let tree = source(&synthesis, "crates/desk-cli/src/tree.rs");
     assert!(
         !tree.contains("::clap::Command::new(\"register\")"),

@@ -134,6 +134,11 @@ impl Layout {
         })
     }
 
+    /// Whether a declaration has an allocated domain before invoking the total owner accessor.
+    pub(crate) fn has_owner(&self, declared: &QualifiedName) -> bool {
+        self.owners.contains_key(declared)
+    }
+
     /// The module identifier of a bounded context.
     pub fn module(&self, domain: &QualifiedName) -> &str {
         self.modules.get(domain).map_or_else(

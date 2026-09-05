@@ -26,7 +26,11 @@ pub(crate) struct Layout {
 impl Layout {
     /// Derives the layout of a resolved specification.
     pub fn of(ir: &EssIr) -> Self {
-        let rust = RustLayout::of(ir);
+        Self::with_rust(ir, RustLayout::of(ir))
+    }
+
+    /// Keeps the exact Rust allocation that passed prerequisite admission.
+    pub fn with_rust(ir: &EssIr, rust: RustLayout) -> Self {
         let mut package = format!("{}-web", ir.system().segments().join("-"));
         // Repaired the way the Rust target repairs a component package, and for the same reason:
         // a system whose own name makes `{system}-web` collide with a crate that already exists

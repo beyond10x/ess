@@ -91,7 +91,7 @@ fn fixture(documents: &[(&str, &str)]) -> EssIr {
 
 /// The billing specification, emitted for the browser.
 fn web() -> Synthesis {
-    synthesize_for(&billing(), Target::Web)
+    synthesize_for(&billing(), Target::Web).expect("the fixture has a realizable target")
 }
 
 /// One artifact's contents, by path.
@@ -127,9 +127,9 @@ fn the_plan_is_byte_identical_in_all_three_targets_trees() {
     // if a browser boundary could not be emitted without changing the plan, the plan was never a
     // fact about the model.
     let ir = billing();
-    let rust = synthesize_for(&ir, Target::Rust);
-    let go = synthesize_for(&ir, Target::Go);
-    let page = synthesize_for(&ir, Target::Web);
+    let rust = synthesize_for(&ir, Target::Rust).expect("the fixture has a realizable target");
+    let go = synthesize_for(&ir, Target::Go).expect("the fixture has a realizable target");
+    let page = synthesize_for(&ir, Target::Web).expect("the fixture has a realizable target");
     for path in ["PLAN.md", "plan.json"] {
         assert_eq!(
             artifact(&rust, path),
@@ -283,7 +283,7 @@ fn the_catalogue_carries_every_command_with_its_typed_input_and_every_declared_o
 #[test]
 fn the_public_browser_catalog_is_the_web_targets_exact_document() {
     let ir = billing();
-    let synthesis = synthesize_for(&ir, Target::Web);
+    let synthesis = synthesize_for(&ir, Target::Web).expect("the fixture has a realizable target");
     let public = browser_catalog(&ir, &synthesis.plan);
     let emitted = synthesis
         .artifacts
@@ -422,7 +422,7 @@ fn an_absent_optional_field_is_omitted_rather_than_sent_as_null() {
     // `required`, not by a `null` branch — so two projections of one model would otherwise
     // disagree about what a value looks like.
     let wire = artifact(
-        &synthesize_for(&shapes(), Target::Web),
+        &synthesize_for(&shapes(), Target::Web).expect("the fixture has a realizable target"),
         "crates/shapes-web/src/wire.rs",
     );
     assert!(
@@ -438,7 +438,7 @@ fn an_absent_optional_field_is_omitted_rather_than_sent_as_null() {
 #[test]
 fn a_list_and_a_map_cross_as_the_shapes_json_already_has() {
     let wire = artifact(
-        &synthesize_for(&shapes(), Target::Web),
+        &synthesize_for(&shapes(), Target::Web).expect("the fixture has a realizable target"),
         "crates/shapes-web/src/wire.rs",
     );
     assert!(
@@ -543,7 +543,8 @@ fn unclaimed() -> EssIr {
 
 #[test]
 fn a_command_no_component_accepts_is_refused_at_the_target_stage_and_gets_no_form() {
-    let synthesis = synthesize_for(&unclaimed(), Target::Web);
+    let synthesis =
+        synthesize_for(&unclaimed(), Target::Web).expect("the fixture has a realizable target");
     let report = synthesis.target.as_ref().expect("a target report");
     assert_eq!(
         report.refusals.len(),
@@ -602,8 +603,8 @@ fn a_command_no_component_accepts_is_refused_at_the_target_stage_and_gets_no_for
 #[test]
 fn emitting_twice_is_byte_identical() {
     let ir = billing();
-    let first = synthesize_for(&ir, Target::Web);
-    let second = synthesize_for(&ir, Target::Web);
+    let first = synthesize_for(&ir, Target::Web).expect("the fixture has a realizable target");
+    let second = synthesize_for(&ir, Target::Web).expect("the fixture has a realizable target");
     assert_eq!(
         first.artifacts.keys().collect::<Vec<_>>(),
         second.artifacts.keys().collect::<Vec<_>>(),

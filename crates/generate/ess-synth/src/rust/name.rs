@@ -101,6 +101,21 @@ fn escape(ident: String) -> String {
 /// Keywords a raw identifier cannot spell.
 const PATH_KEYWORDS: &[&str] = &["crate", "self", "super"];
 
+/// Whether the allocated ASCII spelling is an identifier of the emitted edition.
+pub(super) fn valid_ident(token: &str) -> bool {
+    let raw = token.starts_with("r#");
+    let ident = token.strip_prefix("r#").unwrap_or(token);
+    let mut chars = ident.chars();
+    matches!(chars.next(), Some(c) if c.is_ascii_alphabetic() || c == '_')
+        && ident != "_"
+        && chars.all(|c| c.is_ascii_alphanumeric() || c == '_')
+        && ident != "Self"
+        && !PATH_KEYWORDS.contains(&ident)
+        // The renderer emits edition 2021. `gen` is escaped by the shared conservative naming
+        // helper, but an existing plain crate identifier `gen` remains valid in this edition.
+        && (raw || ident == "gen" || !KEYWORDS.contains(&ident))
+}
+
 /// Every other reserved word of the editions this crate can emit for.
 ///
 /// The 2015/2018/2021 strict and reserved sets. Being over-inclusive is safe — escaping a word that
