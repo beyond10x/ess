@@ -31,24 +31,22 @@ pub const KINDS: &[&str] = &[
     "horizontalpodautoscalers",
 ];
 
-fn kubectl(args: &[&str]) -> Result<Vec<u8>, String> {
+fn kubectl(operation: &'static str, args: &[&str]) -> Result<Vec<u8>, String> {
     let output = Command::new("kubectl")
         .args(args)
         .output()
         .map_err(|error| format!("kubectl not runnable: {error}"))?;
     if !output.status.success() {
-        return Err(format!(
-            "kubectl {} failed: {}",
-            args.join(" "),
-            String::from_utf8_lossy(&output.stderr).trim()
-        ));
+        // Stderr and arguments can contain credentials or caller-selected values. Only the
+        // adapter's static operation label and the process status cross the diagnostic boundary.
+        return Err(format!("kubectl {operation} failed: {}", output.status));
     }
     Ok(output.stdout)
 }
 
 /// Prints the kubeconfig contexts the adapter can target.
 pub fn contexts() -> Result<(), String> {
-    let output = kubectl(&["config", "get-contexts", "-o", "name"])?;
+    let output = kubectl("list contexts", &["config", "get-contexts", "-o", "name"])?;
     print!("{}", String::from_utf8_lossy(&output));
     Ok(())
 }
@@ -60,16 +58,27 @@ pub fn contexts() -> Result<(), String> {
 pub fn scan(context: Option<&str>, output_path: &Path) -> Result<(), String> {
     let context = match context {
         Some(context) => context.to_owned(),
-        None => String::from_utf8_lossy(&kubectl(&["config", "current-context"])?)
-            .trim()
-            .to_owned(),
+        None => String::from_utf8_lossy(&kubectl(
+            "read current context",
+            &["config", "current-context"],
+        )?)
+        .trim()
+        .to_owned(),
     };
 
     let mut kinds = serde_json::Map::new();
     for (index, kind) in KINDS.iter().enumerate() {
         eprint!("[{:>2}/{}] {kind:<24}\r", index + 1, KINDS.len());
-        let raw = kubectl(&["--context", &context, "get", kind, "-A", "-o", "json"])
-            .or_else(|_| kubectl(&["--context", &context, "get", kind, "-o", "json"]))?;
+        let raw = kubectl(
+            "get resources in all namespaces",
+            &["--context", &context, "get", kind, "-A", "-o", "json"],
+        )
+        .or_else(|_| {
+            kubectl(
+                "get resources",
+                &["--context", &context, "get", kind, "-o", "json"],
+            )
+        })?;
         let mut value: serde_json::Value = serde_json::from_slice(&raw)
             .map_err(|error| format!("kubectl get {kind}: not JSON: {error}"))?;
         if *kind == "secrets" {

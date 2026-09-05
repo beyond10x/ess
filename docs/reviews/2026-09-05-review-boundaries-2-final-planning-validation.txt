@@ -1,0 +1,11 @@
+85 file(s) in /home/timo/.local/state/worktree/trees/b10x/ess/wt-752828a285ba/.engineering/planning: 85 artifact(s)
+8 review(s) recorded no findings block:
+  - review-result:review-boundaries-2-containment-adversary-pass-2 states its findings as prose only — nothing can enumerate what it found, so                  the next review starts from nowhere
+  - review-result:review-boundaries-2-diagnostic-adversary-pass-1 states its findings as prose only — nothing can enumerate what it found, so                  the next review starts from nowhere
+  - review-result:review-remediation-design-round-1 states its findings as prose only — nothing can enumerate what it found, so                  the next review starts from nowhere
+  - review-result:review-remediation-design-round-2 states its findings as prose only — nothing can enumerate what it found, so                  the next review starts from nowhere
+  - review-result:review-remediation-parallel-safety-round-1 states its findings as prose only — nothing can enumerate what it found, so                  the next review starts from nowhere
+  - review-result:review-remediation-parallel-safety-round-2 states its findings as prose only — nothing can enumerate what it found, so                  the next review starts from nowhere
+  - review-result:review-remediation-scope-round-1 states its findings as prose only — nothing can enumerate what it found, so                  the next review starts from nowhere
+  - review-result:review-remediation-scope-round-2 states its findings as prose only — nothing can enumerate what it found, so                  the next review starts from nowhere
+valid

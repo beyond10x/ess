@@ -2,7 +2,7 @@
 format: aep.planning-md/1
 id: story:review-kubectl-diagnostic-sanitization
 kind: story
-status: draft
+status: implemented
 title: Keep untrusted kubectl stderr out of ESS diagnostics
 tags:
 - P0
@@ -14,7 +14,13 @@ relations:
 scope:
 - confidence: cited
   path: crates/infra/ess-kubernetes
-revision: 2
+- confidence: cited
+  path: crates/infra/ess-kubernetes/src/lib.rs
+- confidence: cited
+  path: crates/infra/ess-kubernetes/tests/fixtures/fake_command.rs
+- confidence: cited
+  path: crates/infra/ess-kubernetes/tests/secret_boundary.rs
+revision: 10
 ---
 ## Finding and source
 
@@ -42,10 +48,15 @@ Retain the adversary's original failing assertion as the red reproduction. Cover
 
 ## Scope
 
-Derived 2026-09-05 from adversary test and coordinator baseline replay.
+Confirmed 2026-09-05 from the implementor table in docs/reviews/2026-09-05-review-boundaries-2-diagnostic-implementation.md.
 
-- **Primary surface:** `crates/infra/ess-kubernetes` — cited; shared subprocess helper, binary error printing and synthetic process-boundary tests.
-- **Symbols:** `kubectl`, `scan`, `contexts`, and `failed_secret_subprocess_diagnostics_do_not_echo_secret_values` — cited.
-- **Documents:** no new persisted construct or format is required — inferred; value-free subprocess refusal is an existing credential-boundary requirement.
-- **Confidence:** high — cited; the compiled baseline replay reached the exact error path.
-- **Would collide with:** any unit editing `crates/infra/ess-kubernetes` — inferred; serialize with the sanitizer story and future observation-completeness work.
+- **Primary surface:** crates/infra/ess-kubernetes — cited; actual production diff is src/lib.rs, with tests/secret_boundary.rs and tests/fixtures/fake_command.rs.
+- **Mechanism:** static adapter operation labels and exit status replace stderr and complete argument rendering at kubectl and its four call sites — cited; the direct mechanism measurement changed two disclosure failures into 11 package passes.
+- **Caller inventory correction:** cluster metadata uses the same KINDS resource loop, not a separate helper — cited; the regression matrix derives resource cases from KINDS and covers contexts/current-context separately.
+- **Persisted bytes and documents:** no new document/format needed — cited; valid observation golden bytes and successful retry output/order remain equal, with no sanitizer production diff.
+- **Confidence:** high — cited; package gates and actual changed paths confirm the earlier inferred mechanism and package reservation.
+- **Would collide with:** edits to this package, especially shared subprocess and fixture handling — inferred; typed package/file scopes remain reserved.
+
+## Wave 2 execution evidence
+
+Implementation commit b26829a571c0569ba2f63a5da495b987397b43a4. The implementor observed two initial red disclosure assertions, final package 8→11 with zero failures, fmt and strict Clippy exit 0; the credential mutation failed and was restored. review-result:review-boundaries-2-diagnostic-adversary-pass-1 preserves the tests-only attack verbatim: 11→14, no findings, formatter and Clippy exit 0. No adversarial correction was needed. The story remains active until the complete integrated gate is observed.

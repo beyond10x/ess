@@ -2,7 +2,7 @@
 format: aep.planning-md/1
 id: story:review-output-containment
 kind: story
-status: draft
+status: implemented
 title: Validate output paths and page uniqueness before writing
 tags:
 - P0
@@ -16,6 +16,8 @@ scope:
 - confidence: cited
   path: crates/edge/ess-cli/src/main.rs
 - confidence: cited
+  path: crates/edge/ess-cli/tests/output_containment.rs
+- confidence: cited
   path: crates/generate/ess-gen
 - confidence: cited
   path: crates/generate/ess-gen/src/artifact.rs
@@ -23,7 +25,9 @@ scope:
   path: crates/generate/ess-gen/src/document.rs
 - confidence: cited
   path: crates/generate/ess-gen/src/html.rs
-revision: 8
+- confidence: cited
+  path: crates/generate/ess-gen/tests/docs.rs
+revision: 14
 ---
 ## Finding and source
 
@@ -68,3 +72,10 @@ Derived 2026-09-05 by `story-scoper` from the complete story, its parent epic, r
 The independent scoper confirmed the two-package boundary and found two places that need preflight before map construction: duplicate site pages can already have been discarded, and map keys carry a site/ prefix absent from Artifact.path. Validate actual destinations while preserving valid layouts.
 
 Coordinator inference for the future brief: reject noncanonical portable paths rather than silently normalize, detect aliases and ancestor/file collisions, and route the confirmed CLI generated-tree sinks through shared preflight. The implementation must state symlink/root handling and concurrency exclusions, rather than claim race-proof isolation. Additive checked APIs plus mandatory sink checks can preserve current infallible public constructors without widening to unrelated producer packages; the implementor must verify this mechanism with a red case. Exact platform and hard-link policy remains to be documented in that implementation.
+## Confirmed implementation scope and correction
+
+Implementation e6803c061b33dfe8d5c9fdfff10d8f1408083b31 adds checked Artifact/PageId/Document/Site admission and mandatory complete generated-set preflight at all scoped CLI sinks. The first adversary found that compose companions could still collide with generated files or parents. Correction dc122aea038cc18757c3a160b1b36b6798ef6df0 now preflights both named companion outputs and every generated client file together, including invocations without generated clients. The original report and added assertions remain preserved; review-result:review-boundaries-2-containment-adversary-pass-1 has a fixed outcome, pending the second attack and integrated gate.
+
+Actual changed files are main.rs, tests/output_containment.rs, ess-gen/src/artifact.rs, document.rs, html.rs and ess-gen/tests/docs.rs. Named-output paths retain Unicode/space/punctuation and caller-selected parent-root behavior, while directory-like final spellings retain native refusal. Existing link/type and ASCII-case checks apply before writes. Generated names retain the separate portable alphabet and whole-set uniqueness contract. Stable filesystem preflight does not promise rollback, concurrent replacement isolation or owned-file retirement; non-Unix existing replacement is conservatively refused because hard-link counts are not implemented.
+
+The correction package runners executed CLI36→41 and gen189→189, total225→230 with no final failures/ignored cases; both package format and strict Clippy checks exited0. The new native trailing-separator case was first red against the initial correction, then green. These are unit records, not terminal integration evidence. Exact source/test reports are retained under docs/reviews/2026-09-05-review-boundaries-2-containment-*.

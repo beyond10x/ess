@@ -1,244 +1,41 @@
-# ESS review remediation — 2026-09-05
+# Review boundaries wave 2 — 2026-09-05
 
-**Implementation authorized on 2026-09-05.** The operator granted standing approval to handle all remediation waves. Execution starts in [review-boundaries-1](2026-09-05-review-boundaries-1.md), under `approval-record:review-remediation-standing-implementation`. The proposal and measurements below preserve the earlier planning-stage evidence; current launch facts and implementation results belong to each wave page.
+**Implemented and verified; publication and unit cleanup in progress.** This wave fixes untrusted kubectl failure diagnostics and output path containment. Both stories serve `vision:O2`.
 
-**Skill version 0.7.0** — the version in `.claude-plugin/plugin.json`; the stage-1 proposal quotes it.
+Skill version 0.7.0. Coordinator: `wave/review-boundaries-2`, managed record `wt-752828a285ba`. Published base: `0f80f71e7ef997e8a3c7d2ad19e9997090e8e769`.
 
-Owner: [`epic:review-boundary-remediation`](../../.engineering/planning/epic/review-boundary-remediation.md), serving [`vision:O2`](../../.engineering/planning/vision/O2.md), decisions as data with evidence. The original decomposition had **27 new stories and 3 reused stories**; wave 1 added one P0 story for a baseline-reproduced kubectl diagnostic disclosure. The first two stories are implemented and passed the integrated 1,438-test gate plus site build. The remaining 3 legacy drafts were scoped for honest wave computation, not pulled into remediation.
+## Authority and selection
 
-## Current progress
+The user granted all implementation waves, then explicitly approved publishing this and subsequent green remediation waves and requested cleanup. The actual grants are `approval-record:review-remediation-standing-implementation` and `approval-record:review-remediation-standing-publication`. This is an interactive session with standing authorization; no bypass is inferred.
 
-There are 31 remediation stories: four implemented and 27 remaining drafts. [Wave 1](2026-09-05-review-boundaries-1.md) is published on main at 0f80f71e7ef997e8a3c7d2ad19e9997090e8e769; both unit worktrees were removed after remote recovery proof. [Wave 2](2026-09-05-review-boundaries-2.md) has implemented diagnostic sanitization and output containment, passed all eight offline gate steps with 1,475 tests and passed the site build. Publication and managed unit cleanup are in progress. The user has separately approved publication of green remediation waves and managed cleanup in approval-record:review-remediation-standing-publication; release tags/version bumps remain separately authorized.
+Authorized commits: opening scope/approval/page commit, two unit implementations and their adversarial tests, serial integration merges, closing store/evidence commit, merge to main, publication of the green wave and cleanup records. Releases and tags require a separate grant.
 
-The next selection will use the store after this wave closes. Read-only scoping has prepared persisted delivery validation, TypeScript namespace feasibility and the conformance migration design. Design completion alone does not close their dependent implementation findings.
+The store was read afresh after wave 1; both selected stories have no dependencies or blockers. Independent scope is high-confidence and cited. Full store computation and exact selected-set computation follow verbatim below. The selected set has no collision, unassessed story or cycle.
 
-## Evidence and scope of the plan
+Prioritize the newly reproduced credential diagnostic disclosure and the original P0 output escape. Semantic diff is left for a binding compatibility decision about persisted vocabulary and dependency-closed digests. Persisted delivery and InfraIr validation compete for the CLI surface; further conformance work needs its migration design. Remaining ready stories are deferred to keep N=2 and shorten integration feedback. No review item is silently closed by selection.
 
-[The unchanged review](../reviews/2026-09-05-architecture-review.md) supplies F01–F17 and their classifications at ESS `fd06a4d61bfb7b4990617810655dc181d6a3ab00`. Its SHA-256 is `fecce053b6633546f10613c580eba1b5c48be3315d70c6b4369f26143020f828`. Primary ESS main was clean and equal to remote main at this revision during planning. This session copied only the detailed review as a portable source; the earlier review checkout and its unpublished outlook remain intact.
+Native `aep-drive:story-scoper`, `aep-drive:implementor` and `aep-drive:adversary` types are not exposed by this harness. Collaboration agents read their exact plugin charters; inherited model, no override. This adapter deviation is explicit.
 
-The review's probes and 1,419-test gate are attributed historical evidence; this session did not rerun those probes or claim the defects fixed. Architecture choices below are proposals grounded in cited owners, with inferred edit surfaces marked in each story.
+## Preflight and prior cleanup
 
-The exact clean Atlas authority was `a8fb936ddcb35c8971311610e5c63cc86d612fab`, verified against remote main. Its `ROADMAP.md:17` defines O2. The primary Atlas checkout was dirty/stale, so authority was read in managed record `wt-1bb42c471901`, with `B10X_ATLAS_CHECKOUT` assigned to that checkout when organization tooling is used. No Atlas mutation is planned here.
+ESS primary is clean on main, now published at the base. After fresh GC marked both records eligible, exact-id managed GC removed `review-secret-sanitization` and `review-report-reader-validation`, with recovery proof through advertised origin main. Their unit branches were deleted with git branch -d. git worktree list and filesystem existence checks confirm both gone; no impl/* branch remains. Their scratch was archived before the previous cargo clean. Unrelated ESS trees remain untouched. The reusable coordinator has its own target (1,863,996 KiB) and website node_modules (661,116 KiB).
 
-## Finding-to-work traceability
+Free space before selection: 115,393,671,168 bytes. Revised hard reserve remains 8,589,934,592 bytes. Prior measured unit targets were 171 MiB and 313 MiB; the complete reused integration target is about 1.8 GiB. N=2 is a conservative coordinator estimate at this capacity; remeasure at dispatch and return. Each tree builds in its own target, with /usr/bin/sccache, CARGO_INCREMENTAL=0 and dev/test debug=0. Numeric model budget was already requested and not supplied; N=2 is within the default and four-slot harness limit.
 
-Each linked story contains a single observable acceptance, reproduction/validation matrix, compatibility boundary, dependencies and typed edit scope. A finding with multiple stories closes only when all of its required outcomes have evidence.
+Atlas authority is clean at remote main `6035d6e1209686ca474a3f43975fde7d8621ba48` in the current managed authority tree. All commits/pushes use its bot wrapper and identity verification.
 
-| Finding | Priority | Owning stories | Required disposition |
-| --- | --- | --- | --- |
-| F01 | P0 | [`story:review-semantic-diff-coverage`](../../.engineering/planning/story/review-semantic-diff-coverage.md) | Compare all omitted semantics and propagate obligations. |
-| F02 | P0 | [`story:review-persisted-delivery-validation`](../../.engineering/planning/story/review-persisted-delivery-validation.md), [`story:review-infra-ir-invariants`](../../.engineering/planning/story/review-infra-ir-invariants.md) | Validate persisted delivery graphs; protect infrastructure IR handles. |
-| F03 | P0 | [`story:review-report-reader-validation`](../../.engineering/planning/story/review-report-reader-validation.md), [`story:review-conformance-format-design`](../../.engineering/planning/story/review-conformance-format-design.md), [`story:a-skipped-scenario-is-not-a-failed-one`](../../.engineering/planning/story/a-skipped-scenario-is-not-a-failed-one.md), [`story:review-conformance-coverage`](../../.engineering/planning/story/review-conformance-coverage.md) | Validate v1 now; design and migrate category/coverage/exact-suite evidence without reinterpreting v1. |
-| F04 | P1 | [`story:review-openapi-semantic-accounting`](../../.engineering/planning/story/review-openapi-semantic-accounting.md) | Preserve meaning or persist a gap/refusal by dialect. |
-| F05 | P0 | [`story:review-secret-sanitization`](../../.engineering/planning/story/review-secret-sanitization.md), [`story:review-kubectl-diagnostic-sanitization`](../../.engineering/planning/story/review-kubectl-diagnostic-sanitization.md) | Malformed shape refusal is implemented; the additional baseline-reproduced subprocess diagnostic disclosure remains P0 work. |
-| F06 | P1 | [`story:review-observation-completeness`](../../.engineering/planning/story/review-observation-completeness.md) | Retain collection scope and selector uncertainty through consumers. |
-| F07 | P1 | [`story:review-rust-target-feasibility`](../../.engineering/planning/story/review-rust-target-feasibility.md), [`story:review-typescript-root-collision`](../../.engineering/planning/story/review-typescript-root-collision.md) | Validate target symbol/layout feasibility and compile emitted counterexamples. |
-| F08 | P1 | [`story:review-primitive-semantics`](../../.engineering/planning/story/review-primitive-semantics.md) | Use one normative value-domain contract and exact numeric migration. |
-| F09 | P1 | [`story:review-expression-typechecking`](../../.engineering/planning/story/review-expression-typechecking.md) | Typecheck full expression paths before synthesis. |
-| F10 | P0/P1 | [`story:review-output-containment`](../../.engineering/planning/story/review-output-containment.md), [`story:review-output-ownership`](../../.engineering/planning/story/review-output-ownership.md), [`story:scenarios-directory-compiles-nothing`](../../.engineering/planning/story/scenarios-directory-compiles-nothing.md), [`story:review-authored-discovery`](../../.engineering/planning/story/review-authored-discovery.md) | Contain all output first; add ownership/recovery and predictable input discovery. |
-| F11 | P1 | [`story:review-delivery-trust-contract`](../../.engineering/planning/story/review-delivery-trust-contract.md), [`story:review-cache-origin`](../../.engineering/planning/story/review-cache-origin.md), [`story:review-execution-recovery-design`](../../.engineering/planning/story/review-execution-recovery-design.md) | Separate consistency, content origin and execution state; recovery implementation remains an explicit obligation. |
-| F12 | P2 | [`story:review-glossary-boundaries`](../../.engineering/planning/story/review-glossary-boundaries.md) | Correct concepts and record interface/multiple-entrypoint ownership disposition. |
-| F13 | P1/P2 | [`story:review-format-catalog`](../../.engineering/planning/story/review-format-catalog.md), [`story:review-schema-resource-identity`](../../.engineering/planning/story/review-schema-resource-identity.md) | Catalog current bytes and schema boundaries before choosing new identities. |
-| F14 | P2 | [`story:review-typed-diagnostics`](../../.engineering/planning/story/review-typed-diagnostics.md) | Carry rule/source identity independently of wording. |
-| F15 | P1 | [`story:review-browser-replay-fidelity`](../../.engineering/planning/story/review-browser-replay-fidelity.md) | Fix or visibly refuse replay assignment/view semantics. |
-| F16 | P1 | [`story:review-consumer-coverage`](../../.engineering/planning/story/review-consumer-coverage.md), [`story:fuzz-the-specification-surface`](../../.engineering/planning/story/fuzz-the-specification-surface.md), [`story:review-public-support-claims`](../../.engineering/planning/story/review-public-support-claims.md) | Gate consumer coverage, retain fuzz ownership and ground public status in evidence. |
-| F17 | P2 | [`story:review-composition-contract`](../../.engineering/planning/story/review-composition-contract.md) | Document exact surface selection and byte transport; typed-client expansion is conditional. |
+## Unit records
 
-Two durable obligations prevent design/documentation work from masquerading as implementation:
+Absolute root: `/home/timo/.local/state/worktree/trees/b10x/ess`. Worktrees below are created from the opening commit; build and scratch paths are relative to each unit tree. No shared target directory.
 
-- [`obligation:review-execution-recovery-implementation`](../../.engineering/planning/obligation/review-execution-recovery-implementation.md) remains open until the recovery design's typed model supports a concrete decomposition and its implementation passes the fake-executor failure/retry matrix. F11 is not closed by the design alone.
-- [`obligation:review-contract-rollout-coordination`](../../.engineering/planning/obligation/review-contract-rollout-coordination.md) requires exact relying-reader inventory, Atlas ADR, downstream governed work and compatibility evidence before changed formats become default writers.
-
-No new runtime entity is guessed into the plan. Stories operate on existing Rust-owned models; any new persisted ownership or execution evidence is modeled and validated before implementation is decomposed around it. UNMAPPED identity, authority, ownership or cardinality stays unresolved in its binding design.
-
-## Sequencing and decisions
-
-1. **Immediate byte-preserving hardening:** F05 sanitization and the narrow F03 v1 reader are proposed below. Then replan P0 F10 output containment, F02 persisted delivery/IR validity and F01 diff/impact. The latter units touch multiple packages or shared CLI/compiler files and are deliberately outside the first single-package exercise.
-2. **Coverage design and exact supported subsets:** draft the F03 compatibility design independently; migrate count vocabulary before durable coverage/exact-suite binding. F04 import accounting, F07 target feasibility and F09 typechecking follow as scoped units. F06 waits for sanitization and infrastructure invariant preservation. Prioritize remaining P0 implementation over unrelated P2 documentation at each replan.
-3. **Evidence, recovery and primitives:** F11 cache/trust work waits for validated delivery input; recovery design precedes modeling and implementation. F08 begins with the primitive matrix and format inventory, then a coordinated migration; do not change f64 serialization as an incidental refactor.
-4. **Interoperability and maintenance:** F12/F13 glossary and catalogs can be prepared early as separate document surfaces; serialize public-guide changes. F14 diagnostics and F15 replay are separate, with semantics aligned to whichever primitive contract has landed.
-5. **Extension evidence:** F16's matrix follows the concrete F01 repairs; the existing fuzz harness supplies its own no-panic property, while target-feasibility stories own emitted-program compilation. Public status follows actual release evidence, not merely Cargo version.
-
-These are priority phases. Standing approval now covers future remediation waves, each selected afresh from the store, blockers, remote base and typed scopes after the preceding wave. Dependencies are machine-readable where one outcome requires another; shared write paths are machine-readable collisions. A compilation dependency alone is not invented into an edit collision.
-
-F12 and F17 need an honest statement of supported behavior, not automatic multiple-entrypoint or typed-client expansion. F13 needs a catalog and an owned schema identity policy, not blanket renaming. The existing create-only refusal design, Java target and Go formatting work remain outside this epic. The scoper found the create-only story's historical “only refusal form” claim too broad; its body now preserves the historical text with a cited current-source correction.
-
-## Proposed first wave
-
-Name: `review-boundaries-1`. Units: **2**, each serving `vision:O2`.
-
-| Unit | Observable fix | Scope | Status |
-| --- | --- | --- | --- |
-| `story:review-secret-sanitization` | Malformed Secret shapes cannot leak into observation output or diagnostics. | `crates/infra/ess-kubernetes` — cited, high confidence | proposed |
-| `story:review-report-reader-validation` | Contradictory v1 reports are refused on public read boundaries, preserving valid v1 semantics/bytes. | `crates/verify/ess-conformance` — cited, high confidence | proposed |
-
-Eight independent `aep-drive:story-scoper` dispatches established the two candidates and every initially unassessed legacy draft. The coordinator recorded their sections and typed entries serially. All other newly drafted scopes are grounded coordinator scopes, with inferred paths marked; independently re-scope those units before later dispatch.
-
-Selection used **`aep artifact waves` from `protocol 0.54.0`**, not the fallback pairwise method. The complete draft computation is attached below. Its greedy global partitions include unrelated legacy work, so they are not the priority order: after judging implementability and priority, the two scoped candidates moved legally from draft to proposed, and a second CLI computation over proposed stories verifies the exact selected set. Neither has a dependency or blocker, and both carry a `serves:vision:O2` edge. No source story moved to active.
-
-### Exact proposed-set computation
-
-Command: `aep artifact waves --kind story --status proposed --format json`; exit 0.
-
-```json
-{
-  "waves": [
-    {
-      "wave": 1,
-      "artifacts": [
-        {
-          "id": "story:review-report-reader-validation",
-          "inferred": false,
-          "scope": [
-            {
-              "confidence": "cited",
-              "path": "crates/verify/ess-conformance"
-            }
-          ]
-        },
-        {
-          "id": "story:review-secret-sanitization",
-          "inferred": false,
-          "scope": [
-            {
-              "confidence": "cited",
-              "path": "crates/infra/ess-kubernetes"
-            }
-          ]
-        }
-      ]
-    }
-  ],
-  "collisions": [],
-  "unassessed": [],
-  "cycles": []
-}
-```
-
-### What is deliberately left out
-
-- Other P0 fixes remain urgent next candidates, but their package/CLI/API coupling exceeds the first-wave single-package boundary.
-- The versioned F03 count/coverage work needs the shared design and downstream compatibility; v1 reader validation can land independently.
-- F04, F06, F07, F08 and F09 require their declared subset/compatibility work; no padding the first wave with a new target or an unknown surface.
-- Broad delivery recovery is design-first and retains an open implementation obligation.
-- All public documentation edits share a conservative `website/docs` token and are scheduled separately.
-- Create-only refusal has unresolved semantics; Java requires an independently provisioned execution toolchain; Go formatting is distinct existing maintenance.
-
-## Pre-flight measurements and launch conditions
-
-Measured 2026-09-05 in the planning checkout, on the unchanged source revision. Compiler cache was available at `/usr/bin/sccache` and explicitly wired for both measured builds. Settings: `CARGO_INCREMENTAL=0`, dev/test debug information disabled. Each measured target directory was separate; no other worktree's target was reused.
-
-| Check | Observation | Interpretation |
-| --- | --- | --- |
-| ESS primary | Clean, main, HEAD = remote main = `fd06a4d61bfb7b4990617810655dc181d6a3ab00` | Baseline is current; recheck at launch. |
-| Free disk initially / after builds | 74,280,751,104 / 73,851,957,248 bytes | Above proposed 20 GiB floor (21,474,836,480 bytes); floor is coordinator policy, not a repository fact. |
-| Available RAM at initial measurement | 47,774,928,896 bytes | Observed using `free -b`; recheck before launch. |
-| Kubernetes package | `cargo test --locked -p ess-kubernetes`: exit 0, 2 executed tests; 4.084 s; target 78,296 KiB | Baseline only; new fault cases must increase the executed count. |
-| Conformance package | `cargo test --locked -p ess-conformance`: exit 0, 229 executed tests; 13.047 s; separate target 284,228 KiB | Baseline only; all 9 test binaries and doc tests completed. |
-| Planning target total | 362,752 KiB after both builds | Includes both measurements and task scratch; recorded for later cleanup. |
-| Existing linked ESS checkouts | 17 before this planning tree, 18 after | Existing work is preserved. Registry inventory shows 10 pre-existing active and 7 finished records; recovery/previous-wave provenance is still unresolved for launch. |
-| Existing target directories | 13,777,404; 1,823,388; 1,426,252; 6,000,704; 14,059,580 KiB | From exact `du -sk` inventory below; not evidence they are abandoned. |
-| Model budget | Asked during planning; no numeric balance supplied | Provisionally N=2 implementation agents plus reviewer capacity; below the skill's default 4 and the harness's 3 sub-agent concurrency limit. Operator steering may reduce N. |
-| Baseline full gate | All eight tasks underlying `task check` exited 0; 1,419 tests executed | Baseline on unchanged implementation, not remediation evidence; rerun at wave integration. |
-| Approval | Not granted | Stage 1 only. |
-
-Existing build inventory, with paths written relative to the managed ESS trees root:
-
-```text
-13777404  wt-34496b6990aa/target
-1823388   wt-780a9b306a76/target
-1426252   wt-b2a2189b9ecc/target
-6000704   wt-ce6e143e1fe5/target
-14059580  wt-e46db550dce9/target
-```
-
-Launch must first inspect previous-wave records and prove the wave preflight is satisfied. Existing worktrees/builds are not cleaned by age or name. Use managed `worktree` status/reconcile/finish/GC operations, preserve uncommitted work and inspect exact recovery evidence. The planning checkout is intentionally dirty with this plan; it must be committed on the integration branch through bot tooling and cheaply gated before unit checkouts are created. The primary stays clean.
-
-### Planned durable unit records
-
-Notation avoids machine-specific home paths: `<ess-managed-root>` is the registry root returned by the worktree profile, and every actual path must be written into the local launch record when `worktree create --json` assigns it. The three planned branch names were checked with `git branch --list` and were unused at plan completion. Use explicit stable IDs below if available; no unit worktrees exist yet.
-
-| Unit | Planned branch | Planned worktree | Build directory | Scratch root | Head / stage |
+| Story | Branch | Worktree under root | Build | Scratch | Head/stage |
 | --- | --- | --- | --- | --- | --- |
-| coordinator | `wave/review-boundaries-1` | existing managed record `wt-752828a285ba` | `<coordinator>/target` | `<coordinator>/target/review-boundaries-1` | `fd06a4d...` / plan only |
-| secret sanitization | `impl/review-secret-sanitization` | `<ess-managed-root>/review-secret-sanitization` | `<unit>/target` | `<coordinator>/target/review-boundaries-1/review-secret-sanitization` | not created |
-| report reader | `impl/review-report-reader-validation` | `<ess-managed-root>/review-report-reader-validation` | `<unit>/target` | `<coordinator>/target/review-boundaries-1/review-report-reader-validation` | not created |
+| review-kubectl-diagnostic-sanitization | impl/review-kubectl-diagnostic-sanitization | review-kubectl-diagnostic-sanitization | target/ | target/review-boundaries-2/ | 54102b9357151a4827817417ca14ec995bdd68c0; merged at 6685b1991bdee19b28316ccb531a4dbfa1c20f1d |
+| review-output-containment | impl/review-output-containment | review-output-containment | target/ | target/review-boundaries-2/ | f05048be88b2cc14612d34f9cef0044ab7335641; merged at 98defa1b361e053e7fe586b24d777b9843e2f9b5 |
 
-Before dispatch, name the actual branch heads and triples in the wave page/local launch record, create file-backed briefs, gate the opening store/page commit, then run one implementor and one adversary per unit. Implementors never mutate the planning store. Use full role names `aep-drive:implementor` and `aep-drive:adversary`.
+File-backed briefs will bind exact opening SHA, assignments, package gates and scope confirmation. Coordinator owns AEP, source staging, bot commits, integration, gates, publication and managed cleanup. Each green implementation goes to a tests-only adversary. Max two full attack passes; routing preserves original reports verbatim. Each offline gate step reports its own exit code and runner output; applicable site build follows. No terminal move before those results.
 
-**Dispatch limitation:** this harness has no native `subagent_type` selector. Scopers and critics are spawned with the actual plugin charter path and full role name. The critic charter's `sonnet/high` model is unavailable here; session-model execution is a reported deviation, not a claimed native pinned dispatch. The four critic roles are `aep-plan:plan-critic-acceptance`, `aep-plan:plan-critic-design`, `aep-plan:plan-critic-scope`, and `aep-plan:plan-critic-parallel-safety`. With three sub-agent slots, the fourth reads the same frozen draft after a slot opens; no critic receives another's findings.
-
-## Approval and completion boundary
-
-**Approval would authorize only:** one opening store/plan commit, 2 unit commits, their integration merges, one closing store/evidence commit and the gated merge to main; no push, tag, release, unrelated work or next wave. All direct commits/merges use Atlas bot tooling with verified bot author and committer.
-
-The first-wave approval does not waive launch preflight. If the available model budget is lower, replan N before dispatch. Every subsequent wave is proposed from the then-current store. A release is a separate human stop.
-
-The worktree skill and workspace instructions take precedence over the wave skill's raw-Git cleanup example: publish wanted commits before `worktree finish`, review `worktree gc --dry-run` and apply only exact reviewed IDs. Since wave approval grants no push, retain trees with unpublished wanted commits and report publication/cleanup pending instead of deleting them.
-
-During implementation: first observe each new regression fail; run the relevant package gate; record each adversary report unchanged as a review-result; route findings by introduced/pre-existing/undecided origin; use at most two attacks. At integration capture each step's own exit status and skipped-step output, record the exact merge commit evidence, validate planning, then merge only the green wave to main. Do not claim the remediation epic closed while either obligation remains open.
-
-## Critic record
-
-Round 1: design, scope and parallel-safety approved. Acceptance returned six findings: two obligations mixed procedure with discharge criteria; fuzz acceptance mixed corpus setup with its no-panic property; three stories combined independently checkable outcomes. All six artifacts were revised through AEP, preserving their required checks in validation/procedure sections, and all six outcomes were recorded as `fixed`. The critic classified the fuzz wording as pre-existing; the other five were introduced by this draft.
-
-Records: [acceptance round 1](../../.engineering/planning/review-result/review-remediation-acceptance-round-1.md), [design round 1](../../.engineering/planning/review-result/review-remediation-design-round-1.md), [scope round 1](../../.engineering/planning/review-result/review-remediation-scope-round-1.md), [parallel-safety round 1](../../.engineering/planning/review-result/review-remediation-parallel-safety-round-1.md).
-
-Round 2: design, scope and parallel-safety approved again. Acceptance returned three remaining findings because the first body replacement had retained the superseded compound paragraphs beneath the new sentences. The coordinator removed those duplicate paragraphs after all four critics finished, read back each complete Acceptance section, and confirmed that the required checks remain in their validation matrices. No third critic round ran; the final acceptance verdict remains `needs-revision` as immutable history, and the three final corrections were checked locally rather than re-approved by the panel.
-
-Records: [acceptance round 2](../../.engineering/planning/review-result/review-remediation-acceptance-round-2.md), [design round 2](../../.engineering/planning/review-result/review-remediation-design-round-2.md), [scope round 2](../../.engineering/planning/review-result/review-remediation-scope-round-2.md), [parallel-safety round 2](../../.engineering/planning/review-result/review-remediation-parallel-safety-round-2.md).
-
-The three findings that survived into round 2 are preserved verbatim below. Each has a `fixed` outcome on that round's record after the final body revision; none is being claimed as independently re-reviewed:
-
-- story:review-conformance-coverage — the acceptance combines preserved incompleteness with exact-suite evidence binding, which can pass independently; define one observable acceptance result and place its component checks in validation — .engineering/planning/story/review-conformance-coverage.md:33
-- story:review-glossary-boundaries — the acceptance combines glossary distinctions with interface-layout and multiple-entrypoint dispositions, which can pass independently; define one observable completion result for the reference — .engineering/planning/story/review-glossary-boundaries.md:28
-- story:review-public-support-claims — the acceptance combines correcting the HTML-output description with citing current release evidence, which can pass independently; define one observable completion result for the status page — .engineering/planning/story/review-public-support-claims.md:30
-
-Those citations identify the revisions the critic saw; the final story bodies carry the corrected sections. Outcome totals: round 1 `fixed=6, no-op=0, escalated=0`; round 2 `fixed=3, no-op=0, escalated=0`. Six distinct issues were corrected across nine recorded finding outcomes. The scope critic reissued its same round-1 verdict with actual relative-store validation output to avoid persisting a personal home path; that publication correction changed no finding or reviewed artifact.
-
-The harness exposes no reliable per-agent token/tool/wall totals for these dispatches; those values are unavailable, not estimated. Eight scoper tasks and eight critic reviews across four independent perspectives ran; each critic used the same charter for both rounds. There is no non-interactive approval bypass: the root planning session is interactive; child read-only reviews cannot authorize implementation.
-
-## Validation and tooling observations
-
-All tasks underlying `task check` were run sequentially with each task's own captured status:
-
-```text
-fmt-check 0
-clippy 0
-test 0
-doc-check 0
-example-check 0
-projection-check 0
-release-check 0
-action-check 0
-```
-
-Workspace tests executed **1,419** passing cases. No gate task skipped itself. `task site-build` exited **0** in 15.795 seconds, including the WASM/browser lab and Docusaurus. npm reported 30 dependency audit findings and blocked install scripts for two packages; these are untriaged baseline dependency warnings, not a security audit or new remediation scope. The source review explicitly did not audit every dependency.
-
-After the gates, `df -B1` reported 66,465,345,536 free bytes, still above the proposed disk floor. Planning-checkout allocations were `target` 2,118,808 KiB, `examples/billing-web/target` 2,268 KiB, `website/node_modules` 661,040 KiB and `website/build` 6,548 KiB. These paths are retained with the managed planning record; nothing was deleted. Logs are under `target/plan-scratch`; the measurements and meaningful results are preserved here before any eventual cleanup.
-
-`worktree status --json` confirmed 18 present ESS records: the planning record plus 10 pre-existing active and 7 finished records. Registry heads differ from current Git heads on some active records; only fresh Git/recovery evidence may authorize cleanup. A finished lifecycle label alone is not a GC approval.
-
-Installed `protocol 0.54.0` has a reporting limitation: `aep artifact validate` reports approval records with a literal fenced `findings` block containing `[]` as “states its findings as prose only”. The actual blocks are present, and validation exits 0 with no problems. Records were kept unchanged; no fake finding was invented to suppress the advisory. The final validation output follows verbatim (exit 0):
-
-```text
-74 file(s) in .engineering/planning: 74 artifact(s)
-6 review(s) recorded no findings block:
-  - review-result:review-remediation-design-round-1 states its findings as prose only — nothing can enumerate what it found, so                  the next review starts from nowhere
-  - review-result:review-remediation-design-round-2 states its findings as prose only — nothing can enumerate what it found, so                  the next review starts from nowhere
-  - review-result:review-remediation-parallel-safety-round-1 states its findings as prose only — nothing can enumerate what it found, so                  the next review starts from nowhere
-  - review-result:review-remediation-parallel-safety-round-2 states its findings as prose only — nothing can enumerate what it found, so                  the next review starts from nowhere
-  - review-result:review-remediation-scope-round-1 states its findings as prose only — nothing can enumerate what it found, so                  the next review starts from nowhere
-  - review-result:review-remediation-scope-round-2 states its findings as prose only — nothing can enumerate what it found, so                  the next review starts from nowhere
-valid
-```
-
-## Complete draft-store computation
-
-Command: `aep artifact waves --kind story --status draft --format json`; exit 0. These are all returned waves, all 144 excluded collisions, and the unassessed/cycle lists verbatim. The two proposed units are shown in their separate exact computation above. Token equality is the CLI's rule: scopes use crate-directory tokens consistently; broader unresolved legacy design scope is not treated as dispatch-ready.
-
-<details>
-<summary>Verbatim draft-store waves, collisions and unassessed stories</summary>
+## Draft-store computation
 
 ```json
 {
@@ -439,7 +236,7 @@ Command: `aep artifact waves --kind story --status draft --format json`; exit 0.
         },
         {
           "id": "story:review-semantic-diff-coverage",
-          "inferred": false,
+          "inferred": true,
           "scope": [
             {
               "confidence": "cited",
@@ -448,6 +245,30 @@ Command: `aep artifact waves --kind story --status draft --format json`; exit 0.
             {
               "confidence": "cited",
               "path": "crates/verify/ess-diff"
+            },
+            {
+              "confidence": "inferred",
+              "path": "docs/design/ess-semantic-diff-impact-evolution-design-v0.1.md"
+            },
+            {
+              "confidence": "inferred",
+              "path": "generated/asyncapi"
+            },
+            {
+              "confidence": "inferred",
+              "path": "generated/docs"
+            },
+            {
+              "confidence": "inferred",
+              "path": "generated/openapi"
+            },
+            {
+              "confidence": "inferred",
+              "path": "generated/schema"
+            },
+            {
+              "confidence": "inferred",
+              "path": "generated/site"
             }
           ]
         }
@@ -562,16 +383,16 @@ Command: `aep artifact waves --kind story --status draft --format json`; exit 0.
           ]
         },
         {
-          "id": "story:review-output-containment",
-          "inferred": false,
+          "id": "story:review-output-ownership",
+          "inferred": true,
           "scope": [
             {
               "confidence": "cited",
               "path": "crates/edge/ess-cli"
             },
             {
-              "confidence": "cited",
-              "path": "crates/generate/ess-gen"
+              "confidence": "inferred",
+              "path": "docs/design/review-output-ownership.md"
             }
           ]
         },
@@ -787,25 +608,6 @@ Command: `aep artifact waves --kind story --status draft --format json`; exit 0.
       "wave": 11,
       "artifacts": [
         {
-          "id": "story:review-output-ownership",
-          "inferred": true,
-          "scope": [
-            {
-              "confidence": "cited",
-              "path": "crates/edge/ess-cli"
-            },
-            {
-              "confidence": "inferred",
-              "path": "docs/design/review-output-ownership.md"
-            }
-          ]
-        }
-      ]
-    },
-    {
-      "wave": 12,
-      "artifacts": [
-        {
           "id": "story:review-conformance-coverage",
           "inferred": true,
           "scope": [
@@ -931,12 +733,6 @@ Command: `aep artifact waves --kind story --status draft --format json`; exit 0.
     },
     {
       "a": "story:a-skipped-scenario-is-not-a-failed-one",
-      "b": "story:review-output-containment",
-      "path": "crates/edge/ess-cli",
-      "confidence": "inferred"
-    },
-    {
-      "a": "story:a-skipped-scenario-is-not-a-failed-one",
       "b": "story:review-output-ownership",
       "path": "crates/edge/ess-cli",
       "confidence": "inferred"
@@ -1012,12 +808,6 @@ Command: `aep artifact waves --kind story --status draft --format json`; exit 0.
       "b": "story:review-expression-typechecking",
       "path": "crates/verify/ess-conformance",
       "confidence": "cited"
-    },
-    {
-      "a": "story:create-only-command-cannot-refuse",
-      "b": "story:review-output-containment",
-      "path": "crates/generate/ess-gen",
-      "confidence": "inferred"
     },
     {
       "a": "story:create-only-command-cannot-refuse",
@@ -1129,12 +919,6 @@ Command: `aep artifact waves --kind story --status draft --format json`; exit 0.
     },
     {
       "a": "story:java-conformance-target",
-      "b": "story:review-output-containment",
-      "path": "crates/edge/ess-cli",
-      "confidence": "cited"
-    },
-    {
-      "a": "story:java-conformance-target",
       "b": "story:review-output-ownership",
       "path": "crates/edge/ess-cli",
       "confidence": "cited"
@@ -1192,12 +976,6 @@ Command: `aep artifact waves --kind story --status draft --format json`; exit 0.
       "b": "story:review-openapi-semantic-accounting",
       "path": "crates/edge/ess-cli",
       "confidence": "inferred"
-    },
-    {
-      "a": "story:review-authored-discovery",
-      "b": "story:review-output-containment",
-      "path": "crates/edge/ess-cli",
-      "confidence": "cited"
     },
     {
       "a": "story:review-authored-discovery",
@@ -1264,12 +1042,6 @@ Command: `aep artifact waves --kind story --status draft --format json`; exit 0.
       "b": "story:review-openapi-semantic-accounting",
       "path": "crates/edge/ess-cli",
       "confidence": "inferred"
-    },
-    {
-      "a": "story:review-cache-origin",
-      "b": "story:review-output-containment",
-      "path": "crates/edge/ess-cli",
-      "confidence": "cited"
     },
     {
       "a": "story:review-cache-origin",
@@ -1351,12 +1123,6 @@ Command: `aep artifact waves --kind story --status draft --format json`; exit 0.
     },
     {
       "a": "story:review-conformance-coverage",
-      "b": "story:review-output-containment",
-      "path": "crates/edge/ess-cli",
-      "confidence": "cited"
-    },
-    {
-      "a": "story:review-conformance-coverage",
       "b": "story:review-output-ownership",
       "path": "crates/edge/ess-cli",
       "confidence": "cited"
@@ -1430,12 +1196,6 @@ Command: `aep artifact waves --kind story --status draft --format json`; exit 0.
     {
       "a": "story:review-delivery-trust-contract",
       "b": "story:review-openapi-semantic-accounting",
-      "path": "crates/edge/ess-cli",
-      "confidence": "inferred"
-    },
-    {
-      "a": "story:review-delivery-trust-contract",
-      "b": "story:review-output-containment",
       "path": "crates/edge/ess-cli",
       "confidence": "inferred"
     },
@@ -1567,12 +1327,6 @@ Command: `aep artifact waves --kind story --status draft --format json`; exit 0.
     },
     {
       "a": "story:review-infra-ir-invariants",
-      "b": "story:review-output-containment",
-      "path": "crates/edge/ess-cli",
-      "confidence": "inferred"
-    },
-    {
-      "a": "story:review-infra-ir-invariants",
       "b": "story:review-output-ownership",
       "path": "crates/edge/ess-cli",
       "confidence": "inferred"
@@ -1586,12 +1340,6 @@ Command: `aep artifact waves --kind story --status draft --format json`; exit 0.
     {
       "a": "story:review-infra-ir-invariants",
       "b": "story:scenarios-directory-compiles-nothing",
-      "path": "crates/edge/ess-cli",
-      "confidence": "inferred"
-    },
-    {
-      "a": "story:review-openapi-semantic-accounting",
-      "b": "story:review-output-containment",
       "path": "crates/edge/ess-cli",
       "confidence": "inferred"
     },
@@ -1612,30 +1360,6 @@ Command: `aep artifact waves --kind story --status draft --format json`; exit 0.
       "b": "story:scenarios-directory-compiles-nothing",
       "path": "crates/edge/ess-cli",
       "confidence": "inferred"
-    },
-    {
-      "a": "story:review-output-containment",
-      "b": "story:review-output-ownership",
-      "path": "crates/edge/ess-cli",
-      "confidence": "cited"
-    },
-    {
-      "a": "story:review-output-containment",
-      "b": "story:review-persisted-delivery-validation",
-      "path": "crates/edge/ess-cli",
-      "confidence": "cited"
-    },
-    {
-      "a": "story:review-output-containment",
-      "b": "story:review-primitive-semantics",
-      "path": "crates/generate/ess-gen",
-      "confidence": "cited"
-    },
-    {
-      "a": "story:review-output-containment",
-      "b": "story:scenarios-directory-compiles-nothing",
-      "path": "crates/edge/ess-cli",
-      "confidence": "cited"
     },
     {
       "a": "story:review-output-ownership",
@@ -1698,4 +1422,160 @@ Command: `aep artifact waves --kind story --status draft --format json`; exit 0.
 
 ```
 
-</details>
+## Selected proposed-set computation
+
+```json
+{
+  "waves": [
+    {
+      "wave": 1,
+      "artifacts": [
+        {
+          "id": "story:review-kubectl-diagnostic-sanitization",
+          "inferred": false,
+          "scope": [
+            {
+              "confidence": "cited",
+              "path": "crates/infra/ess-kubernetes"
+            },
+            {
+              "confidence": "cited",
+              "path": "crates/infra/ess-kubernetes/src/lib.rs"
+            },
+            {
+              "confidence": "cited",
+              "path": "crates/infra/ess-kubernetes/tests/fixtures/fake_command.rs"
+            },
+            {
+              "confidence": "cited",
+              "path": "crates/infra/ess-kubernetes/tests/secret_boundary.rs"
+            }
+          ]
+        },
+        {
+          "id": "story:review-output-containment",
+          "inferred": false,
+          "scope": [
+            {
+              "confidence": "cited",
+              "path": "crates/edge/ess-cli"
+            },
+            {
+              "confidence": "cited",
+              "path": "crates/edge/ess-cli/src/main.rs"
+            },
+            {
+              "confidence": "cited",
+              "path": "crates/generate/ess-gen"
+            },
+            {
+              "confidence": "cited",
+              "path": "crates/generate/ess-gen/src/artifact.rs"
+            },
+            {
+              "confidence": "cited",
+              "path": "crates/generate/ess-gen/src/document.rs"
+            },
+            {
+              "confidence": "cited",
+              "path": "crates/generate/ess-gen/src/html.rs"
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "collisions": [],
+  "unassessed": [],
+  "cycles": []
+}
+
+```
+
+## Dispatch
+
+Opening commit c1c23b24cee8f527784b7f8467c21a609710c65e has exact bot author and committer. Both triples were provisioned through worktree create from primary; file-backed briefs are target/review-boundaries-2/brief.md in each. Free bytes immediately before dispatch: 113,092,632,576. Package gates use separate compact targets and the 8 GiB reserve.
+
+## Additional cleanup and preparation
+
+The superseded task-owned Atlas authority wt-1bb42c471901 was finished, assessed in a fresh exact-id dry-run and removed by exact-id managed GC with advertised remote recovery proof; filesystem absence was verified. The current authority remains in use. Read-only preparation found two independent report reader paths in exact AEP remote cc321f31fa0120b32a5b9f5e7b8c8fdfa55f69f9. The conformance migration story records them; no AEP change or compatibility test is claimed.
+
+## Diagnostic implementation and dispatch adapter
+
+The diagnostic unit committed b26829a571c0569ba2f63a5da495b987397b43a4 with exact bot author/committer. Its package runner executed 8→11, final zero failures; two red disclosure tests preceded implementation and the credential mutation guard failed then was restored. Formatter and strict Clippy exited 0. The portable implementation report is docs/reviews/2026-09-05-review-boundaries-2-diagnostic-implementation.md. Target size was 145,964 KiB, free bytes 125,694,115,840.
+
+The harness refused new agent creation with `agent thread limit reached` despite a completed scoper. A completed read-only scoper thread was reused under the exact adversary charter for the diagnostic unit it did not implement. Its preceding conformance and delivery scoping results were written into their stories before the role change. This is a harness dispatch adaptation; attack count and test-only assignment are unchanged.
+
+## Diagnostic attack result
+
+review-result:review-boundaries-2-diagnostic-adversary-pass-1 preserves the report verbatim. Three additional tests passed on their first isolated runs, then the package executed 11→14 with zero failures/ignored cases; fmt/Clippy exited 0. No findings or corrections were recorded. Signal status, distinct retry codes and 286,720 additional synthetic bytes per child stream remained value-free in ESS diagnostics. Test commit 54102b9357151a4827817417ca14ec995bdd68c0 has exact bot author and committer. The original test patch is retained in docs/reviews.
+
+## Containment implementation
+
+Source commit e6803c061b33dfe8d5c9fdfff10d8f1408083b31 has exact bot author and committer. Package runners executed CLI 21→33 and ess-gen 183→187 (204→220 combined), zero failed/ignored; both package formatter/strict Clippy commands exited 0. The initial six-case lane had five genuine red refusal cases and a passing valid layout control. A coordinator source review caught overbroad rejection of caller-selected parent roots; a new case failed before correction, then requested-root resolution was fixed while preserving symlink refusal and avoiding creation of discarded directories. The portable implementation report preserves those observations in docs/reviews/2026-09-05-review-boundaries-2-containment-implementation.md.
+
+Current implementation limit: checks are preflight against stable filesystem entries, with Unix link counts. Other platforms refuse existing-file replacement because link-count verification is not implemented. No rollback, hostile mount or concurrent replacement guarantee is claimed. Legacy in-memory constructors/rendering remain source-compatible, with additive checked entrypoints and mandatory CLI sinks.
+
+## Containment attack 1 and correction routing
+
+review-result:review-boundaries-2-containment-adversary-pass-1 preserves the full returned report verbatim, including the one CONFIRMED acceptance blocker with undecided origin. The original test patch is retained in docs/reviews. Five new cases increased executed counts from 220 to 225: 224 passed, one failed. Both compose companion flags can alias a generated client file or directory; the invocation either overwrites one output or writes the companion before refusing. This is a discoverable command output-set collision, within the original acceptance. It was routed to the original implementor for class-wide preflight and a second attack, not deferred as a new story.
+
+The adversary disclosed an extra read-only cargo fmt --all --check outside its prescribed command scope. It exited 1 on untouched generated Rust files and changed nothing. Required package fmt and strict Clippy exited 0. The command-scope deviation is acknowledged; its red result is not an implementation verdict.
+
+## Organization authority refresh
+
+The organization fence at clean Atlas 6035d6e1209686ca474a3f43975fde7d8621ba48 exited 1 after wave-1 publication. Rust (115 tests), catalog, projection, Markdown and brand checks passed; documentation delivery checks and the organization map check failed on sibling state outside this ESS wave. The raw private fence evidence is retained only in coordinator target/review-boundaries-2/atlas-authority-6035d6e/. During the run, Atlas remote main advanced. A new managed authority wt-90ec680c6073 was created at 9f3b42f6d990d849be918936039d7dd5567653c8, and its clean HEAD was verified against git ls-remote origin refs/heads/main before use. The authority's current fence is being rerun; no organization-wide green claim is made.
+
+## Current organization fence result
+
+At authority 9f3b42f6d990d849be918936039d7dd5567653c8, scripts/fences.sh completed with exit 1. Catalog, public Pages delivery (36 repository states, 25 Pages repositories and 50 delivery routes), projection, Markdown and brand passed. Documentation manifest and portal checks refused sibling schema/pin disagreement; the map check reported one sibling without objective grounding. Rust executed 115 cases with 114 passing and one timeout case failing (HTTP 202 observed where 200 was expected). A subsequent isolated execution of that exact case passed 1/1, exit 0; this does not replace the failed full fence. Raw private logs and exit files are preserved in coordinator target/review-boundaries-2/atlas-authority-9f3b42f/. No source in Atlas or those siblings was changed.
+
+## Superseded authority cleanup
+
+After archiving its private fence evidence, cargo clean removed 492.5 MiB of disposable build output from task authority wt-c67acb2e23e6. worktree finish initially refused ignored target output; after the clean it succeeded. A fresh GC dry-run marked that exact record eligible. Exact-id apply removed it with recovery through advertised origin main and pull-request refs; filesystem absence and Git's linked-tree inventory confirmed removal. No other eligible record was selected. The merged wave/review-boundaries-1 branch was deleted with git branch -d.
+
+## Containment correction and second attack
+
+Correction dc122aea038cc18757c3a160b1b36b6798ef6df0 preserves the first attack tests and checks the complete compose output set before any write. It has exact bot author and committer. The package runner executed 225→230, all passing; both package format and strict Clippy checks exited0. A source review identified a native trailing-separator regression in the first correction, which was reproduced red then fixed with its guard retained. The full correction report is docs/reviews/2026-09-05-review-boundaries-2-containment-correction-pass-1.md. The original review has a fixed outcome; the story remains active until integration.
+
+The second and final adversary pass uses the same test-only charter on the clean correction commit. Baseline is230 executed cases. Free bytes133,865,357,312 and own target1,107,980KiB were measured at dispatch. Model token counts and full agent wall duration are unavailable from this harness.
+
+## Second-pass dispatch refusal
+
+The first second-pass dispatch returned the following harness error before producing a review report or test result:
+
+> Agent errored: This content was flagged for possible cybersecurity risk. If this seems wrong, try rephrasing your request. To get authorized for security work, join the Trusted Access for Cyber program: https://chatgpt.com/cyber
+
+This is a failed dispatch, not a completed attack or a green result. The coordinator informed the operator and retried the same reviewer with an explicitly local synthetic-fixture regression scope: no network, credentials, external systems, real user files, races or permission changes. The two-pass limit is unchanged; the required second test review remains pending.
+
+## Second review completion and operational adaptations
+
+The restricted delegated retry also ended with the same automatic content rejection. It left five added integration cases and startup-failure logs; no test had executed because sccache failed before rustc. The coordinator completed the same second review locally, preserving all additions and initial logs. The report is preserved verbatim as review-result:review-boundaries-2-containment-adversary-pass-2. This is a documented delegation adaptation, not a third attack or an independent/human approval claim. No production file was edited during this review.
+
+Cargo had cached the failed rustc metadata query. The failed metadata and socket trace were preserved before removing only target/.rustc_info.json. A task-specific sccache socket remained inside the unit target and used the existing shared cache; its stop command returned0 and its socket no longer accepted a connection. A temporary external scratch root /home/timo/.cache/ess-w2-ctmp held only the first actual case's synthetic files; fixture cleanup and rmdir removed it. The briefly assigned target/t root was also removed. No compiler target was shared and no unrelated cache server or worktree was changed.
+
+Four new isolated cases passed immediately after tool recovery; a fifth lacked a required platform in its synthetic BuildSpec. Adding that fixture field preserved every assertion and its isolated execution passed. Complete package suites then executed235 cases (CLI46, gen189), all passing, no ignored cases; package fmt and strict Clippy exited0. The new cases cover native caller filenames, nested disjoint companions, normalized parent links, four generation sinks and two projection sinks with valid/repeat controls and late conflicts. The preserved patch is docs/reviews/2026-09-05-review-boundaries-2-containment-adversary-pass-2-tests.patch.
+
+The CLI findings comparison reports carried=[], new=[], and the one first-pass compose blocker resolved. No finding remains for this unit; the original immutable report and its fixed outcome remain intact.
+
+Second-review tests are committed at f05048be88b2cc14612d34f9cef0044ab7335641 with exact bot author and committer. Atlas remote advanced again; the existing clean managed authority wt-90ec680c6073 was reused at exact remote 7b00adf3b1004e0cdd8dd12aa4fa8cc8435a0432, with clean HEAD/remote equality verified. Its AGENTS, bot wrapper and fence script bytes did not change in that advance.
+
+## Integrated verification and closure
+
+verification-report:review-boundaries-2-integrated records clean source 98defa1b361e053e7fe586b24d777b9843e2f9b5. All eight underlying task check steps exited 0, and the workspace produced 108 runner summaries totaling **1,475 passed, 0 failed, 0 ignored**. Task site-build also exited 0 after WASM/browser checks, pinned dependency installation and Docusaurus. The baseline npm advisories remain outside these fixes. Exact exit status output:
+
+```text
+fmt-check 0
+clippy 0
+test 0
+doc-check 0
+example-check 0
+projection-check 0
+release-check 0
+action-check 0
+site-build 0
+```
+
+Both stories moved active→implemented using test_result evidence against that integration SHA, observed 2026-09-05T12:34:37Z. The epic stays active with 27 draft stories remaining. Source and test bytes remain unchanged after the gate; closing edits record evidence and lifecycle. No tag or version bump was made.
+
+Before retirement, all wanted raw unit scratch was copied into coordinator target/review-boundaries-2/archive/<unit>/ and compared byte-for-byte: containment 106 files/552,302 bytes, diagnostic 28 files/56,019 bytes. Portable reports and test patches remain committed engineering evidence. Publication must precede worktree finish and fresh exact-id GC.

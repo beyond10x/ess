@@ -27,6 +27,74 @@ use ess_domain::system::Source;
 use ess_gen::artifact::{run, Artifact};
 use ess_gen::docs::Docs;
 
+fn adversary_document(ids: &[&str]) -> ess_gen::document::Document {
+    use ess_gen::provenance::{ModelSlice, Provenance, SlicedProvenance};
+    let provenance = Provenance {
+        system: "adversary".to_owned(),
+        specification_version: "v1".to_owned(),
+        source_digest: "a".repeat(64),
+        contract_digest: "b".repeat(64),
+    };
+    ess_gen::document::Document::new(
+        "adversary",
+        "v1",
+        ids.iter()
+            .map(|id| ess_gen::document::Page {
+                id: (*id).into(),
+                title: Vec::new(),
+                about: None,
+                provenance: SlicedProvenance {
+                    provenance: provenance.clone(),
+                    slice: ModelSlice::WholeModel,
+                },
+                blocks: Vec::new(),
+            })
+            .collect(),
+    )
+}
+
+#[test]
+fn checked_site_rejects_deserialized_collisions_with_late_static_assets() {
+    for ids in [
+        vec!["index", "Assets/extra"],
+        vec!["index", "assets/style.css/child"],
+        vec!["guide.html/child", "guide"],
+        vec!["guide/first", "Guide/second"],
+    ] {
+        let document = adversary_document(&ids);
+        let json = serde_json::to_string(&document).unwrap();
+        let decoded: ess_gen::document::Document = serde_json::from_str(&json).unwrap();
+        let provenance = &decoded.pages[0].provenance.provenance;
+        assert!(
+            ess_gen::html::Site::new()
+                .try_render(&decoded, provenance)
+                .is_err(),
+            "checked renderer admitted {ids:?}"
+        );
+        assert_eq!(serde_json::to_string(&decoded).unwrap(), json);
+    }
+}
+
+#[test]
+fn checked_site_preserves_valid_deserialized_nested_pages_and_every_artifact_byte() {
+    let document = adversary_document(&["index", "Plan", "Plan/Board", "plan2", "docs.v1"]);
+    let json = serde_json::to_string(&document).unwrap();
+    let yaml = serde_yaml::to_string(&document).unwrap();
+    for decoded in [
+        serde_json::from_str::<ess_gen::document::Document>(&json).unwrap(),
+        serde_yaml::from_str::<ess_gen::document::Document>(&yaml).unwrap(),
+    ] {
+        let site = ess_gen::html::Site::new();
+        let provenance = &decoded.pages[0].provenance.provenance;
+        let legacy = site.render(&decoded, provenance);
+        let checked = site.try_render(&decoded, provenance).unwrap();
+        assert_eq!(checked, legacy);
+        assert_eq!(checked.len(), decoded.pages.len() + 3);
+        ess_gen::artifact::validate_paths(checked.iter().map(|artifact| artifact.path.as_str()))
+            .unwrap();
+    }
+}
+
 // ---- the example ------------------------------------------------------------------------------
 
 /// Every `.yaml` file in the billing example, relative to it, in a stable order.

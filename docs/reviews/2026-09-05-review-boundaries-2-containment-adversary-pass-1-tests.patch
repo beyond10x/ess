@@ -1,0 +1,201 @@
+diff --git a/crates/edge/ess-cli/tests/output_containment.rs b/crates/edge/ess-cli/tests/output_containment.rs
+index 0d4fec9..99b8612 100644
+--- a/crates/edge/ess-cli/tests/output_containment.rs
++++ b/crates/edge/ess-cli/tests/output_containment.rs
+@@ -187,3 +187,117 @@ fn a_hardlinked_destination_is_refused_before_other_files_change() {
+     let output = fixture.site(&["plan/board"]);
+     fixture.assert_refused_without_writes(&output);
+ }
++
++fn composition_command() -> Command {
++    let fixtures = workspace_root().join("crates/specify/ess-composition/tests/fixtures");
++    let mut command = Command::new(env!("CARGO_BIN_EXE_ess"));
++    command.args(["compose", "--path"]);
++    command.arg(fixtures.join("compositions/workbench.yaml"));
++    for key in ["todo", "usage"] {
++        command.arg("--service").arg(format!(
++            "{key}={}",
++            fixtures.join("two-components").display()
++        ));
++    }
++    command
++}
++
++#[test]
++fn composition_companion_outputs_cannot_collide_with_the_generated_client_tree() {
++    let control = Fixture::new();
++    let valid = composition_command()
++        .arg("--out")
++        .arg(control.0.join("composition.json"))
++        .arg("--client-plan-out")
++        .arg(control.0.join("client-plan.json"))
++        .arg("--client-rust-out")
++        .arg(control.0.join("out"))
++        .output()
++        .unwrap();
++    assert!(valid.status.success(), "valid fixture: {valid:?}");
++    assert!(control.0.join("out/Cargo.toml").is_file());
++    assert!(control.0.join("out/src/lib.rs").is_file());
++
++    let mut violations = Vec::new();
++    for flag in ["--out", "--client-plan-out"] {
++        for collision in ["Cargo.toml", "src"] {
++            let fixture = Fixture::new();
++            fs::write(fixture.0.join("out/Cargo.toml"), "client manifest sentinel").unwrap();
++            let output = composition_command()
++                .arg(flag)
++                .arg(fixture.0.join("out").join(collision))
++                .arg("--client-rust-out")
++                .arg(fixture.0.join("out"))
++                .output()
++                .unwrap();
++            let manifest_preserved =
++                fs::read(fixture.0.join("out/Cargo.toml")).unwrap() == b"client manifest sentinel";
++            let source_parent_absent = !fixture.0.join("out/src").exists();
++            if output.status.success() || !manifest_preserved || !source_parent_absent {
++                violations.push(format!(
++                    "{flag} out/{collision}: exit {:?}, client manifest preserved \
++                     {manifest_preserved}, source parent absent {source_parent_absent}; stderr: {}",
++                    output.status.code(),
++                    String::from_utf8_lossy(&output.stderr).trim()
++                ));
++            }
++        }
++    }
++    assert!(
++        violations.is_empty(),
++        "companion/generated destination collisions must refuse before writes:\n{}",
++        violations.join("\n")
++    );
++}
++
++fn site_at(fixture: &Fixture, root: &Path) -> Output {
++    Command::new(env!("CARGO_BIN_EXE_ess"))
++        .current_dir(&fixture.0)
++        .args(["generate", "--path"])
++        .arg(workspace_root().join("examples/billing"))
++        .args(["--kind", "site", "--out"])
++        .arg(root)
++        .output()
++        .unwrap()
++}
++
++#[test]
++fn requested_root_normalization_preserves_parent_roots_and_rejects_hidden_files() {
++    let fixture = Fixture::new();
++    let ordinary = fixture.site(&[]);
++    assert!(ordinary.status.success());
++    let bytes = fs::read(fixture.0.join("out/index.html")).unwrap();
++    fs::create_dir(fixture.0.join("working")).unwrap();
++    let parent = site_at(&fixture, Path::new("working/../out"));
++    assert!(parent.status.success(), "parent root: {parent:?}");
++    let missing = site_at(&fixture, Path::new("absent/../out"));
++    assert!(
++        missing.status.success(),
++        "normalized missing root: {missing:?}"
++    );
++    assert!(!fixture.0.join("absent").exists());
++    assert_eq!(fs::read(fixture.0.join("out/index.html")).unwrap(), bytes);
++
++    fs::write(fixture.0.join("not-a-directory"), "root obstacle").unwrap();
++    let invalid = site_at(&fixture, Path::new("not-a-directory/../out"));
++    assert!(!invalid.status.success());
++    assert_eq!(fs::read(fixture.0.join("out/index.html")).unwrap(), bytes);
++    assert_eq!(
++        fs::read(fixture.0.join("not-a-directory")).unwrap(),
++        b"root obstacle"
++    );
++}
++
++#[test]
++fn late_site_asset_aliases_refuse_before_even_creating_output_directories() {
++    for ids in [
++        vec!["Assets/extra"],
++        vec!["assets/mermaid.min.js/child"],
++        vec!["nested/first", "Nested/second"],
++    ] {
++        let fixture = Fixture::new();
++        let output = fixture.site(&ids);
++        fixture.assert_refused_without_writes(&output);
++        assert_eq!(fs::read_dir(fixture.0.join("out")).unwrap().count(), 1);
++    }
++}
+diff --git a/crates/generate/ess-gen/tests/docs.rs b/crates/generate/ess-gen/tests/docs.rs
+index d6bdba4..5b1a7f4 100644
+--- a/crates/generate/ess-gen/tests/docs.rs
++++ b/crates/generate/ess-gen/tests/docs.rs
+@@ -27,6 +27,74 @@ use ess_domain::system::Source;
+ use ess_gen::artifact::{run, Artifact};
+ use ess_gen::docs::Docs;
+ 
++fn adversary_document(ids: &[&str]) -> ess_gen::document::Document {
++    use ess_gen::provenance::{ModelSlice, Provenance, SlicedProvenance};
++    let provenance = Provenance {
++        system: "adversary".to_owned(),
++        specification_version: "v1".to_owned(),
++        source_digest: "a".repeat(64),
++        contract_digest: "b".repeat(64),
++    };
++    ess_gen::document::Document::new(
++        "adversary",
++        "v1",
++        ids.iter()
++            .map(|id| ess_gen::document::Page {
++                id: (*id).into(),
++                title: Vec::new(),
++                about: None,
++                provenance: SlicedProvenance {
++                    provenance: provenance.clone(),
++                    slice: ModelSlice::WholeModel,
++                },
++                blocks: Vec::new(),
++            })
++            .collect(),
++    )
++}
++
++#[test]
++fn checked_site_rejects_deserialized_collisions_with_late_static_assets() {
++    for ids in [
++        vec!["index", "Assets/extra"],
++        vec!["index", "assets/style.css/child"],
++        vec!["guide.html/child", "guide"],
++        vec!["guide/first", "Guide/second"],
++    ] {
++        let document = adversary_document(&ids);
++        let json = serde_json::to_string(&document).unwrap();
++        let decoded: ess_gen::document::Document = serde_json::from_str(&json).unwrap();
++        let provenance = &decoded.pages[0].provenance.provenance;
++        assert!(
++            ess_gen::html::Site::new()
++                .try_render(&decoded, provenance)
++                .is_err(),
++            "checked renderer admitted {ids:?}"
++        );
++        assert_eq!(serde_json::to_string(&decoded).unwrap(), json);
++    }
++}
++
++#[test]
++fn checked_site_preserves_valid_deserialized_nested_pages_and_every_artifact_byte() {
++    let document = adversary_document(&["index", "Plan", "Plan/Board", "plan2", "docs.v1"]);
++    let json = serde_json::to_string(&document).unwrap();
++    let yaml = serde_yaml::to_string(&document).unwrap();
++    for decoded in [
++        serde_json::from_str::<ess_gen::document::Document>(&json).unwrap(),
++        serde_yaml::from_str::<ess_gen::document::Document>(&yaml).unwrap(),
++    ] {
++        let site = ess_gen::html::Site::new();
++        let provenance = &decoded.pages[0].provenance.provenance;
++        let legacy = site.render(&decoded, provenance);
++        let checked = site.try_render(&decoded, provenance).unwrap();
++        assert_eq!(checked, legacy);
++        assert_eq!(checked.len(), decoded.pages.len() + 3);
++        ess_gen::artifact::validate_paths(checked.iter().map(|artifact| artifact.path.as_str()))
++            .unwrap();
++    }
++}
++
+ // ---- the example ------------------------------------------------------------------------------
+ 
+ /// Every `.yaml` file in the billing example, relative to it, in a stable order.

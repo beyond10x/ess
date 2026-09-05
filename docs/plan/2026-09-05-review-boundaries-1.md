@@ -1,6 +1,6 @@
 # Review boundaries wave 1 — 2026-09-05
 
-**Implementation and integrated verification complete; publication-backed cleanup pending.** Both stories are implemented with recorded evidence. All eight offline gate steps exited 0, with 1,438 tests passed, no failures and no ignored tests; the site build also exited 0. `resource-blocker:review-wave-storage-capacity` preserves the earlier interruption and clearance. The rest of the remediation epic remains active.
+**Implemented, verified, published and unit worktrees removed.** Both stories are implemented with recorded evidence. All eight offline gate steps exited 0, with 1,438 tests passed, no failures and no ignored tests; the site build also exited 0. `resource-blocker:review-wave-storage-capacity` preserves the earlier interruption and clearance. The rest of the remediation epic remains active.
 
 Skill version 0.7.0. Integration branch: `wave/review-boundaries-1`, managed record `wt-752828a285ba`; base `fd06a4d61bfb7b4990617810655dc181d6a3ab00`. Both units serve `vision:O2`.
 
@@ -92,3 +92,7 @@ After verification the shared filesystem filled again. All unit scratch was comp
 Local integration readback: primary `main` fast-forwarded through `6b23fe37ceaeacf44ebab6b7df695b23b50863dd` and was clean. Published main remained `d032565fa518ac0c9c020a95c8e4f6a00cc0b136`. Every direct commit in the local wave range has the exact bot author and committer.
 
 Cleanup deviation: the coordinator invoked `worktree finish` before publication, contrary to the prescribed sequence, expecting refusal; the CLI instead marked both clean records finished. No tree was removed. The exact-id GC dry-run then refused both records with `no-remote-recovery-proof`: commits `7130468ce5baa8178407bc02df557f27a7cae7ee` and `6b887663736d088307b4f8957de8488740110e6a` are not reachable from an advertised remote ref. This is the enforcement boundary; do not infer publication checks from the finish verb. The full assessment is preserved in the coordinator's `target/review-boundaries-1/unit-cleanup-assessment.json`. Publication approval, a fresh GC assessment and exact-id apply are still required before retirement and the next implementation wave.
+
+## Publication and managed retirement
+
+The subsequent explicit user grant is approval-record:review-remediation-standing-publication. The bot wrapper published main at 0f80f71e7ef997e8a3c7d2ad19e9997090e8e769, and git ls-remote returned that exact SHA. Fresh exact-id GC assessed both unit records eligible and applied non-forced removals with origin main as recovery proof. Both unit branches were then deleted with git branch -d. Worktree inventory and filesystem checks confirmed both paths gone. Their ignored build/scratch trees are also gone; the previously archived evidence remains in the reusable coordinator. Earlier paragraphs describe the state at their recorded stage and are retained as history.
