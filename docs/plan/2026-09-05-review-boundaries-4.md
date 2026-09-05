@@ -24,8 +24,8 @@ Every unit owns its target and target/review-boundaries-4 scratch. TMPDIR is its
 
 | Story | Branch | Managed path under ESS trees | Build/temp | Scratch | Stage |
 | --- | --- | --- | --- | --- | --- |
-| review-semantic-diff-coverage | impl/review-semantic-diff-coverage | review-semantic-diff-coverage | target/ | target/review-boundaries-4/ | active; not dispatched |
-| review-infra-ir-invariants | impl/review-infra-ir-invariants | review-infra-ir-invariants | target/ | target/review-boundaries-4/ | active; not dispatched |
+| review-semantic-diff-coverage | impl/review-semantic-diff-coverage | review-semantic-diff-coverage | target/ | target/review-boundaries-4/ | active; implementation dispatched |
+| review-infra-ir-invariants | impl/review-infra-ir-invariants | review-infra-ir-invariants | target/ | target/review-boundaries-4/ | active; implementation dispatched |
 
 Coordinator owns every AEP mutation, Git/worktree lifecycle, shared file, Atlas coordination and integration gate. Implementors write only assigned source/tests/design/generated paths and return uncommitted handoffs. Adversaries write only assigned tests and scratch, add cases before isolated execution, and do not pre-run a baseline suite or edit production. Every review is preserved immutably before routing. Maximum two completed full passes; coordinator personally verifies any bounded final correction.
 
@@ -1652,3 +1652,53 @@ Coordinator owns every AEP mutation, Git/worktree lifecycle, shared file, Atlas 
   "cycles": []
 }
 ```
+
+## Provisioning and dispatch
+
+Opening28e97095d9e06c8b4585876a681a5eda5278c1ab has exact bot identities and passed fmt-check, action-check, planning validation and whitespace checks before either unit existed. Both managed trees were created from that exact opening commit, branched as recorded and leased under <story>-wave4. File-backed briefs are in each assigned scratch. Coordinator foreground cache session14507 at target/w4-cache.sock answered --show-stats with exit0; idle timeout is disabled and shutdown remains coordinator-owned. F01 starts with its binding-design checkpoint; InfraIR binds the owner transformation seam before code. No handoff or rollout result is claimed at dispatch.
+
+## Coordinator migration workspace
+
+F01 governance is owned by the coordinator in a separately managed Atlas tree, planned ID ess-semantic-migration-governance, branch docs/ess-semantic-migration-governance, base7b00adf3b1004e0cdd8dd12aa4fa8cc8435a0432. Its planned triple is /home/timo/.local/state/worktree/trees/b10x/atlas/ess-semantic-migration-governance, own target, target/ess-review-semantic-migration scratch. Only its planning story, ADR and dated shipping log are initially reserved; no catalogue, dependency or public-delivery source change is implied. The clean readonly Atlas authority remains separate for bot tooling. Any downstream Service SDK compatibility tree will be recorded before creation.
+
+The Atlas tree was created, branched and leased as recorded. Its governed story is
+`story:ess-semantic-diff-provenance-migration` (active, revision 5), serving O2 and deriving
+from its existing service-builder epic. Planning validation returned `valid` with the
+existing three unscoped-story and twelve review-findings advisories.
+
+## Service SDK compatibility experiment
+
+Read-only scoping refreshed Service SDK advertised main to
+`48833c6d14ec37cb3b614fca05cf7dd78f63b743`. Its six direct ESS dependencies remain pinned
+to `d1a66772a91b5411d942d7a45bbf08dfc5de4651`. The builder calls its linked generators
+and compares complete files and their ownership manifest; it has no discovered executable
+delta, impact or sliced-stamp parser. Old/new drift is therefore a byte-comparison result,
+not provenance-reader admission. Source-bound SDK artifacts use source identity, whose
+ESS algorithm remains frozen; actual unchanged output still needs measurement.
+
+Two test-only managed trees are reserved before creation, both at that exact SDK commit:
+
+| ID | Checkout | Build root | Scratch |
+| --- | --- | --- | --- |
+| ess-sdk-compat-old | `/home/timo/.local/state/worktree/trees/b10x/service-sdk/ess-sdk-compat-old` | own `target` | `target/ess-review-compat` |
+| ess-sdk-compat-new | `/home/timo/.local/state/worktree/trees/b10x/service-sdk/ess-sdk-compat-new` | own `target` | `target/ess-review-compat` |
+
+The existing third agent runs this bounded experiment under the Atlas coordination story.
+It may write only its assigned scratch and Cargo-produced local lock resolution; candidate
+dependency substitution is supplied through a scratch Cargo config. It makes no SDK source,
+planning, commit, publication or deployment change. The candidate source must be a frozen
+coordinator-provided ESS commit; it must not compile a live implementation tree. Both trees
+use the wave's explicitly named shared cache and retain separate build roots. Old-baseline
+tests and retained fixture preparation may run while F01 is implemented; the new side waits
+for the frozen candidate. Actual pins, package graphs, fixture maps, exit statuses and
+compatibility limits will be archived before restoring temporary lock changes and managed
+cleanup. A needed persistent SDK repair is a new governed SDK scope, never an implicit edit.
+
+## Binding design checkpoints
+
+The coordinator inspected and confirmed both unit designs before F01 production changes.
+F01 binds `ess-diff/2`, `ess-impact/3`, and `slice-sha256/2:<64 lowercase hex>` for
+Constructs, with whole/source identity frozen and explicit old-reader fallback limits.
+InfraIR binds a shared model query and checked detached transformation through its existing
+reader. Its projector returns a typed admission error before recording or writing a partial
+result. This fixes owner reference membership, without claiming observation completeness.
