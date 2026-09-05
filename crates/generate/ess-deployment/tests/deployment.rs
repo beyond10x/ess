@@ -1081,3 +1081,111 @@ fn persisted_duplicate_keys_are_rejected_at_every_populated_nested_map() {
     check(&lock);
     check(&deployment);
 }
+
+#[test]
+fn adversary_runtime_readers_match_compiler_slot_and_volume_refusals() {
+    let semantic = semantic();
+    let build = build();
+    let physical = physical_realization(&semantic);
+    let valid = runtime_spec(&semantic, &physical, &build);
+    let compiled = compile_runtime(&valid, &semantic, &physical, &build).unwrap();
+    assert_eq!(
+        RuntimeIr::from_json(&compiled.to_canonical_json())
+            .unwrap()
+            .to_canonical_json(),
+        compiled.to_canonical_json()
+    );
+    let mut variants = Vec::new();
+    let mut invalid = valid.clone();
+    invalid.containers[0].config[0].value = Some("forbidden optional literal".to_owned());
+    variants.push(invalid);
+    let mut invalid = valid.clone();
+    invalid.containers[0].endpoints[0].environment = "DATABASE_PASSWORD".to_owned();
+    variants.push(invalid);
+    let mut invalid = valid.clone();
+    invalid.containers[0]
+        .volume_mounts
+        .push(valid.containers[0].volume_mounts[0].clone());
+    variants.push(invalid);
+    let mut invalid = valid.clone();
+    invalid.workloads[0].storage = Some("1Gi".to_owned());
+    variants.push(invalid);
+    let mut invalid = valid.clone();
+    invalid.workloads[0]
+        .volumes
+        .push(valid.workloads[0].volumes[0].clone());
+    variants.push(invalid);
+
+    for invalid in variants {
+        assert!(compile_runtime(&invalid, &semantic, &physical, &build).is_err());
+        let mut persisted = serde_json::to_value(&compiled).unwrap();
+        persisted["containers"]["server"] = serde_json::to_value(&invalid.containers[0]).unwrap();
+        persisted["workloads"]["oracle"] = serde_json::to_value(&invalid.workloads[0]).unwrap();
+        assert_persisted_refused::<RuntimeIr>(&persisted);
+    }
+}
+
+#[test]
+fn adversary_rehashed_bundle_cannot_launder_a_build_cycle() {
+    let bundle = persisted_bundle();
+    let canonical = bundle.to_canonical_json();
+    assert_eq!(
+        ReleaseBundle::from_json(&canonical)
+            .unwrap()
+            .to_canonical_json(),
+        canonical
+    );
+    let invalid_build = bundle
+        .build
+        .to_canonical_json()
+        .replace("\"base\": \"base\"", "\"base\": \"runtime-image\"");
+    assert_ne!(invalid_build, bundle.build.to_canonical_json());
+    let build_digest = ess_deployment::Digest::of_bytes(invalid_build.as_bytes());
+    let invalid_runtime = bundle
+        .runtime
+        .to_canonical_json()
+        .replace(bundle.build.digest().as_str(), build_digest.as_str());
+    // The standalone runtime is locally valid; the included build makes the graph provable.
+    let runtime = RuntimeIr::from_json(&invalid_runtime).unwrap();
+    let mut invalid = serde_json::to_value(&bundle).unwrap();
+    invalid["build"] = serde_json::from_str(&invalid_build).unwrap();
+    invalid["runtime"] = serde_json::to_value(&runtime).unwrap();
+    for release in invalid["releases"].as_object_mut().unwrap().values_mut() {
+        release["build_digest"] = serde_json::json!(build_digest);
+        release["runtime_digest"] = serde_json::json!(runtime.digest());
+    }
+    assert_eq!(runtime.build_digest(), &build_digest);
+    assert_persisted_refused::<ReleaseBundle>(&invalid);
+}
+
+#[test]
+fn adversary_unselected_catalog_candidate_mutation_is_revalidated() {
+    let bundle = persisted_bundle();
+    let catalog: ReleaseCatalog = serde_json::from_value(serde_json::json!({
+        "format":"ess-release-catalog/1",
+        "releases": bundle.releases.values().map(|release| serde_json::json!({
+            "semantic_version":"v1", "release":release, "runtime":bundle.runtime,
+        })).collect::<Vec<_>>(),
+    }))
+    .unwrap();
+    let stack: StackSpec = serde_json::from_value(serde_json::json!({
+        "format":"ess-stack/1", "stack":"empty", "systems":[],
+        "composition_digest":bundle.digest(),
+    }))
+    .unwrap();
+    assert!(resolve_stack(&stack, &catalog).is_ok());
+    for field in ["build_digest", "semantic_digest", "runtime_digest"] {
+        let mut invalid = catalog.clone();
+        let digest = ess_deployment::Digest::of_bytes(b"other input");
+        match field {
+            "build_digest" => invalid.releases[1].release.build_digest = digest,
+            "semantic_digest" => invalid.releases[1].release.semantic_digest = digest,
+            "runtime_digest" => invalid.releases[1].release.runtime_digest = digest,
+            _ => unreachable!(),
+        }
+        assert!(resolve_stack(&stack, &invalid)
+            .unwrap_err()
+            .contains(DiagnosticCode::DigestMismatch));
+        assert_persisted_refused::<ReleaseCatalog>(&serde_json::to_value(&invalid).unwrap());
+    }
+}

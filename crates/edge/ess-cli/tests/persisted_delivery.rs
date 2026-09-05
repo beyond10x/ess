@@ -174,3 +174,104 @@ fn valid_plan_reaches_both_local_fake_executors_in_rollout_order() {
         "oras\nhelm\nhelm\n"
     );
 }
+
+#[test]
+fn adversary_duplicate_desired_keys_are_refused_before_any_executor() {
+    for extension in ["json", "yaml"] {
+        let fixture = Fixture::new();
+        let desired = fixture.write(&format!("valid.{extension}"), &plan());
+        let valid = fixture.reconcile(&desired, None, true);
+        assert!(valid.status.success(), "{:?}", valid.stderr);
+        fixture.assert_no_calls();
+        // Both duplicated releases are individually valid. Refusal must retain original keys.
+        let raw = serde_json::to_string(&plan()).unwrap();
+        let duplicate = raw.replacen(
+            "\"releases\":{",
+            &format!("\"releases\":{{\"last\":{},", plan()["releases"]["last"]),
+            1,
+        );
+        assert_ne!(duplicate, raw);
+        let desired = fixture.0.join(format!("duplicate.{extension}"));
+        std::fs::write(&desired, duplicate).unwrap();
+        let output = fixture.reconcile(&desired, None, false);
+        assert!(!output.status.success(), "{:?}", output.stdout);
+        assert!(
+            String::from_utf8_lossy(&output.stderr).contains("duplicate map key"),
+            "{:?}",
+            output.stderr
+        );
+        fixture.assert_no_calls();
+    }
+}
+
+#[test]
+fn adversary_duplicate_current_keys_block_removal_and_diff() {
+    for extension in ["json", "yaml"] {
+        let fixture = Fixture::new();
+        let mut empty = plan();
+        empty["releases"] = serde_json::json!({});
+        empty["rollout_order"] = serde_json::json!([]);
+        let desired = fixture.write("desired.json", &empty);
+        let current = fixture.write(&format!("valid.{extension}"), &plan());
+        let valid = fixture.reconcile(&desired, Some(&current), true);
+        assert!(valid.status.success(), "{:?}", valid.stderr);
+        assert!(String::from_utf8_lossy(&valid.stdout).contains("remove: last, first"));
+        fixture.assert_no_calls();
+        let raw = serde_json::to_string(&plan()).unwrap();
+        let duplicate = raw.replacen(
+            "\"images\":{",
+            &format!(
+                "\"images\":{{\"app\":{},",
+                plan()["releases"]["first"]["images"]["app"]
+            ),
+            1,
+        );
+        assert_ne!(duplicate, raw);
+        let current = fixture.0.join(format!("duplicate.{extension}"));
+        std::fs::write(&current, duplicate).unwrap();
+        let reconcile = fixture.reconcile(&desired, Some(&current), false);
+        let diff = fixture
+            .command()
+            .args(["deployment", "diff", "--from"])
+            .arg(&current)
+            .arg("--to")
+            .arg(&desired)
+            .output()
+            .unwrap();
+        for output in [reconcile, diff] {
+            assert!(!output.status.success(), "{:?}", output.stdout);
+            assert!(
+                String::from_utf8_lossy(&output.stderr).contains("duplicate map key"),
+                "{:?}",
+                output.stderr
+            );
+        }
+        fixture.assert_no_calls();
+    }
+}
+
+#[test]
+fn adversary_noncanonical_topological_order_is_refused_before_execution() {
+    let fixture = Fixture::new();
+    let mut desired = plan();
+    desired["releases"]["middle"] = desired["releases"]["first"].clone();
+    desired["releases"]["middle"]["service"] = serde_json::json!("middle");
+    desired["releases"]["middle"]["release_name"] = serde_json::json!("middle");
+    desired["releases"]["last"]["depends_on"] = serde_json::json!(["first"]);
+    desired["rollout_order"] = serde_json::json!(["first", "last", "middle"]);
+    let valid = fixture.write("valid.json", &desired);
+    let output = fixture.reconcile(&valid, None, true);
+    assert!(output.status.success(), "{:?}", output.stderr);
+    assert!(String::from_utf8_lossy(&output.stdout).contains("apply: first, last, middle"));
+    // This respects the dependency but delays a newly ready lexical predecessor.
+    desired["rollout_order"] = serde_json::json!(["first", "middle", "last"]);
+    let invalid = fixture.write("invalid.yaml", &desired);
+    let output = fixture.reconcile(&invalid, None, false);
+    assert!(!output.status.success(), "{:?}", output.stdout);
+    assert!(
+        String::from_utf8_lossy(&output.stderr).contains("canonical compiler order"),
+        "{:?}",
+        output.stderr
+    );
+    fixture.assert_no_calls();
+}
