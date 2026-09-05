@@ -533,3 +533,309 @@ fn late_site_asset_aliases_refuse_before_even_creating_output_directories() {
         assert_eq!(fs::read_dir(fixture.0.join("out")).unwrap().count(), 1);
     }
 }
+
+fn copy_local_fixture(source: &Path, destination: &Path) {
+    fs::create_dir_all(destination).unwrap();
+    for entry in fs::read_dir(source).unwrap() {
+        let entry = entry.unwrap();
+        let kind = entry.file_type().unwrap();
+        let target = destination.join(entry.file_name());
+        if kind.is_dir() {
+            copy_local_fixture(&entry.path(), &target);
+        } else {
+            assert!(kind.is_file(), "fixture must not follow links");
+            fs::write(target, fs::read(entry.path()).unwrap()).unwrap();
+        }
+    }
+}
+
+fn local_composition_command(fixture: &Fixture) -> Command {
+    let source = workspace_root().join("crates/specify/ess-composition/tests/fixtures");
+    let local = fixture.0.join("composition-fixture");
+    if !local.exists() {
+        fs::create_dir(&local).unwrap();
+        fs::write(
+            local.join("workbench.yaml"),
+            fs::read(source.join("compositions/workbench.yaml")).unwrap(),
+        )
+        .unwrap();
+        copy_local_fixture(&source.join("two-components"), &local.join("services"));
+    }
+    let mut command = Command::new(env!("CARGO_BIN_EXE_ess"));
+    command
+        .current_dir(&fixture.0)
+        .args(["compose", "--path"])
+        .arg(local.join("workbench.yaml"));
+    for name in ["todo", "usage"] {
+        command
+            .arg("--service")
+            .arg(format!("{name}={}", local.join("services").display()));
+    }
+    command
+}
+
+#[test]
+fn composition_preserves_disjoint_files_inside_generated_directories() {
+    let fixture = Fixture::new();
+    fs::create_dir(fixture.0.join("out/src")).unwrap();
+    let reference = local_composition_command(&fixture)
+        .args([
+            "--out",
+            "composition.json",
+            "--client-plan-out",
+            "client-plan.json",
+        ])
+        .output()
+        .unwrap();
+    assert!(reference.status.success(), "{reference:?}");
+    let composition = fs::read(fixture.0.join("composition.json")).unwrap();
+    let plan = fs::read(fixture.0.join("client-plan.json")).unwrap();
+    let mut together = local_composition_command(&fixture);
+    together.args([
+        "--out",
+        "out/.composition + copy.json",
+        "--client-plan-out",
+        "out/src/plan résumé.json",
+        "--client-rust-out",
+        "out",
+    ]);
+    let output = together.output().unwrap();
+    assert!(output.status.success(), "{output:?}");
+    assert_eq!(
+        fs::read(fixture.0.join("out/.composition + copy.json")).unwrap(),
+        composition
+    );
+    assert_eq!(
+        fs::read(fixture.0.join("out/src/plan résumé.json")).unwrap(),
+        plan
+    );
+    assert!(fixture.0.join("out/Cargo.toml").is_file());
+    assert!(fixture.0.join("out/src/lib.rs").is_file());
+    let before = output_snapshot(&fixture.0);
+    let retry = together.output().unwrap();
+    assert!(retry.status.success(), "{retry:?}");
+    assert_eq!(output_snapshot(&fixture.0), before);
+}
+
+#[cfg(unix)]
+#[test]
+fn composition_keeps_native_non_utf8_and_backslash_filenames_distinct() {
+    use std::ffi::OsString;
+    use std::os::unix::ffi::OsStringExt;
+
+    let fixture = Fixture::new();
+    let opaque = OsString::from_vec(b"plan-\xff.json".to_vec());
+    let output = local_composition_command(&fixture)
+        .arg("--out")
+        .arg(&opaque)
+        .args([
+            "--client-plan-out",
+            r"plan\copy:report.json",
+            "--client-rust-out",
+            "out",
+        ])
+        .output()
+        .unwrap();
+    assert!(output.status.success(), "{output:?}");
+    let composition: serde_json::Value =
+        serde_json::from_slice(&fs::read(fixture.0.join(&opaque)).unwrap()).unwrap();
+    let plan: serde_json::Value =
+        serde_json::from_slice(&fs::read(fixture.0.join(r"plan\copy:report.json")).unwrap())
+            .unwrap();
+    assert_ne!(composition, plan);
+    assert!(!fixture.0.join("plan").exists());
+    assert!(fixture.0.join("out/src/lib.rs").is_file());
+}
+
+#[cfg(unix)]
+#[test]
+fn composition_refuses_cancelled_parent_links_before_disjoint_companions_change() {
+    for flag in ["--out", "--client-plan-out"] {
+        let fixture = Fixture::new();
+        fs::create_dir(fixture.0.join("directory")).unwrap();
+        std::os::unix::fs::symlink(fixture.0.join("directory"), fixture.0.join("alias")).unwrap();
+        fs::write(fixture.0.join("companion.json"), "companion sentinel").unwrap();
+        let mut command = local_composition_command(&fixture);
+        let other = if flag == "--out" {
+            "--client-plan-out"
+        } else {
+            "--out"
+        };
+        command.args([
+            flag,
+            "alias/../new.json",
+            other,
+            "companion.json",
+            "--client-rust-out",
+            "out",
+        ]);
+        let before = output_snapshot(&fixture.0);
+        let output = command.output().unwrap();
+        assert!(!output.status.success(), "{flag}: {output:?}");
+        assert!(
+            String::from_utf8_lossy(&output.stderr).contains("symlink"),
+            "{output:?}"
+        );
+        assert_eq!(output_snapshot(&fixture.0), before);
+    }
+}
+
+fn local_tree_command(fixture: &Fixture, workflow: &str, output: &Path) -> Command {
+    let mut command = Command::new(env!("CARGO_BIN_EXE_ess"));
+    command.current_dir(&fixture.0);
+    match workflow {
+        "generate" => {
+            command.args(["generate", "--path", "spec", "--kind", "docs"]);
+        }
+        "synthesize" => {
+            command.args(["synthesize", "--path", "spec", "--target", "rust"]);
+        }
+        "go-suite" => {
+            command.args(["conform", "synthesize", "--path", "spec", "--target", "go"]);
+        }
+        "web" => {
+            command.args(["conform", "web", "--path", "spec"]);
+        }
+        "buildkit" => {
+            command.args(["project", "buildkit", "--ir", "build.ir.json"]);
+        }
+        "kubernetes" => {
+            command.args([
+                "project",
+                "kubernetes",
+                "--spec",
+                "expected.yaml",
+                "--ir",
+                "cluster.ir.json",
+            ]);
+        }
+        _ => panic!("unknown local workflow {workflow}"),
+    }
+    command.arg("--out").arg(output);
+    command
+}
+
+fn assert_local_tree_refuses_late_conflicts(fixture: &Fixture, workflow: &str) {
+    let control_root = fixture.0.join(format!("{workflow}-control"));
+    let control = local_tree_command(fixture, workflow, &control_root)
+        .output()
+        .unwrap();
+    assert!(control.status.success(), "{workflow} control: {control:?}");
+    let control_bytes = output_snapshot(&control_root);
+    let files: Vec<_> = control_bytes
+        .iter()
+        .filter(|(_, (kind, _))| kind == "file")
+        .map(|(path, _)| path)
+        .collect();
+    assert!(
+        files.len() >= 2,
+        "{workflow} did not exercise a destination set"
+    );
+    let repeat = local_tree_command(fixture, workflow, &control_root)
+        .output()
+        .unwrap();
+    assert!(repeat.status.success(), "{workflow} repeat: {repeat:?}");
+    assert_eq!(output_snapshot(&control_root), control_bytes);
+
+    for conflict in ["directory", "case-alias"] {
+        let blocked_root = fixture.0.join(format!("{workflow}-{conflict}"));
+        fs::create_dir(&blocked_root).unwrap();
+        for (index, relative) in files.iter().enumerate() {
+            let destination = blocked_root.join(relative);
+            fs::create_dir_all(destination.parent().unwrap()).unwrap();
+            if index + 1 == files.len() {
+                if conflict == "directory" {
+                    fs::create_dir(destination).unwrap();
+                } else {
+                    let alias = destination.file_name().unwrap().to_ascii_uppercase();
+                    assert_ne!(alias, destination.file_name().unwrap());
+                    fs::write(destination.with_file_name(alias), "alias sentinel").unwrap();
+                }
+            } else {
+                fs::write(destination, "generated sentinel").unwrap();
+            }
+        }
+        let before = output_snapshot(&fixture.0);
+        let output = local_tree_command(fixture, workflow, &blocked_root)
+            .output()
+            .unwrap();
+        assert!(
+            !output.status.success(),
+            "{workflow} {conflict}: {output:?}"
+        );
+        let diagnostic = String::from_utf8_lossy(&output.stderr);
+        assert!(
+            diagnostic.contains("incompatible file type")
+                || diagnostic.contains("aliases an existing entry"),
+            "{workflow} {conflict}: {output:?}"
+        );
+        assert_eq!(output_snapshot(&fixture.0), before, "{workflow} {conflict}");
+    }
+}
+
+#[test]
+fn local_generation_sinks_refuse_late_conflicts_before_any_generated_file_changes() {
+    let fixture = Fixture::new();
+    copy_local_fixture(
+        &workspace_root().join("examples/billing"),
+        &fixture.0.join("spec"),
+    );
+    for workflow in ["generate", "synthesize", "go-suite", "web"] {
+        assert_local_tree_refuses_late_conflicts(&fixture, workflow);
+    }
+}
+
+#[test]
+fn local_projection_sinks_refuse_late_conflicts_before_any_generated_file_changes() {
+    let fixture = Fixture::new();
+    fs::write(
+        fixture.0.join("build.yaml"),
+        r"format: ess-build/1
+build: containment-fixture
+platforms:
+  - os: linux
+    architecture: amd64
+nodes:
+  - id: source
+    kind: source
+    path: .
+    destination: /src
+  - id: output
+    kind: artifact
+    from: source
+    path: /src/fixture.bin
+outputs:
+  - name: binary
+    release_unit: containment-fixture
+    node: output
+    kind: binary
+",
+    )
+    .unwrap();
+    let compiled = Command::new(env!("CARGO_BIN_EXE_ess"))
+        .current_dir(&fixture.0)
+        .args([
+            "build",
+            "compile",
+            "--path",
+            "build.yaml",
+            "--out",
+            "build.ir.json",
+        ])
+        .output()
+        .unwrap();
+    assert!(
+        compiled.status.success(),
+        "local build compilation: {compiled:?}"
+    );
+    for name in ["expected.yaml", "cluster.ir.json"] {
+        fs::write(
+            fixture.0.join(name),
+            fs::read(workspace_root().join("examples/k3d-dev-cluster").join(name)).unwrap(),
+        )
+        .unwrap();
+    }
+    for workflow in ["buildkit", "kubernetes"] {
+        assert_local_tree_refuses_late_conflicts(&fixture, workflow);
+    }
+}
