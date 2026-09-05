@@ -2,7 +2,7 @@
 format: aep.planning-md/1
 id: story:review-output-containment
 kind: story
-status: draft
+status: active
 title: Validate output paths and page uniqueness before writing
 tags:
 - P0
@@ -23,7 +23,7 @@ scope:
   path: crates/generate/ess-gen/src/document.rs
 - confidence: cited
   path: crates/generate/ess-gen/src/html.rs
-revision: 8
+revision: 10
 ---
 ## Finding and source
 
