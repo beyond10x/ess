@@ -15,8 +15,10 @@ scope:
   path: crates/edge/ess-cli/src/normalize.rs
 - confidence: cited
   path: crates/edge/ess-cli/tests/normalization.rs
-- confidence: inferred
+- confidence: cited
   path: crates/edge/ess-cli/tests/normalization_typescript.rs
+- confidence: cited
+  path: crates/edge/ess-cli/tests/normalization_typescript_adversary.rs
 - confidence: cited
   path: crates/generate/schema-contract/Cargo.toml
 - confidence: cited
@@ -25,43 +27,47 @@ scope:
   path: crates/generate/schema-contract/src/realize/normalize/go_target.rs
 - confidence: cited
   path: crates/generate/schema-contract/src/realize/normalize/target.rs
-- confidence: inferred
+- confidence: cited
   path: crates/generate/schema-contract/src/realize/normalize/ts_collection.ts.txt
-- confidence: inferred
+- confidence: cited
   path: crates/generate/schema-contract/src/realize/normalize/ts_condition.ts.txt
-- confidence: inferred
+- confidence: cited
   path: crates/generate/schema-contract/src/realize/normalize/ts_expression.ts.txt
-- confidence: inferred
+- confidence: cited
   path: crates/generate/schema-contract/src/realize/normalize/ts_input.ts.txt
-- confidence: inferred
+- confidence: cited
   path: crates/generate/schema-contract/src/realize/normalize/ts_numeric.ts.txt
-- confidence: inferred
+- confidence: cited
   path: crates/generate/schema-contract/src/realize/normalize/ts_retained.ts.txt
-- confidence: inferred
+- confidence: cited
   path: crates/generate/schema-contract/src/realize/normalize/ts_runtime.ts.txt
-- confidence: inferred
+- confidence: cited
   path: crates/generate/schema-contract/src/realize/normalize/ts_schema.ts.txt
-- confidence: inferred
+- confidence: cited
   path: crates/generate/schema-contract/src/realize/normalize/ts_value.ts.txt
-- confidence: inferred
+- confidence: cited
   path: crates/generate/schema-contract/src/realize/normalize/typescript_schema.rs
-- confidence: inferred
+- confidence: cited
   path: crates/generate/schema-contract/src/realize/normalize/typescript_target.rs
-- confidence: inferred
+- confidence: cited
   path: crates/generate/schema-contract/tests/fixtures/normalization_typescript.rs
-- confidence: inferred
+- confidence: cited
+  path: crates/generate/schema-contract/tests/fixtures/normalization_typescript_adversary.ts.txt
+- confidence: cited
   path: crates/generate/schema-contract/tests/fixtures/normalization_typescript_legacy_maps.json
-- confidence: inferred
+- confidence: cited
   path: crates/generate/schema-contract/tests/fixtures/normalization_typescript_tests.ts.txt
-- confidence: inferred
+- confidence: cited
   path: crates/generate/schema-contract/tests/normalization_typescript.rs
-- confidence: inferred
+- confidence: cited
+  path: crates/generate/schema-contract/tests/normalization_typescript_adversary.rs
+- confidence: cited
   path: crates/generate/schema-contract/tests/normalization_typescript_legacy_bytes.rs
-- confidence: inferred
+- confidence: cited
   path: crates/generate/schema-contract/tests/normalization_typescript_native.rs
-- confidence: inferred
+- confidence: cited
   path: crates/generate/schema-contract/tests/normalization_typescript_schema.rs
-- confidence: inferred
+- confidence: cited
   path: crates/generate/schema-contract/tests/support/normalization_typescript.rs
 - confidence: cited
   path: docs/design/source-pinned-data-normalization.md
@@ -73,7 +79,7 @@ scope:
   path: website/docs/reference/cli.md
 - confidence: cited
   path: website/docs/reference/formats.md
-revision: 13
+revision: 36
 ---
 ## Outcome
 
