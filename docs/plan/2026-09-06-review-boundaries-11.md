@@ -301,3 +301,31 @@ revision 17 with 12 reservations, unselected and without an accepted binding. St
 after source review recording reports 180 artifacts, the same 30 empty-findings advisories,
 and `valid` with exit zero. The complete validation output is retained in
 `target/review-boundaries-11/preparation/source-review-pass1-record/01.log`.
+
+The correction's first full package attempt executed 646 cases, with 643 passing and three
+failing producer cases, exit 101 in 50.127 seconds (implementor's retained lane). All four frozen
+review cases passed. Root checked `synthesize.rs:286` and `authored.rs:769`: both original typed
+Display implementations indent each cause line by two spaces. The newly added producer helper's
+raw multiline substring check was therefore wrong. Root authorizes comparing the exactly
+indented original cause while retaining equality to the fixed complete D1 message, its exact
+fixture hash and every earlier assertion. The failed attempt's source, log and partial exports
+remain; the corrected helper uses new attempt-2 snapshots and exports. This does not change the
+independent plan or expected diagnostic.
+
+The final correction is frozen at `8560854dae5998a3b4f1b03abb60b75af4783893`. Its full package
+lane passes all 646 cases with no failures or ignored cases, 62 summaries, exit 0 in
+42.390921502 seconds. Root read the complete correction, verified 21 seal records, 14,879 evidence
+entries, 2,953 cache entries, 951 external entries and all 1,103 final source snapshots. Each of
+the three producer profiles has 554 source inputs matching that snapshot. Its 39 report and
+four refusal-control index paths were checked as opaque bytes. Both commit identities are the bot.
+The first source review's fixed outcome was recorded after that commit, and source attack 2 is
+active under `expression_review_resume`. Fresh review scratch is `adversary-pass-2` in the unit's
+wave directory; browser scratch is `/home/timo/.cache/ess-w11-review2-tmp`.
+
+`verification-report:coverage-writer-correction-and-gate-preparation` retains the full separate
+orchestration audit and root's corrections. Use integration runner v6, receipt wrapper v3,
+no-report reader v3 and AEP invocation runner v2. The fixed semantic plan and mapper remain
+unchanged. Source preinspection checkpoint 02 covers 17 inputs and must match the final integration
+before execution. Only process-observation and receipt-persistence probes have run; no wave 11
+integration gate, actual mapping, helper correspondence or publication has occurred. Planning
+validation reports 181 artifacts, 30 existing empty-findings advisories, and `valid`, exit 0.
