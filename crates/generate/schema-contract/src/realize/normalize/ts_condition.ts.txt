@@ -1,0 +1,49 @@
+import { MISSING, fail } from './value.js';
+import { integer } from './numeric.js';
+import { schemaEqual } from './schema.js';
+import { required, type Expression, type Context } from './expression.js';
+
+export type Condition = (context: Context, at: string) => boolean;
+export function isPresent(value: Expression): Condition {
+  return (context, at) => value(context, at + '/value') !== MISSING;
+}
+export function asBoolean(value: Expression): Condition {
+  return (context, at) => {
+    const result = required(value, context, at + '/value');
+    return typeof result === 'boolean' ? result : fail(at, 'boolean_value', 'condition is not a boolean');
+  };
+}
+export function equalValues(left: Expression, right: Expression): Condition {
+  return (context, at) => {
+    const a = left(context, at + '/left'), b = right(context, at + '/right');
+    if (a === MISSING || b === MISSING) return false;
+    // Frozen reference behavior: the recipe-wide format-5/6 flag also permits
+    // two floating tokens in statically admitted Integer equality. Mixed numeric
+    // representations still require signed integers. This is a known core
+    // limitation, not an implicit Binary64 output conversion or TS type admission.
+    if (context.binary64 && typeof a === 'number' && typeof b === 'number') return a === b;
+    if (typeof a === 'number' || typeof a === 'bigint') integer(a, at);
+    if (typeof b === 'number' || typeof b === 'bigint') integer(b, at);
+    return schemaEqual(a, b);
+  };
+}
+export function greaterThan(left: Expression, right: Expression): Condition {
+  return (context, at) => integer(required(left, context, at + '/left'), at)
+    > integer(required(right, context, at + '/right'), at);
+}
+export function startsWith(value: Expression, prefix: Expression): Condition {
+  return (context, at) => {
+    const a = required(value, context, at + '/value'), b = required(prefix, context, at + '/prefix');
+    if (typeof a !== 'string' || typeof b !== 'string') fail(at, 'string_value', 'prefix comparison requires strings');
+    return a.startsWith(b);
+  };
+}
+export function allOf(conditions: readonly Condition[]): Condition {
+  return (context, at) => conditions.every((condition, i) => condition(context, at + '/conditions/' + i));
+}
+export function anyOf(conditions: readonly Condition[]): Condition {
+  return (context, at) => conditions.some((condition, i) => condition(context, at + '/conditions/' + i));
+}
+export function negate(condition: Condition): Condition {
+  return (context, at) => !condition(context, at + '/condition');
+}

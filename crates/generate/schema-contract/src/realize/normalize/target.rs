@@ -7,7 +7,16 @@ use serde::Serialize;
 
 use super::{finding, Plan, Refused, Root};
 use crate::bundle::source_digest;
-use crate::realize::TargetConfiguration;
+
+// Normalization has package-bearing executable targets. Structural TypeScript
+// deliberately retains its separate, fieldless configuration.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(tag = "language", rename_all = "snake_case")]
+pub(super) enum Configuration {
+    Rust { package: String },
+    Go { package: String, module: String },
+    Typescript { package: String },
+}
 
 /// Complete executable-target files; no successful partial adapter is returned.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -23,7 +32,7 @@ pub struct Realization {
 pub struct Report {
     format: &'static str,
     generator_version: &'static str,
-    configuration: TargetConfiguration,
+    configuration: Configuration,
     recipe_digest: String,
     roots: Vec<SchemaIdentity>,
     files: BTreeMap<String, String>,
@@ -92,7 +101,7 @@ pub(super) fn rust(plan: &Plan, package: &str) -> Result<Realization, Refused> {
     files.insert("src/schemas.rs".to_owned(), embedded);
     Ok(finish(
         plan,
-        TargetConfiguration::Rust {
+        Configuration::Rust {
             package: package.to_owned(),
         },
         files,
@@ -162,7 +171,7 @@ pub(super) fn sources(plan: &Plan) -> Result<SourceFiles, Refused> {
 
 pub(super) fn finish(
     plan: &Plan,
-    configuration: TargetConfiguration,
+    configuration: Configuration,
     mut files: BTreeMap<String, String>,
     identities: Vec<SchemaIdentity>,
 ) -> Realization {

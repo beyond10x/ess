@@ -10,6 +10,8 @@ mod recipe;
 mod retained;
 mod source;
 mod target;
+mod typescript_schema;
+mod typescript_target;
 
 use serde_json::Value;
 use std::collections::BTreeMap;
@@ -128,6 +130,11 @@ pub struct Plan {
 }
 
 impl Plan {
+    /// Emit a standalone ES2022 normalization library with exact JSON-text boundaries.
+    pub fn typescript(&self, package: &str) -> Result<Realization, Refused> {
+        typescript_target::generate(self, package)
+    }
+
     /// Emit a standalone Rust normalization library with pinned schemas and source provenance.
     pub fn rust(&self, package: &str) -> Result<Realization, Refused> {
         target::rust(self, package)

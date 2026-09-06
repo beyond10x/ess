@@ -1,0 +1,108 @@
+import { MISSING, Refusal, pointer, scalarCompare, type Value, type Finding } from './value.js';
+import { numericCompare } from './numeric.js';
+import { base64Shape } from './retained.js';
+
+export type Schema = boolean | {
+  readonly ref?: string;
+  readonly types?: readonly string[];
+  readonly constant?: Value;
+  readonly enumeration?: readonly Value[];
+  readonly properties?: ReadonlyMap<string, Schema>;
+  readonly required?: readonly string[];
+  readonly additional?: Schema;
+  readonly names?: Schema;
+  readonly items?: Schema;
+  readonly prefix?: readonly Schema[];
+  readonly minimum?: bigint | number;
+  readonly maximum?: bigint | number;
+  readonly exclusiveMinimum?: bigint | number;
+  readonly exclusiveMaximum?: bigint | number;
+  readonly minLength?: bigint | number;
+  readonly maxLength?: bigint | number;
+  readonly minItems?: bigint | number;
+  readonly maxItems?: bigint | number;
+  readonly base64?: boolean;
+  readonly anyOf?: readonly Schema[];
+  readonly oneOf?: readonly Schema[];
+  readonly allOf?: readonly Schema[];
+};
+export interface RootSchema { readonly root: Schema; readonly definitions: ReadonlyMap<string, Schema> }
+function numeric(value: Value): value is bigint | number {
+  return typeof value === 'bigint' || typeof value === 'number';
+}
+export function schemaEqual(a: Value, b: Value): boolean {
+  if (numeric(a) && numeric(b)) return numericCompare(a, b) === 0;
+  if (a === b) return true;
+  if (Array.isArray(a) && Array.isArray(b))
+    return a.length === b.length && a.every((v, i) => schemaEqual(v, b[i]!));
+  if (a instanceof Map && b instanceof Map)
+    return a.size === b.size && [...a].every(([key, v]) => b.has(key) && schemaEqual(v, b.get(key)!));
+  return false;
+}
+function typeMatches(name: string, value: Value): boolean {
+  switch (name) {
+    case 'null': return value === null;
+    case 'boolean': return typeof value === 'boolean';
+    case 'string': return typeof value === 'string';
+    case 'number': return numeric(value);
+    case 'integer': return typeof value === 'bigint' || (typeof value === 'number' && Number.isInteger(value));
+    case 'array': return Array.isArray(value);
+    case 'object': return value instanceof Map;
+    default: throw new Error('unqualified schema type');
+  }
+}
+function collect(schema: Schema, value: Value, at: string, defs: ReadonlyMap<string, Schema>): string[] {
+  if (typeof schema === 'boolean') return schema ? [] : [at];
+  const out: string[] = [];
+  if (schema.ref !== undefined) {
+    const target = defs.get(schema.ref);
+    if (target === undefined) throw new Error('unbound checked schema reference');
+    out.push(...collect(target, value, at, defs));
+  }
+  if (schema.types !== undefined && !schema.types.some(name => typeMatches(name, value))) out.push(at);
+  if (schema.constant !== undefined && !schemaEqual(schema.constant, value)) out.push(at);
+  if (schema.enumeration !== undefined && !schema.enumeration.some(v => schemaEqual(v, value))) out.push(at);
+  if (schema.anyOf !== undefined && !schema.anyOf.some(s => collect(s, value, at, defs).length === 0)) out.push(at);
+  if (schema.oneOf !== undefined && schema.oneOf.filter(s => collect(s, value, at, defs).length === 0).length !== 1) out.push(at);
+  for (const child of schema.allOf ?? []) out.push(...collect(child, value, at, defs));
+  if (numeric(value)) {
+    if (schema.minimum !== undefined && numericCompare(value, schema.minimum) < 0) out.push(at);
+    if (schema.maximum !== undefined && numericCompare(value, schema.maximum) > 0) out.push(at);
+    if (schema.exclusiveMinimum !== undefined && numericCompare(value, schema.exclusiveMinimum) <= 0) out.push(at);
+    if (schema.exclusiveMaximum !== undefined && numericCompare(value, schema.exclusiveMaximum) >= 0) out.push(at);
+  }
+  if (typeof value === 'string') {
+    const length = BigInt([...value].length);
+    if (schema.minLength !== undefined && numericCompare(length, schema.minLength) < 0) out.push(at);
+    if (schema.maxLength !== undefined && numericCompare(length, schema.maxLength) > 0) out.push(at);
+    if (schema.base64 && !base64Shape(value)) out.push(at);
+  }
+  if (Array.isArray(value)) {
+    const length = BigInt(value.length), prefix = schema.prefix ?? [];
+    if (schema.minItems !== undefined && numericCompare(length, schema.minItems) < 0) out.push(at);
+    if (schema.maxItems !== undefined && numericCompare(length, schema.maxItems) > 0) out.push(at);
+    for (let i = 0; i < value.length; i++) {
+      const child = i < prefix.length ? prefix[i]! : schema.items;
+      if (child !== undefined) out.push(...collect(child, value[i]!, at + '/' + i, defs));
+    }
+  }
+  if (value instanceof Map) {
+    for (const name of schema.required ?? []) if (!value.has(name)) out.push(at);
+    let extras = false;
+    for (const key of [...value.keys()].sort(scalarCompare)) {
+      if (schema.names !== undefined) out.push(...collect(schema.names, key, at, defs));
+      if (schema.properties?.has(key)) out.push(...collect(schema.properties.get(key)!, value.get(key)!, pointer(at, key), defs));
+      else if (schema.additional === false) extras = true;
+      else if (schema.additional !== undefined) out.push(...collect(schema.additional, value.get(key)!, pointer(at, key), defs));
+    }
+    if (extras) out.push(at);
+  }
+  return out;
+}
+export function validate(schema: RootSchema, value: Value, at: string): void {
+  if (value === MISSING) throw new Error('missing stage value');
+  const findings: Finding[] = collect(schema.root, value, at, schema.definitions)
+    .sort(scalarCompare).map(pointer => ({ pointer, rule: 'schema_validation',
+      detail: 'value does not satisfy the selected stage contract' }));
+  if (findings.length !== 0) throw new Refusal(findings);
+}

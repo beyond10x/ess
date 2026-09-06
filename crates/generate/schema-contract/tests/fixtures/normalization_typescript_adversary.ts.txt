@@ -1,0 +1,42 @@
+import { Normalizer, type NormalizationResult } from './index.js';
+import { positionArities } from './bindings.js';
+
+interface Case { input: string; output?: string; pointer?: string; rule?: string }
+const cases: readonly Case[] = __CASES__;
+const normalizer = new Normalizer();
+let count = 0;
+function check(condition: boolean, message: string): void {
+  if (!condition) throw new Error(message);
+  count++;
+}
+function failure(result: NormalizationResult, at: string, rule: string): boolean {
+  return !result.ok && Object.keys(result).sort().join(',') === 'findings,ok'
+    && result.findings.length === 1 && result.findings[0]!.pointer === at
+    && result.findings[0]!.rule === rule;
+}
+for (const c of cases) {
+  const outer = normalizer.normalize('retain', c.input);
+  const result = outer.ok ? normalizer.normalizeBase64Json('adapt', JSON.parse(outer.json) as string) : outer;
+  check(c.output !== undefined ? result.ok && result.json === c.output : failure(result, c.pointer!, c.rule!), JSON.stringify({c,result}));
+}
+const input = '[[["a","b"],["c","d"]],[["e","f"]]]';
+const output = '[[{"a/b~":"a"},{"a/b~":"c"}],[{"a/b~":"e"}]]';
+function good(): boolean {
+  const r = normalizer.normalize('pair~/', input);
+  return r.ok && r.json === output;
+}
+check(good(), 'public nested position evaluation');
+// Corrupt only a generated test package's private binding. This is a defensive
+// contract probe; the public API does not expose this map for mutation.
+const at = '/branches/pair~0~1/0/value/value/value/fields/a~1b~0';
+const mutable = positionArities as Map<string, bigint>;
+check(mutable.get(at) === 2n, 'compiler must bind the full static escaped pointer');
+mutable.delete(at);
+check(failure(normalizer.normalize('pair~/', input), at, 'position_value'), 'missing private authority');
+mutable.set(at, 0n);
+check(failure(normalizer.normalize('pair~/', input), at, 'position_value'), 'zero private authority');
+mutable.set(at, 3n);
+check(failure(normalizer.normalize('pair~/', input), at, 'position_value'), 'valid index cannot authorize wrong full arity');
+mutable.set(at, 2n);
+check(good(), 'fresh evaluation after defensive refusal');
+console.log('adversary retained reentry and nested arity: executed '+count+'; failed 0 (8 public reentries, 2 public nested executions, 1 binding assertion, 3 private corruptions)');
