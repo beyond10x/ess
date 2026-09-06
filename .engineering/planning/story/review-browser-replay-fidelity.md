@@ -15,7 +15,7 @@ scope:
   path: crates/verify/ess-conformance
 - confidence: inferred
   path: docs/design/review-replay-subset.md
-revision: 3
+revision: 4
 ---
 ## Finding and source
 
@@ -41,11 +41,22 @@ No production interpreter or universal evaluator; primitive comparison vectors m
 
 ## Scope
 
-Derived 2026-09-05 by the coordinator from review citations; independently re-scope before future dispatch. Directory tokens cover source and tests within the named package; references used only as evidence are excluded.
+Derived 2026-09-06 by story-scoper against ESS e339f4ce3d5046443ff8e99b0ea72099bc23e410.
+Entries distinguish cited surfaces from inferred implementation reservations.
 
-- `crates/verify/ess-conformance` — cited; owning implementation or documented surface.
-- `docs/design/review-replay-subset.md` — inferred; planned edit surface, verify before dispatch.
-- Confidence: medium — inferred; exact package-local test filenames remain an implementation choice.
-- Would collide with: stories sharing any of these exact tokens — inferred; see the complete pair list in `docs/plan/2026-09-05-review-remediation.md` before concurrent scheduling.
-- Shared integration files: planning journal, wave page and final change record belong to the coordinator — inferred execution assignment.
+- **Primary surface:** `crates/verify/ess-conformance` — cited; the story names this owner, and replay projection, browser behavior and existing projection tests remain package-local.
+- **Producer files and symbols:** `src/web.rs:54` (`emit`), `:75` (`model`), `:108` (`outcome`), `:123` (`subject`), `:143` (`view`), `:181` (`set_source`) within the primary surface — cited; these determine the model information available to replay.
+- **Browser files and symbols:** `assets/player.js:56` (`literal`), `:68` (`groupSteps`), `:111` (`applyAct`), `:185` (`parseFilter`), `:204` (`evaluateViews`), `:262` (`mark`), and `assets/index.html:176` (state), `:200` (refusal heading), `:205` (views) within the primary surface — cited; these own the demonstrated F15 behavior and visible limitations.
+- **Validation surface:** `src/web.rs:229`, `:256`, `:275` and `tests/synthesis.rs:2231` within the primary surface — cited; existing checks inspect emitted assets or collect canonical artifacts and do not exercise browser semantics.
+- **Required new validation:** owner-package generic-player browser cases and independent expected vectors for every F15 counterexample, including reset/back replay and visible unsupported results — inferred; exact filenames depend on the browser harness delivered by coverage work.
+- **Binding document:** `docs/design/review-replay-subset.md` — inferred; absent at this baseline and required to choose supported assignment/value/filter/order/parameter semantics, unknown propagation, markers and any replay format migration.
+- **Scope limit:** this is the minimum unconditional reservation; a stronger persisted replay representation or changed CLI selection requires refreshed reservations for concrete CLI, format-catalog and public-documentation paths before dispatch — inferred.
+- **Confidence:** medium — inferred; defect locations and owners are established, but accepted replay/1 intentionally leaves stronger representation and format consequence to this story.
+- **Would collide with:** the conformance package's web emitter, paired-model admission, player assets, generic-browser harness and compatibility fixtures; the same package's primitive-comparison and synthesis-vector work — cited.
+- **Sequencing:** refresh source/API assumptions after coverage-writer integration; preserve complete original-byte admission, pairing, selection, coverage/refusal display and historical compatibility fixtures — inferred.
+- **Coordinator-owned records:** planning journal, wave selection, integration evidence and shipment records remain outside the implementation reservation — inferred.
 
+
+## Fresh inspection note
+
+The read-only `count_writer_scope8` report at ESS e339f4ce3d5046443ff8e99b0ea72099bc23e410 confirms F15 remains open. Accepted coverage transport intentionally preserves replay/1 limitations. Assignment literals in `ResolvedPayloadValue::Literal` are String (`ess-compiler/src/ir.rs:744`), not an already typed JSON scalar; conversion metadata, precise subject sources, ranking and filter AST are absent from replay/1. A richer projection requires a separate versioned binding before implementation. Runtime corrections using the existing shape must expose information loss instead of guessing. Refresh reservations and source assumptions after coverage integration. This is preparation, with no source implementation or F15 test result claimed.
