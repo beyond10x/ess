@@ -315,6 +315,69 @@ fn generated_rust_client_matches_the_committed_corpus_and_compiles() {
 }
 
 #[test]
+fn generated_rust_client_executes_the_byte_transport_boundary() {
+    let artifacts = both_components(&compiled(), false)
+        .client_plan()
+        .rust_artifacts();
+    let temp = std::env::temp_dir().join(format!(
+        "ess-composition-client-runtime-{}",
+        std::process::id()
+    ));
+    for artifact in artifacts.values() {
+        let path = temp.join(artifact.path());
+        std::fs::create_dir_all(path.parent().expect("artifact has a parent"))
+            .expect("runtime fixture directory is creatable");
+        std::fs::write(path, artifact.contents()).expect("generated artifact is writable");
+    }
+
+    // Compile the actual emission as a separate crate. The fixture is a downstream
+    // caller of its public API, with no access to private Operation construction.
+    let rustc = std::env::var_os("RUSTC").unwrap_or_else(|| "rustc".into());
+    let library = temp.join("libcomposition_fixture.rlib");
+    let executable = temp.join("client_boundary_tests");
+    let mut compile_library = std::process::Command::new(&rustc);
+    compile_library
+        .args([
+            "--edition=2021",
+            "--crate-type=lib",
+            "--crate-name=composition_fixture",
+        ])
+        .arg(temp.join("src/lib.rs"))
+        .arg("-o")
+        .arg(&library);
+    run_client_boundary_step(&mut compile_library, &temp.join("compile-library.log"));
+
+    let mut compile_tests = std::process::Command::new(&rustc);
+    compile_tests
+        .args(["--edition=2021", "--test", "-D", "warnings"])
+        .arg(fixture().parent().unwrap().join("client_boundary.rs"))
+        .arg("--extern")
+        .arg(format!("composition_fixture={}", library.display()))
+        .arg("-o")
+        .arg(&executable);
+    run_client_boundary_step(&mut compile_tests, &temp.join("compile-tests.log"));
+
+    let mut execute_tests = std::process::Command::new(executable);
+    execute_tests.args(["--nocapture", "--test-threads=1"]);
+    run_client_boundary_step(&mut execute_tests, &temp.join("runtime-tests.log"));
+    println!("generated-client evidence retained in {}", temp.display());
+}
+
+fn run_client_boundary_step(command: &mut std::process::Command, log: &Path) {
+    let invocation = format!("{command:?}");
+    let output = command.output().expect("generated-client command starts");
+    let evidence = format!(
+        "command: {invocation}\nexit: {}\nstdout:\n{}\nstderr:\n{}",
+        output.status,
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr),
+    );
+    std::fs::write(log, &evidence).expect("generated-client evidence is writable");
+    println!("{evidence}");
+    assert!(output.status.success(), "{evidence}");
+}
+
+#[test]
 fn exact_component_identity_digest_and_closed_registry_are_enforced() {
     let model = compiled();
     let todo_key = key("todo");
