@@ -28,7 +28,7 @@ scope:
   path: website/docs/guides/generate-artifacts.md
 - confidence: cited
   path: website/docs/reference/formats.md
-revision: 17
+revision: 18
 ---
 ## Finding and source
 
@@ -97,3 +97,9 @@ Incoming main6bf76440c38331f6dd5214e5667c210b58a24015 supplies independently pub
 ## Integrated verification
 
 verification-report:review-boundaries-10-integrated records clean9e82d207b4c7ef6713c19b3bb842c8453018a6bc:8declared task-check lanes plus site-build and planning all returned0;2018workspace cases passed,0failed/ignored,178summaries. Every tracked source byte stayed unchanged. Both public merges match independently composed hashes, preserving the incoming TypeScript normalization work. The gate establishes source implementation completion under the standing grant; publication, CI, immutable public delivery and managed cleanup remain separately observed outcomes.
+
+## Published source and verified public delivery
+
+Published source239996d846460aee342ce42514378c25b2be5152 has successful exact-source CI, source bundle and documentation validation with both bot actor fields. Joint Atlas publication34044223213 succeeded on exact controlb0fb59be02712e221c2a07d3e589120ed0ae3d7a. Its complete1709-file artifact pins this reader/schema source pair, and the independent artifact verifier passed356routes/1328sitefiles. Full Website gate passed99tests,0failed/skipped/cancelled,141.370037115seconds; every artifact byte remained unchanged. Both live provenance endpoints and all3changed documentation pages matched exact artifact bytes. The dated wave page preserves every run/hash and the separate three existing Atlas workspace fence issues.
+
+Implementation evidence is archived and independently reread; the exact managed implementation tree and merged unit branch were retired through the manager/non-forced Git path. Joint Website support archival/cleanup is still finishing. Actual future ESS coverage producer correspondence remains unexecuted and required before that later writer's publication. No release, tag, installed binary or default switch is selected here.

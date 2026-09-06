@@ -223,3 +223,79 @@ merged automatically. The automatic changelog merge placed the schema entry unde
 root kept the new schema entry under Unreleased and preserved the incoming release section.
 This is integration of another session's published preparation, not a release or tag selected
 by this remediation wave. A fresh full gate will verify the resulting versioned source.
+
+## Final source and public delivery
+
+The fresh gate passed on239996d846460aee342ce42514378c25b2be5152: all10 commands returned0,
+2018workspace tests passed,0failed/ignored,178summaries,143.793475881seconds for tests.
+The run completed16:00:49.987709UTC with every tracked byte unchanged. That exact green commit
+was published and read back as main. verification-report:review-boundaries-10-versioned-source
+retains all new rows separately from the earlier gate. Source CI34044137562, bundle34044137573
+and documentation validation34044137563 all completed successfully on that exact commit,
+attempt1, with both actor fields b10x-bot[bot].
+
+Atlas publication34044223213 completed successfully, attempt1, under exact clean remote control
+b0fb59be02712e221c2a07d3e589120ed0ae3d7a with both actor fields b10x-bot[bot]. It selected the
+published ESS239996d source and AEP658cf76e6371b1628f6de69548e724b52803f5c2. The complete
+layout-v2 artifact9992629303 contains1709files and all24source bundles. Its downloaded ZIP is
+32604525bytes, SHA2563e0e482f6f6482eb5313db2557ebd243b4414cd5037b8dea8caeb9c6e4c9cfee;
+source-set SHA256ec193897f199ad03c2c267395c7ff2d8bc5833c95cdb171fc73d2fe8e9a667fb.
+Website runtime remainsfc4571534765c098ed861bc326da4d3da0d1df63; the Docs System executable
+pin remains1c8c31697e87235dda8bec9467264b22a7fa0c95, distinct from its selected public source.
+
+The immutable-artifact verifier passed for356routes and1328sitefiles. The complete Website gate
+then passed99tests,0failed/skipped/cancelled, in141.370037115seconds on the first attempt.
+Gate log SHA25669232941290d84ba0421f5e3adf396778839a3679f1e1dbfd382d85389fe7891.
+All1709downloaded artifact files remained unchanged. Navigation, code, search, browser, audit,
+crawl and provenance checks ran;357search-indexed HTML pages remain distinct from356routes.
+
+At16:09:25–16:09:26UTC, both live provenance endpoints and the changed AEP CLI, ESS generation
+guide and ESS format pages returned200 and matched their artifact bytes exactly. Provenance
+SHA256b15b35b88e38d9a1166c580f06d3cb9f2a676ae9ca945db12558591df1b61025. This is five actual
+live fetches, not an assertion that every production file was downloaded.
+
+The fresh Atlas fence ran16:02:41.247250–16:05:54.651875UTC,193.404612626seconds. All149Rust
+tests passed,0failed/ignored,6summaries. Aggregate exit remains1 with the same three operational
+issues: the primary AgentIDE manifest is v4 but its collector refuses it, primary Website's
+Docs System pin differs from the catalog, and Widgets lacks Serves. Catalog, live Pages,
+projection, markdown and brand passed. Full log SHA256
+9d3948969995883e372201353dd0a619cf04e0d5b2ebeffcc8e6600fa7239799. No primary checkout or
+unrelated work was changed to suppress those observations.
+
+## Implementation unit retired
+
+Root independently verified the schema archive, all7369retained entries including5454files and
+52literal symlinks, and every13361original target entry before removal. Archive24810260bytes,
+SHA256f748755540c85c7d7500fc616cf9e177926e20f14bcccd9b06e957d2f9c70c4c, lives in
+/home/timo/.cache/ess-review/2026-09-06-resume/schema-resource-unit-retirement. Both reports,
+initial failures, original source and CLI receipts are retained; every excluded cache entry is
+inventoried. Shared Cargo link targets were never traversed or removed.
+
+After published ancestry verification, only the exact owned target was removed, the lease ended,
+and worktree finish succeeded. Root reviewed every GC assessment and applied only
+ess-schema-resource-identity. The manager recorded removal and the merged branch was deleted
+without force. Other eligible Atlas work was preserved. Joint Website evidence retirement is
+the remaining wave-closing operation at that observation; its completion follows.
+
+## Joint Website retirement and wave closure
+
+The joint Website archive is sealed at
+`/home/timo/.cache/ess-review/2026-09-06-resume/joint-coverage-schema-website-retirement`.
+Its 25,170,415 compressed bytes have SHA256
+`8c571049f5c4b05cdee14db820b81dbc144f630a631aacecba061b54ee72daf3`.
+Root independently verified all 2,455 regular payloads (73,566,441 bytes), 621 directories,
+one literal symlink and one socket metadata record, without extraction or dereferencing.
+The fresh source traversal checked all 62,168 entries, including all 59,091 excluded cache
+entries. All 1,709 publication files matched the original and every retained after manifest;
+all five saved live bodies matched the publication; all 158 tracked files matched HEAD.
+
+With no process using the checkout or assigned TMP, root removed only the seven reviewed
+generated roots. The tracked tree stayed clean, the lease ended and `worktree finish` succeeded.
+All 22 GC assessments were reviewed. Only `aep-coverage-website-verification` was applied;
+the manager recorded removal and the path is absent. Other eligible Atlas work was preserved.
+Both implementation units and the joint Website support tree are now retired with their
+records retained. The continuing ESS/AEP coordinators retain the next writer's preparation.
+
+Wave 10 is closed: source, exact source CI, public delivery and task-owned retirement are
+recorded. The coverage writer is still unselected at this closure and requires a fresh replan.
+No release, tag, installed binary replacement or default transition was selected by this wave.
