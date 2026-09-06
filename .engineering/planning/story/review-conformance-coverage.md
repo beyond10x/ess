@@ -32,7 +32,7 @@ scope:
   path: website/docs/guides/verify-conformance.md
 - confidence: cited
   path: website/docs/reference/formats.md
-revision: 23
+revision: 24
 ---
 ## Finding and source
 
@@ -175,3 +175,29 @@ retention root. Managed retirement remains a separate step after recording this 
 
 Suite4/report1 defaults remain. Browser-fidelity F15 and the execution-recovery implementation
 obligation remain open. Source and delivery completion do not select a release, tag or installation.
+
+## Completed managed retirement and coordination
+
+The coverage implementation and Website support worktrees were finished and removed through
+`worktree gc` with only exact reviewed IDs `ess-conformance-coverage-writer` and
+`ess-wave11-website-verification`. Root reviewed all 23 dry-run rows, preserving every unrelated
+record, including the other eligible Atlas tree. Fresh advertised remote recovery was required
+by the manager. Both paths are absent from disk and Git's worktree inventories; the registry
+records both as removed. The merged `impl/review-conformance-coverage` branch was deleted
+without force. Fourteen exact archived scratch/cache roots were retired before manager removal.
+All source/evidence entry sets and archive hashes matched before that retirement; original
+read-only directory modes remain in the archives. The root integration evidence is retained.
+
+Atlas coordination is implemented and published at
+`d10b7484d64c28830774c9dae0ec531fcc47acb2`, with exact bot author/committer and remote readback.
+ADR 0040 and its story/log record the reader-first source order, actual 43-case correspondence,
+public delivery and unresolved installed/generated adoption. Its closing full fence passed
+149 Rust cases and exited 1 in 173.083087076 seconds for the same three primary-workspace issues;
+catalog, live Pages, projection, Markdown and brand passed. Raw log SHA256 is
+`8dc06b27744af1b2be17612a4172d7cf903a941c090525b11ad08f161663478b`.
+Final Atlas record-only Markdown/diff checks passed. This does not assert organization-wide
+convergence or release/default readiness.
+
+Wave 11 is closed. The remediation epic has 19 implemented stories and 12 drafts, none active.
+The next turn must use the fresh store and refreshed integrated-source scope; earlier candidate
+preparation does not select another implementation wave.

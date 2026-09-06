@@ -96,7 +96,7 @@ before a unit is created. The wave page and file brief are updated at each hando
 
 The coverage writer is implemented, reviewed and published at a333949e6581e151f2c3b154d7df30e125d07375.
 All ten integrated gate lanes, 43 actual AEP correspondence cases, four no-report controls, exact
-source CI and public delivery have passed. Closing records and managed cleanup are in progress.
+source CI and public delivery have passed. Closing records, Atlas coordination and managed cleanup are complete.
 The paragraphs below retain the earlier handoffs; the final evidence section supersedes their
 preparation-only status statements.
 
@@ -438,3 +438,29 @@ one socket metadata record, four embedded manifests and all 1,709 publication fi
 62,168 current source entries, all 158 tracked HEAD files and the five saved live bodies matched.
 The 58,538 excluded generated/cache entries are inventoried; no source gate was rerun by the
 archive verifier. No tree or external root has yet been removed.
+
+## Completed managed retirement and coordination
+
+The coverage implementation and Website support worktrees were finished and removed through
+`worktree gc` with only exact reviewed IDs `ess-conformance-coverage-writer` and
+`ess-wave11-website-verification`. Root reviewed all 23 dry-run rows, preserving every unrelated
+record, including the other eligible Atlas tree. Fresh advertised remote recovery was required
+by the manager. Both paths are absent from disk and Git's worktree inventories; the registry
+records both as removed. The merged `impl/review-conformance-coverage` branch was deleted
+without force. Fourteen exact archived scratch/cache roots were retired before manager removal.
+All source/evidence entry sets and archive hashes matched before that retirement; original
+read-only directory modes remain in the archives. The root integration evidence is retained.
+
+Atlas coordination is implemented and published at
+`d10b7484d64c28830774c9dae0ec531fcc47acb2`, with exact bot author/committer and remote readback.
+ADR 0040 and its story/log record the reader-first source order, actual 43-case correspondence,
+public delivery and unresolved installed/generated adoption. Its closing full fence passed
+149 Rust cases and exited 1 in 173.083087076 seconds for the same three primary-workspace issues;
+catalog, live Pages, projection, Markdown and brand passed. Raw log SHA256 is
+`8dc06b27744af1b2be17612a4172d7cf903a941c090525b11ad08f161663478b`.
+Final Atlas record-only Markdown/diff checks passed. This does not assert organization-wide
+convergence or release/default readiness.
+
+Wave 11 is closed. The remediation epic has 19 implemented stories and 12 drafts, none active.
+The next turn must use the fresh store and refreshed integrated-source scope; earlier candidate
+preparation does not select another implementation wave.
