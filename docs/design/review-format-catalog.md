@@ -222,6 +222,25 @@ wire version and does not establish collection completeness.
 
 ## Other machine output and artifact containers
 
+### Qualified namespace topology migration
+
+`infra-observation/2` adds mandatory closed `coverage` (`namespace_topology`, exact namespace).
+All seventeen declared kind lists are required. Namespace identity and referenced-node membership
+are checked. It deliberately omits configuration/Secret payloads, literals and probes. The old
+observation/1 writer retains successful bytes; a failed read no longer changes scope through retry.
+
+`infra-ir/2` adds this coverage to the canonical model and digest. The IR/1 reader forbids the
+field; legacy documents keep their canonical bytes. The new reader checks qualification against
+membership and omitted content, and checked transformations cannot change it. Independent frozen
+old-envelope tests reject version 2. This is a concrete format migration within the existing
+infrastructure bounded context, not a shared envelope with EssIr.
+
+`infra-graph/2` and `infra-drift/2` retain coverage. Drift refuses unequal coverage (including
+legacy/qualified pairs), and does not interpret referenced-node membership as cluster membership.
+`infra-simulation/2` retains coverage in `CollectionLimited` unknown outcomes. The unversioned
+diagnosis presentation adds `INFRA-DIAG-021`; projections refuse qualified input before output.
+No infrastructure projection format changes. No deployed reader is assumed upgraded by this change.
+
 These outputs have no ESS version discriminator or persisted admission protocol. A JSON/YAML
 presentation can be redirected to disk, but doing so does not make it a versioned input to another
 ESS command. They have no own semantic/release version or whole-document digest unless a field

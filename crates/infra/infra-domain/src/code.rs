@@ -93,6 +93,9 @@ infra_codes! {
     /// A labels or selector map carries a value that is not a string.
     NonStringSelector => "INFRA-SELECTOR-001",
 
+    /// An environment reference has no supported source or several competing sources.
+    UnsupportedEnvironmentSource => "INFRA-ENV-001",
+
     /// A workload's pod template declares no containers.
     EmptyWorkload => "INFRA-WORKLOAD-001",
 
@@ -294,8 +297,8 @@ mod tests {
     fn every_code_renders_in_the_infra_namespace_and_the_generated_list_holds_them_all() {
         assert_eq!(
             InfraCode::ALL.len(),
-            25,
-            "the catalogue is twenty-five codes: eleven observation refusals, four IR-document \
+            26,
+            "the catalogue is twenty-six codes: twelve observation refusals, four IR-document \
              ones and ten desired-state-specification ones"
         );
         for code in InfraCode::ALL {

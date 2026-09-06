@@ -228,6 +228,14 @@ whole-system semantic validity or support in the separate restricted TypeScript 
 
 ## Infrastructure records
 
+The namespace topology profile adds `infra-observation/2`, `infra-ir/2`, `infra-graph/2`,
+`infra-drift/2` and `infra-simulation/2`. Its closed coverage claim names the namespace and
+`namespace_topology` profile. IR coverage belongs to the canonical model and its digest;
+graph and drift retain that coverage, and simulation retains it in its typed unknown reason.
+Version 1 bytes remain unchanged, and version 1 cannot carry version 2 qualifications.
+See [namespace collection](../guides/check-infrastructure.md#collect-one-namespaces-topology)
+for omitted content, comparison restrictions and projection refusal.
+
 | Document and discriminator | Independent identity | Reader and byte contract |
 |---|---|---|
 | `format: infra-observation/1` | Context, scan time, scanner release | Sanitized scanner output; permissive raw DTO → observation validation. Pretty JSON without an appended LF; scanner-reported hash covers those file bytes. It does not prove complete collection scope. [Writer][scanner], [reader][observation] |

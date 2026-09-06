@@ -187,6 +187,7 @@ pub fn compile(observation: &Observation) -> InfraIr {
             &workload.identity.name,
         );
         let resolved = resolve_workload(
+            observation.coverage.is_none(),
             workload,
             &key,
             &services,
@@ -413,6 +414,7 @@ pub fn compile(observation: &Observation) -> InfraIr {
             scout_version: observation.scout_version.clone(),
         },
         model: InfraModel {
+            coverage: observation.coverage.clone(),
             namespaces,
             nodes,
             workloads,
@@ -437,6 +439,7 @@ pub fn compile(observation: &Observation) -> InfraIr {
 /// CLI: the body is long because a workload has many reference sites, not because it is complex.
 #[allow(clippy::too_many_arguments, clippy::too_many_lines)]
 fn resolve_workload(
+    configuration_keys_observed: bool,
     workload: &Workload,
     key: &str,
     services: &BTreeMap<String, infra_domain::network::Service>,
@@ -457,7 +460,7 @@ fn resolve_workload(
         let map_key = scoped_key(namespace, name);
         if let Some(config_map) = config_maps.get(&map_key) {
             if let Some(needed_key) = needed_key {
-                if !config_map.keys.contains_key(needed_key) {
+                if configuration_keys_observed && !config_map.keys.contains_key(needed_key) {
                     facts.push(UnresolvedReference {
                         from: from.clone(),
                         site,
@@ -494,7 +497,7 @@ fn resolve_workload(
         let map_key = scoped_key(namespace, name);
         if let Some(secret) = secrets.get(&map_key) {
             if let Some(needed_key) = needed_key {
-                if !secret.keys.contains_key(needed_key) {
+                if configuration_keys_observed && !secret.keys.contains_key(needed_key) {
                     facts.push(UnresolvedReference {
                         from: from.clone(),
                         site,

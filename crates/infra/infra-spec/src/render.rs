@@ -177,10 +177,23 @@ pub fn drift_to_text(report: &InfraDrift) -> String {
         &report.to.digest[..12]
     );
     let _ = writeln!(rendered);
+    if let Some(coverage) = &report.coverage {
+        let _ = writeln!(
+            rendered,
+            "coverage: namespace {}; {}",
+            coverage.namespace(),
+            coverage.limitation()
+        );
+    }
     if report.changes.is_empty() {
         let _ = writeln!(
             rendered,
-            "no change: the two snapshots are the same cluster state"
+            "{}",
+            if report.coverage.is_some() {
+                "no change in compared topology; omitted content remains unobserved"
+            } else {
+                "no change: the two snapshots are the same cluster state"
+            }
         );
         return rendered;
     }
@@ -226,6 +239,7 @@ fn change_name(change: &InfraChange) -> &'static str {
         InfraChange::ClaimPhaseChanged { .. } => "claim_phase_changed",
         InfraChange::ReferenceBroke { .. } => "reference_broke",
         InfraChange::ReferenceHealed { .. } => "reference_healed",
+        InfraChange::TopologyDigestChanged => "topology_digest_changed",
     }
 }
 

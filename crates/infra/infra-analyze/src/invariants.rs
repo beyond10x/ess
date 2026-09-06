@@ -118,6 +118,9 @@ pub struct InvariantCandidate {
 /// Mines every invariant candidate out of one IR, in code order.
 #[must_use]
 pub fn candidates(ir: &InfraIr) -> Vec<InvariantCandidate> {
+    if ir.model().coverage.is_some() {
+        return Vec::new();
+    }
     let mut found = Vec::new();
     candidate_uniform_registry(ir, &mut found);
     candidate_uniform_pdb_coverage(ir, &mut found);

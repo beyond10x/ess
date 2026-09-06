@@ -13,13 +13,13 @@
 
 use std::collections::BTreeMap;
 
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
 use crate::code::{InfraCode, ValidationErrors};
 
 /// A whole observation bundle, exactly as the scanner wrote it.
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct RawBundle {
     /// The format claim, `infra-observation/1`.
     #[serde(default)]
@@ -33,6 +33,9 @@ pub struct RawBundle {
     /// The scanner's version.
     #[serde(default)]
     pub scout_version: String,
+    /// Required only for observation/2; missing on legacy observations.
+    #[serde(default)]
+    pub coverage: Option<RawCollectionCoverage>,
     /// One `kubectl get -o json` list per kind, keyed by the scanner's kind name.
     ///
     /// A map of [`Value`]s rather than twelve typed fields, so a kind this model does not read is
@@ -42,8 +45,19 @@ pub struct RawBundle {
     pub kinds: BTreeMap<String, Value>,
 }
 
+/// Unvalidated collection scope, admitted through the domain's coverage conversion.
+#[derive(Debug, Clone, Deserialize, Serialize)]
+#[serde(tag = "profile", rename_all = "snake_case", deny_unknown_fields)]
+pub enum RawCollectionCoverage {
+    /// The fixed namespace topology subset.
+    NamespaceTopology {
+        /// The requested namespace, validated before constructing coverage.
+        namespace: String,
+    },
+}
+
 /// The `metadata` block every object carries.
-#[derive(Debug, Clone, Default, Deserialize)]
+#[derive(Debug, Clone, Default, Deserialize, Serialize)]
 pub struct RawMeta {
     /// The object's name.
     #[serde(default)]
@@ -63,7 +77,7 @@ pub struct RawMeta {
 }
 
 /// One entry of `metadata.ownerReferences`.
-#[derive(Debug, Clone, Default, Deserialize)]
+#[derive(Debug, Clone, Default, Deserialize, Serialize)]
 pub struct RawOwnerRef {
     /// The owner's kind, such as `ReplicaSet`.
     #[serde(default)]
@@ -77,7 +91,7 @@ pub struct RawOwnerRef {
 }
 
 /// A namespace.
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct RawNamespace {
     /// Identity and labels.
     #[serde(default)]
@@ -85,7 +99,7 @@ pub struct RawNamespace {
 }
 
 /// A node.
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct RawNode {
     /// Identity and labels.
     #[serde(default)]
@@ -96,7 +110,7 @@ pub struct RawNode {
 }
 
 /// The slice of a node's status the model reads.
-#[derive(Debug, Clone, Default, Deserialize)]
+#[derive(Debug, Clone, Default, Deserialize, Serialize)]
 pub struct RawNodeStatus {
     /// Resource capacity, quantities kept as the API's strings.
     #[serde(default)]
@@ -107,7 +121,7 @@ pub struct RawNodeStatus {
 }
 
 /// The `status.nodeInfo` block.
-#[derive(Debug, Clone, Default, Deserialize)]
+#[derive(Debug, Clone, Default, Deserialize, Serialize)]
 pub struct RawNodeInfo {
     /// CPU architecture, such as `amd64`.
     #[serde(default)]
@@ -130,7 +144,7 @@ pub struct RawNodeInfo {
 }
 
 /// A deployment, statefulset or daemonset — one raw shape, because the API gives them one.
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct RawWorkload {
     /// Identity and labels.
     #[serde(default)]
@@ -141,7 +155,7 @@ pub struct RawWorkload {
 }
 
 /// The slice of a workload's spec the model reads.
-#[derive(Debug, Clone, Default, Deserialize)]
+#[derive(Debug, Clone, Default, Deserialize, Serialize)]
 pub struct RawWorkloadSpec {
     /// Desired replicas. Absent on daemonsets, whose count is the node set's.
     #[serde(default)]
@@ -158,7 +172,8 @@ pub struct RawWorkloadSpec {
 }
 
 /// A label selector; only `matchLabels` is modelled in v1 of the subset.
-#[derive(Debug, Clone, Default, Deserialize)]
+#[derive(Debug, Clone, Default, Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
 pub struct RawSelector {
     /// Equality requirements, values unchecked until validation.
     #[serde(default, rename = "matchLabels")]
@@ -166,7 +181,7 @@ pub struct RawSelector {
 }
 
 /// A workload's pod template.
-#[derive(Debug, Clone, Default, Deserialize)]
+#[derive(Debug, Clone, Default, Deserialize, Serialize)]
 pub struct RawPodTemplate {
     /// The template's metadata; its labels are what selectors match.
     #[serde(default)]
@@ -177,7 +192,7 @@ pub struct RawPodTemplate {
 }
 
 /// The slice of a pod spec the model reads.
-#[derive(Debug, Clone, Default, Deserialize)]
+#[derive(Debug, Clone, Default, Deserialize, Serialize)]
 pub struct RawPodSpec {
     /// The service account the pods run as; `default` when absent.
     #[serde(default, rename = "serviceAccountName")]
@@ -194,7 +209,7 @@ pub struct RawPodSpec {
 }
 
 /// One container of a pod template.
-#[derive(Debug, Clone, Default, Deserialize)]
+#[derive(Debug, Clone, Default, Deserialize, Serialize)]
 pub struct RawContainer {
     /// The container's name.
     #[serde(default)]
@@ -226,7 +241,7 @@ pub struct RawContainer {
 }
 
 /// One environment variable.
-#[derive(Debug, Clone, Default, Deserialize)]
+#[derive(Debug, Clone, Default, Deserialize, Serialize)]
 pub struct RawEnvVar {
     /// The variable's name.
     #[serde(default)]
@@ -240,7 +255,8 @@ pub struct RawEnvVar {
 }
 
 /// Where an environment variable's value comes from.
-#[derive(Debug, Clone, Default, Deserialize)]
+#[derive(Debug, Clone, Default, Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
 pub struct RawEnvVarSource {
     /// A key of a configmap.
     #[serde(default, rename = "configMapKeyRef")]
@@ -257,7 +273,7 @@ pub struct RawEnvVarSource {
 }
 
 /// A `{name, key, optional}` reference into a configmap or secret.
-#[derive(Debug, Clone, Default, Deserialize)]
+#[derive(Debug, Clone, Default, Deserialize, Serialize)]
 pub struct RawKeySelector {
     /// The configmap's or secret's name.
     #[serde(default)]
@@ -271,7 +287,7 @@ pub struct RawKeySelector {
 }
 
 /// A downward-API field reference.
-#[derive(Debug, Clone, Default, Deserialize)]
+#[derive(Debug, Clone, Default, Deserialize, Serialize)]
 pub struct RawFieldRef {
     /// The referenced field path, such as `metadata.name`.
     #[serde(default, rename = "fieldPath")]
@@ -279,7 +295,7 @@ pub struct RawFieldRef {
 }
 
 /// One `envFrom` source.
-#[derive(Debug, Clone, Default, Deserialize)]
+#[derive(Debug, Clone, Default, Deserialize, Serialize)]
 pub struct RawEnvFrom {
     /// A prefix prepended to every imported key.
     #[serde(default)]
@@ -293,7 +309,7 @@ pub struct RawEnvFrom {
 }
 
 /// A `{name, optional}` reference to a configmap or secret.
-#[derive(Debug, Clone, Default, Deserialize)]
+#[derive(Debug, Clone, Default, Deserialize, Serialize)]
 pub struct RawNameRef {
     /// The referenced object's name.
     #[serde(default)]
@@ -304,7 +320,7 @@ pub struct RawNameRef {
 }
 
 /// One volume mount of a container.
-#[derive(Debug, Clone, Default, Deserialize)]
+#[derive(Debug, Clone, Default, Deserialize, Serialize)]
 pub struct RawVolumeMount {
     /// The volume's name.
     #[serde(default)]
@@ -322,7 +338,7 @@ pub struct RawVolumeMount {
 /// The sources are optional fields rather than an enum because that is the API's own shape; the
 /// validated model turns them into one. A volume with a source this model does not read becomes
 /// `Other` there — tolerated, not refused.
-#[derive(Debug, Clone, Default, Deserialize)]
+#[derive(Debug, Clone, Default, Deserialize, Serialize)]
 pub struct RawVolume {
     /// The volume's name, what mounts refer to.
     #[serde(default)]
@@ -345,7 +361,7 @@ pub struct RawVolume {
 }
 
 /// A configmap volume source.
-#[derive(Debug, Clone, Default, Deserialize)]
+#[derive(Debug, Clone, Default, Deserialize, Serialize)]
 pub struct RawConfigMapVolume {
     /// The configmap's name.
     #[serde(default)]
@@ -356,7 +372,7 @@ pub struct RawConfigMapVolume {
 }
 
 /// A secret volume source.
-#[derive(Debug, Clone, Default, Deserialize)]
+#[derive(Debug, Clone, Default, Deserialize, Serialize)]
 pub struct RawSecretVolume {
     /// The secret's name.
     #[serde(default, rename = "secretName")]
@@ -367,7 +383,7 @@ pub struct RawSecretVolume {
 }
 
 /// A persistent volume claim volume source.
-#[derive(Debug, Clone, Default, Deserialize)]
+#[derive(Debug, Clone, Default, Deserialize, Serialize)]
 pub struct RawClaimSource {
     /// The claim's name.
     #[serde(default, rename = "claimName")]
@@ -375,7 +391,7 @@ pub struct RawClaimSource {
 }
 
 /// A host path volume source.
-#[derive(Debug, Clone, Default, Deserialize)]
+#[derive(Debug, Clone, Default, Deserialize, Serialize)]
 pub struct RawHostPath {
     /// The path on the node.
     #[serde(default)]
@@ -383,7 +399,7 @@ pub struct RawHostPath {
 }
 
 /// A probe, any of the three kinds.
-#[derive(Debug, Clone, Default, Deserialize)]
+#[derive(Debug, Clone, Default, Deserialize, Serialize)]
 pub struct RawProbe {
     /// An HTTP GET handler.
     #[serde(default, rename = "httpGet")]
@@ -412,7 +428,7 @@ pub struct RawProbe {
 }
 
 /// An HTTP GET probe handler.
-#[derive(Debug, Clone, Default, Deserialize)]
+#[derive(Debug, Clone, Default, Deserialize, Serialize)]
 pub struct RawHttpGet {
     /// The request path.
     #[serde(default)]
@@ -423,7 +439,7 @@ pub struct RawHttpGet {
 }
 
 /// A TCP probe handler.
-#[derive(Debug, Clone, Default, Deserialize)]
+#[derive(Debug, Clone, Default, Deserialize, Serialize)]
 pub struct RawTcpSocket {
     /// The port, a number or a named port.
     #[serde(default)]
@@ -431,7 +447,7 @@ pub struct RawTcpSocket {
 }
 
 /// A container's resource requests and limits, quantities kept as the API's strings.
-#[derive(Debug, Clone, Default, Deserialize)]
+#[derive(Debug, Clone, Default, Deserialize, Serialize)]
 pub struct RawResources {
     /// Requested quantities per resource.
     #[serde(default)]
@@ -442,7 +458,7 @@ pub struct RawResources {
 }
 
 /// A service.
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct RawService {
     /// Identity and labels.
     #[serde(default)]
@@ -453,7 +469,7 @@ pub struct RawService {
 }
 
 /// The slice of a service's spec the model reads.
-#[derive(Debug, Clone, Default, Deserialize)]
+#[derive(Debug, Clone, Default, Deserialize, Serialize)]
 pub struct RawServiceSpec {
     /// The service type, such as `ClusterIP`.
     #[serde(default, rename = "type")]
@@ -467,7 +483,7 @@ pub struct RawServiceSpec {
 }
 
 /// One declared service port.
-#[derive(Debug, Clone, Default, Deserialize)]
+#[derive(Debug, Clone, Default, Deserialize, Serialize)]
 pub struct RawServicePort {
     /// The port's name, required when a service declares several.
     #[serde(default)]
@@ -484,7 +500,7 @@ pub struct RawServicePort {
 }
 
 /// An ingress, `networking.k8s.io/v1` shape.
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct RawIngress {
     /// Identity and labels.
     #[serde(default)]
@@ -495,7 +511,7 @@ pub struct RawIngress {
 }
 
 /// The slice of an ingress spec the model reads.
-#[derive(Debug, Clone, Default, Deserialize)]
+#[derive(Debug, Clone, Default, Deserialize, Serialize)]
 pub struct RawIngressSpec {
     /// The routing rules.
     #[serde(default)]
@@ -506,7 +522,7 @@ pub struct RawIngressSpec {
 }
 
 /// One ingress rule.
-#[derive(Debug, Clone, Default, Deserialize)]
+#[derive(Debug, Clone, Default, Deserialize, Serialize)]
 pub struct RawIngressRule {
     /// The host the rule applies to.
     #[serde(default)]
@@ -517,7 +533,7 @@ pub struct RawIngressRule {
 }
 
 /// The `http` block of an ingress rule.
-#[derive(Debug, Clone, Default, Deserialize)]
+#[derive(Debug, Clone, Default, Deserialize, Serialize)]
 pub struct RawIngressHttp {
     /// The paths.
     #[serde(default)]
@@ -525,7 +541,7 @@ pub struct RawIngressHttp {
 }
 
 /// One ingress path.
-#[derive(Debug, Clone, Default, Deserialize)]
+#[derive(Debug, Clone, Default, Deserialize, Serialize)]
 pub struct RawIngressPath {
     /// The URL path.
     #[serde(default)]
@@ -539,7 +555,7 @@ pub struct RawIngressPath {
 }
 
 /// An ingress backend.
-#[derive(Debug, Clone, Default, Deserialize)]
+#[derive(Debug, Clone, Default, Deserialize, Serialize)]
 pub struct RawIngressBackend {
     /// The service form of a backend; resource backends are not modelled.
     #[serde(default)]
@@ -547,7 +563,7 @@ pub struct RawIngressBackend {
 }
 
 /// The service half of an ingress backend.
-#[derive(Debug, Clone, Default, Deserialize)]
+#[derive(Debug, Clone, Default, Deserialize, Serialize)]
 pub struct RawIngressServiceBackend {
     /// The service's name.
     #[serde(default)]
@@ -558,7 +574,7 @@ pub struct RawIngressServiceBackend {
 }
 
 /// An ingress backend's port.
-#[derive(Debug, Clone, Default, Deserialize)]
+#[derive(Debug, Clone, Default, Deserialize, Serialize)]
 pub struct RawServiceBackendPort {
     /// The port's name.
     #[serde(default)]
@@ -569,7 +585,7 @@ pub struct RawServiceBackendPort {
 }
 
 /// A configmap.
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct RawConfigMap {
     /// Identity and labels.
     #[serde(default)]
@@ -586,7 +602,7 @@ pub struct RawConfigMap {
 ///
 /// Values deserialize as [`Value`] because whether each one *is* a digest object is the hard rule
 /// [`crate::code::InfraCode::UnsanitizedSecret`] enforces, and a rule needs to see what it refuses.
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct RawSecret {
     /// Identity and labels.
     #[serde(default)]
@@ -603,7 +619,7 @@ pub struct RawSecret {
 }
 
 /// A service account.
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct RawServiceAccount {
     /// Identity and labels.
     #[serde(default)]
@@ -611,7 +627,7 @@ pub struct RawServiceAccount {
 }
 
 /// A persistent volume claim.
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct RawClaim {
     /// Identity and labels.
     #[serde(default)]
@@ -625,7 +641,7 @@ pub struct RawClaim {
 }
 
 /// The slice of a claim's status the model reads.
-#[derive(Debug, Clone, Default, Deserialize)]
+#[derive(Debug, Clone, Default, Deserialize, Serialize)]
 pub struct RawClaimStatus {
     /// The lifecycle phase, `Bound` on a healthy claim.
     #[serde(default)]
@@ -633,7 +649,7 @@ pub struct RawClaimStatus {
 }
 
 /// The slice of a claim's spec the model reads.
-#[derive(Debug, Clone, Default, Deserialize)]
+#[derive(Debug, Clone, Default, Deserialize, Serialize)]
 pub struct RawClaimSpec {
     /// The storage class.
     #[serde(default, rename = "storageClassName")]
@@ -647,7 +663,7 @@ pub struct RawClaimSpec {
 }
 
 /// A claim's resource block.
-#[derive(Debug, Clone, Default, Deserialize)]
+#[derive(Debug, Clone, Default, Deserialize, Serialize)]
 pub struct RawClaimResources {
     /// Requested quantities, `storage` among them.
     #[serde(default)]
@@ -655,7 +671,7 @@ pub struct RawClaimResources {
 }
 
 /// A replicaset — the rung between a deployment and its pods.
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct RawReplicaSet {
     /// Identity, labels and owner references; the owner is the deployment.
     #[serde(default)]
@@ -666,7 +682,7 @@ pub struct RawReplicaSet {
 }
 
 /// The slice of a replicaset's spec the model reads.
-#[derive(Debug, Clone, Default, Deserialize)]
+#[derive(Debug, Clone, Default, Deserialize, Serialize)]
 pub struct RawReplicaSetSpec {
     /// Desired replicas.
     #[serde(default)]
@@ -674,7 +690,7 @@ pub struct RawReplicaSetSpec {
 }
 
 /// A job.
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct RawJob {
     /// Identity, labels and owner references; the owner, when there is one, is a cronjob.
     #[serde(default)]
@@ -688,7 +704,7 @@ pub struct RawJob {
 }
 
 /// The slice of a job's spec the model reads.
-#[derive(Debug, Clone, Default, Deserialize)]
+#[derive(Debug, Clone, Default, Deserialize, Serialize)]
 pub struct RawJobSpec {
     /// How many completions the job wants; the API's default is one.
     #[serde(default)]
@@ -696,7 +712,7 @@ pub struct RawJobSpec {
 }
 
 /// The slice of a job's status the model reads.
-#[derive(Debug, Clone, Default, Deserialize)]
+#[derive(Debug, Clone, Default, Deserialize, Serialize)]
 pub struct RawJobStatus {
     /// Pods that reached `Succeeded`.
     #[serde(default)]
@@ -707,7 +723,7 @@ pub struct RawJobStatus {
 }
 
 /// A cronjob.
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct RawCronJob {
     /// Identity and labels.
     #[serde(default)]
@@ -718,7 +734,7 @@ pub struct RawCronJob {
 }
 
 /// The slice of a cronjob's spec the model reads.
-#[derive(Debug, Clone, Default, Deserialize)]
+#[derive(Debug, Clone, Default, Deserialize, Serialize)]
 pub struct RawCronJobSpec {
     /// The cron schedule expression.
     #[serde(default)]
@@ -729,7 +745,7 @@ pub struct RawCronJobSpec {
 }
 
 /// A pod disruption budget.
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct RawPodDisruptionBudget {
     /// Identity and labels.
     #[serde(default)]
@@ -740,7 +756,7 @@ pub struct RawPodDisruptionBudget {
 }
 
 /// The slice of a pod disruption budget's spec the model reads.
-#[derive(Debug, Clone, Default, Deserialize)]
+#[derive(Debug, Clone, Default, Deserialize, Serialize)]
 pub struct RawPodDisruptionBudgetSpec {
     /// The pod selector.
     #[serde(default)]
@@ -754,7 +770,7 @@ pub struct RawPodDisruptionBudgetSpec {
 }
 
 /// A horizontal pod autoscaler.
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct RawHorizontalPodAutoscaler {
     /// Identity and labels.
     #[serde(default)]
@@ -765,7 +781,7 @@ pub struct RawHorizontalPodAutoscaler {
 }
 
 /// The slice of an autoscaler's spec the model reads.
-#[derive(Debug, Clone, Default, Deserialize)]
+#[derive(Debug, Clone, Default, Deserialize, Serialize)]
 pub struct RawHorizontalPodAutoscalerSpec {
     /// What the autoscaler scales.
     #[serde(default, rename = "scaleTargetRef")]
@@ -779,7 +795,7 @@ pub struct RawHorizontalPodAutoscalerSpec {
 }
 
 /// An autoscaler's `scaleTargetRef`.
-#[derive(Debug, Clone, Default, Deserialize)]
+#[derive(Debug, Clone, Default, Deserialize, Serialize)]
 pub struct RawScaleTargetRef {
     /// The target's kind, such as `Deployment`.
     #[serde(default)]
@@ -790,7 +806,7 @@ pub struct RawScaleTargetRef {
 }
 
 /// A pod.
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct RawPod {
     /// Identity, labels and owner references.
     #[serde(default)]
@@ -804,7 +820,7 @@ pub struct RawPod {
 }
 
 /// The slice of a pod's status the model reads.
-#[derive(Debug, Clone, Default, Deserialize)]
+#[derive(Debug, Clone, Default, Deserialize, Serialize)]
 pub struct RawPodStatus {
     /// The lifecycle phase.
     #[serde(default)]
@@ -815,7 +831,7 @@ pub struct RawPodStatus {
 }
 
 /// One container's observed status.
-#[derive(Debug, Clone, Default, Deserialize)]
+#[derive(Debug, Clone, Default, Deserialize, Serialize)]
 pub struct RawContainerStatus {
     /// The container's name.
     #[serde(default)]
@@ -832,7 +848,7 @@ pub struct RawContainerStatus {
 }
 
 /// A container status's `state` block.
-#[derive(Debug, Clone, Default, Deserialize)]
+#[derive(Debug, Clone, Default, Deserialize, Serialize)]
 pub struct RawContainerState {
     /// Present while the container waits instead of running.
     #[serde(default)]
@@ -840,7 +856,7 @@ pub struct RawContainerState {
 }
 
 /// The waiting state's essentials; the free-text `message` is deliberately not read.
-#[derive(Debug, Clone, Default, Deserialize)]
+#[derive(Debug, Clone, Default, Deserialize, Serialize)]
 pub struct RawContainerWaiting {
     /// The machine-readable reason, such as `CrashLoopBackOff`.
     #[serde(default)]

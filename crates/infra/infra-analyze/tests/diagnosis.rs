@@ -42,10 +42,18 @@ fn fires_on(diagnosis: &Diagnosis, code: DiagCode, subject: &str) -> bool {
 }
 
 #[test]
-fn every_registered_code_fires_at_least_once_on_the_example_observation() {
+fn every_registered_code_fires_at_least_once_on_the_observation_fixtures() {
     // The registry-level guard: a rule cannot be registered without being load-bearing on the
     // committed fixture, and a disabled rule fails here naming its code.
-    let diagnosis = example_diagnosis();
+    let mut diagnosis = example_diagnosis();
+    let raw: infra_domain::RawBundle = serde_json::from_str(include_str!(
+        "../../infra-compiler/tests/fixtures/namespace-topology.json"
+    ))
+    .unwrap();
+    let scoped = infra_compiler::compile(&infra_domain::Observation::try_from(raw).unwrap());
+    diagnosis
+        .findings
+        .extend(infra_analyze::diagnose(&scoped).findings);
     for code in DiagCode::ALL {
         assert!(
             !of_code(&diagnosis, *code).is_empty(),

@@ -56,6 +56,11 @@ pub const SIMULATION_FORMAT: &str = "infra-simulation/1";
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Serialize)]
 #[serde(tag = "reason", rename_all = "snake_case")]
 pub enum UnknownReason {
+    /// The collection's deliberately omitted fields are insufficient for intent evaluation.
+    CollectionLimited {
+        /// The exact collection scope/profile responsible for withholding the conclusion.
+        coverage: infra_domain::coverage::CollectionCoverage,
+    },
     /// The scope selected no subject at all.
     ///
     /// Deliberately not vacuous truth. "Every container in `payments` declares limits" over a
@@ -102,6 +107,7 @@ pub enum UnknownReason {
 impl std::fmt::Display for UnknownReason {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
+            Self::CollectionLimited { coverage } => f.write_str(coverage.limitation()),
             Self::NoSubjectInScope => f.write_str("the scope selects no subject in this snapshot"),
             Self::NamespaceUnobserved { namespace } => {
                 write!(f, "namespace `{namespace}` was not observed")
@@ -380,7 +386,11 @@ pub fn simulate(spec: &InfraSpec, ir: &InfraIr) -> Simulation {
     }
 
     Simulation {
-        format: SIMULATION_FORMAT,
+        format: if ir.model().coverage.is_some() {
+            "infra-simulation/2"
+        } else {
+            SIMULATION_FORMAT
+        },
         specification: spec.name.clone(),
         snapshot: SnapshotRef {
             context: ir.provenance.context.clone(),
@@ -426,6 +436,14 @@ fn evaluate(
     properties: &BTreeMap<String, WorkloadProperties>,
     facts: &BTreeMap<String, WorkloadFacts>,
 ) -> (Vec<String>, Vec<SubjectOutcome>) {
+    if let Some(coverage) = &ir.model().coverage {
+        return undecidable_scope(
+            &expectation.scope,
+            UnknownReason::CollectionLimited {
+                coverage: coverage.clone(),
+            },
+        );
+    }
     // The one kind that names its own subject: cluster-scoped, so there is nothing to select.
     if let ExpectationKind::WorkloadExists {
         namespace,

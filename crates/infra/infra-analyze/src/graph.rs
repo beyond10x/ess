@@ -320,6 +320,7 @@ type EdgeId = (GraphNode, EdgeRelation, GraphNode);
 /// The dependency graph of one compiled IR.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct InfraGraph {
+    coverage: Option<infra_domain::coverage::CollectionCoverage>,
     /// Every observed object, whether or not anything references it.
     nodes: BTreeSet<GraphNode>,
     /// The sites of every edge, keyed by the edge's identity.
@@ -336,6 +337,7 @@ impl InfraGraph {
     #[must_use]
     pub fn of(ir: &InfraIr) -> Self {
         let mut graph = Self {
+            coverage: ir.model().coverage.clone(),
             nodes: BTreeSet::new(),
             edges: BTreeMap::new(),
             pod_owners: BTreeMap::new(),
@@ -414,6 +416,7 @@ impl InfraGraph {
     #[must_use]
     pub fn restricted_to(&self, namespace: &str) -> Self {
         let mut kept = Self {
+            coverage: self.coverage.clone(),
             nodes: self
                 .nodes
                 .iter()
@@ -917,6 +920,9 @@ fn deployment_of_replicaset(replicaset: &str, template_hash: Option<&str>) -> Op
 /// The graph as a persistable JSON document.
 #[derive(Debug, Clone, Serialize)]
 pub struct GraphDocument {
+    /// Collection scope and omitted content for graph/2; absent from legacy graph/1.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub coverage: Option<infra_domain::coverage::CollectionCoverage>,
     /// The format claim, `infra-graph/1`.
     pub format: &'static str,
     /// The kubeconfig context the underlying observation targeted.
@@ -938,7 +944,12 @@ impl GraphDocument {
     #[must_use]
     pub fn of(graph: &InfraGraph, ir: &InfraIr, namespace: Option<&str>) -> Self {
         Self {
-            format: GRAPH_FORMAT,
+            format: if graph.coverage.is_some() {
+                "infra-graph/2"
+            } else {
+                GRAPH_FORMAT
+            },
+            coverage: graph.coverage.clone(),
             context: ir.provenance.context.clone(),
             source_digest: ir.digest(),
             namespace: namespace.map(ToOwned::to_owned),
@@ -1009,6 +1020,14 @@ impl InfraGraph {
         }
 
         let mut out = String::from("flowchart TB\n");
+        if let Some(coverage) = &self.coverage {
+            let _ = writeln!(
+                out,
+                "  %% namespace {}; {}",
+                coverage.namespace(),
+                coverage.limitation()
+            );
+        }
         for (index, (namespace, members)) in namespaces.iter().enumerate() {
             let _ = writeln!(
                 out,

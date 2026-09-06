@@ -550,6 +550,18 @@ fn render_labels(labels: &BTreeMap<String, String>) -> String {
 /// Returns checked IR admission errors if a generated candidate cannot preserve the reader's
 /// invariants. No partial projection is returned and the observed owner remains unchanged.
 pub fn project(spec: &InfraSpec, ir: &InfraIr) -> Result<Projection, ValidationErrors> {
+    if let Some(coverage) = &ir.model().coverage {
+        let mut errors = ValidationErrors::new();
+        errors.refuse(
+            infra_domain::InfraCode::IrMalformed,
+            "model.coverage",
+            format!(
+                "projection requires content omitted by this collection: {}",
+                coverage.limitation()
+            ),
+        );
+        return Err(errors);
+    }
     let observed = simulate(spec, ir);
     let mut bench = Workbench::new(ir);
 

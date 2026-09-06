@@ -175,6 +175,10 @@ diag_codes! {
     /// A cronjob whose `suspend` flag is set.
     CronJobSuspended => "INFRA-DIAG-020", Info,
         "a suspended cronjob starts nothing; deliberate pauses are worth remembering";
+
+    /// Omitted observation content prevents a complete diagnosis.
+    ObservationLimited => "INFRA-DIAG-021", Warning,
+        "diagnosis is withheld because this collection observes only namespace topology";
 }
 
 impl fmt::Display for DiagCode {
@@ -197,7 +201,7 @@ mod tests {
     fn every_code_renders_in_the_diag_namespace_and_the_generated_list_holds_them_all() {
         assert_eq!(
             DiagCode::ALL.len(),
-            20,
+            21,
             "the catalogue is twenty codes: IW2's fourteen and IW2.5's six"
         );
         for code in DiagCode::ALL {

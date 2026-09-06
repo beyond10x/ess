@@ -4,6 +4,12 @@
 
 ### Added
 
+- Native namespace topology collection with `--namespace`: exact namespace and referenced-node
+  reads, payload omission before writing, and typed coverage in observation/IR version 2.
+  Graph and drift retain the scope; intent checks withhold conclusions and projection refuses
+  omitted content. Failed cluster reads no longer retry in the current namespace, and unsupported
+  selector terms are refused instead of becoming match-all selectors.
+
 - Opt-in `ess-conformance/5` records selected generated and authored coverage,
   omitted scenarios, source identities and every refusal occurrence. Checked
   `ess-conformance-input/1` carriers retain original suite and parent bytes;

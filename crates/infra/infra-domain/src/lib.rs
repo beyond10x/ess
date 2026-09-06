@@ -61,6 +61,7 @@
 pub mod code;
 pub mod config;
 pub mod controller;
+pub mod coverage;
 pub mod network;
 pub mod observation;
 pub mod policy;

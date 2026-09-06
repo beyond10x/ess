@@ -2,7 +2,7 @@
 format: aep.planning-md/1
 id: story:review-observation-completeness
 kind: story
-status: draft
+status: implemented
 title: Preserve observation scope and selector uncertainty
 tags:
 - P1
@@ -37,7 +37,7 @@ scope:
   path: website/docs/guides/check-infrastructure.md
 - confidence: cited
   path: website/docs/reference/formats.md
-revision: 18
+revision: 22
 ---
 ## Finding and source
 
@@ -99,3 +99,15 @@ entries remain unchanged. The inventory does not establish deployed-adopter abse
 ADR or resolve format/default decisions; post-writer CLI/docs refresh remains required. A separate
 retained clarification resolves root's display-escaping misread of a correct query receipt; it
 changes no inventory finding, and its already completed 37-query replay found identical matches.
+
+## Authorized implementation — 2026-09-07
+
+The operator requested repair of the native collector instead of an adopter-side workaround.
+Implement the existing F06 boundary in ESS: stop scope-changing retries, refuse unsupported
+selector terms, and add an explicit namespace topology profile with typed collection coverage.
+The new profile omits value-bearing payloads before serialization. Preserve legacy format bytes;
+new observations and compiled models use version 2, with coverage in the semantic digest.
+Native graph and drift carry the qualification; unsupported diagnosis, intent evaluation and
+projection must withhold conclusions rather than read omitted fields as absent.
+The binding design is docs/design/review-observation-completeness.md. Public fixtures remain
+synthetic; no live evidence belongs in this repository. No release is claimed by this work.

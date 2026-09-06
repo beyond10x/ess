@@ -24,6 +24,9 @@ use crate::workload::{Workload, WorkloadKind};
 /// The format string this model reads.
 pub const OBSERVATION_FORMAT: &str = "infra-observation/1";
 
+/// Scoped, qualified observations; never interpreted as a complete cluster scan.
+pub const SCOPED_OBSERVATION_FORMAT: &str = "infra-observation/2";
+
 /// The kind keys a bundle must carry, in the scanner's order.
 pub const KINDS: &[&str] = &[
     "namespaces",
@@ -53,6 +56,148 @@ pub const OPTIONAL_KINDS: &[&str] = &[
     "poddisruptionbudgets",
     "horizontalpodautoscalers",
 ];
+
+fn validate_coverage(raw: &RawBundle, errors: &mut ValidationErrors) {
+    if (raw.format == SCOPED_OBSERVATION_FORMAT) != raw.coverage.is_some() {
+        errors.refuse(
+            InfraCode::UnsupportedFormat,
+            "coverage",
+            "observation/2 requires coverage; observation/1 forbids it",
+        );
+        return;
+    }
+    let Some(coverage) = &raw.coverage else {
+        return;
+    };
+    let Ok(coverage) = crate::coverage::CollectionCoverage::try_from(coverage.clone()) else {
+        errors.refuse(
+            InfraCode::UnsupportedFormat,
+            "coverage",
+            "invalid collection namespace",
+        );
+        return;
+    };
+    let namespace = coverage.namespace();
+    let node_names: BTreeSet<&str> = raw
+        .kinds
+        .get("pods")
+        .and_then(|v| v.get("items"))
+        .and_then(Value::as_array)
+        .into_iter()
+        .flatten()
+        .filter_map(|v| v.pointer("/spec/nodeName").and_then(Value::as_str))
+        .collect();
+    for kind in KINDS.iter().chain(OPTIONAL_KINDS) {
+        if raw
+            .kinds
+            .get(*kind)
+            .and_then(|v| v.pointer("/metadata/continue"))
+            .is_some_and(|v| !v.is_null() && v != "")
+        {
+            errors.refuse(
+                InfraCode::MissingKind,
+                *kind,
+                "qualified collection cannot carry an incomplete paginated List",
+            );
+        }
+        let Some(items) = raw
+            .kinds
+            .get(*kind)
+            .and_then(|v| v.get("items"))
+            .and_then(Value::as_array)
+        else {
+            errors.refuse(
+                InfraCode::MissingKind,
+                *kind,
+                "qualified collection requires a present List for every declared kind",
+            );
+            continue;
+        };
+        if *kind == "namespaces" && items.len() != 1 {
+            errors.refuse(
+                InfraCode::MissingKind,
+                *kind,
+                "qualified collection requires exactly the requested namespace",
+            );
+        }
+        let mut found_nodes = BTreeSet::new();
+        for item in items {
+            validate_topology_content(item, kind, errors);
+            let name = item.pointer("/metadata/name").and_then(Value::as_str);
+            let ns = item.pointer("/metadata/namespace").and_then(Value::as_str);
+            let in_scope = match *kind {
+                "namespaces" => name == Some(namespace) && ns.is_none(),
+                "nodes" => ns.is_none() && name.is_some_and(|n| node_names.contains(n)),
+                _ => ns == Some(namespace),
+            };
+            if !in_scope {
+                errors.refuse(
+                    InfraCode::UnsupportedFormat,
+                    *kind,
+                    "response is outside the declared collection scope",
+                );
+            }
+            if *kind == "nodes" {
+                if let Some(name) = name {
+                    found_nodes.insert(name);
+                }
+            }
+        }
+        if *kind == "nodes" && found_nodes != node_names {
+            errors.refuse(
+                InfraCode::MissingKind,
+                *kind,
+                "every referenced node must have been collected",
+            );
+        }
+    }
+}
+
+fn validate_topology_content(item: &Value, kind: &str, errors: &mut ValidationErrors) {
+    if matches!(kind, "configmaps" | "secrets")
+        && ["data", "binaryData", "stringData"].iter().any(|field| {
+            item.get(field)
+                .is_some_and(|v| !v.is_null() && v.as_object().is_none_or(|map| !map.is_empty()))
+        })
+    {
+        errors.refuse(
+            InfraCode::UnsupportedFormat,
+            kind,
+            "topology profile cannot carry configuration or Secret payloads",
+        );
+    }
+    let spec = if kind == "pods" {
+        item.get("spec")
+    } else {
+        item.pointer("/spec/template/spec")
+    };
+    for container in spec
+        .and_then(|s| s.get("containers"))
+        .and_then(Value::as_array)
+        .into_iter()
+        .flatten()
+    {
+        let has_probes = ["livenessProbe", "readinessProbe", "startupProbe"]
+            .iter()
+            .any(|key| container.get(key).is_some_and(|v| !v.is_null()));
+        let has_literals = container
+            .get("env")
+            .and_then(Value::as_array)
+            .into_iter()
+            .flatten()
+            .any(|env| {
+                env.get("value").is_some_and(|v| !v.is_null())
+                    || env.get("valueFrom").is_none_or(Value::is_null)
+            });
+        if has_probes || has_literals {
+            errors.refuse(
+                InfraCode::UnsupportedFormat,
+                kind,
+                "topology profile cannot carry probes or literal environment entries",
+            );
+        }
+    }
+}
 
 /// An object's identity: what everything downstream keys on.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Serialize)]
@@ -263,6 +408,9 @@ pub struct Observation {
     pub scanned_at: String,
     /// The scanner's version. Provenance, not semantic state.
     pub scout_version: String,
+    /// Collection scope and omitted content; legacy observations make no such claim.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub coverage: Option<crate::coverage::CollectionCoverage>,
     /// Namespaces, in observed order; the compiler normalizes.
     pub namespaces: Vec<Namespace>,
     /// Nodes.
@@ -305,7 +453,7 @@ impl TryFrom<RawBundle> for Observation {
     fn try_from(raw: RawBundle) -> Result<Self, Self::Error> {
         let mut errors = ValidationErrors::new();
 
-        if raw.format != OBSERVATION_FORMAT {
+        if raw.format != OBSERVATION_FORMAT && raw.format != SCOPED_OBSERVATION_FORMAT {
             errors.refuse(
                 InfraCode::UnsupportedFormat,
                 "format",
@@ -315,6 +463,8 @@ impl TryFrom<RawBundle> for Observation {
                 ),
             );
         }
+
+        validate_coverage(&raw, &mut errors);
 
         let namespaces = items::<RawNamespace>(&raw, "namespaces", &mut errors)
             .into_iter()
@@ -421,6 +571,9 @@ impl TryFrom<RawBundle> for Observation {
             context: raw.context,
             scanned_at: raw.scanned_at,
             scout_version: raw.scout_version,
+            coverage: raw
+                .coverage
+                .and_then(|raw| crate::coverage::CollectionCoverage::try_from(raw).ok()),
             namespaces,
             nodes,
             workloads,

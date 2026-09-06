@@ -14,6 +14,7 @@ publish.workspace = true
 clap.workspace = true
 serde.workspace = true
 serde_json.workspace = true
+infra-domain.workspace = true
 # Secret values are hashed before anything is written to disk; this is the hasher.
 sha2 = "0.11"
 

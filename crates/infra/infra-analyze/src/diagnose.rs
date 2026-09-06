@@ -121,6 +121,17 @@ pub fn diagnose(ir: &InfraIr) -> Diagnosis {
 /// [`diagnose`] over a graph the caller already built.
 #[must_use]
 pub fn diagnose_with(ir: &InfraIr, graph: &InfraGraph) -> Diagnosis {
+    if let Some(coverage) = &ir.model().coverage {
+        return Diagnosis {
+            findings: vec![Finding::new(
+                DiagCode::ObservationLimited,
+                format!("namespaces/{}", coverage.namespace()),
+                None,
+                coverage.limitation(),
+                BTreeMap::new(),
+            )],
+        };
+    }
     let mut findings = Vec::new();
 
     rule_dangling_selector(ir, &mut findings);

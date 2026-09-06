@@ -461,6 +461,9 @@ pub enum UnresolvedTarget {
 /// The digested content: everything semantic, nothing about when or how it was observed.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct InfraModel {
+    /// Qualified collection meaning, included in the digest; absent in legacy IR/1.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub coverage: Option<infra_domain::coverage::CollectionCoverage>,
     /// Namespaces, keyed by name.
     pub namespaces: BTreeMap<String, Namespace>,
     /// Nodes, keyed by name.
@@ -683,6 +686,15 @@ impl InfraIr {
     ) -> Result<Self, infra_domain::ValidationErrors> {
         let mut model = self.model.clone();
         edit(&mut model);
+        if model.coverage != self.model.coverage {
+            let mut errors = infra_domain::ValidationErrors::new();
+            errors.refuse(
+                infra_domain::InfraCode::IrMalformed,
+                "model.coverage",
+                "a model transformation cannot change collection coverage",
+            );
+            return Err(errors);
+        }
         let candidate = Self {
             provenance: self.provenance.clone(),
             model,
@@ -711,7 +723,11 @@ impl InfraIr {
     /// The persistable document, digest computed.
     pub fn document(&self) -> InfraIrDocument<'_> {
         InfraIrDocument {
-            format: IR_FORMAT,
+            format: if self.model.coverage.is_some() {
+                "infra-ir/2"
+            } else {
+                IR_FORMAT
+            },
             provenance: &self.provenance,
             digest: self.digest(),
             model: &self.model,

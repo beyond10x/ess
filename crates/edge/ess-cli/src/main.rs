@@ -589,6 +589,9 @@ enum ImportAdapter {
         /// Live kubeconfig context. Requires `--observation-out`.
         #[arg(long, conflicts_with = "path")]
         context: Option<String>,
+        /// Safe topology of one namespace and its referenced nodes; emits qualified version 2.
+        #[arg(long, requires = "context", conflicts_with = "path")]
+        namespace: Option<String>,
         /// Where a live scan writes its sanitized source bundle.
         #[arg(long, requires = "context")]
         observation_out: Option<PathBuf>,
@@ -2940,6 +2943,7 @@ fn import(adapter: ImportAdapter) -> Result<ExitCode> {
         ImportAdapter::Kubernetes {
             path,
             context,
+            namespace,
             observation_out,
             out,
             format,
@@ -2949,8 +2953,15 @@ fn import(adapter: ImportAdapter) -> Result<ExitCode> {
             } else {
                 let observation =
                     observation_out.context("live Kubernetes import requires --observation-out")?;
-                ess_kubernetes::scan(context.as_deref(), &observation)
-                    .map_err(anyhow::Error::msg)?;
+                match namespace {
+                    Some(namespace) => ess_kubernetes::scan_namespace(
+                        context.as_deref().expect("clap requires context"),
+                        &namespace,
+                        &observation,
+                    ),
+                    None => ess_kubernetes::scan(context.as_deref(), &observation),
+                }
+                .map_err(anyhow::Error::msg)?;
                 observation
             };
             let ir = resolved_infrastructure(&source)?;
@@ -2973,7 +2984,12 @@ fn import(adapter: ImportAdapter) -> Result<ExitCode> {
                     "secret-shape",
                     "runtime",
                 ],
-                coverage_gaps: Vec::new(),
+                coverage_gaps: ir
+                    .model()
+                    .coverage
+                    .as_ref()
+                    .map(|coverage| vec![coverage.limitation().to_owned()])
+                    .unwrap_or_default(),
                 obligations: Vec::new(),
                 refusals: Vec::new(),
                 unresolved_references: ir.model().unresolved.len(),
@@ -2981,10 +2997,13 @@ fn import(adapter: ImportAdapter) -> Result<ExitCode> {
             };
             if matches!(format, Format::Text) {
                 println!(
-                    "imported Kubernetes observation as infra-ir/1 digest {}",
-                    document.digest
+                    "imported Kubernetes observation as {} digest {}",
+                    document.format, document.digest
                 );
                 println!("{} unresolved reference(s)", report.unresolved_references);
+                for gap in &report.coverage_gaps {
+                    println!("coverage: {gap}");
+                }
             } else {
                 render(&report, format)?;
             }
