@@ -210,6 +210,26 @@ TypeScript's structural aliases do not enforce nominal model identities, which i
 report names for each selected newtype. Full synthesis remains unchanged. Model-field
 bindings to imported schemas and application-specific decoder semantics remain pending.
 
+#### Finite model codecs
+
+Standalone Rust and Go model targets support compiler-owned `Binary64` fields
+from unreleased `ess/2`. Rust emits `EssBinary64::new(f64)` with checked finite
+construction and `.get()` access; Go emits `NewEssBinary64(float64)` and `.Float64()`.
+Their JSON codecs retain the original numeric token through supported aliases,
+recursive containers and union branches. They preserve signed zero, subnormals,
+signed underflow and nearest-even rounding; wrong JSON kinds and overflow refuse.
+Go's zero wrapper value represents positive zero.
+
+Rust decoding requires original source text through `serde_json::from_str` or
+`from_slice`, with the generated `raw_value` feature enabled. Deserializing an
+already parsed `serde_json::Value` cannot recover original numeric spelling and
+is outside this codec contract. A pure map with Binary64 values is supported;
+a Rust record combining declared fields with Binary64-containing extra values
+refuses as `rust_binary64_open_record` before files are written. Ordinary schema
+refinements, union exclusivity and map-key constraints remain report obligations.
+The helpers and required features appear only for selected Binary64 closures;
+older non-Binary64 output maps stay unchanged at the same generator version.
+
 ### Explicit Normalization
 
 The Rust library `schema_contract::realize::normalize` separates
@@ -436,7 +456,8 @@ an empty map, and retain their canonical recipes, generated code and file maps.
 Across package releases, reports still record the actual generator version.
 TypeScript normalization adapters remain pending.
 Expanded recursive shapes, tuples and
-intersections refuse in its initial checker. Schema bounds and other refinements are
+intersections refuse in the earlier checker profiles; format 6 adds only the
+explicit closed-tuple support described below. Schema bounds and other refinements are
 checked at runtime boundaries, not proven by structural checking. Integer operations
 require exact signed-64-bit integral JSON tokens; equality is scalar-only, with no
 cross-kind coercion. Full language-target normalization and
@@ -478,6 +499,69 @@ positive and negative zero compare equal; it does not cast mixed scalar kinds.
 Explicit raw capture and retained-document helpers from format 4 remain available.
 Format 5 uses target report version 3. Frozen templates preserve the complete
 emitted Rust/Go file maps of formats 1–4.
+
+#### Fixed positional input arrays
+
+Use unreleased `ess-normalization/6` when the source contract explicitly constructs
+a fresh fixed string array. Declare the prepared field as a positive-length closed
+tuple: `prefixItems` contains exactly that many string schemas, `minItems` and
+`maxItems` equal the length, and `items` is `false`. The input policy records the
+source decoder behavior instead of asking schema validation to infer it.
+
+This excerpt adds a two-slot policy to an otherwise complete checked recipe:
+
+```json
+{
+  "format": "ess-normalization/6",
+  "positional_inputs": {
+    "decode": [{
+      "path": [{"kind": "field", "name": "operands"}],
+      "kind": "fixed_string_array",
+      "length": 2,
+      "missing": "preserve",
+      "null": "zero",
+      "short": "zero_pad",
+      "extra": "discard",
+      "null_element": "zero"
+    }]
+  }
+}
+```
+
+Every displayed declaration member is required; this version admits only these
+policy values. A missing field stays missing, null produces empty strings, short
+arrays are padded and excess elements are discarded. Consumed elements must be
+strings or null. Discarded tokens still pass complete JSON grammar, Unicode and
+the global 64-level depth check, without converting their numeric values.
+Required fields remain required after preparation.
+
+A checked `position` expression reads one slot and can map it to a named field:
+
+```json
+{
+  "op": "position",
+  "value": {"op": "read", "scope": "input", "path": ["operands"]},
+  "index": 0
+}
+```
+
+The operand must have one proven exact tuple arity and the index must be in range.
+Missing tuples propagate missing. Heterogeneous closed tuples can be read with the
+type of their selected slot; nullable tuples, ambiguous source tuple unions,
+homogeneous arrays and open or variable prefixes refuse. Homogeneous list
+operations retain their earlier behavior.
+
+Policies select only field, homogeneous-item or root boundaries and run at the
+external original-text edge before first-stage schema validation. Overlap with
+raw capture, Binary64 policies or other positional declarations refuses. Active
+positional policies require an original-text entrypoint (`Plan::run_json`, Rust
+`Normalizer::normalize`, Go `Normalizer.Normalize`, or CLI `normalize-run`) or a
+retained-base64 helper. `Plan::run` and Rust `normalize_value` refuse them even
+when the selected field is absent.
+The existing normalize check/run/generate commands and Rust/Go targets apply.
+Format 6 keeps `ess-normalization-target/3`, its report fields and digest domains;
+formats 1–5 keep their complete generated maps at the same generator version.
+TypeScript normalization remains pending.
 
 ## The graph, without generating a tree
 
