@@ -1501,3 +1501,11 @@ Opening21eac63d347d5d1328712cd59dd9ae5edf41aace has verified bot author and comm
 ```
 
 Both implementors were dispatched by brief path after the actual resource record was written. Expression uses review_scenarios; OpenAPI uses scope_empty_scenarios. These are implementation assignments, not handoff/gate results. The AEP count implementor remains impl_diagnostic in its separate repository.
+
+F09 verification correction: source inspection confirms the assembled Specification is sealed, with no safe public mutation/deserialization path. The accepted binding now requires module-local revalidation tests, real compiler/diagnostic controls and the existing compiler-entry fence, without fabricating a literal downstream mutated-Specification case or adding a production testing aperture. The source requirement is unchanged; the complete correction is in the binding and unit scratch/sealed-verification-correction.md.
+
+## Published baseline CI and current public-source correspondence
+
+Both remote checks onfadbc674 completed successfully: documentation validation34002501925 and CI34002501928. The already-running Atlas source publication34002436539 completed success at2026-09-06T00:58:23Z, publishing root9c06f9e9c3d04e9f6950b4fa0db37d8d44e7d0ef from Website runtimefc457153 and Atlas control304a58f. The retained complete observation is target/review-boundaries-7/incoming-publication-observation/terminal-observation.{md,json}.
+
+Both live provenance endpoints equal immutable Git bytes (SHA2560bbe27ff20e78553e7930643ae984d6cf15bfec6d27d5df805af6d09f472ecd0). Downloaded source-set and bootstrap metadata equal the published inputs; source-set81e55400013d3e83c0787089080b213399c51635f641751673fbc6c125d063e6 selects ESSe113a65, producer34001828934/artifact9979714535, bundlecb7aee61277d5954884e82e3228c69defdc1182a07eb5f5f66c9e5b32f4b2869. All43 source ZIP entries equal the resolver inputs, and all40 selected source files equal published combinedfadbc674. This establishes source correspondence; identity remains e113. Actual publication ran its immutable-bundle build and independent v2 verifier. No duplicate dispatch, extra delivery worktree, additional full Website test gate or organization-wide fence is claimed by this read-only observation.

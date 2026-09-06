@@ -19,7 +19,7 @@ scope:
   path: crates/verify/ess-conformance
 - confidence: inferred
   path: docs/design/review-expression-typechecking.md
-revision: 11
+revision: 12
 ---
 ## Finding and source
 
@@ -135,3 +135,7 @@ Within those tokens, inferred concrete additions are `ess-domain/src/expression.
 Compiler ir.rs/resolve.rs/diagnostic.rs stay in the collision inventory; consume public resolved types and preserve bridge revalidation without requiring an IR/schema change. Conformance scenario.rs and runner.rs are evidence/compatibility surfaces, not a request to change persisted predicates or execution. No new CLI, primitives, infra-spec, wire, graph, solver, projection or format token is proposed.
 
 Root should bind the reviewed design through the store and owned design document before dispatch; this proposal creates neither an approval nor a lifecycle claim.
+
+## Sealed specification verification correction
+
+Source inspection during implementation establishes that Specification has private fields, shared getters and Serialize only (spec.rs:115–213); it has no safe public post-assembly mutation or deserialization path. The earlier proposed literal mutated-Specification-to-compile_locating fixture therefore cannot be constructed by a downstream safe caller. Retain unconditional compiler revalidation at resolve.rs:744–755. Measure module-local test-only mutation inside ess-domain against Specification::validate, real public compile/compile_locating controls, compiler diagnostic propagation and the existing sealed_state revalidation-order fence. Report these as separate boundaries; do not claim an impossible public mutation case was executed. No production mutator, public test-access feature, unsafe construction or domain-to-compiler dependency is added for the fixture. This corrects the verification mechanism, not the complete-expression admission requirement.
