@@ -10,11 +10,7 @@ use super::{NumberPath, Refused};
 
 type Result<T> = std::result::Result<T, Refused>;
 
-pub(super) fn parse(
-    text: &str,
-    paths: &[Vec<NumberPath>],
-    captures: &[Vec<NumberPath>],
-) -> Result<Value> {
+pub(super) fn parse(text: &str, paths: &[Vec<NumberPath>]) -> Result<Value> {
     let raw: Box<RawValue> = serde_json::from_str(text)
         .map_err(|_| error("/input", "input_syntax", "expected one complete JSON value"))?;
     decode(
@@ -22,20 +18,10 @@ pub(super) fn parse(
         "/input",
         0,
         &paths.iter().map(Vec::as_slice).collect::<Vec<_>>(),
-        &captures.iter().map(Vec::as_slice).collect::<Vec<_>>(),
     )
 }
 
-fn decode(
-    raw: &RawValue,
-    at: &str,
-    depth: usize,
-    paths: &[&[NumberPath]],
-    captures: &[&[NumberPath]],
-) -> Result<Value> {
-    if captures.iter().any(|path| path.is_empty()) {
-        return super::retained::capture(raw, at, depth).map(Value::String);
-    }
+fn decode(raw: &RawValue, at: &str, depth: usize, paths: &[&[NumberPath]]) -> Result<Value> {
     if depth > 64 {
         return Err(error(at, "input_depth", "JSON input exceeds 64 levels"));
     }
@@ -52,14 +38,8 @@ fn decode(
                 .0
                 .iter()
                 .map(|(key, value)| {
-                    decode(
-                        value,
-                        &path(at, key),
-                        depth + 1,
-                        &descend(paths, Some(key)),
-                        &descend(captures, Some(key)),
-                    )
-                    .map(|value| (key.clone(), value))
+                    decode(value, &path(at, key), depth + 1, &descend(paths, Some(key)))
+                        .map(|value| (key.clone(), value))
                 })
                 .collect::<Result<serde_json::Map<_, _>>>()
                 .map(Value::Object)
@@ -76,7 +56,6 @@ fn decode(
                         &format!("{at}/{index}"),
                         depth + 1,
                         &descend(paths, None),
-                        &descend(captures, None),
                     )
                 })
                 .collect::<Result<_>>()

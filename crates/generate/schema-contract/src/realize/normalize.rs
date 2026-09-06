@@ -7,6 +7,7 @@ mod go_target;
 mod input;
 mod numeric;
 mod recipe;
+mod retained;
 mod source;
 mod target;
 
@@ -18,7 +19,8 @@ use crate::bundle::{source_digest, Bundle};
 use recipe::unique_map;
 pub use recipe::{
     Binary64Inputs, Binary64Range, Binary64Step, Condition, Expr, IntegerOp, ModelIdentity,
-    NumberPath, Overflow, Recipe, Root, Scope, Stage, FORMAT, FORMAT_V2, FORMAT_V3,
+    NumberPath, Overflow, RawJsonInputs, Recipe, Root, Scope, Stage, FORMAT, FORMAT_V2, FORMAT_V3,
+    FORMAT_V4,
 };
 pub use target::{Realization, Report};
 
@@ -38,7 +40,7 @@ impl Root {
 impl Recipe {
     fn envelope_findings(&self) -> Vec<Finding> {
         let mut found = Vec::new();
-        if ![FORMAT, FORMAT_V2, FORMAT_V3].contains(&self.format.as_str()) {
+        if ![FORMAT, FORMAT_V2, FORMAT_V3, FORMAT_V4].contains(&self.format.as_str()) {
             found.push(finding(
                 "/format",
                 "recipe_format",
@@ -66,6 +68,24 @@ impl Recipe {
                         &path("/binary64_inputs", branch),
                         "unknown_branch",
                         "numeric input declaration names an unknown branch",
+                    ));
+                }
+            }
+        }
+        if let Some(paths) = &self.raw_json_inputs {
+            if self.format != FORMAT_V4 {
+                found.push(finding(
+                    "/raw_json_inputs",
+                    "operation_version",
+                    "raw JSON input declarations require ess-normalization/4",
+                ));
+            }
+            for branch in paths.keys() {
+                if !self.branches.contains_key(branch) {
+                    found.push(finding(
+                        &path("/raw_json_inputs", branch),
+                        "unknown_branch",
+                        "raw JSON input declaration names an unknown branch",
                     ));
                 }
             }
@@ -138,7 +158,9 @@ impl Plan {
                     ));
                 }
                 for (position, root) in [("input", &stage.input), ("output", &stage.output)] {
-                    if matches!(root, Root::Model { .. }) && recipe.format != FORMAT_V3 {
+                    if matches!(root, Root::Model { .. })
+                        && ![FORMAT_V3, FORMAT_V4].contains(&recipe.format.as_str())
+                    {
                         found.push(finding(
                             &format!("{at}/{position}"),
                             "root_version",
@@ -167,6 +189,14 @@ impl Plan {
                             &input,
                             stage.input.name(),
                             &path("/binary64_inputs", name),
+                            &mut found,
+                        );
+                        check::input_captures(
+                            recipe.raw_json_paths(name),
+                            recipe.binary64_paths(name),
+                            &input,
+                            stage.input.name(),
+                            &path("/raw_json_inputs", name),
                             &mut found,
                         );
                     }
@@ -199,18 +229,24 @@ impl Plan {
         )
     }
 
-    /// Parse duplicate-free JSON without silently rounding numeric values, then execute.
+    /// Parse JSON with explicit lexical capture and numeric policies, then execute.
+    /// Outside declared captures, duplicate keys and silent numeric precision loss refuse.
     /// Fractional/exponent spellings remain nonintegral for integer operations.
     pub fn run_json(&self, branch: &str, input: &str) -> Result<Value, Refused> {
         self.run_prepared(
             branch,
-            &input::parse(input, self.recipe.binary64_paths(branch))?,
+            &input::parse(
+                input,
+                self.recipe.binary64_paths(branch),
+                self.recipe.raw_json_paths(branch),
+            )?,
         )
     }
 
     /// Evaluate a branch atomically with respect to caller data and observable result.
     /// The caller owns decoding precision; use [`Self::run_json`] for raw JSON bytes.
     pub fn run(&self, branch: &str, input: &Value) -> Result<Value, Refused> {
+        retained::require_text(self.recipe.raw_json_paths(branch))?;
         if self.recipe.binary64_paths(branch).is_empty() {
             return self.run_prepared(branch, input);
         }
@@ -218,6 +254,11 @@ impl Plan {
             branch,
             &input::prepare(input, self.recipe.binary64_paths(branch))?,
         )
+    }
+
+    /// Decode canonical standard base64 and UTF-8, then execute over untouched JSON text.
+    pub fn run_base64_json(&self, branch: &str, encoded: &str) -> Result<Value, Refused> {
+        self.run_json(branch, &retained::decode(encoded)?)
     }
 
     fn run_prepared(&self, branch: &str, input: &Value) -> Result<Value, Refused> {

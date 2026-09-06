@@ -391,7 +391,50 @@ not execute those predicates. Go's pattern refusal also applies to model-derived
 patterns outside the exact qualified `Bytes` expression above. Bundle-only versions
 1 and 2 keep their canonical recipe representation and version 1 report envelope.
 
-TypeScript normalization adapters and selected raw JSON token capture remain pending.
+The unreleased `ess-normalization/4` format adds explicit lexical capture through
+`raw_json_inputs`. Each branch maps to a list of field/items selectors; an empty
+path selects the root token:
+
+```json
+"raw_json_inputs": {
+  "primary": [[{"kind":"field","name":"payload"}]],
+  "retain_document": [[]]
+}
+```
+
+This is a recipe-member excerpt; branches and source-pinned stages are still
+required. The first input schema describes the captured representation: a selected
+leaf must be string-shaped, normally model `Bytes`. At the text edge, the complete
+selected token becomes canonical standard base64 before validation. Whitespace
+outside the token is excluded; interior whitespace, quotes, escapes, member order,
+duplicate members and number spelling remain exact. Huge numbers are retained
+without numeric conversion. Capturing `null` produces `bnVsbA==`; an absent member
+stays absent, and null intermediate containers are not traversed.
+
+Capture requires valid JSON, strict Unicode and at most 64 levels of nesting,
+including the captured content. Outside captures, existing duplicate-key and
+numeric rules still apply. Selectors use declared wire fields and array items;
+duplicate or ancestor-overlapping captures and capture/binary64 overlaps refuse
+planning. Capture is never inferred from a `Bytes` type or field name.
+
+Use `Plan::run_json`, Rust `Normalizer::normalize`, Go `Normalizer.Normalize`, or
+the existing CLI `normalize-run` text edge. `Plan::run` and Rust `normalize_value`
+refuse a branch with active capture selectors because decoded values have lost
+token provenance. An empty selector list does not disable those value APIs.
+
+To inspect tokens inside a retained document, use a second checked recipe and an
+explicit decoding boundary: `Plan::run_base64_json`, Rust
+`Normalizer::normalize_base64_json`, or Go `Normalizer.NormalizeBase64JSON`.
+These accept unquoted base64 text, require canonical standard encoding and UTF-8,
+then pass unchanged JSON text to normal execution. Failures occur in order:
+`input_base64`, `input_utf8`, then normal text-edge findings. They do not parse and
+reserialize the retained document or automatically decode a nested field. Each
+recipe retains its own source identities; callers own their composition.
+
+Format 4 uses target report version 3. Versions 1–3 refuse `raw_json_inputs`, even
+an empty map, and retain their canonical recipes, generated code and file maps.
+Across package releases, reports still record the actual generator version.
+TypeScript normalization adapters remain pending.
 Expanded recursive shapes, tuples and
 intersections refuse in its initial checker. Schema bounds and other refinements are
 checked at runtime boundaries, not proven by structural checking. Integer operations

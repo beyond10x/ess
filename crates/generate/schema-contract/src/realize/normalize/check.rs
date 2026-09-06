@@ -127,6 +127,80 @@ fn numeric_path(input: &Type, path: &[NumberPath], at: &str) -> Result<()> {
     Ok(())
 }
 
+pub(super) fn input_captures(
+    paths: &[Vec<NumberPath>],
+    numbers: &[Vec<NumberPath>],
+    input: &Types,
+    root: &str,
+    at: &str,
+    found: &mut Vec<Finding>,
+) {
+    if paths.is_empty() {
+        return;
+    }
+    let ty = match from_node(input, &input.definitions[root], 0) {
+        Ok(ty) => ty,
+        Err(error) => {
+            found.push(error);
+            return;
+        }
+    };
+    for (index, path) in paths.iter().enumerate() {
+        let location = format!("{at}/{index}");
+        if let Some(earlier) = paths[..index].iter().position(|other| other == path) {
+            found.push(finding(
+                &location,
+                "duplicate_capture_path",
+                &format!("capture path duplicates {at}/{earlier}"),
+            ));
+        } else if let Some(earlier) = paths[..index]
+            .iter()
+            .position(|other| overlaps(path, other))
+        {
+            found.push(finding(
+                &location,
+                "overlapping_capture_path",
+                &format!("capture path overlaps {at}/{earlier}"),
+            ));
+        } else if let Some(numeric) = numbers.iter().position(|other| overlaps(path, other)) {
+            let numeric_at = at.replacen("/raw_json_inputs/", "/binary64_inputs/", 1);
+            found.push(finding(
+                &location,
+                "input_policy_overlap",
+                &format!("capture path overlaps {numeric_at}/{numeric}"),
+            ));
+        } else if let Err(error) = capture_path(&ty, path, &location) {
+            found.push(error);
+        }
+    }
+}
+
+fn overlaps(left: &[NumberPath], right: &[NumberPath]) -> bool {
+    left.starts_with(right) || right.starts_with(left)
+}
+
+fn capture_path(input: &Type, path: &[NumberPath], at: &str) -> Result<()> {
+    limit(path.len(), at)?;
+    let mut ty = input.clone();
+    for (index, segment) in path.iter().enumerate() {
+        let at = format!("{at}/{index}");
+        ty = match segment {
+            NumberPath::Field { name } => member(&ty.without_null(), name, &at)?,
+            NumberPath::Items => array_item(&ty.without_null(), &at)?,
+        };
+    }
+    let mut ty = ty.without_null();
+    ty.missing = false;
+    if ty.kind == Kind::Never || !assignable(&ty, &Type::new(Kind::String)) {
+        return Err(finding(
+            at,
+            "capture_input_type",
+            "raw JSON capture requires a declared string leaf",
+        ));
+    }
+    Ok(())
+}
+
 pub(super) fn stage(
     stage: &Stage,
     input: &Types,

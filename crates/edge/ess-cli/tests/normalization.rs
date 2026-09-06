@@ -195,6 +195,59 @@ fn checked_recipe_and_run_are_deterministic_with_json_only_stdout() {
 }
 
 #[test]
+fn raw_json_capture_runs_before_schema_and_keeps_failure_output_untouched() {
+    let fixture = Fixture::new();
+    let bundle = Fixture::bundle("Text", &json!({"type":"string"}));
+    fs::write(
+        fixture.0.join("input.bundle.json"),
+        bundle.to_json().unwrap(),
+    )
+    .unwrap();
+    let root = Root::pin(&bundle, "Text").unwrap();
+    let recipe = json!({"format":"ess-normalization/4","raw_json_inputs":{"primary":[[]]},"branches":{"primary":[{"input":root,"output":root,"requires":[],"value":{"op":"read","scope":"input","path":[]}}]}});
+    fs::write(fixture.0.join("recipe.json"), recipe.to_string()).unwrap();
+    let input = " \n{\"n\":1e999,\"n\":2} \t";
+    fs::write(fixture.0.join("instance.json"), input).unwrap();
+    let run = fixture.run("normalize-run", &[]);
+    assert!(run.status.success(), "{run:?}");
+    assert_eq!(run.stdout, b"\"eyJuIjoxZTk5OSwibiI6Mn0=\"\n");
+    assert_eq!(
+        fs::read_to_string(fixture.0.join("instance.json")).unwrap(),
+        input
+    );
+    let checked = fixture.run("normalize-check", &[]);
+    assert!(checked.status.success(), "{checked:?}");
+    let plan =
+        schema_contract::realize::normalize::Plan::read(&recipe.to_string(), &[bundle]).unwrap();
+    assert_eq!(checked.stdout, plan.to_json().as_bytes());
+    for target in ["rust", "go"] {
+        let mut args = vec!["--target", target, "--package", "adapter", "--out", target];
+        if target == "go" {
+            args.extend(["--module", "example.invalid/adapter"]);
+        }
+        let result = fixture.run("normalize-generate", &args);
+        assert!(result.status.success(), "{result:?}");
+        let report: Value = serde_json::from_slice(
+            &fs::read(fixture.0.join(target).join("normalization-report.json")).unwrap(),
+        )
+        .unwrap();
+        assert_eq!(report["format"], "ess-normalization-target/3");
+        args.push("--check");
+        assert!(fixture.run("normalize-generate", &args).status.success());
+    }
+    for input in [r#""\ud800""#, "{\"n\":1,}"] {
+        fs::write(fixture.0.join("instance.json"), input).unwrap();
+        let result = fixture.run("normalize-run", &["--out", "result.json"]);
+        assert!(!result.status.success());
+        assert!(String::from_utf8_lossy(&result.stderr).contains("input_syntax"));
+        assert_eq!(
+            fs::read_to_string(fixture.0.join("result.json")).unwrap(),
+            "untouched"
+        );
+    }
+}
+
+#[test]
 fn generated_libraries_match_the_api_and_drift_check_never_repairs_files() {
     let fixture = Fixture::new();
     let bundles = ["input.bundle.json", "output.bundle.json"]

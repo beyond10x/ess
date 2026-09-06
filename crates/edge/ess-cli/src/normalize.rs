@@ -12,7 +12,7 @@ use schema_contract::realize::normalize::{Plan, Recipe, Root};
 #[derive(Debug, Args)]
 #[command(group(clap::ArgGroup::new("normalization_sources").required(true).multiple(true).args(["bundle", "model"])))]
 pub struct Sources {
-    /// Authored ess-normalization/1, /2 or /3 recipe; every branch is checked first.
+    /// Authored ess-normalization/1, /2, /3 or /4 recipe; every branch is checked first.
     #[arg(long)]
     recipe: PathBuf,
     /// Replay-checked source bundles referenced by canonical digest. Repeat as needed.
