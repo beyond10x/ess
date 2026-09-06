@@ -393,7 +393,8 @@ JSON values themselves do not acquire host-language nominal types.
 The compiler's string-enum projection combines `type:string` with a finite `enum`.
 Normalize that exact checked-model intersection to its string literals; do not
 flatten arbitrary imported intersections or `allOf`. Membership is still validated
-at each boundary, and all other intersection/tuple mappings remain refused.
+at each boundary, and other intersection/tuple mappings remain refused in that
+format. Format 6 adds the explicit checked tuple boundary described below.
 
 The CLI compiles each supplied `--model` specification and recreates the exact
 root selections declared by the recipe before checking their complete identity.
@@ -416,6 +417,24 @@ frozen templates; positional arrays, invariant execution and TypeScript remain o
 that unit.
 
 ## Adapter Generation Command
+
+The [format-6 positional binding](positional-array-normalization.md) adds
+`positional_inputs` and `position`. A declared fresh fixed string array is
+prepared from original JSON text before its first input schema: missing stays
+missing, null becomes empty strings, short arrays are padded, and excess tokens
+receive lexical Unicode/depth validation before being discarded. This policy is
+explicit; neither a tuple schema nor a positional expression selects it. A
+`position` expression requires one exact closed tuple and uses private arity
+metadata recomputed from checked roots. It preserves absence and nullable slots
+and never admits tuples to homogeneous list operations.
+
+Format 6 inherits raw capture, retained-document helpers and modeled Binary64,
+retains `ess-normalization-target/3`, and preserves complete format-1 through
+format-5 Rust/Go file maps through frozen templates. Reference and generated Rust
+decoded-value entrypoints refuse active positional policies after any raw-capture
+provenance refusal. Text entrypoints and the retained-base64 helper execute the
+policy before normal stage validation. The concrete grammar, paths, diagnostics,
+precedence and qualification requirements are in the positional binding.
 
 `ess generate schema normalize-generate` reads `--recipe` and repeated `--bundle`
 inputs through the existing sealed-plan boundary. `--target rust|go` selects an

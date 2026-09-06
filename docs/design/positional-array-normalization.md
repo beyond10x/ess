@@ -1,9 +1,10 @@
 # Explicit positional-array normalization
 
 Binding decisions selected by the coordinator for
-`story:normalize-positional-array-input`. Implementation and qualification are
-pending. This document introduces no released capability and makes no claim of
-complete compatibility with a native JSON decoder.
+`story:normalize-positional-array-input`. The implementation adds the explicit
+format-6 boundary to the reference engine and generated Rust/Go libraries.
+Publication remains subject to the coordinated review and release gates. This
+profile makes no claim of complete compatibility with a native JSON decoder.
 
 The selected boundary is a freshly constructed fixed string array: missing stays
 missing, null becomes a zero array, short arrays are padded, excess values are
@@ -18,7 +19,8 @@ boundaries. The separately selected Binary64 work owns normalization format 5;
 this work follows its integration and uses **`ess-normalization/6`**, retaining
 **`ess-normalization-target/3`**. Inspection of the frozen Binary64 unit
 `bf16e504ccad68b2ee67607ba39606aadf07f627` establishes the report contract below;
-refresh those source seams after integration before implementing this extension.
+the implementation follows the integrated format-5 source and freezes the ten
+affected templates before extending them.
 
 ## Why two distinct mechanisms are necessary
 
@@ -488,8 +490,21 @@ tail or numeric-kind semantics. Native target cases exercise their actual token
 parsers, not a pre-parsed fixture substituted at the input API. Reuse the existing
 normalization harness for code generation and complete artifact accounting.
 
-These are required future checks. No test, adapter generation, release adoption
-or native parity result is claimed by this binding draft.
+These are the qualification requirements. The dedicated positional corpus,
+generated-target drivers and CLI regression exercise this contract. The native
+Rust driver runs default and arbitrary-precision serde_json builds; the explicit
+Go lane runs every text and retained-base64 case. Decoded-value provenance cases
+run in the reference and Rust APIs, since the Go library exposes text entrypoints.
+The inherited Binary64 corpus and a mixed three-stage recipe check format-6
+admission alongside the new operations. Release adoption remains a separate gate.
+
+Complete format-1 through format-5 generated file maps were captured at the same
+generator before implementation. The legacy regression includes all ten maps,
+including reports, manifests, retained recipes/sources and runtime files. The
+new freezes cover the format-5 recipe/evaluator/executor/runtimes, format-4/5
+input and retained-token sources, and the shared format-1/5 Go expression source.
+No older runtime source or reported generator identity is rewritten to claim
+compatibility.
 
 ## Implementation seams established by the public baseline
 
@@ -519,3 +534,7 @@ claim that format 5 or format 6 is implemented at commit 6c78676.
 [rust-runtime]: https://github.com/beyond10x/ess/blob/6c78676c35193423fe326b9dde21b8fc21681b8a/crates/generate/schema-contract/src/realize/normalize/rust_runtime.rs.txt
 [go-input]: https://github.com/beyond10x/ess/blob/6c78676c35193423fe326b9dde21b8fc21681b8a/crates/generate/schema-contract/src/realize/normalize/go_input.go.txt
 [go-runtime]: https://github.com/beyond10x/ess/blob/6c78676c35193423fe326b9dde21b8fc21681b8a/crates/generate/schema-contract/src/realize/normalize/go_runtime.go.txt
+
+## Checked arity metadata
+
+The checked plan retains a private `position_arities: BTreeMap<String, u64>`, recomputed from replay-checked stage roots and each successfully checked `position` operand's exact tuple type. Keys are full escaped expression pointers, including branch, stage and nested expression location; collection input indices do not change those static pointers. Arity is never derived from the selected index, the runtime array length or an authored annotation. The authored recipe keeps exactly `position { value, index }` and receives no arity or trusted-check field. The reference passes immutable metadata through `execute::run` and every evaluator context. For format 6 only, generated Rust places a private `POSITION_ARITIES` binding in its existing schema-binding source and stores it privately in `Normalizer`; generated Go places the equivalent private `positionArities` map in its existing operation bindings. Each Position evaluates its operand once and propagates missing; a present operand requires positive checked metadata, an array of exactly that arity and an in-range index. Missing or zero metadata, nonarrays, shorter or longer arrays even when the selected index exists, and out-of-range indices refuse at the expression pointer with `position_value`: `position encountered a value outside its checked tuple contract`. Tests cover these defenses and static-pointer propagation through nested collection and condition scopes. This refines private Plan/checker/evaluator/executor/target/Normalizer plumbing within the existing scope, without changing public run APIs, authored grammar, root identity or report fields. Recipe 6 retains `ess-normalization-target/3`; complete emitted file hashes cover the private bindings. Freeze affected older sources before editing and preserve complete format-1 through format-5 output bytes at the same generator version.

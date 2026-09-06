@@ -1,0 +1,135 @@
+package adversary_types
+
+import (
+	"encoding/json"
+	"math"
+	"reflect"
+	"strings"
+	"testing"
+)
+
+const adversaryInput = `{"choice":{"value":"node","content":{"a/b~":TOKEN,"next":{"back":{"a/b~":TOKEN},"numbers":{"$serde_json::private::RawValue":[TOKEN,null]}}}},"nullableBag":{"none":null,"some":{"value":"numbers","content":{"__proto__":[TOKEN,null]}}},"optionalMaybe":TOKEN}`
+
+func adversaryBits(value any, found *[]uint64) {
+	switch v := value.(type) {
+	case float64:
+		*found = append(*found, math.Float64bits(v))
+	case []any:
+		for _, child := range v {
+			adversaryBits(child, found)
+		}
+	case map[string]any:
+		for _, child := range v {
+			adversaryBits(child, found)
+		}
+	}
+}
+
+func TestRecursiveSourceBits(t *testing.T) {
+	for _, c := range []struct {
+		token string
+		bits  uint64
+	}{
+		{"-0", 0x8000000000000000},
+		{"-0e999999999999999999999999999999", 0x8000000000000000},
+		{"-1e-999999999999999999999999999999", 0x8000000000000000},
+		{"2.4703282292062328e-324", 1},
+		{"-2.4703282292062328e-324", 0x8000000000000001},
+		{"9007199254740995", 0x4340000000000002},
+	} {
+		var value ProbeFloatEnvelope
+		input := strings.ReplaceAll(adversaryInput, "TOKEN", c.token)
+		if err := json.Unmarshal([]byte(input), &value); err != nil {
+			t.Fatal(c.token, err)
+		}
+		output, err := json.Marshal(value)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var decoded any
+		if err := json.Unmarshal(output, &decoded); err != nil {
+			t.Fatal(err)
+		}
+		var actual []uint64
+		adversaryBits(decoded, &actual)
+		if len(actual) != 5 {
+			t.Fatalf("%s: %v", output, actual)
+		}
+		for _, b := range actual {
+			if b != c.bits {
+				t.Fatalf("%s: %016x", c.token, b)
+			}
+		}
+		if c.bits == 0x8000000000000000 && strings.Count(string(output), "-0.0") != 5 {
+			t.Fatalf("%s", output)
+		}
+	}
+}
+
+func TestEveryLateFailureLeavesTheWholeReceiverUntouched(t *testing.T) {
+	for _, token := range []string{
+		`{"$serde_json::private::Number":"-0"}`,
+		`{"$serde_json::private::RawValue":"-0"}`,
+		`{"$serde_json::private::RawValue":"-0","extra":0}`,
+		"1.7976931348623159e308", "-1e999999999999999999999999999999",
+		`"-0"`, "[]", "true",
+	} {
+		for selected := 0; selected < 5; selected++ {
+			var receiver ProbeFloatEnvelope
+			if err := json.Unmarshal([]byte(strings.ReplaceAll(adversaryInput, "TOKEN", "-0")), &receiver); err != nil {
+				t.Fatal(err)
+			}
+			before, err := json.Marshal(receiver)
+			if err != nil {
+				t.Fatal(err)
+			}
+			var independent ProbeFloatEnvelope
+			if err := json.Unmarshal(before, &independent); err != nil {
+				t.Fatal(err)
+			}
+			parts := strings.Split(adversaryInput, "TOKEN")
+			input := parts[0]
+			for i, part := range parts[1:] {
+				replacement := "9007199254740995"
+				if i == selected {
+					replacement = token
+				}
+				input += replacement + part
+			}
+			if err := receiver.UnmarshalJSON([]byte(input)); err == nil {
+				t.Fatalf("slot %d: %s", selected, input)
+			}
+			after, err := json.Marshal(receiver)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if string(after) != string(before) || !reflect.DeepEqual(receiver, independent) {
+				t.Fatalf("partial receiver mutation at slot %d", selected)
+			}
+		}
+	}
+}
+
+func TestOptionalNullableAndRetryResetAreExplicit(t *testing.T) {
+	var value ProbeFloatEnvelope
+	present := `{"choice":{"value":"text","content":"-0"},"nullableBag":{"none":null},"optionalMaybe":null}`
+	if err := json.Unmarshal([]byte(present), &value); err != nil {
+		t.Fatal(err)
+	}
+	raw, err := json.Marshal(value)
+	if err != nil || !strings.Contains(string(raw), `"optionalMaybe":null`) {
+		t.Fatalf("%s %v", raw, err)
+	}
+	missing := `{"choice":{"value":"text","content":"-0"},"nullableBag":{}}`
+	if err := json.Unmarshal([]byte(missing), &value); err != nil {
+		t.Fatal(err)
+	}
+	raw, err = json.Marshal(value)
+	if err != nil || strings.Contains(string(raw), "optionalMaybe") {
+		t.Fatalf("stale optional state: %s %v", raw, err)
+	}
+	var scalar ProbeFloatScalar
+	if json.Unmarshal([]byte("null"), &scalar) == nil {
+		t.Fatal("null became a scalar")
+	}
+}

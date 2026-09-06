@@ -12,9 +12,19 @@
   and generated Rust/Go preserve signed zero, subnormals and nearest-even rounding.
   Two typed Binary64 operands use IEEE equality; authored model predicates retain
   their existing Number comparisons. Complete format 1–4 generated maps remain
-  frozen. Structural Rust/Go codecs, whole-system synthesis and conformance refuse
-  unsupported Binary64 before publication; TypeScript structural output reports
-  the finite codec obligation.
+  frozen. Whole-system synthesis and conformance refuse unsupported Binary64
+  before publication; TypeScript structural output reports the finite codec obligation.
+- Standalone model Rust/Go libraries now emit checked finite Binary64 wrappers.
+  Original-token codecs preserve signed zero, subnormals and nearest-even rounding
+  through supported aliases, recursive containers and unions. Rust requires
+  source-backed Serde decoding; mixed declared-field/Binary64-extra records refuse
+  before output. Existing non-Binary64 generated maps remain unchanged.
+- `ess-normalization/6` adds explicit fixed string array preparation and checked
+  `position` reads in the reference, Rust and Go targets. Declared boundaries
+  preserve absence, turn null values/elements into empty strings, pad short arrays
+  and discard excess tokens after strict lexical checks. Active policies require
+  original JSON text. Format 6 retains target report 3; complete format 1–5 maps
+  remain byte-identical at the same generator version.
 - Opt-in `ess-conformance-report/2` separates passed, failed, error, unsupported
   and skipped counts, binding outcomes to the exact executed suite bytes.
   Rust/CLI also expose checked `ess-conformance-run/2` detailed output; generated

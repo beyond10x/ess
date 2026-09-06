@@ -1,0 +1,130 @@
+package binary64_types
+
+import (
+    "encoding/json"
+    "math"
+    "strings"
+    "testing"
+)
+
+var numbers = []struct{ token string; bits uint64 }{
+    {"0", 0}, {"-0", 0x8000000000000000}, {"-0.0", 0x8000000000000000},
+    {"9007199254740993", 0x4340000000000000}, {"9007199254740995", 0x4340000000000002},
+    {"-9007199254740993", 0xc340000000000000}, {"-9007199254740995", 0xc340000000000002},
+    {"1.00000000000000011102230246251565404236316680908203125", 0x3ff0000000000000},
+    {"1.00000000000000011102230246251565404236316680908203126", 0x3ff0000000000001},
+    {"1.00000000000000033306690738754696212708950042724609375", 0x3ff0000000000002},
+    {"1.7976931348623157e308", 0x7fefffffffffffff}, {"2.2250738585072014e-308", 0x0010000000000000},
+    {"5e-324", 1}, {"-5e-324", 0x8000000000000001},
+    {"2.4703282292062327e-324", 0}, {"2.4703282292062328e-324", 1},
+    {"-2.4703282292062327e-324", 0x8000000000000000}, {"1e-999", 0}, {"-1e-999", 0x8000000000000000},
+}
+var bad = []string{`null`, `true`, `false`, `"-0"`, `[]`, `{}`,
+    `{"$serde_json::private::Number":"-0"}`, `{"$serde_json::private::RawValue":"-0"}`,
+    `1.7976931348623159e308`, `1e999`, `-1e999`, `NaN`, `Inf`, `Infinity`, `+1`, `0x1p0`, `01`, `1.`, `1e`, `--1`, `1 2`, `/*x*/1`,
+}
+
+func TestFiniteRoundingAndSerializedIdentity(t *testing.T) {
+    for _, c := range numbers {
+        var value EssBinary64
+        if err := json.Unmarshal([]byte(c.token), &value); err != nil { t.Fatal(c.token, err) }
+        if math.Float64bits(value.Float64()) != c.bits { t.Fatalf("%s: %016x", c.token, math.Float64bits(value.Float64())) }
+        var wrapped SampleFloatScalar
+        if err := json.Unmarshal([]byte(c.token), &wrapped); err != nil { t.Fatal(c.token, err) }
+        if math.Float64bits(wrapped.Value.Float64()) != c.bits { t.Fatal(c.token) }
+        encoded, err := json.Marshal(value)
+        if err != nil { t.Fatal(err) }
+        if !strings.ContainsAny(string(encoded), ".eE") { t.Fatalf("lost float identity: %s", encoded) }
+        if c.bits == 0x8000000000000000 && string(encoded) != "-0.0" { t.Fatalf("lost -0: %s", encoded) }
+        var again EssBinary64
+        if err := json.Unmarshal(encoded, &again); err != nil { t.Fatal(err) }
+        if math.Float64bits(again.Float64()) != c.bits { t.Fatalf("roundtrip %s -> %s", c.token, encoded) }
+    }
+}
+
+func TestNumericKindConstructionAndAtomicScalar(t *testing.T) {
+    for _, token := range bad {
+        value, _ := NewEssBinary64(7)
+        if value.UnmarshalJSON([]byte(token)) == nil { t.Fatalf("accepted %s", token) }
+        if value.Float64() != 7 { t.Fatalf("failed decode mutated value: %s", token) }
+    }
+    for _, value := range []float64{math.NaN(), math.Inf(1), math.Inf(-1)} {
+        if _, err := NewEssBinary64(value); err == nil { t.Fatal("accepted nonfinite construction") }
+        // This same-package test qualifies the defensive serializer without exporting storage.
+        if _, err := (EssBinary64{value: value}).MarshalJSON(); err == nil { t.Fatal("serialized nonfinite") }
+    }
+    for _, c := range numbers {
+        value, err := NewEssBinary64(math.Float64frombits(c.bits))
+        if err != nil || math.Float64bits(value.Float64()) != c.bits { t.Fatal(c.token, err) }
+    }
+    var zero EssBinary64
+    if math.Float64bits(zero.Float64()) != 0 { t.Fatal("invalid zero value") }
+    positive, _ := NewEssBinary64(0)
+    negative, _ := NewEssBinary64(math.Copysign(0, -1))
+    if positive != negative { t.Fatal("numeric zero equality") }
+}
+
+func path[T any](t *testing.T, template string) {
+    t.Helper()
+    for _, token := range []string{"-0", "-1e-999"} {
+        input := strings.ReplaceAll(template, "TOKEN", token)
+        var value T
+        if err := json.Unmarshal([]byte(input), &value); err != nil { t.Fatal(input, err) }
+        output, err := json.Marshal(value)
+        if err != nil { t.Fatal(err) }
+        if !strings.Contains(string(output), "-0.0") { t.Fatalf("lost sign: %s -> %s", input, output) }
+    }
+    for _, token := range bad {
+        if !json.Valid([]byte(token)) { continue }
+        input := strings.ReplaceAll(template, "TOKEN", token)
+        var value T
+        if json.Unmarshal([]byte(input), &value) == nil { t.Fatalf("accepted %s", input) }
+    }
+}
+
+func TestAllNestedStructuralPaths(t *testing.T) {
+    path[SampleFloatAlias](t, `TOKEN`)
+    path[SampleFloatDictionary](t, `{"x":TOKEN}`)
+    path[SampleFloatMapAlias](t, `{"x":TOKEN}`)
+    path[SampleFloatMaps](t, `{"x":{"y":TOKEN}}`)
+    path[SampleFloatListMap](t, `{"x":[TOKEN]}`)
+    path[SampleFloatChoice](t, `{"value":"number","content":TOKEN}`)
+    path[SampleFloatChoiceMap](t, `{"x":{"value":"number","content":TOKEN}}`)
+    path[SampleFloatRecord](t, `{"required":TOKEN,"dictionary":{},"children":[]}`)
+    path[SampleFloatRecord](t, `{"required":1,"optional":TOKEN,"dictionary":{},"children":[]}`)
+    path[SampleFloatRecord](t, `{"required":1,"dictionary":{},"children":[{"required":TOKEN,"dictionary":{},"children":[]}]}`)
+    path[SampleFloatNested](t, `{"value":"dictionary","content":{"x":TOKEN}}`)
+    path[SampleFloatNested](t, `{"value":"record","content":{"required":TOKEN,"dictionary":{},"children":[]}}`)
+    for _, token := range []string{"-0", "-1e-999"} {
+        var items SampleFloatItems
+        if err := json.Unmarshal([]byte("["+token+",null]"), &items); err != nil { t.Fatal(err) }
+        raw, err := json.Marshal(items)
+        if err != nil || string(raw) != "[-0.0,null]" { t.Fatalf("%s %v", raw, err) }
+        var values SampleFloatNullableMap
+        if err := json.Unmarshal([]byte(`{"x":`+token+`,"none":null}`), &values); err != nil { t.Fatal(err) }
+        raw, err = json.Marshal(values)
+        if err != nil || string(raw) != `{"none":null,"x":-0.0}` { t.Fatalf("%s %v", raw, err) }
+    }
+    for _, token := range []string{"1e999", `"1"`, "{}"} {
+        var items SampleFloatItems
+        if json.Unmarshal([]byte("["+token+"]"), &items) == nil { t.Fatal(token) }
+        var values SampleFloatNullableMap
+        if json.Unmarshal([]byte(`{"x":`+token+`}`), &values) == nil { t.Fatal(token) }
+    }
+}
+
+func TestPresenceUnionAndAtomicRecords(t *testing.T) {
+    var value SampleFloatRecord
+    valid := `{"required":7,"dictionary":{},"children":[]}`
+    if err := json.Unmarshal([]byte(valid), &value); err != nil { t.Fatal(err) }
+    if value.Optional.Present { t.Fatal("absent optional") }
+    for _, input := range []string{
+        `{"dictionary":{},"children":[]}`, `{"required":1,"optional":null,"dictionary":{},"children":[]}`,
+        `{"required":1,"dictionary":{"x":1e999},"children":[]}`,
+    } {
+        if json.Unmarshal([]byte(input), &value) == nil { t.Fatal(input) }
+        if value.Required.Float64() != 7 { t.Fatal("partial record assignment") }
+    }
+    var text SampleFloatChoice
+    if err := json.Unmarshal([]byte(`{"value":"text","content":"-0"}`), &text); err != nil { t.Fatal(err) }
+}

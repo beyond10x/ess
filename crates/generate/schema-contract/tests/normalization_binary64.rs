@@ -192,7 +192,7 @@ fn floating_integral_results_do_not_become_integer_operands() {
 }
 
 #[test]
-fn compiler_metadata_and_structural_refusals_cannot_be_minted_by_schema_annotations() {
+fn compiler_metadata_and_finite_codecs_cannot_be_minted_by_schema_annotations() {
     let (model, _) = fixture::fixture();
     assert!(model
         .binary64_locations()
@@ -203,16 +203,14 @@ fn compiler_metadata_and_structural_refusals_cannot_be_minted_by_schema_annotati
     let structural = schema_contract::realize::Plan::from_model(&model).unwrap();
     assert!(structural
         .rust("adapter")
-        .unwrap_err()
-        .0
-        .iter()
-        .all(|e| e.rule == "model_binary64_codec"));
+        .unwrap()
+        .declarations
+        .contains("pub struct EssBinary64(f64)"));
     assert!(structural
         .go("adapter", "example.invalid/adapter")
-        .unwrap_err()
-        .0
-        .iter()
-        .all(|e| e.rule == "model_binary64_codec"));
+        .unwrap()
+        .declarations
+        .contains("type EssBinary64 struct"));
     let report = json!(structural.typescript().report);
     assert!(report["obligations"]
         .as_array()

@@ -5,6 +5,7 @@ use serde_json::Value;
 
 pub(super) fn run(
     recipe: &Recipe,
+    position_arities: &std::collections::BTreeMap<String, u64>,
     branch: &str,
     input: &Value,
     validate: impl Fn(&Root, &Value, &str) -> Result<(), Refused>,
@@ -24,7 +25,9 @@ pub(super) fn run(
             input: &current,
             item: None,
             index: None,
-            binary64: recipe.format == super::recipe::FORMAT_V5,
+            binary64: [super::recipe::FORMAT_V5, super::recipe::FORMAT_V6]
+                .contains(&recipe.format.as_str()),
+            position_arities,
         };
         for (index, condition) in stage.requires.iter().enumerate() {
             let at = format!("{at}/requires/{index}");

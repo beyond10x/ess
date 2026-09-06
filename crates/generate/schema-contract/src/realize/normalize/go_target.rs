@@ -25,15 +25,21 @@ pub(super) fn generate(plan: &Plan, package: &str, module: &str) -> Result<Reali
     }
     check_schema_support(plan)?;
     let (roots, mut files) = target::sources(plan)?;
-    let floating = plan.recipe.format == super::FORMAT_V5;
+    let positional = plan.recipe.format == super::FORMAT_V6;
+    let floating = positional || plan.recipe.format == super::FORMAT_V5;
     let capture = floating || plan.recipe.format == super::FORMAT_V4;
-    for (path, source) in runtime_sources(floating, capture) {
+    for (path, source) in runtime_sources(positional, floating, capture) {
         files.insert(path.to_owned(), source.replace("__PACKAGE__", package));
     }
     if capture {
         files.insert(
             "retained.go".to_owned(),
-            include_str!("go_retained.go.txt").replace("__PACKAGE__", package),
+            if positional {
+                include_str!("go_retained.go.txt")
+            } else {
+                include_str!("legacy_v4_v5/go_retained.go.txt")
+            }
+            .replace("__PACKAGE__", package),
         );
     }
     files.insert("source.recipe.json".to_owned(), plan.to_json());
@@ -83,6 +89,9 @@ pub(super) fn generate(plan: &Plan, package: &str, module: &str) -> Result<Reali
             plan.recipe.raw_json_inputs.as_ref(),
         );
     }
+    if positional {
+        positional_bindings(&mut source, plan);
+    }
     files.insert("bindings.go".to_owned(), source);
     Ok(target::finish(
         plan,
@@ -93,6 +102,35 @@ pub(super) fn generate(plan: &Plan, package: &str, module: &str) -> Result<Reali
         files,
         roots,
     ))
+}
+
+fn positional_bindings(source: &mut String, plan: &Plan) {
+    source.push_str("\nvar positionArities = map[string]uint64{\n");
+    for (at, arity) in &plan.position_arities {
+        writeln!(source, "{}: {arity},", quote(at)).expect("String write");
+    }
+    source.push_str("}\n\nvar positionalPolicies = map[string][]positionalPolicy{\n");
+    if let Some(branches) = &plan.recipe.positional_inputs {
+        for (branch, policies) in branches {
+            writeln!(source, "{}: {{", quote(branch)).expect("String write");
+            for policy in policies {
+                write!(source, "{{length:{},path:[]numberSegment{{", policy.length)
+                    .expect("String write");
+                for segment in &policy.path {
+                    match segment {
+                        NumberPath::Field { name } => {
+                            write!(source, "{{name:{}}},", quote(name))
+                        }
+                        NumberPath::Items => write!(source, "{{items:true}},"),
+                    }
+                    .expect("String write");
+                }
+                source.push_str("}},\n");
+            }
+            source.push_str("},\n");
+        }
+    }
+    source.push_str("}\n");
 }
 
 fn input_paths(source: &mut String, name: &str, branches: Option<&super::Binary64Inputs>) {
@@ -176,6 +214,7 @@ fn record(fields: &std::collections::BTreeMap<String, Expr>) -> String {
 
 fn expression(value: &Expr) -> String {
     match value {
+        Expr::Position { value, index } => format!("positionValue({},{index})", expression(value)),
         Expr::Null => "literal(nil)".to_owned(),
         Expr::Boolean { value } => format!("literal({value})"),
         Expr::String { value } => format!("literal({})", quote(value)),
@@ -320,12 +359,18 @@ fn condition(test: &Condition) -> String {
     }
 }
 
-fn runtime_sources(floating: bool, capture: bool) -> [(&'static str, &'static str); 6] {
+fn runtime_sources(
+    positional: bool,
+    floating: bool,
+    capture: bool,
+) -> [(&'static str, &'static str); 6] {
     [
         (
             "runtime.go",
-            if floating {
+            if positional {
                 include_str!("go_runtime.go.txt")
+            } else if floating {
+                include_str!("legacy_v5/go_runtime.go.txt")
             } else if capture {
                 include_str!("legacy_v4/go_runtime.go.txt")
             } else {
@@ -334,13 +379,22 @@ fn runtime_sources(floating: bool, capture: bool) -> [(&'static str, &'static st
         ),
         (
             "input.go",
-            if capture {
+            if positional {
                 include_str!("go_input.go.txt")
+            } else if capture {
+                include_str!("legacy_v4_v5/go_input.go.txt")
             } else {
                 include_str!("legacy_v1_v3/go_input.go.txt")
             },
         ),
-        ("expression.go", include_str!("go_expression.go.txt")),
+        (
+            "expression.go",
+            if positional {
+                include_str!("go_expression.go.txt")
+            } else {
+                include_str!("legacy_v1_v5/go_expression.go.txt")
+            },
+        ),
         ("collection.go", include_str!("go_collection.go.txt")),
         (
             "condition.go",

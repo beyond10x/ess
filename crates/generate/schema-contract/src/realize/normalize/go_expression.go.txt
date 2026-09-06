@@ -107,3 +107,18 @@ func chooseValue(test condition, yes, no expression) expression {
 		return no(context, at+"/else_value")
 	}
 }
+
+func positionValue(value expression, index uint64) expression {
+	return func(s scope, at string) (any, error) {
+		value, err := value(s, at+"/value")
+		if err != nil || isMissing(value) {
+			return value, err
+		}
+		arity, exists := positionArities[at]
+		items, array := value.([]any)
+		if !exists || arity == 0 || !array || uint64(len(items)) != arity || index >= arity {
+			return nil, refusal(at, "position_value", "position encountered a value outside its checked tuple contract")
+		}
+		return items[index], nil
+	}
+}

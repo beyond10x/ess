@@ -31,8 +31,8 @@ its later binding and writer-baseline refresh; no replay-fidelity result is clai
 
 ## Source reconciliation and preflight
 
-The ESS primary is clean on main6c6620b3783cbd41ca31a998805bc8e51e0c3515, verified equal to
-the remote. The manager-owned coordinator was reused deliberately from the continuing loop.
+At opening, the ESS primary was clean on main6c6620b3783cbd41ca31a998805bc8e51e0c3515, verified
+equal to the remote. The manager-owned coordinator was reused deliberately from the continuing loop.
 Root committed its F15 scope as fcf94282, then reconciled the published Binary64 work as
 a24ef59. The whole incoming planning store was restored and15 semantic CLI operations replayed
 17 local events. The incoming1282-line journal prefix,145 unrelated artifact files and all
@@ -181,6 +181,19 @@ the inherited12 package,3 distinct child and1948 integration cases remain separa
 Its diff is empty, all source/fixture hashes remain unchanged and it relinquished every write.
 The two-review findings ledger has no carried, new or resolved findings. No third attack and no
 fabricated fixed outcome are needed. Final changed-input gates and public delivery remain pending.
+
+Before the final gate, remote main advanced to b55efa4cd6c379217f60b98fb30f28f70e526ee6 with the
+other session's reviewed structural Binary64 codecs and positional normalization. Root merged
+that exact published source, preserving the new public format rows and changelog alongside this
+unit's composition text. Only the append-only planning journal conflicted. The complete incoming
+store became canonical;24 semantic AEP CLI commands replayed29 local events. All1319 incoming
+journal lines,148 unrelated incoming artifacts and all8 local artifacts remained byte-exact.
+The replay initially stopped at its own guard for a compound scope change; its partial store
+and log are retained. The CLI supports that exact combined remove/add operation, so the resumed
+replay used one command and preserved the original revision. No journal concatenation or direct
+artifact edit occurred. The full record is under composition/preparation/reconcile-b55efa4.
+This source change requires a fresh complete integration gate; the earlier1948-case result is
+retained against its original source and is not extended to the incoming normalization work.
 
 ## Website delivery checkout
 

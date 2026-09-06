@@ -21,7 +21,7 @@ func (n *Normalizer) NormalizeBase64JSON(branch string, encoded string) (json.Ra
 }
 
 func captureJSON(data []byte, at string, depth int) (string, error) {
-	if err := validateCaptured(data, at, depth); err != nil {
+	if err := validateRetained(data, at, depth, "captured JSON token contains invalid Unicode"); err != nil {
 		return "", err
 	}
 	return base64.StdEncoding.EncodeToString(data), nil
@@ -29,11 +29,11 @@ func captureJSON(data []byte, at string, depth int) (string, error) {
 
 // Grammar and token spans come from jsontext; only Unicode and depth are checked
 // here. Values and object keys are visited in source order without numeric parsing.
-func validateCaptured(data []byte, at string, depth int) error {
+func validateRetained(data []byte, at string, depth int, detail string) error {
 	if depth > 64 {
 		return refusal(at, "input_depth", "JSON input exceeds 64 levels")
 	}
-	invalid := func() error { return refusal(at, "input_syntax", "captured JSON token contains invalid Unicode") }
+	invalid := func() error { return refusal(at, "input_syntax", detail) }
 	decoder := rawDecoder(data)
 	switch data[0] {
 	case '{':
@@ -47,7 +47,7 @@ func validateCaptured(data []byte, at string, depth int) error {
 			if err != nil {
 				return invalid()
 			}
-			if err := validateCaptured(raw, at, depth+1); err != nil {
+			if err := validateRetained(raw, at, depth+1, detail); err != nil {
 				return err
 			}
 		}
@@ -58,7 +58,7 @@ func validateCaptured(data []byte, at string, depth int) error {
 			if err != nil {
 				return invalid()
 			}
-			if err := validateCaptured(raw, at, depth+1); err != nil {
+			if err := validateRetained(raw, at, depth+1, detail); err != nil {
 				return err
 			}
 		}

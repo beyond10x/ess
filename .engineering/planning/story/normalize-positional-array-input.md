@@ -2,7 +2,7 @@
 format: aep.planning-md/1
 id: story:normalize-positional-array-input
 kind: story
-status: draft
+status: implemented
 title: Normalize declared positional arrays without guessing decoder policy
 relations:
 - derived_from: story:source-pinned-data-normalization
@@ -13,6 +13,8 @@ scope:
   path: crates/edge/ess-cli/src/normalize.rs
 - confidence: cited
   path: crates/edge/ess-cli/tests/normalization.rs
+- confidence: cited
+  path: crates/edge/ess-cli/tests/normalization_positional_adversary.rs
 - confidence: cited
   path: crates/generate/schema-contract/src/realize/normalize.rs
 - confidence: cited
@@ -25,7 +27,7 @@ scope:
   path: crates/generate/schema-contract/src/realize/normalize/go_expression.go.txt
 - confidence: cited
   path: crates/generate/schema-contract/src/realize/normalize/go_input.go.txt
-- confidence: inferred
+- confidence: cited
   path: crates/generate/schema-contract/src/realize/normalize/go_retained.go.txt
 - confidence: cited
   path: crates/generate/schema-contract/src/realize/normalize/go_runtime.go.txt
@@ -33,29 +35,29 @@ scope:
   path: crates/generate/schema-contract/src/realize/normalize/go_target.rs
 - confidence: cited
   path: crates/generate/schema-contract/src/realize/normalize/input.rs
-- confidence: inferred
+- confidence: cited
   path: crates/generate/schema-contract/src/realize/normalize/legacy_v1_v5/go_expression.go.txt
-- confidence: inferred
+- confidence: cited
   path: crates/generate/schema-contract/src/realize/normalize/legacy_v4_v5/go_input.go.txt
-- confidence: inferred
+- confidence: cited
   path: crates/generate/schema-contract/src/realize/normalize/legacy_v4_v5/go_retained.go.txt
-- confidence: inferred
+- confidence: cited
   path: crates/generate/schema-contract/src/realize/normalize/legacy_v4_v5/input.rs.txt
-- confidence: inferred
+- confidence: cited
   path: crates/generate/schema-contract/src/realize/normalize/legacy_v4_v5/retained.rs.txt
-- confidence: inferred
+- confidence: cited
   path: crates/generate/schema-contract/src/realize/normalize/legacy_v5/eval.rs.txt
-- confidence: inferred
+- confidence: cited
   path: crates/generate/schema-contract/src/realize/normalize/legacy_v5/execute.rs.txt
-- confidence: inferred
+- confidence: cited
   path: crates/generate/schema-contract/src/realize/normalize/legacy_v5/go_runtime.go.txt
-- confidence: inferred
+- confidence: cited
   path: crates/generate/schema-contract/src/realize/normalize/legacy_v5/recipe.rs.txt
-- confidence: inferred
+- confidence: cited
   path: crates/generate/schema-contract/src/realize/normalize/legacy_v5/rust_runtime.rs.txt
 - confidence: cited
   path: crates/generate/schema-contract/src/realize/normalize/recipe.rs
-- confidence: inferred
+- confidence: cited
   path: crates/generate/schema-contract/src/realize/normalize/retained.rs
 - confidence: cited
   path: crates/generate/schema-contract/src/realize/normalize/rust_runtime.rs.txt
@@ -63,23 +65,29 @@ scope:
   path: crates/generate/schema-contract/src/realize/normalize/target.rs
 - confidence: cited
   path: crates/generate/schema-contract/tests/fixtures/normalization_legacy_maps.json
-- confidence: inferred
+- confidence: cited
   path: crates/generate/schema-contract/tests/fixtures/normalization_positional.rs
-- confidence: inferred
+- confidence: cited
   path: crates/generate/schema-contract/tests/fixtures/normalization_positional_go_tests.go.txt
-- confidence: inferred
+- confidence: cited
   path: crates/generate/schema-contract/tests/fixtures/normalization_positional_rust_tests.rs.txt
 - confidence: cited
+  path: crates/generate/schema-contract/tests/fixtures/positional_adversary_go.go.txt
+- confidence: cited
+  path: crates/generate/schema-contract/tests/fixtures/positional_adversary_rust.rs.txt
+- confidence: cited
   path: crates/generate/schema-contract/tests/normalization_legacy_bytes.rs
-- confidence: inferred
+- confidence: cited
   path: crates/generate/schema-contract/tests/normalization_positional.rs
-- confidence: inferred
+- confidence: cited
+  path: crates/generate/schema-contract/tests/normalization_positional_adversary.rs
+- confidence: cited
   path: crates/generate/schema-contract/tests/normalization_positional_targets.rs
-- confidence: inferred
+- confidence: cited
   path: docs/design/positional-array-normalization.md
 - confidence: cited
   path: docs/design/source-pinned-data-normalization.md
-revision: 9
+revision: 17
 ---
 ## Evidence
 
@@ -114,6 +122,48 @@ a homogeneous list or replace source decoding with stricter schema validation.
   and semantics unless an explicitly versioned migration requires otherwise.
 
 ## Scope
+
+Implementation confirmation at `eb2e5d60e9e803993417df39563bc744dbcd36fc`: the implementor confirmed every originally inferred path before editing, and root verified every final file hash and mode against its manifest. No production scope widening occurred. The current confirmed implementation scope is:
+
+- **cited** `crates/edge/ess-cli/src/normalize.rs` at the frozen commit.
+- **cited** `crates/edge/ess-cli/tests/normalization.rs` at the frozen commit.
+- **cited** `crates/generate/schema-contract/src/realize/normalize.rs` at the frozen commit.
+- **cited** `crates/generate/schema-contract/src/realize/normalize/check.rs` at the frozen commit.
+- **cited** `crates/generate/schema-contract/src/realize/normalize/eval.rs` at the frozen commit.
+- **cited** `crates/generate/schema-contract/src/realize/normalize/execute.rs` at the frozen commit.
+- **cited** `crates/generate/schema-contract/src/realize/normalize/go_expression.go.txt` at the frozen commit.
+- **cited** `crates/generate/schema-contract/src/realize/normalize/go_input.go.txt` at the frozen commit.
+- **cited** `crates/generate/schema-contract/src/realize/normalize/go_retained.go.txt` at the frozen commit.
+- **cited** `crates/generate/schema-contract/src/realize/normalize/go_runtime.go.txt` at the frozen commit.
+- **cited** `crates/generate/schema-contract/src/realize/normalize/go_target.rs` at the frozen commit.
+- **cited** `crates/generate/schema-contract/src/realize/normalize/input.rs` at the frozen commit.
+- **cited** `crates/generate/schema-contract/src/realize/normalize/legacy_v1_v5/go_expression.go.txt` at the frozen commit.
+- **cited** `crates/generate/schema-contract/src/realize/normalize/legacy_v4_v5/go_input.go.txt` at the frozen commit.
+- **cited** `crates/generate/schema-contract/src/realize/normalize/legacy_v4_v5/go_retained.go.txt` at the frozen commit.
+- **cited** `crates/generate/schema-contract/src/realize/normalize/legacy_v4_v5/input.rs.txt` at the frozen commit.
+- **cited** `crates/generate/schema-contract/src/realize/normalize/legacy_v4_v5/retained.rs.txt` at the frozen commit.
+- **cited** `crates/generate/schema-contract/src/realize/normalize/legacy_v5/eval.rs.txt` at the frozen commit.
+- **cited** `crates/generate/schema-contract/src/realize/normalize/legacy_v5/execute.rs.txt` at the frozen commit.
+- **cited** `crates/generate/schema-contract/src/realize/normalize/legacy_v5/go_runtime.go.txt` at the frozen commit.
+- **cited** `crates/generate/schema-contract/src/realize/normalize/legacy_v5/recipe.rs.txt` at the frozen commit.
+- **cited** `crates/generate/schema-contract/src/realize/normalize/legacy_v5/rust_runtime.rs.txt` at the frozen commit.
+- **cited** `crates/generate/schema-contract/src/realize/normalize/recipe.rs` at the frozen commit.
+- **cited** `crates/generate/schema-contract/src/realize/normalize/retained.rs` at the frozen commit.
+- **cited** `crates/generate/schema-contract/src/realize/normalize/rust_runtime.rs.txt` at the frozen commit.
+- **cited** `crates/generate/schema-contract/src/realize/normalize/target.rs` at the frozen commit.
+- **cited** `crates/generate/schema-contract/tests/fixtures/normalization_legacy_maps.json` at the frozen commit.
+- **cited** `crates/generate/schema-contract/tests/fixtures/normalization_positional.rs` at the frozen commit.
+- **cited** `crates/generate/schema-contract/tests/fixtures/normalization_positional_go_tests.go.txt` at the frozen commit.
+- **cited** `crates/generate/schema-contract/tests/fixtures/normalization_positional_rust_tests.rs.txt` at the frozen commit.
+- **cited** `crates/generate/schema-contract/tests/normalization_legacy_bytes.rs` at the frozen commit.
+- **cited** `crates/generate/schema-contract/tests/normalization_positional.rs` at the frozen commit.
+- **cited** `crates/generate/schema-contract/tests/normalization_positional_targets.rs` at the frozen commit.
+- **cited** `docs/design/positional-array-normalization.md` at the frozen commit.
+- **cited** `docs/design/source-pinned-data-normalization.md` at the frozen commit.
+
+### Historical opening scope and constraints
+
+The original cited/inferred classifications below are retained as the opening observation. The confirmation above supersedes their uncertainty; the stated ownership and symbol constraints remain binding.
 
 Scope refreshed from frozen Binary64 unit bf16e504ccad68b2ee67607ba39606aadf07f627.
 This is a read-only source audit, not an implementation or final integrated gate.
@@ -297,3 +347,16 @@ Rust version admission to 6, freezing required old executor/runtime sources.
 Filed during resumed source mapping. This is a concrete capability refusal and a
 compatibility requirement, not a claim that every native decoder permissiveness
 must be reproduced by a typed canonical contract. No implementation is claimed.
+
+## Checked arity metadata
+
+The checked plan retains a private `position_arities: BTreeMap<String, u64>`, recomputed from replay-checked stage roots and each successfully checked `position` operand's exact tuple type. Keys are full escaped expression pointers, including branch, stage and nested expression location; collection input indices do not change those static pointers. Arity is never derived from the selected index, the runtime array length or an authored annotation. The authored recipe keeps exactly `position { value, index }` and receives no arity or trusted-check field. The reference passes immutable metadata through `execute::run` and every evaluator context. For format 6 only, generated Rust places a private `POSITION_ARITIES` binding in its existing schema-binding source and stores it privately in `Normalizer`; generated Go places the equivalent private `positionArities` map in its existing operation bindings. Each Position evaluates its operand once and propagates missing; a present operand requires positive checked metadata, an array of exactly that arity and an in-range index. Missing or zero metadata, nonarrays, shorter or longer arrays even when the selected index exists, and out-of-range indices refuse at the expression pointer with `position_value`: `position encountered a value outside its checked tuple contract`. Tests cover these defenses and static-pointer propagation through nested collection and condition scopes. This refines private Plan/checker/evaluator/executor/target/Normalizer plumbing within the existing scope, without changing public run APIs, authored grammar, root identity or report fields. Recipe 6 retains `ess-normalization-target/3`; complete emitted file hashes cover the private bindings. Freeze affected older sources before editing and preserve complete format-1 through format-5 output bytes at the same generator version.
+
+## Independent review scope
+
+Independent pass1 added four test-only paths at `3b500c7fcda959d99eccac402f7c8aa99311f8da`. Root verified all979 earlier tracked hashes and modes unchanged before committing them. The exact review is review-result:normalization-positional-adversary-pass1; it found no implementation issue and its outcome is no-op.
+
+- **cited** `crates/edge/ess-cli/tests/normalization_positional_adversary.rs` at the test commit.
+- **cited** `crates/generate/schema-contract/tests/fixtures/positional_adversary_go.go.txt` at the test commit.
+- **cited** `crates/generate/schema-contract/tests/fixtures/positional_adversary_rust.rs.txt` at the test commit.
+- **cited** `crates/generate/schema-contract/tests/normalization_positional_adversary.rs` at the test commit.

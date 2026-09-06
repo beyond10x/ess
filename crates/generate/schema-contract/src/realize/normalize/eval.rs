@@ -14,11 +14,13 @@ pub(super) struct Context<'a> {
     pub item: Option<&'a Value>,
     pub index: Option<usize>,
     pub binary64: bool,
+    pub position_arities: &'a BTreeMap<String, u64>,
 }
 
 impl Context<'_> {
     pub fn value(&self, expr: &Expr, at: &str) -> Result<Option<Value>> {
         let value = match expr {
+            Expr::Position { value, index } => return self.position(value, *index, at),
             Expr::Null => Value::Null,
             Expr::Boolean { value } => Value::Bool(*value),
             Expr::String { value } => Value::String(value.clone()),
@@ -116,6 +118,32 @@ impl Context<'_> {
             } => self.select(list, condition, value, Some(otherwise), at)?,
         };
         Ok(Some(value))
+    }
+
+    fn position(&self, operand: &Expr, index: u64, at: &str) -> Result<Option<Value>> {
+        let Some(value) = self.value(operand, &format!("{at}/value"))? else {
+            return Ok(None);
+        };
+        let invalid = || {
+            error(
+                at,
+                "position_value",
+                "position encountered a value outside its checked tuple contract",
+            )
+        };
+        let arity = self
+            .position_arities
+            .get(at)
+            .copied()
+            .filter(|arity| *arity > 0)
+            .ok_or_else(invalid)?;
+        let items = value
+            .as_array()
+            .filter(|items| items.len() as u64 == arity && index < arity)
+            .ok_or_else(invalid)?;
+        Ok(Some(
+            items[usize::try_from(index).map_err(|_| invalid())?].clone(),
+        ))
     }
 
     fn present(&self, expr: &Expr, at: &str) -> Result<Value> {
@@ -223,6 +251,7 @@ impl Context<'_> {
                 item: Some(item),
                 index: Some(index),
                 binary64: self.binary64,
+                position_arities: self.position_arities,
             };
             if scope.condition(condition, &format!("{at}/condition"))? {
                 let result = scope.present(value, &format!("{at}/value"))?;
@@ -278,6 +307,7 @@ impl Context<'_> {
                     item: Some(item),
                     index: Some(index),
                     binary64: self.binary64,
+                    position_arities: self.position_arities,
                 }
                 .present(value, &format!("{at}/value"))
             })
@@ -297,6 +327,7 @@ impl Context<'_> {
                 item: Some(item),
                 index: Some(index),
                 binary64: self.binary64,
+                position_arities: self.position_arities,
             };
             if scope.condition(condition, &format!("{at}/condition"))? {
                 let key = scope.present(key, &format!("{at}/key"))?;
@@ -404,4 +435,68 @@ fn integer(value: &Value, at: &str) -> Result<i64> {
 
 fn error(at: &str, rule: &str, detail: &str) -> Refused {
     Refused(vec![finding(at, rule, detail)])
+}
+
+#[cfg(test)]
+mod positional_defense {
+    use super::*;
+    use serde_json::json;
+
+    #[test]
+    fn checked_arity_is_required_for_present_values_and_missing_propagates() {
+        let at = "/private/position";
+        for (arity, input, index) in [
+            (None, json!(["a", "b"]), 0),
+            (Some(0), json!(["a", "b"]), 0),
+            (Some(2), json!(["a"]), 0),
+            (Some(2), json!(["a", "b", "c"]), 0),
+            (Some(2), json!({}), 0),
+            (Some(2), json!(["a", "b"]), 2),
+            (Some(2), json!(["a", "b"]), u64::MAX),
+        ] {
+            let position_arities = arity
+                .map(|arity| (at.to_owned(), arity))
+                .into_iter()
+                .collect();
+            let context = Context {
+                input: &input,
+                item: None,
+                index: None,
+                binary64: true,
+                position_arities: &position_arities,
+            };
+            let expression = Expr::Position {
+                value: Box::new(Expr::Read {
+                    scope: Scope::Input,
+                    path: Vec::new(),
+                }),
+                index,
+            };
+            assert_eq!(
+                json!(context.value(&expression, at).unwrap_err().0),
+                json!([{"pointer":at,"rule":"position_value","detail":"position encountered a value outside its checked tuple contract"}])
+            );
+        }
+        for (input, path, expected) in [
+            (json!(["a", null]), vec![], Some(Value::Null)),
+            (json!({}), vec!["missing".to_owned()], None),
+        ] {
+            let position_arities = [(at.to_owned(), 2)].into_iter().collect();
+            let context = Context {
+                input: &input,
+                item: None,
+                index: None,
+                binary64: true,
+                position_arities: &position_arities,
+            };
+            let expression = Expr::Position {
+                value: Box::new(Expr::Read {
+                    scope: Scope::Input,
+                    path,
+                }),
+                index: 1,
+            };
+            assert_eq!(context.value(&expression, at).unwrap(), expected);
+        }
+    }
 }

@@ -1,0 +1,29 @@
+// EssBinary64 stores a finite IEEE-754 binary64 value. Its zero value is +0.
+type EssBinary64 struct { value float64 }
+
+func NewEssBinary64(value float64) (EssBinary64, error) {
+	if math.IsNaN(value) || math.IsInf(value, 0) {
+		return EssBinary64{}, fmt.Errorf("Binary64 requires a finite value")
+	}
+	return EssBinary64{value: value}, nil
+}
+
+func (v EssBinary64) Float64() float64 { return v.value }
+
+func (v EssBinary64) MarshalJSON() ([]byte, error) {
+	if _, err := NewEssBinary64(v.value); err != nil { return nil, err }
+	if v.value == 0 && math.Signbit(v.value) { return []byte("-0.0"), nil }
+	token := strconv.FormatFloat(v.value, 'g', -1, 64)
+	if !strings.ContainsAny(token, ".eE") { token += ".0" }
+	return []byte(token), nil
+}
+
+func (v *EssBinary64) UnmarshalJSON(data []byte) error {
+	if !essIsNumber(data) { return fmt.Errorf("Binary64 requires a JSON number token") }
+	value, err := strconv.ParseFloat(string(bytes.TrimSpace(data)), 64)
+	if err != nil { return fmt.Errorf("Binary64 requires a finite value") }
+	decoded, err := NewEssBinary64(value)
+	if err != nil { return err }
+	*v = decoded
+	return nil
+}

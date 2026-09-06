@@ -2,7 +2,7 @@
 format: aep.planning-md/1
 id: story:binary64-structural-codecs
 kind: story
-status: draft
+status: implemented
 title: Preserve finite Binary64 in standalone model data libraries
 relations:
 - derived_from: story:model-binary64-fields
@@ -10,30 +10,38 @@ relations:
 - serves: vision:O2
 scope:
 - confidence: cited
+  path: crates/edge/ess-cli/tests/binary64_structural_adversary.rs
+- confidence: cited
   path: crates/edge/ess-cli/tests/model_types.rs
 - confidence: cited
   path: crates/generate/schema-contract/src/realize.rs
 - confidence: cited
   path: crates/generate/schema-contract/src/realize/go.rs
-- confidence: inferred
+- confidence: cited
   path: crates/generate/schema-contract/src/realize/go_binary64.go.txt
 - confidence: cited
   path: crates/generate/schema-contract/src/realize/rust.rs
-- confidence: inferred
+- confidence: cited
   path: crates/generate/schema-contract/src/realize/rust_binary64.rs.txt
-- confidence: inferred
+- confidence: cited
   path: crates/generate/schema-contract/tests/binary64_structural.rs
-- confidence: inferred
+- confidence: cited
+  path: crates/generate/schema-contract/tests/binary64_structural_adversary.rs
+- confidence: cited
+  path: crates/generate/schema-contract/tests/fixtures/binary64_structural_adversary_go.txt
+- confidence: cited
+  path: crates/generate/schema-contract/tests/fixtures/binary64_structural_adversary_rust.txt
+- confidence: cited
   path: crates/generate/schema-contract/tests/fixtures/binary64_wire_tests.go.txt
-- confidence: inferred
+- confidence: cited
   path: crates/generate/schema-contract/tests/fixtures/binary64_wire_tests.rs.txt
 - confidence: cited
   path: crates/generate/schema-contract/tests/normalization_binary64.rs
-- confidence: inferred
+- confidence: cited
   path: docs/design/binary64-structural-codecs.md
 - confidence: cited
   path: docs/design/model-binary64.md
-revision: 4
+revision: 9
 ---
 ## Outcome
 
@@ -81,6 +89,32 @@ paths and bytes under the same generator version. Structural TypeScript remains
 an obligation-bearing declaration, not an invented runtime decoder.
 
 ## Scope
+
+Implementation confirmation at `291f229256ce4fa78a17a01b085f56a9e5ab6990`: the implementor confirmed every originally inferred path before editing, and root verified every final file hash and mode against its manifest. No production scope widening occurred. The current confirmed implementation scope is:
+
+- **cited** `crates/edge/ess-cli/tests/model_types.rs` at the frozen commit.
+- **cited** `crates/generate/schema-contract/src/realize.rs` at the frozen commit.
+- **cited** `crates/generate/schema-contract/src/realize/go.rs` at the frozen commit.
+- **cited** `crates/generate/schema-contract/src/realize/go_binary64.go.txt` at the frozen commit.
+- **cited** `crates/generate/schema-contract/src/realize/rust.rs` at the frozen commit.
+- **cited** `crates/generate/schema-contract/src/realize/rust_binary64.rs.txt` at the frozen commit.
+- **cited** `crates/generate/schema-contract/tests/binary64_structural.rs` at the frozen commit.
+- **cited** `crates/generate/schema-contract/tests/fixtures/binary64_wire_tests.go.txt` at the frozen commit.
+- **cited** `crates/generate/schema-contract/tests/fixtures/binary64_wire_tests.rs.txt` at the frozen commit.
+- **cited** `crates/generate/schema-contract/tests/normalization_binary64.rs` at the frozen commit.
+- **cited** `docs/design/binary64-structural-codecs.md` at the frozen commit.
+- **cited** `docs/design/model-binary64.md` at the frozen commit.
+
+Independent review added four test-only paths in `b809e43dc492b8817fc5a860b0948e90bdab8649`; all969 earlier tracked files remained exact:
+
+- **cited** `crates/generate/schema-contract/tests/binary64_structural_adversary.rs` at the independent test commit.
+- **cited** `crates/generate/schema-contract/tests/fixtures/binary64_structural_adversary_rust.txt` at the independent test commit.
+- **cited** `crates/generate/schema-contract/tests/fixtures/binary64_structural_adversary_go.txt` at the independent test commit.
+- **cited** `crates/edge/ess-cli/tests/binary64_structural_adversary.rs` at the independent test commit.
+
+### Historical opening scope and constraints
+
+The original cited/inferred classifications below are retained as the opening observation. The confirmation above supersedes their uncertainty; the stated ownership and symbol constraints remain binding.
 
 Scope refreshed from frozen Binary64 unit bf16e504ccad68b2ee67607ba39606aadf07f627.
 This is a read-only source audit, not an implementation or final integrated gate.

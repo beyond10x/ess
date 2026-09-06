@@ -320,10 +320,50 @@ impl Plan {
     }
 
     fn binary64_codec(&self) -> Result<(), Refused> {
-        if self.binary64.is_empty() {
+        let mut numeric = BTreeSet::new();
+        let mut pending = self.definitions.values().collect::<Vec<_>>();
+        while let Some(node) = pending.pop() {
+            if matches!(node.shape, Shape::Number) {
+                numeric.insert(&node.pointer);
+            }
+            pending.extend(children(node));
+        }
+        let errors = self
+            .binary64
+            .iter()
+            .filter(|at| !numeric.contains(at))
+            .map(|at| {
+                finding(
+                    at,
+                    "model_binary64_layout",
+                    "compiler-owned Binary64 location does not resolve to a numeric wire node",
+                )
+            })
+            .collect::<Vec<_>>();
+        if errors.is_empty() {
             return Ok(());
         }
-        Err(Refused(self.binary64.iter().map(|at| finding(at, "model_binary64_codec", "structural wire codecs do not enforce finite Binary64; use the checked format-5 normalization boundary")).collect()))
+        Err(Refused(errors))
+    }
+
+    // Follow references as well as inline shapes. Per-query visitation avoids caching an
+    // incomplete answer for a recursive component before its other edges are explored.
+    fn reaches_binary64(&self, node: &Node) -> bool {
+        let mut pending = vec![node];
+        let mut visited = BTreeSet::new();
+        while let Some(node) = pending.pop() {
+            if self.binary64.contains(&node.pointer) {
+                return true;
+            }
+            if !visited.insert(&node.pointer) {
+                continue;
+            }
+            if let Shape::Ref(name) = &node.shape {
+                pending.push(&self.definitions[name]);
+            }
+            pending.extend(children(node));
+        }
+        false
     }
 
     /// Emit accounted structural TypeScript, with no implicit validation or coercion.
@@ -348,6 +388,15 @@ impl Plan {
         if matches!(configuration, TargetConfiguration::Typescript) {
             for name in &self.newtypes {
                 obligations.insert(finding(&path("/$defs", name), "typescript_nominal_identity", "structural TypeScript aliases do not enforce distinct model newtype identities"));
+            }
+        } else {
+            obligations.retain(|item| {
+                item.rule != "model_binary64" || !self.binary64.contains(&item.pointer)
+            });
+            if matches!(configuration, TargetConfiguration::Rust { .. }) {
+                for at in &self.binary64 {
+                    obligations.insert(finding(at, "rust_binary64_source", "original-token decoding requires serde_json text/slice/reader or an equivalent raw-capable JSON deserializer; prior Value conversion cannot restore lost sign or token kind and other deserializers may refuse"));
+                }
             }
         }
         Report {
@@ -862,5 +911,210 @@ mod pattern_accounting_tests {
             .map(|(suffix, pattern)| (format!("/$defs/Sample{suffix}"), pattern.to_owned()))
             .collect()
         );
+    }
+}
+
+#[cfg(test)]
+mod binary64_codec_tests {
+    use super::*;
+    use crate::bundle::{import, Dialect};
+    use serde_json::json;
+
+    // Only this private fixture can manipulate sealed Plan inventory. Public imported
+    // annotations never mint authority; model-driven native cases cover the public path.
+    fn marked(schemas: &Value, marked: &[&str]) -> Plan {
+        let roots = schemas.as_object().unwrap().keys().cloned().collect();
+        let bundle = import(
+            &json!({"components":{"schemas":schemas}}).to_string(),
+            &roots,
+            Dialect::Draft202012,
+        )
+        .unwrap();
+        let mut plan = Plan::from_bundle(&bundle, &roots).unwrap();
+        plan.binary64 = marked.iter().map(|at| (*at).to_owned()).collect();
+        plan
+    }
+
+    #[test]
+    fn marked_non_numeric_or_missing_nodes_refuse_before_either_emission() {
+        for at in ["/components/schemas/Wrong", "/components/schemas/Missing"] {
+            let plan = marked(&json!({"Wrong":{"type":"string"}}), &[at]);
+            for errors in [
+                plan.rust("types").unwrap_err(),
+                plan.go("types", "example.invalid/types").unwrap_err(),
+            ] {
+                assert_eq!(
+                    errors.0,
+                    vec![finding(
+                        at,
+                        "model_binary64_layout",
+                        "compiler-owned Binary64 location does not resolve to a numeric wire node"
+                    )]
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn recursive_map_reachability_and_mixed_open_record_refusal_are_located() {
+        let plan = marked(
+            &json!({
+                "Number":{"type":"number"},
+                "Record":{"type":"object","properties":{"next":{"$ref":"#/components/schemas/Record"}}, "additionalProperties":{"$ref":"#/components/schemas/Number"}}
+            }),
+            &["/components/schemas/Number"],
+        );
+        assert!(plan.reaches_binary64(&plan.definitions["Record"]));
+        let errors = plan.rust("types").unwrap_err();
+        assert_eq!(errors.0, vec![finding("/components/schemas/Record/additionalProperties", "rust_binary64_open_record", "Binary64 additional values on a record with declared fields require raw-token object decoding, which this Rust target does not support")]);
+        assert!(plan.go("types", "example.invalid/types").is_ok());
+        let unmarked = marked(
+            &json!({"Record":{"type":"object","properties":{"next":{"$ref":"#/components/schemas/Record"}}, "additionalProperties":false}}),
+            &[],
+        );
+        assert!(!unmarked.reaches_binary64(&unmarked.definitions["Record"]));
+    }
+
+    #[test]
+    fn exact_tuples_and_conditional_helper_collisions_keep_their_boundaries() {
+        let plan = marked(
+            &json!({"Tuple":{"type":"array","prefixItems":[{"type":"number"},{"type":"string"}],"minItems":2,"maxItems":2}}),
+            &["/components/schemas/Tuple/prefixItems/0"],
+        );
+        assert!(plan
+            .rust("types")
+            .unwrap()
+            .declarations
+            .contains("pub struct Tuple(pub EssBinary64, pub ::std::string::String)"));
+        assert!(plan
+            .go("types", "example.invalid/types")
+            .unwrap()
+            .declarations
+            .contains("EssBinary64"));
+        for helper in ["EssBinary64", "EssBinary64Error", "NewEssBinary64"] {
+            let plan = marked(
+                &json!({helper:{"type":"string"},"Number":{"type":"number"}}),
+                &["/components/schemas/Number"],
+            );
+            if helper != "NewEssBinary64" {
+                assert!(plan
+                    .rust("types")
+                    .unwrap_err()
+                    .0
+                    .iter()
+                    .any(|e| e.rule == "rust_helper_collision"));
+            }
+            if helper != "EssBinary64Error" {
+                assert!(plan
+                    .go("types", "example.invalid/types")
+                    .unwrap_err()
+                    .0
+                    .iter()
+                    .any(|e| e.rule == "go_helper_collision"));
+            }
+        }
+    }
+
+    #[test]
+    fn native_tuple_union_order_and_known_open_fields_keep_original_tokens() {
+        let plan = marked(
+            &json!({
+                "Float":{"type":"number"},
+                "Tuple":{"type":"array","prefixItems":[{"$ref":"#/components/schemas/Float"},{"type":"string"}],"minItems":2,"maxItems":2},
+                "Choice":{"anyOf":[{"$ref":"#/components/schemas/Float"},{"type":"number"},{"type":"string"}]},
+                "Open":{"type":"object","required":["value"],"properties":{"value":{"$ref":"#/components/schemas/Float"}},"additionalProperties":{"type":"number"}}
+            }),
+            &["/components/schemas/Float"],
+        );
+        let rust = plan.rust("layout_types").unwrap();
+        let base = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../../target");
+        let root = base.join(format!("binary64-layout-rust-{}", std::process::id()));
+        std::fs::create_dir_all(&root).unwrap();
+        std::fs::write(root.join("Cargo.toml"), &rust.supporting["Cargo.toml"]).unwrap();
+        std::fs::write(
+            root.join("types.rs"),
+            rust.declarations
+                + r###"
+#[test]
+fn raw_layouts() {
+    let tuple: Tuple = serde_json::from_str(r##"[-0,"x"]"##).unwrap();
+    assert_eq!(tuple.0.0.get().to_bits(), 0x8000000000000000);
+    for input in [r##"[1e999,"x"]"##, r##"[null,"x"]"##, r##"["1","x"]"##] {
+        assert!(serde_json::from_str::<Tuple>(input).is_err());
+    }
+    let choice: Choice = serde_json::from_str("-0").unwrap();
+    assert!(matches!(choice, Choice::V0(value) if value.0.get().is_sign_negative()));
+    assert!(matches!(serde_json::from_str::<Choice>("1e999").unwrap(), Choice::V1(_)));
+    assert!(matches!(serde_json::from_str::<Choice>(r##""-0""##).unwrap(), Choice::V2(_)));
+    let open: Open = serde_json::from_str(r##"{"value":-0,"extra":1e999}"##).unwrap();
+    assert!(open.value.0.get().is_sign_negative());
+    assert_eq!(open.ess_extra["extra"].to_string(), "1e+999");
+}
+"###,
+        )
+        .unwrap();
+        for args in [
+            vec!["generate-lockfile", "--offline"],
+            vec!["test", "--offline", "--locked"],
+        ] {
+            let result = std::process::Command::new(env!("CARGO"))
+                .args(args)
+                .current_dir(&root)
+                .output()
+                .unwrap();
+            println!(
+                "layout Rust:\n{}\n{}",
+                String::from_utf8_lossy(&result.stdout),
+                String::from_utf8_lossy(&result.stderr)
+            );
+            assert!(result.status.success());
+        }
+        #[cfg(feature = "go-typecheck")]
+        {
+            let go = plan
+                .go("layout_types", "example.invalid/layouttypes")
+                .unwrap();
+            let root = base.join(format!("binary64-layout-go-{}", std::process::id()));
+            std::fs::create_dir_all(&root).unwrap();
+            std::fs::write(root.join("go.mod"), &go.supporting["go.mod"]).unwrap();
+            std::fs::write(root.join("types.go"), go.declarations).unwrap();
+            std::fs::write(root.join("wire_test.go"), r#"package layout_types
+import("encoding/json"; "math"; "testing")
+func TestRawLayouts(t *testing.T) {
+ var tuple Tuple
+ if err := json.Unmarshal([]byte(`[-0,"x"]`), &tuple); err != nil { t.Fatal(err) }
+ if !math.Signbit(tuple.Item0.Value.Float64()) { t.Fatal("tuple lost sign") }
+ for _, raw := range []string{`[1e999,"x"]`, `[null,"x"]`, `["1","x"]`} {
+  if json.Unmarshal([]byte(raw), &tuple) == nil { t.Fatal(raw) }
+ }
+ var choice Choice
+ if err := json.Unmarshal([]byte(`-0`), &choice); err != nil { t.Fatal(err) }
+ if value, ok := choice.Value.(ChoiceV0); !ok || !math.Signbit(value.Value.Value.Float64()) { t.Fatal("union order/sign") }
+ if err := json.Unmarshal([]byte(`1e999`), &choice); err != nil { t.Fatal(err) }
+ if _, ok := choice.Value.(ChoiceV1); !ok { t.Fatal("independent numeric alternative") }
+ var open Open
+ if err := json.Unmarshal([]byte(`{"value":-0,"extra":1e999}`), &open); err != nil { t.Fatal(err) }
+ if !math.Signbit(open.Value.Value.Float64()) { t.Fatal("known open field lost sign") }
+}
+"#).unwrap();
+            let result = std::process::Command::new(
+                std::env::var_os("ESS_GO_COMPILER").expect("go-typecheck requires ESS_GO_COMPILER"),
+            )
+            .args(["test", "-count=1", "-v", "./..."])
+            .current_dir(&root)
+            .env("GOTOOLCHAIN", "local")
+            .env("GOPROXY", "off")
+            .env("GOSUMDB", "off")
+            .env("GOWORK", "off")
+            .env("GOFLAGS", "")
+            .output()
+            .unwrap();
+            println!(
+                "layout Go:\n{}\n{}",
+                String::from_utf8_lossy(&result.stdout),
+                String::from_utf8_lossy(&result.stderr)
+            );
+            assert!(result.status.success());
+        }
     }
 }

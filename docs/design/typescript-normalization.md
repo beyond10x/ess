@@ -95,6 +95,16 @@ Binary64 and positional-input contracts before its implementation is accepted.
 Those units define their semantics once; TypeScript must not derive a second
 policy from broad JSON Schema types. Consumer dispatch remains outside the target.
 
+The selected configuration is a private normalization-local serde enum tagged
+`language`: `Rust { package }`, `Go { package, module }` and
+`Typescript { package }`. Existing Rust/Go field order and report bytes remain
+unchanged. The separate structural fieldless TypeScript configuration is untouched.
+Recipe formats1/2 retain target report1, format3 report2, and formats4/5/6 report3.
+The new API is additive; the report's configuration field remains private.
+There is no authored or configurable schema-profile identifier. Deterministic
+runtime inputs and a fixed `schema-profile.json` enter the ordinary file-digest map;
+unsupported profiles refuse before a Realization or report is returned.
+
 ## Concrete library and CLI contract
 
 Add `normalize::Plan::typescript(package: &str) -> Result<Realization, Refused>`.
@@ -272,7 +282,7 @@ including aliases, 2490 base64, 149 raw text/helper and 42 raw-adversary cases:
 including base64 `model_keys`. The raw fixture's seven decoded-value entrypoint
 cases remain explicitly inapplicable to the text-only API. These counts establish
 the reviewed baseline; they do not claim completed TS execution or include the
-pending format-5/6 additions.
+format-5/6 additions; the frozen positional refresh below records their current inventory.
 
 The current minimum validates boolean/empty schemas, local definition references,
 primitive and array-valued `type`, `properties`, `required`, boolean/schema-valued
@@ -406,3 +416,196 @@ These are generation-time capability boundaries, not runtime data coercions.
 Format-6 `prefixItems`, `minItems` and `maxItems` are expressly required additions
 to this measured minimum, not final-profile refusals. No new runtime dependency
 is selected by this binding.
+
+## Frozen positional implementation refresh
+
+This source/design refresh is pinned to positional commit `eb2e5d60e9e803993417df39563bc744dbcd36fc`
+and coordinator TypeScript binding `81f1551f1373bc66e9b4dabf59d6557ec4350a43`.
+It defines the implementation dependency; it does not claim TypeScript execution.
+A positional adversary correction or final integration delta requires refresh
+before TypeScript implementation begins.
+
+## Actual type and checked-arity boundary
+
+`normalize/check.rs:20` now has `Kind::Tuple(Vec<Type>, bool)` and
+`Kind::SchemaUnion(Vec<Type>)`, separate from expression `Kind::Union`.
+`from_node` at line 465 admits a tuple representation only for recipe 6. Exactness
+requires a nonempty prefix, `Shape::Never` tail, and minimum/maximum equal to the
+prefix length. A homogeneous array is still an array. `assignable` at line 1118
+does not flatten tuples into homogeneous collections and rejects a nonexact source
+tuple. Compiler-owned Binary64 input values under a tuple still refuse with
+`model_binary64_path`; no numeric tuple selector was added to NumberPath.
+
+`schema_union` at line 84 retains distinct source alternatives containing tuples,
+even when they are structurally equal. `has_tuple` sees nested object, array and
+union positions. `member` at 1062, `array_item` at 1096 and `without_null` preserve
+that provenance; fallback does not erase it. Consequently duplicate source
+`anyOf` tuples, tuples inside alternative objects, and tuples reached through
+alternative arrays do not become one proved positional source. An expression
+`choose` over the same independently exact tuple remains admissible. The public
+regression at `tests/normalization_positional.rs:202` covers both sides.
+
+TypeScript consumes the sealed Plan rather than reproducing this type admission.
+Its schema validator still validates every retained source alternative; target
+preflight must not reinterpret a union as permission for positional decoding.
+
+`normalize.rs:125` stores the private `BTreeMap<String, u64>` named
+`position_arities`. `check::stage` at 415 gathers it; `Context::position` at 633
+records the operand's exact positive arity at the full escaped static expression
+pointer, after proving the index fits. Nested item scopes share this map. It is
+not serialized into `source.recipe.json` (the format-6 regression asserts this at
+`tests/normalization_positional.rs:524`).
+
+The TypeScript emitter can access this parent-private field from its new child
+module. Emit a deterministic private arity table in `src/bindings.ts`; use the
+same static branch/stage/requirement/expression pointers during evaluation.
+Runtime collection indices do not enter arity keys. `eval.rs:123` and generated
+Go `go_expression.go.txt:111` evaluate the operand once, propagate missing before
+checking metadata, and otherwise require present positive arity, array kind,
+exact length and `index < arity`. Preserve the exact `position_value` finding at
+the expression pointer, including for an overlong array where the selected index
+exists. Null slots remain null for a pure Position read. Source null-to-empty
+conversion belongs only to the explicit input policy.
+
+## Closed policy, parser and retained-token behavior
+
+`recipe.rs:21` exposes FORMAT_V6; `PositionalInput` at 29 is a closed DTO. Its
+required fields are path, kind, length, missing, null, short, extra and
+null_element. Every policy enum has the one bound variant. The private path
+deserializer at 526 accepts only exact field/items objects; the map reader at
+546 rejects duplicate branch names. An empty path selects the document root.
+Present null or malformed declaration data is a recipe syntax failure, not an
+absent declaration or a default. `position` uses a checked u64 index; there is
+no authored arity field and no replacement recipe parser in the TS runtime.
+
+`check::input_positions` at 295 checks positive length, duplicate declarations,
+earlier positional overlaps, raw-capture overlap, numeric overlap, then terminal
+schema feasibility. `positional_path` at 371 requires one exact tuple of the
+declared arity with string-shaped positions; optional ancestors may be traversed
+without creating them, while a nullable terminal tuple does not prove this
+profile. Preserve these Plan refusals unchanged and lower only checked path/length
+bindings into the new TypeScript target.
+
+`input.rs:13` parses the complete grammar first. `decode` at 34 checks capture
+boundaries, then original-root depth, then a selected positional boundary before
+ordinary value conversion. Overlap checks make capture/positional conflicts
+unreachable from a checked public Plan. Ordinary objects retain decoded-key
+uniqueness validation and scalar-sorted child traversal; arrays retain index order.
+`positional` at 147 accepts only array or null, converts consumed null slots to
+empty strings, checks consumed depth before kind/Unicode, pads short arrays and
+does not recursively interpret a rejected consumed object or number. Missing
+members and null ancestors are preserved; zero padding is synthetic and is not
+another input traversal.
+
+Every excess token is walked by `retained::validate` at 50 with the detail
+`discarded positional token contains invalid Unicode`, original depth and the
+discarded element pointer. This is source-order Unicode/depth validation without
+number conversion or duplicate collapse. Huge exponents and duplicate keys in a
+valid discarded token are therefore admissible. A later grammar failure anywhere
+still wins before preparation; otherwise an earlier consumed kind error wins over
+a later discarded Unicode/depth failure. New TypeScript `ts_input.ts.txt` and
+`ts_retained.ts.txt` must share the original spans and this validator parameter,
+including the distinct capture error detail. Strict base64/UTF-8/BOM behavior
+remains the existing retained-document boundary.
+
+`normalize.rs:259`, `execute.rs:6` and generated runtime entrypoints apply input
+policies once before first-stage validation. Position remains usable later in the
+stage pipeline without another input decode. The Rust decoded-value APIs refuse
+capture provenance before positional provenance; the TS text-only API has no
+decoded-value entrypoint to add.
+
+## Format families, source accounting and immutable older output
+
+The frozen implementation now admits recipe 6 in envelope, model-root, raw-input,
+Binary64 construction/equality, generated Rust-runtime and CLI gates. Position and
+positional declarations remain recipe-6-only, even for an empty declaration map
+in older formats. `execute.rs:28` enables Binary64 equality for formats 5 and 6.
+`target.rs:163` actually selects report 1 for recipes 1/2, report 2 for recipe 3,
+and report 3 for recipes 4/5/6. Keep this selection; a third target adds no common
+report version.
+
+Report configuration is still a private field (`target.rs:23`); `finish` remains
+`pub(super)`. Existing configuration construction is in `target::rust` and
+`go_target::generate`. The selected normalization-local Rust/Go/Typescript package
+enum remains an additive public-API implementation: expose only
+`normalize::Plan::typescript(&self, package: &str) -> Result<Realization, Refused>`.
+Preserve old serialized Rust/Go arms and report field order. Keep the structural
+configuration enum unchanged. The fixed schema profile and every new deterministic
+TS runtime input enter the existing file map; unsupported profile refusals precede
+Realization/report creation. No profile selector is added.
+
+Actual Rust template routing (`target.rs:198`): format 6 uses current
+rust_runtime/recipe/eval/execute/input/retained sources; format 5 uses `legacy_v5`
+runtime/recipe/eval/execute and `legacy_v4_v5` input/retained; format 4 retains
+`legacy_v4` runtime/recipe, `legacy_v1_v4` eval/execute and `legacy_v4_v5`
+input/retained; older recipes retain their existing legacy families. Actual Go
+routing (`go_target.rs:362`) similarly adds `legacy_v5/go_runtime.go.txt`,
+`legacy_v4_v5/go_input.go.txt`, `legacy_v4_v5/go_retained.go.txt` and
+`legacy_v1_v5/go_expression.go.txt` while format 6 uses current files. TypeScript
+must not edit any of these current or legacy template bytes.
+
+The existing `tests/normalization_legacy_bytes.rs:28` now covers formats 1–5
+(ten Rust/Go maps), but replaces generator_version with a placeholder at line 64.
+That guard remains untouched. Before shared TypeScript edits, the new scoped
+`normalization_typescript_legacy_bytes.rs` and its new JSON fixture must freeze
+all twelve complete format-1–6 Rust/Go maps at one actual fixed generator version,
+same package `normalization_adapter` and Go module
+`example.invalid/normalization-adapter`. Include all generated paths and exact
+report bytes without normalization. Format 6 can use `normalization_positional::plan()`;
+the three-stage mixed source/model plan is an additional accounting/control case,
+not a substitute for a missing format family. No snapshot generation was run in
+this refresh; the twelve-map pre-edit capture is still required.
+
+## Concrete corpus and profile delta
+
+Retain the earlier 2,836 applicable fixture executions, plus all 70 Binary64
+vectors under format 5. Format 6 adds the 99-vector positional constructor,
+of which six decoded-value API cases are explicitly inapplicable to TS: four
+positional-provenance refusals, the record capture-provenance refusal and the
+plain decoded-value control (`normalization_positional.rs` fixture at 324).
+The TS text/helper count is therefore 93, as the existing Go harness selects at
+`tests/normalization_positional_targets.rs:153`. Do not convert those six cases
+to text and pretend their original API assertions executed. The earlier seven raw
+decoded-value cases remain separately inapplicable.
+
+Execute all 70 Binary64 vectors a second time with the recipe format promoted to
+6, using the same checked model roots and independent expected bits/kinds. This
+is a distinct format-family execution, not 70 newly invented inputs. Add all
+three `mixed_plan`/`mixed_cases` vectors at fixture lines 98/112:
+
+| External input | Required cross-stage result |
+|---|---|
+| `{"operands":["a",null,1e999],"raw":{"duplicate":0,"duplicate":1e999},"number":-0}` | true: positional consumed-null/discard handling, raw duplicate capture, signed numeric input and three modeled Binary64 stages coexist |
+| `{"operands":null,"number":0.10000000000000001}` | false: positional zero array and explicitly rounded numeric input coexist |
+| `{"operands":[]}` | true: zero padding and the explicit Binary64 -0.0 default remain executable |
+
+This accounts for **3,072 planned fixture executions**: 2,836 historical applicable
+cases + 70 format-5 Binary64 + 93 positional text/helper + 3 mixed + 70 inherited
+format-6 Binary64. It excludes separate generation/admission/defensive tests and
+the new TS-specific engine/numeric/Unicode/prototype controls. These are source
+and prior-handoff inventory counts, not a TS test run in this task. Re-enumerate
+the constructors at final dispatch, especially if adversary corrections add cases.
+
+The actual positional schemas require prefixItems, items:false, minItems,
+maxItems, nullable primitive/array/object types, local roots and references,
+properties/required/additionalProperties, and homogeneous arrays containing
+tuples. `tests/normalization_positional.rs:398` additionally requires minLength
+after padding. Tuple failure pointers are instance indices; min/max violations
+are located at the array and remain conjunctive with item/tail failures. Keep
+the already proposed full closed profile and separately qualify the exact
+diagnostic multiset against the pinned validator; this refresh does not assert a
+new measured diagnostic multiplicity. No inspected new positional or mixed
+fixture requires uniqueItems:true, so its explicit source-qualified preflight
+refusal remains applicable. The fixed schema-profile file must include the tuple
+and minLength capability rather than describing the earlier pre-5/6 minimum as
+the final profile.
+
+## Next dispatch boundary
+
+Apply the proposed design update only after positional integration; refresh any
+changed source hashes/lines from an adversary correction first. Freeze the twelve
+old target maps before modifying the four shared TypeScript seams. Requalify the
+actual TypeScript 6.0.3 and Node/V8 environment when implementation runs. No engine,
+numeric, native or schema diagnostic qualification was rerun here. The same 31
+write paths, coordinator-owned document split, fixed package arm, report families,
+source pins and no-new-dependency decision remain intact.

@@ -202,11 +202,14 @@ The first unit implements the model and format-5 normalization path described
 above. `ModelTypes::binary64_locations` exposes a read-only inventory minted from
 checked model nodes, including escaped wire properties and nested items. It is
 private metadata in the selection, not a new serialized model-bundle field.
-Structural TypeScript output reports a finite codec obligation. Structural Rust
-and Go return `model_binary64_codec` until standalone finite wrappers/codecs are
-qualified. This refusal currently blocks all-type Rust/Go model generation when
-Binary64 is introduced; standalone structural codecs are an adoption prerequisite
-and a separate bounded follow-up, not a completed capability of this unit.
+Structural TypeScript output reports a finite codec obligation. The
+[standalone Rust/Go codec follow-up](binary64-structural-codecs.md) supplies checked
+finite wrappers and preserves original JSON tokens through closed records, lists,
+references, unions and typed map values. Rust requires raw-capable JSON source
+deserializers; prior Value conversion cannot restore lost token provenance. Mixed
+records with Binary64-reachable additional values retain a located Rust refusal.
+These standalone libraries discharge the finite-codec obligation while retaining
+schema constraints and their other reported runtime obligations.
 
 Whole-system Rust/Go/Web/Clap workspaces refuse before constructing artifacts.
 Go/Clap `workspace` now return `Result<Emission, TargetFailure>`; this public Rust
