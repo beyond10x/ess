@@ -38,6 +38,18 @@ AEP citations are Git-object reads at **00c742e4179593738a2e8aa69e2ecc07d3c89402
 
 An external adopter may retain an older generated Go package indefinitely. That relying party is not upgraded by releasing ESS. The Atlas ADR must enumerate the actual repositories and deployed consumers discovered at rollout, including their pinned generated packages and automation reading detailed CLI JSON/YAML; this source inventory is the known minimum, not an assertion that every external adopter has been discovered.
 
+## Legacy DTO and admitted execution
+
+Clarified 2026-09-06 during count-stage implementation, against existing suite.rs parser fixtures and the S3/S4 boundary.
+
+The historical ConformanceSuite DTO, from_json and generic Deserialize remain unadmitted value parsing. Existing suite.rs fixtures at the wave8 base parse discarded provenance metadata and newer vocabulary under a legacy marker; their parser behavior alone is not version/vocabulary admission or original-byte proof. Do not weaken those tests or reinterpret the DTO as an admitted capability.
+
+Original-byte CLI, generated-Go and report-pair inputs enter the strict AdmittedSuite path directly. The admitted value has no unchecked deserialization, public constructor or mutable escape. Every Runner entry checks supported membership and retained typed vocabulary before target identity/callbacks. A checked try_run-style API reports refusal; a compatibility nonfallible run wrapper must document its pre-execution refusal behavior and cannot fabricate a complete report on invalid input.
+
+The separate in-memory path serializes its supplied typed suite once, admits that immutable buffer and executes the corresponding value. If a historical DTO parser previously discarded fields from some other JSON, the new buffer is a different issued suite document with its own digest. It cannot be called admission of, or paired as, the discarded original bytes. Original unknown structural fields remain refused by direct admitted input; newer vocabulary under a falsely older major remains refused before execution even if the DTO parser accepted it.
+
+Required control: retain the old DTO parsing assertions, directly refuse the unknown-field original at AdmittedSuite/CLI, prove retained invalid-major vocabulary never reaches callbacks, and show any admitted reconstructed in-memory document has its own exact digest and cannot pair with the rejected original. This is the S3/S4 distinction between value compatibility, original-byte admission and serialize-once in-memory execution, not a permissive original-byte bypass. No source-breaking raw-parser migration is selected in the count stage.
+
 ## Frozen execution semantics
 
 For the following table, one terminal scenario contributes one to total. A v1 list entry is exactly the status word, one ASCII space, then the opaque scenario identity. It is not parsed by splitting the identity into words. scenarios_failed is the length of the entire non-pass list, regardless of its misleading name. Rust and Go both preserve this meaning. No skipped/error/unsupported category is retroactively relabeled failed. [S1, S2, S5]

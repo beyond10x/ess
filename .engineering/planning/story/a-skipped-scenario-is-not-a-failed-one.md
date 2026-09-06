@@ -24,7 +24,7 @@ scope:
   path: website/docs/guides/verify-conformance.md
 - confidence: cited
   path: website/docs/reference/formats.md
-revision: 16
+revision: 17
 ---
 ## What is wrong
 
@@ -127,3 +127,13 @@ A skip-only execution emits a versioned report with zero actual failures and exp
 ## Remediation ownership and compatibility
 
 Owns the F03 count split, not exact-suite coverage binding. The conformance-format design must settle Rust error/unsupported versus Go skipped mapping, list semantics and old/current reader behavior before this implementation. Valid v1 bytes and meanings stay frozen; a new count meaning is not retrofitted to v1. Downstream AEP migration requires separate governed work and an Atlas ADR before enabling a new default writer. The narrow v1 reader story lands first. For computed collisions, the guide's parent `website/docs` token is also recorded, inferred, matching the public-doc stories' chosen granularity.
+
+## Legacy DTO and admitted execution clarification
+
+The historical ConformanceSuite DTO, from_json and generic Deserialize remain unadmitted value parsing. Existing suite.rs fixtures at the wave8 base parse discarded provenance metadata and newer vocabulary under a legacy marker; their parser behavior alone is not version/vocabulary admission or original-byte proof. Do not weaken those tests or reinterpret the DTO as an admitted capability.
+
+Original-byte CLI, generated-Go and report-pair inputs enter the strict AdmittedSuite path directly. The admitted value has no unchecked deserialization, public constructor or mutable escape. Every Runner entry checks supported membership and retained typed vocabulary before target identity/callbacks. A checked try_run-style API reports refusal; a compatibility nonfallible run wrapper must document its pre-execution refusal behavior and cannot fabricate a complete report on invalid input.
+
+The separate in-memory path serializes its supplied typed suite once, admits that immutable buffer and executes the corresponding value. If a historical DTO parser previously discarded fields from some other JSON, the new buffer is a different issued suite document with its own digest. It cannot be called admission of, or paired as, the discarded original bytes. Original unknown structural fields remain refused by direct admitted input; newer vocabulary under a falsely older major remains refused before execution even if the DTO parser accepted it.
+
+Required control: retain the old DTO parsing assertions, directly refuse the unknown-field original at AdmittedSuite/CLI, prove retained invalid-major vocabulary never reaches callbacks, and show any admitted reconstructed in-memory document has its own exact digest and cannot pair with the rejected original. This is the S3/S4 distinction between value compatibility, original-byte admission and serialize-once in-memory execution, not a permissive original-byte bypass. No source-breaking raw-parser migration is selected in the count stage.
