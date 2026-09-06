@@ -201,3 +201,24 @@ Verification-report:review-boundaries-8-integrated records all ten gate lanes an
 Final actual2d2c391 producer correspondence completed19fixtures/133command attempts, including expected nonzero negative controls. All117copied export files stayed unchanged. The root-verified unit and AEP compatibility archives are respectively2,088records/SHA256bd63bc17eb7e59b5ba8c88acd93e811803144e385f9e3d9cc5a6a2d9580a02ce and1,277records/SHA25625c33312545e7869bac363639c9b2cc032faedf8ef64f718c5e48fd3d1a9fed2, with adjacent per-file manifests in the user cache.
 
 Root recorded the confirmed Scope and implementation evidence through AEP, then test_result linked to the integrated verification report. An initial positional move invocation was refused at argument parsing; the documented --to invocation completed the implemented transition. There are now16implemented remediation stories and15remaining drafts, with none active. Source publication, exact public delivery, Atlas shipment and managed cleanup continue below; implementation status does not claim those external steps happened.
+
+## Published source, delivery and cleanup
+
+ESS source `87d9945051f5b2e6296cea8b4cbb82ad2e50aeb3` is published on main. [CI 34028748074](https://github.com/beyond10x/ess/actions/runs/34028748074), documentation validation 34028748069 and source bundle 34028748110 succeeded. Production and public source bytes are unchanged from the combined gate at `64f6f07`; later closing changes are internal records only.
+
+Atlas publication 34029018905, attempt 1, succeeded at control `5eea91c9e8c7390298c7032b52798621ff0e3f2d`. Its immutable artifact 9988016122 selects this ESS source and published AEP reader `30aeef2c9985613f5283764bdff3eec12160e43d`. Website runtime is `fc4571534765c098ed861bc326da4d3da0d1df63`, with Docs System `1c8c31697e87235dda8bec9467264b22a7fa0c95`. Independent verification passed 356 routes and 1,328 files. The full Website gate passed 99 tests, zero failed or skipped, and left the CI artifact unchanged. Both live provenance endpoints matched the immutable bytes at 11:13:20 UTC. Source-set SHA-256 is `7ce120f7f29661cd1f12ae3f0f6f70c1eba47ea5b6792e896ada880ace326627`; live provenance SHA-256 is `5d4f05cc5694bf2dd9c896d57c9eec6f36425966bc41b01972383568817398e6`. Local rebuild success is not a claim of identical CI file bytes.
+
+Atlas published the completed count-stage migration record at `34fa907ff3ffcbdbb6bbf37d4dd674c05904bb20`, preserving concurrent Extensions records. Its actual fence at preceding source `5eea91c9` passed 127 Rust cases and all 52 live delivery routes, with catalog, projection, Markdown and brand also green. The full fence exited 1 on the same three primary-workspace failures: AgentIDE v4 collector mismatch, stale primary Website Docs System pin and Widgets missing Serves. Subsequent record-only planning and Markdown checks passed. These explicit limits do not turn the fence into an organization-wide green result.
+
+Verified archives, each read back against a per-file manifest, remain in the ESS review user cache:
+
+| Evidence | Records | SHA-256 |
+| --- | ---: | --- |
+| Count writer, both attacks and corrections | 2,088 | `bd63bc17eb7e59b5ba8c88acd93e811803144e385f9e3d9cc5a6a2d9580a02ce` |
+| Actual AEP correspondence and controls | 1,277 | `25c33312545e7869bac363639c9b2cc032faedf8ef64f718c5e48fd3d1a9fed2` |
+| Immutable public delivery and Website gate | 1,727 | `0b459c00a251af90a73dd8f30052e40bf3ec82bc7dfcceeb559f38ee20b99e10` |
+| Atlas shipment and fence | 11 | `1aa83bd8677e1df46867223a9a3879d031f98fc38a16baeda3cd6289fe187c8d` |
+
+Managed IDs `ess-conformance-count-writer` and `ess-wave8-website-verification` are removed, and both paths are confirmed absent. The merged count implementation branch was deleted without force. Archived owned evidence was rechecked before disposal; exact-id GC used advertised remote recovery proof. The final profile dry-run reviewed 24 assessments and selected only the Website unit, preserving the three other eligible records and every refused record. Reused ESS/AEP coordinators and the clean current Atlas authority plus built shipment checkout remain intentional resources for subsequent authorized remediation.
+
+There are 16 implemented remediation stories and 15 remaining drafts, with none active. The count-stage source and public-delivery work are complete. Suite/5 and complete-coverage qualification remain separate, including the next AEP reader prerequisite and exact parent/source/browser transport decisions. No installed-binary, external-adopter, release or default change is claimed. Agent token/tool/wall-cost totals were unavailable from this harness; no values are inferred.
