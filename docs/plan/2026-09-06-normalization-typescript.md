@@ -30,6 +30,10 @@ Integration branch `impl/normalization-base64-resume` in manager record `wt-bf45
 
 | Unit | Branch | Managed path | Build path | Scratch | Stage |
 | --- | --- | --- | --- | --- | --- |
-| TypeScript | impl/normalization-typescript | $MANAGED/b10x/ess/wt-1a25421922fc | $MANAGED/b10x/ess/wt-1a25421922fc/target | $SCRATCH/ess-typescript-design/implementation | Created at a2f02fc; baseline/red phase ready |
+| TypeScript | impl/normalization-typescript | $MANAGED/b10x/ess/wt-1a25421922fc | $MANAGED/b10x/ess/wt-1a25421922fc/target | $SCRATCH/ess-typescript-design/implementation | Implementation; shared native corpus green, final controls pending |
 
 Opening commit `a2f02fceb01f9844c984f67fd251f94f7c6df94c` passed formatting, release consistency and all five layout cases before managed creation. Root holds the session lease. Implementor scope_typescript is assigned the sole Cargo/native lane; the exact private unit brief records environment, source scope and evidence paths.
+
+## Implementation progress
+
+The implementor’s baseline package/CLI command passed 303 cases on a2f02fc. It captured twelve complete format-1–6 Rust/Go maps, 218 files including exact 0.19.0 reports, before shared edits; the new witness JSON has SHA-256 `9d0e7faf6e2c70a500d573a5b32b51ef3594766d48997805a0155c6acc589e1b`. The new CLI test then exited 101 because TypeScript was not an admitted target. The emitted package subsequently executed all 3,091 bound shared vectors under the qualified Node/TypeScript environment, with repeated calls on each Normalizer. An initial harness comparison incorrectly treated finding-object member insertion order as semantic; the correction retains complete key sets and values, and both logs remain. Final independent unit controls, CLI checks, linting, frozen source and adversarial review are still pending. This progress report is not the wave gate result.
