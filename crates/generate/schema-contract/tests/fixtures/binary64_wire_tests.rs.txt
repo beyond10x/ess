@@ -1,0 +1,110 @@
+use binary64_types::*;
+use serde::{de::DeserializeOwned, Deserialize, Serialize};
+
+const NUMBERS: &[(&str, u64)] = &[
+    ("0", 0), ("-0", 0x8000000000000000), ("-0.0", 0x8000000000000000),
+    ("9007199254740993", 0x4340000000000000), ("9007199254740995", 0x4340000000000002),
+    ("-9007199254740993", 0xc340000000000000), ("-9007199254740995", 0xc340000000000002),
+    ("1.00000000000000011102230246251565404236316680908203125", 0x3ff0000000000000),
+    ("1.00000000000000011102230246251565404236316680908203126", 0x3ff0000000000001),
+    ("1.00000000000000033306690738754696212708950042724609375", 0x3ff0000000000002),
+    ("1.7976931348623157e308", 0x7fefffffffffffff),
+    ("2.2250738585072014e-308", 0x0010000000000000),
+    ("5e-324", 1), ("-5e-324", 0x8000000000000001),
+    ("2.4703282292062327e-324", 0), ("2.4703282292062328e-324", 1),
+    ("-2.4703282292062327e-324", 0x8000000000000000),
+    ("1e-999", 0), ("-1e-999", 0x8000000000000000),
+];
+const BAD: &[&str] = &[
+    "null", "true", "false", "\"-0\"", "[]", "{}",
+    "{\"$serde_json::private::Number\":\"-0\"}",
+    "{\"$serde_json::private::RawValue\":\"-0\"}",
+    "1.7976931348623159e308", "1e999", "-1e999",
+    "NaN", "Inf", "Infinity", "+1", "0x1p0", "01", "1.", "1e", "--1", "1 2", "/*x*/1",
+];
+
+#[test]
+fn finite_rounding_bits_and_serialized_float_identity() {
+    for &(token, bits) in NUMBERS {
+        let value: EssBinary64 = serde_json::from_str(token).unwrap();
+        assert_eq!(value.get().to_bits(), bits, "{token}");
+        let wrapped: SampleFloatScalar = serde_json::from_slice(token.as_bytes()).unwrap();
+        assert_eq!(wrapped.0.get().to_bits(), bits, "{token}");
+        let encoded = serde_json::to_string(&value).unwrap();
+        assert!(encoded.contains(['.', 'e', 'E']), "{encoded}");
+        if bits == 0x8000000000000000 { assert_eq!(encoded, "-0.0"); }
+        let again: EssBinary64 = serde_json::from_reader(encoded.as_bytes()).unwrap();
+        assert_eq!(again.get().to_bits(), bits, "{token} -> {encoded}");
+    }
+}
+
+#[test]
+fn actual_numeric_source_kind_and_finite_construction() {
+    for token in BAD {
+        assert!(serde_json::from_str::<EssBinary64>(token).is_err(), "{token}");
+        assert!(serde_json::from_str::<SampleFloatScalar>(token).is_err(), "{token}");
+    }
+    for value in [f64::NAN, f64::INFINITY, f64::NEG_INFINITY] {
+        assert_eq!(EssBinary64::new(value), Err(EssBinary64Error::NonFinite));
+    }
+    for &(_, bits) in NUMBERS {
+        assert_eq!(EssBinary64::new(f64::from_bits(bits)).unwrap().get().to_bits(), bits);
+    }
+    assert_eq!(EssBinary64::new(0.0).unwrap(), EssBinary64::new(-0.0).unwrap());
+    assert_eq!(EssBinary64Error::NonFinite.to_string(), "Binary64 requires a finite value");
+}
+
+fn path<T: DeserializeOwned + Serialize>(template: &str) {
+    for token in ["-0", "-1e-999"] {
+        let input = template.replace("TOKEN", token);
+        let value: T = serde_json::from_str(&input).unwrap_or_else(|error| panic!("{input}: {error}"));
+        let output = serde_json::to_string(&value).unwrap();
+        assert!(output.contains("-0.0"), "source sign lost: {input} -> {output}");
+    }
+    for token in BAD.iter().filter(|token| serde_json::from_str::<serde_json::Value>(token).is_ok()) {
+        let input = template.replace("TOKEN", token);
+        assert!(serde_json::from_str::<T>(&input).is_err(), "accepted {input}");
+    }
+}
+
+#[test]
+fn original_tokens_reach_all_nested_structural_paths() {
+    path::<SampleFloatAlias>("TOKEN");
+    // Null is an independently admitted Option value; test its non-null scalar path below.
+    for token in ["-0", "-1e-999"] {
+        let value: SampleFloatItems = serde_json::from_str(&format!("[{token},null]")).unwrap();
+        assert_eq!(value.0[0].unwrap().get().to_bits(), 0x8000000000000000);
+        assert!(value.0[1].is_none());
+        let map: SampleFloatNullableMap = serde_json::from_str(&format!("{{\"x\":{token},\"none\":null}}")).unwrap();
+        assert_eq!(map.ess_extra["x"].unwrap().get().to_bits(), 0x8000000000000000);
+        assert!(map.ess_extra["none"].is_none());
+    }
+    path::<SampleFloatDictionary>("{\"x\":TOKEN}");
+    path::<SampleFloatMapAlias>("{\"x\":TOKEN}");
+    path::<SampleFloatMaps>("{\"x\":{\"y\":TOKEN}}");
+    path::<SampleFloatListMap>("{\"x\":[TOKEN]}");
+    path::<SampleFloatChoice>("{\"value\":\"number\",\"content\":TOKEN}");
+    path::<SampleFloatChoiceMap>("{\"x\":{\"value\":\"number\",\"content\":TOKEN}}");
+    path::<SampleFloatRecord>("{\"required\":TOKEN,\"dictionary\":{},\"children\":[]}");
+    path::<SampleFloatRecord>("{\"required\":1,\"optional\":TOKEN,\"dictionary\":{},\"children\":[]}");
+    path::<SampleFloatRecord>("{\"required\":1,\"dictionary\":{},\"children\":[{\"required\":TOKEN,\"dictionary\":{},\"children\":[]}]}");
+    path::<SampleFloatNested>("{\"value\":\"dictionary\",\"content\":{\"x\":TOKEN}}");
+    path::<SampleFloatNested>("{\"value\":\"record\",\"content\":{\"required\":TOKEN,\"dictionary\":{},\"children\":[]}}");
+    for token in ["1e999", "\"1\"", "{}"] {
+        assert!(serde_json::from_str::<SampleFloatItems>(&format!("[{token}]")).is_err());
+        assert!(serde_json::from_str::<SampleFloatNullableMap>(&format!("{{\"x\":{token}}}")).is_err());
+    }
+}
+
+#[test]
+fn presence_union_alternatives_and_prior_value_boundary() {
+    assert!(serde_json::from_str::<SampleFloatRecord>("{\"dictionary\":{},\"children\":[]}").is_err());
+    let record: SampleFloatRecord = serde_json::from_str("{\"required\":0,\"dictionary\":{},\"children\":[]}").unwrap();
+    assert!(matches!(record.optional, EssPresence::Absent));
+    let text: SampleFloatChoice = serde_json::from_str("{\"value\":\"text\",\"content\":\"-0\"}").unwrap();
+    assert!(serde_json::to_string(&text).unwrap().contains("\"-0\""));
+    let prior: serde_json::Value = serde_json::from_str("-0").unwrap();
+    let converted: EssBinary64 = serde_json::from_value(prior).unwrap();
+    assert_eq!(converted.get().to_bits(), 0, "Value conversion has already lost lexical sign");
+    assert!(EssBinary64::deserialize(serde::de::value::F64Deserializer::<serde::de::value::Error>::new(1.0)).is_err());
+}

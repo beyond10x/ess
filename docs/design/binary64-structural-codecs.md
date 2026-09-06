@@ -1,16 +1,18 @@
 # Standalone structural Binary64 codecs
 
-Binding draft for a bounded follow-up to [finite Binary64 model fields](model-binary64.md).
-Implementation and qualification are pending. This document defines the selected
-contract; it claims no passing native tests, released codec or whole-system support.
+Binding for the standalone follow-up to [finite Binary64 model fields](model-binary64.md).
+Rust and Go structural targets implement the checked finite codec and raw-token
+container profile below. This is standalone data-library support; whole-system
+synthesis and conformance retain their existing refusals.
 
 The public structural source baseline is
 [`6c78676c35193423fe326b9dde21b8fc21681b8a`][baseline]. It establishes the existing
 emission and decoding seams cited below. It does not contain the subsequent
-Binary64 compiler authority. Before implementation, pin the integrated Binary64
-commit and refresh the actual sealed model inventory, Plan admission/refusal,
-report accounting and old-output baselines. Do not substitute moving line numbers
-or infer primitive identity from the broad schema projection.
+Binary64 compiler authority. The implementation was based on the integrated
+`c4ba992b69eee8ac97f89e5fe6d7a7a37cb9a957` checkout. Its sealed
+`ModelTypes::binary64_locations` inventory is copied by `Plan::from_model`; imported
+schemas cannot populate that inventory. The old-output fixture freezes complete
+Rust/Go model and imported output maps at that base and generator identity.
 
 ## Bound scope and authority
 
@@ -22,8 +24,8 @@ Every accepted path must deliver its original JSON numeric token to the scalar
 decoder. A declaration that compiles while losing that token is not support.
 
 The integrated `ModelTypes::binary64_locations` inventory, consumed by
-`Plan::from_model`, is the intended authority. Refresh the final names and location
-contract at the integrated base. Exact marked-leaf membership selects the native
+`Plan::from_model`, is the authority. Locations identify numeric nodes in the
+selected model's `/$defs` projection. Exact marked-leaf membership selects the native
 scalar representation; transitive reachability selects affected container codecs.
 Traversal must terminate on recursive references without overlooking an affected
 path. A marked location must resolve to a numeric wire node or refuse explicitly.
@@ -236,8 +238,19 @@ accounted changes. Conditional reservations must also preserve old admitted name
 Retain positional and older normalization output bytes by leaving their emitters,
 templates and common package-validation functions unchanged.
 
-Native corpus execution and CLI publication checks are acceptance work for the
-implementation. This draft records no executed gate, generated fixture or wave run.
+Qualification lives in `tests/binary64_structural.rs`, its two native wire fixtures,
+the private layout tests in `realize.rs`, and CLI `tests/model_types.rs`. The native
+fixtures execute source JSON in emitted Rust and Go libraries. Private layout tests
+also exercise exact tuples, ordered untagged alternatives and known Binary64 fields
+with ordinary-number extras, without creating a public schema-annotation authority.
+The Rust input boundary is tested from text, bytes and readers, while a prior-Value
+case demonstrates its already-lost sign. The CLI case checks all-type publication
+and preserves existing output when preflight refuses; it needs no native compiler.
+
+Run the package corpus with `cargo test --offline --locked -p schema-contract
+--features go-typecheck`, setting `ESS_GO_COMPILER` to the qualified Go 1.26.5
+compiler, and the CLI publication lane with `cargo test --offline --locked -p ess-cli
+--test model_types`. Release and integrated workspace qualification remain separate.
 
 ## Concrete scope and positional-unit collision assessment
 
@@ -253,26 +266,25 @@ structural tuple layout, the shared Shape definition or compiler Binary64 author
 | `realize/go.rs` | `emit`; marked scalar selection in `Emitter::ty`; conditional helper/import/name handling and accounting. | Positional uses `normalize/go_target.rs`, `go_input.go.txt`, `go_expression.go.txt` and `go_runtime.go.txt`; different files. Preserve `go::{package_name,module_name}`, which normalization reads. |
 | New `realize/rust_binary64.rs.txt`, `realize/go_binary64.go.txt` | Conditional finite-value codecs. | Positional's input/retained lexical helpers and frozen normalization templates are disjoint. Do not extract a new common decoder as incidental cleanup. |
 | `realize/normalize.rs` and `realize/normalize/{recipe,check,input,eval,target,go_target,retained}.rs` | Read-only dependency boundary; no structural-codec edits. | Positional owns its recipe format, tuple type checking, text/value entrypoints, policy/evaluation, emission and any qualified lexical-tail reuse. |
-| Structural tests and fixtures | `tests/{rust_realization,go_realization}.rs`, new finite wire fixtures, CLI `tests/model_types.rs`. | Positional uses normalization-specific fixtures, legacy output maps and CLI `tests/normalization.rs`; disjoint bounded test files. Shared test-support changes require re-scoping. |
-| Design documents | This design, `docs/design/model-binary64.md`'s standalone target boundary and the structural realization design. | Positional owns its design and source-pinned-normalization design. Cross-links can be integrated by one owner. |
-| `website/docs/reference/formats.md`, `CHANGELOG.md` | Structural capability/compatibility publication. | Both full scopes include these files. Their final edit ranges are not proved disjoint; assign one integration owner or sequence edits. |
-| Planning store and release metadata | Coordinator-owned. | Shared mutation surfaces must remain serial; this draft does not authorize competing journal/release edits. |
+| Structural tests and fixtures | `tests/binary64_structural.rs`, finite wire fixtures, private layout tests, CLI `tests/model_types.rs` and the obsolete structural-refusal assertion in `tests/normalization_binary64.rs`. | Positional uses separate normalization fixtures, legacy output maps and CLI `tests/normalization.rs`; it does not own the existing Binary64 assertion. Shared test-support changes require re-scoping. |
+| Design documents | This design and `docs/design/model-binary64.md`'s standalone target boundary. | Positional owns its design and source-pinned-normalization design. Cross-links can be integrated by one owner. |
+| `website/docs/reference/formats.md`, `website/docs/guides/generate-artifacts.md`, `CHANGELOG.md` | Coordinator-owned capability and compatibility publication. | Neither bounded implementation edits these files; serial integration owns the combined prose. |
+| Planning store and release metadata | Coordinator-owned. | Shared mutation surfaces remain serial. |
 
 All relative `realize/` and `tests/` paths above are within
 `crates/generate/schema-contract/` (`realize/` is under `src/`); CLI tests are under
-`crates/edge/ess-cli/`. New helper/fixture names are proposed paths. Existing
-production symbols are grounded in the public baseline, while compiler inventory
-and blanket-guard names must be refreshed after Binary64 integration.
+`crates/edge/ess-cli/`. Existing production seams are grounded in the public
+baseline; the integrated compiler inventory and target admission are described
+above. The unconditional native helper files and normalization templates remain
+unchanged.
 
 There is no demonstrated intrinsic implementation dependency between the two
 follow-ups after the common Binary64 base. Their bounded production edits can be
 disjoint by **file**, which is stronger than an assertion about nearby line ranges.
-However, the current full scopes overlap publication files, and the final common
-base has not yet been inspected for this scheduling decision. Do not declare an
-already-disjoint wave. Either sequence the full units, or first assign shared
-documentation/release/planning edits to one coordinator, refresh exact file/symbol
-scopes on the integrated base, and verify neither implementation needs to widen
-them. Any shared Shape, compiler metadata, package validator, common fixture or
+The bounded implementation scopes assign common publication files to one
+coordinator and keep normalization production, shared Shape, compiler inventory
+and package validators unchanged in the structural unit. Any necessary shared
+Shape, compiler metadata, package validator, common fixture or
 report-contract change invalidates that narrowed independence and requires
 coordinated sequencing. Integration and its required gates remain serial.
 
