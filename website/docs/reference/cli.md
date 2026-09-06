@@ -70,6 +70,7 @@ components from one compiled model. From the ESS repository root, emit its clien
 
 ```sh
 fixture=crates/specify/ess-composition/tests/fixtures
+mkdir -p target/composition-example
 ess specify compose --path "$fixture/compositions/workbench.yaml" \
   --service "todo=$fixture/two-components" \
   --service "usage=$fixture/two-components" \
