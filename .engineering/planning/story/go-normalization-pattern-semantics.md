@@ -2,24 +2,33 @@
 format: aep.planning-md/1
 id: story:go-normalization-pattern-semantics
 kind: story
-status: draft
+status: active
 title: Qualify bounded ECMA-262 patterns in Go normalization
 relations:
 - derived_from: story:source-pinned-data-normalization
+- serves: vision:O2
 scope:
-- confidence: inferred
-  path: Cargo.lock
 - confidence: cited
-  path: crates/edge/ess-cli
+  path: CHANGELOG.md
 - confidence: cited
-  path: crates/generate/schema-contract
-- confidence: inferred
-  path: docs/design/go-normalization-pattern-semantics.md
+  path: crates/edge/ess-cli/tests/normalization.rs
+- confidence: cited
+  path: crates/generate/schema-contract/src/realize.rs
+- confidence: cited
+  path: crates/generate/schema-contract/src/realize/normalize/go_target.rs
+- confidence: cited
+  path: crates/generate/schema-contract/tests/fixtures/normalization_base64.rs
+- confidence: cited
+  path: crates/generate/schema-contract/tests/normalization_base64_adversary.rs
+- confidence: cited
+  path: crates/generate/schema-contract/tests/normalization_go.rs
+- confidence: cited
+  path: crates/generate/schema-contract/tests/normalization_rust.rs
 - confidence: cited
   path: docs/design/source-pinned-data-normalization.md
 - confidence: cited
   path: website/docs/guides/generate-artifacts.md
-revision: 8
+revision: 15
 ---
 ## Evidence
 
@@ -51,11 +60,21 @@ that cannot be preserved. Do not silently fall back to RE2 or skip patterns.
 
 ## Current Boundary
 
-The initial Go target refuses every selected pattern obligation with
-go_schema_pattern. Its generation test covers a referenced lookahead pattern
-and confirms a plain root in the same retained bundle remains usable.
-The full source-pinned normalization story stays active; this story records its
-newly identified matcher gap, not a reduction of three-target acceptance.
+The resumed unit qualifies exactly the frozen model base64 pattern documented in
+docs/design/source-pinned-data-normalization.md. Every other selected pattern still
+refuses before publication, including nested model propertyNames constraints. The
+private schema-position collector preserves structural report obligations and formats.
+
+Implementation c8b8eb1 is committed on the integration branch, with native Go and Rust
+corpus evidence. Adversary pass 1 found the previously omitted map-key pattern class;
+the unchanged case was reproduced red and corrected. Pass 2 found nothing further.
+Full workspace and documentation gates are running before publication. The broader
+source-pinned normalization parent remains active with TypeScript, raw capture,
+positional input and model binary64 capabilities tracked separately.
+
+The incoming independent Scope section is retained as historical scoping evidence.
+The typed scope now names the actual files, retiring the unused Cargo.lock and new
+pattern-design-page reservations. The binding lives in the existing shared design.
 
 ## Scope
 

@@ -30,8 +30,10 @@
   typed operation bindings, offline pinned schema validation, exact integer and
   declared binary64 input policies, and complete source/file provenance. Native
   Go fixtures exercise old, ordered and numeric recipes against reference results
-  and located refusals. Schemas with `pattern` explicitly refuse generation until
-  a compatible bounded ECMA-262 matcher is qualified.
+  and located refusals. The exact frozen base64 pattern used by model `Bytes` is
+  qualified against the pinned reference through a shared ASCII, Unicode, padding
+  and long-input corpus in generated Go and Rust. Every other selected pattern
+  retains its source-located `go_schema_pattern` generation refusal.
 - `ess generate schema normalize-generate` exposes Rust and Go normalization
   libraries with explicit package/module identity and complete source provenance.
   It checks every branch and target before destination preflight, protects source

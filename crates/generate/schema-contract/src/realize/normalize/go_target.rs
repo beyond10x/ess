@@ -9,6 +9,9 @@ use super::{
 };
 use crate::realize::{finding, TargetConfiguration};
 
+// Frozen qualification profile, not a promise to accept future primitive-pattern changes.
+const BASE64_PATTERN: &str = "^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$";
+
 pub(super) fn generate(plan: &Plan, package: &str, module: &str) -> Result<Realization, Refused> {
     if !crate::realize::go::package_name(package)
         || package == "main"
@@ -118,13 +121,12 @@ fn check_schema_support(plan: &Plan) -> Result<(), Refused> {
             super::Root::Bundle { bundle_digest, .. } => format!("/bundles/{bundle_digest}"),
             super::Root::Model { model, .. } => format!("/models/{}", model.projection_digest),
         };
-        for obligation in types
-            .obligations
-            .iter()
-            .filter(|item| item.rule == "pattern")
-        {
+        for (pointer, pattern) in &types.patterns {
+            if pattern == BASE64_PATTERN {
+                continue;
+            }
             found.insert(finding(
-                &format!("{source}{}", obligation.pointer),
+                &format!("{source}{pointer}"),
                 "go_schema_pattern",
                 "Go pattern semantics are not qualified against the reference ECMA-262 validator",
             ));

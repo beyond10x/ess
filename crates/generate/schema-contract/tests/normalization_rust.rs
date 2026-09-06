@@ -19,8 +19,16 @@ mod fixture_v2;
 #[path = "fixtures/normalization_numeric.rs"]
 mod fixture_numeric;
 
+#[path = "fixtures/normalization_base64.rs"]
+mod fixture_base64;
 #[path = "fixtures/normalization_model.rs"]
 mod fixture_model;
+
+#[test]
+fn standalone_rust_target_matches_the_qualified_base64_language() {
+    let (plan, cases) = fixture_base64::fixture();
+    assert_target(&plan, &cases);
+}
 
 #[test]
 fn standalone_rust_target_executes_model_owned_wire_records() {

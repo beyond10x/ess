@@ -1540,8 +1540,6 @@ Expression first review completed with no findings: fourteen new cases passed in
 
 OpenAPI first review completed 163 package cases: 159 passed, four failed, zero ignored. Its one introduced finding at `accounting.rs:152` concerns unknown fields erased from integer, number and boolean schema variants before checked replay equality; actual library and CLI callers reproduce it. The full report is `review-result:review-boundaries-7-openapi-adversary-pass-1`, SHA-256 `4ac12af6456773e2698fd4a5b76e97ecd4acb68e87477c5df2957d17ef6cdda3`. A fresh implementor `openapi_correction_resume` continues the existing diff under `target/review-boundaries-7/correction-pass-1.md`; the original implementor is unavailable after the interruption. The second review remains available after correction, and no red unit has merged.
 
-## Correction handoff and evidence retention
-
 ## Integrated gate and completion
 
 Combined source `8271c3ec92adfe9e39d8fe877933e2a4199b2f46` passed all eight ordered offline tasks, site-build and planning from 07:57:24Z to 07:59:31Z on 2026-09-06. The workspace runner executed 1,873 cases, all passing with none ignored, across 145 summaries. Each task's actual exit and complete output is retained in `target/review-boundaries-7/final-gate`; `verification-report:review-boundaries-7-integrated` records the subject, per-step measurements and limits. No lane was skipped. The site step executed its browser checks, WASM build and Docusaurus build under Node 24.20.0. The expired shared sccache socket was not restarted; all integrated Rust checks used the tree's own target and direct rustc.
@@ -1551,6 +1549,14 @@ The coordinator corrected one remaining documentation claim about the intentiona
 The OpenAPI unit archive contains 3,131 hash-verified evidence files at `/home/timo/.cache/ess-review/2026-09-06-resume/openapi-wave7-evidence.tar.gz`, SHA-256 `89635d7bf76da8e6bd751db40539d815aac52614b829c7580bdecec835052eda`. Its adjacent JSON manifest enumerates every included file and the excluded disposable compiler/dependency caches. Both unit archives now exist before managed retirement. Publication, remote CI, public source delivery and exact-id cleanup remain separately observed outcomes. The AEP prerequisite and sixteen draft remediation stories remain unfinished; no release tag or version bump was made.
 
 ## Earlier correction handoff detail
+
+## Concurrent base64 normalization integration
+
+The first publication attempt was rejected as non-fast-forward after another session published `60ffcb2238ffef3a48d0db9555b6f2ca709ca2f7`. It adds reviewed base64 pattern qualification in schema-contract and its CLI tests, plus normalization planning and public-guide updates. The source merge applied without conflict; only the append-only planning journal conflicted. The attempted push changed no remote ref.
+
+Root preserved local `4a925ad44f2a583726e7eb0a653346691a743f63`, both complete stores and original journals in `target/review-boundaries-7/base64-normalization-reconciliation`. Incoming main's exact 1,156-line journal is canonical. Twenty-three local semantic operations were replayed through the AEP CLI, producing 1,179 lines with that prefix unchanged. All 134 expected artifact files are byte-equal to the union of incoming and local intent; planning exits zero. Raw replay argv, individual outputs and proof remain beside the snapshots. The combined runtime source now receives the complete gate again before publication; the earlier passing gate remains evidence for its original subject.
+
+## Retained pre-integration handoff
 
 OpenAPI's final review completed with no findings: seven new cases passed their first focused runs, and all 172 package cases passed with none ignored. Formatting and strict Clippy passed. The report is recorded unchanged as `review-result:review-boundaries-7-openapi-adversary-pass-2`, SHA-256 `6e6006e037187b1abd842ddb4c8e719c3fbbf985a7f261f1606610d4ea3462da`. Its two test files were committed at `7468e7a01b6eab0abe32cdb56e1718a9a0f67fa4`; the unit merged at `979f1f13514fa8f9c6f9648985fbd85a5113165b`. The CLI comparison reports one resolved finding, no carried findings and no new findings. Both immutable reviews and their separate outcomes remain recorded. The combined expression/OpenAPI source is ready for all eight ordered offline steps, site build and planning validation.
 
