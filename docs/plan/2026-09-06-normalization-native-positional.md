@@ -1,0 +1,33 @@
+# Native Binary64 codecs and positional input wave — 2026-09-06
+
+Skill version 0.8.0. Continued authorized ESS closure after the validated GitLab checkpoints. The operator explicitly requested "publish validated checkpoint now, do ESS, publish updates" and had already authorized owned commits/pushes, final managed cleanup and the status DM. No new approval or token budget is invented.
+
+## Selected scope and ownership
+
+The computed candidate set admits story:binary64-structural-codecs and story:normalize-positional-array-input together. Both serve vision:O2 and depend on model-binary64-fields. The combined Binary64/conformance checkpoint is published at6c6620b3783cbd41ca31a998805bc8e51e0c3515 after its reviews, 1,945 passing workspace cases and successful site gate. All implementation write paths are disjoint: 12 structural paths and 35 positional paths, with cited existing seams and inferred new fixtures/templates. Symbol constraints in the governed story bodies preserve the shared structural shapes, compiler inventory and package/module validators.
+
+The root-owned story:normalization-followup-publication retains CHANGELOG.md and the shared formats/generate-artifacts guides after both units. Release metadata and planning remain root-owned. TypeScript follows positional input; it is not dropped. Other draft review-remediation work belongs to its separate ongoing workstream. Normalization recipe6 retains normalization-target/3 because fields, prepared-stage schema meaning and hash domains remain unchanged.
+
+The complete command output is linked as a dated opening observation, including every wave, collision, unassessed id and cycle. No unassessed id or cycle was returned. The computed pair agrees with the independent source audit; no collision override is claimed.
+
+## Execution and resource plan
+
+One managed worktree and private target per unit, forked from the published integration checkpoint. Exact manager-returned IDs, paths, branches, initial heads and assigned scratch paths are recorded before dispatch. Root retains the integration tree for the ongoing authorized sequence; the operator requested cleanup after the final updates. No other owner's trees are cleanup candidates.
+
+Two implementors can edit concurrently; Cargo/native execution is serial with four build jobs. The measured Binary64 unit used about3.23GB with incremental compilation disabled and development/test debug information0. Each new unit has a6GiB planning allowance, with an8GiB free filesystem floor. Available disk is remeasured immediately before allocation. The installed sccache is used when compatible with the repository/compiler; a failed availability check is retained rather than silently sharing targets. No explicit model budget was supplied; two implementors and one adversary stay below the four-agent default. Token/cost telemetry is unavailable.
+
+Generic harness agents explicitly load aep-drive:implementor and aep-drive:adversary charters; typed plugin subagent_type is unavailable, so the substitution is disclosed. Root records exact immutable adversary reports before routing corrections, with two passes maximum. Root runs complete workspace and site gates after integration.
+
+Authorization covers the two unit source/test commits, reviewed corrections when required, integration merges, opening/closing planning and evidence commits, and publication to main after gates. The separately authorized release procedure follows wave closure; no consumer deployment is implied.
+
+## Stage
+
+Opening plan: no implementor dispatched yet. The prerequisite checkpoint is published and the primary checkout is clean on that main commit. Manager-resolved unit identifiers and paths follow before dispatch. Production sources retain the 12fb11a scope proof; later changes concern tests and metadata. The positional design now binds compiler-derived private exact-arity metadata within the same35 paths.
+
+## Opening evidence
+
+The [complete computed candidate sets](../reviews/2026-09-06-normalization-native-positional-opening-waves.md) retain all waves, every collision and all unassessed/cycle lists verbatim. Existing inferred filenames are planning observations, not claims that those files already exist.
+
+Independent 39-file scope proof after conformance integration: JSON SHA-256 d11ff9c0e6c855a53917c3d90713164eb935605ef00f09ab333b5e2ca82bcc3c; manifest SHA-256 6de3d80cb2dab8f9cec27cadc339d5a8df1df539bb352fe2e3af56474a8651c0. Six shared CLI helpers are byte-identical and the count-format additions do not alter normalization report3. The final positional metadata refinement is in its governed story and binding.
+
+Resource observation 2026-09-06T11:39:35.300899+00:00: available 24,180,948,992 bytes, coordinator target 32,783,054,858 bytes, prior Binary64 target 3,218,030,730 bytes. Two new targets have a combined 12,884,901,888-byte planning allowance; reserve remains 8,589,934,592 bytes. New units explicitly set RUSTC_WRAPPER to the installed sccache0.16.0 and retain their own target directories. The current shared cache reports no unsupported compiler calls.

@@ -2,7 +2,7 @@
 format: aep.planning-md/1
 id: story:normalize-positional-array-input
 kind: story
-status: draft
+status: active
 title: Normalize declared positional arrays without guessing decoder policy
 relations:
 - derived_from: story:source-pinned-data-normalization
@@ -79,7 +79,7 @@ scope:
   path: docs/design/positional-array-normalization.md
 - confidence: cited
   path: docs/design/source-pinned-data-normalization.md
-revision: 9
+revision: 12
 ---
 ## Evidence
 
@@ -297,3 +297,7 @@ Rust version admission to 6, freezing required old executor/runtime sources.
 Filed during resumed source mapping. This is a concrete capability refusal and a
 compatibility requirement, not a claim that every native decoder permissiveness
 must be reproduced by a typed canonical contract. No implementation is claimed.
+
+## Checked arity metadata
+
+The checked plan retains a private `position_arities: BTreeMap<String, u64>`, recomputed from replay-checked stage roots and each successfully checked `position` operand's exact tuple type. Keys are full escaped expression pointers, including branch, stage and nested expression location; collection input indices do not change those static pointers. Arity is never derived from the selected index, the runtime array length or an authored annotation. The authored recipe keeps exactly `position { value, index }` and receives no arity or trusted-check field. The reference passes immutable metadata through `execute::run` and every evaluator context. For format 6 only, generated Rust places a private `POSITION_ARITIES` binding in its existing schema-binding source and stores it privately in `Normalizer`; generated Go places the equivalent private `positionArities` map in its existing operation bindings. Each Position evaluates its operand once and propagates missing; a present operand requires positive checked metadata, an array of exactly that arity and an in-range index. Missing or zero metadata, nonarrays, shorter or longer arrays even when the selected index exists, and out-of-range indices refuse at the expression pointer with `position_value`: `position encountered a value outside its checked tuple contract`. Tests cover these defenses and static-pointer propagation through nested collection and condition scopes. This refines private Plan/checker/evaluator/executor/target/Normalizer plumbing within the existing scope, without changing public run APIs, authored grammar, root identity or report fields. Recipe 6 retains `ess-normalization-target/3`; complete emitted file hashes cover the private bindings. Freeze affected older sources before editing and preserve complete format-1 through format-5 output bytes at the same generator version.
