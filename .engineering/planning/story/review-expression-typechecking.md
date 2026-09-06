@@ -2,7 +2,7 @@
 format: aep.planning-md/1
 id: story:review-expression-typechecking
 kind: story
-status: draft
+status: active
 title: Resolve complete expression paths during validation
 tags:
 - P1
@@ -19,7 +19,7 @@ scope:
   path: crates/verify/ess-conformance
 - confidence: inferred
   path: docs/design/review-expression-typechecking.md
-revision: 7
+revision: 11
 ---
 ## Finding and source
 
@@ -76,3 +76,62 @@ Derived 2026-09-05 by an independent aep-drive:story-scoper reading the complete
 - Baseline and isolated regressions first, then offline locked package tests, formatting and strict Clippy for the three packages. Preserve prior valid canonical bytes. Coordinator owns full integration and site gate — inferred.
 - Confidence: high — cited; all ESS predicate owners, the defect and compiler/conformance paths identified. No complete normative operand/collection matrix, exact API/module names, measured baseline or precise predicate-leaf locations was established. Binding design must settle these before code.
 - Collisions: domain command/entity/type/view/spec validation, compiler IR/resolve and diagnostics, conformance input/authored/synthesis/witness. Use all three exact package tokens and the proposed design token. CLI/primitives stay evidence-only until an actual edit is established — inferred.
+
+
+## Bound Wave7 implementation
+
+The coordinator accepts docs/design/review-expression-typechecking.md before source edits under the user's standing approval for all remediation waves. The complete original Scope above is retained. The following independent refresh remains attributed proposal text; its concrete design/scope/acceptance choices are now accepted for implementation. Planned cases are not executed evidence. Source pin e113a65 is contained in published combined fadbc674, whose complete ten-lane gate passed1768 Rust cases at2026-09-06T00:53:01Z. That gate is the opening baseline, not a result for this implementation.
+
+# Scope refresh delta — review-expression-typechecking
+
+Read-only refresh initially at coordinator `1b1c4a3a424e3304e503747422a0c3d10d86928a`, now verified against fresh main `e113a65a0bac63e77cd17f43fa280a5bf56c93f9`, story revision 7. Preserve the existing detailed Scope in place; `scope-as-read.md` is its verbatim snapshot. This file proposes an appended refresh rather than replacement. No tracked/store/ref edits or builds ran.
+
+## Source drift since the review baseline
+
+Compared source to the cited original review commit `fd06a4d61bfb7b4990617810655dc181d6a3ab00`.
+
+```text
+ crates/specify/ess-compiler/src/graph.rs           |  74 +++++-
+ crates/specify/ess-compiler/src/resolve.rs         |   2 +
+ crates/specify/ess-compiler/tests/wire_fields.rs   | 171 ++++++++++++
+ crates/specify/ess-domain/src/lib.rs               |   1 +
+ crates/specify/ess-domain/src/spec.rs              |   2 +-
+ crates/specify/ess-domain/src/wire.rs              | 102 +++++++
+ crates/verify/ess-conformance/src/evidence.rs      | 295 ++++++++++++++++++++-
+ .../tests/report_reader_adversary.rs               | 194 ++++++++++++++
+ 8 files changed, 836 insertions(+), 5 deletions(-)
+```
+
+- **Cited actual drift:** Specification::validate still begins at spec.rs:266 but now initializes errors from `crate::wire::validate(self)`. Preserve that validation and its accumulation when inserting the registry-aware invariant pass. New wire.rs validates effective wire namespaces, including entity state/identity and view params/shape fields; expression lookup continues to use semantic field names. No wire.rs edit is needed.
+- **Cited actual drift:** resolve.rs adds `params` and `shape` to diagnostic STRUCTURAL needles. Preserve those entries. compile_locating is now :744 (formerly :742); bridge remains :543 and class mapping :602–605. No locator replacement or exact-leaf-location promise follows from this drift.
+- **Cited actual drift outside this implementation:** compiler graph.rs and wire_fields.rs tests changed; conformance evidence.rs/report_reader_adversary.rs changed. They do not alter the expression declarations, checker/evaluator call sites or witness candidate algorithm and stay outside the proposed edits.
+- **Cited unchanged source:** command.rs, entity.rs, types.rs, view.rs, primitives predicate.rs/facts.rs, compiler ir.rs, and conformance input.rs/authored.rs/synthesize.rs/witness.rs have no diff over this range. The original complete inventory still applies.
+- **Citation refresh only:** current NamedType::check_invariants is types.rs:512, not :509; CLI validate is main.rs:1782 and compile :1809. load.rs assembly bridge remains :105. These line updates do not add CLI scope.
+
+## Binding refinements, not claims of concurrent code drift
+
+The additional main refresh from 1b1c4a3 to e113a65 changes no byte anywhere in ess-domain, ess-compiler, ess-primitives or ess-conformance: all four complete directory tree objects match. New Go normalization implementation and CLI exposure are outside those tokens. CLI validate/compile remain at main.rs:1782/:1809; assembly diagnostics remain load.rs:105/:108. Exact tree IDs are retained in source-correspondence.md. No further expression scope drift results.
+
+The original Scope explicitly left these choices inferred. The separate binding proposal settles them without deleting their inventory lines:
+
+1. Same evaluator-kind compatibility for comparison, distinct from nominal assignment; enum fact/literal membership checks; Text ordering stays type-correct without a scale; Number includes Integer == 0.5.
+2. Scalar Truthy and Defined only; optional scalar presence remains runtime behavior.
+3. List count/canonical ordinal selectors; Map count and value quantification, with no direct Map key/ordinal selector or entry record; lexical binders and parameter use are checked through the actual AST.
+4. Non-progress-cycle detection by type identity plus path position; no semantic 32-step path limit or new global recursive-type rejection.
+5. A domain checker and resolved compiler adapter return typed reads plus structural projection requirements; conformance consumes them without claiming collection projection support.
+6. Existing compiler diagnostic envelope/heuristic location limits remain; one new in-memory authored operand-error cause (proposed ESS-AUTHOR-035) distinguishes bad typing from existing unreadable-path cause 026.
+
+## Exact scheduling and file delta
+
+Keep the four existing machine-readable scope tokens unchanged:
+
+- `crates/specify/ess-domain` — cited
+- `crates/specify/ess-compiler` — cited
+- `crates/verify/ess-conformance` — cited
+- `docs/design/review-expression-typechecking.md` — inferred
+
+Within those tokens, inferred concrete additions are `ess-domain/src/expression.rs`, `ess-compiler/src/expression.rs`, their existing lib.rs exports, and focused expression tests in the three packages. Existing command/entity/types/view/spec owner files and conformance input/authored/synthesize plus witness/synthesis fixture tests remain in the original assignment.
+
+Compiler ir.rs/resolve.rs/diagnostic.rs stay in the collision inventory; consume public resolved types and preserve bridge revalidation without requiring an IR/schema change. Conformance scenario.rs and runner.rs are evidence/compatibility surfaces, not a request to change persisted predicates or execution. No new CLI, primitives, infra-spec, wire, graph, solver, projection or format token is proposed.
+
+Root should bind the reviewed design through the store and owned design document before dispatch; this proposal creates neither an approval nor a lifecycle claim.

@@ -2,7 +2,7 @@
 format: aep.planning-md/1
 id: story:review-openapi-semantic-accounting
 kind: story
-status: draft
+status: active
 title: Account for every unpreserved OpenAPI constraint
 tags:
 - P1
@@ -11,13 +11,23 @@ relations:
 - decomposes: epic:review-boundary-remediation
 - serves: vision:O2
 scope:
+- confidence: inferred
+  path: Cargo.lock
+- confidence: cited
+  path: README.md
 - confidence: cited
   path: crates/edge/ess-cli
 - confidence: cited
   path: crates/generate/ess-openapi
+- confidence: cited
+  path: docs/design/review-format-catalog.md
 - confidence: inferred
   path: docs/design/review-openapi-accounting.md
-revision: 6
+- confidence: cited
+  path: website/docs/reference/cli.md
+- confidence: cited
+  path: website/docs/reference/formats.md
+revision: 15
 ---
 ## Finding and source
 
@@ -66,3 +76,69 @@ Derived 2026-09-05 by independent aep-drive:story-scoper from story revision4 an
 - Binding decisions remain: distinct wrapper versus new interface version; reader-first defaults; legacy accounting unavailable (never proven zero) and explicit reimport/acknowledgement/qualification-preserving projection; exact source-byte/normalization/importer identity and dependency/lockfile consequence. Do not reinterpret ESS source_digest. Add README/public documentation scopes before dispatch if defaults change — inferred.
 - Clean Atlas7b00adf3b1004e0cdd8dd12aa4fa8cc8435a0432 equaled remote during scoping. Cross-repo ADR rule applies when another repo verifies changed bytes; none established for interface here, so revisit actual consumers instead of inventing an unconditional ADR requirement. Any public documentation still requires its normal downstream publication gates — cited/inferred coordinator boundary.
 - Confidence high for converter, strict envelope and actual persisted writer/reader. No new contract decision or compatibility execution claimed. Collides on exact ess-openapi, ess-cli and proposed design tokens; shared planning/integration root-owned — cited/inferred.
+
+
+## Bound Wave7 implementation
+
+The coordinator accepts docs/design/review-openapi-accounting.md before source edits under the user's standing approval for all remediation waves. The complete original Scope above is retained. The following independent refresh remains attributed proposal text; its concrete design/scope/acceptance choices are now accepted for implementation. Planned cases are not executed evidence. Source pin e113a65 is contained in published combined fadbc674, whose complete ten-lane gate passed1768 Rust cases at2026-09-06T00:53:01Z. That gate is the opening baseline, not a result for this implementation.
+
+# F04 scope refresh and acceptance delta
+
+Proposal only, 2026-09-06. Bind against incoming ESS
+`e113a65a0bac63e77cd17f43fa280a5bf56c93f9`; the initial refresh pin was
+`1b1c4a3a424e3304e503747422a0c3d10d86928a`. Retain the existing detailed Scope and
+finding history from story revision 6. The concise section below adds the intended documentation
+and lockfile reservations once the accompanying binding is accepted. Source citations use incoming
+e113. Neither acceptance nor any test result is claimed by this proposal.
+
+## Scope
+
+- Primary surface: `crates/generate/ess-openapi` — cited; owns strict ServiceInterface/1, transient ImportReport, import/read/project, variant conversion and inline tests (`src/lib.rs:12–80,189–318,723–970,975–1057`). Actual edits stay in this crate, including its manifest and focused fixtures/tests.
+- CLI boundary: `crates/edge/ess-cli` — cited; actual intended edits are OpenAPI help and import/project routing in `src/main.rs:560,610,2825–2900,3165–3205` and focused CLI tests; the existing package reservation is retained.
+- Binding document: `docs/design/review-openapi-accounting.md` — inferred; record the accepted envelope/profile, raw-source identity, checked admission, legacy/default/projection behavior and bounded dialect accounting before implementation.
+- Lockfile: `Cargo.lock` — inferred; adding the already-resolved `sha2 = "0.11"` to ess-openapi changes its dependency list (current package at line 425; sha2 at line 1208). Root Cargo.toml has no workspace sha2 entry and needs no edit.
+- User overview: `README.md` — cited; lines 81–86 currently claim import produces ServiceInterface/1 and describe its accounting, requiring correspondence with the new persisted default.
+- Internal catalog: `docs/design/review-format-catalog.md` — cited; lines 143 and 149 identify the current interface reader and imported projection, requiring a new import-envelope row and qualifications on the retained interface/projection rows.
+- Public CLI reference: `website/docs/reference/cli.md` — cited; lines 126 and 128 describe OpenAPI import/projection, requiring the new output marker and checked --ir refusal/reimport behavior.
+- Public format reference: `website/docs/reference/formats.md` — cited; lines 152 and 155 describe current interface and imported projection, requiring the envelope/profile/source-hash contract and the retained low-level API's limits.
+- Existing compatibility evidence: current inline supported 3.1.0 roundtrip, reference and projection tests, plus `crates/edge/ess-cli/tests/command_surface.rs:165–182` and Taskfile import smoke — cited; they do not establish durable reload, legacy/default migration or tamper rejection.
+- Intended verification: measured variant/site counterexamples, exact durable gap/refusal checks, checked write/read/project controls, frozen old-reader rejection, retained old /1 and supported projection bytes, and before/after package checks — inferred; coordinator owns integration/site and publication gates.
+- Shared incoming work: `crates/edge/ess-cli`, `website/docs/reference/cli.md` and `website/docs/reference/formats.md` — cited; e113 adds normalize-generate in src/normalize.rs and src/schema.rs, sets main.rs:3519 leaf count to 51, adds cli.md:104 and updates formats.md:88 for Plan::go. Preserve these incoming changes; no normalization source edits are needed for F04.
+- Would collide with: edits using the exact existing ess-openapi or ess-cli package tokens, the binding document, Cargo.lock, README.md, or either catalog/public reference file — inferred; normalization work overlaps the ess-cli reservation and the two public reference files even though its implementation symbols differ. Coordinate the reservation before concurrent dispatch.
+- Confidence: high for current ownership, loss boundary and documentation drift — cited; the exact incoming objects and existing story identify them. This scope is an implementation story, not a documents-only change.
+- Exclusions: schema-contract, ess-gen, normalization.rs/schema.rs implementation, broad OpenAPI support, new normalization targets, new public navigation or manifest surfaces, and an unestablished cross-repository verifier/ADR — inferred; none is needed to implement the proposed F04 contract. Coordinator-owned release/planning records remain outside the implementor unit.
+
+## Matching typed scope commands
+
+These commands are a complete desired path set, not an instruction to replay already-recorded
+entries. The first three are already present at story revision 6; root should add only the five new
+paths after binding. No command below has been run.
+
+```sh
+aep plan artifact scope story:review-openapi-semantic-accounting --add crates/generate/ess-openapi
+aep plan artifact scope story:review-openapi-semantic-accounting --add crates/edge/ess-cli
+aep plan artifact scope story:review-openapi-semantic-accounting --add docs/design/review-openapi-accounting.md --inferred
+aep plan artifact scope story:review-openapi-semantic-accounting --add Cargo.lock --inferred
+aep plan artifact scope story:review-openapi-semantic-accounting --add README.md
+aep plan artifact scope story:review-openapi-semantic-accounting --add docs/design/review-format-catalog.md
+aep plan artifact scope story:review-openapi-semantic-accounting --add website/docs/reference/cli.md
+aep plan artifact scope story:review-openapi-semantic-accounting --add website/docs/reference/formats.md
+```
+
+## Acceptance delta proposed after binding
+
+Keep the original acceptance sentence. Add these concrete observable boundaries:
+
+1. Successful persisted imports use the accepted distinct closed/versioned envelope containing the unchanged ServiceInterface/1, exact retained UTF-8 source plus SHA-256, fixed normalization identity, admitted dialect, and deterministic normalization/gap/reference-site accounting. Immediate and reloaded accounting agree; no count-only replacement or omitted accounting is accepted.
+2. Checked reload reimports the retained source and compares the complete derived result. Unknown/missing/duplicate wire fields or maps, changed source/digest/profile/dialect/interface, removed gaps and changed unresolved sites refuse; a self-consistent new source is admitted only as that new source. Repeat canonical writes are byte-identical.
+3. Enum/const consumption depends on the admitted variant; missing items and all reviewed unsupported shapes always emit explicit gap/refusal before any component/property/message can disappear. Schema-reference siblings are accounted under admitted 3.1 semantics. Unsupported versions/dialects/resource interpretation refuse, while existing supported bare local references and string constraints remain supported. Use the binding's explicit cases and primary-spec distinctions.
+4. The CLI switches its flat and area --out writers together. The old strict ServiceInterface/1 reader and canonical bytes remain unchanged and reject the new envelope. The new import-document boundary reports legacy accounting unavailable with an actionable source-reimport refusal; it never upgrades absent history into complete accounting. --format remains terminal presentation only.
+5. Checked CLI --ir projection refuses partial, unresolved or legacy-unqualified imports before output mutation. Complete admitted imports, including allowed annotation-only normalizations, retain the supported projected YAML. The low-level structural ServiceInterface projection and native --path producer remain explicitly distinct.
+6. Help, README and both catalogs accurately state the implemented reader/default/profile/hash/projection limits. Preserve the incoming normalize-generate command, 51-leaf count, recipe /1 and /2 rows, and Plan::rust/Plan::go target-report wording. Proposed tests and catalog prose are not substitutes for executed package/integration evidence.
+
+## What is not established
+
+- Root has not yet bound the proposed marker/profile names, retained-source policy, replay admission or strict projection/default migration; the separate binding document makes these choices concrete for root to settle.
+- No external persisted ServiceInterface consumer or cross-repo byte verifier was found by the bounded local search; this does not enumerate published crates, installed binaries or users' saved files.
+- No new tests, builds, compatibility execution, publication or source edits were performed. Existing tests were inspected only.
+- Incoming source may advance again before dispatch; root must preserve the new exact source when rebasing reservations and briefs. This report does not establish remote main after the supplied e113 object.
