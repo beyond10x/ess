@@ -699,3 +699,626 @@ fn the_emitted_runner_stops_a_scan_and_fails_a_target_that_builds_the_whole_list
     );
     let _ = std::fs::remove_dir_all(&directory);
 }
+
+#[test]
+fn count_report_skip_only_is_inconclusive_without_actual_failures() {
+    let go = go().expect("count-stage verification requires an actual Go toolchain");
+    let directory = module("count-skip-only");
+    let fixture = std::fs::read_to_string(directory.join("target.go")).unwrap();
+    let needle = "func (";
+    assert!(fixture.contains(needle));
+    std::fs::write(directory.join("target_test.go"), r#"package billing
+import ("testing"; "essbilling/essconform")
+type unavailable struct { essconform.Target }
+func (unavailable) Identity() (essconform.Identity, error) { return essconform.Identity{Name:"skip-control", Version:"1"}, nil }
+func (unavailable) BeginScenario(essconform.ScenarioContext) error { return essconform.ErrUnsupported }
+func TestConformance(t *testing.T) { essconform.Run(t, func() essconform.Target { return unavailable{} }) }
+"#).unwrap();
+    let output = Command::new(go)
+        .args(["test", "-count=1", "-v", "./..."])
+        .current_dir(&directory)
+        .env("ESS_REPORT_FORMAT", "2")
+        .env("ESS_REPORT_OUT", report_path(&directory))
+        .output()
+        .unwrap();
+    let raw = String::from_utf8_lossy(&output.stdout);
+    assert!(
+        output.status.success(),
+        "{raw}\n{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert_eq!(scenarios(&raw, "SKIP").len(), 30, "{raw}");
+    let text = std::fs::read_to_string(report_path(&directory)).unwrap();
+    let value: serde_json::Value = serde_json::from_str(&text).unwrap();
+    assert_eq!(value["format"], "ess-conformance-report/2", "{text}");
+    assert_eq!(value["counts"]["failed"], 0);
+    assert_eq!(value["counts"]["skipped"], 30);
+    assert_eq!(value["execution_status"], "inconclusive");
+    assert_eq!(value["conformance_status"], "inconclusive");
+}
+
+fn predicate_path_and_operator_cases() -> Vec<(serde_json::Value, bool)> {
+    use serde_json::json;
+
+    let mut cases = Vec::new();
+    for (path, accepted) in [
+        ("ready", true),
+        ("ready.0_done-now", true),
+        ("A_-.0_-", true),
+        ("", false),
+        ("ready..done", false),
+        (".ready", false),
+        ("ready.", false),
+        ("0ready", false),
+        ("réady", false),
+    ] {
+        for predicate in [
+            json!({path: {"eq": true}}),
+            json!(path),
+            json!(format!("{path} == true")),
+            json!(format!("defined ( {path} )")),
+            json!(format!("exists({path})")),
+            json!(format!("missing({path})")),
+        ] {
+            cases.push((predicate, accepted));
+        }
+    }
+    for operator in [
+        "eq",
+        "equals",
+        "==",
+        "ne",
+        "not_equals",
+        "!=",
+        "lt",
+        "<",
+        "le",
+        "lte",
+        "<=",
+        "gt",
+        ">",
+        "ge",
+        "gte",
+        ">=",
+    ] {
+        cases.push((json!({"ready": {operator: "other..literal"}}), true));
+        cases.push((json!({"ready": {operator: {}}}), false));
+    }
+    for operator in ["any_of", "in", "one_of", "none_of", "not_in"] {
+        for operand in [
+            json!(null),
+            json!([]),
+            json!("a.b"),
+            json!([true, 1.5, "a.b"]),
+        ] {
+            cases.push((json!({"ready": {operator: operand}}), true));
+        }
+        for operand in [json!([null]), json!([[]]), json!([{}]), json!({})] {
+            cases.push((json!({"ready": {operator: operand}}), false));
+        }
+    }
+    for operator in ["exists", "defined"] {
+        for operand in [json!(true), json!(false)] {
+            cases.push((json!({"ready": {operator: operand}}), true));
+        }
+        for operand in [json!(null), json!("true"), json!(1), json!([])] {
+            cases.push((json!({"ready": {operator: operand}}), false));
+        }
+    }
+    for operand in [json!(null), json!({"future": [null, {}]}), json!([])] {
+        cases.push((json!({"ready": {"truthy": operand}}), true));
+    }
+    cases
+}
+
+#[test]
+fn count_go_predicate_admission_matches_rust_leaf_grammar() {
+    use serde_json::json;
+
+    let directory = count_module("predicate-leaves");
+    let mut cases = predicate_path_and_operator_cases();
+    for predicate in [
+        json!(true),
+        json!(false),
+        json!("true"),
+        json!("false"),
+        json!("always"),
+        json!("never"),
+        json!({}),
+        json!([]),
+        json!({"ready": {}}),
+        json!({"ready": [true, 1, "word"]}),
+        json!({"ready": ""}),
+        json!({"ready": 1.5}),
+        json!({"ready": {"eq": true, "ne": false}}),
+        json!("ready == other..literal"),
+        json!("ready == 'a.b'"),
+        json!("ready == other.value"),
+        json!("ready < quoted == text"),
+        json!("not defined (ready.0)"),
+    ] {
+        cases.push((predicate, true));
+    }
+    for predicate in [
+        json!(null),
+        json!(1),
+        json!("ready == "),
+        json!("ready ==\t"),
+        json!("'ready' == true"),
+        json!({"ready": null}),
+        json!({"ready": [null]}),
+        json!({"ready": {"eq": []}}),
+        json!({"ready": {"eq": null}}),
+        json!({"ready": {"eq": true, "future": true}}),
+        json!({"not": null}),
+    ] {
+        cases.push((predicate, false));
+    }
+    for group in ["all", "and", "all_of", "any", "or", "none", "none_of_these"] {
+        cases.push((json!({group: null}), true));
+        cases.push((json!({group: [{"ready": {"eq": true}}]}), true));
+        cases.push((json!({group: ["ready..done"]}), false));
+    }
+    let template: serde_json::Value = serde_json::from_str(
+        &std::fs::read_to_string(directory.join("essconform/suite.json")).unwrap(),
+    )
+    .unwrap();
+    let vectors: Vec<_> = cases.into_iter().enumerate().map(|(index, (predicate, accepted))| {
+        let mut document = template.clone();
+        document["scenarios"]["example.domain/authored/control"]["steps"] = json!([
+            {"step":"expect_view", "view":"example.domain.Rows",
+                "expectation":{"expect":"satisfies", "predicate":predicate}}
+        ]);
+        let original = document.to_string();
+        assert_eq!(ess_conformance::AdmittedSuite::from_json(&original).is_ok(), accepted,
+            "Rust grammar control {index}: {predicate}");
+        json!({"name":format!("{index}: {predicate}"), "original":original, "accepted":accepted})
+    }).collect();
+    std::fs::write(
+        directory.join("essconform/predicate_vectors.json"),
+        serde_json::to_string_pretty(&vectors).unwrap(),
+    )
+    .unwrap();
+    std::fs::write(directory.join("essconform/predicate_admission_test.go"), r#"package essconform
+import (
+    _ "embed"
+    "encoding/json"
+    "testing"
+)
+//go:embed predicate_vectors.json
+var predicateVectors []byte
+func TestPredicateAdmission(t *testing.T) {
+    var cases []struct { Name string; Original string; Accepted bool }
+    if err := json.Unmarshal(predicateVectors, &cases); err != nil { t.Fatal(err) }
+    for _, c := range cases {
+        _, err := admitSuite(c.Original)
+        if (err == nil) != c.Accepted { t.Errorf("%s: admitted=%v, expected=%v, error=%v", c.Name, err == nil, c.Accepted, err) }
+    }
+    t.Logf("checked %d independently expected Rust/Go predicate originals", len(cases))
+}
+"#).unwrap();
+    let output = invoke_count(
+        &directory,
+        "predicate-leaf-grammar",
+        &[],
+        "^TestPredicateAdmission$",
+    );
+    assert!(
+        output.status.success(),
+        "{}{}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+}
+
+fn count_module(label: &str) -> PathBuf {
+    let directory = scratch(label);
+    let suite = serde_json::json!({
+        "provenance": {"suite_version":"ess-conformance/4", "system":"example", "specification_version":"v1", "spec_digest":"a".repeat(64), "contract_digest":"a".repeat(64)},
+        "scenarios": {"example.domain/authored/control": {"purpose":"A controlled terminal command", "steps":[{"step":"execute_command","command":"example.domain.Execute"}],"source":[]}}
+    });
+    let suite = ConformanceSuite::from_json(&suite.to_string()).unwrap();
+    for file in ess_conformance::go::emit(&suite).expect("admitted suite") {
+        let path = directory.join(file.path);
+        std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+        std::fs::write(path, file.contents).unwrap();
+    }
+    std::fs::write(directory.join("go.mod"), "module countfixture\n\ngo 1.24\n").unwrap();
+    std::fs::write(directory.join("essconform/count_test.go"), r#"package essconform
+import ("errors"; "os"; "runtime"; "strconv"; "testing")
+type countTarget struct { Target; mode string }
+func (c countTarget) Identity() (Identity,error) { return Identity{Name:"count-fixture",Version:"1"},nil }
+func (c countTarget) BeginScenario(ScenarioContext) error { if c.mode=="begin-skip" { return ErrUnsupported }; if c.mode=="begin-error" {return errors.New("begin control")};return nil }
+func (c countTarget) EndScenario(ScenarioContext) error { if c.mode=="teardown" {return ErrUnsupported};return nil }
+func (c countTarget) ExecuteCommand(CommandRequest) (CommandResult,error) {
+    switch c.mode {case "skip","teardown":return CommandResult{},ErrUnsupported;case "failure":return CommandResult{},errors.New("ordinary control");case "goexit":runtime.Goexit();case "panic":panic("abnormal control")}
+    return CommandResult{},nil
+}
+func TestCount(t *testing.T) {
+    if clock:=os.Getenv("COUNT_CLOCK");clock!="" { now,err:=strconv.ParseInt(clock,10,64);if err!=nil{t.Fatal(err)};countReportNow=func()int64{return now} }
+    Run(t,func()Target { if marker:=os.Getenv("COUNT_MARKER");marker!=""{if err:=os.WriteFile(marker,[]byte("constructed\n"),0600);err!=nil{panic(err)}};return countTarget{mode:os.Getenv("COUNT_MODE")} })
+}
+func TestCountUnsigned(t *testing.T) {
+    for _,raw:=range []string{"0","9007199254740993","9223372036854775807","9223372036854775808","18446744073709551615"} {
+        value,err:=strictJSON(raw);if err!=nil{t.Fatal(err)};n,err:=unsigned(value);if err!=nil{t.Fatal(err)};if strconv.FormatUint(n,10)!=raw{t.Fatal("integer rounded")}
+    }
+    for _,raw:=range []string{"-1","-0","1.0","1e0","0.5","\"1\"","18446744073709551616"} { value,err:=strictJSON(raw);if err==nil{_,err=unsigned(value)};if err==nil{t.Fatalf("admitted %s",raw)} }
+    raw,err:=countCanonical(map[string]any{"z":uint64(18446744073709551615),"a":"e\u0301<>&/\u2028\n\u0001"});if err!=nil{t.Fatal(err)}
+    if string(raw)!="{\n  \"a\": \"e\u0301<>&/\u2028\\n\\u0001\",\n  \"z\": 18446744073709551615\n}\n"{t.Fatalf("canonical bytes: %s",raw)}
+}
+"#).unwrap();
+    directory
+}
+
+fn invoke_count(
+    directory: &Path,
+    label: &str,
+    env: &[(&str, &str)],
+    filter: &str,
+) -> std::process::Output {
+    let mut command = Command::new(go().expect("count verification requires Go"));
+    command
+        .args(["test", "-count=1", "-v", "./...", "-run", filter])
+        .current_dir(directory)
+        .env_remove("ESS_REPORT_FORMAT")
+        .env_remove("ESS_CONFORMANCE_STRICT")
+        .env_remove("ESS_CONFORMANCE_ALLOW_INCOMPLETE")
+        .env_remove("ESS_REPORT_OUT")
+        .env_remove("COUNT_MODE")
+        .env_remove("COUNT_CLOCK")
+        .env_remove("COUNT_MARKER");
+    for (key, value) in env {
+        command.env(key, value);
+    }
+    let output = command.output().unwrap();
+    let log = format!(
+        "cwd: {}\ncommand: {command:?}\nexit: {:?}\n{}{}",
+        directory.display(),
+        output.status.code(),
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let evidence = root().join("target/review-boundaries-8/go-matrix");
+    std::fs::create_dir_all(&evidence).unwrap();
+    std::fs::write(evidence.join(format!("{label}.log")), log).unwrap();
+    output
+}
+
+#[test]
+fn count_go_actual_producers_keep_skip_error_and_teardown_categories() {
+    let directory = count_module("count-matrix");
+    let output = invoke_count(&directory, "unsigned", &[], "^TestCountUnsigned$");
+    assert!(
+        output.status.success(),
+        "{}{}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+    for (mode, success, passed, failed, skipped, status) in [
+        ("passed", true, 1, 0, 0, "passed"),
+        ("skip", true, 0, 0, 1, "inconclusive"),
+        ("begin-skip", true, 0, 0, 1, "inconclusive"),
+        ("failure", false, 0, 1, 0, "failed"),
+        ("begin-error", false, 0, 1, 0, "failed"),
+        ("teardown", false, 0, 1, 0, "failed"),
+    ] {
+        let destination = directory.join(format!("{mode}.json"));
+        let output = invoke_count(
+            &directory,
+            mode,
+            &[
+                ("COUNT_MODE", mode),
+                ("ESS_REPORT_FORMAT", "2"),
+                ("COUNT_CLOCK", "1788680000000"),
+                ("ESS_REPORT_OUT", destination.to_str().unwrap()),
+            ],
+            "^TestCount$",
+        );
+        assert_eq!(
+            output.status.success(),
+            success,
+            "{mode}: {}{}",
+            String::from_utf8_lossy(&output.stdout),
+            String::from_utf8_lossy(&output.stderr)
+        );
+        let raw = std::fs::read_to_string(&destination).unwrap();
+        let value: serde_json::Value = serde_json::from_str(&raw).unwrap();
+        assert_eq!(
+            value["counts"],
+            serde_json::json!({"total":1,"passed":passed,"failed":failed,"error":0,"unsupported":0,"skipped":skipped})
+        );
+        assert_eq!(value["execution_status"], status);
+        assert_eq!(
+            value["conformance_status"],
+            if status == "failed" {
+                "failed"
+            } else {
+                "inconclusive"
+            }
+        );
+        let original = std::fs::read_to_string(directory.join("essconform/suite.json")).unwrap();
+        let admitted = ess_conformance::AdmittedSuite::from_json(&original).unwrap();
+        let report = ess_conformance::CountReport::from_json(&raw, &admitted).unwrap();
+        assert_eq!(
+            report.to_canonical_json().unwrap(),
+            raw,
+            "cross-language canonical bytes"
+        );
+        let export = root()
+            .join("target/review-boundaries-8/producer-pairs/go")
+            .join(mode);
+        std::fs::create_dir_all(&export).unwrap();
+        std::fs::write(export.join("suite.json"), original).unwrap();
+        std::fs::write(export.join("report.json"), raw).unwrap();
+        for relative in [
+            "go.mod",
+            "essconform/runtime.go",
+            "essconform/predicate.go",
+            "essconform/suite.go",
+            "essconform/suite.json",
+            "essconform/count_test.go",
+        ] {
+            let to = export.join("generated").join(relative);
+            std::fs::create_dir_all(to.parent().unwrap()).unwrap();
+            std::fs::copy(directory.join(relative), to).unwrap();
+        }
+        let expected = serde_json::json!({"producer":"actual generated Go Run + writeCountReport", "command":format!("COUNT_MODE={mode} COUNT_CLOCK=1788680000000 ESS_REPORT_FORMAT=2 ESS_REPORT_OUT=report.json go test -count=1 -v ./... -run '^TestCount$'"),"runtime":String::from_utf8(Command::new("go").arg("version").output().unwrap().stdout).unwrap(),"report":"report.json","suite":"suite.json","generated_module":"generated","expected_model_digest":"a".repeat(64),"expected_selected_ids":["example.domain/authored/control"],"expected":{"total":1,"passed":passed,"failed":failed,"error":0,"unsupported":0,"skipped":skipped,"execution_status":status,"conformance_status":if status=="failed"{"failed"}else{"inconclusive"}},"clock":1_788_680_000_000_u64});
+        std::fs::write(
+            export.join("fixture.json"),
+            serde_json::to_string_pretty(&expected).unwrap() + "\n",
+        )
+        .unwrap();
+    }
+    for mode in ["passed", "skip"] {
+        let output = invoke_count(
+            &directory,
+            &format!("strict-{mode}"),
+            &[
+                ("COUNT_MODE", mode),
+                ("ESS_REPORT_FORMAT", "2"),
+                ("ESS_CONFORMANCE_STRICT", "1"),
+            ],
+            "^TestCount$",
+        );
+        assert!(!output.status.success());
+        assert!(String::from_utf8_lossy(&output.stdout).contains("strict conformance"));
+    }
+}
+
+#[test]
+fn count_go_refusals_precede_targets_and_incomplete_runs_never_publish() {
+    let directory = count_module("count-refusals");
+    let marker = directory.join("constructed");
+    let destination = directory.join("report.json");
+    for (index, settings) in [
+        vec![("ESS_REPORT_FORMAT", "3")],
+        vec![("ESS_REPORT_FORMAT", "")],
+        vec![("ESS_CONFORMANCE_STRICT", "")],
+        vec![("ESS_CONFORMANCE_ALLOW_INCOMPLETE", "")],
+        vec![("ESS_CONFORMANCE_STRICT", "1")],
+        vec![
+            ("ESS_REPORT_FORMAT", "2"),
+            ("ESS_CONFORMANCE_STRICT", "1"),
+            ("ESS_CONFORMANCE_ALLOW_INCOMPLETE", "1"),
+        ],
+        vec![("ESS_CONFORMANCE_STRICT", "0")],
+        vec![("ESS_CONFORMANCE_ALLOW_INCOMPLETE", "true")],
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        let mut settings = settings;
+        settings.push(("COUNT_MARKER", marker.to_str().unwrap()));
+        settings.push(("ESS_REPORT_OUT", destination.to_str().unwrap()));
+        let output = invoke_count(
+            &directory,
+            &format!("configuration-{index}"),
+            &settings,
+            "^TestCount$",
+        );
+        assert!(!output.status.success());
+        assert!(!marker.exists());
+        assert!(!destination.exists());
+    }
+    for (label, mode, clock, filter) in [
+        ("filtered", "passed", "0", "^TestCount$/omitted"),
+        ("negative-clock", "passed", "-1", "^TestCount$"),
+        ("abnormal-goexit", "goexit", "0", "^TestCount$"),
+        ("abnormal-panic", "panic", "0", "^TestCount$"),
+    ] {
+        for with_destination in [false, true] {
+            let mut settings = vec![
+                ("ESS_REPORT_FORMAT", "2"),
+                ("COUNT_MODE", mode),
+                ("COUNT_CLOCK", clock),
+            ];
+            if with_destination {
+                settings.push(("ESS_REPORT_OUT", destination.to_str().unwrap()));
+            }
+            let output = invoke_count(
+                &directory,
+                &format!("{label}-{with_destination}"),
+                &settings,
+                filter,
+            );
+            assert!(!output.status.success(), "{label}");
+            assert!(!destination.exists());
+        }
+    }
+    let output = invoke_count(
+        &directory,
+        "report-io-failure",
+        &[
+            ("ESS_REPORT_FORMAT", "2"),
+            ("ESS_REPORT_OUT", directory.to_str().unwrap()),
+        ],
+        "^TestCount$",
+    );
+    assert!(!output.status.success());
+    assert_count_suite_refusals(&directory, &marker, &destination);
+}
+
+fn assert_count_suite_refusals(directory: &Path, marker: &Path, destination: &Path) {
+    let original = std::fs::read_to_string(directory.join("essconform/suite.json")).unwrap();
+    let mut cases = Vec::new();
+    for version in ["ess-conformance/5", "ess-conformance/99"] {
+        cases.push(original.replace("ess-conformance/4", version));
+    }
+    cases.push(original.replacen("\"steps\": [", "\"unknown\": 1, \"steps\": [", 1));
+    cases.push(original.replacen(
+        "\"command\": \"example.domain.Execute\"",
+        "\"command\": \"example.domain.Execute\", \"comm\\u0061nd\": \"example.domain.Execute\"",
+        1,
+    ));
+    cases.push(original.replace("A controlled terminal command", "\\ud800"));
+    let mut old: serde_json::Value = serde_json::from_str(&original).unwrap();
+    old["provenance"]["suite_version"] = serde_json::json!("ess-conformance/2");
+    old["scenarios"]["example.domain/authored/control"]["steps"] =
+        serde_json::json!([{"step":"mark_instant","instant":"start"}]);
+    cases.push(old.to_string());
+    for (index, bad) in cases.iter().enumerate() {
+        std::fs::write(directory.join("essconform/suite.json"), bad).unwrap();
+        let output = invoke_count(
+            directory,
+            &format!("suite-refusal-{index}"),
+            &[
+                ("ESS_REPORT_FORMAT", "2"),
+                ("COUNT_MARKER", marker.to_str().unwrap()),
+                ("ESS_REPORT_OUT", destination.to_str().unwrap()),
+            ],
+            "^TestCount$",
+        );
+        assert!(!output.status.success());
+        assert!(!marker.exists());
+        assert!(!destination.exists());
+    }
+}
+
+#[test]
+fn count_retained_runtime_preserves_legacy_behavior_and_does_not_gain_version_checks() {
+    let directory = count_module("count-retained-runtime");
+    let legacy = include_str!("fixtures/go-count-legacy/runtime.go");
+    std::fs::write(directory.join("essconform/runtime.go"), legacy).unwrap();
+    let mut fixture = std::fs::read_to_string(directory.join("essconform/count_test.go")).unwrap();
+    fixture = fixture.replace("; \"strconv\"", "");
+    fixture = fixture
+        .lines()
+        .filter(|line| !line.contains("if clock:="))
+        .collect::<Vec<_>>()
+        .join("\n");
+    fixture.truncate(fixture.find("func TestCountUnsigned").unwrap());
+    std::fs::write(directory.join("essconform/count_test.go"), fixture).unwrap();
+    let destination = directory.join("legacy.json");
+    let epoch_millis = || {
+        u64::try_from(
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_millis(),
+        )
+        .unwrap()
+    };
+    let observed_before = epoch_millis();
+    let output = invoke_count(
+        &directory,
+        "retained-runtime-v1",
+        &[
+            ("COUNT_MODE", "skip"),
+            ("ESS_REPORT_FORMAT", "2"),
+            ("ESS_REPORT_OUT", destination.to_str().unwrap()),
+        ],
+        "^TestCount$",
+    );
+    assert!(
+        output.status.success(),
+        "{}{}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let observed_after = epoch_millis();
+    let bytes = std::fs::read_to_string(&destination).unwrap();
+    let report = StandaloneConformanceReport::from_json(&bytes).unwrap();
+    assert_eq!(report.format, "ess-conformance-report/1");
+    assert_eq!(report.scenarios_total, 1);
+    assert_eq!(report.scenarios_failed, 1);
+    assert_eq!(report.status, VerificationStatus::Inconclusive);
+    assert_eq!(report.to_canonical_json(), bytes);
+    let export = root().join("target/review-boundaries-8/producer-pairs/go/legacy");
+    std::fs::create_dir_all(&export).unwrap();
+    std::fs::write(export.join("report.json"), bytes).unwrap();
+    let manifest = serde_json::json!({"producer":"actual retained generated Go Run/writeReport at bd6d82f0d551fcf1cc2ec2eab65aab2fe7539947","command":"COUNT_MODE=skip ESS_REPORT_FORMAT=2 ESS_REPORT_OUT=report.json go test -count=1 -v ./... -run '^TestCount$'","runtime":String::from_utf8(Command::new("go").arg("version").output().unwrap().stdout).unwrap(),"report":"report.json","suite":"suite.json","expected_model_digest":"a".repeat(64),"expected_selected_ids":["example.domain/authored/control"],"expected":{"format":"ess-conformance-report/1","scenarios_total":1,"scenarios_failed":1,"status":"inconclusive","failed_scenarios":["skipped example.domain/authored/control"]},"clock":null,"clock_source":"unmodified legacy time.Now().UnixMilli()","expected_clock_range":[observed_before,observed_after]});
+    std::fs::write(
+        export.join("fixture.json"),
+        serde_json::to_string_pretty(&manifest).unwrap() + "\n",
+    )
+    .unwrap();
+    std::fs::copy(
+        directory.join("essconform/suite.json"),
+        export.join("suite.json"),
+    )
+    .unwrap();
+    let suite = std::fs::read_to_string(directory.join("essconform/suite.json"))
+        .unwrap()
+        .replace("ess-conformance/4", "ess-conformance/5");
+    std::fs::write(directory.join("essconform/suite.json"), suite).unwrap();
+    let output = invoke_count(
+        &directory,
+        "retained-runtime-future-suite",
+        &[
+            ("COUNT_MODE", "skip"),
+            ("ESS_REPORT_OUT", destination.to_str().unwrap()),
+        ],
+        "^TestCount$",
+    );
+    assert!(output.status.success());
+    let report: serde_json::Value =
+        serde_json::from_slice(&std::fs::read(destination).unwrap()).unwrap();
+    assert_eq!(report["suite_version"], "ess-conformance/5");
+    assert_eq!(report["scenarios_failed"], 1);
+    // This is an observed old-runtime defect, never a claim that the upgraded runtime admits /5.
+}
+
+#[test]
+fn count_go_empty_selection_is_inconclusive_and_clock_conversion_is_checked() {
+    let directory = count_module("count-empty-and-clock");
+    let path = directory.join("essconform/suite.json");
+    let mut suite: serde_json::Value =
+        serde_json::from_slice(&std::fs::read(&path).unwrap()).unwrap();
+    suite["scenarios"] = serde_json::json!({});
+    std::fs::write(&path, serde_json::to_string_pretty(&suite).unwrap() + "\n").unwrap();
+    let destination = directory.join("report.json");
+    for instant in ["0", "9223372036854775807"] {
+        let output = invoke_count(
+            &directory,
+            &format!("empty-clock-{instant}"),
+            &[
+                ("ESS_REPORT_FORMAT", "2"),
+                ("COUNT_CLOCK", instant),
+                ("ESS_REPORT_OUT", destination.to_str().unwrap()),
+            ],
+            "^TestCount$",
+        );
+        assert!(output.status.success());
+        let original = std::fs::read_to_string(&path).unwrap();
+        let admitted = ess_conformance::AdmittedSuite::from_json(&original).unwrap();
+        let raw = std::fs::read_to_string(&destination).unwrap();
+        let report = ess_conformance::CountReport::from_json(&raw, &admitted).unwrap();
+        assert_eq!(report.counts().total, 0);
+        assert_eq!(
+            report.execution_status(),
+            ess_conformance::CountStatus::Passed
+        );
+        assert_eq!(
+            report.conformance_status(),
+            ess_conformance::CountStatus::Inconclusive
+        );
+        assert_eq!(report.completed_at(), instant.parse::<u64>().unwrap());
+    }
+    let output = invoke_count(
+        &directory,
+        "empty-strict",
+        &[("ESS_REPORT_FORMAT", "2"), ("ESS_CONFORMANCE_STRICT", "1")],
+        "^TestCount$",
+    );
+    assert!(!output.status.success());
+}

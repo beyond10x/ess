@@ -310,8 +310,8 @@ fn typed_binary64_suites_refuse_serialization_emission_and_target_effects() {
     }
     assert!(changed);
     let errors = suite.to_canonical_json().unwrap_err();
-    assert_eq!(errors.locations.len(), 1);
-    assert!(errors.locations[0].ends_with("/shape/ratio~1a~0b"));
+    assert_eq!(errors.issues.len(), 1);
+    assert!(errors.issues[0].path.ends_with("/shape/ratio~1a~0b"));
     assert!(serde_json::to_string(&suite).is_err());
     assert_eq!(ess_conformance::go::emit(&suite).unwrap_err(), errors);
     assert_eq!(ess_conformance::web::emit(&ir, &suite).unwrap_err(), errors);
@@ -347,8 +347,8 @@ fn sparse_models_cannot_publish_an_empty_success_for_binary64() {
     assert!(synthesized.suite.is_empty());
     assert_eq!(synthesized.refusals.len(), 1);
     let errors = ess_conformance::admission::model(&ir).unwrap_err();
-    assert_eq!(errors.locations.len(), 1);
-    assert!(errors.locations[0].contains("sample.data.Ratio"));
+    assert_eq!(errors.issues.len(), 1);
+    assert!(errors.issues[0].path.contains("sample.data.Ratio"));
     assert_eq!(
         ess_conformance::web::emit(&ir, &synthesized.suite).unwrap_err(),
         errors

@@ -125,6 +125,8 @@
 
 pub mod admission;
 pub mod authored;
+mod count_json;
+pub mod counts;
 pub mod decision;
 pub mod evidence;
 pub mod faulty;
@@ -139,6 +141,8 @@ pub mod target;
 pub mod web;
 pub mod witness;
 
+pub use admission::{AdmissionError, AdmittedSuite};
+pub use counts::{CountReport, CountRun, CountStatus};
 pub use decision::{when, Decision, Reason, Unevaluable, UnknownCause};
 pub use evidence::{StandaloneConformanceReport, STANDALONE_REPORT_FORMAT};
 pub use faulty::{Caught, Fault, Faulty, Injection, System};
@@ -149,7 +153,7 @@ pub use report::{
     CheckCode, CheckResult, ConformanceReport, ConformanceStatus, Diagnostic, ScenarioResult,
     Status,
 };
-pub use runner::{AdvancingClock, Clock, Ids, Runner, RunnerConfig};
+pub use runner::{AdvancingClock, Clock, ExecutedRun, Ids, Runner, RunnerConfig};
 pub use scenario::{
     AuthoredName, BindingAspect, ConformanceScenario, ConformanceSuite, Elapsed, EssSemanticRef,
     Holds, InstanceName, InstantName, LeafShape, PayloadShape, Position, ScenarioId,

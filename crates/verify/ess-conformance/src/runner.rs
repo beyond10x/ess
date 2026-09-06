@@ -250,6 +250,41 @@ impl Default for RunnerConfig {
 
 // ---- the runner ------------------------------------------------------------------------------
 
+/// A completed run bound to the exact admitted suite bytes that were executed.
+///
+/// Only [`Runner::run_admitted`] constructs this capability. Legacy diagnostics are available
+/// immutably; cloning or extracting the raw report does not recreate an execution binding.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ExecutedRun {
+    report: ConformanceReport,
+    suite_digest: String,
+}
+
+impl ExecutedRun {
+    /// The immutable legacy diagnostics, retaining their historical wire representation.
+    pub fn report(&self) -> &ConformanceReport {
+        &self.report
+    }
+
+    /// The digest of the exact original suite bytes supplied to execution.
+    pub fn suite_digest(&self) -> &str {
+        &self.suite_digest
+    }
+
+    /// Discard the execution capability and return the freely constructible legacy DTO.
+    pub fn into_report(self) -> ConformanceReport {
+        self.report
+    }
+}
+
+impl std::ops::Deref for ExecutedRun {
+    type Target = ConformanceReport;
+
+    fn deref(&self) -> &Self::Target {
+        self.report()
+    }
+}
+
 /// Executes a suite against a target and reports what it found.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Runner<C: Clock = AdvancingClock> {
@@ -283,12 +318,37 @@ impl<C: Clock> Runner<C> {
     ///
     /// Takes `self` by value: a second run means a second runner, so no run can inherit the clock or
     /// the counter the previous one left behind.
+    ///
+    /// This checked API serializes and admits the in-memory DTO before target identity
+    /// or callbacks. Unsupported vocabulary and Binary64 return an admission error.
+    /// Use [`Self::run_admitted`] with original-byte [`crate::AdmittedSuite`] input for counts.
+    /// The DTO's legacy Serde parser is not original-byte admission.
     pub fn run<T: ConformanceTarget>(
-        mut self,
+        self,
         suite: &ConformanceSuite,
         target: &T,
-    ) -> Result<ConformanceReport, crate::admission::AdmissionError> {
-        crate::admission::suite(suite)?;
+    ) -> Result<ConformanceReport, crate::AdmissionError> {
+        self.try_run(suite, target)
+    }
+
+    /// Admit an in-memory suite before identity or callbacks and return legacy diagnostics.
+    /// For count production, retain the execution capability from [`Self::run_admitted`].
+    pub fn try_run<T: ConformanceTarget>(
+        self,
+        suite: &ConformanceSuite,
+        target: &T,
+    ) -> Result<ConformanceReport, crate::AdmissionError> {
+        let admitted = crate::AdmittedSuite::from_suite(suite)?;
+        Ok(self.run_admitted(&admitted, target).into_report())
+    }
+
+    /// Execute an immutable admitted suite whose original bytes can be paired with report/2.
+    pub fn run_admitted<T: ConformanceTarget>(
+        mut self,
+        admitted: &crate::AdmittedSuite,
+        target: &T,
+    ) -> ExecutedRun {
+        let suite = admitted.suite();
         let started_at = self.clock.now();
         let implementation = target
             .identity()
@@ -300,14 +360,17 @@ impl<C: Clock> Runner<C> {
         }
 
         let completed_at = self.clock.now();
-        Ok(ConformanceReport {
-            suite: suite.provenance.clone(),
-            implementation,
-            started_at,
-            completed_at,
-            status: ConformanceReport::verdict(&scenarios),
-            scenarios,
-        })
+        ExecutedRun {
+            suite_digest: admitted.digest().into(),
+            report: ConformanceReport {
+                suite: suite.provenance.clone(),
+                implementation,
+                started_at,
+                completed_at,
+                status: ConformanceReport::verdict(&scenarios),
+                scenarios,
+            },
+        }
     }
 
     /// Runs one scenario in its own execution context.

@@ -472,9 +472,18 @@ enum ConformCommand {
         scenarios: Option<PathBuf>,
         #[arg(long, value_enum)]
         target: ReferenceTarget,
-        /// Where to write `ess-conformance-report/1`.
+        /// Standalone JSON destination (report/1 by default, report/2 with explicit selection).
         #[arg(long)]
         report_out: Option<PathBuf>,
+        /// Report contract version; JSON/YAML detailed v2 is ess-conformance-run/2.
+        #[arg(long, default_value = "1", value_parser = ["1", "2"])]
+        report_format: String,
+        /// Require passed complete conformance (unavailable for legacy unknown coverage).
+        #[arg(long, conflicts_with = "allow_incomplete")]
+        strict: bool,
+        /// Explicitly retain diagnostic execution exit behavior.
+        #[arg(long)]
+        allow_incomplete: bool,
         #[arg(long, value_enum, default_value_t = Format::Text)]
         format: Format,
     },
@@ -2416,10 +2425,16 @@ fn conform(command: ConformCommand) -> Result<ExitCode> {
             scenarios,
             target,
             report_out,
+            report_format,
+            strict,
+            allow_incomplete: _,
             format,
         } => {
-            let suite = if let Some(file) = suite {
-                ess_conformance::ConformanceSuite::from_json(&fs::read_to_string(&file)?)?
+            if strict && report_format != "2" {
+                bail!("strict conformance requires explicit --report-format 2; use --allow-incomplete for diagnostic report/1");
+            }
+            let admitted = if let Some(file) = suite {
+                ess_conformance::AdmittedSuite::from_json(&fs::read_to_string(&file)?)?
             } else {
                 let Ok((ir, _)) = resolved(&path, format)? else {
                     return Ok(ExitCode::from(1));
@@ -2441,29 +2456,69 @@ fn conform(command: ConformCommand) -> Result<ExitCode> {
                         bail!("`{id}` is already in the suite");
                     }
                 }
-                suite
+                ess_conformance::AdmittedSuite::from_suite(&suite)?
             };
+            let suite = admitted.suite();
             let report = match target {
-                ReferenceTarget::Billing => ess_conformance::Runner::for_suite(&suite)
-                    .run(&suite, &ess_conformance::reference::Billing::new()),
-                ReferenceTarget::OracleFixture => ess_conformance::Runner::for_suite(&suite)
-                    .run(&suite, &ess_conformance::reference::Oracle::new()),
-            }?;
-            if let Some(path) = report_out {
-                fs::write(&path, report.standalone().to_canonical_json())
-                    .with_context(|| format!("writing {}", path.display()))?;
-            }
-            match format {
-                Format::Text => print!("{report}"),
-                _ => render(&report, format)?,
-            }
-            Ok(match report.status {
-                ess_conformance::ConformanceStatus::Passed => ExitCode::SUCCESS,
-                ess_conformance::ConformanceStatus::Failed => ExitCode::from(1),
-                ess_conformance::ConformanceStatus::Error => ExitCode::from(3),
-            })
+                ReferenceTarget::Billing => ess_conformance::Runner::for_suite(suite)
+                    .run_admitted(&admitted, &ess_conformance::reference::Billing::new()),
+                ReferenceTarget::OracleFixture => ess_conformance::Runner::for_suite(suite)
+                    .run_admitted(&admitted, &ess_conformance::reference::Oracle::new()),
+            };
+            render_conformance_report(
+                &report,
+                &admitted,
+                &report_format,
+                strict,
+                report_out.as_deref(),
+                format,
+            )
         }
     }
+}
+
+fn render_conformance_report(
+    report: &ess_conformance::ExecutedRun,
+    admitted: &ess_conformance::AdmittedSuite,
+    report_format: &str,
+    strict: bool,
+    report_out: Option<&Path>,
+    format: Format,
+) -> Result<ExitCode> {
+    if report_format == "2" {
+        let summary = ess_conformance::CountReport::from_run(report, admitted)?;
+        let detailed = ess_conformance::CountRun::from_run(report, admitted)?;
+        if let Some(path) = report_out {
+            fs::write(path, summary.to_canonical_json()?)
+                .with_context(|| format!("writing {}", path.display()))?;
+        }
+        match format {
+            Format::Text => print!("{}", report.report()),
+            Format::Json => print!("{}", detailed.to_canonical_json()?),
+            Format::Yaml => render(&detailed, format)?,
+        }
+        if strict {
+            return Ok(match summary.conformance_status() {
+                ess_conformance::CountStatus::Passed => ExitCode::SUCCESS,
+                ess_conformance::CountStatus::Failed => ExitCode::from(1),
+                ess_conformance::CountStatus::Inconclusive => ExitCode::from(3),
+            });
+        }
+    } else {
+        if let Some(path) = report_out {
+            fs::write(path, report.standalone().to_canonical_json())
+                .with_context(|| format!("writing {}", path.display()))?;
+        }
+        match format {
+            Format::Text => print!("{}", report.report()),
+            _ => render(report.report(), format)?,
+        }
+    }
+    Ok(match report.status {
+        ess_conformance::ConformanceStatus::Passed => ExitCode::SUCCESS,
+        ess_conformance::ConformanceStatus::Failed => ExitCode::from(1),
+        ess_conformance::ConformanceStatus::Error => ExitCode::from(3),
+    })
 }
 
 /// `ess conform synthesize`: the suite the specification obliges, for the system or for one

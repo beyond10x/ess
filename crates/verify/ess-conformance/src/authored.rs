@@ -1456,7 +1456,7 @@ pub fn compile(ir: &EssIr, sources: &[Source]) -> Authoring {
                 origin: "model".to_owned(),
                 scenario: None,
                 cause: Cause::UnsupportedBinary64 {
-                    locations: error.locations,
+                    locations: error.issues.into_iter().map(|issue| issue.path).collect(),
                 },
             }],
         };

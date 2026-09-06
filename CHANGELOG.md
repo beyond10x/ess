@@ -15,6 +15,12 @@
   frozen. Structural Rust/Go codecs, whole-system synthesis and conformance refuse
   unsupported Binary64 before publication; TypeScript structural output reports
   the finite codec obligation.
+- Opt-in `ess-conformance-report/2` separates passed, failed, error, unsupported
+  and skipped counts, binding outcomes to the exact executed suite bytes.
+  Rust/CLI also expose checked `ess-conformance-run/2` detailed output; generated
+  Go supports standalone report 2 and explicit strict execution. Suite versions
+  1–4 retain unknown coverage, so these counts cannot establish complete
+  conformance. Report 1 and diagnostic defaults retain their existing behavior.
 - Checked `ess-openapi-import/1` envelopes retain original source identity and
   semantic accounting. Reloading verifies the source digest, normalization and
   derived interface before projection; constraints that cannot be preserved
