@@ -1429,3 +1429,63 @@ Independent pass2 runs under target/review-boundaries-8/adversary-pass-2/brief.m
 Root reran the actual AEP correspondence exercise against the immutable correction-pass-1 producer-pairs export, with independently declared fixture expectations. actual-1be4dbd999b2 completed19fixtures and133command attempts, including expected nonzero negative controls; all117 copied fixture files remained unchanged. Typed recording/replay and both reader routes retain exact identities, categories and full-u64 times; report2 planning rejects unsupported calendar dates before opening or changing stores. The separately recorded legacy report1 calendar limitation remains unchanged. This correspondence covers the actual supplied producers; pass2 continues to test malformed original-suite admission independently.
 
 AEP metadata CI34025256949 completed successfully after the preceding section's observation; documentation validation34025257007 also succeeded. Reader source remains30aeef2, with only the published internal plan and draft legacy defect at62ef3a7.
+
+## Second adversary routing
+
+Complete pass2 is immutable review-result:ess-count-writer-adversary-pass-2, body byte-equal to the89,221-byte returned report at SHA25626cb137a58a1ef98a58a8bbd67178d1ed391889d5a47c0fc2d583583cb0659fd. Root verified all23 frozen source hashes and only3 additive test/fixture paths, then bot-froze them at66169d5e69d4ca1cc0859076eff0b66edc834f9d. No old assertion changed. The first new case selected1 and failed behaviorally before any broader command. A separate Rust test compile-only enum mistake selected0, was corrected only in that new test and is retained as setup evidence. Complete package run408cases:407passed1failed0ignored35summaries; fail-fast invocation71executed70passed1failed. All405 inherited named cases passed.
+
+The exact CLI ledger below records a falling3→1 trend:0carried,1new,3resolved. Signature comparison uses file:line/verdict/origin; the new Go leaf/path/operator case is adjacent residue of the earlier predicate-admission class. The original quantifier, teardown and result-binding cases remain green. Root therefore routes the new introduced reachable acceptance blocker to the same implementor under correction-pass-2/brief.md. Root will inspect the final correction and preserved assertions directly; no third attack is authorized. Original review outcomes now have3fixed records, one per first-pass finding, all referencing actual correction1be4. The new finding has no premature fixed outcome.
+
+The measured route is a generated Go package invoking Run with explicit report2 and an original suite whose malformed leaf predicate Rust AdmittedSuite rejects. Actual Go target construction and skipped report publication occurred with exit0, establishing the pre-callback admission violation. The separate formatter/Goexit hypothesis and cloned/extracted execution-binding control passed and are not findings.
+
+```json
+{
+  "artifact": "story:a-skipped-scenario-is-not-a-failed-one",
+  "reviews": 10,
+  "from": "review-result:ess-count-writer-adversary-pass-1",
+  "from_reviewer": "unattributed",
+  "to": "review-result:ess-count-writer-adversary-pass-2",
+  "to_reviewer": "unattributed",
+  "carried": [],
+  "new": [
+    {
+      "file": "crates/verify/ess-conformance/src/go/runtime.go",
+      "line": 2294,
+      "category": "acceptance",
+      "severity": "blocker",
+      "verdict": "CONFIRMED",
+      "origin": "introduced",
+      "message": "Generated Go admission still accepts invalid leaf fact paths and unknown constraint operators, allowing refused original predicates to construct targets and publish report/2."
+    }
+  ],
+  "resolved": [
+    {
+      "file": "crates/verify/ess-conformance/src/counts.rs",
+      "line": 171,
+      "category": "contract-drift",
+      "severity": "blocker",
+      "verdict": "CONFIRMED",
+      "origin": "introduced",
+      "message": "The public count producers can bind an unchanged completed run to a different admitted suite with the same provenance and selected IDs, including a suite whose added assertion actually fails."
+    },
+    {
+      "file": "crates/verify/ess-conformance/src/go/runtime.go",
+      "line": 2284,
+      "category": "acceptance",
+      "severity": "blocker",
+      "verdict": "CONFIRMED",
+      "origin": "introduced",
+      "message": "Generated Go admission delegates predicates to a permissive evaluator parser, allowing unknown quantifier fields, invalid bindings and excess depth to reach target construction and complete report/2 output."
+    },
+    {
+      "file": "crates/verify/ess-conformance/src/go/runtime.go",
+      "line": 566,
+      "category": "boundary",
+      "severity": "blocker",
+      "verdict": "CONFIRMED",
+      "origin": "introduced",
+      "message": "A skipped Go scenario whose EndScenario calls runtime.Goexit is counted as terminal, so report/2 can be published and the invocation can exit successfully even without a report destination."
+    }
+  ]
+}
+```
