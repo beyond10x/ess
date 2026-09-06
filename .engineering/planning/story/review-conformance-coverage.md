@@ -32,7 +32,7 @@ scope:
   path: website/docs/guides/verify-conformance.md
 - confidence: cited
   path: website/docs/reference/formats.md
-revision: 16
+revision: 17
 ---
 ## Finding and source
 
@@ -48,7 +48,7 @@ Design the suite/report compatibility contract before coding: account for genera
 
 ## Validation
 
-Round-trip complete, partial and zero-generated suites through JSON, YAML, files and Go output; prove strict refusal and explicit incomplete acceptance, exact-suite digest mismatch rejection and old-version behavior. Use an unsupported but type-correct synthesis case so fixing F09 cannot erase the coverage regression.
+Round-trip complete, partial and zero-generated suites through JSON, YAML, files and Go output; prove strict refusal and explicit diagnostic execution of incomplete inventory, exact-suite digest mismatch rejection and old-version behavior. Use an unsupported but type-correct synthesis case so fixing F09 cannot erase the coverage regression.
 
 Run package-scoped checks while implementing; the integration coordinator runs every step of `task check` and `task site-build` when required by `AGENTS.md`, retaining individual exit statuses and executed-case counts.
 
@@ -97,3 +97,7 @@ Under the standing ESS remediation implementation/publication authorization, roo
 - architecture/adr/0040-ess-complete-selection-evidence.md — SHA256 54931ffb2e52beb09e7ba7b952ec16f996a681161692227e5cdc25b1f3d337ac.
 
 Original review reports are035d8b8fd665457e387a73edfd47fec9b40fbdc85bc6c93a774b48f3f4f8ada3 andf13642c04236967cd71ff28096abb1907aa8e1139687243546f3192c345b058a. Actual AEP source baseline package tests separately passed1320cases0failed/ignored61summaries; that is existing-source resource/control evidence, not new reader implementation. Reader publication remains required before the ESS writer, followed by frozen actual Rust/Go correspondence before ESS writer publication.
+
+## Published Binary64 source refresh
+
+The transport binding records published main6c6620b model/suite refusal before output. Suite/5 adds inventory without introducing a Binary64 codec. Preserve admission::model/suite and checked runner/serializer/projection Result returns. A model-level UnsupportedBinary64 authoring cause cannot be assigned an invented authored source identity or admitted as a new coverage refusal code. The reader prerequisite retains its accepted supported vocabulary; fresh writer source assumptions must be refreshed after this integration. This source-preservation clarification is accepted under the standing remediation instruction, with no new wire vocabulary or default change.

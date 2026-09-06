@@ -120,6 +120,24 @@ Suite/5 with implicit or explicit report/1 refuses before execution, even with `
 or no report destination. Explicit report/2 and the existing strict/diagnostic choices retain
 their accepted meanings. No default transition is part of this work.
 
+## Preserved model admission after the Binary64 integration
+
+Source refresh on 2026-09-06: published ESS `6c6620b` adds explicit Binary64 model/suite
+refusal before conformance output (`ess-conformance/src/admission.rs:280`, `:285`,
+`src/authored.rs:1452`, `src/synthesize.rs:926`). Coverage suite/5 adds inventory, not a
+finite Binary64 conformance codec. Fresh suite/5 builders and paired web/Go projections
+must retain that model admission before constructing inventory or output. Direct typed
+and original-byte suite inputs must retain their unsupported-primitive refusal. An invalid
+model cannot become a complete empty inventory merely because synthesis emitted no scenario.
+
+The new model-level authored `UnsupportedBinary64` cause has origin `model` and no file
+identity. It is an input-model refusal, not an authored source-map entry: do not invent a
+source file or admit it as a new suite/5 coverage refusal code. The selected coverage wire
+continues to admit only the supported execution vocabulary and baseline coverage causes.
+An actual Binary64 conformance codec requires its separately governed contract decision.
+The checked `Result` returns now used by suite serialization and runner/projection entries
+must be propagated; no compatibility wrapper may fabricate a report on refusal.
+
 ## Browser pairing
 
 Introduce a single closed paired document `ess-conformance-replay/1` containing `format`,
