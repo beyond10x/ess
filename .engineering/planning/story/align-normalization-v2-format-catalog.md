@@ -2,7 +2,7 @@
 format: aep.planning-md/1
 id: story:align-normalization-v2-format-catalog
 kind: story
-status: active
+status: implemented
 title: Align the internal normalization format catalog
 relations:
 - serves: vision:O2
@@ -11,7 +11,7 @@ relations:
 scope:
 - confidence: cited
   path: docs/design/review-format-catalog.md
-revision: 4
+revision: 6
 ---
 ## Context
 
@@ -77,3 +77,9 @@ ESS `f0cbf56a1e3985a08effffc88a3e7f5b17893a9b`; every scope entry below is cited
 - **Documents:** only the internal catalog; existing public, design, source and test citations do not reserve their paths for editing — cited, coordinator assignment.
 - **Confidence:** high because the assignment names the exact document, and the pinned internal/public rows plus source establish the missing entry — cited.
 - **Would collide with:** another edit to `docs/design/review-format-catalog.md`, especially its Source-driven integration additions section — inferred; no crate or public-document reservation is justified by this amendment.
+
+## Implemented result and evidence
+
+The single internal-document amendment was compared with exact incoming f0cbf56 constants, closed DTO and version checks, input routing, writers and the already matching public row. The source correspondence report ran no tests and makes no deployed-reader or release claim. The full combined repository gate below is separate executable evidence.
+
+Combined integration 37db6228da231e5d80a889d9fc9f344b5e2c5126 passed all ten declared lanes at 2026-09-06T00:13:18Z: fmt-check, clippy, test, doc-check, example-check, projection-check, release-check, action-check, site-build and planning. Rust executed1760 passing cases, zero failed and zero ignored across133 summaries. Site-lab compiled WASM, checked21 browser claims and28 steps over64 rows, then the pinned site build succeeded. Raw lane commands, exits and times are target/review-boundaries-6/integration/results.json and adjacent logs; the durable integration record is docs/plan/2026-09-06-review-boundaries-6.md. Existing npm dependency advisories and twelve planning prose-findings advisories remain visible in raw output. No release/tag or recovery-runtime completion is inferred.

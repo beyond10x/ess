@@ -1,6 +1,6 @@
 # ESS review boundary remediation — wave 6
 
-Standing-approved selection of two independent units serving vision:O2. Eleven of the original31 stories are implemented, these two units are active, and18 remain draft. Both reviewed units and the incoming normalization/2 source are now integrated locally; the combined gate is pending. This wave does not close all seventeen findings.
+Standing-approved selection of two independent units serving vision:O2. Thirteen of the original31 stories are implemented and18 remain draft. Both reviewed units and the incoming normalization/2 source passed the complete combined gate at37db622. Source publication and managed cleanup are the remaining Wave6 steps. This wave does not close all seventeen findings.
 
 **Skill version 0.7.0** — aep-drive:wave. Dispatch roles are aep-drive:implementor and aep-drive:adversary; scoping uses aep-drive:story-scoper. Native plugin agent types are unavailable, so collaboration threads read the exact installed charters as the recorded adapter deviation. No model override or additional approval claim is made.
 
@@ -33,8 +33,8 @@ N=2 implementors within three worker slots and the previously established defaul
 
 | Unit | Branch | Reserved managed ID | Build/temp | Scratch | Stage |
 | --- | --- | --- | --- | --- | --- |
-| scenarios-directory-compiles-nothing | impl/scenarios-directory-compiles-nothing | review-empty-scenarios | target | target/review-boundaries-6 | active; subject2d9e9b7; pass1 recorded, no findings;115 package cases; merged dbe4108 |
-| review-execution-recovery-design | impl/review-execution-recovery-design | review-execution-recovery-design | target | target/review-boundaries-6 | active; corrected subject9c18eb0; pass2 recorded, no findings; merged fcd9820 |
+| scenarios-directory-compiles-nothing | impl/scenarios-directory-compiles-nothing | review-empty-scenarios | target | target/review-boundaries-6 | implemented r13; subject2d9e9b7;115 package cases; merged dbe4108; combined gate0 |
+| review-execution-recovery-design | impl/review-execution-recovery-design | review-execution-recovery-design | target | target/review-boundaries-6 | implemented r8; corrected subject9c18eb0; pass2 no findings; merged fcd9820; combined gate0 |
 
 The existing coordinator is reused at its manager-returned wt-752828a285ba path on wave/review-boundaries-6. Units will fork from the same frozen opening commit. Root records their actual full path/build/scratch triples before dispatch, owns all AEP/Git/lifecycle operations, and gates the opening metadata with cheap applicable checks before creating trees. Implementors leave uncommitted handoffs; each independent adversary receives its own unit and may add tests, never production edits. Maximum two full attacks, with every immutable result and outcome recorded.
 
@@ -61,6 +61,38 @@ Recovery subject0a1be79 received one introduced warning in immutable review-resu
 The AEP reader managed checkout at00c742e contains draft story:admit-ess-conformance-v2-counts. Root accepted the grounded raw-byte carrier/optional pure reader and independent task-owned expectation choices from the32202-byte admission-binding proposal (SHA25622f2d982a6006fc8809b7a95d69c405afe0d6365a822e9aca8ee84fa7c09519d). Concrete binding and Atlas coordination drafts are being prepared before implementation. The additional task schema scope is inferred. The managed Atlas companion /home/timo/.local/state/worktree/trees/b10x/atlas/ess-conformance-v2-governance starts atf4f2b51 on docs/ess-conformance-v2-governance, leased to ess-review-counts-governance. Reader source, compatibility gates and rollout remain outstanding; no count-stage evidence is treated as complete coverage.
 
 The coordinator-owned story:align-normalization-v2-format-catalog records the bounded internal catalog amendment outside the original31-story cohort. Its sole source scope is docs/design/review-format-catalog.md. The independently inspected f0cbf56 public row agrees with the reader/writer; the amendment adds /2, preserves /1 omission semantics and distinguishes normalization-target/1. No new executable test is invented for this prose correspondence. Both reviewed unit sources, complete review records, catalog amendment and Unreleased notes are frozen together for the ten-lane integration gate.
+
+## Combined gate and implemented records
+
+Exact source37db6228da231e5d80a889d9fc9f344b5e2c5126 includes incoming normalization/2, both reviewed units, the internal catalog companion and Unreleased notes. All ten lanes completed at2026-09-06T00:13:18.913763Z: fmt-check0, clippy0, test0, doc-check0, example-check0, projection-check0, release-check0, action-check0, site-build0, planning0. Rust executed1760 passing cases, zero failures and zero ignored across133 summaries. The site lane compiled the WASM target, held21 browser-boundary claims and28 deterministic steps over64 rows, installed the pinned dependencies and generated Docusaurus successfully. Dependency advisories remain in its raw log; no dependency upgrade or audit remediation was part of this wave.
+
+Raw commands, exact per-lane timestamps/exits and stdout/stderr are target/review-boundaries-6/integration/{results.json,*.log}. The gate ran from clean37db622; the closing commit changes only planning records and internal wave/progress pages. AEP recorded the actual whole-second observation2026-09-06T00:13:18Z, complete source identity and this page for both units and the coordinator-owned catalog companion. The original cohort is now13 implemented and18 draft; the companion is additional and does not change the31-story denominator. Source publication and unit retirement are pending at this checkpoint.
+
+Scopes now record the implementors' confirmations: the formerly inferred scenario test and recovery document exist at their assigned paths; the additional adversarial test is cited; no production scope expanded. The two scenario red regressions preserved the earlier matching-directory read refusal. Recovery's29 matrix families remain design vectors. Its open implementation obligation is unchanged. Full reports and original sources were archived before retirement, with tar byte-comparison0: review-empty-scenarios archive SHA2566c45a8ccbd4edc7ba0f3204e635b2e6ed7e7c6ae124dcdb8d7cdcb97a092de4d and recovery-design SHA25685c654ded40a2974439788ac17f7344fd7a0f0422038e9184996ad3baf731556. Archives are /home/timo/.cache/ess-review/2026-09-06/remediation-wave-6/archives; unit-archive-manifest.json records exact sources, sizes and capture times. Trees remain leased until remote recovery proof and managed cleanup.
+
+The collaboration harness provided no token/tool-use/wall-duration totals in its completion messages. Those values are unavailable, not zero; actual command-level duration and executed counts are retained. No release/version/tag or complete F10/F11 disposition follows from these two stories.
+
+## Closing planning validation (verbatim)
+
+```text
+121 file(s) in /home/timo/.local/state/worktree/trees/b10x/ess/wt-752828a285ba/.engineering/planning: 121 artifact(s)
+14 review(s) recorded no findings block:
+  - review-result:review-boundaries-2-containment-adversary-pass-2 states its findings as prose only — nothing can enumerate what it found, so                  the next review starts from nowhere
+  - review-result:review-boundaries-2-diagnostic-adversary-pass-1 states its findings as prose only — nothing can enumerate what it found, so                  the next review starts from nowhere
+  - review-result:review-boundaries-3-delivery-adversary-pass-1 states its findings as prose only — nothing can enumerate what it found, so                  the next review starts from nowhere
+  - review-result:review-boundaries-3-typescript-adversary-pass-1 states its findings as prose only — nothing can enumerate what it found, so                  the next review starts from nowhere
+  - review-result:review-boundaries-4-infra-adversary-pass-1 states its findings as prose only — nothing can enumerate what it found, so                  the next review starts from nowhere
+  - review-result:review-boundaries-5-format-adversary-pass-2 states its findings as prose only — nothing can enumerate what it found, so                  the next review starts from nowhere
+  - review-result:review-boundaries-6-recovery-adversary-pass-2 states its findings as prose only — nothing can enumerate what it found, so                  the next review starts from nowhere
+  - review-result:review-boundaries-6-scenarios-adversary-pass-1 states its findings as prose only — nothing can enumerate what it found, so                  the next review starts from nowhere
+  - review-result:review-remediation-design-round-1 states its findings as prose only — nothing can enumerate what it found, so                  the next review starts from nowhere
+  - review-result:review-remediation-design-round-2 states its findings as prose only — nothing can enumerate what it found, so                  the next review starts from nowhere
+  - review-result:review-remediation-parallel-safety-round-1 states its findings as prose only — nothing can enumerate what it found, so                  the next review starts from nowhere
+  - review-result:review-remediation-parallel-safety-round-2 states its findings as prose only — nothing can enumerate what it found, so                  the next review starts from nowhere
+  - review-result:review-remediation-scope-round-1 states its findings as prose only — nothing can enumerate what it found, so                  the next review starts from nowhere
+  - review-result:review-remediation-scope-round-2 states its findings as prose only — nothing can enumerate what it found, so                  the next review starts from nowhere
+valid
+```
 
 ## Complete draft computation
 

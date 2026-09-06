@@ -2,7 +2,7 @@
 format: aep.planning-md/1
 id: story:scenarios-directory-compiles-nothing
 kind: story
-status: active
+status: implemented
 title: A --scenarios directory of directories compiles nothing and exits 0
 summary: The flag does not descend, and a corpus root silently yields a suite with none of the corpus
 relations:
@@ -13,11 +13,11 @@ scope:
   path: crates/edge/ess-cli
 - confidence: cited
   path: crates/edge/ess-cli/src/main.rs
-- confidence: inferred
+- confidence: cited
   path: crates/edge/ess-cli/tests/authored_scenarios.rs
 - confidence: cited
   path: crates/edge/ess-cli/tests/authored_scenarios_adversary.rs
-revision: 10
+revision: 13
 ---
 ## The defect
 
@@ -67,7 +67,7 @@ Derived 2026-09-06 by `aep-drive:story-scoper` against clean published ESS `ba43
 - **Symbols and callers:** `authored_sources`, `synthesize_suite`, `author_suite`, `conform_web`, and the synthesized-suite branch of `conform` / `ConformCommand::Run` — cited; all four discovery paths propagate the helper's `Result` before their output writes or runner invocation.
 - **Implementation boundary:** refuse an empty selection from an explicit directory in the shared discovery helper, identify the requested path, explain immediate `.yaml`/`.yml` selection and how to select the intended child directory or file, and make the subdirectory case actionable without adding recursive selection — inferred; this is the smallest change satisfying the story.
 - **Preserved behavior:** omission selects no authored sources; an explicit file is read without extension filtering; directory entries are selected by the existing lowercase `.yaml`/`.yml` rule and sorted by path; `Run` with `--suite` does not read `--scenarios` — cited; these are separate existing branches and must not be collapsed by an unconditional emptiness check.
-- **Tests:** `crates/edge/ess-cli/tests/authored_scenarios.rs` — inferred; a focused new subprocess regression file can cover the shared caller matrix, refusal before output creation or replacement, omitted-flag controls, direct-file and shallow-directory success, and committed-suite bypass without modifying unrelated existing test files.
+- **Tests:** `crates/edge/ess-cli/tests/authored_scenarios.rs` — originally inferred and now confirmed by the implementor:25 focused cases cover the shared caller matrix, output preservation, omission, direct files, shallow selection and committed-suite bypass. `authored_scenarios_adversary.rs` is the cited additional nine-case independent attack. The existing regression files were not changed. The incorrect intermediate directory-filter assumption was corrected with two observed red cases; its original source and evidence remain retained.
 - **CLI help:** the `ConformCommand::Synthesize.scenarios` description in the production file — cited; lines 421–423 incorrectly claim an implicit `scenarios/` default, contradicting the helper and the story's explicit preservation requirement.
 - **Documents:** no separate design or public documentation file is required for this bounded refusal — inferred; CLI help is the directly affected explanation, and this change requires no new persisted format or discovery contract.
 - **Confidence:** high — cited; the exact empty-success branch and all four shared discovery callers are present in the inspected source.
@@ -80,3 +80,9 @@ An explicitly supplied scenario path resolving to zero authored ESS scenario doc
 ## Remediation ownership
 
 Owns the immediate F10 empty-result refusal. Omitted --scenarios retains its existing intentional behavior. Broader typed/recursive mixed-document discovery belongs to story:review-authored-discovery.
+
+## Implemented result and evidence
+
+Implementor81→106 package cases; independent adversary106→115, no findings. Source/test subject2d9e9b7 and merge dbe4108 retain matching-directory read refusal and all established omission/direct-file/suite behaviors. The actual inferred test path was confirmed. CLI helper/help and those two new test files are the complete source scope.
+
+Combined integration 37db6228da231e5d80a889d9fc9f344b5e2c5126 passed all ten declared lanes at 2026-09-06T00:13:18Z: fmt-check, clippy, test, doc-check, example-check, projection-check, release-check, action-check, site-build and planning. Rust executed1760 passing cases, zero failed and zero ignored across133 summaries. Site-lab compiled WASM, checked21 browser claims and28 steps over64 rows, then the pinned site build succeeded. Raw lane commands, exits and times are target/review-boundaries-6/integration/results.json and adjacent logs; the durable integration record is docs/plan/2026-09-06-review-boundaries-6.md. Existing npm dependency advisories and twelve planning prose-findings advisories remain visible in raw output. No release/tag or recovery-runtime completion is inferred.

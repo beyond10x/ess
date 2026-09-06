@@ -2,7 +2,7 @@
 format: aep.planning-md/1
 id: story:review-execution-recovery-design
 kind: story
-status: active
+status: implemented
 title: Specify the recovery contract for finite deployment execution
 tags:
 - P1
@@ -11,9 +11,9 @@ relations:
 - decomposes: epic:review-boundary-remediation
 - serves: vision:O2
 scope:
-- confidence: inferred
+- confidence: cited
   path: docs/design/review-execution-recovery.md
-revision: 5
+revision: 8
 ---
 ## Finding and source
 
@@ -42,7 +42,7 @@ No continuous controller or live deployment. This design alone does not close F1
 Derived 2026-09-06 by `aep-drive:story-scoper` against clean ESS `ba43fda29de637ad9323d96c4bb9aac10f48ae64` — cited.
 
 - **Primary surface:** design documentation only; define finite deployment recovery, distinguish desired/observed/applied claims, and specify observable outcomes and fake-executor verification for partial failure, interruption, drift, retries and removals — cited.
-- **Documents/edit token:** `docs/design/review-execution-recovery.md` — inferred; the story names this proposed binding document, which does not yet exist.
+- **Documents/edit token:** `docs/design/review-execution-recovery.md` — originally inferred; the implementor confirmed the path was new and produced the144-line document there. No source scope expansion occurred.
 - **Existing symbols to ground the design:** `DeploymentCommand::Reconcile`, `deployment`, `reconcile_release`, `fetch_helm_chart`, `run_external`, `DeploymentIr`, `DeploymentRelease`, `ReleaseManifest`, `Evidence`, `EvidenceKind`, `Identifier` and `Digest`; these are read-only evidence, not implementation scope — cited.
 - **Typed-contract boundary:** existing delivery types establish validated intent and release-artifact evidence; they do not establish a deployment execution receipt or applied-state authority. Preserve this distinction rather than adding receipt fields to existing envelopes — cited.
 - **Modeling prerequisite:** any concrete new execution-evidence model requires an explicitly scoped ESS modeling step, resolved identity/ownership/cardinality/authority semantics, and successful validation before receipt fields or implementation decomposition are admitted. Unresolved semantics remain `UNMAPPED` — cited.
@@ -50,3 +50,9 @@ Derived 2026-09-06 by `aep-drive:story-scoper` against clean ESS `ba43fda29de637
 - **Exclusions:** no executor, persisted format, test, live deployment, continuous controller or public Website change in this unit; ESS acquires no AEP dependency — cited.
 - **Confidence:** high — the acceptance explicitly requires a binding design, and the current finite executor and validated delivery boundaries were inspected — cited.
 - **Would collide with:** another writer of `docs/design/review-execution-recovery.md`; the planning journal, wave page and change record remain coordinator-owned. Read-only CLI references do not reserve the CLI package against the separate empty-scenarios unit — inferred.
+
+## Implemented result and evidence
+
+Initial design0a1be79 was corrected at9c18eb0 for R25 historical removal attribution. The two immutable reviews report one introduced warning then none; AEP findings returns carried0, new0, resolved1. This is design-only acceptance:29 matrix families are future verification vectors, not executable tests. The integration gate checks the combined repository, not an implemented recovery engine. obligation:review-execution-recovery-implementation remains open; typed applied-state authority must be modeled before implementation.
+
+Combined integration 37db6228da231e5d80a889d9fc9f344b5e2c5126 passed all ten declared lanes at 2026-09-06T00:13:18Z: fmt-check, clippy, test, doc-check, example-check, projection-check, release-check, action-check, site-build and planning. Rust executed1760 passing cases, zero failed and zero ignored across133 summaries. Site-lab compiled WASM, checked21 browser claims and28 steps over64 rows, then the pinned site build succeeded. Raw lane commands, exits and times are target/review-boundaries-6/integration/results.json and adjacent logs; the durable integration record is docs/plan/2026-09-06-review-boundaries-6.md. Existing npm dependency advisories and twelve planning prose-findings advisories remain visible in raw output. No release/tag or recovery-runtime completion is inferred.
