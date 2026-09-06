@@ -105,6 +105,11 @@ pub const IMPACT_FORMAT: &str = "ess-impact/3";
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
 #[serde(tag = "refused", rename_all = "kebab-case")]
 pub enum ImpactRefusal {
+    /// Coverage admission was unavailable or incomplete for this requested selection.
+    Coverage {
+        /// Explicit reason; no suite-free or empty fallback is produced.
+        reason: String,
+    },
     /// The two specifications are not two revisions of one system.
     ///
     /// Carried through from [`diff`] rather than restated, so the one rule has one spelling.
@@ -152,6 +157,7 @@ pub enum ImpactRefusal {
 impl fmt::Display for ImpactRefusal {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
+            Self::Coverage { reason } => write!(f, "coverage impact refused: {reason}"),
             Self::Pair { refusal } => write!(f, "{refusal}"),
             Self::SuiteFromAnotherSystem { suite, revisions } => write!(
                 f,
@@ -192,6 +198,64 @@ impl fmt::Display for ImpactRefusal {
 }
 
 impl std::error::Error for ImpactRefusal {}
+
+/// In-memory exact-selection context; the persisted impact/3 report is unchanged.
+#[derive(Debug, Clone)]
+pub struct CoverageImpact {
+    report: EssImpact,
+    suite: ess_conformance::coverage::SuiteReference,
+    selection: ess_conformance::coverage::Selection,
+}
+impl CoverageImpact {
+    /// Existing invalidation report within this declared selection.
+    pub fn report(&self) -> &EssImpact {
+        &self.report
+    }
+    /// Exact admitted selected source, never an execution result.
+    pub fn suite(&self) -> &ess_conformance::coverage::SuiteReference {
+        &self.suite
+    }
+    /// The immutable boundary of this invalidation calculation.
+    pub fn selection(&self) -> &ess_conformance::coverage::Selection {
+        &self.selection
+    }
+}
+/// Calculate invalidation only after complete original-parent and coverage admission.
+pub fn impact_input(
+    before: &EssIr,
+    after: &EssIr,
+    input: &ess_conformance::coverage::AdmittedInput,
+    tree: Option<&GeneratedTree>,
+) -> Result<CoverageImpact, ImpactRefusal> {
+    let suite = input.selected();
+    let coverage = suite.coverage().ok_or_else(|| ImpactRefusal::Coverage {
+        reason: "missing admitted inventory".into(),
+    })?;
+    if !coverage.is_complete() {
+        return Err(ImpactRefusal::Coverage {
+            reason: "inventory is unknown or contains in-scope refusals".into(),
+        });
+    }
+    if suite.suite().provenance.specification_version
+        != ess_conformance::SuiteProvenance::of(before).specification_version
+    {
+        return Err(ImpactRefusal::Coverage {
+            reason: "suite specification version differs from before model".into(),
+        });
+    }
+    if let ess_conformance::coverage::Scope::Component { component } = &coverage.selection.scope {
+        if !before.components().contains_key(component) {
+            return Err(ImpactRefusal::Coverage {
+                reason: "suite component is absent from before model".into(),
+            });
+        }
+    }
+    Ok(CoverageImpact {
+        report: impact_value(before, after, Some(suite.suite()), tree)?,
+        suite: ess_conformance::coverage::SuiteReference::of(suite),
+        selection: coverage.selection.clone(),
+    })
+}
 
 /// One reason one construct is impacted: the change, what it reached, and the edges between.
 ///
@@ -764,6 +828,20 @@ impl EssImpact {
 /// given suite was not produced from the `before` revision or carries a contract digest its model
 /// does not compute.
 pub fn impact(
+    before: &EssIr,
+    after: &EssIr,
+    suite: Option<&ConformanceSuite>,
+    tree: Option<&GeneratedTree>,
+) -> Result<EssImpact, ImpactRefusal> {
+    if suite.is_some_and(|s| s.provenance.suite_version.major() == 5) {
+        return Err(ImpactRefusal::Coverage {
+            reason: "suite/5 requires original admitted input; a legacy DTO has discarded coverage"
+                .into(),
+        });
+    }
+    impact_value(before, after, suite, tree)
+}
+fn impact_value(
     before: &EssIr,
     after: &EssIr,
     suite: Option<&ConformanceSuite>,

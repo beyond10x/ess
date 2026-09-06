@@ -61,12 +61,12 @@ error/unsupported; generated Go uses skipped and keeps ordinary target errors as
 binds every original suite byte, including its final newline, under `sha256-json-bytes/1`. Retain the
 original suite beside the report; reformatting it changes that identity.
 
-The admitted suites remain versions 1–4. Their coverage is exactly `unknown`, so even an empty or
+Legacy suite versions 1–4 have coverage exactly `unknown`, so even an empty or
 all-pass execution has inconclusive conformance. `--allow-incomplete` explicitly chooses diagnostic
 execution: Rust exits 0 for passed execution, 1 for failed and 3 for inconclusive execution.
 `--strict` requires explicit `--report-format 2` and succeeds only for passed conformance; unknown
 coverage therefore exits nonzero. Strict and allow-incomplete cannot be combined. Neither control
-changes the report format automatically, and suite/5 is not admitted at this stage.
+changes the report format automatically. Suite/4 and diagnostic report/1 remain the defaults.
 
 With report format 2, `--format json` or `--format yaml` presents a separate closed
 `ess-conformance-run/2` object containing `format`, the standalone `summary`, `started_at` and ordered
@@ -87,6 +87,71 @@ terminated selected subtests, a negative report/2 clock or a failed report write
 complete report. These checks also apply when no report destination is requested. Retained generated
 packages keep their own runtime behavior until regenerated; upgrading the standalone binary does
 not update them.
+
+## Opt into declared coverage
+
+```shell-session
+$ ess verify conform synthesize --path examples/billing \
+    --scenarios examples/billing-scenarios --suite-format 5 --out target/coverage-suite.json
+$ ess verify conform run --suite target/coverage-suite.json --target billing \
+    --report-format 2 --strict --report-out target/coverage-report.json
+```
+
+Suite/5 retains the declared scope, origins, selected IDs, known outside scenarios, every refusal
+occurrence and every requested authored source's relative identity and exact byte digest. Generated
+and authored origins can be selected independently; `--component` limits fresh synthesis to that
+component. `conform author --suite-format 5` inventories only its supplied authored files. Library
+callers can explicitly retain known excluded generated inventory with
+`coverage_build::build_with_known_generated`.
+
+A nonempty all-pass selection qualifies only when its inventory is complete and has no in-scope
+refusal. Unknown inventory, an empty selection or a missing required check remains inconclusive.
+Filtering cannot remove a refusal or promote unknown knowledge. Every identical refusal occurrence
+remains visible; a useful passing scenario can have missing checks beside it. Strict mode fails
+when conformance is inconclusive, while diagnostic mode retains the execution result's exit rules.
+Suite/5 always requires explicit report/2, including with `--allow-incomplete` or no report output.
+
+To narrow an admitted suite, supply a JSON array of sorted distinct scenario IDs; `[]` explicitly
+selects none:
+
+```shell-session
+$ ess verify conform select --suite target/coverage-suite.json \
+    --ids selected-ids.json --out target/coverage-input.json
+$ ess verify conform run --suite-input target/coverage-input.json --target billing \
+    --report-format 2 --strict --report-out target/selected-report.json
+```
+
+The closed `ess-conformance-input/1` retains the selected original JSON string and every original
+parent string, nearest first. Repeated selection uses `--suite-input` and retains the full chain.
+An explicit child cannot be run from its raw suite alone. Admission checks each full surviving
+scenario definition, dependency, source map, refusal and selection against the exact parent.
+Only the inner selected bytes are hashed; reformatting the carrier preserves that identity.
+
+Authored directory discovery remains shallow. Identities use `/`-separated relative UTF-8 segments;
+absolute paths, dot segments, backslashes, colons, controls, invalid UTF-8 filenames and selected
+symlinks refuse. Relocating a root preserves identities; changing source newlines changes its digest.
+The historical `ConformanceSuite` DTO remains unadmitted: it cannot recover discarded source fields
+or become known coverage by changing its version. Original inputs use `AdmittedSuite` or
+`coverage::AdmittedInput`; count reports require the immutable actual `ExecutedRun` capability.
+
+Generate Go with `--suite-format 5 --target go`, or call `go::emit_input` with an admitted carrier.
+The runtime checks every original parent before creating a target. Wire metadata retains the full
+u64 range; only selected execution fields must fit the host's Go `int`. Unrepresentable selected
+counts, indices or halt limits refuse before callbacks or reports. An oversized omitted parent
+field does not block a representable child. The Go report clock supports nonnegative int64 values;
+Rust report/run timestamps support the full u64 range. Payload Number meaning is a separate finite
+binary64 boundary. Modeled Binary64 remains unsupported by conformance, including suite/5.
+
+`conform web --suite-format 5` emits a paired `ess-conformance-replay/1` document and matching player.
+The actual player checks the closed projection, exact suite reference and full input before creating
+replay state, then displays selection and refusals. It emits no execution report. The reduced model
+omits literal assignment values and full view evaluation; digest comparison neither reconstructs
+the full compiled model nor authenticates its publisher. Existing players do not acquire these
+checks when handed new metadata; regenerate and distribute the paired bundle together.
+
+`ess impact --suite-input` accepts complete admitted coverage and reports its selection separately.
+Unknown or incomplete inventory and missing parents refuse. Persisted output remains `ess-impact/3`
+with its existing fields; invalidation within a selection is not whole-system execution evidence.
 
 ## What the report proves
 

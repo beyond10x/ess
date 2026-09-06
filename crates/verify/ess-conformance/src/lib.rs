@@ -127,6 +127,8 @@ pub mod admission;
 pub mod authored;
 mod count_json;
 pub mod counts;
+pub mod coverage;
+pub mod coverage_build;
 pub mod decision;
 pub mod evidence;
 pub mod faulty;
@@ -139,6 +141,7 @@ pub mod scenario;
 pub mod synthesize;
 pub mod target;
 pub mod web;
+pub mod web_replay;
 pub mod witness;
 
 pub use admission::{AdmissionError, AdmittedSuite};

@@ -1,0 +1,78 @@
+{
+  "provenance": {
+    "suite_version": "ess-conformance/4",
+    "system": "billing",
+    "specification_version": "v3",
+    "spec_digest": "56090788443a14b4a51ad151eb5cb3ebded2b98f6defe9ac50826296ac5d0942",
+    "contract_digest": "cb634bd5e6f1afa6ebc8e9dca752e9901a9a68a2e51fc5009d099f155680606c"
+  },
+  "scenarios": {
+    "billing.invoice/authored/a-scenario": {
+      "purpose": "What this scenario proves, in one line.",
+      "steps": [
+        {
+          "step": "execute_command",
+          "command": "billing.invoice.CreateInvoice",
+          "actor": "billing.invoice.Customer",
+          "input": {
+            "account_id": {
+              "kind": "literal",
+              "value": "00000000-0000-4000-8000-000000000001"
+            },
+            "amount": {
+              "kind": "literal",
+              "value": {
+                "amount": 10.0,
+                "currency": "EUR"
+              }
+            },
+            "customer_email": {
+              "kind": "literal",
+              "value": "buyer@example.test"
+            }
+          }
+        },
+        {
+          "step": "expect_outcome",
+          "outcome": {
+            "command": "billing.invoice.CreateInvoice",
+            "outcome": "accepted"
+          }
+        }
+      ],
+      "source": [
+        {
+          "kind": "domain",
+          "name": "billing.invoice"
+        },
+        {
+          "kind": "type",
+          "name": "billing.invoice.AccountId"
+        },
+        {
+          "kind": "type",
+          "name": "billing.invoice.Email"
+        },
+        {
+          "kind": "type",
+          "name": "billing.invoice.Money"
+        },
+        {
+          "kind": "command",
+          "name": "billing.invoice.CreateInvoice"
+        },
+        {
+          "kind": "outcome",
+          "name": {
+            "command": "billing.invoice.CreateInvoice",
+            "outcome": "accepted"
+          }
+        },
+        {
+          "kind": "actor",
+          "name": "billing.invoice.Customer"
+        }
+      ]
+    }
+  }
+}
