@@ -1,0 +1,88 @@
+use adversary_types::*;
+use serde_json::Value;
+
+const INPUT: &str = r#"{"choice":{"value":"node","content":{"a/b~":TOKEN,"next":{"back":{"a/b~":TOKEN},"numbers":{"$serde_json::private::RawValue":[TOKEN,null]}}}},"nullableBag":{"none":null,"some":{"value":"numbers","content":{"__proto__":[TOKEN,null]}}},"optionalMaybe":TOKEN}"#;
+
+fn bits(value: &ProbeFloatEnvelope) -> [u64; 5] {
+    let ProbeFloatChoice::V0(branch) = value.choice.as_ref() else { panic!("node branch") };
+    let a = &branch.content;
+    let EssPresence::Present(b) = &a.next else { panic!("next") };
+    let EssPresence::Present(back) = &b.back else { panic!("back") };
+    let ProbeFloatChoice::V1(numbers) = value.nullable_bag.ess_extra["some"].as_ref().unwrap().as_ref() else { panic!("numbers branch") };
+    let EssPresence::Present(maybe) = &value.optional_maybe else { panic!("present optional alias") };
+    [
+        a.a_b.0.get().to_bits(),
+        back.a_b.0.get().to_bits(),
+        b.numbers.ess_extra["$serde_json::private::RawValue"][0].as_ref().unwrap().0.get().to_bits(),
+        numbers.content.ess_extra["__proto__"][0].as_ref().unwrap().0.get().to_bits(),
+        maybe.0.as_ref().unwrap().0.get().to_bits(),
+    ]
+}
+
+#[test]
+fn recursive_ref_map_union_paths_keep_bits_and_float_markers() {
+    for (token, expected) in [
+        ("-0", 0x8000000000000000),
+        ("-0e999999999999999999999999999999", 0x8000000000000000),
+        ("-1e-999999999999999999999999999999", 0x8000000000000000),
+        ("2.4703282292062328e-324", 1),
+        ("-2.4703282292062328e-324", 0x8000000000000001),
+        ("9007199254740995", 0x4340000000000002),
+    ] {
+        let input = INPUT.replace("TOKEN", token);
+        for read_mode in 0..3 {
+            let value: ProbeFloatEnvelope = match read_mode {
+                0 => serde_json::from_str(&input).unwrap(),
+                1 => serde_json::from_slice(input.as_bytes()).unwrap(),
+                _ => serde_json::from_reader(input.as_bytes()).unwrap(),
+            };
+            assert_eq!(bits(&value), [expected; 5], "{token}, source mode {read_mode}");
+            let output = serde_json::to_string(&value).unwrap();
+            // Observe the emitted typed values, avoiding private-marker interpretation by
+            // serde_json::Value when a perfectly ordinary map key resembles that marker.
+            let again: ProbeFloatEnvelope = serde_json::from_str(&output).unwrap();
+            assert_eq!(bits(&again), [expected; 5], "{token}, source mode {read_mode}: {output}");
+            if expected == 0x8000000000000000 {
+                assert_eq!(output.matches("-0.0").count(), 5, "{output}");
+            }
+        }
+    }
+}
+
+#[test]
+fn marker_objects_and_late_invalid_values_cannot_take_a_float_path() {
+    for token in [
+        r#"{"$serde_json::private::Number":"-0"}"#,
+        r#"{"$serde_json::private::RawValue":"-0"}"#,
+        r#"{"$serde_json::private::RawValue":"-0","extra":0}"#,
+        "1.7976931348623159e308", "-1e999999999999999999999999999999",
+        r#""-0""#, "[]", "true",
+    ] {
+        for selected in 0..5 {
+            let mut index = 0;
+            let input = INPUT.split("TOKEN").enumerate().fold(String::new(), |mut text, (i, part)| {
+                if i != 0 {
+                    text.push_str(if index == selected { token } else { "-0" });
+                    index += 1;
+                }
+                text.push_str(part);
+                text
+            });
+            assert!(serde_json::from_str::<ProbeFloatEnvelope>(&input).is_err(), "slot {selected}: {input}");
+        }
+    }
+}
+
+#[test]
+fn optional_nullable_alias_and_independent_text_alternative_remain_distinct() {
+    let missing = r#"{"choice":{"value":"text","content":"-0"},"nullableBag":{}}"#;
+    let value: ProbeFloatEnvelope = serde_json::from_str(missing).unwrap();
+    let output: Value = serde_json::to_value(value).unwrap();
+    assert!(output.get("optionalMaybe").is_none());
+    let null = r#"{"choice":{"value":"text","content":"-0"},"nullableBag":{"none":null},"optionalMaybe":null}"#;
+    let value: ProbeFloatEnvelope = serde_json::from_str(null).unwrap();
+    let output: Value = serde_json::to_value(value).unwrap();
+    assert!(output["optionalMaybe"].is_null());
+    assert_eq!(output["choice"]["content"], "-0");
+    assert!(serde_json::from_str::<ProbeFloatScalar>("null").is_err());
+}
