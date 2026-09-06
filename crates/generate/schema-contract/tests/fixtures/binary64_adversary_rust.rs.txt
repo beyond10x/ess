@@ -1,0 +1,38 @@
+use normalization_adapter::Normalizer;
+use serde_json::Value;
+
+fn compare(actual: &Value, expected: &Value) {
+    match (actual, expected) {
+        (Value::Number(a), Value::Number(e)) if e.is_f64() => {
+            assert!(a.is_f64(), "floating identity: {actual}");
+            assert_eq!(a.as_f64().unwrap().to_bits(), e.as_f64().unwrap().to_bits());
+        }
+        (Value::Array(a), Value::Array(e)) => {
+            assert_eq!(a.len(), e.len());
+            for (a, e) in a.iter().zip(e) { compare(a, e); }
+        }
+        (Value::Object(a), Value::Object(e)) => {
+            assert_eq!(a.keys().collect::<Vec<_>>(), e.keys().collect::<Vec<_>>());
+            for (key, e) in e { compare(&a[key], e); }
+        }
+        _ => assert_eq!(actual, expected),
+    }
+}
+
+#[test]
+fn adversarial_composition() {
+    let normalizer = Normalizer::new().unwrap();
+    let cases: Value = serde_json::from_str(include_str!("cases.json")).unwrap();
+    for case in cases.as_array().unwrap() {
+        let result = normalizer.normalize("primary", case["input"].as_str().unwrap());
+        if let Some(rule) = case["error"].as_str() {
+            let errors = result.unwrap_err();
+            assert_eq!(errors.0[0].rule, rule, "{case}: {errors:?}");
+            if let Some(pointer) = case["pointer"].as_str() { assert_eq!(errors.0[0].pointer, pointer); }
+        } else {
+            let expected: Value = serde_json::from_str(case["expected"].as_str().unwrap()).unwrap();
+            compare(&result.unwrap(), &expected);
+        }
+    }
+    eprintln!("8 independently authored nested/raw/exact/default/error-order vectors");
+}

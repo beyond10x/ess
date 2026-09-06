@@ -278,6 +278,90 @@ fn worked_example(ir: &EssIr) -> ConformanceSuite {
     suite
 }
 
+#[test]
+fn typed_binary64_suites_refuse_serialization_emission_and_target_effects() {
+    use ess_conformance::runner::{Clock, Ids, Runner, RunnerConfig};
+    struct UntouchedClock;
+    impl Clock for UntouchedClock {
+        fn now(&mut self) -> ess_primitives::time::Timestamp {
+            panic!("unsupported suite reached runner effects")
+        }
+    }
+    let ir = billing();
+    let mut suite = worked_example(&ir);
+    let mut changed = false;
+    for scenario in suite.scenarios.values_mut() {
+        for step in &mut scenario.steps {
+            if let ScenarioStep::ExpectEvent { shape, .. } = step {
+                shape.insert(
+                    "ratio/a~b",
+                    LeafShape::required(Holds::Primitive {
+                        kind: Primitive::Binary64,
+                    })
+                    .optional(),
+                );
+                changed = true;
+                break;
+            }
+        }
+        if changed {
+            break;
+        }
+    }
+    assert!(changed);
+    let errors = suite.to_canonical_json().unwrap_err();
+    assert_eq!(errors.issues.len(), 1);
+    assert!(errors.issues[0].path.ends_with("/shape/ratio~1a~0b"));
+    assert!(serde_json::to_string(&suite).is_err());
+    assert_eq!(ess_conformance::go::emit(&suite).unwrap_err(), errors);
+    assert_eq!(ess_conformance::web::emit(&ir, &suite).unwrap_err(), errors);
+    let runner = Runner::new(
+        RunnerConfig::default(),
+        UntouchedClock,
+        Ids::for_suite(&suite),
+    );
+    assert_eq!(
+        runner
+            .run(&suite, &ess_conformance::reference::Billing::new())
+            .unwrap_err(),
+        errors
+    );
+
+    let original = worked_example(&ir).to_canonical_json().unwrap();
+    assert!(original.contains("\"decimal\""));
+    let forged = original.replace("\"decimal\"", "\"binary64\"");
+    assert!(ConformanceSuite::from_json(&forged).is_err());
+    assert!(serde_json::from_str::<ConformanceSuite>(&forged).is_err());
+}
+
+#[test]
+fn sparse_models_cannot_publish_an_empty_success_for_binary64() {
+    let text = "format: ess/2\nsystem: sample\nversion: v1\ndomains: [sample.data]\ndomain: sample.data\ntypes:\n  - {name: sample.data.Ratio, kind: newtype, of: Binary64}\n";
+    let spec = Specification::assemble([(
+        Source::new("sparse.yaml"),
+        RawSpecFile::parse(text).unwrap(),
+    )])
+    .unwrap();
+    let ir = compile(&spec, &SourceMap::new()).unwrap();
+    let synthesized = ess_conformance::synthesize::synthesize(&ir);
+    assert!(synthesized.suite.is_empty());
+    assert_eq!(synthesized.refusals.len(), 1);
+    let errors = ess_conformance::admission::model(&ir).unwrap_err();
+    assert_eq!(errors.issues.len(), 1);
+    assert!(errors.issues[0].path.contains("sample.data.Ratio"));
+    assert_eq!(
+        ess_conformance::web::emit(&ir, &synthesized.suite).unwrap_err(),
+        errors
+    );
+    let authored = ess_conformance::authored::compile(&ir, &[]);
+    assert!(authored.scenarios.is_empty());
+    assert_eq!(authored.refusals.len(), 1);
+    assert_eq!(
+        authored.refusals[0].cause.code().to_string(),
+        "ESS-AUTHOR-036"
+    );
+}
+
 // ---- the claims --------------------------------------------------------------------------------
 
 #[test]
@@ -350,8 +434,8 @@ fn serialising_a_suite_twice_produces_byte_identical_json() {
     // Two independent compilations and two independent suites. Nothing is shared between them, so an
     // unordered map, a clock or an address-dependent iteration order anywhere in the path would show
     // up here as a diff rather than as a rumour.
-    let first = worked_example(&billing()).to_canonical_json();
-    let second = worked_example(&billing()).to_canonical_json();
+    let first = worked_example(&billing()).to_canonical_json().unwrap();
+    let second = worked_example(&billing()).to_canonical_json().unwrap();
 
     assert_eq!(
         first.as_bytes(),
@@ -375,13 +459,13 @@ fn a_suite_serialised_in_one_process_resolves_in_another() {
     // Design §49's step-1 acceptance, and the reason every reference in a suite is a name: a handle
     // has no public constructor, so nothing that survives this round trip can be one.
     let suite = worked_example(&billing());
-    let written = suite.to_canonical_json();
+    let written = suite.to_canonical_json().unwrap();
 
     let read = ConformanceSuite::from_json(&written).expect("a written suite parses");
 
     assert_eq!(read, suite, "what came back is what went in");
     assert_eq!(
-        read.to_canonical_json().as_bytes(),
+        read.to_canonical_json().unwrap().as_bytes(),
         written.as_bytes(),
         "and writing it again produces the same file"
     );
@@ -643,10 +727,11 @@ fn a_count_and_a_position_read_back_as_what_a_runner_in_another_language_must_re
 
     // And back out again, byte for byte with what a second reader would produce.
     assert_eq!(
-        ConformanceSuite::from_json(&suite.to_canonical_json())
+        ConformanceSuite::from_json(&suite.to_canonical_json().unwrap())
             .expect("what this crate writes, this crate reads")
-            .to_canonical_json(),
-        suite.to_canonical_json()
+            .to_canonical_json()
+            .unwrap(),
+        suite.to_canonical_json().unwrap()
     );
 }
 
@@ -731,7 +816,7 @@ fn the_scenario_ids_appear_in_the_file_in_the_order_a_sorted_key_list_would_be()
     // producing a diff a drift check would fail on.
     let ir = billing();
     let suite = worked_example(&ir);
-    let json = suite.to_canonical_json();
+    let json = suite.to_canonical_json().unwrap();
 
     let mut names: Vec<String> = suite.scenarios.keys().map(ToString::to_string).collect();
     let offsets: Vec<usize> = names

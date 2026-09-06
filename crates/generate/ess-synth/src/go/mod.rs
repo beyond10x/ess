@@ -273,7 +273,8 @@ impl<'a> Emit<'a> {
 /// If what was emitted is not exactly what the plan marks generated *minus* what this target
 /// refused — a defect in this crate, and the one lie neither the plan nor the target report may be
 /// allowed to tell.
-pub fn workspace(ir: &EssIr, plan: &SynthesisPlan) -> Emission {
+pub fn workspace(ir: &EssIr, plan: &SynthesisPlan) -> Result<Emission, crate::TargetFailure> {
+    crate::failure::binary64(ir, plan, crate::Target::Go)?;
     let refusals = TargetRefusals::of(ir, plan);
     let layout = Layout::of(ir, plan, &refusals);
     let provenance = &plan.provenance;
@@ -339,7 +340,7 @@ pub fn workspace(ir: &EssIr, plan: &SynthesisPlan) -> Emission {
 
     assert_bijection(plan, &refusals, &covered, &stubbed);
 
-    Emission {
+    Ok(Emission {
         artifacts,
         report: TargetReport {
             provenance: provenance.clone(),
@@ -353,7 +354,7 @@ pub fn workspace(ir: &EssIr, plan: &SynthesisPlan) -> Emission {
                 })
                 .collect(),
         },
-    }
+    })
 }
 
 /// Holds the emitter to the plan: emitted is exactly generated minus target-refused, and stubbed

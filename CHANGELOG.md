@@ -4,6 +4,17 @@
 
 ### Added
 
+- Authored `ess/2` adds finite `Binary64` fields, distinct from integer and decimal
+  values. Model projection retains compiler-owned numeric locations; old authored
+  formats and Binary64 map keys refuse at every declared type position.
+  `ess-normalization/5` requires explicit input paths and adds token-preserving
+  `binary64_literal` constants and finite `binary64` conversion/steps. Reference
+  and generated Rust/Go preserve signed zero, subnormals and nearest-even rounding.
+  Two typed Binary64 operands use IEEE equality; authored model predicates retain
+  their existing Number comparisons. Complete format 1–4 generated maps remain
+  frozen. Structural Rust/Go codecs, whole-system synthesis and conformance refuse
+  unsupported Binary64 before publication; TypeScript structural output reports
+  the finite codec obligation.
 - Opt-in `ess-conformance-report/2` separates passed, failed, error, unsupported
   and skipped counts, binding outcomes to the exact executed suite bytes.
   Rust/CLI also expose checked `ess-conformance-run/2` detailed output; generated
@@ -52,6 +63,17 @@
   libraries with explicit package/module identity and complete source provenance.
   It checks every branch and target before destination preflight, protects source
   inputs, and offers read-only planned-file drift checking through `--check`.
+
+### Changed
+
+- In the upcoming pre-1.0 minor release, `ess_synth::{go,clap}::workspace` return
+  `Result<Emission, TargetFailure>`. Their new finite-codec failures use
+  `ess-target-failure/2`; Rust/Web failure envelopes keep version 1 and old bytes.
+  `ess_conformance::{go,web}::emit`, `ConformanceSuite::to_canonical_json`, and
+  `Runner::run` now return `Result` with a located `AdmissionError`. Readers,
+  model producers, direct typed suites and CLI routes reject Binary64 before
+  artifact creation or target interaction, including sparse models with no
+  generated scenarios. Existing admitted suite bytes remain unchanged.
 
 ### Fixed
 

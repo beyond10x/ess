@@ -64,6 +64,7 @@ pub mod entity;
 pub mod expression;
 pub mod locate;
 pub mod name;
+mod primitive_admission;
 pub mod refs;
 pub mod spec;
 pub mod system;

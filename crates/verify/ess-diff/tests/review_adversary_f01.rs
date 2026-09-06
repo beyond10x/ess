@@ -25,7 +25,7 @@ fn complete_generated_and_authored_suite_four_bytes_remain_frozen() {
         synthesis.suite.insert(id, scenario).unwrap();
     }
     assert!(synthesis.refusals.is_empty());
-    let candidate = synthesis.suite.to_canonical_json();
+    let candidate = synthesis.suite.to_canonical_json().unwrap();
     let parsed: serde_json::Value = serde_json::from_str(&candidate).unwrap();
     assert_eq!(parsed["provenance"]["suite_version"], "ess-conformance/4");
     assert_eq!(parsed["scenarios"].as_object().unwrap().len(), 30);
@@ -33,7 +33,8 @@ fn complete_generated_and_authored_suite_four_bytes_remain_frozen() {
     assert_eq!(
         ess_conformance::scenario::ConformanceSuite::from_json(frozen)
             .unwrap()
-            .to_canonical_json(),
+            .to_canonical_json()
+            .unwrap(),
         frozen
     );
 }

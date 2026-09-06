@@ -477,7 +477,11 @@ fn the_emitted_runner_reads_a_positional_assertion_and_refuses_one_in_an_unorder
             ),
         )
         .expect("the id is free");
-    std::fs::write(&embedded, suite.to_canonical_json()).expect("the suite writes");
+    std::fs::write(
+        &embedded,
+        suite.to_canonical_json().expect("admitted suite"),
+    )
+    .expect("the suite writes");
 
     let (passed, printed) = go_test(&go, &directory, None);
     assert!(
@@ -551,7 +555,11 @@ fn with_a_window(directory: &Path) {
             ),
         )
         .expect("the id is free");
-    std::fs::write(&embedded, suite.to_canonical_json()).expect("the suite writes");
+    std::fs::write(
+        &embedded,
+        suite.to_canonical_json().expect("admitted suite"),
+    )
+    .expect("the suite writes");
 }
 
 #[test]
@@ -638,7 +646,11 @@ fn with_a_stop(directory: &Path) {
             ),
         )
         .expect("the id is free");
-    std::fs::write(&embedded, suite.to_canonical_json()).expect("the suite writes");
+    std::fs::write(
+        &embedded,
+        suite.to_canonical_json().expect("admitted suite"),
+    )
+    .expect("the suite writes");
 }
 
 #[test]
@@ -906,7 +918,7 @@ fn count_module(label: &str) -> PathBuf {
         "scenarios": {"example.domain/authored/control": {"purpose":"A controlled terminal command", "steps":[{"step":"execute_command","command":"example.domain.Execute"}],"source":[]}}
     });
     let suite = ConformanceSuite::from_json(&suite.to_string()).unwrap();
-    for file in ess_conformance::go::emit(&suite) {
+    for file in ess_conformance::go::emit(&suite).expect("admitted suite") {
         let path = directory.join(file.path);
         std::fs::create_dir_all(path.parent().unwrap()).unwrap();
         std::fs::write(path, file.contents).unwrap();

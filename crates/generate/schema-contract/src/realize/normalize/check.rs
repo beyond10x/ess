@@ -23,6 +23,7 @@ enum Kind {
     Boolean,
     String,
     Number,
+    Binary64,
     Integer,
     Literal(Value),
     Object(BTreeMap<String, Type>, Box<Type>),
@@ -80,7 +81,7 @@ pub(super) fn input_numbers(
     at: &str,
     found: &mut Vec<Finding>,
 ) {
-    if paths.is_empty() {
+    if paths.is_empty() && input.binary64.is_empty() {
         return;
     }
     let ty = match from_node(input, &input.definitions[root], 0) {
@@ -90,6 +91,9 @@ pub(super) fn input_numbers(
             return;
         }
     };
+    if let Err(error) = model_paths(&ty, &mut Vec::new(), paths, at) {
+        found.push(error);
+    }
     let mut seen = BTreeSet::new();
     for (index, path) in paths.iter().enumerate() {
         let at = format!("{at}/{index}");
@@ -103,6 +107,69 @@ pub(super) fn input_numbers(
             found.push(error);
         }
     }
+}
+
+fn has_binary64(ty: &Type) -> bool {
+    match &ty.kind {
+        Kind::Binary64 => true,
+        Kind::Array(item) => has_binary64(item),
+        Kind::Object(fields, additional) => {
+            fields.values().any(has_binary64) || has_binary64(additional)
+        }
+        Kind::Union(values) => values.iter().any(has_binary64),
+        _ => false,
+    }
+}
+
+fn model_paths(
+    ty: &Type,
+    path: &mut Vec<NumberPath>,
+    declared: &[Vec<NumberPath>],
+    at: &str,
+) -> Result<()> {
+    match &ty.kind {
+        Kind::Binary64 if !declared.contains(path) => {
+            return Err(finding(
+                at,
+                "model_binary64_policy",
+                &format!(
+                    "modeled Binary64 leaf requires explicit binary64_inputs path {}",
+                    serde_json::to_string(path).expect("typed path")
+                ),
+            ))
+        }
+        Kind::Array(item) => {
+            path.push(NumberPath::Items);
+            model_paths(item, path, declared, at)?;
+            path.pop();
+        }
+        Kind::Object(fields, additional) => {
+            if has_binary64(additional) {
+                return Err(finding(
+                    at,
+                    "model_binary64_path",
+                    "Binary64 map values require a path grammar that this format does not admit",
+                ));
+            }
+            for (name, field) in fields {
+                path.push(NumberPath::Field { name: name.clone() });
+                model_paths(field, path, declared, at)?;
+                path.pop();
+            }
+        }
+        Kind::Union(values) if values.iter().any(has_binary64) => {
+            let values = values
+                .iter()
+                .filter(|value| !matches!(value.kind, Kind::Null | Kind::Never))
+                .collect::<Vec<_>>();
+            if values.len() != 1 {
+                return Err(finding(at, "model_binary64_path", "Binary64 union values require explicit variant selection; only nullable alternatives are admitted"));
+            }
+            model_paths(values[0], path, declared, at)?;
+        }
+        _ => {}
+    }
+    Ok(())
 }
 
 fn numeric_path(input: &Type, path: &[NumberPath], at: &str) -> Result<()> {
@@ -206,7 +273,7 @@ pub(super) fn stage(
     input: &Types,
     output: &Types,
     at: &str,
-    extended: bool,
+    format: &str,
     found: &mut Vec<Finding>,
 ) {
     let converted = from_node(input, &input.definitions[stage.input.name()], 0).and_then(|input| {
@@ -226,7 +293,7 @@ pub(super) fn stage(
     let scope = Context {
         input: &input,
         item: None,
-        extended,
+        format,
     };
     for (index, condition) in stage.requires.iter().enumerate() {
         if let Err(error) = scope.condition(condition, &format!("{at}/requires/{index}"), 0) {
@@ -247,6 +314,16 @@ pub(super) fn stage(
 
 fn from_node(plan: &Types, node: &Node, depth: usize) -> Result<Type> {
     limit(depth, &node.pointer)?;
+    if matches!(
+        node.shape,
+        Shape::Union {
+            mode: UnionMode::OneOf,
+            ..
+        }
+    ) && contains_binary64(plan, node, &mut BTreeSet::new())
+    {
+        return Err(finding(&node.pointer, "model_binary64_path", "Binary64 tagged union values require explicit variant selection that this format does not admit"));
+    }
     let nested = |node| from_node(plan, node, depth + 1);
     let kind = match &node.shape {
         Shape::Ref(name) => return nested(&plan.definitions[name]),
@@ -255,6 +332,7 @@ fn from_node(plan: &Types, node: &Node, depth: usize) -> Result<Type> {
         Shape::Null => Kind::Null,
         Shape::Boolean => Kind::Boolean,
         Shape::String => Kind::String,
+        Shape::Number if plan.binary64.contains(&node.pointer) => Kind::Binary64,
         Shape::Number => Kind::Number,
         Shape::Integer => Kind::Integer,
         Shape::Literal(value) => Kind::Literal(value.clone()),
@@ -272,6 +350,33 @@ fn from_node(plan: &Types, node: &Node, depth: usize) -> Result<Type> {
         Shape::Array { .. } | Shape::Intersection(_) => return Err(finding(&node.pointer, "unsupported_shape", "normalization requires an explicit tuple/intersection mapping; it is not flattened implicitly")),
     };
     Ok(Type::new(kind))
+}
+
+fn contains_binary64(plan: &Types, node: &Node, seen: &mut BTreeSet<String>) -> bool {
+    if plan.binary64.contains(&node.pointer) {
+        return true;
+    }
+    match &node.shape {
+        Shape::Ref(name) if seen.insert(name.clone()) => {
+            contains_binary64(plan, &plan.definitions[name], seen)
+        }
+        Shape::Object { fields, additional } => {
+            fields
+                .values()
+                .any(|field| contains_binary64(plan, &field.value, seen))
+                || contains_binary64(plan, additional, seen)
+        }
+        Shape::Array { prefix, items, .. } => {
+            prefix
+                .iter()
+                .any(|node| contains_binary64(plan, node, seen))
+                || contains_binary64(plan, items, seen)
+        }
+        Shape::Union { variants, .. } | Shape::Intersection(variants) => variants
+            .iter()
+            .any(|node| contains_binary64(plan, node, seen)),
+        _ => false,
+    }
 }
 
 fn model_enum(terms: &[Node]) -> Option<Type> {
@@ -315,7 +420,7 @@ fn limit(depth: usize, at: &str) -> Result<()> {
 struct Context<'a> {
     input: &'a Type,
     item: Option<&'a Type>,
-    extended: bool,
+    format: &'a str,
 }
 
 impl Context<'_> {
@@ -326,7 +431,16 @@ impl Context<'_> {
     }
 
     fn version(&self, value: &Expr, at: &str) -> Result<()> {
-        if !self.extended
+        if self.format != super::FORMAT_V5
+            && matches!(value, Expr::Binary64Literal { .. } | Expr::Binary64 { .. })
+        {
+            return Err(finding(
+                at,
+                "operation_version",
+                "operation requires ess-normalization/5",
+            ));
+        }
+        if self.format == super::FORMAT
             && matches!(
                 value,
                 Expr::Concat { .. }
@@ -348,12 +462,25 @@ impl Context<'_> {
         Ok(())
     }
 
+    fn floating(
+        &self,
+        value: &Expr,
+        steps: &[super::Binary64Step],
+        at: &str,
+        depth: usize,
+    ) -> Result<Type> {
+        self.binary64(value, steps, at, depth)?;
+        Ok(Type::new(Kind::Binary64))
+    }
+
     fn expression(&self, value: &Expr, at: &str, depth: usize) -> Result<Type> {
         match value {
             Expr::Null => Ok(Type::new(Kind::Null)),
             Expr::Boolean { value } => Ok(Type::new(Kind::Literal(json!(value)))),
             Expr::String { value } => Ok(Type::new(Kind::Literal(json!(value)))),
             Expr::Integer { value } => Ok(Type::new(Kind::Literal(json!(value)))),
+            Expr::Binary64Literal { value } => binary64_literal(value, at),
+            Expr::Binary64 { value, steps } => self.floating(value, steps, at, depth),
             Expr::Binary64ToInteger { value, steps, .. } => self.binary64(value, steps, at, depth),
             Expr::Read { scope, path } => self.read(*scope, path, at),
             Expr::Field { object, name } => member(
@@ -454,7 +581,7 @@ impl Context<'_> {
         let ty = Context {
             input: self.input,
             item: Some(&item),
-            extended: self.extended,
+            format: self.format,
         }
         .value(value, &format!("{at}/value"), depth + 1)?;
         required(&ty, at)?;
@@ -531,7 +658,7 @@ impl Context<'_> {
         let scope = Context {
             input: self.input,
             item: Some(&item),
-            extended: self.extended,
+            format: self.format,
         };
         scope.condition(condition, &format!("{at}/condition"), depth + 1)?;
         let key = scope.value(key, &format!("{at}/key"), depth + 1)?;
@@ -571,7 +698,7 @@ impl Context<'_> {
         let scope = Context {
             input: self.input,
             item: Some(&item),
-            extended: self.extended,
+            format: self.format,
         };
         scope.condition(condition, &format!("{at}/condition"), depth + 1)?;
         let at_value = format!("{at}/value");
@@ -648,6 +775,13 @@ impl Context<'_> {
                 }
             }
             Condition::Equal { left, right } => {
+                if self.format == super::FORMAT_V5 {
+                    let left = self.value(left, &format!("{at}/left"), depth + 1)?;
+                    let right = self.value(right, &format!("{at}/right"), depth + 1)?;
+                    if left.kind == Kind::Binary64 && right.kind == Kind::Binary64 {
+                        return Ok(());
+                    }
+                }
                 for (name, value) in [("left", left), ("right", right)] {
                     let at = format!("{at}/{name}");
                     if !comparable(&self.value(value, &at, depth + 1)?) {
@@ -771,7 +905,8 @@ fn assignable(source: &Type, target: &Type) -> bool {
         | (Kind::Boolean, Kind::Boolean)
         | (Kind::String, Kind::String)
         | (Kind::Integer, Kind::Integer | Kind::Number)
-        | (Kind::Number, Kind::Number) => true,
+        | (Kind::Number, Kind::Number)
+        | (Kind::Binary64, Kind::Binary64 | Kind::Number) => true,
         (Kind::Union(values), _) => values.iter().all(|value| {
             assignable(
                 &Type {
@@ -816,4 +951,15 @@ fn assignable(source: &Type, target: &Type) -> bool {
         }
         _ => false,
     }
+}
+
+fn binary64_literal(value: &str, at: &str) -> Result<Type> {
+    if super::numeric::literal(value).is_none() {
+        return Err(finding(
+            &format!("{at}/value"),
+            "binary64_literal",
+            "expected a finite JSON numeric token",
+        ));
+    }
+    Ok(Type::new(Kind::Binary64))
 }

@@ -1,6 +1,7 @@
 //! Original-byte admission for the frozen suite/1–4 execution vocabulary.
 use crate::count_json::Json;
-use crate::{scenario::SuiteFormat, ConformanceSuite};
+use crate::{scenario::SuiteFormat, ConformanceSuite, Holds, ScenarioStep};
+use ess_domain::Primitive;
 use sha2::{Digest, Sha256};
 use std::fmt;
 use std::fmt::Write;
@@ -75,7 +76,7 @@ impl AdmittedSuite {
     }
     /// Serialize once, then execute the value admitted from those exact bytes.
     pub fn from_suite(suite: &ConformanceSuite) -> Result<Self, AdmissionError> {
-        Self::from_json(&suite.to_canonical_json())
+        Self::from_json(&suite.to_canonical_json()?)
     }
     /// The entire unchanged document, including its final newline.
     pub fn original_json(&self) -> &str {
@@ -274,4 +275,78 @@ fn step_value(value: &Json, major: u32) -> Result<(), AdmissionError> {
         }
     }
     Ok(())
+}
+
+/// Check the model even when synthesis would omit unsupported fields or whole scenarios.
+pub fn model(ir: &ess_compiler::EssIr) -> Result<(), AdmissionError> {
+    checked(ess_compiler::binary64::locations(ir).into_iter().collect())
+}
+
+/// Check directly constructed suites before artifact creation or target effects.
+pub fn suite(suite: &ConformanceSuite) -> Result<(), AdmissionError> {
+    let mut found = Vec::new();
+    for (id, scenario) in &suite.scenarios {
+        for (index, step) in scenario.steps.iter().enumerate() {
+            if let ScenarioStep::ExpectEvent { shape, .. }
+            | ScenarioStep::EventuallyEvent { shape, .. } = step
+            {
+                for (name, leaf) in shape.leaves() {
+                    if matches!(
+                        leaf.holds,
+                        Holds::Primitive {
+                            kind: Primitive::Binary64
+                        }
+                    ) {
+                        found.push(format!(
+                            "/scenarios/{}/steps/{index}/shape/{}",
+                            escape(&id.to_string()),
+                            escape(name)
+                        ));
+                    }
+                }
+            }
+        }
+    }
+    checked(found)
+}
+
+fn escape(value: &str) -> String {
+    value.replace('~', "~0").replace('/', "~1")
+}
+fn checked(locations: Vec<String>) -> Result<(), AdmissionError> {
+    if locations.is_empty() {
+        Ok(())
+    } else {
+        Err(AdmissionError {
+            issues: locations.into_iter().map(|path| AdmissionIssue {
+                reason: "UnsupportedPrimitive",
+                path,
+                detail: "finite Binary64 is not admitted by the current conformance suite and codecs".into(),
+            }).collect(),
+        })
+    }
+}
+
+#[allow(clippy::trivially_copy_pass_by_ref)] // Serde serialize_with requires a borrowed field.
+pub(crate) fn serialize_primitive<S: serde::Serializer>(
+    primitive: &Primitive,
+    serializer: S,
+) -> Result<S::Ok, S::Error> {
+    if *primitive == Primitive::Binary64 {
+        return Err(serde::ser::Error::custom(
+            "Binary64 is not admitted by this conformance suite format",
+        ));
+    }
+    serde::Serialize::serialize(primitive, serializer)
+}
+pub(crate) fn deserialize_primitive<'de, D: serde::Deserializer<'de>>(
+    deserializer: D,
+) -> Result<Primitive, D::Error> {
+    let primitive = <Primitive as serde::Deserialize>::deserialize(deserializer)?;
+    if primitive == Primitive::Binary64 {
+        return Err(serde::de::Error::custom(
+            "Binary64 is not admitted by this conformance suite format",
+        ));
+    }
+    Ok(primitive)
 }

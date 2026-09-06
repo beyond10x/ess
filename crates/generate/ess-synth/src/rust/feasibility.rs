@@ -78,6 +78,7 @@ impl Inventory {
     fn reference(&mut self, scope: &str, reference: &ResolvedTypeRef, source: &str) {
         match reference {
             ResolvedTypeRef::Primitive { name } => match name {
+                Primitive::Binary64 => unreachable!("Binary64 is refused before target rendering"),
                 Primitive::String => self.helper(scope, "String", source),
                 Primitive::Bytes => self.helper(scope, "Vec", source),
                 Primitive::Boolean

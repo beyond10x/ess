@@ -26,7 +26,7 @@ fn module(label: &str) -> PathBuf {
         .join(format!("go-{label}-{}", std::process::id()));
     std::fs::create_dir_all(&directory).unwrap();
     let suite = ConformanceSuite::from_json(&document(&json!(true)).to_string()).unwrap();
-    for artifact in ess_conformance::go::emit(&suite) {
+    for artifact in ess_conformance::go::emit(&suite).expect("admitted suite") {
         let path = directory.join(artifact.path);
         std::fs::create_dir_all(path.parent().unwrap()).unwrap();
         std::fs::write(path, artifact.contents).unwrap();

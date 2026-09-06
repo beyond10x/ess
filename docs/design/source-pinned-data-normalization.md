@@ -193,6 +193,13 @@ the existence of `find` alone does not establish that mapping.
 
 ## Declared Binary64 Conversion
 
+The later [modeled Binary64 binding](model-binary64.md) adds authored `ess/2` and
+normalization format 5. Its explicit floating constants/value-producing steps and
+two-typed-Binary64 equality do not change the older qualified-schema conversion
+semantics below. Formats 1–4 retain complete generated Rust/Go byte maps through
+frozen shared templates; raw capture and retained-document helpers remain available
+in format 5. Model Binary64 requires explicit complete first-input numeric paths.
+
 Version 2 is still unreleased. Its concrete numeric extension is bound here before
 implementation, alongside the ordered operations above. Version 1 keeps both its
 old canonical bytes and its precision-loss refusal. No published version 2 recipe

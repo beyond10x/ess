@@ -490,6 +490,10 @@ pub(crate) fn primitive(primitive: Primitive) -> Node {
             kind: Some("integer"),
             ..Node::default()
         },
+        Primitive::Binary64 => Node {
+            kind: Some("number"),
+            ..Node::default()
+        },
         // A string, not a number. Money does not round the way a float does, and a JSON number is
         // read as a float by most of the world — `JSON.parse` has no other option. The lossy
         // rendering would have validated `0.1` as an exact decimal, which is the failure the

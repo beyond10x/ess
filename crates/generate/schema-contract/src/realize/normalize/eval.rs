@@ -13,6 +13,7 @@ pub(super) struct Context<'a> {
     pub input: &'a Value,
     pub item: Option<&'a Value>,
     pub index: Option<usize>,
+    pub binary64: bool,
 }
 
 impl Context<'_> {
@@ -22,6 +23,10 @@ impl Context<'_> {
             Expr::Boolean { value } => Value::Bool(*value),
             Expr::String { value } => Value::String(value.clone()),
             Expr::Integer { value } => Value::Number((*value).into()),
+            Expr::Binary64Literal { value } => super::numeric::constant(value, at)?,
+            Expr::Binary64 { value, steps } => {
+                super::numeric::floating(&self.present(value, &format!("{at}/value"))?, steps, at)?
+            }
             Expr::Binary64ToInteger {
                 value,
                 steps,
@@ -217,6 +222,7 @@ impl Context<'_> {
                 input: self.input,
                 item: Some(item),
                 index: Some(index),
+                binary64: self.binary64,
             };
             if scope.condition(condition, &format!("{at}/condition"))? {
                 let result = scope.present(value, &format!("{at}/value"))?;
@@ -271,6 +277,7 @@ impl Context<'_> {
                     input: self.input,
                     item: Some(item),
                     index: Some(index),
+                    binary64: self.binary64,
                 }
                 .present(value, &format!("{at}/value"))
             })
@@ -289,6 +296,7 @@ impl Context<'_> {
                 input: self.input,
                 item: Some(item),
                 index: Some(index),
+                binary64: self.binary64,
             };
             if scope.condition(condition, &format!("{at}/condition"))? {
                 let key = scope.present(key, &format!("{at}/key"))?;
@@ -325,6 +333,9 @@ impl Context<'_> {
                 let b = self.value(right, &format!("{at}/right"))?;
                 match (a, b) {
                     (Some(a), Some(b)) => {
+                        if self.binary64 && a.is_f64() && b.is_f64() {
+                            return Ok(a.as_f64() == b.as_f64());
+                        }
                         for value in [&a, &b] {
                             if value.is_number() {
                                 integer(value, at)?;

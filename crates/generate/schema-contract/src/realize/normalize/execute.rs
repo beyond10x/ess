@@ -24,6 +24,7 @@ pub(super) fn run(
             input: &current,
             item: None,
             index: None,
+            binary64: recipe.format == super::recipe::FORMAT_V5,
         };
         for (index, condition) in stage.requires.iter().enumerate() {
             let at = format!("{at}/requires/{index}");

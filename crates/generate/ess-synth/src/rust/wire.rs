@@ -572,6 +572,7 @@ fn encode_value(
 /// One primitive, written.
 fn encode_primitive(primitive: Primitive, expr: &str) -> String {
     match primitive {
+        Primitive::Binary64 => unreachable!("Binary64 is refused before target rendering"),
         Primitive::String => format!("json::push_text(out, &{expr});"),
         Primitive::Boolean => format!("json::push_bool(out, {expr});"),
         Primitive::Integer => format!("json::push_integer(out, {expr});"),
@@ -585,6 +586,7 @@ fn encode_primitive(primitive: Primitive, expr: &str) -> String {
 /// One map key, written — always as a string, because JSON has no other kind of key.
 fn encode_key(primitive: Primitive, expr: &str) -> String {
     match primitive {
+        Primitive::Binary64 => unreachable!("Binary64 is refused before target rendering"),
         Primitive::String => format!("json::push_text(out, {expr});"),
         Primitive::Boolean => {
             format!("json::push_text(out, if *{expr} {{ \"true\" }} else {{ \"false\" }});")
@@ -678,6 +680,7 @@ fn decode_value(
 fn decode_primitive(surface: &dyn Surface, primitive: Primitive, value: &str, at: &str) -> String {
     let primitives = format!("{}::primitives", surface.types());
     match primitive {
+        Primitive::Binary64 => unreachable!("Binary64 is refused before target rendering"),
         Primitive::String => format!("json::text_at({value}, {at}, \"a string\")?.to_owned()"),
         Primitive::Boolean => format!("json::bool_at({value}, {at}, \"a boolean\")?"),
         Primitive::Integer => format!("json::integer_at({value}, {at}, \"an integer\")?"),
@@ -705,6 +708,7 @@ fn decode_primitive(surface: &dyn Surface, primitive: Primitive, value: &str, at
 fn decode_key(surface: &dyn Surface, primitive: Primitive, key: &str, at: &str) -> String {
     let primitives = format!("{}::primitives", surface.types());
     match primitive {
+        Primitive::Binary64 => unreachable!("Binary64 is refused before target rendering"),
         Primitive::String => format!("{key}.clone()"),
         Primitive::Boolean => format!("json::key_bool({key}, {at})?"),
         Primitive::Integer => format!("json::key_integer({key}, {at})?"),

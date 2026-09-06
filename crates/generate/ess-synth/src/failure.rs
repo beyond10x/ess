@@ -81,19 +81,22 @@ impl TargetFailure {
         plan: &SynthesisPlan,
         mut causes: Vec<TargetFailureCause>,
     ) -> Self {
-        assert!(matches!(target, Target::Rust | Target::Web));
         causes.sort();
         causes.dedup();
         assert!(!causes.is_empty());
         Self {
-            format: "ess-target-failure/1",
+            format: if matches!(target, Target::Rust | Target::Web) {
+                "ess-target-failure/1"
+            } else {
+                "ess-target-failure/2"
+            },
             target: target.name(),
             plan: Box::new(plan.clone()),
             causes,
         }
     }
 
-    /// The failed target, `rust` or `web`.
+    /// The failed target.
     pub fn target(&self) -> &str {
         self.target
     }
@@ -124,3 +127,25 @@ impl fmt::Display for TargetFailure {
 }
 
 impl std::error::Error for TargetFailure {}
+
+pub(crate) fn binary64(
+    ir: &ess_compiler::EssIr,
+    plan: &SynthesisPlan,
+    target: Target,
+) -> Result<(), TargetFailure> {
+    let causes = ess_compiler::binary64::locations(ir)
+        .into_iter()
+        .map(|at| {
+            TargetFailureCause::new(
+                TargetFailureCode::MissingRepresentation,
+                vec![at],
+                "this target has no qualified finite Binary64 codec".to_owned(),
+            )
+        })
+        .collect::<Vec<_>>();
+    if causes.is_empty() {
+        Ok(())
+    } else {
+        Err(TargetFailure::new(target, plan, causes))
+    }
+}

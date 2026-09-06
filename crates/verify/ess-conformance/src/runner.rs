@@ -319,17 +319,16 @@ impl<C: Clock> Runner<C> {
     /// Takes `self` by value: a second run means a second runner, so no run can inherit the clock or
     /// the counter the previous one left behind.
     ///
-    /// This legacy nonfallible API serializes and admits the in-memory DTO before target identity
-    /// or callbacks. It panics on refused version/vocabulary; use [`Self::try_run`] for a checked
-    /// refusal, or [`Self::run_admitted`] with original-byte [`crate::AdmittedSuite`] input.
+    /// This checked API serializes and admits the in-memory DTO before target identity
+    /// or callbacks. Unsupported vocabulary and Binary64 return an admission error.
+    /// Use [`Self::run_admitted`] with original-byte [`crate::AdmittedSuite`] input for counts.
     /// The DTO's legacy Serde parser is not original-byte admission.
     pub fn run<T: ConformanceTarget>(
         self,
         suite: &ConformanceSuite,
         target: &T,
-    ) -> ConformanceReport {
+    ) -> Result<ConformanceReport, crate::AdmissionError> {
         self.try_run(suite, target)
-            .unwrap_or_else(|error| panic!("suite admission refused before execution: {error}"))
     }
 
     /// Admit an in-memory suite before identity or callbacks and return legacy diagnostics.

@@ -83,6 +83,92 @@ fn the_control_assembles_and_compiles() {
 }
 
 #[test]
+fn binary64_predicates_share_number_comparisons_without_nominal_assignment() {
+    use ess_domain::{types::is_assignable, Primitive, TypeRef};
+    let text = SOURCE
+        .replace("ess/1", "ess/2")
+        .replace("Decimal", "Binary64");
+    let spec = assemble(&text).unwrap();
+    compile(&spec, &SourceMap::new()).unwrap();
+    let floating = TypeRef::Primitive(Primitive::Binary64);
+    for other in [Primitive::Integer, Primitive::Decimal] {
+        let other = TypeRef::Primitive(other);
+        assert!(!is_assignable(&floating, &other));
+        assert!(!is_assignable(&other, &floating));
+    }
+    rejected(
+        &text.replace("when: amount > 0", "when: amount > true"),
+        ValidationCode::TypeMismatch,
+        "command.sample.data.Update",
+        "Bool",
+    );
+}
+
+#[test]
+fn binary64_requires_ess_two_at_every_authored_field_position() {
+    let header = "format: ess/2\nsystem: sample\nversion: v1\ndomains: [sample.data]\n";
+    for (owner, body) in [
+        ("types.sample.data.Value", "types:\n  - {name: sample.data.Value, kind: newtype, of: 'Optional<List<Binary64>>'}\n"),
+        ("types.sample.data.Value", "types:\n  - name: sample.data.Value\n    kind: struct\n    fields: [{name: value, type: Binary64}]\n"),
+        ("types.sample.data.Value", "types:\n  - name: sample.data.Value\n    kind: union\n    tag: kind\n    variants: {value: Binary64}\n"),
+        ("entity sample.data.Item.identity", "entities:\n  - name: sample.data.Item\n    identity: {name: id, type: Binary64}\n    lifecycle: {initial: Active, states: [Active], terminal: [Active]}\n"),
+        ("entity sample.data.Item.fields", "entities:\n  - name: sample.data.Item\n    identity: {name: id, type: String}\n    fields: [{name: value, type: Binary64}]\n    lifecycle: {initial: Active, states: [Active], terminal: [Active]}\n"),
+        ("command.sample.data.Update.input", "events: [{name: sample.data.Changed}]\ncommands:\n  - name: sample.data.Update\n    input: [{name: value, type: Binary64}]\n    outcomes: [{name: changed, emits: [sample.data.Changed]}]\n"),
+        ("event.sample.data.Changed.fields", "events:\n  - name: sample.data.Changed\n    fields: [{name: value, type: Binary64}]\n"),
+        ("error.sample.data.Rejected.fields", "errors:\n  - name: sample.data.Rejected\n    fields: [{name: value, type: Binary64}]\n"),
+        ("view.sample.data.Values.fields", "views:\n  - name: sample.data.Values\n    fields: [{name: value, type: Binary64}]\n"),
+        ("view.sample.data.Values.params", "views:\n  - name: sample.data.Values\n    fields: [{name: value, type: String}]\n    params: [{name: minimum, type: Binary64}]\n    filter: param.minimum >= 0\n"),
+    ] {
+        let fragment = if owner.starts_with("view.") {
+            let value_type = if owner.ends_with("fields") { "Binary64" } else { "String" };
+            format!("domain: sample.data\nentities:\n  - name: sample.data.Source\n    identity: {{name: id, type: String}}\n    fields: [{{name: value, type: {value_type}}}]\n    lifecycle: {{initial: Active, states: [Active], terminal: [Active]}}\n{body}").replace("name: sample.data.Values\n", "name: sample.data.Values\n    source: sample.data.Source\n")
+        } else { format!("domain: sample.data\n{body}") };
+        let assemble_parts = |header: &str| Specification::assemble([
+            (Source::new("header.yaml"), RawSpecFile::parse(header).unwrap()),
+            (Source::new("fragment.yaml"), RawSpecFile::parse(&fragment).unwrap()),
+        ]);
+        let spec = assemble_parts(header).unwrap_or_else(|errors| panic!("{owner}: {errors}"));
+        let ir = compile(&spec, &SourceMap::new()).unwrap();
+        assert!(ess_compiler::binary64::locations(&ir).iter().any(|at| at.contains(owner)), "compiler inventory omitted {owner}");
+        let errors = assemble_parts(&header.replace("ess/2", "ess/1")).unwrap_err();
+        assert!(errors.as_slice().iter().any(|e| e.code == ValidationCode::UnsupportedFormatVersion && e.location.contains(owner)), "{owner}: {errors}");
+    }
+}
+
+#[test]
+fn binary64_directly_constructed_types_cannot_bypass_version_or_map_key_admission() {
+    use ess_domain::{types::RawTypeBody, Primitive, TypeRef};
+    let source = "format: ess/1\nsystem: sample\nversion: v1\ndomains: [sample.data]\ndomain: sample.data\ntypes:\n  - {name: sample.data.Value, kind: newtype, of: String}\n";
+    for (ty, code) in [
+        (
+            TypeRef::Primitive(Primitive::Binary64),
+            ValidationCode::UnsupportedFormatVersion,
+        ),
+        (
+            TypeRef::Map(
+                Primitive::Binary64,
+                Box::new(TypeRef::Primitive(Primitive::String)),
+            ),
+            ValidationCode::TypeMismatch,
+        ),
+    ] {
+        let mut raw = RawSpecFile::parse(source).unwrap();
+        raw.types[0].body = RawTypeBody::Newtype {
+            of: ty,
+            invariants: vec![],
+        };
+        let errors = Specification::assemble([(Source::new("typed.yaml"), raw)]).unwrap_err();
+        assert!(
+            errors
+                .as_slice()
+                .iter()
+                .any(|e| e.code == code && e.location.contains("sample.data.Value")),
+            "{errors}"
+        );
+    }
+}
+
+#[test]
 fn guard_scalar_continuation_fails_at_admission() {
     rejected(
         &SOURCE.replace("when: amount > 0", "when: amount.nonexistent > 0"),

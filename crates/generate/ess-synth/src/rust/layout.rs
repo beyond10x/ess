@@ -291,6 +291,7 @@ fn component_packages(ir: &EssIr, reserved: &[&str]) -> BTreeMap<ComponentName, 
 /// disagree about what a value looks like.
 pub fn primitive(name: Primitive) -> &'static str {
     match name {
+        Primitive::Binary64 => unreachable!("Binary64 is refused before target rendering"),
         Primitive::String => "String",
         Primitive::Boolean => "bool",
         Primitive::Integer => "i64",
