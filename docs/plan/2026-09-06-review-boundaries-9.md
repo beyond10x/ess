@@ -206,3 +206,28 @@ Node24 `npm ci --ignore-scripts` exited0 in17.742seconds, preserving package and
 the full log and result are npm-ci.log/json in that scratch. This is preparation, not a Website
 gate or production-artifact verification. Production delivery must bind the published ESS commit,
 the exact Website runtime and Docs System1c8c31697e87235dda8bec9467264b22a7fa0c95.
+
+## Final source gate and implementation state
+
+The reconciled integration4777c1de3a80ea7645a255e4e229ad30a8a5cc8e passed all10 declared lanes
+from2026-09-06T14:11:33.729Z to14:13:55.330Z. The workspace test lane passed1983 cases,
+0failed/ignored,170 summaries in97.446seconds. Site-build exited0 in14.679seconds, including
+the retained Rust/WASM and browser checks. Every tracked source hash remained unchanged.
+verification-report:review-boundaries-9-integrated holds each command's direct exit, duration
+and log hash; complete raw evidence is target/review-boundaries-9/gate-4777c1de3a80.
+
+Root appended the integrated acceptance through AEP and recorded test_result before the legal
+active→implemented move. The story is implemented revision10. A first evidence command refused
+the six-digit fractional timestamp before writing; the retained observation was recorded at the
+same whole-second instant using the CLI's admitted syntax. The final batch validated157 artifacts
+with exit0 and `valid`; its24 empty-findings advisories include the two new incoming normalization
+reviews and retain the previously documented parser limitation. No findings were invented.
+There are17 implemented remediation stories and14 remaining drafts. Implementation status records
+the source gate; source publication, exact public delivery and managed cleanup continue below.
+
+The Website support runner is prepared under target/review-boundaries-9/preparation in its own
+tree. Root verified the preparation manifest SHA256
+b879d99981b031bf4ae6f63c8def3c1d349f5288bee81a06b16dd852a5e6370c from its declared base directory.
+It requires the independently supplied published ESS commit and complete immutable layout-v2
+publication, including every source bundle. It will run the actual artifact verifier and Website
+gate with separate logs and full before/after artifact inventories. It has not executed yet.

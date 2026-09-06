@@ -2,7 +2,7 @@
 format: aep.planning-md/1
 id: story:review-composition-contract
 kind: story
-status: active
+status: implemented
 title: State the composition client plan's actual guarantees
 tags:
 - P2
@@ -17,7 +17,7 @@ scope:
   path: website/docs/reference/cli.md
 - confidence: cited
   path: website/docs/reference/formats.md
-revision: 8
+revision: 10
 ---
 ## Finding and source
 
@@ -74,3 +74,9 @@ The original complete-type-closure inference is corrected: traversal includes co
 The added test compiles actual emitted code as a separate library and executes three downstream cases. Independently declared String-title and numeric-title buffers reach Todo/CreateList unchanged with separate authority; arbitrary binary response bytes are unchanged. MissingEndpoint precedes authority/transport access and the original transport error is retained. Package tests passed10 cases,0failed/ignored,3summaries; the child binary separately passed3,0failed/ignored. Package formatting, fixture formatting, strict package all-target Clippy and diff checks each exited0. The first focused characterization passed before documentation correction. The package baseline was9, not13.
 
 This handoff supplies unit evidence and confirmed scope only. Independent source attack1 is running; full integration task-check/site-build, publication and story completion remain pending. Root owns their shared planning, changelog and delivery surfaces.
+
+## Integrated acceptance evidence
+
+The actual emitted byte-buffer counterexample and exact selected-operation metadata are documented. Both source attacks found no remaining defect; their immutable records and empty final ledger are retained. The corrected copyable command and conflicting-destination refusal executed as documented without changing generated corpus bytes.
+
+The full integration at4777c1de3a80ea7645a255e4e229ad30a8a5cc8e passed1983 workspace cases,0failed/ignored,170 summaries and all10 recorded lanes, including site-build. verification-report:review-boundaries-9-integrated binds each real exit and log hash to its source. This includes the other session's published native-codec/positional changes without changing this unit's scope. Root records source publication, public delivery and managed cleanup separately in the wave page.
