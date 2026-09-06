@@ -560,10 +560,10 @@ func Run(t *testing.T, newTarget func() Target) {
 			returned := false
 			defer func() {
 				status = run.status
-				if config.version == "2" && returned && t.Failed() {
+				terminal = run.callbacksComplete && (returned || status != statusPassed)
+				if config.version == "2" && t.Failed() {
 					status = statusFailed
 				}
-				terminal = returned || status != statusPassed
 			}()
 			run.execute(id, scenario)
 			returned = true
@@ -705,11 +705,15 @@ type run struct {
 	queried string
 	// status is what this scenario has come to so far: passed until a step fails or skips.
 	status string
+	// callbacksComplete records returned callbacks, independently of a provisional skip/failure.
+	// A Goexit or panic inside teardown cannot complete the earlier step's verdict.
+	callbacksComplete bool
 }
 
 func (r *run) execute(id string, scenario Scenario) {
 	context := ScenarioContext{Scenario: id, Correlation: r.correlation}
 	if err := r.target.BeginScenario(context); err != nil {
+		r.callbacksComplete = true // begin returned; no teardown is required
 		if errors.Is(err, ErrUnsupported) {
 			r.skip("the target does not support this scenario: %v", err)
 		}
@@ -717,7 +721,9 @@ func (r *run) execute(id string, scenario Scenario) {
 		r.t.Fatalf("begin: %v", err)
 	}
 	defer func() {
-		if err := r.target.EndScenario(context); err != nil {
+		err := r.target.EndScenario(context)
+		r.callbacksComplete = true
+		if err != nil {
 			r.status = statusFailed
 			r.t.Errorf("end: %v", err)
 		}
@@ -1891,6 +1897,7 @@ func unsigned(value any) (uint64, error) {
 }
 
 var qualifiedName = regexp.MustCompile(`^[A-Za-z][A-Za-z0-9_-]*(\.[A-Za-z][A-Za-z0-9_-]*)*$`)
+var factPath = regexp.MustCompile(`^[A-Za-z][A-Za-z0-9_-]*(\.[A-Za-z0-9_-]+)*$`)
 var kebabName = regexp.MustCompile(`^[a-z][a-z0-9]*(-[a-z0-9]+)*$`)
 var stateName = regexp.MustCompile(`^[A-Z][A-Za-z0-9]*$`)
 var modelDigest = regexp.MustCompile(`^[a-f0-9]{64}$`)
@@ -2277,6 +2284,9 @@ func admitExpectation(value any, major int) error {
 		}
 	}
 	if predicate, ok := f["predicate"]; ok {
+		if err := admitPredicateEnvelope(predicate, 0); err != nil {
+			return err
+		}
 		raw, err := json.Marshal(predicate)
 		if err != nil {
 			return err
@@ -2287,6 +2297,63 @@ func admitExpectation(value any, major int) error {
 	}
 	return nil
 }
+
+// admitPredicateEnvelope checks the original predicate structure before the legacy evaluator
+// parses it. Structured children and string `not` prefixes spend the same Rust depth budget.
+func admitPredicateEnvelope(value any, depth int) error {
+	if depth > 32 {
+		return fmt.Errorf("predicate exceeds maximum depth 32")
+	}
+	switch node := value.(type) {
+	case string:
+		if rest, ok := strings.CutPrefix(strings.TrimSpace(node), "not "); ok {
+			return admitPredicateEnvelope(rest, depth+1)
+		}
+	case []any:
+		for _, child := range node {
+			if err := admitPredicateEnvelope(child, depth+1); err != nil {
+				return err
+			}
+		}
+	case map[string]any:
+		for key, child := range node {
+			switch key {
+			case "all", "and", "all_of", "any", "or", "none", "none_of_these":
+				children, ok := child.([]any)
+				if !ok {
+					children = []any{child}
+				}
+				for _, item := range children {
+					if err := admitPredicateEnvelope(item, depth+1); err != nil {
+						return err
+					}
+				}
+			case "not":
+				if err := admitPredicateEnvelope(child, depth+1); err != nil {
+					return err
+				}
+			case "forall", "exists":
+				fields, err := closed(child, "in as that", "")
+				if err != nil {
+					return err
+				}
+				over, err := text(fields["in"])
+				if err != nil || !factPath.MatchString(over) {
+					return fmt.Errorf("quantifier in must be a fact path")
+				}
+				bind, err := text(fields["as"])
+				if err != nil || !factPath.MatchString(bind) || strings.Contains(bind, ".") {
+					return fmt.Errorf("quantifier as must be one fact path segment")
+				}
+				if err := admitPredicateEnvelope(fields["that"], depth+1); err != nil {
+					return err
+				}
+			}
+		}
+	}
+	return nil
+}
+
 func admitStep(value any, major int) error {
 	f, ok := value.(map[string]any)
 	if !ok {

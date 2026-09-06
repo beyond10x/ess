@@ -10,7 +10,7 @@ fn document() -> Value {
     })
 }
 
-fn execute(suite: &AdmittedSuite) -> ess_conformance::ConformanceReport {
+fn execute(suite: &AdmittedSuite) -> ess_conformance::ExecutedRun {
     Runner::for_suite(suite.suite())
         .run_admitted(suite, &ess_conformance::reference::Billing::new())
 }

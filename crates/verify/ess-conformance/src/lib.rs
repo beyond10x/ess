@@ -153,7 +153,7 @@ pub use report::{
     CheckCode, CheckResult, ConformanceReport, ConformanceStatus, Diagnostic, ScenarioResult,
     Status,
 };
-pub use runner::{AdvancingClock, Clock, Ids, Runner, RunnerConfig};
+pub use runner::{AdvancingClock, Clock, ExecutedRun, Ids, Runner, RunnerConfig};
 pub use scenario::{
     AuthoredName, BindingAspect, ConformanceScenario, ConformanceSuite, Elapsed, EssSemanticRef,
     Holds, InstanceName, InstantName, LeafShape, PayloadShape, Position, ScenarioId,

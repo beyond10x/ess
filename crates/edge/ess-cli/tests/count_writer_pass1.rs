@@ -20,7 +20,7 @@ fn module(label: &str) -> PathBuf {
         .canonicalize()
         .unwrap();
     let directory = root
-        .join("target/review-boundaries-8/adversary-pass-1")
+        .join("target/review-boundaries-8/correction-pass-1/go-tests")
         .join(format!("go-{label}-{}", std::process::id()));
     std::fs::create_dir_all(&directory).unwrap();
     let suite = ConformanceSuite::from_json(&document().to_string()).unwrap();

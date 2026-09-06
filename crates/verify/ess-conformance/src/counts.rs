@@ -2,7 +2,7 @@
 use crate::{
     admission::{AdmissionError, AdmittedSuite},
     count_json::Json,
-    ConformanceReport, ScenarioId, ScenarioResult, Status,
+    ConformanceReport, ExecutedRun, ScenarioId, ScenarioResult, Status,
 };
 use ess_primitives::evidence::SpecDigest;
 use serde::{Deserialize, Serialize};
@@ -121,11 +121,11 @@ fn canonical(value: &impl Serialize) -> Result<String, AdmissionError> {
     Ok(text)
 }
 impl CountReport {
-    /// Publish complete Rust results only when their provenance and exact selected IDs agree.
-    pub fn from_run(
-        run: &ConformanceReport,
-        admitted: &AdmittedSuite,
-    ) -> Result<Self, AdmissionError> {
+    /// Publish complete Rust results only for the exact admitted suite bytes actually executed.
+    pub fn from_run(run: &ExecutedRun, admitted: &AdmittedSuite) -> Result<Self, AdmissionError> {
+        if run.suite_digest() != admitted.digest() {
+            return Err(error("run executed different admitted suite bytes"));
+        }
         if run.suite != admitted.suite().provenance {
             return Err(error("run provenance differs from admitted suite"));
         }
@@ -322,10 +322,7 @@ struct WireRun {
 pub struct CountRun(WireRun);
 impl CountRun {
     /// Construct the separate detailed surface from one complete run.
-    pub fn from_run(
-        run: &ConformanceReport,
-        admitted: &AdmittedSuite,
-    ) -> Result<Self, AdmissionError> {
+    pub fn from_run(run: &ExecutedRun, admitted: &AdmittedSuite) -> Result<Self, AdmissionError> {
         let result = Self(WireRun {
             format: COUNT_RUN_FORMAT.into(),
             summary: CountReport::from_run(run, admitted)?.0,

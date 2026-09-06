@@ -100,7 +100,7 @@ impl ConformanceTarget for Target {
         unreachable!()
     }
 }
-fn execute(suite: &AdmittedSuite, clock: u64) -> ess_conformance::ConformanceReport {
+fn execute(suite: &AdmittedSuite, clock: u64) -> ess_conformance::ExecutedRun {
     Runner::new(
         RunnerConfig::default(),
         FixedClock(clock),
@@ -111,7 +111,7 @@ fn execute(suite: &AdmittedSuite, clock: u64) -> ess_conformance::ConformanceRep
 fn write_fixture(
     name: &str,
     suite: &AdmittedSuite,
-    run: &ess_conformance::ConformanceReport,
+    run: &ess_conformance::ExecutedRun,
     expected: &Value,
     fixed_clock: u64,
 ) {

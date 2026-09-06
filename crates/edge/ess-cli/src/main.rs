@@ -2477,7 +2477,7 @@ fn conform(command: ConformCommand) -> Result<ExitCode> {
 }
 
 fn render_conformance_report(
-    report: &ess_conformance::ConformanceReport,
+    report: &ess_conformance::ExecutedRun,
     admitted: &ess_conformance::AdmittedSuite,
     report_format: &str,
     strict: bool,
@@ -2492,7 +2492,7 @@ fn render_conformance_report(
                 .with_context(|| format!("writing {}", path.display()))?;
         }
         match format {
-            Format::Text => print!("{report}"),
+            Format::Text => print!("{}", report.report()),
             Format::Json => print!("{}", detailed.to_canonical_json()?),
             Format::Yaml => render(&detailed, format)?,
         }
@@ -2509,8 +2509,8 @@ fn render_conformance_report(
                 .with_context(|| format!("writing {}", path.display()))?;
         }
         match format {
-            Format::Text => print!("{report}"),
-            _ => render(report, format)?,
+            Format::Text => print!("{}", report.report()),
+            _ => render(report.report(), format)?,
         }
     }
     Ok(match report.status {
