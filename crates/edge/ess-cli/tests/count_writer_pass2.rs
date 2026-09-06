@@ -8,7 +8,7 @@ use std::{
 
 const ID: &str = "review.count/authored/second";
 
-fn document(predicate: Value) -> Value {
+fn document(predicate: &Value) -> Value {
     json!({"provenance":{"suite_version":"ess-conformance/4", "system":"review",
         "specification_version":"v1", "spec_digest":"a".repeat(64), "contract_digest":"a".repeat(64)},
         "scenarios":{ID:{"purpose":"Final original admission and callback review", "steps":[
@@ -25,7 +25,7 @@ fn module(label: &str) -> PathBuf {
         .join("target/review-boundaries-8/adversary-pass-2")
         .join(format!("go-{label}-{}", std::process::id()));
     std::fs::create_dir_all(&directory).unwrap();
-    let suite = ConformanceSuite::from_json(&document(json!(true)).to_string()).unwrap();
+    let suite = ConformanceSuite::from_json(&document(&json!(true)).to_string()).unwrap();
     for artifact in ess_conformance::go::emit(&suite) {
         let path = directory.join(artifact.path);
         std::fs::create_dir_all(path.parent().unwrap()).unwrap();
@@ -86,7 +86,7 @@ fn invoke(directory: &Path, label: &str, mode: &str, destination: bool) -> Outpu
 #[test]
 fn generated_go_admits_only_typed_predicate_paths_and_operator_envelopes() {
     let directory = module("leaf-admission");
-    let valid = document(json!({"ready": {"eq": true}})).to_string();
+    let valid = document(&json!({"ready": {"eq": true}})).to_string();
     let suite = AdmittedSuite::from_json(&valid).unwrap();
     std::fs::write(directory.join("essconform/suite.json"), valid).unwrap();
     assert!(invoke(&directory, "valid", "begin-skip", true)
@@ -110,7 +110,7 @@ fn generated_go_admits_only_typed_predicate_paths_and_operator_envelopes() {
         ),
         ("invalid-expression-path", json!("ready..done == true")),
     ] {
-        let original = document(predicate).to_string();
+        let original = document(&predicate).to_string();
         assert!(
             AdmittedSuite::from_json(&original).is_err(),
             "Rust direct-original refusal: {label}"
@@ -136,7 +136,7 @@ fn generated_go_admits_only_typed_predicate_paths_and_operator_envelopes() {
 #[test]
 fn generated_go_abnormal_unsupported_error_formatting_cannot_complete() {
     let directory = module("error-formatting");
-    let original = document(json!(true)).to_string();
+    let original = document(&json!(true)).to_string();
     let suite = AdmittedSuite::from_json(&original).unwrap();
     std::fs::write(directory.join("essconform/suite.json"), original).unwrap();
     assert!(invoke(&directory, "ordinary-skip", "begin-skip", true)

@@ -2284,31 +2284,29 @@ func admitExpectation(value any, major int) error {
 		}
 	}
 	if predicate, ok := f["predicate"]; ok {
-		if err := admitPredicateEnvelope(predicate, 0); err != nil {
+		if err := admitPayload(predicate); err != nil {
 			return err
 		}
-		raw, err := json.Marshal(predicate)
-		if err != nil {
-			return err
-		}
-		if _, err := parsePredicate(raw); err != nil {
-			return err
-		}
+		return admitPredicateEnvelope(predicate, 0)
 	}
 	return nil
 }
 
-// admitPredicateEnvelope checks the original predicate structure before the legacy evaluator
-// parses it. Structured children and string `not` prefixes spend the same Rust depth budget.
+// admitPredicateEnvelope mirrors Rust Predicate::from_node admission. The historical evaluator
+// parses only at execution; its permissive leaf fallback is not an original-byte admission gate.
+// Structured children and string `not` prefixes spend the same Rust depth budget.
 func admitPredicateEnvelope(value any, depth int) error {
 	if depth > 32 {
 		return fmt.Errorf("predicate exceeds maximum depth 32")
 	}
 	switch node := value.(type) {
+	case bool:
+		return nil
 	case string:
 		if rest, ok := strings.CutPrefix(strings.TrimSpace(node), "not "); ok {
 			return admitPredicateEnvelope(rest, depth+1)
 		}
+		return admitPredicateLeaf(node)
 	case []any:
 		for _, child := range node {
 			if err := admitPredicateEnvelope(child, depth+1); err != nil {
@@ -2319,6 +2317,9 @@ func admitPredicateEnvelope(value any, depth int) error {
 		for key, child := range node {
 			switch key {
 			case "all", "and", "all_of", "any", "or", "none", "none_of_these":
+				if child == nil { // Rust Node::as_seq_or_single treats null as an empty list
+					continue
+				}
 				children, ok := child.([]any)
 				if !ok {
 					children = []any{child}
@@ -2348,10 +2349,135 @@ func admitPredicateEnvelope(value any, depth int) error {
 				if err := admitPredicateEnvelope(fields["that"], depth+1); err != nil {
 					return err
 				}
+			default:
+				if err := admitPredicatePath(key); err != nil {
+					return err
+				}
+				if err := admitPredicateConstraint(child); err != nil {
+					return err
+				}
+			}
+		}
+	default:
+		return fmt.Errorf("predicate must be a boolean, expression, list or mapping")
+	}
+	return nil
+}
+
+func admitPredicatePath(path string) error {
+	if !factPath.MatchString(path) {
+		return fmt.Errorf("invalid predicate fact path %q", path)
+	}
+	return nil
+}
+
+func admitPredicateScalar(value any) error {
+	switch value.(type) {
+	case bool, string, json.Number:
+		// Payload admission already checked finite numbers. Any string is legal: Rust operands
+		// fall back to a literal when text (including a dotted spelling) is not a valid fact path.
+		return nil
+	default:
+		return fmt.Errorf("predicate operand must be a boolean, number or string")
+	}
+}
+
+func admitPredicateConstraint(value any) error {
+	switch node := value.(type) {
+	case []any:
+		for _, item := range node {
+			if err := admitPredicateScalar(item); err != nil {
+				return err
+			}
+		}
+	case map[string]any:
+		// Every operator is checked; a known operator cannot hide a malformed neighbor.
+		for operator, operand := range node {
+			switch operator {
+			case "eq", "equals", "==", "ne", "not_equals", "!=", "lt", "<", "le", "lte", "<=", "gt", ">", "ge", "gte", ">=":
+				if err := admitPredicateScalar(operand); err != nil {
+					return err
+				}
+			case "any_of", "in", "one_of", "none_of", "not_in":
+				if operand == nil { // null is the empty sequence shorthand, not a null literal
+					continue
+				}
+				items, ok := operand.([]any)
+				if !ok {
+					items = []any{operand}
+				}
+				for _, item := range items {
+					if err := admitPredicateScalar(item); err != nil {
+						return err
+					}
+				}
+			case "exists", "defined":
+				if _, ok := operand.(bool); !ok {
+					return fmt.Errorf("predicate %s takes a boolean", operator)
+				}
+			case "truthy":
+				// Rust's truthy form ignores its operand; payload validity still applies.
+			default:
+				return fmt.Errorf("unknown predicate constraint operator %q", operator)
+			}
+		}
+	default:
+		return admitPredicateScalar(value)
+	}
+	return nil
+}
+
+func admitPredicateLeaf(expression string) error {
+	trimmed := strings.TrimSpace(expression)
+	switch trimmed {
+	case "always", "true", "never", "false":
+		return nil
+	}
+	for _, function := range []string{"defined", "exists", "missing"} {
+		if rest, ok := strings.CutPrefix(trimmed, function); ok {
+			if rest, ok := strings.CutPrefix(strings.TrimSpace(rest), "("); ok {
+				if path, ok := strings.CutSuffix(strings.TrimSpace(rest), ")"); ok {
+					return admitPredicatePath(strings.TrimSpace(path))
+				}
 			}
 		}
 	}
-	return nil
+	// Rust split_comparison chooses the first operator outside quotes, examining two-byte
+	// operators before one-byte operators at that position. Its RHS is nonempty operand text.
+	var quote byte
+	for index := 0; index < len(trimmed); index++ {
+		ch := trimmed[index]
+		if quote != 0 {
+			if ch == quote {
+				quote = 0
+			}
+			continue
+		}
+		if ch == '\'' || ch == '"' {
+			quote = ch
+			continue
+		}
+		width := 0
+		if index+1 < len(trimmed) {
+			switch trimmed[index : index+2] {
+			case "==", "!=", "<=", ">=":
+				width = 2
+			}
+		}
+		if width == 0 && (ch == '<' || ch == '>') {
+			width = 1
+		}
+		if width != 0 {
+			if err := admitPredicatePath(strings.TrimSpace(trimmed[:index])); err != nil {
+				return err
+			}
+			if strings.TrimSpace(trimmed[index+width:]) == "" {
+				return fmt.Errorf("predicate comparison requires a right operand")
+			}
+			return nil
+		}
+	}
+	return admitPredicatePath(trimmed)
 }
 
 func admitStep(value any, major int) error {

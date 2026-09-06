@@ -1,4 +1,4 @@
-//! ExecutedRun cloning and discarded raw diagnostics retain exact source separation.
+//! `ExecutedRun` cloning and discarded raw diagnostics retain exact source separation.
 use ess_conformance::{AdmittedSuite, ConformanceStatus, CountReport, CountRun, Runner};
 use serde_json::json;
 

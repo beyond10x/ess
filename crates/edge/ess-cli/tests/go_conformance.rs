@@ -725,6 +725,180 @@ func TestConformance(t *testing.T) { essconform.Run(t, func() essconform.Target 
     assert_eq!(value["conformance_status"], "inconclusive");
 }
 
+fn predicate_path_and_operator_cases() -> Vec<(serde_json::Value, bool)> {
+    use serde_json::json;
+
+    let mut cases = Vec::new();
+    for (path, accepted) in [
+        ("ready", true),
+        ("ready.0_done-now", true),
+        ("A_-.0_-", true),
+        ("", false),
+        ("ready..done", false),
+        (".ready", false),
+        ("ready.", false),
+        ("0ready", false),
+        ("réady", false),
+    ] {
+        for predicate in [
+            json!({path: {"eq": true}}),
+            json!(path),
+            json!(format!("{path} == true")),
+            json!(format!("defined ( {path} )")),
+            json!(format!("exists({path})")),
+            json!(format!("missing({path})")),
+        ] {
+            cases.push((predicate, accepted));
+        }
+    }
+    for operator in [
+        "eq",
+        "equals",
+        "==",
+        "ne",
+        "not_equals",
+        "!=",
+        "lt",
+        "<",
+        "le",
+        "lte",
+        "<=",
+        "gt",
+        ">",
+        "ge",
+        "gte",
+        ">=",
+    ] {
+        cases.push((json!({"ready": {operator: "other..literal"}}), true));
+        cases.push((json!({"ready": {operator: {}}}), false));
+    }
+    for operator in ["any_of", "in", "one_of", "none_of", "not_in"] {
+        for operand in [
+            json!(null),
+            json!([]),
+            json!("a.b"),
+            json!([true, 1.5, "a.b"]),
+        ] {
+            cases.push((json!({"ready": {operator: operand}}), true));
+        }
+        for operand in [json!([null]), json!([[]]), json!([{}]), json!({})] {
+            cases.push((json!({"ready": {operator: operand}}), false));
+        }
+    }
+    for operator in ["exists", "defined"] {
+        for operand in [json!(true), json!(false)] {
+            cases.push((json!({"ready": {operator: operand}}), true));
+        }
+        for operand in [json!(null), json!("true"), json!(1), json!([])] {
+            cases.push((json!({"ready": {operator: operand}}), false));
+        }
+    }
+    for operand in [json!(null), json!({"future": [null, {}]}), json!([])] {
+        cases.push((json!({"ready": {"truthy": operand}}), true));
+    }
+    cases
+}
+
+#[test]
+fn count_go_predicate_admission_matches_rust_leaf_grammar() {
+    use serde_json::json;
+
+    let directory = count_module("predicate-leaves");
+    let mut cases = predicate_path_and_operator_cases();
+    for predicate in [
+        json!(true),
+        json!(false),
+        json!("true"),
+        json!("false"),
+        json!("always"),
+        json!("never"),
+        json!({}),
+        json!([]),
+        json!({"ready": {}}),
+        json!({"ready": [true, 1, "word"]}),
+        json!({"ready": ""}),
+        json!({"ready": 1.5}),
+        json!({"ready": {"eq": true, "ne": false}}),
+        json!("ready == other..literal"),
+        json!("ready == 'a.b'"),
+        json!("ready == other.value"),
+        json!("ready < quoted == text"),
+        json!("not defined (ready.0)"),
+    ] {
+        cases.push((predicate, true));
+    }
+    for predicate in [
+        json!(null),
+        json!(1),
+        json!("ready == "),
+        json!("ready ==\t"),
+        json!("'ready' == true"),
+        json!({"ready": null}),
+        json!({"ready": [null]}),
+        json!({"ready": {"eq": []}}),
+        json!({"ready": {"eq": null}}),
+        json!({"ready": {"eq": true, "future": true}}),
+        json!({"not": null}),
+    ] {
+        cases.push((predicate, false));
+    }
+    for group in ["all", "and", "all_of", "any", "or", "none", "none_of_these"] {
+        cases.push((json!({group: null}), true));
+        cases.push((json!({group: [{"ready": {"eq": true}}]}), true));
+        cases.push((json!({group: ["ready..done"]}), false));
+    }
+    let template: serde_json::Value = serde_json::from_str(
+        &std::fs::read_to_string(directory.join("essconform/suite.json")).unwrap(),
+    )
+    .unwrap();
+    let vectors: Vec<_> = cases.into_iter().enumerate().map(|(index, (predicate, accepted))| {
+        let mut document = template.clone();
+        document["scenarios"]["example.domain/authored/control"]["steps"] = json!([
+            {"step":"expect_view", "view":"example.domain.Rows",
+                "expectation":{"expect":"satisfies", "predicate":predicate}}
+        ]);
+        let original = document.to_string();
+        assert_eq!(ess_conformance::AdmittedSuite::from_json(&original).is_ok(), accepted,
+            "Rust grammar control {index}: {predicate}");
+        json!({"name":format!("{index}: {predicate}"), "original":original, "accepted":accepted})
+    }).collect();
+    std::fs::write(
+        directory.join("essconform/predicate_vectors.json"),
+        serde_json::to_string_pretty(&vectors).unwrap(),
+    )
+    .unwrap();
+    std::fs::write(directory.join("essconform/predicate_admission_test.go"), r#"package essconform
+import (
+    _ "embed"
+    "encoding/json"
+    "testing"
+)
+//go:embed predicate_vectors.json
+var predicateVectors []byte
+func TestPredicateAdmission(t *testing.T) {
+    var cases []struct { Name string; Original string; Accepted bool }
+    if err := json.Unmarshal(predicateVectors, &cases); err != nil { t.Fatal(err) }
+    for _, c := range cases {
+        _, err := admitSuite(c.Original)
+        if (err == nil) != c.Accepted { t.Errorf("%s: admitted=%v, expected=%v, error=%v", c.Name, err == nil, c.Accepted, err) }
+    }
+    t.Logf("checked %d independently expected Rust/Go predicate originals", len(cases))
+}
+"#).unwrap();
+    let output = invoke_count(
+        &directory,
+        "predicate-leaf-grammar",
+        &[],
+        "^TestPredicateAdmission$",
+    );
+    assert!(
+        output.status.success(),
+        "{}{}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+}
+
 fn count_module(label: &str) -> PathBuf {
     let directory = scratch(label);
     let suite = serde_json::json!({
