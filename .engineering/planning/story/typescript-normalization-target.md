@@ -7,6 +7,7 @@ title: Execute source-pinned normalization in native TypeScript
 relations:
 - derived_from: story:source-pinned-data-normalization
 - serves: vision:O2
+- depends_on: story:normalize-positional-array-input
 scope:
 - confidence: cited
   path: CHANGELOG.md
@@ -26,7 +27,7 @@ scope:
   path: website/docs/reference/cli.md
 - confidence: cited
   path: website/docs/reference/formats.md
-revision: 2
+revision: 3
 ---
 ## Outcome
 
@@ -70,3 +71,33 @@ exact integer parity.
   numeric qualification still need implementation evidence.
 - Sequence after the recovered base64 unit because target packaging, tests and
   shared design/documentation overlap (cited).
+
+## Refreshed binding after raw capture
+
+The binding design now includes the concrete standalone API/package, exact
+integer and floating representation, raw capture and retained-document helpers,
+Unicode-scalar ordering, prototype-safe records, and stable schema-finding
+multiset presentation. The first native lane records TypeScript6.0.3 and the
+actual Node/V8 engine; browser or unmeasured engine support is not inferred.
+
+Focused numerical preparation at immutable source6c78676 established a feasible
+strategy: JSON grammar first, bigint integer fast paths, guarded Number conversion,
+reference decimal-key equality for exact floats, and zmij-compatible layout over
+native shortest digits. Node22.23.1 matched13,455 finite patterns,28 midpoint
+cases and35 existing numeric cases;29 scalar pipelines also matched. These are
+private strategy experiments, not target implementation or format5 qualification.
+The actual dependency graph enables serde_json float_roundtrip through jsonschema;
+its inactive fallback parser must not be ported.
+
+Implementation follows the integrated Binary64 and positional contracts. It must
+refresh their checked metadata, operation variants, input policies, target-report
+versions and frozen legacy sources before dispatch. Raw format4 helpers/cases are
+required; seven decoded-value API cases are named as inapplicable to the text-only
+TypeScript API. No required corpus branch may be silently skipped.
+
+The native runtime validates a closed qualified source-schema profile without
+coercing bigint into Number. The independent profile audit is still completing;
+unsupported refinements must refuse before any artifacts. A pre-existing pinned
+validator discrepancy in numeric uniqueItems is being separately recorded and
+must not be silently copied or described as a TypeScript-introduced defect.
+No TypeScript adapter, passing full gate, consumer migration or release is claimed.

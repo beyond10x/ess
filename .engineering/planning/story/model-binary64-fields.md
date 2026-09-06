@@ -14,21 +14,41 @@ scope:
 - confidence: cited
   path: crates/edge/ess-cli/src/main.rs
 - confidence: cited
+  path: crates/edge/ess-cli/tests/binary64_publication.rs
+- confidence: cited
+  path: crates/edge/ess-cli/tests/go_conformance.rs
+- confidence: cited
+  path: crates/edge/ess-cli/tests/normalization.rs
+- confidence: cited
   path: crates/generate/ess-gen/src/model_types.rs
 - confidence: cited
   path: crates/generate/ess-gen/src/types.rs
 - confidence: cited
-  path: crates/generate/ess-openapi/src/accounting.rs
-- confidence: cited
-  path: crates/generate/ess-openapi/src/lib.rs
+  path: crates/generate/ess-synth/src/clap/mod.rs
 - confidence: cited
   path: crates/generate/ess-synth/src/failure.rs
 - confidence: cited
+  path: crates/generate/ess-synth/src/go/http.rs
+- confidence: cited
+  path: crates/generate/ess-synth/src/go/layout.rs
+- confidence: cited
+  path: crates/generate/ess-synth/src/go/mod.rs
+- confidence: cited
   path: crates/generate/ess-synth/src/lib.rs
 - confidence: cited
-  path: crates/generate/schema-contract/src/realize.rs
+  path: crates/generate/ess-synth/src/rust/feasibility.rs
 - confidence: cited
-  path: crates/generate/schema-contract/src/realize/go.rs
+  path: crates/generate/ess-synth/src/rust/layout.rs
+- confidence: cited
+  path: crates/generate/ess-synth/src/rust/mod.rs
+- confidence: cited
+  path: crates/generate/ess-synth/src/rust/wire.rs
+- confidence: cited
+  path: crates/generate/ess-synth/src/web/mod.rs
+- confidence: cited
+  path: crates/generate/ess-synth/tests/feasibility.rs
+- confidence: cited
+  path: crates/generate/schema-contract/src/realize.rs
 - confidence: cited
   path: crates/generate/schema-contract/src/realize/normalize.rs
 - confidence: cited
@@ -36,35 +56,67 @@ scope:
 - confidence: cited
   path: crates/generate/schema-contract/src/realize/normalize/eval.rs
 - confidence: cited
+  path: crates/generate/schema-contract/src/realize/normalize/execute.rs
+- confidence: cited
+  path: crates/generate/schema-contract/src/realize/normalize/go_condition.go.txt
+- confidence: cited
   path: crates/generate/schema-contract/src/realize/normalize/go_numeric.go.txt
 - confidence: cited
-  path: crates/generate/schema-contract/src/realize/normalize/go_runtime.go.txt
-- confidence: inferred
-  path: crates/generate/schema-contract/src/realize/normalize/legacy_v1_v4
+  path: crates/generate/schema-contract/src/realize/normalize/go_target.rs
+- confidence: cited
+  path: crates/generate/schema-contract/src/realize/normalize/legacy_v1_v4/eval.rs.txt
+- confidence: cited
+  path: crates/generate/schema-contract/src/realize/normalize/legacy_v1_v4/execute.rs.txt
+- confidence: cited
+  path: crates/generate/schema-contract/src/realize/normalize/legacy_v1_v4/go_condition.go.txt
+- confidence: cited
+  path: crates/generate/schema-contract/src/realize/normalize/legacy_v1_v4/go_numeric.go.txt
+- confidence: cited
+  path: crates/generate/schema-contract/src/realize/normalize/legacy_v1_v4/numeric.rs.txt
+- confidence: cited
+  path: crates/generate/schema-contract/src/realize/normalize/legacy_v4/go_runtime.go.txt
+- confidence: cited
+  path: crates/generate/schema-contract/src/realize/normalize/legacy_v4/recipe.rs.txt
+- confidence: cited
+  path: crates/generate/schema-contract/src/realize/normalize/legacy_v4/rust_runtime.rs.txt
 - confidence: cited
   path: crates/generate/schema-contract/src/realize/normalize/numeric.rs
 - confidence: cited
   path: crates/generate/schema-contract/src/realize/normalize/recipe.rs
 - confidence: cited
-  path: crates/generate/schema-contract/src/realize/normalize/source.rs
+  path: crates/generate/schema-contract/src/realize/normalize/rust_runtime.rs.txt
 - confidence: cited
-  path: crates/generate/schema-contract/src/realize/rust.rs
+  path: crates/generate/schema-contract/src/realize/normalize/target.rs
 - confidence: cited
-  path: crates/generate/schema-contract/src/realize/ts.rs
-- confidence: inferred
-  path: crates/generate/schema-contract/tests/normalization_binary64_model.rs
+  path: crates/generate/schema-contract/tests/fixtures/normalization_binary64.rs
 - confidence: cited
-  path: crates/specify/ess-compiler/src/expression.rs
+  path: crates/generate/schema-contract/tests/fixtures/normalization_binary64_go_tests.go.txt
 - confidence: cited
-  path: crates/specify/ess-compiler/src/resolve.rs
+  path: crates/generate/schema-contract/tests/fixtures/normalization_binary64_rust_tests.rs.txt
+- confidence: cited
+  path: crates/generate/schema-contract/tests/fixtures/normalization_legacy_maps.json
+- confidence: cited
+  path: crates/generate/schema-contract/tests/fixtures/normalization_raw.rs
+- confidence: cited
+  path: crates/generate/schema-contract/tests/normalization_binary64.rs
+- confidence: cited
+  path: crates/generate/schema-contract/tests/normalization_binary64_targets.rs
+- confidence: cited
+  path: crates/generate/schema-contract/tests/normalization_go.rs
+- confidence: cited
+  path: crates/generate/schema-contract/tests/normalization_legacy_bytes.rs
+- confidence: cited
+  path: crates/specify/ess-compiler/src/binary64.rs
+- confidence: cited
+  path: crates/specify/ess-compiler/src/lib.rs
 - confidence: cited
   path: crates/specify/ess-compiler/tests/expression_validation.rs
 - confidence: cited
-  path: crates/specify/ess-domain/src/command.rs
-- confidence: cited
-  path: crates/specify/ess-domain/src/entity.rs
-- confidence: cited
   path: crates/specify/ess-domain/src/expression.rs
+- confidence: cited
+  path: crates/specify/ess-domain/src/lib.rs
+- confidence: cited
+  path: crates/specify/ess-domain/src/primitive_admission.rs
 - confidence: cited
   path: crates/specify/ess-domain/src/spec.rs
 - confidence: cited
@@ -72,25 +124,17 @@ scope:
 - confidence: cited
   path: crates/specify/ess-domain/src/types.rs
 - confidence: cited
-  path: crates/specify/ess-domain/src/view.rs
+  path: crates/specify/ess-domain/tests/billing.rs
 - confidence: cited
-  path: crates/specify/ess-domain/src/wire.rs
-- confidence: inferred
-  path: crates/specify/ess-domain/tests/binary64.rs
-- confidence: cited
-  path: crates/specify/ess-domain/tests/expression.rs
-- confidence: cited
-  path: crates/specify/ess-primitives/src/facts.rs
-- confidence: inferred
   path: crates/verify/ess-conformance/src/admission.rs
 - confidence: cited
   path: crates/verify/ess-conformance/src/authored.rs
 - confidence: cited
   path: crates/verify/ess-conformance/src/go/mod.rs
 - confidence: cited
-  path: crates/verify/ess-conformance/src/go/runtime.go
-- confidence: cited
   path: crates/verify/ess-conformance/src/input.rs
+- confidence: cited
+  path: crates/verify/ess-conformance/src/lib.rs
 - confidence: cited
   path: crates/verify/ess-conformance/src/runner.rs
 - confidence: cited
@@ -100,14 +144,36 @@ scope:
 - confidence: cited
   path: crates/verify/ess-conformance/src/web.rs
 - confidence: cited
-  path: crates/verify/ess-conformance/tests/adversary_expression_pass1.rs
+  path: crates/verify/ess-conformance/src/witness.rs
+- confidence: cited
+  path: crates/verify/ess-conformance/tests/authored.rs
+- confidence: cited
+  path: crates/verify/ess-conformance/tests/elapsed.rs
+- confidence: cited
+  path: crates/verify/ess-conformance/tests/execution.rs
+- confidence: cited
+  path: crates/verify/ess-conformance/tests/faults.rs
+- confidence: cited
+  path: crates/verify/ess-conformance/tests/halt.rs
+- confidence: cited
+  path: crates/verify/ess-conformance/tests/suite.rs
+- confidence: cited
+  path: crates/verify/ess-conformance/tests/synthesis.rs
+- confidence: cited
+  path: crates/verify/ess-diff/tests/review_adversary_f01.rs
 - confidence: cited
   path: docs/design/model-binary64.md
 - confidence: cited
+  path: docs/design/source-pinned-data-normalization.md
+- confidence: cited
+  path: examples/billing-realization/tests/conformance.rs
+- confidence: cited
   path: website/docs/guides/generate-artifacts.md
 - confidence: cited
+  path: website/docs/guides/write-a-specification.md
+- confidence: cited
   path: website/docs/reference/formats.md
-revision: 9
+revision: 11
 ---
 ## Evidence
 
@@ -179,61 +245,124 @@ remains the task scope absent a response narrowing the outstanding wrap-up quest
 
 ## Scope
 
-Bound against combined main1667d02 plus raw unit3e2eb52, now integrated as6c78676.
-This is one serial cross-crate primitive/model/normalization unit. New Primitive
-admission necessarily reaches the domain, compiler, generation and conformance
-boundaries; splitting off only the enum would leave falsely successful consumers.
-OpenAPI import/accounting stays unchanged and supplies no new numeric authority.
+The implementation handoff is frozen at bf16e504ccad68b2ee67607ba39606aadf07f627.
+Its complete 82-path content/mode manifest was verified by the coordinator before
+the bot commit; manifest SHA-256 is
+edcef1f19ee47dfcad2b0f6b9b26ae19fcf6355ba8b28aa02604a24c9cc9f68e.
+This replaces the provisional write scope with observed writes. Adversary test
+additions and any routed correction will be recorded separately.
 
-The cited scope covers existing implementation and required qualification surfaces;
-not every cited file needs an edit. Concrete new helpers/tests and additional frozen
-format1–4 templates are inferred until the implementor returns their actual paths.
-Confidence: high for required boundaries, medium for exact new helper placement.
+The implementor confirmed the shared domain Number predicate policy, compiler
+metadata and synthesis/conformance admission boundaries. Actual caller discovery
+also required test-only Result handling in ess-diff and billing-realization.
+The same-command whole-base test count was not measured; no such count is inferred.
 
-- `CHANGELOG.md` (cited).
-- `crates/edge/ess-cli/src/main.rs` (cited).
-- `crates/generate/ess-gen/src/model_types.rs` (cited).
-- `crates/generate/ess-gen/src/types.rs` (cited).
-- `crates/generate/ess-openapi/src/accounting.rs` (cited).
-- `crates/generate/ess-openapi/src/lib.rs` (cited).
-- `crates/generate/ess-synth/src/failure.rs` (cited).
-- `crates/generate/ess-synth/src/lib.rs` (cited).
-- `crates/generate/schema-contract/src/realize.rs` (cited).
-- `crates/generate/schema-contract/src/realize/go.rs` (cited).
-- `crates/generate/schema-contract/src/realize/normalize.rs` (cited).
-- `crates/generate/schema-contract/src/realize/normalize/check.rs` (cited).
-- `crates/generate/schema-contract/src/realize/normalize/eval.rs` (cited).
-- `crates/generate/schema-contract/src/realize/normalize/go_numeric.go.txt` (cited).
-- `crates/generate/schema-contract/src/realize/normalize/go_runtime.go.txt` (cited).
-- `crates/generate/schema-contract/src/realize/normalize/numeric.rs` (cited).
-- `crates/generate/schema-contract/src/realize/normalize/source.rs` (cited).
-- `crates/generate/schema-contract/src/realize/rust.rs` (cited).
-- `crates/generate/schema-contract/src/realize/ts.rs` (cited).
-- `crates/specify/ess-compiler/src/expression.rs` (cited).
-- `crates/specify/ess-compiler/src/resolve.rs` (cited).
-- `crates/specify/ess-compiler/tests/expression_validation.rs` (cited).
-- `crates/specify/ess-domain/src/command.rs` (cited).
-- `crates/specify/ess-domain/src/entity.rs` (cited).
-- `crates/specify/ess-domain/src/expression.rs` (cited).
-- `crates/specify/ess-domain/src/spec.rs` (cited).
-- `crates/specify/ess-domain/src/system.rs` (cited).
-- `crates/specify/ess-domain/src/types.rs` (cited).
-- `crates/specify/ess-domain/src/view.rs` (cited).
-- `crates/specify/ess-domain/src/wire.rs` (cited).
-- `crates/specify/ess-domain/tests/expression.rs` (cited).
-- `crates/specify/ess-primitives/src/facts.rs` (cited).
-- `crates/verify/ess-conformance/src/authored.rs` (cited).
-- `crates/verify/ess-conformance/src/go/mod.rs` (cited).
-- `crates/verify/ess-conformance/src/go/runtime.go` (cited).
-- `crates/verify/ess-conformance/src/input.rs` (cited).
-- `crates/verify/ess-conformance/src/runner.rs` (cited).
-- `crates/verify/ess-conformance/src/scenario.rs` (cited).
-- `crates/verify/ess-conformance/src/synthesize.rs` (cited).
-- `crates/verify/ess-conformance/src/web.rs` (cited).
-- `crates/verify/ess-conformance/tests/adversary_expression_pass1.rs` (cited).
-- `docs/design/model-binary64.md` (cited).
-- `website/docs/guides/generate-artifacts.md` (cited).
-- `website/docs/reference/formats.md` (cited).
+Previously scoped paths that remained read-only or were replaced by concrete
+helper/test placement are retained here as corrections to the earlier inference:
+- `crates/generate/ess-openapi/src/accounting.rs` — no write in this unit commit.
+- `crates/generate/ess-openapi/src/lib.rs` — no write in this unit commit.
+- `crates/generate/schema-contract/src/realize/go.rs` — no write in this unit commit.
+- `crates/generate/schema-contract/src/realize/normalize/go_runtime.go.txt` — no write in this unit commit.
+- `crates/generate/schema-contract/src/realize/normalize/legacy_v1_v4` — no write in this unit commit.
+- `crates/generate/schema-contract/src/realize/normalize/source.rs` — no write in this unit commit.
+- `crates/generate/schema-contract/src/realize/rust.rs` — no write in this unit commit.
+- `crates/generate/schema-contract/src/realize/ts.rs` — no write in this unit commit.
+- `crates/generate/schema-contract/tests/normalization_binary64_model.rs` — no write in this unit commit.
+- `crates/specify/ess-compiler/src/expression.rs` — no write in this unit commit.
+- `crates/specify/ess-compiler/src/resolve.rs` — no write in this unit commit.
+- `crates/specify/ess-domain/src/command.rs` — no write in this unit commit.
+- `crates/specify/ess-domain/src/entity.rs` — no write in this unit commit.
+- `crates/specify/ess-domain/src/view.rs` — no write in this unit commit.
+- `crates/specify/ess-domain/src/wire.rs` — no write in this unit commit.
+- `crates/specify/ess-domain/tests/binary64.rs` — no write in this unit commit.
+- `crates/specify/ess-domain/tests/expression.rs` — no write in this unit commit.
+- `crates/specify/ess-primitives/src/facts.rs` — no write in this unit commit.
+- `crates/verify/ess-conformance/src/go/runtime.go` — no write in this unit commit.
+- `crates/verify/ess-conformance/tests/adversary_expression_pass1.rs` — no write in this unit commit.
+
+Confirmed implementation write paths (cited from the frozen manifest):
+- `CHANGELOG.md`.
+- `crates/edge/ess-cli/src/main.rs`.
+- `crates/edge/ess-cli/tests/binary64_publication.rs`.
+- `crates/edge/ess-cli/tests/go_conformance.rs`.
+- `crates/edge/ess-cli/tests/normalization.rs`.
+- `crates/generate/ess-gen/src/model_types.rs`.
+- `crates/generate/ess-gen/src/types.rs`.
+- `crates/generate/ess-synth/src/clap/mod.rs`.
+- `crates/generate/ess-synth/src/failure.rs`.
+- `crates/generate/ess-synth/src/go/http.rs`.
+- `crates/generate/ess-synth/src/go/layout.rs`.
+- `crates/generate/ess-synth/src/go/mod.rs`.
+- `crates/generate/ess-synth/src/lib.rs`.
+- `crates/generate/ess-synth/src/rust/feasibility.rs`.
+- `crates/generate/ess-synth/src/rust/layout.rs`.
+- `crates/generate/ess-synth/src/rust/mod.rs`.
+- `crates/generate/ess-synth/src/rust/wire.rs`.
+- `crates/generate/ess-synth/src/web/mod.rs`.
+- `crates/generate/ess-synth/tests/feasibility.rs`.
+- `crates/generate/schema-contract/src/realize.rs`.
+- `crates/generate/schema-contract/src/realize/normalize.rs`.
+- `crates/generate/schema-contract/src/realize/normalize/check.rs`.
+- `crates/generate/schema-contract/src/realize/normalize/eval.rs`.
+- `crates/generate/schema-contract/src/realize/normalize/execute.rs`.
+- `crates/generate/schema-contract/src/realize/normalize/go_condition.go.txt`.
+- `crates/generate/schema-contract/src/realize/normalize/go_numeric.go.txt`.
+- `crates/generate/schema-contract/src/realize/normalize/go_target.rs`.
+- `crates/generate/schema-contract/src/realize/normalize/legacy_v1_v4/eval.rs.txt`.
+- `crates/generate/schema-contract/src/realize/normalize/legacy_v1_v4/execute.rs.txt`.
+- `crates/generate/schema-contract/src/realize/normalize/legacy_v1_v4/go_condition.go.txt`.
+- `crates/generate/schema-contract/src/realize/normalize/legacy_v1_v4/go_numeric.go.txt`.
+- `crates/generate/schema-contract/src/realize/normalize/legacy_v1_v4/numeric.rs.txt`.
+- `crates/generate/schema-contract/src/realize/normalize/legacy_v4/go_runtime.go.txt`.
+- `crates/generate/schema-contract/src/realize/normalize/legacy_v4/recipe.rs.txt`.
+- `crates/generate/schema-contract/src/realize/normalize/legacy_v4/rust_runtime.rs.txt`.
+- `crates/generate/schema-contract/src/realize/normalize/numeric.rs`.
+- `crates/generate/schema-contract/src/realize/normalize/recipe.rs`.
+- `crates/generate/schema-contract/src/realize/normalize/rust_runtime.rs.txt`.
+- `crates/generate/schema-contract/src/realize/normalize/target.rs`.
+- `crates/generate/schema-contract/tests/fixtures/normalization_binary64.rs`.
+- `crates/generate/schema-contract/tests/fixtures/normalization_binary64_go_tests.go.txt`.
+- `crates/generate/schema-contract/tests/fixtures/normalization_binary64_rust_tests.rs.txt`.
+- `crates/generate/schema-contract/tests/fixtures/normalization_legacy_maps.json`.
+- `crates/generate/schema-contract/tests/fixtures/normalization_raw.rs`.
+- `crates/generate/schema-contract/tests/normalization_binary64.rs`.
+- `crates/generate/schema-contract/tests/normalization_binary64_targets.rs`.
+- `crates/generate/schema-contract/tests/normalization_go.rs`.
+- `crates/generate/schema-contract/tests/normalization_legacy_bytes.rs`.
+- `crates/specify/ess-compiler/src/binary64.rs`.
+- `crates/specify/ess-compiler/src/lib.rs`.
+- `crates/specify/ess-compiler/tests/expression_validation.rs`.
+- `crates/specify/ess-domain/src/expression.rs`.
+- `crates/specify/ess-domain/src/lib.rs`.
+- `crates/specify/ess-domain/src/primitive_admission.rs`.
+- `crates/specify/ess-domain/src/spec.rs`.
+- `crates/specify/ess-domain/src/system.rs`.
+- `crates/specify/ess-domain/src/types.rs`.
+- `crates/specify/ess-domain/tests/billing.rs`.
+- `crates/verify/ess-conformance/src/admission.rs`.
+- `crates/verify/ess-conformance/src/authored.rs`.
+- `crates/verify/ess-conformance/src/go/mod.rs`.
+- `crates/verify/ess-conformance/src/input.rs`.
+- `crates/verify/ess-conformance/src/lib.rs`.
+- `crates/verify/ess-conformance/src/runner.rs`.
+- `crates/verify/ess-conformance/src/scenario.rs`.
+- `crates/verify/ess-conformance/src/synthesize.rs`.
+- `crates/verify/ess-conformance/src/web.rs`.
+- `crates/verify/ess-conformance/src/witness.rs`.
+- `crates/verify/ess-conformance/tests/authored.rs`.
+- `crates/verify/ess-conformance/tests/elapsed.rs`.
+- `crates/verify/ess-conformance/tests/execution.rs`.
+- `crates/verify/ess-conformance/tests/faults.rs`.
+- `crates/verify/ess-conformance/tests/halt.rs`.
+- `crates/verify/ess-conformance/tests/suite.rs`.
+- `crates/verify/ess-conformance/tests/synthesis.rs`.
+- `crates/verify/ess-diff/tests/review_adversary_f01.rs`.
+- `docs/design/model-binary64.md`.
+- `docs/design/source-pinned-data-normalization.md`.
+- `examples/billing-realization/tests/conformance.rs`.
+- `website/docs/guides/generate-artifacts.md`.
+- `website/docs/guides/write-a-specification.md`.
+- `website/docs/reference/formats.md`.
 
 ## Dispatch
 

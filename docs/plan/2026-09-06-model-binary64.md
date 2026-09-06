@@ -43,10 +43,19 @@ The final release procedure remains separate. No consumer deployment is implied.
 
 ## Stage
 
-Scoped and bound; implementor dispatched in the managed unit. Source/tests are in progress.
-The page will record the handed-off commit, review stage, integrated gate and cleanup
-proof as they occur. Raw source publication is a dependency, not evidence that this
-new primitive already works.
+Implementation is frozen in local unit commit
+bf16e504ccad68b2ee67607ba39606aadf07f627, with82 changed paths. The complete
+content/mode manifest SHA-256 is
+edcef1f19ee47dfcad2b0f6b9b26ae19fcf6355ba8b28aa02604a24c9cc9f68e.
+Reported scoped qualification executed1,036 distinct tests, including70 numeric
+vectors per reference/CLI/native target and8 unchanged legacy file maps. A
+same-command full-base test count was not measured. Initial deciding cases were
+3 red; final deciding lane8 green. All unit processes are terminal.
+
+Adversary pass1 is dispatched against this exact commit, tests-only, with the
+unit's target and the assigned recovery scratch subdirectory. Root owns full
+integration gates and publication after the immutable review record. Current
+target3,110,035,456bytes and available22,639,206,400bytes remain above the reserve.
 
 ## Computed candidate sets, collisions and unassessed ids
 

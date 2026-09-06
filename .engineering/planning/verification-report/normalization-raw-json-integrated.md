@@ -6,7 +6,7 @@ status: draft
 title: Raw JSON normalization integrated verification
 relations:
 - verifies: story:raw-json-normalization-provenance
-revision: 3
+revision: 4
 ---
 ## Outcome
 
@@ -121,3 +121,25 @@ https://github.com/beyond10x/ess/actions/runs/34023996599
 A normal Atlas source-set reconciliation was requested after observing the green
 bundle. Its final publication/provenance will be recorded after completion; a
 successful dispatch alone is not delivery evidence. No version bump or tag yet.
+
+## Atlas delivery
+
+Atlas publication34024493096 completed successfully under the normal serialized
+reconciliation workflow. A direct live PROVENANCE.json observation on2026-09-06
+at09:33:19Z records ESS6c78676c35193423fe326b9dde21b8fc21681b8a in source set
+e68b6b02e92ce94126fc0ecee7540772472e25ad386183305b6f53565ddc94f2.
+The exact ESS source bundle is
+50f66e7d803b373175324954c96611d0bcb14bc77552bed68375a93728d0d70f,
+produced by34023996599, artifact9986455140. Website runtime is
+fc4571534765c098ed861bc326da4d3da0d1df63 and Atlas control is
+f3b9f99ba8d2b65b823a08fefabcb13e094c349d.
+
+The workflow built the selected immutable bundles, independently verified the
+artifact, and completed privileged root-first publication. This is direct live
+provenance evidence for the raw JSON source, not merely dispatch acceptance.
+It does not claim a new full Website99-test gate or an ESS version release.
+
+Publication: https://github.com/beyond10x/atlas/actions/runs/34024493096
+Live provenance: https://beyond10x.github.io/PROVENANCE.json
+The private observation receipt and full provenance are retained outside the
+public repository. No private source or adopter identity is projected here.
