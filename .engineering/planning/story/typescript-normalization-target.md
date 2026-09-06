@@ -13,6 +13,8 @@ scope:
   path: CHANGELOG.md
 - confidence: cited
   path: crates/edge/ess-cli/src/normalize.rs
+- confidence: cited
+  path: crates/edge/ess-cli/tests/normalization.rs
 - confidence: inferred
   path: crates/edge/ess-cli/tests/normalization_typescript.rs
 - confidence: cited
@@ -71,7 +73,7 @@ scope:
   path: website/docs/reference/cli.md
 - confidence: cited
   path: website/docs/reference/formats.md
-revision: 10
+revision: 13
 ---
 ## Outcome
 
@@ -338,3 +340,15 @@ No repository edits, builds, implementation or worktree lifecycle actions occurr
 The coordinator's gates and explicit implementor/worktree dispatch remain pending.
 This final source receipt needs only a delta recheck if that dispatch changes the
 integration source pin.
+
+## Measured equality compatibility boundary, 2026-09-06
+
+The implementor measured a frozen reference discrepancy before target acceptance. In format 5 or 6 an admitted Integer/Integer equal condition returns true for input {"a":1.0,"b":1.0}, even with no binary64_inputs; format 1 refuses integer_representation at /branches/eq/0/value/condition. The exact source bundle, recipes, commands and outputs are retained in ess-typescript-design/implementation/integer-equality-observation/observations.json. At b55efa4cd6c379217f60b98fb30f28f70e526ee6, crates/generate/schema-contract/src/realize/normalize/check.rs:988 admits checked Binary64 pairs or the existing comparable scalar types. execute.rs:28 enables the runtime flag recipe-wide, and eval.rs:367 takes floating equality whenever both values carry floating tokens.
+
+Coordinator decision: TypeScript preserves this actual reference behavior, with literal qualification and explicit documentation. It does not introduce a target-only generation refusal, alter reference/checker semantics, or change historical Rust/Go output. The design's checked-Binary64 statement describes static typed admission; it must not be presented as a guarantee that Integer inputs in these formats enforce integer-token eligibility during equality. This is a named compatibility limitation and a separate core-contract correction candidate, not a repaired Integer contract or broader typed Binary64 admission. All ordinary integer operations and mixed-token equality retain their measured existing rules. Independent read-only review of this decision is pending.
+
+## Observed scope correction during implementation
+
+The pre-existing CLI test at crates/edge/ess-cli/tests/normalization.rs:578 used TypeScript as the unknown-target example. Its unchanged assertion fails because this unit now admits that target. The recorded after-package run exited 101 with successful generation for that old negative case. The coordinator owns one exact test-only correction: replace the target spelling with unsupported javascript, retaining the original refusal, empty-stdout and untouched-destination assertions. New TypeScript CLI cases independently check successful generation and its supported/refused options. No existing assertion is dropped. Patch SHA256 9a98162c1696851d0b03935df7108f3db4b0026455541cda9c1f7ca1f17f5dab, before hash2c92c41dec2c197819cd7d3ff607a3acd76d534c0e27d215af9797e3ac974e5f.
+
+This cited additional scope makes 32 total paths: implementor25, coordinator6docs plus this existing CLI test. Preserve the original31-path plan as historical; this is the explicit learned correction and does not authorize any broader edit to old cases/templates. The final unit handoff enumerates the coordinator test separately from the implementor manifest.
