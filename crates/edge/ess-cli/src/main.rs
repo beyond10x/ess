@@ -4,6 +4,7 @@ mod coverage;
 mod load;
 mod model_types;
 mod normalize;
+mod oci_cache;
 mod schema;
 mod schema_bundle;
 mod site;
@@ -1504,32 +1505,8 @@ fn release(command: ReleaseCommand) -> Result<ExitCode> {
             Ok(ExitCode::SUCCESS)
         }
         ReleaseCommand::Fetch { from, cache, out } => {
-            let digest = pinned_oci_digest(&from)?;
-            let cache_path = cache
-                .join("sha256")
-                .join(digest.as_str().trim_start_matches("sha256:"))
-                .join("ess-release-bundle.json");
-            let bundle = if cache_path.is_file() {
-                verified_bundle(&cache_path, true).with_context(|| {
-                    format!(
-                        "cached OCI release bundle {} is invalid",
-                        cache_path.display()
-                    )
-                })?
-            } else {
-                let staging = TemporaryDirectory::create("ess-release-fetch")?;
-                let mut process = ProcessCommand::new("oras");
-                process
-                    .args(["pull", "--no-tty", "--output"])
-                    .arg(staging.path())
-                    .arg(&from);
-                run_external(&mut process, "ORAS pull")?;
-                let payload = only_regular_file(staging.path())?;
-                let bundle = verified_bundle(&payload, true)
-                    .with_context(|| format!("verifying OCI payload from {from}"))?;
-                write_canonical(Some(&cache_path), &bundle.to_canonical_json())?;
-                bundle
-            };
+            let bytes = oci_cache::payload(&from, &cache, oci_cache::Profile::Bundle)?;
+            let bundle = oci_cache::bundle(&bytes)?;
             if let Some(out) = out.as_deref() {
                 write_canonical(Some(out), &bundle.to_canonical_json())?;
             }
@@ -3185,30 +3162,6 @@ fn verified_bundle(path: &Path, require_canonical: bool) -> Result<ess_deploymen
     Ok(verified)
 }
 
-fn pinned_oci_digest(reference: &str) -> Result<ess_deployment::Digest> {
-    let (repository, digest) = reference
-        .rsplit_once('@')
-        .context("OCI release source must be pinned as <repository>@sha256:<digest>")?;
-    if repository.is_empty() {
-        bail!("OCI release source repository must not be empty");
-    }
-    ess_deployment::Digest::new(digest)
-        .with_context(|| format!("OCI release source has invalid digest {digest:?}"))
-}
-
-fn only_regular_file(directory: &Path) -> Result<PathBuf> {
-    let entries = fs::read_dir(directory)
-        .with_context(|| format!("reading ORAS output directory {}", directory.display()))?
-        .collect::<std::io::Result<Vec<_>>>()?;
-    if entries.len() != 1 || !entries[0].file_type()?.is_file() {
-        bail!(
-            "OCI release bundle must contain exactly one regular payload file; found {} entry(s)",
-            entries.len()
-        );
-    }
-    Ok(entries[0].path())
-}
-
 fn reconcile_release(
     cluster: &str,
     release: &ess_deployment::DeploymentRelease,
@@ -3218,8 +3171,15 @@ fn reconcile_release(
     if release.chart.kind != ess_deployment::ArtifactKind::HelmChart {
         bail!("{} does not select a Helm chart artifact", release.service);
     }
-    let chart = fetch_helm_chart(&release.chart, cache)?;
+    let reference = format!(
+        "{}@{}",
+        release.chart.reference.trim_start_matches("oci://"),
+        release.chart.digest
+    );
+    let chart_bytes = oci_cache::payload(&reference, cache, oci_cache::Profile::Helm)?;
     let staging = TemporaryDirectory::create("ess-helm-values")?;
+    let chart = staging.path().join("chart.tgz");
+    fs::write(&chart, chart_bytes).context("writing verified private Helm chart snapshot")?;
     let values_path = staging.path().join("values.yaml");
     let values = serde_yaml::to_string(&serde_json::json!({
         "serviceAccount": {"name": &release.service_account},
@@ -3245,79 +3205,6 @@ fn reconcile_release(
         .arg(&values_path)
         .args(["--atomic", "--wait", "--timeout", timeout]);
     run_external(&mut process, "Helm reconciliation")
-}
-
-fn fetch_helm_chart(artifact: &ess_deployment::Artifact, cache: &Path) -> Result<PathBuf> {
-    let digest_hex = artifact.digest.as_str().trim_start_matches("sha256:");
-    let cache_directory = cache.join("helm").join("sha256").join(digest_hex);
-    let archive = cache_directory.join("chart.tgz");
-    let checksum = cache_directory.join("payload.digest");
-    if archive.is_file() && checksum.is_file() {
-        let expected = fs::read_to_string(&checksum)
-            .with_context(|| format!("reading {}", checksum.display()))?;
-        let actual = ess_deployment::Digest::of_bytes(
-            &fs::read(&archive).with_context(|| format!("reading {}", archive.display()))?,
-        );
-        if expected.trim() != actual.as_str() {
-            bail!(
-                "cached Helm payload {} failed its local checksum",
-                archive.display()
-            );
-        }
-        return Ok(archive);
-    }
-
-    let staging = TemporaryDirectory::create("ess-helm-fetch")?;
-    let reference = format!(
-        "{}@{}",
-        artifact.reference.trim_start_matches("oci://"),
-        artifact.digest
-    );
-    let mut process = ProcessCommand::new("oras");
-    process
-        .args(["pull", "--no-tty", "--output"])
-        .arg(staging.path())
-        .arg(&reference);
-    run_external(&mut process, "ORAS chart pull")?;
-    let source = only_chart_archive(staging.path())?;
-    let bytes = fs::read(&source).with_context(|| format!("reading {}", source.display()))?;
-    let payload_digest = ess_deployment::Digest::of_bytes(&bytes);
-    fs::create_dir_all(&cache_directory)
-        .with_context(|| format!("creating {}", cache_directory.display()))?;
-    fs::write(&archive, bytes).with_context(|| format!("writing {}", archive.display()))?;
-    fs::write(&checksum, format!("{payload_digest}\n"))
-        .with_context(|| format!("writing {}", checksum.display()))?;
-    Ok(archive)
-}
-
-fn only_chart_archive(directory: &Path) -> Result<PathBuf> {
-    let mut pending = vec![directory.to_path_buf()];
-    let mut archives = Vec::new();
-    while let Some(next) = pending.pop() {
-        for entry in fs::read_dir(&next)
-            .with_context(|| format!("reading ORAS chart output {}", next.display()))?
-        {
-            let entry = entry?;
-            let kind = entry.file_type()?;
-            if kind.is_dir() {
-                pending.push(entry.path());
-            } else if kind.is_file()
-                && entry
-                    .path()
-                    .extension()
-                    .is_some_and(|extension| extension == "tgz")
-            {
-                archives.push(entry.path());
-            }
-        }
-    }
-    if archives.len() != 1 {
-        bail!(
-            "OCI Helm artifact must contain exactly one .tgz archive; found {}",
-            archives.len()
-        );
-    }
-    Ok(archives.remove(0))
 }
 
 struct TemporaryDirectory(PathBuf);
