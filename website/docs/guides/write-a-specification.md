@@ -41,6 +41,34 @@ offline gate is `task check`, which exercises the schema contract alongside the 
 
 ## Validate early, read the refusals
 
+The unreleased `ess/2` format adds `Binary64` for finite IEEE-754 values. Use it
+when a source contract requires binary floating-point rounding and signed zero:
+
+```yaml
+format: ess/2
+system: sample
+version: v1
+domains: [sample.settings]
+domain: sample.settings
+types:
+  - name: sample.settings.Ratio
+    kind: newtype
+    of: Binary64
+```
+
+`Integer` retains exact signed integer identity; `Decimal` retains its patterned
+string representation. Neither implicitly assigns to `Binary64`. Map keys cannot
+be Binary64. Format 1 refuses the new primitive, including fields in headerless
+fragments. Authored numeric predicates may compare Binary64 to numeric literals,
+using the existing Number predicate rules; that comparison does not construct a
+floating value.
+
+The qualified executable boundary is [format-5 normalization](generate-artifacts.md).
+Standalone structural Rust/Go codecs and whole-system/conformance targets currently
+refuse Binary64; TypeScript structural output reports the finite codec obligation.
+Adding a Binary64 type to a model selected in full therefore requires checking
+every intended target's support before adopting it.
+
 ```shell-session
 $ ess specify validate --path examples/billing
 billing v3 — 5 file(s), valid

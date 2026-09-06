@@ -296,6 +296,7 @@ impl crate::rust::wire::Surface for Bridge<'_> {
 /// Returns [`crate::TargetFailure`] when the Rust prerequisite or Web codec allocation cannot be
 /// emitted. A partial browser target report still accompanies a successful [`Emission`].
 pub fn workspace(ir: &EssIr, plan: &SynthesisPlan) -> Result<Emission, crate::TargetFailure> {
+    crate::failure::binary64(ir, plan, crate::Target::Web)?;
     let rust = crate::rust::feasibility::checked(ir, plan, crate::Target::Web)?;
     let layout = Layout::with_rust(ir, rust);
     let acceptors = refusal::acceptors(ir);

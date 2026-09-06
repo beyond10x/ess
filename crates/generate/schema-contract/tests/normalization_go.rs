@@ -303,6 +303,19 @@ fn every_primitive_map_key_pattern_is_qualified_at_its_nested_source_pointer() {
     use schema_contract::realize::normalize::Root;
 
     for key in Primitive::ALL {
+        if *key == Primitive::Binary64 {
+            assert!(ess_domain::TypeRef::parse("Map<Binary64, Bytes>").is_err());
+            assert!(!ess_domain::TypeRegistry::new()
+                .resolve(
+                    &ess_domain::TypeRef::Map(
+                        *key,
+                        Box::new(ess_domain::TypeRef::Primitive(Primitive::Bytes))
+                    ),
+                    "map"
+                )
+                .is_empty());
+            continue;
+        }
         let source = format!(
             "format: ess/1\nsystem: sample\nversion: v1\ndomains: [sample.maps]\ndomain: sample.maps\ntypes:\n  - name: sample.maps.Encoded\n    kind: struct\n    fields:\n      - name: values\n        wire: encoded/~\n        type: List<Optional<Map<{key}, Bytes>>>\n"
         );
@@ -312,6 +325,7 @@ fn every_primitive_map_key_pattern_is_qualified_at_its_nested_source_pointer() {
             .pointer(map_pointer)
             .unwrap();
         let expected_key_keywords: &[&str] = match key {
+            Primitive::Binary64 => unreachable!("map-key refusal checked above"),
             Primitive::String => &[],
             Primitive::Boolean => &["enum", "type"],
             Primitive::Integer => &["pattern", "type"],
@@ -363,6 +377,7 @@ fn every_primitive_map_key_pattern_is_qualified_at_its_nested_source_pointer() {
             .unwrap();
         let result = plan.go("adapter", "example.invalid/adapter");
         match key {
+            Primitive::Binary64 => unreachable!("map-key refusal checked above"),
             Primitive::Integer | Primitive::Decimal | Primitive::Uuid => {
                 let refused = result.expect_err("unqualified key pattern must refuse");
                 assert_eq!(refused.0.len(), 1, "{key}");

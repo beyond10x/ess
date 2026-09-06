@@ -2238,7 +2238,7 @@ fn canonical_expression_compatibility_fixtures() {
     ] {
         let ir = example(system);
         let synthesis = synthesize(&ir);
-        let artifacts = ess_conformance::web::emit(&ir, &synthesis.suite);
+        let artifacts = ess_conformance::web::emit(&ir, &synthesis.suite).unwrap();
         let report = ess_conformance::StandaloneConformanceReport::from_json(
             &serde_json::json!({
                 "format": "ess-conformance-report/1",
@@ -2258,7 +2258,7 @@ fn canonical_expression_compatibility_fixtures() {
                 "digests.json",
                 serde_json::to_string_pretty(&ess_gen::Provenance::of(&ir)).unwrap(),
             ),
-            ("suite.json", synthesis.suite.to_canonical_json()),
+            ("suite.json", synthesis.suite.to_canonical_json().unwrap()),
             (
                 "artifacts.json",
                 serde_json::to_string_pretty(&artifacts).unwrap(),
@@ -2268,7 +2268,10 @@ fn canonical_expression_compatibility_fixtures() {
         assert_eq!(files["ir.json"], example(system).to_canonical_json());
         assert_eq!(
             files["suite.json"],
-            synthesize(&example(system)).suite.to_canonical_json()
+            synthesize(&example(system))
+                .suite
+                .to_canonical_json()
+                .unwrap()
         );
         if let Some(directory) = std::env::var_os("ESS_EXPRESSION_CAPTURE") {
             let directory = PathBuf::from(directory);
@@ -2305,8 +2308,8 @@ fn synthesising_the_same_specification_twice_produces_byte_identical_output() {
         let second = synthesize(&example(system));
 
         assert_eq!(
-            first.suite.to_canonical_json().as_bytes(),
-            second.suite.to_canonical_json().as_bytes(),
+            first.suite.to_canonical_json().unwrap().as_bytes(),
+            second.suite.to_canonical_json().unwrap().as_bytes(),
             "`{system}` must produce the same suite, byte for byte"
         );
         let rendered = |synthesis: &Synthesis| {
@@ -2322,7 +2325,7 @@ fn synthesising_the_same_specification_twice_produces_byte_identical_output() {
             "and the same refusals, in the same order"
         );
         assert!(
-            first.suite.to_canonical_json().ends_with('\n'),
+            first.suite.to_canonical_json().unwrap().ends_with('\n'),
             "a file without a trailing newline shows up modified"
         );
     }
@@ -2405,7 +2408,7 @@ fn a_synthesised_suite_survives_being_written_and_read_back() {
     // §49's step-1 acceptance, now against a suite nobody wrote by hand: every reference in it is a
     // name, so a suite generated here resolves in a process that never saw the `EssIr`.
     let synthesis = synthesize(&example("billing"));
-    let written = synthesis.suite.to_canonical_json();
+    let written = synthesis.suite.to_canonical_json().unwrap();
 
     let read =
         ess_conformance::ConformanceSuite::from_json(&written).expect("a written suite parses");
@@ -3209,7 +3212,7 @@ fn a_whole_system_suite_does_not_mention_a_component() {
     assert_eq!(whole.suite.provenance.component, None);
     assert!(whole.outside.is_empty());
     let document: serde_json::Value =
-        serde_json::from_str(&whole.suite.to_canonical_json()).expect("the suite is JSON");
+        serde_json::from_str(&whole.suite.to_canonical_json().unwrap()).expect("the suite is JSON");
     assert!(
         document["provenance"].get("component").is_none(),
         "an unscoped suite must digest exactly as it did before the field existed"

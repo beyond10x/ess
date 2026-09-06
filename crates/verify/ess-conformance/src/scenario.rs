@@ -179,19 +179,18 @@ impl ConformanceSuite {
     /// the indentation is `serde_json`'s two spaces, and the last byte is a newline, because a file
     /// without one shows up as modified in the next diff.
     ///
-    /// # Panics
-    ///
-    /// It does not. `serde_json` has exactly one error of its own — a map key that is not a string —
-    /// and the only maps here are keyed by [`ScenarioId`], which serialises as one, and by `String`.
-    /// The `unwrap_or_else` names the impossible case rather than hiding it. A [`Node`] holding a
+    /// Unsupported Binary64 shape records return a located admission error before serialization.
+    /// After admission the maps are keyed by [`ScenarioId`], which serialises as a string, or
+    /// `String`; the remaining serializer failure is an internal invariant. A [`Node`] holding a
     /// non-finite float is written as `null`, which is the same known defect
     /// [`EssIr::to_canonical_json`] records; it is a defect in what the model accepts on input, not
     /// in this function.
-    pub fn to_canonical_json(&self) -> String {
+    pub fn to_canonical_json(&self) -> Result<String, crate::admission::AdmissionError> {
+        crate::admission::suite(self)?;
         let mut json = serde_json::to_string_pretty(self)
             .unwrap_or_else(|error| panic!("a conformance suite serialises: {error}"));
         json.push('\n');
-        json
+        Ok(json)
     }
 
     /// Reads a suite back from canonical JSON.
@@ -1508,6 +1507,10 @@ pub enum Holds {
     /// A primitive, after every newtype on the way down has been walked through.
     Primitive {
         /// Which one.
+        #[serde(
+            serialize_with = "crate::admission::serialize_primitive",
+            deserialize_with = "crate::admission::deserialize_primitive"
+        )]
         kind: Primitive,
     },
     /// One of a fixed set of names, as text.

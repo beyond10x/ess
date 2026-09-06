@@ -49,50 +49,9 @@ fn rust_package(package: &str) -> Result<(), Refused> {
 
 pub(super) fn rust(plan: &Plan, package: &str) -> Result<Realization, Refused> {
     rust_package(package)?;
-    let capture = plan.recipe.format == super::FORMAT_V4;
-    let mut files = BTreeMap::from([
-        ("source.recipe.json".to_owned(), plan.to_json()),
-        (
-            "src/lib.rs".to_owned(),
-            if capture {
-                include_str!("rust_runtime.rs.txt")
-            } else {
-                include_str!("legacy_v1_v3/rust_runtime.rs.txt")
-            }
-            .to_owned(),
-        ),
-        (
-            "src/recipe.rs".to_owned(),
-            if capture {
-                include_str!("recipe.rs")
-            } else {
-                include_str!("legacy_v1_v3/recipe.rs.txt")
-            }
-            .to_owned(),
-        ),
-        ("src/eval.rs".to_owned(), include_str!("eval.rs").to_owned()),
-        (
-            "src/numeric.rs".to_owned(),
-            include_str!("numeric.rs").to_owned(),
-        ),
-        (
-            "src/input.rs".to_owned(),
-            if capture {
-                include_str!("input.rs")
-            } else {
-                include_str!("legacy_v1_v3/input.rs.txt")
-            }
-            .to_owned(),
-        ),
-        (
-            "src/execute.rs".to_owned(),
-            include_str!("execute.rs").to_owned(),
-        ),
-        (
-            "src/diagnostic.rs".to_owned(),
-            include_str!("../diagnostic.rs").to_owned(),
-        ),
-    ]);
+    let floating = plan.recipe.format == super::FORMAT_V5;
+    let capture = floating || plan.recipe.format == super::FORMAT_V4;
+    let mut files = runtime_sources(plan, floating, capture);
     files.insert("Cargo.toml".to_owned(), format!(
         "[package]\nname = {package:?}\nversion = \"0.0.0\"\nedition = \"2021\"\npublish = false\n\n[dependencies]\nserde = {{ version = \"=1.0.229\", features = [\"derive\"] }}\nserde_json = {{ version = \"=1.0.151\", features = [\"raw_value\"] }}\njsonschema = {{ version = \"=0.52.1\", default-features = false }}\n\n[workspace]\n"
     ));
@@ -195,7 +154,7 @@ pub(super) fn finish(
     identities: Vec<SchemaIdentity>,
 ) -> Realization {
     let report = Report {
-        format: if plan.recipe.format == super::FORMAT_V4 {
+        format: if [super::FORMAT_V4, super::FORMAT_V5].contains(&plan.recipe.format.as_str()) {
             "ess-normalization-target/3"
         } else if plan.recipe.format == super::FORMAT_V3 {
             "ess-normalization-target/2"
@@ -219,4 +178,72 @@ pub(super) fn finish(
         ),
     );
     Realization { files, report }
+}
+
+fn runtime_sources(plan: &Plan, floating: bool, capture: bool) -> BTreeMap<String, String> {
+    BTreeMap::from([
+        ("source.recipe.json".to_owned(), plan.to_json()),
+        (
+            "src/lib.rs".to_owned(),
+            if floating {
+                include_str!("rust_runtime.rs.txt")
+            } else if capture {
+                include_str!("legacy_v4/rust_runtime.rs.txt")
+            } else {
+                include_str!("legacy_v1_v3/rust_runtime.rs.txt")
+            }
+            .to_owned(),
+        ),
+        (
+            "src/recipe.rs".to_owned(),
+            if floating {
+                include_str!("recipe.rs")
+            } else if capture {
+                include_str!("legacy_v4/recipe.rs.txt")
+            } else {
+                include_str!("legacy_v1_v3/recipe.rs.txt")
+            }
+            .to_owned(),
+        ),
+        (
+            "src/eval.rs".to_owned(),
+            if floating {
+                include_str!("eval.rs")
+            } else {
+                include_str!("legacy_v1_v4/eval.rs.txt")
+            }
+            .to_owned(),
+        ),
+        (
+            "src/numeric.rs".to_owned(),
+            if floating {
+                include_str!("numeric.rs")
+            } else {
+                include_str!("legacy_v1_v4/numeric.rs.txt")
+            }
+            .to_owned(),
+        ),
+        (
+            "src/input.rs".to_owned(),
+            if capture {
+                include_str!("input.rs")
+            } else {
+                include_str!("legacy_v1_v3/input.rs.txt")
+            }
+            .to_owned(),
+        ),
+        (
+            "src/execute.rs".to_owned(),
+            if floating {
+                include_str!("execute.rs")
+            } else {
+                include_str!("legacy_v1_v4/execute.rs.txt")
+            }
+            .to_owned(),
+        ),
+        (
+            "src/diagnostic.rs".to_owned(),
+            include_str!("../diagnostic.rs").to_owned(),
+        ),
+    ])
 }

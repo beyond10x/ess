@@ -123,6 +123,7 @@
 //! * **A constraint solver, still.** §11 names one as a later extension, and nothing in the fault
 //!   matrix needed it.
 
+pub mod admission;
 pub mod authored;
 pub mod decision;
 pub mod evidence;

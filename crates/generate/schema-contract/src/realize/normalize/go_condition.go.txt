@@ -39,6 +39,9 @@ func equalValues(left, right expression) condition {
 		if isMissing(a) || isMissing(b) {
 			return false, nil
 		}
+		if left, ok := a.(float64); ok {
+			if right, ok := b.(float64); ok { return left == right, nil }
+		}
 		for _, value := range []any{a, b} {
 			switch value.(type) {
 			case int64, uint64, float64:

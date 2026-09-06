@@ -108,7 +108,7 @@ fn suite(system: System) -> ConformanceSuite {
 /// The report a run of `system`'s suite against `target` produces.
 fn run<T: ConformanceTarget>(system: System, target: &T) -> ConformanceReport {
     let suite = suite(system);
-    Runner::for_suite(&suite).run(&suite, target)
+    Runner::for_suite(&suite).run(&suite, target).unwrap()
 }
 
 /// The report a run against the implementation carrying `fault` produces.

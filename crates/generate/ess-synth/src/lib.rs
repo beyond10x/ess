@@ -282,6 +282,7 @@ pub fn synthesize(ir: &EssIr) -> Result<Synthesis, TargetFailure> {
 /// would make `PLAN.md` a lie about the tree beside it.
 pub fn synthesize_for(ir: &EssIr, target: Target) -> Result<Synthesis, TargetFailure> {
     let plan = SynthesisPlan::of(ir);
+    failure::binary64(ir, &plan, target)?;
     let mut artifacts = BTreeMap::new();
     insert(
         &mut artifacts,
@@ -299,7 +300,7 @@ pub fn synthesize_for(ir: &EssIr, target: Target) -> Result<Synthesis, TargetFai
             None
         }
         Target::Go => {
-            let emission = go::workspace(ir, &plan);
+            let emission = go::workspace(ir, &plan)?;
             for artifact in emission.artifacts {
                 insert(&mut artifacts, artifact);
             }
@@ -313,7 +314,7 @@ pub fn synthesize_for(ir: &EssIr, target: Target) -> Result<Synthesis, TargetFai
             Some(emission.report)
         }
         Target::Clap => {
-            let emission = clap::workspace(ir, &plan);
+            let emission = clap::workspace(ir, &plan)?;
             for artifact in emission.artifacts {
                 insert(&mut artifacts, artifact);
             }

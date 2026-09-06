@@ -427,6 +427,9 @@ impl<'ir> Builder<'ir> {
             ResolvedTypeRef::List { .. } => Ok(Node::Seq(Vec::new())),
             ResolvedTypeRef::Map { .. } => Ok(Node::Map(BTreeMap::new())),
             ResolvedTypeRef::Primitive { name } => {
+                if *name == Primitive::Binary64 {
+                    return Err(WitnessGap { path: path.to_string(), type_ref: name.to_string(), reason: "requires a finite Binary64 conformance codec that this suite format does not admit" });
+                }
                 let base = primitive_value(*name, path, self.distinction);
                 if record {
                     self.leaves
@@ -494,6 +497,9 @@ impl Leaf {
     /// What a candidate may vary a primitive to.
     fn of_primitive(primitive: Primitive) -> Self {
         match primitive {
+            Primitive::Binary64 => {
+                unreachable!("Binary64 witnesses are refused before construction")
+            }
             Primitive::Boolean => Self::Bool,
             Primitive::Integer => Self::Number { integral: true },
             Primitive::Decimal => Self::Number { integral: false },
@@ -521,6 +527,7 @@ fn primitive_value(primitive: Primitive, path: &FactPath, distinction: Distincti
     // silently rounded would be two instances nothing could tell apart.
     let ordinal = u32::try_from(nth).unwrap_or(u32::MAX);
     match primitive {
+        Primitive::Binary64 => unreachable!("Binary64 witnesses are refused before construction"),
         Primitive::Boolean => Node::Bool(BASE_BOOL != (nth % 2 == 1)),
         Primitive::Integer | Primitive::Decimal => {
             Node::Number(number(BASE_NUMBER + f64::from(ordinal)))

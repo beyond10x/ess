@@ -1,0 +1,74 @@
+package normalization_adapter
+
+import (
+    "bytes"
+    "encoding/json"
+    "fmt"
+    "math"
+    "os"
+    "strconv"
+    "testing"
+)
+
+type corpusCase struct {
+    Branch string `json:"branch"`
+    Input string `json:"input"`
+    Bits string `json:"bits"`
+    ArrayBits []*string `json:"array_bits"`
+    Value json.RawMessage `json:"value"`
+    Error string `json:"error"`
+}
+
+func TestCorpus(t *testing.T) {
+    normalizer, err := New()
+    if err != nil { t.Fatal(err) }
+    data, err := os.ReadFile("cases.json")
+    if err != nil { t.Fatal(err) }
+    var cases []corpusCase
+    if err := json.Unmarshal(data, &cases); err != nil { t.Fatal(err) }
+    for index, entry := range cases {
+        t.Run(fmt.Sprintf("%d", index), func(t *testing.T) {
+            output, err := normalizer.Normalize(entry.Branch, []byte(entry.Input))
+            if entry.Error != "" {
+                refusal, ok := err.(Refused)
+                if !ok || len(refusal) == 0 || refusal[0].Rule != entry.Error { t.Fatalf("%s: %v", entry.Input, err) }
+                return
+            }
+            if err != nil { t.Fatalf("%s: %v", entry.Input, err) }
+            if entry.Bits != "" {
+                expected, err := strconv.ParseUint(entry.Bits, 16, 64)
+                if err != nil { t.Fatal(err) }
+                value, err := strconv.ParseFloat(string(output), 64)
+                if err != nil || math.Float64bits(value) != expected { t.Fatalf("%s: %s bits %x want %x", entry.Input, output, math.Float64bits(value), expected) }
+                if !bytes.ContainsAny(output, ".eE") { t.Fatalf("floating lexical identity: %s", output) }
+                if expected == 1<<63 && string(output) != "-0.0" { t.Fatalf("negative zero: %s", output) }
+                roundtrip, err := normalizer.Normalize("scalar", output)
+                if err != nil { t.Fatal(err) }
+                value, err = strconv.ParseFloat(string(roundtrip), 64)
+                if err != nil || math.Float64bits(value) != expected { t.Fatal("round-trip changed bits") }
+            } else if entry.ArrayBits != nil {
+                var values []json.RawMessage
+                if err := json.Unmarshal(output, &values); err != nil { t.Fatal(err) }
+                if len(values) != len(entry.ArrayBits) { t.Fatal("array length") }
+                for index, bits := range entry.ArrayBits {
+                    if bits == nil { if string(values[index]) != "null" { t.Fatal("nullable item") }; continue }
+                    expected, _ := strconv.ParseUint(*bits, 16, 64)
+                    value, err := strconv.ParseFloat(string(values[index]), 64)
+                    if err != nil || math.Float64bits(value) != expected { t.Fatal("array item bits") }
+                }
+            } else {
+                var actual, expected bytes.Buffer
+                if err := json.Compact(&actual, output); err != nil { t.Fatal(err) }
+                if err := json.Compact(&expected, entry.Value); err != nil { t.Fatal(err) }
+                if actual.String() != expected.String() { t.Fatalf("%s: %s want %s", entry.Input, output, entry.Value) }
+            }
+        })
+    }
+}
+
+func TestRetainedDocumentBoundary(t *testing.T) {
+    normalizer, err := New()
+    if err != nil { t.Fatal(err) }
+    value, err := normalizer.NormalizeBase64JSON("scalar", "LTA=")
+    if err != nil || string(value) != "-0.0" { t.Fatalf("%s: %v", value, err) }
+}

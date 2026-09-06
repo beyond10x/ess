@@ -2424,6 +2424,7 @@ fn conform(command: ConformCommand) -> Result<ExitCode> {
                 let Ok((ir, _)) = resolved(&path, format)? else {
                     return Ok(ExitCode::from(1));
                 };
+                ess_conformance::admission::model(&ir)?;
                 let mut suite = ess_conformance::synthesize(&ir).suite;
                 let authoring = ess_conformance::authored::compile(
                     &ir,
@@ -2447,7 +2448,7 @@ fn conform(command: ConformCommand) -> Result<ExitCode> {
                     .run(&suite, &ess_conformance::reference::Billing::new()),
                 ReferenceTarget::OracleFixture => ess_conformance::Runner::for_suite(&suite)
                     .run(&suite, &ess_conformance::reference::Oracle::new()),
-            };
+            }?;
             if let Some(path) = report_out {
                 fs::write(&path, report.standalone().to_canonical_json())
                     .with_context(|| format!("writing {}", path.display()))?;
@@ -2477,6 +2478,7 @@ fn synthesize_suite(
     let Ok((ir, _)) = resolved(&input.path, input.format)? else {
         return Ok(ExitCode::from(1));
     };
+    ess_conformance::admission::model(&ir)?;
     let mut synthesis = match component {
         None => ess_conformance::synthesize(&ir),
         Some(name) => match ess_conformance::synthesize::synthesize_for(&ir, name) {
@@ -2504,7 +2506,7 @@ fn synthesize_suite(
         }
         return Ok(ExitCode::from(1));
     }
-    let json = synthesis.suite.to_canonical_json();
+    let json = synthesis.suite.to_canonical_json()?;
 
     let written = match (target, &out) {
         (SuiteTarget::Ir, Some(out)) => {
@@ -2512,7 +2514,7 @@ fn synthesize_suite(
             Some(format!("written to {}", out.display()))
         }
         (SuiteTarget::Go, Some(out)) => {
-            let files = ess_conformance::go::emit(&synthesis.suite);
+            let files = ess_conformance::go::emit(&synthesis.suite)?;
             write_generated_files(
                 out,
                 files
@@ -2583,6 +2585,7 @@ fn conform_web(input: &SpecPath, scenarios: Option<&Path>, out: Option<&Path>) -
     let Ok((ir, _)) = resolved(&input.path, input.format)? else {
         return Ok(ExitCode::from(1));
     };
+    ess_conformance::admission::model(&ir)?;
     let sources = authored_sources(scenarios)?;
     let authoring = ess_conformance::authored::compile(&ir, &sources);
     let complete = authoring.is_complete();
@@ -2600,7 +2603,7 @@ fn conform_web(input: &SpecPath, scenarios: Option<&Path>, out: Option<&Path>) -
         println!("{refusal}");
     }
 
-    let artifacts = ess_conformance::web::emit(&ir, &suite);
+    let artifacts = ess_conformance::web::emit(&ir, &suite)?;
     write_artifacts(out, &artifacts)?;
     println!(
         "{} scenario(s), {} artifact(s){}",
@@ -2626,6 +2629,7 @@ fn author_suite(
     let Ok((ir, _)) = resolved(&input.path, input.format)? else {
         return Ok(ExitCode::from(1));
     };
+    ess_conformance::admission::model(&ir)?;
     let sources = authored_sources(scenarios)?;
     let authoring = ess_conformance::authored::compile(&ir, &sources);
     let mut suite =
@@ -2636,7 +2640,7 @@ fn author_suite(
             bail!("`{id}` is already in the suite");
         }
     }
-    let json = suite.to_canonical_json();
+    let json = suite.to_canonical_json()?;
     let written = match out {
         Some(out) => {
             fs::write(out, &json).with_context(|| format!("writing {}", out.display()))?;

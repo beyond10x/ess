@@ -99,6 +99,7 @@ impl Emit<'_> {
 /// If what was emitted is not exactly what the plan marks generated — a defect in this crate, and
 /// the one lie the plan document must never be allowed to tell.
 pub fn workspace(ir: &EssIr, plan: &SynthesisPlan) -> Result<Vec<Artifact>, crate::TargetFailure> {
+    crate::failure::binary64(ir, plan, crate::Target::Rust)?;
     let layout = feasibility::checked(ir, plan, crate::Target::Rust)?;
     let provenance = &plan.provenance;
 

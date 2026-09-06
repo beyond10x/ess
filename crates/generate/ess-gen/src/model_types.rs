@@ -2,7 +2,7 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
-use ess_compiler::ir::ResolvedBody;
+use ess_compiler::ir::{ResolvedBody, ResolvedTypeRef};
 use ess_compiler::refs::DeclaredTypeRef;
 use ess_compiler::EssIr;
 use serde_json::Value;
@@ -27,6 +27,7 @@ pub struct ModelTypes {
     roots: BTreeSet<String>,
     definitions: BTreeMap<String, Value>,
     newtypes: BTreeSet<String>,
+    binary64: BTreeSet<String>,
     provenance: Provenance,
 }
 
@@ -89,7 +90,12 @@ impl ModelTypes {
                     .map(|name| DeclaredTypeRef::new(name.clone()).into()),
             )
             .provenance;
+        let mut binary64 = BTreeSet::new();
+        for item in selected.values() {
+            body_numeric_locations(item, &mut binary64);
+        }
         Ok(Self {
+            binary64,
             roots: roots.clone(),
             definitions: selected
                 .values()
@@ -125,6 +131,12 @@ impl ModelTypes {
         &self.newtypes
     }
 
+    /// Exact schema-node locations whose finite Binary64 identity was minted from checked types.
+    /// These are private projection metadata, never recovered from serialized annotations.
+    pub fn binary64_locations(&self) -> &BTreeSet<String> {
+        &self.binary64
+    }
+
     /// Existing model and contract provenance, minted from the resolved input.
     pub fn provenance(&self) -> &Provenance {
         &self.provenance
@@ -141,5 +153,52 @@ impl ModelTypes {
             "{}\n",
             serde_json::to_string_pretty(&document).expect("typed selection serializes")
         )
+    }
+}
+
+fn pointer(at: &str, key: &str) -> String {
+    format!("{at}/{}", key.replace('~', "~0").replace('/', "~1"))
+}
+
+fn numeric_locations(reference: &ResolvedTypeRef, at: &str, found: &mut BTreeSet<String>) {
+    match reference {
+        ResolvedTypeRef::Primitive {
+            name: ess_domain::Primitive::Binary64,
+        } => {
+            found.insert(at.to_owned());
+        }
+        ResolvedTypeRef::Optional { of } => numeric_locations(of, &format!("{at}/anyOf/0"), found),
+        ResolvedTypeRef::List { of } => numeric_locations(of, &format!("{at}/items"), found),
+        ResolvedTypeRef::Map { value, .. } => {
+            numeric_locations(value, &format!("{at}/additionalProperties"), found);
+        }
+        ResolvedTypeRef::Declared { .. } | ResolvedTypeRef::Primitive { .. } => {}
+    }
+}
+
+fn body_numeric_locations(item: &ess_compiler::ir::ResolvedType, found: &mut BTreeSet<String>) {
+    let at = pointer("/$defs", &item.name.to_string());
+    match &item.body {
+        ResolvedBody::Newtype { of, .. } => numeric_locations(of, &at, found),
+        ResolvedBody::Struct { fields, .. } => {
+            for field in fields {
+                numeric_locations(
+                    field.type_ref.required(),
+                    &pointer(&format!("{at}/properties"), types::wire_name(field)),
+                    found,
+                );
+            }
+        }
+        ResolvedBody::Union { tag, variants } => {
+            let content = types::content_key(tag);
+            for (index, (_, payload)) in variants.iter().enumerate() {
+                numeric_locations(
+                    payload.required(),
+                    &pointer(&format!("{at}/oneOf/{index}/properties"), content),
+                    found,
+                );
+            }
+        }
+        ResolvedBody::Enum { .. } => {}
     }
 }

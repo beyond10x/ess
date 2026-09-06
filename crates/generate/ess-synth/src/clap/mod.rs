@@ -59,7 +59,8 @@ pub struct Emission {
 ///
 /// A specification with no such component emits a crate with no verbs and says so in its report,
 /// rather than inventing a surface nobody declared.
-pub fn workspace(ir: &EssIr, plan: &SynthesisPlan) -> Emission {
+pub fn workspace(ir: &EssIr, plan: &SynthesisPlan) -> Result<Emission, crate::TargetFailure> {
+    crate::failure::binary64(ir, plan, crate::Target::Clap)?;
     let layout = Layout::of(ir);
     let surfaces = tree::surfaces(ir);
     let provenance = &plan.provenance;
@@ -84,10 +85,10 @@ pub fn workspace(ir: &EssIr, plan: &SynthesisPlan) -> Emission {
     ];
     artifacts.sort_by(|left, right| left.path.cmp(&right.path));
 
-    Emission {
+    Ok(Emission {
         report: report(ir, &surfaces, plan),
         artifacts,
-    }
+    })
 }
 
 /// What the grammar cannot carry, said once per rule rather than once per command.

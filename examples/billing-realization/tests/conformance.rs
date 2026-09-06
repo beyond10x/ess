@@ -786,7 +786,9 @@ fn the_committed_suite_unchanged_passes_the_linked_synthesized_system() {
     );
     assert_same_model(&suite);
 
-    let report = Runner::for_suite(&suite).run(&suite, &Synthesized::honest());
+    let report = Runner::for_suite(&suite)
+        .run(&suite, &Synthesized::honest())
+        .unwrap();
 
     let failures: Vec<String> = report
         .failures()
@@ -817,8 +819,12 @@ fn two_runs_against_the_linked_system_produce_byte_identical_reports() {
     // tokens from counters, the runner owns the clock, and nothing else varies — so the whole
     // report is reproducible to the byte, which is what makes a red run debuggable.
     let suite = committed_suite();
-    let first = Runner::for_suite(&suite).run(&suite, &Synthesized::honest());
-    let second = Runner::for_suite(&suite).run(&suite, &Synthesized::honest());
+    let first = Runner::for_suite(&suite)
+        .run(&suite, &Synthesized::honest())
+        .unwrap();
+    let second = Runner::for_suite(&suite)
+        .run(&suite, &Synthesized::honest())
+        .unwrap();
     assert_eq!(
         first.to_canonical_json(),
         second.to_canonical_json(),
@@ -834,7 +840,9 @@ fn the_same_suite_fails_the_corrupted_linkage_exactly_where_the_lie_is() {
     // one. The corrupted linkage differs from the honest one by exactly one obligation, so the
     // suite's verdict about it is attributable to the one lie.
     let suite = committed_suite();
-    let report = Runner::for_suite(&suite).run(&suite, &Synthesized::corrupted());
+    let report = Runner::for_suite(&suite)
+        .run(&suite, &Synthesized::corrupted())
+        .unwrap();
 
     assert_eq!(
         report.status,

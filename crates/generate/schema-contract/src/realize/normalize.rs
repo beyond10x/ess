@@ -20,7 +20,7 @@ use recipe::unique_map;
 pub use recipe::{
     Binary64Inputs, Binary64Range, Binary64Step, Condition, Expr, IntegerOp, ModelIdentity,
     NumberPath, Overflow, RawJsonInputs, Recipe, Root, Scope, Stage, FORMAT, FORMAT_V2, FORMAT_V3,
-    FORMAT_V4,
+    FORMAT_V4, FORMAT_V5,
 };
 pub use target::{Realization, Report};
 
@@ -40,7 +40,7 @@ impl Root {
 impl Recipe {
     fn envelope_findings(&self) -> Vec<Finding> {
         let mut found = Vec::new();
-        if ![FORMAT, FORMAT_V2, FORMAT_V3, FORMAT_V4].contains(&self.format.as_str()) {
+        if ![FORMAT, FORMAT_V2, FORMAT_V3, FORMAT_V4, FORMAT_V5].contains(&self.format.as_str()) {
             found.push(finding(
                 "/format",
                 "recipe_format",
@@ -73,7 +73,7 @@ impl Recipe {
             }
         }
         if let Some(paths) = &self.raw_json_inputs {
-            if self.format != FORMAT_V4 {
+            if ![FORMAT_V4, FORMAT_V5].contains(&self.format.as_str()) {
                 found.push(finding(
                     "/raw_json_inputs",
                     "operation_version",
@@ -159,7 +159,7 @@ impl Plan {
                 }
                 for (position, root) in [("input", &stage.input), ("output", &stage.output)] {
                     if matches!(root, Root::Model { .. })
-                        && ![FORMAT_V3, FORMAT_V4].contains(&recipe.format.as_str())
+                        && ![FORMAT_V3, FORMAT_V4, FORMAT_V5].contains(&recipe.format.as_str())
                     {
                         found.push(finding(
                             &format!("{at}/{position}"),
@@ -183,6 +183,15 @@ impl Plan {
                     &mut found,
                 );
                 if let (Some(input), Some(output)) = (input, output) {
+                    if recipe.format != FORMAT_V5
+                        && (!input.binary64.is_empty() || !output.binary64.is_empty())
+                    {
+                        found.push(finding(
+                            &at,
+                            "model_binary64_version",
+                            "selected modeled Binary64 requires ess-normalization/5",
+                        ));
+                    }
                     if index == 0 {
                         check::input_numbers(
                             recipe.binary64_paths(name),
@@ -200,14 +209,7 @@ impl Plan {
                             &mut found,
                         );
                     }
-                    check::stage(
-                        stage,
-                        &input,
-                        &output,
-                        &at,
-                        recipe.format != FORMAT,
-                        &mut found,
-                    );
+                    check::stage(stage, &input, &output, &at, &recipe.format, &mut found);
                 }
             }
         }

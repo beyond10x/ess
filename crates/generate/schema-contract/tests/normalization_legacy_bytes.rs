@@ -1,4 +1,4 @@
-//! Complete legacy output snapshots, recorded before format-4 implementation.
+//! Complete legacy output snapshots, recorded before each successor format.
 
 #[allow(dead_code)]
 #[path = "fixtures/normalization_v1.rs"]
@@ -6,9 +6,10 @@ mod v1;
 #[allow(dead_code)]
 #[path = "fixtures/normalization_numeric.rs"]
 mod v2;
+use v4::model as v3;
 #[allow(dead_code)]
-#[path = "fixtures/normalization_model.rs"]
-mod v3;
+#[path = "fixtures/normalization_raw.rs"]
+mod v4;
 
 use schema_contract::realize::normalize::Plan;
 use serde_json::{json, Value};
@@ -23,6 +24,7 @@ fn complete_legacy_file_maps_are_preserved() {
         v1::plan(),
         Plan::read(&recipe.to_string(), &[bundle]).unwrap(),
         v3::plan(),
+        v4::plan(),
     ];
     let mut snapshots = BTreeMap::new();
     for (index, plan) in plans.iter().enumerate() {

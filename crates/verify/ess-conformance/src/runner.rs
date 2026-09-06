@@ -287,7 +287,8 @@ impl<C: Clock> Runner<C> {
         mut self,
         suite: &ConformanceSuite,
         target: &T,
-    ) -> ConformanceReport {
+    ) -> Result<ConformanceReport, crate::admission::AdmissionError> {
+        crate::admission::suite(suite)?;
         let started_at = self.clock.now();
         let implementation = target
             .identity()
@@ -299,14 +300,14 @@ impl<C: Clock> Runner<C> {
         }
 
         let completed_at = self.clock.now();
-        ConformanceReport {
+        Ok(ConformanceReport {
             suite: suite.provenance.clone(),
             implementation,
             started_at,
             completed_at,
             status: ConformanceReport::verdict(&scenarios),
             scenarios,
-        }
+        })
     }
 
     /// Runs one scenario in its own execution context.

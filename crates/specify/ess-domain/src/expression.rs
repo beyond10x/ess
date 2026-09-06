@@ -28,7 +28,7 @@ impl ScalarKind {
     pub fn of(primitive: Primitive) -> Self {
         match primitive {
             Primitive::Boolean => Self::Bool,
-            Primitive::Integer | Primitive::Decimal => Self::Number,
+            Primitive::Integer | Primitive::Decimal | Primitive::Binary64 => Self::Number,
             Primitive::String
             | Primitive::Timestamp
             | Primitive::Duration

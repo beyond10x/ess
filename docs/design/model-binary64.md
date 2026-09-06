@@ -185,3 +185,48 @@ constructed suite calls to the Go emitter before producing output. If the emitte
 needs a checked/fallible API, update every caller and report the public Rust API
 change. Do not publish a new primitive through an old suite contract whose Go
 reader treats an unknown primitive spelling as successful validation.
+
+Authored model predicates keep their established numeric comparison policy.
+Classify Binary64 as the existing Number scalar for predicate comparisons, including
+numeric literals, while nominal model assignment remains strict. This is a predicate
+view of a value, not construction of a modeled Binary64 or proof of its original
+token provenance. Qualify the shared domain policy and compiler adapter without
+changing older Integer/Decimal comparisons. Conformance producer admission must
+retain primitive identity and refuse Binary64 before the generic scalar policy can
+claim an unsupported field is readable. Normalization format5 equality remains
+the distinct two-typed-Binary64 rule above.
+
+## Implemented boundary and compatibility
+
+The first unit implements the model and format-5 normalization path described
+above. `ModelTypes::binary64_locations` exposes a read-only inventory minted from
+checked model nodes, including escaped wire properties and nested items. It is
+private metadata in the selection, not a new serialized model-bundle field.
+Structural TypeScript output reports a finite codec obligation. Structural Rust
+and Go return `model_binary64_codec` until standalone finite wrappers/codecs are
+qualified. This refusal currently blocks all-type Rust/Go model generation when
+Binary64 is introduced; standalone structural codecs are an adoption prerequisite
+and a separate bounded follow-up, not a completed capability of this unit.
+
+Whole-system Rust/Go/Web/Clap workspaces refuse before constructing artifacts.
+Go/Clap `workspace` now return `Result<Emission, TargetFailure>`; this public Rust
+API change is accepted for the upcoming pre-1.0 minor release. New Go/Clap complete
+failures use `ess-target-failure/2`. Rust/Web retain their existing failure/1 bytes.
+All four use located `missing-representation` causes and preserve neutral plans.
+
+Conformance retains its current suite format and explicitly refuses Binary64.
+The compiler inventory guards model producers and CLI routes, including sparse
+models whose unsupported fields never reach a scenario. Direct suite admission
+guards Go/Web emission, canonical serialization and runner execution before
+clock/target effects. Serde readers/writers reject Binary64 primitive records.
+`go::emit`, `web::emit`, `ConformanceSuite::to_canonical_json` and `Runner::run`
+therefore return `Result` with an `AdmissionError` carrying source/suite locations.
+Existing admitted suite bytes remain unchanged; no new consumer support is implied.
+
+Legacy generation dispatch has three explicit families: formats 1–3, raw format 4,
+and current format 5. In addition to the raw unit's frozen templates, formats 1–4
+freeze shared `eval`, `numeric`, `execute`, Go numeric and Go condition sources;
+format 4 freezes recipe and Rust/Go runtime templates. Complete eight-file-map
+fixtures cover Rust/Go for each old recipe version. Format 5 retains format-4 raw
+input dependencies/helpers and target-report/3, binding the new semantics through
+its recipe version and digest. Generator version fields remain truthful.

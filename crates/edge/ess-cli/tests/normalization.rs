@@ -9,8 +9,108 @@ use schema_contract::bundle::{import, Bundle, Dialect};
 use schema_contract::realize::normalize::Root;
 use serde_json::{json, Value};
 
-#[path = "../../../generate/schema-contract/tests/fixtures/normalization_model.rs"]
-mod fixture_model;
+#[path = "../../../generate/schema-contract/tests/fixtures/normalization_binary64.rs"]
+mod fixture_binary64;
+use fixture_binary64::model as fixture_model;
+
+#[test]
+fn binary64_cli_keeps_numeric_identity_and_emits_checked_format_five() {
+    let fixture = Fixture::new();
+    fs::create_dir(fixture.0.join("model")).unwrap();
+    fs::write(
+        fixture.0.join("model/system.yaml"),
+        fixture_binary64::SOURCE,
+    )
+    .unwrap();
+    let (_, recipe) = fixture_binary64::fixture();
+    fs::write(fixture.0.join("recipe.json"), recipe.to_string()).unwrap();
+    let invoke = |operation: &str, args: &[&str]| {
+        Command::new(env!("CARGO_BIN_EXE_ess"))
+            .current_dir(&fixture.0)
+            .args([
+                "generate",
+                "schema",
+                operation,
+                "--recipe",
+                "recipe.json",
+                "--model",
+                "model",
+            ])
+            .args(args)
+            .output()
+            .unwrap()
+    };
+    let checked = invoke("normalize-check", &[]);
+    assert!(checked.status.success(), "{checked:?}");
+    assert_eq!(
+        String::from_utf8(checked.stdout).unwrap(),
+        fixture_binary64::plan().to_json()
+    );
+    let cases = fixture_binary64::cases();
+    for case in &cases {
+        fs::write(
+            fixture.0.join("instance.json"),
+            case["input"].as_str().unwrap(),
+        )
+        .unwrap();
+        let result = invoke(
+            "normalize-run",
+            &[
+                "--branch",
+                case["branch"].as_str().unwrap(),
+                "--input",
+                "instance.json",
+            ],
+        );
+        if let Some(error) = case["error"].as_str() {
+            assert!(!result.status.success());
+            let details = format!(
+                "{}{}",
+                String::from_utf8_lossy(&result.stdout),
+                String::from_utf8_lossy(&result.stderr)
+            );
+            assert!(details.contains(error), "{case}: {details}");
+        } else {
+            assert!(result.status.success(), "{case}: {result:?}");
+            let value: Value = serde_json::from_slice(&result.stdout).unwrap();
+            if let Some(bits) = case["bits"].as_str() {
+                assert_eq!(
+                    value.as_f64().unwrap().to_bits(),
+                    u64::from_str_radix(bits, 16).unwrap()
+                );
+                assert!(value.as_i64().is_none());
+            } else if let Some(bits) = case["array_bits"].as_array() {
+                assert_eq!(value.as_array().unwrap().len(), bits.len());
+                for (item, bits) in value.as_array().unwrap().iter().zip(bits) {
+                    if bits.is_null() {
+                        assert!(item.is_null());
+                    } else {
+                        assert_eq!(
+                            item.as_f64().unwrap().to_bits(),
+                            u64::from_str_radix(bits.as_str().unwrap(), 16).unwrap()
+                        );
+                    }
+                }
+            } else {
+                assert_eq!(value, case["value"]);
+            }
+        }
+    }
+    for target in ["rust", "go"] {
+        let mut args = vec!["--target", target, "--package", "adapter", "--out", target];
+        if target == "go" {
+            args.extend(["--module", "example.invalid/adapter"]);
+        }
+        let generated = invoke("normalize-generate", &args);
+        assert!(generated.status.success(), "{generated:?}");
+        args.push("--check");
+        assert!(invoke("normalize-generate", &args).status.success());
+    }
+    eprintln!(
+        "CLI executed {} independent Binary64 vectors and both target publication/drift checks",
+        cases.len()
+    );
+}
 
 #[test]
 fn model_sources_are_compiled_pinned_and_protected_by_the_cli() {

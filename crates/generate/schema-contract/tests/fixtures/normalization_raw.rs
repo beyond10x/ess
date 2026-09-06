@@ -5,7 +5,7 @@ use serde_json::{json, Value};
 
 #[allow(dead_code)]
 #[path = "normalization_model.rs"]
-mod model;
+pub(super) mod model;
 
 pub fn field(name: &str) -> Value {
     json!({"kind":"field", "name":name})

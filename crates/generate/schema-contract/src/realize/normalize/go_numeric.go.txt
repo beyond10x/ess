@@ -49,6 +49,18 @@ func floatBits(bits uint64) float64 { return math.Float64frombits(bits) }
 
 func binary64Integer(value expression, steps []numericStep) expression {
 	return func(context scope, at string) (any, error) {
+		result, err := binary64Value(value, steps)(context, at)
+		if err != nil { return nil, err }
+		floating := result.(float64)
+		if floating < -9223372036854775808.0 || floating >= 9223372036854775808.0 {
+			return nil, refusal(at, "binary64_range", "truncated binary64 value is outside signed 64-bit representation")
+		}
+		return int64(floating), nil
+	}
+}
+
+func binary64Value(value expression, steps []numericStep) expression {
+	return func(context scope, at string) (any, error) {
 		input, err := present(value, context, at+"/value")
 		if err != nil {
 			return nil, err
@@ -82,9 +94,6 @@ func binary64Integer(value expression, steps []numericStep) expression {
 				return nil, refusal(fmt.Sprintf("%s/steps/%d", at, index), "binary64_overflow", "binary64 intermediate result is not finite")
 			}
 		}
-		if result < -9223372036854775808.0 || result >= 9223372036854775808.0 {
-			return nil, refusal(at, "binary64_range", "truncated binary64 value is outside signed 64-bit representation")
-		}
-		return int64(result), nil
+		return result, nil
 	}
 }

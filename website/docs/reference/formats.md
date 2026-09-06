@@ -38,7 +38,7 @@ the row says otherwise; it does not imply that those bytes are hashed.
 
 | Document and discriminator | Version/identity carried separately | Reader and byte contract |
 |---|---|---|
-| Authored specification: `format: ess/1` | Specification `vN` | `RawSpecFile::parse`, assembly/validation and compilation. Format parsing checks syntax; semantic support is currently major 1. No canonical raw-source hash. [Source][spec] |
+| Authored specification: `format: ess/1` or unreleased `ess/2` | Specification `vN` | `RawSpecFile::parse`, assembly/validation and compilation. Format parsing checks syntax; semantic support is majors 1 and 2. Binary64 requires major 2 at every declared position; map keys refuse. No canonical raw-source hash. [Source][spec] |
 | Compiled `EssIr`: **unversioned** | Numeric specification major | Compiler-minted, Serialize-only; no general persisted-IR reader. Pretty JSON output; **compiled-model** digest uses compact bytes instead. There is no current `ess-ir/1` marker. [Source][ir] |
 | Authored composition: `format: ess-composition/1` with a **services array** | Composition/service keys and exact service source digests | Closed JSON/YAML DTO, then `compile` against supplied services. Pretty canonical JSON; no whole-composition digest. [Source][composition] |
 | Compiled composition: `format: ess-composition/1` with a **services map** | Resolved service identities | Serialize-only compiler output. The authored reader does not read this shape. Pretty JSON; service source digests remain references. [Source][composition] |
@@ -48,10 +48,12 @@ the row says otherwise; it does not imply that those bytes are hashed.
 | `plan.json`: **unversioned** `SynthesisPlan` | Specification provenance | Neutral generated plan, consumed as a typed value by emitters. Pretty JSON and `PLAN.md`; **compiled-model/whole-contract** references, no plan-file hash. [Source][plan] |
 | `target.json`: **unversioned** `TargetReport` | Target name and specification provenance | Successful Go/Web/Clap synthesis includes this refusal/weakening report; successful Rust has `target: None` and no target metadata. No persisted admission reader. Unchanged pretty JSON and `TARGET.md`; provenance references, no report-file hash. [Source][synthesis] |
 | Complete failure: `format: ess-target-failure/1` | Target `rust` or `web`; unchanged neutral plan and its provenance | Serialize-only `TargetFailure` has `format`, `target`, `plan`, nonempty `causes`; private construction, read-only accessors, no Deserialize/admission reader. Typed pretty JSON+LF or CLI YAML; no failure-file digest or artifacts. [Source][target-failure] |
+| Complete failure: `format: ess-target-failure/2` (unreleased) | Target `go` or `clap`; unchanged neutral plan and provenance | New located finite Binary64 codec refusal with the same failure fields and no artifacts. Rust/Web keep target-failure/1. [Source][target-failure] |
 
 `ess_synth::synthesize` and `synthesize_for` return `Result<Synthesis, TargetFailure>`.
 The direct `rust::workspace` and `web::workspace` APIs return `Result<Vec<Artifact>, TargetFailure>`
-and `Result<web::Emission, TargetFailure>` respectively. Rust checks allocation and representation
+and `Result<web::Emission, TargetFailure>` respectively. Go and Clap workspace APIs
+now also return `Result<Emission, TargetFailure>` in the upcoming pre-1.0 minor release. Rust checks allocation and representation
 before rendering; Web checks its Rust prerequisite and Web codec allocation. `Err` withholds the
 whole requested workspace, even if some modules could be emitted. `Ok` retains the existing
 `Synthesis` fields and neutral plan bytes; partial Go/Web/Clap reports remain successful values.
@@ -89,7 +91,8 @@ implement a model's lifecycle, and normalization executes only an explicitly che
 | `format: ess-normalization-target/1` | Serialize-only standalone library report from `Plan::rust` or unreleased `Plan::go`, with explicit target configuration, recipe, root/schema and emitted-file identities. Pretty typed JSON plus LF; no persisted report-admission API. It is not a full-synthesis target report. [Source][normalization-target] |
 | `format: ess-normalization/4` (unreleased) | Adds explicit branch/field/items/root lexical capture through `raw_json_inputs` before first input-schema validation. Selected tokens become canonical standard base64; captures preserve duplicate members and numeric spelling while enforcing JSON grammar, Unicode and global depth 64. Capture/numeric overlaps refuse; decoded-value APIs require the text edge for capture branches. Versions 1–3 refuse the member, including an empty map. [Source][normalization] |
 | `format: ess-normalization-target/2` (unreleased) | Report for format-3 recipes, retaining complete model-root identities and source/schema/file digests. Existing format-1/2 recipes retain target/1. [Source][normalization-target] |
-| `format: ess-normalization-target/3` (unreleased) | Report for every format-4 recipe. The embedded canonical recipe and its digest bind capture policy; first-stage schemas describe the captured representation. Same report fields, new semantics; older readers must reject this version. No general report-admission API exists. Formats 1–3 preserve generated file maps through frozen legacy templates; generator versions remain truthful across releases. [Source][normalization-target] |
+| `format: ess-normalization/5` (unreleased) | Adds modeled finite Binary64 with explicit complete input policy, token-string `binary64_literal`, finite value-producing `binary64` steps and two-typed-Binary64 IEEE equality. Formats 1–4 refuse selected Binary64 models and the new expressions; their qualified-schema numeric behavior and full emitted maps remain unchanged. Raw capture/helpers remain available. [Source][normalization] |
+| `format: ess-normalization-target/3` (unreleased) | Report for every format-4 or format-5 recipe. The embedded canonical recipe and its digest bind capture policy; first-stage schemas describe the captured representation. Same report fields, new semantics; older readers must reject this version. No general report-admission API exists. Formats 1–4 preserve generated file maps through frozen legacy templates; generator versions remain truthful across releases. [Source][normalization-target] |
 
 The following hashes are bare lowercase SHA-256, but have different input domains:
 
@@ -146,6 +149,13 @@ inputs are supplied; they do not prove remote artifact contents or authenticity.
 has no `--generated` option and does not inspect a committed output tree. The library API can accept
 a `GeneratedTree` for that additional check. See [Track specification change](../guides/track-change.md)
 and the [impact implementation][impact].
+
+`ConformanceSuite::to_canonical_json`, Go/Web `emit` and `Runner::run` now return
+`Result` with a located `AdmissionError` for unsupported Binary64 contracts. The
+model producer/CLI guard also checks sparse models whose unsupported fields would
+be absent from the suite. Suite readers and serializers reject the new primitive
+under the existing suite vocabulary; no new suite version or float codec support
+is implied. Existing admitted canonical suites retain their bytes.
 
 ## Generated documents and external formats
 

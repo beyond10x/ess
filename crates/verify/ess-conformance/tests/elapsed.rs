@@ -313,7 +313,9 @@ fn checks(report: &ess_conformance::report::ConformanceReport) -> Vec<(CheckCode
 #[test]
 fn a_target_that_holds_the_window_and_reports_it_passes() {
     let suite = suite(windows());
-    let report = Runner::for_suite(&suite).run(&suite, &Ticking::new(Wrong::Nothing));
+    let report = Runner::for_suite(&suite)
+        .run(&suite, &Ticking::new(Wrong::Nothing))
+        .unwrap();
 
     assert_eq!(report.status, ConformanceStatus::Passed);
     let recorded = checks(&report);
@@ -340,7 +342,9 @@ fn a_target_whose_clock_never_moves_fails_rather_than_being_read_as_having_waite
     // consequence arrives, it carries what it declares, the view holds it. What separates them is
     // that twenty seconds did not pass, and nothing said so.
     let suite = suite(windows());
-    let report = Runner::for_suite(&suite).run(&suite, &Ticking::new(Wrong::NeverHolds));
+    let report = Runner::for_suite(&suite)
+        .run(&suite, &Ticking::new(Wrong::NeverHolds))
+        .unwrap();
 
     assert_eq!(report.status, ConformanceStatus::Failed);
     let recorded = checks(&report);
@@ -375,7 +379,9 @@ fn a_target_whose_clock_never_moves_fails_rather_than_being_read_as_having_waite
 #[test]
 fn an_event_published_inside_the_window_fails_the_bounded_negative_and_nothing_else() {
     let suite = suite(windows());
-    let report = Runner::for_suite(&suite).run(&suite, &Ticking::new(Wrong::NotQuiet));
+    let report = Runner::for_suite(&suite)
+        .run(&suite, &Ticking::new(Wrong::NotQuiet))
+        .unwrap();
 
     assert_eq!(report.status, ConformanceStatus::Failed);
     assert_eq!(
@@ -408,7 +414,9 @@ fn a_deadline_the_target_ran_past_fails_the_within_claim() {
     ]);
     // `Slow` adds fifteen seconds on every reading, so the hold lands at 35s and the deadline of
     // thirty is missed by a system that did arrive — which is the claim `within` exists to make.
-    let report = Runner::for_suite(&suite).run(&suite, &Ticking::new(Wrong::Slow));
+    let report = Runner::for_suite(&suite)
+        .run(&suite, &Ticking::new(Wrong::Slow))
+        .unwrap();
 
     assert_eq!(report.status, ConformanceStatus::Failed);
     let recorded = checks(&report);
@@ -431,7 +439,7 @@ fn a_target_with_no_clock_reports_unsupported_and_the_run_fails() {
     // existed before duration claims did still compiles, still runs every other scenario, and is
     // told apart from a target that checked the window and found it held.
     let suite = suite(windows());
-    let report = Runner::for_suite(&suite).run(&suite, &Clockless);
+    let report = Runner::for_suite(&suite).run(&suite, &Clockless).unwrap();
 
     assert_ne!(
         report.status,
@@ -459,7 +467,9 @@ fn a_window_opened_at_an_instant_nothing_marked_is_a_suite_defect_and_not_a_fail
         instant: instant("bridged"),
         elapsed: Elapsed::seconds(20),
     }]);
-    let report = Runner::for_suite(&suite).run(&suite, &Ticking::new(Wrong::Nothing));
+    let report = Runner::for_suite(&suite)
+        .run(&suite, &Ticking::new(Wrong::Nothing))
+        .unwrap();
 
     let recorded = checks(&report);
     assert_eq!(recorded[0].0, CheckCode::Suite);
@@ -484,9 +494,11 @@ fn two_runs_over_one_window_produce_byte_identical_reports() {
     let suite = suite(windows());
     let first = Runner::for_suite(&suite)
         .run(&suite, &Ticking::new(Wrong::Nothing))
+        .unwrap()
         .to_canonical_json();
     let second = Runner::for_suite(&suite)
         .run(&suite, &Ticking::new(Wrong::Nothing))
+        .unwrap()
         .to_canonical_json();
     assert_eq!(first, second);
 }

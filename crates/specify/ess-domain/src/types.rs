@@ -48,6 +48,8 @@ pub enum Primitive {
     Integer,
     /// An exact decimal. Never a float: money does not round the way a float does.
     Decimal,
+    /// A finite IEEE-754 binary64, preserving signed zero. Authored in ess/2.
+    Binary64,
     /// An instant.
     Timestamp,
     /// A length of time.
@@ -69,6 +71,7 @@ impl Primitive {
         Self::Duration,
         Self::Uuid,
         Self::Bytes,
+        Self::Binary64,
     ];
 
     /// The primitive as written in a specification.
@@ -82,6 +85,7 @@ impl Primitive {
             Self::Duration => "Duration",
             Self::Uuid => "Uuid",
             Self::Bytes => "Bytes",
+            Self::Binary64 => "Binary64",
         }
     }
 
@@ -190,6 +194,9 @@ impl TypeRef {
                     ),
                 )
             })?;
+            if key == Primitive::Binary64 {
+                return Err(reject("Binary64 map keys have no admitted wire spelling"));
+            }
             return Ok(Self::Map(
                 key,
                 Box::new(Self::parse_nested(value_type, depth + 1)?),
@@ -892,6 +899,7 @@ impl TypeRegistry {
     /// Checks that every named type a reference mentions exists.
     pub fn resolve(&self, reference: &TypeRef, location: &str) -> ValidationErrors {
         let mut errors = ValidationErrors::new();
+        crate::primitive_admission::reference(reference, None, location, &mut errors);
         for name in reference.named_dependencies() {
             if !self.types.contains_key(name) {
                 errors.push(
