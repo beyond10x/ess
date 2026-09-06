@@ -50,6 +50,10 @@ The separate in-memory path serializes its supplied typed suite once, admits tha
 
 Required control: retain the old DTO parsing assertions, directly refuse the unknown-field original at AdmittedSuite/CLI, prove retained invalid-major vocabulary never reaches callbacks, and show any admitted reconstructed in-memory document has its own exact digest and cannot pair with the rejected original. This is the S3/S4 distinction between value compatibility, original-byte admission and serialize-once in-memory execution, not a permissive original-byte bypass. No source-breaking raw-parser migration is selected in the count stage.
 
+## Execution-bound count construction
+
+Clarified2026-09-06 after the first count-writer adversary. Exact-suite binding applies to the suite actually executed, not merely another admitted value sharing provenance and selected IDs. New count producers must retain an immutable execution binding through construction; a legacy ConformanceReport DTO cannot attest that binding by itself. Preserve the legacy DTO public construction surface and frozen wire bytes. An opt-in execution result may expose immutable legacy diagnostics or explicitly discard its execution capability when converted back to a raw legacy value; no unchecked construction, mutable escape or raw Deserialize may recreate that capability. Refactoring newly introduced, still-unpublished count APIs is permitted to enforce this existing source-identity obligation.
+
 ## Frozen execution semantics
 
 For the following table, one terminal scenario contributes one to total. A v1 list entry is exactly the status word, one ASCII space, then the opaque scenario identity. It is not parsed by splitting the identity into words. scenarios_failed is the length of the entire non-pass list, regardless of its misleading name. Rust and Go both preserve this meaning. No skipped/error/unsupported category is retroactively relabeled failed. [S1, S2, S5]

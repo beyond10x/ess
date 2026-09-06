@@ -24,7 +24,7 @@ scope:
   path: website/docs/guides/verify-conformance.md
 - confidence: cited
   path: website/docs/reference/formats.md
-revision: 17
+revision: 18
 ---
 ## What is wrong
 
@@ -137,3 +137,11 @@ Original-byte CLI, generated-Go and report-pair inputs enter the strict Admitted
 The separate in-memory path serializes its supplied typed suite once, admits that immutable buffer and executes the corresponding value. If a historical DTO parser previously discarded fields from some other JSON, the new buffer is a different issued suite document with its own digest. It cannot be called admission of, or paired as, the discarded original bytes. Original unknown structural fields remain refused by direct admitted input; newer vocabulary under a falsely older major remains refused before execution even if the DTO parser accepted it.
 
 Required control: retain the old DTO parsing assertions, directly refuse the unknown-field original at AdmittedSuite/CLI, prove retained invalid-major vocabulary never reaches callbacks, and show any admitted reconstructed in-memory document has its own exact digest and cannot pair with the rejected original. This is the S3/S4 distinction between value compatibility, original-byte admission and serialize-once in-memory execution, not a permissive original-byte bypass. No source-breaking raw-parser migration is selected in the count stage.
+
+## First review correction boundary
+
+The first independent attack at a46bd7ff46ec8553bef4f48d4021514c8f175e82 is preserved byte-for-byte in review-result:ess-count-writer-adversary-pass-1 (report SHA25632563d1fcbcc00489f7d6f897a0c6f471d2774ef99e65ad4a861e69c959b84ff). Three retained reachable introduced cases fail: exact executed-suite rebinding, permissive Go predicate admission, and Goexit during teardown incorrectly counted terminal. Complete package selection executed405:402passed3failed0ignored33summaries; all401inherited cases still pass. The same implementor receives all three for correction; fixed outcomes wait for actual correction evidence.
+
+Count-source construction must carry identity from the exact immutable admitted suite actually executed. Same provenance and selected IDs do not establish this. The opt-in producer receives an immutable execution result/capability with no unchecked construction, mutable escape or raw Deserialize. A legacy ConformanceReport clone or independently parsed DTO is not that capability. Preserve historical ConformanceReport public construction and wire bytes rather than installing a source-breaking private field there. Newly introduced, unpublished opt-in APIs may be refactored to carry the execution binding; narrowly mechanical adaptations of new count/adversary helper signatures must preserve every assertion and fixture meaning. This changes no legacy default or report wire contract.
+
+Generated Go original admission must match the accepted structural/predicate grammar and limits before target construction. A callback interrupted by Goexit is not a completed teardown and cannot support a complete report2, including when no destination is configured. Retain the actual valid quantifier, ordinary skip/returned teardown error, strictness and opaque-ID controls. No AEP reader relaxation is part of correction.
