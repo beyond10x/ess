@@ -1,0 +1,25 @@
+use normalization_adapter::Normalizer;
+use serde_json::{json, Value};
+
+#[test]
+fn lexical_corpus() {
+    let normalizer = Normalizer::new().unwrap();
+    let cases: Vec<Value> = serde_json::from_str(include_str!("cases.json")).unwrap();
+    for (index, case) in cases.iter().enumerate() {
+        let branch = case["branch"].as_str().unwrap();
+        let input = case["input"].as_str().unwrap();
+        let result = match case["mode"].as_str() {
+            Some("base64") => normalizer.normalize_base64_json(branch, input),
+            Some("value") => normalizer.normalize_value(branch, &serde_json::from_str(input).unwrap()),
+            _ => normalizer.normalize(branch, input),
+        };
+        match result {
+            Ok(value) => assert_eq!(Some(&value), case.get("value"), "case {index}"),
+            Err(error) => assert_eq!(Some(json!(error.0)), case.get("errors").cloned(), "case {index}"),
+        }
+    }
+    // The retained enclosing document is explicitly decoded before nested capture.
+    let outer = normalizer.normalize("root", r#"{"payload": {"n":1e999,"n":2}}"#).unwrap();
+    let inner = normalizer.normalize_base64_json("record", outer.as_str().unwrap()).unwrap();
+    assert_eq!(inner, json!({"payload":"eyJuIjoxZTk5OSwibiI6Mn0="}));
+}

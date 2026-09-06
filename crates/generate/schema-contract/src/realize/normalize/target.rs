@@ -49,15 +49,26 @@ fn rust_package(package: &str) -> Result<(), Refused> {
 
 pub(super) fn rust(plan: &Plan, package: &str) -> Result<Realization, Refused> {
     rust_package(package)?;
+    let capture = plan.recipe.format == super::FORMAT_V4;
     let mut files = BTreeMap::from([
         ("source.recipe.json".to_owned(), plan.to_json()),
         (
             "src/lib.rs".to_owned(),
-            include_str!("rust_runtime.rs.txt").to_owned(),
+            if capture {
+                include_str!("rust_runtime.rs.txt")
+            } else {
+                include_str!("legacy_v1_v3/rust_runtime.rs.txt")
+            }
+            .to_owned(),
         ),
         (
             "src/recipe.rs".to_owned(),
-            include_str!("recipe.rs").to_owned(),
+            if capture {
+                include_str!("recipe.rs")
+            } else {
+                include_str!("legacy_v1_v3/recipe.rs.txt")
+            }
+            .to_owned(),
         ),
         ("src/eval.rs".to_owned(), include_str!("eval.rs").to_owned()),
         (
@@ -66,7 +77,12 @@ pub(super) fn rust(plan: &Plan, package: &str) -> Result<Realization, Refused> {
         ),
         (
             "src/input.rs".to_owned(),
-            include_str!("input.rs").to_owned(),
+            if capture {
+                include_str!("input.rs")
+            } else {
+                include_str!("legacy_v1_v3/input.rs.txt")
+            }
+            .to_owned(),
         ),
         (
             "src/execute.rs".to_owned(),
@@ -80,6 +96,14 @@ pub(super) fn rust(plan: &Plan, package: &str) -> Result<Realization, Refused> {
     files.insert("Cargo.toml".to_owned(), format!(
         "[package]\nname = {package:?}\nversion = \"0.0.0\"\nedition = \"2021\"\npublish = false\n\n[dependencies]\nserde = {{ version = \"=1.0.229\", features = [\"derive\"] }}\nserde_json = {{ version = \"=1.0.151\", features = [\"raw_value\"] }}\njsonschema = {{ version = \"=0.52.1\", default-features = false }}\n\n[workspace]\n"
     ));
+    if capture {
+        files.insert(
+            "src/retained.rs".to_owned(),
+            include_str!("retained.rs").to_owned(),
+        );
+        let manifest = files.get_mut("Cargo.toml").expect("inserted manifest");
+        *manifest = manifest.replace("\n[workspace]\n", "base64 = \"=0.22.1\"\n\n[workspace]\n");
+    }
     let (identities, source_files) = sources(plan)?;
     files.extend(source_files);
     let mut embedded = "//! Generated root bindings; source identities are data, never Rust identifiers.\n\npub(super) const ROOTS: &[(&str, &str)] = &[\n".to_owned();
@@ -171,7 +195,9 @@ pub(super) fn finish(
     identities: Vec<SchemaIdentity>,
 ) -> Realization {
     let report = Report {
-        format: if plan.recipe.format == super::FORMAT_V3 {
+        format: if plan.recipe.format == super::FORMAT_V4 {
+            "ess-normalization-target/3"
+        } else if plan.recipe.format == super::FORMAT_V3 {
             "ess-normalization-target/2"
         } else {
             "ess-normalization-target/1"

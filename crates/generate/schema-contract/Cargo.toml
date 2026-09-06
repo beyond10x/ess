@@ -29,6 +29,7 @@ serde_json = { workspace = true, features = ["raw_value"] }
 thiserror.workspace = true
 sha2 = "0.11"
 fluent-uri = "0.4.1"
+base64 = "=0.22.1"
 
 # The same validator and version ESS generators test their published contracts with. It is
 # runtime here because adopter documents are inputs to ESS schema validation; default features

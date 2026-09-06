@@ -16,7 +16,7 @@ scope:
   path: crates/generate/schema-contract/src/realize/normalize/recipe.rs
 - confidence: cited
   path: crates/specify/ess-domain/src/types.rs
-revision: 2
+revision: 3
 ---
 ## Evidence
 
@@ -69,3 +69,19 @@ Typed realization surfaces under `crates/generate/ess-synth` and structural
 This is a generic type-system/normalization gap, distinct from lexical JSON capture,
 exact decimal arithmetic, source-language permissiveness and platform-specific
 out-of-range casts.
+
+## Bound design
+
+The coordinator selected docs/design/model-binary64.md for the next serial unit
+following raw JSON format 4 integration. It introduces authored ess/2 Binary64,
+finite numeric wire policy with signed-zero retention, compiler-owned model type
+metadata, explicit branch numeric input paths and version-5 floating literal/value
+operations for defaults and computed output. Old model/recipe/generated file maps
+remain stable; selected unsupported synthesis/conformance routes refuse before
+publication. No generic JSON property bag, implicit numeric cast, map-key float
+support or ess-ir/2 is introduced. Full synthesis codecs are a distinct boundary.
+
+The design is bound but no implementation, gate or release is claimed. Raw JSON
+and this unit overlap; they run serially. Typed scope will be refreshed from the
+final raw source before dispatch. The operator's original full-gap continuation
+remains the task scope absent a response narrowing the outstanding wrap-up question.

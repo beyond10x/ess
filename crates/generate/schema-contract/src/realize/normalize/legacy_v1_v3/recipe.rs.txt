@@ -12,14 +12,8 @@ pub const FORMAT_V2: &str = "ess-normalization/2";
 /// Checked model-owned roots in addition to qualified bundle roots.
 pub const FORMAT_V3: &str = "ess-normalization/3";
 
-/// Explicit lexical JSON capture at the text input boundary.
-pub const FORMAT_V4: &str = "ess-normalization/4";
-
 /// Exact branch names mapped to explicit paths through their external input roots.
 pub type Binary64Inputs = BTreeMap<String, Vec<Vec<NumberPath>>>;
-
-/// Exact branch names mapped to tokens retained as canonical standard base64.
-pub type RawJsonInputs = BTreeMap<String, Vec<Vec<NumberPath>>>;
 
 /// Complete compiler-minted identity, rechecked against a supplied model selection.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
@@ -63,7 +57,7 @@ pub enum Root {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Recipe {
-    /// Declared version; model roots require version 3/4, extended operations version 2/3/4.
+    /// Declared version; model roots require version 3, extended operations version 2 or 3.
     pub format: String,
     /// Exact external discriminator values; no trial decoding or implicit default branch.
     #[serde(deserialize_with = "unique_map")]
@@ -75,23 +69,9 @@ pub struct Recipe {
         deserialize_with = "number_inputs"
     )]
     pub binary64_inputs: Option<Binary64Inputs>,
-    /// Version 4: explicit token capture before first-stage input validation.
-    #[serde(
-        default,
-        skip_serializing_if = "Option::is_none",
-        deserialize_with = "raw_inputs"
-    )]
-    pub raw_json_inputs: Option<RawJsonInputs>,
 }
 
 impl Recipe {
-    /// The selected branch's lexical capture paths, never inferred from values or schemas.
-    pub fn raw_json_paths(&self, branch: &str) -> &[Vec<NumberPath>] {
-        self.raw_json_inputs
-            .as_ref()
-            .and_then(|paths| paths.get(branch))
-            .map_or(&[], Vec::as_slice)
-    }
     /// The selected branch's explicit numeric input paths, never inferred from values.
     pub fn binary64_paths(&self, branch: &str) -> &[Vec<NumberPath>] {
         self.binary64_inputs
@@ -112,42 +92,6 @@ pub enum NumberPath {
     },
     /// Traverse each element of a declared array.
     Items,
-}
-
-// An empty struct variant closes Items' fields. Serde's internally tagged unit
-// variant otherwise ignores extra members; retain that historical numeric reader
-// while requiring strict format-4 capture selectors.
-fn raw_inputs<'de, D: serde::Deserializer<'de>>(
-    deserializer: D,
-) -> Result<Option<RawJsonInputs>, D::Error> {
-    #[derive(Deserialize)]
-    #[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
-    enum Segment {
-        Field { name: String },
-        Items {},
-    }
-    let branches: BTreeMap<String, Vec<Vec<Segment>>> = unique_map(deserializer)?;
-    Ok(Some(
-        branches
-            .into_iter()
-            .map(|(branch, paths)| {
-                (
-                    branch,
-                    paths
-                        .into_iter()
-                        .map(|path| {
-                            path.into_iter()
-                                .map(|segment| match segment {
-                                    Segment::Field { name } => NumberPath::Field { name },
-                                    Segment::Items {} => NumberPath::Items,
-                                })
-                                .collect()
-                        })
-                        .collect(),
-                )
-            })
-            .collect(),
-    ))
 }
 
 /// One rounded binary64 operation, in source order.

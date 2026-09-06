@@ -2,25 +2,30 @@
 format: aep.planning-md/1
 id: story:raw-json-normalization-provenance
 kind: story
-status: draft
+status: implemented
 title: Preserve declared raw JSON token bytes during normalization
 relations:
 - derived_from: story:source-pinned-data-normalization
+- serves: vision:O2
 scope:
-- confidence: inferred
+- confidence: cited
   path: CHANGELOG.md
 - confidence: cited
+  path: Cargo.lock
+- confidence: cited
+  path: crates/edge/ess-cli/src/normalize.rs
+- confidence: cited
   path: crates/edge/ess-cli/tests/normalization.rs
+- confidence: cited
+  path: crates/generate/schema-contract/Cargo.toml
 - confidence: cited
   path: crates/generate/schema-contract/src/realize/normalize.rs
 - confidence: cited
   path: crates/generate/schema-contract/src/realize/normalize/check.rs
-- confidence: inferred
-  path: crates/generate/schema-contract/src/realize/normalize/eval.rs
-- confidence: inferred
-  path: crates/generate/schema-contract/src/realize/normalize/execute.rs
 - confidence: cited
   path: crates/generate/schema-contract/src/realize/normalize/go_input.go.txt
+- confidence: cited
+  path: crates/generate/schema-contract/src/realize/normalize/go_retained.go.txt
 - confidence: cited
   path: crates/generate/schema-contract/src/realize/normalize/go_runtime.go.txt
 - confidence: cited
@@ -28,26 +33,50 @@ scope:
 - confidence: cited
   path: crates/generate/schema-contract/src/realize/normalize/input.rs
 - confidence: cited
+  path: crates/generate/schema-contract/src/realize/normalize/legacy_v1_v3/README.md
+- confidence: cited
+  path: crates/generate/schema-contract/src/realize/normalize/legacy_v1_v3/go_input.go.txt
+- confidence: cited
+  path: crates/generate/schema-contract/src/realize/normalize/legacy_v1_v3/go_runtime.go.txt
+- confidence: cited
+  path: crates/generate/schema-contract/src/realize/normalize/legacy_v1_v3/input.rs.txt
+- confidence: cited
+  path: crates/generate/schema-contract/src/realize/normalize/legacy_v1_v3/recipe.rs.txt
+- confidence: cited
+  path: crates/generate/schema-contract/src/realize/normalize/legacy_v1_v3/rust_runtime.rs.txt
+- confidence: cited
   path: crates/generate/schema-contract/src/realize/normalize/recipe.rs
+- confidence: cited
+  path: crates/generate/schema-contract/src/realize/normalize/retained.rs
 - confidence: cited
   path: crates/generate/schema-contract/src/realize/normalize/rust_runtime.rs.txt
 - confidence: cited
   path: crates/generate/schema-contract/src/realize/normalize/target.rs
-- confidence: inferred
-  path: crates/generate/schema-contract/tests/fixtures/normalization_raw_json.rs
 - confidence: cited
-  path: crates/generate/schema-contract/tests/normalization_go.rs
-- confidence: inferred
-  path: crates/generate/schema-contract/tests/normalization_raw_json.rs
+  path: crates/generate/schema-contract/tests/fixtures/normalization_legacy_maps.json
 - confidence: cited
-  path: crates/generate/schema-contract/tests/normalization_rust.rs
+  path: crates/generate/schema-contract/tests/fixtures/normalization_raw.rs
+- confidence: cited
+  path: crates/generate/schema-contract/tests/fixtures/normalization_raw_go_tests.go.txt
+- confidence: cited
+  path: crates/generate/schema-contract/tests/fixtures/normalization_raw_rust_tests.rs.txt
+- confidence: cited
+  path: crates/generate/schema-contract/tests/normalization_legacy_bytes.rs
+- confidence: cited
+  path: crates/generate/schema-contract/tests/normalization_raw.rs
+- confidence: cited
+  path: crates/generate/schema-contract/tests/normalization_raw_adversary.rs
+- confidence: cited
+  path: crates/generate/schema-contract/tests/normalization_raw_targets.rs
+- confidence: cited
+  path: docs/design/raw-json-normalization.md
 - confidence: cited
   path: docs/design/source-pinned-data-normalization.md
 - confidence: cited
   path: website/docs/guides/generate-artifacts.md
 - confidence: cited
   path: website/docs/reference/formats.md
-revision: 4
+revision: 12
 ---
 ## Evidence
 
@@ -105,18 +134,11 @@ Derived 2026-09-06 by aep-drive:story-scoper during session recovery.
 - Confidence: medium; token-loss boundaries are established, capture representation/order/format remain design decisions (inferred).
 - Collisions: go_target.rs, normalization_go.rs, normalization_rust.rs and the binding design overlap the recovered base64 qualification (cited).
 
-## Design Decisions Still Required
+## Design decision disposition
 
-The scoper identified capture representation versus first-stage schema validation;
-root/field/array reach and overlapping paths; extraction from retained embedded
-documents; duplicate-key, Unicode, depth and numeric checks inside captured tokens;
-interaction with binary64 paths; absence versus explicit null; refusal by decoded
-value APIs without lexical provenance; format/report compatibility; and located,
-deterministically ordered diagnostics. These are unresolved design questions, not
-observed runtime failures. TypeScript normalization has no target yet.
-
-The coordinator will finish the existing base64 qualification before scheduling
-this overlapping implementation. This scope update claims no implementation.
+The initial scoper questions are bound by docs/design/raw-json-normalization.md.
+The complete lexical, composition, ordering and version decisions below govern the
+implementation; TypeScript is a separately scoped target.
 
 ## Retained-document sequencing
 
@@ -126,3 +148,49 @@ An input-edge capture alone does not implement that second boundary. The binding
 design must declare either composition of separately checked decoding steps or an
 explicit parse-retained-bytes operation, preserving provenance and error order.
 Do not claim complete external decoding from a capture-only implementation.
+
+## Bound implementation
+
+Binding: docs/design/raw-json-normalization.md in managed implementation tree
+wt-c12a5474a249 at base60ffcb2. The coordinator selected format4, explicit branch
+field/items/root captures into canonical base64 before first-stage validation,
+strict Unicode/depth with retained duplicate/numeric lexemes, deterministic path
+conflicts and value-API provenance refusals, and explicit base64-to-text helpers
+for composition of separately checked recipes.
+
+Five affected emitted templates are frozen as one legacy_v1_v3 family. Existing
+formats1–3 preserve complete emitted bytes/file maps under identical generator
+version; release-version provenance remains truthful. Native corpus evidence and
+old-reader/full-map compatibility checks are required before this unit goes green.
+The coordinator owns store updates and integration; the implementor owns its
+isolated worktree and reuses the assigned serial build cache. No approval is inferred
+from the outstanding optional wrap-up scope question: the original full-gap
+authorization remains the current scope absent a correction.
+
+## Implementation and review state
+
+Implemented source unit3e2eb52e84f5ed7b94381076270d4cdc6f2970fd is integrated with
+main1667d02 in the coordinator tree. The first adversarial pass added42 lexical
+cases and four top-level tests, with no findings; the exact path-normalized report
+is review-result:normalization-raw-json-adversary-pass1-public and its recorded
+outcome is no-op. Reference/Rust corpus156, Go149 plus UTF-8/composition controls,
+six complete legacy file maps and the2,490-case base64 qualification remain green.
+
+The literal task check passed1,894 Rust cases, zero failed/ignored. The corrected
+explicit-Go native lane and site build also passed. The initial native harness
+failure, original logs, timings, integration conflict resolution, CLI help change,
+resource observations and workflow deviations are retained in
+verification-report:normalization-raw-json-integrated. Source publication and final
+Atlas delivery will be recorded separately. No release is claimed at this stage.
+
+The raw implementation used managed treewt-c12a5474a249, branch
+impl/normalization-raw-json at base60ffcb2. Integration is inwt-bf45625a6a50,
+branch impl/normalization-base64-resume. Assigned raw scratch is outside both trees.
+A serial target cache was reused across these two trees as an explicit deviation
+from the wave instruction, with no simultaneous unit builds. Subsequent units use
+their own target. Native build artifacts remain owned by the coordinator until
+wanted evidence is retained and managed cleanup is safe.
+
+TypeScript, positional arrays and model Binary64 are separate open stories. A
+source-observed legacy Go depth-cap difference has not been independently measured
+as a legacy native case and is not reported as a confirmed regression.
