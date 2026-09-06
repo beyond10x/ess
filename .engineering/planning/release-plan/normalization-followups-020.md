@@ -7,7 +7,7 @@ title: Release ESS normalization followups as 0.20.0 and qualify IVR adoption
 relations:
 - depends_on: story:typescript-normalization-target
 - serves: vision:O2
-revision: 8
+revision: 10
 ---
 ## Purpose and authority
 
@@ -42,9 +42,15 @@ After the actual version bump and actual generator rebuild, retain separate raw 
 
 ## Current state
 
-Active release preparation. TypeScript is implemented and published at checkpoint 6bf76440c38331f6dd5214e5667c210b58a24015, which passed literal task check (2003 passed, zero failed/ignored, 176 groups) and task site-build. The actual workspace version and eighteen internal dependency constraints are now 0.20.0. Cargo update --workspace --offline changed only 22 workspace package versions in Cargo.lock; no external dependency upgraded. The dated changelog retains every integrated main entry and documents the fallible pre-1.0 API changes. Current capability documentation no longer labels available APIs unreleased.
+ESS 0.20.0 is published from exact tagged source c90ca1b2a3a5db02d7580dab63be6cbc56679e0b. Before publication, literal `task check` passed 2,003 tests with no failures or ignored cases across 176 result groups (exit 0, 144.946 seconds); `task site-build` passed (exit 0, 16.217 seconds). Annotated tag 0.20.0 and main were pushed. [Release workflow 34043573262](https://github.com/beyond10x/ess/actions/runs/34043573262) succeeded. [Release 383642123](https://github.com/beyond10x/ess/releases/tag/0.20.0) is published by the existing workflow as github-actions[bot], with draft and prerelease both false. These observations supersede the earlier pending checkpoints retained below.
 
-Actual post-bump compatibility/native qualifications passed; the exact release-commit workspace and site gates remain pending. No 0.20 tag or binary release exists yet. The two decoded-reader and retained-common candidates and the 155-case adopter proposal are frozen, with the broader source-specific defaults/decoder/Flow boundaries still explicit. Consumer regeneration, GitLab publication, Atlas release observation and final status delivery remain required.
+All four platform archives and SHA256SUMS were downloaded. Their sizes and hashes match both API digests and the checksum file. The Linux x86_64 archive SHA256 is 569a34b0c2263e663140579b8511c321514fd6428634d6e62ddf2e2b15c66232; its executable SHA256 is eff3b1c8fe8834b2700681267906c768444a6e38e703ebe5349dd7e472da4980. The downloaded executable returns `ess 0.20.0`, exit 0. Literal `task release-status` exits 0. The actual post-bump native and producer-witness qualification is recorded below.
+
+Atlas commit 78d96cc706f735c3a160369e3ce2f2133f4b1d41 publishes the bounded local-tag observation, validated catalog, generated version projections and separate remote-release evidence. Its full unscoped `scripts/fences.sh` completed in 199.141 seconds with exit 1: all 149 Rust tests, catalog, live Pages, projections, Markdown and brand checks passed; the existing AgentIDE collector-v4, primary Website Docs System pin and Widgets Serves findings remain. This does not establish organization-wide convergence. The final evidence-log append separately passed the 181-file Markdown fence.
+
+Normal documentation publication 34043900364 succeeded. [Live provenance](https://beyond10x.github.io/PROVENANCE.json) observed at 2026-09-06T16:11:04Z selects newer ESS main 239996d846460aee342ce42514378c25b2be5152, a release descendant with workspace version 0.20.0. Producer 34044137573 and artifact 9992578091 carry 40 files that match exact Git and artifact bytes. Two public documentation files differ from c90 because an independent schema-resource review wave subsequently landed. Both 40-file bundles were verified. The coordinator fast-forwarded to that main commit without rewriting either the planning journal or the release tag.
+
+The selected consumer has the verified released binary pin, CLI-owned common bundle import, five repinned recipes and all 15 generated normalization packages. Native qualification, independent review and publication remain in progress. Broader decoder, default, Flow and family boundaries remain outside these canonical subsets; no gapfree service-conformance claim is made. Final consumer evidence, owned-tree cleanup and operator notification remain required.
 
 ## Module identity during adoption
 
