@@ -2,7 +2,7 @@
 format: aep.planning-md/1
 id: story:review-conformance-coverage
 kind: story
-status: draft
+status: active
 title: Carry conformance coverage through persisted suites and evidence
 tags:
 - P0
@@ -20,7 +20,7 @@ scope:
   path: crates/verify/ess-conformance
 - confidence: cited
   path: crates/verify/ess-diff
-- confidence: inferred
+- confidence: cited
   path: docs/design/review-conformance-coverage-transport.md
 - confidence: cited
   path: docs/design/review-conformance-coverage.md
@@ -32,7 +32,7 @@ scope:
   path: website/docs/guides/verify-conformance.md
 - confidence: cited
   path: website/docs/reference/formats.md
-revision: 17
+revision: 21
 ---
 ## Finding and source
 
@@ -58,26 +58,23 @@ The first-wave v1 reader fix is independent; do not treat legacy zero-test evide
 
 ## Scope
 
-Refreshed 2026-09-06 by story-scoper at ESS be0eefd7ec125d46bb3b664c4b95b8d638a2b1fe, story revision6; coordinator incorporates the separate proposed transport design — cited.
+Derived 2026-09-06 by aep-drive:story-scoper 0.8.0 against clean ESS 239996d846460aee342ce42514378c25b2be5152 and complete draft revision 17; current accepted coverage/transport bindings and the refreshed source/hash record govern — cited.
 
-- crates/verify/ess-conformance — cited; admission.rs:51 retains original bytes/view/digest, runner.rs:258 and :347 bind actual execution, counts.rs:125 checks it. Preserve the immutable capabilities and historical unadmitted DTO. Own complete synthesis/authored inventory, source ownership, report/run coverage, Go and browser admission.
-- Suite/5 representation — inferred; keep a separate closed document/builder and private admitted coverage rather than changing legacy DTO serialization. Preserve full parent scenario bodies/dependencies, knowledge, every refusal occurrence and source map.
-- Authored producers — cited; synthesize.rs:197,923,981 and authored.rs:231,715,1439 own candidates and refusals. Source.origin is display text; stable input identity must precede new duplicate ownership. Preserve old APIs and all known identities.
-- Go — cited; go/mod.rs:49 emits legacy suites; runtime.go:504 admits before target creation, :1945 permits only1–4 and :2591 emits unknown coverage. Its :2634 digest handoff must retain the inner original suite when the new carrier is embedded. Keep terminal/no-destination/teardown guards.
-- Browser — cited; web.rs:54,75 and player.js:28 currently emit/read an unversioned reduced model before admission. Add explicit paired typed input and actual browser rejection tests. Coverage pairing does not close the separate replay-fidelity finding.
-- crates/edge/ess-cli — cited; main.rs:2018 owns impact loading, :2436 execution admission, :2525 synthesis, :2637 web, :2676 authoring and :2737 source acquisition. The v5 path must retain presently discarded refusals and merged candidate dispositions. Add explicit format/carrier/filter controls without changing defaults.
-- crates/verify/ess-diff — cited; impact.rs:766 consumes a DTO and EssImpact:700 carries existing version3 provenance/invalidation. Add admitted input and in-memory selection context; preserve the persisted envelope. The proposed binding selects operation refusal for incomplete v5 coverage instead of adding a new WholeAnswer spelling under3.
-- docs/design/review-conformance-coverage.md — cited; accepted inventory, multiplicity, identity and matrix authority, with stale current-impact2 citations to correct after review.
-- docs/design/review-conformance-coverage-transport.md — inferred; proposed separate input/1 carrier, stable identities, browser pairing, CLI routing and impact clarification; not yet accepted.
-- website/docs/guides/verify-conformance.md — cited; current lines64–69 say suite5 unavailable.
-- website/docs/reference/formats.md — cited; current lines205–206 describe count-only coverage and the future successor.
-- docs/design/review-format-catalog.md — cited; lines288–295 record count-only behavior and reserved suite5.
-- website/docs — inferred; retain the exact parent collision token for public instructions.
-- Tests — cited; conformance count_reports/count_writer_pass1/count_writer_pass2/synthesis/authored, CLI count_reports/go_conformance/count_writer_pass1/count_writer_pass2/authored_scenarios and diff impact are controls. Add actual lineage/source/browser cases; emitted-source assertions and billing/WASM are not generic-browser execution.
-- Cross-repository prerequisite — cited; separately governed AEP story:admit-ess-conformance-coverage and a new current Atlas ADR must precede writer publication. Installed/generated adoption remains distinct; no defaults or releases are selected.
-- No extra production reservation established — inferred; shared primitives/compiler, ess-gen, normalization, realization, Cargo.lock and Taskfile remain outside the proposed implementation unless a measured mechanism requires expansion.
-- Confidence: medium — inferred; the three production owners and count capabilities are established; transport/source/browser decisions are proposed and untested.
-- Would collide with: the three package tokens, two binding paths, catalog, cited guides and website/docs parent token — inferred. AEP scope matching is literal; keep those directory tokens.
+- **Primary surface:** crates/verify/ess-conformance — cited; existing suite/scenario admission, synthesis/authored inventories, immutable execution/count pairing, Go emission/runtime and generic browser projection/player own closed suite/5, input/1 and replay/1. Preserve legacy DTO construction, original suite1–4 bytes, count APIs, checked Result returns and supported execution vocabulary.
+- **CLI surface:** crates/edge/ess-cli — cited; main.rs owns fresh/loaded conformance, source acquisition, output preflight and impact input. Add accepted explicit suite-format, suite-input and conform select controls, read-once root-relative sources and pairing before effects. Its separately integrated normalize.rs TypeScript route is a collision surface to preserve.
+- **Impact surface:** crates/verify/ess-diff — cited; existing semantic invalidation owns admitted exact-input and in-memory selection context. Preserve ess-impact/3 with ess-diff/2 fields/bytes and conservative dependency obligations; refuse incomplete suite/5 or unavailable exact lineage without fallback.
+- **Binding authority:** docs/design/review-conformance-coverage.md — cited; accepted outcome, inventory, byte/scalar, 75-row matrix and P1–P10 authority. Source-status clarification remains coordinator-owned; implementation does not rewrite the contract.
+- **Transport authority:** docs/design/review-conformance-coverage-transport.md — cited; accepted original input/1 lineage, authored identities, paired replay/1, impact/3 and reader-first shipment rules, including model Binary64 refusal before inventory/output.
+- **Internal format inventory:** docs/design/review-format-catalog.md — cited; update conformance/carrier/replay support after implementation while preserving the current checked synthesis, normalization and schema-resource distinctions.
+- **Public guide:** website/docs/guides/verify-conformance.md — cited; extend current count-only instructions with explicit suite/5 production, original input/parents, selection and truthful report/2 pairing after implementation. No default or deployed-adopter transition is selected.
+- **Public format reference:** website/docs/reference/formats.md — cited; add the implemented suite/5, input/1 and replay/1 support while preserving TypeScript normalization report/1–3, recipe/1–6, known floating-pair equality limits and adopter-owned schema IDs.
+- **Public collision token:** website/docs — inferred; retain the existing literal parent reservation alongside the two concrete public leaves.
+- **Execution and scalar limits:** exact u64 metadata, original inner/parent bytes, inherited nested defaults and finite Number meaning only at declared Node payload positions remain distinct. Model/shape Binary64 refusal must precede inventory/target effects; no invented authored identity/code or numeric normalization across unknown fields — cited.
+- **Consumer prerequisite:** the coordinator reports AEP 658cf76e6371b1628f6de69548e724b52803f5c2 published with all three exact-source CI/bundle/docs runs successful. The repinned helper's frozen compiled inputs match that source, but it has not executed; actual frozen Rust/Go correspondence through both readers/replay remains required before ESS writer publication — cited.
+- **Preservation boundary:** replay pairing does not close F15 browser fidelity, authenticate a publisher or prove inventory honesty. No ESS-to-AEP dependency, normalization equality repair, new impact envelope or conformance default movement is selected — cited.
+- **No additional production reservation:** no changed owner establishes a coverage-writer edit in schema-contract, ess-gen, primitives/compiler, composition, realization, shared manifests/lock or Taskfile. New private modules and permanent Rust test harnesses fit the three reserved packages; report a concrete need before expansion — inferred.
+- **Confidence: high** — cited; all prior production/test owners and both accepted bindings are byte-identical, and the two changed public/internal references preserve the same coverage boundary. Private names and exact fixture placement remain implementation choices.
+- **Would collide with:** edits anywhere in the three package tokens, either binding, the catalog, either public leaf or website/docs parent token; notably CLI normalization work already shares the ess-cli package reservation. Store/generator/delivery scheduling remains coordinator-owned — inferred.
 
 ## Required classification checks
 
@@ -101,3 +98,7 @@ Original review reports are035d8b8fd665457e387a73edfd47fec9b40fbdc85bc6c93a774b4
 ## Published Binary64 source refresh
 
 The transport binding records published main6c6620b model/suite refusal before output. Suite/5 adds inventory without introducing a Binary64 codec. Preserve admission::model/suite and checked runner/serializer/projection Result returns. A model-level UnsupportedBinary64 authoring cause cannot be assigned an invented authored source identity or admitted as a new coverage refusal code. The reader prerequisite retains its accepted supported vocabulary; fresh writer source assumptions must be refreshed after this integration. This source-preservation clarification is accepted under the standing remediation instruction, with no new wire vocabulary or default change.
+
+## Wave 11 prerequisite readback
+
+The AEP coverage reader is published at 658cf76e6371b1628f6de69548e724b52803f5c2, with its closing records at 70ec336c00fa67b3d83f5c05bfbe71189462c01e. Joint public delivery and task-owned retirement are recorded in the closed wave 10 page. This supersedes the historical Current preparation paragraph. The refreshed scope report at 239996d is still source-applicable: later ESS commits through 1c7b38b change internal planning records only. Actual frozen Rust/Go correspondence through the published AEP readers remains required before the writer is published.
