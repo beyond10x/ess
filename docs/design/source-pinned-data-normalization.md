@@ -437,14 +437,14 @@ policy before normal stage validation. The concrete grammar, paths, diagnostics,
 precedence and qualification requirements are in the positional binding.
 
 `ess generate schema normalize-generate` reads `--recipe` and repeated `--bundle`
-inputs through the existing sealed-plan boundary. `--target rust|go` selects an
-implemented library target; `--package` is required, and `--module` is required
-only for Go and refused for Rust. No structural target substitutes for an
-unimplemented normalization target. TypeScript joins this command only when its
-runtime realization exists.
+inputs through the existing sealed-plan boundary. `--target rust|go|typescript`
+selects an implemented library target; `--package` is required, and `--module` is
+required only for Go and refused for Rust and TypeScript. Structural declarations
+remain a separate API from executable normalization.
 
 The command writes the exact library-API file set to required `--out`, including
-source recipe, bundles, embedded schemas and normalization-target/1 report.
+source recipe, bundles, embedded schemas and the recipe-selected target report:
+version 1 for recipes 1/2, version 2 for recipe 3, and version 3 for recipes 4/5/6.
 Admission and target feasibility finish before output preflight. All generated
 paths pass the existing shared containment, symlink, hard-link, case-alias and
 file/directory checks before any write. Canonical source input paths must not
@@ -455,6 +455,42 @@ assumption and does not claim rollback on subsequent I/O failure.
 or changing files. Missing or stale files are listed deterministically and give a
 nonzero exit. It checks the generated file set, not ownership of unrelated files
 in an adopter's directory; neither mode deletes obsolete or unowned files.
-Source/target refusals still apply in check mode. Tests compare both targets with
+Source/target refusals still apply in check mode. Tests compare all three targets with
 the library output and cover input protection, complete preflight, read-only drift,
 invalid unused branches and target refusals before publication.
+
+## Native TypeScript execution (unreleased)
+
+`Plan::typescript(package)` emits a standalone strict ES2022 ESM package for
+recipes 1–6. `new Normalizer().normalize(branch, jsonText)` returns only complete
+JSON text or located findings; `normalizeBase64Json(branch, encoded)` validates
+canonical standard base64 and strict UTF-8 before entering the same text boundary.
+There is no decoded-object entrypoint. Exact integral tokens use private bigint,
+floating tokens retain number identity, and records use prototype-safe Maps with
+Unicode-scalar ordering. Binary64 and positional preparation require the existing
+explicit policies and compiler-owned metadata; inputs are prepared once.
+
+The fixed schema profile validates source constraints without numeric coercion.
+It does not broaden Plan's existing shape admission: some numeric type/enum or
+allOf intersections refuse before target selection, while ordinary string/model
+enums execute. `uniqueItems: true`, unqualified patterns and other unsupported
+constraints refuse generation at qualified source pointers. Schema formats and
+content annotations do not execute; default values do not mutate inputs.
+
+Static checking admits the additional Binary64 equality case only when both
+operand kinds are Binary64 in formats 5/6. This does not change general Number
+admission or allow Integer/Number/Decimal values to fill Binary64 outputs.
+The frozen reference evaluator has a separate runtime limitation: formats 5/6
+compare any two floating representations before integer eligibility, including
+integral floating tokens admitted by Integer source schemas. TypeScript preserves
+that behavior. Mixed integer/floating pairs still require integer eligibility and
+refuse; two integer representations retain the signed-64 check. Compiler-owned
+metadata remains authoritative for static checking, lowering and output provenance.
+This compatibility choice adds no target-only refusal or core evaluator change;
+a separately governed core-contract follow-up must assess any semantic tightening.
+
+All emitted source/runtime/profile files use the existing report digest map;
+the report excludes itself. TypeScript adds one private normalization-local
+package configuration arm without changing structural target configuration or
+old Rust/Go report bytes. The [TypeScript binding](typescript-normalization.md)
+records the executable API, exact profile and native qualification limits.

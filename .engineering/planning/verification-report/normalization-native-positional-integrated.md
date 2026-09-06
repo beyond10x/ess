@@ -8,7 +8,7 @@ relations:
 - verifies: story:binary64-structural-codecs
 - verifies: story:normalize-positional-array-input
 - verifies: story:normalization-followup-publication
-revision: 1
+revision: 3
 ---
 ## Outcome
 
@@ -46,3 +46,11 @@ Both implementors and both adversaries released the serial compiler lane with al
 The combined gate reduced free filesystem space to about10.04GB. Before the next unit receives its6GiB allowance above an8GiB reserve, the coordinator will archive wanted ignored verification artifacts and retire only the four completed, remotely reachable ESS unit trees through the worktree manager. Integration and current authority trees remain needed for the ongoing sequence. This is resource-driven cleanup of completed published units, not a claim that final cleanup is finished.
 
 This checkpoint is main-source publication, not a new binary release or completed adopter cutover. Released ESS remains0.19.0. TypeScript normalization, final released-tool adoption and the remaining explicitly source-bound IVR mapping are still pending. Whole-system Binary64 synthesis/conformance and unsupported structural refinements retain their documented boundaries.
+
+## Published documentation delivery
+
+Published ESS main b55efa4cd6c379217f60b98fb30f28f70e526ee6 passed remote CI 34036042567, documentation validation 34036042583 and source bundle 34036042661. Bundle artifact 9990196847 has provider digest sha256:0eba748aa8bec38b885c8dd1a72d75082ae80ab2928812f19cf08fde005b4605. Root downloaded it, verified that digest, and compared every one of its 40 source files byte-for-byte with the exact published Git commit; manifest and collection hashes also matched.
+
+Normal Atlas reconcile workflow 34037137505 completed successfully at 2026-09-06T13:52:40Z. Live https://beyond10x.github.io/PROVENANCE.json checked at 2026-09-06T13:55:17.910888Z names ESS b55efa4, Atlas controls b0fb59be02712e221c2a07d3e589120ed0ae3d7a and Website runtime fc4571534765c098ed861bc326da4d3da0d1df63. Its ESS producer/artifact/digest match the verified bundle; bundle SHA-256 is 9896b92bb505d476696db0ab9ce403f5fccfecfa04949e2af2ac93e561d9ff7a and source-set SHA-256 is 2e98c0aeca9568e5b3bd2f98ef1527a2364139cec93f22b51ada5ad8ad462012.
+
+This proves delivery of the reviewed unreleased native/positional guidance through the ordinary source-bundle workflow. It is not an ESS 0.20 release or completed TypeScript/IVR adoption. The same Atlas b0fb59be GitHub Gate 34035380674 also succeeded; the separate local whole-workspace fence observation retains its three previously recorded sibling-workspace failures.

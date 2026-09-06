@@ -1,0 +1,59 @@
+import { arrayValue, fail, type Value } from './value.js';
+import { required, type Context, type Expression } from './expression.js';
+import type { Condition } from './condition.js';
+
+function scope(context: Context, item: Value, index: number): Context {
+  return { ...context, item, index };
+}
+export function mapItems(list: Expression, value: Expression): Expression {
+  return (context, at) => {
+    const items = required(list, context, at + '/list');
+    if (!Array.isArray(items)) fail(at, 'collection_value', 'mapping requires a list');
+    return items.map((item, index) => required(value, scope(context, item, index), at + '/value'));
+  };
+}
+export function countDistinct(list: Expression, condition: Condition, key: Expression): Expression {
+  return (context, at) => {
+    const items = required(list, context, at + '/list');
+    if (!Array.isArray(items)) fail(at, 'collection_value', 'counting requires a list');
+    const keys = new Set<string>();
+    for (let index = 0; index < items.length; index++) {
+      const inner = scope(context, items[index]!, index);
+      if (condition(inner, at + '/condition')) {
+        const result = required(key, inner, at + '/key');
+        if (typeof result !== 'string') fail(at, 'count_key', 'distinct category key is not a string');
+        keys.add(result);
+      }
+    }
+    return BigInt(keys.size);
+  };
+}
+export function concatLists(lists: readonly Expression[]): Expression {
+  return (context, at) => {
+    const out: Value[] = [];
+    for (let index = 0; index < lists.length; index++) {
+      const location = at + '/lists/' + index;
+      for (const item of arrayValue(required(lists[index]!, context, location), location)) out.push(item);
+    }
+    return out;
+  };
+}
+export const indexValue: Expression = (context, at) => {
+  if (context.index === undefined) fail(at, 'item_scope', 'no collection index is bound here');
+  return BigInt(context.index);
+};
+export function selectItems(list: Expression, condition: Condition, value: Expression, otherwise?: Expression): Expression {
+  return (context, at) => {
+    const items = arrayValue(required(list, context, at + '/list'), at + '/list');
+    const out: Value[] = [];
+    for (let index = 0; index < items.length; index++) {
+      const inner = scope(context, items[index]!, index);
+      if (condition(inner, at + '/condition')) {
+        const result = required(value, inner, at + '/value');
+        if (otherwise !== undefined) return result;
+        out.push(result);
+      }
+    }
+    return otherwise === undefined ? out : required(otherwise, context, at + '/otherwise');
+  };
+}

@@ -5,6 +5,55 @@ TypeScript execution target. The reference remains the checked recipe and retain
 source schemas described in `source-pinned-data-normalization.md`; structural type
 aliases do not implement execution or validation.
 
+## Implemented target (unreleased)
+
+`Plan::typescript(package)` and `normalize-generate --target typescript` now emit
+and execute the contract below for recipe formats 1–6. Historical preparation
+receipts later in this document describe their named source snapshots; their
+pending-dispatch statements do not describe this implementation.
+
+The qualified package is private ESM, version `0.0.0`, with strict ES2022/NodeNext
+build inputs and only the root public export. It has no runtime dependencies.
+Package identities use one optional `@scope/` prefix, at most 214 ASCII bytes,
+and parts beginning with `a`–`z` followed by `a`–`z`, digits, `-`, `_` or `.`.
+Generation emits files without installing packages or compiling them.
+
+The existing checked Plan remains the first admission boundary. The fixed target
+profile then qualifies boolean schemas, local references and their siblings,
+`type`, `const`, `enum`, object/required/additional/property-name constraints,
+`items`, `prefixItems`, minimum/maximum and exclusive numeric bounds, Unicode
+string length, array length, `anyOf`, `oneOf` and `allOf`, plus exactly the frozen
+Bytes pattern. This keyword list does not broaden Plan shape admission. For
+example, the numeric type-plus-enum intersection
+`{"type":"number","exclusiveMinimum":-1,"exclusiveMaximum":1.0,"enum":[-0.0,0,1]}`
+and `{"allOf":[{"type":"number","minimum":1},{"type":"number","maximum":-1}]}`
+remain `normalization_shape` refusals before target selection. Ordinary string
+enums and model enums execute. Private conjunction/const validator probes are
+internal validation evidence, not public Plan/target support.
+
+`uniqueItems: true`, every unqualified pattern and any other unsupported
+constraint refuse as `typescript_schema_profile` at their original qualified
+schema pointer before Realization/report creation. `uniqueItems: false` is inert.
+Formats and content encodings are annotations; schema defaults do not execute.
+The fully hashed `schema-profile.json` states these limits. Source schemas retain
+all annotations and their original bundle/model identities.
+
+Native qualification uses Node 22.23.1 (V8 12.4.254.21-node.56) and TypeScript
+6.0.3. It executes all 3,091 shared text/helper vectors, 31 public schema controls,
+56 Unicode/prototype/lexical/arity controls, seven private schema conjunctions,
+25 equality controls and 26,966 numeric cases derived from 13,455 finite bit
+patterns plus 28 midpoint/huge-exponent tokens. Applicable runtime vectors repeat
+against the same Normalizer to check call isolation. The 13 named decoded-value
+API cases do not apply to the text-only API; none of the 3,091 text/helper cases
+is skipped. These measurements qualify the tested engine and cases, not every
+binary64 value or another engine. Equality measurements compare the reference
+and native TypeScript; no new Rust/Go native equality run is implied.
+
+Before shared edits, twelve complete Rust/Go emission maps for formats 1–6 were
+captured at actual generator 0.19.0: 218 files including exact report bytes.
+The literal witness does not rewrite the generator version. A later release
+projection requires separate qualification; this target changes no old map byte.
+
 ## Input and result boundary
 
 The generated library accepts an exact branch name and one complete JSON text.
@@ -107,7 +156,7 @@ unsupported profiles refuse before a Realization or report is returned.
 
 ## Concrete library and CLI contract
 
-Add `normalize::Plan::typescript(package: &str) -> Result<Realization, Refused>`.
+The additive API is `normalize::Plan::typescript(package: &str) -> Result<Realization, Refused>`.
 The existing structural `realize::Plan::typescript()` remains a separate API.
 `normalize-generate --target typescript --package <name>` emits a checked package;
 `--module` remains a Go-only option and refuses here before any output is written.
@@ -190,13 +239,18 @@ observed serializer uses zmij 1.0.23. Any dependency or engine change must be
 qualified against the actual build graph and corpus, rather than inferred from
 one direct dependency declaration. No new numeric runtime dependency is selected.
 
-Modeled Binary64 remains a checked type distinction from general Number even when
-both use a private JavaScript number representation. Consume compiler-owned
-metadata and preserve it in lowering. Format-5 equality accepts two typed
-Binary64 operands and uses finite IEEE equality, including +0 equal to -0.
-Runtime `typeof number` is insufficient authority. Integer/general Number/Decimal
-values do not silently fill Binary64 outputs. Missing explicit input paths and
-unsupported model path shapes remain planning refusals.
+Static checking admits the additional Binary64 equality case only when both
+operand kinds are Binary64 in formats 5/6. This does not change general Number
+admission or allow Integer/Number/Decimal values to fill Binary64 outputs.
+The frozen reference evaluator has a separate runtime limitation: formats 5/6
+compare any two floating representations before integer eligibility, including
+integral floating tokens admitted by Integer source schemas. TypeScript preserves
+that behavior. Mixed integer/floating pairs still require integer eligibility and
+refuse; two integer representations retain the signed-64 check. Compiler-owned
+metadata remains authoritative for static checking, lowering and output provenance.
+This compatibility choice adds no target-only refusal or core evaluator change;
+a separately governed core-contract follow-up must assess any semantic tightening.
+Missing explicit input paths and unsupported model path shapes remain planning refusals.
 
 ## Lexical input and retained bytes
 
@@ -519,7 +573,8 @@ decoded-value entrypoint to add.
 The frozen implementation now admits recipe 6 in envelope, model-root, raw-input,
 Binary64 construction/equality, generated Rust-runtime and CLI gates. Position and
 positional declarations remain recipe-6-only, even for an empty declaration map
-in older formats. `execute.rs:28` enables Binary64 equality for formats 5 and 6.
+in older formats. `execute.rs:28` enables the existing format-wide floating equality branch for
+formats 5 and 6, including the Integer-expression runtime limitation stated above.
 `target.rs:163` actually selects report 1 for recipes 1/2, report 2 for recipe 3,
 and report 3 for recipes 4/5/6. Keep this selection; a third target adds no common
 report version.
@@ -579,9 +634,9 @@ three `mixed_plan`/`mixed_cases` vectors at fixture lines 98/112:
 | `{"operands":null,"number":0.10000000000000001}` | false: positional zero array and explicitly rounded numeric input coexist |
 | `{"operands":[]}` | true: zero padding and the explicit Binary64 -0.0 default remain executable |
 
-This accounts for **3,072 planned fixture executions**: 2,836 historical applicable
+This accounts for **3,091 planned fixture executions**: 2,836 historical applicable
 cases + 70 format-5 Binary64 + 93 positional text/helper + 3 mixed + 70 inherited
-format-6 Binary64. It excludes separate generation/admission/defensive tests and
+format-6 Binary64 + 19 literal positional adversary text vectors. It excludes separate generation/admission/defensive tests and
 the new TS-specific engine/numeric/Unicode/prototype controls. These are source
 and prior-handoff inventory counts, not a TS test run in this task. Re-enumerate
 the constructors at final dispatch, especially if adversary corrections add cases.
@@ -609,3 +664,94 @@ actual TypeScript 6.0.3 and Node/V8 environment when implementation runs. No eng
 numeric, native or schema diagnostic qualification was rerun here. The same 31
 write paths, coordinator-owned document split, fixed package arm, report families,
 source pins and no-new-dependency decision remain intact.
+
+
+## Final integration dispatch delta
+
+Pinned integration: `1f8e319cf153c348a6c434c6e74939f4aa587125`.
+
+**The exact 31-path write scope is unchanged.** It matches the persisted TypeScript
+story revision 7: 11 existing files and 20 proposed new files. No additional
+production, existing-test or template write path is needed. `scope-entries.json`
+refreshes every existing path to this integration's exact blob/hash.
+
+The normalization Plan, checker, recipe/input/retained/evaluation code, Rust/Go
+runtime families, CLI source and positional/Binary64 fixture constructors match
+frozen positional source `eb2e5d60e9e803993417df39563bc744dbcd36fc` exactly.
+Structural realization production matches `213d4b8a8338763346cad2bc92cee826430726c9`.
+The older packet's structural emitter hashes therefore update to the reviewed
+finite codecs; they are read dependencies, not TS write authority. The existing
+normalization Binary64 test's changed expectation now checks successful structural
+finite wrappers instead of the retired blanket refusal; its normalization fixture
+and 70-vector corpus did not change. Structural TypeScript remains separate.
+
+The integrated TypeScript design is byte-identical to the proposed design file
+from the positional refresh. Source proof contains 84 current file hashes, the
+previous-packet comparisons and the empty protected production/fixture diffs.
+Public documentation and planning differences are the recorded integration, not
+an unreviewed normalization-runtime change.
+
+## Added positional controls within the same test scope
+
+The new private `adversarial_plan` and `independent_cases` helpers in
+`tests/normalization_positional_adversary.rs:53,82` supply **19 additional text
+vectors**. The coordinator accepted their addition to the planned native fixture
+inventory: **3,072 → 3,091**. Preserve the literal inputs, independent outputs and
+ordered findings, repeated fresh-call controls, signed-zero bits, escaped source
+paths, source-order depth/Unicode precedence and unknown-branch grammar priority.
+
+The separate `uniqueItems:true` control at that file's line 264 is an explicit
+TypeScript **generation-refusal** control under the already bound closed profile.
+It does not add runtime uniqueness support or enter the 19 text-vector count.
+Assert the original source-qualified keyword pointer and that no Realization or
+report is returned. Keep the original reference/adversary test unchanged. This
+updates test accounting; it does not silently drop a required refinement.
+
+Concrete copy route, requiring no existing helper visibility edits:
+
+1. In the already scoped new
+   `tests/fixtures/normalization_typescript.rs`, add a dedicated nested module
+   containing copies of the pinned adversary's small tuple/read/policy/position
+   constructors, `adversarial_plan` and `independent_cases`. Preserve those source
+   bodies and raw expected strings; expose new fixture wrappers from this new
+   module. Cite the immutable source commit and original file hash in the copy.
+   Do not include the complete old integration-test module or its native build
+   harness. This avoids importing unrelated Rust/Go test executions or editing
+   private old helpers merely for reuse.
+2. `tests/support/normalization_typescript.rs` inventories the 19 vectors in source
+   order; `normalization_typescript_native.rs` executes them through the emitted
+   package, using the existing scoped TypeScript assertion fixture. Keep expected
+   numbers and raw strings lossless. Add source-union/nested-Position controls from
+   the adversary's line 220 to the new schema/generation tests.
+3. Reconstruct the two-slot uniqueItems schema in the already scoped
+   `normalization_typescript_schema.rs` and assert preflight refusal. Private arity
+   fault-injection and missing-propagation controls belong in test-owned generated
+   copies or internal test code, without a public mutable metadata API.
+4. Adapt the CLI refusal/drift scenarios in the already scoped new CLI TS test.
+   Existing decoded-value provenance checks remain reference/Rust controls because
+   TS has no value-input API. The Go fixture's invalid raw UTF-8 byte-input cases
+   are not a TS text entrypoint; retain separate strict-UTF-8 base64-helper tests
+   and located literal/escaped UTF-16-surrogate controls instead of claiming those
+   byte-API cases executed unchanged.
+
+The four positional and four structural adversary source/fixture files are retained
+as hashed read dependencies. None enters the TS write scope. Full format-1–6
+Rust/Go maps still require capture at one actual generator version before any
+shared TS edit; no map capture or target build was run in this check.
+
+## Available native tool paths
+
+- Node: `/usr/bin/node`; observed `22.23.1`, V8 `12.4.254.21-node.56`.
+- Compiler: set `ESS_TYPESCRIPT_COMPILER=/usr/lib/node_modules/typescript/lib/tsc.js`.
+  `/usr/bin/node` with that exact script and `--version` returned `Version 6.0.3`.
+- `/usr/bin/tsc` resolves to `/usr/lib/node_modules/typescript/bin/tsc`; its direct
+  version query also returned `Version 6.0.3`.
+
+All four read-only version queries exited 0. `toolchain.json` retains exact commands,
+outputs and executable/compiler-file hashes. These identities match the retained
+numeric-strategy qualification; no numeric or schema parity run was repeated.
+
+No repository edits, builds, implementation or worktree lifecycle actions occurred.
+The coordinator's gates and explicit implementor/worktree dispatch remain pending.
+This final source receipt needs only a delta recheck if that dispatch changes the
+integration source pin.

@@ -1,0 +1,47 @@
+---
+format: aep.planning-md/1
+id: review-result:typescript-normalization-docs-pass1
+kind: review-result
+status: active
+title: Review TypeScript normalization adopter and binding documentation
+relations:
+- reviews: story:typescript-normalization-target
+revision: 1
+---
+Unit: TypeScript normalization documentation review, pass 1
+Scope: six proposed documentation files; introduced TypeScript hunks
+Source: 68f0b57dfe01f069c38b070784ea63ed27bf92da
+Document patch SHA256: 293adae766c12223d3c943d988d2500c75c6ac8e55c6b1a39bd49cda82948b09
+Verdict: no documentation findings
+Execution: read-only source/evidence inspection; no toolchains or Git commands
+
+The six resulting files match every proposed SHA256 in `six-doc-proposal.json`. All 25 implementation-owned source files match the frozen source manifest. The assigned source commit is the coordinator-provided identity; this review verified its supplied file hashes without querying Git. `reviewed-inputs.json` records the exact document and evidence identities. The proposal's historical `applied: false` does not describe the inspected coordinator files.
+
+The API, generated package and compilation guidance agree with the frozen implementation: `Plan::typescript(package)`; the text-only `Normalizer.normalize` and `normalizeBase64Json` methods; discriminated complete JSON/findings results; private ESM package; strict ES2022/NodeNext configuration; root export; `dist/index.js`; no runtime dependencies; lowercase bounded package names; and Go-only `--module`. The guide's import is a consumer-file-relative example, with branch/input explicitly dependent on the supplied recipe. This review inspected the emitted build configuration and recorded qualified native compilation rather than executing that illustrative recipe. Sources: [crates/generate/schema-contract/src/realize/normalize/typescript_target.rs:15](https://github.com/beyond10x/ess/blob/68f0b57dfe01f069c38b070784ea63ed27bf92da/crates/generate/schema-contract/src/realize/normalize/typescript_target.rs#L15), [crates/generate/schema-contract/src/realize/normalize/ts_runtime.ts.txt:9](https://github.com/beyond10x/ess/blob/68f0b57dfe01f069c38b070784ea63ed27bf92da/crates/generate/schema-contract/src/realize/normalize/ts_runtime.ts.txt#L9), [crates/edge/ess-cli/src/normalize.rs:148](https://github.com/beyond10x/ess/blob/68f0b57dfe01f069c38b070784ea63ed27bf92da/crates/edge/ess-cli/src/normalize.rs#L148).
+
+The profile statements distinguish existing Plan admission from target schema validation. The documented keywords and exact Bytes pattern agree with qualification/lowering; `uniqueItems: true` and unsupported constraints refuse before Realization. Annotations/defaults do not execute. Private conjunction probes are explicitly separated from public Plan support. Complete schema diagnostics retain multiplicity and sort escaped instance pointers by Unicode scalar order. Sources: [crates/generate/schema-contract/src/realize/normalize/typescript_schema.rs:61](https://github.com/beyond10x/ess/blob/68f0b57dfe01f069c38b070784ea63ed27bf92da/crates/generate/schema-contract/src/realize/normalize/typescript_schema.rs#L61), [crates/generate/schema-contract/src/realize/normalize/ts_schema.ts.txt:55](https://github.com/beyond10x/ess/blob/68f0b57dfe01f069c38b070784ea63ed27bf92da/crates/generate/schema-contract/src/realize/normalize/ts_schema.ts.txt#L55), [crates/generate/schema-contract/src/realize/normalize/ts_value.ts.txt:16](https://github.com/beyond10x/ess/blob/68f0b57dfe01f069c38b070784ea63ed27bf92da/crates/generate/schema-contract/src/realize/normalize/ts_value.ts.txt#L16), [crates/generate/schema-contract/tests/normalization_typescript_native.rs:63](https://github.com/beyond10x/ess/blob/68f0b57dfe01f069c38b070784ea63ed27bf92da/crates/generate/schema-contract/tests/normalization_typescript_native.rs#L63).
+
+The corrected equality wording accurately separates the checker’s exact Binary64-kind admission from the recipe-wide format-5/6 runtime floating-pair branch. Integer-schema inputs represented as two floating values reach that branch; mixed representations retain integer eligibility refusal. The TypeScript target preserves the frozen reference behavior without claiming new Integer/Number/Decimal-to-Binary64 output authority, a core fix, or newly executed Rust/Go equality evidence. Sources: [crates/generate/schema-contract/src/realize/normalize/check.rs:988](https://github.com/beyond10x/ess/blob/68f0b57dfe01f069c38b070784ea63ed27bf92da/crates/generate/schema-contract/src/realize/normalize/check.rs#L988), [crates/generate/schema-contract/src/realize/normalize/execute.rs:21](https://github.com/beyond10x/ess/blob/68f0b57dfe01f069c38b070784ea63ed27bf92da/crates/generate/schema-contract/src/realize/normalize/execute.rs#L21), [crates/generate/schema-contract/src/realize/normalize/eval.rs:362](https://github.com/beyond10x/ess/blob/68f0b57dfe01f069c38b070784ea63ed27bf92da/crates/generate/schema-contract/src/realize/normalize/eval.rs#L362), [crates/generate/schema-contract/src/realize/normalize/ts_condition.ts.txt:16](https://github.com/beyond10x/ess/blob/68f0b57dfe01f069c38b070784ea63ed27bf92da/crates/generate/schema-contract/src/realize/normalize/ts_condition.ts.txt#L16).
+
+The recorded final native log supports the stated counts, with zero failures:
+
+| Evidence category | Recorded cases |
+| --- | ---: |
+| Shared text/retained-helper corpus | 3,091 |
+| Public schema controls | 31 |
+| Unicode/prototype/lexical/private-arity controls | 56 |
+| Private validator conjunction probes | 7 |
+| Equality controls | 25 |
+| Numeric cases | 26,966 |
+
+The numeric count is `13,455 × 2 + 28 × 2`. Shared/native case arrays execute twice on the same Normalizer; those repeat calls are not additional fixture counts. Private boundary/conjunction probes remain separately labeled. The 13 decoded-value entrypoints are inapplicable to the text-only API, not skipped shared text cases. Node 22.23.1, V8 12.4.254.21-node.56 and TypeScript 6.0.3 are asserted by the runner and recorded by the terminal native log. The docs limit qualification to the measured engine/corpora. Sources: [crates/generate/schema-contract/tests/normalization_typescript_native.rs:11](https://github.com/beyond10x/ess/blob/68f0b57dfe01f069c38b070784ea63ed27bf92da/crates/generate/schema-contract/tests/normalization_typescript_native.rs#L11), [crates/generate/schema-contract/tests/normalization_typescript_native.rs:134](https://github.com/beyond10x/ess/blob/68f0b57dfe01f069c38b070784ea63ed27bf92da/crates/generate/schema-contract/tests/normalization_typescript_native.rs#L134), [crates/generate/schema-contract/tests/support/normalization_typescript.rs:11](https://github.com/beyond10x/ess/blob/68f0b57dfe01f069c38b070784ea63ed27bf92da/crates/generate/schema-contract/tests/support/normalization_typescript.rs#L11), [crates/generate/schema-contract/tests/fixtures/normalization_typescript_tests.ts.txt:23](https://github.com/beyond10x/ess/blob/68f0b57dfe01f069c38b070784ea63ed27bf92da/crates/generate/schema-contract/tests/fixtures/normalization_typescript_tests.ts.txt#L23).
+
+`native-final.log` records six passing runner tests. `packages-final.log` totals 317 passing tests, zero failed/ignored; its final CLI TypeScript suite contains seven tests, superseding the earlier five-test intermediate CLI run. Final strict Clippy and scoped formatting command records both exit zero. These are reviewed implementor executions, not fresh reviewer runs or a claim that a full root/site gate ran here.
+
+Report mappings remain recipes 1/2 → target report 1, recipe 3 → report 2, recipes 4/5/6 → report 3. The serialization-only local TypeScript configuration and generated source/profile digest entries preserve the existing envelope; the report excludes itself and consumer-built `dist/` is outside generation. I independently compared the retained 218 emitted files across twelve before/after maps, including exact reports at actual generator 0.19.0. All paths/hashes match. The extra `canonical-maps.json` capture witness is evidence, not a thirteenth generated target. The docs correctly reserve later release-version projection qualification. Sources: [crates/generate/schema-contract/src/realize/normalize/target.rs:14](https://github.com/beyond10x/ess/blob/68f0b57dfe01f069c38b070784ea63ed27bf92da/crates/generate/schema-contract/src/realize/normalize/target.rs#L14), [crates/generate/schema-contract/src/realize/normalize/target.rs:172](https://github.com/beyond10x/ess/blob/68f0b57dfe01f069c38b070784ea63ed27bf92da/crates/generate/schema-contract/src/realize/normalize/target.rs#L172), [crates/generate/schema-contract/tests/normalization_typescript_legacy_bytes.rs:31](https://github.com/beyond10x/ess/blob/68f0b57dfe01f069c38b070784ea63ed27bf92da/crates/generate/schema-contract/tests/normalization_typescript_legacy_bytes.rs#L31).
+
+This verdict applies to the introduced TypeScript documentation in the exact six-file patch. It is not source approval, a release/adoption claim, or review of subsequent composition integration. Later merging of independently published composition documentation requires preservation of both changes. No repository, planning, lifecycle, or external integration writes occurred. Only this new review directory was written; all reviewer commands are terminal and no compiler lane was acquired. Public text contains repository-relative/public source citations and evidence basenames; exact local paths are retained solely in `evidence-private.json`.
+
+```findings
+[]
+```

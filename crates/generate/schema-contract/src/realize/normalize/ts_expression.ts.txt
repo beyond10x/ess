@@ -1,0 +1,104 @@
+import { MISSING, fail, pointer, present, stringValue, arrayValue, type Value } from './value.js';
+import { arithmetic, floating, integer, type NumericStep } from './numeric.js';
+import type { Condition } from './condition.js';
+
+export interface Context {
+  readonly input: Value;
+  readonly item: Value;
+  readonly index?: number;
+  readonly binary64: boolean;
+  readonly positionArities: ReadonlyMap<string, bigint>;
+}
+export type Expression = (context: Context, at: string) => Value;
+export interface Stage {
+  readonly input: number;
+  readonly output: number;
+  readonly requires: readonly Condition[];
+  readonly value: Expression;
+}
+export function required(expr: Expression, context: Context, at: string): Value {
+  return present(expr(context, at), at);
+}
+export function literal(value: Value): Expression { return () => value; }
+export function readValue(item: boolean, path: readonly string[]): Expression {
+  return (context, at) => {
+    let value = item ? context.item : context.input;
+    for (const key of path) {
+      if (value === MISSING) return MISSING;
+      if (!(value instanceof Map)) fail(at, 'object_value', 'member access encountered a nonobject');
+      value = value.get(key) ?? (value.has(key) ? null : MISSING);
+    }
+    return value;
+  };
+}
+export function fieldValue(object: Expression, name: string): Expression {
+  return (context, at) => {
+    const value = object(context, at + '/object');
+    if (value === MISSING) return MISSING;
+    if (!(value instanceof Map)) fail(at, 'object_value', 'member access encountered a nonobject');
+    return value.has(name) ? value.get(name)! : MISSING;
+  };
+}
+export function positionValue(operand: Expression, index: bigint): Expression {
+  return (context, at) => {
+    const value = operand(context, at + '/value');
+    if (value === MISSING) return MISSING;
+    const arity = context.positionArities.get(at);
+    if (arity === undefined || arity <= 0n || !Array.isArray(value)
+      || BigInt(value.length) !== arity || index >= arity || index < 0n)
+      fail(at, 'position_value', 'position encountered a value outside its checked tuple contract');
+    return value[Number(index)]!;
+  };
+}
+export function recordValue(fields: readonly (readonly [string, Expression])[]): Expression {
+  return (context, at) => {
+    const out = new Map<string, Value>();
+    for (const [key, expr] of fields) {
+      const value = expr(context, pointer(at + '/fields', key));
+      if (value !== MISSING) out.set(key, value);
+    }
+    return out;
+  };
+}
+export function listValue(items: readonly Expression[]): Expression {
+  return (context, at) => items.map((expr, i) => required(expr, context, at + '/items/' + i));
+}
+export function fallbackValue(value: Expression, fallback: Expression, onNull: boolean): Expression {
+  return (context, at) => {
+    const result = value(context, at + '/value');
+    return result === MISSING || (onNull && result === null) ? fallback(context, at + '/fallback') : result;
+  };
+}
+export function chooseValue(condition: Condition, thenValue: Expression, elseValue: Expression): Expression {
+  return (context, at) => condition(context, at + '/condition')
+    ? thenValue(context, at + '/then_value') : elseValue(context, at + '/else_value');
+}
+export function integerArithmetic(multiply: boolean, wrap: boolean, left: Expression, right: Expression): Expression {
+  return (context, at) => {
+    // Eligibility of the left operand precedes evaluation of the right operand.
+    const a = integer(required(left, context, at + '/left'), at);
+    const b = integer(required(right, context, at + '/right'), at);
+    return arithmetic(a, b, multiply, wrap, at);
+  };
+}
+export function binary64Value(value: Expression, steps: readonly NumericStep[], truncate: boolean): Expression {
+  return (context, at) => floating(required(value, context, at + '/value'), steps, truncate, at);
+}
+export function integerText(value: Expression): Expression {
+  return (context, at) => integer(required(value, context, at + '/value'), at + '/value').toString();
+}
+export function concatText(parts: readonly Expression[]): Expression {
+  return (context, at) => parts.map((expr, index) => {
+    const location = at + '/parts/' + index;
+    return stringValue(required(expr, context, location), location);
+  }).join('');
+}
+export function joinText(list: Expression, separator: Expression): Expression {
+  return (context, at) => {
+    const items = arrayValue(required(list, context, at + '/list'), at + '/list');
+    const sep = stringValue(required(separator, context, at + '/separator'), at + '/separator');
+    const strings = items.map(value => typeof value === 'string' ? value
+      : fail(at + '/list', 'string_value', 'joining requires string elements'));
+    return strings.join(sep);
+  };
+}

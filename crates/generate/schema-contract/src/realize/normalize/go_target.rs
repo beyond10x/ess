@@ -3,11 +3,12 @@
 use std::collections::BTreeSet;
 use std::fmt::Write as _;
 
+use super::target::Configuration;
 use super::{
     target, Binary64Range, Binary64Step, Condition, Expr, IntegerOp, NumberPath, Overflow, Plan,
     Realization, Refused, Scope,
 };
-use crate::realize::{finding, TargetConfiguration};
+use crate::realize::finding;
 
 // Frozen qualification profile, not a promise to accept future primitive-pattern changes.
 const BASE64_PATTERN: &str = "^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$";
@@ -95,7 +96,7 @@ pub(super) fn generate(plan: &Plan, package: &str, module: &str) -> Result<Reali
     files.insert("bindings.go".to_owned(), source);
     Ok(target::finish(
         plan,
-        TargetConfiguration::Go {
+        Configuration::Go {
             package: package.to_owned(),
             module: module.to_owned(),
         },

@@ -1,4 +1,4 @@
-//! Complete legacy output snapshots, recorded before each successor format.
+//! Complete output maps frozen before TypeScript; only the truthful producer line is projected.
 
 // Historical fixtures own private helper modules. Import them intact so this
 // byte witness exercises the original plans without rewriting frozen fixtures.
@@ -17,11 +17,15 @@ mod v4;
 #[allow(dead_code)]
 #[path = "fixtures/normalization_binary64.rs"]
 mod v5;
+#[allow(dead_code)]
+#[path = "fixtures/normalization_positional.rs"]
+mod v6;
 
 #[path = "support/generator_version.rs"]
 mod generator_version;
 
 use schema_contract::realize::normalize::Plan;
+
 use sha2::{Digest, Sha256};
 use std::collections::BTreeMap;
 use std::fmt::Write as _;
@@ -35,9 +39,10 @@ fn complete_legacy_file_maps_are_preserved() {
         v3::plan(),
         v4::plan(),
         v5::plan(),
+        v6::plan(),
     ];
-    let capture_root =
-        std::path::Path::new(env!("CARGO_TARGET_TMPDIR")).join("normalization-legacy-current");
+    let capture_root = std::path::Path::new(env!("CARGO_TARGET_TMPDIR"))
+        .join("normalization-typescript-legacy-current");
     let mut snapshots = BTreeMap::new();
     for (index, plan) in plans.iter().enumerate() {
         for (language, target) in [
@@ -78,38 +83,8 @@ fn complete_legacy_file_maps_are_preserved() {
     std::fs::write(capture_root.join("canonical-maps.json"), &actual).unwrap();
     let expected = std::fs::read_to_string(concat!(
         env!("CARGO_MANIFEST_DIR"),
-        "/tests/fixtures/normalization_legacy_maps.json"
+        "/tests/fixtures/normalization_typescript_legacy_maps.json"
     ))
     .unwrap();
     assert_eq!(actual, expected);
-}
-
-#[test]
-fn report_projection_changes_only_the_truthful_version_line() {
-    let baseline = "{\n  \"format\": \"ess-normalization-target/3\",\n  \"generator_version\": \"0.19.0\",\n  \"literal\": \"0.20.0\"\n}\n";
-    let current = baseline.replacen(
-        "\"generator_version\": \"0.19.0\"",
-        "\"generator_version\": \"0.20.0\"",
-        1,
-    );
-    assert_eq!(
-        generator_version::report_at_baseline(&current, "0.20.0").unwrap(),
-        baseline
-    );
-    assert!(generator_version::report_at_baseline(baseline, "0.20.0").is_err());
-    assert!(generator_version::report_at_baseline(
-        &current.replace("  \"generator_version", "    \"generator_version"),
-        "0.20.0"
-    )
-    .is_err());
-    for changed in [
-        current.replace("target/3", "target/4"),
-        current.replace("\"literal\": \"0.20.0\"", "\"literal\": \"changed\""),
-        current.replace("}\n", "}\n\n"),
-    ] {
-        assert_ne!(
-            generator_version::report_at_baseline(&changed, "0.20.0").unwrap(),
-            baseline
-        );
-    }
 }

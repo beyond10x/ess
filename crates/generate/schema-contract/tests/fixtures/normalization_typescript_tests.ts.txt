@@ -1,0 +1,113 @@
+import { Normalizer, type Finding } from './index.js';
+import { encodeBase64 } from './retained.js';
+import { MISSING, Refusal, type Value } from './value.js';
+import { literal, positionValue, type Context } from './expression.js';
+
+interface Case {
+  readonly branch: string;
+  readonly input: string;
+  readonly mode?: string;
+  readonly expected_json?: string;
+  readonly expected_errors?: readonly Finding[];
+  readonly bits?: string;
+  readonly array_bits?: readonly (string | null)[];
+}
+const cases = JSON.parse(__CASES_JSON_STRING__) as readonly Case[];
+const label = String(__CASE_LABEL__);
+function assert(value: boolean, detail: string): void { if (!value) throw new Error(detail); }
+function bits(value: number): string {
+  const view = new DataView(new ArrayBuffer(8));
+  view.setFloat64(0, value, false);
+  return view.getBigUint64(0, false).toString(16).padStart(16, '0');
+}
+const normalizer = new Normalizer();
+for (let index = 0; index < cases.length; index++) {
+  const entry = cases[index]!;
+  for (let repeat = 0; repeat < 2; repeat++) {
+    const result = entry.mode === 'base64' ? normalizer.normalizeBase64Json(entry.branch, entry.input)
+      : normalizer.normalize(entry.branch, entry.input);
+    const at = label + ':' + index + ':' + entry.branch + ' ' + entry.input;
+    assert(JSON.stringify(Object.keys(result).sort()) === (result.ok ? '["json","ok"]' : '["findings","ok"]'), at + ': result keys / partial output');
+    if (entry.expected_errors !== undefined) {
+      assert(!result.ok, at + ': expected refusal, got ' + JSON.stringify(result));
+      if (!result.ok) assert(result.findings.length === entry.expected_errors.length
+        && result.findings.every((finding, i) => finding.pointer === entry.expected_errors![i]!.pointer
+          && finding.rule === entry.expected_errors![i]!.rule && finding.detail === entry.expected_errors![i]!.detail
+          && JSON.stringify(Object.keys(finding).sort()) === JSON.stringify(Object.keys(entry.expected_errors![i]!).sort())),
+        at + ': got ' + JSON.stringify(result.findings) + '; expected ' + JSON.stringify(entry.expected_errors));
+    } else {
+      assert(result.ok, at + ': ' + JSON.stringify(result));
+      if (result.ok) {
+        assert(result.json === entry.expected_json, at + ': got ' + result.json + '; expected ' + entry.expected_json);
+        if (entry.bits !== undefined) assert(bits(JSON.parse(result.json) as number) === entry.bits, at + ': bits');
+        if (entry.array_bits !== undefined) {
+          const values = JSON.parse(result.json) as (number | null)[];
+          assert(JSON.stringify(values.map(v => v === null ? null : bits(v))) === JSON.stringify(entry.array_bits), at + ': array bits');
+        }
+      }
+    }
+  }
+}
+console.log(label + ': executed ' + cases.length + '; failed 0; repeated fresh-call checks ' + cases.length);
+
+if (label === 'typescript-boundaries') {
+  let controls = 0;
+  const good = (branch: string, input: string, expected: string): void => {
+    const got = normalizer.normalize(branch, input); controls++;
+    assert(got.ok && got.json === expected, JSON.stringify({ branch, input, got, expected }));
+  };
+  const bad = (branch: string, input: string, pointer: string, rule: string, detail: string, helper = false): void => {
+    const got = helper ? normalizer.normalizeBase64Json(branch, input) : normalizer.normalize(branch, input); controls++;
+    assert(!got.ok && Object.keys(got).sort().join(',') === 'findings,ok' && got.findings.length === 1
+      && Object.keys(got.findings[0]!).sort().join(',') === 'detail,pointer,rule'
+      && got.findings[0]!.pointer === pointer && got.findings[0]!.rule === rule && got.findings[0]!.detail === detail,
+      JSON.stringify({ branch, input, got, expected: { pointer, rule, detail } }));
+  };
+  const ordered = '{"":0,"10":10,"2":2,"__proto__":{"constructor":null},"constructor":false,"\ue000":1,"\ud800\udc00":2}';
+  for (const branch of ['plain','__proto__','constructor'])
+    good(branch, '{"\ud800\udc00":2,"constructor":false,"2":2,"\ue000":1,"10":10,"":0,"__proto__":{"constructor":null}}', ordered);
+  bad('toString', 'null', '/branches', 'unknown_dispatch', 'external discriminator has no declared branch');
+  bad('plain', '{"__proto__":0,"\\u005f_proto__":1}', '/input', 'input_syntax', 'JSON object keys must be unique');
+  bad('plain', '{"\ud800\udc00":"\\ud800","\ue000":1e999}', '/input/\ue000', 'input_number', 'JSON number is outside the supported representation');
+  for (const lone of [String.fromCharCode(0xd800), String.fromCharCode(0xdc00)]) {
+    bad('plain', '"' + lone + '"', '/input', 'input_syntax', 'invalid JSON scalar');
+    bad('raw', '"' + lone + '"', '/input', 'input_syntax', 'captured JSON token contains invalid Unicode');
+    bad('plain', '{"' + lone + '":0}', '/input', 'input_syntax', 'JSON object keys must be unique');
+    bad('raw', '"' + lone + '" []', '/input', 'input_syntax', 'expected one complete JSON value');
+  }
+  good('raw', ' "😀" ', '"IvCfmIAi"');
+  good('plain', '"\ufeff"', '"\ufeff"');
+  for (const branch of ['plain','raw','missing']) {
+    bad(branch, '\ufeffnull', '/input', 'input_syntax', 'expected one complete JSON value');
+    bad(branch, encodeBase64(new Uint8Array([0xef,0xbb,0xbf,0x6e,0x75,0x6c,0x6c])), '/input', 'input_syntax', 'expected one complete JSON value', true);
+  }
+  for (const bytes of [[0xc0,0xaf],[0xe0,0x80,0x80],[0xed,0xa0,0x80],[0xf0,0x80,0x80,0x80],[0xf4,0x90,0x80,0x80],[0xf5,0x80,0x80,0x80],[0xe2,0x82],[0x80],[0xff]])
+    bad('missing', encodeBase64(new Uint8Array(bytes)), '/input', 'input_utf8', 'retained JSON bytes must be UTF-8', true);
+  for (const encoded of ['AB==','AAB=','AA==\n','AA==\r','AA==\u2028','AA==\u2029','ＡＡ==','AA','AA===','====','_w=='])
+    bad('missing', encoded, '/input', 'input_base64', 'expected canonical standard base64', true);
+  bad('missing', '', '/input', 'input_syntax', 'expected one complete JSON value', true);
+  const deep = '['.repeat(3000) + 'null' + ']'.repeat(3000);
+  bad('raw', deep, '/input', 'input_depth', 'JSON input exceeds 64 levels');
+  bad('raw', deep + '[]', '/input', 'input_syntax', 'expected one complete JSON value');
+  bad('missing', deep + '[]', '/input', 'input_syntax', 'expected one complete JSON value');
+  const at = '/private/position';
+  for (const [arity, input, index] of [
+    [undefined,['a','b'],0n], [0n,['a','b'],0n], [2n,['a'],0n], [2n,['a','b','c'],0n],
+    [2n,new Map(),0n], [2n,['a','b'],2n], [2n,['a','b'],18446744073709551615n]
+  ] as readonly (readonly [bigint | undefined, Value, bigint])[]) {
+    const context: Context = { input, item: MISSING, binary64: true,
+      positionArities: new Map(arity === undefined ? [] : [[at, arity]]) };
+    let refused = false;
+    try { positionValue(literal(input), index)(context, at); }
+    catch (e) { refused = e instanceof Refusal && e.findings.length === 1 && e.findings[0]!.pointer === at
+      && e.findings[0]!.rule === 'position_value' && e.findings[0]!.detail === 'position encountered a value outside its checked tuple contract'; }
+    assert(refused, 'private arity defense'); controls++;
+  }
+  const context: Context = { input: null, item: MISSING, binary64: true, positionArities: new Map() };
+  let evaluations = 0;
+  assert(positionValue(() => { evaluations++; return MISSING; }, 0n)(context, at) === MISSING && evaluations === 1, 'missing before metadata, operand once'); controls++;
+  const nullable: Context = { ...context, positionArities: new Map([[at,2n]]) };
+  assert(positionValue(literal(['a',null]),1n)(nullable,at) === null, 'position keeps null'); controls++;
+  good('plain', 'null', 'null');
+  console.log('TypeScript boundary controls: executed ' + controls + '; failed 0');
+}

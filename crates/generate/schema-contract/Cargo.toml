@@ -22,6 +22,10 @@ required-features = ["typescript-typecheck"]
 name = "go_realization"
 required-features = ["go-typecheck"]
 
+[[test]]
+name = "normalization_typescript_native"
+required-features = ["typescript-typecheck"]
+
 [dependencies]
 ess-gen.workspace = true
 serde.workspace = true

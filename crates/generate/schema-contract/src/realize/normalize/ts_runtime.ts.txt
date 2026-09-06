@@ -1,0 +1,45 @@
+import { branches, policies, positionArities, binary64 } from './bindings.js';
+import { roots } from './schemas.js';
+import { MISSING, Refusal, fail, pointer, serialize, type Finding } from './value.js';
+import { parseInput, EMPTY_POLICIES } from './input.js';
+import { decodeBase64Json } from './retained.js';
+import { validate } from './schema.js';
+import type { Context } from './expression.js';
+
+export type { Finding } from './value.js';
+export type NormalizationResult =
+  | { readonly ok: true; readonly json: string }
+  | { readonly ok: false; readonly findings: readonly Finding[] };
+export class Normalizer {
+  normalize(branch: string, jsonText: string): NormalizationResult {
+    try {
+      let current = parseInput(jsonText, policies.get(branch) ?? EMPTY_POLICIES);
+      const stages = branches.get(branch);
+      if (stages === undefined) fail('/branches', 'unknown_dispatch', 'external discriminator has no declared branch');
+      for (let index = 0; index < stages.length; index++) {
+        const stage = stages[index]!, at = pointer('/branches', branch) + '/' + index;
+        validate(roots[stage.input]!, current, at + '/input');
+        const context: Context = { input: current, item: MISSING, binary64, positionArities };
+        for (let i = 0; i < stage.requires.length; i++) {
+          const location = at + '/requires/' + i;
+          if (!stage.requires[i]!(context, location)) fail(location, 'requirement_failed', 'stage requirement is false');
+        }
+        const value = stage.value(context, at + '/value');
+        if (value === MISSING) fail(at, 'missing_output', 'stage output is absent');
+        validate(roots[stage.output]!, value, at + '/output');
+        current = value;
+      }
+      return { ok: true, json: serialize(current) };
+    } catch (error) {
+      if (error instanceof Refusal) return { ok: false, findings: error.findings };
+      throw error;
+    }
+  }
+  normalizeBase64Json(branch: string, encoded: string): NormalizationResult {
+    try { return this.normalize(branch, decodeBase64Json(encoded)); }
+    catch (error) {
+      if (error instanceof Refusal) return { ok: false, findings: error.findings };
+      throw error;
+    }
+  }
+}

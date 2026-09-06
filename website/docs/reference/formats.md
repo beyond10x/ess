@@ -98,12 +98,27 @@ implement a model's lifecycle, and normalization executes only an explicitly che
 | `format: ess-normalization/1` | Closed recipe DTO, then `normalize::Plan::read`/`check` with supplied checked bundles. All branches and ordered stage boundaries check before execution. Canonical typed pretty JSON plus LF; parsing alone is not admission. [Source][normalization] |
 | `format: ess-normalization/2` (unreleased) | Extends `/1` with ordered text/list construction, original item indices, filtered mapping, first-match selection and explicit binary64 input/conversion declarations. The `/1` checker refuses these additions; existing `/1` canonical bytes and numeric admission remain unchanged. [Source][normalization] |
 | `format: ess-normalization/3` (unreleased) | Adds compiler-owned model roots with complete provenance and explicit selected root sets. `Plan::check_with_models` requires sealed model selections; imported `x-ess-*` annotations cannot provide authority. Versions 1 and 2 refuse model roots. Model invariant obligations refuse until an executable evaluator exists. Generated targets use `ess-normalization-target/2` for this recipe version. [Source][normalization] |
-| `format: ess-normalization-target/1` | Serialize-only standalone library report from `Plan::rust` or unreleased `Plan::go`, with explicit target configuration, recipe, root/schema and emitted-file identities. Pretty typed JSON plus LF; no persisted report-admission API. It is not a full-synthesis target report. [Source][normalization-target] |
+| `format: ess-normalization-target/1` | Serialize-only standalone library report from `Plan::rust`, unreleased `Plan::go` or `Plan::typescript`, with explicit target configuration, recipe, root/schema and emitted-file identities. Pretty typed JSON plus LF; no persisted report-admission API. It is not a full-synthesis target report. [Source][normalization-target] |
 | `format: ess-normalization/4` (unreleased) | Adds explicit branch/field/items/root lexical capture through `raw_json_inputs` before first input-schema validation. Selected tokens become canonical standard base64; captures preserve duplicate members and numeric spelling while enforcing JSON grammar, Unicode and global depth 64. Capture/numeric overlaps refuse; decoded-value APIs require the text edge for capture branches. Versions 1–3 refuse the member, including an empty map. [Source][normalization] |
 | `format: ess-normalization-target/2` (unreleased) | Report for format-3 recipes, retaining complete model-root identities and source/schema/file digests. Existing format-1/2 recipes retain target/1. [Source][normalization-target] |
 | `format: ess-normalization/5` (unreleased) | Adds modeled finite Binary64 with explicit complete input policy, token-string `binary64_literal`, finite value-producing `binary64` steps and two-typed-Binary64 IEEE equality. Formats 1–4 refuse selected Binary64 models and the new expressions; their qualified-schema numeric behavior and full emitted maps remain unchanged. Raw capture/helpers remain available. [Source][normalization] |
 | `format: ess-normalization/6` (unreleased) | Adds closed `positional_inputs` declarations and checked `position { value, index }` reads. Explicit fixed-string-array policies prepare the first input into an exact closed tuple; raw capture and Binary64 remain available. Formats 1–5 refuse the new member and operation, retaining their complete emitted maps at the same generator version. Report version remains target/3. [Source][normalization] |
 | `format: ess-normalization-target/3` (unreleased) | Report for every format-4, format-5 or format-6 recipe. The embedded canonical recipe and its digest bind input policies; first-stage schemas describe the prepared representation. Same report fields, new semantics; older readers must reject this version. No general report-admission API exists. Formats 1–5 preserve generated file maps through frozen legacy templates; generator versions remain truthful across releases. [Source][normalization-target] |
+
+The unreleased TypeScript normalization writer adds a package-bearing configuration
+arm local to normalization; structural TypeScript configuration remains separate.
+Recipes 1/2 retain target report 1, recipe 3 uses report 2, and recipes 4/5/6 use
+report 3. These are serialize-only reports, so the additional target needs no new
+report version. Its fixed schema profile and runtime files enter the existing
+file-digest map; unsupported constraints refuse before a report exists. Complete
+Rust/Go maps retain exact bytes at a fixed generator version.
+
+Format-5/6 static checking adds equality for two typed Binary64 operands. The
+frozen runtime has a broader floating-pair branch: two floating representations
+compare numerically even in an admitted Integer expression. Mixed integer/floating
+pairs still require integer eligibility. TypeScript preserves that reference
+limitation without granting general Number equality or Binary64 output provenance.
+No core equality tightening is included in this target addition.
 
 The following hashes are bare lowercase SHA-256, but have different input domains:
 

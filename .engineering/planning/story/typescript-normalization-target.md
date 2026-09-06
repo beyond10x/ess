@@ -2,7 +2,7 @@
 format: aep.planning-md/1
 id: story:typescript-normalization-target
 kind: story
-status: draft
+status: active
 title: Execute source-pinned normalization in native TypeScript
 relations:
 - derived_from: story:source-pinned-data-normalization
@@ -13,8 +13,12 @@ scope:
   path: CHANGELOG.md
 - confidence: cited
   path: crates/edge/ess-cli/src/normalize.rs
-- confidence: inferred
+- confidence: cited
+  path: crates/edge/ess-cli/tests/normalization.rs
+- confidence: cited
   path: crates/edge/ess-cli/tests/normalization_typescript.rs
+- confidence: cited
+  path: crates/edge/ess-cli/tests/normalization_typescript_adversary.rs
 - confidence: cited
   path: crates/generate/schema-contract/Cargo.toml
 - confidence: cited
@@ -23,43 +27,47 @@ scope:
   path: crates/generate/schema-contract/src/realize/normalize/go_target.rs
 - confidence: cited
   path: crates/generate/schema-contract/src/realize/normalize/target.rs
-- confidence: inferred
+- confidence: cited
   path: crates/generate/schema-contract/src/realize/normalize/ts_collection.ts.txt
-- confidence: inferred
+- confidence: cited
   path: crates/generate/schema-contract/src/realize/normalize/ts_condition.ts.txt
-- confidence: inferred
+- confidence: cited
   path: crates/generate/schema-contract/src/realize/normalize/ts_expression.ts.txt
-- confidence: inferred
+- confidence: cited
   path: crates/generate/schema-contract/src/realize/normalize/ts_input.ts.txt
-- confidence: inferred
+- confidence: cited
   path: crates/generate/schema-contract/src/realize/normalize/ts_numeric.ts.txt
-- confidence: inferred
+- confidence: cited
   path: crates/generate/schema-contract/src/realize/normalize/ts_retained.ts.txt
-- confidence: inferred
+- confidence: cited
   path: crates/generate/schema-contract/src/realize/normalize/ts_runtime.ts.txt
-- confidence: inferred
+- confidence: cited
   path: crates/generate/schema-contract/src/realize/normalize/ts_schema.ts.txt
-- confidence: inferred
+- confidence: cited
   path: crates/generate/schema-contract/src/realize/normalize/ts_value.ts.txt
-- confidence: inferred
+- confidence: cited
   path: crates/generate/schema-contract/src/realize/normalize/typescript_schema.rs
-- confidence: inferred
+- confidence: cited
   path: crates/generate/schema-contract/src/realize/normalize/typescript_target.rs
-- confidence: inferred
+- confidence: cited
   path: crates/generate/schema-contract/tests/fixtures/normalization_typescript.rs
-- confidence: inferred
+- confidence: cited
+  path: crates/generate/schema-contract/tests/fixtures/normalization_typescript_adversary.ts.txt
+- confidence: cited
   path: crates/generate/schema-contract/tests/fixtures/normalization_typescript_legacy_maps.json
-- confidence: inferred
+- confidence: cited
   path: crates/generate/schema-contract/tests/fixtures/normalization_typescript_tests.ts.txt
-- confidence: inferred
+- confidence: cited
   path: crates/generate/schema-contract/tests/normalization_typescript.rs
-- confidence: inferred
+- confidence: cited
+  path: crates/generate/schema-contract/tests/normalization_typescript_adversary.rs
+- confidence: cited
   path: crates/generate/schema-contract/tests/normalization_typescript_legacy_bytes.rs
-- confidence: inferred
+- confidence: cited
   path: crates/generate/schema-contract/tests/normalization_typescript_native.rs
-- confidence: inferred
+- confidence: cited
   path: crates/generate/schema-contract/tests/normalization_typescript_schema.rs
-- confidence: inferred
+- confidence: cited
   path: crates/generate/schema-contract/tests/support/normalization_typescript.rs
 - confidence: cited
   path: docs/design/source-pinned-data-normalization.md
@@ -71,7 +79,7 @@ scope:
   path: website/docs/reference/cli.md
 - confidence: cited
   path: website/docs/reference/formats.md
-revision: 7
+revision: 37
 ---
 ## Outcome
 
@@ -246,3 +254,117 @@ unsupported refinements must refuse before any artifacts. A pre-existing pinned
 validator discrepancy in numeric uniqueItems is being separately recorded and
 must not be silently copied or described as a TypeScript-introduced defect.
 No TypeScript adapter, passing full gate, consumer migration or release is claimed.
+
+## Final integration dispatch delta
+
+# Final TypeScript dispatch delta
+
+Pinned integration: `1f8e319cf153c348a6c434c6e74939f4aa587125`.
+
+**The exact 31-path write scope is unchanged.** It matches the persisted TypeScript
+story revision 7: 11 existing files and 20 proposed new files. No additional
+production, existing-test or template write path is needed. `scope-entries.json`
+refreshes every existing path to this integration's exact blob/hash.
+
+The normalization Plan, checker, recipe/input/retained/evaluation code, Rust/Go
+runtime families, CLI source and positional/Binary64 fixture constructors match
+frozen positional source `eb2e5d60e9e803993417df39563bc744dbcd36fc` exactly.
+Structural realization production matches `213d4b8a8338763346cad2bc92cee826430726c9`.
+The older packet's structural emitter hashes therefore update to the reviewed
+finite codecs; they are read dependencies, not TS write authority. The existing
+normalization Binary64 test's changed expectation now checks successful structural
+finite wrappers instead of the retired blanket refusal; its normalization fixture
+and 70-vector corpus did not change. Structural TypeScript remains separate.
+
+The integrated TypeScript design is byte-identical to the proposed design file
+from the positional refresh. Source proof contains 84 current file hashes, the
+previous-packet comparisons and the empty protected production/fixture diffs.
+Public documentation and planning differences are the recorded integration, not
+an unreviewed normalization-runtime change.
+
+## Added positional controls within the same test scope
+
+The new private `adversarial_plan` and `independent_cases` helpers in
+`tests/normalization_positional_adversary.rs:53,82` supply **19 additional text
+vectors**. The coordinator accepted their addition to the planned native fixture
+inventory: **3,072 → 3,091**. Preserve the literal inputs, independent outputs and
+ordered findings, repeated fresh-call controls, signed-zero bits, escaped source
+paths, source-order depth/Unicode precedence and unknown-branch grammar priority.
+
+The separate `uniqueItems:true` control at that file's line 264 is an explicit
+TypeScript **generation-refusal** control under the already bound closed profile.
+It does not add runtime uniqueness support or enter the 19 text-vector count.
+Assert the original source-qualified keyword pointer and that no Realization or
+report is returned. Keep the original reference/adversary test unchanged. This
+updates test accounting; it does not silently drop a required refinement.
+
+Concrete copy route, requiring no existing helper visibility edits:
+
+1. In the already scoped new
+   `tests/fixtures/normalization_typescript.rs`, add a dedicated nested module
+   containing copies of the pinned adversary's small tuple/read/policy/position
+   constructors, `adversarial_plan` and `independent_cases`. Preserve those source
+   bodies and raw expected strings; expose new fixture wrappers from this new
+   module. Cite the immutable source commit and original file hash in the copy.
+   Do not include the complete old integration-test module or its native build
+   harness. This avoids importing unrelated Rust/Go test executions or editing
+   private old helpers merely for reuse.
+2. `tests/support/normalization_typescript.rs` inventories the 19 vectors in source
+   order; `normalization_typescript_native.rs` executes them through the emitted
+   package, using the existing scoped TypeScript assertion fixture. Keep expected
+   numbers and raw strings lossless. Add source-union/nested-Position controls from
+   the adversary's line 220 to the new schema/generation tests.
+3. Reconstruct the two-slot uniqueItems schema in the already scoped
+   `normalization_typescript_schema.rs` and assert preflight refusal. Private arity
+   fault-injection and missing-propagation controls belong in test-owned generated
+   copies or internal test code, without a public mutable metadata API.
+4. Adapt the CLI refusal/drift scenarios in the already scoped new CLI TS test.
+   Existing decoded-value provenance checks remain reference/Rust controls because
+   TS has no value-input API. The Go fixture's invalid raw UTF-8 byte-input cases
+   are not a TS text entrypoint; retain separate strict-UTF-8 base64-helper tests
+   and located literal/escaped UTF-16-surrogate controls instead of claiming those
+   byte-API cases executed unchanged.
+
+The four positional and four structural adversary source/fixture files are retained
+as hashed read dependencies. None enters the TS write scope. Full format-1–6
+Rust/Go maps still require capture at one actual generator version before any
+shared TS edit; no map capture or target build was run in this check.
+
+## Available native tool paths
+
+- Node: `/usr/bin/node`; observed `22.23.1`, V8 `12.4.254.21-node.56`.
+- Compiler: set `ESS_TYPESCRIPT_COMPILER=/usr/lib/node_modules/typescript/lib/tsc.js`.
+  `/usr/bin/node` with that exact script and `--version` returned `Version 6.0.3`.
+- `/usr/bin/tsc` resolves to `/usr/lib/node_modules/typescript/bin/tsc`; its direct
+  version query also returned `Version 6.0.3`.
+
+All four read-only version queries exited 0. `toolchain.json` retains exact commands,
+outputs and executable/compiler-file hashes. These identities match the retained
+numeric-strategy qualification; no numeric or schema parity run was repeated.
+
+No repository edits, builds, implementation or worktree lifecycle actions occurred.
+The coordinator's gates and explicit implementor/worktree dispatch remain pending.
+This final source receipt needs only a delta recheck if that dispatch changes the
+integration source pin.
+
+## Measured equality compatibility boundary, 2026-09-06
+
+The implementor measured a frozen reference discrepancy before target acceptance. In format 5 or 6 an admitted Integer/Integer equal condition returns true for input {"a":1.0,"b":1.0}, even with no binary64_inputs; format 1 refuses integer_representation at /branches/eq/0/value/condition. The exact source bundle, recipes, commands and outputs are retained in ess-typescript-design/implementation/integer-equality-observation/observations.json. At b55efa4cd6c379217f60b98fb30f28f70e526ee6, crates/generate/schema-contract/src/realize/normalize/check.rs:988 admits checked Binary64 pairs or the existing comparable scalar types. execute.rs:28 enables the runtime flag recipe-wide, and eval.rs:367 takes floating equality whenever both values carry floating tokens.
+
+Coordinator decision: TypeScript preserves this actual reference behavior, with literal qualification and explicit documentation. It does not introduce a target-only generation refusal, alter reference/checker semantics, or change historical Rust/Go output. The design's checked-Binary64 statement describes static typed admission; it must not be presented as a guarantee that Integer inputs in these formats enforce integer-token eligibility during equality. This is a named compatibility limitation and a separate core-contract correction candidate, not a repaired Integer contract or broader typed Binary64 admission. All ordinary integer operations and mixed-token equality retain their measured existing rules. Independent read-only review of this decision is pending.
+
+## Observed scope correction during implementation
+
+The pre-existing CLI test at crates/edge/ess-cli/tests/normalization.rs:578 used TypeScript as the unknown-target example. Its unchanged assertion fails because this unit now admits that target. The recorded after-package run exited 101 with successful generation for that old negative case. The coordinator owns one exact test-only correction: replace the target spelling with unsupported javascript, retaining the original refusal, empty-stdout and untouched-destination assertions. New TypeScript CLI cases independently check successful generation and its supported/refused options. No existing assertion is dropped. Patch SHA256 9a98162c1696851d0b03935df7108f3db4b0026455541cda9c1f7ca1f17f5dab, before hash2c92c41dec2c197819cd7d3ff607a3acd76d534c0e27d215af9797e3ac974e5f.
+
+This cited additional scope makes 32 total paths: implementor25, coordinator6docs plus this existing CLI test. Preserve the original31-path plan as historical; this is the explicit learned correction and does not authorize any broader edit to old cases/templates. The final unit handoff enumerates the coordinator test separately from the implementor manifest.
+
+## Frozen unit and actual independent result
+
+Implementation unit 68f0b57dfe01f069c38b070784ea63ed27bf92da was frozen with 1018 tracked content/mode identities. Independent source/native pass 1 added exactly three new test files, committed as 55c338b51f25d0c7b7c6ebda248b10fa2a407183; all frozen source and all 218 historical Rust/Go output files remained unchanged. The returned report is retained verbatim as review-result:typescript-normalization-adversary-pass1, SHA256 f8e99e0166c8118a54a40167b63279e5c34c5a0b081142ec0fe5dd6c87849341. Verdict nothing found; 317 to 320 ordinary package tests, zero product-red cases, plus 30176 inherited native controls and 22 independent checks. Initial test-construction failures are retained in the immutable report and are not counted as product findings.
+
+Review-result:typescript-normalization-docs-pass1 retains the separate exact six-document review, SHA256 b8638b968fba8d90c3aee0fd3af139fea54206f1ced9015b666b2c4046de998a, with no findings. The numeric equality qualification was applied in c930726f43cfaff3eb97e9546da670963777c413 and recorded as fixed against review-result:typescript-equality-binding. Core semantic tightening remains the distinct draft story:normalization-equality-eligibility.
+
+All 32 implementation/coordinator surfaces are now cited rather than inferred, and the three actual adversary files are additional cited scope. The fourth permitted adversary support file was not needed and was never created. Product integration is local commit 0f2dcd71e28f852de54af3ba01c62b3b22e6cc9b, preserving published composition main 42a44c4324e0815ba622b8873a4c0eb5c050d7f0. Whole-workspace/site gates and publication are still pending at this record; the unit verdict does not substitute for those gates.
+
+Release-plan:normalization-followups-020 owns a separate test-only producer-version projection in normalization_typescript_legacy_bytes.rs, reusing the qualified strict generator-version helper. It changes no production emitter or frozen literal fixture. Actual pre- and post-version outputs must be retained and checked before release.

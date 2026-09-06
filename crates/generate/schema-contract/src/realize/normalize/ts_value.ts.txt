@@ -1,0 +1,42 @@
+// Private lossless values. Wire names never consult JavaScript prototypes.
+import { formatFloat } from './numeric.js';
+
+export const MISSING: unique symbol = Symbol('missing');
+export type Value = typeof MISSING | null | boolean | string | bigint | number | Value[] | Map<string, Value>;
+export interface Finding { readonly pointer: string; readonly rule: string; readonly detail: string }
+export class Refusal extends Error {
+  constructor(readonly findings: readonly Finding[]) { super('normalization refused'); }
+}
+export function fail(pointer: string, rule: string, detail: string): never {
+  throw new Refusal([{ pointer, rule, detail }]);
+}
+export function pointer(at: string, key: string): string {
+  return at + '/' + key.replace(/~/g, '~0').replace(/\//g, '~1');
+}
+export function scalarCompare(a: string, b: string): number {
+  const x = a[Symbol.iterator](), y = b[Symbol.iterator]();
+  for (;;) {
+    const p = x.next(), q = y.next();
+    if (p.done || q.done) return p.done ? (q.done ? 0 : -1) : 1;
+    const n = p.value.codePointAt(0)!, m = q.value.codePointAt(0)!;
+    if (n !== m) return n < m ? -1 : 1;
+  }
+}
+export function serialize(value: Value): string {
+  if (value === MISSING) throw new Error('missing value escaped evaluation');
+  if (typeof value === 'bigint') return value.toString();
+  if (typeof value === 'number') return formatFloat(value);
+  if (Array.isArray(value)) return '[' + value.map(serialize).join(',') + ']';
+  if (value instanceof Map) return '{' + [...value.keys()].sort(scalarCompare)
+    .map(key => JSON.stringify(key) + ':' + serialize(value.get(key)!)).join(',') + '}';
+  return JSON.stringify(value);
+}
+export function present(value: Value, at: string): Value {
+  return value === MISSING ? fail(at, 'missing_value', 'required expression value is absent') : value;
+}
+export function stringValue(value: Value, at: string): string {
+  return typeof value === 'string' ? value : fail(at, 'string_value', 'operation requires a string');
+}
+export function arrayValue(value: Value, at: string): Value[] {
+  return Array.isArray(value) ? value : fail(at, 'collection_value', 'operation requires a list');
+}
