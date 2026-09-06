@@ -2,7 +2,7 @@
 format: aep.planning-md/1
 id: story:normalize-positional-array-input
 kind: story
-status: active
+status: implemented
 title: Normalize declared positional arrays without guessing decoder policy
 relations:
 - derived_from: story:source-pinned-data-normalization
@@ -87,7 +87,7 @@ scope:
   path: docs/design/positional-array-normalization.md
 - confidence: cited
   path: docs/design/source-pinned-data-normalization.md
-revision: 16
+revision: 17
 ---
 ## Evidence
 

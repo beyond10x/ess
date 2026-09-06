@@ -2,7 +2,7 @@
 format: aep.planning-md/1
 id: story:binary64-structural-codecs
 kind: story
-status: active
+status: implemented
 title: Preserve finite Binary64 in standalone model data libraries
 relations:
 - derived_from: story:model-binary64-fields
@@ -41,7 +41,7 @@ scope:
   path: docs/design/binary64-structural-codecs.md
 - confidence: cited
   path: docs/design/model-binary64.md
-revision: 8
+revision: 9
 ---
 ## Outcome
 

@@ -2,7 +2,7 @@
 format: aep.planning-md/1
 id: story:normalization-followup-publication
 kind: story
-status: active
+status: implemented
 title: Publish shared Binary64 codec and positional normalization guidance
 relations:
 - depends_on: story:binary64-structural-codecs
@@ -16,7 +16,7 @@ scope:
   path: website/docs/guides/generate-artifacts.md
 - confidence: cited
   path: website/docs/reference/formats.md
-revision: 4
+revision: 5
 ---
 ## Outcome
 
