@@ -134,10 +134,11 @@ inputs are supplied; they do not prove remote artifact contents or authenticity.
 | **Default** `format: ess-diff/2` | Same endpoint identities | Supported delta majors are 1 and 2. Admission checks ids, relations, order, uniqueness and same-system identity; serialization checks the selected vocabulary. Pretty JSON. [Source][delta] |
 | **Current** `format: ess-impact/3` | Embedded /2 delta, optional suite and artifact identities | `ess_diff::impact` returns `EssImpact` with 26 dependency relations; no persisted report reader. Pretty JSON; references input digests. [Source][impact] |
 | Authored **`type: ess-scenario/1`** | Domain/scenario identity and purpose | Closed authored DTO, then compilation against IR. No raw-source canonical digest. [Source][authored] |
-| Suite **`provenance.suite_version: ess-conformance/4`** | Specification `vN`, model and whole-contract digests | Derived Deserialize/from_json parses a suite. Declared support `[1,2,3,4]` is not uniform execution admission: syntax parsing alone can accept an unsupported major. Pretty JSON; no digest of exact suite bytes. [Source][suite] |
+| Suite **`provenance.suite_version: ess-conformance/4`** | Specification `vN`, model and whole-contract digests | Historical Deserialize/from_json parses an unadmitted DTO. Original-byte admission checks the closed, major-specific vocabulary before execution; serialize-once admission of a DTO binds only its newly serialized bytes. Suite bytes/defaults stay frozen; report/2 separately carries exact identity. [Source][suite] |
 | Rust `format: ess-conformance-report/1` | Model digest, implementation and suite-version claim | Checked closed reader validates version/counts/list/status; it does not establish exact-suite coverage or unique opaque result ids. Pretty JSON; unsigned u64 `completed_at`. [Source][report] |
 | Go `format: ess-conformance-report/1` | Same claims, Go failed/skipped vocabulary | Generated Go writer; current Rust admission accommodates its non-pass vocabulary. Indented JSON+LF, signed int64 `completed_at`; no cross-producer byte/range equivalence is implied. [Source][go-report] |
-| Detailed `ConformanceReport`: **unversioned** | Suite provenance, implementation, run/scenario identities | Detailed CLI JSON/YAML is distinct from standalone `--report-out` JSON. Serialize-only; pretty canonical JSON, no report-file or exact-suite hash. [Source][detailed-report] |
+| Default detailed `ConformanceReport`: **unversioned** | Suite provenance, implementation, run/scenario identities | Detailed CLI JSON/YAML is distinct from standalone `--report-out` JSON. Serialize-only; pretty canonical JSON, no report-file or exact-suite hash. [Source][detailed-report] |
+| Opt-in `ess-conformance-report/2` and `ess-conformance-run/2` | Exact original suite/1–4 bytes, producer profile and five outcome categories | Separate standalone and detailed surfaces with paired readers. Sorted UTF-8 object keys, two-space JSON plus LF, exact unsigned u64 counts/timestamps; coverage remains unknown and cannot qualify. [Count contracts][count-report] |
 
 `ess verify impact` computes generated-artifact obligations from the compared models. The CLI
 has no `--generated` option and does not inspect a committed output tree. The library API can accept
@@ -197,11 +198,11 @@ Generic String deserialization does not perform that check. Cargo synthesis stam
 not validate TOML, and a docs document has per-page stamps rather than one artifact stamp.
 [Stamp reader][stamp].
 
-Suite **/5**, standalone report **/2**, detailed **ess-conformance-run/2**, and the exact-suite
-`sha256-json-bytes/1` profile are successor designs, **not current writer/reader support**. They need
-implemented admission, legacy fixtures, reader migration, regenerated runtimes and coordinated
-default changes. Current suite/4 and report/1 do not establish durable complete coverage or exact
-suite-byte identity. A format catalog alone does not establish an external consumer upgrade.
+Explicit report **/2** and detailed **ess-conformance-run/2** now pair admitted original suite/1–4
+bytes under `sha256-json-bytes/1`. Count-stage coverage is exactly unknown, including all-pass runs.
+Suite **/5** and durable complete coverage remain successor work. Defaults remain suite/4, report/1
+and diagnostic execution. Report/1 retains its historical non-pass aggregate and does not establish
+exact suite-byte identity. A format catalog alone does not establish an external consumer upgrade.
 
 [versions]: https://github.com/beyond10x/ess/blob/main/crates/specify/ess-domain/src/name.rs
 [schema-bundle]: https://github.com/beyond10x/ess/blob/main/crates/generate/schema-contract/src/bundle.rs
@@ -259,3 +260,5 @@ suite-byte identity. A format catalog alone does not establish an external consu
 [infra-simulation]: https://github.com/beyond10x/ess/blob/main/crates/infra/infra-spec/src/simulate.rs
 [infra-graph]: https://github.com/beyond10x/ess/blob/main/crates/infra/infra-analyze/src/graph.rs
 [infra-project]: https://github.com/beyond10x/ess/blob/main/crates/infra/infra-project/src/project.rs
+
+[count-report]: https://github.com/beyond10x/ess/blob/main/crates/verify/ess-conformance/src/counts.rs

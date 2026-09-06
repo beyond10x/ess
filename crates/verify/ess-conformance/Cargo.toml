@@ -26,7 +26,8 @@ ess-gen.workspace = true
 # have bought two `Display` impls that are eleven lines each, and a value tree of this crate's own
 # would have bought a second spelling of `ess_primitives::node::Node`.
 serde.workspace = true
-serde_json.workspace = true
+serde_json = { workspace = true, features = ["raw_value"] }
+sha2 = "0.11"
 
 # An authored scenario is a document a person writes, and every document a person writes in this
 # workspace is YAML — so the authoring surface reads the format the model documents are already in

@@ -283,11 +283,37 @@ impl<C: Clock> Runner<C> {
     ///
     /// Takes `self` by value: a second run means a second runner, so no run can inherit the clock or
     /// the counter the previous one left behind.
+    ///
+    /// This legacy nonfallible API serializes and admits the in-memory DTO before target identity
+    /// or callbacks. It panics on refused version/vocabulary; use [`Self::try_run`] for a checked
+    /// refusal, or [`Self::run_admitted`] with original-byte [`crate::AdmittedSuite`] input.
+    /// The DTO's legacy Serde parser is not original-byte admission.
     pub fn run<T: ConformanceTarget>(
-        mut self,
+        self,
         suite: &ConformanceSuite,
         target: &T,
     ) -> ConformanceReport {
+        self.try_run(suite, target)
+            .unwrap_or_else(|error| panic!("suite admission refused before execution: {error}"))
+    }
+
+    /// Admit an in-memory suite before identity or callbacks, retaining the executed byte value.
+    pub fn try_run<T: ConformanceTarget>(
+        self,
+        suite: &ConformanceSuite,
+        target: &T,
+    ) -> Result<ConformanceReport, crate::AdmissionError> {
+        let admitted = crate::AdmittedSuite::from_suite(suite)?;
+        Ok(self.run_admitted(&admitted, target))
+    }
+
+    /// Execute an immutable admitted suite whose original bytes can be paired with report/2.
+    pub fn run_admitted<T: ConformanceTarget>(
+        mut self,
+        admitted: &crate::AdmittedSuite,
+        target: &T,
+    ) -> ConformanceReport {
+        let suite = admitted.suite();
         let started_at = self.clock.now();
         let implementation = target
             .identity()

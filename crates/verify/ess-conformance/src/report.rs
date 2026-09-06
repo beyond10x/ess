@@ -315,7 +315,8 @@ impl TryFrom<String> for CheckCode {
 ///
 /// The rendering is §29's own layout, because the output is meant to be pasted into a repair request
 /// unchanged.
-#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct Diagnostic {
     /// Which rule, as a stable code; the sentence is [`CheckCode::rule`].
     pub code: CheckCode,
@@ -430,7 +431,8 @@ pub fn quote_input(command: &str, input: &BTreeMap<String, Node>) -> String {
 // ---- results ---------------------------------------------------------------------------------
 
 /// One rule, checked once (§28).
-#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct CheckResult {
     /// Which rule.
     pub code: CheckCode,
@@ -492,7 +494,8 @@ impl fmt::Display for CheckResult {
 }
 
 /// What one scenario came to (§28).
-#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct ScenarioResult {
     /// Which scenario.
     pub scenario: ScenarioId,

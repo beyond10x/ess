@@ -194,7 +194,11 @@ impl ConformanceSuite {
         json
     }
 
-    /// Reads a suite back from canonical JSON.
+    /// Reads a suite back from canonical JSON as a historical, unadmitted DTO.
+    ///
+    /// This parser retains its permissive legacy meanings. Use [`crate::AdmittedSuite::from_json`]
+    /// to validate original bytes before execution or exact report pairing. In-memory admission
+    /// serializes this DTO once and binds only those newly serialized bytes.
     ///
     /// The other half of design §49's step-1 acceptance — *a suite serialized in one process
     /// resolves in another*. Every name is parsed on the way in, so a suite naming something that is
