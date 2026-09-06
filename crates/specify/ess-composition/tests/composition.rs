@@ -474,3 +474,136 @@ fn service_keys_and_digests_have_one_canonical_spelling() {
     }
     assert_eq!(SourceDigest::of(&compiled()).as_str().len(), 64);
 }
+
+#[test]
+fn downstream_operation_construction_requires_an_emitted_descriptor() {
+    let artifacts = both_components(&compiled(), false)
+        .client_plan()
+        .rust_artifacts();
+    let (temp, library) = adversary_library("descriptor", artifacts["src/lib.rs"].contents());
+    let probes = [
+        (
+            "selected",
+            "pub fn operation() -> composition_fixture::Operation { composition_fixture::service_todo::QUERY_LIST_BY_ID }",
+            None,
+        ),
+        (
+            "constructor",
+            "pub fn operation() -> composition_fixture::Operation { composition_fixture::Operation::new(\"todo\", \"workbench.usage.RecordUsage\", composition_fixture::OperationKind::Command) }",
+            Some("E0624"),
+        ),
+        (
+            "fields",
+            "pub fn operation() -> composition_fixture::Operation { composition_fixture::Operation { service_key: \"todo\", semantic: \"workbench.usage.RecordUsage\", kind: composition_fixture::OperationKind::Command } }",
+            Some("E0451"),
+        ),
+    ];
+    for (name, source, expected_error) in probes {
+        let path = temp.join(format!("{name}.rs"));
+        std::fs::write(&path, source).expect("downstream probe is writable");
+        let mut command =
+            std::process::Command::new(std::env::var_os("RUSTC").unwrap_or_else(|| "rustc".into()));
+        command
+            .args(["--edition=2021", "--crate-type=lib", "-D", "warnings"])
+            .arg(path)
+            .arg("--extern")
+            .arg(format!("composition_fixture={}", library.display()))
+            .arg("--out-dir")
+            .arg(&temp);
+        let output = adversary_output(&mut command, &temp.join(format!("{name}.log")));
+        if let Some(code) = expected_error {
+            assert_eq!(output.status.code(), Some(1));
+            let diagnostic = String::from_utf8_lossy(&output.stderr);
+            assert!(diagnostic.contains(code), "{diagnostic}");
+            assert!(diagnostic.contains("private"), "{diagnostic}");
+        } else {
+            assert!(output.status.success());
+        }
+    }
+}
+
+#[test]
+fn recording_example_detects_a_payload_dropping_client_mutant() {
+    let artifacts = both_components(&compiled(), false)
+        .client_plan()
+        .rust_artifacts();
+    let original = artifacts["src/lib.rs"].contents();
+    let forwarding = ".execute(endpoint, self.authority.authority(), operation, payload)";
+    assert_eq!(original.matches(forwarding).count(), 1);
+    let mutant = original.replace(
+        forwarding,
+        ".execute(endpoint, self.authority.authority(), operation, &payload[..0])",
+    );
+    let case = "compatible_and_incompatible_titles_reach_the_same_selected_operation_unchanged";
+    for (label, source, expect_success) in [
+        ("forwarding-control", original, true),
+        ("forwarding-mutant", mutant.as_str(), false),
+    ] {
+        let (temp, library) = adversary_library(label, source);
+        let executable = temp.join("client_boundary_tests");
+        let mut compile_tests =
+            std::process::Command::new(std::env::var_os("RUSTC").unwrap_or_else(|| "rustc".into()));
+        compile_tests
+            .args(["--edition=2021", "--test", "-D", "warnings"])
+            .arg(fixture().parent().unwrap().join("client_boundary.rs"))
+            .arg("--extern")
+            .arg(format!("composition_fixture={}", library.display()))
+            .arg("-o")
+            .arg(&executable);
+        run_client_boundary_step(&mut compile_tests, &temp.join("compile-tests.log"));
+        let mut execute = std::process::Command::new(executable);
+        execute.args([case, "--exact", "--nocapture", "--test-threads=1"]);
+        let output = adversary_output(&mut execute, &temp.join("runtime-tests.log"));
+        assert_eq!(output.status.success(), expect_success);
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        if expect_success {
+            assert!(stdout.contains("1 passed; 0 failed"), "{stdout}");
+        } else {
+            assert_eq!(output.status.code(), Some(101));
+            assert!(stdout.contains("0 passed; 1 failed"), "{stdout}");
+            assert!(stderr.contains("left: []"), "{stderr}");
+            assert!(stderr.contains("client_boundary.rs:"), "{stderr}");
+        }
+    }
+}
+
+fn adversary_library(label: &str, source: &str) -> (PathBuf, PathBuf) {
+    let temp = std::env::temp_dir().join(format!(
+        "ess-composition-adversary-{label}-{}",
+        std::process::id()
+    ));
+    std::fs::create_dir_all(&temp).expect("assigned adversary directory is creatable");
+    let path = temp.join("lib.rs");
+    std::fs::write(&path, source).expect("actual emitted client copy is writable");
+    let library = temp.join("libcomposition_fixture.rlib");
+    let mut command =
+        std::process::Command::new(std::env::var_os("RUSTC").unwrap_or_else(|| "rustc".into()));
+    command
+        .args([
+            "--edition=2021",
+            "--crate-type=lib",
+            "--crate-name=composition_fixture",
+            "-D",
+            "warnings",
+        ])
+        .arg(path)
+        .arg("-o")
+        .arg(&library);
+    run_client_boundary_step(&mut command, &temp.join("compile-library.log"));
+    (temp, library)
+}
+
+fn adversary_output(command: &mut std::process::Command, log: &Path) -> std::process::Output {
+    let invocation = format!("{command:?}");
+    let output = command.output().expect("adversary command starts");
+    let evidence = format!(
+        "command: {invocation}\nexit: {}\nstdout:\n{}\nstderr:\n{}",
+        output.status,
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr),
+    );
+    std::fs::write(log, &evidence).expect("adversary evidence is writable");
+    println!("{evidence}");
+    output
+}
