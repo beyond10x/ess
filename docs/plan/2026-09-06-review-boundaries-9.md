@@ -104,19 +104,35 @@ and diff checks each exited0. The immutable implementor report SHA256 is
 bcfc1563e5909f53ce1c4b6a9adbff4183a67d27fc856199d01beaf291a78b1c; root verified all5 changed
 source hashes and retained fixture hashes. These are unit checks, not the full integration gate.
 
-Agent count_writer_scope8 now performs source adversary pass1 under the exact
-aep-drive:adversary0.8.0 charter. Its scratch is the unit's
+Agent count_writer_scope8 completed source adversary pass1 under the exact
+aep-drive:adversary0.8.0 charter. It found no defect; the immutable report is recorded as
+review-result:composition-contract-adversary-pass-1, SHA256
+73f2c626cbb62cbc262d7ff4c0b675935f7a1f1401411b8b8c8168601ab160d1. Root verified the final
+source hashes and all68 evidence-manifest records. Only133 additive test lines changed.
+The package executed12 passing cases; the original child fixture retained3 distinct passing
+cases. The new scratch mutation check also executed one repeated passing child control and
+one expected child failure; that deliberate mutation is not a defect in the unit. Downstream
+private constructor/field probes refused with E0624/E0451, and the selected descriptor compiled.
+The payload-dropping mutation failed the unchanged fixture's exact-byte assertion. Package
+formatting, strict Clippy and retained-byte checks passed. No correction or second attack was
+needed. Root retained both added cases in bot commitd65b6281339c2ba257d726c16a24dbb77d9def77.
+Its scratch is the unit's
 target/review-boundaries-9/adversary-pass-1 with TMPDIR beneath it; its build remains the unit's
 target and it reuses the existing unit-owned Cargo home. The source implementor relinquished
-all writes before dispatch. Root retains planning, integration, full gates and public delivery.
+all writes before dispatch; the adversary relinquished its writes on return. Root retains
+planning, integration, full gates and public delivery.
 
 The AEP coverage reader continues in its assigned unit. Its separate Rust correspondence helper
 has setup-compiled only; root verified all22 preparation-manifest entries. No helper execution,
 actual suite5 writer output or producer correspondence is claimed.
 
-The scope-update batch validated149 artifacts with exit0 and final output `valid`. Its20
-historical reviews without findings blocks are unchanged; this wave has not yet recorded its
-first source attack. Full raw integration validation will be retained with the gate lanes.
+The scope-update batch validated149 artifacts with exit0 and final output `valid`. After the
+immutable review was added, validation exited0 for150 artifacts. It lists21 reviews under its
+"no findings block" advisory, including this pass's present, valid empty findings list. The
+current AEP planning.rs:5296 checks whether the parsed list is empty, conflating that result
+with an absent block. Root verified the exact report bytes and retained this observed advisory;
+no finding was invented to silence it. The earlier20 advisory entries remain unchanged. Full
+raw output is in composition/preparation/review-record-validate.log under this wave's scratch.
 
 ## Provisioned unit
 
@@ -129,7 +145,7 @@ directory. No external scratch is assigned. The live lease is ess-review-wave9-c
 Root wrote the complete unit-brief.md and copied actual9-case baseline/source-scope evidence
 into that scratch. Agent expression_review_resume implements this unit under
 aep-drive:implementor0.8.0; the later adversary is a different writer. Current stage:
-implementation handed off and frozen; independent first attack running. Root retains all
+implementation and first attack complete, green unit ready for integration. Root retains all
 integration/publication authority. The unit's private Cargo registry copy is
 target/review-boundaries-9/cargo-home, measured1,830,384,812bytes; reflinks were unsupported and
 the implementor used an ordinary copy. A missing external timer was a second setup failure;
