@@ -30,4 +30,6 @@ Integration branch `impl/normalization-base64-resume` in manager record `wt-bf45
 
 | Unit | Branch | Managed path | Build path | Scratch | Stage |
 | --- | --- | --- | --- | --- | --- |
-| TypeScript | impl/normalization-typescript | Pending manager creation | Its own target/ | $SCRATCH/ess-typescript-design/implementation | Opening checks and prior-unit GC pending |
+| TypeScript | impl/normalization-typescript | $MANAGED/b10x/ess/wt-1a25421922fc | $MANAGED/b10x/ess/wt-1a25421922fc/target | $SCRATCH/ess-typescript-design/implementation | Created at a2f02fc; baseline/red phase ready |
+
+Opening commit `a2f02fceb01f9844c984f67fd251f94f7c6df94c` passed formatting, release consistency and all five layout cases before managed creation. Root holds the session lease. Implementor scope_typescript is assigned the sole Cargo/native lane; the exact private unit brief records environment, source scope and evidence paths.
