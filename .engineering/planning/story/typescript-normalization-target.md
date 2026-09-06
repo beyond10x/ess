@@ -2,7 +2,7 @@
 format: aep.planning-md/1
 id: story:typescript-normalization-target
 kind: story
-status: draft
+status: active
 title: Execute source-pinned normalization in native TypeScript
 relations:
 - derived_from: story:source-pinned-data-normalization
@@ -71,7 +71,7 @@ scope:
   path: website/docs/reference/cli.md
 - confidence: cited
   path: website/docs/reference/formats.md
-revision: 7
+revision: 10
 ---
 ## Outcome
 
@@ -246,3 +246,95 @@ unsupported refinements must refuse before any artifacts. A pre-existing pinned
 validator discrepancy in numeric uniqueItems is being separately recorded and
 must not be silently copied or described as a TypeScript-introduced defect.
 No TypeScript adapter, passing full gate, consumer migration or release is claimed.
+
+## Final integration dispatch delta
+
+# Final TypeScript dispatch delta
+
+Pinned integration: `1f8e319cf153c348a6c434c6e74939f4aa587125`.
+
+**The exact 31-path write scope is unchanged.** It matches the persisted TypeScript
+story revision 7: 11 existing files and 20 proposed new files. No additional
+production, existing-test or template write path is needed. `scope-entries.json`
+refreshes every existing path to this integration's exact blob/hash.
+
+The normalization Plan, checker, recipe/input/retained/evaluation code, Rust/Go
+runtime families, CLI source and positional/Binary64 fixture constructors match
+frozen positional source `eb2e5d60e9e803993417df39563bc744dbcd36fc` exactly.
+Structural realization production matches `213d4b8a8338763346cad2bc92cee826430726c9`.
+The older packet's structural emitter hashes therefore update to the reviewed
+finite codecs; they are read dependencies, not TS write authority. The existing
+normalization Binary64 test's changed expectation now checks successful structural
+finite wrappers instead of the retired blanket refusal; its normalization fixture
+and 70-vector corpus did not change. Structural TypeScript remains separate.
+
+The integrated TypeScript design is byte-identical to the proposed design file
+from the positional refresh. Source proof contains 84 current file hashes, the
+previous-packet comparisons and the empty protected production/fixture diffs.
+Public documentation and planning differences are the recorded integration, not
+an unreviewed normalization-runtime change.
+
+## Added positional controls within the same test scope
+
+The new private `adversarial_plan` and `independent_cases` helpers in
+`tests/normalization_positional_adversary.rs:53,82` supply **19 additional text
+vectors**. The coordinator accepted their addition to the planned native fixture
+inventory: **3,072 → 3,091**. Preserve the literal inputs, independent outputs and
+ordered findings, repeated fresh-call controls, signed-zero bits, escaped source
+paths, source-order depth/Unicode precedence and unknown-branch grammar priority.
+
+The separate `uniqueItems:true` control at that file's line 264 is an explicit
+TypeScript **generation-refusal** control under the already bound closed profile.
+It does not add runtime uniqueness support or enter the 19 text-vector count.
+Assert the original source-qualified keyword pointer and that no Realization or
+report is returned. Keep the original reference/adversary test unchanged. This
+updates test accounting; it does not silently drop a required refinement.
+
+Concrete copy route, requiring no existing helper visibility edits:
+
+1. In the already scoped new
+   `tests/fixtures/normalization_typescript.rs`, add a dedicated nested module
+   containing copies of the pinned adversary's small tuple/read/policy/position
+   constructors, `adversarial_plan` and `independent_cases`. Preserve those source
+   bodies and raw expected strings; expose new fixture wrappers from this new
+   module. Cite the immutable source commit and original file hash in the copy.
+   Do not include the complete old integration-test module or its native build
+   harness. This avoids importing unrelated Rust/Go test executions or editing
+   private old helpers merely for reuse.
+2. `tests/support/normalization_typescript.rs` inventories the 19 vectors in source
+   order; `normalization_typescript_native.rs` executes them through the emitted
+   package, using the existing scoped TypeScript assertion fixture. Keep expected
+   numbers and raw strings lossless. Add source-union/nested-Position controls from
+   the adversary's line 220 to the new schema/generation tests.
+3. Reconstruct the two-slot uniqueItems schema in the already scoped
+   `normalization_typescript_schema.rs` and assert preflight refusal. Private arity
+   fault-injection and missing-propagation controls belong in test-owned generated
+   copies or internal test code, without a public mutable metadata API.
+4. Adapt the CLI refusal/drift scenarios in the already scoped new CLI TS test.
+   Existing decoded-value provenance checks remain reference/Rust controls because
+   TS has no value-input API. The Go fixture's invalid raw UTF-8 byte-input cases
+   are not a TS text entrypoint; retain separate strict-UTF-8 base64-helper tests
+   and located literal/escaped UTF-16-surrogate controls instead of claiming those
+   byte-API cases executed unchanged.
+
+The four positional and four structural adversary source/fixture files are retained
+as hashed read dependencies. None enters the TS write scope. Full format-1–6
+Rust/Go maps still require capture at one actual generator version before any
+shared TS edit; no map capture or target build was run in this check.
+
+## Available native tool paths
+
+- Node: `/usr/bin/node`; observed `22.23.1`, V8 `12.4.254.21-node.56`.
+- Compiler: set `ESS_TYPESCRIPT_COMPILER=/usr/lib/node_modules/typescript/lib/tsc.js`.
+  `/usr/bin/node` with that exact script and `--version` returned `Version 6.0.3`.
+- `/usr/bin/tsc` resolves to `/usr/lib/node_modules/typescript/bin/tsc`; its direct
+  version query also returned `Version 6.0.3`.
+
+All four read-only version queries exited 0. `toolchain.json` retains exact commands,
+outputs and executable/compiler-file hashes. These identities match the retained
+numeric-strategy qualification; no numeric or schema parity run was repeated.
+
+No repository edits, builds, implementation or worktree lifecycle actions occurred.
+The coordinator's gates and explicit implementor/worktree dispatch remain pending.
+This final source receipt needs only a delta recheck if that dispatch changes the
+integration source pin.
