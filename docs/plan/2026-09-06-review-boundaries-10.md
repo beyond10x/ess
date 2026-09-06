@@ -87,6 +87,17 @@ owned-id cleanup. It does not replace any required evidence.
 
 ## Current stage
 
-Opening: scope and binding accepted, story advancing through the admitted proposed and active
-states, package baseline green. The unit has not been provisioned or dispatched. No example
-success, full integration gate or wave10 publication is claimed yet.
+Opening e283a26cf0176e96e41b13e5e8b79cd1a82ab88d has verified bot author and committer.
+The story is active revision11; opening formatting, action,157-artifact planning and diff
+checks each exited0. Planning retains the known24 empty-findings advisories unchanged.
+Provisioning sampled15344922624free bytes and created the unit at that exact opening head.
+
+Worktree: /home/timo/.local/state/worktree/trees/b10x/ess/ess-schema-resource-identity.
+Branch: impl/review-schema-resource-identity. Build: that worktree's target directory.
+Scratch: target/review-boundaries-10/schema-resource-identity beneath the unit; TMPDIR is its
+tmp directory. Its assigned Cargo home is scratch/cargo-home, with existing registry/git
+caches available as read-only inputs. Lease: ess-review-schema-implementation. The complete
+unit-brief.md is under that scratch. Agent count_writer_scope8 is assigned implementation;
+the adversary will use a different thread after source freeze.
+
+No example success, full integration gate or wave10 publication is claimed yet.
