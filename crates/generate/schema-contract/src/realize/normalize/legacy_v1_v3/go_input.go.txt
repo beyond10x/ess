@@ -20,7 +20,7 @@ type numberSegment struct {
 	items bool
 }
 
-func parseInput(data []byte, paths, captures [][]numberSegment) (any, error) {
+func parseInput(data []byte, paths [][]numberSegment) (any, error) {
 	decoder := rawDecoder(data)
 	raw, err := decoder.ReadValue()
 	if err != nil {
@@ -30,65 +30,12 @@ func parseInput(data []byte, paths, captures [][]numberSegment) (any, error) {
 	if _, err := decoder.ReadToken(); err != io.EOF {
 		return nil, refusal("/input", "input_syntax", "expected one complete JSON value")
 	}
-	return decodeInput(value, "/input", 0, paths, captures)
+	return decodeInput(value, "/input", 0, paths)
 }
 
-// Incremental standard-library tokens avoid jsontext.ReadValue's fixed 10000-level
-// cap. The parser owns grammar; offsets retain original spelling, and UseNumber
-// keeps even huge numeric tokens uninterpreted. Located decoding checks Unicode.
-type rawInputDecoder struct {
-	data    []byte
-	decoder *json.Decoder
-}
-
-func rawDecoder(data []byte) *rawInputDecoder {
-	decoder := json.NewDecoder(bytes.NewReader(data))
-	decoder.UseNumber()
-	return &rawInputDecoder{data: data, decoder: decoder}
-}
-
-func (d *rawInputDecoder) start() int {
-	at := int(d.decoder.InputOffset())
-	for at < len(d.data) && (d.data[at] == ' ' || d.data[at] == '\t' || d.data[at] == '\n' || d.data[at] == '\r' || d.data[at] == ',' || d.data[at] == ':') {
-		at++
-	}
-	return at
-}
-
-func (d *rawInputDecoder) PeekKind() byte {
-	at := d.start()
-	if at == len(d.data) {
-		return 0
-	}
-	return d.data[at]
-}
-
-func (d *rawInputDecoder) ReadToken() (json.Token, error) { return d.decoder.Token() }
-
-func (d *rawInputDecoder) ReadValue() (jsontext.Value, error) {
-	start := d.start()
-	token, err := d.decoder.Token()
-	if err != nil {
-		return nil, err
-	}
-	depth := 0
-	if delimiter, ok := token.(json.Delim); ok && (delimiter == '{' || delimiter == '[') {
-		depth = 1
-	}
-	for depth > 0 {
-		token, err = d.decoder.Token()
-		if err != nil {
-			return nil, err
-		}
-		if delimiter, ok := token.(json.Delim); ok {
-			if delimiter == '{' || delimiter == '[' {
-				depth++
-			} else {
-				depth--
-			}
-		}
-	}
-	return jsontext.Value(d.data[start:int(d.decoder.InputOffset())]), nil
+func rawDecoder(data []byte) *jsontext.Decoder {
+	// Validate grammar before precision, while checking Unicode and duplicate keys at their own located boundary.
+	return jsontext.NewDecoder(bytes.NewReader(data), jsontext.AllowDuplicateNames(true), jsontext.AllowInvalidUTF8(true))
 }
 
 func descend(paths [][]numberSegment, field string, items bool) [][]numberSegment {
@@ -101,12 +48,7 @@ func descend(paths [][]numberSegment, field string, items bool) [][]numberSegmen
 	return result
 }
 
-func decodeInput(data []byte, at string, depth int, paths, captures [][]numberSegment) (any, error) {
-	for _, path := range captures {
-		if len(path) == 0 {
-			return captureJSON(data, at, depth)
-		}
-	}
+func decodeInput(data []byte, at string, depth int, paths [][]numberSegment) (any, error) {
 	if depth > 64 {
 		return nil, refusal(at, "input_depth", "JSON input exceeds 64 levels")
 	}
@@ -140,7 +82,7 @@ func decodeInput(data []byte, at string, depth int, paths, captures [][]numberSe
 		sort.Strings(keys)
 		result := make(map[string]any, len(fields))
 		for _, key := range keys {
-			value, err := decodeInput(fields[key], pointer(at, key), depth+1, descend(paths, key, false), descend(captures, key, false))
+			value, err := decodeInput(fields[key], pointer(at, key), depth+1, descend(paths, key, false))
 			if err != nil {
 				return nil, err
 			}
@@ -155,7 +97,7 @@ func decodeInput(data []byte, at string, depth int, paths, captures [][]numberSe
 			if err != nil {
 				return nil, refusal(at, "input_syntax", "invalid JSON list")
 			}
-			value, err := decodeInput(raw, fmt.Sprintf("%s/%d", at, len(result)), depth+1, descend(paths, "", true), descend(captures, "", true))
+			value, err := decodeInput(raw, fmt.Sprintf("%s/%d", at, len(result)), depth+1, descend(paths, "", true))
 			if err != nil {
 				return nil, err
 			}

@@ -4,6 +4,14 @@
 
 ### Added
 
+- `ess-normalization/4` explicitly captures selected JSON field, array-item or root
+  tokens as canonical standard base64 before first-stage schema validation. Exact
+  token spelling, duplicate members and huge numeric lexemes are retained inside
+  captures; JSON grammar, Unicode and the 64-level depth bound remain enforced.
+  Reference, generated Rust and Go expose strict base64-to-JSON entrypoints for
+  separately checked retained-document composition. Decoded-value APIs refuse
+  capture branches without original token bytes. Targets use report version 3;
+  frozen legacy templates preserve formats 1–3 emitted bytes and file maps.
 - `ess-normalization/3` model-owned stage roots, pinned to complete compiler
   provenance and explicit type selections. `Plan::check_with_models` and CLI
   `--model` inputs reuse checked model wire projections without duplicate schemas

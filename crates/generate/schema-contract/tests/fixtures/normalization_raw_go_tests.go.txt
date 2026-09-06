@@ -1,0 +1,101 @@
+package normalization_adapter
+
+import (
+	"bytes"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"os"
+	"reflect"
+	"testing"
+)
+
+func TestCorpus(t *testing.T) {
+	normalizer, err := New()
+	if err != nil {
+		t.Fatal(err)
+	}
+	data, err := os.ReadFile("cases.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var cases []struct {
+		Branch, Input, Mode string
+		Value               json.RawMessage
+		Errors              Refused
+	}
+	if err := json.Unmarshal(data, &cases); err != nil {
+		t.Fatal(err)
+	}
+	for index, entry := range cases {
+		t.Run(fmt.Sprint(index), func(t *testing.T) {
+			input := []byte(entry.Input)
+			before := bytes.Clone(input)
+			var result json.RawMessage
+			var err error
+			if entry.Mode == "base64" {
+				result, err = normalizer.NormalizeBase64JSON(entry.Branch, entry.Input)
+			} else {
+				result, err = normalizer.Normalize(entry.Branch, input)
+			}
+			if entry.Errors != nil {
+				var refused Refused
+				if !errors.As(err, &refused) || !reflect.DeepEqual(refused, entry.Errors) {
+					t.Fatalf("got %s %v; want %#v", result, err, entry.Errors)
+				}
+				if result != nil {
+					t.Fatal("partial output")
+				}
+			} else {
+				if err != nil {
+					t.Fatal(err)
+				}
+				got, err := parseInput(result, nil, nil)
+				if err != nil {
+					t.Fatal(err)
+				}
+				want, err := parseInput(entry.Value, nil, nil)
+				if err != nil {
+					t.Fatal(err)
+				}
+				if !reflect.DeepEqual(got, want) {
+					t.Fatalf("got %s; want %s", result, entry.Value)
+				}
+			}
+			if !bytes.Equal(input, before) {
+				t.Fatal("input changed")
+			}
+		})
+	}
+}
+
+func TestInvalidUTF8AndComposition(t *testing.T) {
+	normalizer, err := New()
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, input := range [][]byte{{'"', 0xff, '"'}, append([]byte(`{"payload":"`), 0xff, '"', '}')} {
+		branch, at := "root", "/input"
+		if input[0] == '{' {
+			branch, at = "record", "/input/payload"
+		}
+		result, err := normalizer.Normalize(branch, input)
+		var refused Refused
+		want := Refused{{Pointer: at, Rule: "input_syntax", Detail: "captured JSON token contains invalid Unicode"}}
+		if result != nil || !errors.As(err, &refused) || !reflect.DeepEqual(refused, want) {
+			t.Fatalf("%s %v", result, err)
+		}
+	}
+	outer, err := normalizer.Normalize("root", []byte(`{"payload": {"n":1e999,"n":2}}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var encoded string
+	if err := json.Unmarshal(outer, &encoded); err != nil {
+		t.Fatal(err)
+	}
+	inner, err := normalizer.NormalizeBase64JSON("record", encoded)
+	if err != nil || string(inner) != `{"payload":"eyJuIjoxZTk5OSwibiI6Mn0="}` {
+		t.Fatalf("%s %v", inner, err)
+	}
+}

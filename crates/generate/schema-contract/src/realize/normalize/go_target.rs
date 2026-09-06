@@ -25,15 +25,36 @@ pub(super) fn generate(plan: &Plan, package: &str, module: &str) -> Result<Reali
     }
     check_schema_support(plan)?;
     let (roots, mut files) = target::sources(plan)?;
+    let capture = plan.recipe.format == super::FORMAT_V4;
     for (path, source) in [
-        ("runtime.go", include_str!("go_runtime.go.txt")),
-        ("input.go", include_str!("go_input.go.txt")),
+        (
+            "runtime.go",
+            if capture {
+                include_str!("go_runtime.go.txt")
+            } else {
+                include_str!("legacy_v1_v3/go_runtime.go.txt")
+            },
+        ),
+        (
+            "input.go",
+            if capture {
+                include_str!("go_input.go.txt")
+            } else {
+                include_str!("legacy_v1_v3/go_input.go.txt")
+            },
+        ),
         ("expression.go", include_str!("go_expression.go.txt")),
         ("collection.go", include_str!("go_collection.go.txt")),
         ("condition.go", include_str!("go_condition.go.txt")),
         ("numeric.go", include_str!("go_numeric.go.txt")),
     ] {
         files.insert(path.to_owned(), source.replace("__PACKAGE__", package));
+    }
+    if capture {
+        files.insert(
+            "retained.go".to_owned(),
+            include_str!("go_retained.go.txt").replace("__PACKAGE__", package),
+        );
     }
     files.insert("source.recipe.json".to_owned(), plan.to_json());
     files.insert("go.mod".to_owned(),format!("module {module}\n\ngo 1.26\n\nrequire (\n\tgithub.com/go-json-experiment/json v0.0.0-20260601182631-00ed12fed2a6\n\tgithub.com/santhosh-tekuri/jsonschema/v6 v6.0.2\n)\n\nrequire golang.org/x/text v0.14.0 // indirect\n"));
@@ -69,8 +90,34 @@ pub(super) fn generate(plan: &Plan, package: &str, module: &str) -> Result<Reali
         }
         source.push_str("},\n");
     }
-    source.push_str("}\n\nvar numberPaths = map[string][][]numberSegment{\n");
-    if let Some(branches) = &plan.recipe.binary64_inputs {
+    source.push_str("}\n");
+    input_paths(
+        &mut source,
+        "numberPaths",
+        plan.recipe.binary64_inputs.as_ref(),
+    );
+    if capture {
+        input_paths(
+            &mut source,
+            "capturePaths",
+            plan.recipe.raw_json_inputs.as_ref(),
+        );
+    }
+    files.insert("bindings.go".to_owned(), source);
+    Ok(target::finish(
+        plan,
+        TargetConfiguration::Go {
+            package: package.to_owned(),
+            module: module.to_owned(),
+        },
+        files,
+        roots,
+    ))
+}
+
+fn input_paths(source: &mut String, name: &str, branches: Option<&super::Binary64Inputs>) {
+    writeln!(source, "\nvar {name} = map[string][][]numberSegment{{").expect("String write");
+    if let Some(branches) = branches {
         for (branch, paths) in branches {
             writeln!(source, "{}: {{", quote(branch)).expect("String write");
             for path in paths {
@@ -88,16 +135,6 @@ pub(super) fn generate(plan: &Plan, package: &str, module: &str) -> Result<Reali
         }
     }
     source.push_str("}\n");
-    files.insert("bindings.go".to_owned(), source);
-    Ok(target::finish(
-        plan,
-        TargetConfiguration::Go {
-            package: package.to_owned(),
-            module: module.to_owned(),
-        },
-        files,
-        roots,
-    ))
 }
 
 fn check_schema_support(plan: &Plan) -> Result<(), Refused> {
