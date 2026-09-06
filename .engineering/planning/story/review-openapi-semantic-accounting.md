@@ -27,7 +27,7 @@ scope:
   path: website/docs/reference/cli.md
 - confidence: cited
   path: website/docs/reference/formats.md
-revision: 18
+revision: 19
 ---
 ## Finding and source
 
@@ -77,6 +77,15 @@ Derived 2026-09-05 by independent aep-drive:story-scoper from story revision4 an
 - Clean Atlas7b00adf3b1004e0cdd8dd12aa4fa8cc8435a0432 equaled remote during scoping. Cross-repo ADR rule applies when another repo verifies changed bytes; none established for interface here, so revisit actual consumers instead of inventing an unconditional ADR requirement. Any public documentation still requires its normal downstream publication gates — cited/inferred coordinator boundary.
 - Confidence high for converter, strict envelope and actual persisted writer/reader. No new contract decision or compatibility execution claimed. Collides on exact ess-openapi, ess-cli and proposed design tokens; shared planning/integration root-owned — cited/inferred.
 
+Confirmed integration scope after implementation and both reviews:
+
+- cited — `crates/generate/ess-openapi`: the retained structural DTO/reader and canonical bytes, variant-aware import accounting, one sealed checked envelope and raw-interface unit-field validation. This does not make the legacy DTO fully closed; integer/number/boolean variants retain their measured unknown-field behavior.
+- cited — `crates/edge/ess-cli`: checked import/persist/reload/project routing and refusal before writes, including same-path destinations. Both reviewer test sets and all original assertions are retained.
+- cited — `Cargo.lock` and the OpenAPI package manifest: one intentional SHA-256 dependency consequence, no additional format or modeling dependency.
+- cited — README and the format/CLI reference rows describe the checked envelope and retained legacy boundary. The final coordinator corrected the legacy closed-DTO wording using the already measured first-review behavior. Incoming normalization rows are preserved.
+- cited — the accepted `docs/design/review-openapi-accounting.md` binding and `docs/design/review-format-catalog.md` record source identity, truthful accounting and legacy compatibility. Native generation is unchanged; unsupported semantics remain gaps or refusals, with annotation omissions explicitly separate.
+
+Initial inferred scope above is preserved as historical preparation. The complete integrated suite passed 1,873 cases with zero failures or ignored cases; all eight offline tasks, site build and planning exited zero. The final wording-only reference correction receives its own site-build check before publication; it changes no Rust, fixture, manifest, lockfile or runtime task.
 
 ## Bound Wave7 implementation
 
