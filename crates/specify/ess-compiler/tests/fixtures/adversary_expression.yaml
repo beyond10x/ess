@@ -1,0 +1,74 @@
+format: ess/1
+system: review
+version: v1
+domains: [review.data]
+domain: review.data
+types:
+  - name: review.data.Phase
+    kind: enum
+    variants: [Ready, Done, 'false', '1']
+  - name: review.data.WrappedPhase
+    kind: newtype
+    of: Optional<review.data.Phase>
+  - name: review.data.Amount
+    kind: newtype
+    of: Optional<Decimal>
+    invariants: [value >= 0]
+  - name: review.data.Entry
+    kind: struct
+    fields:
+      - {name: amount, type: review.data.Amount, wire: amount_wire}
+      - {name: phase, type: review.data.WrappedPhase}
+      - {name: count, type: Boolean}
+      - {name: next, type: Optional<review.data.Entry>}
+      - {name: children, type: 'Map<String, List<review.data.Entry>>'}
+    invariants: [amount >= 0]
+  - name: review.data.Loop
+    kind: newtype
+    of: Optional<review.data.Loop>
+entities:
+  - name: review.data.Item
+    identity: {name: id, type: String}
+    fields:
+      - {name: amount, type: Decimal}
+      - {name: flag, type: Boolean}
+      - {name: phase, type: review.data.WrappedPhase}
+      - {name: entry, type: review.data.Entry}
+      - {name: groups, type: 'Map<String, List<review.data.Entry>>'}
+      - {name: loop, type: review.data.Loop}
+    lifecycle: {initial: Active, states: [Active], terminal: [Active]}
+    invariants: [amount >= 0]
+commands:
+  - name: review.data.ZObserve
+    input: []
+    outcomes:
+      - name: observed
+        emits: [review.data.Changed]
+  - name: review.data.Update
+    input:
+      - {name: amount, type: Decimal}
+      - {name: flag, type: Boolean}
+      - {name: phase, type: review.data.WrappedPhase}
+      - {name: entry, type: review.data.Entry}
+      - {name: groups, type: 'Map<String, List<review.data.Entry>>'}
+      - {name: loop, type: review.data.Loop}
+    outcomes:
+      - name: changed
+        when: amount > 0
+        emits: [review.data.Changed]
+      - name: refused
+        error: review.data.Refused
+events:
+  - name: review.data.Changed
+errors:
+  - name: review.data.Refused
+views:
+  - name: review.data.Items
+    source: review.data.Item
+    fields:
+      - {name: amount, type: Decimal}
+      - {name: flag, type: Boolean}
+      - {name: phase, type: review.data.WrappedPhase}
+      - {name: entry, type: review.data.Entry}
+      - {name: groups, type: 'Map<String, List<review.data.Entry>>'}
+    filter: amount >= 0
