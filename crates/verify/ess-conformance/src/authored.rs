@@ -1479,7 +1479,7 @@ pub fn compile(ir: &EssIr, sources: &[Source]) -> Authoring {
 }
 
 /// One file, or every reason it produced nothing.
-fn compile_one(
+pub(crate) fn compile_one(
     ir: &EssIr,
     source: &Source,
     seen: &BTreeMap<ScenarioId, String>,

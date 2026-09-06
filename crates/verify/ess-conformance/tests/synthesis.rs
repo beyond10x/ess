@@ -32,9 +32,212 @@ use ess_primitives::node::Node;
 
 // ---- the specifications under test -------------------------------------------------------------
 
+fn coverage_one_pass(
+    input: &ess_conformance::coverage::AdmittedInput,
+    id: &str,
+) -> ess_conformance::CountReport {
+    let selected = input.select(&[ScenarioId::parse(id).unwrap()]).unwrap();
+    let run = ess_conformance::Runner::for_suite(selected.selected().suite()).run_admitted(
+        selected.selected(),
+        &ess_conformance::reference::Billing::new(),
+    );
+    let report = ess_conformance::CountReport::from_run(&run, selected.selected()).unwrap();
+    assert_eq!(report.counts().total, 1);
+    assert_eq!(report.counts().passed, 1, "{}", run.to_canonical_json());
+    assert_eq!(
+        report.conformance_status(),
+        ess_conformance::CountStatus::Inconclusive
+    );
+    report
+}
+#[test]
+fn coverage_missing_lifecycle_and_view_checks_remain_beside_actual_passing_results() {
+    use ess_conformance::coverage::{Effect, Origins, Scope};
+    let ir = example_with("billing", |raw| {
+        for command in &mut raw.commands {
+            command.outcomes.retain(|outcome| !outcome.wrong_state);
+        }
+    });
+    let input = ess_conformance::coverage_build::build(&ir, &[], Scope::System, Origins::Generated)
+        .unwrap();
+    let inventory = input.selected().coverage().unwrap();
+    let id = "billing.invoice.Invoice/state/Paid/refuses/billing.invoice.CancelInvoice";
+    let refusal = inventory
+        .refused
+        .iter()
+        .find(|r| r.scenario.as_ref().is_some_and(|s| s.to_string() == id))
+        .unwrap();
+    assert_eq!(refusal.code, "ESS-SYNTH-012");
+    assert_eq!(refusal.effect, Effect::CheckNotEmitted);
+    assert!(refusal.retained.is_some());
+    assert_eq!(inventory.counts.refused, 8);
+    coverage_one_pass(&input, id);
+
+    let ir = example_with("billing", |raw| {
+        if let Some(view) = raw
+            .views
+            .iter_mut()
+            .find(|v| v.name.to_string() == "billing.invoice.OutstandingInvoices")
+        {
+            let mut unknown = view.clone();
+            unknown.name = QualifiedName::new("billing.invoice.UnknowableInvoices").unwrap();
+            unknown.filter =
+                Some(serde_json::from_value(serde_json::json!("reminder_count > 100")).unwrap());
+            unknown.order_by.clear();
+            view.filter = Some(
+                serde_json::from_value(
+                    serde_json::json!({"all":["state == Draft","state == Paid"]}),
+                )
+                .unwrap(),
+            );
+            raw.views.push(unknown);
+        }
+    });
+    let input = ess_conformance::coverage_build::build(&ir, &[], Scope::System, Origins::Generated)
+        .unwrap();
+    let id = "billing.invoice.CreateInvoice/outcome/accepted";
+    let refused: Vec<_> = input
+        .selected()
+        .coverage()
+        .unwrap()
+        .refused
+        .iter()
+        .filter(|r| r.scenario.as_ref().is_some_and(|s| s.to_string() == id))
+        .collect();
+    assert_eq!(refused.len(), 2);
+    assert_eq!(
+        refused
+            .iter()
+            .map(|r| r.code.as_str())
+            .collect::<BTreeSet<_>>(),
+        BTreeSet::from(["ESS-SYNTH-005", "ESS-SYNTH-014"])
+    );
+    assert!(refused
+        .iter()
+        .all(|r| r.effect == Effect::CheckNotEmitted && r.retained.is_some()));
+    coverage_one_pass(&input, id);
+}
+
+#[test]
+fn coverage_all_missing_invariants_keep_null_survivors_and_component_proofs_stay_conservative() {
+    use ess_conformance::coverage::{Effect, Origins, RefusalScope, Scope};
+    let missing = |raw: &mut RawSpecFile| {
+        for view in &mut raw.views {
+            if view.name.to_string() == "billing.invoice.InvoiceById" {
+                view.fields.retain(|field| field.name != "reminder_count");
+            }
+        }
+    };
+    let ir = example_with("billing", |raw| {
+        missing(raw);
+        for entity in &mut raw.entities {
+            if entity.name.to_string() == "billing.invoice.Invoice" {
+                entity.invariants.remove(0);
+            }
+        }
+    });
+    let input = ess_conformance::coverage_build::build(&ir, &[], Scope::System, Origins::Generated)
+        .unwrap();
+    let inventory = input.selected().coverage().unwrap();
+    assert_eq!(inventory.counts.refused, 4);
+    assert_eq!(inventory.counts.generated, 25);
+    for refusal in &inventory.refused {
+        assert_eq!(refusal.code, "ESS-SYNTH-011");
+        assert_eq!(refusal.effect, Effect::CheckNotEmitted);
+        assert!(refusal.scenario.is_some() && refusal.retained.is_none());
+        assert!(!input
+            .selected()
+            .suite()
+            .scenarios
+            .contains_key(refusal.scenario.as_ref().unwrap()));
+    }
+    coverage_one_pass(&input, "billing.invoice.CreateInvoice/outcome/accepted");
+
+    let ir = example_with("billing", missing);
+    let input = ess_conformance::coverage_build::build(
+        &ir,
+        &[],
+        Scope::component("email-service").unwrap(),
+        Origins::Generated,
+    )
+    .unwrap();
+    let inventory = input.selected().coverage().unwrap();
+    assert_eq!(inventory.counts.generated, 2);
+    assert_eq!(inventory.counts.outside, 27);
+    assert_eq!(inventory.counts.refused, 4);
+    assert!(inventory
+        .refused
+        .iter()
+        .all(|r| r.scope == RefusalScope::OutsideComponent
+            && r.retained.is_some()
+            && !r.needs.is_empty()));
+    assert!(inventory.is_complete());
+    let run = ess_conformance::Runner::for_suite(input.selected().suite()).run_admitted(
+        input.selected(),
+        &ess_conformance::reference::Billing::new(),
+    );
+    let report = ess_conformance::CountReport::from_run(&run, input.selected()).unwrap();
+    assert_eq!(report.counts().passed, 2);
+    assert_eq!(
+        report.conformance_status(),
+        ess_conformance::CountStatus::Passed
+    );
+}
+
 /// An example directory, compiled from the files it lives in rather than from a copy inlined here.
 fn example(name: &str) -> EssIr {
     example_with(name, |_| {})
+}
+
+#[test]
+fn coverage_builder_records_the_complete_generated_inventory_and_component_omissions() {
+    use ess_conformance::{
+        coverage::{Origins, Scope},
+        coverage_build::build,
+    };
+    use ess_domain::component::ComponentName;
+    let ir = example("billing");
+    let old = synthesize(&ir);
+    let input = build(&ir, &[], Scope::System, Origins::Generated).expect("build inventory");
+    let inventory = input.selected().coverage().unwrap();
+    assert_eq!(
+        inventory.generated,
+        old.suite.scenarios.keys().cloned().collect::<Vec<_>>()
+    );
+    assert_eq!(inventory.refused.len(), old.refusals.len());
+    assert_eq!(inventory.generated.len(), 29);
+    assert!(inventory.is_complete());
+    let old_component = synthesize_for(&ir, "invoice-service").unwrap();
+    let component = build(
+        &ir,
+        &[],
+        Scope::Component {
+            component: ComponentName::new("invoice-service").unwrap(),
+        },
+        Origins::Generated,
+    )
+    .unwrap();
+    let inventory = component.selected().coverage().unwrap();
+    assert_eq!(
+        inventory.generated,
+        old_component
+            .suite
+            .scenarios
+            .keys()
+            .cloned()
+            .collect::<Vec<_>>()
+    );
+    assert_eq!(inventory.outside.len(), old_component.outside.len());
+    assert!(inventory.is_complete());
+    assert!(build(
+        &ir,
+        &[],
+        Scope::Component {
+            component: ComponentName::new("absent").unwrap()
+        },
+        Origins::Generated
+    )
+    .is_err());
 }
 
 /// An example directory whose raw documents may be narrowed before validation and compilation.

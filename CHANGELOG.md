@@ -4,6 +4,14 @@
 
 ### Added
 
+- Opt-in `ess-conformance/5` records selected generated and authored coverage,
+  omitted scenarios, source identities and every refusal occurrence. Checked
+  `ess-conformance-input/1` carriers retain original suite and parent bytes;
+  Rust, generated Go, the CLI and the generic browser admit complete lineage
+  before execution. Report 2 distinguishes complete passing conformance from
+  empty, unknown or incomplete coverage. Browser replay and impact analysis
+  retain the same selection boundary. Legacy suite/report meanings and defaults
+  remain unchanged.
 - Executable offline registry examples for generated source-syntax and contract
   schemas, using adopter-owned resource IDs and separate strict selector envelopes.
   Generated schema bytes remain unchanged; syntax admission, system semantics and

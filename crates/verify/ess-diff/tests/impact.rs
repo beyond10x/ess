@@ -33,6 +33,54 @@ fn catalog_suite() -> ConformanceSuite {
     synthesize(&compiled("examples/revision-pair/before")).suite
 }
 
+#[test]
+fn raw_legacy_impact_cannot_discard_a_coverage_inventory() {
+    let before = compiled("examples/billing");
+    let mut suite = synthesize(&before).suite;
+    suite.provenance.suite_version =
+        ess_conformance::scenario::SuiteFormat::parse("ess-conformance/5").unwrap();
+    assert!(impact(&before, &before, Some(&suite), None).is_err());
+}
+
+#[test]
+fn coverage_impact_keeps_exact_selection_context_out_of_persisted_impact3() {
+    use ess_conformance::coverage::{Origins, Scope};
+    let before = compiled("examples/billing");
+    let input =
+        ess_conformance::coverage_build::build(&before, &[], Scope::System, Origins::Generated)
+            .unwrap();
+    let id = input
+        .selected()
+        .suite()
+        .scenarios
+        .keys()
+        .next()
+        .unwrap()
+        .clone();
+    let selected = input.select(&[id]).unwrap();
+    let impact = ess_diff::impact::impact_input(&before, &before, &selected, None)
+        .expect("complete selection impact");
+    assert_eq!(impact.suite().digest, selected.selected().digest());
+    assert_eq!(
+        impact.selection(),
+        &selected.selected().coverage().unwrap().selection
+    );
+    let value: serde_json::Value =
+        serde_json::from_str(&impact.report().to_canonical_json()).unwrap();
+    assert_eq!(value["format"], "ess-impact/3");
+    assert!(value.get("coverage").is_none());
+    assert!(value.get("selection").is_none());
+    assert_eq!(impact.report().churn.conformance_scenarios_total, Some(1));
+    let mut unknown: serde_json::Value =
+        serde_json::from_str(input.selected().original_json()).unwrap();
+    unknown["coverage"]["knowledge"] = serde_json::json!("unknown");
+    let unknown = ess_conformance::coverage::AdmittedInput::from_suite(
+        ess_conformance::AdmittedSuite::from_json(&unknown.to_string()).unwrap(),
+    )
+    .unwrap();
+    assert!(ess_diff::impact::impact_input(&before, &before, &unknown, None).is_err());
+}
+
 /// The impact of the fixture pair's six changes on the suite the earlier revision obliges.
 fn catalog_impact() -> EssImpact {
     impact(

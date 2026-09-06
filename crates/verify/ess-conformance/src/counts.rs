@@ -2,6 +2,7 @@
 use crate::{
     admission::{AdmissionError, AdmittedSuite},
     count_json::Json,
+    coverage::{Counts as CoverageCounts, Knowledge, Refusal, Selection, SuiteReference},
     ConformanceReport, ExecutedRun, ScenarioId, ScenarioResult, Status,
 };
 use ess_primitives::evidence::SpecDigest;
@@ -33,14 +34,6 @@ pub enum ProducerProfile {
     /// Go skipped semantics; errors and unsupported are unavailable categories.
     #[serde(rename = "go-scenario-status/1")]
     Go,
-}
-/// Exact original-byte suite identity.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
-struct SuiteReference {
-    version: String,
-    digest_profile: String,
-    digest: String,
 }
 /// Five terminal categories and their checked sum.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
@@ -86,6 +79,39 @@ struct UnknownCoverage {
 }
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
+struct InventorySummary {
+    knowledge: Knowledge,
+    selection: Selection,
+    counts: CoverageCounts,
+    refused: Vec<Refusal>,
+}
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(untagged)]
+enum ReportCoverage {
+    Inventory(InventorySummary),
+    Legacy(UnknownCoverage),
+}
+impl ReportCoverage {
+    fn of(admitted: &AdmittedSuite) -> Self {
+        admitted.coverage().map_or_else(
+            || {
+                Self::Legacy(UnknownCoverage {
+                    knowledge: "unknown".into(),
+                })
+            },
+            |c| {
+                Self::Inventory(InventorySummary {
+                    knowledge: c.knowledge,
+                    selection: c.selection.clone(),
+                    counts: c.counts.clone(),
+                    refused: c.refused.clone(),
+                })
+            },
+        )
+    }
+}
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 struct WireReport {
     format: String,
     specification: String,
@@ -96,7 +122,7 @@ struct WireReport {
     execution_status: CountStatus,
     counts: ScenarioCounts,
     outcomes: Outcomes,
-    coverage: UnknownCoverage,
+    coverage: ReportCoverage,
     conformance_status: CountStatus,
     policy: String,
     completed_at: u64,
@@ -173,10 +199,8 @@ impl CountReport {
             execution_status,
             counts,
             outcomes,
-            coverage: UnknownCoverage {
-                knowledge: "unknown".into(),
-            },
-            conformance_status: qualification(execution_status),
+            coverage: ReportCoverage::of(admitted),
+            conformance_status: qualification(execution_status, admitted),
             policy: "complete-selection/1".into(),
             completed_at: run.completed_at.epoch_millis(),
         });
@@ -201,6 +225,10 @@ impl CountReport {
         for count in counts.values() {
             count.unsigned()?;
         }
+        let coverage = fields
+            .get("coverage")
+            .ok_or_else(|| error("missing coverage"))?;
+        crate::coverage::validate_summary_json(coverage, admitted.coverage().is_some())?;
         let wire = serde_json::from_str(&raw.raw).map_err(|e| error(e.to_string()))?;
         let result = Self(wire);
         result.validate(admitted)?;
@@ -210,7 +238,7 @@ impl CountReport {
         let r = &self.0;
         if r.format != COUNT_REPORT_FORMAT
             || r.policy != "complete-selection/1"
-            || r.coverage.knowledge != "unknown"
+            || r.coverage != ReportCoverage::of(admitted)
         {
             return Err(error("unsupported format, policy or count-stage coverage"));
         }
@@ -258,7 +286,9 @@ impl CountReport {
             ));
         }
         let expected = execution(r.producer_profile, &r.counts)?;
-        if r.execution_status != expected || r.conformance_status != qualification(expected) {
+        if r.execution_status != expected
+            || r.conformance_status != qualification(expected, admitted)
+        {
             return Err(error(
                 "execution/conformance status contradicts producer outcomes and unknown coverage",
             ));
@@ -300,9 +330,16 @@ fn execution(profile: ProducerProfile, c: &ScenarioCounts) -> Result<CountStatus
         CountStatus::Passed
     })
 }
-fn qualification(execution: CountStatus) -> CountStatus {
+fn qualification(execution: CountStatus, admitted: &AdmittedSuite) -> CountStatus {
     if execution == CountStatus::Failed {
         CountStatus::Failed
+    } else if execution == CountStatus::Passed
+        && !admitted.suite().is_empty()
+        && admitted
+            .coverage()
+            .is_some_and(crate::coverage::Inventory::is_complete)
+    {
+        CountStatus::Passed
     } else {
         CountStatus::Inconclusive
     }

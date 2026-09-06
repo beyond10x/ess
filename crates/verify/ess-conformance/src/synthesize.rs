@@ -1078,7 +1078,7 @@ impl std::error::Error for UnknownComponent {}
 ///
 /// One entry per distinct construct, in name order, so the list is a function of the scenario and
 /// not of the order its steps happen to name things.
-fn needs_of(
+pub(crate) fn needs_of(
     ir: &EssIr,
     component: &ResolvedComponent,
     scenario: &ConformanceScenario,
@@ -2700,7 +2700,7 @@ fn lifecycle(
 }
 
 /// Adds a scenario, or records the collision as a refusal rather than losing one of the two.
-fn insert(
+pub(crate) fn insert(
     suite: &mut ConformanceSuite,
     id: ScenarioId,
     scenario: ConformanceScenario,

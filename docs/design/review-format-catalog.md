@@ -255,7 +255,7 @@ explicitly references one already cataloged above.
 | Realization identity | Prefixed SHA-256 of compact specification/synthesis/implementations tuple. [Owner](../../crates/specify/ess-realization/src/lib.rs). | Not a hash of the whole realization document or its prose entrypoints. |
 | InfraIR identity | Bare SHA-256 of compact sorted model JSON. [Owner](../../crates/infra/infra-compiler/src/ir.rs). | Excludes provenance; valid handles and digest do not prove observation completeness. |
 | InfraSpec identity; projection `provenance.specification_digest` | Bare 64 lowercase SHA-256 of compact key-sorted serialized typed `InfraSpec` (`format`, `name`, `expectations`), no LF. Array order, including declared expectation order, remains significant. [Digest](../../crates/infra/infra-spec/src/spec.rs), [consumer](../../crates/infra/infra-project/src/project.rs). | Not raw authored YAML, the InfraIR model digest or a whole-projection hash. |
-| Exact-suite bytes, **explicit count-stage opt-in** | `SuiteReference.digest_profile: sha256-json-bytes/1` in report/2 and run/2. [Owner](../../crates/verify/ess-conformance/src/counts.rs). | SHA-256 of every admitted original suite/1–4 UTF-8 byte, including final newline. Count-stage coverage remains unknown; suite/4 and report/1 bytes stay frozen. |
+| Exact-suite bytes, **explicit opt-in** | `SuiteReference.digest_profile: sha256-json-bytes/1` in report/2, run/2 and replay/1. [Owner](../../crates/verify/ess-conformance/src/counts.rs). | SHA-256 of every admitted original suite/1–5 UTF-8 byte, including final newline. The carrier and reduced execution view are not hash inputs. Legacy coverage remains unknown; suite/4 and report/1 bytes stay frozen. |
 
 `Provenance::read_digests` now delegates to [stamp admission](../../crates/generate/ess-gen/src/stamp.rs):
 complete authoritative comment/JSON/YAML envelopes, unique keys/locations, exclusive aliases and
@@ -297,13 +297,29 @@ test; the implementation report records any actual fixture calculations separate
 ## Successors and relying parties
 
 Default writers remain suite **/4**, standalone report **/1**, and unversioned detailed runs.
-Explicit report **/2** and detailed **ess-conformance-run/2** implement the count stage with original
-suite/1–4 admission, exact-byte pairing and unknown coverage. Their JSON objects use sorted UTF-8
+Explicit report **/2** and detailed **ess-conformance-run/2** retain original
+suite/1–4 admission, exact-byte pairing and unknown coverage, and now accept admitted suite/5
+coverage. Their JSON objects use sorted UTF-8
 keys, two-space layout and a final LF; counts/timestamps are exact unsigned decimal u64. Rust u64
 and Go int64 timestamps remain separate frozen legacy domains. The
-[binding conformance design](review-conformance-coverage.md) still reserves suite **/5** and durable
-coverage/selection. Its complete 75-row matrix and future pairings are later obligations; the count
-stage does not claim full coverage, default movement or deployed adopter readiness.
+[binding conformance design](review-conformance-coverage.md) supplies suite **/5** and durable
+declared coverage/selection. The [transport binding](review-conformance-coverage-transport.md)
+adds complete original parent input and paired browser admission. No default movement, publisher
+authentication, independent inventory honesty or deployed adopter readiness follows from these types.
+
+| New opt-in document | Closed fields and checked meaning |
+|---|---|
+| `provenance.suite_version: ess-conformance/5` | Exactly provenance/scenarios/coverage; declared scope, origins, filter, knowledge, selected/outside IDs, every refusal occurrence and every requested authored source. Immutable original-byte admission; the legacy DTO cannot issue known coverage by relabeling. [Owner](../../crates/verify/ess-conformance/src/coverage.rs). |
+| `ess-conformance-input/1` | Exactly format/suite_json/parent_suites; original selected text and complete nearest-first original parents. Admission compares full surviving definitions/dependencies, inventory and provenance; no ambient lookup or lineage-depth cap. [Owner](../../crates/verify/ess-conformance/src/coverage.rs). |
+| `ess-conformance-replay/1` | Exactly format/model/suite/input; explicit closed typed model projection, exact selected reference and admitted input. The browser validates before replay state, displays all refusals and produces no execution report. Existing projection omissions remain. [Owner](../../crates/verify/ess-conformance/src/web_replay.rs). |
+| `ess-conformance-report/2`, `ess-conformance-run/2` | Actual immutable execution capability binds selected original bytes. Complete nonempty all-pass inventory with no in-scope refusal qualifies only for its declared selection. The standalone and detailed envelopes remain separate. [Owner](../../crates/verify/ess-conformance/src/counts.rs). |
+
+Fresh builders check model Binary64 before inventory/output. Go admits the full original u64 wire
+and lineage before adapting selected fields to its host int width; unrepresentable selected execution
+fields refuse before callbacks, while omitted parent fields remain admitted. Exact timestamp domains
+are unchanged. Suite/5 always requires explicit report/2, even with allow-incomplete or no destination.
+Impact's admitted-input path requires complete inventory and keeps selection as separate context;
+persisted output remains ess-impact/3 with unchanged fields and meanings.
 
 Before moving a default, implement admission and preserved legacy fixtures, migrate actual readers,
 regenerate/test runtimes and record the coordinated Atlas decision and shipped versions. The design

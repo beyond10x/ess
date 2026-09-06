@@ -170,7 +170,10 @@ inputs are supplied; they do not prove remote artifact contents or authenticity.
 | Rust `format: ess-conformance-report/1` | Model digest, implementation and suite-version claim | Checked closed reader validates version/counts/list/status; it does not establish exact-suite coverage or unique opaque result ids. Pretty JSON; unsigned u64 `completed_at`. [Source][report] |
 | Go `format: ess-conformance-report/1` | Same claims, Go failed/skipped vocabulary | Generated Go writer; current Rust admission accommodates its non-pass vocabulary. Indented JSON+LF, signed int64 `completed_at`; no cross-producer byte/range equivalence is implied. [Source][go-report] |
 | Default detailed `ConformanceReport`: **unversioned** | Suite provenance, implementation, run/scenario identities | Detailed CLI JSON/YAML is distinct from standalone `--report-out` JSON. Serialize-only; pretty canonical JSON, no report-file or exact-suite hash. [Source][detailed-report] |
-| Opt-in `ess-conformance-report/2` and `ess-conformance-run/2` | Exact original suite/1–4 bytes, producer profile and five outcome categories | Separate standalone and detailed surfaces with paired readers. Sorted UTF-8 object keys, two-space JSON plus LF, exact unsigned u64 counts/timestamps; coverage remains unknown and cannot qualify. [Count contracts][count-report] |
+| Opt-in `ess-conformance-report/2` and `ess-conformance-run/2` | Exact original suite/1–5 bytes, producer profile and five outcome categories | Separate standalone and detailed surfaces with paired readers. Sorted UTF-8 object keys, two-space JSON plus LF, exact unsigned u64 counts/timestamps. Legacy coverage remains unknown; complete nonempty suite/5 selection can qualify. [Count contracts][count-report] |
+| Opt-in `provenance.suite_version: ess-conformance/5` | Model/contract provenance and complete declared selection inventory | Closed original-byte admission retains source ownership, known outside IDs and every refusal occurrence. Explicit selections require exact parent input. [Coverage contract][coverage] |
+| `format: ess-conformance-input/1` | Selected inner original bytes and full original parent chain | Closed format/suite_json/parent_suites carrier; complete admission checks original references and typed lineage. Only selected inner bytes are hashed. [Coverage contract][coverage] |
+| `format: ess-conformance-replay/1` | Paired typed model, exact selected suite reference and input | Closed format/model/suite/input; browser admission precedes replay state. Reduced projection, no execution evidence or full model digest reconstruction. [Replay contract][coverage-replay] |
 
 `ess verify impact` computes generated-artifact obligations from the compared models. The CLI
 has no `--generated` option and does not inspect a committed output tree. The library API can accept
@@ -244,11 +247,29 @@ Generic String deserialization does not perform that check. Cargo synthesis stam
 not validate TOML, and a docs document has per-page stamps rather than one artifact stamp.
 [Stamp reader][stamp].
 
-Explicit report **/2** and detailed **ess-conformance-run/2** now pair admitted original suite/1–4
-bytes under `sha256-json-bytes/1`. Count-stage coverage is exactly unknown, including all-pass runs.
-Suite **/5** and durable complete coverage remain successor work. Defaults remain suite/4, report/1
-and diagnostic execution. Report/1 retains its historical non-pass aggregate and does not establish
-exact suite-byte identity. A format catalog alone does not establish an external consumer upgrade.
+Explicit report **/2** and detailed **ess-conformance-run/2** pair admitted original suite/1–5
+bytes under `sha256-json-bytes/1`. Legacy suite/1–4 coverage remains unknown, including all-pass runs.
+Suite **/5** adds a closed declared inventory: exact selection, origin/source ownership, outside
+scenarios and every refusal occurrence. Only nonempty all-pass execution with complete inventory
+and no in-scope refusal qualifies for that exact selection. Defaults remain suite/4, report/1
+and diagnostic execution. Suite/5 with report/1 refuses before execution, including without an
+output destination or with allow-incomplete. Report/1 keeps its historical non-pass aggregate and
+does not establish exact suite-byte identity. [Coverage workflow](../guides/verify-conformance.md#opt-into-declared-coverage).
+
+`ess-conformance-input/1` has exactly `format`, original selected `suite_json` and nearest-first
+`parent_suites` strings. Every explicit child needs its complete original parent chain. The selected
+inner string is hashed, never the carrier or the reduced execution DTO; all surviving definitions,
+dependencies, source mappings and refusal occurrences must agree. `ess-conformance-replay/1` pairs
+that input with the exact SuiteReference and a closed typed reduced model before browser state is
+created. The player displays coverage but emits no evidence; it does not reconstruct the full model
+digest, authenticate a publisher or fill the existing literal-assignment/view-evaluation omissions.
+
+New counts and timestamps use exact unsigned decimal u64 tokens. Go's selected execution adapter
+separately checks its host `int` width after admitting all parents, and its clock remains nonnegative
+int64; Rust timestamps retain the full u64 range. Declared Node payloads retain finite binary64
+meaning. Modeled Binary64 remains refused before conformance output. Impact with complete admitted
+input retains `ess-impact/3` and presents selection separately; unknown/incomplete input refuses.
+A format catalog alone does not establish an installed external consumer upgrade.
 
 [versions]: https://github.com/beyond10x/ess/blob/main/crates/specify/ess-domain/src/name.rs
 [schema-bundle]: https://github.com/beyond10x/ess/blob/main/crates/generate/schema-contract/src/bundle.rs
@@ -308,3 +329,5 @@ exact suite-byte identity. A format catalog alone does not establish an external
 [infra-project]: https://github.com/beyond10x/ess/blob/main/crates/infra/infra-project/src/project.rs
 
 [count-report]: https://github.com/beyond10x/ess/blob/main/crates/verify/ess-conformance/src/counts.rs
+[coverage]: https://github.com/beyond10x/ess/blob/main/crates/verify/ess-conformance/src/coverage.rs
+[coverage-replay]: https://github.com/beyond10x/ess/blob/main/crates/verify/ess-conformance/src/web_replay.rs

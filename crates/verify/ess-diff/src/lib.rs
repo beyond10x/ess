@@ -135,7 +135,8 @@ pub use delta::{
 pub use diff::{diff, DiffRefusal};
 pub use graph::{DependencyEdge, DependencyRelation, ImpactClass, Reach, SemanticDependencyGraph};
 pub use impact::{
-    impact, ArtifactAnswer, ArtifactId, ArtifactObligation, Churn, EssImpact, GeneratedTree,
-    ImpactPath, ImpactRefusal, Invalidation, ScenarioImpact, WholeAnswer, IMPACT_FORMAT,
+    impact, impact_input, ArtifactAnswer, ArtifactId, ArtifactObligation, Churn, CoverageImpact,
+    EssImpact, GeneratedTree, ImpactPath, ImpactRefusal, Invalidation, ScenarioImpact, WholeAnswer,
+    IMPACT_FORMAT,
 };
 pub use raw::RawEssDelta;

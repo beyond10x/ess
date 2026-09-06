@@ -37,14 +37,951 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"reflect"
 	"regexp"
 	"sort"
 	"strconv"
 	"strings"
 	"testing"
 	"time"
+	"unicode"
 	"unicode/utf8"
 )
+
+// ---- exact coverage inventory and original parent admission ----------------------------------
+
+func coverageError() error             { return fmt.Errorf("inconsistent closed coverage inventory") }
+func originalDigest(raw string) string { return fmt.Sprintf("sha256:%x", sha256.Sum256([]byte(raw))) }
+func sourceIdentity(value any) error {
+	name, err := text(value)
+	if err != nil {
+		return err
+	}
+	for _, segment := range strings.Split(name, "/") {
+		if segment == "" || segment == "." || segment == ".." {
+			return coverageError()
+		}
+	}
+	for _, r := range name {
+		if r == '\\' || r == ':' || unicode.IsControl(r) {
+			return coverageError()
+		}
+	}
+	return nil
+}
+func suiteReference(value any) error {
+	r, err := closed(value, "version digest_profile digest", "")
+	if err != nil {
+		return err
+	}
+	d, ok := r["digest"].(string)
+	if r["version"] != "ess-conformance/5" || r["digest_profile"] != "sha256-json-bytes/1" ||
+		!ok || !strings.HasPrefix(d, "sha256:") || !modelDigest.MatchString(strings.TrimPrefix(d, "sha256:")) {
+		return coverageError()
+	}
+	return nil
+}
+func referenceFor(suite Suite) map[string]any {
+	return map[string]any{"version": suite.Provenance.SuiteVersion, "digest_profile": "sha256-json-bytes/1", "digest": originalDigest(suite.original)}
+}
+func orderedIDs(value any) ([]string, error) {
+	values, err := array(value)
+	if err != nil {
+		return nil, err
+	}
+	result := make([]string, 0, len(values))
+	for _, value := range values {
+		id, err := text(value)
+		if err != nil {
+			return nil, err
+		}
+		if err := scenarioIdentity(id); err != nil {
+			return nil, err
+		}
+		if len(result) > 0 && result[len(result)-1] >= id {
+			return nil, coverageError()
+		}
+		result = append(result, id)
+	}
+	return result, nil
+}
+func semanticKey(value any) string {
+	if value == nil {
+		return ""
+	}
+	ref := value.(map[string]any)
+	kinds := []string{"domain", "type", "entity", "command", "outcome", "event", "error", "view", "actor", "transition", "binding", "component"}
+	rank := 0
+	for i, kind := range kinds {
+		if ref["kind"] == kind {
+			rank = i
+			break
+		}
+	}
+	name, ok := ref["name"].(string)
+	if !ok {
+		nested := ref["name"].(map[string]any)
+		if ref["kind"] == "outcome" {
+			name = nested["command"].(string) + "/" + nested["outcome"].(string)
+		} else {
+			name = nested["entity"].(string) + "/" + nested["transition"].(string)
+		}
+	}
+	return fmt.Sprintf("%02d:%s", rank, name)
+}
+func checkedNeeds(value any, required bool) error {
+	needs, err := array(value)
+	if err != nil {
+		return err
+	}
+	if required == (len(needs) == 0) {
+		return coverageError()
+	}
+	previous := ""
+	for _, need := range needs {
+		if err := admitReference(need); err != nil {
+			return err
+		}
+		key := semanticKey(need)
+		if key <= previous {
+			return coverageError()
+		}
+		previous = key
+	}
+	return nil
+}
+func nullableID(value any) error {
+	if value == nil {
+		return nil
+	}
+	id, err := text(value)
+	if err != nil {
+		return err
+	}
+	return scenarioIdentity(id)
+}
+func originIncludes(selection map[string]any, origin any) bool {
+	return selection["origins"] == "generated_and_authored" || selection["origins"] == origin
+}
+func checkedSelection(value any, provenance map[string]any) (map[string]any, error) {
+	selection, err := closed(value, "scope origins filter", "")
+	if err != nil {
+		return nil, err
+	}
+	switch selection["origins"] {
+	case "generated", "authored", "generated_and_authored":
+	default:
+		return nil, coverageError()
+	}
+	scope, err := closed(selection["scope"], "kind", "component")
+	if err != nil {
+		return nil, err
+	}
+	switch scope["kind"] {
+	case "system":
+		if len(scope) != 1 || provenance["component"] != nil {
+			return nil, coverageError()
+		}
+	case "component":
+		name, ok := scope["component"].(string)
+		if !ok || !kebabName.MatchString(name) || provenance["component"] != name {
+			return nil, coverageError()
+		}
+	default:
+		return nil, coverageError()
+	}
+	filter, err := closed(selection["filter"], "kind", "ids parent")
+	if err != nil {
+		return nil, err
+	}
+	switch filter["kind"] {
+	case "all":
+		if len(filter) != 1 {
+			return nil, coverageError()
+		}
+	case "explicit":
+		if _, err := orderedIDs(filter["ids"]); err != nil {
+			return nil, err
+		}
+		if err := suiteReference(filter["parent"]); err != nil {
+			return nil, err
+		}
+	default:
+		return nil, coverageError()
+	}
+	return selection, nil
+}
+func checkedOutside(value any, selection map[string]any) (map[string]any, error) {
+	outside, err := closed(value, "scenario origin reason needs", "")
+	if err != nil {
+		return nil, err
+	}
+	if err := nullableID(outside["scenario"]); err != nil || outside["scenario"] == nil {
+		return nil, coverageError()
+	}
+	if outside["origin"] != "generated" && outside["origin"] != "authored" {
+		return nil, coverageError()
+	}
+	if err := checkedNeeds(outside["needs"], outside["reason"] == "other_component"); err != nil {
+		return nil, err
+	}
+	scope := selection["scope"].(map[string]any)
+	switch outside["reason"] {
+	case "other_component":
+		if scope["kind"] != "component" || !originIncludes(selection, outside["origin"]) {
+			return nil, coverageError()
+		}
+	case "origin_selection":
+		if originIncludes(selection, outside["origin"]) {
+			return nil, coverageError()
+		}
+	case "selection_filter":
+		if selection["filter"].(map[string]any)["kind"] != "explicit" || !originIncludes(selection, outside["origin"]) {
+			return nil, coverageError()
+		}
+	default:
+		return nil, coverageError()
+	}
+	return outside, nil
+}
+func refusalKey(r map[string]any) []string {
+	key := func(v any) string {
+		if v == nil {
+			return ""
+		}
+		return v.(string)
+	}
+	retainedOrigin, retainedSource := "", ""
+	if r["retained"] != nil {
+		retained := r["retained"].(map[string]any)
+		retainedOrigin, retainedSource = key(retained["origin"]), key(retained["source"])
+	}
+	needs := []string{}
+	for _, need := range r["needs"].([]any) {
+		needs = append(needs, semanticKey(need))
+	}
+	return []string{key(r["origin"]), key(r["source"]), semanticKey(r["subject"]), key(r["scenario"]), key(r["code"]),
+		key(r["effect"]), retainedOrigin, retainedSource, key(r["scope"]), strings.Join(needs, "\x00"), key(r["message"])}
+}
+func orderedRefusal(a, b map[string]any) bool {
+	left, right := refusalKey(a), refusalKey(b)
+	for i := range left {
+		if left[i] != right[i] {
+			return left[i] < right[i]
+		}
+	}
+	return true
+}
+func checkedRefusal(value any, selection map[string]any, sources map[string]any, survivors map[string]string, owners map[string]string) (map[string]any, error) {
+	r, err := closed(value, "origin scenario subject source code message effect retained scope needs", "")
+	if err != nil {
+		return nil, err
+	}
+	if err := nullableID(r["scenario"]); err != nil {
+		return nil, err
+	}
+	if r["subject"] != nil {
+		if err := admitReference(r["subject"]); err != nil {
+			return nil, err
+		}
+	}
+	message, ok := r["message"].(string)
+	if !ok || strings.TrimSpace(message) == "" {
+		return nil, coverageError()
+	}
+	code, ok := r["code"].(string)
+	if !ok {
+		return nil, coverageError()
+	}
+	switch r["origin"] {
+	case "generated":
+		if r["source"] != nil || r["subject"] == nil {
+			return nil, coverageError()
+		}
+		number := 0
+		for n := 1; n <= 14; n++ {
+			if code == fmt.Sprintf("ESS-SYNTH-%03d", n) {
+				number = n
+			}
+		}
+		if number == 0 {
+			return nil, coverageError()
+		}
+		effect := "candidate_not_emitted"
+		if number == 5 || number == 11 || number == 12 || number == 14 {
+			effect = "check_not_emitted"
+		}
+		if r["effect"] != effect {
+			return nil, coverageError()
+		}
+	case "authored":
+		if err := sourceIdentity(r["source"]); err != nil {
+			return nil, err
+		}
+		valid := false
+		for n := 1; n <= 35; n++ {
+			if code == fmt.Sprintf("ESS-AUTHOR-%03d", n) {
+				valid = true
+			}
+		}
+		if !valid || r["effect"] != "candidate_not_emitted" {
+			return nil, coverageError()
+		}
+		source, ok := sources[r["source"].(string)].(map[string]any)
+		if !ok || source["disposition"] != "refused" || !reflect.DeepEqual(source["scenario"], r["scenario"]) {
+			return nil, coverageError()
+		}
+	default:
+		return nil, coverageError()
+	}
+	var retained any
+	if id, ok := r["scenario"].(string); ok && survivors[id] != "" {
+		var source any
+		if owners[id] != "" {
+			source = owners[id]
+		}
+		retained = map[string]any{"origin": survivors[id], "source": source}
+	}
+	if r["retained"] != nil {
+		if _, err := closed(r["retained"], "origin source", ""); err != nil {
+			return nil, err
+		}
+	}
+	if !reflect.DeepEqual(retained, r["retained"]) {
+		return nil, coverageError()
+	}
+	if err := checkedNeeds(r["needs"], r["scope"] == "outside_component"); err != nil {
+		return nil, err
+	}
+	switch r["scope"] {
+	case "in_scope":
+		if !originIncludes(selection, r["origin"]) {
+			return nil, coverageError()
+		}
+	case "outside_origin":
+		if originIncludes(selection, r["origin"]) {
+			return nil, coverageError()
+		}
+	case "outside_component":
+		if selection["scope"].(map[string]any)["kind"] != "component" || !originIncludes(selection, r["origin"]) {
+			return nil, coverageError()
+		}
+	default:
+		return nil, coverageError()
+	}
+	return r, nil
+}
+func admitCoverage(root map[string]any) error {
+	c, err := closed(root["coverage"], "selection knowledge generated authored outside refused authored_sources counts", "")
+	if err != nil {
+		return err
+	}
+	selection, err := checkedSelection(c["selection"], root["provenance"].(map[string]any))
+	if err != nil {
+		return err
+	}
+	if c["knowledge"] != "unknown" && c["knowledge"] != "complete_inventory" {
+		return coverageError()
+	}
+	counts, err := closed(c["counts"], "generated authored outside refused", "")
+	if err != nil {
+		return err
+	}
+	for _, name := range []string{"generated", "authored", "outside", "refused"} {
+		count, err := unsigned(counts[name])
+		if err != nil {
+			return err
+		}
+		values, err := array(c[name])
+		if err != nil {
+			return err
+		}
+		if count != uint64(len(values)) {
+			return coverageError()
+		}
+	}
+	survivors := map[string]string{}
+	for _, origin := range []string{"generated", "authored"} {
+		ids, err := orderedIDs(c[origin])
+		if err != nil {
+			return err
+		}
+		if len(ids) > 0 && !originIncludes(selection, origin) {
+			return coverageError()
+		}
+		for _, id := range ids {
+			if survivors[id] != "" {
+				return coverageError()
+			}
+			survivors[id] = origin
+		}
+	}
+	scenarios := root["scenarios"].(map[string]any)
+	if len(survivors) != len(scenarios) {
+		return coverageError()
+	}
+	for id := range scenarios {
+		if survivors[id] == "" {
+			return coverageError()
+		}
+	}
+	filter := selection["filter"].(map[string]any)
+	if filter["kind"] == "explicit" {
+		ids, _ := orderedIDs(filter["ids"])
+		if len(ids) != len(scenarios) {
+			return coverageError()
+		}
+		for _, id := range ids {
+			if _, ok := scenarios[id]; !ok {
+				return coverageError()
+			}
+		}
+	}
+	previous := ""
+	for _, value := range c["outside"].([]any) {
+		outside, err := checkedOutside(value, selection)
+		if err != nil {
+			return err
+		}
+		id := outside["scenario"].(string)
+		if id <= previous || survivors[id] != "" {
+			return coverageError()
+		}
+		previous, survivors[id] = id, outside["origin"].(string)
+	}
+	sources, ok := c["authored_sources"].(map[string]any)
+	if !ok {
+		return coverageError()
+	}
+	owners := map[string]string{}
+	for identity, value := range sources {
+		if err := sourceIdentity(identity); err != nil {
+			return err
+		}
+		source, err := closed(value, "digest scenario disposition", "")
+		if err != nil {
+			return err
+		}
+		digest, ok := source["digest"].(string)
+		if !ok || !strings.HasPrefix(digest, "sha256:") || !modelDigest.MatchString(strings.TrimPrefix(digest, "sha256:")) {
+			return coverageError()
+		}
+		if err := nullableID(source["scenario"]); err != nil {
+			return err
+		}
+		switch source["disposition"] {
+		case "accepted":
+			id, ok := source["scenario"].(string)
+			if !ok || survivors[id] != "authored" || owners[id] != "" {
+				return coverageError()
+			}
+			owners[id] = identity
+		case "refused":
+		default:
+			return coverageError()
+		}
+	}
+	for id, origin := range survivors {
+		if origin == "authored" && owners[id] == "" {
+			return coverageError()
+		}
+	}
+	refusedSources := map[string]bool{}
+	var previousRefusal map[string]any
+	for _, value := range c["refused"].([]any) {
+		r, err := checkedRefusal(value, selection, sources, survivors, owners)
+		if err != nil {
+			return err
+		}
+		if previousRefusal != nil && !orderedRefusal(previousRefusal, r) {
+			return coverageError()
+		}
+		previousRefusal = r
+		if r["source"] != nil {
+			refusedSources[r["source"].(string)] = true
+		}
+	}
+	for identity, value := range sources {
+		if value.(map[string]any)["disposition"] == "refused" && !refusedSources[identity] {
+			return coverageError()
+		}
+	}
+	return nil
+}
+func completeCoverage(c map[string]any) bool {
+	if c == nil || c["knowledge"] != "complete_inventory" {
+		return false
+	}
+	for _, value := range c["refused"].([]any) {
+		if value.(map[string]any)["scope"] == "in_scope" {
+			return false
+		}
+	}
+	return true
+}
+func admitRunInput(raw string) (Suite, error) {
+	value, err := strictJSON(raw)
+	if err != nil {
+		return Suite{}, err
+	}
+	object, ok := value.(map[string]any)
+	if !ok {
+		return Suite{}, coverageError()
+	}
+	if _, carrier := object["format"]; !carrier {
+		return admitSuite(raw)
+	}
+	input, err := closed(value, "format suite_json parent_suites", "")
+	if err != nil {
+		return Suite{}, err
+	}
+	if input["format"] != "ess-conformance-input/1" {
+		return Suite{}, coverageError()
+	}
+	original, err := text(input["suite_json"])
+	if err != nil {
+		return Suite{}, err
+	}
+	selected, err := admitSuiteDocument(original, true)
+	if err != nil {
+		return Suite{}, err
+	}
+	if selected.coverage == nil {
+		return Suite{}, coverageError()
+	}
+	parents, err := array(input["parent_suites"])
+	if err != nil {
+		return Suite{}, err
+	}
+	seen := map[string]bool{originalDigest(original): true}
+	child := selected
+	for _, value := range parents {
+		text, err := text(value)
+		if err != nil {
+			return Suite{}, err
+		}
+		parent, err := admitSuiteDocument(text, true)
+		if err != nil {
+			return Suite{}, err
+		}
+		digest := originalDigest(text)
+		if seen[digest] {
+			return Suite{}, coverageError()
+		}
+		seen[digest] = true
+		if err := admitParent(child, parent); err != nil {
+			return Suite{}, err
+		}
+		child = parent
+	}
+	if child.coverage["selection"].(map[string]any)["filter"].(map[string]any)["kind"] != "all" {
+		return Suite{}, fmt.Errorf("missing final parent")
+	}
+	return selected, nil
+}
+func copyObject(value map[string]any) map[string]any {
+	copy := map[string]any{}
+	for key, value := range value {
+		copy[key] = value
+	}
+	return copy
+}
+func admitParent(child, parent Suite) error {
+	if parent.coverage == nil {
+		return coverageError()
+	}
+	selection := child.coverage["selection"].(map[string]any)
+	filter := selection["filter"].(map[string]any)
+	if filter["kind"] != "explicit" || !reflect.DeepEqual(filter["parent"], referenceFor(parent)) {
+		return coverageError()
+	}
+	childProvenance := copyObject(child.document["provenance"].(map[string]any))
+	parentProvenance := copyObject(parent.document["provenance"].(map[string]any))
+	childProvenance["component"] = childProvenance["component"]
+	parentProvenance["component"] = parentProvenance["component"]
+	if !reflect.DeepEqual(childProvenance, parentProvenance) {
+		return coverageError()
+	}
+	expected := copyObject(parent.coverage)
+	selected := copyObject(parent.coverage["selection"].(map[string]any))
+	selected["filter"] = filter
+	expected["selection"] = selected
+	outside := append([]any{}, parent.coverage["outside"].([]any)...)
+	for _, origin := range []string{"generated", "authored"} {
+		ids := []any{}
+		for _, value := range parent.coverage[origin].([]any) {
+			id := value.(string)
+			if _, ok := child.Scenarios[id]; ok {
+				ids = append(ids, id)
+			} else {
+				outside = append(outside, map[string]any{"scenario": id, "origin": origin, "reason": "selection_filter", "needs": []any{}})
+			}
+		}
+		expected[origin] = ids
+	}
+	sort.Slice(outside, func(i, j int) bool {
+		return outside[i].(map[string]any)["scenario"].(string) < outside[j].(map[string]any)["scenario"].(string)
+	})
+	expected["outside"] = outside
+	counts := copyObject(parent.coverage["counts"].(map[string]any))
+	for _, key := range []string{"generated", "authored", "outside"} {
+		counts[key] = json.Number(strconv.Itoa(len(expected[key].([]any))))
+	}
+	expected["counts"] = counts
+	if !reflect.DeepEqual(expected, child.coverage) {
+		return coverageError()
+	}
+	parentScenarios := parent.document["scenarios"].(map[string]any)
+	for id, value := range child.document["scenarios"].(map[string]any) {
+		original, ok := parentScenarios[id]
+		if !ok || !reflect.DeepEqual(scenarioMeaning(value), scenarioMeaning(original)) {
+			return fmt.Errorf("child changed full scenario semantics or dependencies")
+		}
+	}
+	return nil
+}
+
+// scenarioMeaning applies only the inherited typed defaults and declared Node/predicate owners.
+// Typed predicate meaning is used only after original vocabulary admission. It follows
+// ess-primitives Predicate's constructors (including empty/singleton and negation defaults).
+func meaningCombine(kind string, children []any) any {
+	if len(children) == 0 {
+		return kind == "all"
+	}
+	if len(children) == 1 {
+		return children[0]
+	}
+	return []any{kind, children}
+}
+func meaningNot(value any) any {
+	if value, ok := value.(bool); ok {
+		return !value
+	}
+	if list, ok := value.([]any); ok && len(list) == 2 && list[0] == "not" {
+		return list[1]
+	}
+	return []any{"not", value}
+}
+func meaningSequence(value any) []any {
+	if value == nil {
+		return []any{}
+	}
+	if list, ok := value.([]any); ok {
+		return list
+	}
+	return []any{value}
+}
+func meaningKeys(value map[string]any) []string {
+	keys := make([]string, 0, len(value))
+	for key := range value {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+	return keys
+}
+
+var meaningDecimal = regexp.MustCompile(`^[+-]?([0-9]+(\.[0-9]*)?|\.[0-9]+)([eE][+-]?[0-9]+)?$`)
+
+func meaningScalar(value any) any {
+	raw, ok := value.(string)
+	if !ok {
+		return nodeMeaning(value)
+	}
+	raw = strings.TrimSpace(raw)
+	if len(raw) >= 2 && (raw[0] == '\'' || raw[0] == '"') && raw[len(raw)-1] == raw[0] {
+		return raw[1 : len(raw)-1]
+	}
+	if raw == "true" {
+		return true
+	}
+	if raw == "false" {
+		return false
+	}
+	if meaningDecimal.MatchString(raw) {
+		if number, err := strconv.ParseFloat(raw, 64); err == nil {
+			return number
+		}
+	}
+	return raw
+}
+func meaningOperand(value any) any {
+	if raw, ok := value.(string); ok {
+		raw = strings.TrimSpace(raw)
+		if strings.Contains(raw, ".") && factPath.MatchString(raw) {
+			if _, err := strconv.ParseFloat(raw, 64); err != nil {
+				return []any{"fact", raw}
+			}
+		}
+	}
+	return []any{"literal", meaningScalar(value)}
+}
+
+var meaningOperators = map[string]string{
+	"eq": "==", "equals": "==", "==": "==", "ne": "!=", "not_equals": "!=", "!=": "!=",
+	"lt": "<", "<": "<", "le": "<=", "lte": "<=", "<=": "<=", "gt": ">", ">": ">",
+	"ge": ">=", "gte": ">=", ">=": ">=",
+}
+
+func meaningLeaf(raw string) any {
+	raw = strings.TrimSpace(raw)
+	switch raw {
+	case "true", "always":
+		return true
+	case "false", "never":
+		return false
+	}
+	if tail, ok := strings.CutPrefix(raw, "not "); ok {
+		return meaningNot(meaningLeaf(tail))
+	}
+	for _, function := range []string{"defined", "exists", "missing"} {
+		if tail, ok := strings.CutPrefix(raw, function); ok {
+			tail = strings.TrimSpace(tail)
+			if strings.HasPrefix(tail, "(") && strings.HasSuffix(tail, ")") {
+				value := []any{"defined", strings.TrimSpace(tail[1 : len(tail)-1])}
+				if function == "missing" {
+					return meaningNot(value)
+				}
+				return value
+			}
+		}
+	}
+	var quote byte
+	for i := 0; i < len(raw); i++ {
+		char := raw[i]
+		if quote != 0 {
+			if char == quote {
+				quote = 0
+			}
+			continue
+		}
+		if char == '\'' || char == '"' {
+			quote = char
+			continue
+		}
+		op := ""
+		if i+1 < len(raw) {
+			switch raw[i : i+2] {
+			case "==", "!=", "<=", ">=":
+				op = raw[i : i+2]
+			}
+		}
+		if op == "" && (char == '<' || char == '>') {
+			op = string(char)
+		}
+		if op != "" {
+			return []any{"compare", strings.TrimSpace(raw[:i]), op, meaningOperand(raw[i+len(op):])}
+		}
+	}
+	return []any{"truthy", raw}
+}
+func predicateMeaning(value any) any {
+	switch value := value.(type) {
+	case bool:
+		return value
+	case string:
+		return meaningLeaf(value)
+	case []any:
+		children := make([]any, 0, len(value))
+		for _, item := range value {
+			children = append(children, predicateMeaning(item))
+		}
+		return meaningCombine("all", children)
+	case map[string]any:
+		children := make([]any, 0, len(value))
+		for _, key := range meaningKeys(value) {
+			children = append(children, meaningEntry(key, value[key]))
+		}
+		return meaningCombine("all", children)
+	default:
+		panic("predicate meaning requires prior typed admission")
+	}
+}
+func meaningEntry(key string, value any) any {
+	switch key {
+	case "all", "and", "all_of", "any", "or", "none", "none_of_these":
+		children := []any{}
+		for _, item := range meaningSequence(value) {
+			children = append(children, predicateMeaning(item))
+		}
+		kind := "any"
+		if key == "all" || key == "and" || key == "all_of" {
+			kind = "all"
+		}
+		result := meaningCombine(kind, children)
+		if key == "none" || key == "none_of_these" {
+			return meaningNot(result)
+		}
+		return result
+	case "not":
+		return meaningNot(predicateMeaning(value))
+	case "forall", "exists":
+		body := value.(map[string]any)
+		return []any{key, body["in"], body["as"], predicateMeaning(body["that"])}
+	}
+	if list, ok := value.([]any); ok {
+		items := make([]any, 0, len(list))
+		for _, item := range list {
+			items = append(items, meaningScalar(item))
+		}
+		return []any{"any_of", key, items}
+	}
+	if mapping, ok := value.(map[string]any); ok {
+		children := make([]any, 0, len(mapping))
+		for _, operator := range meaningKeys(mapping) {
+			children = append(children, meaningOperator(key, operator, mapping[operator]))
+		}
+		return meaningCombine("all", children)
+	}
+	return []any{"compare", key, "==", []any{"literal", meaningScalar(value)}}
+}
+func meaningOperator(path, operator string, value any) any {
+	if op, ok := meaningOperators[operator]; ok {
+		return []any{"compare", path, op, meaningOperand(value)}
+	}
+	switch operator {
+	case "defined", "exists":
+		result := []any{"defined", path}
+		if !value.(bool) {
+			return meaningNot(result)
+		}
+		return result
+	case "truthy":
+		return []any{"truthy", path}
+	default:
+		kind := "any_of"
+		if operator == "none_of" || operator == "not_in" {
+			kind = "none_of"
+		}
+		items := []any{}
+		for _, item := range meaningSequence(value) {
+			items = append(items, meaningScalar(item))
+		}
+		return []any{kind, path, items}
+	}
+}
+func rankingMeaning(value any) any {
+	keys := []any{}
+	for _, item := range value.([]any) {
+		words := strings.Fields(item.(string))
+		direction := "asc"
+		if len(words) == 2 && (words[1] == "desc" || words[1] == "descending") {
+			direction = "desc"
+		}
+		keys = append(keys, []any{words[0], direction})
+	}
+	return keys
+}
+
+// Integer metadata and original source strings never pass through this semantic comparison.
+func scenarioMeaning(value any) any {
+	scenario := copyObject(value.(map[string]any))
+	source := map[string]bool{}
+	for _, ref := range scenario["source"].([]any) {
+		source[semanticKey(ref)] = true
+	}
+	scenario["source"] = source
+	steps := []any{}
+	for _, value := range scenario["steps"].([]any) {
+		step := copyObject(value.(map[string]any))
+		defaults := map[string]string{
+			"execute_command": "input", "expect_error": "fields", "expect_event": "payload shape",
+			"query_view": "params", "eventually_view": "params", "eventually_event": "payload shape",
+			"expect_invocation": "input", "expect_duration": "", "expect_halt": "params", "eventually_halt": "params",
+		}
+		for _, key := range strings.Fields(defaults[step["step"].(string)]) {
+			if _, ok := step[key]; !ok {
+				step[key] = map[string]any{}
+			}
+		}
+		if step["step"] == "execute_command" {
+			if _, ok := step["actor"]; !ok {
+				step["actor"] = nil
+			}
+		}
+		for _, key := range []string{"input", "params"} {
+			if values, ok := step[key].(map[string]any); ok {
+				step[key] = valuesMeaning(values)
+			}
+		}
+		for _, key := range []string{"payload", "fields"} {
+			if values, ok := step[key]; ok {
+				step[key] = nodeMeaning(values)
+			}
+		}
+		if shape, ok := step["shape"].(map[string]any); ok {
+			shapes := map[string]any{}
+			for key, value := range shape {
+				leaf := copyObject(value.(map[string]any))
+				if _, ok := leaf["optional"]; !ok {
+					leaf["optional"] = false
+				}
+				shapes[key] = leaf
+			}
+			step["shape"] = shapes
+		}
+		if expectation, ok := step["expectation"].(map[string]any); ok {
+			expected := copyObject(expectation)
+			switch expected["expect"] {
+			case "contains", "absent", "at":
+				if _, ok := expected["fields"]; !ok {
+					expected["fields"] = map[string]any{}
+				}
+			case "counts":
+				if _, ok := expected["at_least"]; !ok {
+					expected["at_least"] = nil
+				}
+				if _, ok := expected["at_most"]; !ok {
+					expected["at_most"] = nil
+				}
+			}
+			if fields, ok := expected["fields"].(map[string]any); ok {
+				expected["fields"] = valuesMeaning(fields)
+			}
+			if predicate, ok := expected["predicate"]; ok {
+				expected["predicate"] = predicateMeaning(predicate)
+			}
+			if ranking, ok := expected["order_by"]; ok {
+				expected["order_by"] = rankingMeaning(ranking)
+			}
+			step["expectation"] = expected
+		}
+		steps = append(steps, step)
+	}
+	scenario["steps"] = steps
+	return scenario
+}
+func valuesMeaning(values map[string]any) any {
+	result := map[string]any{}
+	for name, value := range values {
+		field := copyObject(value.(map[string]any))
+		if field["kind"] == "literal" {
+			field["value"] = nodeMeaning(field["value"])
+		}
+		result[name] = field
+	}
+	return result
+}
+func nodeMeaning(value any) any {
+	switch value := value.(type) {
+	case json.Number:
+		number, _ := value.Float64()
+		return number
+	case []any:
+		result := make([]any, 0, len(value))
+		for _, element := range value {
+			result = append(result, nodeMeaning(element))
+		}
+		return result
+	case map[string]any:
+		result := map[string]any{}
+		for key, element := range value {
+			result[key] = nodeMeaning(element)
+		}
+		return result
+	default:
+		return value
+	}
+}
 
 // ---- what an implementation offers ------------------------------------------------------------
 
@@ -388,6 +1325,9 @@ func reduce(system string) string {
 type Suite struct {
 	Provenance Provenance          `json:"provenance"`
 	Scenarios  map[string]Scenario `json:"scenarios"`
+	original   string
+	document   map[string]any
+	coverage   map[string]any
 }
 
 // Provenance says which specification this suite came from.
@@ -508,9 +1448,16 @@ func Run(t *testing.T, newTarget func() Target) {
 	if err != nil {
 		t.Fatalf("report configuration: %v", err)
 	}
-	suite, err := admitSuite(suiteJSON)
+	suite, err := admitRunInput(suiteJSON)
 	if err != nil {
 		t.Fatalf("suite admission: %v", err)
+	}
+	if suite.coverage != nil && config.version != "2" {
+		t.Fatalf("suite/5 requires explicit ESS_REPORT_FORMAT=2 before execution")
+	}
+	suite, err = executionSuite(suite)
+	if err != nil {
+		t.Fatalf("suite execution adaptation: %v", err)
 	}
 
 	// Sorted, so the order scenarios run in is the order they are written in the report, on every
@@ -1943,12 +2890,15 @@ func scenarioIdentity(id string) error {
 	return nil
 }
 func admitSuite(raw string) (Suite, error) {
+	return admitSuiteDocument(raw, false)
+}
+func admitSuiteDocument(raw string, explicit bool) (Suite, error) {
 	var suite Suite
 	value, err := strictJSON(raw)
 	if err != nil {
 		return suite, err
 	}
-	root, err := closed(value, "provenance scenarios", "")
+	root, err := closed(value, "provenance scenarios", "coverage")
 	if err != nil {
 		return suite, err
 	}
@@ -1970,8 +2920,13 @@ func admitSuite(raw string) (Suite, error) {
 		major = 3
 	case "ess-conformance/4":
 		major = 4
+	case "ess-conformance/5":
+		major = 5
 	default:
 		return suite, fmt.Errorf("unsupported suite version %q", version)
+	}
+	if _, present := root["coverage"]; present != (major == 5) {
+		return suite, fmt.Errorf("coverage is required exactly for suite/5")
 	}
 	for _, key := range []string{"system", "specification_version", "spec_digest", "contract_digest"} {
 		s, err := text(p[key])
@@ -2030,8 +2985,77 @@ func admitSuite(raw string) (Suite, error) {
 			}
 		}
 	}
+	if major == 5 {
+		if err := admitCoverage(root); err != nil {
+			return suite, err
+		}
+		c := root["coverage"].(map[string]any)
+		filter := c["selection"].(map[string]any)["filter"].(map[string]any)
+		if !explicit && filter["kind"] != "all" {
+			return suite, fmt.Errorf("explicit suite requires complete input parents")
+		}
+	}
+	suite.original, suite.document = raw, root
+	if major == 5 {
+		suite.coverage = root["coverage"].(map[string]any)
+		// Original admission includes parents which will never execute. Retain their exact
+		// unsigned metadata independently of the inherited target API's narrower int fields.
+		suite.Provenance = Provenance{SuiteVersion: version, System: p["system"].(string),
+			SpecificationVersion: p["specification_version"].(string), SpecDigest: p["spec_digest"].(string),
+			ContractDigest: p["contract_digest"].(string)}
+		suite.Scenarios = make(map[string]Scenario, len(scenarios))
+		for id, value := range scenarios {
+			suite.Scenarios[id] = Scenario{Purpose: value.(map[string]any)["purpose"].(string)}
+		}
+		return suite, nil
+	}
 	err = json.Unmarshal([]byte(raw), &suite)
 	return suite, err
+}
+func executionSuite(suite Suite) (Suite, error) {
+	if suite.coverage != nil {
+		if err := executionIntegers(suite.document["scenarios"].(map[string]any)); err != nil {
+			return Suite{}, err
+		}
+		if err := json.Unmarshal([]byte(suite.original), &suite); err != nil {
+			return Suite{}, fmt.Errorf("exact selected metadata exceeds the inherited Go execution view: %w", err)
+		}
+	}
+	return suite, nil
+}
+func executionIntegers(scenarios map[string]any) error {
+	maximum := uint64(^uint(0) >> 1)
+	for _, id := range meaningKeys(scenarios) {
+		for index, value := range scenarios[id].(map[string]any)["steps"].([]any) {
+			step := value.(map[string]any)
+			fields := map[string]any{}
+			for _, field := range []string{"after", "elapsed"} {
+				if value, present := step[field]; present {
+					fields[field] = value
+				}
+			}
+			if expectation, present := step["expectation"].(map[string]any); present {
+				for _, field := range []string{"at_least", "at_most"} {
+					if value := expectation[field]; value != nil {
+						fields["expectation."+field] = value
+					}
+				}
+				if position, present := expectation["position"].(map[string]any); present && position["row"] == "nth" {
+					fields["expectation.position.index"] = position["index"]
+				}
+			}
+			for _, field := range meaningKeys(fields) {
+				value, err := unsigned(fields[field])
+				if err != nil {
+					return err
+				}
+				if value > maximum {
+					return fmt.Errorf("scenario %s step %d field %s: exact value %d cannot be represented as Go int%d (maximum %d)", id, index, field, value, strconv.IntSize, maximum)
+				}
+			}
+		}
+	}
+	return nil
 }
 func admitReference(value any) error {
 	f, err := closed(value, "kind name", "")
@@ -2630,12 +3654,21 @@ func countDocument(suite Suite, identity Identity, results []scenarioResult, now
 	conformance := "inconclusive"
 	if execution == "failed" {
 		conformance = "failed"
+	} else if execution == "passed" && counts["total"] > 0 && completeCoverage(suite.coverage) {
+		conformance = "passed"
 	}
-	digest := sha256.Sum256([]byte(suiteJSON))
+	digest := sha256.Sum256([]byte(suite.original))
+	coverage := map[string]any{"knowledge": "unknown"}
+	if suite.coverage != nil {
+		coverage = map[string]any{}
+		for _, key := range []string{"knowledge", "selection", "counts", "refused"} {
+			coverage[key] = suite.coverage[key]
+		}
+	}
 	return map[string]any{
 		"format": "ess-conformance-report/2", "specification": suite.Provenance.System + "/" + suite.Provenance.SpecificationVersion, "spec_digest": suite.Provenance.SpecDigest, "implementation": identity.Name + " " + identity.Version,
 		"producer_profile": "go-scenario-status/1", "suite": map[string]any{"version": suite.Provenance.SuiteVersion, "digest_profile": "sha256-json-bytes/1", "digest": fmt.Sprintf("sha256:%x", digest)},
-		"execution_status": execution, "conformance_status": conformance, "counts": counts, "outcomes": outcomes, "coverage": map[string]any{"knowledge": "unknown"}, "policy": "complete-selection/1", "completed_at": uint64(now),
+		"execution_status": execution, "conformance_status": conformance, "counts": counts, "outcomes": outcomes, "coverage": coverage, "policy": "complete-selection/1", "completed_at": uint64(now),
 	}, nil
 }
 func writeCountReport(t *testing.T, suite Suite, identity Identity, results []scenarioResult, strict bool) {
@@ -2657,7 +3690,11 @@ func writeCountReport(t *testing.T, suite Suite, identity Identity, results []sc
 		}
 	}
 	if strict && document["conformance_status"] != "passed" {
-		t.Errorf("strict conformance: %s (legacy suite coverage is unknown)", document["conformance_status"])
+		if suite.coverage == nil {
+			t.Errorf("strict conformance: %s (legacy suite coverage is unknown)", document["conformance_status"])
+		} else {
+			t.Errorf("strict conformance: %s", document["conformance_status"])
+		}
 	}
 }
 
@@ -2703,6 +3740,8 @@ func countCanonical(document any) ([]byte, error) {
 	write = func(value any, depth int) error {
 		indent := func(d int) { out.WriteString(strings.Repeat("  ", d)) }
 		switch v := value.(type) {
+		case nil:
+			out.WriteString("null")
 		case map[string]any:
 			keys := make([]string, 0, len(v))
 			for k := range v {

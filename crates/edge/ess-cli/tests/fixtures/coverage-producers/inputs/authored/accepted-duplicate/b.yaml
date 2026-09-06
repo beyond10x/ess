@@ -1,0 +1,13 @@
+type: ess-scenario/1
+domain: billing.invoice
+scenario: a-scenario
+summary: What this scenario proves, in one line.
+timeline:
+  - at: 2026-01-05T09:00:00Z
+    command: billing.invoice.CreateInvoice
+    actor: billing.invoice.Customer
+    input:
+      account_id: 00000000-0000-4000-8000-000000000001
+      customer_email: buyer@example.test
+      amount: {amount: 10, currency: EUR}
+    outcome: accepted

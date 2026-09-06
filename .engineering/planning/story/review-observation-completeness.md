@@ -37,7 +37,7 @@ scope:
   path: website/docs/guides/check-infrastructure.md
 - confidence: cited
   path: website/docs/reference/formats.md
-revision: 17
+revision: 18
 ---
 ## Finding and source
 
@@ -85,3 +85,17 @@ No live cluster needed; keep the separate infra bounded context and obtain an ex
 ## Candidate preparation
 
 The 2026-09-06 scope refresh is recorded from the complete read-only report. Root verified all102 input hashes and the unchanged68 infrastructure files plus CLI main/load against retained239996d. The seven package reservations remain, with binding/example and three exact documentation reservations. Binding is still absent; selector support, collection/completeness authority, semantic identity, consumer reason retention, per-format compatibility and relying-party/default order remain decisions before implementation. The trimmed historical example cannot become proof of a complete real scan. Execution-recovery observation/freshness remains UNMAPPED and outside this scope. This is candidate preparation only; no wave, new format/default, runtime verification or live collection is selected. Refresh integrated CLI and format documentation after the active coverage writer closes.
+
+The later local relying-party inventory searched 37 checkouts and found no established current
+foreign infrastructure-format reader. Root verified all 132 pinned inputs, including the same
+70 infrastructure/CLI files. Atlas ROADMAP:49 and org-brain's design assign Kubernetes observation
+consumption to intended work; archived infra-scout is an old observation/1 producer. AEP's checked
+conformance adapters and Website's documentation caches are distinct contracts. These local
+observations add no foreign reservation or AEP prerequisite. The complete report is retained at
+wave11 next-scope/observation-relying-parties/report.md, SHA256
+ec1a268036bb7dcdc634632a08b1014b71ee0cd58629f24903195c54e36eebef, with manifest
+81e2e6e05d3d95294a29203310ca9201c600420d0664d0dfc72d2135780a9354. The twelve scope
+entries remain unchanged. The inventory does not establish deployed-adopter absence, accept an
+ADR or resolve format/default decisions; post-writer CLI/docs refresh remains required. A separate
+retained clarification resolves root's display-escaping misread of a correct query receipt; it
+changes no inventory finding, and its already completed 37-query replay found identical matches.

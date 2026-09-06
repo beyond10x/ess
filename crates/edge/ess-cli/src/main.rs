@@ -1,5 +1,6 @@
 //! The `ess` command: a deterministic shell over the ESS libraries and explicit adapters.
 
+mod coverage;
 mod load;
 mod model_types;
 mod normalize;
@@ -247,6 +248,9 @@ enum VerifyCommand {
         to: PathBuf,
         #[arg(long)]
         suite: Option<PathBuf>,
+        /// Exact coverage input and complete original parent chain.
+        #[arg(long, conflicts_with = "suite")]
+        suite_input: Option<PathBuf>,
         #[arg(long, value_enum, default_value_t = MachineFormat::Text)]
         format: MachineFormat,
     },
@@ -423,6 +427,9 @@ enum ConformCommand {
         /// scenarios are selected.
         #[arg(long)]
         scenarios: Option<PathBuf>,
+        /// Suite contract, with coverage inventory only when explicitly set to 5.
+        #[arg(long, default_value = "4", value_parser = ["4", "5"])]
+        suite_format: String,
     },
     /// Compile the scenarios an author wrote, and nothing the specification obliges.
     ///
@@ -438,6 +445,9 @@ enum ConformCommand {
         /// Where to write the compiled `ess-conformance/4` suite.
         #[arg(long)]
         out: Option<PathBuf>,
+        /// Suite contract; the legacy default remains 4.
+        #[arg(long, default_value = "4", value_parser = ["4", "5"])]
+        suite_format: String,
     },
     /// Render the scenarios as a page somebody can press play on.
     ///
@@ -457,6 +467,26 @@ enum ConformCommand {
         /// Where to write the player.
         #[arg(long)]
         out: Option<PathBuf>,
+        /// Suite contract; suite/5 emits the paired coverage replay document.
+        #[arg(long, default_value = "4", value_parser = ["4", "5"])]
+        suite_format: String,
+    },
+    /// Narrow a suite/5 by explicit IDs, retaining every exact original parent.
+    Select {
+        #[arg(
+            long,
+            required_unless_present = "suite_input",
+            conflicts_with = "suite_input"
+        )]
+        suite: Option<PathBuf>,
+        #[arg(long, required_unless_present = "suite", conflicts_with = "suite")]
+        suite_input: Option<PathBuf>,
+        /// JSON array of sorted distinct IDs; an empty array is explicit.
+        #[arg(long)]
+        ids: PathBuf,
+        /// Destination for the complete ess-conformance-input/1 carrier.
+        #[arg(long)]
+        out: PathBuf,
     },
     /// Run a generated or committed suite against a built-in reference implementation.
     Run {
@@ -464,6 +494,12 @@ enum ConformCommand {
         path: PathBuf,
         #[arg(long)]
         suite: Option<PathBuf>,
+        /// Original suite/5 and its complete original parent chain.
+        #[arg(long, conflicts_with_all = ["suite", "scenarios", "suite_format"])]
+        suite_input: Option<PathBuf>,
+        /// Fresh suite contract; omitted means 4. Loaded versions are preserved.
+        #[arg(long, value_parser = ["4", "5"], conflicts_with_all = ["suite", "suite_input"])]
+        suite_format: Option<String>,
         /// The `ess-scenario/1` documents to run beside the generated scenarios.
         ///
         /// Read only where the suite is synthesized rather than named by `--suite`: a committed
@@ -1023,8 +1059,9 @@ fn verify_area(command: VerifyCommand) -> Result<ExitCode> {
             from,
             to,
             suite,
+            suite_input,
             format,
-        } => impact(&from, &to, suite.as_deref(), format),
+        } => impact(&from, &to, suite.as_deref(), suite_input.as_deref(), format),
     }
 }
 
@@ -2015,7 +2052,13 @@ fn diff(from: &Path, to: &Path, format: MachineFormat) -> Result<ExitCode> {
     Ok(ExitCode::SUCCESS)
 }
 
-fn impact(from: &Path, to: &Path, suite: Option<&Path>, format: MachineFormat) -> Result<ExitCode> {
+fn impact(
+    from: &Path,
+    to: &Path,
+    suite: Option<&Path>,
+    suite_input: Option<&Path>,
+    format: MachineFormat,
+) -> Result<ExitCode> {
     let diagnostic = if matches!(format, MachineFormat::Json) {
         Format::Json
     } else {
@@ -2031,10 +2074,37 @@ fn impact(from: &Path, to: &Path, suite: Option<&Path>, format: MachineFormat) -
         .map(|path| -> Result<_> {
             let text =
                 fs::read_to_string(path).with_context(|| format!("reading {}", path.display()))?;
-            Ok(ess_conformance::ConformanceSuite::from_json(&text)?)
+            Ok(ess_conformance::AdmittedSuite::from_json(&text)?)
         })
         .transpose()?;
-    match ess_diff::impact(&before, &after, suite.as_ref(), None) {
+    let input = if let Some(path) = suite_input {
+        Some(ess_conformance::coverage::AdmittedInput::from_json(
+            &fs::read_to_string(path)?,
+        )?)
+    } else if let Some(suite) = suite.as_ref().filter(|s| s.coverage().is_some()) {
+        Some(ess_conformance::coverage::AdmittedInput::from_suite(
+            suite.clone(),
+        )?)
+    } else {
+        None
+    };
+    let report = if let Some(input) = input {
+        let context = ess_diff::impact_input(&before, &after, &input, None)?;
+        eprintln!(
+            "impact selection {} (exact suite {})",
+            serde_json::to_string(context.selection())?,
+            context.suite().digest
+        );
+        Ok(context.report().clone())
+    } else {
+        ess_diff::impact(
+            &before,
+            &after,
+            suite.as_ref().map(ess_conformance::AdmittedSuite::suite),
+            None,
+        )
+    };
+    match report {
         Ok(report) => match format {
             MachineFormat::Text => print!("{}", ess_diff::render::impact(&report)),
             MachineFormat::Json => print!("{}", report.to_canonical_json()),
@@ -2402,26 +2472,38 @@ fn conform(command: ConformCommand) -> Result<ExitCode> {
             out,
             component,
             scenarios,
+            suite_format,
         } => synthesize_suite(
             &input,
             target,
             out.as_deref(),
             component.as_deref(),
             scenarios.as_deref(),
+            &suite_format,
         ),
         ConformCommand::Author {
             input,
             scenarios,
             out,
-        } => author_suite(&input, scenarios.as_deref(), out.as_deref()),
+            suite_format,
+        } => author_suite(&input, scenarios.as_deref(), out.as_deref(), &suite_format),
         ConformCommand::Web {
             input,
             scenarios,
             out,
-        } => conform_web(&input, scenarios.as_deref(), out.as_deref()),
+            suite_format,
+        } => conform_web(&input, scenarios.as_deref(), out.as_deref(), &suite_format),
+        ConformCommand::Select {
+            suite,
+            suite_input,
+            ids,
+            out,
+        } => coverage::select(suite.as_deref(), suite_input.as_deref(), &ids, &out),
         ConformCommand::Run {
             path,
             suite,
+            suite_input,
+            suite_format,
             scenarios,
             target,
             report_out,
@@ -2433,38 +2515,35 @@ fn conform(command: ConformCommand) -> Result<ExitCode> {
             if strict && report_format != "2" {
                 bail!("strict conformance requires explicit --report-format 2; use --allow-incomplete for diagnostic report/1");
             }
-            let admitted = if let Some(file) = suite {
+            let admitted = if let Some(file) = suite_input {
+                ess_conformance::coverage::AdmittedInput::from_json(&fs::read_to_string(file)?)?
+                    .selected()
+                    .clone()
+            } else if let Some(file) = suite {
                 ess_conformance::AdmittedSuite::from_json(&fs::read_to_string(&file)?)?
             } else {
                 let Ok((ir, _)) = resolved(&path, format)? else {
                     return Ok(ExitCode::from(1));
                 };
                 ess_conformance::admission::model(&ir)?;
-                let mut suite = ess_conformance::synthesize(&ir).suite;
-                let authoring = ess_conformance::authored::compile(
-                    &ir,
-                    &authored_sources(scenarios.as_deref())?,
-                );
-                for refusal in &authoring.refusals {
-                    eprintln!("{refusal}");
+                if suite_format.as_deref() == Some("5") {
+                    coverage::fresh(&ir, scenarios.as_deref(), None, false)?
+                        .selected()
+                        .clone()
+                } else {
+                    let Some(suite) = fresh_legacy_run_suite(&ir, scenarios.as_deref())? else {
+                        return Ok(ExitCode::from(1));
+                    };
+                    suite
                 }
-                if !authoring.is_complete() {
-                    return Ok(ExitCode::from(1));
-                }
-                for (id, scenario) in authoring.scenarios {
-                    if let Err(id) = suite.insert(id, scenario) {
-                        bail!("`{id}` is already in the suite");
-                    }
-                }
-                ess_conformance::AdmittedSuite::from_suite(&suite)?
             };
             let suite = admitted.suite();
-            let report = match target {
+            let report = coverage::execute(&admitted, &report_format, || match target {
                 ReferenceTarget::Billing => ess_conformance::Runner::for_suite(suite)
                     .run_admitted(&admitted, &ess_conformance::reference::Billing::new()),
                 ReferenceTarget::OracleFixture => ess_conformance::Runner::for_suite(suite)
                     .run_admitted(&admitted, &ess_conformance::reference::Oracle::new()),
-            };
+            })?;
             render_conformance_report(
                 &report,
                 &admitted,
@@ -2475,6 +2554,26 @@ fn conform(command: ConformCommand) -> Result<ExitCode> {
             )
         }
     }
+}
+
+fn fresh_legacy_run_suite(
+    ir: &ess_compiler::EssIr,
+    scenarios: Option<&Path>,
+) -> Result<Option<ess_conformance::AdmittedSuite>> {
+    let mut suite = ess_conformance::synthesize(ir).suite;
+    let authoring = ess_conformance::authored::compile(ir, &authored_sources(scenarios)?);
+    for refusal in &authoring.refusals {
+        eprintln!("{refusal}");
+    }
+    if !authoring.is_complete() {
+        return Ok(None);
+    }
+    for (id, scenario) in authoring.scenarios {
+        if let Err(id) = suite.insert(id, scenario) {
+            bail!("`{id}` is already in the suite");
+        }
+    }
+    Ok(Some(ess_conformance::AdmittedSuite::from_suite(&suite)?))
 }
 
 fn render_conformance_report(
@@ -2529,7 +2628,11 @@ fn synthesize_suite(
     out: Option<&Path>,
     component: Option<&str>,
     scenarios: Option<&Path>,
+    suite_format: &str,
 ) -> Result<ExitCode> {
+    if suite_format == "5" {
+        return coverage::generate(input, target, out, component, scenarios, false);
+    }
     let Ok((ir, _)) = resolved(&input.path, input.format)? else {
         return Ok(ExitCode::from(1));
     };
@@ -2636,7 +2739,15 @@ fn synthesize_suite(
 /// is the question an author asks after every model change and does not want a hundred generated
 /// scenarios printed at.
 /// Emits the scenario player for a specification and the scenarios an author wrote.
-fn conform_web(input: &SpecPath, scenarios: Option<&Path>, out: Option<&Path>) -> Result<ExitCode> {
+fn conform_web(
+    input: &SpecPath,
+    scenarios: Option<&Path>,
+    out: Option<&Path>,
+    suite_format: &str,
+) -> Result<ExitCode> {
+    if suite_format == "5" {
+        return coverage::web(input, scenarios, out);
+    }
     let Ok((ir, _)) = resolved(&input.path, input.format)? else {
         return Ok(ExitCode::from(1));
     };
@@ -2680,7 +2791,11 @@ fn author_suite(
     input: &SpecPath,
     scenarios: Option<&Path>,
     out: Option<&Path>,
+    suite_format: &str,
 ) -> Result<ExitCode> {
+    if suite_format == "5" {
+        return coverage::generate(input, SuiteTarget::Ir, out, None, scenarios, true);
+    }
     let Ok((ir, _)) = resolved(&input.path, input.format)? else {
         return Ok(ExitCode::from(1));
     };
@@ -3586,7 +3701,7 @@ mod tests {
     ///
     /// Written down on purpose. A verb added to the tree and to no area would otherwise be
     /// counted by the enumeration it is missing from and pass every case below.
-    const AREA_LEAVES: usize = 51;
+    const AREA_LEAVES: usize = 52;
 
     /// The order they are offered in is checked where it is rendered, in
     /// `tests/command_surface.rs`: `mut_subcommand` moves what it touches to the end of the list,

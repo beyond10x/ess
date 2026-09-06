@@ -53,14 +53,35 @@ pub struct AdmittedSuite {
     original: String,
     suite: ConformanceSuite,
     digest: String,
+    coverage: Option<crate::coverage::Inventory>,
 }
 impl AdmittedSuite {
     /// Admit the original UTF-8 document before any target activity.
     pub fn from_json(original: &str) -> Result<Self, AdmissionError> {
+        let admitted = Self::parse(original)?;
+        if admitted
+            .coverage
+            .as_ref()
+            .is_some_and(|c| matches!(c.selection.filter, crate::coverage::Filter::Explicit { .. }))
+        {
+            return Err(AdmissionError::new(
+                "MissingParent",
+                "$suite.coverage.selection.filter",
+                "explicit suite requires its complete admitted input carrier",
+            ));
+        }
+        Ok(admitted)
+    }
+    pub(crate) fn parse(original: &str) -> Result<Self, AdmissionError> {
         let value = Json::parse(original, "$suite")?;
         validate_suite(&value)?;
         let suite: ConformanceSuite = serde_json::from_str(original)
             .map_err(|e| AdmissionError::new("InvalidSuite", "$suite", e.to_string()))?;
+        let coverage = value
+            .object()?
+            .get("coverage")
+            .map(|c| crate::coverage::parse_inventory(c, &suite))
+            .transpose()?;
         let digest = Sha256::digest(original.as_bytes()).iter().fold(
             "sha256:".to_owned(),
             |mut text, byte| {
@@ -72,6 +93,7 @@ impl AdmittedSuite {
             original: original.into(),
             suite,
             digest,
+            coverage,
         })
     }
     /// Serialize once, then execute the value admitted from those exact bytes.
@@ -90,10 +112,14 @@ impl AdmittedSuite {
     pub fn digest(&self) -> &str {
         &self.digest
     }
+    /// Immutable admitted inventory; historical suites have no coverage claim.
+    pub fn coverage(&self) -> Option<&crate::coverage::Inventory> {
+        self.coverage.as_ref()
+    }
 }
 
 fn validate_suite(value: &Json) -> Result<(), AdmissionError> {
-    let root = value.closed(&["provenance", "scenarios"], &[])?;
+    let root = value.closed(&["provenance", "scenarios"], &["coverage"])?;
     let p = root["provenance"].closed(
         &[
             "suite_version",
@@ -106,10 +132,16 @@ fn validate_suite(value: &Json) -> Result<(), AdmissionError> {
     )?;
     let version = SuiteFormat::parse(p["suite_version"].text()?)
         .map_err(|e| p["suite_version"].error("UnsupportedSuiteVersion", e.to_string()))?;
-    if !matches!(version.major(), 1..=4) {
+    if !matches!(version.major(), 1..=5) {
         return Err(p["suite_version"].error(
             "UnsupportedSuiteVersion",
-            "count-stage readers admit suite majors 1–4",
+            "execution readers admit suite majors 1–5",
+        ));
+    }
+    if (version.major() == 5) != root.contains_key("coverage") {
+        return Err(value.error(
+            "InvalidCoverage",
+            "coverage is required exactly for suite/5",
         ));
     }
     for scenario in root["scenarios"].object()?.values() {
@@ -123,7 +155,7 @@ fn validate_suite(value: &Json) -> Result<(), AdmissionError> {
     }
     Ok(())
 }
-fn semantic_reference(value: &Json) -> Result<(), AdmissionError> {
+pub(crate) fn semantic_reference(value: &Json) -> Result<(), AdmissionError> {
     let fields = value.closed(&["kind", "name"], &[])?;
     match fields["kind"].text()? {
         "outcome" => {

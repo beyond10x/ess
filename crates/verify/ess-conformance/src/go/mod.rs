@@ -62,6 +62,26 @@ pub fn emit(suite: &ConformanceSuite) -> Result<Vec<GoArtifact>, crate::admissio
     ])
 }
 
+/// Emit an immutable suite/5 input with all exact original ancestors.
+pub fn emit_input(
+    input: &crate::coverage::AdmittedInput,
+) -> Result<Vec<GoArtifact>, crate::admission::AdmissionError> {
+    let suite = input.selected();
+    let file = |name: &str, contents: String| GoArtifact {
+        path: format!("{PACKAGE}/{name}"),
+        contents,
+    };
+    let embed = SUITE_GO.replace("go:embed suite.json", "go:embed input.json");
+    Ok(vec![
+        file("runtime.go", include_str!("runtime.go").into()),
+        file("predicate.go", include_str!("predicate.go").into()),
+        file("suite.go", embed),
+        file("suite.json", suite.original_json().into()),
+        file("input.json", input.document().to_canonical_json()?),
+        file("README.md", format!("{}\nCoverage input requires explicit ESS_REPORT_FORMAT=2. The embedded input retains the selected original bytes and every parent.\n", readme(suite.suite()))),
+    ])
+}
+
 /// The one file that exists only to embed the other one.
 const SUITE_GO: &str = r#"// The suite this package runs.
 //

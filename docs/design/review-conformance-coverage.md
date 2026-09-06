@@ -1,11 +1,14 @@
 # Conformance coverage and report migration
 
-Status: binding design for the next implementation; no new writer, reader release, downstream migration, or compatibility execution is established by this document.
+Status: accepted binding. Implementation and shipment evidence are recorded separately from the historical source baseline below.
 
 Current-source clarification, 2026-09-06: the count-stage reader and writer are now published at
-AEP30aeef2 and ESS87d9945, as recorded in the completed wave8 plan. Suite/5 coverage remains
-unimplemented. The accepted [input and consumer transport supplement](review-conformance-coverage-transport.md)
-binds its additional acquisition and replay choices before implementation. Historical source
+AEP30aeef2 and ESS87d9945, as recorded in the completed wave8 plan. The coverage reader is
+published at AEP658cf76; the opt-in suite/5 writer and consumer implementation is reviewed at
+ESSd3c2c1d. Integrated verification and publication are tracked in
+[wave 11](../plan/2026-09-06-review-boundaries-11.md). The accepted
+[input and consumer transport supplement](review-conformance-coverage-transport.md)
+binds its additional acquisition and replay choices. Historical source
 citations below retain their original baseline; the current impact producer is ess-impact/3 with
 ess-diff/2, as observed at ESSbe0eefd, and the current-impact acceptance rows below reflect that fact.
 

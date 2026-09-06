@@ -308,7 +308,7 @@ impl SuiteProvenance {
 /// All four, because a `1` suite means in `4` exactly what it meant in `1` — the vocabulary grew
 /// three times and nothing in it changed meaning. A reader that refused an older number would
 /// refuse a suite it understands perfectly.
-pub const SUPPORTED_SUITE_FORMATS: &[u32] = &[1, 2, 3, 4];
+pub const SUPPORTED_SUITE_FORMATS: &[u32] = &[1, 2, 3, 4, 5];
 
 /// The version of the *document shape* a suite is written in — `ess-conformance/1`.
 ///
@@ -2539,7 +2539,7 @@ mod tests {
             assert!(earlier.is_supported());
         }
 
-        let later = SuiteFormat::parse("ess-conformance/5").expect("well formed");
+        let later = SuiteFormat::parse("ess-conformance/6").expect("well formed");
         assert!(
             !later.is_supported(),
             "a later format may mean something different by the same words"

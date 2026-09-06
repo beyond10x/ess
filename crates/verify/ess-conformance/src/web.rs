@@ -47,6 +47,25 @@ const PLAYER: &str = include_str!("../assets/player.js");
 const VUE: &str = include_str!("../assets/vue.esm-browser.prod.js");
 const VUE_LICENCE: &str = include_str!("../assets/vue.LICENSE");
 
+/// Emit a paired model and completely admitted coverage input for browser replay.
+pub fn emit_input(
+    ir: &EssIr,
+    input: &crate::coverage::AdmittedInput,
+) -> Result<BTreeMap<String, Artifact>, crate::admission::AdmissionError> {
+    let replay = crate::web_replay::AdmittedReplay::new(ir, input)?;
+    let mut out = BTreeMap::new();
+    for (path, contents) in [
+        ("index.html", INDEX.to_owned()),
+        ("player.js", include_str!("../assets/coverage-player.js").to_owned()),
+        ("admission.js", include_str!("../assets/coverage-admission.js").to_owned()),
+        ("assets/vue.esm-browser.prod.js", VUE.to_owned()),
+        ("assets/vue.LICENSE", VUE_LICENCE.to_owned()),
+        ("replay.json", replay.to_canonical_json()?),
+        ("README.md", format!("{}\nCoverage replay uses the closed replay/1 model and complete input/1 parent chain. It displays selection and omissions, emits no execution report, and cannot reconstruct or authenticate the full model digest from this reduced projection. Literal assignment values and full view evaluation remain outside this player.\n", readme(ir, input.selected().suite()))),
+    ] { out.insert(path.into(), Artifact::new(path, contents)); }
+    Ok(out)
+}
+
 /// Emits the player for `ir` and `suite`.
 ///
 /// The map is keyed by path so a caller writes it the way it writes any other artifact set.
@@ -76,7 +95,7 @@ pub fn emit(
 /// Deliberately not the whole IR. A page that received everything would invite a reader to believe
 /// it renders everything, and what it renders is exactly this: which entities exist and how they
 /// move, what each command outcome does, what each view selects, who may ask, and what reacts.
-fn model(ir: &EssIr) -> String {
+pub(crate) fn model(ir: &EssIr) -> String {
     let value = serde_json::json!({
         "system": ir.system().to_string(),
         "version": ir.version().to_string(),

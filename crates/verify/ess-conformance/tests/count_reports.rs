@@ -13,6 +13,39 @@ use sha2::Digest;
 use std::{cell::Cell, collections::BTreeMap, fmt::Write, path::Path};
 
 const DIGEST: &str = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
+
+#[test]
+fn known_complete_coverage_qualifies_actual_nonempty_passes() {
+    let mut value = document(&["passed"]);
+    value["provenance"]["suite_version"] = json!("ess-conformance/5");
+    value["coverage"] = json!({
+        "selection":{"scope":{"kind":"system"},"origins":"authored","filter":{"kind":"all"}},
+        "knowledge":"complete_inventory","generated":[],
+        "authored":["example.domain/authored/passed"],"outside":[],"refused":[],
+        "authored_sources":{"passed.yaml":{"digest":format!("sha256:{DIGEST}"),
+          "scenario":"example.domain/authored/passed","disposition":"accepted"}},
+        "counts":{"generated":0,"authored":1,"outside":0,"refused":0}
+    });
+    let suite = AdmittedSuite::from_json(&value.to_string()).unwrap();
+    let report = CountReport::from_run(&execute(&suite, u64::MAX), &suite).unwrap();
+    assert_eq!(report.execution_status(), CountStatus::Passed);
+    assert_eq!(report.conformance_status(), CountStatus::Passed);
+    let encoded = report.to_canonical_json().unwrap();
+    let decoded: Value = serde_json::from_str(&encoded).unwrap();
+    for key in ["knowledge", "selection", "counts", "refused"] {
+        assert_eq!(decoded["coverage"][key], value["coverage"][key], "{key}");
+    }
+    assert_eq!(CountReport::from_json(&encoded, &suite).unwrap(), report);
+    assert_eq!(report.completed_at(), u64::MAX);
+    value["coverage"]["knowledge"] = json!("unknown");
+    let unknown = AdmittedSuite::from_json(&value.to_string()).unwrap();
+    assert_eq!(
+        CountReport::from_run(&execute(&unknown, 0), &unknown)
+            .unwrap()
+            .conformance_status(),
+        CountStatus::Inconclusive
+    );
+}
 fn document(names: &[&str]) -> Value {
     let mut scenarios = BTreeMap::new();
     for name in names {

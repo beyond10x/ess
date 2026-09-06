@@ -329,3 +329,43 @@ unchanged. Source preinspection checkpoint 02 covers 17 inputs and must match th
 before execution. Only process-observation and receipt-persistence probes have run; no wave 11
 integration gate, actual mapping, helper correspondence or publication has occurred. Planning
 validation reports 181 artifacts, 30 existing empty-findings advisories, and `valid`, exit 0.
+
+
+## Final source review and integration preparation
+
+Source attack 2 is recorded byte-exact in review-result:coverage-writer-source-pass2, report
+SHA256 7d37308d86d53777c57e1051d3e8883b57765a7b84a421ed4d5fbf9fb8759482. Root verified all
+19 seal entries, 17,996 scratch entries, 1,653 external entries, 1,103 inherited source/snapshot
+pairs and both additive tests. All twelve raw command outputs are retained verbatim. The final
+review command executed 648 cases: 647 passed, one failed, none ignored, 64 summaries, exit 101.
+It found no implementation defect; its sole red asserted normalized values in an unused nested
+view projection. Full lineage admission rejected all twelve changed survivor payloads.
+
+The findings CLI reports no carried or new signatures and resolves both first-pass findings.
+Root recorded the unchanged report before applying the explicit scope disposition in
+verification-report:coverage-writer-final-view-test-scope. Nine owners retain exact ordinary
+payload equality; the three unused view owners pin the exact observed token-bearing payload.
+All seven keys, twelve lineage mutations and own-property assertions remain. The test names
+story:review-browser-replay-fidelity; pairing does not close that story. No third attack ran.
+
+Root verification now passes all 648 package cases, none failed or ignored, 64 summaries,
+exit 0 in 67.822408678 seconds. Formatting, the focused actual Firefox case and strict Clippy
+also pass. All 1,105 input sources and copied snapshots match; four producing binaries are
+retained. The original root formatter attempt incorrectly included frozen generated Rust and
+stopped before tests; its unchanged source and complete failed log are preserved separately.
+The corrected command follows the package scope, with no generated-byte changes.
+verification-report:coverage-writer-final-source-disposition retains this distinction.
+
+The green unit is frozen at d3c2c1dd09ad279f5bf6b4c1050b589a4a7ad761, with both commit identities
+verified as the bot. Its merge into the coordinator applied without conflicts. The integration
+adds the Unreleased coverage entry and replaces the binding's stale unimplemented status while
+preserving historical citations. The full integration gate, actual independent producer mapping,
+43-case AEP correspondence and public delivery remain pending; no story closure is asserted.
+
+Separate candidate preparation searched 37 local roots and pinned 132 source inputs. It found no
+established current foreign infrastructure-format reader: Org-brain is intended work, infra-scout
+an archived producer, AEP conformance readers and Website documentation caches distinct contracts.
+The observation story body is revision 18; all twelve reservations remain unchanged. This is a
+bounded local inventory, not deployed-adopter absence or a format/default decision. Its complete
+report/manifest and the clarification of root's display-escaping misread remain in wave scratch;
+post-writer CLI/docs refresh is still required before selection.

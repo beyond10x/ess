@@ -1,0 +1,123 @@
+{
+  "format": "ess-producer-preparation-input-catalog/1",
+  "files": [
+    {
+      "path": "inputs/models/billing/system.yaml",
+      "sha256": "7f71d0feb8dd3703b7676104f1ee563f933927282612f578a2f5849bde8c65c0",
+      "original": "/home/timo/.local/state/worktree/trees/b10x/ess/wt-752828a285ba/examples/billing/system.yaml",
+      "original_sha256": "7f71d0feb8dd3703b7676104f1ee563f933927282612f578a2f5849bde8c65c0",
+      "derivation": "verbatim"
+    },
+    {
+      "path": "inputs/models/billing/components.yaml",
+      "sha256": "ee4986381f8dbb44f76ab05c44742f4654795e369ef46c0ed3aab8e3b85f2583",
+      "original": "/home/timo/.local/state/worktree/trees/b10x/ess/wt-752828a285ba/examples/billing/components.yaml",
+      "original_sha256": "ee4986381f8dbb44f76ab05c44742f4654795e369ef46c0ed3aab8e3b85f2583",
+      "derivation": "verbatim"
+    },
+    {
+      "path": "inputs/models/billing/domains/invoice.yaml",
+      "sha256": "3e129f60c1b3f12319ab991bf3326516361c4418d168e26acd2850284fa1dbae",
+      "original": "/home/timo/.local/state/worktree/trees/b10x/ess/wt-752828a285ba/examples/billing/domains/invoice.yaml",
+      "original_sha256": "3e129f60c1b3f12319ab991bf3326516361c4418d168e26acd2850284fa1dbae",
+      "derivation": "verbatim"
+    },
+    {
+      "path": "inputs/models/billing/domains/email.yaml",
+      "sha256": "8f8a7973e88fc7fa1b73534003f5088c223501e5054d5b59ec4d4e27509ca0e7",
+      "original": "/home/timo/.local/state/worktree/trees/b10x/ess/wt-752828a285ba/examples/billing/domains/email.yaml",
+      "original_sha256": "8f8a7973e88fc7fa1b73534003f5088c223501e5054d5b59ec4d4e27509ca0e7",
+      "derivation": "verbatim"
+    },
+    {
+      "path": "inputs/models/billing/topology.yaml",
+      "sha256": "8857ca73c313730aea54bff148c3e7ef325cd27735145bde1c0bd1c5ec24e23d",
+      "original": "/home/timo/.local/state/worktree/trees/b10x/ess/wt-752828a285ba/examples/billing/topology.yaml",
+      "original_sha256": "8857ca73c313730aea54bff148c3e7ef325cd27735145bde1c0bd1c5ec24e23d",
+      "derivation": "verbatim"
+    },
+    {
+      "path": "inputs/models/billing-repeated-gap/system.yaml",
+      "sha256": "7f71d0feb8dd3703b7676104f1ee563f933927282612f578a2f5849bde8c65c0",
+      "original": "/home/timo/.local/state/worktree/trees/b10x/ess/wt-752828a285ba/examples/billing/system.yaml",
+      "original_sha256": "7f71d0feb8dd3703b7676104f1ee563f933927282612f578a2f5849bde8c65c0",
+      "derivation": "verbatim"
+    },
+    {
+      "path": "inputs/models/billing-repeated-gap/components.yaml",
+      "sha256": "ee4986381f8dbb44f76ab05c44742f4654795e369ef46c0ed3aab8e3b85f2583",
+      "original": "/home/timo/.local/state/worktree/trees/b10x/ess/wt-752828a285ba/examples/billing/components.yaml",
+      "original_sha256": "ee4986381f8dbb44f76ab05c44742f4654795e369ef46c0ed3aab8e3b85f2583",
+      "derivation": "verbatim"
+    },
+    {
+      "path": "inputs/models/billing-repeated-gap/domains/invoice.yaml",
+      "sha256": "d72675fd91cefda8dce627b071e6a34523931a4e4a4bb3e8860206bd8568bb66",
+      "original": "/home/timo/.local/state/worktree/trees/b10x/ess/wt-752828a285ba/examples/billing/domains/invoice.yaml",
+      "original_sha256": "3e129f60c1b3f12319ab991bf3326516361c4418d168e26acd2850284fa1dbae",
+      "derivation": "duplicate entity invariant reminder_count >= 0 once; remove only published InvoiceById reminder_count field; preserve entity field and all other bytes"
+    },
+    {
+      "path": "inputs/models/billing-repeated-gap/domains/email.yaml",
+      "sha256": "8f8a7973e88fc7fa1b73534003f5088c223501e5054d5b59ec4d4e27509ca0e7",
+      "original": "/home/timo/.local/state/worktree/trees/b10x/ess/wt-752828a285ba/examples/billing/domains/email.yaml",
+      "original_sha256": "8f8a7973e88fc7fa1b73534003f5088c223501e5054d5b59ec4d4e27509ca0e7",
+      "derivation": "verbatim"
+    },
+    {
+      "path": "inputs/models/billing-repeated-gap/topology.yaml",
+      "sha256": "8857ca73c313730aea54bff148c3e7ef325cd27735145bde1c0bd1c5ec24e23d",
+      "original": "/home/timo/.local/state/worktree/trees/b10x/ess/wt-752828a285ba/examples/billing/topology.yaml",
+      "original_sha256": "8857ca73c313730aea54bff148c3e7ef325cd27735145bde1c0bd1c5ec24e23d",
+      "derivation": "verbatim"
+    },
+    {
+      "path": "inputs/authored/rank/outstanding-invoices-rank-latest-first.yaml",
+      "source_identity": "outstanding-invoices-rank-latest-first.yaml",
+      "sha256": "3ebf87b3efe36dc28335af01a612e89cca13040c8d09895a2c4a412486d34c91",
+      "derivation": "verbatim examples/billing-scenarios/outstanding-invoices-rank-latest-first.yaml"
+    },
+    {
+      "path": "inputs/authored/single/a.yaml",
+      "source_identity": "a.yaml",
+      "sha256": "4635218f7e27c1dbbdb323055114620b3c8931048a26a48f64cd996fd2bbdddf",
+      "derivation": "tests/authored.rs document(CREATED); repeated undeclared-view assertions appended only for refused-then-accepted/a.yaml"
+    },
+    {
+      "path": "inputs/authored/accepted-duplicate/a.yaml",
+      "source_identity": "a.yaml",
+      "sha256": "4635218f7e27c1dbbdb323055114620b3c8931048a26a48f64cd996fd2bbdddf",
+      "derivation": "tests/authored.rs document(CREATED); repeated undeclared-view assertions appended only for refused-then-accepted/a.yaml"
+    },
+    {
+      "path": "inputs/authored/accepted-duplicate/b.yaml",
+      "source_identity": "b.yaml",
+      "sha256": "4635218f7e27c1dbbdb323055114620b3c8931048a26a48f64cd996fd2bbdddf",
+      "derivation": "tests/authored.rs document(CREATED); repeated undeclared-view assertions appended only for refused-then-accepted/a.yaml"
+    },
+    {
+      "path": "inputs/authored/refused-then-accepted/a.yaml",
+      "source_identity": "a.yaml",
+      "sha256": "9ff9c0f815012e10d31aadabf335964fbd5ea7866edf4bc7e9a3fb4afc621761",
+      "derivation": "tests/authored.rs document(CREATED); repeated undeclared-view assertions appended only for refused-then-accepted/a.yaml"
+    },
+    {
+      "path": "inputs/authored/refused-then-accepted/b.yaml",
+      "source_identity": "b.yaml",
+      "sha256": "4635218f7e27c1dbbdb323055114620b3c8931048a26a48f64cd996fd2bbdddf",
+      "derivation": "tests/authored.rs document(CREATED); repeated undeclared-view assertions appended only for refused-then-accepted/a.yaml"
+    },
+    {
+      "path": "inputs/authored/merge-first/a.yaml",
+      "source_identity": "a.yaml",
+      "sha256": "4635218f7e27c1dbbdb323055114620b3c8931048a26a48f64cd996fd2bbdddf",
+      "derivation": "tests/authored.rs document(CREATED); repeated undeclared-view assertions appended only for refused-then-accepted/a.yaml"
+    },
+    {
+      "path": "inputs/authored/merge-second/b.yaml",
+      "source_identity": "b.yaml",
+      "sha256": "4635218f7e27c1dbbdb323055114620b3c8931048a26a48f64cd996fd2bbdddf",
+      "derivation": "tests/authored.rs document(CREATED); repeated undeclared-view assertions appended only for refused-then-accepted/a.yaml"
+    }
+  ]
+}

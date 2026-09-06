@@ -30,6 +30,75 @@ use ess_domain::system::Source as SpecSource;
 
 // ---- the models under test ---------------------------------------------------------------------
 
+#[test]
+fn rejected_authored_candidate_needs_are_proved_independently_of_an_outside_survivor() {
+    use ess_conformance::{
+        coverage::{Origins, RefusalScope, Scope},
+        coverage_build::{build, CoverageSource},
+    };
+    let ir = example("billing");
+    for (valid_candidate, expected_scope, expected_status) in [
+        (
+            true,
+            RefusalScope::OutsideComponent,
+            ess_conformance::CountStatus::Passed,
+        ),
+        (
+            false,
+            RefusalScope::InScope,
+            ess_conformance::CountStatus::Inconclusive,
+        ),
+    ] {
+        let accepted = document(CREATED);
+        let rejected = if valid_candidate {
+            accepted.clone()
+        } else {
+            accepted.replace(
+                "billing.invoice.CreateInvoice",
+                "billing.invoice.UndeclaredCommand",
+            )
+        };
+        let input = build(
+            &ir,
+            &[
+                CoverageSource::new("a.yaml", accepted).unwrap(),
+                CoverageSource::new("b.yaml", rejected).unwrap(),
+            ],
+            Scope::component("email-service").unwrap(),
+            Origins::GeneratedAndAuthored,
+        )
+        .unwrap();
+        let inventory = input.selected().coverage().unwrap();
+        assert_eq!(inventory.counts.generated, 2);
+        assert_eq!(inventory.counts.authored, 0);
+        assert_eq!(inventory.counts.outside, 28);
+        assert_eq!(inventory.counts.refused, 1);
+        let refusal = &inventory.refused[0];
+        assert_eq!(refusal.scope, expected_scope);
+        assert_eq!(refusal.code, "ESS-AUTHOR-003");
+        assert_eq!(refusal.source.as_ref().unwrap().as_str(), "b.yaml");
+        assert_eq!(
+            refusal
+                .retained
+                .as_ref()
+                .unwrap()
+                .source
+                .as_ref()
+                .unwrap()
+                .as_str(),
+            "a.yaml"
+        );
+        assert_eq!(refusal.needs.is_empty(), !valid_candidate);
+        let run = ess_conformance::Runner::for_suite(input.selected().suite()).run_admitted(
+            input.selected(),
+            &ess_conformance::reference::Billing::new(),
+        );
+        let report = ess_conformance::CountReport::from_run(&run, input.selected()).unwrap();
+        assert_eq!(report.counts().passed, 2);
+        assert_eq!(report.conformance_status(), expected_status);
+    }
+}
+
 /// An example directory, compiled from the files it lives in rather than from a copy inlined here.
 fn example(name: &str) -> EssIr {
     let base = Path::new(env!("CARGO_MANIFEST_DIR"))
@@ -112,6 +181,139 @@ const OBSERVED: &str = r"    events:
       - event: billing.invoice.InvoiceCreated
         payload: {customer_email: buyer@example.test}
 ";
+
+#[test]
+fn coverage_builder_retains_authored_duplicate_ownership_and_original_source_bytes() {
+    use ess_conformance::{
+        coverage::{Disposition, Origin, Origins, Scope},
+        coverage_build::{build, CoverageSource},
+    };
+    let ir = example("billing");
+    let source = document(CREATED);
+    let files = [
+        CoverageSource::new("b.yaml", source.clone()).unwrap(),
+        CoverageSource::new("a.yaml", source.clone()).unwrap(),
+    ];
+    let input = build(&ir, &files, Scope::System, Origins::Authored).expect("build inventory");
+    let inventory = input.selected().coverage().unwrap();
+    assert_eq!(inventory.authored.len(), 1);
+    assert_eq!(
+        inventory.outside.len(),
+        0,
+        "authored acquisition did not request generated inventory"
+    );
+    assert_eq!(inventory.refused.len(), 1);
+    assert_eq!(inventory.refused[0].code, "ESS-AUTHOR-003");
+    assert_eq!(
+        inventory.refused[0].source.as_ref().unwrap().as_str(),
+        "b.yaml"
+    );
+    let retained = inventory.refused[0].retained.as_ref().unwrap();
+    assert_eq!(retained.origin, Origin::Authored);
+    assert_eq!(retained.source.as_ref().unwrap().as_str(), "a.yaml");
+    assert_eq!(
+        inventory.authored_sources[files[1].identity()].disposition,
+        Disposition::Accepted
+    );
+    assert_eq!(
+        inventory.authored_sources[files[0].identity()].disposition,
+        Disposition::Refused
+    );
+    assert_eq!(input.selected().suite().len(), 1);
+    assert!(!inventory.is_complete());
+    let repeated = [files[0].clone(), files[0].clone()];
+    assert!(build(&ir, &repeated, Scope::System, Origins::Authored).is_err());
+}
+
+#[test]
+fn independently_successful_authored_batches_are_refused_only_at_final_merge() {
+    use ess_conformance::{
+        coverage::{Disposition, Origins, Scope},
+        coverage_build::{compile_sources, merge_batches, CoverageSource},
+    };
+    let ir = example("billing");
+    let source = document(CREATED);
+    let first = compile_sources(&ir, &[CoverageSource::new("a.yaml", &source).unwrap()]).unwrap();
+    let second = compile_sources(&ir, &[CoverageSource::new("b.yaml", &source).unwrap()]).unwrap();
+    assert_eq!(first.accepted(), 1);
+    assert_eq!(second.accepted(), 1);
+    assert_eq!(first.refusals().count(), 0);
+    assert_eq!(second.refusals().count(), 0);
+    let merged = merge_batches(&ir, &[second, first], Scope::System, Origins::Authored)
+        .expect("final merge");
+    let coverage = merged.selected().coverage().unwrap();
+    assert_eq!(coverage.counts.authored, 1);
+    assert_eq!(coverage.counts.refused, 1);
+    assert_eq!(coverage.refused[0].code, "ESS-AUTHOR-003");
+    assert_eq!(
+        coverage.refused[0].source.as_ref().unwrap().as_str(),
+        "b.yaml"
+    );
+    assert_eq!(
+        coverage.refused[0]
+            .retained
+            .as_ref()
+            .unwrap()
+            .source
+            .as_ref()
+            .unwrap()
+            .as_str(),
+        "a.yaml"
+    );
+    assert_eq!(
+        coverage.authored_sources
+            [&ess_conformance::coverage::SourceIdentity::new("b.yaml").unwrap()]
+            .disposition,
+        Disposition::Refused
+    );
+}
+
+#[test]
+fn paired_browser_emission_retains_original_input_and_checks_the_actual_model() {
+    use ess_conformance::{
+        coverage::{Origins, Scope, SuiteReference},
+        coverage_build::{build, CoverageSource},
+    };
+    let ir = example("billing");
+    let input = build(
+        &ir,
+        &[CoverageSource::new("created.yaml", document(CREATED)).unwrap()],
+        Scope::System,
+        Origins::Authored,
+    )
+    .unwrap();
+    let selected = input
+        .select(
+            &input
+                .selected()
+                .suite()
+                .scenarios
+                .keys()
+                .cloned()
+                .collect::<Vec<_>>(),
+        )
+        .unwrap();
+    let files = ess_conformance::web::emit_input(&ir, &selected).expect("paired browser emission");
+    let replay: serde_json::Value = serde_json::from_str(&files["replay.json"].contents).unwrap();
+    assert_eq!(replay["format"], "ess-conformance-replay/1");
+    assert_eq!(
+        replay["input"]["suite_json"],
+        selected.selected().original_json()
+    );
+    assert_eq!(
+        replay["input"]["parent_suites"][0],
+        input.selected().original_json()
+    );
+    assert_eq!(
+        replay["suite"],
+        serde_json::to_value(SuiteReference::of(selected.selected())).unwrap()
+    );
+    assert_eq!(
+        replay["model"]["spec_digest"],
+        selected.selected().suite().provenance.spec_digest.as_str()
+    );
+    assert!(ess_conformance::web::emit_input(&example("gatepass"), &selected).is_err());
+}
 
 /// Binding the identity that act published.
 const CAPTURED: &str = r"    capture: {instance: made, event: billing.invoice.InvoiceCreated, field: invoice_id}
