@@ -66,6 +66,10 @@
 
 ### Changed
 
+- Composition documentation states the generated client's selected-operation and
+  model-identity guarantees alongside its byte-buffer transport boundary. An
+  executable downstream example shows compatible and incompatible payloads
+  forwarded unchanged, with separate authority and endpoint/error controls.
 - In the upcoming pre-1.0 minor release, `ess_synth::{go,clap}::workspace` return
   `Result<Emission, TargetFailure>`. Their new finite-codec failures use
   `ess-target-failure/2`; Rust/Web failure envelopes keep version 1 and old bytes.

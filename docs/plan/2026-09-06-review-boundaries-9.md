@@ -92,10 +92,31 @@ completion is claimed by this opening page.
 
 ## Current stage
 
-The story moved through its admitted draft→proposed→active sequence and is active revision7.
-Opening format, action,149-artifact planning and diff checks each exited0. Provisioning and the
-exact unit brief are complete. The AEP coverage reader and its separate correspondence-helper
-preparation continue in their previously assigned paths.
+The story moved through its admitted draft→proposed→active sequence and remains active revision8
+after root recorded the implementor's confirmed scope and corrected the authority wording.
+Opening format, action,149-artifact planning and diff checks each exited0. The composition
+implementation is frozen at327b968acb0fb7237acf005972aa80f16074cd8a with verified bot author and
+committer. The package executed10 cases in3 summaries; a separately compiled downstream binary
+executed3 additional cases against the actual emitted client. All13 passed with0failed/ignored.
+The original package baseline was9; the first characterization passed before documentation
+changes. Package formatting, standalone fixture formatting, strict package all-target Clippy
+and diff checks each exited0. The immutable implementor report SHA256 is
+bcfc1563e5909f53ce1c4b6a9adbff4183a67d27fc856199d01beaf291a78b1c; root verified all5 changed
+source hashes and retained fixture hashes. These are unit checks, not the full integration gate.
+
+Agent count_writer_scope8 now performs source adversary pass1 under the exact
+aep-drive:adversary0.8.0 charter. Its scratch is the unit's
+target/review-boundaries-9/adversary-pass-1 with TMPDIR beneath it; its build remains the unit's
+target and it reuses the existing unit-owned Cargo home. The source implementor relinquished
+all writes before dispatch. Root retains planning, integration, full gates and public delivery.
+
+The AEP coverage reader continues in its assigned unit. Its separate Rust correspondence helper
+has setup-compiled only; root verified all22 preparation-manifest entries. No helper execution,
+actual suite5 writer output or producer correspondence is claimed.
+
+The scope-update batch validated149 artifacts with exit0 and final output `valid`. Its20
+historical reviews without findings blocks are unchanged; this wave has not yet recorded its
+first source attack. Full raw integration validation will be retained with the gate lanes.
 
 ## Provisioned unit
 
@@ -108,4 +129,8 @@ directory. No external scratch is assigned. The live lease is ess-review-wave9-c
 Root wrote the complete unit-brief.md and copied actual9-case baseline/source-scope evidence
 into that scratch. Agent expression_review_resume implements this unit under
 aep-drive:implementor0.8.0; the later adversary is a different writer. Current stage:
-implementation dispatched and running. Root retains all integration/publication authority.
+implementation handed off and frozen; independent first attack running. Root retains all
+integration/publication authority. The unit's private Cargo registry copy is
+target/review-boundaries-9/cargo-home, measured1,830,384,812bytes; reflinks were unsupported and
+the implementor used an ordinary copy. A missing external timer was a second setup failure;
+neither is a failed runtime case. No unit files were written outside its managed worktree.
