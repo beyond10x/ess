@@ -1,0 +1,124 @@
+package positional_adversary
+
+import (
+	"encoding/json"
+	"fmt"
+	"math"
+	"os"
+	"reflect"
+	"testing"
+)
+
+func TestIndependentLiteralTokens(t *testing.T) {
+	data, err := os.ReadFile("cases.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var cases []struct {
+		Branch string
+		Input  string
+		Value  json.RawMessage
+		Errors json.RawMessage
+	}
+	if err := json.Unmarshal(data, &cases); err != nil {
+		t.Fatal(err)
+	}
+	n, err := New()
+	if err != nil {
+		t.Fatal(err)
+	}
+	for i, c := range cases {
+		t.Run(fmt.Sprint(i), func(t *testing.T) {
+			actual, err := n.Normalize(c.Branch, []byte(c.Input))
+			expected := c.Value
+			if err != nil {
+				actual, _ = json.Marshal(err)
+				expected = c.Errors
+				if len(c.Errors) == 0 {
+					t.Fatalf("unexpected refusal: %v", err)
+				}
+			} else if len(c.Errors) > 0 {
+				t.Fatalf("expected refusal, got %s", actual)
+			}
+			var a, b any
+			if err := json.Unmarshal(actual, &a); err != nil {
+				t.Fatal(err)
+			}
+			if err := json.Unmarshal(expected, &b); err != nil {
+				t.Fatal(err)
+			}
+			if !reflect.DeepEqual(a, b) {
+				t.Fatalf("got %s; want %s", actual, expected)
+			}
+			fresh, err := n.Normalize("run/~", []byte("[]"))
+			if err != nil || string(fresh) != `["",""]` {
+				t.Fatalf("fresh call: %s %v", fresh, err)
+			}
+		})
+	}
+	actual, err := n.Normalize("record", []byte(`{"number":-0}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var v struct{ Number float64 }
+	if err := json.Unmarshal(actual, &v); err != nil {
+		t.Fatal(err)
+	}
+	if !math.Signbit(v.Number) {
+		t.Fatalf("lost negative zero: %s", actual)
+	}
+}
+
+func TestCheckedMetadataFaultAndMissingOperand(t *testing.T) {
+	n, err := New()
+	if err != nil {
+		t.Fatal(err)
+	}
+	at := "/branches/pick~1~0/0/value"
+	saved := positionArities[at]
+	defer func() { positionArities[at] = saved }()
+	for _, arity := range []uint64{0, 3} {
+		positionArities[at] = arity
+		value, err := n.Normalize("pick/~", []byte(`["a","b"]`))
+		expected := Refused{{Pointer: at, Rule: "position_value", Detail: "position encountered a value outside its checked tuple contract"}}
+		if value != nil || !reflect.DeepEqual(err, expected) {
+			t.Fatalf("guard: %s %#v", value, err)
+		}
+	}
+	delete(positionArities, at)
+	if _, err := n.Normalize("pick/~", []byte(`["a","b"]`)); err == nil {
+		t.Fatal("missing arity admitted")
+	}
+	count := 0
+	operand := func(scope, string) (any, error) { count++; return missing, nil }
+	value, err := positionValue(operand, ^uint64(0))(scope{}, "/missing-proof")
+	if err != nil || !isMissing(value) || count != 1 {
+		t.Fatalf("missing propagation: %#v %v %d", value, err, count)
+	}
+}
+
+func TestInvalidUtf8KindsAndRetainedOrder(t *testing.T) {
+	n, err := New()
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, c := range []struct{ input, pointer, rule, detail string }{
+		{"[\"\xff\",null]", "/input/0", "input_syntax", "positional string contains invalid Unicode"},
+		{"[null,null,{\"\xff\":0}]", "/input/2", "input_syntax", "discarded positional token contains invalid Unicode"},
+		{"[{\"\xff\":0},null]", "/input/0", "positional_element_type", "fixed_string_array element must be a string or null"},
+	} {
+		actual, err := n.Normalize("run/~", []byte(c.input))
+		expected := Refused{{Pointer: c.pointer, Rule: c.rule, Detail: c.detail}}
+		if actual != nil || !reflect.DeepEqual(err, expected) {
+			t.Fatalf("UTF-8: %s %#v", actual, err)
+		}
+	}
+	actual, err := n.NormalizeBase64JSON("run/~", "W251bGwsImIiLDFlOTk5XQ==")
+	if err != nil || string(actual) != `["","b"]` {
+		t.Fatalf("retained: %s %v", actual, err)
+	}
+	_, err = n.NormalizeBase64JSON("unknown", "!")
+	if !reflect.DeepEqual(err, Refused{{Pointer: "/input", Rule: "input_base64", Detail: "expected canonical standard base64"}}) {
+		t.Fatalf("base64 order: %#v", err)
+	}
+}
