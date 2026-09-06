@@ -227,3 +227,9 @@ Cancel excludes two states, Issue three and Pay three. The original failing test
 all other assertions, including inherited tests, are preserved. M41 exercises the real defensive
 synthesis insertion branch twice with a real synthesized scenario. It must be labelled as branch
 coverage, not as evidence that an ordinary validated model currently emits duplicate identities.
+
+The incoming release-only `e5e4fdf` journal conflict was resolved from its complete canonical
+store, then 27 semantic AEP commands replayed our 36 events. Its 1,444-line incoming journal
+remains the exact prefix; all 163 unaffected incoming artifacts and all 13 own final artifacts
+are byte-identical to their separately retained snapshots. Both original histories are retained
+by the merge. Production and public source bytes are unchanged by this reconciliation.

@@ -2,12 +2,12 @@
 format: aep.planning-md/1
 id: release-plan:normalization-followups-020
 kind: release-plan
-status: active
+status: implemented
 title: Release ESS normalization followups as 0.20.0 and qualify IVR adoption
 relations:
 - depends_on: story:typescript-normalization-target
 - serves: vision:O2
-revision: 10
+revision: 13
 ---
 ## Purpose and authority
 
@@ -46,11 +46,19 @@ ESS 0.20.0 is published from exact tagged source c90ca1b2a3a5db02d7580dab63be6cb
 
 All four platform archives and SHA256SUMS were downloaded. Their sizes and hashes match both API digests and the checksum file. The Linux x86_64 archive SHA256 is 569a34b0c2263e663140579b8511c321514fd6428634d6e62ddf2e2b15c66232; its executable SHA256 is eff3b1c8fe8834b2700681267906c768444a6e38e703ebe5349dd7e472da4980. The downloaded executable returns `ess 0.20.0`, exit 0. Literal `task release-status` exits 0. The actual post-bump native and producer-witness qualification is recorded below.
 
-Atlas commit 78d96cc706f735c3a160369e3ce2f2133f4b1d41 publishes the bounded local-tag observation, validated catalog, generated version projections and separate remote-release evidence. Its full unscoped `scripts/fences.sh` completed in 199.141 seconds with exit 1: all 149 Rust tests, catalog, live Pages, projections, Markdown and brand checks passed; the existing AgentIDE collector-v4, primary Website Docs System pin and Widgets Serves findings remain. This does not establish organization-wide convergence. The final evidence-log append separately passed the 181-file Markdown fence.
+Atlas commit 78d96cc706f735c3a160369e3ce2f2133f4b1d41 publishes the bounded local-tag observation, validated catalog, generated version projections and separate remote-release evidence. Its full unscoped `scripts/fences.sh` completed in 199.141 seconds with exit 1: all 149 Rust tests, catalog, live Pages, projections, Markdown and brand checks passed; the existing AgentIDE collector-v4, primary Website Docs System pin and Widgets Serves findings remained in that local run. This does not establish organization-wide convergence. The final evidence-log append separately passed the 181-file Markdown fence.
 
 Normal documentation publication 34043900364 succeeded. [Live provenance](https://beyond10x.github.io/PROVENANCE.json) observed at 2026-09-06T16:11:04Z selects newer ESS main 239996d846460aee342ce42514378c25b2be5152, a release descendant with workspace version 0.20.0. Producer 34044137573 and artifact 9992578091 carry 40 files that match exact Git and artifact bytes. Two public documentation files differ from c90 because an independent schema-resource review wave subsequently landed. Both 40-file bundles were verified. The coordinator fast-forwarded to that main commit without rewriting either the planning journal or the release tag.
 
-The selected consumer has the verified released binary pin, CLI-owned common bundle import, five repinned recipes and all 15 generated normalization packages. Native qualification, independent review and publication remain in progress. Broader decoder, default, Flow and family boundaries remain outside these canonical subsets; no gapfree service-conformance claim is made. Final consumer evidence, owned-tree cleanup and operator notification remain required.
+The selected consumer's adopted checkpoint 6e7b12a9b830a3882788ae9b79e2f7befffaf660 is published on its canonical main branch. Its downloaded ESS 0.20.0 pin, CLI-owned common bundle import, five repinned recipes and fifteen generated normalization packages are qualified. Local final integration passed all 620 text executions plus 22 helper executions, 18 driver tests, deterministic specification regeneration and Pages. One documentation warning was corrected after measured lower/upper reader bounds; the second bounded review found nothing remaining. The first final attempt stopped at the fixed 6 GiB cumulative build allowance; completed build records and binaries were preserved, only eleven old nested Cargo targets cleaned, and the native/Pages rerun passed with unchanged code, fixtures and limits. Actual final native exit 0 took 117.484 seconds and Pages exit 0 took 0.591 seconds. Native receipt SHA256 cd11c47d652239dcecb520d009daea4f9f4e3b36ebe263d8efec7e12a9312762.
+
+The fresh consumer pipeline 408030 for the published commit succeeded at 2026-09-06T17:25:23Z: specification job 746813, mandatory normalization-native job 746814 and Pages job 746815 all succeeded. The fresh installation exercised the default toolchain provisioner. Its independently downloaded native receipt records status passed, 620 text executions, 22 helper executions and 409 generated files (receipt SHA256 175f331d7212d433745447cd9290fc2497eeaf29508651a66d85dfcf84e4d16a). Authenticated Internal Pages deployed at 17:25:23Z; project visibility and access settings were read back unchanged. These are observed remote results, not predictions from the local gate.
+
+Earlier Atlas Gate 34045010123 failed at the generated documentation contract step, while typed catalog and live Pages jobs passed. Its literal failure asked for Connectors documentation revision 0c69450921ab1794c81dadec915b717a61bf0983; the then-unchanged Atlas edge retained 4b32397df2cc2f5bd5ee1c5737891163fb750957. External Website commit 93994ac2ab2f2e6aaeeeb7de15c228620470e61b had changed that required pin before the run. The actual historical sibling clone SHAs were not logged, so no exact clone assertion is inferred.
+
+A separate team subsequently published the Eventlog baseline and documentation-source reconciliation on Atlas main b89e5b835b384965818eccf0703c8a548ebdbe47, preserving this delivery's 78d96cc release observation. [Atlas Gate 34048651627](https://github.com/beyond10x/atlas/actions/runs/34048651627) for b89e5b83 completed successfully, independently read back through the API. That later success supersedes the earlier remote pin-drift failure; the original failed run and local workspace fence findings remain historical evidence. The coordinator refreshed its clean managed authority to the newer published main after verifying the bot wrapper bytes were unchanged. No claim is made that this normalization unit implemented the other team's reconciliation.
+
+The released feature/adopter delivery is complete at the bounded canonical subset described above. Broader original decoder, default, Flow, family and runtime consumer-cutover boundaries remain in their existing drafts; no gapfree service-conformance claim is made. ACD retains its separately validated published checkpoint and ESS 0.18.0 pin. Owned operational cleanup and the explicitly authorized operator notification follow this final planning-only publication, with receipts preserved privately; this record does not claim those later actions have already happened.
 
 ## Module identity during adoption
 
