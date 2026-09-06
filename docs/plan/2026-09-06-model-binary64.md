@@ -43,19 +43,30 @@ The final release procedure remains separate. No consumer deployment is implied.
 
 ## Stage
 
-Implementation is frozen in local unit commit
-bf16e504ccad68b2ee67607ba39606aadf07f627, with82 changed paths. The complete
-content/mode manifest SHA-256 is
-edcef1f19ee47dfcad2b0f6b9b26ae19fcf6355ba8b28aa02604a24c9cc9f68e.
-Reported scoped qualification executed1,036 distinct tests, including70 numeric
-vectors per reference/CLI/native target and8 unchanged legacy file maps. A
-same-command full-base test count was not measured. Initial deciding cases were
-3 red; final deciding lane8 green. All unit processes are terminal.
+The source unit bf16e504ccad68b2ee67607ba39606aadf07f627 and five independent
+adversarial tests79f062f9a17ca3d97ec8cd052cf69550b2f42ff9 are integrated. The first
+review reported no product finding and retained all926 tracked source files.
+Published count-writer work87d9945 was combined at12fb11a, with a separate bounded
+integration review retaining all957 tracked files and adding two test files.
+That review also reported no product finding. The exact immutable bodies and
+review outcomes are in the planning store.
 
-Adversary pass1 is dispatched against this exact commit, tests-only, with the
-unit's target and the assigned recovery scratch subdirectory. Root owns full
-integration gates and publication after the immutable review record. Current
-target3,110,035,456bytes and available22,639,206,400bytes remain above the reserve.
+The full gate exposed one introduced test setup assumption: the new unconditional
+Go test required an optional compiler override. Root recorded the gate finding
+before fixing it to honor the override or use Go from PATH. Both positive controls
+and all native assertions remain. The corrected isolated case and literal full
+gate passed with the override absent. Final executable/test content is33215d2;
+metadata-only count closurebe0eefd was merged asd3401f1 without changing it.
+
+`task check` passed1,945 tests with zero failed/ignored; `task site-build` passed.
+The metadata-merge path check passed5 cases. Full source/provenance, initial gate
+and harness errors, actual exits and boundaries are recorded in
+verification-report:normalization-binary64-integrated. The story is implemented;
+this closing checkpoint is ready for publication to main. It creates no release
+tag. Subsequent native-codec/positional/TypeScript units remain separately bound.
+All compiler/native processes are terminal. Token/cost telemetry is unavailable.
+Managed unit and integration trees remain tracked for the continuing authorized
+sequence and final cleanup; no unrelated worktree is a cleanup candidate.
 
 ## Computed candidate sets, collisions and unassessed ids
 

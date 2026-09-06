@@ -2,7 +2,7 @@
 format: aep.planning-md/1
 id: story:model-binary64-fields
 kind: story
-status: active
+status: implemented
 title: Represent finite binary64 fields in compiler-owned models
 relations:
 - derived_from: story:source-pinned-data-normalization
@@ -193,7 +193,7 @@ scope:
   path: website/docs/guides/write-a-specification.md
 - confidence: cited
   path: website/docs/reference/formats.md
-revision: 12
+revision: 14
 ---
 ## Evidence
 
@@ -398,3 +398,7 @@ assignment and normalization5 typed Binary64 equality. The implementor must qual
 actual conformance CLI/direct emitter/reader/runner publication boundaries and preserve
 old generated file maps. Unsupported synthesis/conformance routes may refuse explicitly
 before producing output. The coordinator alone owns AEP and Git integration.
+
+## Integrated verification
+
+The Binary64 model/normalization boundary is implemented and integrated with the published conformance count writer. verification-report:normalization-binary64-integrated records source identities, both immutable no-product-findings reviews, the corrected default Go test harness, and literal full gates: 1,945 passing tests, zero failed/ignored, plus the successful site build. Structural native codecs, positional arrays, TypeScript normalization and final release remain separate follow-ups. No released-version adoption is claimed here.
