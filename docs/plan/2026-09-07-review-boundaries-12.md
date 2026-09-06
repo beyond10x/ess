@@ -53,8 +53,11 @@ Planned managed ID: `ess-cache-origin`.
 Planned branch: `impl/review-cache-origin`.
 Planned path: `/home/timo/.local/state/worktree/trees/b10x/ess/ess-cache-origin`.
 Build: that tree's `target`. Scratch: `target/review-boundaries-12/cache-origin` within the unit.
-TMP and Cargo home stay within assigned scratch. A measured socket-path need must be reported
-before using an assigned short external TMP root; no unreported global scratch is permitted.
+Cargo home stays within assigned scratch, with literal links to the existing offline registry
+and Git dependency caches as in the previous unit. The current ess-cli package includes the
+actual Firefox suite. The prior unit established the long TMP Unix-socket path failure, so root
+assigns `/home/timo/.cache/ess-w12-cache-tmp` before this package baseline. It is the only
+external temporary root for this unit and belongs to its evidence inventory and later cleanup.
 
 The implementor owns only `crates/edge/ess-cli` and
 `website/docs/concepts/component-delivery.md`. Root owns the accepted internal binding,
