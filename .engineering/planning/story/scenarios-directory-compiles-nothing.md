@@ -15,7 +15,9 @@ scope:
   path: crates/edge/ess-cli/src/main.rs
 - confidence: inferred
   path: crates/edge/ess-cli/tests/authored_scenarios.rs
-revision: 9
+- confidence: cited
+  path: crates/edge/ess-cli/tests/authored_scenarios_adversary.rs
+revision: 10
 ---
 ## The defect
 

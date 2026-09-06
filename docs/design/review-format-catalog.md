@@ -50,13 +50,17 @@ implementation. It describes the combined integration preview, not an ESS releas
 external consumer. The public [format reference](../../website/docs/reference/formats.md) carries
 the same additional identities.
 
+Normalization `/2` below is additionally pinned to source
+`f0cbf56a1e3985a08effffc88a3e7f5b17893a9b`, whose public format reference marks it unreleased.
+
 | Surface | Admission and canonical identity |
 |---|---|
 | `ess-schema-bundle/1` | Component selection; `Bundle::read` reimports exact retained source and compares the full typed envelope. P bytes. |
 | `ess-schema-bundle/2` | Explicit document-root identity plus local definition closure; the replay reader rejects /1 carrying a document root. P bytes; existing /1 bytes are unchanged. |
 | `ess-types-report/3` | Serialize-only data-target accounting, distinct bundle/model input variants and explicit target configuration. P bytes; no report-byte hash or persisted reader. |
 | `ess-normalization/1` | Closed recipe DTO plus `Plan::read`/`check` against supplied checked bundles. Branches, root pins, stage composition and expressions require semantic checking. P bytes. |
-| `ess-normalization-target/1` | Serialize-only standalone Rust adapter report, distinct from application synthesis. P bytes; no persisted report reader. |
+| `ess-normalization/2` (unreleased at this source) | Same closed recipe DTO and `Plan::read`/`check` boundary; adds ordered text/list construction, original item indices, filtered mapping, first-match selection and explicit binary64 input/conversion declarations. P bytes. |
+| `ess-normalization-target/1` | Serialize-only standalone Rust adapter report from either checked recipe version; its /1 is independent of the recipe version and application synthesis. P bytes; no persisted report reader. |
 | `ess-target-failure/1` | Serialize-only complete Rust/Web synthesis refusal: unchanged neutral plan, ordered typed causes, no artifacts. P bytes; no independent digest. Unversioned `target.json` still identifies the separate optional weakening report. |
 
 Owners: [bundle](../../crates/generate/schema-contract/src/bundle.rs),
@@ -64,6 +68,14 @@ Owners: [bundle](../../crates/generate/schema-contract/src/bundle.rs),
 [normalization](../../crates/generate/schema-contract/src/realize/normalize.rs),
 [normalization target](../../crates/generate/schema-contract/src/realize/normalize/target.rs),
 [synthesis refusal](../../crates/generate/ess-synth/src/failure.rs).
+
+The `/1` checker refuses `/2` operations and any `binary64_inputs` declaration, including `{}`;
+an explicit `null` fails DTO parsing. When that field is omitted, typed serialization retains
+the existing `/1` field order without emitting the new field, and raw-JSON input follows the
+existing numeric-admission path.
+[Recipe](../../crates/generate/schema-contract/src/realize/normalize/recipe.rs),
+[version checks](../../crates/generate/schema-contract/src/realize/normalize/check.rs),
+[input decoding](../../crates/generate/schema-contract/src/realize/normalize/input.rs).
 
 All new byte hashes are bare lowercase SHA-256. They are not interchangeable:
 

@@ -16,6 +16,19 @@
   keep the exact JSON policy; signed integer scaling remains separately governed
   by its reject/wrap policy. Reference, CLI and generated Rust share the semantics.
 
+### Fixed
+
+- Authored conformance commands refuse an explicitly selected directory with no
+  immediate lowercase YAML inputs before writing artifacts or selecting a runner.
+  Diagnostics explain shallow discovery. Omitted selections, direct files and
+  committed suites retain their existing behavior.
+
+### Changed
+
+- Define execution recovery boundaries for interrupted apply and removal, manual
+  drift and fresh observation. Current absence does not establish who removed a
+  release. Applied-state modeling and executable recovery remain follow-on work.
+
 ## [0.19.0] — 2026-09-05
 
 ### Changed
