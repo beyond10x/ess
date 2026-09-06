@@ -8,7 +8,9 @@ Owner: [`epic:review-boundary-remediation`](../../.engineering/planning/epic/rev
 
 ## Current progress
 
-There are **31 ESS remediation stories: 19 implemented and 12 remaining drafts**, with none active.
+There are **31 ESS remediation stories: 19 implemented and 12 remaining**, comprising one active
+cache-origin story and 11 drafts. [Wave 12](2026-09-07-review-boundaries-12.md) selects the
+reviewed cache-origin fix alone after a fresh source/scope and resource check.
 [Wave 11](2026-09-06-review-boundaries-11.md) published conformance coverage at
 `a333949e6581e151f2c3b154d7df30e125d07375`: all ten integration lanes and 2,058 Rust cases
 passed, followed by 43 actual Rust/Go correspondence cases through the published AEP readers.
@@ -16,7 +18,8 @@ Exact source CI and Atlas publication `34062674853` are green; the 99-test Websi
 five live byte comparisons passed. The original review had 17 findings, initially decomposed
 into 30 ESS stories; only the kubectl disclosure story was added to that ESS set. The two AEP
 reader implementation prerequisites are tracked separately, as is Atlas migration coordination.
-Wave 11's managed cleanup and Atlas coordination are complete; the remaining drafts require a fresh replan.
+Wave 11's managed cleanup and Atlas coordination are complete. Wave 12 records the fresh replan;
+its remaining unselected drafts carry no implementation claim.
 
 Earlier wave records follow. [Wave 7](2026-09-06-review-boundaries-7.md) published expression typechecking and checked OpenAPI semantic accounting at1667d022, preserving concurrent base64 normalization. Its final combined gate passed all ten lanes and1,880 Rust cases. Both unit worktrees are archived and removed. The separate AEP count-reader prerequisite is implemented and published at30aeef2 with2,209 passing workspace cases; PostgreSQL explicitly skipped without a configured URL. Its unit is also archived and removed. Exact ESS/AEP source delivery is verified through Atlas publication34022002174 and the99-test Website gate. [Wave 8](2026-09-06-review-boundaries-8.md) has implemented the opt-in count writer after two independent attacks and verified corrections. Its combined gate passed1,918workspace cases and all ten lanes; final actual Rust/Go correspondence passed19fixtures through both published AEP readers and replay. Source87d9945 and its CI are published and green. Exact public delivery34029018905 passed independent356-route/1328-file verification and the99-test Website gate. Atlas count coordination is published at34fa907f with its three unrelated primary-workspace fence failures explicit. The count and Website units are archived and manager-removed; all fifteen remaining drafts require a fresh replan. The two [Wave6](2026-09-06-review-boundaries-6.md) units passed the combined normalization/2 integration gate at37db622 with1760 Rust cases and all ten lanes green; published source7fe3b0c and both managed unit cleanups are complete. The format catalog is delivered. [Wave 1](2026-09-05-review-boundaries-1.md) is published on main at 0f80f71e7ef997e8a3c7d2ad19e9997090e8e769; both unit worktrees were removed after remote recovery proof. [Wave 2](2026-09-05-review-boundaries-2.md) has implemented diagnostic sanitization and output containment, passed all eight offline gate steps with 1,475 tests and passed the site build. It is published on main at 98ea8abeeaf80846f525b5def8b531c139ed7071, and both unit worktrees have been removed with remote recovery proof. The user has separately approved publication of green remediation waves and managed cleanup in approval-record:review-remediation-standing-publication; release tags/version bumps remain separately authorized.
 

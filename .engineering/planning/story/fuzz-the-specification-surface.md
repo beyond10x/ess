@@ -22,7 +22,7 @@ scope:
   path: fuzz
 - confidence: inferred
   path: website/docs/reference/formats.md
-revision: 12
+revision: 13
 ---
 # Fuzz the specification surface
 
@@ -86,19 +86,19 @@ is a pass.
 
 ## Scope
 
-Derived 2026-09-06 by aep-drive:story-scoper from draft revision 8, the retained 33-command mandatory-seed baseline and current coordinator production corresponding to published 239996d846460aee342ce42514378c25b2be5152 — cited.
+Derived 2026-09-07 by aep-drive:story-scoper 0.8.0 from draft revision 12, reviewed candidate binding v3 and coverage-integrated source d1fe6755e842c8ef5486a90493530a39050dae48 — cited.
 
-- **Harness:** fuzz; the story explicitly requires the document harness and three permanent regression seeds here. Own standalone manifest/lock boundaries, shared in-memory pipeline, stable replay, engine entry points, bounded generators, focused controls, corpus translation and local instructions — cited.
-- **Concrete prerequisite repair:** crates/generate/ess-synth; the actual Go panic is in Layout::owner during Layout::of name allocation. Own a Go-specific missing-type-owner prerequisite before layout construction, its source-addressed checked failure and focused Go/direct-facade/compatibility tests. Existing shared failure vocabulary and Rust behavior remain read-only authorities — cited.
-- **Default gate:** Taskfile.yml; current check does not include a standalone fuzz workspace. Add explicit stable harness formatting, strict lint, focused tests and deterministic regression replay while retaining every existing gate lane — cited.
-- **CLI boundary regression:** crates/edge/ess-cli/tests/target_failure.rs; add a separate system-level-type Go case using the existing executable harness, preserving its Rust/Web empty-domain fixture and assertions. Cover both CLI spellings, text/JSON/YAML, Go failure/2, missing-type-owner and destination preservation; CLI production remains read-only — inferred.
-- **Binding:** docs/design/review-specification-fuzzing.md, currently absent; bind the Go prerequisite, corpus encoding and limits, accepted-document route, exact stage accounting, drift detection, stable gate and bounded local ASan policy before code — inferred.
-- **Public correction:** website/docs/reference/formats.md; update only the existing Go/Clap complete-failure row to acknowledge Go missing-owner refusal under its current envelope, preserving distinct Binary64, Rust/Web and normalization claims — inferred.
-- **Ownership boundary:** the measured prerequisite can remain with this harness because it is necessary for a mandatory seed and has one concrete existing producer owner. Any additional discovered panic requires retained evidence and a fresh exact repair assignment; this is not blanket production-remediation scope — inferred.
-- **Compatibility:** preserve all valid owned Go artifact bytes, neutral plans, Rust/Web behavior, the earlier Binary64 guard and existing format envelopes. No root workspace membership, root Cargo manifest/lock, conformance witness generation or generated-program compilation change is required by the standalone option — inferred.
-- **Collision and sequencing:** actual containment matters: the synth package contains the Go owner; the exact CLI test may be contained by a broader CLI reservation; the formats file is currently written by the active coverage unit. A literal-token nonmatch does not establish disjoint files. Wait for coverage closure and refresh integrated source, CLI and format-row bytes before later selection; Taskfile also overlaps the prepared consumer-gate scope — cited.
-- **Delivery:** a public format-row change requires the normal ESS source publication and Website/Atlas delivery under the coordinator's standing authorization. No broader public directory or external repository is an implementation reservation here — inferred.
-- **Confidence:** medium, because the current failure, repair timing, checked API, gate owner and reusable CLI harness are established, but the exact input/generation limits, standalone dependency layout, stage-drift mechanism and offline instrumented build remain binding/setup decisions — inferred.
+- **Harness:** `fuzz` — cited. Own the standalone stable workspace and lock, nested separately locked engine workspace, shared public-API pipeline, ordered multi-document carrier, two bounded engine entries, three mandatory regression seeds, deterministic replay, complete stage observations, watchdogs, mutation controls and local instructions. Preserve candidate v3’s bounds and require actual compiled callbacks and all ten downstream calls; an engine exit or replay count alone is insufficient.
+- **Mandatory prerequisite:** `crates/generate/ess-synth` — cited. Add only the Go missing-type-owner refusal before layout construction and after the existing Binary64 guard. Check every compiled type against actual domain ownership, including unreferenced types. Use the existing MissingTypeOwner code and Go failure/2 envelope, deterministic source-addressed causes and the reviewed exact detail. Own focused direct-workspace, facade, precedence and compatibility regressions; preserve neutral plans and valid owned Go artifact bytes.
+- **Stable gate:** `Taskfile.yml` — cited. Add explicit standalone stable formatting, strict Clippy, tests and deterministic replay to the existing check flow. Preserve every current lane. Keep engine/nightly dependencies outside the root workspace and ordinary stable graph.
+- **CLI regression:** `crates/edge/ess-cli/tests/target_failure.rs` — inferred. Add a separate Go system-level-type case while preserving the existing Rust/Web empty-domain fixture and assertions. Cover both command spellings, text/JSON/YAML, exact typed failure/2 causes, stdout/exit behavior and absent/existing destination preservation. Also establish actual CLI generation/synthesis choice correspondence. CLI production remains a read-only authority.
+- **Binding:** `docs/design/review-specification-fuzzing.md` — inferred. Promote the reviewed candidate after acceptance, refreshing its source/status references. Preserve its closed carrier, budgets, complete stage accounting, production dispatch, bounded live ASan campaign and setup prerequisites.
+- **Public correction:** `website/docs/reference/formats.md` — inferred. Update the Go/Clap complete-failure row narrowly to include Go missing-owner refusal under the existing envelope. Preserve Binary64 precedence, Rust/Web distinctions, normalization claims and the newly integrated coverage documentation.
+- **Repair boundary:** retain the known crashing Go seed and its historical evidence; any additional production defect needs its own concrete repair assignment rather than silently enlarging this prerequisite — inferred.
+- **Compatibility:** preserve existing tests, valid artifact maps and neutral plans. Root workspace membership, root manifest/lock changes, conformance witness generation and emitted-program compilation are outside these reservations — inferred.
+- **Would collide with:** changes within the synth package or fuzz subtree, the exact CLI regression file or a containing CLI reservation, Taskfile gate wiring, the binding page or formats catalog. Compare actual path containment; distinct scope tokens alone do not establish disjointness — inferred.
+- **Delivery:** public catalog publication and Website/Atlas delivery remain coordinator-owned; no external repository becomes an implementation reservation — inferred.
+- **Confidence:** high for these six write reservations because the reviewed binding and current source identify their owners. Offline resolution, instrumented setup and actual observations remain first-stage evidence requirements — cited.
 
 ## Remediation ownership and limits
 
@@ -127,3 +127,12 @@ target/review-boundaries-11/fuzz-preparation/binding-draft-v3.md, SHA256
 not executed or accepted. Offline graph resolution, dated ASan setup and positive Go artifact
 capture remain first-stage prerequisites. Refresh coverage-integrated source/CLI/formats and
 accept the binding before later story selection; no source gate or fuzz execution is claimed.
+
+## Coverage-integrated scope refresh
+
+The independent scope report is retained at
+`target/review-boundaries-12/preparation/scopers/fuzz-report.md`, SHA256
+`e25facc246c3cb91b4f2d44eb75f7b278bc35a1526c863f460e2903a84beef8d`. Root read back every inspected input hash before applying this section
+(45 inputs). The report was captured from the original final message without
+rewriting it. The machine reservations remain unchanged. This read-only refresh ran no source
+tests or build and did not itself select an implementation.
