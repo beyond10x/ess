@@ -5,7 +5,7 @@ TypeScript execution target. The reference remains the checked recipe and retain
 source schemas described in `source-pinned-data-normalization.md`; structural type
 aliases do not implement execution or validation.
 
-## Implemented target (unreleased)
+## Implemented target (ESS 0.20.0)
 
 `Plan::typescript(package)` and `normalize-generate --target typescript` now emit
 and execute the contract below for recipe formats 1–6. Historical preparation

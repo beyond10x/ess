@@ -2,12 +2,12 @@
 format: aep.planning-md/1
 id: release-plan:normalization-followups-020
 kind: release-plan
-status: draft
+status: active
 title: Release ESS normalization followups as 0.20.0 and qualify IVR adoption
 relations:
 - depends_on: story:typescript-normalization-target
 - serves: vision:O2
-revision: 5
+revision: 8
 ---
 ## Purpose and authority
 
@@ -42,7 +42,9 @@ After the actual version bump and actual generator rebuild, retain separate raw 
 
 ## Current state
 
-Draft release preparation. No 0.20 version edit, tag, release, consumer adoption, final cleanup or status DM has occurred. TypeScript unit commands have passed and its handoff is being frozen for independent review. The two decoded-reader and retained-common scratch candidates are frozen; reader artifacts have been independently hash-verified. The complete source-specific mapping remains open until its declared runtime/default/decoder/Flow boundaries have actual evidence.
+Active release preparation. TypeScript is implemented and published at checkpoint 6bf76440c38331f6dd5214e5667c210b58a24015, which passed literal task check (2003 passed, zero failed/ignored, 176 groups) and task site-build. The actual workspace version and eighteen internal dependency constraints are now 0.20.0. Cargo update --workspace --offline changed only 22 workspace package versions in Cargo.lock; no external dependency upgraded. The dated changelog retains every integrated main entry and documents the fallible pre-1.0 API changes. Current capability documentation no longer labels available APIs unreleased.
+
+Actual post-bump compatibility/native qualifications passed; the exact release-commit workspace and site gates remain pending. No 0.20 tag or binary release exists yet. The two decoded-reader and retained-common candidates and the 155-case adopter proposal are frozen, with the broader source-specific defaults/decoder/Flow boundaries still explicit. Consumer regeneration, GitLab publication, Atlas release observation and final status delivery remain required.
 
 ## Module identity during adoption
 
@@ -63,3 +65,17 @@ Exact raw old/current files, commands, exit times and source hashes are preserve
 ## TypeScript twelve-map pre-bump qualification
 
 After the frozen source and independent tests were integrated at 0f2dcd71e28f852de54af3ba01c62b3b22e6cc9b, the reviewed one-file producer projection patch 88d607dd037da8dd3459a24cf7db7f1036789801da3a33aaf44cab6efd018be8 was applied. The actual complete-map test and strict scoped Clippy exited zero on unchanged 0.19.0 source. All 218 raw files across 12 Rust/Go maps match the original literal fixture, including all 12 reports carrying actual producer 0.19.0; the fixture bytes are unchanged. Raw output and exact command exits are retained in release-020-preparation/qualification-typescript019. This only qualifies the test projection before changing the actual generator version; 0.20 output and final gates remain pending.
+
+## Version-edit scope and command qualification
+
+The release delta is Cargo.toml, Cargo.lock, CHANGELOG.md, docs/design/typescript-normalization.md, website/docs/guides/generate-artifacts.md and website/docs/reference/formats.md, together with this CLI-owned plan and closing verification evidence. The separately qualified TypeScript witness file is already in the published checkpoint. The installed AEP scope verb refused this release-plan kind because typed wave scope belongs to stories; no unsupported frontmatter was inserted and no fake story was created merely to bypass that rule. The release procedure is single-writer coordinator work, not a newly dispatched concurrent unit.
+
+The read-only projection audit found no further fixed producer golden requiring migration: 46 normative sample projections and the authored document schema omit the ESS build version. Actual checks still decide drift. Only cargo xtask generate or cargo xtask schema may refresh their owned output after an actual failing check; historical example provenance and dependency fixtures remain untouched.
+
+## Actual 0.20 producer and native qualification
+
+The rebuilt 0.20.0 source passed the selected structural Rust/Go wire, historical map and TypeScript native/adversary checks with 24 printed passing runner results across eight result groups, including nested generated Rust test groups, zero failures and zero ignored cases. The TypeScript corpus again executes 30176 inherited controls plus 22 independent checks; those inner controls are separate from runner counts. Strict Clippy with the actual external-tool features and explicit release verify 0.20.0 also exited zero. The initial command mistakenly requested a nonexistent rust-typecheck feature and was refused before compilation; that exit 101 is retained. Rust wire tests are unconditional, so the corrected command uses only the actual go-typecheck and typescript-typecheck features. No test/source was changed to obtain these results.
+
+Actual raw post-bump generation was compared to the retained actual 0.19 producer output. The ten-map 172-file witness changes only ten report producer lines; the twelve-map 218-file witness changes only twelve report producer lines. All other bytes, paths and literal fixtures are exact. The four structural maps change only four producer report lines and four first-line declaration headers; their remaining bodies/support files are exact. Raw old structural map SHA256 remains 02312f45fadac5e16b54aa1fce13d8f68cd8aaf14336a2180b85cd923811c79f; raw actual 0.20 map SHA256 is b628c84541f549efd1b388df24d15244effae9b5eff6bc66d28a3b298c1b810c. No synthetic producer input is offered as a post-bump observation.
+
+Complete raw captures, initial refusal, corrected command exits and independent file comparisons are retained in release-020-preparation/qualification-020. The next commit contains the actual version/changelog/documentation and this qualification record. Literal task check and task site-build must both run on that exact commit before its main publication and annotated tag; no untested metadata followup may become the release tag target.

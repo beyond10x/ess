@@ -2,7 +2,7 @@
 format: aep.planning-md/1
 id: story:typescript-normalization-target
 kind: story
-status: active
+status: implemented
 title: Execute source-pinned normalization in native TypeScript
 relations:
 - derived_from: story:source-pinned-data-normalization
@@ -79,7 +79,7 @@ scope:
   path: website/docs/reference/cli.md
 - confidence: cited
   path: website/docs/reference/formats.md
-revision: 37
+revision: 38
 ---
 ## Outcome
 
