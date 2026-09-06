@@ -208,3 +208,18 @@ published source commits, checks every artifact entry before/after, invokes the 
 verifier and runs the complete Website gate. Runner SHA256
 d4766ce3719de05d4967ff375dd4f5575a7fc6ad2fa6b2ff93c443745aebbca0. It is prepared, not yet run.
 Source publication, CI, actual public delivery and managed retirement continue separately.
+
+## Incoming release preparation before publication
+
+The prepublication remote equality check refused before committing or pushing: main advanced
+from6bf7644 to c90ca1b2a3a5db02d7580dab63be6cbc56679e0b. That separately published commit
+prepares ESS0.20.0, changing workspace versions, its changelog and release-status wording.
+The schema gate above remains a valid9e82d20 observation; it is not a gate of those new inputs.
+
+Root retained that gate record at73ec4ee389d199ecdcd2a23cf9e3937fd2e04c7e, restored the complete
+incoming1414-line canonical planning journal and replayed17AEP commands producing19events.
+All163unrelated incoming artifacts and all3local artifacts remain byte-exact. Both public pages
+merged automatically. The automatic changelog merge placed the schema entry under0.20.0;
+root kept the new schema entry under Unreleased and preserved the incoming release section.
+This is integration of another session's published preparation, not a release or tag selected
+by this remediation wave. A fresh full gate will verify the resulting versioned source.

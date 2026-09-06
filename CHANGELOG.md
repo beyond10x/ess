@@ -8,6 +8,11 @@
   schemas, using adopter-owned resource IDs and separate strict selector envelopes.
   Generated schema bytes remain unchanged; syntax admission, system semantics and
   restricted TypeScript projection have distinct documented boundaries.
+
+## [0.20.0] — 2026-09-06
+
+### Added
+
 - Standalone TypeScript normalization from `Plan::typescript(package)` and
   `normalize-generate --target typescript --package NAME`. Generated ES2022 ESM
   packages execute formats 1–6 from exact JSON text, use bigint for exact integer
@@ -95,7 +100,7 @@
   TypeScript preserves reference behavior; mixed integer/floating operands retain
   integer eligibility refusal. Static Binary64 admission and output provenance
   remain distinct. This release does not tighten the core equality contract.
-- In the upcoming pre-1.0 minor release, `ess_synth::{go,clap}::workspace` return
+- In this pre-1.0 minor release, `ess_synth::{go,clap}::workspace` return
   `Result<Emission, TargetFailure>`. Their new finite-codec failures use
   `ess-target-failure/2`; Rust/Web failure envelopes keep version 1 and old bytes.
   `ess_conformance::{go,web}::emit`, `ConformanceSuite::to_canonical_json`, and
