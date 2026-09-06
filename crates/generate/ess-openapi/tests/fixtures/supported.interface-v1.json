@@ -1,0 +1,56 @@
+{
+  "format": "ess-service-interface/1",
+  "source_openapi": "3.1.0",
+  "service": {
+    "name": "invoice-service",
+    "version": "v1"
+  },
+  "operations": {
+    "createInvoice": {
+      "id": "createInvoice",
+      "path": "/invoices",
+      "method": "post",
+      "request": {
+        "required": true,
+        "schema": {
+          "kind": "reference",
+          "name": "CreateInvoice"
+        }
+      },
+      "responses": {
+        "202": {
+          "required": false,
+          "schema": {
+            "kind": "reference",
+            "name": "Invoice"
+          }
+        }
+      }
+    }
+  },
+  "types": {
+    "CreateInvoice": {
+      "kind": "object",
+      "properties": {
+        "amount": {
+          "kind": "number"
+        }
+      },
+      "required": [
+        "amount"
+      ]
+    },
+    "Invoice": {
+      "kind": "object",
+      "properties": {
+        "id": {
+          "kind": "string",
+          "format": "uuid"
+        }
+      },
+      "required": [
+        "id"
+      ]
+    }
+  }
+}

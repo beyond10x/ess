@@ -8,7 +8,14 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use serde_json::{Map, Value};
 
-/// Persisted format written by the `OpenAPI` importer.
+mod accounting;
+
+pub use accounting::{
+    project_import, read_import, AccountingCode, AccountingEntry, ImportAccounting, ImportReport,
+    ImportSource, UnresolvedReference, IMPORT_FORMAT, NORMALIZATION_PROFILE, SCHEMA_DIALECT,
+};
+
+/// Structural interface format retained inside the `OpenAPI` import envelope.
 pub const INTERFACE_FORMAT: &str = "ess-service-interface/1";
 
 /// A typed service and its interface operations.
@@ -228,17 +235,6 @@ pub enum InterfaceSchema {
     },
 }
 
-/// Successful import plus the limitations and unresolved local references it observed.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct ImportReport {
-    /// Validated typed interface.
-    pub interface: ServiceInterface,
-    /// Source constructs intentionally normalized away or unsupported.
-    pub coverage_gaps: Vec<String>,
-    /// Local component references whose declarations were absent.
-    pub unresolved_references: Vec<String>,
-}
-
 /// A source defect that prevents a truthful typed import or projection.
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
 pub struct Refusal {
@@ -259,7 +255,7 @@ impl Refusal {
 
 /// Imports one `OpenAPI` 3.1 document into typed service-interface IR.
 pub fn import(text: &str) -> Result<ImportReport, Vec<Refusal>> {
-    let value: Value = match serde_yaml::from_str(text) {
+    let value: Value = match serde_yaml::from_value(accounting::strict_value(text)?) {
         Ok(value) => value,
         Err(error) => {
             return Err(vec![Refusal::new(
@@ -268,7 +264,7 @@ pub fn import(text: &str) -> Result<ImportReport, Vec<Refusal>> {
             )])
         }
     };
-    Importer::new().document(&value)
+    Importer::new().document(&value, text)
 }
 
 /// Reads an importer-produced service-interface document from JSON or YAML.
@@ -451,32 +447,67 @@ fn schema_value(schema: &InterfaceSchema) -> Value {
 }
 
 struct Importer {
-    gaps: BTreeSet<String>,
+    gaps: BTreeSet<AccountingEntry>,
+    normalizations: BTreeSet<AccountingEntry>,
     refusals: Vec<Refusal>,
-    references: BTreeSet<String>,
+    references: BTreeSet<UnresolvedReference>,
+}
+
+#[derive(Clone, Copy)]
+enum KeywordContext {
+    Schema,
+    Interface,
+    Operation,
+    Message,
+    Media,
+    Path,
+}
+
+impl KeywordContext {
+    fn annotation(self, key: &str) -> bool {
+        match self {
+            Self::Schema => matches!(
+                key,
+                "title" | "description" | "example" | "examples" | "default" | "deprecated"
+            ),
+            Self::Operation => matches!(key, "description" | "deprecated"),
+            Self::Message | Self::Path => key == "description",
+            Self::Media => matches!(key, "example" | "examples"),
+            Self::Interface => false,
+        }
+    }
 }
 
 impl Importer {
     fn new() -> Self {
         Self {
             gaps: BTreeSet::new(),
+            normalizations: BTreeSet::new(),
             refusals: Vec::new(),
             references: BTreeSet::new(),
         }
     }
 
-    fn document(mut self, value: &Value) -> Result<ImportReport, Vec<Refusal>> {
+    fn document(mut self, value: &Value, text: &str) -> Result<ImportReport, Vec<Refusal>> {
         let Some(root) = value.as_object() else {
             return Err(vec![Refusal::new("/", "document root must be an object")]);
         };
         let version = self.required_string(root, "openapi", "/openapi");
         if let Some(version) = &version {
-            if !version.starts_with("3.1.") {
+            if !version.strip_prefix("3.1.").is_some_and(|patch| {
+                !patch.is_empty()
+                    && patch.bytes().all(|byte| byte.is_ascii_digit())
+                    && (patch == "0" || !patch.starts_with('0'))
+            }) {
                 self.refusals.push(Refusal::new(
                     "/openapi",
                     format!("only OpenAPI 3.1 is supported, found `{version}`"),
                 ));
             }
+        }
+        self.check_dialect(root.get("jsonSchemaDialect"), "/jsonSchemaDialect");
+        if !self.refusals.is_empty() {
+            return Err(self.refusals);
         }
         let service = self.service(root.get("info"));
         let types = self.types(root.get("components"));
@@ -496,14 +527,18 @@ impl Importer {
         interface.validate()?;
         let unresolved_references = self
             .references
-            .difference(&interface.types.keys().cloned().collect())
-            .cloned()
+            .into_iter()
+            .filter(|reference| !interface.types.contains_key(&reference.target))
             .collect();
-        Ok(ImportReport {
+        Ok(ImportReport::new(
+            text,
             interface,
-            coverage_gaps: self.gaps.into_iter().collect(),
-            unresolved_references,
-        })
+            ImportAccounting {
+                normalizations: self.normalizations.into_iter().collect(),
+                coverage_gaps: self.gaps.into_iter().collect(),
+                unresolved_references,
+            },
+        ))
     }
 
     fn service(&mut self, value: Option<&Value>) -> Option<Service> {
@@ -514,38 +549,46 @@ impl Importer {
         };
         let name = self.required_string(info, "title", "/info/title");
         let version = self.required_string(info, "version", "/info/version");
-        for key in info.keys() {
-            if !matches!(
-                key.as_str(),
-                "title" | "version" | "summary" | "description" | "x-ess-provenance"
-            ) && !key.starts_with("x-")
-            {
-                self.gaps
-                    .insert(format!("/info/{key}: annotation normalized"));
-            }
-        }
+        self.note_keywords(
+            info,
+            &["title", "version", "summary", "description"],
+            "/info",
+            KeywordContext::Interface,
+        );
         match (name, version) {
             (Some(name), Some(version)) => Some(Service {
                 name,
                 version,
-                summary: optional_string(info, "summary"),
-                description: optional_string(info, "description"),
+                summary: self.optional_string(info, "summary", "/info"),
+                description: self.optional_string(info, "description", "/info"),
             }),
             _ => None,
         }
     }
 
     fn types(&mut self, value: Option<&Value>) -> BTreeMap<String, InterfaceSchema> {
-        let Some(components) = value.and_then(Value::as_object) else {
+        let Some(value) = value else {
             return BTreeMap::new();
         };
-        for key in components.keys() {
-            if key != "schemas" {
-                self.gaps
-                    .insert(format!("/components/{key}: component kind unsupported"));
-            }
-        }
-        let Some(schemas) = components.get("schemas").and_then(Value::as_object) else {
+        let Some(components) = value.as_object() else {
+            self.refusals
+                .push(Refusal::new("/components", "components must be an object"));
+            return BTreeMap::new();
+        };
+        self.note_keywords(
+            components,
+            &["schemas"],
+            "/components",
+            KeywordContext::Interface,
+        );
+        let Some(value) = components.get("schemas") else {
+            return BTreeMap::new();
+        };
+        let Some(schemas) = value.as_object() else {
+            self.refusals.push(Refusal::new(
+                "/components/schemas",
+                "schemas must be an object",
+            ));
             return BTreeMap::new();
         };
         schemas
@@ -589,11 +632,11 @@ impl Importer {
                             "path-item references are unsupported",
                         ));
                     } else {
-                        self.gaps.insert(format!(
-                            "/paths/{}/{}: path-item feature normalized",
-                            pointer_escape(path),
-                            pointer_escape(key)
-                        ));
+                        self.note_keyword(
+                            key,
+                            &format!("/paths/{}", pointer_escape(path)),
+                            KeywordContext::Path,
+                        );
                     }
                     continue;
                 };
@@ -618,23 +661,18 @@ impl Importer {
             return None;
         };
         let id = self.required_string(object, "operationId", &format!("{pointer}/operationId"));
-        for key in object.keys() {
-            if !matches!(
-                key.as_str(),
-                "operationId" | "summary" | "tags" | "requestBody" | "responses"
-            ) {
-                self.gaps.insert(format!(
-                    "{pointer}/{}: operation feature unsupported",
-                    pointer_escape(key)
-                ));
-            }
-        }
+        self.note_keywords(
+            object,
+            &["operationId", "summary", "tags", "requestBody", "responses"],
+            &pointer,
+            KeywordContext::Operation,
+        );
         let responses = self.responses(object.get("responses"), &format!("{pointer}/responses"));
         id.map(|id| Operation {
             id,
             path: path.to_owned(),
             method,
-            summary: optional_string(object, "summary"),
+            summary: self.optional_string(object, "summary", &pointer),
             tags: string_array(
                 object.get("tags"),
                 &format!("{pointer}/tags"),
@@ -679,18 +717,25 @@ impl Importer {
             ));
             return None;
         }
-        for key in object.keys() {
-            let supported = if request {
-                matches!(key.as_str(), "description" | "required" | "content")
+        self.note_keywords(
+            object,
+            if request {
+                &["required", "content"]
             } else {
-                matches!(key.as_str(), "description" | "content")
-            };
-            if !supported {
-                self.gaps.insert(format!(
-                    "{pointer}/{}: message feature unsupported",
-                    pointer_escape(key)
-                ));
-            }
+                &["content"]
+            },
+            pointer,
+            KeywordContext::Message,
+        );
+        if request
+            && object
+                .get("required")
+                .is_some_and(|value| !value.is_boolean())
+        {
+            self.refusals.push(Refusal::new(
+                format!("{pointer}/required"),
+                "message required must be a boolean",
+            ));
         }
         let schema = self.json_schema(object.get("content"), &format!("{pointer}/content"));
         Some(Message {
@@ -704,87 +749,80 @@ impl Importer {
     }
 
     fn json_schema(&mut self, value: Option<&Value>, pointer: &str) -> Option<InterfaceSchema> {
-        let content = value.and_then(Value::as_object)?;
+        let value = value?;
+        let Some(content) = value.as_object() else {
+            self.refusals
+                .push(Refusal::new(pointer, "content must be an object"));
+            return None;
+        };
         for media_type in content.keys() {
             if media_type != "application/json" {
-                self.gaps.insert(format!(
-                    "{pointer}/{}: media type unsupported",
-                    pointer_escape(media_type)
-                ));
+                self.note_keyword(media_type, pointer, KeywordContext::Interface);
             }
         }
-        let media = content.get("application/json").and_then(Value::as_object)?;
-        self.schema(
-            media.get("schema")?,
-            &format!("{pointer}/application~1json/schema"),
-        )
+        let value = content.get("application/json")?;
+        let media_pointer = format!("{pointer}/application~1json");
+        let Some(media) = value.as_object() else {
+            self.refusals
+                .push(Refusal::new(&media_pointer, "media type must be an object"));
+            return None;
+        };
+        self.note_keywords(media, &["schema"], &media_pointer, KeywordContext::Media);
+        let Some(schema) = media.get("schema") else {
+            self.refusals.push(Refusal::new(
+                format!("{media_pointer}/schema"),
+                "JSON content without a typed schema is unsupported",
+            ));
+            return None;
+        };
+        self.schema(schema, &format!("{pointer}/application~1json/schema"))
     }
 
     fn schema(&mut self, value: &Value, pointer: &str) -> Option<InterfaceSchema> {
         let Some(object) = value.as_object() else {
-            self.refusals
-                .push(Refusal::new(pointer, "schema must be an object"));
+            self.refusals.push(Refusal::new(
+                pointer,
+                "only object schemas are supported; boolean schemas are valid but unsupported",
+            ));
             return None;
         };
+        if !self.schema_context(object, pointer) {
+            return None;
+        }
         if let Some(reference) = object.get("$ref") {
-            let Some(reference) = reference.as_str() else {
-                self.refusals.push(Refusal::new(
-                    format!("{pointer}/$ref"),
-                    "$ref must be a string",
-                ));
-                return None;
-            };
-            let prefix = "#/components/schemas/";
-            let Some(name) = reference.strip_prefix(prefix).and_then(pointer_unescape) else {
-                self.refusals.push(Refusal::new(
-                    format!("{pointer}/$ref"),
-                    "only local component-schema references are supported",
-                ));
-                return None;
-            };
-            self.references.insert(name.clone());
-            return Some(InterfaceSchema::Reference { name });
+            let schema = self.local_reference(reference, pointer);
+            self.note_keywords(
+                object,
+                &["$ref", "$schema"],
+                pointer,
+                KeywordContext::Schema,
+            );
+            return schema;
         }
         let kind = object.get("type").and_then(Value::as_str);
         let inferred_string = kind == Some("string")
             || (kind.is_none() && (object.contains_key("const") || object.contains_key("enum")));
         let schema = if inferred_string {
-            let values = string_array(
-                object.get("enum"),
-                &format!("{pointer}/enum"),
-                &mut self.refusals,
-            );
-            let constant = object
-                .get("const")
-                .map(|value| {
-                    value.as_str().map(ToOwned::to_owned).ok_or_else(|| {
-                        Refusal::new(format!("{pointer}/const"), "string const must be a string")
-                    })
-                })
-                .transpose();
-            match constant {
-                Ok(constant) => Some(InterfaceSchema::String {
-                    format: optional_string(object, "format"),
-                    pattern: optional_string(object, "pattern"),
-                    values,
-                    constant,
-                }),
-                Err(refusal) => {
-                    self.refusals.push(refusal);
-                    None
-                }
-            }
+            self.string_schema(object, pointer)
         } else {
             match kind {
                 Some("integer") => Some(InterfaceSchema::Integer),
                 Some("number") => Some(InterfaceSchema::Number),
                 Some("boolean") => Some(InterfaceSchema::Boolean),
-                Some("array") => object
-                    .get("items")
-                    .and_then(|items| self.schema(items, &format!("{pointer}/items")))
-                    .map(|items| InterfaceSchema::Array {
-                        items: Box::new(items),
-                    }),
+                Some("array") => {
+                    if let Some(items) = object.get("items") {
+                        self.schema(items, &format!("{pointer}/items"))
+                            .map(|items| InterfaceSchema::Array {
+                                items: Box::new(items),
+                            })
+                    } else {
+                        self.refusals.push(Refusal::new(
+                            format!("{pointer}/items"),
+                            "array without typed items is a valid but unsupported adapter shape",
+                        ));
+                        None
+                    }
+                }
                 Some("object") => self.object_schema(object, pointer),
                 Some(other) => {
                     self.refusals.push(Refusal::new(
@@ -802,8 +840,124 @@ impl Importer {
                 }
             }
         };
-        self.schema_gaps(object, pointer);
+        let consumed: &[&str] = match &schema {
+            Some(InterfaceSchema::String { .. }) => {
+                &["type", "$schema", "format", "pattern", "enum", "const"]
+            }
+            Some(InterfaceSchema::Array { .. }) => &["type", "$schema", "items"],
+            Some(InterfaceSchema::Object { .. }) => &[
+                "type",
+                "$schema",
+                "properties",
+                "required",
+                "additionalProperties",
+            ],
+            _ => &["type", "$schema"],
+        };
+        self.note_keywords(object, consumed, pointer, KeywordContext::Schema);
         schema
+    }
+
+    fn string_schema(
+        &mut self,
+        object: &Map<String, Value>,
+        pointer: &str,
+    ) -> Option<InterfaceSchema> {
+        let values = string_array(
+            object.get("enum"),
+            &format!("{pointer}/enum"),
+            &mut self.refusals,
+        );
+        let constant = object
+            .get("const")
+            .map(|value| {
+                value.as_str().map(ToOwned::to_owned).ok_or_else(|| {
+                    Refusal::new(format!("{pointer}/const"), "string const must be a string")
+                })
+            })
+            .transpose();
+        match constant {
+            Ok(constant) => Some(InterfaceSchema::String {
+                format: self.optional_string(object, "format", pointer),
+                pattern: self.optional_string(object, "pattern", pointer),
+                values,
+                constant,
+            }),
+            Err(refusal) => {
+                self.refusals.push(refusal);
+                None
+            }
+        }
+    }
+
+    fn schema_context(&mut self, object: &Map<String, Value>, pointer: &str) -> bool {
+        if !self.check_dialect(object.get("$schema"), &format!("{pointer}/$schema")) {
+            return false;
+        }
+        for key in [
+            "$id",
+            "$anchor",
+            "$dynamicAnchor",
+            "$dynamicRef",
+            "$recursiveAnchor",
+            "$recursiveRef",
+            "$vocabulary",
+        ] {
+            if object.contains_key(key) {
+                self.refusals.push(Refusal::new(
+                    format!("{pointer}/{key}"),
+                    "schema resource, anchor or vocabulary interpretation is unsupported",
+                ));
+                return false;
+            }
+        }
+        if let Some(values) = object.get("enum") {
+            if values.as_array().is_none_or(Vec::is_empty) {
+                self.refusals.push(Refusal::new(format!("{pointer}/enum"), "a nonempty enum array is required by this adapter; empty enumerations are unsupported"));
+                return false;
+            }
+        }
+        if object.get("type").is_some_and(|kind| !kind.is_string()) {
+            self.refusals.push(Refusal::new(
+                format!("{pointer}/type"),
+                "only a single string schema type is supported; type arrays are unsupported",
+            ));
+            return false;
+        }
+        true
+    }
+
+    fn local_reference(&mut self, value: &Value, pointer: &str) -> Option<InterfaceSchema> {
+        let Some(reference) = value.as_str() else {
+            self.refusals.push(Refusal::new(
+                format!("{pointer}/$ref"),
+                "$ref must be a string",
+            ));
+            return None;
+        };
+        let Some(name) = reference
+            .strip_prefix("#/components/schemas/")
+            .filter(|name| {
+                !name.is_empty()
+                    && !name.chars().any(|character| {
+                        matches!(character, '/' | '%' | '#')
+                            || character.is_whitespace()
+                            || character.is_control()
+                    })
+            })
+            .and_then(pointer_unescape)
+        else {
+            self.refusals.push(Refusal::new(
+                format!("{pointer}/$ref"),
+                "only local component-schema references are supported",
+            ));
+            return None;
+        };
+        self.references.insert(UnresolvedReference {
+            pointer: format!("{pointer}/$ref"),
+            target: name.clone(),
+        });
+        Some(InterfaceSchema::Reference { name })
     }
 
     fn object_schema(
@@ -855,51 +1009,89 @@ impl Importer {
         })
     }
 
-    fn schema_gaps(&mut self, object: &Map<String, Value>, pointer: &str) {
+    fn note_keywords(
+        &mut self,
+        object: &Map<String, Value>,
+        consumed: &[&str],
+        pointer: &str,
+        context: KeywordContext,
+    ) {
         for key in object.keys() {
-            if !matches!(
-                key.as_str(),
-                "$ref"
-                    | "type"
-                    | "format"
-                    | "pattern"
-                    | "enum"
-                    | "const"
-                    | "items"
-                    | "properties"
-                    | "required"
-                    | "additionalProperties"
-                    | "title"
-                    | "description"
-                    | "x-ess-name"
-                    | "x-ess-kind"
-                    | "x-ess-invariants"
-            ) && !key.starts_with("x-")
-            {
-                self.gaps.insert(format!(
-                    "{pointer}/{}: schema keyword unsupported",
-                    pointer_escape(key)
-                ));
+            if !consumed.contains(&key.as_str()) {
+                self.note_keyword(key, pointer, context);
             }
         }
     }
 
-    fn note_root_gaps(&mut self, root: &Map<String, Value>) {
-        for key in root.keys() {
-            if !matches!(
-                key.as_str(),
-                "openapi" | "info" | "paths" | "components" | "tags"
-            ) && !key.starts_with("x-")
-            {
-                self.gaps.insert(format!(
-                    "/{}: document feature unsupported",
-                    pointer_escape(key)
-                ));
-            }
+    fn note_keyword(&mut self, key: &str, pointer: &str, context: KeywordContext) {
+        let pointer = format!("{pointer}/{}", pointer_escape(key));
+        if context.annotation(key) {
+            self.normalizations.insert(AccountingEntry {
+                pointer,
+                code: AccountingCode::AnnotationOmitted,
+                detail: "known annotation omitted without applying a default".to_owned(),
+            });
+        } else {
+            let schema = matches!(context, KeywordContext::Schema);
+            self.gaps.insert(AccountingEntry {
+                pointer,
+                code: if schema && !key.starts_with("x-") {
+                    AccountingCode::ConstraintUnpreserved
+                } else {
+                    AccountingCode::FeatureUnpreserved
+                },
+                detail: if schema {
+                    "schema keyword not preserved by this variant"
+                } else {
+                    "interface feature not preserved"
+                }
+                .to_owned(),
+            });
         }
-        if root.contains_key("tags") {
-            self.gaps
-                .insert("/tags: top-level tag descriptions normalized".to_owned());
+    }
+
+    fn note_root_gaps(&mut self, root: &Map<String, Value>) {
+        self.note_keywords(
+            root,
+            &[
+                "openapi",
+                "info",
+                "paths",
+                "components",
+                "jsonSchemaDialect",
+            ],
+            "",
+            KeywordContext::Interface,
+        );
+    }
+
+    fn check_dialect(&mut self, value: Option<&Value>, pointer: &str) -> bool {
+        if value.is_some_and(|value| value.as_str() != Some(SCHEMA_DIALECT)) {
+            self.refusals.push(Refusal::new(
+                pointer,
+                format!("only schema dialect `{SCHEMA_DIALECT}` is supported"),
+            ));
+            false
+        } else {
+            true
+        }
+    }
+
+    fn optional_string(
+        &mut self,
+        object: &Map<String, Value>,
+        key: &str,
+        pointer: &str,
+    ) -> Option<String> {
+        let value = object.get(key)?;
+        if let Some(value) = value.as_str() {
+            Some(value.to_owned())
+        } else {
+            self.refusals.push(Refusal::new(
+                format!("{pointer}/{}", pointer_escape(key)),
+                "expected a string",
+            ));
+            None
         }
     }
 
@@ -920,13 +1112,6 @@ impl Importer {
             }
         }
     }
-}
-
-fn optional_string(object: &Map<String, Value>, key: &str) -> Option<String> {
-    object
-        .get(key)
-        .and_then(Value::as_str)
-        .map(ToOwned::to_owned)
 }
 
 fn string_array(value: Option<&Value>, pointer: &str, refusals: &mut Vec<Refusal>) -> Vec<String> {
@@ -1019,10 +1204,10 @@ components:
     #[test]
     fn supported_ir_survives_projection_and_reimport_semantically() {
         let imported = import(SOURCE).expect("supported source imports");
-        let projected = project(&imported.interface).expect("typed IR projects");
+        let projected = project(imported.interface()).expect("typed IR projects");
         let reimported = import(&projected).expect("projection imports");
-        assert_eq!(reimported.interface, imported.interface);
-        assert_eq!(project(&reimported.interface), Ok(projected));
+        assert_eq!(reimported.interface(), imported.interface());
+        assert_eq!(project(reimported.interface()), Ok(projected));
     }
 
     #[test]
@@ -1032,7 +1217,15 @@ components:
             "#/components/schemas/Missing'",
         );
         let imported = import(&source).expect("a dangling local reference remains representable");
-        assert_eq!(imported.unresolved_references, vec!["Missing"]);
+        assert_eq!(
+            imported
+                .accounting()
+                .unresolved_references
+                .iter()
+                .map(|reference| reference.target.as_str())
+                .collect::<Vec<_>>(),
+            vec!["Missing"]
+        );
     }
 
     #[test]
@@ -1050,8 +1243,224 @@ components:
 
     #[test]
     fn projection_is_byte_deterministic() {
-        let interface = import(SOURCE).expect("source imports").interface;
-        assert_eq!(project(&interface), project(&interface));
+        let imported = import(SOURCE).expect("source imports");
+        let interface = imported.interface();
+        assert_eq!(project(interface), project(interface));
         assert_eq!(interface.to_canonical_json(), interface.to_canonical_json());
+    }
+
+    fn at_site(schema: Value, site: usize) -> (String, String) {
+        let mut document = serde_json::json!({
+            "openapi": "3.1.0", "info": {"title": "test", "version": "v1"},
+            "paths": {"/items": {"post": {"operationId": "create", "responses": {"200": {"description": "ok"}}}}},
+            "components": {"schemas": {}}
+        });
+        let pointer = match site {
+            0 => {
+                document["components"]["schemas"]["A~/"] = schema;
+                "/components/schemas/A~0~1"
+            }
+            1 => {
+                document["components"]["schemas"]["A~/"] = serde_json::json!({
+                    "type": "object", "additionalProperties": false,
+                    "properties": {"p~/": schema}
+                });
+                "/components/schemas/A~0~1/properties/p~0~1"
+            }
+            2 => {
+                document["paths"]["/items"]["post"]["requestBody"] = serde_json::json!({
+                    "content": {"application/json": {"schema": schema}}
+                });
+                "/paths/~1items/post/requestBody/content/application~1json/schema"
+            }
+            3 => {
+                document["paths"]["/items"]["post"]["responses"]["200"]["content"] =
+                    serde_json::json!({"application/json": {"schema": schema}});
+                "/paths/~1items/post/responses/200/content/application~1json/schema"
+            }
+            _ => unreachable!(),
+        };
+        (document.to_string(), pointer.to_owned())
+    }
+
+    #[test]
+    fn review_nonstring_enum_and_const_are_accounted_at_every_site() {
+        for schema in [
+            serde_json::json!({"type": "integer", "enum": [1, 2], "const": 1}),
+            serde_json::json!({"type": "number", "enum": [1.5], "const": 1.5}),
+            serde_json::json!({"type": "boolean", "enum": [true], "const": true}),
+            serde_json::json!({"type": "array", "items": {"type": "string"}, "enum": [[]], "const": []}),
+            serde_json::json!({"type": "object", "properties": {}, "additionalProperties": false, "enum": [{}], "const": {}}),
+        ] {
+            for site in 0..4 {
+                let (source, pointer) = at_site(schema.clone(), site);
+                let imported = import(&source).expect("partial typed shape remains representable");
+                for keyword in ["enum", "const"] {
+                    assert!(
+                        imported
+                            .accounting()
+                            .coverage_gaps
+                            .iter()
+                            .any(|gap| gap.pointer == format!("{pointer}/{keyword}")),
+                        "lost {pointer}/{keyword}: {imported:?}"
+                    );
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn review_reference_sibling_constraints_are_accounted_at_every_site() {
+        for site in 0..4 {
+            let (source, pointer) = at_site(
+                serde_json::json!({
+                    "$ref": "#/components/schemas/Missing", "enum": [1], "minimum": 1
+                }),
+                site,
+            );
+            let imported = import(&source).expect("local reference remains representable");
+            for keyword in ["enum", "minimum"] {
+                assert!(
+                    imported
+                        .accounting()
+                        .coverage_gaps
+                        .iter()
+                        .any(|gap| gap.pointer == format!("{pointer}/{keyword}")),
+                    "lost reference sibling {pointer}/{keyword}"
+                );
+            }
+        }
+    }
+
+    fn refused_at_every_site(schema: &Value, suffix: &str) {
+        for site in 0..4 {
+            let (source, pointer) = at_site(schema.clone(), site);
+            let refusals = import(&source).expect_err("unsupported schema must not disappear");
+            assert!(
+                refusals
+                    .iter()
+                    .any(|refusal| refusal.pointer == format!("{pointer}{suffix}")),
+                "{refusals:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn review_missing_array_items_refuses_at_every_site() {
+        refused_at_every_site(&serde_json::json!({"type": "array"}), "/items");
+    }
+
+    #[test]
+    fn review_empty_enum_refuses_at_every_site() {
+        refused_at_every_site(&serde_json::json!({"type": "string", "enum": []}), "/enum");
+    }
+
+    #[test]
+    fn review_type_array_is_not_an_absent_type() {
+        refused_at_every_site(
+            &serde_json::json!({"type": ["string", "null"], "enum": ["a"]}),
+            "/type",
+        );
+    }
+
+    #[test]
+    fn review_schema_dialect_override_refuses_at_every_site() {
+        refused_at_every_site(
+            &serde_json::json!({"type": "string", "$schema": "https://json-schema.org/draft/2020-12/schema"}),
+            "/$schema",
+        );
+    }
+
+    #[test]
+    fn review_document_dialect_is_checked_before_schema_interpretation() {
+        let (source, _) = at_site(serde_json::json!({"type": "string"}), 0);
+        let mut value: Value = serde_json::from_str(&source).unwrap();
+        value["jsonSchemaDialect"] = Value::String("https://example.invalid/dialect".to_owned());
+        let refusals = import(&value.to_string()).expect_err("unknown dialect refuses");
+        assert!(refusals
+            .iter()
+            .any(|refusal| refusal.pointer == "/jsonSchemaDialect"));
+    }
+
+    #[test]
+    fn review_version_prefix_is_not_a_valid_patch_version() {
+        for version in ["3.1.", "3.1.wrong", "3.1.0.extra", "3.1.01"] {
+            let refusals = import(&SOURCE.replace("3.1.0", version))
+                .expect_err("invalid patch version refuses");
+            assert!(refusals.iter().any(|refusal| refusal.pointer == "/openapi"));
+        }
+    }
+
+    #[test]
+    fn review_unsupported_reference_fragments_are_not_dangling_names() {
+        for reference in [
+            "#/components/schemas/A%20B",
+            "#/components/schemas/A/properties/p",
+        ] {
+            refused_at_every_site(&serde_json::json!({"$ref": reference}), "/$ref");
+        }
+    }
+
+    #[test]
+    fn review_invalid_optional_string_constraints_refuse() {
+        for keyword in ["pattern", "format"] {
+            let mut schema = serde_json::json!({"type": "string"});
+            schema[keyword] = Value::Bool(false);
+            refused_at_every_site(&schema, &format!("/{keyword}"));
+        }
+    }
+
+    #[test]
+    fn review_string_enum_and_const_are_both_retained() {
+        for site in 0..4 {
+            let (source, _) = at_site(
+                serde_json::json!({"type": "string", "enum": ["a", "b"], "const": "a"}),
+                site,
+            );
+            let imported = import(&source).unwrap();
+            let projected = project(imported.interface()).unwrap();
+            let reimported = import(&projected).unwrap();
+            assert_eq!(imported.interface(), reimported.interface());
+            assert!(projected.contains("const: a"));
+            assert!(projected.contains("enum:"));
+        }
+    }
+
+    #[test]
+    fn review_annotation_names_only_normalize_at_admitted_positions() {
+        let (source, _) = at_site(serde_json::json!({"type": "string"}), 0);
+        let mut value: Value = serde_json::from_str(&source).unwrap();
+        value["default"] = serde_json::json!({"$schema": "literal, not a schema"});
+        value["info"]["examples"] = serde_json::json!(["not an info annotation"]);
+        let imported = import(&value.to_string()).unwrap();
+        for pointer in ["/default", "/info/examples"] {
+            assert!(
+                imported
+                    .accounting()
+                    .coverage_gaps
+                    .iter()
+                    .any(|gap| gap.pointer == pointer),
+                "unsupported-position feature lost: {pointer}"
+            );
+        }
+    }
+
+    #[test]
+    fn review_schema_annotation_literals_are_not_walked_as_schemas() {
+        let (source, _) = at_site(
+            serde_json::json!({
+                "type": "string", "description": "text", "default": {"$ref": "https://example.invalid/literal", "$schema": "literal"},
+                "readOnly": true, "writeOnly": true, "x-ess-invariants": ["kept as a gap"], "x-other": true
+            }),
+            0,
+        );
+        let imported = import(&source).unwrap();
+        assert_eq!(imported.accounting().coverage_gaps.len(), 4);
+        assert!(imported
+            .accounting()
+            .normalizations
+            .iter()
+            .any(|entry| entry.pointer.ends_with("/default")));
+        assert!(project_import(&imported).is_err());
     }
 }

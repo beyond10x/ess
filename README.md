@@ -78,10 +78,12 @@ Adapters use one explicit contract:
   applies infrastructure or mutates an external system.
 - Kubernetes import accepts a sanitized bundle or performs a live scan at the credential edge.
   Secret values are digested before any serialization or filesystem write.
-- OpenAPI import produces `ess-service-interface/1`: typed service, operation, JSON-message, local
-  reference, and interface-type structures plus coverage gaps and unresolved references. Projection
-  accepts that IR or a native ESS specification. The supported subset has an IR → OpenAPI → IR
-  semantic round-trip guarantee; unsupported protocol features are normalized, reported, or refused.
+- OpenAPI import writes `ess-openapi-import/1`, retaining the original source, its SHA-256, the
+  typed service interface and replay-checked accounting. Unpreserved semantics become durable gaps
+  or refusals; unresolved reference sites remain explicit. Checked `--ir` projection refuses partial,
+  unresolved or legacy interface-only input; reimport the original OpenAPI source for legacy files.
+  Complete supported imports retain the interface → OpenAPI → interface semantic round trip.
+  Native ESS specifications remain a separate projection input.
 
 `EssIr`, `InfraIr`, and the adapter-specific service-interface representation intentionally remain
 distinct. The compiler IRs keep compiler-minted handles, total lookups, ordered collections, and

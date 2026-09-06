@@ -1,0 +1,40 @@
+components:
+  schemas:
+    CreateInvoice:
+      additionalProperties: false
+      properties:
+        amount:
+          type: number
+      required:
+      - amount
+      type: object
+    Invoice:
+      additionalProperties: false
+      properties:
+        id:
+          format: uuid
+          type: string
+      required:
+      - id
+      type: object
+info:
+  title: invoice-service
+  version: v1
+openapi: 3.1.0
+paths:
+  /invoices:
+    post:
+      operationId: createInvoice
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateInvoice'
+        required: true
+      responses:
+        '202':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Invoice'
+          description: Response 202
