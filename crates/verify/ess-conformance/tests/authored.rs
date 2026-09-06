@@ -729,6 +729,20 @@ fn a_predicate_reading_something_the_view_does_not_publish_is_refused() {
 }
 
 #[test]
+fn authored_predicate_operand_errors_have_their_own_refusal() {
+    let ir = example("billing");
+    for predicate in [
+        "total.amount == text",
+        "{total.amount: {any_of: [1, text]}}",
+        "{forall: {in: total.amount, as: n, that: true}}",
+    ] {
+        let body = format!("{CREATED}assert:\n  - view: billing.invoice.OutstandingInvoices\n    satisfies: {predicate}\n");
+        let refused = refusal(&ir, &document(&body));
+        assert_eq!(refused.code().to_string(), "ESS-AUTHOR-035");
+    }
+}
+
+#[test]
 fn a_scenario_that_runs_nothing_is_refused_rather_than_counted_as_a_check() {
     let ir = example("billing");
     assert!(matches!(cause(&ir, &document("")), Cause::NothingHappens));
@@ -924,7 +938,7 @@ fn every_cause_is_reachable_from_a_document() {
 ///
 /// Written down rather than counted, because the point of the case above is that the numbering and
 /// the documents agree: a count taken from the enum would agree with itself whatever happened.
-const CAUSES: u16 = 34;
+const CAUSES: u16 = 35;
 
 /// One entry per refusal, each the documents that reach it compiled together.
 ///
@@ -1036,6 +1050,8 @@ fn refusable() -> Vec<(&'static str, Vec<String>)> {
         billing(windowed("        not_before: PT10S\n        within: PT10S\n")),
         // 34 a halt after no rows at all
         billing(format!("{CREATED}{HALTS_AT_NOTHING}")),
+        // 35 semantically incompatible scalar operands
+        billing(format!("{CREATED}assert:\n  - view: billing.invoice.OutstandingInvoices\n    satisfies: total.amount == text\n")),
     ]
 }
 
@@ -1249,4 +1265,26 @@ fn a_halt_stated_beside_another_claim_is_two_assertions_filed_as_one() {
         }
         other => panic!("two claims in one assertion is refused as two: {other}"),
     }
+}
+
+#[test]
+fn authored_aggregate_presence_keeps_026_and_valid_scalar_reads_keep_the_predicate() {
+    let ir = example("billing");
+    let body = |predicate: &str| {
+        document(&format!("{CREATED}assert:\n  - view: billing.invoice.OutstandingInvoices\n    satisfies: {predicate}\n"))
+    };
+    for predicate in [
+        "{total: {exists: true}}",
+        "total",
+        "param.limit > 0",
+        "total.amount.nonexistent > 0",
+    ] {
+        assert_eq!(
+            refusal(&ir, &body(predicate)).code().to_string(),
+            "ESS-AUTHOR-026"
+        );
+    }
+    let authored = authoring(&ir, &body("total.amount > 0"));
+    assert!(authored.refusals.is_empty());
+    assert_eq!(authored.scenarios.len(), 1);
 }

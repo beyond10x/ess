@@ -502,13 +502,38 @@ impl NamedType {
         }
     }
 
+    /// Check complete invariant paths after every named and lifecycle type is registered.
+    pub fn validate_invariants(&self, registry: &TypeRegistry) -> ValidationErrors {
+        let value;
+        let (fields, invariants) = match &self.body {
+            TypeBody::Struct { fields, invariants } => (fields.as_slice(), invariants),
+            TypeBody::Newtype { of, invariants } => {
+                value = [Field::new(Self::VALUE, of.clone())];
+                (value.as_slice(), invariants)
+            }
+            TypeBody::Enum { .. } | TypeBody::Union { .. } => return ValidationErrors::new(),
+        };
+        let environment = crate::expression::DomainEnvironment::new(registry, fields);
+        let mut errors = ValidationErrors::new();
+        for (index, invariant) in invariants.iter().enumerate() {
+            errors.extend(
+                crate::expression::check_predicate(
+                    &environment,
+                    &invariant.predicate,
+                    &format!("types.{}.invariants[{index}]", self.name),
+                )
+                .validation_errors(),
+            );
+        }
+        errors
+    }
+
     /// Checks that every invariant reads something this type has (§36.6).
     ///
     /// Only this type's own fields are resolvable here: the check runs while the declaration is
     /// being converted, before any [`TypeRegistry`] exists, so a path that leaves the type
-    /// (`total.amount`) is checked as far as `total` and no further — which is also as far as
-    /// [`EntitySpec::validate`](crate::entity::EntitySpec::validate) can check one without the
-    /// registry.
+    /// (`total.amount`) is checked as far as `total` and no further. The registry-aware
+    /// [`Self::validate_invariants`] pass checks complete paths and operands at specification admission.
     fn check_invariants(&self) -> ValidationErrors {
         let mut errors = ValidationErrors::new();
         let (invariants, readable, hint) = match &self.body {
@@ -853,6 +878,15 @@ impl TypeRegistry {
     /// `true` when nothing is declared.
     pub fn is_empty(&self) -> bool {
         self.types.is_empty()
+    }
+
+    /// Recheck all named-type predicates against the complete registry.
+    pub(crate) fn validate_invariants(&self) -> ValidationErrors {
+        let mut errors = ValidationErrors::new();
+        for declared in self.iter() {
+            errors.extend(declared.validate_invariants(self));
+        }
+        errors
     }
 
     /// Checks that every named type a reference mentions exists.

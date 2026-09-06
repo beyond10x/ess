@@ -275,6 +275,8 @@ impl Specification {
             }
         }
 
+        errors.extend(registry.validate_invariants());
+
         for entity in self.entities.values() {
             errors.extend(entity.validate(&registry));
         }
@@ -836,6 +838,28 @@ impl Collected {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn revalidation_rejects_an_expression_mutated_inside_the_sealed_module() {
+        let text = "format: ess/1\nsystem: sample\nversion: v1\ndomain: sample.data\ncommands:\n  - name: sample.data.Update\n    input:\n      - {name: amount, type: Decimal}\n    outcomes:\n      - name: changed\n        when: amount > 0\n        emits: [sample.data.Changed]\n      - name: refused\n        error: sample.data.Refused\nevents:\n  - name: sample.data.Changed\nerrors:\n  - name: sample.data.Refused\n";
+        let mut spec = Specification::assemble([file("mutation.yaml", text)]).unwrap();
+        assert!(spec.validate().is_empty());
+        let command = spec.commands.values_mut().next().unwrap();
+        command.outcomes[0].condition = crate::command::OutcomeCondition::When(
+            ess_primitives::predicate::Predicate::parse_expression("amount.nonexistent > 0")
+                .unwrap(),
+        );
+        let errors = spec.validate();
+        assert!(
+            errors
+                .as_slice()
+                .iter()
+                .any(|error| error.code == ValidationCode::UnobservableFact
+                    && error.location.contains("command.sample.data.Update")
+                    && error.message.contains("amount.nonexistent")),
+            "{errors}"
+        );
+    }
 
     /// Parses one file's worth of YAML.
     fn file(source: &str, yaml: &str) -> (Source, RawSpecFile) {

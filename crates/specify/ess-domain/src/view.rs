@@ -40,11 +40,10 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::fmt;
 
 use ess_primitives::error::{ParseError, ValidationCode, ValidationError, ValidationErrors};
-use ess_primitives::facts::{FactPath, FactValue};
-use ess_primitives::predicate::{Operand, Predicate};
+use ess_primitives::predicate::Predicate;
 
 use crate::name::{Naming, QualifiedName};
-use crate::types::{Field, TypeBody, TypeRef, TypeRegistry};
+use crate::types::{Field, TypeBody, TypeRegistry};
 
 /// How soon a view reflects a command that has already returned.
 ///
@@ -544,41 +543,42 @@ impl ViewSpec {
             }
         }
 
-        if let Some(filter) = &self.filter {
-            // Only the first segment is resolved: a deeper path such as `total.amount` walks into a
-            // named struct, and resolving that belongs with the IR, which knows every type.
-            for path in filter.fact_paths() {
-                let root = path.namespace();
-                // `param.<name>` is a fact the *caller* supplies, so it is not looked for on the
-                // source. The predicate grammar needs nothing new for this — a parameter reads as
-                // a fact path like any other, and what makes the name a parameter is `params:`.
-                if root == Self::PARAM {
-                    continue;
-                }
-                if known(root).is_none() {
-                    errors.push(
-                        ValidationError::new(
-                            ValidationCode::UnobservableFact,
-                            at("filter"),
-                            format!(
-                                "`{path}` reads `{root}`, which `{}` does not have; a view cannot \
-                                 select on something its source never observes",
-                                self.source
-                            ),
-                        )
-                        .with_hint(format!(
-                            "fields of `{}`: {}",
-                            self.source,
-                            join(source_fields.iter().map(|field| field.name.clone()))
-                        )),
-                    );
-                }
-            }
-
-            errors.extend(self.validate_filter_values(filter, types, source_fields));
+        for field in &self.params {
+            errors.extend(
+                types.resolve(&field.type_ref, &at(&format!("params.{}.type", field.name))),
+            );
         }
-
-        errors.extend(self.validate_params());
+        let mut read_params = BTreeSet::new();
+        if let Some(filter) = &self.filter {
+            let environment = crate::expression::DomainEnvironment::new(types, source_fields)
+                .with_params(&self.params);
+            let checked = crate::expression::check_predicate(&environment, filter, &at("filter"));
+            for error in &checked.errors {
+                let mut diagnostic = error.validation_error();
+                if error.code == ValidationCode::UnobservableFact {
+                    diagnostic
+                        .message
+                        .push_str("; a view cannot select on something its source never observes");
+                }
+                if error.code == ValidationCode::UndeclaredReference
+                    && error.path.is_none()
+                    && matches!(
+                        filter,
+                        Predicate::Compare {
+                            op: ess_primitives::predicate::CompareOp::Eq,
+                            ..
+                        }
+                    )
+                {
+                    diagnostic
+                        .message
+                        .push_str("; this equality selects nothing whatever the system does");
+                }
+                errors.push(diagnostic);
+            }
+            read_params = checked.parameters;
+        }
+        errors.extend(self.validate_params(&read_params));
         errors.extend(self.validate_order(projected_fields));
 
         errors.into_result(())
@@ -650,37 +650,15 @@ impl ViewSpec {
     /// declared parameter no filter reads is worse than useless: every caller is made to supply it
     /// and nothing selects on it, so two different values return the same rows and the view looks
     /// parameterised to a reader who then trusts it.
-    fn validate_params(&self) -> ValidationErrors {
+    fn validate_params(&self, read: &BTreeSet<String>) -> ValidationErrors {
         let mut errors = ValidationErrors::new();
         let declared: BTreeSet<&str> = self
             .params
             .iter()
             .map(|field| field.name.as_str())
             .collect();
-        let read: BTreeSet<&str> = self
-            .filter
-            .iter()
-            .flat_map(Predicate::fact_paths)
-            .filter(|path| path.namespace() == Self::PARAM && path.segments().len() == 2)
-            .map(|path| path.segments()[1].as_str())
-            .collect();
+        let read: BTreeSet<&str> = read.iter().map(String::as_str).collect();
 
-        for name in read.difference(&declared) {
-            errors.push(
-                ValidationError::new(
-                    ValidationCode::UndeclaredReference,
-                    format!("view.{}.filter", self.name),
-                    format!(
-                        "the filter reads `param.{name}`, which `{}` does not declare; a caller \
-                         cannot supply a parameter the view never asked for",
-                        self.name
-                    ),
-                )
-                .with_hint(
-                    "declare it under `params:`, with the type the field it is compared to has",
-                ),
-            );
-        }
         for name in declared.difference(&read) {
             errors.push(
                 ValidationError::new(
@@ -699,133 +677,6 @@ impl ViewSpec {
             );
         }
         errors
-    }
-
-    /// Checks every value a filter compares against what the field it compares can hold.
-    ///
-    /// Only enumerations are checkable: they are the one type whose values the specification lists,
-    /// and the state an entity's lifecycle synthesises is one. `state == Issed` is otherwise a
-    /// filter that selects nothing, and a generated conformance scenario that can never match is
-    /// indistinguishable from one that can.
-    fn validate_filter_values(
-        &self,
-        filter: &Predicate,
-        types: &TypeRegistry,
-        source_fields: &[Field],
-    ) -> ValidationErrors {
-        let mut errors = ValidationErrors::new();
-
-        for (path, value) in compared_values(filter) {
-            // As above: a deeper path walks into a named struct, and resolving that belongs with
-            // the IR. A root the source does not have is already reported as unobservable.
-            if path.segments().len() != 1 {
-                continue;
-            }
-            let Some(field) = source_fields
-                .iter()
-                .find(|field| field.name == path.namespace())
-            else {
-                continue;
-            };
-            let Some((declared, variants)) = enumeration(types, &field.type_ref) else {
-                continue;
-            };
-
-            let compared = value.to_string();
-            if !variants.contains(&compared) {
-                errors.push(
-                    ValidationError::new(
-                        ValidationCode::UndeclaredReference,
-                        format!("view.{}.filter", self.name),
-                        format!(
-                            "`{}` compares `{}` to `{compared}`, which `{declared}` does not have, \
-                             so the filter selects nothing whatever the system does",
-                            self.name, field.name
-                        ),
-                    )
-                    .with_hint(format!("values of `{declared}`: {}", join(variants.iter()))),
-                );
-            }
-        }
-
-        errors
-    }
-}
-
-/// The enumeration a type reference resolves to, with the name to report it under.
-///
-/// `Optional` is unwrapped: a value that may be absent is still one of the same names when it is
-/// there. Anything else — a primitive, a struct, a list, a type nothing declares — has no listed
-/// values, so there is nothing to check a comparison against.
-///
-/// Recurses once per `Optional` and does not count: a [`TypeRef`] cannot nest past
-/// [`MAX_TYPE_DEPTH`](crate::types::MAX_TYPE_DEPTH), which its parser enforces. Note that it does
-/// not follow a `Named` type into its body, so a newtype chain cannot lengthen this walk either.
-fn enumeration<'a>(
-    types: &'a TypeRegistry,
-    reference: &TypeRef,
-) -> Option<(&'a QualifiedName, &'a [String])> {
-    match reference {
-        TypeRef::Optional(inner) => enumeration(types, inner),
-        TypeRef::Named(name) => {
-            let declared = types.get(name)?;
-            match &declared.body {
-                TypeBody::Enum { variants } => Some((&declared.name, variants.as_slice())),
-                _ => None,
-            }
-        }
-        TypeRef::Primitive(_) | TypeRef::List(_) | TypeRef::Map(_, _) => None,
-    }
-}
-
-/// Every fact a predicate compares to a literal, paired with that literal.
-fn compared_values(predicate: &Predicate) -> Vec<(&FactPath, &FactValue)> {
-    let mut found = Vec::new();
-    collect_compared_values(predicate, &mut Vec::new(), &mut found);
-    found
-}
-
-/// Walks a predicate, because a filter is as often `any: [...]` as a single comparison.
-///
-/// Unbounded recursion on a bounded tree: a filter is parsed by
-/// [`Predicate::from_node`](ess_primitives::predicate::Predicate::from_node) or
-/// [`parse_expression`](ess_primitives::predicate::Predicate::parse_expression), both of which refuse
-/// past [`MAX_PREDICATE_DEPTH`](ess_primitives::predicate::MAX_PREDICATE_DEPTH).
-fn collect_compared_values<'a>(
-    predicate: &'a Predicate,
-    bound: &mut Vec<&'a str>,
-    found: &mut Vec<(&'a FactPath, &'a FactValue)>,
-) {
-    match predicate {
-        Predicate::All(children) | Predicate::Any(children) => {
-            for child in children {
-                collect_compared_values(child, bound, found);
-            }
-        }
-        Predicate::Not(inner) => collect_compared_values(inner, bound, found),
-        Predicate::Compare { left, right, .. } => match (left, right) {
-            (Operand::Fact(path), Operand::Literal(value))
-            | (Operand::Literal(value), Operand::Fact(path))
-                if !bound.contains(&path.namespace()) =>
-            {
-                found.push((path, value));
-            }
-            _ => {}
-        },
-        Predicate::AnyOf { path, values } | Predicate::NoneOf { path, values } => {
-            if !bound.contains(&path.namespace()) {
-                found.extend(values.iter().map(|value| (path, value)));
-            }
-        }
-        // The body is walked, but under the binder: `slot.state == Free` is a claim about an
-        // element of a collection, not about a field of the view, and checking it against the
-        // view's own enum variants would refuse a correct filter.
-        Predicate::Forall(quantified) | Predicate::Exists(quantified) => {
-            bound.push(&quantified.bind);
-            collect_compared_values(&quantified.body, bound, found);
-            bound.pop();
-        }
-        Predicate::Always | Predicate::Never | Predicate::Truthy(_) | Predicate::Defined(_) => {}
     }
 }
 
