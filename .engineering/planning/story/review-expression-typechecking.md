@@ -19,7 +19,7 @@ scope:
   path: crates/verify/ess-conformance
 - confidence: inferred
   path: docs/design/review-expression-typechecking.md
-revision: 12
+revision: 14
 ---
 ## Finding and source
 
@@ -77,6 +77,7 @@ Derived 2026-09-05 by an independent aep-drive:story-scoper reading the complete
 - Confidence: high — cited; all ESS predicate owners, the defect and compiler/conformance paths identified. No complete normative operand/collection matrix, exact API/module names, measured baseline or precise predicate-leaf locations was established. Binding design must settle these before code.
 - Collisions: domain command/entity/type/view/spec validation, compiler IR/resolve and diagnostics, conformance input/authored/synthesis/witness. Use all three exact package tokens and the proposed design token. CLI/primitives stay evidence-only until an actual edit is established — inferred.
 
+Confirmed after implementation: the original four package/design tokens remain correct. Frozen implementation f03ecdafda8059562d781cd4c842a0fd936bc8c2 changes seventeen source/test files in ess-domain, ess-compiler and ess-conformance; independent review adds three tests/fixture files within the same tokens at 1b018bf38c49a644754f2f91be9fde2dc4c9f9df. The implementor confirms registry-aware owners, lifecycle-before-named checking, a resolved compiler adapter and separate conformance capability checks. The originally inferred safe public post-assembly mutation fixture was not feasible because Specification is sealed; the accepted correction uses module-local revalidation, real public compiler entry points and the existing sealed-state ordering test. No production testing aperture or dependency inversion was added. Source: unit implementor-report.md sections 1–2 and immutable review-result:review-boundaries-7-expression-adversary-pass-1.
 
 ## Bound Wave7 implementation
 
@@ -139,3 +140,7 @@ Root should bind the reviewed design through the store and owned design document
 ## Sealed specification verification correction
 
 Source inspection during implementation establishes that Specification has private fields, shared getters and Serialize only (spec.rs:115–213); it has no safe public post-assembly mutation or deserialization path. The earlier proposed literal mutated-Specification-to-compile_locating fixture therefore cannot be constructed by a downstream safe caller. Retain unconditional compiler revalidation at resolve.rs:744–755. Measure module-local test-only mutation inside ess-domain against Specification::validate, real public compile/compile_locating controls, compiler diagnostic propagation and the existing sealed_state revalidation-order fence. Report these as separate boundaries; do not claim an impossible public mutation case was executed. No production mutator, public test-access feature, unsafe construction or domain-to-compiler dependency is added for the fixture. This corrects the verification mechanism, not the complete-expression admission requirement.
+
+## Independent review and integration readiness
+
+Frozen implementation f03ecdafda8059562d781cd4c842a0fd936bc8c2 passed its package checks (647 to 683 cases, eleven independently measured semantic red cases corrected). Independent first review added fourteen cases and ran all 697 assigned package cases with zero failures or ignored cases; findings are empty. Its complete report is review-result:review-boundaries-7-expression-adversary-pass-1, SHA-256 40cbb59d6f5d7da1cd46e308a8c395b170b03701d901551779d1c4c4f0a755e8. Root committed the exact reviewed tests at 1b018bf38c49a644754f2f91be9fde2dc4c9f9df and verified formatting and bot identities. The integrated whole-repository gate remains required before implemented status or main publication.

@@ -27,7 +27,7 @@ scope:
   path: website/docs/reference/cli.md
 - confidence: cited
   path: website/docs/reference/formats.md
-revision: 15
+revision: 16
 ---
 ## Finding and source
 
@@ -142,3 +142,7 @@ Keep the original acceptance sentence. Add these concrete observable boundaries:
 - No external persisted ServiceInterface consumer or cross-repo byte verifier was found by the bounded local search; this does not enumerate published crates, installed binaries or users' saved files.
 - No new tests, builds, compatibility execution, publication or source edits were performed. Existing tests were inspected only.
 - Incoming source may advance again before dispatch; root must preserve the new exact source when rebasing reservations and briefs. This report does not establish remote main after the supplied e113 object.
+
+## First independent review and correction route
+
+Independent first review of frozen 633e1d9839dc0e8dae071e955f8e8af540c8a685 is preserved verbatim in review-result:review-boundaries-7-openapi-adversary-pass-1 (report SHA-256 4ac12af6456773e2698fd4a5b76e97ecd4acb68e87477c5df2957d17ef6cdda3). It executed 163 package cases: 159 passed, four failed, zero ignored. One introduced defect at crates/generate/ess-openapi/src/accounting.rs:152 accepts and erases unknown fields on integer, number and boolean schema nodes before replay equality. Actual checked library and CLI callers reach it. A fresh implementor receives the frozen diff, retained tests and target/review-boundaries-7/correction-pass-1.md because the original session ended; the existing legacy DTO/reader stays compatible. No green review or implemented status is claimed.
