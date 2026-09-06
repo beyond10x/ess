@@ -1,4 +1,4 @@
-//! Exact complete output maps frozen at generator 0.19.0 before the TypeScript target.
+//! Complete output maps frozen before TypeScript; only the truthful producer line is projected.
 
 // Historical fixtures own private helper modules. Import them intact so this
 // byte witness exercises the original plans without rewriting frozen fixtures.
@@ -20,6 +20,9 @@ mod v5;
 #[allow(dead_code)]
 #[path = "fixtures/normalization_positional.rs"]
 mod v6;
+
+#[path = "support/generator_version.rs"]
+mod generator_version;
 
 use schema_contract::realize::normalize::Plan;
 
@@ -61,7 +64,12 @@ fn complete_legacy_file_maps_are_preserved() {
                 std::fs::write(destination, source).unwrap();
             }
             let mut files = BTreeMap::new();
-            for (path, source) in target.files {
+            for (path, mut source) in target.files {
+                if path == "normalization-report.json" {
+                    source =
+                        generator_version::report_at_baseline(&source, env!("CARGO_PKG_VERSION"))
+                            .unwrap();
+                }
                 let mut digest = String::new();
                 for byte in Sha256::digest(source.as_bytes()) {
                     write!(digest, "{byte:02x}").unwrap();

@@ -7,7 +7,7 @@ title: Release ESS normalization followups as 0.20.0 and qualify IVR adoption
 relations:
 - depends_on: story:typescript-normalization-target
 - serves: vision:O2
-revision: 4
+revision: 5
 ---
 ## Purpose and authority
 
@@ -59,3 +59,7 @@ At coordinator ba3c962c5862437be0822086b35cd3b7e321ec86, the reviewed four test 
 The actual 0.19 generator's raw four-map structural payload hashes to the original 02312f45fadac5e16b54aa1fce13d8f68cd8aaf14336a2180b85cd923811c79f. Every report and declaration header carries 0.19.0 before projection. All ten raw normalization maps were retained and independently checked against the qualified 172-entry witness: exactly ten report expectations move from their previously reproduced placeholder representation to raw historical report hashes; all 162 other expectations remain unchanged. The prior scratch capture was copied before the test wrote its new canonical-map record.
 
 Exact raw old/current files, commands, exit times and source hashes are preserved under release-020-preparation/qualification-019, including qualification-result.json and the complete artifact manifest. This is pre-bump witness qualification only. Actual 0.20 generator output and the separately qualified twelve-map TypeScript witness are still pending; synthetic producer controls are not evidence of those future executions.
+
+## TypeScript twelve-map pre-bump qualification
+
+After the frozen source and independent tests were integrated at 0f2dcd71e28f852de54af3ba01c62b3b22e6cc9b, the reviewed one-file producer projection patch 88d607dd037da8dd3459a24cf7db7f1036789801da3a33aaf44cab6efd018be8 was applied. The actual complete-map test and strict scoped Clippy exited zero on unchanged 0.19.0 source. All 218 raw files across 12 Rust/Go maps match the original literal fixture, including all 12 reports carrying actual producer 0.19.0; the fixture bytes are unchanged. Raw output and exact command exits are retained in release-020-preparation/qualification-typescript019. This only qualifies the test projection before changing the actual generator version; 0.20 output and final gates remain pending.
