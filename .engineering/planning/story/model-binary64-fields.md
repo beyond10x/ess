@@ -14,7 +14,15 @@ scope:
 - confidence: cited
   path: crates/edge/ess-cli/src/main.rs
 - confidence: cited
+  path: crates/edge/ess-cli/tests/binary64_adversary.rs
+- confidence: cited
+  path: crates/edge/ess-cli/tests/binary64_count_adversary.rs
+- confidence: cited
   path: crates/edge/ess-cli/tests/binary64_publication.rs
+- confidence: cited
+  path: crates/edge/ess-cli/tests/count_writer_pass1.rs
+- confidence: cited
+  path: crates/edge/ess-cli/tests/count_writer_pass2.rs
 - confidence: cited
   path: crates/edge/ess-cli/tests/go_conformance.rs
 - confidence: cited
@@ -88,6 +96,14 @@ scope:
 - confidence: cited
   path: crates/generate/schema-contract/src/realize/normalize/target.rs
 - confidence: cited
+  path: crates/generate/schema-contract/tests/binary64_adversary.rs
+- confidence: cited
+  path: crates/generate/schema-contract/tests/fixtures/binary64_adversary.rs
+- confidence: cited
+  path: crates/generate/schema-contract/tests/fixtures/binary64_adversary_go.go.txt
+- confidence: cited
+  path: crates/generate/schema-contract/tests/fixtures/binary64_adversary_rust.rs.txt
+- confidence: cited
   path: crates/generate/schema-contract/tests/fixtures/normalization_binary64.rs
 - confidence: cited
   path: crates/generate/schema-contract/tests/fixtures/normalization_binary64_go_tests.go.txt
@@ -148,6 +164,8 @@ scope:
 - confidence: cited
   path: crates/verify/ess-conformance/tests/authored.rs
 - confidence: cited
+  path: crates/verify/ess-conformance/tests/binary64_count_adversary.rs
+- confidence: cited
   path: crates/verify/ess-conformance/tests/elapsed.rs
 - confidence: cited
   path: crates/verify/ess-conformance/tests/execution.rs
@@ -164,6 +182,8 @@ scope:
 - confidence: cited
   path: docs/design/model-binary64.md
 - confidence: cited
+  path: docs/design/review-conformance-coverage.md
+- confidence: cited
   path: docs/design/source-pinned-data-normalization.md
 - confidence: cited
   path: examples/billing-realization/tests/conformance.rs
@@ -173,7 +193,7 @@ scope:
   path: website/docs/guides/write-a-specification.md
 - confidence: cited
   path: website/docs/reference/formats.md
-revision: 11
+revision: 12
 ---
 ## Evidence
 
