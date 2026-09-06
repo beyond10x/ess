@@ -82,13 +82,12 @@ pub(super) fn rust(plan: &Plan, package: &str) -> Result<Realization, Refused> {
     ));
     let (identities, source_files) = sources(plan)?;
     files.extend(source_files);
-    let mut embedded = "//! Generated root bindings; source identities are data, never Rust identifiers.\n\npub(super) const ROOTS: &[(&str, &str, &str)] = &[\n".to_owned();
+    let mut embedded = "//! Generated root bindings; source identities are data, never Rust identifiers.\n\npub(super) const ROOTS: &[(&str, &str)] = &[\n".to_owned();
     for root in &identities {
         writeln!(
             embedded,
-            "    ({:?}, {:?}, include_str!({:?})),",
-            root.identity.bundle_digest,
-            root.identity.root,
+            "    ({:?}, include_str!({:?})),",
+            serde_json::to_string(&root.identity).expect("typed root serializes"),
             format!("../{}", root.schema_path)
         )
         .expect("String write");
@@ -118,13 +117,38 @@ pub(super) fn sources(plan: &Plan) -> Result<SourceFiles, Refused> {
     let mut identities = Vec::new();
     let mut files = BTreeMap::new();
     for root in roots {
-        let bundle = &plan.bundles[&root.bundle_digest];
-        let root_digest = source_digest(&root.root);
-        let schema_path = format!("schemas/{}-{root_digest}.schema.json", root.bundle_digest);
-        let id = format!("urn:ess:normalization:{}:{root_digest}", root.bundle_digest);
-        let schema = bundle.schema(&root.root, &id).map_err(|error| {
-            Refused(vec![finding("/roots", "target_schema", &error.to_string())])
-        })?;
+        let root_digest = source_digest(root.name());
+        let (key, schema, source_path, source) = match root {
+            Root::Bundle {
+                bundle_digest,
+                root,
+            } => {
+                let bundle = &plan.bundles[bundle_digest];
+                let id = format!("urn:ess:normalization:{bundle_digest}:{root_digest}");
+                let schema = bundle.schema(root, &id).map_err(|error| {
+                    Refused(vec![finding("/roots", "target_schema", &error.to_string())])
+                })?;
+                let source = bundle.to_json().map_err(|error| {
+                    Refused(vec![finding("/roots", "target_bundle", &error.to_string())])
+                })?;
+                (
+                    bundle_digest.clone(),
+                    schema,
+                    format!("sources/{bundle_digest}.bundle.json"),
+                    source,
+                )
+            }
+            Root::Model { model, .. } => {
+                let key = format!("model-{}", model.digest());
+                (
+                    key.clone(),
+                    super::source::model_schema(plan, root),
+                    format!("sources/model-{}.schema.json", model.projection_digest),
+                    plan.models[model].to_json(),
+                )
+            }
+        };
+        let schema_path = format!("schemas/{key}-{root_digest}.schema.json");
         let schema = format!(
             "{}\n",
             serde_json::to_string_pretty(&schema).expect("schema serializes")
@@ -135,12 +159,7 @@ pub(super) fn sources(plan: &Plan) -> Result<SourceFiles, Refused> {
             schema_digest: source_digest(&schema),
         });
         files.insert(schema_path, schema);
-        files.insert(
-            format!("sources/{}.bundle.json", root.bundle_digest),
-            bundle.to_json().map_err(|error| {
-                Refused(vec![finding("/roots", "target_bundle", &error.to_string())])
-            })?,
-        );
+        files.insert(source_path, source);
     }
     Ok((identities, files))
 }
@@ -152,7 +171,11 @@ pub(super) fn finish(
     identities: Vec<SchemaIdentity>,
 ) -> Realization {
     let report = Report {
-        format: "ess-normalization-target/1",
+        format: if plan.recipe.format == super::FORMAT_V3 {
+            "ess-normalization-target/2"
+        } else {
+            "ess-normalization-target/1"
+        },
         generator_version: env!("CARGO_PKG_VERSION"),
         configuration,
         recipe_digest: source_digest(&plan.to_json()),

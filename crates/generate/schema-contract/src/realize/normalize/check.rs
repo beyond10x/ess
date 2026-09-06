@@ -5,7 +5,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use serde_json::{json, Value};
 
 use super::{Binary64Step, Condition, Expr, Finding, NumberPath, Scope, Stage, Types};
-use crate::realize::{finding, Node, Shape};
+use crate::realize::{finding, InputIdentity, Node, Shape, UnionMode};
 
 type Result<T> = std::result::Result<T, Finding>;
 
@@ -135,8 +135,8 @@ pub(super) fn stage(
     extended: bool,
     found: &mut Vec<Finding>,
 ) {
-    let converted = from_node(input, &input.definitions[&stage.input.root], 0).and_then(|input| {
-        from_node(output, &output.definitions[&stage.output.root], 0).map(|output| (input, output))
+    let converted = from_node(input, &input.definitions[stage.input.name()], 0).and_then(|input| {
+        from_node(output, &output.definitions[stage.output.name()], 0).map(|output| (input, output))
     });
     let (input, output) = match converted {
         Ok(pair) => pair,
@@ -194,9 +194,36 @@ fn from_node(plan: &Types, node: &Node, depth: usize) -> Result<Type> {
         }
         Shape::Array { prefix, items, .. } if prefix.is_empty() => Kind::Array(Box::new(nested(items)?)),
         Shape::Union { variants, .. } => return Ok(Type::union(variants.iter().map(nested).collect::<Result<_>>()?)),
+        Shape::Intersection(terms) if matches!(plan.input, InputIdentity::Model { .. }) && model_enum(terms).is_some() => return Ok(model_enum(terms).expect("checked model enum")),
         Shape::Array { .. } | Shape::Intersection(_) => return Err(finding(&node.pointer, "unsupported_shape", "normalization requires an explicit tuple/intersection mapping; it is not flattened implicitly")),
     };
     Ok(Type::new(kind))
+}
+
+fn model_enum(terms: &[Node]) -> Option<Type> {
+    let [Node {
+        shape: Shape::Union {
+            mode: UnionMode::Enum,
+            variants,
+        },
+        ..
+    }, Node {
+        shape: Shape::String,
+        ..
+    }] = terms
+    else {
+        return None;
+    };
+    let literals = variants
+        .iter()
+        .map(|node| match &node.shape {
+            Shape::Literal(value @ Value::String(_)) => {
+                Some(Type::new(Kind::Literal(value.clone())))
+            }
+            _ => None,
+        })
+        .collect::<Option<Vec<_>>>()?;
+    Some(Type::union(literals))
 }
 
 fn limit(depth: usize, at: &str) -> Result<()> {

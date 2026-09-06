@@ -9,6 +9,102 @@ use schema_contract::bundle::{import, Bundle, Dialect};
 use schema_contract::realize::normalize::Root;
 use serde_json::{json, Value};
 
+#[path = "../../../generate/schema-contract/tests/fixtures/normalization_model.rs"]
+mod fixture_model;
+
+#[test]
+fn model_sources_are_compiled_pinned_and_protected_by_the_cli() {
+    let fixture = Fixture::new();
+    let model_path = fixture.0.join("model");
+    fs::create_dir(&model_path).unwrap();
+    fs::write(model_path.join("system.yaml"), fixture_model::SOURCE).unwrap();
+    let (_, recipe) = fixture_model::fixture();
+    fs::write(fixture.0.join("recipe.json"), recipe.to_string()).unwrap();
+    fs::write(
+        fixture.0.join("instance.json"),
+        r#"{"identifier":"x","seconds":3}"#,
+    )
+    .unwrap();
+    let invoke = |operation: &str, extra: &[&str]| {
+        Command::new(env!("CARGO_BIN_EXE_ess"))
+            .current_dir(&fixture.0)
+            .args([
+                "generate",
+                "schema",
+                operation,
+                "--recipe",
+                "recipe.json",
+                "--model",
+                "model",
+            ])
+            .args(extra)
+            .output()
+            .unwrap()
+    };
+    let checked = invoke("normalize-check", &[]);
+    assert!(checked.status.success(), "{checked:?}");
+    assert_eq!(
+        String::from_utf8(checked.stdout).unwrap(),
+        fixture_model::plan().to_json()
+    );
+    for case in fixture_model::cases().as_array().unwrap() {
+        fs::write(
+            fixture.0.join("instance.json"),
+            case["input"].as_str().unwrap(),
+        )
+        .unwrap();
+        let run = invoke(
+            "normalize-run",
+            &["--branch", "primary", "--input", "instance.json"],
+        );
+        if let Some(value) = case.get("value") {
+            assert!(run.status.success(), "{run:?}");
+            assert_eq!(
+                serde_json::from_slice::<Value>(&run.stdout).unwrap(),
+                *value
+            );
+        } else {
+            assert!(!run.status.success());
+        }
+    }
+    for target in ["rust", "go"] {
+        let mut args = vec!["--target", target, "--package", "adapter", "--out", target];
+        if target == "go" {
+            args.extend(["--module", "example.invalid/adapter"]);
+        }
+        let result = invoke("normalize-generate", &args);
+        assert!(result.status.success(), "{result:?}");
+        args.push("--check");
+        assert!(invoke("normalize-generate", &args).status.success());
+    }
+    for (operation, args) in [
+        ("normalize-check", vec!["--out", "model/recipe.json"]),
+        (
+            "normalize-generate",
+            vec![
+                "--target",
+                "rust",
+                "--package",
+                "adapter",
+                "--out",
+                "model/output",
+            ],
+        ),
+    ] {
+        assert!(!invoke(operation, &args).status.success());
+    }
+    assert!(!model_path.join("recipe.json").exists());
+    assert!(!model_path.join("output").exists());
+    fs::write(
+        model_path.join("system.yaml"),
+        fixture_model::SOURCE.replace("version: v1", "version: v2"),
+    )
+    .unwrap();
+    let stale = invoke("normalize-check", &[]);
+    assert!(!stale.status.success());
+    assert!(String::from_utf8_lossy(&stale.stderr).contains("unknown_model"));
+}
+
 struct Fixture(PathBuf);
 
 impl Fixture {

@@ -19,6 +19,14 @@ mod fixture_v2;
 #[path = "fixtures/normalization_numeric.rs"]
 mod fixture_numeric;
 
+#[path = "fixtures/normalization_model.rs"]
+mod fixture_model;
+
+#[test]
+fn standalone_rust_target_executes_model_owned_wire_records() {
+    assert_target(&fixture_model::plan(), &fixture_model::cases());
+}
+
 fn source_digest(source: &str) -> String {
     use std::fmt::Write as _;
     let mut out = String::new();
@@ -123,7 +131,15 @@ fn assert_target(plan: &Plan, cases: &Value) {
     let target = plan.rust("normalization_adapter").unwrap();
     assert_eq!(target, plan.rust("normalization_adapter").unwrap());
     let report = serde_json::to_value(&target.report).unwrap();
-    assert_eq!(report["format"], "ess-normalization-target/1");
+    let recipe: Value = serde_json::from_str(&plan.to_json()).unwrap();
+    assert_eq!(
+        report["format"],
+        if recipe["format"] == "ess-normalization/3" {
+            "ess-normalization-target/2"
+        } else {
+            "ess-normalization-target/1"
+        }
+    );
     assert_eq!(report["recipe_digest"], source_digest(&plan.to_json()));
     for (path, digest) in report["files"].as_object().unwrap() {
         assert_eq!(digest, &source_digest(&target.files[path]));

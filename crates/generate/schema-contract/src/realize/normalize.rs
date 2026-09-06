@@ -7,17 +7,18 @@ mod go_target;
 mod input;
 mod numeric;
 mod recipe;
+mod source;
 mod target;
 
 use serde_json::Value;
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::BTreeMap;
 
 use super::{finding, path, Finding, Plan as Types, Refused};
 use crate::bundle::{source_digest, Bundle};
 use recipe::unique_map;
 pub use recipe::{
-    Binary64Inputs, Binary64Range, Binary64Step, Condition, Expr, IntegerOp, NumberPath, Overflow,
-    Recipe, Root, Scope, Stage, FORMAT, FORMAT_V2,
+    Binary64Inputs, Binary64Range, Binary64Step, Condition, Expr, IntegerOp, ModelIdentity,
+    NumberPath, Overflow, Recipe, Root, Scope, Stage, FORMAT, FORMAT_V2, FORMAT_V3,
 };
 pub use target::{Realization, Report};
 
@@ -27,10 +28,49 @@ impl Root {
         bundle: &Bundle,
         root: impl Into<String>,
     ) -> Result<Self, crate::bundle::ImportError> {
-        Ok(Self {
+        Ok(Self::Bundle {
             bundle_digest: source_digest(&bundle.to_json()?),
             root: root.into(),
         })
+    }
+}
+
+impl Recipe {
+    fn envelope_findings(&self) -> Vec<Finding> {
+        let mut found = Vec::new();
+        if ![FORMAT, FORMAT_V2, FORMAT_V3].contains(&self.format.as_str()) {
+            found.push(finding(
+                "/format",
+                "recipe_format",
+                "unsupported normalization format",
+            ));
+        }
+        if self.branches.is_empty() {
+            found.push(finding(
+                "/branches",
+                "empty_dispatch",
+                "declare at least one dispatch branch",
+            ));
+        }
+        if let Some(paths) = &self.binary64_inputs {
+            if self.format == FORMAT {
+                found.push(finding(
+                    "/binary64_inputs",
+                    "operation_version",
+                    "numeric input declarations require ess-normalization/2",
+                ));
+            }
+            for branch in paths.keys() {
+                if !self.branches.contains_key(branch) {
+                    found.push(finding(
+                        &path("/binary64_inputs", branch),
+                        "unknown_branch",
+                        "numeric input declaration names an unknown branch",
+                    ));
+                }
+            }
+        }
+        found
     }
 }
 
@@ -39,6 +79,7 @@ impl Root {
 pub struct Plan {
     recipe: Recipe,
     bundles: BTreeMap<String, Bundle>,
+    models: BTreeMap<ModelIdentity, ess_gen::schema::ModelTypes>,
 }
 
 impl Plan {
@@ -61,7 +102,16 @@ impl Plan {
 
     /// Checks all branches before returning any executable plan.
     pub fn check(recipe: Recipe, bundles: &[Bundle]) -> Result<Self, Refused> {
-        let mut found = Vec::new();
+        Self::check_with_models(recipe, bundles, &[])
+    }
+
+    /// Check qualified bundles and sealed compiler-owned model selections together.
+    pub fn check_with_models(
+        recipe: Recipe,
+        bundles: &[Bundle],
+        models: &[ess_gen::schema::ModelTypes],
+    ) -> Result<Self, Refused> {
+        let mut found = recipe.envelope_findings();
         let mut retained = BTreeMap::new();
         for bundle in bundles {
             let bytes = bundle.to_json().map_err(|error| {
@@ -69,38 +119,10 @@ impl Plan {
             })?;
             retained.insert(source_digest(&bytes), bundle.clone());
         }
-        if recipe.format != FORMAT && recipe.format != FORMAT_V2 {
-            found.push(finding(
-                "/format",
-                "recipe_format",
-                "unsupported normalization format",
-            ));
-        }
-        if recipe.branches.is_empty() {
-            found.push(finding(
-                "/branches",
-                "empty_dispatch",
-                "declare at least one dispatch branch",
-            ));
-        }
-        if let Some(paths) = &recipe.binary64_inputs {
-            if recipe.format != FORMAT_V2 {
-                found.push(finding(
-                    "/binary64_inputs",
-                    "operation_version",
-                    "numeric input declarations require ess-normalization/2",
-                ));
-            }
-            for branch in paths.keys() {
-                if !recipe.branches.contains_key(branch) {
-                    found.push(finding(
-                        &path("/binary64_inputs", branch),
-                        "unknown_branch",
-                        "numeric input declaration names an unknown branch",
-                    ));
-                }
-            }
-        }
+        let models = models
+            .iter()
+            .map(|model| (ModelIdentity::pin(model), model.clone()))
+            .collect();
         for (name, stages) in &recipe.branches {
             let at = super::path("/branches", name);
             if stages.is_empty() {
@@ -115,10 +137,26 @@ impl Plan {
                         "input identity differs from the previous output",
                     ));
                 }
-                let input = selection(&stage.input, &retained, &format!("{at}/input"), &mut found);
-                let output = selection(
+                for (position, root) in [("input", &stage.input), ("output", &stage.output)] {
+                    if matches!(root, Root::Model { .. }) && recipe.format != FORMAT_V3 {
+                        found.push(finding(
+                            &format!("{at}/{position}"),
+                            "root_version",
+                            "model roots require ess-normalization/3",
+                        ));
+                    }
+                }
+                let input = source::selection(
+                    &stage.input,
+                    &retained,
+                    &models,
+                    &format!("{at}/input"),
+                    &mut found,
+                );
+                let output = source::selection(
                     &stage.output,
                     &retained,
+                    &models,
                     &format!("{at}/output"),
                     &mut found,
                 );
@@ -127,7 +165,7 @@ impl Plan {
                         check::input_numbers(
                             recipe.binary64_paths(name),
                             &input,
-                            &stage.input.root,
+                            stage.input.name(),
                             &path("/binary64_inputs", name),
                             &mut found,
                         );
@@ -137,7 +175,7 @@ impl Plan {
                         &input,
                         &output,
                         &at,
-                        recipe.format == FORMAT_V2,
+                        recipe.format != FORMAT,
                         &mut found,
                     );
                 }
@@ -149,6 +187,7 @@ impl Plan {
         Ok(Self {
             recipe,
             bundles: retained,
+            models,
         })
     }
 
@@ -188,8 +227,15 @@ impl Plan {
     }
 
     fn validate(&self, root: &Root, value: &Value, at: &str) -> Result<(), Refused> {
-        let found = self.bundles[&root.bundle_digest]
-            .validate(&root.root, value)
+        let Root::Bundle {
+            bundle_digest,
+            root: name,
+        } = root
+        else {
+            return source::validate_model(self, root, value, at);
+        };
+        let found = self.bundles[bundle_digest]
+            .validate(name, value)
             .map_err(|error| Refused(vec![finding(at, "schema_validation", &error.to_string())]))?;
         if found.is_empty() {
             return Ok(());
@@ -206,34 +252,5 @@ impl Plan {
                 })
                 .collect(),
         ))
-    }
-}
-
-fn selection(
-    root: &Root,
-    bundles: &BTreeMap<String, Bundle>,
-    at: &str,
-    found: &mut Vec<Finding>,
-) -> Option<Types> {
-    let Some(bundle) = bundles.get(&root.bundle_digest) else {
-        found.push(finding(
-            at,
-            "unknown_bundle",
-            "no supplied checked bundle has this canonical digest",
-        ));
-        return None;
-    };
-    match Types::from_bundle(bundle, &BTreeSet::from([root.root.clone()])) {
-        Ok(plan) => Some(plan),
-        Err(errors) => {
-            found.extend(errors.0.into_iter().map(|error| {
-                finding(
-                    at,
-                    "root_selection",
-                    &format!("{}: {}", error.pointer, error.detail),
-                )
-            }));
-            None
-        }
     }
 }

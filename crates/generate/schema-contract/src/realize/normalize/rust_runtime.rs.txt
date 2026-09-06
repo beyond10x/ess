@@ -26,11 +26,13 @@ impl Normalizer {
     pub fn new() -> Result<Self, Refused> {
         let recipe: Recipe = serde_json::from_str(include_str!("../source.recipe.json"))
             .map_err(|_| Refused(vec![finding("/", "target_recipe", "embedded recipe is invalid")]))?;
-        if recipe.format != recipe::FORMAT && recipe.format != recipe::FORMAT_V2 {
+        if ![recipe::FORMAT, recipe::FORMAT_V2, recipe::FORMAT_V3].contains(&recipe.format.as_str()) {
             return Err(Refused(vec![finding("/format", "recipe_format", "unsupported normalization format")]));
         }
         let mut validators = BTreeMap::new();
-        for (bundle_digest, root, schema) in schemas::ROOTS {
+        for (identity, schema) in schemas::ROOTS {
+            let root: Root = serde_json::from_str(identity)
+                .map_err(|_| Refused(vec![finding("/roots", "target_root", "embedded root identity is invalid")]))?;
             let schema: Value = serde_json::from_str(schema)
                 .map_err(|_| Refused(vec![finding("/roots", "target_schema", "embedded schema is invalid")]))?;
             let validator = jsonschema::options()
@@ -38,7 +40,7 @@ impl Normalizer {
                 .should_validate_formats(false)
                 .build(&schema)
                 .map_err(|_| Refused(vec![finding("/roots", "target_schema", "embedded schema cannot be compiled")]))?;
-            validators.insert(Root { bundle_digest: (*bundle_digest).to_owned(), root: (*root).to_owned() }, validator);
+            validators.insert(root, validator);
         }
         Ok(Self { recipe, validators })
     }

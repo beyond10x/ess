@@ -7,16 +7,20 @@ use std::process::ExitCode;
 use anyhow::{bail, Context, Result};
 use clap::{Args, ValueEnum};
 use schema_contract::bundle::Bundle;
-use schema_contract::realize::normalize::Plan;
+use schema_contract::realize::normalize::{Plan, Recipe, Root};
 
 #[derive(Debug, Args)]
+#[command(group(clap::ArgGroup::new("normalization_sources").required(true).multiple(true).args(["bundle", "model"])))]
 pub struct Sources {
-    /// Authored ess-normalization/1 or /2 recipe; every branch is checked first.
+    /// Authored ess-normalization/1, /2 or /3 recipe; every branch is checked first.
     #[arg(long)]
     recipe: PathBuf,
     /// Replay-checked source bundles referenced by canonical digest. Repeat as needed.
-    #[arg(long, required = true)]
+    #[arg(long)]
     bundle: Vec<PathBuf>,
+    /// Compile a model specification and recheck its pinned selections. Repeat as needed.
+    #[arg(long)]
+    model: Vec<PathBuf>,
 }
 
 #[derive(Debug, Args)]
@@ -82,12 +86,40 @@ impl Sources {
                     .with_context(|| format!("checking bundle {}", path.display()))
             })
             .collect::<Result<Vec<_>>>()?;
-        Plan::read(&read(&self.recipe)?, &bundles)
+        let recipe: Recipe = serde_json::from_str(&read(&self.recipe)?)
+            .with_context(|| format!("reading normalization recipe {}", self.recipe.display()))?;
+        let identities = recipe
+            .branches
+            .values()
+            .flatten()
+            .flat_map(|stage| [&stage.input, &stage.output])
+            .filter_map(|root| match root {
+                Root::Model { model, .. } => Some(model),
+                Root::Bundle { .. } => None,
+            })
+            .collect::<std::collections::BTreeSet<_>>();
+        let mut models = Vec::new();
+        for path in &self.model {
+            let Ok((ir, _)) = crate::resolved(path, crate::Format::Text)? else {
+                bail!("model specification {} did not compile", path.display());
+            };
+            for identity in identities.iter().filter(|identity| {
+                identity.system == ir.system().to_string()
+                    && identity.specification_version == ir.version().to_string()
+            }) {
+                let selection = ess_gen::schema::ModelTypes::select(&ir, &identity.roots).map_err(
+                    |errors| anyhow::anyhow!("model selection {}: {errors:?}", path.display()),
+                )?;
+                models.push(selection);
+            }
+        }
+        Plan::check_with_models(recipe, &bundles, &models)
             .with_context(|| format!("checking normalization recipe {}", self.recipe.display()))
     }
 
     fn paths(&self) -> impl Iterator<Item = &Path> {
-        std::iter::once(self.recipe.as_path()).chain(self.bundle.iter().map(PathBuf::as_path))
+        std::iter::once(self.recipe.as_path())
+            .chain(self.bundle.iter().chain(&self.model).map(PathBuf::as_path))
     }
 }
 
@@ -137,8 +169,10 @@ pub fn generate(args: &GenerateArgs) -> Result<ExitCode> {
     )?;
     for input in args.sources.paths() {
         let input = fs::canonicalize(input)?;
-        if generated.files.keys().any(|path| root.join(path) == input) {
-            bail!("normalization output must not replace a recipe or bundle input");
+        if (input.is_dir() && root.starts_with(&input))
+            || generated.files.keys().any(|path| root.join(path) == input)
+        {
+            bail!("normalization output must not replace a recipe or bundle input, or reside within a model input");
         }
     }
     if args.check {
@@ -196,8 +230,9 @@ fn emit<'a>(
     if let Some(output) = output {
         let destination = crate::preflight_named_output(output)?;
         for input in inputs {
-            if fs::canonicalize(input)? == destination {
-                bail!("normalization output must not replace a recipe, bundle or instance input");
+            let input = fs::canonicalize(input)?;
+            if input == destination || (input.is_dir() && destination.starts_with(&input)) {
+                bail!("normalization output must not replace a recipe, bundle or instance input, or reside within a model input");
             }
         }
         crate::write_preflighted_files([(destination, contents)])?;

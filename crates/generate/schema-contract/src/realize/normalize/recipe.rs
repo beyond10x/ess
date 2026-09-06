@@ -1,7 +1,7 @@
 //! Typed authored recipe; shared verbatim with standalone normalization targets.
 
 use serde::{Deserialize, Serialize};
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 /// Authored behavior envelope, independent of schema and model formats.
 pub const FORMAT: &str = "ess-normalization/1";
@@ -9,24 +9,55 @@ pub const FORMAT: &str = "ess-normalization/1";
 /// Ordered construction and explicitly declared binary64 input conversion.
 pub const FORMAT_V2: &str = "ess-normalization/2";
 
+/// Checked model-owned roots in addition to qualified bundle roots.
+pub const FORMAT_V3: &str = "ess-normalization/3";
+
 /// Exact branch names mapped to explicit paths through their external input roots.
 pub type Binary64Inputs = BTreeMap<String, Vec<Vec<NumberPath>>>;
 
-/// One replay-checked bundle root, identified without filesystem or network authority.
+/// Complete compiler-minted identity, rechecked against a supplied model selection.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
-pub struct Root {
-    /// SHA-256 of canonical qualified-bundle bytes, not only its underlying schema source.
-    pub bundle_digest: String,
-    /// An independently selectable root admitted by that bundle.
-    pub root: String,
+pub struct ModelIdentity {
+    /// Declared system identity.
+    pub system: String,
+    /// Declared specification version, not the generator version.
+    pub specification_version: String,
+    /// Source digest minted by the model projector.
+    pub source_digest: String,
+    /// Contract digest minted from the selected closure.
+    pub contract_digest: String,
+    /// Digest of the complete retained model projection.
+    pub projection_digest: String,
+    /// Explicit root admission, distinct from reachable definitions.
+    pub roots: BTreeSet<String>,
+}
+
+/// One checked source root, identified without filesystem or network authority.
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
+#[serde(untagged, deny_unknown_fields)]
+pub enum Root {
+    /// Versions 1 and 2 retain this exact persisted representation.
+    Bundle {
+        /// SHA-256 of canonical qualified-bundle bytes.
+        bundle_digest: String,
+        /// Independently selectable bundle root.
+        root: String,
+    },
+    /// Version 3 requires a sealed model projection with this complete identity.
+    Model {
+        /// Compiler-minted source and selection identity.
+        model: ModelIdentity,
+        /// Qualified root explicitly admitted by the selection.
+        root: String,
+    },
 }
 
 /// Explicit external dispatch and ordered stages. Construction alone does not validate it.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Recipe {
-    /// Must equal [`FORMAT`] or [`FORMAT_V2`]; extended operations require version 2.
+    /// Declared version; model roots require version 3, extended operations version 2 or 3.
     pub format: String,
     /// Exact external discriminator values; no trial decoding or implicit default branch.
     #[serde(deserialize_with = "unique_map")]

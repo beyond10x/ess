@@ -57,12 +57,16 @@ scope:
   path: crates/generate/schema-contract/src/realize/normalize/recipe.rs
 - confidence: cited
   path: crates/generate/schema-contract/src/realize/normalize/rust_runtime.rs.txt
+- confidence: inferred
+  path: crates/generate/schema-contract/src/realize/normalize/source.rs
 - confidence: cited
   path: crates/generate/schema-contract/src/realize/normalize/target.rs
 - confidence: cited
   path: crates/generate/schema-contract/src/realize/rust.rs
 - confidence: cited
   path: crates/generate/schema-contract/tests/fixtures/normalization_go_tests.go.txt
+- confidence: inferred
+  path: crates/generate/schema-contract/tests/fixtures/normalization_model.rs
 - confidence: cited
   path: crates/generate/schema-contract/tests/fixtures/normalization_numeric.rs
 - confidence: cited
@@ -75,6 +79,8 @@ scope:
   path: crates/generate/schema-contract/tests/normalization.rs
 - confidence: cited
   path: crates/generate/schema-contract/tests/normalization_go.rs
+- confidence: inferred
+  path: crates/generate/schema-contract/tests/normalization_model.rs
 - confidence: cited
   path: crates/generate/schema-contract/tests/normalization_numeric.rs
 - confidence: cited
@@ -89,7 +95,7 @@ scope:
   path: website/docs/reference/cli.md
 - confidence: cited
   path: website/docs/reference/formats.md
-revision: 13
+revision: 15
 ---
 ## Evidence
 
@@ -495,3 +501,51 @@ CI https://github.com/beyond10x/ess/actions/runs/34001828985. Existing Rust/Go
 generation is integrated, not yet a complete multi-target normalization release.
 No TypeScript normalization target, lexical capture support or model-owned
 normalization support is claimed by this checkpoint.
+
+## Implemented Model-Owned Normalization
+
+The binding design now defines ess-normalization/3 and its model root identity:
+system, specification version, resolved source digest, contract digest, projection
+digest and exact selected root set. Root::pin_model admits only explicitly
+selected roots; Plan::check_with_models accepts sealed ModelTypes selections
+beside checked bundles. No imported annotation or parallel authored schema is
+accepted as compiler authority. Existing bundle-only recipe bytes are unchanged.
+
+Model wire schemas retain provenance, nominal definitions, requiredness, field
+renames, constraints and optional-property semantics. The checked model's finite
+string-enum projection is handled without flattening arbitrary intersections.
+Selected model invariant statements refuse planning until an evaluator exists.
+
+Rust and Go target reports use ess-normalization-target/2 for version 3 recipes,
+retain each complete selected model projection and identify every root schema.
+Root schema identifiers include complete selection identity: distinct root sets
+that share projection bytes cannot collide in the Go validator registry. Source
+projection bytes may still be retained once when they are identical.
+
+The CLI accepts repeated --model inputs with or without bundles, compiles them,
+recreates the declared selections and checks every identity coordinate. Model
+input files and directory trees are protected from generated or canonical output.
+Stale identities, closure-only roots and old recipe versions refuse explicitly.
+
+Verification on the implemented tree:
+- Full offline task check exits zero; task site-build exits zero.
+- Six model normalization checks cover wire mappings, presence, every identity
+  coordinate, old-reader/version refusal, invariant refusal, enum membership,
+  and qualified-source-to-model normalization.
+- Native Go 1.26.5 runs old, ordered, numeric and model recipes with -race,
+  including two distinct selections sharing the same projection. Four tests pass.
+- Five Rust target tests pass, including model records and both serde_json feature
+  configurations. The old version 1 canonical recipe digest remains unchanged.
+- Twelve CLI normalization tests pass, including model acquisition, source-tree
+  protection, generation/check and stale model refusals. git diff --check is clean.
+
+An adopter's actual decoded transfer conversion now checks and runs from its
+model, and a generated standalone Rust adapter passes the source-grounded mapping
+case. Its Go generation correctly remains refused at the model Bytes base64
+pattern, tracked by go-normalization-pattern-semantics. Adopter data and evidence
+remain outside this public store.
+
+This closes model-owned normalization, not the complete parent objective.
+TypeScript normalization, selected lexical JSON capture, bounded Go pattern
+qualification and remaining source-driven mappings still require work and a
+subsequent integrated release.

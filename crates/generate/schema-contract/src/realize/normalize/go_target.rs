@@ -1,6 +1,6 @@
 //! Lower the sealed recipe to Go function bindings, never a replacement runtime parser.
 
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::BTreeSet;
 use std::fmt::Write as _;
 
 use super::{
@@ -98,29 +98,33 @@ pub(super) fn generate(plan: &Plan, package: &str, module: &str) -> Result<Reali
 }
 
 fn check_schema_support(plan: &Plan) -> Result<(), Refused> {
-    let mut selected: BTreeMap<&str, BTreeSet<String>> = BTreeMap::new();
-    for root in plan
+    let selected = plan
         .recipe
         .branches
         .values()
         .flatten()
         .flat_map(|stage| [&stage.input, &stage.output])
-    {
-        selected
-            .entry(&root.bundle_digest)
-            .or_default()
-            .insert(root.root.clone());
-    }
+        .collect::<BTreeSet<_>>();
     let mut found = BTreeSet::new();
-    for (digest, roots) in selected {
-        let types = super::Types::from_bundle(&plan.bundles[digest], &roots)?;
+    for root in selected {
+        let mut errors = Vec::new();
+        let types =
+            super::source::selection(root, &plan.bundles, &plan.models, "/roots", &mut errors)
+                .ok_or_else(|| Refused(errors.clone()))?;
+        if !errors.is_empty() {
+            return Err(Refused(errors));
+        }
+        let source = match root {
+            super::Root::Bundle { bundle_digest, .. } => format!("/bundles/{bundle_digest}"),
+            super::Root::Model { model, .. } => format!("/models/{}", model.projection_digest),
+        };
         for obligation in types
             .obligations
             .iter()
             .filter(|item| item.rule == "pattern")
         {
             found.insert(finding(
-                &format!("/bundles/{digest}{}", obligation.pointer),
+                &format!("{source}{}", obligation.pointer),
                 "go_schema_pattern",
                 "Go pattern semantics are not qualified against the reference ECMA-262 validator",
             ));
