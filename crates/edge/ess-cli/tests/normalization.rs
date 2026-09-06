@@ -575,7 +575,7 @@ fn generation_checks_refuse_before_creating_or_changing_destinations() {
             "--module",
             "example.invalid/a",
         ],
-        vec!["--target", "typescript", "--package", "adapter"],
+        vec!["--target", "javascript", "--package", "adapter"],
     ] {
         let mut args = options;
         args.extend(["--out", "missing"]);

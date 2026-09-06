@@ -1,0 +1,166 @@
+import { fail, pointer, scalarCompare, type Value } from './value.js';
+import { readNumber } from './numeric.js';
+import { encodeBase64, encodeUtf8, validUnicode } from './retained.js';
+
+interface Token {
+  readonly start: number;
+  end: number;
+  readonly kind: string;
+  readonly items: Token[];
+  readonly members: (readonly [Token, Token])[];
+}
+interface Frame { readonly token: Token; state: 'first' | 'next' | 'colon' | 'value' | 'after'; key?: Token }
+export type InputPath = readonly (string | null)[]; // null selects array items, string selects a field.
+export interface PositionalPolicy { readonly path: InputPath; readonly length: number }
+export interface Policies {
+  readonly numbers: readonly InputPath[];
+  readonly captures: readonly InputPath[];
+  readonly positions: readonly PositionalPolicy[];
+}
+export const EMPTY_POLICIES: Policies = { numbers: [], captures: [], positions: [] };
+
+// Grammar first: no recursion, Unicode conversion, numeric conversion or semantic depth checks.
+export function scanDocument(text: string): Token {
+  let i = 0;
+  const bad = (): never => fail('/input', 'input_syntax', 'expected one complete JSON value');
+  const whitespace = (): void => { while (i < text.length && /[\x20\t\r\n]/.test(text[i]!)) i++; };
+  const stringToken = (): Token => {
+    const start = i++;
+    while (i < text.length) {
+      const c = text.charCodeAt(i++);
+      if (c === 34) return { start, end: i, kind: '"', items: [], members: [] };
+      if (c < 32) bad();
+      if (c === 92) {
+        const e = text[i++];
+        if (e === 'u') {
+          for (let n = 0; n < 4; n++) {
+            if (i >= text.length || !/[0-9a-fA-F]/.test(text[i++]!)) bad();
+          }
+        } else if (e === undefined || !'"\\/bfnrt'.includes(e)) bad();
+      }
+    }
+    return bad();
+  };
+  const stack: Frame[] = [];
+  const valueToken = (): Token => {
+    whitespace();
+    const start = i, kind = text[i];
+    if (kind === '"') return stringToken();
+    if (kind === '[' || kind === '{') {
+      const token: Token = { start, end: -1, kind, items: [], members: [] };
+      i++; stack.push({ token, state: 'first' }); return token;
+    }
+    let size = 0;
+    if (kind === 'n' && text.startsWith('null', i)) size = 4;
+    else if (kind === 't' && text.startsWith('true', i)) size = 4;
+    else if (kind === 'f' && text.startsWith('false', i)) size = 5;
+    else if (kind !== undefined && /[-0-9]/.test(kind)) {
+      const match = /^-?(?:0|[1-9][0-9]*)(?:\.[0-9]+)?(?:[eE][+-]?[0-9]+)?/.exec(text.slice(i));
+      size = match?.[0].length ?? 0;
+    }
+    if (size === 0 || kind === undefined) return bad();
+    i += size;
+    return { start, end: i, kind, items: [], members: [] };
+  };
+  const root = valueToken();
+  while (stack.length !== 0) {
+    const frame = stack[stack.length - 1]!;
+    whitespace();
+    const close = frame.token.kind === '[' ? ']' : '}';
+    if ((frame.state === 'first' || frame.state === 'after') && text[i] === close) {
+      frame.token.end = ++i; stack.pop(); continue;
+    }
+    if (frame.state === 'after') {
+      if (text[i++] !== ',') bad();
+      frame.state = 'next'; continue;
+    }
+    if (frame.token.kind === '[') {
+      frame.state = 'after'; frame.token.items.push(valueToken()); continue;
+    }
+    if (frame.state === 'first' || frame.state === 'next') {
+      if (text[i] !== '"') bad();
+      frame.key = stringToken(); frame.state = 'colon'; continue;
+    }
+    if (frame.state === 'colon') {
+      if (text[i++] !== ':') bad();
+      frame.state = 'value'; continue;
+    }
+    frame.state = 'after'; frame.token.members.push([frame.key!, valueToken()]);
+  }
+  whitespace();
+  if (i !== text.length) bad();
+  return root;
+}
+function decodeString(text: string, token: Token, at: string, detail: string): string {
+  const value = JSON.parse(text.slice(token.start, token.end)) as string;
+  if (!validUnicode(value)) fail(at, 'input_syntax', detail);
+  return value;
+}
+function depthCheck(depth: number, at: string): void {
+  if (depth > 64) fail(at, 'input_depth', 'JSON input exceeds 64 levels');
+}
+export function validateToken(text: string, token: Token, at: string, depth: number, detail: string): void {
+  depthCheck(depth, at);
+  if (token.kind === '"') decodeString(text, token, at, detail);
+  for (const [key, child] of token.members) {
+    decodeString(text, key, at, detail);
+    validateToken(text, child, at, depth + 1, detail);
+  }
+  for (const child of token.items) validateToken(text, child, at, depth + 1, detail);
+}
+function descend(paths: readonly InputPath[], key: string | null): InputPath[] {
+  return paths.filter(path => path.length !== 0 && path[0] === key).map(path => path.slice(1));
+}
+function childPolicies(policies: Policies, key: string | null): Policies {
+  return { numbers: descend(policies.numbers, key), captures: descend(policies.captures, key),
+    positions: policies.positions.filter(p => p.path.length !== 0 && p.path[0] === key)
+      .map(p => ({ path: p.path.slice(1), length: p.length })) };
+}
+function preparePositional(text: string, token: Token, at: string, depth: number, length: number): Value[] {
+  if (token.kind !== '[' && token.kind !== 'n')
+    fail(at, 'positional_input_type', 'fixed_string_array requires an array or null');
+  const out: Value[] = [];
+  for (let index = 0; index < token.items.length; index++) {
+    const child = token.items[index]!, location = at + '/' + index;
+    if (index >= length) {
+      validateToken(text, child, location, depth + 1, 'discarded positional token contains invalid Unicode');
+      continue;
+    }
+    depthCheck(depth + 1, location);
+    if (child.kind === 'n') out.push('');
+    else if (child.kind === '"') out.push(decodeString(text, child, location, 'positional string contains invalid Unicode'));
+    else fail(location, 'positional_element_type', 'fixed_string_array element must be a string or null');
+  }
+  while (out.length < length) out.push('');
+  return out;
+}
+function decode(text: string, token: Token, at: string, depth: number, policies: Policies): Value {
+  if (policies.captures.some(p => p.length === 0)) {
+    validateToken(text, token, at, depth, 'captured JSON token contains invalid Unicode');
+    return encodeBase64(encodeUtf8(text.slice(token.start, token.end)));
+  }
+  depthCheck(depth, at);
+  const positional = policies.positions.find(p => p.path.length === 0);
+  if (positional !== undefined) return preparePositional(text, token, at, depth, positional.length);
+  if (token.kind === '{') {
+    const members = new Map<string, Token>();
+    for (const [rawKey, child] of token.members) {
+      const key = decodeString(text, rawKey, at, 'JSON object keys must be unique');
+      if (members.has(key)) fail(at, 'input_syntax', 'JSON object keys must be unique');
+      members.set(key, child);
+    }
+    const out = new Map<string, Value>();
+    for (const key of [...members.keys()].sort(scalarCompare))
+      out.set(key, decode(text, members.get(key)!, pointer(at, key), depth + 1, childPolicies(policies, key)));
+    return out;
+  }
+  if (token.kind === '[') return token.items.map((child, index) =>
+    decode(text, child, at + '/' + index, depth + 1, childPolicies(policies, null)));
+  if (/[-0-9]/.test(token.kind))
+    return readNumber(text.slice(token.start, token.end), policies.numbers.some(p => p.length === 0), at);
+  if (token.kind === '"') return decodeString(text, token, at, 'invalid JSON scalar');
+  return token.kind === 'n' ? null : token.kind === 't';
+}
+export function parseInput(text: string, policies: Policies): Value {
+  return decode(text, scanDocument(text), '/input', 0, policies);
+}

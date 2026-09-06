@@ -53,6 +53,8 @@ pub enum Target {
     Rust,
     /// Standalone Go library with checked operation bindings.
     Go,
+    /// Standalone ES2022 library with exact JSON-text execution.
+    Typescript,
 }
 
 #[derive(Debug, Args)]
@@ -65,7 +67,7 @@ pub struct GenerateArgs {
     /// Native library package identity.
     #[arg(long)]
     package: String,
-    /// Go module identity; required for Go and refused for Rust.
+    /// Go module identity; required for Go and refused for other targets.
     #[arg(long)]
     module: Option<String>,
     /// Directory for generated library, source inputs and provenance report.
@@ -146,6 +148,12 @@ pub fn run(args: &RunArgs) -> Result<ExitCode> {
 pub fn generate(args: &GenerateArgs) -> Result<ExitCode> {
     let plan = args.sources.plan()?;
     let generated = match args.target {
+        Target::Typescript => {
+            if args.module.is_some() {
+                bail!("--module is only supported for the Go target");
+            }
+            plan.typescript(&args.package)?
+        }
         Target::Rust => {
             if args.module.is_some() {
                 bail!("--module is only supported for the Go target");

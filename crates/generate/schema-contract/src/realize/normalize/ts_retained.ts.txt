@@ -1,0 +1,57 @@
+import { fail } from './value.js';
+
+const ALPHABET = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/';
+// Full shape matching deliberately avoids JavaScript's permissive terminal `$`.
+export function base64Shape(text: string): boolean {
+  if (text.length % 4 !== 0) return false;
+  const padding = text.endsWith('==') ? 2 : text.endsWith('=') ? 1 : 0;
+  const length = text.length - padding;
+  for (let i = 0; i < length; i++) if (!ALPHABET.includes(text[i]!)) return false;
+  return padding === 0 || (length >= 2 && length % 4 === 4 - padding);
+}
+export function encodeBase64(bytes: Uint8Array): string {
+  const out: string[] = [];
+  for (let i = 0; i < bytes.length; i += 3) {
+    const a = bytes[i]!, b = bytes[i + 1] ?? 0, c = bytes[i + 2] ?? 0;
+    out.push(ALPHABET[a >> 2]!, ALPHABET[((a & 3) << 4) | (b >> 4)]!,
+      i + 1 < bytes.length ? ALPHABET[((b & 15) << 2) | (c >> 6)]! : '=',
+      i + 2 < bytes.length ? ALPHABET[c & 63]! : '=');
+  }
+  return out.join('');
+}
+export function validUnicode(text: string): boolean {
+  for (let i = 0; i < text.length; i++) {
+    const c = text.charCodeAt(i);
+    if (c >= 0xd800 && c <= 0xdbff) {
+      const next = text.charCodeAt(++i);
+      if (!(next >= 0xdc00 && next <= 0xdfff)) return false;
+    } else if (c >= 0xdc00 && c <= 0xdfff) return false;
+  }
+  return true;
+}
+export function encodeUtf8(text: string): Uint8Array {
+  if (!validUnicode(text)) throw new Error('Unicode must be validated before encoding');
+  return new TextEncoder().encode(text);
+}
+export function decodeUtf8(bytes: Uint8Array): string {
+  try {
+    // ignoreBOM=true means treat a BOM as a character, preserving the JSON boundary.
+    return new TextDecoder('utf-8', { fatal: true, ignoreBOM: true }).decode(bytes);
+  } catch { return fail('/input', 'input_utf8', 'retained JSON bytes must be UTF-8'); }
+}
+export function decodeBase64Json(text: string): string {
+  if (!base64Shape(text)) fail('/input', 'input_base64', 'expected canonical standard base64');
+  const padding = text.endsWith('==') ? 2 : text.endsWith('=') ? 1 : 0;
+  const bytes = new Uint8Array(text.length / 4 * 3 - padding);
+  let at = 0;
+  for (let i = 0; i < text.length; i += 4) {
+    const a = ALPHABET.indexOf(text[i]!), b = ALPHABET.indexOf(text[i + 1]!);
+    const c = Math.max(0, ALPHABET.indexOf(text[i + 2]!));
+    const d = Math.max(0, ALPHABET.indexOf(text[i + 3]!));
+    bytes[at++] = (a << 2) | (b >> 4);
+    if (at < bytes.length) bytes[at++] = (b << 4) | (c >> 2);
+    if (at < bytes.length) bytes[at++] = (c << 6) | d;
+  }
+  if (encodeBase64(bytes) !== text) fail('/input', 'input_base64', 'expected canonical standard base64');
+  return decodeUtf8(bytes);
+}

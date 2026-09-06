@@ -1,0 +1,115 @@
+import { fail, type Value } from './value.js';
+
+const MIN = -(1n << 63n), MAX = (1n << 63n) - 1n, UMAX = (1n << 64n) - 1n;
+const EMIN = -(1n << 127n), EMAX = (1n << 127n) - 1n;
+export function fromBits(bits: bigint): number {
+  const view = new DataView(new ArrayBuffer(8));
+  view.setBigUint64(0, bits, false);
+  return view.getFloat64(0, false);
+}
+export function bits(value: number): bigint {
+  const view = new DataView(new ArrayBuffer(8));
+  view.setFloat64(0, value, false);
+  return view.getBigUint64(0, false);
+}
+function boundedInteger(text: string, low: bigint, high: bigint): bigint | undefined {
+  const negative = text[0] === '-';
+  const digits = text.replace(/^[+-]/, '').replace(/^0+/, '') || '0';
+  // Guard lexical magnitude before constructing a bigint from untrusted text.
+  const bound = (negative ? -low : high).toString();
+  if (digits.length > bound.length || (digits.length === bound.length && digits > bound)) return undefined;
+  const n = BigInt((negative ? '-' : '') + digits);
+  return n < low || n > high ? undefined : n;
+}
+export function decimalKey(text: string): string | undefined {
+  const negative = text[0] === '-';
+  const [mantissa, exponent = '0'] = text.replace(/^-/, '').split(/[eE]/);
+  const [whole, fraction = ''] = mantissa!.split('.');
+  const digits = (whole! + fraction).replace(/^0+/, '');
+  if (digits.length === 0) return '0';
+  const trimmed = digits.replace(/0+$/, '');
+  let e = boundedInteger(exponent, EMIN, EMAX);
+  if (e === undefined) return undefined;
+  e -= BigInt(fraction.length);
+  if (e < EMIN) return undefined;
+  e += BigInt(digits.length - trimmed.length);
+  if (e > EMAX) return undefined;
+  return (negative ? '-' : '+') + trimmed + 'e' + e.toString();
+}
+export function readNumber(text: string, floating: boolean, at: string): bigint | number {
+  if (!floating && !/[.eE]/.test(text)) {
+    const integer = boundedInteger(text, MIN, UMAX);
+    if (integer !== undefined) return integer;
+  }
+  const value = Number(text);
+  if (!Number.isFinite(value)) fail(at, 'input_number', floating
+    ? 'JSON number is outside finite binary64 representation'
+    : 'JSON number is outside the supported representation');
+  if (!floating) {
+    const key = decimalKey(text);
+    if (key === undefined || key !== decimalKey(formatFloat(value)))
+      fail(at, 'input_number', 'JSON number cannot round-trip without precision loss');
+  }
+  return value;
+}
+export function formatFloat(value: number): string {
+  if (!Number.isFinite(value)) throw new Error('nonfinite private number');
+  if (value === 0) return Object.is(value, -0) ? '-0.0' : '0.0';
+  const sign = value < 0 ? '-' : '';
+  const [mantissa, exponent = '0'] = Math.abs(value).toString().split('e');
+  const [whole, fraction = ''] = mantissa!.split('.');
+  const all = whole! + fraction;
+  const leading = all.length - all.replace(/^0+/, '').length;
+  const digits = all.slice(leading).replace(/0+$/, '');
+  const scientific = Number(exponent) + whole!.length - leading - 1;
+  if (scientific < -5 || scientific > 15)
+    return sign + digits[0] + (digits.length > 1 ? '.' + digits.slice(1) : '')
+      + 'e' + (scientific >= 0 ? '+' : '') + scientific;
+  const point = scientific + 1;
+  if (point <= 0) return sign + '0.' + '0'.repeat(-point) + digits;
+  if (point >= digits.length) return sign + digits + '0'.repeat(point - digits.length) + '.0';
+  return sign + digits.slice(0, point) + '.' + digits.slice(point);
+}
+export function integer(value: Value, at: string): bigint {
+  if (typeof value !== 'bigint' || value < MIN || value > MAX)
+    fail(at, 'integer_representation', 'operation requires an exact integral token representable as signed 64-bit');
+  return value;
+}
+export function arithmetic(a: Value, b: Value, multiply: boolean, wrap: boolean, at: string): bigint {
+  const left = integer(a, at), right = integer(b, at);
+  const value = multiply ? left * right : left + right;
+  if (wrap) return BigInt.asIntN(64, value);
+  if (value < MIN || value > MAX) fail(at, 'integer_overflow', 'arithmetic result exceeds signed 64-bit representation');
+  return value;
+}
+export type NumericStep = readonly ['multiply' | 'minimum' | 'maximum', number];
+export function floating(value: Value, steps: readonly NumericStep[], truncate: boolean, at: string): number | bigint {
+  if (typeof value !== 'bigint' && typeof value !== 'number')
+    fail(at + '/value', 'binary64_value', 'expected a finite numeric value');
+  let n = Number(value);
+  if (!Number.isFinite(n)) fail(at + '/value', 'binary64_value', 'expected a finite numeric value');
+  for (let index = 0; index < steps.length; index++) {
+    const [op, operand] = steps[index]!;
+    n = op === 'multiply' ? n * operand : op === 'minimum' ? Math.min(n, operand) : Math.max(n, operand);
+    if (!Number.isFinite(n)) fail(at + '/steps/' + index, 'binary64_overflow', 'binary64 intermediate result is not finite');
+  }
+  if (!truncate) return n;
+  if (n < -9223372036854775808 || n >= 9223372036854775808)
+    fail(at, 'binary64_range', 'truncated binary64 value is outside signed 64-bit representation');
+  return BigInt(Math.trunc(n));
+}
+function rational(n: number): readonly [bigint, number] {
+  const b = bits(n), exponent = Number((b >> 52n) & 0x7ffn);
+  let numerator = b & ((1n << 52n) - 1n);
+  if (exponent !== 0) numerator |= 1n << 52n;
+  if ((b >> 63n) !== 0n) numerator = -numerator;
+  return [numerator, exponent === 0 ? -1074 : exponent - 1075];
+}
+export function numericCompare(a: bigint | number, b: bigint | number): number {
+  if (typeof a === typeof b) return a < b ? -1 : a > b ? 1 : 0;
+  if (typeof a === 'number') return -numericCompare(b, a);
+  const [n, e] = rational(b as number);
+  const left = e < 0 ? a << BigInt(-e) : a;
+  const right = e > 0 ? n << BigInt(e) : n;
+  return left < right ? -1 : left > right ? 1 : 0;
+}
