@@ -1,0 +1,9 @@
+{
+  "format": "ess/1",
+  "system": "shop",
+  "version": "v1",
+  "domains": [
+    "shop.cart"
+  ]
+}
+

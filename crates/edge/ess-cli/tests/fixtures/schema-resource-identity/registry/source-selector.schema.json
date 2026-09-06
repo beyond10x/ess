@@ -1,0 +1,19 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:example:ess-source-submission:1",
+  "type": "object",
+  "required": [
+    "schema",
+    "payload"
+  ],
+  "properties": {
+    "schema": {
+      "const": "urn:example:ess-source-submission:1"
+    },
+    "payload": {
+      "$ref": "urn:example:ess-source-syntax:1"
+    }
+  },
+  "additionalProperties": false
+}
+

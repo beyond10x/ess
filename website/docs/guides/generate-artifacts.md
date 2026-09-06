@@ -47,6 +47,89 @@ moves for no reason is one every reader learns to ignore.
 See [the worked example](../examples/specification-to-contracts.md) for one command's source next to
 each generated document.
 
+## Generated schemas in a local registry
+
+The generated contract schemas and `schemas/generated/ess.schema.json` have no root `$id`.
+They are usable by schema tooling, but passing either original to `ess generate schema validate`
+as a registry resource produces `missing_schema_id`. ESS does not assign them a public schema
+endpoint. To use this registry, the adopter chooses resource IDs and supplies the resources locally.
+
+This example runs from an ESS repository checkout with `ess` and `jq` installed. It reads the
+committed generated schemas and creates separate copies, adding only a root `$id` to each.
+The supplied application envelopes and instances live under
+`crates/edge/ess-cli/tests/fixtures/schema-resource-identity`:
+
+```sh
+sample=target/schema-resource-example
+fixtures=crates/edge/ess-cli/tests/fixtures/schema-resource-identity
+mkdir -p "$sample/registry" "$sample/instances"
+cp "$fixtures/registry/invoice-selector.schema.json" \
+  "$fixtures/registry/source-selector.schema.json" "$sample/registry/"
+cp "$fixtures/instances/create-invoice.json" \
+  "$fixtures/instances/ess-source.json" "$sample/instances/"
+jq --arg id urn:example:billing-create-invoice:1 '. + {"$id": $id}' \
+  generated/schema/commands/billing.invoice.CreateInvoice.schema.json \
+  > "$sample/registry/invoice-resource.schema.json"
+jq --arg id urn:example:ess-source-syntax:1 '. + {"$id": $id}' \
+  schemas/generated/ess.schema.json > "$sample/registry/source-resource.schema.json"
+ess generate schema validate "$sample/instances" --schemas "$sample/registry" --format json
+```
+
+The command exits 0 with four schema resources, two accepted instances and no issues. The accepted
+records name `urn:example:invoice-submission:1` and `urn:example:ess-source-submission:1`, with their
+selector-schema filenames. They identify the selected envelopes; the payload resources are reached
+through each envelope's `$ref`. Filenames are not registry identities.
+
+For example, `invoice-selector.schema.json` is a separate application resource:
+
+```json
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:example:invoice-submission:1",
+  "type": "object",
+  "required": ["schema", "payload"],
+  "properties": {
+    "schema": {"const": "urn:example:invoice-submission:1"},
+    "payload": {"$ref": "urn:example:billing-create-invoice:1"}
+  },
+  "additionalProperties": false
+}
+```
+
+Its instance contains exactly `schema` and `payload`. Nest the original payload value unchanged:
+injecting a selector into the strict invoice command object would violate that command schema.
+This preserves the payload's JSON value, not its original whitespace or number spelling. It is an
+application envelope example, not a universal ESS envelope or conformance-evidence format.
+
+Keep both payload resources separate from their envelopes. The syntax resource retains draft-07
+and its `#/definitions` references; the command resource retains draft 2020-12 and `#/$defs`.
+Inlining an ID-less schema under `properties.payload` would change where those root fragments
+resolve. Keep all constraints and `x-ess-*` provenance annotations when copying. Removing only the
+added `$id` recovers the original parsed schema, but the copied file has different bytes: its model
+and slice digests are not checksums of that new file.
+
+These `urn:example:` IDs illustrate an adopter's immutable logical names. Choose distinct IDs for
+payloads and envelopes, and define ownership, uniqueness, versioning and publication before sharing
+them. The CLI detects duplicate exact ID strings in the supplied registry; it supplies no historical
+immutability ledger, URI-alias equivalence guarantee, organization namespace or hosted resolver.
+All resources are compiled offline before any instance is checked. A missing reference or invalid
+registry leaves the report's `valid` list empty. Later instance failures can coexist with accepted
+instances, so an exit of 1 does not always mean that list is empty.
+
+Schema acceptance also does not assemble an ESS system. The syntax example deliberately names
+`shop.cart` without defining that domain. Its envelope validates above, while this actual semantic
+validation command exits 1 with an unsatisfied `system.domains` diagnostic:
+
+```sh
+ess specify validate --path "$fixtures/source/semantic-invalid.json" --format json
+```
+
+The separate `schema typescript` command supports a restricted structural vocabulary. The existing
+`urn:example:widget:1` fixture can be projected, but the generated command's annotations and the
+envelope's external `$ref` are refused before output is written. Do not strip annotations to make a
+projection appear supported. Adding `$id` also supplies no original-text numeric admission or
+`ModelTypes` authority; the bundle and normalization paths below keep their own contracts.
+
 ## What `site` means
 
 `site` renders the same document IR as `docs`, without parsing generated Markdown back

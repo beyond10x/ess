@@ -1,0 +1,19 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:example:invoice-submission:1",
+  "type": "object",
+  "required": [
+    "schema",
+    "payload"
+  ],
+  "properties": {
+    "schema": {
+      "const": "urn:example:invoice-submission:1"
+    },
+    "payload": {
+      "$ref": "urn:example:billing-create-invoice:1"
+    }
+  },
+  "additionalProperties": false
+}
+
