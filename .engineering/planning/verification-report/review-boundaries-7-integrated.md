@@ -7,7 +7,7 @@ title: Boundary wave 7 integrated verification
 relations:
 - verifies: story:review-expression-typechecking
 - verifies: story:review-openapi-semantic-accounting
-revision: 1
+revision: 2
 ---
 ## Subject and measured integration
 
@@ -177,5 +177,137 @@ After the complete gate, source `5d5e87fc70e021ce38477ab71c842a2063a845a3` corre
   "seconds": 16.25657180591952,
   "exit": 0,
   "log": "/home/timo/.local/state/worktree/trees/b10x/ess/wt-752828a285ba/target/review-boundaries-7/final-gate/site-build-reference-correction.log"
+}
+```
+
+## Combined gate after concurrent normalization publication
+
+Combined source `d482457a12bb299d761bdfb957743d75e9d9f67c` includes incoming reviewed normalization `60ffcb2238ffef3a48d0db9555b6f2ca709ca2f7`. Every one of the ten ordered integration lanes exited zero. The workspace runner executed 1,880 cases, zero failed or ignored, across 146 summaries. Site-build executed its browser, WASM and Docusaurus steps. Complete command output and per-step exit records are in `target/review-boundaries-7/base64-combined-gate`; the earlier 1,873-case result remains attributed to its earlier subject.
+
+The planning-only merge conflict was resolved by preserving incoming's exact 1,156-line canonical journal and replaying 23 local AEP operations. All 134 expected artifacts were byte-equal before recording this result. No review was discarded or edited, and the normalization session's new drafts remain separately owned. Both Wave 7 story implementations remain supported by this newer combined source.
+
+```json
+{
+  "subject": "d482457a12bb299d761bdfb957743d75e9d9f67c",
+  "steps": [
+    {
+      "step": "fmt-check",
+      "argv": [
+        "task",
+        "fmt-check"
+      ],
+      "started": "2026-09-06T08:09:51.742486+00:00",
+      "finished": "2026-09-06T08:09:52.979309+00:00",
+      "seconds": 1.2368389279581606,
+      "exit": 0
+    },
+    {
+      "step": "clippy",
+      "argv": [
+        "task",
+        "clippy"
+      ],
+      "started": "2026-09-06T08:09:52.979506+00:00",
+      "finished": "2026-09-06T08:09:56.475015+00:00",
+      "seconds": 3.495528078987263,
+      "exit": 0
+    },
+    {
+      "step": "test",
+      "argv": [
+        "task",
+        "test"
+      ],
+      "started": "2026-09-06T08:09:56.475327+00:00",
+      "finished": "2026-09-06T08:10:39.027567+00:00",
+      "seconds": 42.55225454492029,
+      "exit": 0,
+      "counts": {
+        "passed": 1880,
+        "failed": 0,
+        "ignored": 0,
+        "summaries": 146
+      }
+    },
+    {
+      "step": "doc-check",
+      "argv": [
+        "task",
+        "doc-check"
+      ],
+      "started": "2026-09-06T08:10:39.028378+00:00",
+      "finished": "2026-09-06T08:10:41.301416+00:00",
+      "seconds": 2.273051730939187,
+      "exit": 0
+    },
+    {
+      "step": "example-check",
+      "argv": [
+        "task",
+        "example-check"
+      ],
+      "started": "2026-09-06T08:10:41.301613+00:00",
+      "finished": "2026-09-06T08:10:46.734017+00:00",
+      "seconds": 5.432418846059591,
+      "exit": 0
+    },
+    {
+      "step": "projection-check",
+      "argv": [
+        "task",
+        "projection-check"
+      ],
+      "started": "2026-09-06T08:10:46.734230+00:00",
+      "finished": "2026-09-06T08:10:47.335246+00:00",
+      "seconds": 0.6010289900004864,
+      "exit": 0
+    },
+    {
+      "step": "release-check",
+      "argv": [
+        "task",
+        "release-check"
+      ],
+      "started": "2026-09-06T08:10:47.335456+00:00",
+      "finished": "2026-09-06T08:10:47.435928+00:00",
+      "seconds": 0.1004854430211708,
+      "exit": 0
+    },
+    {
+      "step": "action-check",
+      "argv": [
+        "task",
+        "action-check"
+      ],
+      "started": "2026-09-06T08:10:47.436153+00:00",
+      "finished": "2026-09-06T08:10:47.481661+00:00",
+      "seconds": 0.04552171495743096,
+      "exit": 0
+    },
+    {
+      "step": "site-build",
+      "argv": [
+        "task",
+        "site-build"
+      ],
+      "started": "2026-09-06T08:10:47.481888+00:00",
+      "finished": "2026-09-06T08:11:04.135840+00:00",
+      "seconds": 16.653973231907003,
+      "exit": 0
+    },
+    {
+      "step": "planning",
+      "argv": [
+        "aep",
+        "plan",
+        "artifact",
+        "validate"
+      ],
+      "started": "2026-09-06T08:11:04.136252+00:00",
+      "finished": "2026-09-06T08:11:05.721155+00:00",
+      "seconds": 1.5849185179686174,
+      "exit": 0
+    }
+  ]
 }
 ```
