@@ -1703,3 +1703,6 @@ Command: `aep artifact waves --kind story --status draft --format json`; exit 0.
 ```
 
 </details>
+
+
+Wave7 opens from publishedfadbc674, which integrates the concurrent Go normalization/CLI source and passed1768 Rust tests plus all ten gate lanes at2026-09-06T00:53:01Z. The original31-story cohort now has13 implemented, two active (F04 OpenAPI accounting and F09 expression typechecking), and16 draft. Its governed selection, exact scopes, source overlap and managed ownership are docs/plan/2026-09-06-review-boundaries-7.md. The separately approved AEP count reader is active; count producers and complete coverage remain later work.
