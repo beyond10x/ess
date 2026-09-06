@@ -1361,3 +1361,31 @@ Command: aep plan artifact waves --kind story --status draft --format json, exit
 ## Opening lifecycle
 
 The first attempted draft→active move was refused by the actual lifecycle; it wrote no transition. Root then used the admitted draft→proposed→active sequence. The initial draft wave computation remains preserved above; no refusal was bypassed.
+
+## Actual provisioned unit
+
+Openingbd6d82f0d551fcf1cc2ec2eab65aab2fe7539947 has verified bot author/committer; fmt, action, planning and diff steps each exited0 before manager provisioning. Raw argv/log/exits are target/review-boundaries-8/opening/results.json. The manager-created unit is:
+
+```json
+{
+  "id": "ess-conformance-count-writer",
+  "worktree": "/home/timo/.local/state/worktree/trees/b10x/ess/ess-conformance-count-writer",
+  "branch": "impl/ess-conformance-count-writer",
+  "base": "bd6d82f0d551fcf1cc2ec2eab65aab2fe7539947",
+  "build": "/home/timo/.local/state/worktree/trees/b10x/ess/ess-conformance-count-writer/target",
+  "scratch": "/home/timo/.local/state/worktree/trees/b10x/ess/ess-conformance-count-writer/target/review-boundaries-8",
+  "brief": "/home/timo/.local/state/worktree/trees/b10x/ess/ess-conformance-count-writer/target/review-boundaries-8/unit-brief.md",
+  "lease": "ess-review-wave8-count-writer",
+  "stage": "provisioned; brief written; ready for dispatch"
+}
+```
+
+The implementation agent count_writer_impl8 is active under that exact on-disk brief. Its first complete package baseline passed; it retained the original runtime source before edits. Both documentation support worktrees were archived and removed by reviewed exact-id cleanup; public-delivery archiveb18e9daedc737f39e4615601ebbb4bb73d1c2a075508786ead945719beaf023f remains in the user cache. Atlas shipment records are published at84cadb68. Root retains two Atlas checkouts deliberately: one clean current-main authority, and one with the already-built fence tool for the pending count-writer shipment; neither is an orphaned implementation unit.
+
+## Compatibility preparation and retained evidence
+
+Root prepared a standalone Rust harness under the AEP reader coordinator's target/ess-conformance-v2-counts/producer-compat. It uses only published AEP source APIs, original report/suite files and independently supplied expected model, exact-suite digest, selected IDs, categories/statuses and evaluation time. Its typed-envelope, checked recording, snapshot/source readback, changed-suite no-mutation refusal, missing-reader refusal and legacy-reader rejection controls passed on a clearly labeled synthetic setup fixture. The actual planning --from/--suite reader also preserved that setup's exact diagnostics in a CLI-created scratch store. Two initial harness setup defects (missing trait import and sha2 output formatting) were corrected with the original build failure retained. None of this is actual ESS producer compatibility; the implementor must first freeze real Rust/Go exports.
+
+Published AEP100fc25b0aa212df0dd549c6bc7ab869a5289eed adds only its internal shipment plan to reader source30aeef2. Root verified that sole changed path and the clean checkout; all reader/API/protocol bytes still correspond to30aeef2. Current Atlas authority84cadb68 records the reader-first shipment and the separate fence limitations.
+
+Coordinator archives are complete and verified in the ESS review user cache: Wave7 has5,364 files/SHA25656733e41fdccf34bc22c66042546c9e9be26ebc476e1c60557aa317acbdeb989; AEP reader evidence2,406 files/SHA25648da639466da4376def1c98d9f3bd912790809bae775370b95e37ff412e66f72, excluding the new in-progress producer compatibility; Atlas reader shipment22 files/SHA256be6dc7a21642e137317018fb589bdf118d7a75caf84b06432b3fb98e4f0f8007. Per-file manifests and earlier failures remain retained. Existing coordinator build directories stay assigned to their own checkouts for the continuing remediation; finished implementation/delivery unit directories are removed.
