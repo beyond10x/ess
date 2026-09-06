@@ -20,12 +20,7 @@ type numberSegment struct {
 	items bool
 }
 
-type positionalPolicy struct {
-	path   []numberSegment
-	length uint64
-}
-
-func parseInput(data []byte, paths, captures [][]numberSegment, positions []positionalPolicy) (any, error) {
+func parseInput(data []byte, paths, captures [][]numberSegment) (any, error) {
 	decoder := rawDecoder(data)
 	raw, err := decoder.ReadValue()
 	if err != nil {
@@ -35,7 +30,7 @@ func parseInput(data []byte, paths, captures [][]numberSegment, positions []posi
 	if _, err := decoder.ReadToken(); err != io.EOF {
 		return nil, refusal("/input", "input_syntax", "expected one complete JSON value")
 	}
-	return decodeInput(value, "/input", 0, paths, captures, positions)
+	return decodeInput(value, "/input", 0, paths, captures)
 }
 
 // Incremental standard-library tokens avoid jsontext.ReadValue's fixed 10000-level
@@ -106,7 +101,7 @@ func descend(paths [][]numberSegment, field string, items bool) [][]numberSegmen
 	return result
 }
 
-func decodeInput(data []byte, at string, depth int, paths, captures [][]numberSegment, positions []positionalPolicy) (any, error) {
+func decodeInput(data []byte, at string, depth int, paths, captures [][]numberSegment) (any, error) {
 	for _, path := range captures {
 		if len(path) == 0 {
 			return captureJSON(data, at, depth)
@@ -114,11 +109,6 @@ func decodeInput(data []byte, at string, depth int, paths, captures [][]numberSe
 	}
 	if depth > 64 {
 		return nil, refusal(at, "input_depth", "JSON input exceeds 64 levels")
-	}
-	for _, policy := range positions {
-		if len(policy.path) == 0 {
-			return decodePositional(data, at, depth, policy.length)
-		}
 	}
 	decoder := rawDecoder(data)
 	switch data[0] {
@@ -150,7 +140,7 @@ func decodeInput(data []byte, at string, depth int, paths, captures [][]numberSe
 		sort.Strings(keys)
 		result := make(map[string]any, len(fields))
 		for _, key := range keys {
-			value, err := decodeInput(fields[key], pointer(at, key), depth+1, descend(paths, key, false), descend(captures, key, false), descendPositions(positions, key, false))
+			value, err := decodeInput(fields[key], pointer(at, key), depth+1, descend(paths, key, false), descend(captures, key, false))
 			if err != nil {
 				return nil, err
 			}
@@ -165,7 +155,7 @@ func decodeInput(data []byte, at string, depth int, paths, captures [][]numberSe
 			if err != nil {
 				return nil, refusal(at, "input_syntax", "invalid JSON list")
 			}
-			value, err := decodeInput(raw, fmt.Sprintf("%s/%d", at, len(result)), depth+1, descend(paths, "", true), descend(captures, "", true), descendPositions(positions, "", true))
+			value, err := decodeInput(raw, fmt.Sprintf("%s/%d", at, len(result)), depth+1, descend(paths, "", true), descend(captures, "", true))
 			if err != nil {
 				return nil, err
 			}
@@ -245,63 +235,4 @@ func decimalKey(text string) string {
 	}
 	power.Add(power, big.NewInt(int64(len(digits)-len(trimmed)-fraction)))
 	return fmt.Sprintf("%t:%s:%s", negative, trimmed, power.String())
-}
-
-func descendPositions(policies []positionalPolicy, field string, items bool) []positionalPolicy {
-	result := []positionalPolicy{}
-	for _, policy := range policies {
-		path := policy.path
-		if len(path) > 0 && path[0].items == items && (items || path[0].name == field) {
-			result = append(result, positionalPolicy{path: path[1:], length: policy.length})
-		}
-	}
-	return result
-}
-
-func decodePositional(data []byte, at string, depth int, length uint64) (any, error) {
-	if data[0] != '[' && data[0] != 'n' {
-		return nil, refusal(at, "positional_input_type", "fixed_string_array requires an array or null")
-	}
-	result := []any{}
-	if data[0] == '[' {
-		decoder := rawDecoder(data)
-		_, _ = decoder.ReadToken()
-		var index uint64
-		for decoder.PeekKind() != ']' {
-			raw, err := decoder.ReadValue()
-			if err != nil {
-				return nil, refusal(at, "input_syntax", "invalid JSON list")
-			}
-			slot := fmt.Sprintf("%s/%d", at, index)
-			if index >= length {
-				if err := validateRetained(raw, slot, depth+1, "discarded positional token contains invalid Unicode"); err != nil {
-					return nil, err
-				}
-			} else {
-				if depth+1 > 64 {
-					return nil, refusal(slot, "input_depth", "JSON input exceeds 64 levels")
-				}
-				switch raw[0] {
-				case 'n':
-					result = append(result, "")
-				case '"':
-					if !raw.IsValid() {
-						return nil, refusal(slot, "input_syntax", "positional string contains invalid Unicode")
-					}
-					var value string
-					if err := json.Unmarshal(raw, &value); err != nil {
-						return nil, refusal(slot, "input_syntax", "positional string contains invalid Unicode")
-					}
-					result = append(result, value)
-				default:
-					return nil, refusal(slot, "positional_element_type", "fixed_string_array element must be a string or null")
-				}
-			}
-			index++
-		}
-	}
-	for uint64(len(result)) < length {
-		result = append(result, "")
-	}
-	return result, nil
 }

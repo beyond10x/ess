@@ -34,12 +34,7 @@ pub(super) fn decode(encoded: &str) -> Result<String, Refused> {
 }
 
 pub(super) fn capture(raw: &RawValue, at: &str, depth: usize) -> Result<String, Refused> {
-    validate(
-        raw,
-        at,
-        depth,
-        "captured JSON token contains invalid Unicode",
-    )?;
+    validate(raw, at, depth)?;
     Ok(STANDARD.encode(raw.get().as_bytes()))
 }
 
@@ -47,12 +42,7 @@ pub(super) fn capture(raw: &RawValue, at: &str, depth: usize) -> Result<String, 
 // scanner. This bounded walk checks strings and depth without parsing any number.
 // Object visitation is deliberately sequential: a later invalid key cannot hide
 // the first child's depth/Unicode failure. Duplicate keys are never collected.
-pub(super) fn validate(
-    raw: &RawValue,
-    at: &str,
-    depth: usize,
-    detail: &str,
-) -> Result<(), Refused> {
+fn validate(raw: &RawValue, at: &str, depth: usize) -> Result<(), Refused> {
     if depth > 64 {
         return Err(error(at, "input_depth", "JSON input exceeds 64 levels"));
     }
@@ -61,7 +51,6 @@ pub(super) fn validate(
             struct Object<'a> {
                 at: &'a str,
                 depth: usize,
-                detail: &'a str,
                 failure: &'a mut Option<Refused>,
             }
             impl<'de> Visitor<'de> for Object<'_> {
@@ -72,7 +61,7 @@ pub(super) fn validate(
                 fn visit_map<A: MapAccess<'de>>(self, mut map: A) -> Result<(), A::Error> {
                     while map.next_key::<String>()?.is_some() {
                         let raw = map.next_value::<Box<RawValue>>()?;
-                        if let Err(error) = validate(&raw, self.at, self.depth + 1, self.detail) {
+                        if let Err(error) = validate(&raw, self.at, self.depth + 1) {
                             *self.failure = Some(error);
                             return Err(de::Error::custom("captured token refused"));
                         }
@@ -84,28 +73,31 @@ pub(super) fn validate(
             let result = serde_json::Deserializer::from_str(raw.get()).deserialize_map(Object {
                 at,
                 depth,
-                detail,
                 failure: &mut failure,
             });
-            result.map_err(|_| failure.unwrap_or_else(|| unicode(at, detail)))
+            result.map_err(|_| failure.unwrap_or_else(|| unicode(at)))
         }
         b'[' => {
             let values: Vec<Box<RawValue>> =
-                serde_json::from_str(raw.get()).map_err(|_| unicode(at, detail))?;
+                serde_json::from_str(raw.get()).map_err(|_| unicode(at))?;
             for value in values {
-                validate(&value, at, depth + 1, detail)?;
+                validate(&value, at, depth + 1)?;
             }
             Ok(())
         }
         b'"' => serde_json::from_str::<String>(raw.get())
             .map(|_| ())
-            .map_err(|_| unicode(at, detail)),
+            .map_err(|_| unicode(at)),
         _ => Ok(()),
     }
 }
 
-fn unicode(at: &str, detail: &str) -> Refused {
-    error(at, "input_syntax", detail)
+fn unicode(at: &str) -> Refused {
+    error(
+        at,
+        "input_syntax",
+        "captured JSON token contains invalid Unicode",
+    )
 }
 
 fn error(at: &str, rule: &str, detail: &str) -> Refused {

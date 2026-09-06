@@ -1,9 +1,10 @@
 # Explicit positional-array normalization
 
 Binding decisions selected by the coordinator for
-`story:normalize-positional-array-input`. Implementation and qualification are
-pending. This document introduces no released capability and makes no claim of
-complete compatibility with a native JSON decoder.
+`story:normalize-positional-array-input`. The implementation adds the explicit
+format-6 boundary to the reference engine and generated Rust/Go libraries.
+Publication remains subject to the coordinated review and release gates. This
+profile makes no claim of complete compatibility with a native JSON decoder.
 
 The selected boundary is a freshly constructed fixed string array: missing stays
 missing, null becomes a zero array, short arrays are padded, excess values are
@@ -18,7 +19,8 @@ boundaries. The separately selected Binary64 work owns normalization format 5;
 this work follows its integration and uses **`ess-normalization/6`**, retaining
 **`ess-normalization-target/3`**. Inspection of the frozen Binary64 unit
 `bf16e504ccad68b2ee67607ba39606aadf07f627` establishes the report contract below;
-refresh those source seams after integration before implementing this extension.
+the implementation follows the integrated format-5 source and freezes the ten
+affected templates before extending them.
 
 ## Why two distinct mechanisms are necessary
 
@@ -488,8 +490,21 @@ tail or numeric-kind semantics. Native target cases exercise their actual token
 parsers, not a pre-parsed fixture substituted at the input API. Reuse the existing
 normalization harness for code generation and complete artifact accounting.
 
-These are required future checks. No test, adapter generation, release adoption
-or native parity result is claimed by this binding draft.
+These are the qualification requirements. The dedicated positional corpus,
+generated-target drivers and CLI regression exercise this contract. The native
+Rust driver runs default and arbitrary-precision serde_json builds; the explicit
+Go lane runs every text and retained-base64 case. Decoded-value provenance cases
+run in the reference and Rust APIs, since the Go library exposes text entrypoints.
+The inherited Binary64 corpus and a mixed three-stage recipe check format-6
+admission alongside the new operations. Release adoption remains a separate gate.
+
+Complete format-1 through format-5 generated file maps were captured at the same
+generator before implementation. The legacy regression includes all ten maps,
+including reports, manifests, retained recipes/sources and runtime files. The
+new freezes cover the format-5 recipe/evaluator/executor/runtimes, format-4/5
+input and retained-token sources, and the shared format-1/5 Go expression source.
+No older runtime source or reported generator identity is rewritten to claim
+compatibility.
 
 ## Implementation seams established by the public baseline
 

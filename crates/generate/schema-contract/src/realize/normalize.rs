@@ -19,8 +19,9 @@ use crate::bundle::{source_digest, Bundle};
 use recipe::unique_map;
 pub use recipe::{
     Binary64Inputs, Binary64Range, Binary64Step, Condition, Expr, IntegerOp, ModelIdentity,
-    NumberPath, Overflow, RawJsonInputs, Recipe, Root, Scope, Stage, FORMAT, FORMAT_V2, FORMAT_V3,
-    FORMAT_V4, FORMAT_V5,
+    NumberPath, Overflow, PositionalExtra, PositionalInput, PositionalInputs, PositionalKind,
+    PositionalMissing, PositionalShort, PositionalZero, RawJsonInputs, Recipe, Root, Scope, Stage,
+    FORMAT, FORMAT_V2, FORMAT_V3, FORMAT_V4, FORMAT_V5, FORMAT_V6,
 };
 pub use target::{Realization, Report};
 
@@ -40,7 +41,11 @@ impl Root {
 impl Recipe {
     fn envelope_findings(&self) -> Vec<Finding> {
         let mut found = Vec::new();
-        if ![FORMAT, FORMAT_V2, FORMAT_V3, FORMAT_V4, FORMAT_V5].contains(&self.format.as_str()) {
+        if ![
+            FORMAT, FORMAT_V2, FORMAT_V3, FORMAT_V4, FORMAT_V5, FORMAT_V6,
+        ]
+        .contains(&self.format.as_str())
+        {
             found.push(finding(
                 "/format",
                 "recipe_format",
@@ -73,7 +78,7 @@ impl Recipe {
             }
         }
         if let Some(paths) = &self.raw_json_inputs {
-            if ![FORMAT_V4, FORMAT_V5].contains(&self.format.as_str()) {
+            if ![FORMAT_V4, FORMAT_V5, FORMAT_V6].contains(&self.format.as_str()) {
                 found.push(finding(
                     "/raw_json_inputs",
                     "operation_version",
@@ -90,6 +95,25 @@ impl Recipe {
                 }
             }
         }
+        if let Some(policies) = &self.positional_inputs {
+            if self.format == FORMAT_V6 {
+                for branch in policies.keys() {
+                    if !self.branches.contains_key(branch) {
+                        found.push(finding(
+                            &path("/positional_inputs", branch),
+                            "unknown_branch",
+                            "positional input declaration names an unknown branch",
+                        ));
+                    }
+                }
+            } else {
+                found.push(finding(
+                    "/positional_inputs",
+                    "operation_version",
+                    "positional input declarations require ess-normalization/6",
+                ));
+            }
+        }
         found
     }
 }
@@ -98,6 +122,7 @@ impl Recipe {
 #[derive(Debug, Clone)]
 pub struct Plan {
     recipe: Recipe,
+    position_arities: BTreeMap<String, u64>,
     bundles: BTreeMap<String, Bundle>,
     models: BTreeMap<ModelIdentity, ess_gen::schema::ModelTypes>,
 }
@@ -132,6 +157,7 @@ impl Plan {
         models: &[ess_gen::schema::ModelTypes],
     ) -> Result<Self, Refused> {
         let mut found = recipe.envelope_findings();
+        let mut position_arities = BTreeMap::new();
         let mut retained = BTreeMap::new();
         for bundle in bundles {
             let bytes = bundle.to_json().map_err(|error| {
@@ -159,7 +185,8 @@ impl Plan {
                 }
                 for (position, root) in [("input", &stage.input), ("output", &stage.output)] {
                     if matches!(root, Root::Model { .. })
-                        && ![FORMAT_V3, FORMAT_V4, FORMAT_V5].contains(&recipe.format.as_str())
+                        && ![FORMAT_V3, FORMAT_V4, FORMAT_V5, FORMAT_V6]
+                            .contains(&recipe.format.as_str())
                     {
                         found.push(finding(
                             &format!("{at}/{position}"),
@@ -183,7 +210,7 @@ impl Plan {
                     &mut found,
                 );
                 if let (Some(input), Some(output)) = (input, output) {
-                    if recipe.format != FORMAT_V5
+                    if ![FORMAT_V5, FORMAT_V6].contains(&recipe.format.as_str())
                         && (!input.binary64.is_empty() || !output.binary64.is_empty())
                     {
                         found.push(finding(
@@ -193,23 +220,17 @@ impl Plan {
                         ));
                     }
                     if index == 0 {
-                        check::input_numbers(
-                            recipe.binary64_paths(name),
-                            &input,
-                            stage.input.name(),
-                            &path("/binary64_inputs", name),
-                            &mut found,
-                        );
-                        check::input_captures(
-                            recipe.raw_json_paths(name),
-                            recipe.binary64_paths(name),
-                            &input,
-                            stage.input.name(),
-                            &path("/raw_json_inputs", name),
-                            &mut found,
-                        );
+                        check_inputs(&recipe, name, &input, &stage.input, &mut found);
                     }
-                    check::stage(stage, &input, &output, &at, &recipe.format, &mut found);
+                    check::stage(
+                        stage,
+                        &input,
+                        &output,
+                        &at,
+                        &recipe.format,
+                        &mut found,
+                        &mut position_arities,
+                    );
                 }
             }
         }
@@ -218,6 +239,7 @@ impl Plan {
         }
         Ok(Self {
             recipe,
+            position_arities,
             bundles: retained,
             models,
         })
@@ -241,6 +263,7 @@ impl Plan {
                 input,
                 self.recipe.binary64_paths(branch),
                 self.recipe.raw_json_paths(branch),
+                self.recipe.positional_paths(branch),
             )?,
         )
     }
@@ -249,6 +272,7 @@ impl Plan {
     /// The caller owns decoding precision; use [`Self::run_json`] for raw JSON bytes.
     pub fn run(&self, branch: &str, input: &Value) -> Result<Value, Refused> {
         retained::require_text(self.recipe.raw_json_paths(branch))?;
+        input::require_positional_text(self.recipe.positional_paths(branch))?;
         if self.recipe.binary64_paths(branch).is_empty() {
             return self.run_prepared(branch, input);
         }
@@ -264,9 +288,13 @@ impl Plan {
     }
 
     fn run_prepared(&self, branch: &str, input: &Value) -> Result<Value, Refused> {
-        execute::run(&self.recipe, branch, input, |root, value, at| {
-            self.validate(root, value, at)
-        })
+        execute::run(
+            &self.recipe,
+            &self.position_arities,
+            branch,
+            input,
+            |root, value, at| self.validate(root, value, at),
+        )
     }
 
     fn validate(&self, root: &Root, value: &Value, at: &str) -> Result<(), Refused> {
@@ -295,5 +323,36 @@ impl Plan {
                 })
                 .collect(),
         ))
+    }
+}
+
+fn check_inputs(recipe: &Recipe, name: &str, input: &Types, root: &Root, found: &mut Vec<Finding>) {
+    check::input_numbers(
+        recipe.binary64_paths(name),
+        input,
+        root.name(),
+        &recipe.format,
+        &path("/binary64_inputs", name),
+        found,
+    );
+    check::input_captures(
+        recipe.raw_json_paths(name),
+        recipe.binary64_paths(name),
+        input,
+        root.name(),
+        &recipe.format,
+        &path("/raw_json_inputs", name),
+        found,
+    );
+    if recipe.format == FORMAT_V6 {
+        check::input_positions(
+            recipe.positional_paths(name),
+            recipe.raw_json_paths(name),
+            recipe.binary64_paths(name),
+            input,
+            root.name(),
+            &path("/positional_inputs", name),
+            found,
+        );
     }
 }

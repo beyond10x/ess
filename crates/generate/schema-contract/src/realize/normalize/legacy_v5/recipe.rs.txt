@@ -17,71 +17,6 @@ pub const FORMAT_V4: &str = "ess-normalization/4";
 /// Explicit finite floating construction and compiler-owned Binary64 fields.
 pub const FORMAT_V5: &str = "ess-normalization/5";
 
-/// Explicit positional input policy and checked tuple positions.
-pub const FORMAT_V6: &str = "ess-normalization/6";
-
-/// Branch-specific fixed-array source policies.
-pub type PositionalInputs = BTreeMap<String, Vec<PositionalInput>>;
-
-/// A closed, explicit freshly constructed fixed string array policy.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct PositionalInput {
-    /// Exact external wire path; an empty path selects the document root.
-    #[serde(deserialize_with = "positional_path")]
-    pub path: Vec<NumberPath>,
-    /// The bounded decoder profile.
-    pub kind: PositionalKind,
-    /// Positive checked tuple arity, before any allocation.
-    pub length: u64,
-    /// Missing selected members remain absent.
-    pub missing: PositionalMissing,
-    /// A selected null becomes a zero array.
-    pub null: PositionalZero,
-    /// Short arrays receive empty-string padding.
-    pub short: PositionalShort,
-    /// Excess tokens are lexically checked and discarded.
-    pub extra: PositionalExtra,
-    /// Consumed null slots become empty strings.
-    pub null_element: PositionalZero,
-}
-
-/// The admitted source decoder profile.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum PositionalKind {
-    /// Decode a freshly constructed fixed string array.
-    FixedStringArray,
-}
-/// Missing-member policy.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum PositionalMissing {
-    /// Preserve absence without synthesizing a member.
-    Preserve,
-}
-/// Explicit string-array zero policy.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum PositionalZero {
-    /// Use empty strings in the selected zero slots.
-    Zero,
-}
-/// Short-array policy.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum PositionalShort {
-    /// Pad consumed slots to the checked length.
-    ZeroPad,
-}
-/// Excess-token policy.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum PositionalExtra {
-    /// Lexically validate excess tokens without interpreting values.
-    Discard,
-}
-
 /// Exact branch names mapped to explicit paths through their external input roots.
 pub type Binary64Inputs = BTreeMap<String, Vec<Vec<NumberPath>>>;
 
@@ -149,23 +84,9 @@ pub struct Recipe {
         deserialize_with = "raw_inputs"
     )]
     pub raw_json_inputs: Option<RawJsonInputs>,
-    /// Version 6: fixed-array source preparation before first-stage validation.
-    #[serde(
-        default,
-        skip_serializing_if = "Option::is_none",
-        deserialize_with = "positional_inputs"
-    )]
-    pub positional_inputs: Option<PositionalInputs>,
 }
 
 impl Recipe {
-    /// The selected branch's explicit positional policies.
-    pub fn positional_paths(&self, branch: &str) -> &[PositionalInput] {
-        self.positional_inputs
-            .as_ref()
-            .and_then(|paths| paths.get(branch))
-            .map_or(&[], Vec::as_slice)
-    }
     /// The selected branch's lexical capture paths, never inferred from values or schemas.
     pub fn raw_json_paths(&self, branch: &str) -> &[Vec<NumberPath>] {
         self.raw_json_inputs
@@ -308,13 +229,6 @@ pub enum Scope {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "op", rename_all = "snake_case", deny_unknown_fields)]
 pub enum Expr {
-    /// Read a statically checked exact tuple position without source coercion.
-    Position {
-        /// Tuple operand, evaluated once; missing propagates.
-        value: Box<Expr>,
-        /// Statically bounded unsigned tuple index.
-        index: u64,
-    },
     /// JSON null, which is never the missing-value sentinel.
     Null,
     /// A boolean literal.
@@ -521,32 +435,6 @@ pub enum Condition {
         /// Child condition.
         condition: Box<Condition>,
     },
-}
-
-fn positional_path<'de, D: serde::Deserializer<'de>>(
-    deserializer: D,
-) -> Result<Vec<NumberPath>, D::Error> {
-    #[derive(Deserialize)]
-    #[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
-    enum Segment {
-        Field { name: String },
-        Items {},
-    }
-    Vec::<Segment>::deserialize(deserializer).map(|segments| {
-        segments
-            .into_iter()
-            .map(|segment| match segment {
-                Segment::Field { name } => NumberPath::Field { name },
-                Segment::Items {} => NumberPath::Items,
-            })
-            .collect()
-    })
-}
-
-fn positional_inputs<'de, D: serde::Deserializer<'de>>(
-    deserializer: D,
-) -> Result<Option<PositionalInputs>, D::Error> {
-    unique_map(deserializer).map(Some)
 }
 
 fn number_inputs<'de, D>(deserializer: D) -> Result<Option<Binary64Inputs>, D::Error>
