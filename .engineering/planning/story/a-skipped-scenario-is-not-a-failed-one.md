@@ -2,7 +2,7 @@
 format: aep.planning-md/1
 id: story:a-skipped-scenario-is-not-a-failed-one
 kind: story
-status: active
+status: implemented
 title: A conformance report counts skipped scenarios as failed
 relations:
 - decomposes: epic:review-boundary-remediation
@@ -24,7 +24,7 @@ scope:
   path: website/docs/guides/verify-conformance.md
 - confidence: cited
   path: website/docs/reference/formats.md
-revision: 20
+revision: 23
 ---
 ## What is wrong
 
@@ -120,7 +120,7 @@ Derived 2026-09-06 by independent story-scoper at ESS 1667d022ed2041342c8928250a
 - **Confidence:** high for producer/CLI/docs/AEP boundaries and now-confirmed internal capabilities/root lock — cited. The literal website/docs parent token remains inferred collision bookkeeping, not a broader implementation write grant.
 - **Would collide with:** the two Rust packages, confirmed Cargo.lock addition and cited guide/catalog paths — cited. The parent docs token remains inferred. Root owns planning, compatibility harness, shared changelog, Atlas, publication and lifecycle.
 
-Coordinator confirmation after implementation and two independent attacks: the initial root-lock and admitted-API inferences are resolved above, with their original status visible. The initial report SHA25642301e05ff1818c52b93cbb6bd287c731e7102334928f713014642f1456327bd, correction SHA256b5197b11aa13bf152a09dd03ea6d896ca1d19a485b3f2055f919c8db94796296 and manifests are the sources. All actual public prose changes remain the three assigned guide/catalog paths; raw-value support already existed. Final Go leaf-admission correction is still active; no terminal implementation or full-gate claim is made by this scope update.
+Coordinator confirmation after implementation and two independent attacks: the initial root-lock and admitted-API inferences are resolved above, with their original status visible. The initial report SHA25642301e05ff1818c52b93cbb6bd287c731e7102334928f713014642f1456327bd, correction SHA256b5197b11aa13bf152a09dd03ea6d896ca1d19a485b3f2055f919c8db94796296 and manifests are the sources. All actual public prose changes remain the three assigned guide/catalog paths; raw-value support already existed. Final Go leaf-admission correction is frozen at2d2c391. Root independently verified every inherited assertion and the complete191-input fixture, then the full integrated gate passed1,918cases on64f6f07. Actual source/report details and limits are recorded in verification-report:review-boundaries-8-integrated.
 
 ## Acceptance
 
@@ -147,3 +147,7 @@ The first independent attack at a46bd7ff46ec8553bef4f48d4021514c8f175e82 is pres
 Count-source construction must carry identity from the exact immutable admitted suite actually executed. Same provenance and selected IDs do not establish this. The opt-in producer receives an immutable execution result/capability with no unchecked construction, mutable escape or raw Deserialize. A legacy ConformanceReport clone or independently parsed DTO is not that capability. Preserve historical ConformanceReport public construction and wire bytes rather than installing a source-breaking private field there. Newly introduced, unpublished opt-in APIs may be refactored to carry the execution binding; narrowly mechanical adaptations of new count/adversary helper signatures must preserve every assertion and fixture meaning. This changes no legacy default or report wire contract.
 
 Generated Go original admission must match the accepted structural/predicate grammar and limits before target construction. A callback interrupted by Goexit is not a completed teardown and cannot support a complete report2, including when no destination is configured. Retain the actual valid quantifier, ordinary skip/returned teardown error, strictness and opaque-ID controls. No AEP reader relaxation is part of correction.
+
+## Implementation evidence
+
+Source2d2c391 integrates atbfc2c0b and passes the complete gate at64f6f07:1,918workspace cases, zero failures or ignored cases, all10recorded lanes exited0 with the exact compiler-input carry described in verification-report:review-boundaries-8-integrated. Both independent reviews are corrected and root verified the final correction without a third attack. All19actual Rust/Go producer fixtures passed the independent published AEP reader/planning/replay correspondence, including expected negative controls. Count-only unknown coverage never qualifies complete conformance; legacy defaults and bytes remain frozen. Source/public documentation publication and task-owned cleanup are recorded separately in the wave page.
