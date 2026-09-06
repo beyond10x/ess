@@ -1,6 +1,6 @@
 # ESS review boundary remediation — wave 6
 
-Standing-approved selection of two independent units serving vision:O2. Thirteen of the original31 stories are implemented and18 remain draft. Both reviewed units and the incoming normalization/2 source passed the complete combined gate at37db622. Source publication and managed cleanup are the remaining Wave6 steps. This wave does not close all seventeen findings.
+Standing-approved selection of two independent units serving vision:O2. Thirteen of the original31 stories are implemented and18 remain draft. Both reviewed units and the incoming normalization/2 source passed the complete combined gate at37db622. Source publication, live public-source correspondence and managed unit cleanup are complete. This wave does not close all seventeen findings.
 
 **Skill version 0.7.0** — aep-drive:wave. Dispatch roles are aep-drive:implementor and aep-drive:adversary; scoping uses aep-drive:story-scoper. Native plugin agent types are unavailable, so collaboration threads read the exact installed charters as the recorded adapter deviation. No model override or additional approval claim is made.
 
@@ -93,6 +93,16 @@ The collaboration harness provided no token/tool-use/wall-duration totals in its
   - review-result:review-remediation-scope-round-2 states its findings as prose only — nothing can enumerate what it found, so                  the next review starts from nowhere
 valid
 ```
+
+## Final source publication, delivery and cleanup
+
+ESS main7fe3b0c146d16e2e42a0045d9f98e6523f150cf7 was published through the bot boundary and read back from advertised main. Its direct author/committer identities were verified, and both Git parents preserve the concurrent normalization source and remediation checkpoints. The clean primary was fast-forwarded fromf0cbf56 to7fe3b0c. Both CI and documentation validation for7fe are green. No version/tag was created.
+
+The concurrent Atlas publication34001113806 completed successfully at2026-09-06T00:27:52Z and published root38905756f0bcb61e01e433fd075c7f8df3df58a5. Its exact ESS source isf0cbf56, producer33999169983, artifact9978966802, bundle SHA256a5eff493ebc4623cbc374470bc801b8db860ef9b8bb805d18ecb6b9a05bd7de3. The bundle-selected paths, manifest, changes and workflow bytes are unchanged fromf0 to7fe, so Wave6 introduced no new selected public source; the path-filtered bundler correctly did not produce a7fe artifact. Both live provenance endpoints equal the published Git bytes, source-setc6e2ce0533af590306c0b849623ae7ce2f7e61af3c75f92f6bc8c8dafd8aadf2 and provenance SHA25673fee92e43fe2874810d9e4c7de58523f8e5d08945c316c808d1613845c31b87. Source identity remainsf0; it is not relabelled as a7fe producer. The read-only terminal report is target/review-boundaries-6/source-delivery-observation/terminal-observation.md, SHA2568218fa39797570f023c79a4c13f87e28e7831b9acc12669440040172dd1b4926. Actual publication ran build and independent v2 verification; no additional full Website test gate or organization fence is claimed here. No delivery dispatch or delivery worktree was needed for this source-equivalent wave.
+
+Both units were archived completely, all target records moved to /home/timo/.cache/ess-review/2026-09-06/remediation-wave-6/retained-evidence/{review-empty-scenarios,review-execution-recovery-design}/target, leases released and worktree finish completed. The full23-assessment GC dry run was reviewed; only review-empty-scenarios and review-execution-recovery-design were applied. Both removals have advertised-main recovery proof and both paths are absent from disk and Git inventory. Both merged impl branches were deleted non-forcibly. Only the exact relocated Cargo/Go compilation/cache directories were disposed; all raw fixtures and complete archives remain. Full-target archive hashes aread1727eb846d273a7a9712c83610502c23184875cc8122c1320ffcb79b3517e3 and06ec26f7dc2b3ac035567811cf573f72aa63bb7eb95e07e087c749663d4dd676, with tar byte-comparison0. unit-cleanup-plan.json, gc-dry-run.json, gc-apply.json and cleanup-completion.json retain the actual decisions/results. Other owners' eligible trees and the shared compiler cache were untouched.
+
+Wave6 is complete. The reusable ESS coordinator and current Atlas authority remain required for the overall remediation. The AEP count reader and its Atlas governance companion are active, separately leased work;13 original stories are implemented and18 remain draft. The count writer and recovery implementation obligation remain open.
 
 ## Complete draft computation
 
