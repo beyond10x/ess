@@ -114,15 +114,17 @@ cases. The new scratch mutation check also executed one repeated passing child c
 one expected child failure; that deliberate mutation is not a defect in the unit. Downstream
 private constructor/field probes refused with E0624/E0451, and the selected descriptor compiled.
 The payload-dropping mutation failed the unchanged fixture's exact-byte assertion. Package
-formatting, strict Clippy and retained-byte checks passed. No correction or second attack was
-needed. Root retained both added cases in bot commitd65b6281339c2ba257d726c16a24dbb77d9def77.
+formatting, strict Clippy and retained-byte checks passed. This first attack found no correction
+to request. Root retained both added cases in bot commitd65b6281339c2ba257d726c16a24dbb77d9def77.
 Its scratch is the unit's
 target/review-boundaries-9/adversary-pass-1 with TMPDIR beneath it; its build remains the unit's
 target and it reuses the existing unit-owned Cargo home. The source implementor relinquished
 all writes before dispatch; the adversary relinquished its writes on return. Root retains
 planning, integration, full gates and public delivery.
 
-The AEP coverage reader continues in its assigned unit. Its separate Rust correspondence helper
+The AEP coverage reader is frozen at48efe3783b559caf17f7d70510935e253d8b3d6f and its first
+source adversary is running. Its final five-package run passed1360 cases,0failed/ignored,
+65 summaries. Its separate Rust correspondence helper
 has setup-compiled only; root verified all22 preparation-manifest entries. No helper execution,
 actual suite5 writer output or producer correspondence is claimed.
 
@@ -145,8 +147,49 @@ directory. No external scratch is assigned. The live lease is ess-review-wave9-c
 Root wrote the complete unit-brief.md and copied actual9-case baseline/source-scope evidence
 into that scratch. Agent expression_review_resume implements this unit under
 aep-drive:implementor0.8.0; the later adversary is a different writer. Current stage:
-implementation and first attack complete, green unit ready for integration. Root retains all
+implementation and both attacks complete, corrected unit ready for final integration. Root retains all
 integration/publication authority. The unit's private Cargo registry copy is
 target/review-boundaries-9/cargo-home, measured1,830,384,812bytes; reflinks were unsupported and
 the implementor used an ordinary copy. A missing external timer was a second setup failure;
 neither is a failed runtime case. No unit files were written outside its managed worktree.
+
+## Integration and command correction
+
+The first integration merge d565eb0206e0139da9e3ab6ad89aacac3c373927 passed every declared
+Taskfile lane and site-build, plus planning validation:10 direct exits0. The test lane executed
+1948 cases,0failed/ignored,163 summaries in97.433seconds. The complete run lasted from
+2026-09-06T13:41:28.957Z to13:44:08.957Z; all tracked source bytes remained unchanged.
+Raw commands, statuses, source manifests and log hashes are retained in
+target/review-boundaries-9/gate-d565eb0206e0. This run covers that commit's inputs.
+
+Root subsequently executed the new copyable compose example against an absent output parent.
+It exited1 because that parent did not exist. The original observation is retained in
+verification-report:composition-cli-example-first-check and the command scratch. The implementor
+added exactly `mkdir -p target/composition-example` before the invocation; no Rust or fixture
+changed. Corrected unit commit75df9e6d41202dd007c78c0dd116bda371451b04 has both bot identities.
+The correction report SHA256 is aa7d340e5d6bd0f47d7338d2620ac164e698965660662d534fd65b3cca5b00c6.
+Using the gated binary with unchanged decisive sources, the corrected command exited0 and all
+three emitted client artifacts plus the companion plan matched the retained corpus.
+
+Final source attack2 found no remaining defect. Its immutable report is
+review-result:composition-contract-adversary-pass-2, SHA256
+2717092c4adfd88d8855d3a00c88abf1bbef97b1617eb7d1764b50b49d9bf6d6. Its evidence manifest SHA256
+is efde4b6fa7fe995238c3ddaad947d53d1a4c4b1c310c5b19be81a994be49aacc; root verified every entry.
+Two predeclared actual CLI invocations exercised fresh success and conflicting-destination
+refusal before companion writes. No package or child suites were rerun in that one-line review;
+the inherited12 package,3 distinct child and1948 integration cases remain separately attributed.
+Its diff is empty, all source/fixture hashes remain unchanged and it relinquished every write.
+The two-review findings ledger has no carried, new or resolved findings. No third attack and no
+fabricated fixed outcome are needed. Final changed-input gates and public delivery remain pending.
+
+## Website delivery checkout
+
+The manager-created support id ess-wave9-website-verification is detached at the effective
+Atlas-pinned Website runtime fc4571534765c098ed861bc326da4d3da0d1df63. Its worktree is
+/home/timo/.local/state/worktree/trees/b10x/website/ess-wave9-website-verification, its build and
+scratch root is target/review-boundaries-9, and TMPDIR/npm cache are beneath that scratch.
+Lease ess-review-wave9-website covers this task-owned path. Root read this exact AGENTS.md.
+Node24 `npm ci --ignore-scripts` exited0 in17.742seconds, preserving package and lock hashes;
+the full log and result are npm-ci.log/json in that scratch. This is preparation, not a Website
+gate or production-artifact verification. Production delivery must bind the published ESS commit,
+the exact Website runtime and Docs System1c8c31697e87235dda8bec9467264b22a7fa0c95.
