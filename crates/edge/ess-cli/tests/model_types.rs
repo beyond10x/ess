@@ -143,3 +143,46 @@ fn root_selection_and_output_refusals_preserve_existing_files() {
     );
     assert!(!fixture.0.join("out/source.schema.json").exists());
 }
+
+#[test]
+fn all_type_binary64_libraries_publish_finite_codecs_with_atomic_preflight() {
+    let fixture = Fixture::new();
+    fs::write(fixture.0.join("model/system.yaml"), "format: ess/2\nsystem: sample\nversion: v1\ndomains: [sample.float]\ndomain: sample.float\ntypes:\n  - {name: sample.float.Scalar, kind: newtype, of: Binary64}\n  - name: sample.float.Record\n    kind: struct\n    fields:\n      - {name: number, type: sample.float.Scalar}\n      - {name: values, type: 'Map<String, Binary64>'}\n").unwrap();
+    // This CLI lane checks publication and needs no ambient Go or Rust compiler.
+    for (target, extension, native) in [
+        ("rust", "rs", vec!["--package", "float_types"]),
+        (
+            "go",
+            "go",
+            vec![
+                "--package",
+                "float_types",
+                "--module",
+                "example.invalid/floattypes",
+            ],
+        ),
+    ] {
+        let mut args = vec!["--all-types", "--target", target, "--out", target];
+        args.extend(native);
+        let output = fixture.run(&args);
+        assert!(output.status.success(), "{output:?}");
+        let directory = fixture.0.join(target);
+        let report: Value =
+            serde_json::from_slice(&fs::read(directory.join("types-report.json")).unwrap())
+                .unwrap();
+        assert_eq!(report["format"], "ess-types-report/3");
+        assert_eq!(report["roots"].as_array().unwrap().len(), 2);
+        assert!(!report["obligations"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|e| e["rule"] == "model_binary64"));
+        let source = directory.join(format!("types.{extension}"));
+        assert!(fs::read_to_string(&source).unwrap().contains("EssBinary64"));
+        fs::remove_file(directory.join("types-report.json")).unwrap();
+        fs::create_dir(directory.join("types-report.json")).unwrap();
+        fs::write(&source, "sentinel").unwrap();
+        assert!(!fixture.run(&args).status.success());
+        assert_eq!(fs::read_to_string(&source).unwrap(), "sentinel");
+    }
+}
