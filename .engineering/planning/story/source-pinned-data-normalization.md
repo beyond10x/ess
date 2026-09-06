@@ -89,7 +89,7 @@ scope:
   path: website/docs/reference/cli.md
 - confidence: cited
   path: website/docs/reference/formats.md
-revision: 12
+revision: 13
 ---
 ## Evidence
 
@@ -474,3 +474,24 @@ The story remains active. TypeScript normalization and complete source-driven
 lookup/runtime/declarative-dispatch mapping remain required. Generic pattern
 support is tracked separately and must not be conflated with ordinary data fields
 whose wire name happens to be pattern. No new release is cut by this checkpoint.
+
+## Model-Owned and Lexical Input Boundaries
+
+Source-grounded adopter record mapping reproduced two further requirements:
+model-owned records cannot enter the bundle-only normalization API through the
+document importer because their model provenance/type annotations are refused;
+and selected embedded JSON token bytes remain observable beyond parsed value
+identity. These are now tracked as derived stories
+normalize-model-owned-records and raw-json-normalization-provenance.
+
+The model boundary must use checked model authority, not annotation stripping or
+a hand-maintained duplicate schema. The lexical boundary must explicitly retain
+selected token bytes and distinguish absence from null without broadening every
+JSON value into an opaque property bag. Both stories require binding design and
+format compatibility decisions before implementation.
+
+The generation CLI commit e113a65a0bac63e77cd17f43fa280a5bf56c93f9 passed remote
+CI https://github.com/beyond10x/ess/actions/runs/34001828985. Existing Rust/Go
+generation is integrated, not yet a complete multi-target normalization release.
+No TypeScript normalization target, lexical capture support or model-owned
+normalization support is claimed by this checkpoint.
