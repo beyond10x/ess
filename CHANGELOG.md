@@ -4,6 +4,13 @@
 
 ### Added
 
+- Standalone TypeScript normalization from `Plan::typescript(package)` and
+  `normalize-generate --target typescript --package NAME`. Generated ES2022 ESM
+  packages execute formats 1–6 from exact JSON text, use bigint for exact integer
+  representation, retain source pins and expose strict retained-base64 helpers.
+  The fixed schema profile refuses unsupported constraints before generation;
+  `uniqueItems: true` is explicitly outside that profile. Complete Rust/Go maps
+  retain their bytes at the same generator version.
 - Authored `ess/2` adds finite `Binary64` fields, distinct from integer and decimal
   values. Model projection retains compiler-owned numeric locations; old authored
   formats and Binary64 map keys refuse at every declared type position.
@@ -55,7 +62,6 @@
   first-match selection. The reference engine and generated Rust libraries preserve
   order, duplicate values and lazy selected-value evaluation. Version 1 refuses the
   new operations and retains its existing semantics and canonical representation.
-  TypeScript normalization remains pending.
 - Version 2 branch-specific `binary64_inputs` declarations and ordered
   `binary64_to_integer` conversion with finite multiply/minimum/maximum steps,
   nearest-even decoding and explicit out-of-range refusal. Undeclared numbers
@@ -69,13 +75,18 @@
   qualified against the pinned reference through a shared ASCII, Unicode, padding
   and long-input corpus in generated Go and Rust. Every other selected pattern
   retains its source-located `go_schema_pattern` generation refusal.
-- `ess generate schema normalize-generate` exposes Rust and Go normalization
+- `ess generate schema normalize-generate` exposes Rust, Go and TypeScript normalization
   libraries with explicit package/module identity and complete source provenance.
   It checks every branch and target before destination preflight, protects source
   inputs, and offers read-only planned-file drift checking through `--check`.
 
 ### Changed
 
+- Document the frozen normalization equality limitation: formats 5/6 compare two
+  floating representations numerically even in an admitted Integer expression.
+  TypeScript preserves reference behavior; mixed integer/floating operands retain
+  integer eligibility refusal. Static Binary64 admission and output provenance
+  remain distinct. This release does not tighten the core equality contract.
 - In the upcoming pre-1.0 minor release, `ess_synth::{go,clap}::workspace` return
   `Result<Emission, TargetFailure>`. Their new finite-codec failures use
   `ess-target-failure/2`; Rust/Web failure envelopes keep version 1 and old bytes.

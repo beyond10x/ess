@@ -5,6 +5,55 @@ TypeScript execution target. The reference remains the checked recipe and retain
 source schemas described in `source-pinned-data-normalization.md`; structural type
 aliases do not implement execution or validation.
 
+## Implemented target (unreleased)
+
+`Plan::typescript(package)` and `normalize-generate --target typescript` now emit
+and execute the contract below for recipe formats 1–6. Historical preparation
+receipts later in this document describe their named source snapshots; their
+pending-dispatch statements do not describe this implementation.
+
+The qualified package is private ESM, version `0.0.0`, with strict ES2022/NodeNext
+build inputs and only the root public export. It has no runtime dependencies.
+Package identities use one optional `@scope/` prefix, at most 214 ASCII bytes,
+and parts beginning with `a`–`z` followed by `a`–`z`, digits, `-`, `_` or `.`.
+Generation emits files without installing packages or compiling them.
+
+The existing checked Plan remains the first admission boundary. The fixed target
+profile then qualifies boolean schemas, local references and their siblings,
+`type`, `const`, `enum`, object/required/additional/property-name constraints,
+`items`, `prefixItems`, minimum/maximum and exclusive numeric bounds, Unicode
+string length, array length, `anyOf`, `oneOf` and `allOf`, plus exactly the frozen
+Bytes pattern. This keyword list does not broaden Plan shape admission. For
+example, the numeric type-plus-enum intersection
+`{"type":"number","exclusiveMinimum":-1,"exclusiveMaximum":1.0,"enum":[-0.0,0,1]}`
+and `{"allOf":[{"type":"number","minimum":1},{"type":"number","maximum":-1}]}`
+remain `normalization_shape` refusals before target selection. Ordinary string
+enums and model enums execute. Private conjunction/const validator probes are
+internal validation evidence, not public Plan/target support.
+
+`uniqueItems: true`, every unqualified pattern and any other unsupported
+constraint refuse as `typescript_schema_profile` at their original qualified
+schema pointer before Realization/report creation. `uniqueItems: false` is inert.
+Formats and content encodings are annotations; schema defaults do not execute.
+The fully hashed `schema-profile.json` states these limits. Source schemas retain
+all annotations and their original bundle/model identities.
+
+Native qualification uses Node 22.23.1 (V8 12.4.254.21-node.56) and TypeScript
+6.0.3. It executes all 3,091 shared text/helper vectors, 31 public schema controls,
+56 Unicode/prototype/lexical/arity controls, seven private schema conjunctions,
+25 equality controls and 26,966 numeric cases derived from 13,455 finite bit
+patterns plus 28 midpoint/huge-exponent tokens. Applicable runtime vectors repeat
+against the same Normalizer to check call isolation. The 13 named decoded-value
+API cases do not apply to the text-only API; none of the 3,091 text/helper cases
+is skipped. These measurements qualify the tested engine and cases, not every
+binary64 value or another engine. Equality measurements compare the reference
+and native TypeScript; no new Rust/Go native equality run is implied.
+
+Before shared edits, twelve complete Rust/Go emission maps for formats 1–6 were
+captured at actual generator 0.19.0: 218 files including exact report bytes.
+The literal witness does not rewrite the generator version. A later release
+projection requires separate qualification; this target changes no old map byte.
+
 ## Input and result boundary
 
 The generated library accepts an exact branch name and one complete JSON text.
@@ -107,7 +156,7 @@ unsupported profiles refuse before a Realization or report is returned.
 
 ## Concrete library and CLI contract
 
-Add `normalize::Plan::typescript(package: &str) -> Result<Realization, Refused>`.
+The additive API is `normalize::Plan::typescript(package: &str) -> Result<Realization, Refused>`.
 The existing structural `realize::Plan::typescript()` remains a separate API.
 `normalize-generate --target typescript --package <name>` emits a checked package;
 `--module` remains a Go-only option and refuses here before any output is written.
@@ -190,13 +239,18 @@ observed serializer uses zmij 1.0.23. Any dependency or engine change must be
 qualified against the actual build graph and corpus, rather than inferred from
 one direct dependency declaration. No new numeric runtime dependency is selected.
 
-Modeled Binary64 remains a checked type distinction from general Number even when
-both use a private JavaScript number representation. Consume compiler-owned
-metadata and preserve it in lowering. Format-5 equality accepts two typed
-Binary64 operands and uses finite IEEE equality, including +0 equal to -0.
-Runtime `typeof number` is insufficient authority. Integer/general Number/Decimal
-values do not silently fill Binary64 outputs. Missing explicit input paths and
-unsupported model path shapes remain planning refusals.
+Static checking admits the additional Binary64 equality case only when both
+operand kinds are Binary64 in formats 5/6. This does not change general Number
+admission or allow Integer/Number/Decimal values to fill Binary64 outputs.
+The frozen reference evaluator has a separate runtime limitation: formats 5/6
+compare any two floating representations before integer eligibility, including
+integral floating tokens admitted by Integer source schemas. TypeScript preserves
+that behavior. Mixed integer/floating pairs still require integer eligibility and
+refuse; two integer representations retain the signed-64 check. Compiler-owned
+metadata remains authoritative for static checking, lowering and output provenance.
+This compatibility choice adds no target-only refusal or core evaluator change;
+a separately governed core-contract follow-up must assess any semantic tightening.
+Missing explicit input paths and unsupported model path shapes remain planning refusals.
 
 ## Lexical input and retained bytes
 
@@ -519,7 +573,8 @@ decoded-value entrypoint to add.
 The frozen implementation now admits recipe 6 in envelope, model-root, raw-input,
 Binary64 construction/equality, generated Rust-runtime and CLI gates. Position and
 positional declarations remain recipe-6-only, even for an empty declaration map
-in older formats. `execute.rs:28` enables Binary64 equality for formats 5 and 6.
+in older formats. `execute.rs:28` enables the existing format-wide floating equality branch for
+formats 5 and 6, including the Integer-expression runtime limitation stated above.
 `target.rs:163` actually selects report 1 for recipes 1/2, report 2 for recipe 3,
 and report 3 for recipes 4/5/6. Keep this selection; a third target adds no common
 report version.
