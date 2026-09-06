@@ -7,7 +7,7 @@ title: Release ESS normalization followups as 0.20.0 and qualify IVR adoption
 relations:
 - depends_on: story:typescript-normalization-target
 - serves: vision:O2
-revision: 2
+revision: 4
 ---
 ## Purpose and authority
 
@@ -23,7 +23,7 @@ No released source-specific decoder parity is inferred from generated types or a
 
 ## Producer-version compatibility qualification
 
-The read-only release witness audit identifies exactly four proposed test paths. Its proposal patch SHA-256 is `0d33730c6afefb768af6997e6563e07e0912c5c038b1d4445456ae8b0c51b9b7`; the manifest is `3356fae023e4f1cd7ffb4ed84df46de1d9ba2786e24fccb8b1c142e6ac1f8912`. This is an unapplied, uncompiled proposal. Before changing producer versions, retain actual raw 0.19 output for the four structural maps and all normalization maps. Structural raw output must reproduce the established `02312f45fadac5e16b54aa1fce13d8f68cd8aaf14336a2180b85cd923811c79f` witness. The TypeScript unit independently freezes twelve complete Rust/Go format-1–6 maps before shared implementation edits.
+The read-only release witness audit identifies exactly four proposed test paths. Its proposal patch SHA-256 is `0d33730c6afefb768af6997e6563e07e0912c5c038b1d4445456ae8b0c51b9b7`; the manifest is `3356fae023e4f1cd7ffb4ed84df46de1d9ba2786e24fccb8b1c142e6ac1f8912`. That original audit was an unapplied, uncompiled proposal; the later pre-bump qualification below records its actual application and checks. Before changing producer versions, retain actual raw 0.19 output for the four structural maps and all normalization maps. Structural raw output must reproduce the established `02312f45fadac5e16b54aa1fce13d8f68cd8aaf14336a2180b85cd923811c79f` witness. The TypeScript unit independently freezes twelve complete Rust/Go format-1–6 maps before shared implementation edits.
 
 Qualify a test-only projection that first asserts the actual current producer version, then changes only the exact report producer line and structural generator header to the historical version for comparison. Preserve all remaining raw bytes, paths, support files and map membership. Replace only the ten older normalization report hashes that had used a synthetic placeholder with their independently reproduced raw 0.19 report hashes; keep the other 162 entries exact. Add mutation controls for stale producer identity, body changes and membership drift. Never globally replace versions, discard report formatting, or bless a different structural aggregate digest.
 
@@ -42,8 +42,20 @@ After the actual version bump and actual generator rebuild, retain separate raw 
 
 ## Current state
 
-Draft preparation only. No 0.20 version edit, tag, release, consumer adoption, final cleanup or status DM has occurred. TypeScript implementation and the two decoded-reader scratch candidates are running as separate bounded tasks. The complete source-specific mapping remains open until its declared runtime/default/decoder/Flow boundaries have actual evidence.
+Draft release preparation. No 0.20 version edit, tag, release, consumer adoption, final cleanup or status DM has occurred. TypeScript unit commands have passed and its handoff is being frozen for independent review. The two decoded-reader and retained-common scratch candidates are frozen; reader artifacts have been independently hash-verified. The complete source-specific mapping remains open until its declared runtime/default/decoder/Flow boundaries have actual evidence.
 
 ## Module identity during adoption
 
 The published namespace relocation at IVR cf1a9657298760af53b50fe9f5abd0eea3a1c222, docs/namespace-relocation.md:12–15, explicitly retains generated Go module declarations under gitlab.stack.babelforce.com/specs/ivr/... for compatibility. These are import identities, while origin fetch/push and navigation use specs/services/ivr. The ESS release adoption preserves those module identities. A later module cutover must coordinate generator and consumer pins together; an earlier private preparation note suggesting a generator-only namespace replacement is superseded by this source-backed rule.
+
+## Orthogonal pre-bump qualification
+
+After TypeScript unit commands became terminal, the coordinator received the exclusive compiler lane to prequalify the four reviewed historical witness test paths on unchanged 0.19 source. This test-only preparation can run while the implementor freezes its handoff; it does not bump the version, include mutable TypeScript source, or replace the later integrated 12-map/new-release qualification. Capture raw structural and normalization files before comparison, preserve pre-existing scratch, and keep this qualification distinct from final release gates.
+
+## Actual pre-bump witness result
+
+At coordinator ba3c962c5862437be0822086b35cd3b7e321ec86, the reviewed four test paths were applied and scoped formatting passed. Five focused runner tests passed (two existing complete-map witnesses plus three producer/body/membership controls), with zero failures or ignored cases, followed by strict Clippy exit 0. The qualified source patch after formatting is SHA256 a4aa5a052dc63848cde9b23d850a17c79181b37b50bfc51906d638527a49e2c4. No production emitter or Cargo version changed.
+
+The actual 0.19 generator's raw four-map structural payload hashes to the original 02312f45fadac5e16b54aa1fce13d8f68cd8aaf14336a2180b85cd923811c79f. Every report and declaration header carries 0.19.0 before projection. All ten raw normalization maps were retained and independently checked against the qualified 172-entry witness: exactly ten report expectations move from their previously reproduced placeholder representation to raw historical report hashes; all 162 other expectations remain unchanged. The prior scratch capture was copied before the test wrote its new canonical-map record.
+
+Exact raw old/current files, commands, exit times and source hashes are preserved under release-020-preparation/qualification-019, including qualification-result.json and the complete artifact manifest. This is pre-bump witness qualification only. Actual 0.20 generator output and the separately qualified twelve-map TypeScript witness are still pending; synthetic producer controls are not evidence of those future executions.

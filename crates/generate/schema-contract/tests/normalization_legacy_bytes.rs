@@ -18,8 +18,10 @@ mod v4;
 #[path = "fixtures/normalization_binary64.rs"]
 mod v5;
 
+#[path = "support/generator_version.rs"]
+mod generator_version;
+
 use schema_contract::realize::normalize::Plan;
-use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
 use std::collections::BTreeMap;
 use std::fmt::Write as _;
@@ -59,10 +61,9 @@ fn complete_legacy_file_maps_are_preserved() {
             let mut files = BTreeMap::new();
             for (path, mut source) in target.files {
                 if path == "normalization-report.json" {
-                    let mut report: Value = serde_json::from_str(&source).unwrap();
-                    assert_eq!(report["generator_version"], env!("CARGO_PKG_VERSION"));
-                    report["generator_version"] = json!("<current-generator-version>");
-                    source = format!("{}\n", serde_json::to_string_pretty(&report).unwrap());
+                    source =
+                        generator_version::report_at_baseline(&source, env!("CARGO_PKG_VERSION"))
+                            .unwrap();
                 }
                 let mut digest = String::new();
                 for byte in Sha256::digest(source.as_bytes()) {
@@ -81,4 +82,34 @@ fn complete_legacy_file_maps_are_preserved() {
     ))
     .unwrap();
     assert_eq!(actual, expected);
+}
+
+#[test]
+fn report_projection_changes_only_the_truthful_version_line() {
+    let baseline = "{\n  \"format\": \"ess-normalization-target/3\",\n  \"generator_version\": \"0.19.0\",\n  \"literal\": \"0.20.0\"\n}\n";
+    let current = baseline.replacen(
+        "\"generator_version\": \"0.19.0\"",
+        "\"generator_version\": \"0.20.0\"",
+        1,
+    );
+    assert_eq!(
+        generator_version::report_at_baseline(&current, "0.20.0").unwrap(),
+        baseline
+    );
+    assert!(generator_version::report_at_baseline(baseline, "0.20.0").is_err());
+    assert!(generator_version::report_at_baseline(
+        &current.replace("  \"generator_version", "    \"generator_version"),
+        "0.20.0"
+    )
+    .is_err());
+    for changed in [
+        current.replace("target/3", "target/4"),
+        current.replace("\"literal\": \"0.20.0\"", "\"literal\": \"changed\""),
+        current.replace("}\n", "}\n\n"),
+    ] {
+        assert_ne!(
+            generator_version::report_at_baseline(&changed, "0.20.0").unwrap(),
+            baseline
+        );
+    }
 }
