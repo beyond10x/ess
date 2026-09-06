@@ -1,0 +1,87 @@
+package normalization_adapter
+
+import (
+	"bytes"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"os"
+	"reflect"
+	"sort"
+	"testing"
+)
+
+func TestEveryResultAndRefusal(t *testing.T) {
+	normalizer, err := New()
+	if err != nil {
+		t.Fatal(err)
+	}
+	data, err := os.ReadFile("cases.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var cases []struct {
+		Branch string          `json:"branch"`
+		Input  string          `json:"input"`
+		Value  json.RawMessage `json:"value"`
+		Errors Refused         `json:"errors"`
+	}
+	if err := json.Unmarshal(data, &cases); err != nil {
+		t.Fatal(err)
+	}
+	if len(cases) == 0 {
+		t.Fatal("empty behavior fixture")
+	}
+	for index, entry := range cases {
+		t.Run(fmt.Sprint(index), func(t *testing.T) {
+			t.Parallel()
+			input := []byte(entry.Input)
+			before := bytes.Clone(input)
+			for repeat := 0; repeat < 2; repeat++ {
+				result, err := normalizer.Normalize(entry.Branch, input)
+				if entry.Errors != nil {
+					// Schema libraries traverse keywords differently; compare every finding,
+					// including duplicates, in the Go target's specified pointer order.
+					want := append(Refused(nil), entry.Errors...)
+					if schemaOnly(want) {
+						sort.SliceStable(want, func(i, j int) bool { return want[i].Pointer < want[j].Pointer })
+					}
+					var refused Refused
+					if !errors.As(err, &refused) || !reflect.DeepEqual(refused, want) {
+						t.Fatalf("%s %s: got %s %v; want errors %#v", entry.Branch, input, result, err, entry.Errors)
+					}
+					if result != nil {
+						t.Fatal("partial result on refusal")
+					}
+				} else {
+					if err != nil {
+						t.Fatalf("%s %s: %v", entry.Branch, input, err)
+					}
+					got, err := parseInput(result, nil)
+					if err != nil {
+						t.Fatal(err)
+					}
+					want, err := parseInput(entry.Value, nil)
+					if err != nil {
+						t.Fatal(err)
+					}
+					if !reflect.DeepEqual(got, want) {
+						t.Fatalf("%s %s: got %s; want %s", entry.Branch, input, result, entry.Value)
+					}
+				}
+				if !bytes.Equal(input, before) {
+					t.Fatal("caller bytes changed")
+				}
+			}
+		})
+	}
+}
+
+func schemaOnly(findings Refused) bool {
+	for _, finding := range findings {
+		if finding.Rule != "schema_validation" {
+			return false
+		}
+	}
+	return len(findings) > 0
+}

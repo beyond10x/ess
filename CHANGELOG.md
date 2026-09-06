@@ -9,12 +9,18 @@
   first-match selection. The reference engine and generated Rust libraries preserve
   order, duplicate values and lazy selected-value evaluation. Version 1 refuses the
   new operations and retains its existing semantics and canonical representation.
-  Go/TypeScript normalization and the adapter-generation CLI remain pending.
+  TypeScript normalization and the adapter-generation CLI remain pending.
 - Version 2 branch-specific `binary64_inputs` declarations and ordered
   `binary64_to_integer` conversion with finite multiply/minimum/maximum steps,
   nearest-even decoding and explicit out-of-range refusal. Undeclared numbers
   keep the exact JSON policy; signed integer scaling remains separately governed
   by its reject/wrap policy. Reference, CLI and generated Rust share the semantics.
+- Standalone Go normalization libraries from `Plan::go(package, module)`, with
+  typed operation bindings, offline pinned schema validation, exact integer and
+  declared binary64 input policies, and complete source/file provenance. Native
+  Go fixtures exercise old, ordered and numeric recipes against reference results
+  and located refusals. Schemas with `pattern` explicitly refuse generation until
+  a compatible bounded ECMA-262 matcher is qualified.
 
 ### Fixed
 

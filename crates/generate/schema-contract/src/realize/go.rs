@@ -411,7 +411,7 @@ fn quote(text: &str) -> String {
     serde_json::to_string(text).expect("JSON string")
 }
 
-fn package_name(name: &str) -> bool {
+pub(super) fn package_name(name: &str) -> bool {
     !name.is_empty()
         && name.len() <= 64
         && name.as_bytes()[0].is_ascii_lowercase()
@@ -448,7 +448,7 @@ fn package_name(name: &str) -> bool {
         .contains(&name)
 }
 
-fn module_name(name: &str) -> bool {
+pub(super) fn module_name(name: &str) -> bool {
     !name.is_empty()
         && name.len() <= 256
         && name

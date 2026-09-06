@@ -320,7 +320,17 @@ The `ess-normalization-target/1` report records the canonical recipe, source roo
 schemas and emitted-file digests, excluding the report itself. Generated-crate checks
 cover default serde_json features and consumer-enabled arbitrary precision.
 
-Go/TypeScript normalization adapters and an adapter-generation CLI remain pending.
+The unreleased library API `Plan::go(package, module)` emits a standalone Go 1.26
+module with the same source-pinned report. `New()` prepares offline validators;
+`Normalize(branch, input)` accepts JSON bytes and returns a complete `json.RawMessage`
+or a typed `Refused`. It preserves exact integer tokens, explicitly declared
+binary64 decoding, ordered collection operations and lazy first-match evaluation.
+Schema findings are sorted by escaped instance pointer, retaining duplicates;
+Rust retains its validator's traversal order. Go uses pinned JSON token and schema
+libraries and refuses selected schemas with `pattern` at generation with
+`go_schema_pattern`: its ECMA-262 matcher compatibility remains unqualified.
+
+TypeScript normalization adapters and an adapter-generation CLI remain pending.
 Expanded recursive shapes, tuples and
 intersections refuse in its initial checker. Schema bounds and other refinements are
 checked at runtime boundaries, not proven by structural checking. Integer operations

@@ -24,6 +24,8 @@ scope:
 - confidence: cited
   path: crates/generate/schema-contract/src/realize/diagnostic.rs
 - confidence: cited
+  path: crates/generate/schema-contract/src/realize/go.rs
+- confidence: cited
   path: crates/generate/schema-contract/src/realize/normalize.rs
 - confidence: cited
   path: crates/generate/schema-contract/src/realize/normalize/check.rs
@@ -31,6 +33,22 @@ scope:
   path: crates/generate/schema-contract/src/realize/normalize/eval.rs
 - confidence: cited
   path: crates/generate/schema-contract/src/realize/normalize/execute.rs
+- confidence: cited
+  path: crates/generate/schema-contract/src/realize/normalize/go.sum.txt
+- confidence: cited
+  path: crates/generate/schema-contract/src/realize/normalize/go_collection.go.txt
+- confidence: cited
+  path: crates/generate/schema-contract/src/realize/normalize/go_condition.go.txt
+- confidence: cited
+  path: crates/generate/schema-contract/src/realize/normalize/go_expression.go.txt
+- confidence: cited
+  path: crates/generate/schema-contract/src/realize/normalize/go_input.go.txt
+- confidence: cited
+  path: crates/generate/schema-contract/src/realize/normalize/go_numeric.go.txt
+- confidence: cited
+  path: crates/generate/schema-contract/src/realize/normalize/go_runtime.go.txt
+- confidence: cited
+  path: crates/generate/schema-contract/src/realize/normalize/go_target.rs
 - confidence: cited
   path: crates/generate/schema-contract/src/realize/normalize/input.rs
 - confidence: cited
@@ -44,13 +62,19 @@ scope:
 - confidence: cited
   path: crates/generate/schema-contract/src/realize/rust.rs
 - confidence: cited
+  path: crates/generate/schema-contract/tests/fixtures/normalization_go_tests.go.txt
+- confidence: cited
   path: crates/generate/schema-contract/tests/fixtures/normalization_numeric.rs
 - confidence: cited
   path: crates/generate/schema-contract/tests/fixtures/normalization_rust_tests.rs.txt
 - confidence: cited
+  path: crates/generate/schema-contract/tests/fixtures/normalization_v1.rs
+- confidence: cited
   path: crates/generate/schema-contract/tests/fixtures/normalization_v2.rs
 - confidence: cited
   path: crates/generate/schema-contract/tests/normalization.rs
+- confidence: cited
+  path: crates/generate/schema-contract/tests/normalization_go.rs
 - confidence: cited
   path: crates/generate/schema-contract/tests/normalization_numeric.rs
 - confidence: cited
@@ -65,7 +89,7 @@ scope:
   path: website/docs/reference/cli.md
 - confidence: cited
   path: website/docs/reference/formats.md
-revision: 9
+revision: 11
 ---
 ## Evidence
 
@@ -363,3 +387,50 @@ dispatch lowering contract and complete source-adapter adoption remain required.
 Host-dependent out-of-range conversions are explicitly qualified, not guessed.
 Keep the story active; this checkpoint is not the completed three-target outcome
 and has not cut a new release.
+
+## Standalone Go Checkpoint
+
+Plan::go(package, module) now emits a standalone Go 1.26 library from the sealed
+recipe. Expressions and conditions lower to typed function bindings. The module
+retains canonical recipe, qualified bundles, checked root schemas and every
+generated-file digest in normalization-target/1 with explicit Go configuration.
+New compiles offline validators; Normalize accepts raw JSON and returns only a
+complete validated result or typed, located Refused. Caller bytes are immutable.
+
+Version 1, ordered version 2 and declared binary64 operations execute in native
+Go against the reference fixtures. Integral/fractional token identity, signed
+bounds, explicit wrapping, finite conversion/range refusal, lexical collection
+indices and lazy first match remain observable. Strict malformed Unicode,
+duplicate-key precedence and nested/multiple schema failures are checked.
+
+Schema diagnostic presentation is explicitly target-specific: Go sorts instance
+pointers and retains duplicate occurrences. Tests compare the complete reference
+schema-finding multiset in that order; non-schema failures remain order-sensitive.
+Rust's existing traversal order and artifact bytes are not changed.
+
+The matcher gap is tracked as story:go-normalization-pattern-semantics. Go refuses
+all selected pattern obligations before generation with go_schema_pattern and a
+bundle-qualified schema pointer. Referenced definitions are checked; unselected
+schemas in the retained bundle do not widen refusal. A pattern accepted by RE2
+is not evidence that its ECMA-262 meaning is preserved. No matcher parity claim
+is made until a bounded compatible implementation is qualified.
+
+Verification on the final local implementation:
+- CARGO_NET_OFFLINE=true CARGO_BUILD_JOBS=4 task check: exit 0.
+- CARGO_BUILD_JOBS=4 task site-build: exit 0.
+- Strict schema-contract Clippy with go-typecheck enabled: exit 0.
+- Native go-typecheck lane on Go 1.26.5: four tests pass, including execution of
+  three generated modules with go test -count=1 -race -mod=readonly ./..., network
+  module lookup disabled and local toolchain selection. Concurrent repeated
+  normalization does not mutate input or report races.
+- Four generated Rust tests pass, including default and arbitrary_precision
+  feature configurations and the unchanged version 1 canonical recipe digest.
+- The complete old version 1 Rust normalization report, including every generated
+  file digest, is byte-identical before and after source-packaging extraction.
+- Go source templates are gofmt-clean; git diff --check exits 0.
+
+This is a library-API checkpoint. The native lane is opt-in locally; default CI
+does not thereby gain Go runtime execution. TypeScript normalization, generation
+CLI, bounded Go pattern compatibility, concrete runtime dispatch lowering and
+complete source-adapter adoption remain required. Keep the original story active.
+No new release is cut by this checkpoint.
