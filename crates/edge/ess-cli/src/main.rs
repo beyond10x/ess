@@ -557,7 +557,7 @@ enum ImportAdapter {
     Openapi {
         #[arg(long)]
         path: PathBuf,
-        /// Where to write `ess-service-interface/1`.
+        /// Where to write the replay-checked `ess-openapi-import/1` envelope.
         #[arg(long)]
         out: Option<PathBuf>,
         #[arg(long, value_enum, default_value_t = Format::Text)]
@@ -607,7 +607,7 @@ enum ProjectAdapter {
         /// ESS specification to compile and project.
         #[arg(long, conflicts_with = "ir", required_unless_present = "ir")]
         path: Option<PathBuf>,
-        /// Imported `ess-service-interface/1` to project.
+        /// Checked `ess-openapi-import/1` to project; partial, unresolved or legacy input refuses.
         #[arg(long, conflicts_with = "path", required_unless_present = "path")]
         ir: Option<PathBuf>,
         #[arg(long)]
@@ -2857,7 +2857,7 @@ fn import_openapi(path: &Path, out: Option<&Path>, format: Format) -> Result<Exi
         }
     };
     if let Some(path) = out {
-        fs::write(path, imported.interface.to_canonical_json())
+        fs::write(path, imported.to_canonical_json())
             .with_context(|| format!("writing {}", path.display()))?;
     }
     let report = AdapterReport {
@@ -2870,27 +2870,38 @@ fn import_openapi(path: &Path, out: Option<&Path>, format: Format) -> Result<Exi
             "local-schema-reference",
             "json-message",
         ],
-        coverage_gaps: imported.coverage_gaps,
+        coverage_gaps: imported
+            .accounting()
+            .coverage_gaps
+            .iter()
+            .map(|gap| format!("{}: {}", gap.pointer, gap.detail))
+            .collect(),
         obligations: imported
+            .accounting()
             .unresolved_references
             .iter()
-            .map(|reference| format!("declare local interface type `{reference}`"))
+            .map(|reference| {
+                format!(
+                    "{}: declare local interface type `{}`",
+                    reference.pointer, reference.target
+                )
+            })
             .collect(),
         refusals: Vec::new(),
-        unresolved_references: imported.unresolved_references.len(),
+        unresolved_references: imported.accounting().unresolved_references.len(),
         output: out.map(|path| path.display().to_string()),
     };
     if matches!(format, Format::Text) {
         println!(
             "imported OpenAPI {} service `{}` as {}",
-            imported.interface.source_openapi,
-            imported.interface.service.name,
-            ess_openapi::INTERFACE_FORMAT
+            imported.interface().source_openapi,
+            imported.interface().service.name,
+            ess_openapi::IMPORT_FORMAT
         );
         println!(
             "{} operation(s), {} interface type(s), {} coverage gap(s), {} unresolved reference(s)",
-            imported.interface.operations.len(),
-            imported.interface.types.len(),
+            imported.interface().operations.len(),
+            imported.interface().types.len(),
             report.coverage_gaps.len(),
             report.unresolved_references
         );
@@ -3169,9 +3180,9 @@ fn project_openapi_interface(
 ) -> Result<ExitCode> {
     let text =
         fs::read_to_string(ir_path).with_context(|| format!("reading {}", ir_path.display()))?;
-    let interface = ess_openapi::read_interface(&text).map_err(|refusals| {
+    let imported = ess_openapi::read_import(&text).map_err(|refusals| {
         anyhow::anyhow!(
-            "service-interface IR refused: {}",
+            "OpenAPI import envelope refused: {}",
             refusals
                 .iter()
                 .map(|refusal| format!("{}: {}", refusal.pointer, refusal.message))
@@ -3179,7 +3190,7 @@ fn project_openapi_interface(
                 .join("; ")
         )
     })?;
-    let yaml = ess_openapi::project(&interface).map_err(|refusals| {
+    let yaml = ess_openapi::project_import(&imported).map_err(|refusals| {
         anyhow::anyhow!(
             "OpenAPI projection refused: {}",
             refusals
@@ -3195,7 +3206,7 @@ fn project_openapi_interface(
     match (out, format) {
         (Some(path), Format::Text) => println!(
             "projected `{}` to OpenAPI 3.1 at {} without applying it",
-            interface.service.name,
+            imported.interface().service.name,
             path.display()
         ),
         (Some(_), _) => {}

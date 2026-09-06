@@ -123,9 +123,9 @@ Run `ess verify conform <command> --help` for target-specific arguments.
 
 | Command | Direction |
 |---|---|
-| `ess infra import openapi …` | OpenAPI → supported ESS service/interface IR. |
+| `ess infra import openapi --path FILE [--out FILE] …` | OpenAPI 3.1 subset → `ess-openapi-import/1` with retained source, SHA-256 and durable accounting. `--format` selects terminal presentation; `--out` always writes the canonical import envelope. |
 | `ess infra import kubernetes …` | sanitized bundle or explicitly selected live cluster → infrastructure IR. |
-| `ess generate project openapi …` | ESS service/interface IR → OpenAPI. |
+| `ess generate project openapi (--ir FILE \| --path SPEC) …` | Checked import envelope or native ESS specification → OpenAPI. `--ir` refuses semantic gaps, unresolved references or legacy interface-only input before output; reimport original OpenAPI to replace legacy files. |
 | `ess generate project kubernetes …` | infrastructure intent and observation → manifests and obligations. |
 
 The commands under `ess generate project` write artifacts only. They do not call `kubectl`, apply a
