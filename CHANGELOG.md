@@ -4,6 +4,11 @@
 
 ### Added
 
+- Checked `ess-openapi-import/1` envelopes retain original source identity and
+  semantic accounting. Reloading verifies the source digest, normalization and
+  derived interface before projection; constraints that cannot be preserved
+  produce located gaps or refusals. Legacy `ess-service-interface/1` readers
+  retain their existing representation.
 - `ess-normalization/3` model-owned stage roots, pinned to complete compiler
   provenance and explicit type selections. `Plan::check_with_models` and CLI
   `--model` inputs reuse checked model wire projections without duplicate schemas

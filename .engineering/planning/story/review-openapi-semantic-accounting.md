@@ -27,7 +27,7 @@ scope:
   path: website/docs/reference/cli.md
 - confidence: cited
   path: website/docs/reference/formats.md
-revision: 17
+revision: 18
 ---
 ## Finding and source
 
@@ -152,3 +152,9 @@ Independent first review of frozen 633e1d9839dc0e8dae071e955f8e8af540c8a685 is p
 Correction subject `42513466e27248c008d39efe5a676d64c3283d7a` retains the original first-review regressions and adds raw-interface validation before typed unit variants can discard unknown fields. The correction report is `target/review-boundaries-7/correction-pass-1/correction-report.md` in the existing unit. The full package suite executed 163→165 cases, all 165 passed, with zero failures or ignored cases; all four original regressions are green. Strict Clippy and package formatting also passed. Production adds 36 lines; two nesting/legacy controls add 82 test lines. Review-file changes are formatter output and a borrowed helper parameter, with exact originals/diffs retained.
 
 Root verified all four final source hashes, committed through organization tooling, and verified author and committer. The first immutable review is preserved; its separate outcome is fixed. A fresh `openapi_review_pass2` agent performs the second and final bounded review under the installed 0.8.0 tests-only charter because the first reviewer is unavailable after resumption. Exact brief: `target/review-boundaries-7/adversary-pass-2/brief.md`. This is readiness for review, not integration or completion evidence.
+
+## Final review and local integration
+
+The second and final review is preserved as `review-result:review-boundaries-7-openapi-adversary-pass-2`, SHA-256 `6e6006e037187b1abd842ddb4c8e719c3fbbf985a7f261f1606610d4ea3462da`. Seven new cases passed their first focused runs and the full package suite executed 165→172 cases, all passed, zero failures or ignored cases. Formatting and strict Clippy passed. Both new test files were committed as `7468e7a01b6eab0abe32cdb56e1718a9a0f67fa4` after hash verification. The full unit merged into the coordinator at `979f1f13514fa8f9c6f9648985fbd85a5113165b`, with both direct identities verified.
+
+The CLI findings comparison reports one resolved finding, no carried findings and no new findings. The second review has a no-op outcome; the first retains its separate fixed outcome. This exhausts the two-pass review budget. The complete integrated gate remains required before the story moves from active.
