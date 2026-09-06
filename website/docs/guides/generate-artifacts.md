@@ -320,7 +320,41 @@ The `ess-normalization-target/1` report records the canonical recipe, source roo
 schemas and emitted-file digests, excluding the report itself. Generated-crate checks
 cover default serde_json features and consumer-enabled arbitrary precision.
 
-Go/TypeScript normalization adapters and an adapter-generation CLI remain pending.
+The unreleased library API `Plan::go(package, module)` emits a standalone Go 1.26
+module with the same source-pinned report. `New()` prepares offline validators;
+`Normalize(branch, input)` accepts JSON bytes and returns a complete `json.RawMessage`
+or a typed `Refused`. It preserves exact integer tokens, explicitly declared
+binary64 decoding, ordered collection operations and lazy first-match evaluation.
+Schema findings are sorted by escaped instance pointer, retaining duplicates;
+Rust retains its validator's traversal order. Go uses pinned JSON token and schema
+libraries and refuses selected schemas with `pattern` at generation with
+`go_schema_pattern`: its ECMA-262 matcher compatibility remains unqualified.
+
+Generate either implemented normalization library directly with the unreleased CLI:
+
+```shell-session
+$ ess generate schema normalize-generate --recipe normalization.json \
+    --bundle input.bundle.json --bundle output.bundle.json \
+    --target rust --package settings_adapter --out generated/rust
+$ ess generate schema normalize-generate --recipe normalization.json \
+    --bundle input.bundle.json --bundle output.bundle.json \
+    --target go --package settings_adapter --module example.invalid/settings-adapter \
+    --out generated/go
+$ ess generate schema normalize-generate --recipe normalization.json \
+    --bundle input.bundle.json --bundle output.bundle.json \
+    --target go --package settings_adapter --module example.invalid/settings-adapter \
+    --out generated/go --check
+```
+
+Every branch and target checks before files are written. The command protects its
+recipe and bundle inputs and preflights the complete generated destination set.
+`--check` compares every planned file without writing; missing or stale files return
+a nonzero exit. Neither mode deletes unrelated or obsolete files. Output preflight
+assumes controlled parent directories and does not provide rollback for later I/O
+failure. The output includes `normalization-report.json` with the exact library-API
+provenance and file identities.
+
+TypeScript normalization adapters remain pending.
 Expanded recursive shapes, tuples and
 intersections refuse in its initial checker. Schema bounds and other refinements are
 checked at runtime boundaries, not proven by structural checking. Integer operations

@@ -254,3 +254,85 @@ grammar validation, rather than relying on a JSON library's optional fast float
 parser. Verify signed boundaries, subnormal/underflow, halfway decimals, decoded
 integer tokens, lexical precision preservation outside declared paths, nested
 arrays/nulls and actual generated-library execution under both JSON feature modes.
+
+## Standalone Go Target
+
+`Plan::go(package, module)` emits a standalone Go 1.26 normalization library from
+the same sealed plan. Package/module identity uses the existing structural target
+rules. The generated program compiles expressions and conditions into typed Go
+function bindings; it does not accept a replacement recipe or interpret arbitrary
+source strings. The canonical recipe, qualified source bundles, root schemas and
+all generated files retain the existing normalization-target/1 provenance envelope,
+with the explicit Go target configuration. Rust artifact bytes must not change
+merely because packaging helpers are shared.
+
+`New()` prepares reusable offline schema validators. `Normalize(branch, input)`
+accepts JSON bytes and returns complete JSON bytes or a typed Refused containing
+source-located Findings. No stage result escapes on failure; input bytes are never
+modified. Requirements, expression/condition evaluation, lexical item/index scope,
+selected-value laziness and every version 1/version 2 operation preserve the
+reference semantics. Signed integer arithmetic is not performed through float64.
+
+Use the pinned go-json-experiment/json jsontext decoder for strict JSON grammar,
+duplicate names and Unicode handling, with a 64-level boundary imposed by this
+adapter. Use standard strconv binary64 parsing only after token validation.
+Integral tokens retain int64/uint64 identity; fractional and exponent tokens remain
+float64 and do not become eligible for integer operations. Exact-admission decimal
+comparison and explicit binary64 input paths preserve the reference policies.
+Serialization must retain floating lexical identity, including signed zero, rather
+than turning a computed float into an integral token between systems.
+
+Schema validation uses github.com/santhosh-tekuri/jsonschema/v6, pinned at 6.0.2,
+with draft 2020-12, no network loader and format assertions disabled, matching the
+reference boundary. Source schemas are compiled from embedded data; unresolved or
+unsupported schemas refuse at construction rather than retrieving network data.
+The initial Go target refuses every retained `pattern` obligation at generation
+with `go_schema_pattern`, qualified by bundle digest and schema pointer. RE2 does
+not implement the reference validator's ECMA-262 pattern semantics; accepting its
+overlapping syntax would silently change some constraints. A proven bounded
+compatible matcher is required before removing this refusal. The guard reads the
+existing structural plan's obligations, not arbitrary JSON object keys, and checks
+the complete referenced closure of every selected root.
+Schema failure presentation is target-specific: Go findings are sorted by escaped
+instance pointer, retaining every occurrence. The existing Rust validator's
+traversal order is preserved unchanged. Cross-target fixtures compare the complete
+schema-finding multiset and additionally assert Go's stable order; all non-schema
+refusals remain order-sensitive. This does not change which stage runs, which
+expression is evaluated first, or where a failed operation is located.
+The JSON token decoder is pinned at
+v0.0.0-20260601182631-00ed12fed2a6, an exact Go 1.26-compatible revision rather than
+a moving experimental API. Dependency identity belongs in the emitted module and
+checksums. All generated code must compile and execute through the repository's
+explicit go-typecheck lane, including old, ordered and numeric fixtures, malformed
+Unicode, duplicate keys, nested schema failures and preservation of signed bounds.
+
+This is a Go runtime library, not a Go reimplementation of the ESS compiler or a
+second specification authority. The Rust generator remains the sole plan-admission
+edge. Schema refinements are still checked at each stage, never replaced by the
+structural type projection. TypeScript and the target-generation CLI remain part
+of the original normalization story and are not completed by this target alone.
+
+## Adapter Generation Command
+
+`ess generate schema normalize-generate` reads `--recipe` and repeated `--bundle`
+inputs through the existing sealed-plan boundary. `--target rust|go` selects an
+implemented library target; `--package` is required, and `--module` is required
+only for Go and refused for Rust. No structural target substitutes for an
+unimplemented normalization target. TypeScript joins this command only when its
+runtime realization exists.
+
+The command writes the exact library-API file set to required `--out`, including
+source recipe, bundles, embedded schemas and normalization-target/1 report.
+Admission and target feasibility finish before output preflight. All generated
+paths pass the existing shared containment, symlink, hard-link, case-alias and
+file/directory checks before any write. Canonical source input paths must not
+equal any generated destination. This retains the existing trusted-parent
+assumption and does not claim rollback on subsequent I/O failure.
+
+`--check` compares every planned file byte-for-byte without creating directories
+or changing files. Missing or stale files are listed deterministically and give a
+nonzero exit. It checks the generated file set, not ownership of unrelated files
+in an adopter's directory; neither mode deletes obsolete or unowned files.
+Source/target refusals still apply in check mode. Tests compare both targets with
+the library output and cover input protection, complete preflight, read-only drift,
+invalid unused branches and target refusals before publication.

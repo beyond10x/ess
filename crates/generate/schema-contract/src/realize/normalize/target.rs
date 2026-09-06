@@ -30,9 +30,9 @@ pub struct Report {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
-struct SchemaIdentity {
-    identity: Root,
-    schema_path: String,
+pub(super) struct SchemaIdentity {
+    pub(super) identity: Root,
+    pub(super) schema_path: String,
     schema_digest: String,
 }
 
@@ -80,6 +80,34 @@ pub(super) fn rust(plan: &Plan, package: &str) -> Result<Realization, Refused> {
     files.insert("Cargo.toml".to_owned(), format!(
         "[package]\nname = {package:?}\nversion = \"0.0.0\"\nedition = \"2021\"\npublish = false\n\n[dependencies]\nserde = {{ version = \"=1.0.229\", features = [\"derive\"] }}\nserde_json = {{ version = \"=1.0.151\", features = [\"raw_value\"] }}\njsonschema = {{ version = \"=0.52.1\", default-features = false }}\n\n[workspace]\n"
     ));
+    let (identities, source_files) = sources(plan)?;
+    files.extend(source_files);
+    let mut embedded = "//! Generated root bindings; source identities are data, never Rust identifiers.\n\npub(super) const ROOTS: &[(&str, &str, &str)] = &[\n".to_owned();
+    for root in &identities {
+        writeln!(
+            embedded,
+            "    ({:?}, {:?}, include_str!({:?})),",
+            root.identity.bundle_digest,
+            root.identity.root,
+            format!("../{}", root.schema_path)
+        )
+        .expect("String write");
+    }
+    embedded.push_str("];\n");
+    files.insert("src/schemas.rs".to_owned(), embedded);
+    Ok(finish(
+        plan,
+        TargetConfiguration::Rust {
+            package: package.to_owned(),
+        },
+        files,
+        identities,
+    ))
+}
+
+type SourceFiles = (Vec<SchemaIdentity>, BTreeMap<String, String>);
+
+pub(super) fn sources(plan: &Plan) -> Result<SourceFiles, Refused> {
     let roots = plan
         .recipe
         .branches
@@ -88,7 +116,7 @@ pub(super) fn rust(plan: &Plan, package: &str) -> Result<Realization, Refused> {
         .flat_map(|stage| [&stage.input, &stage.output])
         .collect::<BTreeSet<_>>();
     let mut identities = Vec::new();
-    let mut embedded = "//! Generated root bindings; source identities are data, never Rust identifiers.\n\npub(super) const ROOTS: &[(&str, &str, &str)] = &[\n".to_owned();
+    let mut files = BTreeMap::new();
     for root in roots {
         let bundle = &plan.bundles[&root.bundle_digest];
         let root_digest = source_digest(&root.root);
@@ -101,14 +129,6 @@ pub(super) fn rust(plan: &Plan, package: &str) -> Result<Realization, Refused> {
             "{}\n",
             serde_json::to_string_pretty(&schema).expect("schema serializes")
         );
-        writeln!(
-            embedded,
-            "    ({:?}, {:?}, include_str!({:?})),",
-            root.bundle_digest,
-            root.root,
-            format!("../{schema_path}")
-        )
-        .expect("String write");
         identities.push(SchemaIdentity {
             identity: root.clone(),
             schema_path: schema_path.clone(),
@@ -122,14 +142,19 @@ pub(super) fn rust(plan: &Plan, package: &str) -> Result<Realization, Refused> {
             })?,
         );
     }
-    embedded.push_str("];\n");
-    files.insert("src/schemas.rs".to_owned(), embedded);
+    Ok((identities, files))
+}
+
+pub(super) fn finish(
+    plan: &Plan,
+    configuration: TargetConfiguration,
+    mut files: BTreeMap<String, String>,
+    identities: Vec<SchemaIdentity>,
+) -> Realization {
     let report = Report {
         format: "ess-normalization-target/1",
         generator_version: env!("CARGO_PKG_VERSION"),
-        configuration: TargetConfiguration::Rust {
-            package: package.to_owned(),
-        },
+        configuration,
         recipe_digest: source_digest(&plan.to_json()),
         roots: identities,
         files: files
@@ -144,5 +169,5 @@ pub(super) fn rust(plan: &Plan, package: &str) -> Result<Realization, Refused> {
             serde_json::to_string_pretty(&report).expect("typed report serializes")
         ),
     );
-    Ok(Realization { files, report })
+    Realization { files, report }
 }

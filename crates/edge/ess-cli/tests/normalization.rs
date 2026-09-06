@@ -99,6 +99,206 @@ fn checked_recipe_and_run_are_deterministic_with_json_only_stdout() {
 }
 
 #[test]
+fn generated_libraries_match_the_api_and_drift_check_never_repairs_files() {
+    let fixture = Fixture::new();
+    let bundles = ["input.bundle.json", "output.bundle.json"]
+        .map(|path| Bundle::read(&fs::read_to_string(fixture.0.join(path)).unwrap()).unwrap());
+    let plan =
+        schema_contract::realize::normalize::Plan::read(&fixture.recipe().to_string(), &bundles)
+            .unwrap();
+    for target in ["rust", "go"] {
+        let mut args = vec!["--target", target, "--package", "adapter", "--out", target];
+        let generated = if target == "rust" {
+            plan.rust("adapter").unwrap()
+        } else {
+            args.extend(["--module", "example.invalid/adapter"]);
+            plan.go("adapter", "example.invalid/adapter").unwrap()
+        };
+        let result = fixture.run("normalize-generate", &args);
+        assert!(result.status.success(), "{result:?}");
+        let root = fixture.0.join(target);
+        for (path, contents) in &generated.files {
+            assert_eq!(fs::read(root.join(path)).unwrap(), contents.as_bytes());
+        }
+        args.push("--check");
+        let result = fixture.run("normalize-generate", &args);
+        assert!(result.status.success(), "{result:?}");
+        assert!(String::from_utf8_lossy(&result.stdout).contains("file(s): current"));
+        fs::write(root.join("source.recipe.json"), "stale").unwrap();
+        fs::remove_file(root.join("normalization-report.json")).unwrap();
+        fs::write(root.join("consumer.txt"), "unowned").unwrap();
+        let result = fixture.run("normalize-generate", &args);
+        assert!(!result.status.success());
+        assert_eq!(
+            result.stdout,
+            b"normalization-report.json: missing\nsource.recipe.json: stale\n"
+        );
+        assert_eq!(fs::read(root.join("source.recipe.json")).unwrap(), b"stale");
+        assert!(!root.join("normalization-report.json").exists());
+        args.pop();
+        assert!(fixture.run("normalize-generate", &args).status.success());
+        args.push("--check");
+        assert!(fixture.run("normalize-generate", &args).status.success());
+        assert_eq!(fs::read(root.join("consumer.txt")).unwrap(), b"unowned");
+    }
+}
+
+#[test]
+fn generation_checks_refuse_before_creating_or_changing_destinations() {
+    let fixture = Fixture::new();
+    let base = [
+        "--target",
+        "rust",
+        "--package",
+        "adapter",
+        "--out",
+        "missing",
+    ];
+    let mut check = base.to_vec();
+    check.push("--check");
+    let result = fixture.run("normalize-generate", &check);
+    assert!(!result.status.success());
+    assert!(String::from_utf8_lossy(&result.stdout).contains("Cargo.toml: missing"));
+    assert!(!fixture.0.join("missing").exists());
+    for options in [
+        vec!["--target", "rust", "--package", "bad-name!"],
+        vec![
+            "--target",
+            "rust",
+            "--package",
+            "adapter",
+            "--module",
+            "extra",
+        ],
+        vec!["--target", "go", "--package", "adapter"],
+        vec![
+            "--target",
+            "go",
+            "--package",
+            "main",
+            "--module",
+            "example.invalid/a",
+        ],
+        vec!["--target", "typescript", "--package", "adapter"],
+    ] {
+        let mut args = options;
+        args.extend(["--out", "missing"]);
+        let result = fixture.run("normalize-generate", &args);
+        assert!(!result.status.success(), "{result:?}");
+        assert!(result.stdout.is_empty());
+        assert!(!fixture.0.join("missing").exists());
+    }
+    let mut recipe = fixture.recipe();
+    recipe["branches"]["unused"] = json!([]);
+    fs::write(fixture.0.join("recipe.json"), recipe.to_string()).unwrap();
+    let result = fixture.run("normalize-generate", &base);
+    assert!(!result.status.success());
+    assert!(String::from_utf8_lossy(&result.stderr).contains("empty_pipeline"));
+    assert!(!fixture.0.join("missing").exists());
+}
+
+#[test]
+fn incompatible_later_destination_preserves_the_entire_existing_output() {
+    let fixture = Fixture::new();
+    let root = fixture.0.join("generated");
+    fs::create_dir_all(root.join("src/schemas.rs")).unwrap();
+    fs::write(root.join("Cargo.toml"), "untouched").unwrap();
+    let result = fixture.run(
+        "normalize-generate",
+        &[
+            "--target",
+            "rust",
+            "--package",
+            "adapter",
+            "--out",
+            "generated",
+        ],
+    );
+    assert!(!result.status.success());
+    assert!(result.stdout.is_empty());
+    assert_eq!(fs::read(root.join("Cargo.toml")).unwrap(), b"untouched");
+    assert!(!root.join("source.recipe.json").exists());
+    assert!(!root.join("normalization-report.json").exists());
+    assert!(!root.join("src/lib.rs").exists());
+}
+
+#[cfg(unix)]
+#[test]
+fn generated_paths_cannot_replace_canonical_source_inputs_or_follow_links() {
+    let fixture = Fixture::new();
+    fs::rename(
+        fixture.0.join("recipe.json"),
+        fixture.0.join("source.recipe.json"),
+    )
+    .unwrap();
+    std::os::unix::fs::symlink("source.recipe.json", fixture.0.join("recipe.json")).unwrap();
+    let before = fs::read(fixture.0.join("source.recipe.json")).unwrap();
+    let result = fixture.run(
+        "normalize-generate",
+        &["--target", "rust", "--package", "adapter", "--out", "."],
+    );
+    assert!(!result.status.success());
+    assert!(String::from_utf8_lossy(&result.stderr).contains("must not replace"));
+    assert_eq!(
+        fs::read(fixture.0.join("source.recipe.json")).unwrap(),
+        before
+    );
+    assert!(!fixture.0.join("Cargo.toml").exists());
+    let root = fixture.0.join("generated");
+    fs::create_dir(&root).unwrap();
+    std::os::unix::fs::symlink(&fixture.0, root.join("schemas")).unwrap();
+    let result = fixture.run(
+        "normalize-generate",
+        &[
+            "--target",
+            "rust",
+            "--package",
+            "adapter",
+            "--out",
+            "generated",
+        ],
+    );
+    assert!(!result.status.success());
+    assert!(String::from_utf8_lossy(&result.stderr).contains("symlink"));
+    assert!(!root.join("Cargo.toml").exists());
+    assert!(!root.join("source.recipe.json").exists());
+}
+
+#[test]
+fn unsupported_go_pattern_has_no_successful_partial_artifact() {
+    let fixture = Fixture::new();
+    let input = Fixture::bundle("Input", &json!({"type":"string", "pattern":"^(?=a)a$"}));
+    fs::write(
+        fixture.0.join("input.bundle.json"),
+        input.to_json().unwrap(),
+    )
+    .unwrap();
+    let mut recipe = fixture.recipe();
+    let root = serde_json::to_value(Root::pin(&input, "Input").unwrap()).unwrap();
+    recipe["branches"]["primary"][0]["input"] = root.clone();
+    recipe["branches"]["primary"][0]["output"] = root;
+    recipe["branches"]["primary"][0]["value"] = json!({"op":"read", "scope":"input", "path":[]});
+    fs::write(fixture.0.join("recipe.json"), recipe.to_string()).unwrap();
+    let result = fixture.run(
+        "normalize-generate",
+        &[
+            "--target",
+            "go",
+            "--package",
+            "adapter",
+            "--module",
+            "example.invalid/adapter",
+            "--out",
+            "generated",
+        ],
+    );
+    assert!(!result.status.success());
+    assert!(result.stdout.is_empty());
+    assert!(String::from_utf8_lossy(&result.stderr).contains("go_schema_pattern"));
+    assert!(!fixture.0.join("generated").exists());
+}
+
+#[test]
 fn explicit_binary64_inputs_run_through_the_cli_without_weakening_version_one() {
     let fixture = Fixture::new();
     let input = Fixture::bundle("Input", &json!({"type":"number"}));

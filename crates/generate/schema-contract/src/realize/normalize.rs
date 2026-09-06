@@ -3,6 +3,7 @@
 mod check;
 mod eval;
 mod execute;
+mod go_target;
 mod input;
 mod numeric;
 mod recipe;
@@ -44,6 +45,11 @@ impl Plan {
     /// Emit a standalone Rust normalization library with pinned schemas and source provenance.
     pub fn rust(&self, package: &str) -> Result<Realization, Refused> {
         target::rust(self, package)
+    }
+
+    /// Emit a standalone Go normalization library with explicit module identity.
+    pub fn go(&self, package: &str, module: &str) -> Result<Realization, Refused> {
+        go_target::generate(self, package, module)
     }
 
     /// Strict parsing and checking; unknown fields, versions and operations refuse.
