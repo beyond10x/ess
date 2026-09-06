@@ -1468,3 +1468,36 @@ Root records actual manager-returned paths, exact opening commit and leases befo
   "cycles": []
 }
 ```
+
+## Opening gate and actual managed units
+
+Opening21eac63d347d5d1328712cd59dd9ae5edf41aace has verified bot author and committer. Package formatting, action check, planning validation and diff checks all exit0 before provisioning; actual argv/exits are target/review-boundaries-7/opening/preflight/results.json. Fresh advertised ESS main remainsfadbc674. The manager created both exact-base units and root acquired their leases, created branch refs and wrote the concrete briefs before dispatch:
+
+```json
+[
+  {
+    "id": "review-expression-typechecking",
+    "path": "/home/timo/.local/state/worktree/trees/b10x/ess/review-expression-typechecking",
+    "branch": "impl/review-expression-typechecking",
+    "base": "21eac63d347d5d1328712cd59dd9ae5edf41aace",
+    "lease": "ess-review-expression-implementation",
+    "build": "/home/timo/.local/state/worktree/trees/b10x/ess/review-expression-typechecking/target",
+    "scratch": "/home/timo/.local/state/worktree/trees/b10x/ess/review-expression-typechecking/target/review-boundaries-7",
+    "brief": "/home/timo/.local/state/worktree/trees/b10x/ess/review-expression-typechecking/target/review-boundaries-7/unit-brief.md",
+    "stage": "provisioned; brief written; ready for dispatch"
+  },
+  {
+    "id": "review-openapi-semantic-accounting",
+    "path": "/home/timo/.local/state/worktree/trees/b10x/ess/review-openapi-semantic-accounting",
+    "branch": "impl/review-openapi-semantic-accounting",
+    "base": "21eac63d347d5d1328712cd59dd9ae5edf41aace",
+    "lease": "ess-review-openapi-implementation",
+    "build": "/home/timo/.local/state/worktree/trees/b10x/ess/review-openapi-semantic-accounting/target",
+    "scratch": "/home/timo/.local/state/worktree/trees/b10x/ess/review-openapi-semantic-accounting/target/review-boundaries-7",
+    "brief": "/home/timo/.local/state/worktree/trees/b10x/ess/review-openapi-semantic-accounting/target/review-boundaries-7/unit-brief.md",
+    "stage": "provisioned; brief written; ready for dispatch"
+  }
+]
+```
+
+Both implementors were dispatched by brief path after the actual resource record was written. Expression uses review_scenarios; OpenAPI uses scope_empty_scenarios. These are implementation assignments, not handoff/gate results. The AEP count implementor remains impl_diagnostic in its separate repository.
