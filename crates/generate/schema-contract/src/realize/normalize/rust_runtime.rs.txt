@@ -5,6 +5,7 @@ mod diagnostic;
 mod eval;
 mod execute;
 mod input;
+mod numeric;
 mod recipe;
 mod schemas;
 
@@ -12,7 +13,7 @@ use std::collections::BTreeMap;
 use serde_json::Value;
 use diagnostic::{finding, path};
 pub use diagnostic::{Finding, Refused};
-use recipe::{unique_map, Condition, Expr, IntegerOp, Overflow, Recipe, Root, Scope};
+use recipe::{unique_map, Binary64Range, Binary64Step, Condition, Expr, IntegerOp, NumberPath, Overflow, Recipe, Root, Scope};
 
 /// One checked recipe with reusable offline validators for all pinned stage roots.
 pub struct Normalizer {
@@ -25,7 +26,7 @@ impl Normalizer {
     pub fn new() -> Result<Self, Refused> {
         let recipe: Recipe = serde_json::from_str(include_str!("../source.recipe.json"))
             .map_err(|_| Refused(vec![finding("/", "target_recipe", "embedded recipe is invalid")]))?;
-        if recipe.format != recipe::FORMAT {
+        if recipe.format != recipe::FORMAT && recipe.format != recipe::FORMAT_V2 {
             return Err(Refused(vec![finding("/format", "recipe_format", "unsupported normalization format")]));
         }
         let mut validators = BTreeMap::new();
@@ -44,7 +45,13 @@ impl Normalizer {
 
     /// Execute one exact branch over raw JSON, returning no intermediate result on failure.
     pub fn normalize(&self, branch: &str, text: &str) -> Result<Value, Refused> {
-        let value = input::parse(text)?;
+        let value = input::parse(text, self.recipe.binary64_paths(branch))?;
+        execute::run(&self.recipe, branch, &value, |root, value, at| self.validate(root, value, at))
+    }
+
+    /// Normalize decoded data; precision already discarded by the caller cannot be recovered.
+    pub fn normalize_value(&self, branch: &str, value: &Value) -> Result<Value, Refused> {
+        let value = input::prepare(value, self.recipe.binary64_paths(branch))?;
         execute::run(&self.recipe, branch, &value, |root, value, at| self.validate(root, value, at))
     }
 

@@ -332,7 +332,7 @@ fn strict_envelope_root_identity_and_every_branch_must_check() {
     );
     let value = recipe(vec![stage(&schemas, "Input", "Output", integer(1))]);
     for (path, replacement, rule) in [
-        ("/format", json!("ess-normalization/2"), "recipe_format"),
+        ("/format", json!("ess-normalization/999"), "recipe_format"),
         (
             "/branches/primary/0/input/bundle_digest",
             json!("wrong"),

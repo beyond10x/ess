@@ -36,7 +36,7 @@ struct SchemaIdentity {
     schema_digest: String,
 }
 
-pub(super) fn rust(plan: &Plan, package: &str) -> Result<Realization, Refused> {
+fn rust_package(package: &str) -> Result<(), Refused> {
     if !crate::realize::rust::package_name(package) || package == "jsonschema" {
         return Err(Refused(vec![finding(
             "/",
@@ -44,6 +44,11 @@ pub(super) fn rust(plan: &Plan, package: &str) -> Result<Realization, Refused> {
             "use a non-reserved lowercase Cargo package name, distinct from runtime dependencies",
         )]));
     }
+    Ok(())
+}
+
+pub(super) fn rust(plan: &Plan, package: &str) -> Result<Realization, Refused> {
+    rust_package(package)?;
     let mut files = BTreeMap::from([
         ("source.recipe.json".to_owned(), plan.to_json()),
         (
@@ -55,6 +60,10 @@ pub(super) fn rust(plan: &Plan, package: &str) -> Result<Realization, Refused> {
             include_str!("recipe.rs").to_owned(),
         ),
         ("src/eval.rs".to_owned(), include_str!("eval.rs").to_owned()),
+        (
+            "src/numeric.rs".to_owned(),
+            include_str!("numeric.rs").to_owned(),
+        ),
         (
             "src/input.rs".to_owned(),
             include_str!("input.rs").to_owned(),

@@ -1,10 +1,10 @@
 //! Structural checking reuses the qualified type plan; schema refinements run at stage boundaries.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 use serde_json::{json, Value};
 
-use super::{Condition, Expr, Finding, Scope, Stage, Types};
+use super::{Binary64Step, Condition, Expr, Finding, NumberPath, Scope, Stage, Types};
 use crate::realize::{finding, Node, Shape};
 
 type Result<T> = std::result::Result<T, Finding>;
@@ -73,11 +73,66 @@ impl Type {
     }
 }
 
+pub(super) fn input_numbers(
+    paths: &[Vec<NumberPath>],
+    input: &Types,
+    root: &str,
+    at: &str,
+    found: &mut Vec<Finding>,
+) {
+    if paths.is_empty() {
+        return;
+    }
+    let ty = match from_node(input, &input.definitions[root], 0) {
+        Ok(ty) => ty,
+        Err(error) => {
+            found.push(error);
+            return;
+        }
+    };
+    let mut seen = BTreeSet::new();
+    for (index, path) in paths.iter().enumerate() {
+        let at = format!("{at}/{index}");
+        if !seen.insert(path) {
+            found.push(finding(
+                &at,
+                "duplicate_numeric_path",
+                "numeric input path is declared twice",
+            ));
+        } else if let Err(error) = numeric_path(&ty, path, &at) {
+            found.push(error);
+        }
+    }
+}
+
+fn numeric_path(input: &Type, path: &[NumberPath], at: &str) -> Result<()> {
+    limit(path.len(), at)?;
+    let mut ty = input.clone();
+    for (index, segment) in path.iter().enumerate() {
+        let at = format!("{at}/{index}");
+        ty = match segment {
+            NumberPath::Field { name } => member(&ty.without_null(), name, &at)?,
+            NumberPath::Items => array_item(&ty.without_null(), &at)?,
+        };
+    }
+    let mut ty = ty.without_null();
+    ty.missing = false;
+    if ty.kind == Kind::Never || !assignable(&ty, &Type::new(Kind::Number)) {
+        return Err(finding(
+            at,
+            "numeric_input_type",
+            "binary64 decoding requires a declared numeric leaf",
+        ));
+    }
+    Ok(())
+}
+
 pub(super) fn stage(
     stage: &Stage,
     input: &Types,
     output: &Types,
     at: &str,
+    extended: bool,
     found: &mut Vec<Finding>,
 ) {
     let converted = from_node(input, &input.definitions[&stage.input.root], 0).and_then(|input| {
@@ -97,6 +152,7 @@ pub(super) fn stage(
     let scope = Context {
         input: &input,
         item: None,
+        extended,
     };
     for (index, condition) in stage.requires.iter().enumerate() {
         if let Err(error) = scope.condition(condition, &format!("{at}/requires/{index}"), 0) {
@@ -158,45 +214,54 @@ fn limit(depth: usize, at: &str) -> Result<()> {
 struct Context<'a> {
     input: &'a Type,
     item: Option<&'a Type>,
+    extended: bool,
 }
 
 impl Context<'_> {
     fn value(&self, value: &Expr, at: &str, depth: usize) -> Result<Type> {
         limit(depth, at)?;
+        self.version(value, at)?;
+        self.expression(value, at, depth)
+    }
+
+    fn version(&self, value: &Expr, at: &str) -> Result<()> {
+        if !self.extended
+            && matches!(
+                value,
+                Expr::Concat { .. }
+                    | Expr::Join { .. }
+                    | Expr::IntegerString { .. }
+                    | Expr::ConcatLists { .. }
+                    | Expr::ItemIndex
+                    | Expr::SelectMap { .. }
+                    | Expr::Find { .. }
+                    | Expr::Binary64ToInteger { .. }
+            )
+        {
+            return Err(finding(
+                at,
+                "operation_version",
+                "operation requires ess-normalization/2",
+            ));
+        }
+        Ok(())
+    }
+
+    fn expression(&self, value: &Expr, at: &str, depth: usize) -> Result<Type> {
         match value {
             Expr::Null => Ok(Type::new(Kind::Null)),
             Expr::Boolean { value } => Ok(Type::new(Kind::Literal(json!(value)))),
             Expr::String { value } => Ok(Type::new(Kind::Literal(json!(value)))),
             Expr::Integer { value } => Ok(Type::new(Kind::Literal(json!(value)))),
-            Expr::Read { scope, path } => {
-                let mut ty = match scope {
-                    Scope::Input => self.input,
-                    Scope::Item => self.item.ok_or_else(|| {
-                        finding(at, "item_scope", "no collection item is bound here")
-                    })?,
-                }
-                .clone();
-                for key in path {
-                    ty = member(&ty, key, at)?;
-                }
-                Ok(ty)
-            }
+            Expr::Binary64ToInteger { value, steps, .. } => self.binary64(value, steps, at, depth),
+            Expr::Read { scope, path } => self.read(*scope, path, at),
             Expr::Field { object, name } => member(
                 &self.value(object, &format!("{at}/object"), depth + 1)?,
                 name,
                 at,
             ),
             Expr::Record { fields } => self.record(fields, at, depth),
-            Expr::List { items } => {
-                let mut types = Vec::new();
-                for (index, item) in items.iter().enumerate() {
-                    let at = format!("{at}/items/{index}");
-                    let ty = self.value(item, &at, depth + 1)?;
-                    required(&ty, &at)?;
-                    types.push(ty);
-                }
-                Ok(Type::new(Kind::Array(Box::new(Type::union(types)))))
-            }
+            Expr::List { items } => self.list(items, at, depth),
             Expr::Fallback {
                 value,
                 fallback,
@@ -226,37 +291,203 @@ impl Context<'_> {
                 self.integer(right, &format!("{at}/right"), depth + 1)?;
                 Ok(Type::new(Kind::Integer))
             }
-            Expr::Map { list, value } => {
-                let item = self.item_type(list, &format!("{at}/list"), depth + 1)?;
-                let ty = Context {
-                    input: self.input,
-                    item: Some(&item),
-                }
-                .value(value, &format!("{at}/value"), depth + 1)?;
-                required(&ty, at)?;
-                Ok(Type::new(Kind::Array(Box::new(ty))))
-            }
+            Expr::Map { list, value } => self.map(list, value, at, depth),
             Expr::DistinctCount {
                 list,
                 condition,
                 key,
-            } => {
-                let item = self.item_type(list, &format!("{at}/list"), depth + 1)?;
-                let scope = Context {
-                    input: self.input,
-                    item: Some(&item),
-                };
-                scope.condition(condition, &format!("{at}/condition"), depth + 1)?;
-                let key = scope.value(key, &format!("{at}/key"), depth + 1)?;
-                if !assignable(&key, &Type::new(Kind::String)) {
+            } => self.count(list, condition, key, at, depth),
+            Expr::Concat { parts } => {
+                for (index, part) in parts.iter().enumerate() {
+                    self.string(part, &format!("{at}/parts/{index}"), depth + 1)?;
+                }
+                Ok(Type::new(Kind::String))
+            }
+            Expr::Join { list, separator } => self.join(list, separator, at, depth),
+            Expr::IntegerString { value } => {
+                self.integer(value, &format!("{at}/value"), depth + 1)?;
+                Ok(Type::new(Kind::String))
+            }
+            Expr::ConcatLists { lists } => {
+                let mut items = Vec::new();
+                for (index, list) in lists.iter().enumerate() {
+                    items.push(self.item_type(list, &format!("{at}/lists/{index}"), depth + 1)?);
+                }
+                Ok(Type::new(Kind::Array(Box::new(Type::union(items)))))
+            }
+            Expr::ItemIndex => {
+                if self.item.is_none() {
                     return Err(finding(
                         at,
-                        "count_key",
-                        "distinct category keys must be present strings",
+                        "item_scope",
+                        "no collection index is bound here",
                     ));
                 }
                 Ok(Type::new(Kind::Integer))
             }
+            Expr::SelectMap {
+                list,
+                condition,
+                value,
+            } => {
+                let ty = self.selected(list, condition, value, at, depth)?;
+                Ok(Type::new(Kind::Array(Box::new(ty))))
+            }
+            Expr::Find {
+                list,
+                condition,
+                value,
+                otherwise,
+            } => {
+                let selected = self.selected(list, condition, value, at, depth)?;
+                let at_otherwise = format!("{at}/otherwise");
+                let otherwise = self.value(otherwise, &at_otherwise, depth + 1)?;
+                required(&otherwise, &at_otherwise)?;
+                Ok(Type::union(vec![selected, otherwise]))
+            }
+        }
+    }
+
+    fn map(&self, list: &Expr, value: &Expr, at: &str, depth: usize) -> Result<Type> {
+        let item = self.item_type(list, &format!("{at}/list"), depth + 1)?;
+        let ty = Context {
+            input: self.input,
+            item: Some(&item),
+            extended: self.extended,
+        }
+        .value(value, &format!("{at}/value"), depth + 1)?;
+        required(&ty, at)?;
+        Ok(Type::new(Kind::Array(Box::new(ty))))
+    }
+
+    fn binary64(
+        &self,
+        value: &Expr,
+        steps: &[Binary64Step],
+        at: &str,
+        depth: usize,
+    ) -> Result<Type> {
+        let at_value = format!("{at}/value");
+        if !assignable(
+            &self.value(value, &at_value, depth + 1)?,
+            &Type::new(Kind::Number),
+        ) {
+            return Err(finding(
+                &at_value,
+                "binary64_type",
+                "binary64 conversion requires a present non-null numeric value",
+            ));
+        }
+        for (index, step) in steps.iter().enumerate() {
+            let (Binary64Step::Multiply { value }
+            | Binary64Step::Minimum { value }
+            | Binary64Step::Maximum { value }) = step;
+            if super::numeric::literal(value).is_none() {
+                return Err(finding(
+                    &format!("{at}/steps/{index}/value"),
+                    "binary64_literal",
+                    "expected a finite JSON numeric token",
+                ));
+            }
+        }
+        Ok(Type::new(Kind::Integer))
+    }
+
+    fn read(&self, scope: Scope, path: &[String], at: &str) -> Result<Type> {
+        let mut ty = match scope {
+            Scope::Input => self.input,
+            Scope::Item => self
+                .item
+                .ok_or_else(|| finding(at, "item_scope", "no collection item is bound here"))?,
+        }
+        .clone();
+        for key in path {
+            ty = member(&ty, key, at)?;
+        }
+        Ok(ty)
+    }
+
+    fn list(&self, items: &[Expr], at: &str, depth: usize) -> Result<Type> {
+        let mut types = Vec::new();
+        for (index, item) in items.iter().enumerate() {
+            let at = format!("{at}/items/{index}");
+            let ty = self.value(item, &at, depth + 1)?;
+            required(&ty, &at)?;
+            types.push(ty);
+        }
+        Ok(Type::new(Kind::Array(Box::new(Type::union(types)))))
+    }
+
+    fn count(
+        &self,
+        list: &Expr,
+        condition: &Condition,
+        key: &Expr,
+        at: &str,
+        depth: usize,
+    ) -> Result<Type> {
+        let item = self.item_type(list, &format!("{at}/list"), depth + 1)?;
+        let scope = Context {
+            input: self.input,
+            item: Some(&item),
+            extended: self.extended,
+        };
+        scope.condition(condition, &format!("{at}/condition"), depth + 1)?;
+        let key = scope.value(key, &format!("{at}/key"), depth + 1)?;
+        if !assignable(&key, &Type::new(Kind::String)) {
+            return Err(finding(
+                at,
+                "count_key",
+                "distinct category keys must be present strings",
+            ));
+        }
+        Ok(Type::new(Kind::Integer))
+    }
+
+    fn join(&self, list: &Expr, separator: &Expr, at: &str, depth: usize) -> Result<Type> {
+        let at_list = format!("{at}/list");
+        let item = self.item_type(list, &at_list, depth + 1)?;
+        if !assignable(&item, &Type::new(Kind::String)) {
+            return Err(finding(
+                &at_list,
+                "string_type",
+                "joining requires present string elements",
+            ));
+        }
+        self.string(separator, &format!("{at}/separator"), depth + 1)?;
+        Ok(Type::new(Kind::String))
+    }
+
+    fn selected(
+        &self,
+        list: &Expr,
+        condition: &Condition,
+        value: &Expr,
+        at: &str,
+        depth: usize,
+    ) -> Result<Type> {
+        let item = self.item_type(list, &format!("{at}/list"), depth + 1)?;
+        let scope = Context {
+            input: self.input,
+            item: Some(&item),
+            extended: self.extended,
+        };
+        scope.condition(condition, &format!("{at}/condition"), depth + 1)?;
+        let at_value = format!("{at}/value");
+        let result = scope.value(value, &at_value, depth + 1)?;
+        required(&result, &at_value)?;
+        Ok(result)
+    }
+
+    fn string(&self, value: &Expr, at: &str, depth: usize) -> Result<()> {
+        if assignable(&self.value(value, at, depth)?, &Type::new(Kind::String)) {
+            Ok(())
+        } else {
+            Err(finding(
+                at,
+                "string_type",
+                "operation requires a present non-null string",
+            ))
         }
     }
 

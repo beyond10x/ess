@@ -1,6 +1,6 @@
 //! Pure reference execution. No stage result or caller mutation escapes on failure.
 
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 
 use serde_json::{Map, Value};
 
@@ -12,6 +12,7 @@ type Result<T> = std::result::Result<T, Refused>;
 pub(super) struct Context<'a> {
     pub input: &'a Value,
     pub item: Option<&'a Value>,
+    pub index: Option<usize>,
 }
 
 impl Context<'_> {
@@ -21,22 +22,17 @@ impl Context<'_> {
             Expr::Boolean { value } => Value::Bool(*value),
             Expr::String { value } => Value::String(value.clone()),
             Expr::Integer { value } => Value::Number((*value).into()),
-            Expr::Read { scope, path } => {
-                let mut value = match scope {
-                    Scope::Input => Some(self.input),
-                    Scope::Item => self.item,
-                };
-                for key in path {
-                    let Some(parent) = value else {
-                        return Ok(None);
-                    };
-                    let object = parent.as_object().ok_or_else(|| {
-                        error(at, "object_value", "member access encountered a nonobject")
-                    })?;
-                    value = object.get(key);
-                }
-                return Ok(value.cloned());
-            }
+            Expr::Binary64ToInteger {
+                value,
+                steps,
+                out_of_range,
+            } => super::numeric::convert(
+                &self.present(value, &format!("{at}/value"))?,
+                steps,
+                *out_of_range,
+                at,
+            )?,
+            Expr::Read { scope, path } => return self.read(*scope, path, at),
             Expr::Field { object, name } => {
                 let Some(value) = self.value(object, &format!("{at}/object"))? else {
                     return Ok(None);
@@ -49,17 +45,7 @@ impl Context<'_> {
                     .get(name)
                     .cloned());
             }
-            Expr::Record { fields } => {
-                let mut out = Map::new();
-                for (key, expr) in fields {
-                    if let Some(value) =
-                        self.value(expr, &super::path(&format!("{at}/fields"), key))?
-                    {
-                        out.insert(key.clone(), value);
-                    }
-                }
-                Value::Object(out)
-            }
+            Expr::Record { fields } => self.record(fields, at)?,
             Expr::List { items } => {
                 let out = items
                     .iter()
@@ -104,6 +90,25 @@ impl Context<'_> {
                 condition,
                 key,
             } => self.count(list, condition, key, at)?,
+            Expr::Concat { parts } => self.concat(parts, at)?,
+            Expr::Join { list, separator } => self.join(list, separator, at)?,
+            Expr::IntegerString { value } => {
+                let at = format!("{at}/value");
+                Value::String(integer(&self.present(value, &at)?, &at)?.to_string())
+            }
+            Expr::ConcatLists { lists } => self.concat_lists(lists, at)?,
+            Expr::ItemIndex => self.item_index(at)?,
+            Expr::SelectMap {
+                list,
+                condition,
+                value,
+            } => self.select(list, condition, value, None, at)?,
+            Expr::Find {
+                list,
+                condition,
+                value,
+                otherwise,
+            } => self.select(list, condition, value, Some(otherwise), at)?,
         };
         Ok(Some(value))
     }
@@ -111,6 +116,120 @@ impl Context<'_> {
     fn present(&self, expr: &Expr, at: &str) -> Result<Value> {
         self.value(expr, at)?
             .ok_or_else(|| error(at, "missing_value", "required expression value is absent"))
+    }
+
+    fn record(&self, fields: &BTreeMap<String, Expr>, at: &str) -> Result<Value> {
+        let mut out = Map::new();
+        for (key, expr) in fields {
+            if let Some(value) = self.value(expr, &super::path(&format!("{at}/fields"), key))? {
+                out.insert(key.clone(), value);
+            }
+        }
+        Ok(Value::Object(out))
+    }
+
+    fn read(&self, scope: Scope, path: &[String], at: &str) -> Result<Option<Value>> {
+        let mut value = match scope {
+            Scope::Input => Some(self.input),
+            Scope::Item => self.item,
+        };
+        for key in path {
+            let Some(parent) = value else {
+                return Ok(None);
+            };
+            let object = parent.as_object().ok_or_else(|| {
+                error(at, "object_value", "member access encountered a nonobject")
+            })?;
+            value = object.get(key);
+        }
+        Ok(value.cloned())
+    }
+
+    fn concat(&self, parts: &[Expr], at: &str) -> Result<Value> {
+        let mut out = String::new();
+        for (index, part) in parts.iter().enumerate() {
+            out.push_str(&self.string(part, &format!("{at}/parts/{index}"))?);
+        }
+        Ok(Value::String(out))
+    }
+
+    fn join(&self, list: &Expr, separator: &Expr, at: &str) -> Result<Value> {
+        let at_list = format!("{at}/list");
+        let values = self.present(list, &at_list)?;
+        let items = array(&values, &at_list)?;
+        let separator = self.string(separator, &format!("{at}/separator"))?;
+        let strings = items
+            .iter()
+            .map(|value| {
+                value.as_str().ok_or_else(|| {
+                    error(&at_list, "string_value", "joining requires string elements")
+                })
+            })
+            .collect::<Result<Vec<_>>>()?;
+        Ok(Value::String(strings.join(&separator)))
+    }
+
+    fn concat_lists(&self, lists: &[Expr], at: &str) -> Result<Value> {
+        let mut out = Vec::new();
+        for (index, list) in lists.iter().enumerate() {
+            let at = format!("{at}/lists/{index}");
+            let values = self.present(list, &at)?;
+            out.extend_from_slice(array(&values, &at)?);
+        }
+        Ok(Value::Array(out))
+    }
+
+    fn item_index(&self, at: &str) -> Result<Value> {
+        let index = self
+            .index
+            .ok_or_else(|| error(at, "item_scope", "no collection index is bound here"))?;
+        let index = i64::try_from(index).map_err(|_| {
+            error(
+                at,
+                "integer_overflow",
+                "collection index exceeds signed 64-bit representation",
+            )
+        })?;
+        Ok(Value::Number(index.into()))
+    }
+
+    fn string(&self, expr: &Expr, at: &str) -> Result<String> {
+        self.present(expr, at)?
+            .as_str()
+            .map(str::to_owned)
+            .ok_or_else(|| error(at, "string_value", "operation requires a string"))
+    }
+
+    fn select(
+        &self,
+        list: &Expr,
+        condition: &Condition,
+        value: &Expr,
+        otherwise: Option<&Expr>,
+        at: &str,
+    ) -> Result<Value> {
+        let at_list = format!("{at}/list");
+        let values = self.present(list, &at_list)?;
+        let items = array(&values, &at_list)?;
+        let mut out = Vec::new();
+        for (index, item) in items.iter().enumerate() {
+            let scope = Context {
+                input: self.input,
+                item: Some(item),
+                index: Some(index),
+            };
+            if scope.condition(condition, &format!("{at}/condition"))? {
+                let result = scope.present(value, &format!("{at}/value"))?;
+                if otherwise.is_some() {
+                    return Ok(result);
+                }
+                out.push(result);
+            }
+        }
+        match otherwise {
+            Some(otherwise) => self.present(otherwise, &format!("{at}/otherwise")),
+            None => Ok(Value::Array(out)),
+        }
     }
 
     fn arithmetic(
@@ -146,10 +265,12 @@ impl Context<'_> {
             .ok_or_else(|| error(at, "collection_value", "mapping requires a list"))?;
         let out = items
             .iter()
-            .map(|item| {
+            .enumerate()
+            .map(|(index, item)| {
                 Context {
                     input: self.input,
                     item: Some(item),
+                    index: Some(index),
                 }
                 .present(value, &format!("{at}/value"))
             })
@@ -163,10 +284,11 @@ impl Context<'_> {
             .as_array()
             .ok_or_else(|| error(at, "collection_value", "counting requires a list"))?;
         let mut keys = BTreeSet::new();
-        for item in items {
+        for (index, item) in items.iter().enumerate() {
             let scope = Context {
                 input: self.input,
                 item: Some(item),
+                index: Some(index),
             };
             if scope.condition(condition, &format!("{at}/condition"))? {
                 let key = scope.present(key, &format!("{at}/key"))?;
@@ -250,6 +372,13 @@ impl Context<'_> {
             }
         }
     }
+}
+
+fn array<'a>(value: &'a Value, at: &str) -> Result<&'a [Value]> {
+    value
+        .as_array()
+        .map(Vec::as_slice)
+        .ok_or_else(|| error(at, "collection_value", "operation requires a list"))
 }
 
 fn integer(value: &Value, at: &str) -> Result<i64> {

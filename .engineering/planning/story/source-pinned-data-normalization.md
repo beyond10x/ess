@@ -34,6 +34,8 @@ scope:
 - confidence: cited
   path: crates/generate/schema-contract/src/realize/normalize/input.rs
 - confidence: cited
+  path: crates/generate/schema-contract/src/realize/normalize/numeric.rs
+- confidence: cited
   path: crates/generate/schema-contract/src/realize/normalize/recipe.rs
 - confidence: cited
   path: crates/generate/schema-contract/src/realize/normalize/rust_runtime.rs.txt
@@ -42,18 +44,28 @@ scope:
 - confidence: cited
   path: crates/generate/schema-contract/src/realize/rust.rs
 - confidence: cited
+  path: crates/generate/schema-contract/tests/fixtures/normalization_numeric.rs
+- confidence: cited
   path: crates/generate/schema-contract/tests/fixtures/normalization_rust_tests.rs.txt
+- confidence: cited
+  path: crates/generate/schema-contract/tests/fixtures/normalization_v2.rs
 - confidence: cited
   path: crates/generate/schema-contract/tests/normalization.rs
 - confidence: cited
+  path: crates/generate/schema-contract/tests/normalization_numeric.rs
+- confidence: cited
   path: crates/generate/schema-contract/tests/normalization_rust.rs
+- confidence: cited
+  path: crates/generate/schema-contract/tests/normalization_v2.rs
 - confidence: cited
   path: docs/design/source-pinned-data-normalization.md
 - confidence: cited
   path: website/docs/guides/generate-artifacts.md
 - confidence: cited
   path: website/docs/reference/cli.md
-revision: 4
+- confidence: cited
+  path: website/docs/reference/formats.md
+revision: 9
 ---
 ## Evidence
 
@@ -209,3 +221,145 @@ active until the unchanged three-target and consumer-normalization acceptance ho
 ## Integration Provenance
 
 Reconciled through AEP from wt-46ef382d9f07 at original revision 11 and status active. Source artifact SHA-256: 5b8b6ca27e75418c9fa0a05dbfdac625d6ae6c13aa4031f8edbef7602313434a. Original journal history remains with its source recovery snapshot; this store records the reconciliation as new governed operations.
+
+## Additional Source-Fidelity Gaps After 0.19.0
+
+The adopter's continued immutable-source audit identified operations that the
+current recipe cannot represent. This is added to the existing unchanged
+three-target acceptance, not filed as a smaller replacement for it.
+
+1. Explicit floating representation and conversion order. A source decoder admits
+   ordinary JSON numbers into binary64, clamps some values, multiplies by a unit
+   scale, truncates toward zero into a signed duration, then performs another
+   integer scale. Expr::Arithmetic and Condition::Greater currently admit only
+   signed integers. normalize/input.rs intentionally rejects lossy JSON conversion.
+   Neither exact decimal multiplication nor silently broadening that text reader
+   preserves the observed pipeline. The binding must declare numeric decoding,
+   rounding, operation order, truncation and range behavior explicitly; retain
+   the existing exact policy for recipes that did not request another policy.
+   Out-of-range host conversions need a supported contract or a named refusal,
+   not a guessed portable result.
+
+2. Ordered string construction. A source conversion maps list entries to exact
+   strings, concatenates them in source order (including duplicate and empty
+   contributions), and conditionally surrounds the result with literal text.
+   Expr currently has literals and prefix comparison, but no concatenation/join.
+   Add concrete typed operations with no hidden sorting, deduplication, regex
+   interpretation or escaping. Empty-list and empty-string behavior must be bound.
+
+3. Filtered indexed collection construction. A source conversion conditionally
+   prepends one element, filters later entries, and constructs a key from each
+   entry's original zero-based index. Expr::Map preserves every input element and
+   Scope exposes only input/item values; there is no index, filtered map, list
+   concatenation or integer-to-string operation. Preserve original indices after
+   filtering and specify lexical index scope for nested collections. Do not
+   replace the behavior with dense renumbering or missing list elements.
+
+4. Non-JSON runtime behavior must retain a typed home. A source converter constructs
+   ordered equality-match callbacks excluded from JSON; first match wins and
+   duplicate keys remain meaningful. A structural JSON snapshot loses them.
+   Define a concrete declarative equality-dispatch representation and its lowering
+   boundary before claiming complete normalization. Do not serialize arbitrary
+   source code, introduce generic callback property bags, or claim a native closure
+   is equivalent to an unbound string. The declaration and execution obligations
+   must remain visible until the target realizes them.
+
+Implementation must first revise docs/design/source-pinned-data-normalization.md,
+including strict old-reader compatibility and format-version consequences. The
+currently published ess-normalization/1 is not silently extended with changed
+number admission or operation meanings. Every admitted operation must be checked
+and realized consistently in the reference engine and Go, Rust and TypeScript;
+unsupported operations must refuse before successful artifact publication.
+
+Code evidence: crates/generate/schema-contract/src/realize/normalize/recipe.rs
+declares the closed Expr/Condition/Scope variants; normalize/input.rs enforces the
+exact JSON boundary; normalize/check.rs checks only those variants; target.rs
+currently offers the standalone Rust target. Source-specific field names and
+immutable implementation citations remain in the adopter's normalization chapter.
+No consumer conversion parity or implementation of these additions is claimed.
+
+## Ordered Operations Checkpoint
+
+The binding design now declares ess-normalization/2 for seven concrete additions:
+concat, join, integer_string, concat_lists, item_index, select_map and find.
+The reference checker/evaluator and standalone Rust target implement them. String
+and list construction preserves source order, duplicates and empty values. Filtered
+mapping retains original indices; nested collection scopes rebind the index.
+First-match selection skips later items and evaluates fallback only on no match,
+in the enclosing scope. Every operand still checks before execution.
+
+The version 1 checker refuses each new operation at its expression pointer with
+operation_version. Existing version 1 canonical bytes are unchanged: its generated
+Rust fixture canonical recipe has SHA-256
+8c99019a9eb7111f0e025772d1c29a82acea2215c1fcaf0b6200f825bcca611b,
+independently reproduced byte-for-byte by the published 0.19.0 reader and pinned
+in tests/normalization_rust.rs. The published reader refuses the version 2 fixture
+with recipe_syntax: unknown variant `join`. New readers retain strict unknown-format
+refusal and do not broaden numeric admission.
+
+Verification on the final local code:
+- CARGO_NET_OFFLINE=true CARGO_BUILD_JOBS=4 task check: exit 0, including formatting,
+  strict Clippy, workspace tests, rustdoc, command smoke checks and projection checks.
+- CARGO_BUILD_JOBS=4 task site-build: exit 0, including the browser/WASM lab and
+  Docusaurus build.
+- Normalization suites: 15 existing reference tests, six version 2 checks and three
+  standalone Rust target tests. Generated crates execute both old/new recipes under
+  default and consumer-enabled serde_json/arbitrary_precision feature configurations.
+  The new target runs 33 cases, including all three-item filter combinations,
+  first-match versus selected overflow, empty collections and integer boundaries.
+- git diff --check: exit 0. Accidental workspace-formatter changes to generated
+  sample projections were removed; no unrelated generated bytes remain changed.
+
+New operation coverage is reference plus Rust only. Binary64 decode/scale/truncate,
+Go and TypeScript normalization targets, adapter-generation CLI and the concrete
+declarative runtime dispatch/consumer lowering contract remain open. Generic public
+documentation labels version 2 unreleased. No new release, commit, push or source
+adapter parity is claimed by this checkpoint. This story remains active with its
+original three-target acceptance unchanged.
+
+## Declared Binary64 Conversion Checkpoint
+
+The unreleased version 2 design now additionally binds branch-specific numeric
+input paths and ordered binary64-to-integer conversion. The optional binary64_inputs
+map is omitted from existing recipe serialization, so the released version 1
+canonical fixture digest remains unchanged. Version 1 refuses the declaration,
+including an empty map; null is not accepted as an absent map. Typed field/items
+paths are checked against each branch's first source root, including duplicate,
+unknown branch/field and nonnumeric-leaf refusals. Nullable/optional containers
+retain their actual presence.
+
+Only selected raw numeric tokens decode with standard binary64 nearest-even
+rounding. Other tokens retain exact admission, including otherwise unused values.
+Signed underflow is preserved; infinity refuses. binary64_to_integer executes
+finite multiply/minimum/maximum steps in declaration order, preserving signed-zero
+clamp semantics, then explicitly rejects outside [-2^63,2^63) before truncating.
+Later integer arithmetic still independently declares reject or wrap. Authored
+constant tokens remain strings, checked before any branch execution.
+
+The reference engine, normalize-check/normalize-run CLI and standalone Rust target
+share this implementation. Generated Rust also exposes normalize_value for a
+decoded-value input, with the same caller-owned precision qualification as Plan::run.
+No source runtime or general schema numeric serialization was changed.
+
+Verification:
+- CARGO_NET_OFFLINE=true CARGO_BUILD_JOBS=4 task check: exit 0.
+- CARGO_BUILD_JOBS=4 task site-build: exit 0.
+- Five numeric integration tests, two numeric unit tests and actual generated Rust
+  execution of 36 numeric cases under default and arbitrary_precision JSON features.
+  Existing 15 reference cases, six ordered-operation checks and the version 1
+  canonical SHA-256 regression remain green. CLI checks exercise fractional scaling,
+  range refusal, version refusal and preservation of a preexisting output file.
+- An independent Go standard-library decoding/conversion run confirmed selected
+  bit patterns and pipeline values. In particular, 1.001 times 1000 truncates to
+  1000; 9223372036854774 times 1000 rounds to 9223372036854773760, and its subsequent
+  wrapping integer scale by 1000000 yields -2048000000. This corrected an initially
+  incorrect hand-calculated test expectation; it was not changed merely to match
+  the new evaluator. In-range binary64 cast behavior only is claimed.
+- git diff --check: exit 0.
+
+The numeric operation gap is addressed for the reference, CLI and Rust realization.
+Go/TypeScript normalization targets, adapter-generation CLI, the concrete runtime
+dispatch lowering contract and complete source-adapter adoption remain required.
+Host-dependent out-of-range conversions are explicitly qualified, not guessed.
+Keep the story active; this checkpoint is not the completed three-target outcome
+and has not cut a new release.

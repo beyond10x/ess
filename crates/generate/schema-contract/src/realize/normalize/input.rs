@@ -5,18 +5,23 @@ use std::collections::BTreeMap;
 use serde::Deserialize;
 use serde_json::{value::RawValue, Number, Value};
 
-use super::Refused;
 use super::{finding, path};
+use super::{NumberPath, Refused};
 
 type Result<T> = std::result::Result<T, Refused>;
 
-pub(super) fn parse(text: &str) -> Result<Value> {
+pub(super) fn parse(text: &str, paths: &[Vec<NumberPath>]) -> Result<Value> {
     let raw: Box<RawValue> = serde_json::from_str(text)
         .map_err(|_| error("/input", "input_syntax", "expected one complete JSON value"))?;
-    decode(&raw, "/input", 0)
+    decode(
+        &raw,
+        "/input",
+        0,
+        &paths.iter().map(Vec::as_slice).collect::<Vec<_>>(),
+    )
 }
 
-fn decode(raw: &RawValue, at: &str, depth: usize) -> Result<Value> {
+fn decode(raw: &RawValue, at: &str, depth: usize, paths: &[&[NumberPath]]) -> Result<Value> {
     if depth > 64 {
         return Err(error(at, "input_depth", "JSON input exceeds 64 levels"));
     }
@@ -33,7 +38,8 @@ fn decode(raw: &RawValue, at: &str, depth: usize) -> Result<Value> {
                 .0
                 .iter()
                 .map(|(key, value)| {
-                    decode(value, &path(at, key), depth + 1).map(|value| (key.clone(), value))
+                    decode(value, &path(at, key), depth + 1, &descend(paths, Some(key)))
+                        .map(|value| (key.clone(), value))
                 })
                 .collect::<Result<serde_json::Map<_, _>>>()
                 .map(Value::Object)
@@ -44,15 +50,85 @@ fn decode(raw: &RawValue, at: &str, depth: usize) -> Result<Value> {
             values
                 .iter()
                 .enumerate()
-                .map(|(index, value)| decode(value, &format!("{at}/{index}"), depth + 1))
+                .map(|(index, value)| {
+                    decode(
+                        value,
+                        &format!("{at}/{index}"),
+                        depth + 1,
+                        &descend(paths, None),
+                    )
+                })
                 .collect::<Result<_>>()
                 .map(Value::Array)
         }
-        b'-' | b'0'..=b'9' => number(text, at).map(Value::Number),
+        b'-' | b'0'..=b'9' => {
+            if paths.iter().any(|path| path.is_empty()) {
+                binary64(text, at).map(Value::Number)
+            } else {
+                number(text, at).map(Value::Number)
+            }
+        }
         _ => {
             serde_json::from_str(text).map_err(|_| error(at, "input_syntax", "invalid JSON scalar"))
         }
     }
+}
+
+fn descend<'a>(paths: &[&'a [NumberPath]], field: Option<&str>) -> Vec<&'a [NumberPath]> {
+    paths
+        .iter()
+        .filter_map(|path| match (path.split_first(), field) {
+            (Some((NumberPath::Field { name }, rest)), Some(field)) if name == field => Some(rest),
+            (Some((NumberPath::Items, rest)), None) => Some(rest),
+            _ => None,
+        })
+        .collect()
+}
+
+pub(super) fn prepare(value: &Value, paths: &[Vec<NumberPath>]) -> Result<Value> {
+    convert(
+        value,
+        "/input",
+        &paths.iter().map(Vec::as_slice).collect::<Vec<_>>(),
+    )
+}
+
+fn convert(value: &Value, at: &str, paths: &[&[NumberPath]]) -> Result<Value> {
+    if paths.is_empty() {
+        return Ok(value.clone());
+    }
+    match value {
+        Value::Object(fields) => fields
+            .iter()
+            .map(|(key, value)| {
+                convert(value, &path(at, key), &descend(paths, Some(key)))
+                    .map(|value| (key.clone(), value))
+            })
+            .collect::<Result<serde_json::Map<_, _>>>()
+            .map(Value::Object),
+        Value::Array(items) => items
+            .iter()
+            .enumerate()
+            .map(|(index, value)| convert(value, &format!("{at}/{index}"), &descend(paths, None)))
+            .collect::<Result<Vec<_>>>()
+            .map(Value::Array),
+        Value::Number(number) if paths.iter().any(|path| path.is_empty()) => {
+            binary64(&number.to_string(), at).map(Value::Number)
+        }
+        _ => Ok(value.clone()),
+    }
+}
+
+fn binary64(text: &str, at: &str) -> Result<Number> {
+    super::numeric::finite(text)
+        .and_then(Number::from_f64)
+        .ok_or_else(|| {
+            error(
+                at,
+                "input_number",
+                "JSON number is outside finite binary64 representation",
+            )
+        })
 }
 
 fn number(text: &str, at: &str) -> Result<Number> {
