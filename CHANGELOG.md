@@ -4,6 +4,10 @@
 
 ### Added
 
+- Executable offline registry examples for generated source-syntax and contract
+  schemas, using adopter-owned resource IDs and separate strict selector envelopes.
+  Generated schema bytes remain unchanged; syntax admission, system semantics and
+  restricted TypeScript projection have distinct documented boundaries.
 - Standalone TypeScript normalization from `Plan::typescript(package)` and
   `normalize-generate --target typescript --package NAME`. Generated ES2022 ESM
   packages execute formats 1–6 from exact JSON text, use bigint for exact integer

@@ -1,0 +1,12 @@
+{
+  "schema": "urn:example:ess-source-submission:1",
+  "payload": {
+    "format": "ess/1",
+    "system": "shop",
+    "version": "v1",
+    "domains": [
+      "shop.cart"
+    ]
+  }
+}
+

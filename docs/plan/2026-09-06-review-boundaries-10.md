@@ -137,3 +137,49 @@ maps all75 accepted matrix rows and the actual producer export contract to the e
 package owners and nine scope entries. This is preparation only: no implementation, test,
 helper execution or later wave selection follows from it. Its47 inspected file hashes were
 unchanged on return; root must refresh any changed source before the next replan.
+
+## Reviewed source and incoming reconciliation
+
+Source attack1 returned no product finding. All167 inherited cases and6 added cases passed:
+173passed,0failed/ignored,27summaries,21.48seconds, followed by green formatting and strict
+all-target Clippy. Root verified8sealed records,765catalog entries and15frozen source entries.
+The sole additive396-line target is frozen at e7aca0f044b092eaadc630e4e2dc29388e4bc5d8 with
+both bot identities verified. Immutable report schema-resource-identity-adversary-pass-1 has
+SHA2562c7de0ec18270544b9080bcbeb9b7ffeca7cc155e6892d486dae31dd5d1a046f. All writes are
+relinquished. This first green source attack closes unit review; no second attack is needed.
+
+The initial added target passed5cases and failed1 because its new currency fixture incorrectly
+assumed an enum. The actual generated field accepts any string. Only that new input changed to
+a boolean; its isolated case and the complete package then passed. Exact original bytes and all
+104 schema-identity subprocess receipts remain retained, separately from Rust case counts.
+The full package includes31new CLI calls and34inherited CLI calls. No production fix is inferred.
+
+Incoming main6bf76440c38331f6dd5214e5667c210b58a24015 published TypeScript normalization while
+the unit ran. Root preserved the incoming1406-line canonical journal, replayed9local commands
+through AEP and verified162unrelated artifacts and the one local story byte-exact. Reconciliation
+commit ea5b8f055cdf1c53025692f4eac8b01eeaa66053 preserves all50incoming changed non-journal
+paths byte-exact. The schema merge then combined both shared public pages without a conflict.
+The new normalization target and the existing restricted schema TypeScript projection remain
+separate. The learned scope adds the independent test and root-owned CHANGELOG.md entry.
+
+The complete findings comparison is retained verbatim; its earlier review is the last shared
+planning review, not a fabricated earlier source attack:
+
+```json
+{
+  "artifact": "story:review-schema-resource-identity",
+  "reviews": 9,
+  "from": "review-result:review-remediation-parallel-safety-round-2",
+  "from_reviewer": "unattributed",
+  "to": "review-result:schema-resource-identity-adversary-pass-1",
+  "to_reviewer": "unattributed",
+  "carried": [],
+  "new": [],
+  "resolved": []
+}
+```
+
+All eight declared task-check lanes, the separate site-build and planning validation will run
+on the clean merged source. Runner SHA2562e442489a06718da883d513b4784fce63b5dd69d33318264c29f005a47382d93
+retains separate real statuses, validates the declared lane list, checks source hashes after
+each lane and uses this coordinator's own target with2jobs. No integrated result is claimed yet.

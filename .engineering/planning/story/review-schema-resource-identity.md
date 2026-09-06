@@ -12,10 +12,14 @@ relations:
 - serves: vision:O2
 - depends_on: story:review-format-catalog
 scope:
+- confidence: cited
+  path: CHANGELOG.md
 - confidence: inferred
   path: crates/edge/ess-cli/tests/fixtures/schema-resource-identity
 - confidence: inferred
   path: crates/edge/ess-cli/tests/schema_registry_identity.rs
+- confidence: cited
+  path: crates/edge/ess-cli/tests/schema_registry_identity_adversary.rs
 - confidence: cited
   path: docs/design/review-format-catalog.md
 - confidence: inferred
@@ -24,7 +28,7 @@ scope:
   path: website/docs/guides/generate-artifacts.md
 - confidence: cited
   path: website/docs/reference/formats.md
-revision: 12
+revision: 15
 ---
 ## Finding and source
 
@@ -79,3 +83,13 @@ The first9-case observation retained8passes/1failure: the new external-reference
 Immutable implementor report SHA25673b736a6f1480333ed568f6a4b6fe5c262728188f05f5d0d9b2782a5c74cdfe8. Root verified16summary hashes,507evidence files and15final source entries before the bot-authored/committed freeze. The actual inherited158-case baseline names42a44c4; its diff to openinge283a26 contains only coordinator planning/design/review documents, as recorded by the implementor.
 
 First source attack is assigned to count_writer_impl8 under the installed adversary0.8.0 charter, in the same unit with additive-tests-only custody after full implementor relinquishment. Its scratch is target/review-boundaries-10/schema-resource-identity/adversary-pass-1. Full integration gates and publication are not yet claimed.
+
+## Source review and integration handoff
+
+review-result:schema-resource-identity-adversary-pass-1 preserves the complete source attack against50c1001369c90f662b50d162aac97961199c1e72. Six added cases passed alongside all167inheritedcases:173passed,0failed/ignored,27summaries,21.48seconds. Final formatting and strict all-target Clippy passed. Root verified8sealed records,765catalog entries and all15frozen source entries, then froze the single additive396-line test at e7aca0f044b092eaadc630e4e2dc29388e4bc5d8. Report SHA2562c7de0ec18270544b9080bcbeb9b7ffeca7cc155e6892d486dae31dd5d1a046f. No product finding was returned and no finding outcome is invented.
+
+The original new adversary fixture wrongly assumed currency had an enum; the actual generated schema accepts any string. Its5pass/1fail target, exact initial test and all receipts remain retained. Changing only that new input to a boolean restored the intended nested type refusal, passed alone and then in the full package. This is distinct from the implementor's retained diagnostic-expectation correction. Final package receipts include31new and34inherited actual CLI calls, not65Rust cases.
+
+The learned surface adds the independent test crates/edge/ess-cli/tests/schema_registry_identity_adversary.rs and a root-owned Unreleased changelog entry. Unit ownership otherwise remains its9frozen files; production and original generated schemas are unchanged. The source review is complete after its first green pass. Integration gates and public delivery remain pending.
+
+Incoming main6bf76440c38331f6dd5214e5667c210b58a24015 supplies independently published TypeScript normalization. Root retained its canonical1406-line planning journal, replayed9local schema commands through AEP and verified162unrelated incoming artifacts plus the one local story byte-exact. Reconciliation commit ea5b8f055cdf1c53025692f4eac8b01eeaa66053 precedes this schema merge. Both shared public pages merged automatically; the full integration gate will verify the combined source.

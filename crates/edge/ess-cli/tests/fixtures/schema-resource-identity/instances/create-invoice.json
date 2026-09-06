@@ -1,0 +1,12 @@
+{
+  "schema": "urn:example:invoice-submission:1",
+  "payload": {
+    "account_id": "00000000-0000-4000-8000-000000000001",
+    "customer_email": "reader@example.org",
+    "amount": {
+      "amount": "12.50",
+      "currency": "EUR"
+    }
+  }
+}
+
