@@ -108,6 +108,16 @@ setup and instrumented campaigns remain unselected prerequisites. The consumer s
 also recorded: root verified all 65 inputs and 59 original Git blobs, with the same four
 reservations and no accepted binding, baseline or implementation assignment.
 
+During cache implementation, a read-only authored-discovery scoper inspected frozen `25a1b474`.
+Root retained the exact returned report, SHA256
+`325615d0f60e162071606e199e61bb6cde7f217280f790bcfff0beeb25d42057`, and verified 50 inputs,
+including 47 whole Git blobs. The draft's scope now includes the two existing reservations
+plus the specification-writing and conformance-verification public guides. It covers both the
+legacy scenario helper and the suite/5 coverage loader, with their distinct source-identity
+and symlink rules. Selection, recursive compatibility, headerless fragments and generated-file
+exclusion remain design decisions; no new manifest, discovery binding or next-wave selection
+is accepted. This preparation does not expand the current cache implementation unit.
+
 ## Current stage
 
 Binding accepted and N=1 selection recorded. The owning story moved draft → proposed → active

@@ -16,7 +16,11 @@ scope:
   path: crates/edge/ess-cli
 - confidence: inferred
   path: docs/design/review-authored-discovery.md
-revision: 3
+- confidence: cited
+  path: website/docs/guides/verify-conformance.md
+- confidence: cited
+  path: website/docs/guides/write-a-specification.md
+revision: 6
 ---
 ## Finding and source
 
@@ -42,11 +46,14 @@ The existing scenarios-directory-compiles-nothing story owns the immediate zero-
 
 ## Scope
 
-Derived 2026-09-05 by the coordinator from review citations; independently re-scope before future dispatch. Directory tokens cover source and tests within the named package; references used only as evidence are excluded.
+Derived 2026-09-07 by `story-scoper` against ESS `25a1b47486190f24d5928e808d9baae7d6ce6d5e` — cited.
 
-- `crates/edge/ess-cli` — cited; owning implementation or documented surface.
-- `docs/design/review-authored-discovery.md` — inferred; planned edit surface, verify before dispatch.
-- Confidence: medium — inferred; exact package-local test filenames remain an implementation choice.
-- Would collide with: stories sharing any of these exact tokens — inferred; see the complete pair list in `docs/plan/2026-09-05-review-remediation.md` before concurrent scheduling.
-- Shared integration files: planning journal, wave page and final change record belong to the coordinator — inferred execution assignment.
-
+- **Primary surface:** `crates/edge/ess-cli` — cited; owns specification filesystem discovery, both current authored-scenario discovery implementations, their command dispatch and CLI help, and package-local regression tests.
+- **Symbols:** `load::specification_files`, `load::specification`, `resolved`, `authored_sources`, `fresh_legacy_run_suite`, `synthesize_suite`, `author_suite`, `conform_web`, `coverage::sources`, `coverage::fresh`, `coverage::generate`, and `coverage::web` — cited; these select, read, or consume the authored input sets.
+- **Existing tests:** the authored-scenarios and authored-scenarios-adversary integration matrices, coverage-CLI source identity tests, command-surface alias tests, and model-types/normalization model-input cases within the primary package — cited.
+- **Binding:** `docs/design/review-authored-discovery.md` — inferred; the story requires a discovery contract before implementation, and this reserved design path does not exist at the frozen subject.
+- **Public specification layout:** `website/docs/guides/write-a-specification.md` — cited; its Layout section owns the existing directory and single-file input guidance and is the concrete place to document the accepted mixed layout.
+- **Public scenario discovery:** `website/docs/guides/verify-conformance.md` — cited; it expressly promises shallow authored discovery and documents suite/5 source identities, exact text digests and selected-symlink refusals.
+- **Boundary:** imported specification and conformance types remain evidence inputs unless the accepted design changes their parsing, identity or persisted contracts — inferred; filesystem selection can be implemented in the owning CLI package without changing those libraries.
+- **Confidence:** medium — inferred; the present owners and callers are established, but choosing a new persisted manifest instead of a package-local discovery contract could introduce additional owners and compatibility work.
+- **Would collide with:** any unit changing the ess-cli package, the reserved discovery binding, specification layout guidance or conformance acquisition guidance — cited; the four paths above are the proposed machine-readable reservations.
