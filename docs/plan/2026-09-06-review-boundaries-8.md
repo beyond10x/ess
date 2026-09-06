@@ -1489,3 +1489,13 @@ The measured route is a generated Go package invoking Run with explicit report2 
   ]
 }
 ```
+
+## Final correction verified by coordinator
+
+Root inspected the final production change against Rust Predicate/FactPath grammar and independently compared every inherited test byte with frozen66169d5. Only the authorized test-comment backticks and borrowed document helper/four arguments differ; removing the additive helper/test block exactly reconstructs the prior Go integration tests. Both191-vector buffers are byte-identical. Every inherited named case remains selected, with one new Cargo case; the191 inputs are not counted as191 Cargo cases.
+
+Final unit commit2d2c391883e3f2d36bd3f25843ffbed07d9c4cd5 has verified bot author and committer. It changes4paths/316insertions16deletions. Only runtime.go changes production: a complete checked predicate grammar replaces the permissive evaluator as the admission gate. Historical evaluator/default wire bytes remain unchanged. The second-pass retained failure ran alone green first; an additive191-input table has retained pre-fix behavioral red and post-fix green evidence. Complete package command passed409 cases,0failed/ignored35summaries. After subsequent authorized lint-only helper changes, the affected2pass2 and13Go tests passed, followed by strict all-target Clippy, Rust/Go formatting and diff checks. The second full package run had already completed before the later lint refactor; root does not claim it executed a future source snapshot. The full integration gate follows on final source.
+
+Report SHA2563792760c20c639cbaa86b4ac12aaa232a40cc5c0e935448dc7c1f6fc11c4421b;26-file source manifest6f2f279772c4cec73fc2e3d4dcadbb0a3a605d71a7cc25ec547ff86b25c4a2f4;117-file/19-fixture producer manifest77a6635632cf412c5a16b2f99573193e2df786d5d6c14b02a7fd3512bfe191b6. Final Go template and all six exported runtime copies share SHA256a617a07bfa28a375e97aa07f595a6b313c254ec40e97116dad27d2654fb37826. Actual old runtime434a77d4 remains unchanged. Root copied all top-level final reports/manifests/logs to coordinator scratch and recorded the second review's fixed outcome through the CLI after this verification. All implementor writes are relinquished; no third attack was opened.
+
+Actual AEP correspondence is now being repeated from correction-pass-2 exports against the frozen final unit. No new compatibility or integration-gate result is inferred in advance. Agent token/tool/wall metrics were not supplied by the collaboration harness, so no numerical cost is invented.
