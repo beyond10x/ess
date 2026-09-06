@@ -9,7 +9,7 @@
   first-match selection. The reference engine and generated Rust libraries preserve
   order, duplicate values and lazy selected-value evaluation. Version 1 refuses the
   new operations and retains its existing semantics and canonical representation.
-  TypeScript normalization and the adapter-generation CLI remain pending.
+  TypeScript normalization remains pending.
 - Version 2 branch-specific `binary64_inputs` declarations and ordered
   `binary64_to_integer` conversion with finite multiply/minimum/maximum steps,
   nearest-even decoding and explicit out-of-range refusal. Undeclared numbers
@@ -21,6 +21,10 @@
   Go fixtures exercise old, ordered and numeric recipes against reference results
   and located refusals. Schemas with `pattern` explicitly refuse generation until
   a compatible bounded ECMA-262 matcher is qualified.
+- `ess generate schema normalize-generate` exposes Rust and Go normalization
+  libraries with explicit package/module identity and complete source provenance.
+  It checks every branch and target before destination preflight, protects source
+  inputs, and offers read-only planned-file drift checking through `--check`.
 
 ### Fixed
 

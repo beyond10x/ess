@@ -28,6 +28,8 @@ pub(crate) enum SchemaCommand {
     NormalizeCheck(crate::normalize::CheckArgs),
     /// Execute one explicit normalization branch with checked input and output boundaries.
     NormalizeRun(crate::normalize::RunArgs),
+    /// Emit a source-pinned normalization library, or check its generated file bytes.
+    NormalizeGenerate(crate::normalize::GenerateArgs),
     /// Validate JSON instances against schemas selected by their `schema` property.
     Validate(ValidateArgs),
     /// Project a schema's structural types into a deterministic TypeScript module.
@@ -76,6 +78,7 @@ pub(crate) fn run(command: SchemaCommand) -> Result<ExitCode> {
         SchemaCommand::TypesBundle(args) => crate::schema_bundle::types(&args),
         SchemaCommand::NormalizeCheck(args) => crate::normalize::check(&args),
         SchemaCommand::NormalizeRun(args) => crate::normalize::run(&args),
+        SchemaCommand::NormalizeGenerate(args) => crate::normalize::generate(&args),
         SchemaCommand::Validate(args) => validate_instances(&args),
         SchemaCommand::Typescript(args) => typescript(&args),
     }

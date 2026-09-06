@@ -330,7 +330,31 @@ Rust retains its validator's traversal order. Go uses pinned JSON token and sche
 libraries and refuses selected schemas with `pattern` at generation with
 `go_schema_pattern`: its ECMA-262 matcher compatibility remains unqualified.
 
-TypeScript normalization adapters and an adapter-generation CLI remain pending.
+Generate either implemented normalization library directly with the unreleased CLI:
+
+```shell-session
+$ ess generate schema normalize-generate --recipe normalization.json \
+    --bundle input.bundle.json --bundle output.bundle.json \
+    --target rust --package settings_adapter --out generated/rust
+$ ess generate schema normalize-generate --recipe normalization.json \
+    --bundle input.bundle.json --bundle output.bundle.json \
+    --target go --package settings_adapter --module example.invalid/settings-adapter \
+    --out generated/go
+$ ess generate schema normalize-generate --recipe normalization.json \
+    --bundle input.bundle.json --bundle output.bundle.json \
+    --target go --package settings_adapter --module example.invalid/settings-adapter \
+    --out generated/go --check
+```
+
+Every branch and target checks before files are written. The command protects its
+recipe and bundle inputs and preflights the complete generated destination set.
+`--check` compares every planned file without writing; missing or stale files return
+a nonzero exit. Neither mode deletes unrelated or obsolete files. Output preflight
+assumes controlled parent directories and does not provide rollback for later I/O
+failure. The output includes `normalization-report.json` with the exact library-API
+provenance and file identities.
+
+TypeScript normalization adapters remain pending.
 Expanded recursive shapes, tuples and
 intersections refuse in its initial checker. Schema bounds and other refinements are
 checked at runtime boundaries, not proven by structural checking. Integer operations

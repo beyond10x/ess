@@ -311,3 +311,28 @@ second specification authority. The Rust generator remains the sole plan-admissi
 edge. Schema refinements are still checked at each stage, never replaced by the
 structural type projection. TypeScript and the target-generation CLI remain part
 of the original normalization story and are not completed by this target alone.
+
+## Adapter Generation Command
+
+`ess generate schema normalize-generate` reads `--recipe` and repeated `--bundle`
+inputs through the existing sealed-plan boundary. `--target rust|go` selects an
+implemented library target; `--package` is required, and `--module` is required
+only for Go and refused for Rust. No structural target substitutes for an
+unimplemented normalization target. TypeScript joins this command only when its
+runtime realization exists.
+
+The command writes the exact library-API file set to required `--out`, including
+source recipe, bundles, embedded schemas and normalization-target/1 report.
+Admission and target feasibility finish before output preflight. All generated
+paths pass the existing shared containment, symlink, hard-link, case-alias and
+file/directory checks before any write. Canonical source input paths must not
+equal any generated destination. This retains the existing trusted-parent
+assumption and does not claim rollback on subsequent I/O failure.
+
+`--check` compares every planned file byte-for-byte without creating directories
+or changing files. Missing or stale files are listed deterministically and give a
+nonzero exit. It checks the generated file set, not ownership of unrelated files
+in an adopter's directory; neither mode deletes obsolete or unowned files.
+Source/target refusals still apply in check mode. Tests compare both targets with
+the library output and cover input protection, complete preflight, read-only drift,
+invalid unused branches and target refusals before publication.
