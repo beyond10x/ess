@@ -2,7 +2,7 @@
 format: aep.planning-md/1
 id: story:review-openapi-semantic-accounting
 kind: story
-status: active
+status: implemented
 title: Account for every unpreserved OpenAPI constraint
 tags:
 - P1
@@ -27,7 +27,7 @@ scope:
   path: website/docs/reference/cli.md
 - confidence: cited
   path: website/docs/reference/formats.md
-revision: 19
+revision: 21
 ---
 ## Finding and source
 
@@ -167,3 +167,7 @@ Root verified all four final source hashes, committed through organization tooli
 The second and final review is preserved as `review-result:review-boundaries-7-openapi-adversary-pass-2`, SHA-256 `6e6006e037187b1abd842ddb4c8e719c3fbbf985a7f261f1606610d4ea3462da`. Seven new cases passed their first focused runs and the full package suite executed 165→172 cases, all passed, zero failures or ignored cases. Formatting and strict Clippy passed. Both new test files were committed as `7468e7a01b6eab0abe32cdb56e1718a9a0f67fa4` after hash verification. The full unit merged into the coordinator at `979f1f13514fa8f9c6f9648985fbd85a5113165b`, with both direct identities verified.
 
 The CLI findings comparison reports one resolved finding, no carried findings and no new findings. The second review has a no-op outcome; the first retains its separate fixed outcome. This exhausts the two-pass review budget. The complete integrated gate remains required before the story moves from active.
+
+## Integrated completion
+
+Combined source `8271c3ec92adfe9e39d8fe877933e2a4199b2f46` passed every ordered offline task, site-build and planning: 1,873 workspace cases, zero failed or ignored. The final wording-only reference correction at `5d5e87fc70e021ce38477ab71c842a2063a845a3` separately passed site-build; root confirmed runtime and fixture bytes unchanged. Complete unit review, integration evidence, scope and limitations are preserved in `verification-report:review-boundaries-7-integrated`. This is implementation completion; publication, remote CI, public delivery and managed cleanup remain separate wave outcomes. No release is authorized by this record.

@@ -2,7 +2,7 @@
 format: aep.planning-md/1
 id: story:review-expression-typechecking
 kind: story
-status: active
+status: implemented
 title: Resolve complete expression paths during validation
 tags:
 - P1
@@ -19,7 +19,7 @@ scope:
   path: crates/verify/ess-conformance
 - confidence: inferred
   path: docs/design/review-expression-typechecking.md
-revision: 14
+revision: 16
 ---
 ## Finding and source
 
@@ -144,3 +144,7 @@ Source inspection during implementation establishes that Specification has priva
 ## Independent review and integration readiness
 
 Frozen implementation f03ecdafda8059562d781cd4c842a0fd936bc8c2 passed its package checks (647 to 683 cases, eleven independently measured semantic red cases corrected). Independent first review added fourteen cases and ran all 697 assigned package cases with zero failures or ignored cases; findings are empty. Its complete report is review-result:review-boundaries-7-expression-adversary-pass-1, SHA-256 40cbb59d6f5d7da1cd46e308a8c395b170b03701d901551779d1c4c4f0a755e8. Root committed the exact reviewed tests at 1b018bf38c49a644754f2f91be9fde2dc4c9f9df and verified formatting and bot identities. The integrated whole-repository gate remains required before implemented status or main publication.
+
+## Integrated completion
+
+Combined source `8271c3ec92adfe9e39d8fe877933e2a4199b2f46` passed every ordered offline task, site-build and planning: 1,873 workspace cases, zero failed or ignored. The final wording-only reference correction at `5d5e87fc70e021ce38477ab71c842a2063a845a3` separately passed site-build; root confirmed runtime and fixture bytes unchanged. Complete unit review, integration evidence, scope and limitations are preserved in `verification-report:review-boundaries-7-integrated`. This is implementation completion; publication, remote CI, public delivery and managed cleanup remain separate wave outcomes. No release is authorized by this record.
