@@ -231,3 +231,73 @@ b879d99981b031bf4ae6f63c8def3c1d349f5288bee81a06b16dd852a5e6370c from its declar
 It requires the independently supplied published ESS commit and complete immutable layout-v2
 publication, including every source bundle. It will run the actual artifact verifier and Website
 gate with separate logs and full before/after artifact inventories. It has not executed yet.
+
+## Source publication and exact public delivery
+
+Root published06b5f1d16501253a936ddb17dc2ce44d71605adf after verifying both bot identities on
+all15 local direct commits. Only planning metadata changed after the full4777c1de gate; the
+final157-artifact validation and5-case layout target passed. Exact-source CI34038739230,
+documentation validation34038739193 and source bundle34038739207 all completed successfully.
+The API readback confirms the exact source and both actor identities as the organization bot.
+
+Atlas reconciliation34038886508 completed successfully at clean control
+b0fb59be02712e221c2a07d3e589120ed0ae3d7a. Its exact workflow resolved the source set, rendered
+the Atlas-owned snapshot, built from immutable bundles, independently verified the artifact and
+published the root source level. Website runtime remainsfc4571534765c098ed861bc326da4d3da0d1df63
+and Docs System remains1c8c31697e87235dda8bec9467264b22a7fa0c95. Artifact9991077598 contains
+1709 files; downloaded ZIP SHA2564767f943c1423ff2f03d5d11461bd0fca81f773ecb74a9f651fa17cb24ebce0f
+matches the API digest. Source-set SHA256 is
+01b9290a4b502f80e171480e695531de2b14de70a11546c4b1541a7e8bb4cc3b and independently names
+ESS06b5f1d. The complete normalized source bundles and original publication are retained.
+
+The local immutable-artifact verifier passed. Its provenance enumerates356 routes and1328
+files; these are site inventories, distinct from1709 complete publication files and357 search
+pages. The first full Website gate ran99 cases with98passes and1failure: its assigned long
+TMPDIR caused EINVAL in an existing Unix-socket fixture. No source or assertion changed, and
+every artifact byte remained unchanged. Root retained that run and assigned the short, owned
+temporary directory /home/timo/.cache/ess-w9-website-tmp. A fresh execution passed all99 cases,
+0failed/skipped/cancelled and the complete production gate in150.369seconds. Its source/build,
+audit, navigation, search, crawl and provenance checks all ran; the downloaded artifact remained
+byte-exact before and after. No immutable-rebuild byte-equality claim follows from the local gate.
+
+At2026-09-06T14:33:10.646Z both live provenance endpoints and both changed ESS reference pages
+matched the immutable artifact byte for byte. Provenance SHA256 is
+7682b974bcfa49fc8300e04ecb33fc0ccb1ca633c6146c03adee7d5d5667e446. The actual live check scope is
+those four endpoints, not a claim that every live site file was fetched. The two public pages
+are /docs/ess/reference/cli/ and /docs/ess/reference/formats/.
+
+Root also ran the full current Atlas fence atb0fb59be:149 Rust cases passed,0failed/ignored,
+6 summaries,212.597seconds. The aggregate exit is1, retaining exactly the established operational
+failures: primary AgentIDE's v4 manifest is refused by that collector, primary Website's Docs
+System pin differs from the catalog, and Widgets has no Serves section. Catalog, live Pages,
+projection, Markdown and brand checks passed. No organization-wide green claim is made. Exact
+log SHA256c943cca9d652be4d481ff2186b6b40be7c7b552c4c9ebb74f918ffc877d8ab4f and all raw results
+remain in the authority's target/ess-review-wave9-fence. No unrelated primary was edited.
+
+## Evidence retention and task-owned cleanup
+
+The composition unit's199 records were archived and every member read back before cleanup;
+archive SHA2566595c1093dd9649c67641aaa2552f5aab008d69cedc076c3a9d62faf258254bb. The first finish
+refused its retained ignored build directory. Root verified the archive, inventoried73895
+generated files and retired only that2,060,172,243-byte target before the manager finished it.
+The full-profile GC dry-run was reviewed; only ess-composition-contract was applied. Its source
+is remotely recoverable through main, its path is absent, and its merged implementation branch
+was deleted with non-forced branch deletion. Another eligible Atlas tree was explicitly preserved.
+
+The Website support evidence archive contains3258 regular records, with the two inactive Chrome
+socket/link entries retained as literal metadata. Initial inventory refusals for those entries
+remain recorded; neither was followed or read as a regular file. Every archived file was read
+back; archive SHA25631b5fcb76b61b1960237f72e166097007cdbf2c58aabbf6cfeb1a2440ff2aaea. This includes
+the complete downloaded publication, both immutable-artifact checks, both full gate attempts,
+raw live captures, original runner and corrected-runner provenance. Root then inventoried and
+removed only its six generated/cache/dependency roots and the explicitly owned short TMPDIR,
+preserving all158 tracked source files byte-exact. The manager has finished that clean support
+checkout. Root reviewed every row of the new full-profile GC dry-run and applied only
+ess-wave9-website-verification. Its path is absent; every other eligible or refused id remains
+untouched. Both archive manifests and lifecycle receipts are under the
+continuation's composition-unit-retirement and composition-website-retirement cache directories.
+
+Wave9 is closed: source, exact public delivery, recorded Atlas fence limits and both owned unit
+retirements are complete. The continuing ESS/AEP/Atlas coordinators remain deliberate resources.
+The next wave must be selected from a fresh store computation. No release or default transition
+was performed, and14 remediation stories remain drafts.
