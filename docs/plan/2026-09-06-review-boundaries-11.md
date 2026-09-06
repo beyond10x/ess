@@ -94,8 +94,11 @@ before a unit is created. The wave page and file brief are updated at each hando
 
 ## Current stage
 
-Scope refreshed; selection and resources recorded. Opening lifecycle moves and checks are next.
-No writer implementation, producer correspondence, source attack or wave 11 full gate is claimed.
+The coverage writer is implemented, reviewed and published at a333949e6581e151f2c3b154d7df30e125d07375.
+All ten integrated gate lanes, 43 actual AEP correspondence cases, four no-report controls, exact
+source CI and public delivery have passed. Closing records and managed cleanup are in progress.
+The paragraphs below retain the earlier handoffs; the final evidence section supersedes their
+preparation-only status statements.
 
 Opening commit `d2057ffb944455d0ef3a90ab7c5043ae70027289` has verified bot author and committer.
 The story moved draft → proposed → active through AEP, reaching revision 21. Opening formatting,
@@ -369,3 +372,69 @@ The observation story body is revision 18; all twelve reservations remain unchan
 bounded local inventory, not deployed-adopter absence or a format/default decision. Its complete
 report/manifest and the clarification of root's display-escaping misread remain in wave scratch;
 post-writer CLI/docs refresh is still required before selection.
+
+## Final integrated source and public delivery
+
+Published source is `a333949e6581e151f2c3b154d7df30e125d07375`, integrating final unit
+`d3c2c1dd09ad279f5bf6b4c1050b589a4a7ad761`. All ten lanes passed with source unchanged;
+2,058 Rust cases passed, none failed or ignored, across 187 summaries. The test lane took
+224.876846674 seconds. All per-step exits, raw hashes and complete actual correspondence
+are recorded in verification-report:coverage-writer-actual-correspondence.
+
+All 39 actual report exports and four task variants passed the unchanged published AEP helper:
+43 direct exits 0, 18 expected qualified, 17 expected unknown and 8 expected contradictions.
+Four separate actual refusal controls emitted no report as required. The original pre-writer
+expectations and frozen mapper were unchanged. Root corrected only receipt orchestration's
+single-PID assumption after two complete process observations proved configuration-identical;
+all six original observations remain and no unique physical producing PID is claimed.
+The earlier wrapper refusal and exact corrections are retained in the same verification record.
+
+CI 34062258911, documentation validation 34062258901 and bundle 34062258926 all completed
+successfully for exact source a333949. Atlas publication 34062674853 succeeded under b89e5b8,
+with independently expected ESS a333949, AEP 658cf76 and Website fc457153. Artifact 9998001636
+has API/archive SHA256 7c4840ca4e5ea3b76a13abd8e6a21e02f1fedeff2c18cfda79f3f17d18bebad3;
+its source-set SHA256 is a77180d60bb40648c4a99f9b9824b98c3379983fd7c2854a6e053f32db0625d2.
+The immutable verifier passed 356 routes/1328 site files. The 99-test Website gate passed with
+zero failed, skipped or cancelled in 139.979430589 seconds; all 1709 artifact files remained
+unchanged. Its raw gate log SHA256 is
+d205ff07eae279b0c000bd4352aad120b739faf669f1834788bf5151184f0bb6.
+At 22:07:53–22:07:54 UTC five live bodies matched: both provenance endpoints, ESS conformance
+guide and formats reference, and the AEP CLI reference. Provenance SHA256 is
+3c807f5603c14487c8fd78888d56374c19810a5407dc79c451baeef2eb7da8d3.
+
+The exact Atlas b89e5b8 full fence's 149 passing Rust cases and three known workspace failures
+remain explicit above; its exit 1 is not restated as green. Source publication and successful
+content-delivery authority checks do not assert an organization-wide clean workspace, upgraded
+installed consumers or readiness to change defaults.
+
+The confirmed Scope is written back from the implementor's confirmation table while retaining
+opening hypotheses. The implementation closes the one coverage story; this leaves 12 of the 31
+ESS remediation stories for a fresh replan. F15 browser fidelity and recovery implementation
+remain separate open work. No release, tag, version, default or installed binary was changed.
+
+## Retention preparation
+
+The unit's full target inventory contains 94,683 entries. All 91,516 retained entries were read
+back from the archive:73,807 files (4,580,555,866 original bytes), 17,407 directories and 302
+literal links. The only exclusion is target/debug, with all 3,167 entries separately inventoried.
+Archive 3d73c167b351ffcd33ff8a7c923ce683301ffbdbf722fd220c6dcecbdeda9b52 is 1,304,478,062 bytes.
+All six assigned external browser roots are retained without exclusions:7,357entries, 4,462files,
+2,810directories and 85native link targets. Their 524,152,127-byte archive has SHA256
+5d8161f388116ac78a1a57045a446f98b1d5ca0168e1ff9ce21d05662249497a. No socket was present.
+Both archives live in coverage-writer-unit-retirement under the session retention root.
+All original red runs, source snapshots, callbacks and retained binaries survive. Neither
+archive operation extracted a link or removed any source. Website retirement is prepared
+separately after its actual gate and live fetches; exact manager outcomes follow below.
+
+The collaboration harness exposes no per-agent token/tool/wall accounting for these resumed
+threads; no estimated cost is supplied. Direct command wall times and actual executed-case
+counts are retained. All three agents are idle; no third source attack occurred.
+
+The Website support archive is verified independently at
+coverage-writer-website-retirement/retained-records.tar.gz in the session retention root:
+SHA256 c1c56b2133086d33b203f67d491b665fec355f55cfaf2c039283bd1dc0621803,
+18,098,858 bytes. Readback checked 3,006 regular payloads, 623 directories, one literal link,
+one socket metadata record, four embedded manifests and all 1,709 publication files. All
+62,168 current source entries, all 158 tracked HEAD files and the five saved live bodies matched.
+The 58,538 excluded generated/cache entries are inventoried; no source gate was rerun by the
+archive verifier. No tree or external root has yet been removed.

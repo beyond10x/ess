@@ -2,7 +2,7 @@
 format: aep.planning-md/1
 id: story:review-conformance-coverage
 kind: story
-status: active
+status: implemented
 title: Carry conformance coverage through persisted suites and evidence
 tags:
 - P0
@@ -32,7 +32,7 @@ scope:
   path: website/docs/guides/verify-conformance.md
 - confidence: cited
   path: website/docs/reference/formats.md
-revision: 21
+revision: 23
 ---
 ## Finding and source
 
@@ -57,6 +57,40 @@ Run package-scoped checks while implementing; the integration coordinator runs e
 The first-wave v1 reader fix is independent; do not treat legacy zero-test evidence as proof of full coverage or retroactively as failed execution. Cross-repository rollout requires an Atlas ADR and separately scoped downstream work before release.
 
 ## Scope
+
+### Confirmed implementation scope
+
+The implementor's confirmation table below establishes the three production packages and the
+three concrete documentation files against its 65-file initial delta. Two source attacks and
+root-reviewed corrections add permanent tests and the exact refusal oracle, for 70 integrated
+unit files at d3c2c1dd09ad279f5bf6b4c1050b589a4a7ad761. Root owns both bindings, changelog and
+engineering records. The nine scheduling tokens remain unchanged; website/docs is retained
+as a coordination reservation beside its two actual public leaves.
+
+| Scope hypothesis | Source-derived result and measurement |
+|---|---|
+| Separate typed inventory/document and admitted original input | Confirmed in coverage.rs (AdmittedInput, SuiteInputDocument, validate_parent) and admission.rs. Original admission-red/input-red and shared Rust/Go/Firefox lineage cases establish the boundaries; no unchecked mutable admitted escape. |
+| Checked authored input layer and final inventory ownership | Confirmed in coverage_build.rs: CoverageSource, compile_sources, merge_batches, partition/classify. Actual duplicate and independently compiled batch controls establish ownership only after final merge; failed candidates never borrow an outside survivor's proof. |
+| Coverage-bearing immutable execution identity | Existing ExecutedRun capability already binds admitted original bytes; it was reused, not replaced or reconstructed from legacy ConformanceReport. Count writer pass1/pass2 inherited guards pass unchanged. |
+| CLI original source acquisition and pre-write admission | coverage.rs sources() and fresh/generate/select/web plus main.rs pair closure execute original input before output/target effects. Actual relocation, invalid path and Binary64 controls passed. |
+| Go full lineage admission before reduced adapter | Confirmed by 95 shared vectors and actual callback/refusal controls. Initial exact-u64 parent admission exposed a separate Go int adaptation limit, resolved by root D7: complete exact wire/lineage first; selected fields only are converted with actual int-width checks. |
+| Generic browser pairing before state | New replay/1 typed model and input retain exact selected/parent originals; actual Firefox executes both the new player and frozen old player. Original-byte integer, model and inventory guard mutations fail behaviorally. 314 recursive closed-model vectors refuse in both Rust and Firefox. |
+| Exact impact context without new persisted format | New impact_input uses the immutable input/selection in memory. Existing ess-impact/3 fields and serialization remain. Raw suite5, unknown coverage and unavailable lineage are refused; existing conservative graph logic is reused. |
+| No additional production reservation | Confirmed by source-audit.json: 19 modified and 46 new files all within the three packages or three named docs. No manifests/lock/Taskfile/compiler/primitives/realization/AEP changes. |
+| website/docs collision token | Confirmed as coordination reservation only. Only guides/verify-conformance.md and reference/formats.md were edited there. Root retains delivery ownership. |
+| Reader-first prerequisite | Supplied published AEP 658cf76 and closing70ec336 satisfy the opening prerequisite. This implementation never executed the AEP helper; actual frozen correspondence, workspace/site gates and publication remain root-owned. |
+
+The table's final row states the implementation handoff boundary. Root subsequently executed
+all ten integrated ESS gate lanes and all 43 actual Rust/generated Go correspondence cases
+through published AEP readers. See verification-report:coverage-writer-actual-correspondence.
+Its successful negative cases preserve empty, incomplete, unknown and mismatched classifications.
+Current source is a333949e6581e151f2c3b154d7df30e125d07375; no default or release was changed.
+
+### Opening scope hypotheses retained for traceability
+
+The following is the source of the original reservations, not a claim that implementation or
+correspondence remains unexecuted. Confirmations and updated evidence above supersede its
+preparation-only statements.
 
 Derived 2026-09-06 by aep-drive:story-scoper 0.8.0 against clean ESS 239996d846460aee342ce42514378c25b2be5152 and complete draft revision 17; current accepted coverage/transport bindings and the refreshed source/hash record govern — cited.
 
@@ -102,3 +136,42 @@ The transport binding records published main6c6620b model/suite refusal before o
 ## Wave 11 prerequisite readback
 
 The AEP coverage reader is published at 658cf76e6371b1628f6de69548e724b52803f5c2, with its closing records at 70ec336c00fa67b3d83f5c05bfbe71189462c01e. Joint public delivery and task-owned retirement are recorded in the closed wave 10 page. This supersedes the historical Current preparation paragraph. The refreshed scope report at 239996d is still source-applicable: later ESS commits through 1c7b38b change internal planning records only. Actual frozen Rust/Go correspondence through the published AEP readers remains required before the writer is published.
+
+## Published implementation and delivery — 2026-09-06 UTC
+
+The full gate at a333949e6581e151f2c3b154d7df30e125d07375 passed all ten lanes and
+2,058 Rust cases (zero failed or ignored). Actual frozen Rust/generated Go exports passed
+43 published AEP compatibility cases and four separate no-report refusal controls.
+verification-report:coverage-writer-actual-correspondence records the exact source, independent
+pre-writer expectations, actual clock/callback evidence and all positive/negative classifications.
+Both source attacks and the root's precise final test-scope correction remain recorded.
+
+The exact source is published. GitHub CI 34062258911, documentation validation 34062258901 and
+source bundle 34062258926 each completed successfully for that commit. Atlas publication
+34062674853 completed successfully under b89e5b835b384965818eccf0703c8a548ebdbe47, selecting
+ESS a333949 and published AEP reader 658cf76. Its source-set SHA256 is
+ a77180d60bb40648c4a99f9b9824b98c3379983fd7c2854a6e053f32db0625d2.
+The independent Website verifier checked 356 routes and 1,328 site files; the complete Website
+gate passed 99 tests, zero failed, skipped or cancelled, in 139.979430589 seconds. All 1,709
+publication artifact files remained unchanged. At 22:07:53–22:07:54 UTC, both live provenance
+endpoints, the two changed ESS pages and the AEP CLI page matched the exact artifact bytes.
+This is five actual fetches, not a download of every production file.
+
+The full Atlas fence on the exact b89e5b authority passed 149 Rust cases and retained its three
+previously reported workspace failures: primary AgentIDE v4 collector compatibility, the primary
+Website Docs System pin, and missing Widgets Serves. That full fence exited 1; the successful
+Atlas publication and Website gates above are separate observations. No organization-wide green
+fence, installed-reader upgrade, publisher authentication or default readiness is claimed.
+
+All unit evidence except the reproducible target/debug cache has been archived with independent
+readback: 91,516 entries, 73,807 regular payloads, 17,407 directories and 302 literal links.
+The archive SHA256 is 3d73c167b351ffcd33ff8a7c923ce683301ffbdbf722fd220c6dcecbdeda9b52;
+1,304,478,062 compressed bytes retain 4,580,555,866 original file bytes. All 3,167 excluded compiler
+entries are inventoried. The six assigned external browser roots are separately archived and
+verified: 7,357 entries, 4,462 files and 85 literal links, SHA256
+5d8161f388116ac78a1a57045a446f98b1d5ca0168e1ff9ce21d05662249497a.
+The cache directory is coverage-writer-unit-retirement under the session's 2026-09-06-resume
+retention root. Managed retirement remains a separate step after recording this implementation.
+
+Suite4/report1 defaults remain. Browser-fidelity F15 and the execution-recovery implementation
+obligation remain open. Source and delivery completion do not select a release, tag or installation.
