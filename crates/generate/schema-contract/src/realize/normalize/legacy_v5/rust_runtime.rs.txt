@@ -1,0 +1,77 @@
+//! Generated standalone normalization adapter. Source pins are in normalization-report.json.
+//! This package embeds one checked recipe; it does not accept replacement recipes at runtime.
+
+mod diagnostic;
+mod eval;
+mod execute;
+mod input;
+mod retained;
+mod numeric;
+mod recipe;
+mod schemas;
+
+use std::collections::BTreeMap;
+use serde_json::Value;
+use diagnostic::{finding, path};
+pub use diagnostic::{Finding, Refused};
+use recipe::{unique_map, Binary64Range, Binary64Step, Condition, Expr, IntegerOp, NumberPath, Overflow, Recipe, Root, Scope};
+
+/// One checked recipe with reusable offline validators for all pinned stage roots.
+pub struct Normalizer {
+    recipe: Recipe,
+    validators: BTreeMap<Root, jsonschema::Validator>,
+}
+
+impl Normalizer {
+    /// Build validators from the embedded schema closure, without schema network retrieval.
+    pub fn new() -> Result<Self, Refused> {
+        let recipe: Recipe = serde_json::from_str(include_str!("../source.recipe.json"))
+            .map_err(|_| Refused(vec![finding("/", "target_recipe", "embedded recipe is invalid")]))?;
+        if ![recipe::FORMAT, recipe::FORMAT_V2, recipe::FORMAT_V3, recipe::FORMAT_V4, recipe::FORMAT_V5].contains(&recipe.format.as_str()) {
+            return Err(Refused(vec![finding("/format", "recipe_format", "unsupported normalization format")]));
+        }
+        let mut validators = BTreeMap::new();
+        for (identity, schema) in schemas::ROOTS {
+            let root: Root = serde_json::from_str(identity)
+                .map_err(|_| Refused(vec![finding("/roots", "target_root", "embedded root identity is invalid")]))?;
+            let schema: Value = serde_json::from_str(schema)
+                .map_err(|_| Refused(vec![finding("/roots", "target_schema", "embedded schema is invalid")]))?;
+            let validator = jsonschema::options()
+                .with_draft(jsonschema::Draft::Draft202012)
+                .should_validate_formats(false)
+                .build(&schema)
+                .map_err(|_| Refused(vec![finding("/roots", "target_schema", "embedded schema cannot be compiled")]))?;
+            validators.insert(root, validator);
+        }
+        Ok(Self { recipe, validators })
+    }
+
+    /// Execute one exact branch over raw JSON, returning no intermediate result on failure.
+    pub fn normalize(&self, branch: &str, text: &str) -> Result<Value, Refused> {
+        let value = input::parse(text, self.recipe.binary64_paths(branch), self.recipe.raw_json_paths(branch))?;
+        execute::run(&self.recipe, branch, &value, |root, value, at| self.validate(root, value, at))
+    }
+
+    /// Normalize decoded data; precision already discarded by the caller cannot be recovered.
+    pub fn normalize_value(&self, branch: &str, value: &Value) -> Result<Value, Refused> {
+        retained::require_text(self.recipe.raw_json_paths(branch))?;
+        let value = input::prepare(value, self.recipe.binary64_paths(branch))?;
+        execute::run(&self.recipe, branch, &value, |root, value, at| self.validate(root, value, at))
+    }
+
+    /// Decode canonical standard base64 and UTF-8, then normalize unchanged JSON text.
+    pub fn normalize_base64_json(&self, branch: &str, encoded: &str) -> Result<Value, Refused> {
+        self.normalize(branch, &retained::decode(encoded)?)
+    }
+
+    fn validate(&self, root: &Root, value: &Value, at: &str) -> Result<(), Refused> {
+        let validator = self.validators.get(root)
+            .ok_or_else(|| Refused(vec![finding(at, "target_root", "embedded stage root is absent")]))?;
+        let found = validator.iter_errors(value).map(|error| finding(
+            &format!("{at}{}", error.instance_path()),
+            "schema_validation",
+            "value does not satisfy the selected stage contract",
+        )).collect::<Vec<_>>();
+        if found.is_empty() { Ok(()) } else { Err(Refused(found)) }
+    }
+}

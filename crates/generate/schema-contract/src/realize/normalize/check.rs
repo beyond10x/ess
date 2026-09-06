@@ -1,5 +1,6 @@
 //! Structural checking reuses the qualified type plan; schema refinements run at stage boundaries.
 
+use std::cell::RefCell;
 use std::collections::{BTreeMap, BTreeSet};
 
 use serde_json::{json, Value};
@@ -28,7 +29,11 @@ enum Kind {
     Literal(Value),
     Object(BTreeMap<String, Type>, Box<Type>),
     Array(Box<Type>),
+    Tuple(Vec<Type>, bool),
     Union(Vec<Type>),
+    // Source alternatives containing tuples retain their separate schema proofs.
+    // Expression unions may still combine independently exact identical types.
+    SchemaUnion(Vec<Type>),
 }
 
 impl Type {
@@ -69,8 +74,39 @@ impl Type {
             Kind::Null => Self::new(Kind::Never),
             Kind::Literal(value) if value.is_null() => Self::new(Kind::Never),
             Kind::Union(values) => Self::union(values.iter().map(Self::without_null).collect()),
+            Kind::SchemaUnion(values) => {
+                Self::schema_union(values.iter().map(Self::without_null).collect())
+            }
             _ => self.clone(),
         }
+    }
+
+    fn schema_union(values: Vec<Self>) -> Self {
+        let mut missing = false;
+        let mut variants = Vec::new();
+        for mut value in values {
+            missing |= value.missing;
+            value.missing = false;
+            if value.kind != Kind::Never {
+                variants.push(value);
+            }
+        }
+        let kind = match variants.len() {
+            0 => Kind::Never,
+            1 => variants.pop().expect("one variant").kind,
+            _ => Kind::SchemaUnion(variants),
+        };
+        Self { missing, kind }
+    }
+}
+
+fn has_tuple(ty: &Type) -> bool {
+    match &ty.kind {
+        Kind::Tuple(..) => true,
+        Kind::Object(fields, extra) => fields.values().any(has_tuple) || has_tuple(extra),
+        Kind::Array(item) => has_tuple(item),
+        Kind::Union(values) | Kind::SchemaUnion(values) => values.iter().any(has_tuple),
+        _ => false,
     }
 }
 
@@ -78,13 +114,14 @@ pub(super) fn input_numbers(
     paths: &[Vec<NumberPath>],
     input: &Types,
     root: &str,
+    format: &str,
     at: &str,
     found: &mut Vec<Finding>,
 ) {
     if paths.is_empty() && input.binary64.is_empty() {
         return;
     }
-    let ty = match from_node(input, &input.definitions[root], 0) {
+    let ty = match from_node(input, &input.definitions[root], 0, format) {
         Ok(ty) => ty,
         Err(error) => {
             found.push(error);
@@ -113,10 +150,11 @@ fn has_binary64(ty: &Type) -> bool {
     match &ty.kind {
         Kind::Binary64 => true,
         Kind::Array(item) => has_binary64(item),
+        Kind::Tuple(items, _) => items.iter().any(has_binary64),
         Kind::Object(fields, additional) => {
             fields.values().any(has_binary64) || has_binary64(additional)
         }
-        Kind::Union(values) => values.iter().any(has_binary64),
+        Kind::Union(values) | Kind::SchemaUnion(values) => values.iter().any(has_binary64),
         _ => false,
     }
 }
@@ -138,6 +176,13 @@ fn model_paths(
                 ),
             ))
         }
+        Kind::Tuple(items, _) if items.iter().any(has_binary64) => {
+            return Err(finding(
+                at,
+                "model_binary64_path",
+                "Binary64 tuple values require a path grammar that this format does not admit",
+            ));
+        }
         Kind::Array(item) => {
             path.push(NumberPath::Items);
             model_paths(item, path, declared, at)?;
@@ -157,7 +202,7 @@ fn model_paths(
                 path.pop();
             }
         }
-        Kind::Union(values) if values.iter().any(has_binary64) => {
+        Kind::Union(values) | Kind::SchemaUnion(values) if values.iter().any(has_binary64) => {
             let values = values
                 .iter()
                 .filter(|value| !matches!(value.kind, Kind::Null | Kind::Never))
@@ -199,13 +244,14 @@ pub(super) fn input_captures(
     numbers: &[Vec<NumberPath>],
     input: &Types,
     root: &str,
+    format: &str,
     at: &str,
     found: &mut Vec<Finding>,
 ) {
     if paths.is_empty() {
         return;
     }
-    let ty = match from_node(input, &input.definitions[root], 0) {
+    let ty = match from_node(input, &input.definitions[root], 0, format) {
         Ok(ty) => ty,
         Err(error) => {
             found.push(error);
@@ -246,6 +292,104 @@ fn overlaps(left: &[NumberPath], right: &[NumberPath]) -> bool {
     left.starts_with(right) || right.starts_with(left)
 }
 
+pub(super) fn input_positions(
+    policies: &[super::PositionalInput],
+    captures: &[Vec<NumberPath>],
+    numbers: &[Vec<NumberPath>],
+    input: &Types,
+    root: &str,
+    at: &str,
+    found: &mut Vec<Finding>,
+) {
+    if policies.is_empty() {
+        return;
+    }
+    let ty = from_node(input, &input.definitions[root], 0, super::FORMAT_V6);
+    for (index, policy) in policies.iter().enumerate() {
+        let declaration = format!("{at}/{index}");
+        let location = format!("{declaration}/path");
+        let error = if policy.length == 0 {
+            Some(finding(
+                &format!("{declaration}/length"),
+                "positional_length",
+                "fixed string array length must be greater than zero",
+            ))
+        } else if let Some(earlier) = policies[..index]
+            .iter()
+            .position(|other| other.path == policy.path)
+        {
+            Some(finding(
+                &location,
+                "duplicate_positional_path",
+                &format!("positional path duplicates {at}/{earlier}/path"),
+            ))
+        } else if let Some(earlier) = policies[..index]
+            .iter()
+            .position(|other| overlaps(&other.path, &policy.path))
+        {
+            Some(finding(
+                &location,
+                "overlapping_positional_path",
+                &format!("positional path overlaps {at}/{earlier}/path"),
+            ))
+        } else if let Some(other) = captures
+            .iter()
+            .position(|other| overlaps(other, &policy.path))
+        {
+            Some(finding(
+                &location,
+                "input_policy_overlap",
+                &format!(
+                    "positional path overlaps {}/{other}",
+                    at.replacen("/positional_inputs/", "/raw_json_inputs/", 1)
+                ),
+            ))
+        } else if let Some(other) = numbers
+            .iter()
+            .position(|other| overlaps(other, &policy.path))
+        {
+            Some(finding(
+                &location,
+                "input_policy_overlap",
+                &format!(
+                    "positional path overlaps {}/{other}",
+                    at.replacen("/positional_inputs/", "/binary64_inputs/", 1)
+                ),
+            ))
+        } else {
+            match &ty {
+                Ok(ty) => positional_path(ty, policy, &location).err(),
+                Err(error) => Some(error.clone()),
+            }
+        };
+        if let Some(error) = error {
+            found.push(error);
+        }
+    }
+}
+
+fn positional_path(input: &Type, policy: &super::PositionalInput, at: &str) -> Result<()> {
+    limit(policy.path.len(), at)?;
+    let mut ty = input.clone();
+    for (index, segment) in policy.path.iter().enumerate() {
+        let at = format!("{at}/{index}");
+        ty = match segment {
+            NumberPath::Field { name } => member(&ty.without_null(), name, &at)?,
+            NumberPath::Items => array_item(&ty.without_null(), &at)?,
+        };
+    }
+    if let Kind::Tuple(items, true) = &ty.kind {
+        if policy.length == items.len() as u64
+            && items
+                .iter()
+                .all(|item| assignable(item, &Type::new(Kind::String)))
+        {
+            return Ok(());
+        }
+    }
+    Err(finding(at, "positional_schema", "fixed_string_array requires an exact closed tuple of the declared length with string-shaped positions"))
+}
+
 fn capture_path(input: &Type, path: &[NumberPath], at: &str) -> Result<()> {
     limit(path.len(), at)?;
     let mut ty = input.clone();
@@ -275,10 +419,13 @@ pub(super) fn stage(
     at: &str,
     format: &str,
     found: &mut Vec<Finding>,
+    position_arities: &mut BTreeMap<String, u64>,
 ) {
-    let converted = from_node(input, &input.definitions[stage.input.name()], 0).and_then(|input| {
-        from_node(output, &output.definitions[stage.output.name()], 0).map(|output| (input, output))
-    });
+    let converted =
+        from_node(input, &input.definitions[stage.input.name()], 0, format).and_then(|input| {
+            from_node(output, &output.definitions[stage.output.name()], 0, format)
+                .map(|output| (input, output))
+        });
     let (input, output) = match converted {
         Ok(pair) => pair,
         Err(error) => {
@@ -290,7 +437,9 @@ pub(super) fn stage(
             return;
         }
     };
+    let positions = RefCell::new(BTreeMap::new());
     let scope = Context {
+        positions: &positions,
         input: &input,
         item: None,
         format,
@@ -310,9 +459,10 @@ pub(super) fn stage(
         )),
         Err(error) => found.push(error),
     }
+    position_arities.extend(positions.into_inner());
 }
 
-fn from_node(plan: &Types, node: &Node, depth: usize) -> Result<Type> {
+fn from_node(plan: &Types, node: &Node, depth: usize, format: &str) -> Result<Type> {
     limit(depth, &node.pointer)?;
     if matches!(
         node.shape,
@@ -324,7 +474,7 @@ fn from_node(plan: &Types, node: &Node, depth: usize) -> Result<Type> {
     {
         return Err(finding(&node.pointer, "model_binary64_path", "Binary64 tagged union values require explicit variant selection that this format does not admit"));
     }
-    let nested = |node| from_node(plan, node, depth + 1);
+    let nested = |node| from_node(plan, node, depth + 1, format);
     let kind = match &node.shape {
         Shape::Ref(name) => return nested(&plan.definitions[name]),
         Shape::Json => Kind::Any,
@@ -345,7 +495,17 @@ fn from_node(plan: &Types, node: &Node, depth: usize) -> Result<Type> {
             Kind::Object(fields, Box::new(nested(additional)?))
         }
         Shape::Array { prefix, items, .. } if prefix.is_empty() => Kind::Array(Box::new(nested(items)?)),
-        Shape::Union { variants, .. } => return Ok(Type::union(variants.iter().map(nested).collect::<Result<_>>()?)),
+        Shape::Array { prefix, items, minimum, maximum } if format == super::FORMAT_V6 => {
+            let exact = !prefix.is_empty() && matches!(items.shape, Shape::Never) && *minimum == prefix.len() as u64 && *maximum == Some(prefix.len() as u64);
+            Kind::Tuple(prefix.iter().map(nested).collect::<Result<_>>()?, exact)
+        }
+        Shape::Union { variants, .. } => {
+            let values = variants.iter().map(nested).collect::<Result<Vec<_>>>()?;
+            if values.iter().any(has_tuple) {
+                return Ok(Type::schema_union(values));
+            }
+            return Ok(Type::union(values));
+        },
         Shape::Intersection(terms) if matches!(plan.input, InputIdentity::Model { .. }) && model_enum(terms).is_some() => return Ok(model_enum(terms).expect("checked model enum")),
         Shape::Array { .. } | Shape::Intersection(_) => return Err(finding(&node.pointer, "unsupported_shape", "normalization requires an explicit tuple/intersection mapping; it is not flattened implicitly")),
     };
@@ -421,6 +581,7 @@ struct Context<'a> {
     input: &'a Type,
     item: Option<&'a Type>,
     format: &'a str,
+    positions: &'a RefCell<BTreeMap<String, u64>>,
 }
 
 impl Context<'_> {
@@ -431,13 +592,20 @@ impl Context<'_> {
     }
 
     fn version(&self, value: &Expr, at: &str) -> Result<()> {
-        if self.format != super::FORMAT_V5
+        if ![super::FORMAT_V5, super::FORMAT_V6].contains(&self.format)
             && matches!(value, Expr::Binary64Literal { .. } | Expr::Binary64 { .. })
         {
             return Err(finding(
                 at,
                 "operation_version",
                 "operation requires ess-normalization/5",
+            ));
+        }
+        if self.format != super::FORMAT_V6 && matches!(value, Expr::Position { .. }) {
+            return Err(finding(
+                at,
+                "operation_version",
+                "position requires ess-normalization/6",
             ));
         }
         if self.format == super::FORMAT
@@ -462,6 +630,36 @@ impl Context<'_> {
         Ok(())
     }
 
+    fn position(&self, value: &Expr, index: u64, at: &str, depth: usize) -> Result<Type> {
+        let ty = self.value(value, &format!("{at}/value"), depth + 1)?;
+        let Kind::Tuple(items, true) = &ty.kind else {
+            return Err(finding(
+                &format!("{at}/value"),
+                "position_type",
+                "position requires one exact closed tuple",
+            ));
+        };
+        if index >= items.len() as u64 {
+            return Err(finding(
+                &format!("{at}/index"),
+                "position_index",
+                "position index is outside the declared tuple",
+            ));
+        }
+        let mut result = items
+            [usize::try_from(index).expect("index is below the checked host-sized tuple arity")]
+        .clone();
+        result.missing |= ty.missing;
+        let arity = items.len() as u64;
+        if let Some(previous) = self.positions.borrow_mut().insert(at.to_owned(), arity) {
+            assert_eq!(
+                previous, arity,
+                "one checked expression pointer has one tuple arity"
+            );
+        }
+        Ok(result)
+    }
+
     fn floating(
         &self,
         value: &Expr,
@@ -473,8 +671,26 @@ impl Context<'_> {
         Ok(Type::new(Kind::Binary64))
     }
 
+    fn fallback(
+        &self,
+        value: &Expr,
+        fallback: &Expr,
+        on_null: bool,
+        at: &str,
+        depth: usize,
+    ) -> Result<Type> {
+        let mut ty = self.value(value, &format!("{at}/value"), depth + 1)?;
+        let fallback = self.value(fallback, &format!("{at}/fallback"), depth + 1)?;
+        if on_null {
+            ty = ty.without_null();
+        }
+        ty.missing = false;
+        Ok(Type::union(vec![ty, fallback]))
+    }
+
     fn expression(&self, value: &Expr, at: &str, depth: usize) -> Result<Type> {
         match value {
+            Expr::Position { value, index } => self.position(value, *index, at, depth),
             Expr::Null => Ok(Type::new(Kind::Null)),
             Expr::Boolean { value } => Ok(Type::new(Kind::Literal(json!(value)))),
             Expr::String { value } => Ok(Type::new(Kind::Literal(json!(value)))),
@@ -494,15 +710,7 @@ impl Context<'_> {
                 value,
                 fallback,
                 on_null,
-            } => {
-                let mut ty = self.value(value, &format!("{at}/value"), depth + 1)?;
-                let fallback = self.value(fallback, &format!("{at}/fallback"), depth + 1)?;
-                if *on_null {
-                    ty = ty.without_null();
-                }
-                ty.missing = false;
-                Ok(Type::union(vec![ty, fallback]))
-            }
+            } => self.fallback(value, fallback, *on_null, at, depth),
             Expr::Choose {
                 condition,
                 then_value,
@@ -582,6 +790,7 @@ impl Context<'_> {
             input: self.input,
             item: Some(&item),
             format: self.format,
+            positions: self.positions,
         }
         .value(value, &format!("{at}/value"), depth + 1)?;
         required(&ty, at)?;
@@ -659,6 +868,7 @@ impl Context<'_> {
             input: self.input,
             item: Some(&item),
             format: self.format,
+            positions: self.positions,
         };
         scope.condition(condition, &format!("{at}/condition"), depth + 1)?;
         let key = scope.value(key, &format!("{at}/key"), depth + 1)?;
@@ -699,6 +909,7 @@ impl Context<'_> {
             input: self.input,
             item: Some(&item),
             format: self.format,
+            positions: self.positions,
         };
         scope.condition(condition, &format!("{at}/condition"), depth + 1)?;
         let at_value = format!("{at}/value");
@@ -775,7 +986,7 @@ impl Context<'_> {
                 }
             }
             Condition::Equal { left, right } => {
-                if self.format == super::FORMAT_V5 {
+                if [super::FORMAT_V5, super::FORMAT_V6].contains(&self.format) {
                     let left = self.value(left, &format!("{at}/left"), depth + 1)?;
                     let right = self.value(right, &format!("{at}/right"), depth + 1)?;
                     if left.kind == Kind::Binary64 && right.kind == Kind::Binary64 {
@@ -831,7 +1042,7 @@ fn comparable(ty: &Type) -> bool {
         Kind::Literal(value) => {
             value.is_null() || value.is_boolean() || value.is_string() || value.as_i64().is_some()
         }
-        Kind::Union(values) => values.iter().all(comparable),
+        Kind::Union(values) | Kind::SchemaUnion(values) => values.iter().all(comparable),
         _ => false,
     }
 }
@@ -849,8 +1060,13 @@ fn required(ty: &Type, at: &str) -> Result<()> {
 }
 
 fn member(object: &Type, key: &str, at: &str) -> Result<Type> {
-    if let Kind::Union(values) = &object.kind {
-        let mut ty = Type::union(
+    if let Kind::Union(values) | Kind::SchemaUnion(values) = &object.kind {
+        let union = if matches!(object.kind, Kind::SchemaUnion(_)) {
+            Type::schema_union
+        } else {
+            Type::union
+        };
+        let mut ty = union(
             values
                 .iter()
                 .map(|value| member(value, key, at))
@@ -880,12 +1096,17 @@ fn member(object: &Type, key: &str, at: &str) -> Result<Type> {
 fn array_item(ty: &Type, at: &str) -> Result<Type> {
     match &ty.kind {
         Kind::Array(item) => Ok(*item.clone()),
-        Kind::Union(values) => Ok(Type::union(
-            values
+        Kind::Union(values) | Kind::SchemaUnion(values) => {
+            let values = values
                 .iter()
                 .map(|value| array_item(value, at))
-                .collect::<Result<_>>()?,
-        )),
+                .collect::<Result<_>>()?;
+            Ok(if matches!(ty.kind, Kind::SchemaUnion(_)) {
+                Type::schema_union(values)
+            } else {
+                Type::union(values)
+            })
+        }
         _ => Err(finding(
             at,
             "collection_type",
@@ -895,6 +1116,9 @@ fn array_item(ty: &Type, at: &str) -> Result<Type> {
 }
 
 fn assignable(source: &Type, target: &Type) -> bool {
+    if matches!(source.kind, Kind::Tuple(_, false)) {
+        return false;
+    }
     if source.missing && !target.missing {
         return false;
     }
@@ -907,7 +1131,7 @@ fn assignable(source: &Type, target: &Type) -> bool {
         | (Kind::Integer, Kind::Integer | Kind::Number)
         | (Kind::Number, Kind::Number)
         | (Kind::Binary64, Kind::Binary64 | Kind::Number) => true,
-        (Kind::Union(values), _) => values.iter().all(|value| {
+        (Kind::Union(values) | Kind::SchemaUnion(values), _) => values.iter().all(|value| {
             assignable(
                 &Type {
                     missing: source.missing,
@@ -916,7 +1140,7 @@ fn assignable(source: &Type, target: &Type) -> bool {
                 target,
             )
         }),
-        (_, Kind::Union(values)) => values.iter().any(|value| {
+        (_, Kind::Union(values) | Kind::SchemaUnion(values)) => values.iter().any(|value| {
             assignable(
                 source,
                 &Type {
@@ -931,6 +1155,9 @@ fn assignable(source: &Type, target: &Type) -> bool {
         (Kind::Literal(v), Kind::String) => v.is_string(),
         (Kind::Literal(v), Kind::Integer) => v.as_i64().is_some() || v.as_u64().is_some(),
         (Kind::Literal(v), Kind::Number) => v.is_number(),
+        (Kind::Tuple(a, true), Kind::Tuple(b, true)) => {
+            a.len() == b.len() && a.iter().zip(b).all(|(a, b)| assignable(a, b))
+        }
         (Kind::Array(a), Kind::Array(b)) => assignable(a, b),
         (Kind::Object(a, extra_a), Kind::Object(b, extra_b)) => {
             b.iter().all(|(key, expected)| {

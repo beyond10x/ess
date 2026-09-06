@@ -13,6 +13,153 @@ use serde_json::{json, Value};
 mod fixture_binary64;
 use fixture_binary64::model as fixture_model;
 
+fn positional_cli_fixture() -> (Fixture, Value) {
+    let fixture = Fixture::new();
+    let input = Fixture::bundle(
+        "Input",
+        &json!({"type":"array","prefixItems":[{"type":"string"},{"type":"string"}],"items":false,"minItems":2,"maxItems":2}),
+    );
+    let output = Fixture::bundle(
+        "Output",
+        &json!({"type":"object","additionalProperties":false,"required":["left","right"],"properties":{"left":{"type":"string"},"right":{"type":"string"}}}),
+    );
+    fs::write(
+        fixture.0.join("input.bundle.json"),
+        input.to_json().unwrap(),
+    )
+    .unwrap();
+    fs::write(
+        fixture.0.join("output.bundle.json"),
+        output.to_json().unwrap(),
+    )
+    .unwrap();
+    let position = |index| json!({"op":"position","value":{"op":"read","scope":"input","path":[]},"index":index});
+    let recipe = json!({"format":"ess-normalization/6","positional_inputs":{"primary":[{"path":[],"kind":"fixed_string_array","length":2,"missing":"preserve","null":"zero","short":"zero_pad","extra":"discard","null_element":"zero"}]},"branches":{"primary":[{"input":Root::pin(&input,"Input").unwrap(),"output":Root::pin(&output,"Output").unwrap(),"requires":[],"value":{"op":"record","fields":{"left":position(0),"right":position(1)}}}]}});
+    fs::write(fixture.0.join("recipe.json"), recipe.to_string()).unwrap();
+    (fixture, recipe)
+}
+
+#[test]
+fn positional_cli_prepares_text_and_refuses_before_publication() {
+    let (fixture, recipe) = positional_cli_fixture();
+    let checked = fixture.run("normalize-check", &[]);
+    assert!(checked.status.success(), "{checked:?}");
+    assert_eq!(
+        serde_json::from_slice::<Value>(&checked.stdout).unwrap(),
+        recipe
+    );
+    for (input, expected) in [
+        ("null", json!({"left":"","right":""})),
+        ("[]", json!({"left":"","right":""})),
+        (r#"["a"]"#, json!({"left":"a","right":""})),
+        (
+            r#"[null,"b",1e999,{"x":0,"x":1}]"#,
+            json!({"left":"","right":"b"}),
+        ),
+    ] {
+        fs::write(fixture.0.join("instance.json"), input).unwrap();
+        let result = fixture.run("normalize-run", &[]);
+        assert!(result.status.success(), "{result:?}");
+        assert_eq!(
+            serde_json::from_slice::<Value>(&result.stdout).unwrap(),
+            expected
+        );
+        assert_eq!(
+            fs::read_to_string(fixture.0.join("instance.json")).unwrap(),
+            input
+        );
+    }
+    for (input, rule) in [
+        (r#"[1e999,"b"]"#, "positional_element_type"),
+        (r#"[true,"b",]"#, "input_syntax"),
+        (r#"["a","b","\ud800"]"#, "input_syntax"),
+        ("{}", "positional_input_type"),
+    ] {
+        fs::write(fixture.0.join("instance.json"), input).unwrap();
+        let result = fixture.run("normalize-run", &["--out", "result.json"]);
+        assert!(!result.status.success());
+        assert!(
+            String::from_utf8_lossy(&result.stderr).contains(rule),
+            "{result:?}"
+        );
+        assert_eq!(
+            fs::read_to_string(fixture.0.join("result.json")).unwrap(),
+            "untouched"
+        );
+    }
+    for target in ["rust", "go"] {
+        let mut args = vec!["--target", target, "--package", "adapter", "--out", target];
+        if target == "go" {
+            args.extend(["--module", "example.invalid/adapter"]);
+        }
+        let result = fixture.run("normalize-generate", &args);
+        assert!(result.status.success(), "{result:?}");
+        let report: Value = serde_json::from_slice(
+            &fs::read(fixture.0.join(target).join("normalization-report.json")).unwrap(),
+        )
+        .unwrap();
+        assert_eq!(report["format"], "ess-normalization-target/3");
+        args.push("--check");
+        assert!(fixture.run("normalize-generate", &args).status.success());
+        let recipe_path = fixture.0.join(target).join("source.recipe.json");
+        fs::write(&recipe_path, "drift").unwrap();
+        assert!(!fixture.run("normalize-generate", &args).status.success());
+        assert_eq!(fs::read_to_string(recipe_path).unwrap(), "drift");
+    }
+    eprintln!("CLI executed 8 positional text vectors and both publication/drift targets");
+}
+
+#[test]
+fn positional_cli_refuses_unused_branches_before_publication() {
+    let (fixture, mut recipe) = positional_cli_fixture();
+    recipe["branches"]["unused"] = recipe["branches"]["primary"].clone();
+    recipe["branches"]["unused"][0]["value"]["fields"]["left"]["index"] = json!(2);
+    fs::write(fixture.0.join("recipe.json"), recipe.to_string()).unwrap();
+    fs::write(fixture.0.join("instance.json"), "[]").unwrap();
+    for (operation, args) in [
+        ("normalize-check", vec!["--out", "result.json"]),
+        ("normalize-run", vec!["--out", "result.json"]),
+        (
+            "normalize-generate",
+            vec![
+                "--target",
+                "rust",
+                "--package",
+                "adapter",
+                "--out",
+                "refused-rust",
+            ],
+        ),
+        (
+            "normalize-generate",
+            vec![
+                "--target",
+                "go",
+                "--package",
+                "adapter",
+                "--module",
+                "example.invalid/adapter",
+                "--out",
+                "refused-go",
+            ],
+        ),
+    ] {
+        let result = fixture.run(operation, &args);
+        assert!(!result.status.success());
+        assert!(
+            String::from_utf8_lossy(&result.stderr).contains("position_index"),
+            "{result:?}"
+        );
+        assert_eq!(
+            fs::read_to_string(fixture.0.join("result.json")).unwrap(),
+            "untouched"
+        );
+    }
+    assert!(!fixture.0.join("refused-rust").exists());
+    assert!(!fixture.0.join("refused-go").exists());
+    eprintln!("CLI executed 4 unused-branch pre-publication refusals");
+}
+
 #[test]
 fn binary64_cli_keeps_numeric_identity_and_emits_checked_format_five() {
     let fixture = Fixture::new();

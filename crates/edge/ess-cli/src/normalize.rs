@@ -12,7 +12,7 @@ use schema_contract::realize::normalize::{Plan, Recipe, Root};
 #[derive(Debug, Args)]
 #[command(group(clap::ArgGroup::new("normalization_sources").required(true).multiple(true).args(["bundle", "model"])))]
 pub struct Sources {
-    /// Authored ess-normalization/1, /2, /3 or /4 recipe; every branch is checked first.
+    /// Authored ess-normalization/1 through /6 recipe; every branch is checked first.
     #[arg(long)]
     recipe: PathBuf,
     /// Replay-checked source bundles referenced by canonical digest. Repeat as needed.
@@ -39,7 +39,7 @@ pub struct RunArgs {
     /// Exact external discriminator; never inferred from the input object.
     #[arg(long)]
     branch: String,
-    /// JSON instance with unique keys and losslessly representable numbers.
+    /// Original JSON text; declared capture, numeric and positional input policies apply.
     #[arg(long)]
     input: PathBuf,
     /// Write the complete result here; omit for JSON on stdout. Refusals write no result.

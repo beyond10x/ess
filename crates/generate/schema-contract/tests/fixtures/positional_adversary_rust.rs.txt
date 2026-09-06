@@ -1,0 +1,98 @@
+#[cfg(test)]
+mod independent_adversary {
+    use super::*;
+    use serde_json::json;
+
+    #[test]
+    fn literal_tokens_and_fresh_state() {
+        let normalizer = Normalizer::new().unwrap();
+        let cases: Vec<Value> = serde_json::from_str(include_str!("../cases.json")).unwrap();
+        for (index, case) in cases.iter().enumerate() {
+            let actual = normalizer.normalize(
+                case["branch"].as_str().unwrap(),
+                case["input"].as_str().unwrap(),
+            );
+            match actual {
+                Ok(value) => assert_eq!(case.get("value"), Some(&value), "case {index}: {case}"),
+                Err(error) => assert_eq!(
+                    case.get("errors"),
+                    Some(&json!(error.0)),
+                    "case {index}: {case}"
+                ),
+            }
+            assert_eq!(
+                normalizer.normalize("run/~", "[]").unwrap(),
+                json!(["", ""])
+            );
+        }
+        assert_eq!(
+            normalizer.normalize("record", r#"{"number":-0}"#).unwrap()["number"]
+                .as_f64()
+                .unwrap()
+                .to_bits(),
+            1_u64 << 63
+        );
+        eprintln!("independent native Rust literal vectors: {}", cases.len());
+    }
+
+    #[test]
+    fn caller_reaches_guard_after_private_metadata_fault_injection() {
+        // A generated source integrity fault is injected only in test-owned memory.
+        // This does not claim callers can mutate the private map through the API.
+        for arity in [None, Some(0), Some(3)] {
+            let mut normalizer = Normalizer::new().unwrap();
+            let at = "/branches/pick~1~0/0/value";
+            if let Some(arity) = arity {
+                normalizer.position_arities.insert(at.to_owned(), arity);
+            } else {
+                normalizer.position_arities.remove(at);
+            }
+            let error = normalizer.normalize("pick/~", r#"["a","b"]"#).unwrap_err();
+            assert_eq!(
+                json!(error.0),
+                json!([{"pointer":at,"rule":"position_value","detail":"position encountered a value outside its checked tuple contract"}])
+            );
+        }
+        let mut normalizer = Normalizer::new().unwrap();
+        normalizer.position_arities.clear();
+        assert_eq!(
+            normalizer.normalize("optional", "{}").unwrap(),
+            json!("absent")
+        );
+    }
+
+    #[test]
+    fn decoded_value_provenance_and_retained_entry_order() {
+        let normalizer = Normalizer::new().unwrap();
+        assert_eq!(
+            normalizer
+                .normalize_value("optional", &json!({}))
+                .unwrap_err()
+                .0[0]
+                .rule,
+            "input_positional_provenance"
+        );
+        assert_eq!(
+            normalizer
+                .normalize_value("record", &json!({}))
+                .unwrap_err()
+                .0[0]
+                .rule,
+            "input_capture_provenance"
+        );
+        assert_eq!(
+            normalizer
+                .normalize_base64_json("unknown", "!")
+                .unwrap_err()
+                .0[0]
+                .rule,
+            "input_base64"
+        );
+        assert_eq!(
+            normalizer
+                .normalize_base64_json("run/~", "W251bGwsImIiLDFlOTk5XQ==")
+                .unwrap(),
+            json!(["", "b"])
+        );
+    }
+}

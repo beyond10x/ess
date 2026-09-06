@@ -103,7 +103,7 @@ func New() (*Normalizer, error) {
 
 // Normalize decodes one JSON value and returns only a fully validated final result.
 func (n *Normalizer) Normalize(branch string, data []byte) (json.RawMessage, error) {
-	current, err := parseInput(data, numberPaths[branch], capturePaths[branch], positionalPolicies[branch])
+	current, err := parseInput(data, numberPaths[branch], capturePaths[branch])
 	if err != nil {
 		return nil, err
 	}

@@ -1,5 +1,9 @@
 //! Complete legacy output snapshots, recorded before each successor format.
 
+// Historical fixtures own private helper modules. Import them intact so this
+// byte witness exercises the original plans without rewriting frozen fixtures.
+#![allow(clippy::duplicate_mod)]
+
 #[allow(dead_code)]
 #[path = "fixtures/normalization_v1.rs"]
 mod v1;
@@ -10,6 +14,9 @@ use v4::model as v3;
 #[allow(dead_code)]
 #[path = "fixtures/normalization_raw.rs"]
 mod v4;
+#[allow(dead_code)]
+#[path = "fixtures/normalization_binary64.rs"]
+mod v5;
 
 use schema_contract::realize::normalize::Plan;
 use serde_json::{json, Value};
@@ -25,7 +32,10 @@ fn complete_legacy_file_maps_are_preserved() {
         Plan::read(&recipe.to_string(), &[bundle]).unwrap(),
         v3::plan(),
         v4::plan(),
+        v5::plan(),
     ];
+    let capture_root =
+        std::path::Path::new(env!("CARGO_TARGET_TMPDIR")).join("normalization-legacy-current");
     let mut snapshots = BTreeMap::new();
     for (index, plan) in plans.iter().enumerate() {
         for (language, target) in [
@@ -39,6 +49,13 @@ fn complete_legacy_file_maps_are_preserved() {
                 .unwrap(),
             ),
         ] {
+            for (path, source) in &target.files {
+                let destination = capture_root
+                    .join(format!("v{}-{language}", index + 1))
+                    .join(path);
+                std::fs::create_dir_all(destination.parent().unwrap()).unwrap();
+                std::fs::write(destination, source).unwrap();
+            }
             let mut files = BTreeMap::new();
             for (path, mut source) in target.files {
                 if path == "normalization-report.json" {
@@ -57,6 +74,7 @@ fn complete_legacy_file_maps_are_preserved() {
         }
     }
     let actual = format!("{}\n", serde_json::to_string_pretty(&snapshots).unwrap());
+    std::fs::write(capture_root.join("canonical-maps.json"), &actual).unwrap();
     let expected = std::fs::read_to_string(concat!(
         env!("CARGO_MANIFEST_DIR"),
         "/tests/fixtures/normalization_legacy_maps.json"
