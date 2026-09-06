@@ -299,3 +299,12 @@ records retained. The continuing ESS/AEP coordinators retain the next writer's p
 Wave 10 is closed: source, exact source CI, public delivery and task-owned retirement are
 recorded. The coverage writer is still unselected at this closure and requires a fresh replan.
 No release, tag, installed binary replacement or default transition was selected by this wave.
+
+Before closing publication, remote main advanced to
+`c4f3d145781c7d6e55339f7a4c2949932cae25e5` with another session's release-plan updates only.
+Root restored its canonical 1,436-line journal and replayed our three AEP commands, producing
+four events. All 165 incoming artifacts and both local artifacts remained byte-exact.
+The source gated at `239996d846460aee342ce42514378c25b2be5152` is unchanged; the closing merge
+adds internal evidence and preserves the incoming release record. Atlas authority was refreshed
+to clean remote `78d96cc706f735c3a160369e3ce2f2133f4b1d41`; its operational instructions,
+bot tooling and publication workflow are byte-identical to the publication's control revision.
