@@ -2,7 +2,7 @@
 format: aep.planning-md/1
 id: story:review-schema-resource-identity
 kind: story
-status: active
+status: implemented
 title: Define the boundary between generated schemas and registry resources
 tags:
 - P2
@@ -28,7 +28,7 @@ scope:
   path: website/docs/guides/generate-artifacts.md
 - confidence: cited
   path: website/docs/reference/formats.md
-revision: 15
+revision: 17
 ---
 ## Finding and source
 
@@ -93,3 +93,7 @@ The original new adversary fixture wrongly assumed currency had an enum; the act
 The learned surface adds the independent test crates/edge/ess-cli/tests/schema_registry_identity_adversary.rs and a root-owned Unreleased changelog entry. Unit ownership otherwise remains its9frozen files; production and original generated schemas are unchanged. The source review is complete after its first green pass. Integration gates and public delivery remain pending.
 
 Incoming main6bf76440c38331f6dd5214e5667c210b58a24015 supplies independently published TypeScript normalization. Root retained its canonical1406-line planning journal, replayed9local schema commands through AEP and verified162unrelated incoming artifacts plus the one local story byte-exact. Reconciliation commit ea5b8f055cdf1c53025692f4eac8b01eeaa66053 precedes this schema merge. Both shared public pages merged automatically; the full integration gate will verify the combined source.
+
+## Integrated verification
+
+verification-report:review-boundaries-10-integrated records clean9e82d207b4c7ef6713c19b3bb842c8453018a6bc:8declared task-check lanes plus site-build and planning all returned0;2018workspace cases passed,0failed/ignored,178summaries. Every tracked source byte stayed unchanged. Both public merges match independently composed hashes, preserving the incoming TypeScript normalization work. The gate establishes source implementation completion under the standing grant; publication, CI, immutable public delivery and managed cleanup remain separately observed outcomes.

@@ -183,3 +183,28 @@ All eight declared task-check lanes, the separate site-build and planning valida
 on the clean merged source. Runner SHA2562e442489a06718da883d513b4784fce63b5dd69d33318264c29f005a47382d93
 retains separate real statuses, validates the declared lane list, checks source hashes after
 each lane and uses this coordinator's own target with2jobs. No integrated result is claimed yet.
+
+## Integrated verification and joint delivery preparation
+
+Clean integration9e82d207b4c7ef6713c19b3bb842c8453018a6bc passed all10 selected commands:
+the8declared task-check lanes, site-build and planning validation. Workspace tests passed
+2018cases,0failed/ignored,178summaries in108.542169922seconds. The run completed at
+15:48:58.013958UTC with every tracked byte unchanged. Optional feature-specific TypeScript
+checks outside this declared gate are not inferred. Both actual merged public-file hashes
+match the independent incoming-source analysis. The CLI recorded the result in
+verification-report:review-boundaries-10-integrated and moved the story to implemented,
+revision17. Validation returned0 for165artifacts with28retained empty-review advisories.
+
+AEP coverage reader source658cf76e6371b1628f6de69548e724b52803f5c2 is published after its
+green16-step gate. Reuse its already provisioned, root-owned Website support checkout
+/home/timo/.local/state/worktree/trees/b10x/website/aep-coverage-website-verification,
+lease ess-review-aep-website, exact runtimefc4571534765c098ed861bc326da4d3da0d1df63,
+scratch target/ess-conformance-coverage. Its npm setup passed; no dependency source changed.
+The short assigned external TMPDIR is /home/timo/.cache/aep-cov-website-tmp.
+
+The joint verifier retains the original AEP-only preparation and adds an independently supplied
+ESS commit requirement. It accepts one complete immutable publication artifact and both exact
+published source commits, checks every artifact entry before/after, invokes the immutable build
+verifier and runs the complete Website gate. Runner SHA256
+d4766ce3719de05d4967ff375dd4f5575a7fc6ad2fa6b2ff93c443745aebbca0. It is prepared, not yet run.
+Source publication, CI, actual public delivery and managed retirement continue separately.
