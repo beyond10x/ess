@@ -22,7 +22,7 @@ Authorization covers the two unit source/test commits, reviewed corrections when
 
 ## Stage
 
-Opening plan: no implementor dispatched yet. The prerequisite checkpoint is published and the primary checkout is clean on that main commit. Manager-resolved unit identifiers and paths follow before dispatch. Production sources retain the 12fb11a scope proof; later changes concern tests and metadata. The positional design now binds compiler-derived private exact-arity metadata within the same35 paths.
+Both implementors are dispatched in the recorded managed trees. Each established its baseline and observed a deciding red test before production edits. Structural's complete schema-contract lane rose from125 to134 passing cases, including actual Rust/Go wire and layout controls; its final CLI/Clippy lane remains pending. Positional captured all ten complete legacy Rust/Go format-1–5 maps before changes and now holds the compiler lane for its first implementation checks. Production ownership remains disjoint; TypeScript implementation waits for the final positional integration.
 
 ## Opening evidence
 
@@ -38,7 +38,7 @@ Both clean unit trees begin at opening commit c4ba992b69eee8ac97f89e5fe6d7a7a37c
 
 | Unit | Branch | Managed path | Build path | Scratch | Stage |
 | --- | --- | --- | --- | --- | --- |
-| Structural codecs | impl/binary64-structural-codecs | $MANAGED/b10x/ess/wt-88f1d4e7ca14 | $MANAGED/b10x/ess/wt-88f1d4e7ca14/target | $SCRATCH/ess-structural-codecs | Ready for implementor |
-| Positional arrays | impl/normalization-positional | $MANAGED/b10x/ess/wt-bde1eaabca2f | $MANAGED/b10x/ess/wt-bde1eaabca2f/target | $SCRATCH/ess-positional-design/implementation | Ready for implementor |
+| Structural codecs | impl/binary64-structural-codecs | $MANAGED/b10x/ess/wt-88f1d4e7ca14 | $MANAGED/b10x/ess/wt-88f1d4e7ca14/target | $SCRATCH/ess-structural-codecs | Schema/native green; final CLI/Clippy queued |
+| Positional arrays | impl/normalization-positional | $MANAGED/b10x/ess/wt-bde1eaabca2f | $MANAGED/b10x/ess/wt-bde1eaabca2f/target | $SCRATCH/ess-positional-design/implementation | Baseline/red captured; first implementation checks own compiler lane |
 
 The integration branch remains impl/normalization-base64-resume in managed tree wt-bf45625a6a50. Opening formatting, release consistency, five layout cases and AEP validation passed before either unit tree was created. Structural owns the first baseline/red-test compiler slot, then yields it explicitly so positional can establish its own baseline/red cases. Subsequent compile/native checks remain serial while source work proceeds concurrently. All extra template/fixture additions remain within the exact scopes.

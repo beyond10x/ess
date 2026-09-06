@@ -95,6 +95,16 @@ Binary64 and positional-input contracts before its implementation is accepted.
 Those units define their semantics once; TypeScript must not derive a second
 policy from broad JSON Schema types. Consumer dispatch remains outside the target.
 
+The selected configuration is a private normalization-local serde enum tagged
+`language`: `Rust { package }`, `Go { package, module }` and
+`Typescript { package }`. Existing Rust/Go field order and report bytes remain
+unchanged. The separate structural fieldless TypeScript configuration is untouched.
+Recipe formats1/2 retain target report1, format3 report2, and formats4/5/6 report3.
+The new API is additive; the report's configuration field remains private.
+There is no authored or configurable schema-profile identifier. Deterministic
+runtime inputs and a fixed `schema-profile.json` enter the ordinary file-digest map;
+unsupported profiles refuse before a Realization or report is returned.
+
 ## Concrete library and CLI contract
 
 Add `normalize::Plan::typescript(package: &str) -> Result<Realization, Refused>`.

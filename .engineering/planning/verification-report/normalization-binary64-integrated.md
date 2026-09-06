@@ -6,7 +6,7 @@ status: draft
 title: Binary64 model and normalization integrated verification
 relations:
 - verifies: story:model-binary64-fields
-revision: 1
+revision: 2
 ---
 ## Outcome
 
@@ -42,3 +42,11 @@ The literal full workspace gate executed1,945 Rust cases in163 result groups, wi
 All owned Cargo/native processes are terminal. The final independent merge review measured30,816,636,928 bytes in the existing coordinator target and30,552,416,256 free filesystem bytes, above the8GiB reserve. The separate Binary64 unit target used about3.23GB. Build directories remain managed for the continuing authorized sequence and final cleanup; no unrelated tree was retired. Agent token/cost telemetry was unavailable.
 
 This is a validated main-source checkpoint, not a release tag or a completed adopter cutover. Released ESS remains0.19.0. Native structural codecs, positional recipe6, TypeScript normalization and the final release/adopter/Atlas publication sequence remain pending. Existing decoder and runtime-consumer contracts are not claimed solved by typed model declarations.
+
+## Published checkpoint and Atlas delivery
+
+Published ESS main6c6620b3783cbd41ca31a998805bc8e51e0c3515 has successful CI34030782738, documentation validation34030782692 and passive source bundle34030782607. The exact artifact9988526231 has digest sha256:499c414e338f613a126f5582b77bded4feaae39b9400b6c13a798c0cd668887c. Independent download verification checked all40 passive source files and their manifest against this commit. No new release tag was created.
+
+Normal Atlas publication34031276932 completed successfully under Atlas control34fa907ff3ffcbdbb6bbf37d4dd674c05904bb20. Fresh live PROVENANCE.json at2026-09-06T12:00:16Z records the exact ESS source and producer/artifact above, source set a934aa1d0c586d07076b660a45b4d5fa1f1468a8b7d870900db65b8310e44058 and bundle8dabaa3755e1566eabb7f21133c40aa4983702b3cf8e148084701599515a6a30. Website runtime remainsfc4571534765c098ed861bc326da4d3da0d1df63. Its build and independent artifact-verification stages establish this content delivery; no full Website runtime gate is claimed.
+
+Publication: https://github.com/beyond10x/atlas/actions/runs/34031276932 . Live receipt source: https://beyond10x.github.io/PROVENANCE.json . Native structural codecs, positional input, TypeScript normalization and the final adopter/release sequence remain separate pending work.
