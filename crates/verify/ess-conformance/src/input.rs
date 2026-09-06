@@ -32,9 +32,9 @@
 //!
 //! **Its limits, named rather than discovered later.** A union is not projected *at all*, not even
 //! its tag — which is a `String` a fact could hold, and which a later wave may decide to bind as
-//! `payee.kind`. A list and a map are not projected because a fact path has no index and no key
-//! selector, so `lines.0.quantity` is not a path this model can spell. And the walk is bounded at
-//! [`MAX_TYPE_DEPTH`], because nothing in the workspace refuses a type that refers to itself.
+//! `payee.kind`. Lists and maps require collection facts this typed projector does not publish,
+//! including legal cardinality and List ordinal reads. The projection walk is bounded at
+//! [`MAX_TYPE_DEPTH`]; semantic path validation has no such depth limit.
 //!
 //! # A candidate that is not a value of the input's type is refused here
 //!
@@ -393,44 +393,57 @@ impl Target {
 /// The fields of a command's input, of a view's projection, or of anything else the model declares
 /// as a flat list of named, typed members.
 pub fn resolve_path(ir: &EssIr, fields: &[ResolvedField], path: &FactPath) -> Target {
-    let segments = path.segments();
-    // `FactPath::new` refuses an empty path, so there is always a first segment.
-    let (root, rest) = segments
-        .split_first()
-        .expect("a fact path has at least one segment");
-    match fields.iter().find(|field| &field.name == root) {
-        Some(field) => walk(ir, &field.type_ref, rest, 0),
-        None => Target::Undeclared(root.clone()),
+    match ess_compiler::expression::resolve_path(ir, fields, path, "conformance input") {
+        Ok(resolved) => projection_target(ir, &resolved),
+        Err(error) if error.code == ess_primitives::error::ValidationCode::SelfReference => {
+            Target::TooDeep
+        }
+        Err(error) => match error.boundary {
+            Some(boundary) => Target::Aggregate(boundary),
+            None => Target::Undeclared(error.segment.unwrap_or_else(|| path.to_string())),
+        },
     }
 }
 
-/// The deep-path rule, as the module table states it.
-fn walk(ir: &EssIr, type_ref: &ResolvedTypeRef, rest: &[String], depth: usize) -> Target {
-    if depth > MAX_TYPE_DEPTH {
+/// Classifies producer support after semantic resolution; terminal Number alone is insufficient.
+pub(crate) fn projection_target(
+    ir: &EssIr,
+    resolved: &ess_domain::expression::Resolution<ResolvedTypeRef>,
+) -> Target {
+    if resolved.access.depth > MAX_TYPE_DEPTH {
         return Target::TooDeep;
     }
-    let leaf = |rest: &[String], target: Target| match rest.split_first() {
-        None => target,
-        Some((segment, _)) => Target::Undeclared(segment.clone()),
-    };
-    match type_ref {
-        ResolvedTypeRef::Optional { of } => walk(ir, of, rest, depth + 1),
+    if resolved.access.collection {
+        return Target::Aggregate("a collection");
+    }
+    if resolved.scalar.is_some() {
+        return Target::Scalar;
+    }
+    match &resolved.terminal {
         ResolvedTypeRef::List { .. } => Target::Aggregate("a list"),
         ResolvedTypeRef::Map { .. } => Target::Aggregate("a map"),
-        ResolvedTypeRef::Primitive { .. } => leaf(rest, Target::Scalar),
-        ResolvedTypeRef::Declared { name } => match &ir.named_type(name).body {
-            ResolvedBody::Newtype { of, .. } => walk(ir, of, rest, depth + 1),
-            ResolvedBody::Enum { .. } => leaf(rest, Target::Scalar),
+        ResolvedTypeRef::Declared { name } => match ir.named_type(name).body {
+            ResolvedBody::Struct { .. } => Target::Aggregate("a struct"),
             ResolvedBody::Union { .. } => Target::Aggregate("a union"),
-            ResolvedBody::Struct { fields, .. } => match rest.split_first() {
-                None => Target::Aggregate("a struct"),
-                Some((segment, tail)) => match fields.iter().find(|it| &it.name == segment) {
-                    Some(field) => walk(ir, &field.type_ref, tail, depth + 1),
-                    None => Target::Undeclared(segment.clone()),
-                },
-            },
+            _ => Target::Aggregate("an aggregate"),
         },
+        _ => Target::Aggregate("an aggregate"),
     }
+}
+
+/// Whether every checked read is available from the current typed scalar projector.
+pub(crate) fn predicate_projectable(
+    ir: &EssIr,
+    fields: &[ResolvedField],
+    predicate: &Predicate,
+) -> bool {
+    let checked =
+        ess_compiler::expression::check_predicate(ir, fields, predicate, "conformance projection");
+    checked.errors.is_empty()
+        && checked
+            .reads
+            .iter()
+            .all(|read| projection_target(ir, &read.resolution).is_scalar())
 }
 
 /// Binds one fact per scalar leaf of `value`, guided by `type_ref`.
@@ -470,8 +483,8 @@ fn project(
             Some(fact) => facts.set(path.clone(), fact),
             None => wrong(errors, name.to_string()),
         },
-        // Checked for shape and projected not at all: a fact path has no index or key selector, so
-        // no path can name an element.
+        // Checked for shape but not projected: legal count and List ordinal paths require
+        // collection facts this producer does not currently publish.
         ResolvedTypeRef::List { .. } => {
             if !matches!(value, Node::Seq(_)) {
                 wrong(errors, format!("{type_ref}"));

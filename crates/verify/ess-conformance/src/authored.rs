@@ -208,7 +208,7 @@ use ess_primitives::predicate::Predicate;
 use ess_primitives::time::{CivilDate, Timestamp};
 use serde::Deserialize as _;
 
-use crate::input::{bind, resolve_path, Completeness, ShapeError, ShapeErrors};
+use crate::input::{bind, projection_target, Completeness, ShapeError, ShapeErrors};
 use crate::scenario::{
     ActorRef, AuthoredName, CommandRef, ConformanceScenario, DeclaredTypeRef, DomainRef, Elapsed,
     EntityRef, ErrorRef, EssSemanticRef, EventRef, InstanceName, InstantName, OutcomeRef, Position,
@@ -985,6 +985,13 @@ pub enum Cause {
         /// The path it reads.
         path: String,
     },
+    /// An assertion's paths resolve, but its operands or quantified target are ill-typed.
+    InvalidPredicate {
+        /// The row owner.
+        view: ViewRef,
+        /// The shared semantic error, with its owner and full expression.
+        diagnostic: ess_domain::expression::ExpressionError,
+    },
     /// The scenario runs no command and asserts nothing.
     NothingHappens,
     /// A window is measured from an instant nothing marked before it.
@@ -1084,6 +1091,7 @@ impl Cause {
                 Self::WindowContradictsTimeline { .. } => 32,
                 Self::AmbiguousWindow { .. } => 33,
                 Self::HaltsAtNothing { .. } => 34,
+                Self::InvalidPredicate { .. } => 35,
             },
         )
     }
@@ -1173,6 +1181,9 @@ impl Cause {
             }
             Self::UnreadablePredicate { .. } => {
                 "read only fields the view projects, or project the field the predicate reads"
+            }
+            Self::InvalidPredicate { .. } => {
+                "use compatible scalar operands and quantify only over a declared List or Map"
             }
             Self::NothingHappens => {
                 "give the scenario a timeline; a scenario that runs nothing is a check that cannot \
@@ -1359,6 +1370,13 @@ impl fmt::Display for Cause {
             }
             Self::UnreadablePredicate { view, path } => {
                 write!(f, "`{view}` publishes nothing at `{path}`")
+            }
+            Self::InvalidPredicate { view, diagnostic } => {
+                write!(
+                    f,
+                    "the assertion over a row of `{view}` is ill-typed: {}",
+                    diagnostic.message
+                )
             }
             Self::NothingHappens => f.write_str("the timeline is empty"),
             Self::UnmarkedInstant { instant, marked } => {
@@ -2019,11 +2037,31 @@ impl Compiler<'_> {
             });
         }
         if let Some(predicate) = &assertion.satisfies {
-            for path in predicate.fact_paths() {
-                if !resolve_path(self.ir, fields, path).is_scalar() {
+            let checked = ess_compiler::expression::check_predicate(
+                self.ir,
+                fields,
+                predicate,
+                &format!("authored row {view}.satisfies"),
+            );
+            if let Some(diagnostic) = checked.errors.first() {
+                if let Some(path) = &diagnostic.path {
                     self.refuse(Cause::UnreadablePredicate {
                         view: view.clone(),
                         path: path.to_string(),
+                    });
+                } else {
+                    self.refuse(Cause::InvalidPredicate {
+                        view: view.clone(),
+                        diagnostic: diagnostic.clone(),
+                    });
+                }
+                return None;
+            }
+            for read in &checked.reads {
+                if !projection_target(self.ir, &read.resolution).is_scalar() {
+                    self.refuse(Cause::UnreadablePredicate {
+                        view: view.clone(),
+                        path: read.path.to_string(),
                     });
                     return None;
                 }

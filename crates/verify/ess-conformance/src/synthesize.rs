@@ -178,7 +178,7 @@ use ess_primitives::node::Node;
 use ess_primitives::predicate::{Operand, Predicate, Quantified, Truth};
 
 use crate::decision::{when, Decision, Unevaluable};
-use crate::input::{flatten, resolve_path, ShapeErrors};
+use crate::input::{flatten, predicate_projectable, resolve_path, ShapeErrors};
 use crate::scenario::{
     ActorRef, BindingAspect, BindingRef, CommandRef, ComponentRef, ConformanceScenario,
     ConformanceSuite, DeclaredTypeRef, EntityRef, ErrorRef, EssSemanticRef, EventRef, Holds,
@@ -2949,7 +2949,7 @@ fn holds_after(
                 RefusalCause::InvariantUnobservable {
                     entity: entity_ref.clone(),
                     invariant: invariant.statement.clone(),
-                    unpublished: unpublished(ir, invariant, views),
+                    unpublished: unpublished(ir, invariant, &entity.observable_fields(), views),
                     state: state.clone(),
                 },
             ));
@@ -3121,10 +3121,11 @@ fn positions_of<'a>(
             );
             for prefix in found {
                 let answerable = invariants.iter().all(|invariant| {
-                    rebased(&invariant.predicate, &prefix, &declared.body)
-                        .fact_paths()
-                        .into_iter()
-                        .all(|path| resolve_path(ir, &view.fields, path).is_scalar())
+                    predicate_projectable(
+                        ir,
+                        &view.fields,
+                        &rebased(&invariant.predicate, &prefix, &declared.body),
+                    )
                 });
                 if answerable {
                     positions.push((view, prefix));
@@ -3372,11 +3373,7 @@ fn witnesses_for<'a>(
     views
         .iter()
         .filter(|view| {
-            invariant
-                .predicate
-                .fact_paths()
-                .into_iter()
-                .all(|path| resolve_path(ir, &view.fields, path).is_scalar())
+            predicate_projectable(ir, &view.fields, &invariant.predicate)
                 && matches!(shows(view, state, settled, &bound(view, settled)), Ok(true))
         })
         .copied()
@@ -3387,17 +3384,22 @@ fn witnesses_for<'a>(
 ///
 /// The difference between "no view holds a row here" and "no view could ever answer this", which is
 /// the difference between a filter an author might widen and a field an author has to publish.
-fn unpublished(ir: &EssIr, invariant: &Invariant, views: &[&ResolvedView]) -> Vec<FactPath> {
-    invariant
-        .predicate
-        .fact_paths()
+fn unpublished(
+    ir: &EssIr,
+    invariant: &Invariant,
+    fields: &[ess_compiler::ir::ResolvedField],
+    views: &[&ResolvedView],
+) -> Vec<FactPath> {
+    ess_compiler::expression::check_predicate(ir, fields, &invariant.predicate, "entity invariant")
+        .reads
         .into_iter()
+        .filter(|read| read.free)
+        .map(|read| read.path)
         .filter(|path| {
             !views
                 .iter()
                 .any(|view| resolve_path(ir, &view.fields, path).is_scalar())
         })
-        .cloned()
         .collect::<BTreeSet<_>>()
         .into_iter()
         .collect()

@@ -500,10 +500,15 @@ fn the_input_a_scenario_sends_is_re_decided_against_the_guard_it_claims_to_reach
 
 #[test]
 fn an_undecidable_guard_refuses_and_does_not_spend_the_candidate_budget() {
-    // Invariant 5 from the generator's side. `amount.vat` parses, validates and compiles — the
-    // domain checks a `when` path's *first* segment only — so this is a specification defect that
-    // reaches synthesis, and treating its `Unknown` as "try another candidate" would report it as a
-    // flaky test after burning every candidate.
+    // A malformed declared path now fails assembly. A separate legal Text ordering keeps
+    // the synthesis Unknown-versus-exhausted-search control: no scale can decide it.
+    let malformed = UNDECIDED.replace("amount.currency > EUR", "amount.vat > 0");
+    let errors = Specification::assemble([(
+        Source::new("malformed.yaml"),
+        RawSpecFile::parse(&malformed).unwrap(),
+    )])
+    .unwrap_err();
+    assert!(errors.to_string().contains("amount.vat"));
     let synthesis = synthesize(&fixture(UNDECIDED));
 
     assert!(
@@ -535,8 +540,8 @@ fn an_undecidable_guard_refuses_and_does_not_spend_the_candidate_budget() {
         .expect("the guarded branch refuses");
     let rendered = refusal.to_string();
     assert!(
-        rendered.contains("amount.vat > 0") && rendered.contains("`vat`"),
-        "a refusal names the predicate and the segment that could not be resolved: {rendered}"
+        rendered.contains("amount.currency > EUR"),
+        "a refusal names the valid predicate whose text ordering lacks a scale: {rendered}"
     );
     assert!(
         matches!(refusal.cause, RefusalCause::GuardUnevaluable(_)),
@@ -2223,6 +2228,71 @@ fn a_value_object_nothing_observable_holds_keeps_a_refusal_naming_what_would_clo
 // ---- §23 and §37: provenance and determinism -----------------------------------------------------
 
 #[test]
+fn canonical_expression_compatibility_fixtures() {
+    for system in [
+        "billing",
+        "gatepass",
+        "oracle-fixture",
+        "revision-pair/before",
+        "revision-pair/after",
+    ] {
+        let ir = example(system);
+        let synthesis = synthesize(&ir);
+        let artifacts = ess_conformance::web::emit(&ir, &synthesis.suite);
+        let report = ess_conformance::StandaloneConformanceReport::from_json(
+            &serde_json::json!({
+                "format": "ess-conformance-report/1",
+                "specification": format!("{}/{}", ir.system(), ir.version()),
+                "spec_digest": synthesis.suite.provenance.spec_digest,
+                "implementation": "compatibility-fixture 1",
+                "status": "passed", "scenarios_total": 0, "scenarios_failed": 0,
+                "suite_version": "ess-conformance/4", "failed_scenarios": [],
+                "completed_at": 1_700_000_001_000_i64
+            })
+            .to_string(),
+        )
+        .unwrap();
+        let files = BTreeMap::from([
+            ("ir.json", ir.to_canonical_json()),
+            (
+                "digests.json",
+                serde_json::to_string_pretty(&ess_gen::Provenance::of(&ir)).unwrap(),
+            ),
+            ("suite.json", synthesis.suite.to_canonical_json()),
+            (
+                "artifacts.json",
+                serde_json::to_string_pretty(&artifacts).unwrap(),
+            ),
+            ("report.json", report.to_canonical_json()),
+        ]);
+        assert_eq!(files["ir.json"], example(system).to_canonical_json());
+        assert_eq!(
+            files["suite.json"],
+            synthesize(&example(system)).suite.to_canonical_json()
+        );
+        if let Some(directory) = std::env::var_os("ESS_EXPRESSION_CAPTURE") {
+            let directory = PathBuf::from(directory);
+            assert!(directory.is_absolute());
+            let root = Path::new(env!("CARGO_MANIFEST_DIR"))
+                .join("../../../target")
+                .canonicalize()
+                .unwrap();
+            assert!(
+                directory.starts_with(root),
+                "captures stay inside this worktree's target"
+            );
+            let destination = directory.join(system);
+            std::fs::create_dir_all(&destination).unwrap();
+            for (name, bytes) in files {
+                let path = destination.join(name);
+                assert!(!path.exists(), "capture records are immutable");
+                std::fs::write(path, bytes).unwrap();
+            }
+        }
+    }
+}
+
+#[test]
 fn synthesising_the_same_specification_twice_produces_byte_identical_output() {
     // Two independent compilations and two independent syntheses. Nothing is shared between them,
     // so an unordered map, a clock or an address-dependent iteration order anywhere in the path
@@ -2406,12 +2476,7 @@ fn an_actor_is_named_only_where_the_specification_grants_the_command() {
 
 // ---- fixtures for corners neither example carries ------------------------------------------------
 
-/// A guard that parses, validates, compiles — and is decidable by nothing.
-///
-/// `ess-domain` checks a `when` path's **first** segment against the input's field names and says
-/// that resolving a deeper one belongs with the IR. So `amount.vat` on a two-field `Money` is a
-/// specification defect that reaches synthesis, which is exactly what makes it a fixture worth
-/// having: it is the input on which "retry on `Unknown`" and "refuse on `Unknown`" differ.
+/// A legal text ordering with no scale, so synthesis must refuse as unevaluable.
 const UNDECIDED: &str = r"
 format: ess/1
 system: undecided
@@ -2444,7 +2509,7 @@ commands:
         type: undecided.orders.Money
     outcomes:
       - name: taxed
-        when: amount.vat > 0
+        when: amount.currency > EUR
         emits:
           - undecided.orders.Taxed
       - name: untaxed

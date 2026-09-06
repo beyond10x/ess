@@ -140,16 +140,14 @@ commands:
       - name: refused
         error: witness.orders.Refused
 
-  # `ess-domain` checks a `when` path's **first** segment against the input field names and no
-  # deeper one, and says so in its own source. So this guard parses, validates and compiles, and
-  # nothing before this crate ever asks what `vat` is.
+  # The common fixture is valid; malformed reads are supplied separately below.
   - name: witness.orders.TaxOrder
     input:
       - name: amount
         type: witness.orders.Money
     outcomes:
       - name: taxed
-        when: amount.vat > 0
+        when: amount.amount > 0
         emits:
           - witness.orders.OrderPlaced
       - name: untaxed
@@ -279,6 +277,49 @@ fn sole_reason(decision: &Decision) -> Reason {
 // ---------------------------------------------------------------------------------------------
 
 #[test]
+fn expression_search_limits_do_not_define_type_correctness() {
+    use ess_conformance::witness::{candidates, Distinction};
+    let ir = compiled();
+    let command = place_order(&ir);
+    let interval = Predicate::All(vec![
+        guard("amount.amount > 0.1"),
+        guard("amount.amount < 0.2"),
+    ]);
+    assert_eq!(facts(&ir, 0.15).decide(&interval), Decision::Satisfied);
+    let options = candidates(&ir, command, &[&interval], Distinction::PLAIN).unwrap();
+    assert!(!options.is_empty());
+    assert!(options.iter().all(|input| !flatten(&ir, command, input)
+        .unwrap()
+        .decide(&interval)
+        .is_satisfied()));
+    let half = guard("quantity == 0.5");
+    let options = candidates(&ir, command, &[&half], Distinction::PLAIN).unwrap();
+    assert!(!options.is_empty());
+    assert!(options.iter().all(|input| !flatten(&ir, command, input)
+        .unwrap()
+        .decide(&half)
+        .is_satisfied()));
+}
+
+#[test]
+fn legal_collection_cardinality_is_not_currently_projected() {
+    let ir = compiled();
+    for expression in [
+        "lines.count > 0",
+        "lines.0.quantity > 0",
+        "labels.count > 0",
+    ] {
+        assert!(
+            facts(&ir, 1.0)
+                .decide(&guard(expression))
+                .unevaluable()
+                .is_some(),
+            "{expression}"
+        );
+    }
+}
+
+#[test]
 fn a_candidate_input_projects_one_fact_per_scalar_leaf() {
     let ir = compiled();
     let facts = facts(&ir, 12.5);
@@ -346,7 +387,7 @@ fn a_newtype_is_transparent_when_a_path_is_resolved_as_well_as_when_it_is_projec
 }
 
 #[test]
-fn a_list_a_map_and_a_union_bind_no_fact_because_no_fact_path_can_name_one() {
+fn a_list_a_map_and_a_union_bind_no_fact_in_the_current_projection() {
     let ir = compiled();
     let facts = facts(&ir, 1.0);
 
@@ -570,13 +611,14 @@ fn ordering_across_two_types_is_unevaluable_not_false() {
 }
 
 #[test]
-fn a_deep_path_no_type_declares_is_unevaluable_and_ess_domain_does_not_refuse_it() {
+fn malformed_declarations_refuse_early_and_direct_bad_reads_remain_unknown() {
     let ir = compiled();
 
-    // Not a predicate this test made up: `TaxOrder`'s `taxed` branch is declared with this guard,
-    // and the fixture compiled — which is the gap. `ess-domain` resolves a `when` path's first
-    // segment only, so `amount` is checked and `vat` is not, by anything, until here.
-    let declared = declared_guard(command(&ir, "witness.orders.TaxOrder"), "taxed");
+    let malformed = WITNESS.replace("when: amount.amount > 0", "when: amount.vat > 0");
+    let raw = RawSpecFile::parse(&malformed).unwrap();
+    let errors = Specification::assemble([(Source::new("malformed.yaml"), raw)]).unwrap_err();
+    assert!(errors.to_string().contains("amount.vat"));
+    let declared = guard("amount.vat > 0");
     let over_tax_order = flatten(
         &ir,
         command(&ir, "witness.orders.TaxOrder"),
@@ -584,12 +626,12 @@ fn a_deep_path_no_type_declares_is_unevaluable_and_ess_domain_does_not_refuse_it
     )
     .expect("the candidate fits the input");
     assert_eq!(
-        sole_reason(&over_tax_order.decide(declared)),
+        sole_reason(&over_tax_order.decide(&declared)),
         Reason::PathNotDeclared {
             path: path("amount.vat"),
             segment: "vat".to_owned(),
         },
-        "a branch the compiler accepted, refused by the first thing that resolves its path"
+        "a directly supplied bad predicate against valid IR remains unevaluable"
     );
 
     assert_eq!(
@@ -836,5 +878,58 @@ fn otherwise_and_external_are_not_guards_over_the_input() {
         when(refused).is_none(),
         "`otherwise` is decided relative to every other branch, so one predicate cannot answer it; \
          choosing a branch is wave 4's job and not this gate's"
+    );
+}
+
+#[test]
+fn resolved_adapter_keeps_semantics_separate_from_collection_projection() {
+    let ir = compiled();
+    let fields = &place_order(&ir).input;
+    for expression in [
+        "lines.count > 0",
+        "lines.0.quantity > 0",
+        "labels.count > 0",
+    ] {
+        let checked = ess_compiler::expression::check_predicate(
+            &ir,
+            fields,
+            &guard(expression),
+            "command witness",
+        );
+        assert!(checked.errors.is_empty(), "{:?}", checked.errors);
+        assert!(checked
+            .reads
+            .iter()
+            .all(|read| read.resolution.access.collection));
+        assert!(checked
+            .reads
+            .iter()
+            .all(|read| read.resolution.scalar.is_some()));
+        assert!(facts(&ir, 1.0)
+            .decide(&guard(expression))
+            .unevaluable()
+            .is_some());
+    }
+}
+
+#[test]
+fn a_long_recursive_read_validates_beyond_the_projection_limit() {
+    let source=WITNESS.replace("types:\n","types:\n  - name: witness.orders.Node\n    kind: struct\n    fields:\n      - {name: next, type: Optional<witness.orders.Node>}\n      - {name: amount, type: Decimal}\n")
+        .replace("  - name: witness.orders.PlaceOrder\n    input:\n","  - name: witness.orders.PlaceOrder\n    input:\n      - {name: node, type: Optional<witness.orders.Node>}\n");
+    let raw = RawSpecFile::parse(&source).unwrap();
+    let specification = Specification::assemble([(Source::new("recursive.yaml"), raw)]).unwrap();
+    let ir = compile(&specification, &SourceMap::new()).unwrap();
+    let path = path(&format!("node.{}amount", "next.".repeat(40)));
+    let resolved = ess_compiler::expression::resolve_path(
+        &ir,
+        &place_order(&ir).input,
+        &path,
+        "command witness",
+    )
+    .unwrap();
+    assert!(resolved.optional && resolved.access.depth > 32);
+    assert_eq!(
+        ess_conformance::input::resolve_path(&ir, &place_order(&ir).input, &path),
+        ess_conformance::input::Target::TooDeep
     );
 }

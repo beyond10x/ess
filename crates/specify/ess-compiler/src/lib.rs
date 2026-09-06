@@ -44,6 +44,7 @@
 //! the same source twice and compares bytes is what makes it true.
 
 pub mod diagnostic;
+pub mod expression;
 pub mod graph;
 pub mod ir;
 pub mod refs;

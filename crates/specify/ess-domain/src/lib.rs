@@ -61,6 +61,7 @@ pub mod command;
 pub mod component;
 pub mod domain;
 pub mod entity;
+pub mod expression;
 pub mod locate;
 pub mod name;
 pub mod refs;

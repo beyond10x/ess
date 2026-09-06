@@ -2,7 +2,7 @@
 //!
 //! An entity has stable identity inside the domain (§4.3): two invoices with the same fields are
 //! still two invoices. A **value object** has none — it is its fields — so it is not modelled here
-//! at all but as a [`TypeBody::Struct`] in [`crate::types`], which
+//! at all but as a [`crate::types::TypeBody::Struct`] in [`crate::types`], which
 //! already carries fields and invariants. One concept, one place.
 //!
 //! # An invariant is a predicate, not a sentence
@@ -41,15 +41,17 @@
 
 use std::collections::{BTreeMap, BTreeSet, VecDeque};
 use std::fmt;
+use std::fmt::Write as _;
 use std::str::FromStr;
 
 use ess_primitives::error::{ParseError, ValidationCode, ValidationError, ValidationErrors};
-use ess_primitives::facts::FactPath;
 use ess_primitives::node::Node;
 use ess_primitives::predicate::Predicate;
 
 use crate::name::{Naming, QualifiedName};
-use crate::types::{Field, TypeBody, TypeRef, TypeRegistry};
+#[cfg(test)]
+use crate::types::TypeBody;
+use crate::types::{Field, TypeRef, TypeRegistry};
 
 /// The name of one state in an entity's lifecycle, such as `Draft`.
 ///
@@ -548,7 +550,7 @@ impl serde::Serialize for Invariant {
 /// Well-formedness is settled here — an unparsable predicate is a [`ParseError`] reported by serde
 /// with document context — so that by the time [`EntitySpec::validate`] runs, the only question
 /// left is whether the fields it reads exist. A value object's invariants
-/// ([`TypeBody`]) are read through this same type, because one language for
+/// ([`crate::types::TypeBody`]) are read through this same type, because one language for
 /// invariants is the point of writing them as predicates at all.
 #[derive(Debug, Clone)]
 pub struct RawInvariant(Invariant);
@@ -835,133 +837,52 @@ impl EntitySpec {
             ));
         }
 
+        // Direct owner validation still knows its own lifecycle, even outside Specification.
+        let mut local_registry;
+        let registry = if registry.get(&self.state_type().name).is_none() {
+            local_registry = registry.clone();
+            local_registry
+                .insert(self.state_type())
+                .expect("the lifecycle type was absent");
+            &local_registry
+        } else {
+            registry
+        };
+        let fields = self.observable_fields();
+        let environment = crate::expression::DomainEnvironment::new(registry, &fields);
         for (index, invariant) in self.invariants.iter().enumerate() {
             let at = format!("{location}.invariants[{index}]");
-            for path in invariant.predicate.fact_paths() {
-                let root = path.namespace();
-                if root == Self::STATE {
-                    continue;
-                }
-                let Some(field) = self.readable_field(root) else {
-                    errors.push(
-                        ValidationError::new(
-                            ValidationCode::UnobservableFact,
-                            at.clone(),
-                            format!(
-                                "`{invariant}` reads `{path}`, and `{root}` is not a field of `{}`",
-                                self.name
-                            ),
+            let checked =
+                crate::expression::check_predicate(&environment, &invariant.predicate, &at);
+            for error in &checked.errors {
+                let mut diagnostic = error.validation_error();
+                if let Some(path) = &error.path {
+                    if error.segment.as_deref() == Some(path.namespace())
+                        && !fields.iter().any(|field| field.name == path.namespace())
+                    {
+                        write!(
+                            diagnostic.message,
+                            "; `{}` is not a field of `{}`",
+                            path.namespace(),
+                            self.name
                         )
-                        .with_hint(format!("readable here: {}", self.readable())),
-                    );
-                    continue;
-                };
-                check_nested(registry, &at, invariant, path, field, &mut errors);
-            }
-
-            // A `forall` needs something to count. A scalar has one value and no cardinality, so
-            // quantifying over one is not a claim that happens to be false — it is a sentence with
-            // no meaning, and it would evaluate to `Unknown` forever without ever saying why.
-            for path in invariant.predicate.quantified_collections() {
-                let root = path.namespace();
-                let Some(field) = self.readable_field(root) else {
-                    continue; // Already reported by the loop above.
-                };
-                let Some(resolved) =
-                    check_nested(registry, &at, invariant, path, field, &mut errors)
-                else {
-                    continue; // The path leaves what this model describes; do not guess.
-                };
-                if !matches!(resolved, TypeRef::List(_) | TypeRef::Map(_, _)) {
-                    errors.push(
-                        ValidationError::new(
-                            ValidationCode::TypeMismatch,
-                            at.clone(),
-                            format!(
-                                "`{invariant}` quantifies over `{path}`, which is `{resolved}` and \
-                                 not a collection"
-                            ),
-                        )
-                        .with_hint(
-                            "`forall` and `exists` walk a `List<T>` or a `Map<K, V>`".to_owned(),
-                        ),
-                    );
+                        .expect("writing to a String");
+                        diagnostic.hint = Some(format!(
+                            "readable here: {}",
+                            fields
+                                .iter()
+                                .map(|field| field.name.as_str())
+                                .collect::<Vec<_>>()
+                                .join(", ")
+                        ));
+                    }
                 }
+                errors.push(diagnostic);
             }
         }
 
         errors
     }
-
-    /// The field an invariant may read under this name.
-    ///
-    /// Wider than [`EntitySpec::field`] by the identity, for the same reason
-    /// [`EntitySpec::observable_fields`] is: an entity that declares `invoice_id` as its identity
-    /// has `invoice_id`, and a rule that may not name it would be refusing a specification for
-    /// saying something true about itself.
-    fn readable_field(&self, name: &str) -> Option<&Field> {
-        if self.identity.name == name {
-            return Some(&self.identity);
-        }
-        self.field(name)
-    }
-
-    /// What an invariant may name, for a diagnostic hint.
-    fn readable(&self) -> String {
-        std::iter::once(self.identity.name.clone())
-            .chain(self.fields.iter().map(|field| field.name.clone()))
-            .chain([Self::STATE.to_owned()])
-            .collect::<Vec<_>>()
-            .join(", ")
-    }
-}
-
-/// Follows `field.a.b` through the registry for as long as each step is a declared struct.
-///
-/// Only the segments that stay inside declared structs can be checked. A path into a newtype, an
-/// enum, a union or a primitive stops being a field lookup — `Money` may well expose `amount`
-/// through a representation this model does not describe — and guessing past that point would
-/// refuse specifications that are fine.
-fn check_nested(
-    registry: &TypeRegistry,
-    at: &str,
-    invariant: &Invariant,
-    path: &FactPath,
-    field: &Field,
-    errors: &mut ValidationErrors,
-) -> Option<TypeRef> {
-    let mut current = field.type_ref.required().clone();
-    for segment in path.segments().iter().skip(1) {
-        let TypeRef::Named(name) = &current else {
-            return None;
-        };
-        let Some(declared) = registry.get(name) else {
-            return None; // Already reported where the field's own type failed to resolve.
-        };
-        let TypeBody::Struct { fields, .. } = &declared.body else {
-            return None;
-        };
-        let Some(next) = fields.iter().find(|candidate| &candidate.name == segment) else {
-            errors.push(
-                ValidationError::new(
-                    ValidationCode::UnobservableFact,
-                    at.to_owned(),
-                    format!("`{invariant}` reads `{path}`, and `{name}` has no field `{segment}`"),
-                )
-                .with_hint(format!(
-                    "`{name}` has: {}",
-                    fields
-                        .iter()
-                        .map(|candidate| candidate.name.clone())
-                        .collect::<Vec<_>>()
-                        .join(", ")
-                )),
-            );
-            return None;
-        };
-        current = next.type_ref.required().clone();
-    }
-    Some(current)
 }
 
 /// Checks the link between a command's outcomes and the lifecycles they drive, in both directions.

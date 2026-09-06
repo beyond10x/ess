@@ -152,6 +152,7 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt;
+use std::fmt::Write as _;
 use std::str::FromStr;
 
 use ess_primitives::error::{ParseError, ValidationCode, ValidationError, ValidationErrors};
@@ -1037,7 +1038,7 @@ impl CommandSpec {
     /// Run by [`TryFrom<RawCommandSpec>`], so a `CommandSpec` obtained by parsing is already
     /// coherent on its own; run again by [`validate`](Self::validate), because the fields are public
     /// and a hand-built value has not been through the conversion.
-    fn validate_shape(&self) -> ValidationErrors {
+    fn validate_shape(&self, types: Option<&TypeRegistry>) -> ValidationErrors {
         let mut errors = ValidationErrors::new();
         let at = |suffix: &str| format!("command.{}.{suffix}", self.name);
 
@@ -1076,6 +1077,11 @@ impl CommandSpec {
                 );
             }
             errors.extend(self.validate_outcome(outcome, &inputs));
+            let location = at(&format!("outcomes.{}", outcome.name));
+            errors.extend(match types {
+                Some(types) => self.validate_typed_guard(outcome, types, &location),
+                None => self.validate_guard(outcome, &inputs, &location),
+            });
         }
 
         errors.extend(self.validate_branch_coverage());
@@ -1198,7 +1204,6 @@ impl CommandSpec {
 
         errors.extend(self.validate_payload_shape(outcome, inputs, &location));
         errors.extend(self.validate_sets_shape(outcome, inputs, &location));
-        errors.extend(self.validate_guard(outcome, inputs, &location));
         errors
     }
 
@@ -1311,8 +1316,8 @@ impl CommandSpec {
     /// Checks that a branch's condition reads only what the caller supplied, and never an identity.
     ///
     /// A `when` is a predicate over *this command's input* and nothing else. Only the first segment
-    /// is resolved here: a deeper path such as `amount.amount` walks into a named struct, and
-    /// resolving that belongs with the IR, which knows every type in the system.
+    /// is resolved during local construction, before a registry exists. Registry-aware validation
+    /// uses the shared checker to resolve every segment, operand and quantified body.
     fn validate_guard(
         &self,
         outcome: &Outcome,
@@ -1367,6 +1372,62 @@ impl CommandSpec {
                          the identity of what is being changed",
                     ),
                 );
+            }
+        }
+        errors
+    }
+
+    /// Rechecks the complete predicate using the registry and preserves the opaque-subject rule.
+    fn validate_typed_guard(
+        &self,
+        outcome: &Outcome,
+        types: &TypeRegistry,
+        location: &str,
+    ) -> ValidationErrors {
+        let Some(predicate) = outcome.condition.predicate() else {
+            return ValidationErrors::new();
+        };
+        let owner = format!("{location}.when");
+        let environment = crate::expression::DomainEnvironment::new(types, &self.input);
+        let checked = crate::expression::check_predicate(&environment, predicate, &owner);
+        let mut errors = ValidationErrors::new();
+        for error in &checked.errors {
+            let mut diagnostic = error.validation_error();
+            if let Some(path) = &error.path {
+                if error.segment.as_deref() == Some(path.namespace())
+                    && !self
+                        .input
+                        .iter()
+                        .any(|field| field.name == path.namespace())
+                {
+                    write!(
+                        diagnostic.message,
+                        "; `{}` is something `{}` does not declare as input",
+                        path.namespace(),
+                        self.name
+                    )
+                    .expect("writing to a String");
+                    diagnostic.hint = Some(format!(
+                        "declared input: {}",
+                        join(self.input.iter().map(|field| &field.name))
+                    ));
+                }
+            }
+            errors.push(diagnostic);
+        }
+        if let Some(subject) = &outcome.subject {
+            if subject.surface() == InstanceSurface::CommandInput {
+                for read in checked
+                    .reads
+                    .iter()
+                    .filter(|read| read.free && read.path.namespace() == subject.instance)
+                {
+                    errors.push(ValidationError::new(
+                        ValidationCode::UnobservableFact, owner.clone(),
+                        format!("outcome `{}` reads `{}`, and `{}` names its subject instance; an identity is opaque",
+                            outcome.name, read.path, subject.instance),
+                    ));
+                }
             }
         }
         errors
@@ -1490,7 +1551,7 @@ impl CommandSpec {
         events: &BTreeSet<QualifiedName>,
         errors: &BTreeSet<QualifiedName>,
     ) -> Result<(), ValidationErrors> {
-        let mut found = self.validate_shape();
+        let mut found = self.validate_shape(Some(types));
         let at = |suffix: &str| format!("command.{}.{suffix}", self.name);
 
         for (index, field) in self.input.iter().enumerate() {
@@ -2375,7 +2436,7 @@ impl TryFrom<RawCommandSpec> for CommandSpec {
             naming: raw.naming,
             refs: raw.refs,
         };
-        errors.extend(spec.validate_shape());
+        errors.extend(spec.validate_shape(None));
         errors.into_result(spec)
     }
 }
