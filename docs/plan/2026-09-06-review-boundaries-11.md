@@ -233,3 +233,41 @@ store, then 27 semantic AEP commands replayed our 36 events. Its 1,444-line inco
 remains the exact prefix; all 163 unaffected incoming artifacts and all 13 own final artifacts
 are byte-identical to their separately retained snapshots. Both original histories are retained
 by the merge. Production and public source bytes are unchanged by this reconciliation.
+
+
+## Frozen writer and first source attack
+
+The assigned implementation is frozen at `874962d3c7f84d0337bb1477892da065aeadc2fd` on
+`impl/review-conformance-coverage`. Both direct commit identities are the organization bot.
+Its complete package lane changed from608 to642 executed cases; final642passed,0failed/ignored,
+60runner summaries, actual exit0 and42.341s shell time. The first full attempt641pass/1fail
+is retained; the accepted conform select addition justifies only the inherited AREA_LEAVES51→52
+inventory update. Every other reachability assertion remains. Strict Clippy and formatting pass.
+Root checked65 source paths,1,100 full pre-run source snapshots,35 sealed handoff records,
+14,158 evidence entries and3,627 external browser entries with literal links preserved.
+The final report SHA256 is `8e92dad32e34b85ddf2d8c8ab9e91d4749dd5cd79a5f01f4023b8366e66489a3`;
+the handoff seal is `7e1e360bb0081066cbbf06914b266e7df5add3f02bfed03aebdc1abe4d8f7dc3`.
+
+`expression_review_resume` now receives actual source attack1 using the complete installed
+adversary0.8.0 charter and file brief under wave11 preparation. Its assigned scratch is the unit's
+`target/review-boundaries-11/adversary-pass-1`; short browser TMP is
+`/home/timo/.cache/ess-w11-review1-tmp`. The implementation handoff is relinquished.
+No actual mapper/AEP correspondence or wave11 full integration gate is claimed here.
+The observation candidate scope is separately sealed and root102input hashes verified;
+it remains unselected and its replacement scope commands remain unapplied.
+
+
+Root's pre-report suite readback found a D1 correspondence mismatch: the current writer stores
+`Cause::to_string()` while the independently sealed mapper expects full `Refusal::to_string()`.
+The main binding's earlier minimum required the original cause, without mandating the full help
+text. The transport now explicitly records the narrower coordinator D1 choice; immutable
+`verification-report:coverage-refusal-rendering-decision` distinguishes it from an original
+published-binding violation. The existing semantic plan, D1 messages, legacy oracles and initial
+writer handoff stay unchanged. Correction and the remaining source review are pending.
+
+The prepared root integration runner now requires preexecution source hash review, preserves all
+tracked source and exact tool binaries, observes the actual Rust producer argv/cwd/environment,
+and retains producing test/CLI binaries immediately after the test lane. Receipt-wrapper and
+43-case AEP helper orchestrators are syntax-checked preparation only. No actual root producer,
+mapper, helper or integration result is claimed. The179-artifact store validates; its30 empty
+findings-block advisories remain the known parser behavior for recorded `[]` reviews.

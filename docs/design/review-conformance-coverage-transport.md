@@ -89,6 +89,19 @@ by a merge is refused, while the surviving source retains ownership. Keep origin
 known IDs, rejected source identities and every duplicate refusal occurrence. These identities
 describe the declared input set; they do not authenticate a repository or prove inventory honesty.
 
+## Concrete refusal rendering for coverage
+
+The coordinator's D1 correspondence decision selects the complete original typed
+`Refusal::to_string()` diagnostic for each new coverage refusal message: header, original cause
+and help, with the existing diagnostic code retained separately. Authored source identities are
+checked relative identities before rendering. Omit only the CLI outer `refused: ` wrapper.
+Preserve repeated equal full messages without deduplication or ordinal suffixes.
+
+The main binding's minimum of nonempty text including original cause remains the historical
+minimum; this paragraph fixes the new writer's concrete rendering. The independently sealed
+pre-writer D1 messages and legacy oracles stay unchanged. This does not alter legacy suite/report
+writers or make diagnostic text an authenticated publisher claim.
+
 ## CLI and generated Go
 
 Fresh synthesis, authoring, reference execution and browser emission gain explicit
