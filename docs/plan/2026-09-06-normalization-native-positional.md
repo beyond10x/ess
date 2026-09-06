@@ -31,3 +31,14 @@ The [complete computed candidate sets](../reviews/2026-09-06-normalization-nativ
 Independent 39-file scope proof after conformance integration: JSON SHA-256 d11ff9c0e6c855a53917c3d90713164eb935605ef00f09ab333b5e2ca82bcc3c; manifest SHA-256 6de3d80cb2dab8f9cec27cadc339d5a8df1df539bb352fe2e3af56474a8651c0. Six shared CLI helpers are byte-identical and the count-format additions do not alter normalization report3. The final positional metadata refinement is in its governed story and binding.
 
 Resource observation 2026-09-06T11:39:35.300899+00:00: available 24,180,948,992 bytes, coordinator target 32,783,054,858 bytes, prior Binary64 target 3,218,030,730 bytes. Two new targets have a combined 12,884,901,888-byte planning allowance; reserve remains 8,589,934,592 bytes. New units explicitly set RUSTC_WRAPPER to the installed sccache0.16.0 and retain their own target directories. The current shared cache reports no unsupported compiler calls.
+
+## Managed dispatch records
+
+Both clean unit trees begin at opening commit c4ba992b69eee8ac97f89e5fe6d7a7a37cb9a957. `$MANAGED` denotes the pool root returned by the worktree manager; each complete machine path and lease is retained in that manager record and the private dispatch receipt. Each unit's build path is its own `target/`, never another tree's target. `$SCRATCH` denotes the coordinator-assigned recovery scratch root.
+
+| Unit | Branch | Managed path | Build path | Scratch | Stage |
+| --- | --- | --- | --- | --- | --- |
+| Structural codecs | impl/binary64-structural-codecs | $MANAGED/b10x/ess/wt-88f1d4e7ca14 | $MANAGED/b10x/ess/wt-88f1d4e7ca14/target | $SCRATCH/ess-structural-codecs | Ready for implementor |
+| Positional arrays | impl/normalization-positional | $MANAGED/b10x/ess/wt-bde1eaabca2f | $MANAGED/b10x/ess/wt-bde1eaabca2f/target | $SCRATCH/ess-positional-design/implementation | Ready for implementor |
+
+The integration branch remains impl/normalization-base64-resume in managed tree wt-bf45625a6a50. Opening formatting, release consistency, five layout cases and AEP validation passed before either unit tree was created. Structural owns the first baseline/red-test compiler slot, then yields it explicitly so positional can establish its own baseline/red cases. Subsequent compile/native checks remain serial while source work proceeds concurrently. All extra template/fixture additions remain within the exact scopes.
