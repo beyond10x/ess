@@ -27,7 +27,7 @@ scope:
   path: website/docs/reference/cli.md
 - confidence: cited
   path: website/docs/reference/formats.md
-revision: 16
+revision: 17
 ---
 ## Finding and source
 
@@ -146,3 +146,9 @@ Keep the original acceptance sentence. Add these concrete observable boundaries:
 ## First independent review and correction route
 
 Independent first review of frozen 633e1d9839dc0e8dae071e955f8e8af540c8a685 is preserved verbatim in review-result:review-boundaries-7-openapi-adversary-pass-1 (report SHA-256 4ac12af6456773e2698fd4a5b76e97ecd4acb68e87477c5df2957d17ef6cdda3). It executed 163 package cases: 159 passed, four failed, zero ignored. One introduced defect at crates/generate/ess-openapi/src/accounting.rs:152 accepts and erases unknown fields on integer, number and boolean schema nodes before replay equality. Actual checked library and CLI callers reach it. A fresh implementor receives the frozen diff, retained tests and target/review-boundaries-7/correction-pass-1.md because the original session ended; the existing legacy DTO/reader stays compatible. No green review or implemented status is claimed.
+
+## Corrected first-review defect and final review
+
+Correction subject `42513466e27248c008d39efe5a676d64c3283d7a` retains the original first-review regressions and adds raw-interface validation before typed unit variants can discard unknown fields. The correction report is `target/review-boundaries-7/correction-pass-1/correction-report.md` in the existing unit. The full package suite executed 163→165 cases, all 165 passed, with zero failures or ignored cases; all four original regressions are green. Strict Clippy and package formatting also passed. Production adds 36 lines; two nesting/legacy controls add 82 test lines. Review-file changes are formatter output and a borrowed helper parameter, with exact originals/diffs retained.
+
+Root verified all four final source hashes, committed through organization tooling, and verified author and committer. The first immutable review is preserved; its separate outcome is fixed. A fresh `openapi_review_pass2` agent performs the second and final bounded review under the installed 0.8.0 tests-only charter because the first reviewer is unavailable after resumption. Exact brief: `target/review-boundaries-7/adversary-pass-2/brief.md`. This is readiness for review, not integration or completion evidence.

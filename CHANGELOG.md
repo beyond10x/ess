@@ -34,6 +34,11 @@
 
 ### Fixed
 
+- Specification admission checks complete expression paths, both operands,
+  membership values and lexical collection bindings across invariant, command
+  and view owners. Conformance reuses the same type rules while retaining its
+  separate projection and witness limits; authored operand errors are distinct
+  from unreadable paths.
 - Authored conformance commands refuse an explicitly selected directory with no
   immediate lowercase YAML inputs before writing artifacts or selecting a runner.
   Diagnostics explain shallow discovery. Omitted selections, direct files and
