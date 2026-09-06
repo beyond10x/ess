@@ -253,6 +253,12 @@ fn fresh_structure(case: &Value) -> AdmittedInput {
     }
 }
 fn expected_inventory(case: &Value, structures: &BTreeMap<String, AdmittedInput>) -> Value {
+    let resolutions_path = fixtures().join("root-resolutions.json");
+    assert_eq!(
+        hash(&resolutions_path),
+        "6feb6754888aefd7fbd9b371fdc09ed42ec30bbcbef3962176d7e1a9f8ca9f8b"
+    );
+    let resolutions = read_json(&resolutions_path);
     let mut expected = case["inventory_expectation"].clone();
     if let Some(parent) =
         expected["selection"]["filter"]["parent"]["deferred_exact_reference_to_case"].as_str()
@@ -262,7 +268,15 @@ fn expected_inventory(case: &Value, structures: &BTreeMap<String, AdmittedInput>
         expected["selection"]["filter"]["parent"] = reference;
     }
     for refusal in expected["refused"].as_array_mut().unwrap() {
-        refusal["message"] = refusal["message"]["required_original_cause"].clone();
+        let key = format!("{}|{}", text(&refusal["code"]), text(&refusal["scenario"]));
+        let message = text(&resolutions["D1"]["messages"][&key]);
+        let indented = text(&refusal["message"]["required_original_cause"])
+            .lines()
+            .map(|line| format!("  {line}"))
+            .collect::<Vec<_>>()
+            .join("\n");
+        assert!(message.contains(&indented));
+        refusal["message"] = json!(message);
         if refusal["subject"].get("independently_resolve").is_some() {
             refusal["subject"] = Value::Null;
         }

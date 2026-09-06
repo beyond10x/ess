@@ -3690,7 +3690,11 @@ func writeCountReport(t *testing.T, suite Suite, identity Identity, results []sc
 		}
 	}
 	if strict && document["conformance_status"] != "passed" {
-		t.Errorf("strict conformance: %s (legacy suite coverage is unknown)", document["conformance_status"])
+		if suite.coverage == nil {
+			t.Errorf("strict conformance: %s (legacy suite coverage is unknown)", document["conformance_status"])
+		} else {
+			t.Errorf("strict conformance: %s", document["conformance_status"])
+		}
 	}
 }
 

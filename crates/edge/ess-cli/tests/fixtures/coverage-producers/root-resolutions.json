@@ -1,0 +1,27 @@
+{
+  "format": "ess-mapper-semantic-resolutions/1",
+  "state": "preparation_only",
+  "D1": {
+    "rule": "Original typed Refusal.to_string/code; authored subject null; root-relative a.yaml/b.yaml; no ordinals",
+    "messages": {
+      "ESS-SYNTH-011|billing.invoice.Invoice/invariant/after/billing.invoice.CancelInvoice/cancelled": "refusal[ESS-SYNTH-011]: entity billing.invoice.Invoice has no scenario `billing.invoice.Invoice/invariant/after/billing.invoice.CancelInvoice/cancelled`\n  `reminder_count >= 0` reads what no view of `billing.invoice.Invoice` publishes\n    - `reminder_count` is published by no view of the entity\n  help: publish the fields the invariant reads in a view of this entity, or state the invariant over what one already publishes",
+      "ESS-SYNTH-011|billing.invoice.Invoice/invariant/after/billing.invoice.CreateInvoice/accepted": "refusal[ESS-SYNTH-011]: entity billing.invoice.Invoice has no scenario `billing.invoice.Invoice/invariant/after/billing.invoice.CreateInvoice/accepted`\n  `reminder_count >= 0` reads what no view of `billing.invoice.Invoice` publishes\n    - `reminder_count` is published by no view of the entity\n  help: publish the fields the invariant reads in a view of this entity, or state the invariant over what one already publishes",
+      "ESS-SYNTH-011|billing.invoice.Invoice/invariant/after/billing.invoice.IssueInvoice/issued": "refusal[ESS-SYNTH-011]: entity billing.invoice.Invoice has no scenario `billing.invoice.Invoice/invariant/after/billing.invoice.IssueInvoice/issued`\n  `reminder_count >= 0` reads what no view of `billing.invoice.Invoice` publishes\n    - `reminder_count` is published by no view of the entity\n  help: publish the fields the invariant reads in a view of this entity, or state the invariant over what one already publishes",
+      "ESS-SYNTH-011|billing.invoice.Invoice/invariant/after/billing.invoice.PayInvoice/settled": "refusal[ESS-SYNTH-011]: entity billing.invoice.Invoice has no scenario `billing.invoice.Invoice/invariant/after/billing.invoice.PayInvoice/settled`\n  `reminder_count >= 0` reads what no view of `billing.invoice.Invoice` publishes\n    - `reminder_count` is published by no view of the entity\n  help: publish the fields the invariant reads in a view of this entity, or state the invariant over what one already publishes",
+      "ESS-AUTHOR-003|billing.invoice/authored/a-scenario": "refusal[ESS-AUTHOR-003]: `billing.invoice/authored/a-scenario` in b.yaml\n  the same scenario is already declared in a.yaml\n  help: two files name one scenario in one domain; rename one of them",
+      "ESS-AUTHOR-012|billing.invoice/authored/a-scenario": "refusal[ESS-AUTHOR-012]: `billing.invoice/authored/a-scenario` in a.yaml\n  `billing.invoice.AllInvoices` is not a view this specification declares\n  help: name a view the specification declares"
+    }
+  },
+  "D2": "Authored acquisition enumerates authored inputs only; known-generated inventory selection is distinct; external unknown remains truthful unknown",
+  "D3": "Separately compiled admitted authored batches merged through the real final merge API",
+  "D4": "Actual source/toolchain/binary/target pins checked before execution",
+  "D5": "Hash exact original suite/parents/carrier/report bytes; never parse report for expectations",
+  "D6": "Advancing clock logs each input before return; root reads final transcript before reports",
+  "policy": {
+    "before": 9,
+    "qualified_after": 8,
+    "diagnostic_after": 9,
+    "before_observation": "Root reports one actual independent Rust empty-policy execution",
+    "qualified_observation": "unexecuted prediction"
+  }
+}

@@ -210,13 +210,14 @@ fn finish_inventory(
         },
     };
     for refusal in synthesis.refusals {
+        let message = refusal.to_string();
         inventory.refused.push(Refusal {
             origin: Origin::Generated,
             scenario: refusal.scenario,
             subject: Some(refusal.subject),
             source: None,
             code: refusal.cause.code().to_string(),
-            message: refusal.cause.to_string(),
+            message,
             effect: generated_effect(&refusal.cause),
             retained: None,
             scope: RefusalScope::InScope,
@@ -463,7 +464,7 @@ fn authored_refusal(
         subject: None,
         source: Some(source.clone()),
         code: refusal.code().to_string(),
-        message: refusal.cause.to_string(),
+        message: refusal.to_string(),
         effect,
         retained: None,
         scope: RefusalScope::InScope,
@@ -531,6 +532,7 @@ mod tests {
             synthesis.refusals[0].cause,
             crate::RefusalCause::DuplicateScenario
         );
+        let original_message = synthesis.refusals[0].to_string();
         let input =
             finish_inventory(&ir, &[], Scope::System, Origins::Generated, synthesis).unwrap();
         let inventory = input.selected().coverage().unwrap();
@@ -539,7 +541,7 @@ mod tests {
         let refusal = &inventory.refused[0];
         assert_eq!(refusal.scenario.as_ref(), Some(&id));
         assert_eq!(refusal.code, "ESS-SYNTH-007");
-        assert_eq!(refusal.message, "a second scenario claimed this id");
+        assert_eq!(refusal.message, original_message);
         assert_eq!(refusal.effect, Effect::CandidateNotEmitted);
         assert_eq!(
             refusal.retained,
