@@ -43,13 +43,91 @@ refused with exit 2 rather than run against the current directory.
 |---|---|
 | `ess specify validate [--path PATH] [--format text\|yaml\|json]` | Load, resolve, and validate one specification. |
 | `ess specify compile [--path PATH] [--out FILE] [--format …]` | Produce canonical typed IR. |
-| `ess specify compose --path PATH --service KEY=PATH… [--out FILE]` | Compile exact component surfaces into composition IR and generated clients. |
+| `ess specify compose --path PATH --service KEY=PATH… [--out FILE] [--client-plan-out FILE] [--client-rust-out DIR]` | Compile selected component surfaces into composition IR, a client plan and a Rust client with byte-buffer transport. |
 | `ess specify inspect --path PATH NAME [--format …]` | Resolve and render one declaration. |
 | `ess specify graph [--path PATH] [--format dot\|mermaid\|json\|yaml]` | Render the interaction graph. |
 | `ess specify realization validate …` | Resolve a physical realization against one exact ESS digest. |
 | `ess specify realization compile …` | Emit deterministic `ess-realization-ir/1`. |
 | `ess specify realization generate …` | Render a run-mode guide from the resolved realization. |
 | `ess specify runtime compile …` | Compile `ess-runtime/1` against exact semantic, realization, and build inputs. |
+
+### Composition clients: selected operations and byte transport
+
+Composition checks an import's exact system, specification version, **compiled-model digest** and
+selected component against the supplied compiled ESS model. Commands come from that component's
+`accepts`; queries come from views in domains it owns. A reference to a command that exists elsewhere
+in the same model is refused with `ReferenceOutsideComponent`; a mismatched imported digest is
+refused with `DigestMismatch`. The digest identifies compiled semantics, not raw YAML bytes,
+client-plan bytes or the service currently running at an endpoint.
+
+The composition IR and `ess-client-plan/1` carry selected names and imported model identity, not
+complete payload definitions or codecs. Named-type traversal follows command inputs, event/error
+fields and query row shapes/fields recursively. It does **not** traverse view parameters, so the
+listed names do not establish complete query payload closure.
+
+For a concrete example, the repository's [Todo/Usage composition][composition-example] imports two
+components from one compiled model. From the ESS repository root, emit its client with:
+
+```sh
+fixture=crates/specify/ess-composition/tests/fixtures
+mkdir -p target/composition-example
+ess specify compose --path "$fixture/compositions/workbench.yaml" \
+  --service "todo=$fixture/two-components" \
+  --service "usage=$fixture/two-components" \
+  --out target/composition-example/composition.json \
+  --client-plan-out target/composition-example/client-plan.json \
+  --client-rust-out target/composition-example/rust-client
+```
+
+The emitted Rust client exposes `service_todo::COMMAND_CREATE_LIST`. `Operation` has private fields
+and a private constructor, constraining normal downstream Rust callers to emitted descriptors.
+`Client::execute` takes an operation and `&[u8]`, forwards them to `Transport<Authority>`, then returns
+the transport's `Vec<u8>` unchanged. It does no payload admission or response decoding.
+
+In the [Todo declaration][composition-todo], `CreateList.details` has type `ListDetails`, whose
+`title` field is the String newtype `Title`. The [executable recording-transport example][composition-boundary]
+constructs a client with application providers and makes these two calls:
+
+```rust
+client.execute(
+    service_todo::COMMAND_CREATE_LIST,
+    br#"{"details":{"title":"Inbox"}}"#,
+);
+client.execute(
+    service_todo::COMMAND_CREATE_LIST,
+    br#"{"details":{"title":7}}"#,
+);
+```
+
+| Request | Relation to the declared title type | Observed client behavior |
+|---|---|---|
+| `{"details":{"title":"Inbox"}}` | String title matches the declaration | Exact bytes reach `todo` / `workbench.todo.CreateList`. |
+| `{"details":{"title":7}}` | Numeric title conflicts with the String declaration | The same selected operation receives these exact bytes too. |
+
+The example independently checks the selected service identity and operation descriptor, the
+separate authority argument, and the unchanged arbitrary binary response `[0, 255, 82, 10]`.
+It also checks that a missing endpoint returns `ClientError::MissingEndpoint` before authority
+lookup or transport execution, and a transport error returns as `ClientError::Transport`.
+The [package test][composition-tests] emits the actual client, compiles it as a separate library,
+then compiles and executes the downstream example. Run it with:
+
+```sh
+cargo test --locked -p ess-composition \
+  generated_rust_client_executes_the_byte_transport_boundary -- --exact --nocapture
+```
+
+Endpoint, authority and transport providers are application-owned. Authority is passed separately;
+the application must establish its validity. Injection does not verify authority or perform a live
+endpoint/model-digest handshake. The client generates no authentication operands, but its opaque
+payload can contain application-chosen data, including authentication coordinates: it is not
+inspected or sanitized. Payload admission, codecs, response interpretation and live service
+compatibility belong to the application and transport contract. Successful composition and byte
+forwarding alone do not establish end-to-end typed payload compatibility.
+
+[composition-example]: https://github.com/beyond10x/ess/blob/main/crates/specify/ess-composition/tests/fixtures/compositions/workbench.yaml
+[composition-todo]: https://github.com/beyond10x/ess/blob/main/crates/specify/ess-composition/tests/fixtures/two-components/domains/todo.yaml
+[composition-boundary]: https://github.com/beyond10x/ess/blob/main/crates/specify/ess-composition/tests/fixtures/client_boundary.rs
+[composition-tests]: https://github.com/beyond10x/ess/blob/main/crates/specify/ess-composition/tests/composition.rs
 
 ## `ess generate` — artifacts and explicit delivery executors
 

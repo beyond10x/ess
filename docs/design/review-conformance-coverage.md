@@ -2,6 +2,13 @@
 
 Status: binding design for the next implementation; no new writer, reader release, downstream migration, or compatibility execution is established by this document.
 
+Current-source clarification, 2026-09-06: the count-stage reader and writer are now published at
+AEP30aeef2 and ESS87d9945, as recorded in the completed wave8 plan. Suite/5 coverage remains
+unimplemented. The accepted [input and consumer transport supplement](review-conformance-coverage-transport.md)
+binds its additional acquisition and replay choices before implementation. Historical source
+citations below retain their original baseline; the current impact producer is ess-impact/3 with
+ess-diff/2, as observed at ESSbe0eefd, and the current-impact acceptance rows below reflect that fact.
+
 Decision date: 2026-09-05. Owner: ESS. Planning authority: story:review-conformance-format-design; implementation is split between story:a-skipped-scenario-is-not-a-failed-one and story:review-conformance-coverage. This decision answers review F03.
 
 ## Decision
@@ -286,7 +293,7 @@ These are specified expected outcomes, **not executed compatibility results**. R
 | M30 | Go reduced execution struct is marshaled to calculate digest | Fixture must fail; only retained complete suiteJSON may be hashed | C/R |
 | M31 | Numeric precision edge, signed zero, combining Unicode, escaped controls | Golden canonical bytes and raw-byte hash match the specified profile; no silent normalization | C/R |
 | M32 | Detailed CLI JSON/YAML treated as standalone report | Format/surface admission refuses the mismatch | R/A |
-| M33 | Impact on a v5 component/subset suite with matching model provenance | Compute invalidation within the named selection and preserve the current ess-impact/2 envelope; do not claim whole-system execution coverage | C |
+| M33 | Impact on an admitted complete v5 component/subset suite with matching model provenance | Compute invalidation within the named selection and preserve the current ess-impact/3 envelope; refuse unknown/incomplete coverage or missing exact input; do not claim whole-system execution coverage | C |
 | M34 | Existing realization digest reference without referenced bytes/profile bridge | Remain an artifact reference, not verified exact-suite conformance | C/O |
 | M35 | New report sent through old AEP domain result/predicates | Refuse v2 adaptation until the new domain/policy route exists; do not narrow the old failed fact | A |
 | M36 | Suite/1–4 plus explicit report/1 and explicit allow-incomplete after default movement | P1: preserve legacy output/count/exit behavior and bytes; coverage unavailable | R/C/O |
@@ -311,7 +318,7 @@ These are specified expected outcomes, **not executed compatibility results**. R
 | M55 | v1 report names suite/5 after general execution support grows to include /5 | Frozen v1 reader refuses; v1 writer pairing prevents creation | R/A, report readers/writers |
 | M56 | Both strict and allow-incomplete are explicit, or Go strictness variable is neither unset nor 1 | Refuse invalid invocation before execution, regardless of otherwise valid pairing | R/C, CLI/Go pairing gate |
 | M57 | Upgraded runtime generated during the opt-in phase retains its old defaults after the standalone ESS binary upgrades | Resolve that runtime's actual defaults; embedded v5 with unset report stays refused under P5 until explicitly configured or regenerated | C/O, retained-runtime rollout fixture |
-| M58 | Current persisted impact result versus a proposed exact-suite impact envelope | Preserve ess-impact/2 format and existing fields/meanings; future exact-suite fields require a separately versioned impact envelope | C/O, impact migration |
+| M58 | Current persisted impact result versus a proposed exact-suite impact envelope | Preserve ess-impact/3 format and existing fields/meanings, plus historical format meanings; future exact-suite fields require a separately versioned impact envelope | C/O, impact migration |
 | M59 | A generated candidate retains a useful check beside two identical unobservable invariant occurrences | Preserve two identical check_not_emitted array elements and counts.refused contribution 2; one selected execution result; in_scope occurrences keep all-pass conformance inconclusive | C/R, inventory/report writers |
 | M60 | One authored file repeats the same undeclared-view assertion twice, with an otherwise valid nonempty timeline | Preserve two identical candidate_not_emitted elements with the same source/ID and counts.refused contribution 2; one source-map entry and no result from that refused file | C/R, authored inventory/report writers |
 | M61 | Existing repeated refusal occurrences pass through component/origin selection or explicit filtering | Preserve every occurrence and retained identity; classify scope only under the existing selection rules; selected/outside/source/outcome uniqueness remains unchanged | C, inventory/filter writers |
@@ -338,7 +345,17 @@ AEP owns a new versioned evidence result and fact namespace for v2. Its old EssC
 
 Both aep-ess-evidence::adapt_json and aep-cli::recorded_from_report require version dispatch. The planning route must report the correct category counts and coverage scope, preserve exact references, and state when it records only descriptive evidence rather than qualifying facts. Updating prose must not claim that a lifecycle records count now evaluates conformance predicates; that is independently owned AEP behavior.
 
-Impact continues using semantic dependencies for invalidation. A v5 admitted-suite view supplies the same dependency graph plus its selection; missing coverage cannot be interpreted as an empty dependency set. The current persisted format is **ess-impact/2** (IMPACT_FORMAT at impact.rs:96); /2 introduced artifacts and optional suite/invalidation. Historical ess-impact/1 is not the current producer contract. No new field is added silently to ess-impact/2 or its serialized SuiteProvenance, and its existing bytes/meanings remain frozen. To issue a future persisted impact result that binds exact suites, the impact owner must version that envelope separately; until then callers pair the original suite externally and cannot reuse a report solely from model/contract provenance. [S9]
+Impact continues using semantic dependencies for invalidation. A v5 admitted-suite view supplies
+the same dependency graph plus its selection; missing coverage cannot be interpreted as an empty
+dependency set. The current persisted format at ESSbe0eefd is **ess-impact/3** (IMPACT_FORMAT at
+impact.rs:97), embedding ess-diff/2. Historical /2 introduced artifacts and optional
+suite/invalidation; its observed source behavior in S9 remains historical. No field is added
+silently to current /3 or its serialized SuiteProvenance, and historical format meanings remain
+frozen. The accepted transport supplement selects in-memory selection context and CLI diagnostics,
+with an operation refusal for unknown/incomplete v5 coverage or unavailable exact input/lineage.
+Persisting exact suite fields would require a separately versioned impact envelope; until then
+callers retain the original suite externally and cannot reuse a report solely from model/contract
+provenance. [S9; current-source clarification above]
 
 Before new default bytes cross repositories, Atlas requires an ADR here in its own repository: **"ESS conformance report v2 and exact-suite coverage migration"**. The coordinator must allocate its ADR number. It must name R/C/A and the actual adopter repositories, generated Go runtimes, browser bundles, AEP detailed-output automation, and any discovered digest consumers; record the contract versions, fixtures, deployed/pinned versions and rollback path. This ADR and shipped log are required by [Atlas AGENTS.md at 6035d6e](https://github.com/beyond10x/atlas/blob/6035d6e1209686ca474a3f43975fde7d8621ba48/AGENTS.md#L297). No ADR approval or downstream completion is claimed here.
 

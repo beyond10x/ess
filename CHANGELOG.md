@@ -82,6 +82,10 @@
 
 ### Changed
 
+- Composition documentation states the generated client's selected-operation and
+  model-identity guarantees alongside its byte-buffer transport boundary. An
+  executable downstream example shows compatible and incompatible payloads
+  forwarded unchanged, with separate authority and endpoint/error controls.
 - Document the frozen normalization equality limitation: formats 5/6 compare two
   floating representations numerically even in an admitted Integer expression.
   TypeScript preserves reference behavior; mixed integer/floating operands retain
