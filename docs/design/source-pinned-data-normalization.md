@@ -312,6 +312,52 @@ edge. Schema refinements are still checked at each stage, never replaced by the
 structural type projection. TypeScript and the target-generation CLI remain part
 of the original normalization story and are not completed by this target alone.
 
+## Bounded Go Pattern Qualification
+
+The first qualified Go schema-pattern profile is the exact frozen expression
+used by the current model `Bytes` projection:
+
+```text
+^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$
+```
+
+Let A be the 64 ASCII letters/digits/plus/slash characters. Its language is
+`A^(4n)` followed by nothing, `AA==` or `AAA=`, for n >= 0. With no flags,
+[ECMAScript assertions](https://tc39.es/ecma262/multipage/text-processing.html#sec-assertion)
+anchor the entire input, and [Go syntax](https://pkg.go.dev/regexp/syntax) gives
+the same start/end behavior. Non-ASCII scalars and all line terminators are outside
+the alphabet; no case folding, Unicode classes or lookaround is involved. Empty
+strings are admitted. Padding placement is checked, but unused pad bits are not:
+this is the declared pattern language, not a stricter binary decoder.
+
+Qualification is exact-pattern identity, not acceptance of arbitrary overlapping
+syntax or an inference from `contentEncoding`. Typed structural planning retains
+each actual pattern value at its schema pointer. Go generation allows the frozen
+expression only; every other selected pattern retains `go_schema_pattern` at
+the original source location before publication. Data members or annotation values
+named `pattern` cannot enter this accounting. A changed model primitive pattern
+requires requalification, not automatic expansion of the supported profile.
+
+Pattern metadata follows schema-valued positions independently of structural type
+lowering, including model map-key schemas under `propertyNames`. Those keys keep
+the existing `model_map_keys` structural report obligation; their nested patterns
+are privately accounted for Go qualification at the exact source pointer. The
+primitive-key enumeration covers every current model key shape: no key constraint
+for String, enum for Boolean, formats for Timestamp/Duration, and patterns for
+Integer/Decimal/Uuid/Bytes. Only the frozen Bytes pattern is qualified. The shared
+runtime corpus exercises it as both a value and a property name.
+
+The existing pinned Go validator uses its standard RE2 engine, whose execution
+is [linear in input size](https://pkg.go.dev/regexp#hdr-Overview). This fixed pattern
+has bounded compiled state and needs no backtracking or wall-clock acceptance
+budget. Input byte limits remain a caller policy, not a new schema constraint.
+The corpus checks the pinned reference and generated targets for all ASCII
+characters, Unicode/line boundaries, padding forms, empty/long inputs and
+noncanonical pad bits; separate generation cases refuse ordinary unqualified
+patterns, lookaround, backreferences, Unicode classes and pathological nesting.
+No existing recipe, schema or target report format changes for this feasibility
+extension, and no successful old bundle-only artifact bytes need to change.
+
 ## Model-Owned Stage Roots
 
 `ess-normalization/3` admits model-owned stage roots as well as the existing

@@ -361,6 +361,53 @@ fn generated_paths_cannot_replace_canonical_source_inputs_or_follow_links() {
 }
 
 #[test]
+fn qualified_go_base64_pattern_is_published_without_decoding_the_value() {
+    let fixture = Fixture::new();
+    let pattern = "^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$";
+    let input = Fixture::bundle(
+        "Input",
+        &json!({"type":"string", "contentEncoding":"base64", "pattern":pattern}),
+    );
+    fs::write(
+        fixture.0.join("input.bundle.json"),
+        input.to_json().unwrap(),
+    )
+    .unwrap();
+    let mut recipe = fixture.recipe();
+    let root = serde_json::to_value(Root::pin(&input, "Input").unwrap()).unwrap();
+    recipe["branches"]["primary"][0]["input"] = root.clone();
+    recipe["branches"]["primary"][0]["output"] = root;
+    recipe["branches"]["primary"][0]["value"] = json!({"op":"read", "scope":"input", "path":[]});
+    fs::write(fixture.0.join("recipe.json"), recipe.to_string()).unwrap();
+    // Nonzero unused pad bits satisfy the pattern even though canonical decoders refuse them.
+    fs::write(fixture.0.join("instance.json"), r#""AB==""#).unwrap();
+    let run = fixture.run("normalize-run", &[]);
+    assert!(run.status.success(), "{run:?}");
+    assert_eq!(
+        serde_json::from_slice::<Value>(&run.stdout).unwrap(),
+        "AB=="
+    );
+    let mut args = vec![
+        "--target",
+        "go",
+        "--package",
+        "adapter",
+        "--module",
+        "example.invalid/adapter",
+        "--out",
+        "generated",
+    ];
+    let generated = fixture.run("normalize-generate", &args);
+    assert!(generated.status.success(), "{generated:?}");
+    let report_path = fixture.0.join("generated/normalization-report.json");
+    let report: Value = serde_json::from_slice(&fs::read(report_path).unwrap()).unwrap();
+    assert_eq!(report["format"], "ess-normalization-target/1");
+    args.push("--check");
+    let checked = fixture.run("normalize-generate", &args);
+    assert!(checked.status.success(), "{checked:?}");
+}
+
+#[test]
 fn unsupported_go_pattern_has_no_successful_partial_artifact() {
     let fixture = Fixture::new();
     let input = Fixture::bundle("Input", &json!({"type":"string", "pattern":"^(?=a)a$"}));

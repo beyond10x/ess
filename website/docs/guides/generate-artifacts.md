@@ -327,8 +327,18 @@ or a typed `Refused`. It preserves exact integer tokens, explicitly declared
 binary64 decoding, ordered collection operations and lazy first-match evaluation.
 Schema findings are sorted by escaped instance pointer, retaining duplicates;
 Rust retains its validator's traversal order. Go uses pinned JSON token and schema
-libraries and refuses selected schemas with `pattern` at generation with
-`go_schema_pattern`: its ECMA-262 matcher compatibility remains unqualified.
+libraries. The exact base64 pattern below is qualified against the pinned reference
+for bundle schemas and model `Bytes` wire projections:
+
+```text
+^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$
+```
+
+It admits empty strings and checks the ASCII alphabet and padding placement; it
+does not decode bytes or require zero unused pad bits. Every other selected pattern
+refuses generation with `go_schema_pattern` at its source pointer, including
+equivalent spellings of this expression. `contentEncoding` alone does not qualify
+a pattern. General ECMA-262 matcher compatibility remains unfinished.
 
 Generate either implemented normalization library directly with the unreleased CLI:
 
@@ -378,8 +388,8 @@ version 2 normalization target report. Wire names, optional properties, newtype
 definitions and refinements come from the existing model projection. Selected
 model invariant statements refuse normalization planning because the engine does
 not execute those predicates. Go's pattern refusal also applies to model-derived
-patterns, including primitive wire constraints. Bundle-only versions 1 and 2 keep
-their canonical recipe representation and version 1 report envelope.
+patterns outside the exact qualified `Bytes` expression above. Bundle-only versions
+1 and 2 keep their canonical recipe representation and version 1 report envelope.
 
 TypeScript normalization adapters and selected raw JSON token capture remain pending.
 Expanded recursive shapes, tuples and

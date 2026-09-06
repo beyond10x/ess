@@ -1,5 +1,7 @@
 //! Accounted Go target generation and an explicit native execution lane.
 
+#[path = "fixtures/normalization_base64.rs"]
+mod fixture_base64;
 #[path = "fixtures/normalization_model.rs"]
 mod fixture_model;
 #[path = "fixtures/normalization_numeric.rs"]
@@ -78,6 +80,7 @@ fn plans() -> Vec<(Plan, Value)> {
         (second, Value::Array(ordered)),
         (third, Value::Array(numeric)),
         model_aliases(),
+        fixture_base64::fixture(),
     ]
 }
 
@@ -219,6 +222,166 @@ fn go_target_refuses_referenced_pattern_semantics_before_emitting_files() {
     assert!(make("Plain")
         .go("adapter", "example.invalid/adapter")
         .is_ok());
+}
+
+#[test]
+fn unqualified_syntax_refuses_even_when_the_reference_matches() {
+    use schema_contract::bundle::{import, Dialect};
+    use schema_contract::realize::normalize::Root;
+    let equivalent_base64 = format!("(?:{})", fixture_base64::PATTERN);
+    for (pattern, input) in [
+        ("^a$", "a"),
+        ("", "anything"),
+        ("^(?=a)a$", "a"),
+        ("(?<=a)b", "ab"),
+        (r"^(a)\1$", "aa"),
+        (r"^\w+$", "abc"),
+        (r"^\p{L}+$", "letters"),
+        ("^.$", "x"),
+        ("^(a+)+$", "aaaa"),
+        ("[A-Za-z0-9+/]{4}", "AAAA"),
+        (equivalent_base64.as_str(), "AAAA"),
+    ] {
+        let source = json!({"components":{"schemas":{"Text":{"type":"string","pattern":pattern}}}});
+        let bundle = import(
+            &source.to_string(),
+            &["Text".to_owned()].into_iter().collect(),
+            Dialect::Draft202012,
+        )
+        .unwrap();
+        let root = Root::pin(&bundle, "Text").unwrap();
+        let plan = Plan::read(&json!({"format":"ess-normalization/1","branches":{"copy":[{
+            "input":root,"output":root,"requires":[],"value":{"op":"read","scope":"input","path":[]}
+        }]}}).to_string(), &[bundle]).unwrap();
+        assert_eq!(plan.run("copy", &json!(input)).unwrap(), input, "{pattern}");
+        let errors = plan.go("adapter", "example.invalid/adapter").unwrap_err().0;
+        assert_eq!(errors.len(), 1, "{pattern}");
+        assert_eq!(errors[0].rule, "go_schema_pattern", "{pattern}");
+        assert!(errors[0].pointer.ends_with("/Text/pattern"));
+    }
+}
+
+#[test]
+fn qualified_patterns_do_not_hide_other_obligations_or_inspect_annotation_data() {
+    use schema_contract::bundle::{import, Dialect};
+    use schema_contract::realize::normalize::Root;
+    let source = json!({"components":{"schemas":{
+        "Encoded":{"type":"string","pattern":fixture_base64::PATTERN},
+        "Input":{"type":"object","properties":{"data":{"$ref":"#/components/schemas/Encoded"},"pattern":{"type":"string"}},
+            "default":{"pattern":"^(a+)+$"},"examples":[{"pattern":"(?=a)"}]},
+        "Mixed":{"type":"object","properties":{"data":{"$ref":"#/components/schemas/Encoded"},"other":{"type":"string","pattern":"^a$"}}}
+    }}});
+    let bundle = import(
+        &source.to_string(),
+        &["Input".to_owned(), "Mixed".to_owned()]
+            .into_iter()
+            .collect(),
+        Dialect::Draft202012,
+    )
+    .unwrap();
+    let make = |name| {
+        let root = Root::pin(&bundle, name).unwrap();
+        Plan::read(&json!({"format":"ess-normalization/1","branches":{"copy":[{"input":root,"output":root,"requires":[],"value":{"op":"read","scope":"input","path":[]}}]}}).to_string(), std::slice::from_ref(&bundle)).unwrap()
+    };
+    assert!(make("Input")
+        .go("adapter", "example.invalid/adapter")
+        .is_ok());
+    let errors = make("Mixed")
+        .go("adapter", "example.invalid/adapter")
+        .unwrap_err()
+        .0;
+    assert_eq!(errors.len(), 1);
+    assert_eq!(errors[0].rule, "go_schema_pattern");
+    assert!(errors[0]
+        .pointer
+        .ends_with("/Mixed/properties/other/pattern"));
+}
+
+#[test]
+fn every_primitive_map_key_pattern_is_qualified_at_its_nested_source_pointer() {
+    use ess_domain::types::Primitive;
+    use schema_contract::realize::normalize::Root;
+
+    for key in Primitive::ALL {
+        let source = format!(
+            "format: ess/1\nsystem: sample\nversion: v1\ndomains: [sample.maps]\ndomain: sample.maps\ntypes:\n  - name: sample.maps.Encoded\n    kind: struct\n    fields:\n      - name: values\n        wire: encoded/~\n        type: List<Optional<Map<{key}, Bytes>>>\n"
+        );
+        let model = fixture_model::selection(&source, &["sample.maps.Encoded"]);
+        let map_pointer = "/properties/encoded~1~0/items/anyOf/0";
+        let map = model.definitions()["sample.maps.Encoded"]
+            .pointer(map_pointer)
+            .unwrap();
+        let expected_key_keywords: &[&str] = match key {
+            Primitive::String => &[],
+            Primitive::Boolean => &["enum", "type"],
+            Primitive::Integer => &["pattern", "type"],
+            Primitive::Decimal | Primitive::Uuid => &["format", "pattern", "type"],
+            Primitive::Timestamp | Primitive::Duration => &["format", "type"],
+            Primitive::Bytes => &["contentEncoding", "pattern", "type"],
+        };
+        assert_eq!(
+            map.get("propertyNames")
+                .and_then(Value::as_object)
+                .into_iter()
+                .flat_map(|object| object.keys().map(String::as_str))
+                .collect::<Vec<_>>(),
+            expected_key_keywords,
+            "{key}"
+        );
+        // Pattern accounting must stay private: structural reports already account for
+        // key validation with model_map_keys, without a second nested obligation.
+        let structural = schema_contract::realize::Plan::from_model(&model).unwrap();
+        let report = serde_json::to_value(structural.typescript().report).unwrap();
+        let obligations = report["obligations"].as_array().unwrap();
+        // TypeScript also reports its compiler options and this root's closed object.
+        assert_eq!(
+            obligations.len(),
+            if *key == Primitive::String { 3 } else { 4 },
+            "{key}: {report}"
+        );
+        assert!(obligations.iter().all(|finding| {
+            finding["rule"] == "typescript_compiler_options"
+                || finding["rule"] == "closed_object"
+                || finding["rule"] == "model_map_keys"
+                || (finding["rule"] == "pattern"
+                    && finding["pointer"]
+                        .as_str()
+                        .unwrap()
+                        .ends_with("/additionalProperties/pattern"))
+        }));
+
+        let root = Root::pin_model(&model, "sample.maps.Encoded").unwrap();
+        let recipe = json!({"format":"ess-normalization/3","branches":{"copy":[{
+            "input":root,"output":root,"requires":[],
+            "value":{"op":"read","scope":"input","path":[]}
+        }]}});
+        let prefix = format!(
+            "/models/{}/$defs/sample.maps.Encoded{map_pointer}",
+            digest(&model.to_json())
+        );
+        let plan = Plan::check_with_models(serde_json::from_value(recipe).unwrap(), &[], &[model])
+            .unwrap();
+        let result = plan.go("adapter", "example.invalid/adapter");
+        match key {
+            Primitive::Integer | Primitive::Decimal | Primitive::Uuid => {
+                let refused = result.expect_err("unqualified key pattern must refuse");
+                assert_eq!(refused.0.len(), 1, "{key}");
+                assert_eq!(refused.0[0].rule, "go_schema_pattern", "{key}");
+                assert_eq!(
+                    refused.0[0].pointer,
+                    format!("{prefix}/propertyNames/pattern"),
+                    "{key}"
+                );
+            }
+            Primitive::String
+            | Primitive::Boolean
+            | Primitive::Timestamp
+            | Primitive::Duration
+            | Primitive::Bytes => {
+                assert!(result.is_ok(), "{key}: {result:?}");
+            }
+        }
+    }
 }
 
 #[cfg(feature = "go-typecheck")]

@@ -99,6 +99,7 @@ pub struct Plan {
     newtypes: BTreeSet<String>,
     annotations: BTreeSet<Finding>,
     obligations: BTreeSet<Finding>,
+    patterns: BTreeMap<String, String>,
 }
 
 #[derive(Debug, Clone)]
@@ -156,6 +157,7 @@ struct Builder {
     errors: BTreeSet<Finding>,
     annotations: BTreeSet<Finding>,
     obligations: BTreeSet<Finding>,
+    patterns: BTreeMap<String, String>,
 }
 
 impl Plan {
@@ -267,7 +269,7 @@ impl Plan {
                 ));
             }
             names.insert(name.to_owned(), projected);
-            definitions.insert(name.to_owned(), builder.node(schema, &pointer));
+            definitions.insert(name.to_owned(), builder.definition(schema, &pointer));
         }
         for node in definitions.values() {
             check_references(node, &names, &mut builder.errors);
@@ -301,6 +303,7 @@ impl Plan {
             newtypes,
             annotations: builder.annotations,
             obligations: builder.obligations,
+            patterns: builder.patterns,
         })
     }
 
@@ -358,6 +361,50 @@ impl Plan {
 }
 
 impl Builder {
+    fn definition(&mut self, schema: &Value, pointer: &str) -> Node {
+        self.collect_patterns(schema, pointer);
+        self.node(schema, pointer)
+    }
+
+    // Runtime pattern qualification follows schema positions, independently of structural
+    // lowering. In particular, propertyNames is retained as one model_map_keys obligation
+    // rather than lowered into a data node. Do not turn its private metadata into new report
+    // obligations, or descend into annotation/literal JSON that happens to name "pattern".
+    fn collect_patterns(&mut self, schema: &Value, pointer: &str) {
+        let Some(object) = schema.as_object() else {
+            return;
+        };
+        if let Some(pattern) = object.get("pattern").and_then(Value::as_str) {
+            self.patterns
+                .insert(path(pointer, "pattern"), pattern.to_owned());
+        }
+        // These are the schema-valued positions admitted by classify_keywords. Referenced
+        // definitions are visited separately through the already selected source closure.
+        for (keyword, value) in object {
+            let location = path(pointer, keyword);
+            match keyword.as_str() {
+                "properties" => {
+                    if let Some(properties) = value.as_object() {
+                        for (name, schema) in properties {
+                            self.collect_patterns(schema, &path(&location, name));
+                        }
+                    }
+                }
+                "anyOf" | "oneOf" | "allOf" | "prefixItems" => {
+                    if let Some(schemas) = value.as_array() {
+                        for (index, schema) in schemas.iter().enumerate() {
+                            self.collect_patterns(schema, &path(&location, &index.to_string()));
+                        }
+                    }
+                }
+                "additionalProperties" | "items" | "propertyNames" => {
+                    self.collect_patterns(value, &location);
+                }
+                _ => {}
+            }
+        }
+    }
+
     fn node(&mut self, schema: &Value, pointer: &str) -> Node {
         let shape = match schema {
             Value::Bool(true) => Shape::Json,
@@ -440,9 +487,24 @@ impl Builder {
                         },
                     ));
                 }
+                "pattern" => {
+                    if object[keyword].is_string() {
+                        self.obligations.insert(finding(
+                            &location,
+                            keyword,
+                            "validate this constraint against the source schema at runtime",
+                        ));
+                    } else {
+                        self.errors.insert(finding(
+                            &location,
+                            "pattern_type",
+                            "schema pattern must be a string",
+                        ));
+                    }
+                }
                 "minimum" | "maximum" | "exclusiveMinimum" | "exclusiveMaximum" | "multipleOf"
-                | "minLength" | "maxLength" | "pattern" | "minItems" | "maxItems"
-                | "uniqueItems" | "minProperties" | "maxProperties" => {
+                | "minLength" | "maxLength" | "minItems" | "maxItems" | "uniqueItems"
+                | "minProperties" | "maxProperties" => {
                     self.obligations.insert(finding(
                         &location,
                         keyword,
@@ -748,4 +810,41 @@ fn declaration_name(source: &str) -> String {
         result.push_str(chars.as_str());
     }
     result
+}
+
+#[cfg(test)]
+mod pattern_accounting_tests {
+    use super::*;
+    use serde_json::json;
+
+    #[test]
+    fn schema_pattern_metadata_follows_schema_positions_only() {
+        let annotation = json!({"pattern":"annotation", "propertyNames":{"pattern":"annotation"}});
+        let schema = json!({
+            "type":"object",
+            "properties":{"escaped/~":{"type":"string","pattern":"property"}},
+            "additionalProperties":{"type":"array","prefixItems":[{"pattern":"prefix"}],"items":{"pattern":"item"}},
+            "propertyNames":{"allOf":[{"pattern":"first"},{"anyOf":[{"pattern":"second"},{"oneOf":[{"pattern":"third"}]}]}]},
+            "default":annotation,"examples":[annotation],"const":annotation,"enum":[annotation]
+        });
+        let mut builder = Builder {
+            model: true,
+            ..Builder::default()
+        };
+        builder.definition(&schema, "/$defs/Sample");
+        assert_eq!(
+            builder.patterns,
+            [
+                ("/properties/escaped~1~0/pattern", "property"),
+                ("/additionalProperties/prefixItems/0/pattern", "prefix"),
+                ("/additionalProperties/items/pattern", "item"),
+                ("/propertyNames/allOf/0/pattern", "first"),
+                ("/propertyNames/allOf/1/anyOf/0/pattern", "second"),
+                ("/propertyNames/allOf/1/anyOf/1/oneOf/0/pattern", "third"),
+            ]
+            .into_iter()
+            .map(|(suffix, pattern)| (format!("/$defs/Sample{suffix}"), pattern.to_owned()))
+            .collect()
+        );
+    }
 }
