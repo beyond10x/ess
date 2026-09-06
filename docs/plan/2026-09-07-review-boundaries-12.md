@@ -110,6 +110,32 @@ reservations and no accepted binding, baseline or implementation assignment.
 
 ## Current stage
 
-Binding accepted and N=1 selection recorded. The owning story moved draft → proposed → active through AEP, reaching revision 13
-before the opening commit. Cheap metadata checks and managed provisioning
-follow. All source tests, source attacks, integration and delivery for this unit remain pending.
+Binding accepted and N=1 selection recorded. The owning story moved draft → proposed → active
+through AEP, reaching revision 13 before opening commit `dce857ff`. Formatting, action, site
+and diff checks exited zero; site-build took 17.951282125 seconds. Commit `e251de917` then
+assigned the short external temporary root before provisioning, changing only this page and
+passing formatting, action and diff checks.
+
+The first provisioning preflight refused before creating a tree: free space was 16,406,302,720
+bytes against the measured 17,545,643,699-byte requirement. Root archived its own coordinator
+`target/debug`, verified all 11,683 entries and payloads, and retired only that directory.
+The retained archive is 2,313,066,724 bytes with SHA256
+`5b2aa9d10a833e2c2d084a3455b15eb1348fee37ab5c9833c00268b25892ccb6`.
+All source, wave evidence and other worktrees were preserved. Integration will require a new
+coordinator build; historical binary evidence resolves through the verified archive.
+
+Managed provisioning then completed at `e251de917a8ee8ff80e116cf9a002d94c83b4ef5` on the
+assigned branch, with 21,523,095,552 bytes free afterward. The first implementor dispatch
+immediately failed with a usage-limit error. On operator continuation, root confirmed the unit
+was still clean at that exact head, the managed record was active, and free space was
+18,457,415,680 bytes. The former agent was unavailable, so a fresh implementor received the
+unchanged brief (SHA256 `86fe2f294964d5f4d914958c2cab6a728e7b9dba89fd8a47cb2d0c25f6305480`).
+The new collaboration thread is `cache_origin_implementor`. Source implementation and its
+package verification are now assigned; independent source attack, integration and delivery
+remain pending. The preflight and dispatch facts are retained under wave preparation.
+
+The prepared integration runner retains the preceding gate's direct exits, source snapshots,
+tool identities and actual producer process observations. Its only changes are the wave 12
+evidence directory and assigned `/home/timo/.cache/ess-w12-gate-tmp`. It has passed syntax
+inspection only and has not executed. Heavy integration waits for the unit's reviewed handoff
+and a fresh resource check; the new temporary root has not been created.
