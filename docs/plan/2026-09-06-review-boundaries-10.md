@@ -101,3 +101,39 @@ unit-brief.md is under that scratch. Agent count_writer_scope8 is assigned imple
 the adversary will use a different thread after source freeze.
 
 No example success, full integration gate or wave10 publication is claimed yet.
+
+## Implementation frozen and first source attack
+
+The implementation is frozen at50c1001369c90f662b50d162aac97961199c1e72, both bot identities
+verified. Exactly9 files changed in the five unit reservations: one Rust test, five JSON
+fixtures and three documentation pages. Production and frozen schema bytes are unchanged.
+Root verified16 summary hashes,507 retained evidence files and15 final source entries.
+Report SHA25673b736a6f1480333ed568f6a4b6fe5c262728188f05f5d0d9b2782a5c74cdfe8.
+
+The full ess-cli suite passed167cases,0failed/ignored,26summaries,30.009861360seconds against
+the158-case inherited baseline. That baseline's recorded42a44c4 differs from openinge283a26
+only in coordinator planning/design/review documents; the complete comparison is retained.
+Formatting, strict all-target Clippy and whitespace checks passed. Both the corrected target
+and final package retained34 actual CLI calls:6 successes,28 expected refusals. Actual public
+commands produced four resources/two accepted envelopes, then the intended semantic roster
+refusal. Only the example output root was relocated into assigned scratch.
+
+The first target run retained8passes/1failure. A newly authored external-reference assertion
+expected `unsupported`, while the existing TypeScript owner prints its precise local-reference
+restriction. Root verified that source and approved only the new expected substring change;
+exit, reference, sentinel and absent-parent checks remained. Its original33 reached calls,
+source snapshot and correction decision are retained. This is a test expectation error, not
+a production defect. The corrected9-case target passed before documentation edits.
+
+Agent count_writer_impl8 is now performing source attack1 under adversary0.8.0 after the
+implementor relinquished all writes. Scratch is the unit's
+target/review-boundaries-10/schema-resource-identity/adversary-pass-1, TMPDIR is its tmp
+directory, and builds reuse only the unit's target. It owns additive tests only; no outside
+scratch, production edit or third attack is authorized. Full integration/publication is pending.
+
+Future coverage-writer preparation was refreshed read-only at the continuing coordinator's
+e7d668d source. Report SHA256255be86bebdb6fe0592966ebfd17d832394e1d8594d08c586b3ced7fc3a84a7e
+maps all75 accepted matrix rows and the actual producer export contract to the existing three
+package owners and nine scope entries. This is preparation only: no implementation, test,
+helper execution or later wave selection follows from it. Its47 inspected file hashes were
+unchanged on return; root must refresh any changed source before the next replan.
