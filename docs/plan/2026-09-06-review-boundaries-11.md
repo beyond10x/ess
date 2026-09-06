@@ -96,3 +96,134 @@ before a unit is created. The wave page and file brief are updated at each hando
 
 Scope refreshed; selection and resources recorded. Opening lifecycle moves and checks are next.
 No writer implementation, producer correspondence, source attack or wave 11 full gate is claimed.
+
+Opening commit `d2057ffb944455d0ef3a90ab7c5043ae70027289` has verified bot author and committer.
+The story moved draft → proposed → active through AEP, reaching revision 21. Opening formatting,
+action, planning and diff checks each returned 0. The manager created the exact planned unit
+triple at that opening commit; branch and lease `ess-review-coverage-writer-implementation` are
+established. `count_writer_impl8` reads the full unit brief in assigned scratch as implementor.
+`expression_review_resume` independently prepares semantic producer expectations in the
+coordinator's assigned producer-verification directory, without inspecting new producer reports.
+Neither preparation nor a compiled helper is counted as producer correspondence.
+
+The implementor identified the assigned long TMP pathname as unsuitable for browser Unix sockets
+before launching that browser. Root assigned `/home/timo/.cache/ess-w11-browser-tmp` for this
+unit's actual browser profiles/sockets only. All other caches and TMP stay inside unit scratch.
+This exact external root joins the unit's retention/cleanup record; literal link and socket
+metadata must be preserved before its eventual removal.
+
+## Current authority fence and later-candidate observation
+
+The complete Atlas fence on clean `78d96cc706f735c3a160369e3ce2f2133f4b1d41` ran from
+16:58:29.673952 to 17:02:20.787877 UTC, taking 231.113911487 seconds. All 149 Rust tests
+passed, with zero failed or ignored across six summaries. The fence's own exit is 1: AgentIDE's
+v4 manifest is refused by the collector, the primary Website pin differs from the catalog, and
+Widgets lacks a Serves section. Catalog, live Pages, projection, markdown and brand passed.
+The complete log SHA256 is
+`1e17863fbf19e120b606a81febd2f22f6f2bc282b6d6f16a2901fb3a77fa223e`.
+These are the same three retained workspace issues, distinct from this wave's future source gate.
+
+Separately, root measured the later fuzz candidate's three reconstructed mandatory seeds using
+the unchanged published CLI source. All three validated and reached six generation kinds and
+four synthesis targets: 33 actual subprocesses, without a fuzz harness or emitted-program
+compilation. System-level `demo.Code` panics in Go synthesis at `src/go/layout.rs:290` (exit 101).
+The immutable `verification-report:fuzz-seed-baseline-go-panic` retains every command and output.
+That story's revision 7 now records the required future Go scope refresh; it is not selected
+or implemented by wave 11. This observation does not enlarge the active coverage unit's ownership.
+
+## Independent producer expectation handoff
+
+The preparer sealed 86 files and relinquished all writes. Root verified every file, all 504 ESS
+and 327 AEP compiled inputs and 33 other authority inputs, and checked the 17 structural cases
+and 39 proposed report instances against the pre-writer scenario oracles and qualification order.
+The semantic plan SHA256 is
+`5a378b14f7747ce7b3f1eac9b6d6e8c5962c02f81e4e116f7e74d478bcae6ef1`.
+Its 15 legacy model/source commands observed the 29/30 Billing counts, 24/6 component partition,
+eight repeated refusal occurrences and both source-ownership cases. These are preparation
+observations; no new coverage report or compatibility-helper execution is claimed.
+
+Root separately initialized the frozen AEP coverage policy with zero evidence and observed both
+missing-evidence diagnostics equal to the independently predicted 9. The dedicated Rust program
+ran successfully after an import-only build correction whose original error is retained. This
+does not measure coverage qualification or the predicted decrease to 8. The immutable
+`verification-report:review-boundaries-11-producer-expectations` records the complete limits and
+hashes. The writer has received the sealed plan; the explicit D1-D6 source, route, transport and
+clock resolutions precede actual frozen correspondence.
+
+The consumer-coverage candidate report is also relinquished and independently read back: all 53
+inputs and 49 opening Git blobs match, report SHA256
+`2194fea88d194d9c54b22e38f5990d6e2b00b64ed633ac039ebf833ca29abd61`.
+Its proposed scope remains unapplied pending a concrete binding and a fresh post-writer replan.
+The scoper is refreshing the later fuzz candidate around the measured Go owner failure and
+permanent regression/gate boundaries. Neither candidate changes this wave's selected ownership.
+
+The coordinator's prepared integration runner retains the prior exact per-lane exit, source
+identity and resource checks. Its only adaptations are the wave 11 output path and a separately
+assigned short gate TMP root, `/home/timo/.cache/ess-w11-gate-tmp`, to accommodate actual browser
+Unix sockets. That root has not been created or used at preparation. Other gate caches remain
+inside the gate output directory; the exact external root joins coordinator retention and cleanup
+with literal link/socket metadata. Preparation has only been syntax checked, not executed.
+
+## Implementation decisions and candidate reviews
+
+D7 now explicitly separates full-u64 Go wire/lineage admission from checked conversion of the
+selected execution view, in the transport binding. Parent-only oversized values remain valid;
+an unrepresentable selected value refuses before target callbacks or output with its scenario
+and field identity. The positive wire assertion remains; separate adaptation-negative and
+parent-only execution controls are required. Root also authorized changing only the future-version
+literal in the existing unsupported-suite test from /5 to /6 because /5 is now selected; its
+refusal assertion and every old-format/default assertion remain. These decisions are not test
+results. The implementor reports its first actual generated Go 29-pass run and actual Firefox
+pairing/replay control green; final sealed source and complete evidence remain pending.
+
+The consumer candidate has two document-only reviews and a separate narrow Draft7 vocabulary
+correction, recorded as immutable review/verification artifacts. Its scope and binding remain
+unapplied pending the final source refresh. The fuzz candidate's first document review identified
+three blockers: checked generator dispatch, meaningful live execution, and complete observation/
+watchdog semantics. Root checked all 27 inputs and amended a separate v3 candidate, which is
+under correction review. Neither candidate review is a coverage-writer source attack or approval.
+The independent producer preparer is preparing the later expectation mapper from sealed semantic
+inputs; it has no access mandate to inspect new writer reports and cannot claim correspondence.
+
+The two candidate scopes are now recorded through AEP: consumer coverage remains draft revision 8
+with four reservations, and fuzzing remains draft revision 12 with six. The second fuzz document
+review closed all three findings; root verified its 30 input hashes. The store validates with
+176 artifacts; its 29 empty-findings advisories include this review's explicit empty list.
+Neither binding has been accepted for implementation selection. A later cache-origin scope is
+being refreshed, including the bundle and chart cache boundaries identified in F11.
+
+Remote ESS advanced to `e5e4fdf899b8afb59c59b6182a8f1e47115569a6`, changing only the normalization
+release plan and four journal events. Production/public bytes are unchanged. Merge preparation
+verified both journals extend the same canonical prefix; preserve incoming release evidence and
+replay our recorded events through AEP when integrating. No merge has started. Atlas advanced to
+`b89e5b835b384965818eccf0703c8a548ebdbe47`; the primary remains dirty/stale. Managed authority
+`wt-53892beacf0d` is clean at that remote commit with unchanged AGENTS, bot/workflow, production,
+manifest and fence bytes. The required current-authority fence completed from 18:52:31.879755 to
+18:55:43.888896 UTC in 192.009129990 seconds: 149 Rust tests passed, zero failed or ignored,
+six summaries, and aggregate exit 1. The same three workspace issues remain: AgentIDE's v4
+manifest, the primary Website Docs System pin and Widgets' missing Serves section. Its complete
+log SHA256 is `4fc8189a5518a96023e4374f60237ec9dde4860e054d3b5951c962da82bc1a5f`.
+This does not replace the later ESS source integration gate.
+
+The cache-origin scoper has relinquished its report. Root read the report and independently
+verified all 42 input and 18 local evidence hashes and lengths. Four local ORAS commands, using
+a synthetic payload and the production publisher's media types/flags, establish the installed
+ORAS 1.2.3 bundle manifest shape, including inline empty-config data and annotations. They do
+not establish actual Helm publisher bytes, remote registry behavior or ESS cache correctness.
+The proposed three-path scope and concrete manifest/legacy/atomicity binding remain later
+candidate work. Report SHA256 is
+`e6cd5709142582cc406fe8583c23045c71b0fcb3b0ce411119fb0e68ad6da69a`.
+
+The independent mapper correction preserves two historical source snapshots whose former live
+paths will change during integration. Root verified all 293 correction files, the original 292
+files unchanged, all 104 runtime input pins and both historical Git blobs. Its unchanged 25
+synthetic controls and bounded path check passed; actual mapping and helper correspondence remain
+unexecuted. The corrected manifest SHA256 is
+`1d86a15bc1e7095390e0707328a17d841e67ed6f2f4e2bf94d7711e63715e741`.
+
+Root authorized one new M37 arithmetic assertion correction, 9 to 8, after independently reading
+Billing's four states and transition source sets (`examples/billing/domains/invoice.yaml:150`):
+Cancel excludes two states, Issue three and Pay three. The original failing test and run remain;
+all other assertions, including inherited tests, are preserved. M41 exercises the real defensive
+synthesis insertion branch twice with a real synthesized scenario. It must be labelled as branch
+coverage, not as evidence that an ordinary validated model currently emits duplicate identities.

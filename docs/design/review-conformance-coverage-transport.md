@@ -116,6 +116,21 @@ global `suiteJSON` in count production; the new path must hash the admitted inne
 Validate the entire lineage before target construction, identity callbacks or scenarios. Keep
 the terminal-completion, teardown, host-filter and no-destination guards from the count stage.
 
+**Checked Go execution adaptation (D7, 2026-09-06).** Suite/5 wire admission and complete
+lineage comparison retain the exact unsigned integer metadata before converting a selected
+execution view. The inherited public Go `Step.After`, count/position fields and
+`ScanRequest.StopAfter` use `int`; this work preserves that API. Their narrower range must not
+reject otherwise valid original parent bytes or alter a parent comparison. In particular, a
+valid oversized value in an omitted parent scenario does not prevent executing a representable
+child. After complete wire/lineage admission, check every integer conversion required by the
+selected execution view against the actual Go `int` width. An unrepresentable selected value
+refuses adaptation before target construction, identity callbacks, replay/execution state or
+report/destination creation, identifying the scenario, field and representability failure.
+It neither wraps, clamps, converts through binary64 nor becomes an `unsupported` execution
+result. Preserve the positive full-u64 wire/lineage vector and add distinct selected-adaptation
+refusal and omitted-parent positive controls. The original suite digest remains unchanged;
+this adapter restriction does not narrow the shared wire contract or timestamp admission.
+
 Suite/5 with implicit or explicit report/1 refuses before execution, even with `--allow-incomplete`
 or no report destination. Explicit report/2 and the existing strict/diagnostic choices retain
 their accepted meanings. No default transition is part of this work.
