@@ -271,3 +271,33 @@ and retains producing test/CLI binaries immediately after the test lane. Receipt
 43-case AEP helper orchestrators are syntax-checked preparation only. No actual root producer,
 mapper, helper or integration result is claimed. The179-artifact store validates; its30 empty
 findings-block advisories remain the known parser behavior for recorded `[]` reviews.
+
+## First source review and correction routing
+
+Source pass 1 is sealed as NEEDS-CHANGE and recorded without alteration in
+`review-result:coverage-writer-source-pass1`. Root read the complete report prose and both new
+test files, verified all 16 seal entries, 6,438 scratch entries, 513 external browser entries,
+1,100 original source hashes and two additive test hashes. All seven raw lane logs occur verbatim
+in the report; their summary counts and recorded exits reconcile independently. The package lane
+executed 646 cases: 643 passed, three failed, none ignored, 62 summaries, exit 101 in
+55.706446619 seconds. Formatting and strict Clippy exited zero. Report SHA256:
+`e484c46aa170ceba0d504b5e269741d16aa417298bb727a510784e93beb2226a`.
+
+Two introduced findings account for the three red cases: full typed D1 refusal rendering in both
+generated and authored mapping, and a misleading Go strict diagnostic for known complete suite/5.
+The latter's actual report counts, knowledge and inconclusive status passed before its diagnostic
+assertion failed. The actual browser line-feed boundary control passed. Both new regression files
+are frozen by bot commit `06791eddd47f09735bb160c8bcdfacbf460218b7`, with both identities verified.
+
+The same implementor, `count_writer_impl8`, now owns correction 1 under the activated file brief
+in wave preparation. Its new scratch is `target/review-boundaries-11/coverage-writer-correction-1`
+in the unit; external browser scratch is `/home/timo/.cache/ess-w11-writerfix1-tmp`. At dispatch,
+18,236,919,808 bytes were free; the 8 GiB floor remains. Original reports, tests and preparation
+pins are retained. No fixed review outcome is recorded before the correction actually lands.
+Final source attack 2, integration and actual AEP correspondence remain pending.
+
+The observation candidate scope is now applied through six AEP commands: it remains draft at
+revision 17 with 12 reservations, unselected and without an accepted binding. Store validation
+after source review recording reports 180 artifacts, the same 30 empty-findings advisories,
+and `valid` with exit zero. The complete validation output is retained in
+`target/review-boundaries-11/preparation/source-review-pass1-record/01.log`.
