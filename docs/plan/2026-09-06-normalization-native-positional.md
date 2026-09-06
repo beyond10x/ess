@@ -22,7 +22,9 @@ Authorization covers the two unit source/test commits, reviewed corrections when
 
 ## Stage
 
-Both implementors are dispatched in the recorded managed trees. Each established its baseline and observed a deciding red test before production edits. Structural's complete schema-contract lane rose from125 to134 passing cases, including actual Rust/Go wire and layout controls; its final CLI/Clippy lane remains pending. Positional captured all ten complete legacy Rust/Go format-1–5 maps before changes and now holds the compiler lane for its first implementation checks. Production ownership remains disjoint; TypeScript implementation waits for the final positional integration.
+Structural source is frozen at291f229256ce4fa78a17a01b085f56a9e5ab6990. Its independent review reported12→16 focused cases, zero red and no findings; six separately selected native cases passed. Root recorded the exact72,721-byte public report as review-result:binary64-structural-codecs-adversary-pass1 (SHA-256655cd7c22e2d87ef622d5463d511af41c3b76fed25121b67acc820f4a2a7a91d), recorded its no-op outcome, verified all969 tracked files unchanged and committed the four new tests atb809e43dc492b8817fc5a860b0948e90bdab8649. The report distinguishes corrected test-harness errors from product findings.
+
+Positional source is frozen ateb2e5d60e9e803993417df39563bc744dbcd36fc after130 default schema-contract cases (coordinator baseline116),17 CLI cases (baseline15), strict scoped Clippy and formatting. Native Rust default and arbitrary-precision lanes each executed99 positional,3 mixed and70 Binary64 vectors; Go executed93 positional,3 mixed and70 Binary64 vectors. Six value-API cases are explicitly inapplicable to Go. All173 complete legacy files across ten format-1–5 maps remain byte-identical. Root verified the35-file manifest and froze all979 tracked files before independent pass1. The adversary now owns the serial compiler lane. TypeScript is refreshing its scope read-only against this final source; implementation waits for the dependency review and integration.
 
 ## Opening evidence
 
@@ -38,7 +40,7 @@ Both clean unit trees begin at opening commit c4ba992b69eee8ac97f89e5fe6d7a7a37c
 
 | Unit | Branch | Managed path | Build path | Scratch | Stage |
 | --- | --- | --- | --- | --- | --- |
-| Structural codecs | impl/binary64-structural-codecs | $MANAGED/b10x/ess/wt-88f1d4e7ca14 | $MANAGED/b10x/ess/wt-88f1d4e7ca14/target | $SCRATCH/ess-structural-codecs | Schema/native green; final CLI/Clippy queued |
-| Positional arrays | impl/normalization-positional | $MANAGED/b10x/ess/wt-bde1eaabca2f | $MANAGED/b10x/ess/wt-bde1eaabca2f/target | $SCRATCH/ess-positional-design/implementation | Baseline/red captured; first implementation checks own compiler lane |
+| Structural codecs | impl/binary64-structural-codecs | $MANAGED/b10x/ess/wt-88f1d4e7ca14 | $MANAGED/b10x/ess/wt-88f1d4e7ca14/target | $SCRATCH/ess-structural-codecs | Frozen291f229 plus b809e43 tests; review1 green and recorded |
+| Positional arrays | impl/normalization-positional | $MANAGED/b10x/ess/wt-bde1eaabca2f | $MANAGED/b10x/ess/wt-bde1eaabca2f/target | $SCRATCH/ess-positional-design/implementation | Frozeneb2e5d6; independent review1 owns compiler lane |
 
 The integration branch remains impl/normalization-base64-resume in managed tree wt-bf45625a6a50. Opening formatting, release consistency, five layout cases and AEP validation passed before either unit tree was created. Structural owns the first baseline/red-test compiler slot, then yields it explicitly so positional can establish its own baseline/red cases. Subsequent compile/native checks remain serial while source work proceeds concurrently. All extra template/fixture additions remain within the exact scopes.

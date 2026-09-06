@@ -25,7 +25,7 @@ scope:
   path: crates/generate/schema-contract/src/realize/normalize/go_expression.go.txt
 - confidence: cited
   path: crates/generate/schema-contract/src/realize/normalize/go_input.go.txt
-- confidence: inferred
+- confidence: cited
   path: crates/generate/schema-contract/src/realize/normalize/go_retained.go.txt
 - confidence: cited
   path: crates/generate/schema-contract/src/realize/normalize/go_runtime.go.txt
@@ -33,29 +33,29 @@ scope:
   path: crates/generate/schema-contract/src/realize/normalize/go_target.rs
 - confidence: cited
   path: crates/generate/schema-contract/src/realize/normalize/input.rs
-- confidence: inferred
+- confidence: cited
   path: crates/generate/schema-contract/src/realize/normalize/legacy_v1_v5/go_expression.go.txt
-- confidence: inferred
+- confidence: cited
   path: crates/generate/schema-contract/src/realize/normalize/legacy_v4_v5/go_input.go.txt
-- confidence: inferred
+- confidence: cited
   path: crates/generate/schema-contract/src/realize/normalize/legacy_v4_v5/go_retained.go.txt
-- confidence: inferred
+- confidence: cited
   path: crates/generate/schema-contract/src/realize/normalize/legacy_v4_v5/input.rs.txt
-- confidence: inferred
+- confidence: cited
   path: crates/generate/schema-contract/src/realize/normalize/legacy_v4_v5/retained.rs.txt
-- confidence: inferred
+- confidence: cited
   path: crates/generate/schema-contract/src/realize/normalize/legacy_v5/eval.rs.txt
-- confidence: inferred
+- confidence: cited
   path: crates/generate/schema-contract/src/realize/normalize/legacy_v5/execute.rs.txt
-- confidence: inferred
+- confidence: cited
   path: crates/generate/schema-contract/src/realize/normalize/legacy_v5/go_runtime.go.txt
-- confidence: inferred
+- confidence: cited
   path: crates/generate/schema-contract/src/realize/normalize/legacy_v5/recipe.rs.txt
-- confidence: inferred
+- confidence: cited
   path: crates/generate/schema-contract/src/realize/normalize/legacy_v5/rust_runtime.rs.txt
 - confidence: cited
   path: crates/generate/schema-contract/src/realize/normalize/recipe.rs
-- confidence: inferred
+- confidence: cited
   path: crates/generate/schema-contract/src/realize/normalize/retained.rs
 - confidence: cited
   path: crates/generate/schema-contract/src/realize/normalize/rust_runtime.rs.txt
@@ -63,23 +63,23 @@ scope:
   path: crates/generate/schema-contract/src/realize/normalize/target.rs
 - confidence: cited
   path: crates/generate/schema-contract/tests/fixtures/normalization_legacy_maps.json
-- confidence: inferred
+- confidence: cited
   path: crates/generate/schema-contract/tests/fixtures/normalization_positional.rs
-- confidence: inferred
+- confidence: cited
   path: crates/generate/schema-contract/tests/fixtures/normalization_positional_go_tests.go.txt
-- confidence: inferred
+- confidence: cited
   path: crates/generate/schema-contract/tests/fixtures/normalization_positional_rust_tests.rs.txt
 - confidence: cited
   path: crates/generate/schema-contract/tests/normalization_legacy_bytes.rs
-- confidence: inferred
+- confidence: cited
   path: crates/generate/schema-contract/tests/normalization_positional.rs
-- confidence: inferred
+- confidence: cited
   path: crates/generate/schema-contract/tests/normalization_positional_targets.rs
-- confidence: inferred
+- confidence: cited
   path: docs/design/positional-array-normalization.md
 - confidence: cited
   path: docs/design/source-pinned-data-normalization.md
-revision: 12
+revision: 14
 ---
 ## Evidence
 
@@ -114,6 +114,48 @@ a homogeneous list or replace source decoding with stricter schema validation.
   and semantics unless an explicitly versioned migration requires otherwise.
 
 ## Scope
+
+Implementation confirmation at `eb2e5d60e9e803993417df39563bc744dbcd36fc`: the implementor confirmed every originally inferred path before editing, and root verified every final file hash and mode against its manifest. No production scope widening occurred. The current confirmed implementation scope is:
+
+- **cited** `crates/edge/ess-cli/src/normalize.rs` at the frozen commit.
+- **cited** `crates/edge/ess-cli/tests/normalization.rs` at the frozen commit.
+- **cited** `crates/generate/schema-contract/src/realize/normalize.rs` at the frozen commit.
+- **cited** `crates/generate/schema-contract/src/realize/normalize/check.rs` at the frozen commit.
+- **cited** `crates/generate/schema-contract/src/realize/normalize/eval.rs` at the frozen commit.
+- **cited** `crates/generate/schema-contract/src/realize/normalize/execute.rs` at the frozen commit.
+- **cited** `crates/generate/schema-contract/src/realize/normalize/go_expression.go.txt` at the frozen commit.
+- **cited** `crates/generate/schema-contract/src/realize/normalize/go_input.go.txt` at the frozen commit.
+- **cited** `crates/generate/schema-contract/src/realize/normalize/go_retained.go.txt` at the frozen commit.
+- **cited** `crates/generate/schema-contract/src/realize/normalize/go_runtime.go.txt` at the frozen commit.
+- **cited** `crates/generate/schema-contract/src/realize/normalize/go_target.rs` at the frozen commit.
+- **cited** `crates/generate/schema-contract/src/realize/normalize/input.rs` at the frozen commit.
+- **cited** `crates/generate/schema-contract/src/realize/normalize/legacy_v1_v5/go_expression.go.txt` at the frozen commit.
+- **cited** `crates/generate/schema-contract/src/realize/normalize/legacy_v4_v5/go_input.go.txt` at the frozen commit.
+- **cited** `crates/generate/schema-contract/src/realize/normalize/legacy_v4_v5/go_retained.go.txt` at the frozen commit.
+- **cited** `crates/generate/schema-contract/src/realize/normalize/legacy_v4_v5/input.rs.txt` at the frozen commit.
+- **cited** `crates/generate/schema-contract/src/realize/normalize/legacy_v4_v5/retained.rs.txt` at the frozen commit.
+- **cited** `crates/generate/schema-contract/src/realize/normalize/legacy_v5/eval.rs.txt` at the frozen commit.
+- **cited** `crates/generate/schema-contract/src/realize/normalize/legacy_v5/execute.rs.txt` at the frozen commit.
+- **cited** `crates/generate/schema-contract/src/realize/normalize/legacy_v5/go_runtime.go.txt` at the frozen commit.
+- **cited** `crates/generate/schema-contract/src/realize/normalize/legacy_v5/recipe.rs.txt` at the frozen commit.
+- **cited** `crates/generate/schema-contract/src/realize/normalize/legacy_v5/rust_runtime.rs.txt` at the frozen commit.
+- **cited** `crates/generate/schema-contract/src/realize/normalize/recipe.rs` at the frozen commit.
+- **cited** `crates/generate/schema-contract/src/realize/normalize/retained.rs` at the frozen commit.
+- **cited** `crates/generate/schema-contract/src/realize/normalize/rust_runtime.rs.txt` at the frozen commit.
+- **cited** `crates/generate/schema-contract/src/realize/normalize/target.rs` at the frozen commit.
+- **cited** `crates/generate/schema-contract/tests/fixtures/normalization_legacy_maps.json` at the frozen commit.
+- **cited** `crates/generate/schema-contract/tests/fixtures/normalization_positional.rs` at the frozen commit.
+- **cited** `crates/generate/schema-contract/tests/fixtures/normalization_positional_go_tests.go.txt` at the frozen commit.
+- **cited** `crates/generate/schema-contract/tests/fixtures/normalization_positional_rust_tests.rs.txt` at the frozen commit.
+- **cited** `crates/generate/schema-contract/tests/normalization_legacy_bytes.rs` at the frozen commit.
+- **cited** `crates/generate/schema-contract/tests/normalization_positional.rs` at the frozen commit.
+- **cited** `crates/generate/schema-contract/tests/normalization_positional_targets.rs` at the frozen commit.
+- **cited** `docs/design/positional-array-normalization.md` at the frozen commit.
+- **cited** `docs/design/source-pinned-data-normalization.md` at the frozen commit.
+
+### Historical opening scope and constraints
+
+The original cited/inferred classifications below are retained as the opening observation. The confirmation above supersedes their uncertainty; the stated ownership and symbol constraints remain binding.
 
 Scope refreshed from frozen Binary64 unit bf16e504ccad68b2ee67607ba39606aadf07f627.
 This is a read-only source audit, not an implementation or final integrated gate.
