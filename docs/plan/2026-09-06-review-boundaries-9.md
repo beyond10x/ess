@@ -94,5 +94,18 @@ completion is claimed by this opening page.
 
 The story moved through its admitted draft→proposed→active sequence and is active revision7.
 Opening format, action,149-artifact planning and diff checks each exited0. Provisioning and the
-exact unit brief are next. The AEP coverage reader and its separate correspondence-helper
+exact unit brief are complete. The AEP coverage reader and its separate correspondence-helper
 preparation continue in their previously assigned paths.
+
+## Provisioned unit
+
+Opening commit e176858010e45bada104ebb10e9b69e2232e0ac0 has verified bot author and committer.
+The manager created ess-composition-contract at that exact commit. Its branch is
+impl/review-composition-contract; worktree is
+/home/timo/.local/state/worktree/trees/b10x/ess/ess-composition-contract, build is that path's
+target directory, scratch is target/review-boundaries-9, and TMPDIR is that scratch's tmp
+directory. No external scratch is assigned. The live lease is ess-review-wave9-composition.
+Root wrote the complete unit-brief.md and copied actual9-case baseline/source-scope evidence
+into that scratch. Agent expression_review_resume implements this unit under
+aep-drive:implementor0.8.0; the later adversary is a different writer. Current stage:
+implementation dispatched and running. Root retains all integration/publication authority.
