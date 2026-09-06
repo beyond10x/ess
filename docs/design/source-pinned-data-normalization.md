@@ -312,6 +312,51 @@ edge. Schema refinements are still checked at each stage, never replaced by the
 structural type projection. TypeScript and the target-generation CLI remain part
 of the original normalization story and are not completed by this target alone.
 
+## Model-Owned Stage Roots
+
+`ess-normalization/3` admits model-owned stage roots as well as the existing
+bundle roots. Versions 1 and 2 keep their existing serialized bundle identity and
+meaning; they refuse model roots. A model root contains a `model` identity and a
+qualified `root`. The identity records system, specification version, source,
+contract and projection digests, and the exact selected root set. Projection bytes
+alone do not declare which members of a reachable closure were explicitly selected.
+Adjacent stages compare this complete identity, not merely a compatible wire shape.
+
+The library accepts sealed `ess_gen::schema::ModelTypes` selections alongside
+checked bundles. It never accepts a JSON document's `x-ess-*` claims as proof that
+the compiler minted the model. The existing structural `Plan::from_model` owns
+wire names, nominal types, closure and obligation accounting. The normalization
+planner reuses it without stripping annotations or manufacturing a parallel schema.
+Only roots explicitly admitted by the supplied selection can be chosen. A stale
+source digest, contract digest, projection digest, root set or model identity
+cannot resolve to a supplied selection.
+
+Model stage validation uses the existing projected definitions and draft-2020-12
+wire rules, including requiredness and refinements. Model invariant statements
+are retained but are not an executable predicate evaluator: a selected closure
+with invariant obligations refuses normalization planning rather than advertising
+a successful partially enforced adapter. Nominal names remain source identity;
+JSON values themselves do not acquire host-language nominal types.
+The compiler's string-enum projection combines `type:string` with a finite `enum`.
+Normalize that exact checked-model intersection to its string literals; do not
+flatten arbitrary imported intersections or `allOf`. Membership is still validated
+at each boundary, and all other intersection/tuple mappings remain refused.
+
+The CLI compiles each supplied `--model` specification and recreates the exact
+root selections declared by the recipe before checking their complete identity.
+This is source acquisition, not permission to trust authored provenance. Outputs
+must not replace any model input or be written inside a model input directory.
+Bundle-only command invocations remain unchanged.
+
+Generated targets retain each complete selected model projection, including its
+provenance and annotations, plus a root-specific validation schema. The target
+report uses `ess-normalization-target/2` for recipes using version 3, preserving
+the old report envelope for old recipes. Its root identity distinguishes model
+projections from qualified bundles. Rust and Go use the same selected schema
+closure; their existing target-feasibility refusals still apply, including Go's
+unqualified pattern semantics. Adding model roots does not claim lexical JSON
+capture, invariant execution or TypeScript normalization.
+
 ## Adapter Generation Command
 
 `ess generate schema normalize-generate` reads `--recipe` and repeated `--bundle`

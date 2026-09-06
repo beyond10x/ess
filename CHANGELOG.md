@@ -4,6 +4,12 @@
 
 ### Added
 
+- `ess-normalization/3` model-owned stage roots, pinned to complete compiler
+  provenance and explicit type selections. `Plan::check_with_models` and CLI
+  `--model` inputs reuse checked model wire projections without duplicate schemas
+  or trusted imported annotations. Rust and Go retain model sources and version 2
+  target reports. Unevaluated model invariants refuse planning; existing Go pattern
+  limits still apply. Versions 1 and 2 retain their bundle recipe representation.
 - Explicit `ess-normalization/2` ordered string concatenation/joining, exact integer
   rendering, list concatenation, original collection indices, filtered mapping and
   first-match selection. The reference engine and generated Rust libraries preserve

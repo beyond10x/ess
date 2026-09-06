@@ -1,5 +1,7 @@
 //! Accounted Go target generation and an explicit native execution lane.
 
+#[path = "fixtures/normalization_model.rs"]
+mod fixture_model;
 #[path = "fixtures/normalization_numeric.rs"]
 mod fixture_numeric;
 #[path = "fixtures/normalization_v1.rs"]
@@ -75,7 +77,58 @@ fn plans() -> Vec<(Plan, Value)> {
         (first, Value::Array(old_cases)),
         (second, Value::Array(ordered)),
         (third, Value::Array(numeric)),
+        model_aliases(),
     ]
+}
+
+fn model_aliases() -> (Plan, Value) {
+    let (model, mut recipe) = fixture_model::fixture();
+    let expanded = fixture_model::selection(
+        fixture_model::SOURCE,
+        &[
+            "sample.settings.Decoded",
+            "sample.settings.Runtime",
+            "sample.settings.Id",
+        ],
+    );
+    assert_eq!(model.to_json(), expanded.to_json());
+    let mut alias = recipe["branches"]["primary"].clone();
+    alias[0]["input"] = json!(schema_contract::realize::normalize::Root::pin_model(
+        &expanded,
+        "sample.settings.Decoded"
+    )
+    .unwrap());
+    alias[0]["output"] = json!(schema_contract::realize::normalize::Root::pin_model(
+        &expanded,
+        "sample.settings.Runtime"
+    )
+    .unwrap());
+    recipe["branches"]["alias"] = alias;
+    let model_plan = Plan::check_with_models(
+        serde_json::from_value(recipe).unwrap(),
+        &[],
+        &[model, expanded],
+    )
+    .unwrap();
+    let mut model_cases = fixture_model::cases().as_array().unwrap().clone();
+    let alias_cases = model_cases
+        .iter()
+        .cloned()
+        .map(|mut case| {
+            case["branch"] = json!("alias");
+            if case.get("errors").is_some() {
+                case["errors"] = json!(
+                    model_plan
+                        .run_json("alias", case["input"].as_str().unwrap())
+                        .unwrap_err()
+                        .0
+                );
+            }
+            case
+        })
+        .collect::<Vec<_>>();
+    model_cases.extend(alias_cases);
+    (model_plan, json!(model_cases))
 }
 
 #[test]
@@ -97,7 +150,15 @@ fn go_target_retains_source_identity_and_accounts_for_every_file() {
             .unwrap()
         );
         let report = serde_json::to_value(&result.report).unwrap();
-        assert_eq!(report["format"], "ess-normalization-target/1");
+        let recipe: Value = serde_json::from_str(&plan.to_json()).unwrap();
+        assert_eq!(
+            report["format"],
+            if recipe["format"] == "ess-normalization/3" {
+                "ess-normalization-target/2"
+            } else {
+                "ess-normalization-target/1"
+            }
+        );
         assert_eq!(report["configuration"]["package"], "normalization_adapter");
         assert_eq!(report["recipe_digest"], digest(&plan.to_json()));
         for (path, expected_digest) in report["files"].as_object().unwrap() {

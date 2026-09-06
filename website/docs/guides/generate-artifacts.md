@@ -354,7 +354,34 @@ assumes controlled parent directories and does not provide rollback for later I/
 failure. The output includes `normalization-report.json` with the exact library-API
 provenance and file identities.
 
-TypeScript normalization adapters remain pending.
+Model-owned records use the unreleased `ess-normalization/3` format.
+`Root::pin_model` pins a root explicitly admitted by a sealed
+`ess_gen::schema::ModelTypes` selection; `Plan::check_with_models` accepts these
+selections alongside replay-checked bundles. Identity includes the system,
+specification version, source/contract/projection digests and selected root set.
+Matching JSON field shapes alone cannot substitute for any of those coordinates.
+
+The same CLI commands accept repeated `--model PATH` inputs, alone or mixed with
+`--bundle`. Each model specification is compiled and the recipe's exact selections
+are recreated and checked. Do not import generated model schemas after stripping
+their annotations, or maintain a parallel schema just for normalization. For example:
+
+```shell-session
+$ ess generate schema normalize-generate --recipe model.normalize.json \
+    --model specifications/settings --target rust --package settings_adapter \
+    --out generated/adapter
+```
+
+Outputs cannot replace a model input or reside inside a model input directory.
+Version 3 targets retain complete selected model schemas and provenance in a
+version 2 normalization target report. Wire names, optional properties, newtype
+definitions and refinements come from the existing model projection. Selected
+model invariant statements refuse normalization planning because the engine does
+not execute those predicates. Go's pattern refusal also applies to model-derived
+patterns, including primitive wire constraints. Bundle-only versions 1 and 2 keep
+their canonical recipe representation and version 1 report envelope.
+
+TypeScript normalization adapters and selected raw JSON token capture remain pending.
 Expanded recursive shapes, tuples and
 intersections refuse in its initial checker. Schema bounds and other refinements are
 checked at runtime boundaries, not proven by structural checking. Integer operations
