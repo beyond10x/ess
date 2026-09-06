@@ -6,7 +6,7 @@ status: draft
 title: Raw JSON normalization integrated verification
 relations:
 - verifies: story:raw-json-normalization-provenance
-revision: 2
+revision: 3
 ---
 ## Outcome
 
@@ -104,3 +104,20 @@ This record first captures the local integrated gates. Raw unit main publication
 CI and Atlas source-set delivery are recorded separately when observed. No release
 tag or version bump occurred at this checkpoint. Model Binary64, TypeScript,
 positional decoding and adopter consumer decisions remain open.
+
+## Published source
+
+Published main6c78676c35193423fe326b9dde21b8fc21681b8a contains source unit3e2eb52
+and the combined verification/planning record. The clean primary checkout was
+fast-forwarded to that commit. Both direct commits have the exact organization bot
+author and committer and were pushed through the intact Atlas bot wrapper.
+
+Exact-head CI34023996607, documentation validation34023996589 and passive source
+bundle34023996599 completed successfully:
+https://github.com/beyond10x/ess/actions/runs/34023996607
+https://github.com/beyond10x/ess/actions/runs/34023996589
+https://github.com/beyond10x/ess/actions/runs/34023996599
+
+A normal Atlas source-set reconciliation was requested after observing the green
+bundle. Its final publication/provenance will be recorded after completion; a
+successful dispatch alone is not delivery evidence. No version bump or tag yet.

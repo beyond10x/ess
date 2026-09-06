@@ -185,3 +185,13 @@ constructed suite calls to the Go emitter before producing output. If the emitte
 needs a checked/fallible API, update every caller and report the public Rust API
 change. Do not publish a new primitive through an old suite contract whose Go
 reader treats an unknown primitive spelling as successful validation.
+
+Authored model predicates keep their established numeric comparison policy.
+Classify Binary64 as the existing Number scalar for predicate comparisons, including
+numeric literals, while nominal model assignment remains strict. This is a predicate
+view of a value, not construction of a modeled Binary64 or proof of its original
+token provenance. Qualify the shared domain policy and compiler adapter without
+changing older Integer/Decimal comparisons. Conformance producer admission must
+retain primitive identity and refuse Binary64 before the generic scalar policy can
+claim an unsupported field is readable. Normalization format5 equality remains
+the distinct two-typed-Binary64 rule above.
