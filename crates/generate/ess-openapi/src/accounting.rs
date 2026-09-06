@@ -149,6 +149,9 @@ pub fn read_import(text: &str) -> Result<ImportReport, Vec<Refusal>> {
             "legacy service-interface accounting unavailable; reimport the original OpenAPI source",
         )]);
     }
+    if let Some(interface) = value.get("interface") {
+        check_unit_schema_fields(interface, "/interface")?;
+    }
     let wire: WireImport = serde_yaml::from_value(value).map_err(|error| {
         vec![Refusal::new(
             "/",
@@ -183,6 +186,39 @@ pub fn read_import(text: &str) -> Result<ImportReport, Vec<Refusal>> {
         )]);
     }
     Ok(replay)
+}
+
+// Serde's internally tagged unit variants discard extra fields even with deny_unknown_fields.
+// In the closed interface, only schema nodes have a string-valued `kind`; named schema maps
+// contain schema objects instead. Walk every nested map before typed decoding loses these fields.
+// Nonunit variants and other records retain their existing deny_unknown_fields admission.
+fn check_unit_schema_fields(value: &serde_yaml::Value, pointer: &str) -> Result<(), Vec<Refusal>> {
+    match value {
+        serde_yaml::Value::Mapping(mapping) => {
+            let unit = matches!(
+                value.get("kind").and_then(serde_yaml::Value::as_str),
+                Some("integer" | "number" | "boolean")
+            );
+            for (key, child) in mapping {
+                let key = key.as_str().expect("strict_value checked string keys");
+                let child_pointer = format!("{pointer}/{}", crate::pointer_escape(key));
+                if unit && key != "kind" {
+                    return Err(vec![Refusal::new(
+                        child_pointer,
+                        format!("malformed import envelope: unknown field `{key}` in unit schema"),
+                    )]);
+                }
+                check_unit_schema_fields(child, &child_pointer)?;
+            }
+        }
+        serde_yaml::Value::Sequence(values) => {
+            for (index, child) in values.iter().enumerate() {
+                check_unit_schema_fields(child, &format!("{pointer}/{index}"))?;
+            }
+        }
+        _ => {}
+    }
+    Ok(())
 }
 
 /// Projects a checked import only when every semantic feature and reference is accounted for.

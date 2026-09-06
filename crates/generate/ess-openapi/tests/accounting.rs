@@ -219,3 +219,85 @@ fn repeated_fields_and_nested_map_keys_refuse_before_erasure() {
     assert_ne!(yaml, changed);
     assert!(read_import(&changed).is_err());
 }
+
+fn nested_unit_import(kind: &str) -> ess_openapi::ImportReport {
+    let schema = json!({"type": "array", "items": {
+        "type": "object", "additionalProperties": false,
+        "properties": {"kind": {"type": "array", "items": {"type": kind}}}
+    }});
+    import(
+        &json!({
+            "openapi": "3.1.0", "info": {"title": "nested", "version": "v1"},
+            "components": {"schemas": {"kind": schema}},
+            "paths": {"/probe": {"post": {
+                "operationId": "kind",
+                "requestBody": {"content": {"application/json": {"schema": schema}}},
+                "responses": {"200": {
+                    "description": "ok", "content": {"application/json": {"schema": schema}}
+                }}
+            }}}
+        })
+        .to_string(),
+    )
+    .unwrap()
+}
+
+const NESTED_UNIT_POINTERS: [&str; 3] = [
+    "/interface/types/kind/items/properties/kind/items",
+    "/interface/operations/kind/request/schema/items/properties/kind/items",
+    "/interface/operations/kind/responses/200/schema/items/properties/kind/items",
+];
+
+#[test]
+fn checked_import_rejects_unknown_fields_through_mixed_schema_nesting() {
+    for kind in ["integer", "number", "boolean"] {
+        let report = nested_unit_import(kind);
+        for pointer in NESTED_UNIT_POINTERS {
+            let mut wire: Value = serde_json::from_str(&report.to_canonical_json()).unwrap();
+            wire.pointer_mut(pointer).unwrap()["extra~/"] = json!(null);
+            for bytes in [wire.to_string(), serde_yaml::to_string(&wire).unwrap()] {
+                let errors = read_import(&bytes).unwrap_err();
+                assert!(
+                    errors.iter().any(|error| {
+                        error.pointer == format!("{pointer}/extra~0~1")
+                            && error.message.contains("unknown field")
+                    }),
+                    "{errors:?}"
+                );
+            }
+        }
+    }
+}
+
+#[test]
+fn nested_units_reload_and_legacy_unit_admission_remains_unchanged() {
+    for kind in ["integer", "number", "boolean"] {
+        let report = nested_unit_import(kind);
+        let wire: Value = serde_json::from_str(&report.to_canonical_json()).unwrap();
+        for bytes in [wire.to_string(), serde_yaml::to_string(&wire).unwrap()] {
+            let checked = read_import(&bytes).unwrap();
+            assert_eq!(checked, report);
+            assert_eq!(project_import(&checked), project_import(&report));
+        }
+
+        let mut legacy = wire["interface"].clone();
+        for pointer in NESTED_UNIT_POINTERS {
+            legacy
+                .pointer_mut(pointer.strip_prefix("/interface").unwrap())
+                .unwrap()["extra~/"] = json!(null);
+        }
+        for bytes in [legacy.to_string(), serde_yaml::to_string(&legacy).unwrap()] {
+            let expected = report.interface().to_canonical_json();
+            assert_eq!(
+                read_interface(&bytes).unwrap().to_canonical_json(),
+                expected
+            );
+            assert_eq!(
+                legacy_v1::read_interface(&bytes)
+                    .unwrap()
+                    .to_canonical_json(),
+                expected
+            );
+        }
+    }
+}
