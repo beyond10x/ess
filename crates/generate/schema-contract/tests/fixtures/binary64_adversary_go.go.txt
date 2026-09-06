@@ -1,0 +1,70 @@
+package normalization_adapter
+
+import (
+    "bytes"
+    "encoding/json"
+    "fmt"
+    "math"
+    "os"
+    "reflect"
+    "strconv"
+    "strings"
+    "testing"
+)
+
+func readExact(t *testing.T, data []byte) any {
+    t.Helper()
+    decoder := json.NewDecoder(bytes.NewReader(data))
+    decoder.UseNumber()
+    var value any
+    if err := decoder.Decode(&value); err != nil { t.Fatal(err) }
+    return value
+}
+
+func compare(t *testing.T, actual, expected any) {
+    t.Helper()
+    switch e := expected.(type) {
+    case json.Number:
+        a, ok := actual.(json.Number)
+        if !ok { t.Fatalf("number: %T", actual) }
+        if strings.ContainsAny(string(e), ".eE") {
+            if !strings.ContainsAny(string(a), ".eE") { t.Fatalf("floating identity: %s", a) }
+            av, ae := strconv.ParseFloat(string(a), 64)
+            ev, ee := strconv.ParseFloat(string(e), 64)
+            if ae != nil || ee != nil || math.Float64bits(av) != math.Float64bits(ev) { t.Fatalf("bits: %s versus %s", a, e) }
+        } else if a != e { t.Fatalf("exact integer: %s versus %s", a, e) }
+    case []any:
+        a, ok := actual.([]any)
+        if !ok || len(a) != len(e) { t.Fatal("list shape") }
+        for index, item := range e { compare(t, a[index], item) }
+    case map[string]any:
+        a, ok := actual.(map[string]any)
+        if !ok || len(a) != len(e) { t.Fatal("record shape") }
+        for key, item := range e { v, exists := a[key]; if !exists { t.Fatal(key) }; compare(t, v, item) }
+    default:
+        if !reflect.DeepEqual(actual, expected) { t.Fatalf("%v versus %v", actual, expected) }
+    }
+}
+
+func TestAdversarialComposition(t *testing.T) {
+    normalizer, err := New()
+    if err != nil { t.Fatal(err) }
+    data, err := os.ReadFile("cases.json")
+    if err != nil { t.Fatal(err) }
+    var cases []struct { Input, Expected, Error, Pointer string }
+    if err := json.Unmarshal(data, &cases); err != nil { t.Fatal(err) }
+    for index, item := range cases {
+        t.Run(fmt.Sprint(index), func(t *testing.T) {
+            actual, err := normalizer.Normalize("primary", []byte(item.Input))
+            if item.Error != "" {
+                errors, ok := err.(Refused)
+                if !ok || len(errors) == 0 || errors[0].Rule != item.Error { t.Fatalf("%s: %v", item.Input, err) }
+                if item.Pointer != "" && errors[0].Pointer != item.Pointer { t.Fatalf("%s: %v", item.Pointer, errors) }
+                if actual != nil { t.Fatal("refusal leaked output") }
+            } else {
+                if err != nil { t.Fatal(err) }
+                compare(t, readExact(t, actual), readExact(t, []byte(item.Expected)))
+            }
+        })
+    }
+}
