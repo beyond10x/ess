@@ -6,7 +6,6 @@
 use ess_primitives::verification::VerificationStatus;
 
 use crate::report::{ConformanceReport, ConformanceStatus, Status};
-use crate::scenario::SuiteFormat;
 
 /// Persisted format for a standalone ESS conformance report.
 pub const STANDALONE_REPORT_FORMAT: &str = "ess-conformance-report/1";
@@ -81,7 +80,10 @@ impl StandaloneConformanceReport {
         if self.format != STANDALONE_REPORT_FORMAT {
             return Err("unsupported standalone conformance report format");
         }
-        if !SuiteFormat::parse(&self.suite_version).is_ok_and(SuiteFormat::is_supported) {
+        if !matches!(
+            self.suite_version.as_str(),
+            "ess-conformance/1" | "ess-conformance/2" | "ess-conformance/3" | "ess-conformance/4"
+        ) {
             return Err("suite_version is not a supported conformance-suite format");
         }
         if self.scenarios_failed > self.scenarios_total {
@@ -134,6 +136,10 @@ impl StandaloneConformanceReport {
 impl ConformanceReport {
     /// Publishes this run as a standalone ESS report with no workflow-system coupling.
     pub fn standalone(&self) -> StandaloneConformanceReport {
+        assert!(
+            matches!(self.suite.suite_version.major(), 1..=4),
+            "report/1 requires suite majors 1–4"
+        );
         StandaloneConformanceReport {
             format: STANDALONE_REPORT_FORMAT.to_owned(),
             specification: format!("{}/{}", self.suite.system, self.suite.specification_version),
