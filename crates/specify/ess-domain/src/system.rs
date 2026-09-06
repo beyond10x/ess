@@ -50,7 +50,7 @@ use crate::name::{Naming, QualifiedName, Version};
 use crate::types::{NamedType, TypeBody, TypeRef, TypeRegistry};
 
 /// Specification format major versions this build implements.
-pub const SUPPORTED_FORMATS: &[u32] = &[1];
+pub const SUPPORTED_FORMATS: &[u32] = &[1, 2];
 
 /// `true` when this build implements `format`.
 pub fn is_supported_format(format: FormatVersion) -> bool {
@@ -69,6 +69,8 @@ pub struct FormatVersion(u32);
 impl FormatVersion {
     /// The first, and so far only, format.
     pub const V1: Self = Self(1);
+    /// Finite Binary64 model primitives, retaining the first format's other semantics.
+    pub const V2: Self = Self(2);
 
     /// How a format version is written.
     pub const PREFIX: &'static str = "ess/";
@@ -431,7 +433,11 @@ impl SystemSpec {
     pub(crate) fn merge_reporting(
         parts: impl IntoIterator<Item = SpecPart>,
     ) -> (Option<Self>, ValidationErrors) {
-        Self::merge_reporting_with_reference_types(parts, &[])
+        let (system, mut errors) = Self::merge_reporting_with_reference_types(parts, &[]);
+        if let Some(system) = &system {
+            errors.extend(crate::primitive_admission::system(system));
+        }
+        (system, errors)
     }
 
     /// As [`Self::merge_reporting`], with additional types that may satisfy references while a
@@ -1172,7 +1178,8 @@ domains:
             "the prefix is part of the spelling"
         );
         assert!(FormatVersion::V1.is_supported());
-        assert!(!FormatVersion::parse("ess/2")
+        assert!(FormatVersion::V2.is_supported());
+        assert!(!FormatVersion::parse("ess/3")
             .expect("parses")
             .is_supported());
     }
@@ -1181,7 +1188,7 @@ domains:
     fn a_document_in_a_later_format_is_refused_rather_than_guessed_at() {
         let errors = system(
             r"
-format: ess/2
+format: ess/3
 system: billing
 ",
         )
@@ -1193,7 +1200,7 @@ system: billing
         );
         let error = &errors.as_slice()[0];
         assert_eq!(error.location, "system.format");
-        assert!(error.message.contains("ess/2"), "{error}");
+        assert!(error.message.contains("ess/3"), "{error}");
         assert!(
             error
                 .hint

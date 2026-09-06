@@ -50,8 +50,12 @@ const VUE_LICENCE: &str = include_str!("../assets/vue.LICENSE");
 /// Emits the player for `ir` and `suite`.
 ///
 /// The map is keyed by path so a caller writes it the way it writes any other artifact set.
-#[must_use]
-pub fn emit(ir: &EssIr, suite: &ConformanceSuite) -> BTreeMap<String, Artifact> {
+pub fn emit(
+    ir: &EssIr,
+    suite: &ConformanceSuite,
+) -> Result<BTreeMap<String, Artifact>, crate::admission::AdmissionError> {
+    crate::admission::model(ir)?;
+    let json = suite.to_canonical_json()?;
     let mut out = BTreeMap::new();
     let mut add = |path: &str, contents: String| {
         out.insert(path.to_owned(), Artifact::new(path, contents));
@@ -62,9 +66,9 @@ pub fn emit(ir: &EssIr, suite: &ConformanceSuite) -> BTreeMap<String, Artifact> 
     add("assets/vue.esm-browser.prod.js", VUE.to_owned());
     add("assets/vue.LICENSE", VUE_LICENCE.to_owned());
     add("model.json", model(ir));
-    add("suite.json", suite.to_canonical_json());
+    add("suite.json", json);
     add("README.md", readme(ir, suite));
-    out
+    Ok(out)
 }
 
 /// The projection the page reads.

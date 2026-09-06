@@ -25,29 +25,9 @@ pub(super) fn generate(plan: &Plan, package: &str, module: &str) -> Result<Reali
     }
     check_schema_support(plan)?;
     let (roots, mut files) = target::sources(plan)?;
-    let capture = plan.recipe.format == super::FORMAT_V4;
-    for (path, source) in [
-        (
-            "runtime.go",
-            if capture {
-                include_str!("go_runtime.go.txt")
-            } else {
-                include_str!("legacy_v1_v3/go_runtime.go.txt")
-            },
-        ),
-        (
-            "input.go",
-            if capture {
-                include_str!("go_input.go.txt")
-            } else {
-                include_str!("legacy_v1_v3/go_input.go.txt")
-            },
-        ),
-        ("expression.go", include_str!("go_expression.go.txt")),
-        ("collection.go", include_str!("go_collection.go.txt")),
-        ("condition.go", include_str!("go_condition.go.txt")),
-        ("numeric.go", include_str!("go_numeric.go.txt")),
-    ] {
+    let floating = plan.recipe.format == super::FORMAT_V5;
+    let capture = floating || plan.recipe.format == super::FORMAT_V4;
+    for (path, source) in runtime_sources(floating, capture) {
         files.insert(path.to_owned(), source.replace("__PACKAGE__", package));
     }
     if capture {
@@ -200,6 +180,8 @@ fn expression(value: &Expr) -> String {
         Expr::Boolean { value } => format!("literal({value})"),
         Expr::String { value } => format!("literal({})", quote(value)),
         Expr::Integer { value } => format!("literal(int64({value}))"),
+        Expr::Binary64Literal { value } => floating_literal(value),
+        Expr::Binary64 { value, steps } => numeric_call("binary64Value", value, steps),
         Expr::Read { scope, path } => format!(
             "readValue({},[]string{{{}}})",
             matches!(scope, Scope::Item),
@@ -289,11 +271,7 @@ fn expression(value: &Expr) -> String {
             value,
             steps,
             out_of_range: Binary64Range::Reject,
-        } => format!(
-            "binary64Integer({},[]numericStep{{{}}})",
-            expression(value),
-            steps.iter().map(numeric_step).collect::<Vec<_>>().join(",")
-        ),
+        } => numeric_call("binary64Integer", value, steps),
     }
 }
 
@@ -340,4 +318,61 @@ fn condition(test: &Condition) -> String {
         ),
         Condition::Not { condition: test } => format!("negate({})", condition(test)),
     }
+}
+
+fn runtime_sources(floating: bool, capture: bool) -> [(&'static str, &'static str); 6] {
+    [
+        (
+            "runtime.go",
+            if floating {
+                include_str!("go_runtime.go.txt")
+            } else if capture {
+                include_str!("legacy_v4/go_runtime.go.txt")
+            } else {
+                include_str!("legacy_v1_v3/go_runtime.go.txt")
+            },
+        ),
+        (
+            "input.go",
+            if capture {
+                include_str!("go_input.go.txt")
+            } else {
+                include_str!("legacy_v1_v3/go_input.go.txt")
+            },
+        ),
+        ("expression.go", include_str!("go_expression.go.txt")),
+        ("collection.go", include_str!("go_collection.go.txt")),
+        (
+            "condition.go",
+            if floating {
+                include_str!("go_condition.go.txt")
+            } else {
+                include_str!("legacy_v1_v4/go_condition.go.txt")
+            },
+        ),
+        (
+            "numeric.go",
+            if floating {
+                include_str!("go_numeric.go.txt")
+            } else {
+                include_str!("legacy_v1_v4/go_numeric.go.txt")
+            },
+        ),
+    ]
+}
+
+fn floating_literal(value: &str) -> String {
+    format!(
+        "literal(floatBits({}))",
+        super::numeric::literal(value)
+            .expect("checked literal")
+            .to_bits()
+    )
+}
+fn numeric_call(name: &str, value: &Expr, steps: &[Binary64Step]) -> String {
+    format!(
+        "{name}({},[]numericStep{{{}}})",
+        expression(value),
+        steps.iter().map(numeric_step).collect::<Vec<_>>().join(",")
+    )
 }

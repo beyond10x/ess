@@ -264,7 +264,8 @@ impl Specification {
 
     /// Checks every reference in the specification.
     pub fn validate(&self) -> ValidationErrors {
-        let mut errors = crate::wire::validate(self);
+        let mut errors = crate::primitive_admission::specification(self);
+        errors.extend(crate::wire::validate(self));
 
         // Entities contribute the enum their lifecycle forms, so a view projecting `state` and a
         // filter comparing it are checked against the same set of names.
@@ -1142,7 +1143,7 @@ events:
             file(
                 "system.yaml",
                 r"
-format: ess/2
+format: ess/3
 system: shop
 version: v1
 ",

@@ -807,6 +807,11 @@ impl fmt::Display for Surface {
 /// instruction for neither.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Cause {
+    /// The model needs a finite codec outside the current conformance contract.
+    UnsupportedBinary64 {
+        /// Every unsupported model field/type position.
+        locations: Vec<String>,
+    },
     /// The file is not a document this format can read.
     Unreadable {
         /// What the reader said.
@@ -1092,6 +1097,7 @@ impl Cause {
                 Self::AmbiguousWindow { .. } => 33,
                 Self::HaltsAtNothing { .. } => 34,
                 Self::InvalidPredicate { .. } => 35,
+                Self::UnsupportedBinary64 { .. } => 36,
             },
         )
     }
@@ -1104,6 +1110,7 @@ impl Cause {
     #[allow(clippy::too_many_lines)]
     pub fn hint(&self) -> &'static str {
         match self {
+            Self::UnsupportedBinary64 { .. } => "use checked format-5 normalization; finite Binary64 conformance codecs are not implemented",
             Self::Unreadable { .. } => {
                 "the document is YAML with the keys `type`, `domain`, `scenario` and `summary`; a \
                  key it does not know is refused rather than ignored"
@@ -1228,6 +1235,11 @@ impl fmt::Display for Cause {
     #[allow(clippy::too_many_lines)]
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
+            Self::UnsupportedBinary64 { locations } => write!(
+                f,
+                "{}: Binary64 requires a qualified conformance codec",
+                locations.join(", ")
+            ),
             Self::Unreadable { detail } => write!(f, "unreadable: {detail}"),
             Self::UnsupportedFormat { found } => {
                 write!(f, "`{found}` is not `{FORMAT}`")
@@ -1437,6 +1449,18 @@ impl fmt::Display for Cause {
 /// half-built one, because a scenario missing the step that could not be compiled is a check that
 /// passes for the wrong reason.
 pub fn compile(ir: &EssIr, sources: &[Source]) -> Authoring {
+    if let Err(error) = crate::admission::model(ir) {
+        return Authoring {
+            scenarios: BTreeMap::new(),
+            refusals: vec![Refusal {
+                origin: "model".to_owned(),
+                scenario: None,
+                cause: Cause::UnsupportedBinary64 {
+                    locations: error.locations,
+                },
+            }],
+        };
+    }
     let mut ordered: Vec<&Source> = sources.iter().collect();
     ordered.sort_by(|left, right| left.origin.cmp(&right.origin));
 

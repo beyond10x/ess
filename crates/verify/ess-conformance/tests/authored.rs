@@ -319,13 +319,14 @@ fn two_compilations_of_one_file_produce_identical_bytes() {
         }
         suite
     };
-    let first = render().to_canonical_json();
-    assert_eq!(first, render().to_canonical_json());
+    let first = render().to_canonical_json().unwrap();
+    assert_eq!(first, render().to_canonical_json().unwrap());
     assert_eq!(
         first,
         ConformanceSuite::from_json(&first)
             .expect("the suite reads back")
-            .to_canonical_json(),
+            .to_canonical_json()
+            .unwrap(),
         "compile, write, read, write: the same bytes"
     );
 }

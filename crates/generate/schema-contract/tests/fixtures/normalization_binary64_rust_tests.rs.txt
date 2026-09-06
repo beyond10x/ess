@@ -1,0 +1,37 @@
+use normalization_adapter::Normalizer;
+use serde_json::Value;
+
+#[test]
+fn finite_values_and_retained_text() {
+    let normalizer = Normalizer::new().unwrap();
+    let cases: Vec<Value> = serde_json::from_str(include_str!("cases.json")).unwrap();
+    let mut executed = 0;
+    for case in &cases {
+        let result = normalizer.normalize(case["branch"].as_str().unwrap(), case["input"].as_str().unwrap());
+        executed += 1;
+        if let Some(rule) = case["error"].as_str() {
+            assert_eq!(result.unwrap_err().0[0].rule, rule, "{case}");
+            continue;
+        }
+        let value = result.unwrap_or_else(|error| panic!("{case}: {error:?}"));
+        if let Some(bits) = case["bits"].as_str() {
+            let expected = u64::from_str_radix(bits, 16).unwrap();
+            assert_eq!(value.as_f64().unwrap().to_bits(), expected, "{case}");
+            assert!(value.as_i64().is_none(), "floating representation: {value}");
+            assert_eq!(normalizer.normalize("scalar", &value.to_string()).unwrap().as_f64().unwrap().to_bits(), expected);
+            if bits == "8000000000000000" { assert_eq!(value.to_string(), "-0.0"); }
+        } else if let Some(expected) = case["array_bits"].as_array() {
+            assert_eq!(value.as_array().unwrap().len(), expected.len());
+            for (value, bits) in value.as_array().unwrap().iter().zip(expected) {
+                if bits.is_null() { assert!(value.is_null()); } else {
+                    assert_eq!(value.as_f64().unwrap().to_bits(), u64::from_str_radix(bits.as_str().unwrap(), 16).unwrap());
+                }
+            }
+        } else { assert_eq!(value, case["value"], "{case}"); }
+    }
+    assert_eq!(executed, cases.len());
+    eprintln!("executed {executed} finite Binary64 corpus cases");
+    assert_eq!(normalizer.normalize_base64_json("scalar", "LTA=").unwrap().as_f64().unwrap().to_bits(), (-0.0_f64).to_bits());
+    assert_eq!(normalizer.normalize_value("scalar", &serde_json::json!(-0.0)).unwrap().as_f64().unwrap().to_bits(), (-0.0_f64).to_bits());
+    assert!(normalizer.normalize_value("capture", &Value::Null).is_err());
+}

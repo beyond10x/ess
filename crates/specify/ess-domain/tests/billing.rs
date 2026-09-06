@@ -423,6 +423,13 @@ fn the_example_uses_every_primitive_and_every_composite() {
         );
     }
     for primitive in ess_domain::types::Primitive::ALL {
+        if *primitive == ess_domain::Primitive::Binary64 {
+            assert!(
+                !primitives.contains("Binary64"),
+                "the unchanged ess/1 example must not acquire a format-2 primitive"
+            );
+            continue;
+        }
         assert!(
             primitives.contains(&format!("{primitive:?}")),
             "the example uses no {primitive:?}: {primitives:?}"

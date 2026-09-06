@@ -532,6 +532,7 @@ fn encode_into(
 /// One primitive, in the rendering the published contracts fix.
 fn encode_primitive(primitive: Primitive, source: &str) -> String {
     match primitive {
+        Primitive::Binary64 => unreachable!("Binary64 is refused before target rendering"),
         Primitive::String | Primitive::Boolean | Primitive::Integer => source.to_owned(),
         Primitive::Bytes => format!("base64.StdEncoding.EncodeToString({source})"),
         Primitive::Decimal | Primitive::Timestamp | Primitive::Duration | Primitive::Uuid => {
@@ -543,6 +544,7 @@ fn encode_primitive(primitive: Primitive, source: &str) -> String {
 /// One map key, as the text a JSON object key has to be.
 fn encode_key(primitive: Primitive, source: &str) -> String {
     match primitive {
+        Primitive::Binary64 => unreachable!("Binary64 is refused before target rendering"),
         Primitive::String => source.to_owned(),
         Primitive::Boolean => format!("strconv.FormatBool({source})"),
         Primitive::Integer => format!("strconv.FormatInt({source}, 10)"),
@@ -695,6 +697,7 @@ fn decode_into(
 /// The helper that reads one primitive, and what a refusal says belongs there.
 fn decode_primitive(primitive: Primitive) -> (&'static str, &'static str) {
     match primitive {
+        Primitive::Binary64 => unreachable!("Binary64 is refused before target rendering"),
         Primitive::String => ("textAt", "a string"),
         Primitive::Boolean => ("boolAt", "true or false"),
         Primitive::Integer => ("integerAt", "a whole number"),
@@ -718,6 +721,7 @@ fn decode_key(
 ) -> String {
     let held = format!("key{}", next(slot));
     match primitive {
+        Primitive::Binary64 => unreachable!("Binary64 is refused before target rendering"),
         Primitive::String => return source.to_owned(),
         Primitive::Boolean => {
             let _ = writeln!(

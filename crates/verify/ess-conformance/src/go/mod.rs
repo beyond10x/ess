@@ -46,19 +46,20 @@ pub const PACKAGE: &str = "essconform";
 ///
 /// Deterministic: the same suite produces the same bytes, because the three Go files are constants
 /// and the fourth is the suite's own canonical JSON.
-pub fn emit(suite: &ConformanceSuite) -> Vec<GoArtifact> {
+pub fn emit(suite: &ConformanceSuite) -> Result<Vec<GoArtifact>, crate::admission::AdmissionError> {
+    let json = suite.to_canonical_json()?;
     let file = |name: &str, contents: String| GoArtifact {
         path: format!("{PACKAGE}/{name}"),
         contents,
     };
 
-    vec![
+    Ok(vec![
         file("runtime.go", include_str!("runtime.go").to_owned()),
         file("predicate.go", include_str!("predicate.go").to_owned()),
         file("suite.go", SUITE_GO.to_owned()),
-        file("suite.json", suite.to_canonical_json()),
+        file("suite.json", json),
         file("README.md", readme(suite)),
-    ]
+    ])
 }
 
 /// The one file that exists only to embed the other one.
@@ -182,8 +183,8 @@ mod tests {
     #[test]
     fn the_runner_is_a_constant_and_only_the_suite_moves() {
         let suite = suite();
-        let first = emit(&suite);
-        let second = emit(&suite);
+        let first = emit(&suite).unwrap();
+        let second = emit(&suite).unwrap();
         assert_eq!(first, second);
 
         let paths: Vec<&str> = first.iter().map(|file| file.path.as_str()).collect();
@@ -202,7 +203,7 @@ mod tests {
     /// Every emitted Go file declares the package the README tells an adopter to import.
     #[test]
     fn every_go_file_is_in_the_package_the_readme_names() {
-        for file in emit(&suite()) {
+        for file in emit(&suite()).unwrap() {
             if std::path::Path::new(&file.path)
                 .extension()
                 .is_some_and(|extension| extension.eq_ignore_ascii_case("go"))

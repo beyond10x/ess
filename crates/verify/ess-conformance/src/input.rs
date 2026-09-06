@@ -410,6 +410,14 @@ pub(crate) fn projection_target(
     ir: &EssIr,
     resolved: &ess_domain::expression::Resolution<ResolvedTypeRef>,
 ) -> Target {
+    if matches!(
+        resolved.terminal,
+        ResolvedTypeRef::Primitive {
+            name: Primitive::Binary64
+        }
+    ) {
+        return Target::Aggregate("an unsupported Binary64 scalar");
+    }
     if resolved.access.depth > MAX_TYPE_DEPTH {
         return Target::TooDeep;
     }

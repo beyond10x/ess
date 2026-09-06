@@ -96,7 +96,9 @@ fn every_scenario_the_billing_specification_obliges_passes_against_the_reference
          prove less than it looks like it proves"
     );
 
-    let report = Runner::for_suite(&suite).run(&suite, &Billing::new());
+    let report = Runner::for_suite(&suite)
+        .run(&suite, &Billing::new())
+        .unwrap();
 
     let failures: Vec<String> = report
         .failures()
@@ -130,7 +132,9 @@ fn every_scenario_checked_something_and_no_family_of_them_was_silently_empty() {
     // A run whose scenarios assert nothing passes just as green as one that asserts everything, and
     // §36's whole argument is that the silent omission is the failure a passing run cannot show.
     let suite = suite();
-    let report = Runner::for_suite(&suite).run(&suite, &Billing::new());
+    let report = Runner::for_suite(&suite)
+        .run(&suite, &Billing::new())
+        .unwrap();
 
     for result in &report.scenarios {
         assert!(
@@ -174,8 +178,12 @@ fn two_runs_of_one_suite_against_one_target_produce_byte_identical_reports() {
     // agreed with itself would only be showing that nothing was reset.
     let suite = suite();
 
-    let first = Runner::for_suite(&suite).run(&suite, &Billing::new());
-    let second = Runner::for_suite(&suite).run(&suite, &Billing::new());
+    let first = Runner::for_suite(&suite)
+        .run(&suite, &Billing::new())
+        .unwrap();
+    let second = Runner::for_suite(&suite)
+        .run(&suite, &Billing::new())
+        .unwrap();
 
     assert_eq!(
         first.to_canonical_json(),
@@ -211,7 +219,9 @@ fn a_scenario_whose_input_no_longer_reaches_its_branch_fails_with_a_diagnostic_n
         }
     }
 
-    let report = Runner::for_suite(&suite).run(&suite, &Billing::new());
+    let report = Runner::for_suite(&suite)
+        .run(&suite, &Billing::new())
+        .unwrap();
 
     let result = report
         .scenarios
@@ -276,7 +286,9 @@ fn a_target_that_cannot_expose_an_observation_fails_the_run_rather_than_skipping
     // §16 refuses to require command tracing of every implementation, so a target may legitimately
     // be unable to answer `binding/mapping` — and the run must still not pass.
     let suite = suite();
-    let report = Runner::for_suite(&suite).run(&suite, &Untraced(Billing::new()));
+    let report = Runner::for_suite(&suite)
+        .run(&suite, &Untraced(Billing::new()))
+        .unwrap();
 
     let mapping = ScenarioId::parse("notify-on-invoice-created/binding/mapping").expect("an id");
     let result = report
@@ -322,8 +334,9 @@ fn an_event_missing_a_field_it_declares_is_named_leaf_by_leaf_rather_than_report
     // fails, because "you published the wrong thing" and "you published the right thing badly" are
     // two different repairs.
     let suite = suite();
-    let report =
-        Runner::for_suite(&suite).run(&suite, &faulty::billing(Fault::PartialEventPayload));
+    let report = Runner::for_suite(&suite)
+        .run(&suite, &faulty::billing(Fault::PartialEventPayload))
+        .unwrap();
 
     let settled = ScenarioId::parse("billing.invoice.PayInvoice/outcome/settled").expect("an id");
     let result = report
@@ -375,7 +388,9 @@ fn a_value_of_the_wrong_declared_type_is_caught_by_the_same_check_as_a_missing_o
     // underneath a newtype, and a number is not one — which is the same rule `flatten` applies to a
     // command input, called rather than restated.
     let suite = suite();
-    let report = Runner::for_suite(&suite).run(&suite, &Perturbed::mistyped());
+    let report = Runner::for_suite(&suite)
+        .run(&suite, &Perturbed::mistyped())
+        .unwrap();
 
     let created = ScenarioId::parse("billing.invoice.CreateInvoice/outcome/accepted").expect("id");
     let result = report
@@ -402,8 +417,9 @@ fn a_read_your_writes_view_is_not_quietly_read_at_current_when_no_token_came_bac
     // With no token the runner *could* ask at `Current` and get a green tick for a question nobody
     // asked. It does not: the read is not made, and the check says which command owes the token.
     let suite = suite();
-    let report =
-        Runner::for_suite(&suite).run(&suite, &faulty::billing(Fault::DropConsistencyToken));
+    let report = Runner::for_suite(&suite)
+        .run(&suite, &faulty::billing(Fault::DropConsistencyToken))
+        .unwrap();
 
     let issued = ScenarioId::parse("billing.invoice.IssueInvoice/outcome/issued").expect("an id");
     let result = report
@@ -455,7 +471,9 @@ fn a_view_answered_in_the_wrong_order_fails_exactly_the_scenarios_that_assert_it
     // against one row holds for every implementation there is, which is what this run would show
     // as green if synthesis had not arranged the second one.
     let suite = suite();
-    let report = Runner::for_suite(&suite).run(&suite, &Perturbed::reversed());
+    let report = Runner::for_suite(&suite)
+        .run(&suite, &Perturbed::reversed())
+        .unwrap();
 
     let failed: Vec<String> = report
         .scenarios
@@ -501,7 +519,9 @@ fn a_view_assertion_names_the_instance_the_scenario_created_rather_than_any_row(
     // The suite names the identity, so a target holding an unrelated row is not mistaken for a
     // conformant one.
     let suite = suite();
-    let report = Runner::for_suite(&suite).run(&suite, &Perturbed::crowded());
+    let report = Runner::for_suite(&suite)
+        .run(&suite, &Perturbed::crowded())
+        .unwrap();
 
     assert_eq!(
         report.status,
@@ -545,7 +565,7 @@ fn an_eventual_assertion_asks_again_within_a_deadline_and_never_sleeps() {
         AdvancingClock::new(0, 100),
         Ids::for_suite(&narrowed),
     );
-    let report = runner.run(&narrowed, &Billing::with_lag(1_000));
+    let report = runner.run(&narrowed, &Billing::with_lag(1_000)).unwrap();
 
     let result = &report.scenarios[0];
     assert_eq!(result.status, Status::Failed);
@@ -572,7 +592,7 @@ fn an_eventual_assertion_asks_again_within_a_deadline_and_never_sleeps() {
         Ids::for_suite(&narrowed),
     );
     assert_eq!(
-        quick.run(&narrowed, &Billing::new()).status,
+        quick.run(&narrowed, &Billing::new()).unwrap().status,
         ConformanceStatus::Passed
     );
 }
@@ -600,7 +620,8 @@ fn an_eventual_view_is_read_again_and_a_read_your_writes_view_is_not() {
         AdvancingClock::new(0, 100),
         Ids::for_suite(&narrowed),
     )
-    .run(&narrowed, &Billing::new());
+    .run(&narrowed, &Billing::new())
+    .unwrap();
     let starved = &one_ask.scenarios[0];
     assert_eq!(
         starved.status,
@@ -619,7 +640,9 @@ fn an_eventual_view_is_read_again_and_a_read_your_writes_view_is_not() {
         "only the eventual view is starved; the read-your-writes view beside it never waits"
     );
 
-    let patient = Runner::for_suite(&narrowed).run(&narrowed, &Billing::new());
+    let patient = Runner::for_suite(&narrowed)
+        .run(&narrowed, &Billing::new())
+        .unwrap();
     let result = &patient.scenarios[0];
     assert_eq!(result.status, Status::Passed);
     let codes: Vec<CheckCode> = result.checks.iter().map(|check| check.code).collect();

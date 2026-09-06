@@ -100,6 +100,7 @@ pub struct Plan {
     annotations: BTreeSet<Finding>,
     obligations: BTreeSet<Finding>,
     patterns: BTreeMap<String, String>,
+    binary64: BTreeSet<String>,
 }
 
 #[derive(Debug, Clone)]
@@ -205,7 +206,7 @@ impl Plan {
     /// Use the sealed selection of a checked ESS model and its existing schema wire mapping.
     pub fn from_model(model: &ess_gen::schema::ModelTypes) -> Result<Self, Refused> {
         let provenance = model.provenance();
-        Self::build(
+        let mut plan = Self::build(
             Builder {
                 model: true,
                 ..Builder::default()
@@ -224,7 +225,12 @@ impl Plan {
                 projection_digest: crate::bundle::source_digest(&model.to_json()),
             },
             model.newtypes().clone(),
-        )
+        )?;
+        plan.binary64.clone_from(model.binary64_locations());
+        for at in &plan.binary64 {
+            plan.obligations.insert(finding(at, "model_binary64", "finite IEEE-754 binary64 requires nearest-even token decoding, signed-zero preservation and finite round-tripping serialization; the structural number representation alone does not enforce this contract"));
+        }
+        Ok(plan)
     }
 
     fn build(
@@ -304,12 +310,20 @@ impl Plan {
             annotations: builder.annotations,
             obligations: builder.obligations,
             patterns: builder.patterns,
+            binary64: BTreeSet::new(),
         })
     }
 
     /// Component identities and their shared declaration names, in deterministic order.
     pub fn declarations(&self) -> &BTreeMap<String, String> {
         &self.names
+    }
+
+    fn binary64_codec(&self) -> Result<(), Refused> {
+        if self.binary64.is_empty() {
+            return Ok(());
+        }
+        Err(Refused(self.binary64.iter().map(|at| finding(at, "model_binary64_codec", "structural wire codecs do not enforce finite Binary64; use the checked format-5 normalization boundary")).collect()))
     }
 
     /// Emit accounted structural TypeScript, with no implicit validation or coercion.
@@ -319,11 +333,13 @@ impl Plan {
 
     /// Emit a standalone Rust data library with explicit presence and wire serialization.
     pub fn rust(&self, package: &str) -> Result<Realization, Refused> {
+        self.binary64_codec()?;
         rust::emit(self, package)
     }
 
     /// Emit a standalone Go data library preserving requiredness and nullable values.
     pub fn go(&self, package: &str, module: &str) -> Result<Realization, Refused> {
+        self.binary64_codec()?;
         go::emit(self, package, module)
     }
 

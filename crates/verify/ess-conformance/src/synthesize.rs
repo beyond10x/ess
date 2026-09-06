@@ -923,6 +923,18 @@ impl fmt::Display for InstanceNeed {
 pub fn synthesize(ir: &EssIr) -> Synthesis {
     let mut suite = ConformanceSuite::new(SuiteProvenance::of(ir));
     let mut refusals = Vec::new();
+    for (path, subject) in ess_compiler::binary64::uses(ir) {
+        refusals.push(Refusal { subject, scenario: None, cause: RefusalCause::NoWitness(WitnessGap {
+            path, type_ref: "Binary64".to_owned(), reason: "requires a qualified finite Binary64 suite and codec that this conformance format does not admit",
+        }) });
+    }
+    if !refusals.is_empty() {
+        return Synthesis {
+            suite,
+            refusals,
+            outside: Vec::new(),
+        };
+    }
     let actors = granted_actors(ir);
 
     for command in ir.commands().values() {

@@ -439,8 +439,45 @@ Expanded recursive shapes, tuples and
 intersections refuse in its initial checker. Schema bounds and other refinements are
 checked at runtime boundaries, not proven by structural checking. Integer operations
 require exact signed-64-bit integral JSON tokens; equality is scalar-only, with no
-floating-point or cross-kind coercion. Full language-target normalization and
+cross-kind coercion. Full language-target normalization and
 source-adapter adoption remain unfinished.
+
+#### Modeled finite floating values
+
+The unreleased `ess-normalization/5` format admits modeled `Binary64` inputs and
+outputs from an `ess/2` specification. Every Binary64 leaf in the first input
+requires an explicit `binary64_inputs` field/items/root selector, including unused
+optional fields. Map-value and tagged-union selectors are unsupported and refuse
+planning. Versions 1–4 refuse selected Binary64 model closures, including types
+used only for outputs. A plain imported `type: number` schema or annotation cannot
+grant model Binary64 identity.
+
+Use explicit floating construction for defaults and computed outputs:
+
+```json
+{
+  "op": "fallback",
+  "value": {"op": "read", "scope": "input", "path": ["ratio"]},
+  "fallback": {"op": "binary64_literal", "value": "-0.0"},
+  "on_null": false
+}
+```
+
+`binary64_literal` keeps its numeric token string in recipe identity and checks
+grammar and finiteness in every branch. `binary64` takes a numeric `value` and
+ordered `steps` using the existing multiply/minimum/maximum vocabulary; it returns
+a finite floating value without truncating. An empty steps list is an explicit
+integer/general-number conversion. Float-to-integer conversion still requires
+`binary64_to_integer`. An integral floating result does not become an integer
+operand. A later conversion cannot recover an input token refused at the text edge.
+
+Reference and generated Rust/Go preserve positive/negative zero, signed underflow,
+subnormals and nearest-even rounding. Overflow and nonfinite values refuse.
+Format-5 `equal` compares two typed Binary64 operands using IEEE equality, so
+positive and negative zero compare equal; it does not cast mixed scalar kinds.
+Explicit raw capture and retained-document helpers from format 4 remain available.
+Format 5 uses target report version 3. Frozen templates preserve the complete
+emitted Rust/Go file maps of formats 1–4.
 
 ## The graph, without generating a tree
 

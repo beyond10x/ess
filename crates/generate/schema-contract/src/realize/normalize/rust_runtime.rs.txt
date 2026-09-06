@@ -27,7 +27,7 @@ impl Normalizer {
     pub fn new() -> Result<Self, Refused> {
         let recipe: Recipe = serde_json::from_str(include_str!("../source.recipe.json"))
             .map_err(|_| Refused(vec![finding("/", "target_recipe", "embedded recipe is invalid")]))?;
-        if ![recipe::FORMAT, recipe::FORMAT_V2, recipe::FORMAT_V3, recipe::FORMAT_V4].contains(&recipe.format.as_str()) {
+        if ![recipe::FORMAT, recipe::FORMAT_V2, recipe::FORMAT_V3, recipe::FORMAT_V4, recipe::FORMAT_V5].contains(&recipe.format.as_str()) {
             return Err(Refused(vec![finding("/format", "recipe_format", "unsupported normalization format")]));
         }
         let mut validators = BTreeMap::new();

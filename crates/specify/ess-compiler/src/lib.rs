@@ -43,6 +43,7 @@
 //! newline. Asserting determinism is what review F8 called out as insufficient; a test that compiles
 //! the same source twice and compares bytes is what makes it true.
 
+pub mod binary64;
 pub mod diagnostic;
 pub mod expression;
 pub mod graph;

@@ -22,6 +22,31 @@ pub(super) fn convert(
     range: Binary64Range,
     at: &str,
 ) -> Result<Value, Refused> {
+    match range {
+        Binary64Range::Reject => truncate(rounded(value, steps, at)?, at),
+    }
+}
+
+pub(super) fn floating(value: &Value, steps: &[Binary64Step], at: &str) -> Result<Value, Refused> {
+    Ok(Value::Number(
+        serde_json::Number::from_f64(rounded(value, steps, at)?).expect("rounded result is finite"),
+    ))
+}
+
+pub(super) fn constant(token: &str, at: &str) -> Result<Value, Refused> {
+    let value = literal(token).ok_or_else(|| {
+        error(
+            &format!("{at}/value"),
+            "binary64_literal",
+            "expected a finite JSON numeric token",
+        )
+    })?;
+    Ok(Value::Number(
+        serde_json::Number::from_f64(value).expect("literal is finite"),
+    ))
+}
+
+fn rounded(value: &Value, steps: &[Binary64Step], at: &str) -> Result<f64, Refused> {
     let mut value = value
         .as_number()
         .and_then(|number| finite(&number.to_string()))
@@ -57,9 +82,7 @@ pub(super) fn convert(
             ));
         }
     }
-    match range {
-        Binary64Range::Reject => truncate(value, at),
-    }
+    Ok(value)
 }
 
 fn minimum(left: f64, right: f64) -> f64 {

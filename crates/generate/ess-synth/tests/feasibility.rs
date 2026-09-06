@@ -47,6 +47,43 @@ fn core(body: &str, wiring: &str) -> EssIr {
     ])
 }
 
+#[test]
+fn binary64_is_refused_even_when_no_component_consumes_the_type() {
+    let ir = fixture(&[("sparse.yaml", "format: ess/2\nsystem: demo\nversion: v1\ndomains: [demo.core]\ndomain: demo.core\ntypes:\n  - {name: demo.core.Ratio, kind: newtype, of: Binary64}\n")]);
+    let plan = SynthesisPlan::of(&ir);
+    for (target, label, format) in [
+        (Target::Rust, "rust", "ess-target-failure/1"),
+        (Target::Web, "web", "ess-target-failure/1"),
+        (Target::Go, "go", "ess-target-failure/2"),
+        (Target::Clap, "clap", "ess-target-failure/2"),
+    ] {
+        let failure = synthesize_for(&ir, target)
+            .err()
+            .expect("finite codec refusal");
+        assert_eq!(failure.target(), label);
+        let json: serde_json::Value = serde_json::from_str(&failure.to_canonical_json()).unwrap();
+        assert_eq!(json["format"], format);
+        assert_eq!(failure.causes().len(), 1);
+        assert!(!failure.causes()[0].sources().is_empty());
+        assert!(failure.causes()[0].detail().contains("Binary64"));
+        let direct = match target {
+            Target::Rust => {
+                ess_synth::rust::workspace(&ir, &plan).expect_err("finite codec refusal")
+            }
+            Target::Go => ess_synth::go::workspace(&ir, &plan)
+                .err()
+                .expect("finite codec refusal"),
+            Target::Web => ess_synth::web::workspace(&ir, &plan)
+                .err()
+                .expect("finite codec refusal"),
+            Target::Clap => ess_synth::clap::workspace(&ir, &plan)
+                .err()
+                .expect("finite codec refusal"),
+        };
+        assert_eq!(direct.to_canonical_json(), failure.to_canonical_json());
+    }
+}
+
 fn scratch(name: &str) -> PathBuf {
     let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../..");
     let directory = root

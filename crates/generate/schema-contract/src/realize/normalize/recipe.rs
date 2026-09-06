@@ -14,6 +14,8 @@ pub const FORMAT_V3: &str = "ess-normalization/3";
 
 /// Explicit lexical JSON capture at the text input boundary.
 pub const FORMAT_V4: &str = "ess-normalization/4";
+/// Explicit finite floating construction and compiler-owned Binary64 fields.
+pub const FORMAT_V5: &str = "ess-normalization/5";
 
 /// Exact branch names mapped to explicit paths through their external input roots.
 pub type Binary64Inputs = BTreeMap<String, Vec<Vec<NumberPath>>>;
@@ -357,6 +359,18 @@ pub enum Expr {
         value: Box<Expr>,
         /// Required fallback in the enclosing scope when no item matches.
         otherwise: Box<Expr>,
+    },
+    /// Version 5: construct a finite floating value from an exact authored numeric token.
+    Binary64Literal {
+        /// JSON number token, retained verbatim and checked in every branch.
+        value: String,
+    },
+    /// Version 5: explicit finite floating conversion with ordered rounded steps.
+    Binary64 {
+        /// Required numeric expression; no implicit model assignment cast.
+        value: Box<Expr>,
+        /// Operations applied in exact declaration order without integer truncation.
+        steps: Vec<Binary64Step>,
     },
     /// Version 2: decode, apply rounded binary64 steps, then truncate toward zero.
     Binary64ToInteger {

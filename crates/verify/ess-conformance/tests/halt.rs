@@ -318,7 +318,9 @@ fn diagnostic(report: &ess_conformance::report::ConformanceReport) -> String {
 #[test]
 fn a_target_whose_producer_stops_when_the_reader_does_passes() {
     let suite = suite(halt());
-    let report = Runner::for_suite(&suite).run(&suite, &Listing::new(Wrong::Nothing, 5));
+    let report = Runner::for_suite(&suite)
+        .run(&suite, &Listing::new(Wrong::Nothing, 5))
+        .unwrap();
 
     assert_eq!(report.status, ConformanceStatus::Passed);
     let recorded = checks(&report);
@@ -343,7 +345,9 @@ fn a_target_that_reads_the_whole_listing_fails_rather_than_being_read_as_having_
     // from a correct one. What separates them is that it pulled five rows to hand over two, and
     // nothing said so.
     let suite = suite(halt());
-    let report = Runner::for_suite(&suite).run(&suite, &Listing::new(Wrong::Materialises, 5));
+    let report = Runner::for_suite(&suite)
+        .run(&suite, &Listing::new(Wrong::Materialises, 5))
+        .unwrap();
 
     assert_eq!(report.status, ConformanceStatus::Failed);
     let recorded = checks(&report);
@@ -363,7 +367,9 @@ fn a_listing_that_ran_out_before_the_reader_stopped_it_is_not_a_halt() {
     // no more than the reader took" would pass it, and the scenario would be green against a system
     // that never demonstrated the thing it claims.
     let suite = suite(halt());
-    let report = Runner::for_suite(&suite).run(&suite, &Listing::new(Wrong::RunsOut, 5));
+    let report = Runner::for_suite(&suite)
+        .run(&suite, &Listing::new(Wrong::RunsOut, 5))
+        .unwrap();
 
     assert_eq!(report.status, ConformanceStatus::Failed);
     let rendered = diagnostic(&report);
@@ -379,7 +385,7 @@ fn a_target_that_cannot_read_a_row_at_a_time_reports_unsupported_and_the_run_fai
     // existed before an early stop did still compiles, still runs every other scenario, and is told
     // apart from a target that read a listing and stopped it.
     let suite = suite(halt());
-    let report = Runner::for_suite(&suite).run(&suite, &Wholesale);
+    let report = Runner::for_suite(&suite).run(&suite, &Wholesale).unwrap();
 
     assert_ne!(
         report.status,
@@ -411,7 +417,9 @@ fn a_halt_of_an_eventual_listing_is_asked_again_while_the_projection_catches_up(
     // not a wrong implementation. The whole bounded read is retried, because each attempt is its own
     // experiment: half an answer from the first attempt would say nothing about the second.
     let suite = suite(eventual_halt());
-    let report = Runner::for_suite(&suite).run(&suite, &Listing::new(Wrong::Lagging, 5));
+    let report = Runner::for_suite(&suite)
+        .run(&suite, &Listing::new(Wrong::Lagging, 5))
+        .unwrap();
 
     assert_eq!(report.status, ConformanceStatus::Passed);
     assert_eq!(checks(&report)[0].1, Status::Passed);
@@ -422,7 +430,9 @@ fn retrying_does_not_rescue_a_producer_that_never_stops() {
     // And the retry is not a way past the claim: a materialising listing answers the same thing
     // every time it is asked, and the deadline arrives.
     let suite = suite(eventual_halt());
-    let report = Runner::for_suite(&suite).run(&suite, &Listing::new(Wrong::Materialises, 5));
+    let report = Runner::for_suite(&suite)
+        .run(&suite, &Listing::new(Wrong::Materialises, 5))
+        .unwrap();
 
     assert_eq!(report.status, ConformanceStatus::Failed);
     let rendered = diagnostic(&report);
@@ -442,9 +452,11 @@ fn two_runs_over_one_halt_claim_produce_byte_identical_reports() {
     let suite = suite(halt());
     let first = Runner::for_suite(&suite)
         .run(&suite, &Listing::new(Wrong::Materialises, 5))
+        .unwrap()
         .to_canonical_json();
     let second = Runner::for_suite(&suite)
         .run(&suite, &Listing::new(Wrong::Materialises, 5))
+        .unwrap()
         .to_canonical_json();
     assert_eq!(first, second);
 }
