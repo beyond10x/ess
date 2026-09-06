@@ -418,9 +418,9 @@ enum ConformCommand {
         component: Option<String>,
         /// The `ess-scenario/1` documents to compile beside the generated scenarios.
         ///
-        /// A directory or one file. Defaults to `scenarios/` beside the specification, so a suite
-        /// holds everything the specification's own directory says — the obligations it derives and
-        /// the checks somebody wrote for what it cannot.
+        /// A directory of `.yaml`/`.yml` files or one file. Directories are read directly, without
+        /// descending into subdirectories; an empty selection is refused. When omitted, no authored
+        /// scenarios are selected.
         #[arg(long)]
         scenarios: Option<PathBuf>,
     },
@@ -2696,16 +2696,34 @@ fn authored_sources(scenarios: Option<&Path>) -> Result<Vec<ess_conformance::aut
     if !directory.is_dir() {
         bail!("{} is not a directory of scenarios", directory.display());
     }
-    let mut files: Vec<PathBuf> = fs::read_dir(&directory)
+    let entries: Vec<PathBuf> = fs::read_dir(&directory)
         .with_context(|| format!("reading {}", directory.display()))?
         .collect::<std::io::Result<Vec<_>>>()?
         .into_iter()
         .map(|entry| entry.path())
+        .collect();
+    let subdirectories = entries.iter().any(|path| path.is_dir());
+    let mut files: Vec<PathBuf> = entries
+        .into_iter()
         .filter(|path| {
             path.extension()
                 .is_some_and(|extension| extension == "yaml" || extension == "yml")
         })
         .collect();
+    if files.is_empty() {
+        let hint = if subdirectories {
+            "subdirectories are present but are not searched; pass the intended child directory \
+             or scenario file with --scenarios"
+        } else {
+            "pass a directory containing scenario files directly, or one scenario file, with \
+             --scenarios"
+        };
+        bail!(
+            "refused --scenarios {}: no .yaml or .yml scenario files found directly in this \
+             directory; {hint}",
+            directory.display()
+        );
+    }
     files.sort();
     files.iter().map(|path| read(path)).collect()
 }
