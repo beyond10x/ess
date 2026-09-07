@@ -206,3 +206,34 @@ that exact untracked root is explicitly accounted; an initial all-files-clean as
 before npm ran and was corrected to tracked-source cleanliness plus that owned root allowance.
 No source file or ignore rule changed. The assigned publication-verification external temporary
 root remains uncreated until the prepared runner executes against the future published artifact.
+
+Source attack one returned no findings. Its nine newly added actual-CLI cases all passed on
+first focused execution; the final package passed 235 cases with zero failed/ignored across
+37 native summaries in 158.578620603 seconds. Final all-target Clippy and package formatting
+also exited zero on identical 1,132 repository inputs. Two intermediate lint failures concerned
+only the new helper's boolean arguments and then its enum Copy implementation; both original
+outputs and source versions are retained. No production assertion failed, and no original test
+or production file changed during the attack.
+
+The immutable report is SHA256
+`21290e42530fa5547722d4b0aeb617168bc0babe7758ab86cd84705f28178da8` and its seal is
+`2c700cd110f8f82246953c228db07e84d6a14a46b19f17f712d3916a022fcd1d`. Root independently
+verified all 27,696 sealed records, 23,495 external entries, 1,145 source/tool/brief inputs,
+38 final binaries and seven observed-absent owned children in 5.047155960 seconds. The scratch
+inventory has 3,017 rows; including that inventory file gives the reviewer's 3,018 sealed scratch
+entries. Both exclude the two self-referential seal bookkeeping files. Complete path censuses,
+regular payload hashes, native metadata and literal symlink targets matched.
+
+The first sealing attempt stopped before creating its seal on a non-UTF-8 temporary filename;
+the retained path listing now uses JSON-quoted native strings, with the original error and script
+preserved. Root verified that listing against every external inventory entry. The original
+implementor evidence is unchanged, and root separately retained all 38 current test/CLI binaries
+(421,225,408 bytes) before any later build can replace them. The full source pass is recorded
+verbatim as `review-result:cache-origin-source-pass1`, with a no-op review outcome. Integration
+and exact source/public delivery remain pending; no second attack is required by this result.
+
+Root committed the two new test files as bot commit
+`e6d9a7a3e3e440c5f77769bcaa293d5fdbc7f401`; the unit is clean and all 1,132 final tested
+repository inputs remain byte-identical. Planning validation exited zero for 186 artifacts.
+Its 32 no-findings advisories include this report's explicit empty findings list, which root
+confirmed is preserved byte-for-byte; no findings were omitted from the returned report.
