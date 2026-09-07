@@ -140,12 +140,50 @@ immediately failed with a usage-limit error. On operator continuation, root conf
 was still clean at that exact head, the managed record was active, and free space was
 18,457,415,680 bytes. The former agent was unavailable, so a fresh implementor received the
 unchanged brief (SHA256 `86fe2f294964d5f4d914958c2cab6a728e7b9dba89fd8a47cb2d0c25f6305480`).
-The new collaboration thread is `cache_origin_implementor`. Source implementation and its
-package verification are now assigned; independent source attack, integration and delivery
-remain pending. The preflight and dispatch facts are retained under wave preparation.
+The replacement collaboration thread was `cache_origin_implementor`; its completed source
+implementation and package verification are recorded below. The preflight and dispatch facts
+are retained under wave preparation.
 
 The prepared integration runner retains the preceding gate's direct exits, source snapshots,
 tool identities and actual producer process observations. Its only changes are the wave 12
 evidence directory and assigned `/home/timo/.cache/ess-w12-gate-tmp`. It has passed syntax
 inspection only and has not executed. Heavy integration waits for the unit's reviewed handoff
 and a fresh resource check; the new temporary root has not been created.
+
+The implementor relinquished writes after the complete formatted package passed 226 cases,
+zero failed and ignored, across 36 native summaries. The baseline was 200 cases across 35
+summaries. The final package took 110.165962087 seconds; strict all-target Clippy and package
+formatting also exited zero on unchanged final inputs. One meaningful legacy-substitution red
+and three assertion-failing guard mutations are retained separately from earlier fixture errors.
+Both timeout clients were observed reaped; the Helm fixture spends 15 seconds on its first call
+before stalling the second, exercising the shared 60-second deadline.
+
+Root verified all 24,210 sealed records, 3,831 scratch entries, 27,289 external entries and
+1,133 source/tool/brief inputs, including complete path censuses and native metadata. The only
+directory bookkeeping exception is the documented scratch root changed by writing its own seal.
+The report is SHA256 `e929825bf3e7686c2dadb4e0f762d9721025b8e7062dac435057f12e0b52a873`;
+the seal is `882d318e6103a07c5a4c52312c9aa742aedcb3982863b7860955e35a0e22bfce`.
+Bot unit commit `6fd6e796c580656b65d9199f9367ebe3b662f806` contains eight owned files;
+all 1,130 tested repository inputs remained byte-identical after the commit.
+
+The first independent source attack is assigned this exact unit head and its existing target.
+Its separate scratch is `target/review-boundaries-12/adversary-pass-1` inside the unit and its
+only external temporary root is `/home/timo/.cache/ess-w12-review1-tmp`. Original compiled
+handoff outputs are independently retained before a review build can replace them. No source
+attack result, integration result or public delivery is established by the package handoff.
+
+The source adversary `cache_origin_adversary1` was dispatched after root read back all 37
+independent binary snapshots (403,074,576 bytes) and reconfirmed the clean committed unit.
+Its active brief is SHA256 `ebd37212546def2da93a68f28c01d76d5de6ad769b8e5020bddd4e94c1f22544`.
+The dispatch check measured 17,725,263,872 bytes free against a 2,000,000,000-byte additional
+review reservation and the unchanged 8 GiB floor. This is source attack one of two.
+
+Before dispatch, root also completed the AEP coordinator compiler archive and independent
+readback: 9,705 entries, 8,405 files, 1,178,178,859 compressed bytes, SHA256
+`a5db1772604c657b37f6bfff0d711fa4ae0b99e7b061b732362cedcee0ad6a83`.
+All payloads and native metadata matched a fresh source scan. Only its exact `target/debug`
+children other than the authoritative `aep` executable were retired; the executable remains
+SHA256 `a86179e2100bb20dd6e7e66b4d2798d6053dbc5c0f6fc765c5eff5747e8c723f`.
+All AEP source, planning, other evidence and the managed tree remain intact. The archive operation
+took 417.207951954 seconds and measured 24,666,288,128 free bytes immediately afterward;
+the later dispatch measurement is the current resource observation.
