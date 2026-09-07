@@ -16,8 +16,10 @@ scope:
 - confidence: cited
   path: website/docs/concepts/ess.md
 - confidence: cited
+  path: website/docs/guides/record-realization.md
+- confidence: cited
   path: website/docs/guides/write-a-specification.md
-revision: 9
+revision: 11
 ---
 ## Finding and source
 
@@ -41,7 +43,7 @@ Run package-scoped checks while implementing; the integration coordinator runs e
 
 No crate rename, universal component registry or semantic/infra merger. Persisted API changes need their own design and migration, not a terminology edit.
 
-## Scope
+## Previous scope (retained)
 
 Derived 2026-09-07 by `story-scoper` against ESS `bab9206e7f02cbf9519c92f8c7712606e086caee` — cited.
 
@@ -72,3 +74,38 @@ Multiple physical entrypoint descriptions do not establish simultaneous CLI-and-
 reach or synthesis. Terminology and explicit interface-ownership wording still require the
 binding document; no model migration, new type, implemented glossary or next-wave selection
 is established by this scope refresh.
+
+
+## Scope
+
+Derived 2026-09-07 by `aep-drive:story-scoper` 0.8.0 against ESS dbe78c5b15df478ec2cd4883c67d0012cdf90e17 — cited.
+
+- **Primary public reference:** `website/docs/concepts/ess.md` — cited; name each logical, interface and delivery owner, correct topology's deployable-grouping description, and state bounded example dispositions.
+- **Authoring explanation:** `website/docs/guides/write-a-specification.md` — cited; correct the two-value reach explanation, describe the existing model-owned CLI contract, and link the ownership reference.
+- **Realization explanation:** `website/docs/guides/record-realization.md` — cited; qualify lines 8–11 so physical invocation and attachment choices are distinguished from reach and CLI layout already owned by the authored/compiled model.
+- **Binding document:** `docs/design/review-concept-boundaries.md` — inferred; reserved by the story but absent at the frozen subject. Record the terminology, interface-ownership statement and supported limitations before implementation.
+- **Read-only evidence:** existing model, compiler, composition, realization, deployment and interface-emission owners, together with the unchanged CLI, HTTP, composition and delivery examples — cited.
+- **Implementation boundary:** documentation of existing contracts; preserve Rust names, persisted formats, model ownership and executor behavior. Multiple realization entrypoints must not imply simultaneous CLI-and-HTTP semantic reach or synthesis — cited.
+- **Confidence:** high — cited; exact public statements and their owning code establish the four documentation surfaces. Preferred labels and binding acceptance remain candidate decisions.
+- **Would collide with:** edits to the three named public pages or the reserved concept-boundaries design — cited.
+
+## Cache-integrated scope refresh
+
+The independent report at
+`target/review-boundaries-12/preparation/glossary-scope-refresh/report.md` is SHA256
+`45974a2d7c601baf1d01324c17f0aed8a528b0a6494534756d16f1bd51cb16fa`.
+Root verified all 32 frozen `dbe78c5b15df478ec2cd4883c67d0012cdf90e17` repository blobs and
+five local inputs. Thirty original repository blobs are unchanged; this story's scope record
+and the component-delivery cache explanation are the only two differences. Neither changes
+the term owners or example limitations.
+
+The earlier three-file reservation was incomplete: `record-realization.md:8–11` broadly says
+interface choices stay outside the system model. Root confirms the scoper's source citations:
+`RawComponentSpec` owns reach/CLI declarations, compiled components serialize them into the
+model identity, while realization separately describes physical invocation, attachment and
+support. Add that existing public guide as a cited fourth reservation. Keep the opening
+scope above so the correction is visible. This does not expand into a new model capability.
+
+Binding acceptance and wave selection remain pending. The preferred-label candidate needs its
+public-page reservation and exact delivery checks updated to include all three public pages;
+no source implementation or executed tests are claimed by this preparation.
