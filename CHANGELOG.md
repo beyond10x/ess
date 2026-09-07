@@ -23,6 +23,16 @@
   Generated schema bytes remain unchanged; syntax admission, system semantics and
   restricted TypeScript projection have distinct documented boundaries.
 
+### Fixed
+
+- The model reference and specification/realization guides distinguish logical
+  components, interface contracts and delivery metadata, including the current
+  single-reach limit and the separate model and realization digest boundaries.
+- Release-bundle and Helm cache hits now verify the requested original OCI manifest
+  and every referenced blob's size and digest. Legacy cache entries trigger cold
+  acquisition, corrupt proof entries refuse, and Helm consumes a private verified
+  chart snapshot. Cold fetches have bounded reads and one shared deadline.
+
 ## [0.20.0] — 2026-09-06
 
 ### Added
