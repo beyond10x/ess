@@ -1,6 +1,6 @@
 //! Explicit coverage acquisition and selection; legacy command paths keep their own defaults.
 use super::{Format, SpecPath, SuiteTarget};
-use anyhow::{bail, Context, Result};
+use anyhow::{bail, Result};
 use ess_compiler::EssIr;
 use ess_conformance::{
     coverage::{AdmittedInput, Origins, Scope},
@@ -14,66 +14,12 @@ use std::{
 };
 
 pub(super) fn sources(path: Option<&Path>) -> Result<Vec<CoverageSource>> {
-    let Some(path) = path else {
-        return Ok(Vec::new());
-    };
-    let metadata =
-        fs::symlink_metadata(path).with_context(|| format!("reading {}", path.display()))?;
-    if metadata.file_type().is_symlink() {
-        bail!("coverage authored root/file is a symlink");
-    }
-    let (root, mut files) = if metadata.is_file() {
-        (
-            path.parent().unwrap_or(Path::new(".")),
-            vec![path.to_path_buf()],
-        )
-    } else if metadata.is_dir() {
-        let files = fs::read_dir(path)?
-            .map(|entry| entry.map(|e| e.path()))
-            .collect::<std::io::Result<Vec<_>>>()?
-            .into_iter()
-            .filter(|p| p.extension().is_some_and(|e| e == "yaml" || e == "yml"))
-            .collect::<Vec<_>>();
-        if files.is_empty() {
-            bail!("refused --scenarios: no .yaml or .yml scenario files found directly in this directory; subdirectories are not searched");
-        }
-        (path, files)
-    } else {
-        bail!("coverage authored input must be a regular file or directory");
-    };
-    let root = if root.as_os_str().is_empty() {
-        Path::new(".")
-    } else {
-        root
-    };
-    if fs::symlink_metadata(root)?.file_type().is_symlink() {
-        bail!("coverage authored root is a symlink");
-    }
-    files.sort();
-    files
-        .iter()
-        .map(|file| {
-            let metadata = fs::symlink_metadata(file)?;
-            if !metadata.is_file() || metadata.file_type().is_symlink() {
-                bail!(
-                    "coverage authored input is not a regular non-symlink file: {}",
-                    file.display()
-                );
-            }
-            let identity = file.strip_prefix(root).or_else(|_| {
-                file.file_name()
-                    .map(Path::new)
-                    .ok_or_else(|| anyhow::anyhow!("missing file name"))
-            })?;
-            let identity = identity
-                .to_str()
-                .context("authored identity is not UTF-8")?;
-            let text =
-                fs::read_to_string(file).with_context(|| format!("reading {}", file.display()))?;
-            Ok(CoverageSource::new(identity, text)?)
-        })
+    crate::input_discovery::authored(path, true)?
+        .into_iter()
+        .map(|input| Ok(CoverageSource::new(input.identity, input.text)?))
         .collect()
 }
+
 pub(super) fn fresh(
     ir: &EssIr,
     path: Option<&Path>,

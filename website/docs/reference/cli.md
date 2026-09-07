@@ -37,6 +37,30 @@ verb's options beside the area's subcommands, and the two cannot be written toge
 `ess generate --path PATH synthesize` names a specification for a verb that takes one and is
 refused with exit 2 rather than run against the current directory.
 
+## Directory input selection
+
+This optional manifest capability is available in current source and is unreleased.
+An explicitly supplied directory may opt into [the `ess-inputs/1` configuration](formats.md#directory-input-configuration)
+through its immediate `ess-inputs.yaml`. No new flag, ancestor search or implicit scenarios are
+introduced. Model arguments select `specification`; `--scenarios` selects `scenarios`. Both lists are
+structurally checked, and only the active list's files are opened in sorted relative-identity order.
+
+This model loader is shared by validate/compile/inspect/graph, composition service paths,
+realization `--spec`, runtime `--system`, generation/projection/synthesis, `types --path`, normalization
+`--model`, both diff/impact revisions, fresh conformance, observed-bindings `--spec`, and qualified
+release `--spec`. Authored synthesize IR/Go, author, web and fresh run use the same exact scenario
+selection for suite/4 and suite/5, with unchanged flat aliases and presentation choices.
+
+Omitted scenarios select nothing. Explicit files bypass directory configuration. Without a manifest,
+model directories retain recursive YAML discovery and immediate `system.yaml`; scenario directories
+retain shallow YAML discovery. Malformed configuration refuses without fallback. Model-types and
+normalization retain their input/output containment checks. A manifest does not authorize writing
+generated type libraries into the selected input directory.
+
+Committed conformance run/select branches retain their bypass. OpenAPI `--ir`, BuildKit/Helm,
+infrastructure observation/intent and ordinary consistency-only release inputs keep their existing
+readers; they do not acquire authored specifications through this configuration.
+
 ## `ess specify` — a system, resolved
 
 | Command | Purpose |

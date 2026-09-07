@@ -30,6 +30,45 @@ A digest field identifies only the bytes its producer defines. Matching syntax d
 that two digest domains are interchangeable, that a report covers its exact suite, or that a remote
 artifact has been fetched and verified.
 
+## Directory input configuration
+
+This format is available in current source and is unreleased.
+`ess-inputs.yaml` declares one `format: ess-inputs/1` document with exactly three required fields:
+`format`, `specification` and `scenarios`. The latter two are lists of strings. Nulls, wrong types,
+unknown fields, duplicate mapping keys, multiple YAML documents and other format versions refuse.
+This is optional immediate-directory acquisition configuration, not an authored ESS fragment or a
+persisted IR. Pass its containing directory; passing the file itself keeps ordinary direct-file
+reader behavior. [Reader][input-discovery].
+
+Each path is a nonempty UTF-8 identity relative to that root. Split on `/`: empty, `.` and `..`
+segments refuse, as do backslashes, colons and control characters. Case and Unicode are preserved;
+`*` is a literal filename character. Duplicates within either list and the same spelling across
+roles refuse. There are no globs, includes, remote expansion or inherited configuration.
+
+Only the active role resolves filesystem entries. Its list must be nonempty. The root, manifest,
+selected files and intermediate directories below that root must not be symlinks; selected inputs
+must be regular files whose canonical targets stay inside the root and are not repeated. Inactive
+paths receive structural checks only and may name missing files. Unlisted files are not enumerated,
+inspected or read. Distinct copied or hardlinked files retain separate identities and can trigger
+existing semantic duplicate refusals.
+
+Selected original UTF-8 text is retained without newline conversion. Entries are read in sorted
+identity order. Model Source/SourceMap and suite/5 source identities are the listed relative paths;
+suite/4 keeps a readable joined origin label. The manifest has no canonical writer or raw-file
+hash contract and is not added to EssIr, suite provenance or suite/5 authored sources. Source-byte
+and semantic digests keep their existing, separate meanings.
+
+An invalid reserved filename refuses without legacy fallback. Rename an older ESS fragment named
+`ess-inputs.yaml` or adopt this configuration. Older readers do not understand this format and
+refuse it; some old conformance semantic-refusal paths can retain incomplete diagnostic outputs.
+Supported legacy direct-file, recursive-model and shallow-scenario layouts remain available when
+configuration is absent. Manifest selection does not infer generation, authorship or ownership.
+
+The named ESS model describes the closed fields, singleton format enum, lists and string values.
+Its projection does not enforce complete path grammar, cross-list uniqueness, active-role cardinality,
+filesystem facts, deterministic acquisition or exact source-byte custody. The CLI reader owns those
+checks; declaration validation alone is not discovery evidence.
+
 ## Specifications and implementation plans
 
 “Closed DTO” below means unknown fields are refused. The named compile or validation step still
@@ -366,3 +405,5 @@ A format catalog alone does not establish an installed external consumer upgrade
 [count-report]: https://github.com/beyond10x/ess/blob/main/crates/verify/ess-conformance/src/counts.rs
 [coverage]: https://github.com/beyond10x/ess/blob/main/crates/verify/ess-conformance/src/coverage.rs
 [coverage-replay]: https://github.com/beyond10x/ess/blob/main/crates/verify/ess-conformance/src/web_replay.rs
+
+[input-discovery]: https://github.com/beyond10x/ess/blob/main/crates/edge/ess-cli/src/input_discovery.rs

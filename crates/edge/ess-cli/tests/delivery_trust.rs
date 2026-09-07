@@ -2057,3 +2057,103 @@ fn adversary2_post_admission_model_and_deployment_replacement_keeps_owned_contex
         );
     }
 }
+
+#[test]
+fn discovery_manifest_qualifies_all_release_model_callers_and_stops_before_oras() {
+    let f = Fixture::new();
+    let paths = [
+        "system.yaml",
+        "components.yaml",
+        "domains/order.yaml",
+        "domains/dispatch.yaml",
+    ];
+    for path in paths {
+        f.write(
+            &format!("model/selected/{path}"),
+            fs::read(f.root.join("model").join(path)).unwrap(),
+        );
+    }
+    f.write("model/ess-inputs.yaml",serde_json::to_vec(&json!({"format":"ess-inputs/1","specification":paths.map(|p|format!("selected/{p}")),"scenarios":["unopened/scenario"]})).unwrap());
+    // Poisoned unlisted copies would make a recursive walk fail or duplicate declarations.
+    f.write("model/generated.yaml", "[invalid");
+    for route in ["check-conformance", "publish-conformance", "publish"] {
+        for flat in [false, true] {
+            let original = f.qualify(route, false);
+            let mut c = f.command();
+            let args = original.get_args().collect::<Vec<_>>();
+            c.args(if flat { &args[1..] } else { &args });
+            success(&adversary2_record(
+                &f,
+                &format!("discovery-{route}-{flat}"),
+                &mut c,
+            ));
+        }
+    }
+    let calls = f.calls().len();
+    f.write(
+        "model/ess-inputs.yaml",
+        br#"{"format":"ess-inputs/1","specification":["absent"],"scenarios":[]}"#,
+    );
+    for route in ["check-conformance", "publish-conformance", "publish"] {
+        let out = adversary2_record(
+            &f,
+            &format!("discovery-refused-{route}"),
+            &mut f.qualify(route, false),
+        );
+        assert_eq!(out.status.code(), Some(1));
+        assert!(String::from_utf8_lossy(&out.stderr).contains("ess-inputs.yaml"));
+        assert!(out.stdout.is_empty());
+        assert_eq!(f.calls().len(), calls);
+    }
+}
+
+#[test]
+fn discovery_runtime_system_acquires_manifest_before_realization_and_output() {
+    let f = Fixture::new();
+    let paths = [
+        "system.yaml",
+        "components.yaml",
+        "domains/order.yaml",
+        "domains/dispatch.yaml",
+    ];
+    for path in paths {
+        f.write(
+            &format!("selected/{path}"),
+            fs::read(f.root.join("model").join(path)).unwrap(),
+        );
+    }
+    f.write(
+        "selected/ess-inputs.yaml",
+        serde_json::to_vec(&json!({"format":"ess-inputs/1","specification":paths,"scenarios":[]}))
+            .unwrap(),
+    );
+    f.write("runtime-input.json",serde_json::to_vec(&json!({"format":"ess-runtime/1","runtime":"discovery","semantic_digest":format!("sha256:{}",model().source_digest()),"realization_digest":format!("sha256:{}","0".repeat(64)),"build_digest":f.bundle.build.digest(),"processes":[],"containers":[],"workloads":[]})).unwrap());
+    for flat in [false, true] {
+        let mut c = f.command();
+        if !flat {
+            c.arg("specify");
+        }
+        c.args([
+            "runtime",
+            "compile",
+            "--path",
+            "runtime-input.json",
+            "--system",
+            "selected",
+            "--realization",
+            "intentionally-missing-realization.json",
+            "--build-ir",
+            "build.json",
+            "--out",
+            "must-not-exist.json",
+        ]);
+        let out = adversary2_record(&f, &format!("discovery-runtime-{flat}"), &mut c);
+        assert_eq!(out.status.code(), Some(1));
+        let text = String::from_utf8_lossy(&out.stderr);
+        assert!(
+            text.contains("reading intentionally-missing-realization.json"),
+            "{out:?}"
+        );
+        assert!(!f.root.join("must-not-exist.json").exists());
+    }
+}

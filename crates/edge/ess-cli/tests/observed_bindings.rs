@@ -327,3 +327,93 @@ fn live_output_in_a_checkout_is_refused_before_collection() {
         .contains("outside Git"));
     assert!(!output_path.exists());
 }
+
+#[test]
+fn discovery_manifest_model_preserves_offline_binding_results_and_refuses_before_collection() {
+    // Preserve this new fixture and its exact process records for the acquisition boundary.
+    let fixture = std::mem::ManuallyDrop::new(Fixture::new());
+    let model = fixture.dir.join("selected-model");
+    std::fs::create_dir_all(model.join("model/domains")).unwrap();
+    let files = [
+        "system.yaml",
+        "components.yaml",
+        "domains/invoice.yaml",
+        "domains/email.yaml",
+        "topology.yaml",
+    ];
+    for file in files {
+        std::fs::copy(
+            root().join("examples/billing").join(file),
+            model.join("model").join(file),
+        )
+        .unwrap();
+    }
+    write(
+        &model.join("ess-inputs.yaml"),
+        &json!({"format":"ess-inputs/1","specification":files.map(|p|format!("model/{p}")),"scenarios":["missing-inactive"]}),
+    );
+    let (baseline, _) = fixture.run();
+    let mut command = ess();
+    command
+        .args(["verify", "bindings", "--spec"])
+        .arg(&model)
+        .arg("--realization")
+        .arg(fixture.dir.join("realization.json"))
+        .arg("--bindings")
+        .arg(fixture.dir.join("bindings.json"))
+        .arg("--infra")
+        .arg(fixture.dir.join("observation.json"))
+        .args(["--format", "json"]);
+    let run = |label: &str, command: &mut Command| {
+        std::fs::write(
+            fixture.dir.join(format!("{label}.command")),
+            format!("{command:?}\n"),
+        )
+        .unwrap();
+        let start = std::time::Instant::now();
+        command
+            .stdout(std::process::Stdio::piped())
+            .stderr(std::process::Stdio::piped());
+        let child = command.spawn().unwrap();
+        let pid = child.id();
+        let out = child.wait_with_output().unwrap();
+        let elapsed = start.elapsed().as_secs_f64();
+        std::fs::write(fixture.dir.join(format!("{label}.stdout")), &out.stdout).unwrap();
+        std::fs::write(fixture.dir.join(format!("{label}.stderr")), &out.stderr).unwrap();
+        write(
+            &fixture.dir.join(format!("{label}.status.json")),
+            &json!({"pid":pid,"exit":out.status.code(),"seconds":elapsed}),
+        );
+        out
+    };
+    let actual = run("discovery-offline", &mut command);
+    assert!(actual.status.success(), "{actual:?}");
+    assert_eq!(actual.stdout, baseline.stdout);
+    write(
+        &model.join("ess-inputs.yaml"),
+        &json!({"format":"ess-inputs/1","specification":["absent"],"scenarios":[]}),
+    );
+    let sentinel = fixture.dir.join("refused-report.json");
+    std::fs::write(&sentinel, "owned").unwrap();
+    let mut live = ess();
+    live.args(["verify", "bindings", "--spec"])
+        .arg(&model)
+        .arg("--realization")
+        .arg(fixture.dir.join("realization.json"))
+        .arg("--bindings")
+        .arg(fixture.dir.join("bindings.json"))
+        .args(["--live", "--format", "json", "--markdown-out"])
+        .arg(&sentinel)
+        .arg("--observation-out")
+        .arg(fixture.dir.join("no-observation.json"))
+        .env("PATH", fixture.dir.join("no-executables"));
+    let refused = run("discovery-before-live", &mut live);
+    assert!(!refused.status.success());
+    let text = String::from_utf8_lossy(&refused.stdout);
+    assert!(
+        text.contains("ess-inputs.yaml") && text.contains("absent"),
+        "{refused:?}"
+    );
+    assert!(!text.contains("starting kubectl"));
+    assert_eq!(std::fs::read_to_string(sentinel).unwrap(), "owned");
+}

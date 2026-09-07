@@ -1,14 +1,11 @@
 //! Filesystem loading for ESS specifications and infrastructure observations.
 
-use std::collections::BTreeSet;
 use std::fs;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 
 use anyhow::{bail, Context, Result};
 use ess_compiler::source::SourceMap;
 use ess_compiler::{Diagnostics, EssIr};
-
-const SPECIFICATION_HEADER: &str = "system.yaml";
 
 /// A loaded specification or every accumulated diagnostic.
 pub(crate) enum LoadedSpec {
@@ -22,67 +19,18 @@ pub(crate) enum LoadedSpec {
     },
 }
 
-fn specification_files(path: &Path) -> Result<Vec<PathBuf>> {
-    if path.is_file() {
-        return Ok(vec![path.to_path_buf()]);
-    }
-    if !path.join(SPECIFICATION_HEADER).is_file() {
-        bail!(
-            "{} is not an ESS specification: a directory must contain `{SPECIFICATION_HEADER}`",
-            path.display()
-        );
-    }
-
-    let mut files = Vec::new();
-    let mut visited = BTreeSet::new();
-    let mut pending = vec![path.to_path_buf()];
-    while let Some(directory) = pending.pop() {
-        let identity = directory
-            .canonicalize()
-            .with_context(|| format!("resolving {}", directory.display()))?;
-        if !visited.insert(identity) {
-            continue;
-        }
-        for entry in
-            fs::read_dir(&directory).with_context(|| format!("reading {}", directory.display()))?
-        {
-            let entry = entry.with_context(|| format!("reading {}", directory.display()))?;
-            let child = entry.path();
-            if child.is_dir() {
-                pending.push(child);
-            } else if child
-                .extension()
-                .is_some_and(|extension| extension == "yaml" || extension == "yml")
-            {
-                files.push(child);
-            }
-        }
-    }
-    files.sort();
-    Ok(files)
-}
-
 /// Parses, assembles, validates, and resolves a specification.
 pub(crate) fn specification(path: &Path) -> Result<LoadedSpec> {
-    let root = path
-        .canonicalize()
-        .with_context(|| format!("resolving {}", path.display()))?;
-    let files = specification_files(&root)?;
-    let files_read = files.len();
-    let base = if root.is_file() {
-        root.parent().unwrap_or(root.as_path())
-    } else {
-        root.as_path()
-    };
+    let inputs =
+        crate::input_discovery::acquire(path, crate::input_discovery::Kind::Specification)?;
+    let files_read = inputs.len();
 
     let mut parsed = Vec::new();
     let mut texts = SourceMap::new();
     let mut problems = Vec::new();
-    for file in files {
-        let relative = file.strip_prefix(base).unwrap_or(file.as_path());
-        let source = ess_domain::system::Source::new(relative.display().to_string());
-        let text =
-            fs::read_to_string(&file).with_context(|| format!("reading {}", file.display()))?;
+    for input in inputs {
+        let source = ess_domain::system::Source::new(input.identity);
+        let text = input.text;
         texts.insert(source.as_str(), text.as_str());
         match ess_domain::spec::RawSpecFile::parse(&text) {
             Ok(raw) => parsed.push((source, raw)),
