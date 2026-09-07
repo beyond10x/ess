@@ -79,11 +79,20 @@ therefore cannot be part of the offline gate. `.github/workflows/pages.yml` pres
 Rust/WASM, browser-lab and site-build checks without Pages authority; the unified Website publishes
 the collected source and the Atlas-generated façade owns the project redirect.
 
-Cutting a release pushes a tag, and the release workflow gates the tag only after it exists. Run
-`task check` and `task site-build` on the commit being tagged before pushing the tag: 0.5.0 was
-tagged eleven minutes after `task site-build` had already gone red on `main`, its release was never
-published, and no workflow can withdraw a tag here. After cutting a release, and after any release
-run that fails:
+Before pushing a release tag, run `task check` and `task site-lab` on the commit being tagged.
+The release workflow runs the reusable gate, WASM/browser-lab correctness checks and native
+packaging concurrently at that exact commit, then publishes only after all succeed. Site rendering
+remains a documentation-validation gate; ordinary source releases do not wait for it. New GitHub
+Releases stay draft until all archives and checksums are uploaded.
+
+Release completion means the exact tag, required release checks, published GitHub Release and
+required assets are verified. A pushed tag awaiting those checks is queued. Atlas observes release
+facts and publishes documentation asynchronously: do not wait for Website or Atlas, update Website
+locks or snapshots, promote consumer pins, release the shared docs runtime or redeploy façades as
+part of releasing ESS. Report documentation as pending unless publication was verified. A failure
+in that background work does not undo a successful ESS release.
+
+After cutting a release, and after any release run that fails:
 
 ```console
 task release-status

@@ -484,6 +484,7 @@ dependencies = [
  "ess-gen",
  "schemars",
  "serde_json",
+ "serde_yaml",
 ]
 
 [[package]]
