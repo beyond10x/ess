@@ -25,6 +25,9 @@
 
 ### Fixed
 
+- Public capability documentation now distinguishes current source from the separately
+  observed release, describes the actual site output and four synthesis targets, and
+  checks the maintained support table against real CLI and projection outputs offline.
 - The model reference and specification/realization guides distinguish logical
   components, interface contracts and delivery metadata, including the current
   single-reach limit and the separate model and realization digest boundaries.

@@ -1,7 +1,7 @@
 ---
 title: Synthesize code from a specification
 sidebar_position: 7
-description: The synthesis plan, the three emitters behind it, obligations as the contract with the human, and how the generated code is proven against the generated suite.
+description: The synthesis plan, the four targets behind it, obligations as the contract with the human, and how the generated code is proven against the generated suite.
 ---
 
 # Synthesize code from a specification
@@ -15,7 +15,7 @@ implements.
 $ ess generate synthesize --path examples/billing --target rust --out out/
 ```
 
-`--target` is `rust`, `go` or `web`; `--out` writes the tree, and without it the artifacts are
+`--target` is `rust`, `go`, `web` or `clap`; `--out` writes the tree, and without it the artifacts are
 listed instead of written, for the same reason `ess generate` behaves that way — a verb
 that scatters files over a working tree the first time someone tries it is a verb nobody tries
 twice.
@@ -45,9 +45,9 @@ A refusal reads the same way and says what it cannot state: *"actor grants
 carry"*.
 
 The plan is rendered as `PLAN.md` and `plan.json` in every emitted tree, and it is
-**byte-identical across all three targets** — the same 48/36/8/4 summary and the same `plan.json`
-digest come back from `--target rust`, `--target go` and `--target web`. Choosing an emitter never
-changes the plan, only what is made of it.
+**language-neutral**. The existing Rust, Go and Web billing example produces the same 48/36/8/4
+summary and `plan.json` digest. Clap also carries the plan and reports its grammar-specific
+weakenings separately; command behavior remains a handler obligation.
 
 What a target holds more weakly or cannot represent at all is declared in a `TARGET.md` beside the
 plan — a named weakening, never a silent downgrade. The Rust target is the one the others are
@@ -58,16 +58,26 @@ own `unsafe_code` lint flags one. The file says so, states that the crate contai
 block, no `unsafe fn` and no raw-pointer dereference, and a test asserts the property the lint
 would have closed. What is lost is the compiler closing the question, not the property.
 
-## The three emitters
+## The four targets
 
 | Target | Emits | Dependencies |
 |---|---|---|
 | `rust` | a cargo workspace: semantic types, typestate lifecycles, component ports, one HTTP transport | none |
 | `go` | a Go module with the same system | standard library only |
 | `web` | a WebAssembly bridge over the Rust target plus a page built at load time from an emitted `catalog.json` — no model is typed into its HTML | no build tool, no `wasm-bindgen` |
+| `clap` | a command tree, shell completion support and a dispatcher with `Handler` seams for components declaring command-line reach and a CLI grammar | `clap` and `clap_complete` 4 |
 
-The zero-dependency constraint is deliberate: generated code that pulls third-party crates makes
-every downstream build reach the network and inherit someone's version policy.
+Clap emits grammar rather than another type layer. Its handlers receive `clap::ArgMatches`; the
+unimplemented handler names the obligation and refuses. The generated dependencies support parsing
+and completion, so the Rust target's zero-dependency boundary does not apply to Clap. See the
+[Clap emitter](https://github.com/beyond10x/ess/blob/main/crates/generate/ess-synth/src/clap/mod.rs)
+and [handler/completion tests](https://github.com/beyond10x/ess/blob/main/crates/generate/ess-synth/tests/clap.rs).
+
+All four full synthesis targets refuse unsupported modeled Binary64, as covered by the
+[feasibility tests](https://github.com/beyond10x/ess/blob/main/crates/generate/ess-synth/tests/feasibility.rs).
+This boundary is separate from the [structural data libraries](../reference/cli.md#adopter-owned-schema-contracts).
+The [support matrix](../status/where-this-stands.md#support-boundaries) records current-source target
+availability independently of the dated release observation.
 
 `examples/gatepass/` is emitted to Rust and Go and deliberately not to the browser: it is a
 component whose own words say its callers are not deployed with it, and a surface reached over a

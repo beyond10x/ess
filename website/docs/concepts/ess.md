@@ -125,11 +125,11 @@ desired workload mapping.
 ## The pipeline
 
 ```text
-source ──validate──► consistent?  ──compile──► normalized IR ──┬─► generate   docs, site source, JSON Schema, OpenAPI, AsyncAPI
+source ──validate──► consistent?  ──compile──► normalized IR ──┬─► generate   docs, HTML site, JSON Schema, OpenAPI, AsyncAPI
                                                                ├─► conform    scenario suite → runner → evidence
                                                                ├─► diff       semantic delta between two revisions
                                                                ├─► impact     what the delta invalidates
-                                                               └─► synthesize language-neutral plan → Rust / Go / browser code
+                                                               └─► synthesize language-neutral plan → Rust / Go / browser / Clap code
 ```
 
 `validate` answers "is this document consistent" and reports every problem in one run. `compile`
@@ -143,7 +143,7 @@ Everything downstream consumes the IR, and compiling the same source twice is by
 | Kind | Output | Why it exists |
 |---|---|---|
 | `docs` | Markdown with Mermaid diagrams | the cheapest completeness check: a construct with no rendering is a hole in a page a person reads |
-| `site` | the same Markdown with frontmatter and a deterministic sidebar | hand static-site generators model-derived pages without making ESS own presentation |
+| `site` | HTML pages, navigation, a local stylesheet and Mermaid assets | browse model-derived pages and explicitly selected authored pages/downloads; hosting remains external |
 | `schema` | JSON Schema for command inputs, messages, named types, and entities | the type system, projected without losing its distinctions — newtypes stay separate definitions |
 | `openapi` | one OpenAPI 3.1 document per component | the specification *is* the HTTP contract |
 | `asyncapi` | one AsyncAPI 3.0 document per component | the same for messaging, including what happens when a binding fails |
@@ -155,8 +155,14 @@ output side by side.
 
 The arrow is one-way: the typed ESS YAML is the specification, and the documentation is one
 projection of it. ESS does not infer model semantics from an existing Markdown document. The
-`site` projection, introduced in `0.4.0`, also stops at static-site-ready Markdown and sidebar data;
-it deliberately emits no HTML, theme, or hosted site.
+`site` projection renders HTML. Explicit `--kind site --out DIR` writes `index.html` and local
+assets at that output root; combined generation puts them under `DIR/site/`. The adjacent
+`README.md`, when present, supplies the default front page; `--front-page` overrides it. Additional
+authored pages and downloads require explicit selection, and hosting remains external. The
+five default projections above exclude the opt-in `--kind docs-ir`, which writes
+`docs-ir/document.json` carrying `ess-docs/1`.
+See the [current-source support matrix](../status/where-this-stands.md#support-boundaries) for output
+checks and the separate dated release observation.
 
 ### The conformance suite (`ess verify conform`)
 
@@ -184,10 +190,12 @@ explains it. It narrows what a change owes; it never claims a result still holds
 
 A language-neutral **synthesis plan** gives every capability of the specification exactly one
 disposition: *generated*, *obligation* (a named piece of work a human must implement — every
-algorithm is one), or *refused* (with the reason). Three emitters render the plan — a
-zero-dependency Rust workspace, a standard-library-only Go module, and a WebAssembly browser
-bridge — and the plan is byte-identical across all three trees. What a target holds more weakly is
-declared in a `TARGET.md` beside the plan, never silently downgraded.
+algorithm is one), or *refused* (with the reason). Four targets render the plan: a Rust workspace,
+a Go module, a WebAssembly browser bridge, and a Clap command grammar with completion support and
+handler seams. The language-neutral plan travels with each tree; target-specific weakenings and
+refusals are recorded separately. Clap handlers receive `clap::ArgMatches`, and its generated crate
+depends on `clap` and `clap_complete` 4. Full synthesis refuses modeled Binary64 across all four
+targets; the separate structural data libraries have their own support boundary.
 
 Behaviour is **never** generated. The generated billing workspace, linked with the hand-written
 realization of its eight obligations, passes the committed 29-scenario suite unchanged — and a

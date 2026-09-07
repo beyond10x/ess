@@ -148,6 +148,13 @@ tasks:
       - npm --prefix website ci
       - npm --prefix website run build
 
+  support-check:
+    desc: Check the complete current-source support matrix against offline CLI output and metadata.
+    env:
+      CARGO_NET_OFFLINE: 'true'
+    cmds:
+      - cargo xtask support --check
+
   check:
     cmds:
       - task: fmt-check
@@ -156,5 +163,6 @@ tasks:
       - task: doc-check
       - task: example-check
       - task: projection-check
+      - task: support-check
       - task: release-check
       - task: action-check

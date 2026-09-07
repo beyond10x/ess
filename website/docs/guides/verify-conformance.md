@@ -30,6 +30,8 @@ $ ess verify conform run \
 ```
 
 The command executes the generated or committed scenarios against the selected reference target.
+The built-in choices are `billing` and `oracle-fixture`; a production adapter must establish its
+own execution boundary.
 The default standalone report is `ess-conformance-report/1`. Its historical `scenarios_failed`
 count includes every non-pass, including Go skips and Rust errors or unsupported results. Those
 legacy bytes and meanings remain unchanged.
@@ -89,6 +91,12 @@ packages keep their own runtime behavior until regenerated; upgrading the standa
 not update them.
 
 ## Opt into declared coverage
+
+The suite/5, original-byte carrier and paired replay features in this section are current-source
+changes after the [0.20.0 release observed on 7 September 2026](../status/where-this-stands.md).
+They remain unreleased relative to that record, even though the workspace still declares `0.20.0`.
+That release establishes the report/2 count surface described above, not these later coverage
+features. Use a source build containing them; the default suite/4 and report/1 paths remain unchanged.
 
 ```shell-session
 $ ess verify conform synthesize --path examples/billing \

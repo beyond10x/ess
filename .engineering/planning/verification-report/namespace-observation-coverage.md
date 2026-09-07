@@ -6,7 +6,7 @@ status: draft
 title: Verify scoped Kubernetes collection and retained coverage
 relations:
 - verifies: story:review-observation-completeness
-revision: 2
+revision: 3
 ---
 ## Verified implementation
 
@@ -56,3 +56,9 @@ The merge integrates main `9d84a425e3a0c052bb08975766c5dbd600d04ef0`. Source and
 The combined branch passed `task check` (194 test groups, 2,108 passed) and `task site-build`, both exit 0. Check-log SHA-256: `aa0d93330f7820450faee0d645c4fdeeb21366d9fc5a9ca9eca80ea483f3ca03`; site-log SHA-256: `8597e6e6b46825863ea4ce4a7f80260d5485869d8d5c2eb998fbdcb179384abd`. An earlier attempt stopped with ENOSPC while writing a native fixture log; disposable incremental build cache was freed and the complete gate rerun successfully. No source or test assertion was changed to address that environment failure.
 
 Workflow bytes remain identical to current main. The operator requested merging PR #12 on 2026-09-07. This record does not assert a release tag, binary publication or completed documentation delivery.
+
+## Final integration after concurrent documentation changes
+
+Main advanced during verification to `57e242e8a0eaa721968c3970099b4bc561cb91aa`. Integrating it changes the documentation/support checker and its public source, while the collector and all runtime library/CLI source trees remain unchanged from the previously tested integration. Native Git union again preserved all original journal records exactly and admitted only disjoint artifact additions; the resulting 195-artifact AEP store validates.
+
+The complete gate was repeated against this combined tree: `task check` exits 0 with 194 test groups and 2,125 passed tests, including the new support-matrix check. `task site-build` also exits 0. The original collector commit remains an ancestor so existing exact source pins retain their identity.
