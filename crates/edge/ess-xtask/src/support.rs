@@ -873,4 +873,60 @@ mod tests {
         document["format"] = serde_json::json!({"nested": "ess-docs/1"});
         assert!(json_marker(&document.to_string(), "/format").is_err());
     }
+
+    #[test]
+    fn adversary_front_page_override_replaces_adjacent_readme_for_a_specification_file() {
+        let root = crate::workspace_root().unwrap();
+        let fixture = adversary_fixture("front-page-override");
+        fs::write(
+            fixture.join("README.md"),
+            "# Read first\n\nADJACENT_README_DEFAULT\n",
+        )
+        .unwrap();
+        fs::write(
+            fixture.join("front.md"),
+            "# Replacement\n\nEXPLICIT_FRONT_OVERRIDE\n",
+        )
+        .unwrap();
+        let mut args: Vec<OsString> = ["generate", "--kind", "site", "--format", "json", "--path"]
+            .into_iter()
+            .map(Into::into)
+            .chain(std::iter::once(
+                fixture.join("system.yaml").into_os_string(),
+            ))
+            .collect();
+        fs::write(fixture.join("default-argv.txt"), format!("{args:?}\n")).unwrap();
+        let default_output = crate::cli_output(&root, &args).unwrap();
+        fs::write(fixture.join("default-stdout.json"), &default_output).unwrap();
+        let default_report: serde_json::Value = serde_json::from_slice(&default_output).unwrap();
+        let default_index = default_report["site/index.html"]["contents"]
+            .as_str()
+            .unwrap();
+        assert!(default_index.contains("ADJACENT_README_DEFAULT"));
+        assert!(!default_index.contains("EXPLICIT_FRONT_OVERRIDE"));
+
+        args.extend([
+            "--front-page".into(),
+            fixture.join("front.md").into_os_string(),
+        ]);
+        fs::write(fixture.join("override-argv.txt"), format!("{args:?}\n")).unwrap();
+        let override_output = crate::cli_output(&root, &args).unwrap();
+        fs::write(fixture.join("override-stdout.json"), &override_output).unwrap();
+        let override_report: serde_json::Value = serde_json::from_slice(&override_output).unwrap();
+        let override_index = override_report["site/index.html"]["contents"]
+            .as_str()
+            .unwrap();
+        assert!(override_index.contains("EXPLICIT_FRONT_OVERRIDE"));
+        assert!(!override_index.contains("ADJACENT_README_DEFAULT"));
+
+        *args.last_mut().unwrap() = fixture.join("missing.md").into_os_string();
+        let refused = crate::cli_output(&root, &args)
+            .expect_err("an absent explicit front page must not silently fall back to README");
+        fs::write(
+            fixture.join("missing-override-refusal.txt"),
+            format!("{refused:#}"),
+        )
+        .unwrap();
+        println!("specification-file path uses adjacent README by default, explicit front page replaces it, and an absent explicit front page refuses");
+    }
 }
