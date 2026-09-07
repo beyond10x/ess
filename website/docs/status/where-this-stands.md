@@ -40,7 +40,8 @@ Output and CLI metadata checks establish kinds, versions and availability; the l
 tests establish the bounded support and refusals. The offline `cargo xtask support --check` compares
 this complete maintained block. It does not verify remote release records.
 
-<!-- ess-source-support:begin -->
+[ess-source-support-begin]: #
+
 The source checkout’s workspace version is `0.20.0` and includes separately documented unreleased changes.
 
 | Capability | Current source | Limits and evidence |
@@ -65,7 +66,8 @@ The source checkout’s workspace version is `0.20.0` and includes separately do
 | Runtime compilation | Checks supplied identities, component coverage, replica bounds and stateful storage | Does not establish live provisioning or all resource requirements. [runtime checks/tests](https://github.com/beyond10x/ess/blob/main/crates/generate/ess-deployment/src/runtime.rs). |
 | Explicit executors | `execute`, `publish`, `fetch`, `reconcile` invoke external clients; reconciliation applies the affected set from supplied current/desired documents | Caller-supplied state and credentials remain material; no continuous control plane or automatic recovery proof. [CLI executor owner](https://github.com/beyond10x/ess/blob/main/crates/edge/ess-cli/src/main.rs). The support check invokes none of these verbs. |
 | Schema commands | `import-bundle`, `import-document`, `project-bundle`, `validate-bundle`, `types-bundle`, `normalize-check`, `normalize-run`, `normalize-generate`, `validate`, `typescript` | Current-source command inventory for import, validation, types and normalization; [CLI reference](../reference/cli.md#adopter-owned-schema-contracts) describes the selected operations. Availability is independent of the dated release record. |
-<!-- ess-source-support:end -->
+
+[ess-source-support-end]: #
 
 The CLI presents four areas: `specify`, `generate`, `verify`, and `infra`. Earlier flat spellings
 remain hidden aliases with the same accepted-command output and exit status.
