@@ -1,6 +1,7 @@
 //! The `ess` command: a deterministic shell over the ESS libraries and explicit adapters.
 
 mod coverage;
+mod input_discovery;
 mod load;
 mod model_types;
 mod normalize;
@@ -293,7 +294,7 @@ enum ImportCommand {
 
 #[derive(Debug, clap::Args)]
 struct SpecPath {
-    /// One ESS file or a directory containing `system.yaml`.
+    /// One ESS file, or a directory with `ess-inputs.yaml` or legacy `system.yaml`.
     #[arg(long, default_value = ".")]
     path: PathBuf,
     /// Output rendering.
@@ -303,7 +304,7 @@ struct SpecPath {
 
 #[derive(Debug, clap::Args)]
 struct SpecLocation {
-    /// One ESS file or a directory containing `system.yaml`.
+    /// One ESS file, or a directory with `ess-inputs.yaml` or legacy `system.yaml`.
     #[arg(long, default_value = ".")]
     path: PathBuf,
 }
@@ -427,9 +428,9 @@ enum ConformCommand {
         component: Option<String>,
         /// The `ess-scenario/1` documents to compile beside the generated scenarios.
         ///
-        /// A directory of `.yaml`/`.yml` files or one file. Directories are read directly, without
-        /// descending into subdirectories; an empty selection is refused. When omitted, no authored
-        /// scenarios are selected.
+        /// One file or a directory. Immediate `ess-inputs.yaml` selects its exact scenarios list.
+        /// Otherwise only immediate `.yaml`/`.yml` files are read; subdirectories are not searched.
+        /// An empty selection is refused. When omitted, no authored scenarios are selected.
         #[arg(long)]
         scenarios: Option<PathBuf>,
         /// Suite contract, with coverage inventory only when explicitly set to 5.
@@ -444,7 +445,7 @@ enum ConformCommand {
     Author {
         #[command(flatten)]
         input: SpecPath,
-        /// A directory of `ess-scenario/1` documents, or one file.
+        /// One scenario file, or a directory using `ess-inputs.yaml` or shallow `.yaml`/`.yml` selection.
         #[arg(long)]
         scenarios: Option<PathBuf>,
         /// Where to write the compiled `ess-conformance/4` suite.
@@ -467,7 +468,7 @@ enum ConformCommand {
     Web {
         #[command(flatten)]
         input: SpecPath,
-        /// A directory of `ess-scenario/1` documents, or one file.
+        /// One scenario file, or a directory using `ess-inputs.yaml` or shallow `.yaml`/`.yml` selection.
         #[arg(long)]
         scenarios: Option<PathBuf>,
         /// Where to write the player.
@@ -561,7 +562,7 @@ struct RealizationInput {
     /// An `ess-realization/1` or `/2` JSON or YAML document.
     #[arg(long)]
     path: PathBuf,
-    /// One ESS file or a directory containing `system.yaml`.
+    /// One ESS file, or a directory with `ess-inputs.yaml` or legacy `system.yaml`.
     #[arg(long = "spec")]
     specification: PathBuf,
     /// Output and diagnostic rendering.
@@ -2948,63 +2949,14 @@ fn author_suite(
     })
 }
 
-/// Every `ess-scenario/1` document a run should compile, in a deterministic order.
-///
-/// `--scenarios` names a directory or one file, and there is no default. That is deliberate rather
-/// than unfinished: `--path` names a **specification**, every walk of one in this workspace collects
-/// `*.yaml` from it, and a document that is not `ess/1` sitting inside would refuse the model
-/// everywhere it is read. So authored scenarios live outside the specification directory and are
-/// named, which also lets one set of them be compiled against two revisions of one model.
-///
-/// Sorted by path, because `read_dir` is not: two runs over one directory have to compile the same
-/// files in the same order, or a duplicate would be refused in one run and not the other.
+/// Adapt the acquired original sources to the legacy diagnostic-origin contract.
 fn authored_sources(scenarios: Option<&Path>) -> Result<Vec<ess_conformance::authored::Source>> {
-    let read = |path: &Path| -> Result<ess_conformance::authored::Source> {
-        let text =
-            fs::read_to_string(path).with_context(|| format!("reading {}", path.display()))?;
-        Ok(ess_conformance::authored::Source::new(
-            path.display().to_string(),
-            text,
-        ))
-    };
-    let directory = match scenarios {
-        None => return Ok(Vec::new()),
-        Some(path) if path.is_file() => return Ok(vec![read(path)?]),
-        Some(path) => path.to_path_buf(),
-    };
-    if !directory.is_dir() {
-        bail!("{} is not a directory of scenarios", directory.display());
-    }
-    let entries: Vec<PathBuf> = fs::read_dir(&directory)
-        .with_context(|| format!("reading {}", directory.display()))?
-        .collect::<std::io::Result<Vec<_>>>()?
+    Ok(input_discovery::authored(scenarios, false)?
         .into_iter()
-        .map(|entry| entry.path())
-        .collect();
-    let subdirectories = entries.iter().any(|path| path.is_dir());
-    let mut files: Vec<PathBuf> = entries
-        .into_iter()
-        .filter(|path| {
-            path.extension()
-                .is_some_and(|extension| extension == "yaml" || extension == "yml")
+        .map(|input| {
+            ess_conformance::authored::Source::new(input.origin.display().to_string(), input.text)
         })
-        .collect();
-    if files.is_empty() {
-        let hint = if subdirectories {
-            "subdirectories are present but are not searched; pass the intended child directory \
-             or scenario file with --scenarios"
-        } else {
-            "pass a directory containing scenario files directly, or one scenario file, with \
-             --scenarios"
-        };
-        bail!(
-            "refused --scenarios {}: no .yaml or .yml scenario files found directly in this \
-             directory; {hint}",
-            directory.display()
-        );
-    }
-    files.sort();
-    files.iter().map(|path| read(path)).collect()
+        .collect())
 }
 
 #[derive(serde::Serialize)]

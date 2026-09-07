@@ -20,6 +20,40 @@ $ ess verify conform synthesize \
 The suite is deterministic. Its provenance names the model and contract digests from which it was
 derived.
 
+## Select authored scenarios explicitly
+
+The manifest capability described here is available in current source and is unreleased.
+`--scenarios` accepts one file or one directory. An immediate `ess-inputs.yaml` in that directory
+selects its exact `scenarios` list, including explicitly listed nested files of any extension.
+The [mixed-layout example](write-a-specification.md#keep-sources-and-generated-output-together)
+can serve both roles:
+
+```shell-session
+$ ess verify conform author --path . --scenarios . --suite-format 5 --out output/authored.json
+```
+
+Without that immediate manifest, a directory selects only immediate lowercase `.yaml`/`.yml`
+entries; subdirectories are not searched. An explicit file bypasses extension filtering and parent
+configuration. An explicit empty selection refuses before outputs or execution. Omitted
+`--scenarios` selects no authored inputs, even if the model's manifest lists scenarios or the working
+directory contains `scenarios/`.
+
+The manifest validates both lists but opens only the active role. It rejects duplicate paths,
+paths shared by both roles, escaping paths and selected symlinks. Suite/4 legacy invocations retain
+their supported file/root links; manifest invocations require real contained files. Each listed
+document still reaches its existing semantic reader, including malformed or foreign documents.
+
+Suite/5 retains the exact listed relative identities and original source text. Relocating the root
+or reordering the lists preserves these bytes; changing LF to CRLF changes source evidence. Copies
+and hardlinks with distinct paths remain separate requested identities. The manifest itself adds
+no suite source entry or provenance digest. Coverage describes this explicit selection, not every
+scenario that might exist below the directory.
+
+Committed `run --suite` and `run --suite-input` retain their acquisition bypass and argument
+conflicts. Impact still loads both model revisions, and release qualification still loads its
+explicit model. Discovery refusals precede output or runner activity; existing document-level
+semantic refusals can still retain incomplete diagnostic evidence.
+
 ## Run a supported target
 
 ```shell-session

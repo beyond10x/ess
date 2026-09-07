@@ -39,6 +39,51 @@ Point your editor at `schemas/generated/ess.schema.json` and field names are che
 The schema is generated from the same Rust types the validator runs. The repository's authoritative
 offline gate is `task check`, which exercises the schema contract alongside the workspace.
 
+## Keep sources and generated output together
+
+Current source supports this configuration; it is unreleased. For a mixed directory, add an immediate
+`ess-inputs.yaml` and pass that directory:
+
+```yaml
+format: ess-inputs/1
+specification:
+  - model/system.yaml
+  - model/domains/invoice.yaml
+  - model/domains/email.yaml
+  - model/components.yaml
+  - model/topology.yaml
+scenarios:
+  - authored/routing/first.yaml
+  - authored/e2e/second.scenario
+```
+
+```text
+ess-inputs.yaml
+model/                  the five billing model files above
+authored/               the two explicitly listed scenario files
+generated/openapi/      unlisted generated YAML
+generated/asyncapi/     unlisted generated YAML
+output/                 unlisted compiler and runner output
+```
+
+`ess specify validate --path .` reads only the `specification` entries. Nested or renamed
+headers work, and headerless fragments retain their existing meaning. The selected files must
+still assemble into one valid specification. Unlisted generated files, including malformed YAML
+or copies of model fragments, are never scanned. List order does not affect selection.
+
+Both lists are required and checked for valid, distinct relative paths, even when one role is
+inactive. Only files in the active role must exist. An empty active list refuses. Paths are literal,
+case-sensitive UTF-8 identities: no empty or dot segments, backslashes, colons or control characters.
+The selected root, manifest, listed files and intermediate directories below the root must not be
+symlinks. Use real contained files. The manifest declares selection, not file ownership or authorship.
+
+Without an immediate manifest, existing recursive model discovery still requires `system.yaml`
+and reads every lowercase `.yaml`/`.yml` below the directory. Use a separate model input directory
+for that layout. An explicit file is always one source, independent of its extension; it never
+searches its parent for configuration. A malformed or unsupported `ess-inputs.yaml` refuses without
+falling back: rename a legacy source with that reserved filename or adopt this configuration.
+See the [complete input format](../reference/formats.md#directory-input-configuration).
+
 ## Validate early, read the refusals
 
 The unreleased `ess/2` format adds `Binary64` for finite IEEE-754 values. Use it

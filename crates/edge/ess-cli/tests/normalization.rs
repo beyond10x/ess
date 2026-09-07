@@ -878,3 +878,122 @@ fn stale_bundle_missing_source_and_unknown_dispatch_refuse() {
     fs::remove_file(fixture.0.join("output.bundle.json")).unwrap();
     assert!(!fixture.run("normalize-check", &[]).status.success());
 }
+
+#[test]
+fn discovery_manifest_normalization_callers_keep_model_pins_and_output_protection() {
+    let fixture = std::mem::ManuallyDrop::new(Fixture::new());
+    fs::create_dir(fixture.0.join("model")).unwrap();
+    fs::write(fixture.0.join("model/selected"), fixture_model::SOURCE).unwrap();
+    fs::write(fixture.0.join("model/ess-inputs.yaml"),r#"{"format":"ess-inputs/1","specification":["selected"],"scenarios":["missing-inactive"]}"#).unwrap();
+    let (_, recipe) = fixture_model::fixture();
+    fs::write(fixture.0.join("recipe.json"), recipe.to_string()).unwrap();
+    fs::write(
+        fixture.0.join("instance.json"),
+        r#"{"identifier":"x","seconds":3}"#,
+    )
+    .unwrap();
+    let invoke = |operation: &str, extra: &[&str]| discovery_invoke(&fixture, operation, extra);
+    let check = invoke("normalize-check", &[]);
+    assert!(check.status.success(), "{check:?}");
+    assert_eq!(
+        String::from_utf8(check.stdout).unwrap(),
+        fixture_model::plan().to_json()
+    );
+    let run = invoke(
+        "normalize-run",
+        &["--branch", "primary", "--input", "instance.json"],
+    );
+    assert!(run.status.success(), "{run:?}");
+    let generated = invoke(
+        "normalize-generate",
+        &[
+            "--target",
+            "rust",
+            "--package",
+            "discovery",
+            "--out",
+            "library",
+        ],
+    );
+    assert!(generated.status.success(), "{generated:?}");
+    for (operation, args) in [
+        ("normalize-check", vec!["--out", "model/recipe.json"]),
+        (
+            "normalize-run",
+            vec![
+                "--branch",
+                "primary",
+                "--input",
+                "instance.json",
+                "--out",
+                "model/result.json",
+            ],
+        ),
+        (
+            "normalize-generate",
+            vec![
+                "--target",
+                "rust",
+                "--package",
+                "discovery",
+                "--out",
+                "model/output",
+            ],
+        ),
+    ] {
+        let out = invoke(operation, &args);
+        assert!(!out.status.success());
+        assert!(
+            String::from_utf8_lossy(&out.stderr).contains("input"),
+            "{out:?}"
+        );
+    }
+    for name in ["model/recipe.json", "model/result.json", "model/output"] {
+        assert!(!fixture.0.join(name).exists());
+    }
+    fs::write(
+        fixture.0.join("model/ess-inputs.yaml"),
+        r#"{"format":"ess-inputs/1","specification":["absent"],"scenarios":[]}"#,
+    )
+    .unwrap();
+    let refused = invoke("normalize-check", &[]);
+    assert!(!refused.status.success());
+    assert!(String::from_utf8_lossy(&refused.stderr).contains("ess-inputs.yaml"));
+}
+
+fn discovery_invoke(fixture: &Fixture, operation: &str, extra: &[&str]) -> Output {
+    static NEXT: AtomicUsize = AtomicUsize::new(0);
+
+    let mut c = Command::new(env!("CARGO_BIN_EXE_ess"));
+    c.current_dir(&fixture.0)
+        .args([
+            "generate",
+            "schema",
+            operation,
+            "--recipe",
+            "recipe.json",
+            "--model",
+            "model",
+        ])
+        .args(extra);
+    let prefix = fixture.0.join(format!(
+        "discovery-{}",
+        NEXT.fetch_add(1, Ordering::Relaxed)
+    ));
+    fs::write(prefix.with_extension("command"), format!("{c:?}\n")).unwrap();
+    let start = std::time::Instant::now();
+    c.stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped());
+    let child = c.spawn().unwrap();
+    let pid = child.id();
+    let output = child.wait_with_output().unwrap();
+    let seconds = start.elapsed().as_secs_f64();
+    fs::write(prefix.with_extension("stdout"), &output.stdout).unwrap();
+    fs::write(prefix.with_extension("stderr"), &output.stderr).unwrap();
+    fs::write(
+        prefix.with_extension("status.json"),
+        json!({"pid":pid,"exit":output.status.code(),"seconds":seconds}).to_string(),
+    )
+    .unwrap();
+    output
+}

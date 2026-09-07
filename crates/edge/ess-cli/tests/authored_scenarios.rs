@@ -421,3 +421,6 @@ fn synthesize_help_describes_explicit_shallow_selection_without_a_default() {
     assert!(help.contains("no authored scenarios"), "{help}");
     assert!(help.contains("subdirectories"), "{help}");
 }
+
+#[path = "support/input_discovery_cases.rs"]
+mod input_discovery;
