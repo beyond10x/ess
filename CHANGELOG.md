@@ -25,6 +25,10 @@
 
 ### Fixed
 
+- Both generic replay players preserve typed inputs and ordered declarations, mark
+  unavailable assignment, subject and view results as unknown, and cancel stale
+  playback callbacks after reset, selection or pause. Expectations remain
+  unexecuted; existing suite and replay formats retain their bytes.
 - Public capability documentation now distinguishes current source from the separately
   observed release, describes the actual site output and four synthesis targets, and
   checks the maintained support table against real CLI and projection outputs offline.

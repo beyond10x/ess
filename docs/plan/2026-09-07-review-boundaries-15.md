@@ -100,3 +100,173 @@ The binding and full story body are published through their proper owners. Exact
 contains five cited and three inferred paths. The story moves draft → proposed → active under
 the standing implementation approval; only future evidence can authorize implemented.
 Opening source commit and cheap-check results are recorded before unit provisioning.
+
+## Dispatched implementation
+
+Opening commit `d7f12b7a027018fc020fadf8f1d66ca6caac1e68` has both required bot identities.
+Formatting, action-contract, site and diff checks each returned zero on that clean commit;
+site-build took 19.7712 seconds. Full tracked-source and frozen Rust payload readbacks remained
+unchanged. AEP validation returned zero with 195 artifacts and exactly the previously relayed
+37-advisory output, SHA256 138fb5ee74406f8ba08d2764a274f5a75515d6a5e6ea830a386d24babcd40557.
+The story is active revision 15; this is implementation status, not completion evidence.
+
+The manager created the planned tree at that exact opening, then root established its planned
+branch and lease. Root reverified all 50 installed Firefox payload entries, modes and literal
+links before provisioning. Its first read-only verifier assumed a `size` key; the recorded
+manifest uses `bytes`, and the corrected reader verified the unchanged complete payload.
+No browser execution is claimed by that preflight.
+
+All planned mutable roots exist and were assigned in the filled brief; source/cache inputs
+remain separate from the unit's default mutable target. Dispatch at 08:37:40Z observed
+41,764,937,728 free bytes. The brief SHA256 is
+`adb18082e07461bdd1a6eac86730fabbeb6d07c7758ef76a6703996215168f5b`, binding SHA256
+`1999a07d1ed00ebb57feddf15b6c3ca72bd23c11055bcae6ed5764be166d811a`, and complete story
+SHA256 `49ba76d490ba8ce1f69f4a7a7b9757457fadf1f36187fada195bdab47718c54f`.
+The implementor owns the unit until its quiescent handoff. Root retains provisioning and
+opening receipts under `target/review-boundaries-15/preparation`; no other implementation is
+selected. Read-only delivery-trust and diagnostic scope preparation uses separate coordinator
+scratch roots and has no source or planning write authority.
+
+## Regression phase
+
+The unit's untouched conformance baseline returned zero in 29.5188 seconds; the four existing
+Firefox coverage cases returned zero in 49.5616 seconds. Root read both direct exits and every
+runner summary. The new target did not exist on the base. Its first admitted Firefox case failed
+on an invented `first.label = "alpha"`; the subsequent complete twelve-case B01–B12 run returned
+101 with twelve failures and no ignored cases. Fixture-construction refusals are retained separately
+from those actual browser assertions. Complete stdout/stderr, launch inputs, resources and tool
+readbacks remain in the unit's `target/review-boundaries-15/browser-replay/implementation`.
+
+Implementation exposed a wording ambiguity in the binding, not a new projection field:
+`Outcome.refuses` is a wrong-state policy and defaults true on other outcomes
+(`ess-domain/src/command.rs:852–857`, `ess-compiler/src/ir.rs:695–702`). Actual refusals name an
+error and validation forbids their subject or emissions (`command.rs:951,1135–1179`). Root
+confirmed that declared subjects govern the permitted conservative effects and requested a
+binding clarification and an explicit no-effect refusal control. Projection bytes remain fixed.
+The implementor is now repairing the reproduced failures; no green handoff or source-review
+verdict is recorded yet.
+
+Retained real Firefox profiles increased unit allocation to 4,624,445,440 bytes before its
+expanded matrix. At 09:10:49Z root measured 29,445,902,336 free bytes and raised the combined
+unit/owned-TMP ceiling from 6 GiB to 8 GiB for subsequent producers. The 8 GiB free-space floor,
+one-producer limit and exact owned paths remain. No records are removed to fit this allowance;
+the already running producer keeps its original ceiling. The exact amendment is retained in
+`target/review-boundaries-15/preparation/browser-resource-amendment-1.json`.
+
+## Coordinator preparation for recovery
+
+Under the same standing remediation approval, root adopted the previously reviewed finite
+recovery contract into `docs/design/review-execution-recovery.md` and the exact two model-v2
+files under `models/execution-recovery/`. This prepares the separately owed implementation;
+browser remains this wave's sole source implementation unit. No recovery implementation story
+is created or selected, and its obligation remains open. The declaration and binding must be
+committed/published before that story is created.
+
+Root read the complete refreshed contract and semantic clause map, independently verified all
+114 inputs and three outputs, and read both model files. The binding differs from the refreshed
+consolidation only in C01's adoption-status paragraph. Original < authority base < v2 < v3 and the
+accepted offline-driver qualification retain their precedence; all R01–R29 families, 44 named
+types and 34 implementation reservations remain unchanged. No third candidate attack is needed
+for that mechanical consolidation.
+
+At the actual model path, the retained ESS executable from source dbe78c5b15df, SHA256
+`fb1121b632781343fd06955778d28ae095cff5f305e9f3c5005f2ca93c8a8d1f`, returned zero for both
+`specify validate` and `specify compile --format json`. Validation printed
+`recovery v1 — 2 file(s), valid`; the 36,251-byte compiled result has the same SHA256
+`40a9fb6e2ac3c67d27e87b6c935422ada17490637a93d3517e9c9dc28cc7cd20` as the prior declaration
+receipt. This establishes structural declaration validity only. It neither tests recovery runtime
+nor supplies deployment authority. Root retains command/source readbacks under
+`target/review-boundaries-15/preparation/recovery-publication`; full integration gates and
+publication remain ahead.
+
+## Source adversary pass 1
+
+The implementor returned quiescent with 287 conformance, four existing coverage and twenty
+new fidelity cases passing; actual fidelity variants total 56 across both routes. Formatting,
+strict package Clippy and exact original format-byte comparisons returned zero. Root independently
+verified all ten handed source/lock/fixture hashes and ten sealed evidence references. Report
+SHA256 c5c4763ccb636ff06544eb30494905a01fe61c2ed22df115b1515c1767fff7a1 is retained with
+complete raw receipts. This is an implementation handoff; the story remains active.
+
+The separate adversary takes exclusive sequential unit ownership for source pass 1, with test-only
+write reservations in the two existing browser integration targets. Its scratch is the planned
+`target/review-boundaries-15/adversary-pass-1`; the newly assigned owned temporary root is
+`/home/timo/.cache/ess-w15-browser-adversary-1-tmp`, and its five XDG paths are under scratch.
+The combined target and both temporary roots now have a 12 GiB ceiling, preserving the 8 GiB
+free-space floor. Fresh free space was 26726100992 bytes. No retained output is removed.
+Exact dispatch pins, handed source bytes, environment and resource measurement are retained in
+coordinator `target/review-boundaries-15/preparation/browser-source-pass-1`.
+
+## Interrupted source-review recovery
+
+Source pass 1 produced seven focused browser cases: five passed and two independently
+reproduced one explicit-null optional count-bound crash in the two players. The actual CLI
+emitted each site first; the binding-authorized persisted fixture passed the existing Rust
+suite/pair readers before Firefox failed in the new declaration renderer. The authored
+omission form remains a green control. No persisted-input CLI flag is claimed.
+
+An automated content filter terminated the review agent and also its report-only recovery,
+stating possible cybersecurity risk. No final agent report or seal was produced. Root retains
+the exact last substantive interim message and error under preparation/browser-source-pass-1;
+the interim message is the review record body, including its then-pending suite statement.
+It has no formal findings block; a later ledger must not invent a structured pass from it.
+This is one interrupted source pass, not approval or a completed agent verification.
+
+Root read all seven added cases, the eight direct exits including scratch-only formatting,
+and confirmed all eight recorded process IDs absent. The original test prefix and production
+files are preserved. Root now takes exclusive sequential unit ownership for the remaining
+combined browser run, using the already assigned adversary environment, target and temporary
+root with the same12GiB ceiling/8GiB floor. Agent writes remain relinquished. Root will record
+its supplemental runner result distinctly and route the reproduced finding to the original
+implementor; no additional defect story is needed.
+
+Root completed the combined browser run:31executed,29passed,2failed,0ignored; direct101.
+Only the two explicit-null cases failed. Full raw output and producer/tool/resource records
+remain in adversary-pass-1/implementation/root-combined-red; coordinator supplemental attribution
+is separate from the interrupted agent record. The same original implementor receives correction1.
+Its scratch is target/review-boundaries-15/browser-replay/fix1, with owned external temporary
+root /home/timo/.cache/ess-w15-browser-fix1-tmp and five XDG directories under scratch.
+The combined target and all three owned temporary roots now have a16GiB ceiling and unchanged
+8GiB free floor; fresh free space was 35618033664 bytes. No evidence is removed.
+
+## Correction 1 and final source review
+
+Correction 1 returned quiescent with the two retained null failures passing, all 31 browser
+cases and 287 conformance cases passing, and package formatting and strict Clippy returning
+zero. Root read the exact two null guards and verified the test file against the retained
+reviewer's formatted copy; no assertion changed. Root independently checked 14 sealed references,
+ten source hashes and five completed producer receipts. The corrected report SHA256 is
+`567559b9a1e28168719fb794a80a223faa420b1dd01221b1b3e2dfb56b9f81e4`.
+The outcome against the interrupted interim review records the reproduced defect as fixed;
+it does not create a missing formal findings block or claim that the first agent completed review.
+
+A fresh separate adversary receives the remaining source pass, pass 2, against all eight source
+reservations and the complete accepted B01–B15 binding. It may only append independent browser
+tests. The unit branch and base remain unchanged. Its assigned scratch is
+`target/review-boundaries-15/adversary-pass-2` in the unit, its external temporary root is
+`/home/timo/.cache/ess-w15-browser-adversary-2-tmp`, and its five XDG directories are under scratch.
+The 16 GiB ceiling now counts the unit target and all four temporary roots, with the same 8 GiB
+free-space floor. At 10:11:49Z allocated bytes were 11,105,861,632 and free bytes were
+33,426,784,256. No retained output was removed. Root preparation/browser-source-pass-2 contains
+the exact handed source snapshot, environment/resource receipt and filled brief, SHA256
+`c19d070941619305fd5458820124bdfbb83fd5c32364f39d1914fd0a30d94773`.
+This consumes the final source-review pass; integration and the full gate remain pending.
+
+## Delivery trust preparation
+
+While browser source review runs, a separate read-only binding pass examines the existing
+`review-delivery-trust-contract` candidate against its original acceptance, actual Rust/action
+owners and complete T01–T18 matrix. This selects no additional implementation. It may write only
+coordinator `target/review-boundaries-15/preparation/delivery-trust-binding-pass-1` and may run no
+build, tests, network operation or repository mutation. Its exact brief and report live there.
+The candidate preserves release/bundle /1 meaning and proposes local exact-selection report/2
+qualification with explicit unverified origin, attachment and artifact-execution limits. Root
+must record any findings and resolve the binding before a fresh post-browser replan can select it.
+
+Root also recorded the previously retained authored-discovery candidate review verbatim as
+`review-result:authored-discovery-binding-pass1`, with a no-op review outcome. The report found
+no candidate-contract issue and executed no tests; it neither selects the manifest design nor
+implements discovery. Its original source anchor and complete report remain unchanged. AEP
+validation returned zero for 197 artifacts and emitted 39 no-findings-block advisories, including
+this report despite its literal empty findings block. This records the CLI's output, not a claim
+that the retained block is absent. No additional story was created.

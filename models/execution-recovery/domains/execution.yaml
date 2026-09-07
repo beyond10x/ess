@@ -1,0 +1,312 @@
+domain: recovery.execution
+
+types:
+  - name: recovery.execution.Text
+    kind: newtype
+    of: String
+    invariants: ['value != ""']
+
+  - name: recovery.execution.Digest
+    kind: newtype
+    of: String
+    invariants: ['value != ""']
+
+  - name: recovery.execution.Index
+    kind: newtype
+    of: Integer
+    invariants: [value >= 0]
+
+  - name: recovery.execution.InvocationId
+    kind: struct
+    fields:
+      - {name: store_epoch, type: Uuid}
+      - {name: nonce, type: Uuid}
+
+  - name: recovery.execution.AuthorityFormat
+    kind: enum
+    variants: [ess-execution-authority/1]
+
+  - name: recovery.execution.StoreFormat
+    kind: enum
+    variants: [ess-execution-store/1]
+
+  - name: recovery.execution.LockFormat
+    kind: enum
+    variants: [ess-execution-lock/1]
+
+  - name: recovery.execution.JournalFormat
+    kind: enum
+    variants: [ess-execution-evidence/1]
+
+  - name: recovery.execution.Profile
+    kind: enum
+    variants: [SingleHostGeneratedHelm1]
+
+  - name: recovery.execution.NamespacePin
+    kind: struct
+    fields:
+      - {name: name, type: recovery.execution.Text}
+      - {name: uid, type: recovery.execution.Text}
+
+  - name: recovery.execution.TargetPin
+    kind: struct
+    fields:
+      - {name: api_server, type: recovery.execution.Text}
+      - {name: ca_digest, type: recovery.execution.Digest}
+      - {name: identity_namespace, type: recovery.execution.NamespacePin}
+
+  - name: recovery.execution.PrincipalPin
+    kind: struct
+    fields:
+      - {name: namespace, type: recovery.execution.Text}
+      - {name: name, type: recovery.execution.Text}
+      - {name: uid, type: recovery.execution.Text}
+
+  - name: recovery.execution.HostPolicy
+    kind: struct
+    fields:
+      - {name: host_id, type: recovery.execution.Text}
+      - {name: executor_uid, type: Integer}
+      - {name: store_epoch, type: Uuid}
+      - {name: state_root, type: recovery.execution.Text}
+      - {name: kubeconfig, type: recovery.execution.Text}
+      - {name: helm, type: recovery.execution.HelmBinary}
+    invariants: [executor_uid > 0]
+
+  - name: recovery.execution.ChartSource
+    kind: struct
+    fields:
+      - {name: runtime_digest, type: recovery.execution.Digest}
+      - {name: chart_name, type: recovery.execution.Text}
+      - {name: chart_version, type: recovery.execution.Text}
+
+  - name: recovery.execution.ObjectKind
+    kind: enum
+    variants: [Deployment, StatefulSet, Service]
+
+  - name: recovery.execution.ObjectAddress
+    kind: struct
+    fields:
+      - {name: kind, type: recovery.execution.ObjectKind}
+      - {name: name, type: recovery.execution.Text}
+
+  - name: recovery.execution.ObjectFingerprint
+    kind: struct
+    fields:
+      - {name: object, type: recovery.execution.ObjectAddress}
+      - {name: content_digest, type: recovery.execution.Digest}
+
+  - name: recovery.execution.ReleaseProjection
+    kind: struct
+    fields:
+      - {name: chart, type: recovery.execution.ChartSource}
+      - {name: objects, type: List<recovery.execution.ObjectFingerprint>}
+
+  - name: recovery.execution.HelmIdentity
+    kind: struct
+    fields:
+      - {name: description, type: recovery.execution.Text}
+      - {name: revision, type: recovery.execution.Index}
+      - {name: storage_uid, type: recovery.execution.Text}
+      - {name: manifest, type: List<recovery.execution.ObjectAddress>}
+      - {name: hook_count, type: recovery.execution.Index}
+
+  - name: recovery.execution.PresentObject
+    kind: struct
+    fields:
+      - {name: object, type: recovery.execution.ObjectAddress}
+      - {name: uid, type: recovery.execution.Text}
+      - {name: resource_version, type: recovery.execution.Text}
+      - {name: content_digest, type: recovery.execution.Digest}
+
+  - name: recovery.execution.ObjectRead
+    kind: union
+    tag: kind
+    variants:
+      Absent: recovery.execution.ObjectAddress
+      Present: recovery.execution.PresentObject
+
+  - name: recovery.execution.ReleaseSnapshot
+    kind: struct
+    fields:
+      - {name: helm, type: Optional<recovery.execution.HelmIdentity>}
+      - {name: objects, type: List<recovery.execution.ObjectRead>}
+
+  - name: recovery.execution.ReleasePermit
+    kind: struct
+    fields:
+      - {name: service, type: recovery.execution.Text}
+      - {name: namespace, type: recovery.execution.NamespacePin}
+      - {name: release_name, type: recovery.execution.Text}
+      - {name: incarnation, type: Uuid}
+      - {name: may_create, type: Boolean}
+      - {name: baseline, type: Optional<recovery.execution.ReleaseProjection>}
+      - {name: desired, type: Optional<recovery.execution.ReleaseProjection>}
+      - {name: repair_from, type: Optional<recovery.execution.ReleaseSnapshot>}
+
+  - name: recovery.execution.LockClaim
+    kind: struct
+    fields:
+      - {name: format, type: recovery.execution.LockFormat}
+      - {name: invocation, type: recovery.execution.InvocationId}
+      - {name: authority_id, type: Uuid}
+      - {name: authority_revision, type: recovery.execution.Index}
+      - {name: target, type: recovery.execution.TargetPin}
+      - {name: registry, type: recovery.execution.RegistryRef}
+
+  - name: recovery.execution.QuiescenceStatement
+    kind: enum
+    variants: [NoFurtherWrites]
+
+  - name: recovery.execution.QuiescenceDecision
+    kind: struct
+    fields:
+      - {name: claim, type: recovery.execution.LockClaim}
+      - {name: claim_digest, type: recovery.execution.Digest}
+      - {name: statement, type: recovery.execution.QuiescenceStatement}
+
+  - name: recovery.execution.Authority
+    kind: struct
+    fields:
+      - {name: format, type: recovery.execution.AuthorityFormat}
+      - {name: profile, type: recovery.execution.Profile}
+      - {name: authority_id, type: Uuid}
+      - {name: revision, type: recovery.execution.Index}
+      - {name: target, type: recovery.execution.TargetPin}
+      - {name: principal, type: recovery.execution.PrincipalPin}
+      - {name: host, type: recovery.execution.HostPolicy}
+      - {name: contexts, type: List<recovery.execution.Text>}
+      - {name: environment, type: recovery.execution.Text}
+      - {name: desired_digest, type: recovery.execution.Digest}
+      - {name: baseline_digest, type: Optional<recovery.execution.Digest>}
+      - {name: releases, type: List<recovery.execution.ReleasePermit>}
+      - {name: quiescence, type: List<recovery.execution.QuiescenceDecision>}
+    invariants: [contexts.count > 0]
+
+  - name: recovery.execution.StoreHeader
+    kind: struct
+    fields:
+      - {name: format, type: recovery.execution.StoreFormat}
+      - {name: store_epoch, type: Uuid}
+      - {name: host_id, type: recovery.execution.Text}
+      - {name: target, type: recovery.execution.TargetPin}
+
+  - name: recovery.execution.InvocationContext
+    kind: struct
+    fields:
+      - {name: authority, type: recovery.execution.Authority}
+      - {name: registry, type: recovery.execution.RegistryRef}
+      - {name: retry_of, type: Optional<recovery.execution.InvocationId>}
+      - {name: selected, type: List<recovery.execution.Text>}
+      - {name: allow_removals, type: Boolean}
+
+  - name: recovery.execution.ObservationPhase
+    kind: enum
+    variants: [Before, After]
+
+  - name: recovery.execution.Observation
+    kind: struct
+    fields:
+      - {name: operation, type: recovery.execution.Index}
+      - {name: phase, type: recovery.execution.ObservationPhase}
+      - {name: started_ms, type: recovery.execution.Index}
+      - {name: finished_ms, type: recovery.execution.Index}
+      - {name: snapshot, type: recovery.execution.ReleaseSnapshot}
+
+  - name: recovery.execution.Prepared
+    kind: struct
+    fields:
+      - {name: operation, type: recovery.execution.Index}
+      - {name: observation_sequence, type: recovery.execution.Index}
+
+  - name: recovery.execution.ProcessDisposition
+    kind: enum
+    variants: [NotLaunched, Acknowledged, Indeterminate]
+
+  - name: recovery.execution.ProcessOutcome
+    kind: struct
+    fields:
+      - {name: operation, type: recovery.execution.Index}
+      - {name: disposition, type: recovery.execution.ProcessDisposition}
+
+  - name: recovery.execution.RefusalCode
+    kind: enum
+    variants:
+      - InvalidInput
+      - UnsupportedProfile
+      - AuthorityMismatch
+      - TargetMismatch
+      - PrincipalMismatch
+      - BaselineMismatch
+      - OwnershipConflict
+      - ObservationUnavailable
+      - ObservationStale
+      - ObservedDrift
+      - MutationBlocked
+      - StoreInvalid
+      - EvidenceIncomplete
+      - PreparationFailed
+      - LaunchFailed
+      - EffectIndeterminate
+      - RemovalNotPermitted
+      - DirectObjectsRemain
+
+  - name: recovery.execution.Stopped
+    kind: struct
+    fields:
+      - {name: operation, type: Optional<recovery.execution.Index>}
+      - {name: reason, type: recovery.execution.RefusalCode}
+
+  - name: recovery.execution.JournalFact
+    kind: union
+    tag: kind
+    variants:
+      Opened: recovery.execution.InvocationContext
+      Observed: recovery.execution.Observation
+      Prepared: recovery.execution.Prepared
+      ProcessOutcome: recovery.execution.ProcessOutcome
+      Stopped: recovery.execution.Stopped
+      Completed: recovery.execution.Index
+
+  - name: recovery.execution.JournalEntry
+    kind: struct
+    fields:
+      - {name: format, type: recovery.execution.JournalFormat}
+      - {name: invocation, type: recovery.execution.InvocationId}
+      - {name: sequence, type: recovery.execution.Index}
+      - {name: previous_digest, type: Optional<recovery.execution.Digest>}
+      - {name: fact, type: recovery.execution.JournalFact}
+
+  - name: recovery.execution.RegistryFormat
+    kind: enum
+    variants: ["ess-execution-registry/1"]
+
+  - name: recovery.execution.AuthorityRegistry
+    kind: struct
+    fields:
+      - {name: format, type: recovery.execution.RegistryFormat}
+      - {name: generation, type: recovery.execution.Index}
+      - {name: authorities, type: List<recovery.execution.Authority>}
+
+  - name: recovery.execution.RegistryRef
+    kind: struct
+    fields:
+      - {name: generation, type: recovery.execution.Index}
+      - {name: digest, type: recovery.execution.Digest}
+
+  - name: recovery.execution.HelmVersion
+    kind: newtype
+    of: String
+    invariants: ['value != ""']
+
+  - name: recovery.execution.HelmProtocol
+    kind: enum
+    variants: [Helm3Recovery1]
+
+  - name: recovery.execution.HelmBinary
+    kind: struct
+    fields:
+      - {name: path, type: recovery.execution.Text}
+      - {name: digest, type: recovery.execution.Digest}
+      - {name: version, type: recovery.execution.HelmVersion}
+      - {name: protocol, type: recovery.execution.HelmProtocol}
