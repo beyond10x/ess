@@ -2,7 +2,7 @@
 format: aep.planning-md/1
 id: story:review-public-support-claims
 kind: story
-status: active
+status: implemented
 title: Keep public support claims aligned with shipped evidence
 tags:
 - P1
@@ -29,7 +29,7 @@ scope:
   path: website/docs/reference/cli.md
 - confidence: cited
   path: website/docs/status/where-this-stands.md
-revision: 21
+revision: 23
 ---
 ## Finding and source
 
@@ -156,3 +156,47 @@ statuses remain retained. The report's closing no-Git statement means no Git mut
 documented read-only Git commands did occur. Source findings compare as carried 0, new 0,
 resolved 1. Full integration, rendered comparison and public delivery remain required before
 implementation completion; package success alone does not satisfy them.
+
+
+## Completed source and public delivery — wave 14
+
+Source commit `57e242e8a0eaa721968c3970099b4bc561cb91aa` is published on remote main.
+The bounded integration correction `2004bb1575d12656521216acce47d74acba49882` replaces
+MDX-invalid HTML comment delimiters with passive Markdown reference definitions. Root verified
+that all 20 rows, the complete test module and ordinary prose remained unchanged. All 37 package
+cases, formatting, strict Clippy, render and support-check passed on that correction. The full
+source gate passed all 11 lanes with 2,110 workspace cases, zero failed or ignored. Attempt 4
+retains three passing same-source attempt-3 lanes and reruns the interrupted test plus every
+previously unrun lane; the resource interruption is preserved, not counted as a successful run.
+
+CI `34094711588`, documentation validation `34094711617` and source bundle `34094711604`
+completed successfully for that exact source. Atlas publication `34094924671` succeeded and
+produced artifact `10008305282`, ZIP SHA256
+`40b9e58d5e361c6aec36bb6db5181cfd945fbd4c58c143c9157f3d0bb04c7ae6`.
+Its source set pins ESS at that source, AEP at `658cf76e6371b1628f6de69548e724b52803f5c2`,
+Website runtime `fc4571534765c098ed861bc326da4d3da0d1df63` and Atlas control
+`d10b7484d64c28830774c9dae0ec531fcc47acb2`.
+
+The independent artifact verifier and complete Website gate returned zero. Website ran 99 tests,
+99 passed, zero failed, skipped or cancelled; it verified 357 routes and 1,332 production files.
+Every immutable artifact entry remained unchanged. The rendered published status table matches
+all 20 source rows and 63 header/data cells, source-version text and the separately dated release
+qualifications/link. Its HTML SHA256 is
+`aefd20148711d58aaa153fc2fc8d89af4a1b6f1de6fbfcda5d78a42ecdd7f3a1`.
+All five changed public pages and both provenance routes returned HTTPS 200 with bytes exactly
+equal to the admitted artifact. Final Atlas Pages verification returned zero: 37 repository
+states, 26 Pages repositories and 52 routes. The broader Atlas fence still has its three recorded
+pre-existing workspace failures; this completion makes no organization-wide green claim.
+
+The separately read release remains public `0.20.0`, record `383642123`, published
+2026-09-06T16:07:45Z; metadata SHA256
+`2ce2479a525e9ffbffb5778333109e16995d1a323df7fabc89c7365435f449a7`.
+Release metadata/asset names were observed; no release binary was executed. No release, tag,
+version bump, install, default switch or live executor deployment was performed.
+
+Full gate, render, publication and live receipts remain under coordinator
+`target/review-boundaries-14`; Website gate completed at 2026-09-07T07:38:53Z.
+The unit's complete target and both owned temporary roots were archived and independently
+verified before removal. Website retention and exact managed cleanup are recorded in the wave
+page as they finish. All 27 material requirements and 21 validation entries retain their
+source, semantic-owner, rendered-page, release and publication evidence boundaries.

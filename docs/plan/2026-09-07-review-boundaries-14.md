@@ -439,3 +439,173 @@ Root readback is `target/review-boundaries-14/preparation/integration-correction
 The site-first full integration attempt and rendered-cell comparison remain required before
 publishing this source. The unit remains quiescent and its retention helper is explicitly held
 pending the corrected integrated commit and successful source publication.
+
+
+## Source gate and publication
+
+The corrected integrated source is `57e242e8a0eaa721968c3970099b4bc561cb91aa`.
+Attempt 3 passed site-build, formatting and strict Clippy. The site build confirms that the
+passive Markdown delimiters resolve the actual MDX failure. Its test lane was interrupted by
+the 8 GiB resource monitor at 07:03:00Z, returning task exit 201 after termination; 2,046
+completed cases were partial evidence only. Shared free space subsequently fell to zero while
+unrelated ESS/Connectors builds were active. This session stopped its producers and changed no
+unrelated process/tree. Fresh readback found no owned gate producer remaining.
+
+The full disk also truncated the local continuation cache during an in-place update. Root
+reconstructed its current checkpoint from verified Git and retained records; obsolete flat cache
+history was not reconstructed. All source commits, gate logs and committed wave history remained
+intact. Subsequent checkpoint writes use fsync and atomic replacement. Capacity recovered to
+22.9 GB without cleanup by this session, so the pending capacity request was resolved.
+
+Attempt 4 verified the same exact clean source and tool manifests, retained the three passing
+attempt-3 checks and reran the interrupted test plus every previously unrun lane. All 11 checks
+passed. The full test returned zero with 2,110 passed, zero failed/ignored and 189 summaries in
+251.0211 seconds. The final gate receipt is
+`target/review-boundaries-14/gate-57e242e8a0ea-attempt4/complete.json`, SHA256
+`08b172e7c6ad2defa40b2bae24d5b33e45522d84a17e009fe28cdfa3a034ccbe`.
+All tracked bytes remained unchanged. Planning validation returned zero and exactly matches the
+previously relayed 194-artifact/37-advisory output (SHA256
+`85d7bb013afe884f17e3aa0e98463d80cc9211de4945e314cfa877a34b43891f`).
+
+The rendered status comparison checks all 20 rows and 63 header/data cells, source-version text,
+release link and dated source/release qualifications. Its first helper treated HTML's optional
+closing tags as explicit-tag markup and refused; no source defect was found. Root used the site's
+installed HTML5 parser, retained normalized HTML and the original refusal, then compared every cell
+successfully. The corrected readback is `preparation/rendered-status-corrected-v3.json`.
+
+Bot source publication returned zero at 07:16:57Z, with remote main read back exactly as
+`57e242e8a0eaa721968c3970099b4bc561cb91aa`; all nine introduced commits have both required bot
+identities. Remote runs are CI `34094711588`, documentation validation `34094711617` and
+source bundle `34094711604`. Documentation validation and bundle passed; CI remained running
+when Atlas publication `34094924671` was dispatched at 07:19:37Z. The desired AEP source remains
+`658cf76e6371b1628f6de69548e724b52803f5c2`, with exact Atlas and Website authority unchanged.
+Public artifact, live readback and final delivery checks remain required before story completion.
+
+The complete unit target archive was independently verified before any removal: 3,037 native
+entries, 1,996,008,170 regular logical bytes, archive SHA256
+`c23ba09fa047ee9b70ced959351a13bcdb58bd65a624c90da98756968ee5e6e5` (400,818,189 bytes).
+Both separately assigned temporary roots also passed archive and independent verification.
+All three raw roots and the managed worktree remain present pending final delivery and cleanup.
+
+
+## Completed delivery
+
+Source commit `57e242e8a0eaa721968c3970099b4bc561cb91aa` is published on remote main.
+The bounded integration correction `2004bb1575d12656521216acce47d74acba49882` replaces
+MDX-invalid HTML comment delimiters with passive Markdown reference definitions. Root verified
+that all 20 rows, the complete test module and ordinary prose remained unchanged. All 37 package
+cases, formatting, strict Clippy, render and support-check passed on that correction. The full
+source gate passed all 11 lanes with 2,110 workspace cases, zero failed or ignored. Attempt 4
+retains three passing same-source attempt-3 lanes and reruns the interrupted test plus every
+previously unrun lane; the resource interruption is preserved, not counted as a successful run.
+
+CI `34094711588`, documentation validation `34094711617` and source bundle `34094711604`
+completed successfully for that exact source. Atlas publication `34094924671` succeeded and
+produced artifact `10008305282`, ZIP SHA256
+`40b9e58d5e361c6aec36bb6db5181cfd945fbd4c58c143c9157f3d0bb04c7ae6`.
+Its source set pins ESS at that source, AEP at `658cf76e6371b1628f6de69548e724b52803f5c2`,
+Website runtime `fc4571534765c098ed861bc326da4d3da0d1df63` and Atlas control
+`d10b7484d64c28830774c9dae0ec531fcc47acb2`.
+
+The independent artifact verifier and complete Website gate returned zero. Website ran 99 tests,
+99 passed, zero failed, skipped or cancelled; it verified 357 routes and 1,332 production files.
+Every immutable artifact entry remained unchanged. The rendered published status table matches
+all 20 source rows and 63 header/data cells, source-version text and the separately dated release
+qualifications/link. Its HTML SHA256 is
+`aefd20148711d58aaa153fc2fc8d89af4a1b6f1de6fbfcda5d78a42ecdd7f3a1`.
+All five changed public pages and both provenance routes returned HTTPS 200 with bytes exactly
+equal to the admitted artifact. Final Atlas Pages verification returned zero: 37 repository
+states, 26 Pages repositories and 52 routes. The broader Atlas fence still has its three recorded
+pre-existing workspace failures; this completion makes no organization-wide green claim.
+
+The separately read release remains public `0.20.0`, record `383642123`, published
+2026-09-06T16:07:45Z; metadata SHA256
+`2ce2479a525e9ffbffb5778333109e16995d1a323df7fabc89c7365435f449a7`.
+Release metadata/asset names were observed; no release binary was executed. No release, tag,
+version bump, install, default switch or live executor deployment was performed.
+
+Full gate, render, publication and live receipts remain under coordinator
+`target/review-boundaries-14`; Website gate completed at 2026-09-07T07:38:53Z.
+The unit's complete target and both owned temporary roots were archived and independently
+verified before removal. Website retention and exact managed cleanup are recorded in the wave
+page as they finish. All 27 material requirements and 21 validation entries retain their
+source, semantic-owner, rendered-page, release and publication evidence boundaries.
+
+
+## Concurrent main advancement
+
+While closing this wave, the operator's separate collector work merged PR #12 into main at
+`a45b4081de9352e0b2f0b7a8ec87bb91f99b6cc3`. The App merged it; branch authority remains
+App-only and its workflow bytes exactly match the previously admitted source. CI `34095802658`,
+documentation validation `34095802697` and source bundle `34095802682` all passed. Its
+verification record reports the combined source gate at 2,125 passing cases and site-build zero.
+The observation-completeness story is implemented revision 22 by that separate work.
+
+Root preserved all three unpublished closure files byte-for-byte, restored only those owned
+changes, fast-forwarded the coordinator and replayed body/evidence/move through AEP. No planning
+record was manually merged or dropped from published history. Earlier unpublished AEP receipts
+remain in the retained snapshot. This wave's public-support evidence continues to name the exact
+57e242 source actually tested and published, now an ancestor of main. The current epic therefore
+has 23 of 31 original stories implemented and eight drafts; recovery implementation remains owed.
+Website also advanced independently; its pinned runtime fc457 remains a published ancestor, and
+the completed support tree stays at that exact tested runtime through retention/retirement.
+
+## Retention and cleanup
+
+All five archives were independently verified before any raw output removal. The unit target
+archive is recorded above. The implementation temporary archive is 1,649 bytes, SHA256
+`96e9f8f0b28c23b85461e86e9921d24f7152ece5b2facffba31c61ef976a10f5`; the first adversary
+temporary archive is 8,979,600 bytes, SHA256
+`e11c5806711fa4f84b6b32a5c076b2ea429322f97601a330d1745e16b4641549`.
+The complete Website support archive contains 61,418 native entries and 1,090,582,878 regular
+logical bytes: 446,599,602 compressed bytes, SHA256
+`f826a876f33dd5509b5f71b034037022d0e3cc5958803c93a3e8024f4e1b66ca`.
+Website temporary attempt 03 contains 554 native entries and 2,782,295 regular logical bytes:
+1,149,771 compressed bytes, SHA256
+`5b52a8168f62ae4b9d8c9d8a346317f77d82243584f0f0d10de77d203baf209a`.
+These records remain outside both retiring managed trees in the dated ESS review cache.
+
+Website temporary attempts 01 and 02 refused an inactive Chromium Unix socket. Root retained
+its complete native metadata, checked its exact inode and absence from the Unix socket table,
+then removed that single inactive endpoint. A Unix socket has no regular-file payload to
+archive. The other 554 entries remained unchanged and were archived and verified in attempt 03.
+The refused attempts and corrected metadata-only disposition remain in the retention record.
+
+Raw retirement attempt 01 refused before removal because an unrelated same-user service denied
+process inspection. Root explicitly reviewed six exact service identities and ancestry; no
+generic permission-error exemption was adopted. Attempt 02 verified all five archives, complete
+native manifests, clean published source and producer state, then removed eight exact owned
+roots. It stopped before the remaining two roots when the user service's host mount-table hash
+changed due to unrelated Docker mounts. No root was partially removed. Its complete events and
+direct failure remain under `public-support-retirement-execution/execution-02` in the same cache.
+Root read the remaining-root census: only Website `.generated` and its assigned temporary root
+remain, with every non-atime native field and file/link/xattr value matching retained evidence.
+Resumption is restricted to those two roots and is recorded below after execution.
+
+The unit lease ended and `worktree finish` returned zero for `ess-public-support-claims` at
+`2004bb1575d12656521216acce47d74acba49882`. Its checkout remains present until exact-ID managed
+GC. The continuing coordinator, frozen toolchain, all retained evidence and unrelated trees
+remain outside this retirement.
+
+Closing metadata checks at source `a45b4081de9352e0b2f0b7a8ec87bb91f99b6cc3` returned zero:
+formatting 1.4675 seconds, action contract 0.0647 seconds, site build 16.5167 seconds and diff
+check 0.1646 seconds. Full tracked-source and frozen-toolchain readbacks were unchanged. These
+checks cover the three owned closure files; the cleanup narrative appended afterward receives
+a final diff check. The imported source's separate successful CI and integration record remain
+the source validation authority. Agent token/tool/wall totals are unavailable from this
+collaboration adapter; no aggregate cost is inferred from elapsed session time.
+
+The bounded two-root resumption returned zero at 08:25:47Z. Both complete native censuses
+matched, both removals have intent/completion events, all 12 original candidate roots are now
+absent and all five archives remain byte-identical. Both managed source checkouts remained
+present and clean. The resumption helper is SHA256
+`00e1834e41fac95ffa58cafec559b005c3eb5e9e824fe69a98111445ee576eed`; root review is
+`bccfb03ae853fbb046498b16edc0e47f96cdae415fa41a4cc120019dbbb94dd4`.
+Its exact four host-service exceptions omit only the unrelated host mount-table hash; other
+identity and ancestry checks remain. Complete raw logs, native comparisons and before/after
+archive checks are retained in `partial-recovery-review/resumption-01`.
+
+The Website lease also ended and `worktree finish` returned zero at the exact tested fc457
+runtime. Managed GC is reviewing the complete activated profile; only the two owned IDs
+`ess-public-support-claims` and `ess-wave14-website-verification` may be applied after that
+review. Its final result will be recorded before the next implementation worktree is created.
