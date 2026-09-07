@@ -327,3 +327,32 @@ The exact initial extraction uses the retained Rust 1.98.1 environment recorded 
 Cargo-home path and storage settings are execution evidence, not requirements silently imposed on
 all other xtask commands. Build-time source stamping must support Cargo's normal home convention.
 The later consumer Taskfile lane must explicitly establish its admitted build and tool profile.
+
+## Accepted initial eligibility and selected enforcement stage
+
+Root accepted the Stage 1 source/output checkpoint at local source commit
+7a6d76855e28d280138d2d439eb6f1e7c15a58d9 after complete source, inventory, attribution,
+package-result and native-evidence readback. The independently produced final inventories
+agree on 1,806 model obligations, 87 behavioral profiles and 157,122 exact pairs.
+
+Only the finite 157,068 nonmandatory pairs in
+crates/edge/ess-xtask/src/consumer_coverage/initial-baseline.json are initially eligible
+for BaselineUnknown. The accepted file SHA256 is
+e005a2e74e067ad51315e594151643b702381dc174bb9af5c355c3eeeb17ad51. Its exact model
+shape dictionary and finite per-profile lists are fixed data; ordinary checks cannot add
+entries, expand a prefix or transfer eligibility to a changed shape/profile. Concrete
+package owners and their unproven boundaries are recorded in each group. The independent
+follow-up epic:qualify-initial-consumer-baseline remains draft and unimplemented. Its
+qualification work is outside the original 31 remediation stories; the current gate
+implementation cannot satisfy or own its own unknown follow-up.
+
+All 54 mandatory F01 pairs are excluded from eligibility. Seventeen existing source cases
+provide candidates for 49 pairs; the additional reserved ess-diff integration-test owner
+supplies five isolated relation kind/target/carrier and parameter order/type witnesses.
+No candidate becomes Supported or Refused until the gate builds and executes its exact
+nonignored case under the bound same-source profile. The known Go system-level-type panic
+remains broken, with its concrete repair separately owned by the existing fuzz story.
+
+Stage 2 now implements enforcement, actual exact-case execution and the required same-source
+production mutations. Source review by the independent adversary and all repository check
+lanes plus site-build still precede implementation completion and publication.

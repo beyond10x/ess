@@ -74,7 +74,7 @@ Unrelated ESS wt-c465ed5c6cd3, primary checkouts and excluded Website work remai
 | Scratch | target/review-boundaries-18/consumer-coverage |
 | Assigned TMP | ~/.cache/ess-w18-consumer-tmp |
 | Root lease | ess-review-consumer-coverage-wave18 |
-| Stage | Selected Stage 1; opening and provisioning pending |
+| Stage | Stage 1 sealed and root-verified; Stage 2 selected for the same implementor |
 
 At 2026-09-07T20:42:07Z free space was 30,882,975,744 bytes. Assign one producer, two Rust jobs,
 a 10,737,418,240-byte combined unit target/TMP allowance and an 8,589,934,592-byte free floor.
@@ -133,3 +133,249 @@ The complete story retains every candidate mutation requirement: representative 
 ## Handoff
 
 Return the complete implementation report, original producer outputs/status/counts, exact source/input/build/binary/fixture/profile inventories, uncertainty and proposed eligibility output. Relinquish writes at the stage checkpoint. Root owns review routing, independent evidence retention, planning changes, bot commits, integration, later baseline acceptance and any next-stage assignment. This preparation itself performed no implementation, build, schema generation, test execution or baseline selection.
+
+## Dispatch observed
+
+Opening commit 408625dd188274b4ab192e1039dabd835e743060 is clean and has the required bot
+author and committer. Its six files are internal design/planning and the prior unit's cleanup
+record; source, fixtures, dependencies, Taskfile and public documents are unchanged from the
+published a0cf3ca behavior. AEP body/proposal/activation and validation each returned zero;
+204 artifacts validate, with the 43 retained empty-findings reader advisories relayed verbatim.
+The story is active revision 12 and retains its four typed reservations.
+
+Managed creation at the exact opening commit, branch creation and root lease start returned zero.
+The unit has its own complete frozen Rust bin/lib snapshot: all 378 entries and 1,392,727,899
+regular bytes were verified before and after copying. The first root tool reader omitted 17
+directory records from its census comparison and returned one; its corrected full readback
+includes the directory records, with no tool changes. Coordinator storage inspection stopped at
+250,000 entries, so its 17,217,339,392 allocated bytes are a lower bound, not reclaimable capacity.
+At dispatch preparation, free space was 26,641,698,816 bytes. The assigned unit/TMP allowance is
+10 GiB with an 8 GiB free floor, two Rust jobs and one heavy producer.
+
+The complete 1,194-file opening source manifest is SHA256
+89b1490b16a13ad44b7c7f4ec1150011dec25a1666a3a695caa8619a3961bae2;
+launch environment SHA256 f459cd0d5a9e9f464b94aba0305fc5cd3f0b083935075d0a4e84ab8e6f8fd287;
+filled brief SHA256 a19e1fa6495d2bed6307f3f1b4d49f17c8119eb94441a7ed7b07722e09cd4ddf.
+The current story and full graph, charter and tool manifest are retained beside the brief.
+Dispatch to consumer_coverage_stage1_implementor succeeded. It must measure the package baseline
+before edits and independently retain each actual baseline executable before any later build.
+Stage 1 extraction, its native results and root's eligibility checkpoint remain outstanding.
+
+## Baseline observed
+
+The complete ess-xtask baseline returned zero after 54.752564 seconds: 37 passing cases across
+32-case and 5-case native summaries, zero failed or ignored. Root independently verified the
+completion record, both raw output hashes/counts and all three retained executable payloads
+against their original observed /proc hashes. Completion SHA256
+8a3f5a42c763d426de65331213ba85771d044e493302e5e6ffbacf7b625323d6.
+The retained images include the two test targets and the actually nested CLI; all baseline
+executable bytes were preserved before subsequent builds. Root's receipt is
+preparation/baseline-root-readback.json. No reconstructed executable is substituted.
+
+The initial attempted red run stopped at fixture-string syntax errors, exit 101 with zero
+executed cases. It is retained as a setup failure, not acceptance-test evidence. Root identified
+a native-copy bookkeeping gap in the original scratch runner: copies were not checked against
+the original observed process hashes. The implementor preserved v1 and its exact correction,
+verified all three baseline copies match every original observation, then added that check and
+an immediate direct-child exit receipt before later retention. Root read the complete correction.
+There is no baseline byte-loss claim for this wave. Runtime red/green extraction results and the
+Stage 1 checkpoint remain pending.
+
+The corrected runnable pre-implementation regression set executed 17 cases: four passed and
+13 failed, none ignored, direct exit 101 in 0.774136 seconds. Root read the immediate native
+exit record, verified both complete output hashes, and read the runner's case/result lines.
+These cover Rust model identities and representation, aliases/modules/references/cycles,
+closed wire accounting and finite unaccepted eligibility. This is the meaningful red baseline;
+the earlier quote-syntax compile failure remains separate. The implementation remains in progress.
+
+## Stage 1 production grammar decision
+
+The implementor reports 17 mechanism cases passing in extractor-mechanism2. Its first actual
+production extraction returned one at the unclassified codes! definition; this is an extraction
+refusal, not completed inventory or matrix evidence. No baseline eligibility has been accepted.
+
+Root read the complete definitions and invocations of codes! and validation_codes! and selected
+the exact diagnostic classification now recorded in the binding. Definition and invocation
+guards, explicit generated-symbol ownership, consumer entries and refusal on selected-model
+reachability are required. Broad source searches do not establish nonreachability. The unit owns
+the implementation; root retains the binding edit until a quiescent source checkpoint. Exact
+canonical pins and meaningful guard/reachability probes remain to be inspected.
+
+Mandatory F01 candidates remain MandatoryUnqualified/CaseCandidate and cannot enter an unknown
+proposal. Nonmandatory gaps without a justified existing follow-up owner may be emitted as
+PendingOwner, which fails eligibility validation. Root will inspect the measured grouped cells
+before selecting ownership; this story cannot own its own follow-up, and unrelated gaps cannot
+be assigned to fuzzing merely to make the proposal valid.
+
+The provisional production-discovery4 returned zero in 8.516993 seconds. Root independently
+verified both output log hashes, direct/completion receipts, all six output file pins, the
+retained provider executable, and exact equality of the 1,202-input compiled/source/before/after
+stamps. Emitted graph closure contains 148 declarations and no generated diagnostic symbols;
+it accounts for 809 Rust obligations. The separate wire inventory has 997 obligations and
+114 local-reference edges. Consumer discovery lists all 22 Cargo packages. Root reconstructed
+all ten canonical macro definition/invocation hashes from the original multiline output and
+recorded the two selected diagnostic pairs in the binding. Receipt
+preparation/production4-root-readback.json is SHA256
+0d21382cd7efe0c4b19dd9a00f8a99897d84186b2c7c8f1d5ad7175dbaa91478.
+These are provisional extraction observations; final profile measurement, reasoned consumer
+classification, exact attribution and PendingOwner accounting remain incomplete.
+
+## Resource recovery during Stage 1
+
+Unrelated workspace builds reduced observed free space to 10,665,766,912 bytes, near the
+8 GiB reserve. The unit held new producers and continued source work while root retained
+the exact completed wave17 gate TMP, whose observed allocation was 1,902,268,416 bytes.
+The active consumer unit and unrelated work were unchanged by this retention operation.
+
+The first broad process preflight returned one before archiving: eight protected same-UID
+service/zombie processes had unreadable proc descriptors. Their exact identities and the
+original failure remain recorded. Root verified all ten observed owned gate PIDs absent,
+all eleven completed gate steps zero, and no visible reference to the exact TMP. This is
+bounded owned-producer evidence; complete machine-wide descriptor visibility is not claimed.
+The full source census remained stable through archive, independent readback and retirement.
+
+Archive and independent verification both returned zero, in 31.732526 and 17.490921 seconds;
+root observed outer session 83566 exit zero. The archive retains 19,248 native entries and
+1,945,218,712 regular payload bytes, with four quiescent sockets represented as metadata.
+Its 389,392,618 compressed bytes have SHA256
+469e86b9d115c7458eb85c51c49ac095d16103c6ff8bafac91dcddb17efe6c60.
+Every regular payload and full PAX native record was independently checked without extraction.
+The exact root is /home/timo/.cache/ess-w17-gate-f82fbc67a4c1-attempt1-tmp.
+Only that TMP was retired after a final complete census, direct exit zero in 9.875220 seconds;
+root observed outer session 54539 exit zero and verified its absence. No managed tree was
+removed. Full scripts, manifests, original outputs and receipts are retained under
+/home/timo/.cache/ess-review/2026-09-06-resume/wave17-gate-tmp-retirement.
+Free space after retirement was 13,848,047,616 bytes. The unit may resume its assigned checks.
+
+## Stage 1 source checkpoint preparation
+
+The implementor's provisional inventory now names 93 profiles: 87 behavioral consumers and
+six separate foreign/maintenance profiles. Its measured expansion preflight is 1,806 × 87 =
+157,122 cells, estimated at 117,552,847 bytes per output. Final extraction, complete concrete
+entry classification and baseline ownership remain pending; these counts do not grant support.
+
+Root read the provisional extractor, wire parser, typed proposal/accounting code and all 93
+profile boundaries. Root found that the initial consumer fingerprint included every source byte
+and provider executable, which would invalidate every cell for an unrelated edit. The binding
+now specifies canonical bounded profile and entrypoint declaration/signature identities, with
+complete source/provider evidence separately bound to actual execution. Root also identified an
+unconditional explicit-Cargo-home requirement in the build script; ordinary Cargo defaults must
+remain usable for existing xtask commands. The implementor accepted both corrections before freeze.
+
+Root identified local prelude-name shadowing in Graph::resolve: an authored Rust declaration named
+String could be mistaken for the standard leaf. The implementor's actual regression run executed
+31 cases: 30 passed and the local-shadowing assertion failed, zero ignored, direct exit 101 in
+7.086149 seconds. Root read both complete native outputs, compared their hashes and read the
+immediate exit receipt. Its receipt is preparation/root-mechanism-shadow-readback.json, SHA256
+b3b66f592a55326f906f465a9a5fbb72681d90f45e71eeb19f90b77393868e65.
+That receipt also verifies the earlier 28-case mechanism run's complete output and direct zero.
+Neither provisional run replaces final package checks or independent source review.
+
+At the implementor's explicit all-writes/producers-held boundary, root synchronized only the
+appended binding into the unit. All 1,206 source paths matched before/after except that file;
+the new binding SHA256 is 0fb289baa6637fdbae832c81793792c661c7c1f3ee3ed6a3276a06f0e8a92783.
+The complete receipt preparation/root-binding-sync-2.json is SHA256
+5eb4af2efb3fb9a042de1bfbb72f1b1fdddcaca64d4646874591df1c393667b9.
+The unit resumed implementation; its binding remains root-owned and read-only.
+
+Root read all source assertions in ess-gen/tests/relations.rs and identified the two concrete
+JsonSchema/OpenAPI relation keyword cases. Their independent complete literal assertions qualify
+as source candidates for the witnessed many/owns relation only, not alternative cardinalities or
+runtime relation behavior. They are now among 17 exact reviewed cases and 17 requirement groups.
+Two groups still lack reviewed assertions: relation kind/target/via comparison and parameter
+order/type comparison. Root prepared five isolated typed-delta test candidates in
+preparation/consumer_coverage_f01.rs.candidate, SHA256
+87500ee6576a1ac14c29466d8a0917aa894a274b80b644dd849dde37f9505721.
+This scratch candidate is uncompiled; no additional owner path is reserved or changed yet, and
+Stage 2 and baseline eligibility remain unselected. Full source adversary attacks remain zero.
+
+Root subsequently checked the proposed authored fixture control and five single-edit variants
+using the retained original baseline CLI f672b200014a7e6666d6919b83df8df8dd22d280a9e7b05785cd8c738ac14d80.
+The initial candidate lacked required entity lifecycles; the next control declared unused view
+parameters; the final type variant used the undeclared spelling Int. Each actual refusal and
+candidate version is retained separately under preparation/f01-fixture-admission* and is setup
+evidence only. After adding the required identical lifecycles, one identical parameter-reading
+filter and the actual Integer primitive spelling, all six exact fixture inputs validated with
+direct exit zero. The control and four unchanged variants passed in attempt 3; attempt 4 reran
+only the corrected type variant. Their complete receipts are SHA256
+a7f8b39ee8981ec6ca4d2929f8b448f774d6f749e6be8d4d41d8a363af574f05 and
+6b3857043b319752a99972f7d22fec64a296dff126081f4eb31f5b67f8ae8178.
+The current scratch Rust candidate is SHA256
+3ae5d5b5025197b54b67375e0a313e515ca7756e9da3095893a45dbe5675ced3;
+its Rust assertions remain uncompiled and unexecuted. Source scope and Stage 2 selection are
+unchanged. The repeated self-comparison filter only provides a stable typed parameter-reading
+fixture; these tests claim declaration comparison, not runtime query usefulness or evaluation.
+
+Root's final source-checkpoint preparation copied all 16 changed files and compared all 1,206
+source-input hashes before/after, under the implementor's explicit source hold. The preserved
+snapshot is preparation/stage1-source-checkpoint; its manifest SHA256 is
+cb71edf02aace2857bc54cff698b17a992a181816910d484f866f10858f41f74.
+It is a review snapshot, not an accepted baseline. Root independently read complete final package
+outputs: 71 cases passed (66 main and five layout), zero failed/ignored, direct exit zero in
+7.687912 seconds; strict Clippy returned zero in 6.397296 seconds. Output hashes and counts are
+verified in preparation/root-final-package-readback.json, SHA256
+4847e37f4d6ece96d7ca01860c1b6f7b16202cc9ab7ab9ec9d107bc7d6b537ab.
+
+The frozen-source read then identified an ambient dependency in the new measured-build-profile
+unit test: it validates its actual OUT_DIR profile against the private extraction settings
+(two jobs, debug disabled, all four wrappers explicitly empty). Ordinary repository test defaults
+are not required to have those settings. Root requested a bounded correction to test the same
+profile rules through injected measured snapshots while production extraction retains actual
+tool/configuration/environment verification. This is a source-read finding; root has not run
+an ordinary-default build or claimed an observed failure under it. The preserved snapshot and
+successful private-profile checks remain historical evidence; the corrected source needs a new
+final checkpoint. No Stage 2 or baseline eligibility has been selected.
+
+## Stage 1 accepted checkpoint and Stage 2 selection
+
+Stage 1 source is preserved in local bot commit 7a6d76855e28d280138d2d439eb6f1e7c15a58d9.
+Both author and committer were verified. It is not published or independently source-reviewed.
+The final package passes 71 cases (66 main and five layout); strict Clippy and formatting
+return zero. Two exact acquisitions return zero and match all 13 output files under provider
+SHA256 73048e5b1323441bec6acd03d996f49bf4ccd0765a697d5ac5e3f12f308e5307.
+The final portability control retained an original binary failing with wrappers absent and
+a corrected binary passing under that same environment; no historical result was rebuilt.
+
+Root's corrected source checkpoint contains all 1,206 source pins and 16 changed payloads:
+preparation/stage1-source-checkpoint-2/source-checkpoint.json, SHA256
+4cdb2cb634c51752abcda8fda80ced28c64fd70304cd4c549c805ee05c3983ea. Complete finite
+accounting verifies 809 Rust plus 997 wire obligations, 87 behavioral profiles, 49 source
+case candidates, five mandatory gaps and 157,068 pending unknown pairs. The 148-declaration
+Rust reference graph is closed. All six cached dependency archives match lock checksums
+and 344 corresponding source payloads; only five xtask lock edges were added.
+
+Final report SHA256 19ac6808b91b660d91b6bebc121cb05b3b0021e440309a0e780e69e2d071d459;
+seal2 SHA256 3da17b0a507016832c41b3116f12e30900970120b5cab1a5a4a8f5fc80341ffc.
+Root independently verified all 3,623 native entries and 4,410,923,841 regular bytes, every
+62 completed lane stream and all source archive payloads. Root final readback SHA256
+05d78f21c2d8c1c16ccdcdb936b9d862670a29c895c36c7e4f6c30d6b1d25985. All 88 native
+copies remain retained. The first seal's manager release refusal is preserved; seal2 used
+the normal manager environment, returned zero and released only the implementor's lease.
+Both seal children and the sealer were observed absent. No cleanup occurred in this handoff.
+
+Root accepts only the exact initial-baseline.json SHA256
+e005a2e74e067ad51315e594151643b702381dc174bb9af5c355c3eeeb17ad51. Its 157,068
+pairs have explicit package owners and the separately drafted
+ epic:qualify-initial-consumer-baseline; all 54 mandatory F01 pairs remain excluded.
+That epic is outside the original 31 fixes. Root recorded the exact new ess-diff test owner
+before any edit; five authored mutations plus control validate through the retained original
+CLI, while their Rust test candidate still needs compilation/execution. AEP now contains
+206 artifacts and validates with the same 43 historical findings-block advisories.
+
+The selected complete Stage 2 brief is preparation/stage2-work-order.md, SHA256
+db89aa72d0a92e9a1c173d396f1a40189714edf21be15d1d141bc1bd53e81ba7. Root owns the
+accepted baseline and synchronizes checkpoint metadata through Git before the same
+implementor resumes. New scratch is target/review-boundaries-18/consumer-coverage-stage2;
+new TMP is ~/.cache/ess-w18-consumer-stage2-tmp. Keep Stage 1 scratch and TMP unchanged.
+The unit builds into its default target with the same read-only frozen toolchain, two Rust
+jobs, one producer, 10 GiB combined target/old/new TMP allowance and 8 GiB free floor.
+New own lease: ess-consumer-coverage-stage2-implementor. Token/tool totals are unavailable.
+
+Root will provision the selected production mutation worktree only after preserving the
+stabilized Stage 2 source. Planned id ess-consumer-coverage-mutations-wave18, branch
+probe/consumer-coverage-wave18, scratch target/review-boundaries-18/consumer-mutations,
+TMP ~/.cache/ess-w18-consumer-mutations-tmp, owning root session
+ess-review-consumer-mutations-wave18. It will have its own default target and a fresh
+measured allowance before execution. The exact optional RawSpecFile field and reusable-row
+Struct invariant projection mutations are selected; no copied-source producer starts before
+this bounded provisioning handoff. Full independent source attacks so far: zero.
