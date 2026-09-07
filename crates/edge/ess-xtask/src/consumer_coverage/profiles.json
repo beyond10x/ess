@@ -1,0 +1,1118 @@
+[
+  {
+    "id": "authored-admission",
+    "entrypoints": [
+      "ess_domain::lib(ess_domain)::spec::impl<RawSpecFile;>::parse"
+    ],
+    "claim_boundary": "Admit the authored RawSpecFile wire grammar; parsing does not qualify later consumer behavior.",
+    "execution_profile": "default-rust",
+    "classification": "model-consumer",
+    "evidence_status": "UNACCEPTED_SOURCE_CANDIDATE",
+    "follow_up": null,
+    "owner": null
+  },
+  {
+    "id": "authored-assembly",
+    "entrypoints": [
+      "ess_domain::lib(ess_domain)::spec::impl<Specification;>::assemble"
+    ],
+    "claim_boundary": "Assemble original source parts and run model validation.",
+    "execution_profile": "default-rust",
+    "classification": "model-consumer",
+    "evidence_status": "UNACCEPTED_SOURCE_CANDIDATE",
+    "follow_up": null,
+    "owner": null
+  },
+  {
+    "id": "authored-validation",
+    "entrypoints": [
+      "ess_domain::lib(ess_domain)::spec::impl<Specification;>::validate"
+    ],
+    "claim_boundary": "Validate a retained specification including manually assembled model values.",
+    "execution_profile": "default-rust",
+    "classification": "model-consumer",
+    "evidence_status": "UNACCEPTED_SOURCE_CANDIDATE",
+    "follow_up": null,
+    "owner": null
+  },
+  {
+    "id": "compiler-resolution",
+    "entrypoints": [
+      "ess_compiler::lib(ess_compiler)::resolve::fn::compile"
+    ],
+    "claim_boundary": "Resolve typed model references through the public compiler boundary.",
+    "execution_profile": "default-rust",
+    "classification": "model-consumer",
+    "evidence_status": "UNACCEPTED_SOURCE_CANDIDATE",
+    "follow_up": null,
+    "owner": null
+  },
+  {
+    "id": "compiler-private-parts",
+    "entrypoints": [
+      "ess_compiler::lib(ess_compiler)::ir::impl<EssIr;>::from_parts"
+    ],
+    "claim_boundary": "Private IR assembly, exercised only through compilation or compiler-local cases.",
+    "execution_profile": "default-rust",
+    "classification": "model-consumer",
+    "evidence_status": "UNACCEPTED_SOURCE_CANDIDATE",
+    "follow_up": null,
+    "owner": null
+  },
+  {
+    "id": "semantic-references",
+    "entrypoints": [
+      "ess_compiler::lib(ess_compiler)::refs::enum::EssSemanticRef"
+    ],
+    "claim_boundary": "Stable named construct references and their exact variants; allocation handles are not external identities.",
+    "execution_profile": "default-rust",
+    "classification": "model-consumer",
+    "evidence_status": "UNACCEPTED_SOURCE_CANDIDATE",
+    "follow_up": null,
+    "owner": null
+  },
+  {
+    "id": "dependency-graph",
+    "entrypoints": [
+      "ess_compiler::lib(ess_compiler)::graph::impl<SemanticDependencyGraph;>::of"
+    ],
+    "claim_boundary": "Build dependencies for each retained model construct.",
+    "execution_profile": "default-rust",
+    "classification": "model-consumer",
+    "evidence_status": "UNACCEPTED_SOURCE_CANDIDATE",
+    "follow_up": null,
+    "owner": null
+  },
+  {
+    "id": "semantic-diff",
+    "entrypoints": [
+      "ess_diff::lib(ess_diff)::diff::fn::diff"
+    ],
+    "claim_boundary": "Compare exact semantic structures and retain unclassified residual changes.",
+    "execution_profile": "default-rust",
+    "classification": "model-consumer",
+    "evidence_status": "UNACCEPTED_SOURCE_CANDIDATE",
+    "follow_up": null,
+    "owner": null
+  },
+  {
+    "id": "semantic-impact",
+    "entrypoints": [
+      "ess_diff::lib(ess_diff)::impact::fn::impact"
+    ],
+    "claim_boundary": "Account for changed contract slices, conformance selection and generated artifact obligations.",
+    "execution_profile": "default-rust",
+    "classification": "model-consumer",
+    "evidence_status": "UNACCEPTED_SOURCE_CANDIDATE",
+    "follow_up": null,
+    "owner": null
+  },
+  {
+    "id": "generator-docs",
+    "entrypoints": [
+      "ess_gen::lib(ess_gen)::docs::impl<Docs;Generator>::generate"
+    ],
+    "claim_boundary": "Published generator docs emits artifacts; semantic behavior needs exact output assertions.",
+    "execution_profile": "default-rust",
+    "classification": "model-consumer",
+    "evidence_status": "UNACCEPTED_SOURCE_CANDIDATE",
+    "follow_up": null,
+    "owner": null
+  },
+  {
+    "id": "generator-site",
+    "entrypoints": [
+      "ess_gen::lib(ess_gen)::html::impl<Site;Generator>::generate"
+    ],
+    "claim_boundary": "Published generator site emits artifacts; semantic behavior needs exact output assertions.",
+    "execution_profile": "default-rust",
+    "classification": "model-consumer",
+    "evidence_status": "UNACCEPTED_SOURCE_CANDIDATE",
+    "follow_up": null,
+    "owner": null
+  },
+  {
+    "id": "generator-schema",
+    "entrypoints": [
+      "ess_gen::lib(ess_gen)::schema::impl<JsonSchema;Generator>::generate"
+    ],
+    "claim_boundary": "Published generator schema emits artifacts; semantic behavior needs exact output assertions.",
+    "execution_profile": "default-rust",
+    "classification": "model-consumer",
+    "evidence_status": "UNACCEPTED_SOURCE_CANDIDATE",
+    "follow_up": null,
+    "owner": null
+  },
+  {
+    "id": "generator-openapi",
+    "entrypoints": [
+      "ess_gen::lib(ess_gen)::openapi::impl<OpenApi;Generator>::generate"
+    ],
+    "claim_boundary": "Published generator openapi emits artifacts; semantic behavior needs exact output assertions.",
+    "execution_profile": "default-rust",
+    "classification": "model-consumer",
+    "evidence_status": "UNACCEPTED_SOURCE_CANDIDATE",
+    "follow_up": null,
+    "owner": null
+  },
+  {
+    "id": "generator-asyncapi",
+    "entrypoints": [
+      "ess_gen::lib(ess_gen)::asyncapi::impl<AsyncApi;Generator>::generate"
+    ],
+    "claim_boundary": "Published generator asyncapi emits artifacts; semantic behavior needs exact output assertions.",
+    "execution_profile": "default-rust",
+    "classification": "model-consumer",
+    "evidence_status": "UNACCEPTED_SOURCE_CANDIDATE",
+    "follow_up": null,
+    "owner": null
+  },
+  {
+    "id": "docs-ir",
+    "entrypoints": [
+      "ess_gen::lib(ess_gen)::docs::fn::document"
+    ],
+    "claim_boundary": "Model-to-document IR content, distinct from Markdown or HTML rendering.",
+    "execution_profile": "default-rust",
+    "classification": "model-consumer",
+    "evidence_status": "UNACCEPTED_SOURCE_CANDIDATE",
+    "follow_up": null,
+    "owner": null
+  },
+  {
+    "id": "markdown",
+    "entrypoints": [
+      "ess_gen::lib(ess_gen)::markdown::fn::render"
+    ],
+    "claim_boundary": "Render document IR to Markdown; transport/rendering effects remain separately attributed.",
+    "execution_profile": "default-rust",
+    "classification": "model-consumer",
+    "evidence_status": "UNACCEPTED_SOURCE_CANDIDATE",
+    "follow_up": null,
+    "owner": null
+  },
+  {
+    "id": "html",
+    "entrypoints": [
+      "ess_gen::lib(ess_gen)::html::impl<Site;>::render"
+    ],
+    "claim_boundary": "Render document IR/site content to HTML; browser execution is separate.",
+    "execution_profile": "default-rust",
+    "classification": "model-consumer",
+    "evidence_status": "UNACCEPTED_SOURCE_CANDIDATE",
+    "follow_up": null,
+    "owner": null
+  },
+  {
+    "id": "graph-rendering",
+    "entrypoints": [
+      "ess_gen::lib(ess_gen)::graph::impl<SystemGraph < 'a >;>::of"
+    ],
+    "claim_boundary": "Model graph rendering and presentation relationships.",
+    "execution_profile": "default-rust",
+    "classification": "model-consumer",
+    "evidence_status": "UNACCEPTED_SOURCE_CANDIDATE",
+    "follow_up": null,
+    "owner": null
+  },
+  {
+    "id": "shared-schema-mapping",
+    "entrypoints": [
+      "ess_gen::lib(ess_gen)::schema::types::fn::body"
+    ],
+    "claim_boundary": "Map semantic type bodies into emitted schema structure and annotations.",
+    "execution_profile": "default-rust",
+    "classification": "model-consumer",
+    "evidence_status": "UNACCEPTED_SOURCE_CANDIDATE",
+    "follow_up": null,
+    "owner": null
+  },
+  {
+    "id": "http-embedding",
+    "entrypoints": [
+      "ess_gen::lib(ess_gen)::openapi::fn::embedded"
+    ],
+    "claim_boundary": "Embed selected model contracts into component HTTP surfaces.",
+    "execution_profile": "default-rust",
+    "classification": "model-consumer",
+    "evidence_status": "UNACCEPTED_SOURCE_CANDIDATE",
+    "follow_up": null,
+    "owner": null
+  },
+  {
+    "id": "neutral-synthesis-plan",
+    "entrypoints": [
+      "ess_synth::lib(ess_synth)::plan::impl<SynthesisPlan;>::of"
+    ],
+    "claim_boundary": "Neutral generated/obligated/refused synthesis decisions.",
+    "execution_profile": "default-rust",
+    "classification": "model-consumer",
+    "evidence_status": "UNACCEPTED_SOURCE_CANDIDATE",
+    "follow_up": null,
+    "owner": null
+  },
+  {
+    "id": "synthesis-rust-emission",
+    "entrypoints": [
+      "ess_synth::lib(ess_synth)::fn::synthesize_for"
+    ],
+    "claim_boundary": "Rust emission; emitted bytes, named refusal and actual generated runtime behavior are separate claims.",
+    "execution_profile": "default-rust",
+    "classification": "model-consumer",
+    "evidence_status": "UNACCEPTED_SOURCE_CANDIDATE",
+    "follow_up": null,
+    "owner": null
+  },
+  {
+    "id": "synthesis-rust-refusal",
+    "entrypoints": [
+      "ess_synth::lib(ess_synth)::fn::synthesize_for"
+    ],
+    "claim_boundary": "Rust refusal; emitted bytes, named refusal and actual generated runtime behavior are separate claims.",
+    "execution_profile": "default-rust",
+    "classification": "model-consumer",
+    "evidence_status": "UNACCEPTED_SOURCE_CANDIDATE",
+    "follow_up": null,
+    "owner": null
+  },
+  {
+    "id": "synthesis-rust-generated-execution",
+    "entrypoints": [
+      "ess_synth::lib(ess_synth)::fn::synthesize_for"
+    ],
+    "claim_boundary": "Rust generated-execution; emitted bytes, named refusal and actual generated runtime behavior are separate claims.",
+    "execution_profile": "frozen-rust",
+    "classification": "model-consumer",
+    "evidence_status": "UNACCEPTED_SOURCE_CANDIDATE",
+    "follow_up": null,
+    "owner": null
+  },
+  {
+    "id": "synthesis-go-emission",
+    "entrypoints": [
+      "ess_synth::lib(ess_synth)::fn::synthesize_for"
+    ],
+    "claim_boundary": "Go emission; emitted bytes, named refusal and actual generated runtime behavior are separate claims.",
+    "execution_profile": "default-rust",
+    "classification": "model-consumer",
+    "evidence_status": "UNACCEPTED_SOURCE_CANDIDATE",
+    "follow_up": null,
+    "owner": null
+  },
+  {
+    "id": "synthesis-go-refusal",
+    "entrypoints": [
+      "ess_synth::lib(ess_synth)::fn::synthesize_for"
+    ],
+    "claim_boundary": "Go refusal; emitted bytes, named refusal and actual generated runtime behavior are separate claims.",
+    "execution_profile": "default-rust",
+    "classification": "model-consumer",
+    "evidence_status": "UNACCEPTED_SOURCE_CANDIDATE",
+    "follow_up": null,
+    "owner": null
+  },
+  {
+    "id": "synthesis-go-generated-execution",
+    "entrypoints": [
+      "ess_synth::lib(ess_synth)::fn::synthesize_for"
+    ],
+    "claim_boundary": "Go generated-execution; emitted bytes, named refusal and actual generated runtime behavior are separate claims.",
+    "execution_profile": "generated-go",
+    "classification": "model-consumer",
+    "evidence_status": "UNACCEPTED_SOURCE_CANDIDATE",
+    "follow_up": null,
+    "owner": null
+  },
+  {
+    "id": "synthesis-web-emission",
+    "entrypoints": [
+      "ess_synth::lib(ess_synth)::fn::synthesize_for"
+    ],
+    "claim_boundary": "Web emission; emitted bytes, named refusal and actual generated runtime behavior are separate claims.",
+    "execution_profile": "default-rust",
+    "classification": "model-consumer",
+    "evidence_status": "UNACCEPTED_SOURCE_CANDIDATE",
+    "follow_up": null,
+    "owner": null
+  },
+  {
+    "id": "synthesis-web-refusal",
+    "entrypoints": [
+      "ess_synth::lib(ess_synth)::fn::synthesize_for"
+    ],
+    "claim_boundary": "Web refusal; emitted bytes, named refusal and actual generated runtime behavior are separate claims.",
+    "execution_profile": "default-rust",
+    "classification": "model-consumer",
+    "evidence_status": "UNACCEPTED_SOURCE_CANDIDATE",
+    "follow_up": null,
+    "owner": null
+  },
+  {
+    "id": "synthesis-web-generated-execution",
+    "entrypoints": [
+      "ess_synth::lib(ess_synth)::fn::synthesize_for"
+    ],
+    "claim_boundary": "Web generated-execution; emitted bytes, named refusal and actual generated runtime behavior are separate claims.",
+    "execution_profile": "rust-wasm-node-firefox",
+    "classification": "model-consumer",
+    "evidence_status": "UNACCEPTED_SOURCE_CANDIDATE",
+    "follow_up": null,
+    "owner": null
+  },
+  {
+    "id": "synthesis-clap-emission",
+    "entrypoints": [
+      "ess_synth::lib(ess_synth)::fn::synthesize_for"
+    ],
+    "claim_boundary": "Clap emission; emitted bytes, named refusal and actual generated runtime behavior are separate claims.",
+    "execution_profile": "default-rust",
+    "classification": "model-consumer",
+    "evidence_status": "UNACCEPTED_SOURCE_CANDIDATE",
+    "follow_up": null,
+    "owner": null
+  },
+  {
+    "id": "synthesis-clap-refusal",
+    "entrypoints": [
+      "ess_synth::lib(ess_synth)::fn::synthesize_for"
+    ],
+    "claim_boundary": "Clap refusal; emitted bytes, named refusal and actual generated runtime behavior are separate claims.",
+    "execution_profile": "default-rust",
+    "classification": "model-consumer",
+    "evidence_status": "UNACCEPTED_SOURCE_CANDIDATE",
+    "follow_up": null,
+    "owner": null
+  },
+  {
+    "id": "synthesis-clap-generated-execution",
+    "entrypoints": [
+      "ess_synth::lib(ess_synth)::fn::synthesize_for"
+    ],
+    "claim_boundary": "Clap generated-execution; emitted bytes, named refusal and actual generated runtime behavior are separate claims.",
+    "execution_profile": "generated-rust-clap",
+    "classification": "model-consumer",
+    "evidence_status": "UNACCEPTED_SOURCE_CANDIDATE",
+    "follow_up": null,
+    "owner": null
+  },
+  {
+    "id": "conformance-generated",
+    "entrypoints": [
+      "ess_conformance::lib(ess_conformance)::synthesize::fn::synthesize"
+    ],
+    "claim_boundary": "Generate model conformance requirements.",
+    "execution_profile": "default-rust",
+    "classification": "model-consumer",
+    "evidence_status": "UNACCEPTED_SOURCE_CANDIDATE",
+    "follow_up": null,
+    "owner": null
+  },
+  {
+    "id": "conformance-authored",
+    "entrypoints": [
+      "ess_conformance::lib(ess_conformance)::authored::fn::compile"
+    ],
+    "claim_boundary": "Compile authored scenario claims under the model.",
+    "execution_profile": "default-rust",
+    "classification": "model-consumer",
+    "evidence_status": "UNACCEPTED_SOURCE_CANDIDATE",
+    "follow_up": null,
+    "owner": null
+  },
+  {
+    "id": "coverage-suite5",
+    "entrypoints": [
+      "ess_conformance::lib(ess_conformance)::coverage_build::fn::build"
+    ],
+    "claim_boundary": "Create suite/5 with admitted coverage inventory and outcomes.",
+    "execution_profile": "default-rust",
+    "classification": "model-consumer",
+    "evidence_status": "UNACCEPTED_SOURCE_CANDIDATE",
+    "follow_up": null,
+    "owner": null
+  },
+  {
+    "id": "coverage-authored-batch",
+    "entrypoints": [
+      "ess_conformance::lib(ess_conformance)::coverage_build::fn::compile_sources"
+    ],
+    "claim_boundary": "Compile exact original authored source batches.",
+    "execution_profile": "default-rust",
+    "classification": "model-consumer",
+    "evidence_status": "UNACCEPTED_SOURCE_CANDIDATE",
+    "follow_up": null,
+    "owner": null
+  },
+  {
+    "id": "suite-admission",
+    "entrypoints": [
+      "ess_conformance::lib(ess_conformance)::admission::impl<AdmittedSuite;>::parse"
+    ],
+    "claim_boundary": "Admit original suite bytes, counts, input identities and retained lineage.",
+    "execution_profile": "default-rust",
+    "classification": "model-consumer",
+    "evidence_status": "UNACCEPTED_SOURCE_CANDIDATE",
+    "follow_up": null,
+    "owner": null
+  },
+  {
+    "id": "conformance-rust-runner",
+    "entrypoints": [
+      "ess_conformance::lib(ess_conformance)::runner::impl<Runner < C >;>::run_admitted"
+    ],
+    "claim_boundary": "Execute the admitted finite scenario selection on an actual Rust target.",
+    "execution_profile": "default-rust",
+    "classification": "model-consumer",
+    "evidence_status": "UNACCEPTED_SOURCE_CANDIDATE",
+    "follow_up": null,
+    "owner": null
+  },
+  {
+    "id": "coverage-final-merge",
+    "entrypoints": [
+      "ess_cli::bin(ess)::coverage::fn::generate"
+    ],
+    "claim_boundary": "Combine generated and authored obligations with exact source identities; input refusal precedes output.",
+    "execution_profile": "default-rust",
+    "classification": "model-consumer",
+    "evidence_status": "UNACCEPTED_SOURCE_CANDIDATE",
+    "follow_up": null,
+    "owner": null
+  },
+  {
+    "id": "coverage-selection",
+    "entrypoints": [
+      "ess_cli::bin(ess)::coverage::fn::select"
+    ],
+    "claim_boundary": "Retain original selection lineage; committed suite selection bypasses specification discovery.",
+    "execution_profile": "default-rust",
+    "classification": "model-consumer",
+    "evidence_status": "UNACCEPTED_SOURCE_CANDIDATE",
+    "follow_up": null,
+    "owner": null
+  },
+  {
+    "id": "coverage-execution",
+    "entrypoints": [
+      "ess_cli::bin(ess)::coverage::fn::execute"
+    ],
+    "claim_boundary": "Execute an admitted suite selection; committed runs bypass current manifest acquisition.",
+    "execution_profile": "frozen-rust",
+    "classification": "model-consumer",
+    "evidence_status": "UNACCEPTED_SOURCE_CANDIDATE",
+    "follow_up": null,
+    "owner": null
+  },
+  {
+    "id": "conformance-go-runner",
+    "entrypoints": [
+      "ess_cli::bin(ess)::fn::synthesize_suite"
+    ],
+    "claim_boundary": "Generate and execute Go conformance; an outer Rust early return is not execution.",
+    "execution_profile": "generated-go",
+    "classification": "model-consumer",
+    "evidence_status": "UNACCEPTED_SOURCE_CANDIDATE",
+    "follow_up": null,
+    "owner": null
+  },
+  {
+    "id": "browser-paired-replay",
+    "entrypoints": [
+      "ess_cli::bin(ess)::coverage::fn::web"
+    ],
+    "claim_boundary": "Paired suite/report replay retains selected claims and visible unknown-state limits.",
+    "execution_profile": "required-firefox",
+    "classification": "model-consumer",
+    "evidence_status": "UNACCEPTED_SOURCE_CANDIDATE",
+    "follow_up": null,
+    "owner": null
+  },
+  {
+    "id": "browser-legacy-replay",
+    "entrypoints": [
+      "ess_cli::bin(ess)::fn::conform_web"
+    ],
+    "claim_boundary": "Legacy browser replay is a bounded display/replay contract, not full view evaluation.",
+    "execution_profile": "required-firefox",
+    "classification": "model-consumer",
+    "evidence_status": "UNACCEPTED_SOURCE_CANDIDATE",
+    "follow_up": null,
+    "owner": null
+  },
+  {
+    "id": "acquisition-specification-manifest",
+    "entrypoints": [
+      "ess_cli::bin(ess)::load::fn::specification"
+    ],
+    "claim_boundary": "specification acquisition under manifest: exact input identities/bytes, role-specific filesystem checking and discovery refusal before output; authored(None, coverage=false/true) remains empty before acquisition; specification requires an explicit path.",
+    "execution_profile": "default-rust",
+    "classification": "model-consumer",
+    "evidence_status": "UNACCEPTED_SOURCE_CANDIDATE",
+    "follow_up": null,
+    "owner": null
+  },
+  {
+    "id": "acquisition-specification-legacy-directory",
+    "entrypoints": [
+      "ess_cli::bin(ess)::load::fn::specification"
+    ],
+    "claim_boundary": "specification acquisition under legacy-directory: exact input identities/bytes, role-specific filesystem checking and discovery refusal before output; authored(None, coverage=false/true) remains empty before acquisition; specification requires an explicit path.",
+    "execution_profile": "default-rust",
+    "classification": "model-consumer",
+    "evidence_status": "UNACCEPTED_SOURCE_CANDIDATE",
+    "follow_up": null,
+    "owner": null
+  },
+  {
+    "id": "acquisition-specification-direct-file",
+    "entrypoints": [
+      "ess_cli::bin(ess)::load::fn::specification"
+    ],
+    "claim_boundary": "specification acquisition under direct-file: exact input identities/bytes, role-specific filesystem checking and discovery refusal before output; authored(None, coverage=false/true) remains empty before acquisition; specification requires an explicit path.",
+    "execution_profile": "default-rust",
+    "classification": "model-consumer",
+    "evidence_status": "UNACCEPTED_SOURCE_CANDIDATE",
+    "follow_up": null,
+    "owner": null
+  },
+  {
+    "id": "acquisition-authored-manifest",
+    "entrypoints": [
+      "ess_cli::bin(ess)::input_discovery::fn::authored"
+    ],
+    "claim_boundary": "authored acquisition under manifest: exact input identities/bytes, role-specific filesystem checking and discovery refusal before output; authored(None, coverage=false/true) remains empty before acquisition; specification requires an explicit path.",
+    "execution_profile": "default-rust",
+    "classification": "model-consumer",
+    "evidence_status": "UNACCEPTED_SOURCE_CANDIDATE",
+    "follow_up": null,
+    "owner": null
+  },
+  {
+    "id": "acquisition-authored-legacy-directory",
+    "entrypoints": [
+      "ess_cli::bin(ess)::input_discovery::fn::authored"
+    ],
+    "claim_boundary": "authored acquisition under legacy-directory: exact input identities/bytes, role-specific filesystem checking and discovery refusal before output; authored(None, coverage=false/true) remains empty before acquisition; specification requires an explicit path.",
+    "execution_profile": "default-rust",
+    "classification": "model-consumer",
+    "evidence_status": "UNACCEPTED_SOURCE_CANDIDATE",
+    "follow_up": null,
+    "owner": null
+  },
+  {
+    "id": "acquisition-authored-direct-file",
+    "entrypoints": [
+      "ess_cli::bin(ess)::input_discovery::fn::authored"
+    ],
+    "claim_boundary": "authored acquisition under direct-file: exact input identities/bytes, role-specific filesystem checking and discovery refusal before output; authored(None, coverage=false/true) remains empty before acquisition; specification requires an explicit path.",
+    "execution_profile": "default-rust",
+    "classification": "model-consumer",
+    "evidence_status": "UNACCEPTED_SOURCE_CANDIDATE",
+    "follow_up": null,
+    "owner": null
+  },
+  {
+    "id": "acquisition-authored-omitted-scenarios",
+    "entrypoints": [
+      "ess_cli::bin(ess)::input_discovery::fn::authored"
+    ],
+    "claim_boundary": "authored acquisition under omitted-scenarios: exact input identities/bytes, role-specific filesystem checking and discovery refusal before output; authored(None, coverage=false/true) remains empty before acquisition; specification requires an explicit path.",
+    "execution_profile": "default-rust",
+    "classification": "model-consumer",
+    "evidence_status": "UNACCEPTED_SOURCE_CANDIDATE",
+    "follow_up": null,
+    "owner": null
+  },
+  {
+    "id": "acquisition-coverage-manifest",
+    "entrypoints": [
+      "ess_cli::bin(ess)::input_discovery::fn::authored"
+    ],
+    "claim_boundary": "coverage acquisition under manifest: exact input identities/bytes, role-specific filesystem checking and discovery refusal before output; authored(None, coverage=false/true) remains empty before acquisition; specification requires an explicit path.",
+    "execution_profile": "default-rust",
+    "classification": "model-consumer",
+    "evidence_status": "UNACCEPTED_SOURCE_CANDIDATE",
+    "follow_up": null,
+    "owner": null
+  },
+  {
+    "id": "acquisition-coverage-legacy-directory",
+    "entrypoints": [
+      "ess_cli::bin(ess)::input_discovery::fn::authored"
+    ],
+    "claim_boundary": "coverage acquisition under legacy-directory: exact input identities/bytes, role-specific filesystem checking and discovery refusal before output; authored(None, coverage=false/true) remains empty before acquisition; specification requires an explicit path.",
+    "execution_profile": "default-rust",
+    "classification": "model-consumer",
+    "evidence_status": "UNACCEPTED_SOURCE_CANDIDATE",
+    "follow_up": null,
+    "owner": null
+  },
+  {
+    "id": "acquisition-coverage-direct-file",
+    "entrypoints": [
+      "ess_cli::bin(ess)::input_discovery::fn::authored"
+    ],
+    "claim_boundary": "coverage acquisition under direct-file: exact input identities/bytes, role-specific filesystem checking and discovery refusal before output; authored(None, coverage=false/true) remains empty before acquisition; specification requires an explicit path.",
+    "execution_profile": "default-rust",
+    "classification": "model-consumer",
+    "evidence_status": "UNACCEPTED_SOURCE_CANDIDATE",
+    "follow_up": null,
+    "owner": null
+  },
+  {
+    "id": "acquisition-coverage-omitted-scenarios",
+    "entrypoints": [
+      "ess_cli::bin(ess)::input_discovery::fn::authored"
+    ],
+    "claim_boundary": "coverage acquisition under omitted-scenarios: exact input identities/bytes, role-specific filesystem checking and discovery refusal before output; authored(None, coverage=false/true) remains empty before acquisition; specification requires an explicit path.",
+    "execution_profile": "default-rust",
+    "classification": "model-consumer",
+    "evidence_status": "UNACCEPTED_SOURCE_CANDIDATE",
+    "follow_up": null,
+    "owner": null
+  },
+  {
+    "id": "release-report-model-qualification",
+    "entrypoints": [
+      "ess_cli::bin(ess)::fn::qualify_release_report"
+    ],
+    "claim_boundary": "Qualify admitted report/model/selection consistency; does not authenticate producer identity or establish execution.",
+    "execution_profile": "default-rust",
+    "classification": "model-consumer",
+    "evidence_status": "UNACCEPTED_SOURCE_CANDIDATE",
+    "follow_up": null,
+    "owner": null
+  },
+  {
+    "id": "observed-binding-comparison",
+    "entrypoints": [
+      "ess_cli::bin(ess)::observed_bindings::fn::run"
+    ],
+    "claim_boundary": "Compare model realization identity and qualified observed bindings; scope uncertainty remains visible.",
+    "execution_profile": "default-rust",
+    "classification": "model-consumer",
+    "evidence_status": "UNACCEPTED_SOURCE_CANDIDATE",
+    "follow_up": null,
+    "owner": null
+  },
+  {
+    "id": "composition-compile",
+    "entrypoints": [
+      "ess_composition::lib(ess_composition)::fn::compile"
+    ],
+    "claim_boundary": "Compile imported service identities and references; no typed runtime payload guarantee.",
+    "execution_profile": "default-rust",
+    "classification": "model-consumer",
+    "evidence_status": "UNACCEPTED_SOURCE_CANDIDATE",
+    "follow_up": null,
+    "owner": null
+  },
+  {
+    "id": "composition-rust-byte-transport",
+    "entrypoints": [
+      "ess_composition::lib(ess_composition)::impl<EssClientPlan;>::rust_artifacts"
+    ],
+    "claim_boundary": "Generated Rust client transports bytes with service/operation identity; it does not validate typed payloads.",
+    "execution_profile": "generated-rust-client",
+    "classification": "model-consumer",
+    "evidence_status": "UNACCEPTED_SOURCE_CANDIDATE",
+    "follow_up": null,
+    "owner": null
+  },
+  {
+    "id": "realization-v1",
+    "entrypoints": [
+      "ess_realization::lib(ess_realization)::fn::compile"
+    ],
+    "claim_boundary": "Realization v1 declared ownership and runtime identity; version alternatives have distinct admission contracts.",
+    "execution_profile": "default-rust",
+    "classification": "model-consumer",
+    "evidence_status": "UNACCEPTED_SOURCE_CANDIDATE",
+    "follow_up": null,
+    "owner": null
+  },
+  {
+    "id": "realization-v2",
+    "entrypoints": [
+      "ess_realization::lib(ess_realization)::fn::compile"
+    ],
+    "claim_boundary": "Realization v2 declared ownership and runtime identity; version alternatives have distinct admission contracts.",
+    "execution_profile": "default-rust",
+    "classification": "model-consumer",
+    "evidence_status": "UNACCEPTED_SOURCE_CANDIDATE",
+    "follow_up": null,
+    "owner": null
+  },
+  {
+    "id": "deployment-runtime",
+    "entrypoints": [
+      "ess_deployment::lib(ess_deployment)::runtime::fn::compile_runtime"
+    ],
+    "claim_boundary": "Compile the runtime projection from admitted model/realization inputs; no live application is implied.",
+    "execution_profile": "default-rust",
+    "classification": "model-consumer",
+    "evidence_status": "UNACCEPTED_SOURCE_CANDIDATE",
+    "follow_up": null,
+    "owner": null
+  },
+  {
+    "id": "deployment-deployment",
+    "entrypoints": [
+      "ess_deployment::lib(ess_deployment)::environment::fn::compile_deployment"
+    ],
+    "claim_boundary": "Compile the deployment projection from admitted model/realization inputs; no live application is implied.",
+    "execution_profile": "default-rust",
+    "classification": "model-consumer",
+    "evidence_status": "UNACCEPTED_SOURCE_CANDIDATE",
+    "follow_up": null,
+    "owner": null
+  },
+  {
+    "id": "deployment-component",
+    "entrypoints": [
+      "ess_deployment::lib(ess_deployment)::component::fn::compile_component"
+    ],
+    "claim_boundary": "Compile the component projection from admitted model/realization inputs; no live application is implied.",
+    "execution_profile": "default-rust",
+    "classification": "model-consumer",
+    "evidence_status": "UNACCEPTED_SOURCE_CANDIDATE",
+    "follow_up": null,
+    "owner": null
+  },
+  {
+    "id": "deployment-build",
+    "entrypoints": [
+      "ess_deployment::lib(ess_deployment)::build::fn::compile_build"
+    ],
+    "claim_boundary": "Compile the build projection from admitted model/realization inputs; no live application is implied.",
+    "execution_profile": "default-rust",
+    "classification": "model-consumer",
+    "evidence_status": "UNACCEPTED_SOURCE_CANDIDATE",
+    "follow_up": null,
+    "owner": null
+  },
+  {
+    "id": "model-types-selection",
+    "entrypoints": [
+      "ess_gen::lib(ess_gen)::schema::model_types::impl<ModelTypes;>::select"
+    ],
+    "claim_boundary": "Select structural model roots and exact provenance before choosing a target.",
+    "execution_profile": "default-rust",
+    "classification": "model-consumer",
+    "evidence_status": "UNACCEPTED_SOURCE_CANDIDATE",
+    "follow_up": null,
+    "owner": null
+  },
+  {
+    "id": "model-types-rust-emission",
+    "entrypoints": [
+      "ess_cli::bin(ess)::model_types::fn::run"
+    ],
+    "claim_boundary": "ModelTypes rust emission; emission/refusal executes the Rust host; actual native behavior requires an attributed generated-library case.",
+    "execution_profile": "default-rust",
+    "classification": "model-consumer",
+    "evidence_status": "UNACCEPTED_SOURCE_CANDIDATE",
+    "follow_up": null,
+    "owner": null
+  },
+  {
+    "id": "model-normalization-rust-emission",
+    "entrypoints": [
+      "ess_cli::bin(ess)::normalize::fn::generate"
+    ],
+    "claim_boundary": "Model-backed normalization rust emission; generate dispatches Plan target emitters; native behavior requires a generated-library case.",
+    "execution_profile": "default-rust",
+    "classification": "model-consumer",
+    "evidence_status": "UNACCEPTED_SOURCE_CANDIDATE",
+    "follow_up": null,
+    "owner": null
+  },
+  {
+    "id": "model-types-rust-refusal",
+    "entrypoints": [
+      "ess_cli::bin(ess)::model_types::fn::run"
+    ],
+    "claim_boundary": "ModelTypes rust refusal; emission/refusal executes the Rust host; actual native behavior requires an attributed generated-library case.",
+    "execution_profile": "default-rust",
+    "classification": "model-consumer",
+    "evidence_status": "UNACCEPTED_SOURCE_CANDIDATE",
+    "follow_up": null,
+    "owner": null
+  },
+  {
+    "id": "model-normalization-rust-refusal",
+    "entrypoints": [
+      "ess_cli::bin(ess)::normalize::fn::generate"
+    ],
+    "claim_boundary": "Model-backed normalization rust refusal; generate dispatches Plan target emitters; native behavior requires a generated-library case.",
+    "execution_profile": "default-rust",
+    "classification": "model-consumer",
+    "evidence_status": "UNACCEPTED_SOURCE_CANDIDATE",
+    "follow_up": null,
+    "owner": null
+  },
+  {
+    "id": "model-types-rust-native-execution",
+    "entrypoints": [
+      "ess_cli::bin(ess)::model_types::fn::run"
+    ],
+    "claim_boundary": "ModelTypes rust native-execution; emission/refusal executes the Rust host; actual native behavior requires an attributed generated-library case.",
+    "execution_profile": "frozen-rust",
+    "classification": "model-consumer",
+    "evidence_status": "UNACCEPTED_SOURCE_CANDIDATE",
+    "follow_up": null,
+    "owner": null
+  },
+  {
+    "id": "model-normalization-rust-native-execution",
+    "entrypoints": [
+      "ess_cli::bin(ess)::normalize::fn::generate"
+    ],
+    "claim_boundary": "Model-backed normalization rust native-execution; generate dispatches Plan target emitters; native behavior requires a generated-library case.",
+    "execution_profile": "frozen-rust",
+    "classification": "model-consumer",
+    "evidence_status": "UNACCEPTED_SOURCE_CANDIDATE",
+    "follow_up": null,
+    "owner": null
+  },
+  {
+    "id": "model-types-go-emission",
+    "entrypoints": [
+      "ess_cli::bin(ess)::model_types::fn::run"
+    ],
+    "claim_boundary": "ModelTypes go emission; emission/refusal executes the Rust host; actual native behavior requires an attributed generated-library case.",
+    "execution_profile": "default-rust",
+    "classification": "model-consumer",
+    "evidence_status": "UNACCEPTED_SOURCE_CANDIDATE",
+    "follow_up": null,
+    "owner": null
+  },
+  {
+    "id": "model-normalization-go-emission",
+    "entrypoints": [
+      "ess_cli::bin(ess)::normalize::fn::generate"
+    ],
+    "claim_boundary": "Model-backed normalization go emission; generate dispatches Plan target emitters; native behavior requires a generated-library case.",
+    "execution_profile": "default-rust",
+    "classification": "model-consumer",
+    "evidence_status": "UNACCEPTED_SOURCE_CANDIDATE",
+    "follow_up": null,
+    "owner": null
+  },
+  {
+    "id": "model-types-go-refusal",
+    "entrypoints": [
+      "ess_cli::bin(ess)::model_types::fn::run"
+    ],
+    "claim_boundary": "ModelTypes go refusal; emission/refusal executes the Rust host; actual native behavior requires an attributed generated-library case.",
+    "execution_profile": "default-rust",
+    "classification": "model-consumer",
+    "evidence_status": "UNACCEPTED_SOURCE_CANDIDATE",
+    "follow_up": null,
+    "owner": null
+  },
+  {
+    "id": "model-normalization-go-refusal",
+    "entrypoints": [
+      "ess_cli::bin(ess)::normalize::fn::generate"
+    ],
+    "claim_boundary": "Model-backed normalization go refusal; generate dispatches Plan target emitters; native behavior requires a generated-library case.",
+    "execution_profile": "default-rust",
+    "classification": "model-consumer",
+    "evidence_status": "UNACCEPTED_SOURCE_CANDIDATE",
+    "follow_up": null,
+    "owner": null
+  },
+  {
+    "id": "model-types-go-native-execution",
+    "entrypoints": [
+      "ess_cli::bin(ess)::model_types::fn::run"
+    ],
+    "claim_boundary": "ModelTypes go native-execution; emission/refusal executes the Rust host; actual native behavior requires an attributed generated-library case.",
+    "execution_profile": "generated-go",
+    "classification": "model-consumer",
+    "evidence_status": "UNACCEPTED_SOURCE_CANDIDATE",
+    "follow_up": null,
+    "owner": null
+  },
+  {
+    "id": "model-normalization-go-native-execution",
+    "entrypoints": [
+      "ess_cli::bin(ess)::normalize::fn::generate"
+    ],
+    "claim_boundary": "Model-backed normalization go native-execution; generate dispatches Plan target emitters; native behavior requires a generated-library case.",
+    "execution_profile": "generated-go",
+    "classification": "model-consumer",
+    "evidence_status": "UNACCEPTED_SOURCE_CANDIDATE",
+    "follow_up": null,
+    "owner": null
+  },
+  {
+    "id": "model-types-typescript-emission",
+    "entrypoints": [
+      "ess_cli::bin(ess)::model_types::fn::run"
+    ],
+    "claim_boundary": "ModelTypes typescript emission; emission/refusal executes the Rust host; actual native behavior requires an attributed generated-library case.",
+    "execution_profile": "default-rust",
+    "classification": "model-consumer",
+    "evidence_status": "UNACCEPTED_SOURCE_CANDIDATE",
+    "follow_up": null,
+    "owner": null
+  },
+  {
+    "id": "model-normalization-typescript-emission",
+    "entrypoints": [
+      "ess_cli::bin(ess)::normalize::fn::generate"
+    ],
+    "claim_boundary": "Model-backed normalization typescript emission; generate dispatches Plan target emitters; native behavior requires a generated-library case.",
+    "execution_profile": "default-rust",
+    "classification": "model-consumer",
+    "evidence_status": "UNACCEPTED_SOURCE_CANDIDATE",
+    "follow_up": null,
+    "owner": null
+  },
+  {
+    "id": "model-types-typescript-refusal",
+    "entrypoints": [
+      "ess_cli::bin(ess)::model_types::fn::run"
+    ],
+    "claim_boundary": "ModelTypes typescript refusal; emission/refusal executes the Rust host; actual native behavior requires an attributed generated-library case.",
+    "execution_profile": "default-rust",
+    "classification": "model-consumer",
+    "evidence_status": "UNACCEPTED_SOURCE_CANDIDATE",
+    "follow_up": null,
+    "owner": null
+  },
+  {
+    "id": "model-normalization-typescript-refusal",
+    "entrypoints": [
+      "ess_cli::bin(ess)::normalize::fn::generate"
+    ],
+    "claim_boundary": "Model-backed normalization typescript refusal; generate dispatches Plan target emitters; native behavior requires a generated-library case.",
+    "execution_profile": "default-rust",
+    "classification": "model-consumer",
+    "evidence_status": "UNACCEPTED_SOURCE_CANDIDATE",
+    "follow_up": null,
+    "owner": null
+  },
+  {
+    "id": "model-types-typescript-native-execution",
+    "entrypoints": [
+      "ess_cli::bin(ess)::model_types::fn::run"
+    ],
+    "claim_boundary": "ModelTypes typescript native-execution; emission/refusal executes the Rust host; actual native behavior requires an attributed generated-library case.",
+    "execution_profile": "typescript-6.0.3-node-22.23.1-v8-12.4.254.21-node.56-optional",
+    "classification": "model-consumer",
+    "evidence_status": "UNACCEPTED_SOURCE_CANDIDATE",
+    "follow_up": null,
+    "owner": null
+  },
+  {
+    "id": "model-normalization-typescript-native-execution",
+    "entrypoints": [
+      "ess_cli::bin(ess)::normalize::fn::generate"
+    ],
+    "claim_boundary": "Model-backed normalization typescript native-execution; generate dispatches Plan target emitters; native behavior requires a generated-library case.",
+    "execution_profile": "typescript-6.0.3-node-22.23.1-v8-12.4.254.21-node.56-optional",
+    "classification": "model-consumer",
+    "evidence_status": "UNACCEPTED_SOURCE_CANDIDATE",
+    "follow_up": null,
+    "owner": null
+  },
+  {
+    "id": "model-normalization-check",
+    "entrypoints": [
+      "ess_cli::bin(ess)::normalize::fn::check"
+    ],
+    "claim_boundary": "Model-backed recipe check uses Sources::plan, ModelTypes::select and Plan::check_with_models before writing the checked recipe.",
+    "execution_profile": "default-rust",
+    "classification": "model-consumer",
+    "evidence_status": "UNACCEPTED_SOURCE_CANDIDATE",
+    "follow_up": null,
+    "owner": null
+  },
+  {
+    "id": "model-normalization-reference",
+    "entrypoints": [
+      "ess_cli::bin(ess)::normalize::fn::run"
+    ],
+    "claim_boundary": "Model-backed reference execution uses Sources::plan then Plan::run_json on exact original input text; generated target execution remains separate.",
+    "execution_profile": "default-rust",
+    "classification": "model-consumer",
+    "evidence_status": "UNACCEPTED_SOURCE_CANDIDATE",
+    "follow_up": null,
+    "owner": null
+  },
+  {
+    "id": "external-bundle-normalization",
+    "entrypoints": [
+      "schema_contract::lib(schema_contract)::realize::normalize::impl<Plan;>::run"
+    ],
+    "claim_boundary": "External Bundle-only normalization has separate input authority; it cannot qualify model-backed behavior.",
+    "execution_profile": "external-bundle",
+    "classification": "foreign-context",
+    "evidence_status": "UNACCEPTED_SOURCE_CANDIDATE",
+    "follow_up": null,
+    "owner": null
+  },
+  {
+    "id": "external-schema-import",
+    "entrypoints": [
+      "schema_contract::lib(schema_contract)::bundle::fn::import"
+    ],
+    "claim_boundary": "External schema import is separately classified; InfraIR is not introduced as an ESS model root.",
+    "execution_profile": "external-schema",
+    "classification": "foreign-context",
+    "evidence_status": "UNACCEPTED_SOURCE_CANDIDATE",
+    "follow_up": null,
+    "owner": null
+  },
+  {
+    "id": "cache-acquisition",
+    "entrypoints": [
+      "ess_cli::bin(ess)::oci_cache::fn::acquire"
+    ],
+    "claim_boundary": "Cached OCI digest/manifest/payload acquisition with provenance; cache identity is not semantic support.",
+    "execution_profile": "oci-bytes",
+    "classification": "foreign-context",
+    "evidence_status": "UNACCEPTED_SOURCE_CANDIDATE",
+    "follow_up": null,
+    "owner": null
+  },
+  {
+    "id": "support-maintenance",
+    "entrypoints": [
+      "ess_xtask::bin(ess-xtask)::support::fn::run"
+    ],
+    "claim_boundary": "Observe CLI metadata and emitted artifact markers; this maintenance command grants no semantic support.",
+    "execution_profile": "maintenance-observation",
+    "classification": "foreign-context",
+    "evidence_status": "UNACCEPTED_SOURCE_CANDIDATE",
+    "follow_up": null,
+    "owner": null
+  },
+  {
+    "id": "infrastructure-legacy-v1",
+    "entrypoints": [
+      "ess_cli::bin(ess)::load::fn::infrastructure"
+    ],
+    "claim_boundary": "InfraIR legacy-v1 is a separate bounded context; qualified v2 namespace topology cannot borrow complete legacy observation claims.",
+    "execution_profile": "infra-v1",
+    "classification": "foreign-context",
+    "evidence_status": "UNACCEPTED_SOURCE_CANDIDATE",
+    "follow_up": null,
+    "owner": null
+  },
+  {
+    "id": "infrastructure-qualified-v2-namespace",
+    "entrypoints": [
+      "ess_cli::bin(ess)::load::fn::infrastructure"
+    ],
+    "claim_boundary": "InfraIR qualified-v2-namespace is a separate bounded context; qualified v2 namespace topology cannot borrow complete legacy observation claims.",
+    "execution_profile": "infra-observation/2;infra-ir/2;infra-graph/2;infra-drift/2;infra-simulation/2",
+    "classification": "foreign-context",
+    "evidence_status": "UNACCEPTED_SOURCE_CANDIDATE",
+    "follow_up": null,
+    "owner": null
+  }
+]

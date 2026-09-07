@@ -14,9 +14,18 @@ ess-domain.workspace = true
 ess-gen.workspace = true
 schemars.workspace = true
 serde_json.workspace = true
+serde.workspace = true
+syn = { version = "=2.0.119", features = ["full", "visit"] }
+quote = "=1.0.47"
+proc-macro2 = "=1.0.107"
+sha2 = "=0.11.0"
 
 [lints]
 workspace = true
 
 [dev-dependencies]
 serde_yaml.workspace = true
+
+[build-dependencies]
+sha2 = "=0.11.0"
+serde_json.workspace = true

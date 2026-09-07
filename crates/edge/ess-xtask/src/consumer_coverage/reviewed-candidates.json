@@ -1,0 +1,584 @@
+{
+  "cases": {
+    "ess-diff:test:families:review_relation_cardinality_name_and_removal_are_changes": {
+      "identity": {
+        "package": "ess-diff",
+        "target_kind": "test",
+        "target_name": "families",
+        "full_name": "review_relation_cardinality_name_and_removal_are_changes",
+        "features": [],
+        "target_profile": "x86_64-unknown-linux-gnu/default",
+        "tool_requirements": [
+          "frozen Rust 1.98.1; locked offline owner-target build"
+        ],
+        "nested_runtime": "None claimed; direct Rust assertions only"
+      },
+      "source": "crates/verify/ess-diff/tests/families.rs",
+      "case_ast_sha256": "33ba3f98541964a70fb07490ae8191579fe9cbd68fd32ca80bc6e77a7b7804db",
+      "reviewed_assertion": "Three controls change relation cardinality, name and removal; each must yield relations-changed.",
+      "attribution_limit": "The helper checks changed input, exact delta kind, checked roundtrip, named legacy refusal and nonempty/whole artifact obligations. Source candidates only. These assertions do not establish runtime execution or effects of other model members.",
+      "source_file_sha256": "ff318c716a85cd1d61be8e0930b1f705d3616627db908dac13e73bbb56900007"
+    },
+    "ess-diff:test:families:review_reach_is_a_change_without_an_unrelated_surface_edit": {
+      "identity": {
+        "package": "ess-diff",
+        "target_kind": "test",
+        "target_name": "families",
+        "full_name": "review_reach_is_a_change_without_an_unrelated_surface_edit",
+        "features": [],
+        "target_profile": "x86_64-unknown-linux-gnu/default",
+        "tool_requirements": [
+          "frozen Rust 1.98.1; locked offline owner-target build"
+        ],
+        "nested_runtime": "None claimed; direct Rust assertions only"
+      },
+      "source": "crates/verify/ess-diff/tests/families.rs",
+      "case_ast_sha256": "dd6a8248dde7d2920e57d3f95ff772e6b94c77ce5d0f71bbdb33962f411366b1",
+      "reviewed_assertion": "Adding network reach without another surface edit must yield reach-changed.",
+      "attribution_limit": "The helper checks changed input, exact delta kind, checked roundtrip, named legacy refusal and nonempty/whole artifact obligations. Source candidates only. These assertions do not establish runtime execution or effects of other model members.",
+      "source_file_sha256": "ff318c716a85cd1d61be8e0930b1f705d3616627db908dac13e73bbb56900007"
+    },
+    "ess-diff:test:families:review_cli_top_level_grouped_views_and_binary_are_changes": {
+      "identity": {
+        "package": "ess-diff",
+        "target_kind": "test",
+        "target_name": "families",
+        "full_name": "review_cli_top_level_grouped_views_and_binary_are_changes",
+        "features": [],
+        "target_profile": "x86_64-unknown-linux-gnu/default",
+        "tool_requirements": [
+          "frozen Rust 1.98.1; locked offline owner-target build"
+        ],
+        "nested_runtime": "None claimed; direct Rust assertions only"
+      },
+      "source": "crates/verify/ess-diff/tests/families.rs",
+      "case_ast_sha256": "dedcdbf9a27e1339215fd3a3d393c7e6a0a16174ca289cd392028083e59e1385",
+      "reviewed_assertion": "Moving top-level views into a named group and independently changing the binary must each yield cli-changed.",
+      "attribution_limit": "The helper checks changed input, exact delta kind, checked roundtrip, named legacy refusal and nonempty/whole artifact obligations. Source candidates only. These assertions do not establish runtime execution or effects of other model members.",
+      "source_file_sha256": "ff318c716a85cd1d61be8e0930b1f705d3616627db908dac13e73bbb56900007"
+    },
+    "ess-diff:test:families:review_outcome_sets_are_independent_of_event_payload": {
+      "identity": {
+        "package": "ess-diff",
+        "target_kind": "test",
+        "target_name": "families",
+        "full_name": "review_outcome_sets_are_independent_of_event_payload",
+        "features": [],
+        "target_profile": "x86_64-unknown-linux-gnu/default",
+        "tool_requirements": [
+          "frozen Rust 1.98.1; locked offline owner-target build"
+        ],
+        "nested_runtime": "None claimed; direct Rust assertions only"
+      },
+      "source": "crates/verify/ess-diff/tests/families.rs",
+      "case_ast_sha256": "c0b3ea2c874d99272206dca14e805a40c9790fb0beccb874a766a33f95e0395f",
+      "reviewed_assertion": "Clearing subject-field assignment sets must yield outcome-sets-changed independently of event payload.",
+      "attribution_limit": "The helper checks changed input, exact delta kind, checked roundtrip, named legacy refusal and nonempty/whole artifact obligations. Source candidates only. These assertions do not establish runtime execution or effects of other model members.",
+      "source_file_sha256": "ff318c716a85cd1d61be8e0930b1f705d3616627db908dac13e73bbb56900007"
+    },
+    "ess-diff:test:families:review_outcome_refusal_is_independent_of_its_error": {
+      "identity": {
+        "package": "ess-diff",
+        "target_kind": "test",
+        "target_name": "families",
+        "full_name": "review_outcome_refusal_is_independent_of_its_error",
+        "features": [],
+        "target_profile": "x86_64-unknown-linux-gnu/default",
+        "tool_requirements": [
+          "frozen Rust 1.98.1; locked offline owner-target build"
+        ],
+        "nested_runtime": "None claimed; direct Rust assertions only"
+      },
+      "source": "crates/verify/ess-diff/tests/families.rs",
+      "case_ast_sha256": "42fc813261ba813c0182c2d06535116b0f905bd0bcbc321e088ade26e95e9c5b",
+      "reviewed_assertion": "Changing refusal independently of its error must yield outcome-refuses-changed.",
+      "attribution_limit": "The helper checks changed input, exact delta kind, checked roundtrip, named legacy refusal and nonempty/whole artifact obligations. Source candidates only. These assertions do not establish runtime execution or effects of other model members.",
+      "source_file_sha256": "ff318c716a85cd1d61be8e0930b1f705d3616627db908dac13e73bbb56900007"
+    },
+    "ess-diff:test:families:review_view_parameter_naming_is_compared_without_a_filter_edit": {
+      "identity": {
+        "package": "ess-diff",
+        "target_kind": "test",
+        "target_name": "families",
+        "full_name": "review_view_parameter_naming_is_compared_without_a_filter_edit",
+        "features": [],
+        "target_profile": "x86_64-unknown-linux-gnu/default",
+        "tool_requirements": [
+          "frozen Rust 1.98.1; locked offline owner-target build"
+        ],
+        "nested_runtime": "None claimed; direct Rust assertions only"
+      },
+      "source": "crates/verify/ess-diff/tests/families.rs",
+      "case_ast_sha256": "5291e8ac167aabe34cc3304a18a7cae12c95e97a2afc00a21d9a512335421b5b",
+      "reviewed_assertion": "Changing parameter summary must yield params-changed; explicit default wire/display naming remains equivalent.",
+      "attribution_limit": "The helper checks changed input, exact delta kind, checked roundtrip, named legacy refusal and nonempty/whole artifact obligations. Source candidates only. These assertions do not establish runtime execution or effects of other model members.",
+      "source_file_sha256": "ff318c716a85cd1d61be8e0930b1f705d3616627db908dac13e73bbb56900007"
+    },
+    "ess-diff:test:graph:review_cli_views_and_parameter_types_are_forward_slice_dependencies": {
+      "identity": {
+        "package": "ess-diff",
+        "target_kind": "test",
+        "target_name": "graph",
+        "full_name": "review_cli_views_and_parameter_types_are_forward_slice_dependencies",
+        "features": [],
+        "target_profile": "x86_64-unknown-linux-gnu/default",
+        "tool_requirements": [
+          "frozen Rust 1.98.1; locked offline owner-target build"
+        ],
+        "nested_runtime": "None claimed; direct Rust assertions only"
+      },
+      "source": "crates/verify/ess-diff/tests/graph.rs",
+      "case_ast_sha256": "6380754258c9a391eda4ea2f423aa3266a46a389b5c0292669037d8388ec0839",
+      "reviewed_assertion": "For grouped and direct CLI views, assert exposes-view and parameter-type graph edges, view slice membership and type-to-component closure.",
+      "attribution_limit": "No parameter ordering, query evaluation or emitted target behavior is established.",
+      "source_file_sha256": "0c67173cffeee05c44c07b04a3a3fc2c4101e36c28a59c5caf8e2bc6e331e56d"
+    },
+    "ess-diff:test:families:review_view_ranking_is_compared_without_a_filter_edit": {
+      "identity": {
+        "package": "ess-diff",
+        "target_kind": "test",
+        "target_name": "families",
+        "full_name": "review_view_ranking_is_compared_without_a_filter_edit",
+        "features": [],
+        "target_profile": "x86_64-unknown-linux-gnu/default",
+        "tool_requirements": [
+          "frozen Rust 1.98.1; locked offline owner-target build"
+        ],
+        "nested_runtime": "None claimed; direct Rust assertions only"
+      },
+      "source": "crates/verify/ess-diff/tests/families.rs",
+      "case_ast_sha256": "85bb0eb704e46bb3971214030fec8b703721b92965d658e0085892f542da77f1",
+      "reviewed_assertion": "Clearing ordering without changing a filter must yield ranking-changed.",
+      "attribution_limit": "The helper checks changed input, exact delta kind, checked roundtrip, named legacy refusal and nonempty/whole artifact obligations. Source candidates only. These assertions do not establish runtime execution or effects of other model members.",
+      "source_file_sha256": "ff318c716a85cd1d61be8e0930b1f705d3616627db908dac13e73bbb56900007"
+    },
+    "ess-diff:test:review_adversary_f01_pass2:ranking_precedence_survives_the_checked_delta_roundtrip": {
+      "identity": {
+        "package": "ess-diff",
+        "target_kind": "test",
+        "target_name": "review_adversary_f01_pass2",
+        "full_name": "ranking_precedence_survives_the_checked_delta_roundtrip",
+        "features": [],
+        "target_profile": "x86_64-unknown-linux-gnu/default",
+        "tool_requirements": [
+          "frozen Rust 1.98.1; locked offline owner-target build"
+        ],
+        "nested_runtime": "None claimed; direct Rust assertions only"
+      },
+      "source": "crates/verify/ess-diff/tests/review_adversary_f01_pass2.rs",
+      "case_ast_sha256": "87b90ab255dec3dc0e1d7306f76c86ecfe355cdbb756ce60b37c81e49cefa601",
+      "reviewed_assertion": "Reverse two ranking elements; assert exact before/after first field in delta, checked roundtrip and legacy refusal.",
+      "attribution_limit": "No runtime sorting or ranking evaluation is asserted.",
+      "source_file_sha256": "65a37f4d8811120abc6dc51b44b6da737dd01417a84fcfe7ec06e71a1da32361"
+    },
+    "ess-diff:test:review_adversary_f01_pass2:served_view_change_reaches_its_openapi_artifact": {
+      "identity": {
+        "package": "ess-diff",
+        "target_kind": "test",
+        "target_name": "review_adversary_f01_pass2",
+        "full_name": "served_view_change_reaches_its_openapi_artifact",
+        "features": [],
+        "target_profile": "x86_64-unknown-linux-gnu/default",
+        "tool_requirements": [
+          "frozen Rust 1.98.1; locked offline owner-target build"
+        ],
+        "nested_runtime": "None claimed; direct Rust assertions only"
+      },
+      "source": "crates/verify/ess-diff/tests/review_adversary_f01_pass2.rs",
+      "case_ast_sha256": "9e2943bf2fa8483b04ed39c8eb6a6190b768271b2b45f61e980dfa00e277aee9",
+      "reviewed_assertion": "Change view summary; assert actual OpenAPI bodies differ after removing provenance, contract digest changes and artifact is owed.",
+      "attribution_limit": "Only summary preservation and invalidation are asserted, not runtime view evaluation.",
+      "source_file_sha256": "65a37f4d8811120abc6dc51b44b6da737dd01417a84fcfe7ec06e71a1da32361"
+    },
+    "ess-diff:test:review_adversary_f01_pass2:reusable_row_invariant_change_reaches_its_openapi_artifact": {
+      "identity": {
+        "package": "ess-diff",
+        "target_kind": "test",
+        "target_name": "review_adversary_f01_pass2",
+        "full_name": "reusable_row_invariant_change_reaches_its_openapi_artifact",
+        "features": [],
+        "target_profile": "x86_64-unknown-linux-gnu/default",
+        "tool_requirements": [
+          "frozen Rust 1.98.1; locked offline owner-target build"
+        ],
+        "nested_runtime": "None claimed; direct Rust assertions only"
+      },
+      "source": "crates/verify/ess-diff/tests/review_adversary_f01_pass2.rs",
+      "case_ast_sha256": "724c7d7dc4e1b5723da6a9a09503691da1f6318530c73ad39bd34ade9128bd6c",
+      "reviewed_assertion": "Change reusable struct-row invariant; assert OpenAPI bodies differ after removing provenance, contract digest changes and artifact is owed.",
+      "attribution_limit": "Annotation preservation and invalidation only; runtime invariant evaluation is unproven.",
+      "source_file_sha256": "65a37f4d8811120abc6dc51b44b6da737dd01417a84fcfe7ec06e71a1da32361"
+    },
+    "ess-diff:test:review_adversary_f01_pass2:switching_equal_row_shapes_retains_independent_residual_coverage": {
+      "identity": {
+        "package": "ess-diff",
+        "target_kind": "test",
+        "target_name": "review_adversary_f01_pass2",
+        "full_name": "switching_equal_row_shapes_retains_independent_residual_coverage",
+        "features": [],
+        "target_profile": "x86_64-unknown-linux-gnu/default",
+        "tool_requirements": [
+          "frozen Rust 1.98.1; locked offline owner-target build"
+        ],
+        "nested_runtime": "None claimed; direct Rust assertions only"
+      },
+      "source": "crates/verify/ess-diff/tests/review_adversary_f01_pass2.rs",
+      "case_ast_sha256": "71ec1a9b9b06de3ad0e895e90c8fa71266223dd1fa49f7607e70f69047292fba",
+      "reviewed_assertion": "Switch equal-shaped named reusable row owner with/without an independent naming edit; assert equal fields, unclassified change and whole artifact impact.",
+      "attribution_limit": "Owner-sensitive residual comparison only; arbitrary equal-shape model paths remain unproven.",
+      "source_file_sha256": "65a37f4d8811120abc6dc51b44b6da737dd01417a84fcfe7ec06e71a1da32361"
+    },
+    "ess-diff:test:review_adversary_f01:moved_outcome_reference_retains_its_owner": {
+      "identity": {
+        "package": "ess-diff",
+        "target_kind": "test",
+        "target_name": "review_adversary_f01",
+        "full_name": "moved_outcome_reference_retains_its_owner",
+        "features": [],
+        "target_profile": "x86_64-unknown-linux-gnu/default",
+        "tool_requirements": [
+          "frozen Rust 1.98.1; locked offline owner-target build"
+        ],
+        "nested_runtime": "None claimed; direct Rust assertions only"
+      },
+      "source": "crates/verify/ess-diff/tests/review_adversary_f01.rs",
+      "case_ast_sha256": "bc571e299ff733f71b3b805959829a3b6516ca418ef71987d1fa37e76baeeecd",
+      "reviewed_assertion": "Move the same external reference between outcomes, with/without an independent classified summary edit; assert unclassified change and Whole suite invalidation.",
+      "attribution_limit": "Does not establish all external reference owners or runtime behavior.",
+      "source_file_sha256": "88693c08449c45e2f34201c1c4cc53c16b90e58a9310ad8e5e78da7f7232f095"
+    },
+    "ess-diff:test:review_adversary_f01:moved_outcome_reference_is_independent_of_a_classified_edit": {
+      "identity": {
+        "package": "ess-diff",
+        "target_kind": "test",
+        "target_name": "review_adversary_f01",
+        "full_name": "moved_outcome_reference_is_independent_of_a_classified_edit",
+        "features": [],
+        "target_profile": "x86_64-unknown-linux-gnu/default",
+        "tool_requirements": [
+          "frozen Rust 1.98.1; locked offline owner-target build"
+        ],
+        "nested_runtime": "None claimed; direct Rust assertions only"
+      },
+      "source": "crates/verify/ess-diff/tests/review_adversary_f01.rs",
+      "case_ast_sha256": "a7cad71e7489aa19b76bf6dcfbf4a2092d103626fe8a19b7d7c5d43d691763ff",
+      "reviewed_assertion": "Move the same external reference between outcomes, with/without an independent classified summary edit; assert unclassified change and Whole suite invalidation.",
+      "attribution_limit": "Does not establish all external reference owners or runtime behavior.",
+      "source_file_sha256": "88693c08449c45e2f34201c1c4cc53c16b90e58a9310ad8e5e78da7f7232f095"
+    },
+    "ess-diff:test:review_adversary_f01:ownership_cardinality_invalidates_both_emitted_schema_ends": {
+      "identity": {
+        "package": "ess-diff",
+        "target_kind": "test",
+        "target_name": "review_adversary_f01",
+        "full_name": "ownership_cardinality_invalidates_both_emitted_schema_ends",
+        "features": [],
+        "target_profile": "x86_64-unknown-linux-gnu/default",
+        "tool_requirements": [
+          "frozen Rust 1.98.1; locked offline owner-target build"
+        ],
+        "nested_runtime": "None claimed; direct Rust assertions only"
+      },
+      "source": "crates/verify/ess-diff/tests/review_adversary_f01.rs",
+      "case_ast_sha256": "f19317549866f05db8dea00c1bf2688aadfdd9d4fd6bec48071991921c43e51d",
+      "reviewed_assertion": "Change ownership cardinality; both complete emitted endpoint schemas differ, both slice digests change and both artifacts are owed.",
+      "attribution_limit": "Whole schema content comparisons include provenance; no assertion isolates the cardinality keyword beyond provenance.",
+      "source_file_sha256": "88693c08449c45e2f34201c1c4cc53c16b90e58a9310ad8e5e78da7f7232f095"
+    },
+    "ess-gen:test:relations:the_entity_document_states_the_relation_on_the_property_that_carries_it": {
+      "identity": {
+        "package": "ess-gen",
+        "target_kind": "test",
+        "target_name": "relations",
+        "full_name": "the_entity_document_states_the_relation_on_the_property_that_carries_it",
+        "features": [],
+        "target_profile": "x86_64-unknown-linux-gnu/default",
+        "tool_requirements": [
+          "frozen Rust 1.98.1; locked offline owner-target build"
+        ],
+        "nested_runtime": "None claimed; direct Rust assertions only"
+      },
+      "source": "crates/generate/ess-gen/tests/relations.rs",
+      "case_ast_sha256": "f34ebfaab3ad6e9884a45995a74ccd5b36f5c0e000f526353e144f057d958c6f",
+      "reviewed_assertion": "Assert actual JsonSchema carrying-property x-ess-relation equals an independent complete literal with cardinality many, kind owns, exact source, target, via and name; no dangling ref and no owner-side annotation.",
+      "attribution_limit": "Witnessed Billing many/owns relation only; no alternative cardinality or changed-input invalidation is proven.",
+      "source_file_sha256": "f7d2c389b7df5ece9359d8838a04f08df0057bc1929a349ef07594d10ad68855"
+    },
+    "ess-gen:test:relations:the_openapi_document_states_the_relation_and_links_the_targets_schema": {
+      "identity": {
+        "package": "ess-gen",
+        "target_kind": "test",
+        "target_name": "relations",
+        "full_name": "the_openapi_document_states_the_relation_and_links_the_targets_schema",
+        "features": [],
+        "target_profile": "x86_64-unknown-linux-gnu/default",
+        "tool_requirements": [
+          "frozen Rust 1.98.1; locked offline owner-target build"
+        ],
+        "nested_runtime": "None claimed; direct Rust assertions only"
+      },
+      "source": "crates/generate/ess-gen/tests/relations.rs",
+      "case_ast_sha256": "983a2c88dd9210155608fc0d2cf411397b2ecae4ca94a2d0d5b429c1f7e3ca35",
+      "reviewed_assertion": "Assert actual OpenAPI carrying-property x-ess-relation equals the independent complete relation literal plus the exact owned-entity $ref and assert the referenced entity exists.",
+      "attribution_limit": "Witnessed Billing many/owns relation only; no alternative cardinality or changed-input invalidation is proven.",
+      "source_file_sha256": "f7d2c389b7df5ece9359d8838a04f08df0057bc1929a349ef07594d10ad68855"
+    }
+  },
+  "requirements": [
+    {
+      "id": "F01-relation-cardinality-name-removal",
+      "models": [
+        "rust:ess_compiler::ir::ResolvedRelation/field/cardinality",
+        "rust:ess_compiler::ir::ResolvedRelation/field/name",
+        "rust:ess_compiler::ir::ResolvedEntity/field/relations",
+        "rust:ess_domain::entity::RelationSpec/field/cardinality",
+        "rust:ess_domain::entity::RelationSpec/field/name"
+      ],
+      "consumers": [
+        "semantic-diff"
+      ],
+      "cases": [
+        "ess-diff:test:families:review_relation_cardinality_name_and_removal_are_changes"
+      ],
+      "reason": "Source candidates only. These assertions do not establish runtime execution or effects of other model members."
+    },
+    {
+      "id": "F01-other-relation-aspects",
+      "models": [
+        "rust:ess_compiler::ir::ResolvedRelation/field/kind",
+        "rust:ess_compiler::ir::ResolvedRelation/field/target",
+        "rust:ess_compiler::ir::ResolvedRelation/field/via"
+      ],
+      "consumers": [
+        "semantic-diff"
+      ],
+      "cases": [],
+      "reason": "The reviewed three-control relation case does not separately mutate kind, target or via. Exact assertion attribution remains unqualified."
+    },
+    {
+      "id": "F01-component-reach",
+      "models": [
+        "rust:ess_compiler::ir::ResolvedComponent/field/reached_by",
+        "rust:ess_domain::component::ComponentSpec/field/reached_by"
+      ],
+      "consumers": [
+        "semantic-diff"
+      ],
+      "cases": [
+        "ess-diff:test:families:review_reach_is_a_change_without_an_unrelated_surface_edit"
+      ],
+      "reason": "Source candidates only. These assertions do not establish runtime execution or effects of other model members."
+    },
+    {
+      "id": "F01-CLI-exposure-grouping",
+      "models": [
+        "rust:ess_compiler::ir::ResolvedComponent/field/cli",
+        "rust:ess_compiler::ir::ResolvedCommandLineSurface/field/binary",
+        "rust:ess_compiler::ir::ResolvedCommandLineSurface/field/groups",
+        "rust:ess_compiler::ir::ResolvedCommandLineSurface/field/views",
+        "rust:ess_domain::component::CommandLineSurface/field/binary",
+        "rust:ess_domain::component::CommandLineSurface/field/groups",
+        "rust:ess_domain::component::CommandLineSurface/field/views"
+      ],
+      "consumers": [
+        "semantic-diff"
+      ],
+      "cases": [
+        "ess-diff:test:families:review_cli_top_level_grouped_views_and_binary_are_changes"
+      ],
+      "reason": "Source candidates only. These assertions do not establish runtime execution or effects of other model members."
+    },
+    {
+      "id": "F01-outcome-assignment",
+      "models": [
+        "rust:ess_compiler::ir::ResolvedOutcome/field/sets",
+        "rust:ess_domain::command::Outcome/field/sets"
+      ],
+      "consumers": [
+        "semantic-diff"
+      ],
+      "cases": [
+        "ess-diff:test:families:review_outcome_sets_are_independent_of_event_payload"
+      ],
+      "reason": "Source candidates only. These assertions do not establish runtime execution or effects of other model members."
+    },
+    {
+      "id": "F01-outcome-refusal",
+      "models": [
+        "rust:ess_compiler::ir::ResolvedOutcome/field/refuses",
+        "rust:ess_domain::command::Outcome/field/refuses"
+      ],
+      "consumers": [
+        "semantic-diff"
+      ],
+      "cases": [
+        "ess-diff:test:families:review_outcome_refusal_is_independent_of_its_error"
+      ],
+      "reason": "Source candidates only. These assertions do not establish runtime execution or effects of other model members."
+    },
+    {
+      "id": "F01-parameter-naming",
+      "models": [
+        "rust:ess_compiler::ir::ResolvedField/field/naming",
+        "rust:ess_domain::types::Field/field/naming"
+      ],
+      "consumers": [
+        "semantic-diff"
+      ],
+      "cases": [
+        "ess-diff:test:families:review_view_parameter_naming_is_compared_without_a_filter_edit"
+      ],
+      "reason": "Only parameter naming in this fixture is attributed; shared Field naming in other contexts remains unproven."
+    },
+    {
+      "id": "F01-parameter-order-and-type-comparison",
+      "models": [
+        "rust:ess_compiler::ir::ResolvedView/field/params",
+        "rust:ess_compiler::ir::ResolvedField/field/type_ref"
+      ],
+      "consumers": [
+        "semantic-diff"
+      ],
+      "cases": [],
+      "reason": "Reviewed naming case does not change parameter order or type. The graph case proves dependency edges, not these diff behaviors."
+    },
+    {
+      "id": "F01-parameter-types-and-CLI-dependencies",
+      "models": [
+        "rust:ess_compiler::graph::DependencyRelation/variant/ParameterType",
+        "rust:ess_compiler::graph::DependencyRelation/variant/ExposesView",
+        "rust:ess_compiler::ir::ResolvedView/field/params"
+      ],
+      "consumers": [
+        "dependency-graph"
+      ],
+      "cases": [
+        "ess-diff:test:graph:review_cli_views_and_parameter_types_are_forward_slice_dependencies"
+      ],
+      "reason": "Source candidates only. These assertions do not establish runtime execution or effects of other model members."
+    },
+    {
+      "id": "F01-ranking-structure",
+      "models": [
+        "rust:ess_compiler::ir::ResolvedView/field/order_by",
+        "rust:ess_domain::view::Ranking/field/field",
+        "rust:ess_domain::view::Ranking/field/direction"
+      ],
+      "consumers": [
+        "semantic-diff"
+      ],
+      "cases": [
+        "ess-diff:test:families:review_view_ranking_is_compared_without_a_filter_edit",
+        "ess-diff:test:review_adversary_f01_pass2:ranking_precedence_survives_the_checked_delta_roundtrip"
+      ],
+      "reason": "Ranking list change/order is a diff candidate only; runtime ranking is unproven."
+    },
+    {
+      "id": "F01-served-view-output",
+      "models": [
+        "rust:ess_compiler::ir::ResolvedView/field/naming"
+      ],
+      "consumers": [
+        "generator-openapi",
+        "http-embedding",
+        "semantic-impact"
+      ],
+      "cases": [
+        "ess-diff:test:review_adversary_f01_pass2:served_view_change_reaches_its_openapi_artifact"
+      ],
+      "reason": "Concrete served OpenAPI output/invalidation candidate; runtime semantics remain unproven."
+    },
+    {
+      "id": "F01-reusable-row-output",
+      "models": [
+        "rust:ess_compiler::ir::ResolvedBody/variant/Struct/field/invariants"
+      ],
+      "consumers": [
+        "generator-openapi",
+        "http-embedding",
+        "semantic-impact",
+        "shared-schema-mapping"
+      ],
+      "cases": [
+        "ess-diff:test:review_adversary_f01_pass2:reusable_row_invariant_change_reaches_its_openapi_artifact"
+      ],
+      "reason": "Invariant annotation preservation and artifact invalidation candidate, not runtime invariant execution."
+    },
+    {
+      "id": "F01-reusable-row-owner",
+      "models": [
+        "rust:ess_compiler::ir::ResolvedView/field/shape"
+      ],
+      "consumers": [
+        "semantic-diff"
+      ],
+      "cases": [
+        "ess-diff:test:review_adversary_f01_pass2:switching_equal_row_shapes_retains_independent_residual_coverage"
+      ],
+      "reason": "Source candidates only. These assertions do not establish runtime execution or effects of other model members."
+    },
+    {
+      "id": "F01-outcome-residual-owner",
+      "models": [
+        "rust:ess_compiler::ir::ResolvedOutcome/field/refs",
+        "rust:ess_domain::command::Outcome/field/refs"
+      ],
+      "consumers": [
+        "semantic-diff",
+        "semantic-impact"
+      ],
+      "cases": [
+        "ess-diff:test:review_adversary_f01:moved_outcome_reference_retains_its_owner",
+        "ess-diff:test:review_adversary_f01:moved_outcome_reference_is_independent_of_a_classified_edit"
+      ],
+      "reason": "Source candidates only. These assertions do not establish runtime execution or effects of other model members."
+    },
+    {
+      "id": "F01-relation-output-invalidation",
+      "models": [
+        "rust:ess_compiler::ir::ResolvedRelation/field/cardinality"
+      ],
+      "consumers": [
+        "semantic-impact"
+      ],
+      "cases": [
+        "ess-diff:test:review_adversary_f01:ownership_cardinality_invalidates_both_emitted_schema_ends"
+      ],
+      "reason": "Concrete endpoint invalidation candidate; exact cardinality keyword projection beyond provenance remains unproven."
+    },
+    {
+      "id": "F01-relation-keyword-output",
+      "models": [
+        "rust:ess_compiler::ir::ResolvedRelation/field/cardinality",
+        "rust:ess_compiler::ir::ResolvedRelation/field/kind",
+        "rust:ess_compiler::ir::ResolvedRelation/field/target",
+        "rust:ess_compiler::ir::ResolvedRelation/field/via",
+        "rust:ess_compiler::ir::ResolvedRelation/field/name"
+      ],
+      "consumers": [
+        "generator-schema"
+      ],
+      "cases": [
+        "ess-gen:test:relations:the_entity_document_states_the_relation_on_the_property_that_carries_it"
+      ],
+      "reason": "Exact relation keyword output for the witnessed many/owns relation; other alternatives remain unproven."
+    },
+    {
+      "id": "F01-relation-OpenAPI-keyword-output",
+      "models": [
+        "rust:ess_compiler::ir::ResolvedRelation/field/cardinality",
+        "rust:ess_compiler::ir::ResolvedRelation/field/kind",
+        "rust:ess_compiler::ir::ResolvedRelation/field/target",
+        "rust:ess_compiler::ir::ResolvedRelation/field/via",
+        "rust:ess_compiler::ir::ResolvedRelation/field/name"
+      ],
+      "consumers": [
+        "generator-openapi"
+      ],
+      "cases": [
+        "ess-gen:test:relations:the_openapi_document_states_the_relation_and_links_the_targets_schema"
+      ],
+      "reason": "Exact relation keyword output and linked entity for the witnessed many/owns relation; other alternatives remain unproven."
+    }
+  ]
+}

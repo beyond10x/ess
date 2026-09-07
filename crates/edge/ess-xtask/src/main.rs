@@ -1,5 +1,6 @@
 //! Repository-only maintenance checks for ESS.
 
+mod consumer_coverage;
 mod support;
 
 use anyhow::{bail, Context, Result as AnyResult};
@@ -55,6 +56,12 @@ struct Cli {
 
 #[derive(Debug, Subcommand)]
 enum Command {
+    /// Extract finite Stage 1 consumer candidates; no eligibility is accepted.
+    ConsumerExtract {
+        /// Fresh directory for private extraction work products.
+        #[arg(long)]
+        output: PathBuf,
+    },
     /// Render or check the finite public source-capability block, offline.
     Support {
         /// Compare the complete maintained block without changing public source.
@@ -114,6 +121,9 @@ fn main() -> ExitCode {
 fn run(cli: Cli) -> Result<String, String> {
     let root = workspace_root()?;
     match cli.command {
+        Command::ConsumerExtract { output } => {
+            consumer_coverage::run(&root, &output).map_err(|error| format!("{error:#}"))
+        }
         Command::Support { check } => {
             support::run(&root, check).map_err(|error| format!("{error:#}"))
         }
