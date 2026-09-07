@@ -457,8 +457,9 @@ enum ConformCommand {
     /// binding reacts to. Serve the directory and open `index.html`.
     ///
     /// It replays rather than executes. A scenario declares which outcome each command took and the
-    /// page applies the effect the model attaches to it, so a green walk says the specification is
-    /// coherent — never that an implementation works.
+    /// page displays declarations and explicit unknowns for unavailable assignment, subject and view
+    /// semantics. Replay establishes no specification coherence, fills no obligation and produces no
+    /// implementation execution report or qualifying conformance evidence.
     Web {
         #[command(flatten)]
         input: SpecPath,

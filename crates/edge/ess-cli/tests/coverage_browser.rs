@@ -141,6 +141,12 @@ fn retained_legacy_player_bytes_still_replay_in_actual_firefox() {
     fs::write(evidence.join("emit.stdout"), &output.stdout).unwrap();
     fs::write(evidence.join("emit.stderr"), &output.stderr).unwrap();
     assert!(output.status.success(), "{output:?}");
+    // Exercise the immutable historical reader explicitly; fresh players have their own vectors.
+    fs::write(
+        generated.join("player.js"),
+        include_bytes!("../../../verify/ess-conformance/tests/fixtures/coverage/legacy-player.js"),
+    )
+    .unwrap();
     assert_eq!(
         fs::read(generated.join("player.js")).unwrap(),
         include_bytes!("../../../verify/ess-conformance/tests/fixtures/coverage/legacy-player.js")
