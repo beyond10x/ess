@@ -354,7 +354,7 @@ fn published_releases(root: &Path) -> Result<BTreeSet<String>, String> {
     // The limit covers the whole tag history on one page, because a release paged off the end
     // would be read as a release that does not exist.
     let output = std::process::Command::new("gh")
-        .args(["release", "list", "--limit", "1000", "--json", "tagName"])
+        .args(["release", "list", "--limit", "1000", "--json", "tagName,isDraft"])
         .current_dir(root)
         .output()
         .map_err(|error| {
@@ -392,23 +392,26 @@ fn is_bare_version(name: &str) -> bool {
     numbered && parts.next().is_none()
 }
 
-/// Tag names in a `gh release list --json tagName` report.
+/// Published tag names in a `gh release list --json tagName,isDraft` report.
 fn release_tag_names(report: &str) -> Result<BTreeSet<String>, String> {
     let releases: serde_json::Value = serde_json::from_str(report)
         .map_err(|error| format!("reading the JSON printed by `gh release list`: {error}"))?;
-    releases
+    let releases = releases
         .as_array()
-        .ok_or_else(|| "`gh release list --json tagName` did not print an array".to_owned())?
-        .iter()
-        .map(|release| {
-            release["tagName"]
-                .as_str()
-                .map(ToOwned::to_owned)
-                .ok_or_else(|| {
-                    "a release in the `gh release list` report has no `tagName`".to_owned()
-                })
-        })
-        .collect()
+        .ok_or_else(|| "`gh release list` did not print an array".to_owned())?;
+    let mut tags = BTreeSet::new();
+    for release in releases {
+        let draft = release["isDraft"].as_bool().ok_or_else(|| {
+            "a release in the `gh release list` report has no boolean `isDraft`".to_owned()
+        })?;
+        let tag = release["tagName"].as_str().ok_or_else(|| {
+            "a release in the `gh release list` report has no `tagName`".to_owned()
+        })?;
+        if !draft {
+            tags.insert(tag.to_owned());
+        }
+    }
+    Ok(tags)
 }
 
 /// One projection published by `ess generate`.
@@ -930,14 +933,70 @@ mod tests {
 
     #[test]
     fn release_publication_is_evaluated_after_every_dependency_finishes() {
-        let workflow = include_str!("../../../../.github/workflows/release.yml");
-        let release_job = workflow
-            .split_once("\n  release:\n")
-            .expect("release workflow has a publication job")
-            .1;
-        assert!(release_job.contains(
-            "if: ${{ always() && needs.resolve.result == 'success' && needs.gate.result == 'success' && needs.website.result == 'success' && needs.package.result == 'success' }}"
-        ));
+        let workflow: serde_yaml::Value =
+            serde_yaml::from_str(include_str!("../../../../.github/workflows/release.yml"))
+                .unwrap();
+        let jobs = &workflow["jobs"];
+        for name in ["gate", "wasm", "package"] {
+            assert_eq!(jobs[name]["needs"].as_str(), Some("resolve"));
+        }
+        assert_eq!(
+            jobs["gate"]["with"]["checkout-ref"].as_str(),
+            Some("${{ needs.resolve.outputs.commit }}")
+        );
+        let needs = jobs["release"]["needs"].as_sequence().unwrap();
+        assert_eq!(
+            needs
+                .iter()
+                .map(|value| value.as_str().unwrap())
+                .collect::<BTreeSet<_>>(),
+            BTreeSet::from(["resolve", "gate", "wasm", "package"])
+        );
+        let condition = jobs["release"]["if"].as_str().unwrap();
+        assert!(condition.contains("always()"));
+        for dependency in needs {
+            assert!(condition.contains(&format!(
+                "needs.{}.result == 'success'",
+                dependency.as_str().unwrap()
+            )));
+        }
+        for name in ["wasm", "package", "release"] {
+            let steps = jobs[name]["steps"].as_sequence().unwrap();
+            let checkout = steps
+                .iter()
+                .find(|step| {
+                    step["uses"]
+                        .as_str()
+                        .is_some_and(|uses| uses.starts_with("actions/checkout@"))
+                })
+                .unwrap();
+            assert_eq!(
+                checkout["with"]["ref"].as_str(),
+                Some("${{ needs.resolve.outputs.commit }}")
+            );
+        }
+        let runs = jobs["wasm"]["steps"]
+            .as_sequence()
+            .unwrap()
+            .iter()
+            .filter_map(|step| step["run"].as_str())
+            .collect::<Vec<_>>();
+        assert!(runs.contains(&"task site-lab"));
+        assert!(
+            !include_str!("../../../../.github/workflows/release.yml").contains("task site-build")
+        );
+        let publication = jobs["release"]["steps"]
+            .as_sequence()
+            .unwrap()
+            .iter()
+            .filter_map(|step| step["run"].as_str())
+            .find(|run| run.contains("gh release create"))
+            .unwrap();
+        assert!(publication.contains("--verify-tag --draft"));
+        assert!(
+            publication.find("gh release upload").unwrap()
+                < publication.find("--draft=false").unwrap()
+        );
     }
 
     #[test]
@@ -960,11 +1019,15 @@ mod tests {
     #[test]
     fn published_release_tags_come_from_the_json_report() {
         assert_eq!(
-            release_tag_names(r#"[{"tagName":"0.5.1"},{"tagName":"0.4.0"}]"#),
+            release_tag_names(
+                r#"[{"tagName":"0.5.1","isDraft":false},{"tagName":"0.4.0","isDraft":false},{"tagName":"0.6.0","isDraft":true}]"#
+            ),
             Ok(BTreeSet::from(["0.4.0".to_owned(), "0.5.1".to_owned()]))
         );
         assert!(release_tag_names("[{}]").is_err());
         assert!(release_tag_names("{}").is_err());
+        assert!(release_tag_names(r#"[{"tagName":"0.6.0"}]"#).is_err());
+        assert!(release_tag_names(r#"[{"tagName":"0.6.0","isDraft":"false"}]"#).is_err());
     }
 
     #[test]
