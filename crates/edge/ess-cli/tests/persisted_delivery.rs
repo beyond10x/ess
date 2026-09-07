@@ -162,7 +162,33 @@ fn invalid_current_removal_is_refused_before_analysis_and_execution() {
 #[test]
 fn valid_plan_reaches_both_local_fake_executors_in_rollout_order() {
     let fixture = Fixture::new();
-    let desired = fixture.write("desired.json", &plan());
+    // This fixture independently binds the requested manifest to original config/chart bytes.
+    let chart = b"local fake chart";
+    let config = b"{}";
+    let manifest = serde_json::to_vec(&serde_json::json!({
+        "schemaVersion":2,"mediaType":"application/vnd.oci.image.manifest.v1+json",
+        "config":{"mediaType":"application/vnd.cncf.helm.config.v1+json","digest":ess_deployment::Digest::of_bytes(config).as_str(),"size":config.len()},
+        "layers":[{"mediaType":"application/vnd.cncf.helm.chart.content.v1.tar+gzip","digest":ess_deployment::Digest::of_bytes(chart).as_str(),"size":chart.len()}]
+    })).unwrap();
+    let mut desired = plan();
+    for name in ["first", "last"] {
+        desired["releases"][name]["chart"]["digest"] =
+            ess_deployment::Digest::of_bytes(&manifest).as_str().into();
+    }
+    std::fs::write(fixture.0.join("manifest"), &manifest).unwrap();
+    std::fs::write(fixture.0.join("config"), config).unwrap();
+    std::fs::write(fixture.0.join("chart"), chart).unwrap();
+    std::fs::write(
+        fixture.0.join("identities"),
+        format!(
+            "{}\n{}\n{}\n",
+            ess_deployment::Digest::of_bytes(&manifest),
+            ess_deployment::Digest::of_bytes(config),
+            ess_deployment::Digest::of_bytes(chart)
+        ),
+    )
+    .unwrap();
+    let desired = fixture.write("desired.json", &desired);
     let output = fixture.reconcile(&desired, None, false);
     assert!(
         output.status.success(),
@@ -171,7 +197,7 @@ fn valid_plan_reaches_both_local_fake_executors_in_rollout_order() {
     );
     assert_eq!(
         std::fs::read_to_string(fixture.0.join("calls")).unwrap(),
-        "oras\nhelm\nhelm\n"
+        "oras\noras\noras\nhelm\nhelm\n"
     );
 }
 
