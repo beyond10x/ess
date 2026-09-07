@@ -279,11 +279,22 @@ because conflating them is how a domain model turns into a description of a depl
 | **binding** | `InvoiceCreated` causes `SendEmail` | which queue carries it |
 | **topology** | the system is not correct with one instance | how many pods to start |
 
-One component word does reach further than the rest: `reached_by:`, a closed set of `in_process` —
-the default, and what silence has always meant — and `network`. It says where a component's callers
-are, and that is enough for the generators to derive an HTTP surface rather than a document beside
-one. `examples/billing/` declares neither and gets the default; `examples/gatepass/components.yaml`
-declares `reached_by: network`, which is why that example has a served contract and billing does not.
+`reached_by:` is a closed set of `in_process` (the default), `network` and `command_line`. It
+declares where a component's callers reach its surface. `examples/billing/` omits it and gets
+`in_process`; `examples/gatepass/components.yaml` declares `network`, which selects HTTP server
+generation in the current Rust and Go targets. Projecting an OpenAPI document alone does not run
+a server.
+
+For `command_line`, supply a `cli:` block naming the binary and placing every accepted command
+exactly once at the root or in a group. Command words derive from their wire names, and flags from
+input fields and their wire names. A CLI block without `command_line`, or `command_line` without a
+CLI block, is refused. Reach and CLI layout belong to the authored/compiled model and participate
+in its identity; physical argv or URL invocation belongs to realization.
+
+Each logical component currently has one reach value. Several physical entrypoint records do not
+add simultaneous semantic CLI and HTTP surfaces, and duplicating domain ownership is refused.
+See [Logical, interface and delivery owners](../concepts/ess.md#logical-interface-and-delivery-owners)
+for the separate contracts, identity consequences and bounded examples.
 
 ## Check what you just wrote resolved
 

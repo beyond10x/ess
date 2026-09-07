@@ -28,11 +28,99 @@ A specification — one YAML file or a directory — declares:
 | **actors** | who may invoke which commands |
 | **components** | units of ownership; `reached_by: network` states where callers are without naming a protocol |
 | **bindings** | event → command reactions across contexts, including what happens when they fail |
-| **topology** | how components group into deployable units — a separate file, because it is a separate decision |
+| **topology** | each component's runtime requirements: replica bounds, statefulness and required resources |
 
 Illegal lifecycle transitions are illegal **by absence**: there is no arrow, and no second rule
 forbidding them, because two places for one truth eventually disagree. The generated documentation
 lists the absent pairs explicitly, derived from the same transitions.
+
+## Logical, interface and delivery owners
+
+ESS uses several documents to connect logical ownership to physical implementations. The words
+*component*, *service* and *workload* occur in more than one. The owning document tells you which
+identity a name selects:
+
+| Term | Owner | What it describes |
+|---|---|---|
+| **Logical component** | `ess-domain` component `ComponentSpec` | Domain ownership, accepted commands and published events. A component can become a module or a process without changing which domain it owns. |
+| **Deliverable descriptor** | `ess-deployment` component `ComponentSpec` (`ess-component/1`) | Repository paths for specification, realization, build and runtime inputs, plus independent runtime and chart release units. Compiling this descriptor does not open its referenced files. |
+| **Imported component alias** (composition service) | `ess-composition` `ServiceImportSpec` → `ResolvedService` | A local key selecting one component from an exact system, specification version and compiled-model digest. It does not select a deployment release. |
+| **Stack member** (stack service) | `ess-deployment` stack `SystemRequirement` → `LockedSystem` | A stack-local service key whose runtime and chart release constraints are resolved against a release catalog. |
+| **Runtime requirement** (semantic workload) | `ess-domain` topology `Topology` and `Workload` | One logical component's replica bounds, statefulness and required resources. These are correctness requirements, not process/container grouping or observed placement. |
+| **Runtime workload mapping** | `ess-deployment` runtime `RuntimeSpec` and `Workload` | Desired mapping of logical components to processes, containers, replica counts and storage. Compilation checks input digests, component coverage, replica bounds and stateful storage; it does not establish resource provisioning or satisfaction of every semantic resource requirement. |
+| **Implementation manifest** (realization) | `ess-realization` `RealizationSpec` (`ess-realization/1`) | Selected components and actors, immutable implementation artifacts and physical entrypoints. Each selected component has exactly one implementation assignment. |
+| **Entrypoint prerequisite** | `ess-realization` `RuntimeRequirement` | Declared OS, architecture, filesystem, network, cgroup, environment-variable or credential-source requirements. Compilation does not verify their availability. |
+| **Declared interface reach and CLI contract** | `ess-domain` `Reach` and `RawCommandLineSurface`, retained by `ess-compiler` | Where callers reach a logical component and its optional CLI binary/group layout. Command words and flags derive from model names and input fields. |
+| **Invocation and attachment** | `ess-realization` `EntryPointSpec` and `Invocation` | One argv or HTTP(S) URL invocation per entrypoint, with attachment, interaction, availability and support metadata. |
+| **Derived HTTP contract** | `ess-gen` HTTP `routes`, consumed by OpenAPI and HTTP synthesis | POST command routes and, for network-reached components, GET view routes. A projected contract alone establishes no listener, deployed URL or public availability. |
+
+A deliverable can implement several logical components. Its descriptor identity, their component
+names, a composition alias and a stack service key therefore need not coincide. See
+[Component delivery](component-delivery.md) for the documents that connect release selection to
+runtime mapping. Infrastructure observations remain in the separate infrastructure model.
+
+### Reach, entrypoints and identity
+
+`reached_by` has exactly three values: `in_process` (the default), `network` and `command_line`.
+A `command_line` component must declare a `cli` block; a `cli` block with either other reach is
+refused. These are interface contracts in the authored and compiled semantic model. Behaviour and
+actor permissions remain in that model too. Physical invocation, attachment and support belong in
+the separate [realization document](../guides/record-realization.md).
+
+One logical component currently has one reach value. Simultaneous semantic CLI and HTTP surfaces
+for that component have no combined reach value or independent interface collection. Duplicating
+its domain owner is refused and cannot add a second surface. Current Rust and Go HTTP server
+generation selects `network` components; the Clap target consumes the declared CLI layout.
+
+A realization can describe multiple entrypoints, with unique IDs and exactly one primary; several
+records may name the same implementation. This describes physical entrypoints without establishing
+simultaneous CLI/HTTP synthesis. Realization compilation resolves references and invocation syntax;
+it does not compare attachment or invocation with semantic reach, establish actor authorization,
+or prove that an entrypoint runs.
+
+The identity distinction matters when changing these documents. `EssIr::source_digest` hashes the
+serialized compiled model, including nondefault reach and present CLI layout. Explicit default
+`in_process` and an absent reach declaration serialize alike. Realization's `realization_digest`
+hashes specification identity, synthesis identity and implementations; it excludes entrypoints.
+An entrypoint-only edit can therefore leave that digest unchanged. Neither digest proves execution,
+deployment or authorization.
+
+Supporting several semantic interfaces in future would require a separate additive design: retain
+one logical domain owner, define interface identities and references, decide model-identity and CLI
+compatibility, and account for every admission, projection and synthesis consumer. Those criteria
+do not add a multiple-interface capability to the current model.
+
+### Reading the examples
+
+The repository examples show which document owns a choice and where the supported boundary ends:
+
+| Example | Owner and supported reading |
+|---|---|
+| **CLI-only: desk-service** | The [Clap fixture][cli-example] declares `reached_by: command_line`, binary `desk` and group `visits`. Its tests inspect generated grammar bytes. The Clap emitter provides parsing, completion and handler seams receiving `ArgMatches`; command behaviour remains implementation work. |
+| **HTTP-only: Gatepass** | [pass-service][http-component] declares `network`; the [server source][http-server] links the handwritten realization to the generated HTTP server. The native executable has no argument parser and is not a semantic CLI. This source describes the linkage, not a currently running deployment. |
+| **Simultaneous CLI and HTTP** | The single `Reach` value and CLI validation above are the current limitation. Multiple realization entrypoint records do not establish combined semantic reach or combined synthesis for one component. |
+| **Physical invocation: billing-local** | The [realization example][realization-example] assigns `invoice-service` to `billing-binary` and describes `local-tui` through argv plus an environment prerequisite. Its artifact locator and identity are fixture values; the document does not establish an available implementation or a declared CLI grammar. |
+| **Composition: Todo/Usage** | The [composition fixture][composition-example] selects `todo-component` and `usage-component` from the same exact workbench model under different aliases. It selects logical surfaces, not two independently resolved releases. |
+| **Delivery: Oracle** | The [delivery fixture][delivery-example] defines one deliverable with runtime/chart release units and maps `order-service` and `dispatch-service` into one runtime workload. Logical ownership remains separate. Its stack selects releases from a catalog; this is compiler/projection example data, not a live deployment. |
+
+Composition's current client emitter produces Rust with byte-buffer transport. Its plan preserves
+selected operation names and model identity, without complete payload definitions or codecs; named
+type traversal does not cover view parameters. The language-neutral plan does not promise a client
+for every synthesis target. See [Composition clients](../reference/cli.md#composition-clients-selected-operations-and-byte-transport)
+for the application-owned payload and transport boundary.
+
+Stack resolution takes a stack and a release catalog. It carries the supplied `composition_digest`
+without reading a compiled composition, so it does not prove correspondence with imported aliases
+or complete typed operation-payload compatibility. Structural synthesis also leaves semantic
+topology as `TopologyDeferred`; deployment runtime compilation is the separate owner of the
+desired workload mapping.
+
+[cli-example]: https://github.com/beyond10x/ess/blob/main/crates/generate/ess-synth/tests/clap.rs
+[http-component]: https://github.com/beyond10x/ess/blob/main/examples/gatepass/components.yaml
+[http-server]: https://github.com/beyond10x/ess/blob/main/examples/gatepass-realization/src/bin/gatepass-server.rs
+[realization-example]: https://github.com/beyond10x/ess/blob/main/examples/realizations/billing-local.yaml
+[composition-example]: https://github.com/beyond10x/ess/blob/main/crates/specify/ess-composition/tests/fixtures/compositions/workbench.yaml
+[delivery-example]: https://github.com/beyond10x/ess/blob/main/crates/generate/ess-deployment/tests/deployment.rs
 
 ## The pipeline
 
