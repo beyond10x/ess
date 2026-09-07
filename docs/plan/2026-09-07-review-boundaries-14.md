@@ -609,3 +609,11 @@ The Website lease also ended and `worktree finish` returned zero at the exact te
 runtime. Managed GC is reviewing the complete activated profile; only the two owned IDs
 `ess-public-support-claims` and `ess-wave14-website-verification` may be applied after that
 review. Its final result will be recorded before the next implementation worktree is created.
+
+Root read all 24 GC assessments, preserved the two unrelated eligible records and every
+unrelated refusal, then applied only those two owned IDs. Managed GC returned zero at 08:30:00Z
+with fresh advertised recovery references and both exact removal receipts. Both paths are
+absent. The merged implementation branch was removed with non-forced `git branch -d` after
+ancestry verification. All archives and the continuing coordinator remain. Support closure
+`4a53fca3dbb3df37d200ea8c6191549f135fb06f` is published; this final lifecycle paragraph travels
+with the next opening record because the profile-wide GC finished after that closure push.
