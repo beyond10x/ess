@@ -346,3 +346,35 @@ remediation count to 24 implemented and seven draft stories; execution-recovery 
 remains separately owed. Closing changes are planning and this wave record only, preserving the
 exact runtime, test, tool, lockfile and public-site bytes that passed the gate. Remote publication,
 CI and exact managed retirement are recorded after their actual outcomes.
+
+## Publication and retirement
+
+Closing commit `95ef5be70dbce966056d0484b66db7ed836fa406` was published to remote main at
+2026-09-07T10:52:41Z and read back at that exact ref. All introduced direct commits have the
+required bot author and committer. CI run 34113711890 and Documentation validation run
+34113711851 completed successfully. Exact publication and CI receipts remain in coordinator
+`target/review-boundaries-15/preparation/closing/publish`.
+
+Root retained all five assigned unit output roots, then independently read each archive and
+compared every member and a fresh complete source census. The first target attempt refused
+before archiving because root's six required report keys omitted the archive's `target/` prefix;
+the failed census/configuration is retained, the six corrected keys matched it, and target
+attempt 02 passed. No source evidence was missing and no failed attempt was overwritten.
+
+| Retained root | Archive bytes | SHA256 |
+|---|---:|---|
+| unit target, attempt 02 | 309,809,187 | `999387a8a5fbe38cd2d42c8d6253496caeb2438a8610c0b71a91f90ed5955bf4` |
+| implementation TMP, attempt 01 | 1,307,570,452 | `e86bc6880ad01ab77d4afcf90a946de82c57d8004e1e13eb024aa34b983116f7` |
+| source pass 1 TMP, attempt 01 | 387,218,854 | `8aef5569c92e69e0fc40e138c1f82d033ef3fff12c4787ae5cf9e6e668098a47` |
+| correction 1 TMP, attempt 01 | 363,431,726 | `ff67be4388206e4cb9ee2849e4f067cd0a489b4ceadbad13b530f25bf608404b` |
+| source pass 2 TMP, attempt 01 | 433,484,595 | `e960a948cca917f0bb0ffef9ddbaf809e35879f38b0dd6f641ac6ed88c709af8` |
+
+Archives, complete native manifests, six required report/seal pins, separate verification exits
+and retirement receipts live under
+`/home/timo/.cache/ess-review/2026-09-06-resume/browser-replay-unit-retirement`.
+Root rechecked the published unit ancestry, clean unit and finite final producer PID list, then
+removed only the five assigned generated roots. The coordinator gate TMP and all unrelated trees
+remain outside that cleanup. Lease end and managed finish returned zero. Root read all 21 fresh
+GC assessments and applied only `ess-browser-replay-fidelity`; manager removal returned zero
+with remote-main recovery proof. The managed path and all five raw roots are absent, and the
+merged implementation branch was deleted without force. This completes wave 15.
