@@ -147,3 +147,43 @@ The earlier refresh is retained at target/review-boundaries-14/preparation/brows
 **Dispatch source refresh — 2026-09-07**
 
 The source anchor is a45b4081de9352e0b2f0b7a8ec87bb91f99b6cc3. namespace-main-root-refresh.json is the independently retained root comparison from 57; dispatch-refresh/readback.json records this bounded document refresh and exact source/output pins. The five browser emitter/asset/test owners and historical fixture retain their reviewed bytes; main.rs and Cargo.lock now have namespace-observation identities. Full package and integration checks must use the actual assigned source, including those new infrastructure dependencies. This does not add an infrastructure write reservation or re-open the accepted browser contract. The five protected behavior/validation sections, complete B01–B15 matrix and historical-player preservation requirement remain byte-identical to the accepted publication draft. Older sections explicitly labelled original or earlier remain historical evidence. Root owns N=1 wave selection and fills final commit, unit/branch/lease and mutable-resource slots before dispatch. No build or browser was run by this refresh.
+
+
+**Implementation clarifications — wave 15**
+
+The two current players retain the same declared replay implementation after their distinct input
+loading/admission steps. They keep the original tagged inputs and step positions, including a leading
+declaration group. Reached queries expose their declared arguments; no view has a computed `rows`
+collection. Instance `fields` and optional lifecycle `state` contain known facts only. Separate
+`unknownFields`, `stateUnknown` and `world.unknownEffects` explain unavailable knowledge. Skins must
+check for absence rather than interpreting an unknown marker as a domain value.
+
+The existing reduced `outcome.refuses` field is a **wrong-state policy**, not a classifier for every
+outcome. `crates/specify/ess-domain/src/command.rs:852–857` defines it as true but unused on ordinary
+outcomes; `is_refusal` at line 955 and outcome validation at lines 1135–1179 establish actual refusal
+from the declared error. `crates/specify/ess-compiler/src/ir.rs:695–702` retains that distinction.
+The web projection carries no error classifier. Its bytes stay unchanged: a validated refusing
+outcome has no subject or entity effects, while ordinary creation and movement follow the subject
+declaration even when this policy field is true. The actual-browser refusal vector compares all
+established instances, unknown effects, notes and observed events before and after the refusal.
+
+A capture's emitted event field can have a different name from the entity's identity field.
+`ResolvedInstance::Observed` in `crates/specify/ess-compiler/src/ir.rs:600–615` owns that source;
+`crates/verify/ess-conformance/src/authored.rs:1901–1932` retains the explicit capture declaration. Matching the projected entity and
+emitted event can establish the declared scenario-local alias. Comparing the two field names would
+invent an additional restriction. The player still establishes no actual identifier and refuses
+ambiguous capture or outcome declarations. A valid renamed-event-field vector exercises both routes.
+
+Coverage admission's exact unsigned metadata tokens remain intact in the internal declaration.
+The display renders decimal tokens only at the scenario vocabulary's metadata owners (`elapsed`,
+`after`, view count bounds and positional index), without conversion through JavaScript Number.
+Literal Nodes keep their admitted finite-number behavior; literal mappings with similar keys are
+not metadata. Original suite, parent and carrier strings remain unchanged.
+
+The executable B01–B12 families and additional refusal, capture, update, binding and timer variants
+live in `crates/edge/ess-cli/tests/replay_fidelity_browser.rs`. They emit explicit suite/4 and suite/5
+with the real CLI and exercise the emitted assets and DOM in Firefox/BiDi. B13–B15 remain in the
+unchanged admission/lineage assertions of `coverage_browser.rs`; its historical test explicitly
+installs the immutable fixture before running the original old-input and new-metadata assertions.
+The implementation handoff retains the exact route/variant matrix, baseline and assertion-red
+receipts, final gate receipts, source and fixture hashes, and the complete scratch census.

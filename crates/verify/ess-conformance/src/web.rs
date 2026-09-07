@@ -224,18 +224,23 @@ fn readme(ir: &EssIr, suite: &ConformanceSuite) -> String {
          open `index.html`; a browser will not instantiate a module from a `file://` URL.\n\n\
          ```console\n$ python3 -m http.server\n$ open http://localhost:8000/index.html\n```\n\n\
          ## What it shows\n\n\
-         **Flow.** One lane per actor a scenario names, one row per act, time downward. The current \
-         act is lit. A third lane holds what a binding causes — drawn dashed, because the model \
-         declares it and the scenario asserts nothing about it.\n\n\
-         **State, views and the UI are three different things**, and the tabs keep them apart. State \
-         is the truth now. A view is a projection with a filter, parameters and a consistency, so it \
-         selects, it needs an argument, and an `eventual` one is allowed to be behind. The UI is \
-         whatever a `skin.js` beside this file renders, and there is none unless somebody wrote one.\n\n\
+         **Flow.** Commands and every original query, expectation and control remain declarations, \
+         in their original order. Replay progress is not assertion success. Binding cards are \
+         unexecuted declarations and do not establish instances or observed events.\n\n\
+         **State.** A matching creation capture can establish a scenario-local alias and the declared \
+         initial lifecycle state. It cannot establish an actual generated identity. Fields remain \
+         explicitly unknown: the projection omits assignment literals, types and conversions. Updates \
+         and moves also omit the subject identity source. Unknown effects remove affected knowledge; \
+         they never stand for null, false, zero or an empty string.\n\n\
+         **Views.** Every view remains visible with its filter, declared parameters and reached query \
+         arguments. Results and model ordering are unavailable; replay does not compute membership, \
+         ordering or consistency. Typed literal values and unresolved references retain their tags.\n\n\
+         **UI.** An optional `skin.js` consumes the same reactive state. Skins must handle absent \
+         state/field knowledge and separate unknown explanations; unavailable facts are not values.\n\n\
          ## What it does not claim\n\n\
-         It replays. A scenario declares which outcome each command took and the player applies the \
-         effect the model attaches to that outcome. No obligation is filled and nothing here decides \
-         anything, so a green walk says the specification is coherent — not that any implementation \
-         works.\n",
+         Replay executes no implementation, fills no obligation and establishes no specification \
+         coherence. It emits no execution report or qualifying conformance evidence. Step, Back, Reset, \
+         Select and Play navigate the same declared prefix; they do not verify its expectations.\n",
         system = ir.system(),
         version = ir.version(),
         count = suite.scenarios.len(),

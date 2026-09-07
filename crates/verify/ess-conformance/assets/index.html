@@ -99,6 +99,9 @@
   .vw .na{color:var(--dim);font-size:11px;font-style:italic;margin-top:4px}
   .fil{font-family:var(--mono);font-size:10px;color:var(--dim);margin-top:3px}
 
+  .declaration{font-size:11px;color:var(--dim);margin-top:7px}
+  .declaration pre{white-space:pre-wrap;overflow-wrap:anywhere;margin:3px 0}
+
   /* A skin brings its own styles; the page styles only what it renders itself. */
   .note{border-left:2px solid var(--warn);padding:4px 0 4px 9px;margin-bottom:4px;font-size:11.5px;color:var(--warn)}
 </style>
@@ -113,10 +116,11 @@
   </header>
 
   <p class="caveat">
-    <b>Declared replay, not an execution.</b> Every transition is read from the model — an outcome
-    names its transition and the states it runs from. Dashed means the model <em>declares</em> it and
-    the scenario asserts nothing about it. No obligation is filled: nothing here decides anything,
-    the scenario says which outcome each command took, and this walks that declaration.
+    <b>Declared replay, not an execution.</b> Scenario-local aliases and initial states are
+    declarations. Assignment values, subject identity and view results remain explicitly unknown
+    where this projection lacks their meaning. Every expectation is unexecuted. Replay fills no
+    obligation, establishes no specification coherence and emits no execution report or qualifying
+    conformance evidence.
   </p>
 
   <main>
@@ -149,15 +153,19 @@
           </div>
           <div v-for="l in lanes" :key="l.key" class="cell" :class="'row-'+rowState(i)">
             <div v-if="l.kind==='actor' && a.actor===l.key" class="card">
-              <div class="cmd">{{ short(a.command) }}</div>
+              <div class="cmd">{{ short(a.command) || 'Leading declarations' }}</div>
+              <div v-for="input in (a.inputs || [])" :key="input.name" class="kv">{{ input.name }}: {{ input.text }}</div>
+              <div v-for="entry in (a.steps || [])" :key="entry.index" class="declaration">
+                <b>{{ entry.index+1 }}. {{ entry.status }}</b><pre>{{ entry.text }}</pre>
+              </div>
               <div class="out" v-if="a.outcome">→ {{ a.outcome }}</div>
-              <div class="ev" v-for="e in a.events" :key="e.event">● {{ short(e.event) }}</div>
+              <div class="ev" v-for="e in a.events" :key="e.event">Expected event (unexecuted): {{ short(e.event) }}</div>
               <div class="here" v-if="i===state.cursor">you are here</div>
             </div>
             <div v-if="l.kind==='binding'" >
               <div v-for="c in a.consequences" :key="c.command" class="card declared">
                 <div class="cmd">⇢ {{ short(c.command) }}</div>
-                <div class="why">{{ c.binding }}</div>
+                <div class="why">{{ c.binding }} — Unexecuted binding declaration</div>
                 <div class="why">granted to {{ c.grantedTo.join(', ') || 'nobody' }}</div>
               </div>
             </div>
@@ -175,16 +183,19 @@
 
       <template v-if="state.tab==='state'">
         <h2>Instances</h2>
-        <p v-if="!instances.length" class="empty">Nothing exists yet. Press play.</p>
+        <p v-if="!instances.length" class="empty">No scenario-local instances are established in this prefix. Unbound effects may remain unknown.</p>
         <div v-for="inst in instances" :key="inst.instance" class="inst" :class="{declared:inst.declared}">
           <div class="hd">
             <span class="nm">{{ inst.instance }}</span>
-            <span class="badge" :class="{term:(lifecycle(inst)?.terminal||[]).includes(inst.state)}">{{ inst.state }}</span>
+            <span class="badge" :class="{term:(lifecycle(inst)?.terminal||[]).includes(inst.state)}">{{ inst.state === undefined ? inst.stateUnknown : inst.state }}</span>
           </div>
           <div class="kv" style="margin:2px 0 5px">{{ inst.entity }}</div>
           <div v-for="(v,k) in inst.fields" :key="k" class="fld" :class="{hot:changed.has(inst.instance+'.'+k)}">
             <span style="color:var(--dim)">{{ k }}</span><span>{{ v }}</span>
           </div>
+          <template v-for="(reason,k) in (inst.unknownFields || {})" :key="k">
+            <div v-if="!(k in inst.fields)" class="fld"><span>{{ k }}</span><span>{{ reason }}</span></div>
+          </template>
           <div class="lc">
             <template v-for="(st,ix) in (lifecycle(inst)?.states||[])" :key="st">
               <b v-if="ix">›</b>
@@ -193,40 +204,38 @@
           </div>
         </div>
 
+        <h3 v-if="state.world.unknownEffects?.length">Unknown effects</h3>
+        <div v-for="(effect,i) in (state.world.unknownEffects || [])" :key="i" class="note">
+          step {{ effect.at+1 }}: {{ effect.entity }} {{ effect.kind }} {{ effect.field }}
+          <span v-if="effect.transition">{{ effect.transition.name }}: {{ effect.transition.from }} → {{ effect.transition.to }} (declared move)</span>
+          <div>{{ effect.reason }}</div>
+          <div v-if="effect.from !== undefined">declared assignment source: {{ effect.from === null ? 'omitted literal' : effect.from }}</div>
+          <div v-if="effect.missingInput">{{ effect.missingInput }}</div>
+        </div>
         <h3>Events</h3>
-        <p v-if="!state.world.events.length" class="empty">No events yet.</p>
-        <div v-for="(e,i) in state.world.events" :key="i" class="kv">● {{ short(e.event) }}</div>
+        <p v-if="!state.world.events.length" class="empty">No implementation events have been observed. Expected events are unexecuted declarations.</p>
+        <div v-for="(e,i) in state.world.events" :key="i" class="kv">Expected event (unexecuted): {{ short(e.event) }}</div>
         <template v-if="state.world.notes.length">
-          <h3>Refusals the model would have made</h3>
+          <h3>Replay diagnostics</h3>
           <div v-for="(n,i) in state.world.notes" :key="i" class="note">step {{ n.at+1 }}: {{ n.text }}</div>
         </template>
       </template>
 
       <template v-if="state.tab==='views'">
-        <h2>Views — projections, not state</h2>
-        <p v-if="!liveViews.length" class="empty">No view has rows or an unmet parameter yet.</p>
+        <h2>View declarations — results unavailable</h2>
+        <p v-if="!liveViews.length" class="empty">The model declares no views.</p>
         <div v-for="v in liveViews" :key="v.name" class="vw">
-          <div class="vh">
-            <span class="vn">{{ v.short }}</span>
-            <span class="cons" :class="{eventual:v.consistency==='eventual'}">{{ v.consistency }}</span>
-          </div>
+          <div class="vh"><span class="vn">{{ v.short }}</span><span class="cons">{{ v.consistency }}</span></div>
           <div class="fil" v-if="v.filterText">filter: {{ v.filterText }}</div>
-          <p v-if="v.unavailable" class="na">unavailable — {{ v.unavailable }}</p>
-          <p v-else-if="v.unevaluated" class="na">filter not evaluated by this player</p>
-          <table v-else-if="v.rows.length"><tbody>
-            <tr><th v-for="f in v.fields" :key="f">{{ f }}</th></tr>
-            <tr v-for="r in v.rows" :key="r.instance" :class="{declared:r.declared}">
-              <td v-for="c in r.cells" :key="c[0]">{{ c[1] }}</td>
-            </tr>
-          </tbody></table>
-          <p v-else class="na">no rows match</p>
+          <div class="fil">declared parameters: {{ v.params.join(', ') || '(none)' }}</div>
+          <p v-for="reason in (v.reasons || [])" :key="reason" class="na">{{ reason }}</p>
+          <div v-for="query in (v.queries || [])" :key="query.index" class="declaration">
+            <b>step {{ query.index+1 }}: {{ query.kind }} — Unexecuted declaration</b>
+            <div v-for="param in query.parameters" :key="param.name">{{ param.name }}: {{ param.text }}</div>
+          </div>
         </div>
-        <p class="footnote">
-          A view is not a window onto the state. It has a filter, so rows appear and vanish as
-          instances move; it takes parameters, so it cannot be read without an argument; and it has a
-          consistency, so an <code>eventual</code> view is allowed to be behind the panel beside this
-          one.
-        </p>
+        <p class="footnote">Queries and row, ordering, timing and halt expectations are declarations.
+          This replay computes no view result and observes no implementation consistency.</p>
       </template>
 
       <template v-if="state.tab==='ui'">
