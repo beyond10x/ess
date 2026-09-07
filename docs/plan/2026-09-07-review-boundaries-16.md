@@ -390,3 +390,59 @@ in preparation/main-refresh-bbbe0de/integration-source-review.json. All other re
 source bytes and ten disjoint upstream paths match their respective inputs exactly.
 The full gate will run against this combined clean commit, with all tracked source
 retained before execution. No prior unit or upstream check is reported as that gate.
+
+## Refreshed Atlas authority after the complete gate
+
+The full gate at 922dd160263acf3bea5f76e2c97b6eddce1553c6 exited zero in all
+eleven lanes, with 2,205 tests in 197 Rust summaries and no failures or ignored cases.
+Raw statuses and complete source/tool records are in gate-922dd160263a-attempt1.
+
+Atlas remote advanced to 80aefa7149f6f52c4601ff24eb39207000105ae6 before the
+Website task-opening commit. The authority assertion stopped that attempt before staging
+or committing. The old clean managed d10 checkout remains untouched. A new manager-owned
+Atlas authority is planned at the exact remote commit with id ess-wave16-atlas-authority;
+its default target is the build root and target/ess-wave16-authority is assigned scratch.
+An 8 GiB target/TMP allowance and 8 GiB free floor bound any required local tool build.
+
+The new authority defaults ordinary source delivery to asynchronous reconciliation and
+adds fresh release observation. This session's explicit workspace instruction still calls
+for the source-lock, snapshot and Website/Atlas delivery gates, so this end-to-end delivery
+continues under the current authority's explicit-publication exception. There is no release
+tag or runtime/control migration in this wave. The Website task records this operation
+separately from the ESS review stories.
+
+
+## Gate completion and second upstream refresh
+
+The source gate at 922dd160263acf3bea5f76e2c97b6eddce1553c6 is complete:
+all eleven lanes exited zero. The complete receipt is SHA256
+45b21ac75c512feaca87704b9b47dfebe8df6fc2844921c912f19f76e418c6e4;
+root independently verified every lane, all 1,182 source inputs (40,155,926 bytes),
+actual coverage binaries and exited producer processes in
+preparation/integration-gate-readback/readback.json (SHA256
+50386573650b205eac3d0990e4f4bf635fa08ee1db104a9c1c0973305b79dc47).
+The test lane executed 2,205 passing tests across 197 summaries, with no failures
+or ignored cases. Individual measured lane durations and direct statuses remain in
+gate-922dd160263a-attempt1/results.json; their total is 365.383650 seconds.
+AEP confirmed all fourteen scope entries and admitted implemented revision 16 after
+recording this actual gate. Validation returned zero for 203 artifacts, retaining
+all 42 no-findings-block advisories verbatim. This makes 25 original stories implemented
+locally, with 24 published and six original drafts plus the separate recovery story open.
+
+The new managed Atlas authority ess-wave16-atlas-authority was created at exact clean
+remote 80aefa7149f6f52c4601ff24eb39207000105ae6. Its native CLI build exited zero
+in 14.016140 seconds; the 18,089,248-byte binary has SHA256
+d7c780b149623eb7933632923be3d092f591d949266ce12a4a1019eafffaa6af.
+Its source, tool, resource and direct-child receipts are retained under that tree's
+target/ess-wave16-authority. The earlier d10 authority remains untouched.
+
+Before publication, fresh remote observation found ESS main had advanced to
+7cdf62513a05c95e37765df3261dffb42e8292cc. Its five-file release change is retained
+in preparation/main-refresh-7cdf625/full-change.diff and was read in full. It changes
+release-job ordering and draft publication, strict draft filtering in release-status,
+and the corresponding workflow tests and existing serde_yaml development dependency.
+It does not overlap the fourteen delivery source paths. The current AGENTS.md retains
+the required source gate and site-build for these documentation/action changes.
+The completed gate above predates this upstream source change: integration and a fresh
+whole gate on the resulting commit remain required before publishing this wave.
+No publication, Website delivery or worktree retirement is claimed by this checkpoint.
