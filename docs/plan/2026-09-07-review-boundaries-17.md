@@ -65,7 +65,7 @@ reconciliation is assigned.
 | Cargo bookkeeping | target/review-boundaries-17/cargo-home inside the unit |
 | Assigned temporary root | ~/.cache/ess-w17-discovery-tmp |
 | Lease | ess-review-authored-discovery-wave17 |
-| Stage | Integrated gate complete; closing record and publication in progress |
+| Stage | Published and managed unit retired; coordinator retained for the next wave |
 
 Initial free space was 23,472,275,456 bytes; later preflight measured 20,236,275,712 bytes. Use one
 producer, two Rust jobs, a 10 GiB combined unit target/TMP allowance and an 8 GiB free floor. This
@@ -334,3 +334,44 @@ Source publication and exact managed-unit retirement remain the next operations.
 and both assigned temporary roots are still present. Three prepared complete native archives and
 separate readbacks are required before removing those owned disposable roots. The coordinator is
 retained for the remaining remediation work. No release tag or downstream delivery is claimed.
+
+## Publication and verified retirement
+
+Source and closing record were published at a0cf3ca8681ce06f6fbdbc988d457b23f2136c04.
+The bot push returned zero and fresh remote advertisement plus fetch matched that exact main
+commit. Progress is 26 of 31 original review stories published, five originals still draft,
+with execution recovery a separate draft obligation. No follow-up story was created by this wave.
+ESS documentation source bundle 34159351602 and documentation validation 34159351572 succeeded.
+CI 34159351573 also completed successfully at the exact published a0cf3ca commit; root observed
+the bot-App helper return completed/success and direct exit zero. The complete local source gate
+above remains its own observed result. Downstream documentation publication was not observed here.
+
+All three assigned native roots were archived completely after publication and separately verified:
+
+| Root | Entries | Regular bytes | Archive SHA256 |
+|---|---:|---:|---|
+| Unit target | 130455 | 6390288742 | 380a5e17e54317e537b6060ec2bc432e16518394d9171f6f7898f5596dc42b48 |
+| Implementation TMP | 37159 | 3558902180 | 2a4fe09bf31b9e4ccc88d95157d99191d3d248908464008afa09ed89bce8a821 |
+| Reviewer TMP | 28640 | 2499326483 | b1b2531d0e8a8e846bbf367924550edd220fd389c5aedb1eb9be694a87b35065 |
+
+Every regular payload and complete native PAX record, literal symlink and hard-link identity was
+verified without extraction; 29 quiescent socket nodes retain metadata only. The final census
+includes the review's ten separately sealed self-exclusions. Root observed archive/readback session
+93615 exit zero and independently checked all six direct results, subprocess records, counts and
+required report/seal pins. The archives and all receipts remain outside the unit at
+~/.cache/ess-review/2026-09-06-resume/authored-discovery-unit-retirement.
+
+The first disposable-root removal command returned one after removing target and implementation
+TMP: its exclusive receipt writer refused the second write to the same output filename. The
+original command, first receipt and failure remain. Root checked actual paths, reverified the
+remaining reviewer TMP against its archive, then removed only that remaining root; recovery session
+99683 returned zero. All three exact disposable roots were verified absent before managed cleanup.
+
+Root ended only its unit lease. Managed finish and exact-id GC dry-run both returned zero; the
+fresh assessment selected only ess-authored-discovery-wave17 as eligible. Exact-id GC apply returned
+zero with current origin/main recovery proof. The unit path is absent. Its exact published merged
+branch was deleted without force after an ancestry check. Worktree repo list confirms the primary,
+the continuing coordinator and unrelated wt-c465ed5c6cd3 remain; none was cleaned incidentally.
+The continuing coordinator is now wave/review-boundaries-18 and retains the full integrated gate,
+frozen tools, opening records and responsibility for the remaining ESS remediation. Unfinished
+Website/Atlas work remains excluded and preserved. No versioned release is claimed.

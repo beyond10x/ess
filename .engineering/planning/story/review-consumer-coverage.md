@@ -2,7 +2,7 @@
 format: aep.planning-md/1
 id: story:review-consumer-coverage
 kind: story
-status: draft
+status: active
 title: Require explicit consumer coverage for model extensions
 tags:
 - P1
@@ -20,7 +20,7 @@ scope:
   path: crates/edge/ess-xtask
 - confidence: inferred
   path: docs/design/review-consumer-coverage.md
-revision: 9
+revision: 12
 ---
 ## Finding and source
 
@@ -46,21 +46,22 @@ Do not rewrite passing gates or claim every target supports every construct; unk
 
 ## Scope
 
-Derived 2026-09-07 by `aep-drive:story-scoper` against frozen ESS source d1fe6755e842c8ef5486a90493530a39050dae48 and draft story revision 8 — cited.
+Derived 2026-09-07 by `aep-drive:story-scoper` 0.8.1 against ESS `a0cf3ca8681ce06f6fbdbc988d457b23f2136c04` and draft story revision 9 — cited.
 
-- **Primary write reservation:** `crates/edge/ess-xtask` — cited; owns the existing Rust command dispatcher and compiled RawSpecFile JSON Schema provider, and is the story's named location for the model/consumer coverage gate.
-- **Gate write reservation:** `Taskfile.yml` — cited; owns the existing projection and repository checks and the new separately named consumer-coverage lane.
-- **Dependency write reservation:** `Cargo.lock` — inferred; package-local AST, serialization or provenance dependencies may alter the resolved lockfile without requiring a workspace-root manifest change.
-- **Binding write reservation:** `docs/design/review-consumer-coverage.md` — inferred; the exact intended internal binding path remains absent, while the reviewed v3 candidate remains an unaccepted preparation artifact.
-- **Model inventory boundary:** RawSpecFile, Specification, EssIr, private EssIrParts, EssSemanticRef and SemanticDependencyGraph, plus their reachable production declarations and the separate compiled RawSpecFile Draft 7 wire graph — cited; the six declaration owners and schema provider are unchanged from the preceding source survey.
-- **First-stage implementation:** build the closed source/profile extractor, explicit consumer classification and proposed finite baseline output before enforcing baseline eligibility — inferred; the coordinator must review and freeze that output at a named checkpoint before any BaselineUnknown record can qualify.
-- **Integrated consumer refresh:** separately classify suite5 construction, authored batch compilation and merging, admitted original-byte input and selection lineage, Rust/Go coverage execution, paired replay admission and browser playback, and coverage-aware impact input — cited; these integrated surfaces invalidate the old Scope's suite1–4-only account.
-- **Behavioral evidence boundary:** each supported/refused cell identifies its exact model shape, consumer profile and actually executed case; model names, fixture presence, package-level green results and outer tests that skipped nested execution do not establish coverage — cited.
-- **Conditional scope expansion:** add exact owner-package test reservations only if mandatory behavioral cells cannot be established by existing assertions and observable executions; no such test edit is selected by this refresh — inferred.
-- **Compatibility:** preserve existing source-model visibility, persisted formats, source defaults, browser fidelity limits and the composition byte-buffer contract — cited.
-- **Validation:** retain the repository gate and separate site-build requirement for the validation-workflow change; include extractor/accounting controls and same-source behavioral mutation evidence under the accepted binding — cited.
-- **Confidence:** medium — inferred; the four write surfaces are established, but the reachable inventories, exact eligibility set, case attribution and execution-profile mechanics have not been implemented or measured.
-- **Would collide with:** any unit changing the xtask package, Taskfile validation sequence, dependency lockfile or exact internal binding document — inferred; consumer/model/test owners are read dependencies rather than write reservations, but changes to their bound inputs require a refreshed inventory and evidence checkpoint.
+- **Primary write reservation:** `crates/edge/ess-xtask` — cited; the story names this Rust gate owner, whose dispatcher and actual compiled RawSpecFile schema provider remain the implementation home.
+- **Gate write reservation:** `Taskfile.yml` — cited; add the separately named consumer lane while preserving every existing check and its order, including support-check.
+- **Dependency write reservation:** `Cargo.lock` — inferred; a measured package-local extractor dependency change may require updated resolution.
+- **Binding write reservation:** `docs/design/review-consumer-coverage.md` — inferred; the intended internal design home is still absent, and the reviewed v3 candidate remains unaccepted preparation.
+- **Model boundary:** RawSpecFile, Specification, EssIr, private EssIrParts, EssSemanticRef and SemanticDependencyGraph, their reachable production declarations, and the separate compiled RawSpecFile Draft 7 wire inventory — cited; the three authoritative ESS model package trees are byte-unchanged from the preceding a45b4081 source checkpoint.
+- **First-stage boundary:** implement closed source/profile/model/wire/consumer extraction, exact candidate case attribution and finite unaccepted baseline output, then stop at a root checkpoint before any BaselineUnknown admission — cited; the preserved v3 policy and finite first-stage work order explicitly require this sequence.
+- **Authored acquisition refresh:** classify specification, authored-scenario and coverage acquisition separately across immediate manifest selection, legacy directory policies, direct files and omitted scenarios; retain original input identities and bytes, inactive-role boundaries and refusal-before-output behavior — cited; the newly integrated shared acquisition owner changes these consumer profiles without adding another semantic model root.
+- **Model-caller refresh:** include release report qualification and observed-binding comparison among the explicit callers of shared specification loading; distinguish admitted model/selection consistency, declared realization identity and qualified infrastructure comparison from execution or producer authentication — cited.
+- **Other integrated consumer refresh:** retain the previous coverage, cache and support classifications; refresh current legacy and paired browser playback, realization v1/v2 alternatives, namespace collection entry points and release-action/build inputs — cited; these source and case identities changed after a45b4081 and cannot inherit an old package-level claim.
+- **Behavioral boundary:** Supported or Refused requires exact attributed assertions and actual case execution under the bound profile; browser unknown-state presentation, release consistency checking, fixture presence and an aggregate green suite do not establish stronger semantic behavior — cited.
+- **Conditional additional writes:** propose an exact owner-test reservation only when a mandatory behavioral cell cannot be established by existing meaningful assertions and observable execution — inferred; this refresh selects no additional test owner or consumer repair.
+- **Validation boundary:** retain package checks, the complete repository gate and site-build for the validation-workflow change; retain mandatory F01 attribution and same-source causal mutation requirements — cited.
+- **Confidence:** medium — inferred; current write owners and relevant source deltas are established, while complete extracted inventories, exact case/profile attribution and finite baseline eligibility remain first-stage outputs.
+- **Would collide with:** edits to the xtask package, Taskfile validation sequence, dependency lockfile or exact internal binding document — inferred; model, consumer and case owners remain read dependencies whose changes require refreshed inventory and evidence checkpoints.
 
 ## Candidate binding review
 
@@ -90,3 +91,21 @@ input and lineage admission, paired replay, actual Rust/Go execution and coverag
 This source inspection does not accept the binding or any BaselineUnknown eligibility.
 The story remains draft and is not selected by wave 12. Later selection must refresh any
 intervening model, consumer, test or profile changes, including the pending cache implementation.
+
+## Selected implementation policy and Stage 1
+
+On 2026-09-07 root accepts the unchanged reviewed v3 policy under the standing implementation
+approval and selects the finite first stage of wave 18. The accepted home is
+`docs/design/review-consumer-coverage.md`; its current assignment names the a0cf3ca source,
+production model/default-feature profile, frozen Rust authority and the mandatory later root
+eligibility checkpoint. The complete Stage 1 work order is retained in
+`docs/plan/2026-09-07-review-boundaries-18.md`, with the current acquisition, browser, release,
+observed-binding, realization and namespace classifications added to its prior input inventory.
+
+The independent scoper returned the same four reservations. Root verified all 44 input hashes
+and 38 current Git blobs; receipt SHA256
+`6f1aea6b8d7cbe240acbc8630b449d33223c14c66aad2c94c75effbab438f73a` at
+`target/review-boundaries-18/preparation/scoper-root-readback.json`.
+The complete prior acceptance, validation, compatibility and review history are preserved.
+The source/output checkpoint must be measured and reviewed before any baseline unknown is admitted;
+no such eligibility, runtime case result or story completion is claimed by this selection.
