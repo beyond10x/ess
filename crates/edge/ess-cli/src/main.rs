@@ -4,6 +4,7 @@ mod coverage;
 mod load;
 mod model_types;
 mod normalize;
+mod observed_bindings;
 mod oci_cache;
 mod schema;
 mod schema_bundle;
@@ -227,6 +228,8 @@ enum GenerateCommand {
 /// `ess verify`: an implementation held to the specification — `crates/verify/`.
 #[derive(Debug, Subcommand)]
 enum VerifyCommand {
+    /// Verify declared implementation bindings against scoped Kubernetes observations.
+    Bindings(observed_bindings::Args),
     /// Generate or execute a semantic conformance suite.
     Conform {
         #[command(subcommand)]
@@ -529,9 +532,9 @@ enum ConformCommand {
 
 #[derive(Debug, Subcommand)]
 enum RealizationCommand {
-    /// Validate and resolve an `ess-realization/1` declaration.
+    /// Validate and resolve an `ess-realization/1` or `/2` declaration.
     Validate(RealizationInput),
-    /// Compile a declaration into canonical `ess-realization-ir/1` JSON.
+    /// Compile a declaration into its versioned canonical realization IR.
     Compile {
         #[command(flatten)]
         input: RealizationInput,
@@ -554,7 +557,7 @@ enum RealizationCommand {
 
 #[derive(Debug, clap::Args)]
 struct RealizationInput {
-    /// An `ess-realization/1` JSON or YAML document.
+    /// An `ess-realization/1` or `/2` JSON or YAML document.
     #[arg(long)]
     path: PathBuf,
     /// One ESS file or a directory containing `system.yaml`.
@@ -1058,6 +1061,7 @@ fn generate_projections(arguments: &GenerateArgs) -> Result<ExitCode> {
 /// `ess verify …`, and the same verbs spelled flat.
 fn verify_area(command: VerifyCommand) -> Result<ExitCode> {
     match command {
+        VerifyCommand::Bindings(args) => observed_bindings::run(&args),
         VerifyCommand::Conform { command } => conform(command),
         VerifyCommand::Diff { from, to, format } => diff(&from, &to, format),
         VerifyCommand::Impact {
@@ -3608,7 +3612,7 @@ mod tests {
     ///
     /// Written down on purpose. A verb added to the tree and to no area would otherwise be
     /// counted by the enumeration it is missing from and pass every case below.
-    const AREA_LEAVES: usize = 52;
+    const AREA_LEAVES: usize = 53;
 
     /// The order they are offered in is checked where it is rendered, in
     /// `tests/command_surface.rs`: `mut_subcommand` moves what it touches to the end of the list,

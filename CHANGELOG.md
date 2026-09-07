@@ -4,6 +4,12 @@
 
 ### Added
 
+- Native `ess verify bindings` connects exact implementation selections to scoped Kubernetes
+  workload templates, with deterministic JSON/Markdown and satisfied, violated or unknown exits.
+  Mutable tags and source-to-image provenance remain unknown; live collection never falls back
+  to a cached observation. Explicit `ess-realization/2` admits implementation-only selections
+  without inventing executable entrypoints; v1 admission and canonical bytes remain unchanged.
+
 - Native namespace topology collection with `--namespace`: exact namespace and referenced-node
   reads, payload omission before writing, and typed coverage in observation/IR version 2.
   Graph and drift retain the scope; intent checks withhold conclusions and projection refuses
@@ -24,6 +30,9 @@
   restricted TypeScript projection have distinct documented boundaries.
 
 ### Fixed
+
+- The browser test harness waits for Firefox's WebSocket route, retrying its startup 404 within
+  the existing deadline while preserving strict upgrade validation and response evidence.
 
 - Both generic replay players preserve typed inputs and ordered declarations, mark
   unavailable assignment, subject and view results as unknown, and cancel stale

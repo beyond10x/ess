@@ -156,3 +156,46 @@ fn unknown_fields_cannot_smuggle_credential_values_into_the_document() {
     let error = RealizationSpec::from_yaml(&source).expect_err("value has no place in the type");
     assert!(error.to_string().contains("unknown field `value`"));
 }
+
+#[test]
+fn implementation_only_selection_is_explicit_v2_and_v1_remains_strict() {
+    let ess = compiled_ess();
+    let original: serde_json::Value = serde_yaml::from_str(&source(&ess)).unwrap();
+    let mut value = original.clone();
+    value["actors"] = serde_json::json!([]);
+    value["entrypoints"] = serde_json::json!([]);
+    let read = |value: &serde_json::Value| RealizationSpec::from_json(&value.to_string()).unwrap();
+    let refused = compile(&read(&value), &ess).unwrap_err();
+    assert!(refused
+        .as_slice()
+        .iter()
+        .any(|e| e.code() == RealizationCode::EmptyDeclaration));
+    value["type"] = serde_json::json!("ess-realization/2");
+    let compiled = compile(&read(&value), &ess).unwrap();
+    let document: serde_json::Value = serde_json::from_str(&compiled.to_canonical_json()).unwrap();
+    assert_eq!(document["type"], "ess-realization-ir/2");
+    assert!(compiled.entrypoints().is_empty());
+    assert_eq!(compiled.implementations().len(), 1);
+    assert!(compiled.to_markdown().contains("No executable entrypoint"));
+    // Identical implementation tuples in v1 and v2 must not share a digest domain.
+    let v1 = compile(&read(&original), &ess).unwrap();
+    assert_ne!(v1.realization_digest(), compiled.realization_digest());
+    assert_eq!(
+        v1.to_canonical_json(),
+        compile(&read(&original), &ess).unwrap().to_canonical_json()
+    );
+    value["actors"] = original["actors"].clone();
+    assert!(compile(&read(&value), &ess).is_err());
+    value["actors"] = serde_json::json!([]);
+    value["conformance"] = serde_json::json!({
+        "status": "passed",
+        "suite_digest": format!("sha256:{}", "a".repeat(64)),
+        "report_digest": format!("sha256:{}", "b".repeat(64)),
+    });
+    assert!(compile(&read(&value), &ess).is_err());
+    value.as_object_mut().unwrap().remove("conformance");
+    value["implementations"] = serde_json::json!([]);
+    assert!(compile(&read(&value), &ess).is_err());
+    value["type"] = serde_json::json!("ess-realization/3");
+    assert!(compile(&read(&value), &ess).is_err());
+}

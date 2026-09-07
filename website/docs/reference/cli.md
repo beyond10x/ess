@@ -15,7 +15,7 @@ lists exactly those:
 |---|---|
 | `ess specify` | `validate`, `compile`, `compose`, `inspect`, `graph`, `realization`, `runtime` |
 | `ess generate` | `generate`, `synthesize`, `project`, `schema`, `build`, `component`, `release`, `stack`, `deployment` |
-| `ess verify` | `conform`, `diff`, `impact` |
+| `ess verify` | `bindings`, `conform`, `diff`, `impact` |
 | `ess infra` | `infra`, `import` |
 
 ## Flat spellings
@@ -47,7 +47,7 @@ refused with exit 2 rather than run against the current directory.
 | `ess specify inspect --path PATH NAME [--format …]` | Resolve and render one declaration. |
 | `ess specify graph [--path PATH] [--format dot\|mermaid\|json\|yaml]` | Render the interaction graph. |
 | `ess specify realization validate …` | Resolve a physical realization against one exact ESS digest. |
-| `ess specify realization compile …` | Emit deterministic `ess-realization-ir/1`. |
+| `ess specify realization compile …` | Emit deterministic `ess-realization-ir/1` or `/2`, matching the authored format. |
 | `ess specify realization generate …` | Render a run-mode guide from the resolved realization. |
 | `ess specify runtime compile …` | Compile `ess-runtime/1` against exact semantic, realization, and build inputs. |
 
@@ -200,6 +200,10 @@ These operations are offline. Schema identity comes from `$id`; filenames only l
 | `ess verify conform run …` | Execute a suite against a supported target and emit a standalone report. |
 | `ess verify diff --from PATH --to PATH [--format text\|json]` | Compare two revisions semantically. |
 | `ess verify impact --from PATH --to PATH [--suite PATH] [--format …]` | Name invalidated scenarios and generated artifacts. |
+| `ess verify bindings --spec PATH --realization FILE --bindings FILE (--infra FILE \| --live --observation-out FILE) [--format text\|json] [--markdown-out FILE]` | Compare an exact implementation selection with scoped workload templates; exit 0 satisfied, 1 violated/refused, 2 unknown. |
+
+See [observed implementation bindings](../guides/check-infrastructure.md#connect-implementation-selections-to-observed-workloads)
+for the authored contract, source-preview requirement and evidence limits.
 
 Run `ess verify conform <command> --help` for target-specific arguments.
 
