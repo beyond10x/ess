@@ -156,9 +156,11 @@ output side by side.
 The arrow is one-way: the typed ESS YAML is the specification, and the documentation is one
 projection of it. ESS does not infer model semantics from an existing Markdown document. The
 `site` projection renders HTML. Explicit `--kind site --out DIR` writes `index.html` and local
-assets at that output root; combined generation puts them under `DIR/site/`. Authored pages and
-downloads require explicit selection, and hosting remains external. The five default projections
-above exclude the opt-in `--kind docs-ir`, which writes `docs-ir/document.json` carrying `ess-docs/1`.
+assets at that output root; combined generation puts them under `DIR/site/`. The adjacent
+`README.md`, when present, supplies the default front page; `--front-page` overrides it. Additional
+authored pages and downloads require explicit selection, and hosting remains external. The
+five default projections above exclude the opt-in `--kind docs-ir`, which writes
+`docs-ir/document.json` carrying `ess-docs/1`.
 See the [current-source support matrix](../status/where-this-stands.md#support-boundaries) for output
 checks and the separate dated release observation.
 

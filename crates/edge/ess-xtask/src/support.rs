@@ -673,4 +673,204 @@ mod tests {
             assert!(compare(&page, &expected).is_err(), "{page}");
         }
     }
+
+    fn adversary_fixture(label: &str) -> std::path::PathBuf {
+        let path = std::env::temp_dir().join(format!(
+            "ess-support-adversary-{label}-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        fs::create_dir(&path).unwrap();
+        fs::write(
+            path.join("system.yaml"),
+            "format: ess/1\nsystem: publication\nversion: v1\ndomains: []\n",
+        )
+        .unwrap();
+        println!("retained fixture: {}", path.display());
+        path
+    }
+
+    #[test]
+    fn adversary_adjacent_readme_is_selected_without_authored_flags() {
+        let root = crate::workspace_root().unwrap();
+        let fixture = adversary_fixture("readme");
+        fs::write(
+            fixture.join("README.md"),
+            "# Default authored front page\n\nADVERSARY_README_DEFAULT\n",
+        )
+        .unwrap();
+        fs::write(fixture.join("sibling.md"), "UNSELECTED_SIBLING").unwrap();
+        fs::write(fixture.join("download.json"), "UNSELECTED_DOWNLOAD").unwrap();
+        let args: Vec<OsString> = ["generate", "--kind", "site", "--format", "json", "--path"]
+            .into_iter()
+            .map(Into::into)
+            .chain(std::iter::once(fixture.as_os_str().to_owned()))
+            .collect();
+        fs::write(fixture.join("argv.txt"), format!("{args:?}\n")).unwrap();
+        let output = crate::cli_output(&root, &args).unwrap();
+        fs::write(fixture.join("actual-cli-stdout.json"), &output).unwrap();
+        let report: serde_json::Value = serde_json::from_slice(&output).unwrap();
+        let index = report["site/index.html"]["contents"].as_str().unwrap();
+        assert!(index.contains("ADVERSARY_README_DEFAULT"));
+        let all = String::from_utf8(output).unwrap();
+        assert!(!all.contains("UNSELECTED_SIBLING"));
+        assert!(!all.contains("UNSELECTED_DOWNLOAD"));
+        println!("actual CLI included adjacent README in index.html without --front-page, --include or --asset; siblings and downloads stayed absent");
+    }
+
+    #[test]
+    fn adversary_actual_explicit_site_and_combined_maps_keep_distinct_roots() {
+        let root = crate::workspace_root().unwrap();
+        let fixture = adversary_fixture("roots");
+        let explicit = crate::projection_artifacts(&root, &fixture, Some("site")).unwrap();
+        let combined = crate::projection_artifacts(&root, &fixture, None).unwrap();
+        fs::write(
+            fixture.join("observed-maps.json"),
+            serde_json::to_vec_pretty(&(&explicit, &combined)).unwrap(),
+        )
+        .unwrap();
+        assert!(explicit.contains_key("index.html"));
+        assert!(!explicit.keys().any(|path| path.starts_with("site/")));
+        assert!(combined.contains_key("site/index.html"));
+        assert!(!combined.contains_key("index.html"));
+        for path in explicit.keys() {
+            assert!(combined.contains_key(&format!("site/{path}")), "{path}");
+        }
+        site(&explicit, "").unwrap();
+        site(&combined, "site/").unwrap();
+        assert!(site(&explicit, "site/").is_err());
+        assert!(site(&combined, "").is_err());
+        assert!(!combined.keys().any(|path| path.starts_with("docs-ir/")));
+    }
+
+    #[test]
+    fn adversary_all_real_material_rows_refuse_cell_removal_duplicate_and_order_drift() {
+        let root = crate::workspace_root().unwrap();
+        let expected = render(&root).unwrap();
+        let page = fs::read_to_string(root.join(STATUS)).unwrap();
+        assert_eq!(compare(&page, &expected), Ok(()));
+        let fixture = adversary_fixture("rows");
+        fs::write(fixture.join("actual-expected.md"), &expected).unwrap();
+        let lines: Vec<_> = expected.lines().map(str::to_owned).collect();
+        let rows: Vec<_> = lines
+            .iter()
+            .enumerate()
+            .filter(|(_, line)| line.starts_with("| ") && !line.starts_with("| Capability |"))
+            .map(|(index, _)| index)
+            .collect();
+        assert_eq!(rows.len(), 20);
+        let mut refused = 0;
+        for &index in &rows {
+            let cells: Vec<_> = lines[index].split('|').map(str::to_owned).collect();
+            for cell in 1..cells.len() - 1 {
+                let mut changed = cells.clone();
+                changed[cell].push_str(" CHANGED ");
+                let mut mutant = lines.clone();
+                mutant[index] = changed.join("|");
+                let error = compare(&mutant.join("\n"), &expected).unwrap_err();
+                assert!(error.contains(STATUS) && error.contains("row"), "{error}");
+                refused += 1;
+            }
+            let mut removed = lines.clone();
+            removed.remove(index);
+            assert!(compare(&removed.join("\n"), &expected).is_err());
+            let mut duplicate = lines.clone();
+            duplicate.insert(index, lines[index].clone());
+            assert!(compare(&duplicate.join("\n"), &expected).is_err());
+            refused += 2;
+        }
+        for pair in rows.windows(2) {
+            let mut reordered = lines.clone();
+            reordered.swap(pair[0], pair[1]);
+            assert!(compare(&reordered.join("\n"), &expected).is_err());
+            refused += 1;
+        }
+        let extra = expected.replace(END, &format!("| Extra | supported | unowned |\n{END}"));
+        assert!(compare(&extra, &expected).is_err());
+        println!(
+            "all 20 actual rows attacked: {} mutation refusals",
+            refused + 1
+        );
+    }
+
+    #[test]
+    fn adversary_real_source_version_drift_keeps_release_bytes_independent() {
+        let root = crate::workspace_root().unwrap();
+        let manifest = fs::read_to_string(root.join("Cargo.toml")).unwrap();
+        let current = crate::workspace_version(&manifest).unwrap();
+        let changed = manifest.replacen(
+            &format!("version = \"{current}\""),
+            "version = \"99.1.2\"",
+            1,
+        );
+        assert_eq!(crate::workspace_version(&changed), Some("99.1.2"));
+        let page = fs::read_to_string(root.join(STATUS)).unwrap();
+        let start = page.find(BEGIN).unwrap();
+        let end = page.find(END).unwrap() + END.len();
+        let old = &page[start..end];
+        let new = old.replacen(current, "99.1.2", 1);
+        assert_ne!(old, new);
+        assert!(compare(&page, &new).is_err());
+        let replaced = format!("{}{}{}", &page[..start], new, &page[end..]);
+        assert_eq!(compare(&replaced, &new), Ok(()));
+        assert!(replaced.starts_with(&page[..start]));
+        assert!(replaced.ends_with(&page[end..]));
+    }
+
+    #[test]
+    fn adversary_actual_help_missing_target_metadata_cannot_borrow_neighbor_values() {
+        let root = crate::workspace_root().unwrap();
+        let help = cli(&root, &["generate", "synthesize", "--help"]).unwrap();
+        assert_eq!(
+            choices(&help, "--target").unwrap(),
+            ["rust", "go", "web", "clap"]
+        );
+        let block = option(&help, "--target").unwrap().join("\n");
+        let missing = help.replace(
+            &block,
+            "      --target <TARGET>\n          metadata removed",
+        );
+        assert!(choices(&missing, "--target").is_err(), "{missing}");
+        let fixture = adversary_fixture("metadata");
+        fs::write(fixture.join("actual-help.txt"), help).unwrap();
+        fs::write(fixture.join("missing-metadata-help.txt"), missing).unwrap();
+    }
+
+    #[test]
+    fn adversary_actual_cli_refusal_is_not_a_successful_support_observation() {
+        let root = crate::workspace_root().unwrap();
+        let fixture = adversary_fixture("refusal");
+        let failure = crate::projection_artifacts(&root, &fixture, Some("unregistered-kind"))
+            .expect_err("a refused CLI cannot supply projection facts");
+        let diagnostic = format!("{failure:#}");
+        fs::write(fixture.join("actual-refusal.txt"), &diagnostic).unwrap();
+        assert!(diagnostic.contains("refused") && diagnostic.contains("unregistered-kind"));
+        let failure = crate::projection_artifacts(&root, &fixture.join("missing"), Some("docs"))
+            .expect_err("an absent specification cannot supply projection facts");
+        fs::write(
+            fixture.join("missing-input-refusal.txt"),
+            format!("{failure:#}"),
+        )
+        .unwrap();
+    }
+
+    #[test]
+    fn adversary_real_docs_ir_marker_is_nested_json_not_visible_marker_text() {
+        let root = crate::workspace_root().unwrap();
+        let fixture = adversary_fixture("docs-ir");
+        let artifacts = crate::projection_artifacts(&root, &fixture, Some("docs-ir")).unwrap();
+        assert_eq!(artifacts.len(), 1);
+        let contents = artifacts.get("docs-ir/document.json").unwrap();
+        fs::write(fixture.join("actual-document.json"), contents).unwrap();
+        assert_eq!(json_marker(contents, "/format").unwrap(), "ess-docs/1");
+        let mut document: serde_json::Value = serde_json::from_str(contents).unwrap();
+        document.as_object_mut().unwrap().remove("format");
+        document["description"] = "ess-docs/1".into();
+        assert!(json_marker(&document.to_string(), "/format").is_err());
+        document["format"] = serde_json::json!({"nested": "ess-docs/1"});
+        assert!(json_marker(&document.to_string(), "/format").is_err());
+    }
 }
