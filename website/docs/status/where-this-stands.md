@@ -1,24 +1,27 @@
 ---
 title: Where this stands
-description: Shipped ESS capabilities and the evidence behind them.
+description: Current-source ESS capabilities, a dated release observation, and their evidence boundaries.
 ---
 
 # Where this stands
 
-ESS is experimental and standalone. `0.13.2` is the current release. Version releases publish
-checksum-pinned `ess` archives for Linux and macOS on x86-64 and ARM64; a locked source build remains
-the fallback for other targets.
+ESS is experimental and standalone.
 
-## Shipped
+Latest published release observed on 7 September 2026: [0.20.0](https://github.com/beyond10x/ess/releases/tag/0.20.0),
+published on 6 September 2026. Its release record lists archives for Linux and macOS on x86-64 and
+ARM64, plus SHA256SUMS. This is a dated asset-list observation; it does not claim that the archives
+were downloaded, their checksums verified, or the binary installed or executed.
+
+## Current source capabilities
 
 - validation and canonical compilation of typed system specifications;
 - name resolution, reusable shapes, entity relations, total handle lookup, inspection, graphing,
   semantic diff, and impact analysis;
 - outcome-to-entity assignments and parameterized views that make generated scenarios assert the
   values written by commands;
-- repository documentation, static-site-ready Markdown/sidebar, JSON Schema, OpenAPI, and AsyncAPI generation;
+- repository Markdown documentation, HTML sites, JSON Schema, OpenAPI, and AsyncAPI generation;
 - offline validation and deterministic TypeScript projection for adopter-owned JSON Schema registries;
-- structural Rust, Go, and browser synthesis with explicit obligations;
+- structural Rust, Go, browser, and Clap synthesis with explicit obligations;
 - semantic conformance-suite generation, component-scoped suites, and reference execution;
 - standalone conformance reports from the Rust and generated Go runners;
 - component descriptors and deterministic build, runtime, release, stack, and deployment models;
@@ -30,9 +33,39 @@ the fallback for other targets.
 - sanitized Kubernetes import, infrastructure analysis, and manifest projection;
 - deterministic fixture and generated-byte checks across the workspace.
 
-The site projection is intentionally narrower than a site builder. It consumes an ESS
-specification—not prose—and emits Markdown, YAML frontmatter, and `sidebar.json`; another system
-owns HTML rendering, theme, navigation shell, and hosting.
+### Support boundaries
+
+These rows describe the source checkout, including changes later than the release observed above.
+Output and CLI metadata checks establish kinds, versions and availability; the linked owners and
+tests establish the bounded support and refusals. The offline `cargo xtask support --check` compares
+this complete maintained block. It does not verify remote release records.
+
+<!-- ess-source-support:begin -->
+The source checkout’s workspace version is `0.20.0` and includes separately documented unreleased changes.
+
+| Capability | Current source | Limits and evidence |
+|---|---|---|
+| Default projections | `docs`, `site`, `schema`, `openapi`, `asyncapi` | Generator inventory and actual CLI artifacts; [ess-gen](https://github.com/beyond10x/ess/blob/main/crates/generate/ess-gen/src/lib.rs). `docs-ir` is an additional explicit choice. |
+| Documentation | `docs`: Markdown with Mermaid diagrams | A projection of the document model; [docs emitter](https://github.com/beyond10x/ess/blob/main/crates/generate/ess-gen/src/docs.rs) establishes rendering, not implementation behavior. |
+| Site | `site`: HTML and local stylesheet/Mermaid assets; explicit output at `index.html` and `assets/`, combined output under `site/` | Explicit authored pages and downloads are supported; ESS does not host the site. [authored-site tests](https://github.com/beyond10x/ess/blob/main/crates/edge/ess-cli/tests/authored_site.rs). |
+| Document IR | Explicit `docs-ir`: `docs-ir/document.json`, `ess-docs/1` | A document projection, not HTML or a general persisted EssIr reader. [document emitter](https://github.com/beyond10x/ess/blob/main/crates/generate/ess-gen/src/document.rs). |
+| JSON Schema | `https://json-schema.org/draft/2020-12/schema` | Named types, entities, command inputs, events and errors; structural validation does not establish behavior. [schema emitter/tests](https://github.com/beyond10x/ess/blob/main/crates/generate/ess-gen/src/schema.rs). |
+| Native API projections | OpenAPI `3.1.0`; AsyncAPI `3.0.0` | Projection directions; [OpenAPI emitter/tests](https://github.com/beyond10x/ess/blob/main/crates/generate/ess-gen/src/openapi.rs) and [AsyncAPI emitter/tests](https://github.com/beyond10x/ess/blob/main/crates/generate/ess-gen/src/asyncapi.rs) own their structural coverage. |
+| Adapter directions | `infra import`: `kubernetes`, `openapi`; `generate project`: `buildkit`, `helm`, `kubernetes`, `openapi` | Availability comes from CLI help. No AsyncAPI importer is declared; the following rows qualify each adapter. |
+| OpenAPI adapter | Supported 3.1 service/interface import to `ess-openapi-import/1`, retaining source and accounting; checked projection | External references refuse. Semantic gaps, unresolved references and legacy interface-only inputs block checked projection; annotation normalization alone may be allowed. [accounting tests](https://github.com/beyond10x/ess/blob/main/crates/generate/ess-openapi/tests/accounting.rs) and [import/refusal owner](https://github.com/beyond10x/ess/blob/main/crates/generate/ess-openapi/src/lib.rs). |
+| Kubernetes import | Sanitized observation bundle or explicit live context to infrastructure IR | The live scanner is the credential edge. A fixed category list and empty `coverage_gaps` do not prove complete observation. [import/redaction owner](https://github.com/beyond10x/ess/blob/main/crates/infra/ess-kubernetes/src/lib.rs). |
+| Kubernetes projection | Intent plus observed IR to patches, new objects and obligations | No apply operation; unstated decisions remain obligations and unsupported conditions may refuse. [projection/refusal tests](https://github.com/beyond10x/ess/blob/main/crates/infra/infra-project/tests/projection.rs). |
+| BuildKit and Helm projection | Checked build IR to Dockerfile/Bake inputs; runtime IR to a configuration-neutral Helm chart | These projections neither execute BuildKit nor apply a chart or establish live resource availability. [deployment projection tests](https://github.com/beyond10x/ess/blob/main/crates/generate/ess-deployment/tests/deployment.rs). |
+| Structural synthesis | `rust`, `go`, `web`, `clap` | Generated structure plus obligations/refusals, not business behavior. All four full targets refuse modeled Binary64; separate structural data libraries have their own support boundary. [feasibility tests](https://github.com/beyond10x/ess/blob/main/crates/generate/ess-synth/tests/feasibility.rs) and [synthesis guide](../guides/synthesize.md). |
+| Clap synthesis | Command grammar, completion support and handler seams receiving `clap::ArgMatches`; generated `clap` and `clap_complete` 4 dependencies | No additional type layer or implemented command behavior. [Clap emitter](https://github.com/beyond10x/ess/blob/main/crates/generate/ess-synth/src/clap/mod.rs) and [handler tests](https://github.com/beyond10x/ess/blob/main/crates/generate/ess-synth/tests/clap.rs). |
+| Conformance targets | `billing`, `oracle-fixture` | Built-in reference implementations. A production adapter must establish its own execution boundary; these targets do not prove independent deployment. |
+| Conformance formats | Defaults: `ess-conformance/4`, `ess-conformance-report/1`. Explicit count surfaces: `ess-conformance-report/2`, `ess-conformance-run/2`. CLI suite choices: `4`, `5` (default `4`); report choices: `1`, `2` (default `1`). | Actual report markers and CLI metadata; all-pass legacy execution can still mean inconclusive conformance. [count-report tests](https://github.com/beyond10x/ess/blob/main/crates/edge/ess-cli/tests/count_reports.rs). |
+| Coverage qualification | Current-source `ess-conformance/5` requires explicit report/2 before execution | Only a nonempty all-pass selection with complete inventory and no in-scope refusal can qualify. Suite/5, carrier and paired replay are unreleased relative to the dated 0.20.0 observation. [coverage CLI tests](https://github.com/beyond10x/ess/blob/main/crates/edge/ess-cli/tests/coverage_cli.rs) and [conformance guide](../guides/verify-conformance.md#opt-into-declared-coverage). |
+| Browser conformance | Replay presentation with no execution report | A green replay is not independent execution evidence; digest comparison does not authenticate the publisher. [browser admission tests](https://github.com/beyond10x/ess/blob/main/crates/edge/ess-cli/tests/coverage_browser.rs). |
+| Runtime compilation | Checks supplied identities, component coverage, replica bounds and stateful storage | Does not establish live provisioning or all resource requirements. [runtime checks/tests](https://github.com/beyond10x/ess/blob/main/crates/generate/ess-deployment/src/runtime.rs). |
+| Explicit executors | `execute`, `publish`, `fetch`, `reconcile` invoke external clients; reconciliation applies the affected set from supplied current/desired documents | Caller-supplied state and credentials remain material; no continuous control plane or automatic recovery proof. [CLI executor owner](https://github.com/beyond10x/ess/blob/main/crates/edge/ess-cli/src/main.rs). The support check invokes none of these verbs. |
+| Schema commands | `import-bundle`, `import-document`, `project-bundle`, `validate-bundle`, `types-bundle`, `normalize-check`, `normalize-run`, `normalize-generate`, `validate`, `typescript` | Current-source command inventory for import, validation, types and normalization; [CLI reference](../reference/cli.md#adopter-owned-schema-contracts) describes the selected operations. Availability is independent of the dated release record. |
+<!-- ess-source-support:end -->
 
 The CLI presents four areas: `specify`, `generate`, `verify`, and `infra`. Earlier flat spellings
 remain hidden aliases with the same accepted-command output and exit status.

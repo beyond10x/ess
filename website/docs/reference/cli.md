@@ -133,7 +133,7 @@ forwarding alone do not establish end-to-end typed payload compatibility.
 
 | Command | Purpose |
 |---|---|
-| `ess generate --path PATH --kind docs\|site\|schema\|openapi\|asyncapi --out PATH` | Generate deterministic projections. `site` is Markdown plus frontmatter and `sidebar.json`, not HTML. |
+| `ess generate --path PATH --kind docs\|site\|docs-ir\|schema\|openapi\|asyncapi --out PATH` | Generate an explicit deterministic projection. `site` writes HTML and local assets at the output root; `docs-ir` writes `docs-ir/document.json` carrying `ess-docs/1`. Omitting `--kind` combines the five default generators, including HTML under `site/`, and excludes `docs-ir`. |
 | `ess generate synthesize …` | Emit supported structural implementation artifacts plus obligations. |
 | `ess generate project <adapter> …` | Project typed IR into concrete artifacts. |
 | `ess generate schema validate …` | Validate adopter-owned JSON Schema contracts. |
@@ -142,6 +142,9 @@ forwarding alone do not establish end-to-end typed payload compatibility.
 | `ess generate release verify\|bundle\|verify-bundle\|publish\|fetch …` | Verify and bundle release records or explicitly cross the OCI credential edge. |
 | `ess generate stack resolve\|validate …` | Resolve generic product stacks from an offline release catalogue. |
 | `ess generate deployment compile\|diff\|reconcile …` | Bind an exact stack lock, compare deployments, or explicitly reconcile the affected Helm releases. |
+
+The [current-source support matrix](../status/where-this-stands.md#support-boundaries) records
+projection kinds, adapter directions and their limits separately from the dated release observation.
 
 Run `ess generate synthesize --help` and `ess generate <command> --help` for target-specific
 arguments.
@@ -169,19 +172,22 @@ print the affected set without contacting external systems. See
 
 ### Adopter-owned schema contracts
 
+These commands are available in the current source. Their presence does not identify which remote
+release contains a particular change; see the [dated release observation](../status/where-this-stands.md).
+
 | Command | Purpose |
 |---|---|
 | `ess generate schema validate PATH… --schemas DIR [--format text\|yaml\|json]` | Validate JSON instances against the offline `*.schema.json` registry they select by stable `schema` identity. |
 | `ess generate schema typescript SCHEMA_ID --root TYPE --schemas DIR [--out FILE] [--check]` | Project deterministic structural TypeScript from one authoritative JSON Schema. |
-| `ess generate schema import-bundle --path FILE --component NAME… --dialect draft-2020-12 [--out FILE]` | Retain and qualify a selected structural component closure without inventing an OpenAPI service. Unreleased. |
-| `ess generate schema import-document --path FILE --root NAME [--definition NAME…] --dialect draft-2020-12 [--out FILE]` | Retain a JSON Schema document root and local definition closure in a replay-checked `/2` bundle. Unreleased. |
-| `ess generate schema project-bundle --bundle FILE --root NAME --schema-id URI [--out FILE]` | Revalidate an import and emit one root's standalone JSON Schema and source qualification. Unreleased. |
-| `ess generate schema validate-bundle --bundle FILE --root NAME INSTANCE…` | Validate unmodified instances against one explicitly selected component. Unreleased. |
-| `ess generate schema types-bundle --bundle FILE --root NAME… --target typescript\|rust\|go [--package NAME] [--module PATH] --out DIR` | Emit root-selected data libraries, qualified source and target accounting. Rust/Go require package identity; Go also requires module identity. Not an application decoder. Unreleased. |
-| `ess generate schema normalize-check --recipe FILE [--bundle FILE]… [--model PATH]… [--out FILE]` | Check bundles and compiled model selections, check every normalization branch, and emit the canonical recipe. At least one source is required. Model roots require version 3. Unreleased. |
-| `ess generate schema normalize-generate --recipe FILE [--bundle FILE]… [--model PATH]… --target rust\|go\|typescript --package NAME [--module PATH] --out DIR [--check]` | Emit a source-pinned normalization library or check planned file bytes without writing. At least one source is required. Go requires `--module`; Rust and TypeScript refuse it. Protect model input trees. TypeScript emits a standalone JSON-text runtime with a fixed checked schema profile. Unreleased. |
-| `ess generate schema normalize-run --recipe FILE [--bundle FILE]… [--model PATH]… --branch NAME --input FILE [--out FILE]` | Execute an explicit branch with stage input/output validation; emit only a complete result. At least one source is required. Refuse duplicate input keys, numeric precision loss and input/output aliases. Unreleased. |
-| `ess generate types --path SPEC (--root QUALIFIED_NAME… \| --all-types) --target typescript\|rust\|go [--package NAME] [--module PATH] --out DIR` | Realize checked ESS model types using the shared wire mapping and data targets. Retains model schema selection and typed provenance; output must be outside the specification tree. Unreleased. |
+| `ess generate schema import-bundle --path FILE --component NAME… --dialect draft-2020-12 [--out FILE]` | Retain and qualify a selected structural component closure without inventing an OpenAPI service. |
+| `ess generate schema import-document --path FILE --root NAME [--definition NAME…] --dialect draft-2020-12 [--out FILE]` | Retain a JSON Schema document root and local definition closure in a replay-checked `/2` bundle. |
+| `ess generate schema project-bundle --bundle FILE --root NAME --schema-id URI [--out FILE]` | Revalidate an import and emit one root's standalone JSON Schema and source qualification. |
+| `ess generate schema validate-bundle --bundle FILE --root NAME INSTANCE…` | Validate unmodified instances against one explicitly selected component. |
+| `ess generate schema types-bundle --bundle FILE --root NAME… --target typescript\|rust\|go [--package NAME] [--module PATH] --out DIR` | Emit root-selected data libraries, qualified source and target accounting. Rust/Go require package identity; Go also requires module identity. Not an application decoder. |
+| `ess generate schema normalize-check --recipe FILE [--bundle FILE]… [--model PATH]… [--out FILE]` | Check bundles and compiled model selections, check every normalization branch, and emit the canonical recipe. At least one source is required. Model roots require version 3. |
+| `ess generate schema normalize-generate --recipe FILE [--bundle FILE]… [--model PATH]… --target rust\|go\|typescript --package NAME [--module PATH] --out DIR [--check]` | Emit a source-pinned normalization library or check planned file bytes without writing. At least one source is required. Go requires `--module`; Rust and TypeScript refuse it. Protect model input trees. TypeScript emits a standalone JSON-text runtime with a fixed checked schema profile. |
+| `ess generate schema normalize-run --recipe FILE [--bundle FILE]… [--model PATH]… --branch NAME --input FILE [--out FILE]` | Execute an explicit branch with stage input/output validation; emit only a complete result. At least one source is required. Refuse duplicate input keys, numeric precision loss and input/output aliases. |
+| `ess generate types --path SPEC (--root QUALIFIED_NAME… \| --all-types) --target typescript\|rust\|go [--package NAME] [--module PATH] --out DIR` | Realize checked ESS model types using the shared wire mapping and data targets. Retains model schema selection and typed provenance; output must be outside the specification tree. |
 
 These operations are offline. Schema identity comes from `$id`; filenames only locate documents.
 `--check` compares an existing generated module byte for byte without rewriting it.

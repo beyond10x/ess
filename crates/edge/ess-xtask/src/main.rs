@@ -1,8 +1,11 @@
 //! Repository-only maintenance checks for ESS.
 
+mod support;
+
 use anyhow::{bail, Context, Result as AnyResult};
 use clap::{Parser, Subcommand};
 use std::collections::{BTreeMap, BTreeSet};
+use std::ffi::OsString;
 use std::fmt::Write as _;
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -52,6 +55,12 @@ struct Cli {
 
 #[derive(Debug, Subcommand)]
 enum Command {
+    /// Render or check the finite public source-capability block, offline.
+    Support {
+        /// Compare the complete maintained block without changing public source.
+        #[arg(long)]
+        check: bool,
+    },
     /// Regenerate or check the normative example's committed projections.
     Generate {
         /// Compare byte for byte without writing.
@@ -105,6 +114,9 @@ fn main() -> ExitCode {
 fn run(cli: Cli) -> Result<String, String> {
     let root = workspace_root()?;
     match cli.command {
+        Command::Support { check } => {
+            support::run(&root, check).map_err(|error| format!("{error:#}"))
+        }
         Command::Generate { check } => generate(&root, check).map_err(|error| format!("{error:#}")),
         Command::Schema { check } => schema(&root, check).map_err(|error| format!("{error:#}")),
         Command::Release {
@@ -470,52 +482,7 @@ fn generate(root: &Path, check: bool) -> AnyResult<String> {
 /// one answer. Generator metadata is read from `ess-gen`, because the CLI's machine output is an
 /// artifact map and the index still needs to describe every projection it contains.
 fn projections(root: &Path, spec: &Path) -> AnyResult<Generated> {
-    let cargo = std::env::var_os("CARGO").unwrap_or_else(|| "cargo".into());
-    let output = std::process::Command::new(&cargo)
-        .args([
-            "run",
-            "--quiet",
-            "--locked",
-            "--package",
-            "ess-cli",
-            "--bin",
-            "ess",
-            "--",
-            "generate",
-            "--format",
-            "json",
-            "--path",
-        ])
-        .arg(spec)
-        .current_dir(root)
-        .output()
-        .with_context(|| format!("running {cargo:?} to generate the projections"))?;
-    if !output.status.success() {
-        bail!(
-            "`ess generate` refused {}:\n{}{}",
-            spec.display(),
-            String::from_utf8_lossy(&output.stdout),
-            String::from_utf8_lossy(&output.stderr)
-        );
-    }
-
-    let report: serde_json::Value = serde_json::from_slice(&output.stdout)
-        .context("reading the JSON artifact map printed by `ess generate`")?;
-    let entries = report
-        .as_object()
-        .context("`ess generate --format json` did not print an artifact map")?;
-    let mut artifacts = BTreeMap::new();
-    for (reported_path, artifact) in entries {
-        let path = json_text(artifact, "path")?;
-        if path != *reported_path {
-            bail!(
-                "`ess generate` keyed `{reported_path}` by an artifact that names itself `{path}`"
-            );
-        }
-        safe_relative_path(&path)?;
-        let contents = json_text(artifact, "contents")?;
-        artifacts.insert(path, contents);
-    }
+    let artifacts = projection_artifacts(root, spec, None)?;
 
     let projections: Vec<Projection> = ess_gen::generators()
         .into_iter()
@@ -541,6 +508,78 @@ fn projections(root: &Path, spec: &Path) -> AnyResult<Generated> {
         projections,
         artifacts,
     })
+}
+
+/// The same public artifact route for combined and explicit projection choices.
+fn projection_artifacts(
+    root: &Path,
+    spec: &Path,
+    kind: Option<&str>,
+) -> AnyResult<BTreeMap<String, String>> {
+    let mut args: Vec<OsString> = ["generate", "--format", "json", "--path"]
+        .into_iter()
+        .map(Into::into)
+        .collect();
+    args.push(spec.as_os_str().to_owned());
+    if let Some(kind) = kind {
+        args.extend(["--kind".into(), kind.into()]);
+    }
+    let output = cli_output(root, &args)?;
+    let report: serde_json::Value = serde_json::from_slice(&output)
+        .context("reading the JSON artifact map printed by `ess generate`")?;
+    let entries = report
+        .as_object()
+        .context("`ess generate --format json` did not print an artifact map")?;
+    let mut artifacts = BTreeMap::new();
+    for (reported_path, artifact) in entries {
+        let path = json_text(artifact, "path")?;
+        // Explicit site uses root-relative write paths inside a site-keyed report. Combined
+        // generation already prefixes both. Preserve that CLI distinction when checking identity.
+        let expected_key = if kind == Some("site") {
+            format!("site/{path}")
+        } else {
+            path.clone()
+        };
+        if expected_key != *reported_path {
+            bail!(
+                "`ess generate` keyed `{reported_path}` by an artifact that names itself `{path}`"
+            );
+        }
+        safe_relative_path(&path)?;
+        let contents = json_text(artifact, "contents")?;
+        artifacts.insert(path, contents);
+    }
+    Ok(artifacts)
+}
+
+/// Repository checks use the actual CLI, with Cargo network access disabled.
+fn cli_output(root: &Path, args: &[OsString]) -> AnyResult<Vec<u8>> {
+    let cargo = std::env::var_os("CARGO").unwrap_or_else(|| "cargo".into());
+    let output = std::process::Command::new(&cargo)
+        .args([
+            "run",
+            "--quiet",
+            "--locked",
+            "--offline",
+            "--package",
+            "ess-cli",
+            "--bin",
+            "ess",
+            "--",
+        ])
+        .args(args)
+        .current_dir(root)
+        .output()
+        .with_context(|| format!("running {cargo:?} for ess {args:?}"))?;
+    if !output.status.success() {
+        bail!(
+            "`ess {args:?}` refused:\n{}{}",
+            String::from_utf8_lossy(&output.stdout),
+            String::from_utf8_lossy(&output.stderr)
+        );
+    }
+
+    Ok(output.stdout)
 }
 
 fn json_text(value: &serde_json::Value, field: &str) -> AnyResult<String> {
