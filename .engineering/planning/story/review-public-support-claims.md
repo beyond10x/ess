@@ -15,9 +15,9 @@ scope:
   path: Taskfile.yml
 - confidence: cited
   path: crates/edge/ess-xtask/src/main.rs
-- confidence: inferred
+- confidence: cited
   path: crates/edge/ess-xtask/src/support.rs
-- confidence: inferred
+- confidence: cited
   path: docs/design/review-public-support-claims.md
 - confidence: cited
   path: website/docs/concepts/ess.md
@@ -29,7 +29,7 @@ scope:
   path: website/docs/reference/cli.md
 - confidence: cited
   path: website/docs/status/where-this-stands.md
-revision: 19
+revision: 21
 ---
 ## Finding and source
 
@@ -54,6 +54,25 @@ Run package-scoped checks while implementing; the integration coordinator runs e
 Do not copy internal review/planning records into the public allowlist or claim the currently live website was audited by the source review.
 
 ## Scope
+
+Confirmed 2026-09-07 by the implementor at source `254db232b785ba3ed6166e9cd5f23e2ad7fe9679`,
+with root readback in `target/review-boundaries-14/preparation/unit-handoff/verified.json` — cited.
+The full report is SHA256 `20f61ec77772038624a76beb43ebaa8289d95a9584cabe5c0100c60df608ed00`.
+
+- `website/docs/status/where-this-stands.md` — cited; complete maintained source matrix and separately dated release prose.
+- `website/docs/concepts/ess.md` — cited; corrected site output and four synthesis targets; glossary prefix preserved.
+- `website/docs/reference/cli.md` — cited; explicit projection choices, site output roots and current-source schema labels.
+- `website/docs/guides/synthesize.md` — cited; four targets, Clap grammar/handler/dependency boundary and Binary64 refusal.
+- `website/docs/guides/verify-conformance.md` — cited; built-in target inventory and current-source coverage versus release boundary.
+- `crates/edge/ess-xtask/src/main.rs` — cited; Command/run dispatch and shared offline public CLI/projection-artifact route.
+- `crates/edge/ess-xtask/src/support.rs` — cited; confirmed new private module and colocated tests. The proposed `support::check` spelling became `support::run(root, check)`; `compare` owns the complete-block refusal.
+- `Taskfile.yml` — cited; offline support-check lane included in the existing check sequence.
+- `docs/design/review-public-support-claims.md` — cited; accepted finite binding, root-owned and unchanged by the unit.
+- The 46 evidence owners, public allowlist, manifests/lock and planning store outside these reservations were preserved — cited.
+- Confidence: high for these exact write owners — cited; independent attack, full integration and publication remain separately required.
+- Would collide with any edit to one of these files or a containing directory — inferred scheduling consequence.
+
+## Preimplementation scope (retained history)
 
 Derived 2026-09-07 by `aep-drive:story-scoper` 0.8.0 against ESS ecb7efc22ad9b19b85ef4debd8143491d6a66ef3 — cited.
 
@@ -97,3 +116,43 @@ acceptance, changed-row owners, rendered status comparison, separate release ver
 publication sequence above remain mandatory. The five public pages and three maintenance files
 are the implementation unit; the binding, shared journal, wave page and changelog are root-owned.
 No generic support registry, persisted metadata format, new domain or dependency is introduced.
+
+## Implementor handoff — wave 14
+
+Source commit `254db232b785ba3ed6166e9cd5f23e2ad7fe9679` changed exactly the eight assigned
+unit paths. The complete package executed 20 → 29 cases, with zero final failures/ignored cases;
+four original behavioral assertions were observed red. Thirteen actual CLI documentation
+mutations refused, and original source bytes were restored. Formatting, strict package Clippy,
+projection drift, support CLI and support task returned zero. Full direct child output and
+48 command receipts are under the unit's `target/review-boundaries-14/public-support/implementation`.
+Root verified the complete report, eight source hashes, 46 source-owner hashes, command output
+hashes and the native target/TMP census before committing with both bot identities. The checker
+compares all 20 maintained rows plus their source-version sentence and complete markers/header;
+ordinary release prose and other page corrections account for all 27 material requirements.
+
+The 21 binding validation entries retain distinct package, semantic-owner, rendered-page,
+release-readback and publication obligations. This handoff alone does not establish completion.
+
+
+## Final source reviews — integration pending
+
+Independent source attack 1 recorded one introduced README default-selection discrepancy;
+correction `b5908e77a7fa8eafe5f8e387db431c967634cb67` resolved it. The second and final attack
+recorded no findings and preserved all seven first-pass tests, adding an actual CLI boundary
+test for adjacent README selection, explicit replacement and missing explicit front-page refusal.
+Final unit commit is `9dbc7a9d10f89b1a77156a92168924e8410f5672`, with both bot identities.
+All 32 unit and five layout cases passed, zero failed or ignored; formatting, strict package
+Clippy, support and projection checks passed. The complete second report is immutable
+`review-result:public-support-source-pass2`, SHA256
+`df319005dddb7bc47c9e363d379a4b0c33192574d596778b401aee3ef4212425`.
+Root read its entire 45,206 bytes and verified 39 controls, 88 material inputs, all eight source
+hashes, every command output and 2,883 native entries (1,954,150,699 regular bytes).
+
+The second attack's initial launch refused before tests because ancestor Cargo configuration
+enabled sccache. Final launches explicitly set both wrapper variables empty; verbose evidence
+records 67 direct pinned rustc launches. Earlier wrapper-free and complete outside-write claims
+are not established by the original nonverbose logs. Initial launch and fixture/format correction
+statuses remain retained. The report's closing no-Git statement means no Git mutations;
+documented read-only Git commands did occur. Source findings compare as carried 0, new 0,
+resolved 1. Full integration, rendered comparison and public delivery remain required before
+implementation completion; package success alone does not satisfy them.
