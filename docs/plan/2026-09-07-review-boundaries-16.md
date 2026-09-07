@@ -446,3 +446,38 @@ the required source gate and site-build for these documentation/action changes.
 The completed gate above predates this upstream source change: integration and a fresh
 whole gate on the resulting commit remain required before publishing this wave.
 No publication, Website delivery or worktree retirement is claimed by this checkpoint.
+
+
+## Final integrated gate
+
+The second upstream release-check change merged cleanly into
+b11d36ee02cbf18f123658203578a888f56df3e3. All five upstream paths equal published
+7cdf62513a05c95e37765df3261dffb42e8292cc, and all fourteen integrated delivery
+source pins remain unchanged. Both direct bot identities were verified on the completion
+record c6ef065488ceeaeb08ff3d49c5709582f3927dd2 and this integration commit.
+
+The fresh whole gate completed all eleven lanes with direct exit zero: site-build,
+formatting, strict Clippy, workspace tests, rustdoc, examples, projections, support,
+release checks, action checks and planning. It executed 2,205 passing tests in 197
+summaries, with no failures or ignored tests; no lane skipped execution. The browser lab
+again held 21 claims and 28 deterministic steps. This is the executed combined-source
+gate, not a reuse of the earlier 922 result. Individual lane durations total
+408.010056 seconds. Harness aggregate agent token/tool metrics remain unavailable.
+
+The retained complete receipt is gate-b11d36ee02cb-attempt1/complete.json, SHA256
+2b98fef5566518209da3b18b8bf7beddce2aacb3d4bc84c5a140dc8afb27596e; its results table is SHA256
+b686f0cae6ca1291737993ee9a34a131542d83108913f4deb96c233fd8481626. Root independently verified all 1,182 tracked inputs
+(40,205,151 bytes), all direct statuses and log hashes, retained producer binaries,
+and all eleven lane plus eight observed coverage PIDs absent. The complete readback is
+preparation/main-refresh-7cdf625/gate-root-readback.json, SHA256
+6a36e4a51e3f1347feee65debe1839d5b60162a7116295d7c8cc1ded0319e727.
+No source changed during or after that gate. The minimum sampled endpoint free space
+was 15,103,606,784 bytes, above the 8 GiB floor.
+
+The source story remains implemented revision 16; its supplemental test evidence names
+this final integration. Source publication follows the closing metadata commit under
+standing approval. Website lock/snapshot/gates and production verification remain pending.
+The completed unit's records will be archived and independently verified before exact
+owned retirement; quiescent Unix socket nodes retain their full native metadata without
+claiming recoverable live IPC state. Only published, clean, quiescent managed trees may
+be finished. The source wave still authorizes no release or live ESS deployment.
