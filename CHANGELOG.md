@@ -31,6 +31,11 @@
 
 ### Fixed
 
+- Specification and scenario commands accept an optional `ess-inputs.yaml` manifest
+  with exact file lists, allowing nested authored inputs alongside generated files.
+  Invalid selections refuse before outputs or execution; selected source identities
+  and original bytes remain intact. Existing layouts work without a manifest, and
+  recursive legacy model discovery visits directory aliases deterministically.
 - Release commands distinguish consistency checks, OCI content verification and
   conformance qualification. New check-conformance and publish-conformance routes
   require a complete nonempty passing report for the exact expected selection and
