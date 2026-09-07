@@ -158,6 +158,21 @@ inputs are supplied; they do not prove remote artifact contents or authenticity.
 | `ess-deployment/1` | Exact stack and release identities | Checked `DeploymentIr`; pretty JSON, **delivery-document** digest. [Source][environment] |
 | `ess-deployment-diff/1` | Before/after deployment digests | CLI-produced added/changed/removed sets; no reader. Key-sorted pretty JSON; no diff-file digest. [Source][cli] |
 
+Release and bundle `/1` wire fields, canonical bytes and four required evidence kinds are unchanged.
+Their validators establish consistency of declared metadata and relationships. **Evidence.digest
+is the OCI attachment manifest digest**, not the SHA-256 of a report file. Provenance, SBOM,
+signature and conformance entries remain declared attachments: attachment binding, producer origin
+and artifact execution are unverified; signature verification is unsupported. Fetch additionally
+checks OCI content identity without authenticating the evidence references inside a bundle.
+
+Local release qualification uses existing report/2 plus an independent original suite/5 or fully
+admitted input/1 carrier and an explicit model/deployment context. It creates no new envelope or
+persisted assessment. Only the supplied nonempty complete all-pass selection qualifies; legacy
+report/1 readers remain unchanged and cannot satisfy this positive gate. Optional CLI/action raw
+pins cover the complete original report and selected suite/carrier files. They do not change any
+format's canonical digest profile or provide remote attachment proof. See the
+[action migration](../concepts/component-delivery.md#migrate-the-release-component-action).
+
 ## Change and conformance records
 
 | Document and discriminator | Separate identity | Reader and byte contract |

@@ -5,6 +5,7 @@ mod load;
 mod model_types;
 mod normalize;
 mod oci_cache;
+mod release_evidence;
 mod schema;
 mod schema_bundle;
 mod site;
@@ -778,7 +779,7 @@ enum RuntimeCommand {
 
 #[derive(Debug, Subcommand)]
 enum ReleaseCommand {
-    /// Verify an `ess-release/1` against exact build and runtime IR.
+    /// Check release metadata consistency against exact build and runtime IR.
     Verify {
         #[arg(long)]
         path: PathBuf,
@@ -789,7 +790,7 @@ enum ReleaseCommand {
         #[arg(long, value_enum, default_value_t = Format::Text)]
         format: Format,
     },
-    /// Combine a component and its verified runtime/chart releases into an OCI payload.
+    /// Combine a component and consistency-checked runtime/chart releases into an OCI payload.
     Bundle {
         #[arg(long)]
         component_ir: PathBuf,
@@ -812,15 +813,17 @@ enum ReleaseCommand {
         #[arg(long, value_enum, default_value_t = Format::Text)]
         format: Format,
     },
-    /// Publish a verified release bundle as an OCI artifact through ORAS.
+    /// Publish a consistency-checked bundle, optionally qualifying a supplied local report.
     Publish {
         #[arg(long)]
         path: PathBuf,
         /// Tagged OCI destination. Consumers must use the digest printed by this command.
         #[arg(long)]
         to: String,
+        #[command(flatten)]
+        qualification: release_evidence::Options,
     },
-    /// Fetch, verify, and cache a release bundle from a digest-pinned OCI reference.
+    /// Check bundle content identity and consistency, then cache a digest-pinned OCI payload.
     Fetch {
         /// OCI source ending in `@sha256:<64 lowercase hex characters>`.
         #[arg(long)]
@@ -831,6 +834,33 @@ enum ReleaseCommand {
         /// Optional copy of the verified canonical bundle.
         #[arg(long)]
         out: Option<PathBuf>,
+    },
+    /// Qualify an original report/2 against an independent selection and explicit model, offline.
+    #[command(group(clap::ArgGroup::new("required_qualification").args(["spec"]).required(true)))]
+    CheckConformance {
+        #[command(flatten)]
+        qualification: release_evidence::Options,
+        #[arg(long)]
+        component_ir: PathBuf,
+        #[arg(long)]
+        build_ir: PathBuf,
+        #[arg(long)]
+        runtime_ir: PathBuf,
+    },
+    /// Qualify and upload the exact original report bytes in the same process through ORAS.
+    #[command(group(clap::ArgGroup::new("required_qualification").args(["spec"]).required(true)))]
+    PublishConformance {
+        #[command(flatten)]
+        qualification: release_evidence::Options,
+        #[arg(long)]
+        component_ir: PathBuf,
+        #[arg(long)]
+        build_ir: PathBuf,
+        #[arg(long)]
+        runtime_ir: PathBuf,
+        /// Tagged OCI evidence destination; its returned manifest digest is not the report hash.
+        #[arg(long)]
+        to: String,
     },
 }
 
@@ -1414,13 +1444,14 @@ fn release(command: ReleaseCommand) -> Result<ExitCode> {
             }
             match format {
                 Format::Text => println!(
-                    "{} {} — {} immutable artifact(s), verified",
+                    "{} {} — {} immutable artifact(s), consistency checked",
                     release.release_unit,
                     release.version,
                     release.artifacts.len()
                 ),
                 Format::Json | Format::Yaml => render(&release, format)?,
             }
+            release_evidence::consistency(false);
             Ok(ExitCode::SUCCESS)
         }
         ReleaseCommand::Bundle {
@@ -1446,7 +1477,7 @@ fn release(command: ReleaseCommand) -> Result<ExitCode> {
             write_canonical(out.as_deref(), &json)?;
             match format {
                 Format::Text => println!(
-                    "{} — {} release unit(s), bundled as {}{}",
+                    "{} — {} release unit(s), consistency checked, bundled as {}{}",
                     bundle.component.component(),
                     bundle.releases.len(),
                     bundle.digest(),
@@ -1456,23 +1487,33 @@ fn release(command: ReleaseCommand) -> Result<ExitCode> {
                 Format::Json => print!("{json}"),
                 Format::Yaml => render(&bundle, format)?,
             }
+            release_evidence::consistency(false);
             Ok(ExitCode::SUCCESS)
         }
         ReleaseCommand::VerifyBundle { path, format } => {
             let bundle = verified_bundle(&path, true)?;
             match format {
                 Format::Text => println!(
-                    "{} — {} release unit(s), verified as {}",
+                    "{} — {} release unit(s), consistency checked as {}",
                     bundle.component.component(),
                     bundle.releases.len(),
                     bundle.digest()
                 ),
                 Format::Json | Format::Yaml => render(&bundle, format)?,
             }
+            release_evidence::consistency(false);
             Ok(ExitCode::SUCCESS)
         }
-        ReleaseCommand::Publish { path, to } => {
+        ReleaseCommand::Publish {
+            path,
+            to,
+            qualification,
+        } => {
+            let inputs = qualification.read()?;
             let bundle = verified_bundle(&path, true)?;
+            let qualified = inputs
+                .map(|inputs| inputs.qualify(&bundle.component, &bundle.build, &bundle.runtime))
+                .transpose()?;
             if to.contains('@') {
                 bail!("OCI publication destination must be a tag, not a digest reference");
             }
@@ -1505,6 +1546,14 @@ fn release(command: ReleaseCommand) -> Result<ExitCode> {
             let digest = digest.trim();
             ess_deployment::Digest::new(digest)
                 .with_context(|| format!("ORAS returned invalid manifest digest {digest:?}"))?;
+            if let Some(qualified) = &qualified {
+                eprintln!("release consistency: checked");
+                qualified.describe(&bundle.component, &bundle.build, &bundle.runtime)?;
+                release_evidence::bundle_context(&bundle)?;
+                release_evidence::qualifiers();
+            } else {
+                release_evidence::consistency(false);
+            }
             println!("{to} — published at {digest}");
             Ok(ExitCode::SUCCESS)
         }
@@ -1515,15 +1564,86 @@ fn release(command: ReleaseCommand) -> Result<ExitCode> {
                 write_canonical(Some(out), &bundle.to_canonical_json())?;
             }
             println!(
-                "{} — verified {}{}",
+                "{} — bundle content identity and consistency checked {}{}",
                 from,
                 bundle.digest(),
                 out.as_ref()
                     .map_or_else(String::new, |path| format!(" at {}", path.display()))
             );
+            release_evidence::consistency(true);
             Ok(ExitCode::SUCCESS)
         }
+        ReleaseCommand::CheckConformance {
+            qualification,
+            component_ir,
+            build_ir,
+            runtime_ir,
+        } => qualify_release_report(&qualification, &component_ir, &build_ir, &runtime_ir, None),
+        ReleaseCommand::PublishConformance {
+            qualification,
+            component_ir,
+            build_ir,
+            runtime_ir,
+            to,
+        } => qualify_release_report(
+            &qualification,
+            &component_ir,
+            &build_ir,
+            &runtime_ir,
+            Some(&to),
+        ),
     }
+}
+
+fn qualify_release_report(
+    options: &release_evidence::Options,
+    component: &Path,
+    build: &Path,
+    runtime: &Path,
+    to: Option<&str>,
+) -> Result<ExitCode> {
+    let inputs = options
+        .read()?
+        .context("conformance qualification inputs are required")?;
+    let (component, build, runtime) = release_evidence::deployment(component, build, runtime)?;
+    let qualified = inputs.qualify(&component, &build, &runtime)?;
+    if let Some(to) = to {
+        release_evidence::tagged_destination(to)?;
+        let staging = TemporaryDirectory::create("ess-conformance-publish")?;
+        fs::write(
+            staging.path().join("conformance-report.json"),
+            qualified.report_bytes(),
+        )
+        .context("staging admitted original conformance report")?;
+        let output = ProcessCommand::new("oras")
+            .current_dir(staging.path())
+            .args([
+                "push",
+                "--no-tty",
+                "--artifact-type",
+                "application/vnd.beyond10x.ess.evidence.conformance.v1",
+                "--format",
+                "go-template={{.digest}}",
+                to,
+                "conformance-report.json:application/json",
+            ])
+            .output()
+            .context("starting ORAS")?;
+        if !output.status.success() {
+            bail!(
+                "ORAS publication failed: {}",
+                String::from_utf8_lossy(&output.stderr).trim()
+            );
+        }
+        let digest = String::from_utf8(output.stdout)
+            .context("ORAS returned a non-UTF-8 manifest digest")?;
+        let digest = ess_deployment::Digest::new(digest.trim())
+            .context("ORAS returned invalid manifest digest")?;
+        println!("{to} — published at {digest}");
+    }
+    qualified.describe(&component, &build, &runtime)?;
+    release_evidence::qualifiers();
+    Ok(ExitCode::SUCCESS)
 }
 
 fn stack(command: StackCommand) -> Result<ExitCode> {
@@ -3238,7 +3358,14 @@ impl TemporaryDirectory {
             .context("system clock precedes the Unix epoch")?
             .as_nanos();
         let path = std::env::temp_dir().join(format!("{prefix}-{}-{nonce}", std::process::id()));
-        fs::create_dir(&path)
+        let mut directory = fs::DirBuilder::new();
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::DirBuilderExt;
+            directory.mode(0o700);
+        }
+        directory
+            .create(&path)
             .with_context(|| format!("creating temporary directory {}", path.display()))?;
         Ok(Self(path))
     }
@@ -3608,7 +3735,7 @@ mod tests {
     ///
     /// Written down on purpose. A verb added to the tree and to no area would otherwise be
     /// counted by the enumeration it is missing from and pass every case below.
-    const AREA_LEAVES: usize = 52;
+    const AREA_LEAVES: usize = 54;
 
     /// The order they are offered in is checked where it is rendered, in
     /// `tests/command_surface.rs`: `mut_subcommand` moves what it touches to the end of the list,

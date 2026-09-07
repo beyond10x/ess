@@ -139,7 +139,7 @@ forwarding alone do not establish end-to-end typed payload compatibility.
 | `ess generate schema validate …` | Validate adopter-owned JSON Schema contracts. |
 | `ess generate build compile\|graph\|execute …` | Validate and compile `ess-build/1`, render its DAG, or explicitly execute its BuildKit projection. |
 | `ess generate component compile …` | Validate a repository-owned component descriptor. |
-| `ess generate release verify\|bundle\|verify-bundle\|publish\|fetch …` | Verify and bundle release records or explicitly cross the OCI credential edge. |
+| `ess generate release verify\|bundle\|verify-bundle\|publish\|fetch\|check-conformance\|publish-conformance …` | Check release consistency, qualify supplied local reports, or explicitly cross the OCI credential edge. |
 | `ess generate stack resolve\|validate …` | Resolve generic product stacks from an offline release catalogue. |
 | `ess generate deployment compile\|diff\|reconcile …` | Bind an exact stack lock, compare deployments, or explicitly reconcile the affected Helm releases. |
 
@@ -159,10 +159,44 @@ without writing them. The repository-only `cargo xtask generate` command reconci
 |---|---|
 | `ess generate component compile --path FILE [--out FILE]` | Validate a repository-owned component descriptor. |
 | `ess generate build execute --path FILE --projection-out DIR …` | Compile and retain the BuildKit projection, then invoke Docker Buildx Bake. |
-| `ess generate release bundle …` | Verify runtime and chart releases and write one canonical OCI payload. |
-| `ess generate release publish --path FILE --to OCI_TAG` | Publish a verified bundle and print its immutable OCI manifest digest. |
+| `ess generate release bundle …` | Check runtime/chart consistency and write one canonical OCI payload. |
+| `ess generate release publish --path FILE --to OCI_TAG` | Publish a consistency-checked bundle and print its OCI manifest digest. Optional local report qualification is described below. |
 | `ess generate release fetch --from OCI_REF@sha256:… --cache DIR` | Fetch a digest-pinned bundle, revalidate it, and cache canonical bytes. |
 | `ess generate deployment reconcile --path FILE --current FILE --cache DIR` | Apply only added or changed Helm releases in rollout order. |
+
+The seven release routes also have identical flat `ess release …` aliases. Existing canonical
+JSON/YAML streams and output files keep their bytes. Text success describes consistency; fetch
+additionally describes OCI content identity. Qualification diagnostics go to stderr. Both
+publishers end stdout with `<destination> — published at <OCI manifest digest>` so the final token
+remains the published manifest digest. `check-conformance` succeeds with empty stdout.
+
+```sh
+ess generate release check-conformance \
+  --spec ess/model --report evidence/report.json \
+  --expected-suite-input policy/expected-input.json \
+  --component-ir ess/compiled/component.ir.json \
+  --build-ir ess/compiled/build.ir.json --runtime-ir ess/compiled/runtime.ir.json
+```
+
+Replace `check-conformance` with `publish-conformance` and add `--to repository:tag` to qualify
+and upload the exact original report bytes through ORAS in the same process. Digest destinations
+are refused. Use `--expected-suite` instead of `--expected-suite-input` for an original unfiltered
+suite/5. The carrier route requires every original parent. A standalone report/2 and explicit
+model are required; report/1, generic logs and detailed run/2 documents refuse. Complete nonempty
+all-pass selection, full model/contract identity and canonical deployment context must agree.
+
+Existing bundle `publish` accepts the all-or-none group `--spec`, `--report` and exactly one of
+`--expected-suite` / `--expected-suite-input`. It obtains deployment context from its admitted
+canonical `--path` bundle. Omitting the group preserves consistency-only publication. Either
+optional raw-byte pin, `--report-sha256 sha256:…` or `--expected-input-sha256 sha256:…`, requires
+the qualification group. Pins cover the complete original files, not an OCI manifest or the
+carrier's selected inner-suite digest. Invalid CLI groups are usage errors; admission or positive
+qualification failures exit 1 before publication effects.
+
+Success qualifies only the supplied exact declared selection. Attachment binding, producer origin
+and artifact execution remain **unverified**; signature verification remains **unsupported**.
+See [component delivery](../concepts/component-delivery.md#migrate-the-release-component-action)
+for the breaking action inputs and old/new action/ESS compatibility.
 
 The compiler and projection operations stay offline. The commands that say `execute`, `publish`,
 `fetch`, or `reconcile` are explicit credential edges and invoke installed Docker, ORAS, or Helm

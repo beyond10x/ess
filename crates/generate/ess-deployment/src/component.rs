@@ -304,7 +304,7 @@ impl ReleaseBundle {
         canonical_json(self)
     }
 
-    /// Digest of the complete verified bundle payload.
+    /// Digest of the complete consistency-checked bundle payload, separate from its OCI manifest.
     pub fn digest(&self) -> Digest {
         Digest::of_bytes(self.to_canonical_json().as_bytes())
     }
@@ -395,7 +395,9 @@ pub fn bundle_release(
     }
 }
 
-/// Verify a bundle read from an untrusted OCI layer.
+/// Check the bundle's declared relationships and nested document invariants.
+/// Evidence attachment binding, producer origin and artifact execution remain unverified;
+/// signature verification is unsupported. OCI content-identity checking belongs to the fetcher.
 pub fn verify_release_bundle(bundle: ReleaseBundle) -> Result<ReleaseBundle, Diagnostics> {
     bundle.validate()?;
     Ok(bundle)

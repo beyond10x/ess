@@ -14,6 +14,14 @@ set -euo pipefail
 : "${CHART_NAMESPACE:?chart namespace is required}"
 : "${EVIDENCE_REPOSITORY:?evidence repository is required}"
 : "${BUNDLE_REPOSITORY:?bundle repository is required}"
+: "${SPEC_PATH:?explicit ESS model path is required}"
+: "${CONFORMANCE_REPORT:?original conformance report/2 file is required}"
+
+if { [ -n "${CONFORMANCE_SUITE:-}" ] && [ -n "${CONFORMANCE_SUITE_INPUT:-}" ]; } ||
+   { [ -z "${CONFORMANCE_SUITE:-}" ] && [ -z "${CONFORMANCE_SUITE_INPUT:-}" ]; }; then
+  printf 'exactly one conformance-suite or conformance-suite-input is required\n' >&2
+  exit 2
+fi
 
 case "$COMPONENT_SERVICE" in
   "" | *[!a-z0-9-]*)
@@ -40,14 +48,34 @@ if [ "${GITHUB_REF_TYPE:-}" = tag ]; then
 fi
 
 mkdir -p target/release
-set -o pipefail
-bash -euo pipefail -c "$CHECK_COMMAND" 2>&1 | tee target/release/conformance.log
-
 ess_bin="$PWD/target/ess/$ESS_REVISION/bin/ess"
 test -x "$ess_bin"
 component_ir=target/release/component.ir.json
 "$ess_bin" generate component compile --path "$COMPONENT_PATH" --out "$component_ir"
 test "$(jq -r .system "$component_ir")" = "$COMPONENT_SERVICE"
+
+# The caller supplied these originals before the action. Keep a byte snapshot and pin it for
+# every later gate; the generic repository check is never the report producer for this action.
+snapshot_root="$(mktemp -d target/release/conformance-inputs.XXXXXX)"
+report_snapshot="$snapshot_root/conformance-report.json"
+input_snapshot="$snapshot_root/expected-input.json"
+cp -- "$CONFORMANCE_REPORT" "$report_snapshot"
+expected_option=--expected-suite
+expected_path="${CONFORMANCE_SUITE:-}"
+if [ -n "${CONFORMANCE_SUITE_INPUT:-}" ]; then
+  expected_option=--expected-suite-input
+  expected_path="$CONFORMANCE_SUITE_INPUT"
+fi
+cp -- "$expected_path" "$input_snapshot"
+report_bytes_digest="sha256:$(sha256sum "$report_snapshot" | awk '{print $1}')"
+input_bytes_digest="sha256:$(sha256sum "$input_snapshot" | awk '{print $1}')"
+qualification=(--spec "$SPEC_PATH" --report "$report_snapshot"
+  "$expected_option" "$input_snapshot"
+  --report-sha256 "$report_bytes_digest" --expected-input-sha256 "$input_bytes_digest")
+deployment_context=(--component-ir "$component_ir" --build-ir "$BUILD_IR" --runtime-ir "$RUNTIME_IR")
+"$ess_bin" generate release check-conformance "${qualification[@]}" "${deployment_context[@]}"
+
+bash -euo pipefail -c "$CHECK_COMMAND" 2>&1 | tee target/release/check.log
 image_tag="$IMAGE_REPOSITORY:$COMPONENT_VERSION"
 
 if [ "$BUILD_IMAGE" = true ]; then
@@ -83,7 +111,7 @@ test -n "$chart_archive"
 chart_name="$(helm show chart "$chart_archive" | awk '$1 == "name:" { print $2; exit }')"
 chart_push="$(helm push "$chart_archive" "$CHART_NAMESPACE" 2>&1)"
 printf '%s\n' "$chart_push"
-chart_digest="$(grep -Eo 'sha256:[0-9a-f]{64}' <<<"$chart_push" | tail -1)"
+chart_digest="$(grep -Eo 'sha256:[0-9a-f]{64}' <<<"$chart_push" | tail -1)" || chart_digest=""
 chart_reference="${CHART_NAMESPACE#oci://}/$chart_name"
 if [ -z "$chart_digest" ]; then
   printf 'helm push did not report a chart digest\n' >&2
@@ -135,22 +163,25 @@ publish_evidence() {
   digest="$(oras push --no-tty \
     --artifact-type "application/vnd.beyond10x.ess.evidence.$kind.v1" \
     --format 'go-template={{.digest}}' \
-    "$destination" "$path:$media_type")"
-  printf '%s\t%s\n' "$destination" "$digest"
+    "$destination" "$path:$media_type")" || return $?
+  printf '%s\n' "$digest"
 }
 
-IFS=$'\t' read -r provenance_reference provenance_digest < <(
-  publish_evidence provenance target/release/provenance.json application/json
-)
-IFS=$'\t' read -r sbom_reference sbom_digest < <(
-  publish_evidence sbom target/release/sbom.json application/vnd.cyclonedx+json
-)
-IFS=$'\t' read -r signature_reference signature_digest < <(
-  publish_evidence signature target/release/signatures.json application/json
-)
-IFS=$'\t' read -r conformance_reference conformance_digest < <(
-  publish_evidence conformance target/release/conformance.log text/plain
-)
+# Images/charts may already have been uploaded. A refusal here blocks all subsequent evidence
+# and bundle uploads; it makes no rollback claim about those earlier operations.
+"$ess_bin" generate release check-conformance "${qualification[@]}" "${deployment_context[@]}"
+provenance_reference="$EVIDENCE_REPOSITORY:$COMPONENT_VERSION-provenance"
+sbom_reference="$EVIDENCE_REPOSITORY:$COMPONENT_VERSION-sbom"
+signature_reference="$EVIDENCE_REPOSITORY:$COMPONENT_VERSION-signature"
+conformance_reference="$EVIDENCE_REPOSITORY:$COMPONENT_VERSION-conformance"
+# Preserve child failure in the assignment. A read over process substitution masks that status.
+provenance_digest="$(publish_evidence provenance target/release/provenance.json application/json)"
+sbom_digest="$(publish_evidence sbom target/release/sbom.json application/vnd.cyclonedx+json)"
+signature_digest="$(publish_evidence signature target/release/signatures.json application/json)"
+conformance_output="$("$ess_bin" generate release publish-conformance \
+  "${qualification[@]}" "${deployment_context[@]}" --to "$conformance_reference")"
+printf '%s\n' "$conformance_output"
+conformance_digest="${conformance_output##* }"
 
 evidence="$(jq -n \
   --arg provenance_reference "$provenance_reference" --arg provenance_digest "$provenance_digest" \
@@ -194,7 +225,8 @@ jq -n \
   --release target/release/runtime-release.json --release target/release/chart-release.json \
   --out target/release/ess-release-bundle.json
 publish_output="$("$ess_bin" generate release publish \
-  --path target/release/ess-release-bundle.json --to "$BUNDLE_REPOSITORY:$COMPONENT_VERSION")"
+  --path target/release/ess-release-bundle.json --to "$BUNDLE_REPOSITORY:$COMPONENT_VERSION" \
+  "${qualification[@]}")"
 printf '%s\n' "$publish_output"
 bundle_digest="${publish_output##* }"
 if [ -n "${GITHUB_STEP_SUMMARY:-}" ]; then
@@ -203,5 +235,10 @@ if [ -n "${GITHUB_STEP_SUMMARY:-}" ]; then
     printf -- '- Bundle: %s@%s\n' "$BUNDLE_REPOSITORY" "$bundle_digest"
     printf -- '- Runtime: %s@%s\n' "$IMAGE_REPOSITORY" "$image_digest"
     printf -- '- Chart: %s@%s\n' "$chart_reference" "$chart_digest"
+    printf -- '- conformance: passed for the supplied exact declared selection\n'
+    printf -- '- attachment binding: unverified\n'
+    printf -- '- producer origin: unverified\n'
+    printf -- '- artifact execution: unverified\n'
+    printf -- '- signature verification: unsupported\n'
   } >> "$GITHUB_STEP_SUMMARY"
 fi

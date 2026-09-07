@@ -2,6 +2,11 @@
 
 Accepted binding for the existing F11 delivery-trust story. Root adopts B01–B07 after the recorded first binding review found no concrete issue and after browser replay closed at published ESS 95ef5be70dbce966056d0484b66db7ed836fa406. The integrated source refresh at 3408bbf049d10215487c50f6f7b5597486b14127 preserves all fourteen reservations and T01–T18; the closing commit changes only planning and the prior wave record. Runtime interfaces remain unimplemented at adoption. The next implementation selection is recorded separately in the wave page. No new model, envelope, format version or remediation objective is introduced. I/N citations refer to integrated source pins and L citations to retained historical receipts, identified below. Original candidate, complete refresh and the mechanical adoption receipt remain under target/review-boundaries-15/preparation/delivery-trust-integration-refresh and target/review-boundaries-16/preparation/opening. This adoption changes source/status annotations only; it is not a second binding review.
 
+The implementation in this change supplies the B02 interfaces and B06 action contract below.
+The adoption and source-refresh statements describe their recorded historical stage. They are
+not runtime evidence. Runtime results are retained by the implementor and integration coordinator;
+the B01–B07 guarantees and T01–T18 obligations remain the acceptance contract.
+
 ## B01 — Existing wire and claims
 
 Keep ess-release/1, ess-release-bundle/1, their canonical JSON/YAML behavior, four required EvidenceKind entries, every current reader rule and all historical digests unchanged. Newly produced releases naturally have different digests when their actual attachment references/digests differ; “preserve digests” does not mean reuse an old digest for new bytes. No new evidence kind, persisted result, envelope, authentication status or arbitrary context map is introduced. [I08; I09; I35]
@@ -19,7 +24,7 @@ Evidence.digest continues to mean the OCI attachment manifest digest returned by
 
 ## B02 — Concrete CLI adapters
 
-Proposed grouped spellings below have the existing flat `ess release …` aliases with identical program-produced streams/status. These are future interfaces, not commands run in this preparation.
+The grouped spellings below have the existing flat `ess release …` aliases with identical program-produced streams/status. The original preparation did not execute them; this change implements them.
 
 1. `ess generate release check-conformance`: offline positive qualification only.
 2. `ess generate release publish-conformance`: the same qualification followed by a narrow ORAS upload of the admitted original report bytes. This second adapter is necessary to avoid a shell uploader reopening a mutable caller path after a separate check.
@@ -135,7 +140,7 @@ Use existing CountReport, CountStatus, AdmittedInput, AdmittedSuite, Selection, 
 
 The complete 14-path candidate scope is unchanged. The only refinement from the original scoper is the narrow publish-conformance operation within already reserved edge/action/test files. No conformance-reader, cache, format catalog, Taskfile, support-matrix generator, primitive, recovery or sibling source change is required. The existing support rows do not inventory release subcommands, so new release help does not itself justify a support.rs/status-page write. [I41:482–504]
 
-All T01–T18 obligations remain mandatory in the unchanged acceptance/fixture section below and in work-order-draft.md. Root accepted this design direction for future implementation; this publication draft and its future interfaces remain unimplemented. None of these success/refusal tests was executed by this source refresh.
+All T01–T18 obligations remain mandatory in the unchanged acceptance/fixture section below and in work-order-draft.md. Root accepted this design direction before implementation. None of these success/refusal tests was executed by the historical source refresh; implementation evidence is retained separately.
 
 ## T01–T18 acceptance and fault matrix
 

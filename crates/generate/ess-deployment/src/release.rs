@@ -55,29 +55,29 @@ pub struct Artifact {
     pub platforms: BTreeMap<String, Digest>,
 }
 
-/// Required release evidence kind.
+/// Required declared attachment kind. Presence and digest syntax do not authenticate its contents.
 #[derive(
     Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, serde::Serialize, serde::Deserialize,
 )]
 #[serde(rename_all = "snake_case")]
 pub enum EvidenceKind {
-    /// Build provenance or SLSA statement.
+    /// Declared build provenance; neither producer origin nor SLSA claims are verified.
     Provenance,
-    /// Software bill of materials.
+    /// Declared software bill of materials; content and completeness remain unverified.
     Sbom,
-    /// Cryptographic artifact signature.
+    /// Declared signature attachment; signature verification and issuer policy are unsupported.
     Signature,
-    /// Semantic/runtime conformance result.
+    /// Declared conformance attachment. Legacy logs are not typed reports or execution proof.
     Conformance,
 }
 
-/// One immutable evidence attachment.
+/// One declared evidence attachment. Local report qualification does not prove this remote binding.
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Evidence {
     /// Evidence artifact coordinate.
     pub reference: String,
-    /// Exact evidence digest.
+    /// OCI attachment manifest digest, distinct from any raw-report byte digest.
     pub digest: Digest,
 }
 
@@ -164,7 +164,9 @@ impl ReleaseManifest {
     }
 }
 
-/// Verify an executor-produced release against the exact build and runtime it claims.
+/// Check metadata, graph and digest consistency against the exact build and runtime it claims.
+/// This does not inspect evidence contents, authenticate a producer, verify a signature or prove
+/// that the referenced runtime/chart artifact executed. The API name is retained for compatibility.
 pub fn verify_release(
     release: &ReleaseManifest,
     build: &BuildIr,

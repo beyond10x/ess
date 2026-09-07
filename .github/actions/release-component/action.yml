@@ -1,5 +1,5 @@
 name: Release ESS component
-description: Build or adopt an image, attest it, and publish the exact ESS chart and component bundle.
+description: Qualify a supplied local conformance report, build or adopt an image, and publish declared evidence and a consistency-checked ESS bundle. Attachment binding and producer origin remain unverified.
 
 inputs:
   service:
@@ -12,9 +12,23 @@ inputs:
     description: Exact released ESS Git commit to install.
     required: true
   check-command:
-    description: Repository-owned verification command run before publication.
+    description: Generic repository check; its log is not conformance evidence. Produce the conformance report in a prior step.
     required: false
     default: task check
+  spec-path:
+    description: Explicit authored ESS model root for local report qualification.
+    required: true
+  conformance-report:
+    description: Pre-existing original standalone ess-conformance-report/2 JSON. No check-command fallback.
+    required: true
+  conformance-suite:
+    description: Independent original unfiltered suite/5 JSON; exactly one suite or suite-input is required.
+    required: false
+    default: ""
+  conformance-suite-input:
+    description: Independent original input/1 carrier including every original parent suite; mutually exclusive with conformance-suite.
+    required: false
+    default: ""
   rust-toolchain:
     description: Exact Rust toolchain used for ESS and the repository-owned verification command.
     required: false
@@ -118,6 +132,10 @@ runs:
         COMPONENT_VERSION: ${{ inputs.version }}
         ESS_REVISION: ${{ inputs.ess-revision }}
         CHECK_COMMAND: ${{ inputs.check-command }}
+        SPEC_PATH: ${{ inputs.spec-path }}
+        CONFORMANCE_REPORT: ${{ inputs.conformance-report }}
+        CONFORMANCE_SUITE: ${{ inputs.conformance-suite }}
+        CONFORMANCE_SUITE_INPUT: ${{ inputs.conformance-suite-input }}
         COMPONENT_PATH: ${{ inputs.component-path }}
         BUILD_PATH: ${{ inputs.build-path }}
         BUILD_IR: ${{ inputs.build-ir }}

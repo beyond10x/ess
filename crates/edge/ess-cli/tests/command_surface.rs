@@ -55,6 +55,37 @@ fn the_help_offers_exactly_the_four_areas() {
     );
 }
 
+#[test]
+fn release_help_exposes_seven_routes_and_identical_alias_options() {
+    let expected = [
+        "verify",
+        "bundle",
+        "verify-bundle",
+        "publish",
+        "fetch",
+        "check-conformance",
+        "publish-conformance",
+    ];
+    for prefix in [vec!["release"], vec!["generate", "release"]] {
+        let mut args = prefix.clone();
+        args.push("--help");
+        let output = ess(&args);
+        assert!(output.status.success());
+        assert_eq!(
+            offered(&String::from_utf8(output.stdout).unwrap()),
+            expected
+        );
+    }
+    for route in expected {
+        let flat = ess(&["release", route, "--help"]);
+        let grouped = ess(&["generate", "release", route, "--help"]);
+        assert_eq!(flat.status.code(), grouped.status.code());
+        let flat = String::from_utf8(flat.stdout).unwrap();
+        let grouped = String::from_utf8(grouped.stdout).unwrap();
+        assert_eq!(flat.replace("ess release", "ess generate release"), grouped);
+    }
+}
+
 /// A flat spelling and the area path that replaced it, for verbs with fixtures in this tree.
 ///
 /// One per area at least, and both verbs whose name is also an area name — `generate` and
