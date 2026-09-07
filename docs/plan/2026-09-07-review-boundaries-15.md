@@ -308,3 +308,41 @@ Delivery trust binding pass 1 also returned no concrete finding. Its exact repor
 Root read the full report and independently verified 70 input references and its output. The
 candidate remains unaccepted and unselected pending the next fresh replan; no additional source
 implementation or runtime result is claimed.
+
+## Integration gate and completion
+
+The clean integration commit `3408bbf049d10215487c50f6f7b5597486b14127` contains browser unit
+`1a416a607f84cfb531cb4ed2c7279a5ad189801a` and the coordinator's prior review records. The full
+eleven-lane gate completed at 2026-09-07T10:40:43.825866Z with every direct exit zero. The workspace
+runner executed 2,155 tests across 195 groups, with zero failures or ignored cases. This includes
+all thirty final fidelity cases and the four existing coverage cases through actual Firefox.
+
+| Lane | Seconds | Exit |
+|---|---:|---:|
+| site-build | 15.827 | 0 |
+| fmt-check | 1.703 | 0 |
+| clippy | 12.716 | 0 |
+| test | 328.553 | 0 |
+| doc-check | 7.711 | 0 |
+| example-check | 1.503 | 0 |
+| projection-check | 0.602 | 0 |
+| support-check | 2.204 | 0 |
+| release-check | 0.102 | 0 |
+| action-check | 0.102 | 0 |
+| planning | 28.734 | 0 |
+
+Exact commands, log hashes, tool/process/source readbacks and durations are retained under
+`target/review-boundaries-15/gate-3408bbf049d1-attempt1`. Every lane preserved tracked bytes;
+root independently verified all eleven log hashes and every test summary. The test log SHA256 is
+`018ef25c5ed163b5ffa2220fe1ed3a417fd486f45de688dd20da7aa3d3e27281`. Root read all smaller gate
+logs and the complete new fidelity runner section; unrelated existing assertion lines remain
+retained without a claim of another line-by-line review. Planning validation returned zero with
+199 artifacts and 41 advisories. Release-check verifies consistency only; no release was cut.
+
+The browser story's completion body cites this evidence and confirms all eight reservations as
+cited. Its original dispatch scope remains as history. Root records the test result before moving
+the story active to implemented through AEP, then validates the store. This raises the original
+remediation count to 24 implemented and seven draft stories; execution-recovery implementation
+remains separately owed. Closing changes are planning and this wave record only, preserving the
+exact runtime, test, tool, lockfile and public-site bytes that passed the gate. Remote publication,
+CI and exact managed retirement are recorded after their actual outcomes.
