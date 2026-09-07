@@ -329,3 +329,113 @@ Browser candidate attack 1 is recorded as `review-result:browser-replay-binding-
 Its one candidate validation finding was fixed in draft v2 by swapping aliases across fixed
 ordered names and asserting distinct emitted reference sequences. The second/final document
 attack remains required; no browser implementation has been selected.
+
+
+## Integrated gate and marker correction
+
+The reviewed source integrated as `bbecd8911f8d454e9ba331686739bfea8477a3fc`, after bot metadata
+commit `4c3aa06324fc514caebe18ba379a2a88a767e6a2`; both identities on both commits were verified.
+No wave-14 source has been published yet.
+
+Attempt 1 stopped when the coordinator process monitor hit PermissionError on a short-lived
+child's `/proc` executable. The test's direct exit was unavailable; its partial output is not a
+success. A fresh process census found no remaining coordinator process. Attempt 2 tolerates and
+records inaccessible/exited child observations, retains direct child status before readback, and
+terminates its owned process group on monitor/resource failure.
+
+Attempt 2's `task test` returned zero: 2,110 passed, zero failed/ignored, 189 Rust summaries,
+364.2405 seconds. Its post-test collector initially refused because package-local offline
+`cargo run` had replaced `target/debug/ess`. The exact original CLI bytes still existed as
+`target/debug/deps/ess-0085035300b649c6`, SHA256
+`ab4a97535745cc1b9fcda5f3ebf52a99bef690f26cef15ae1f88a1ddd563659a`.
+Root independently hashed and retained those exact bytes against all three actual producer
+receipts, preserved the initial refusal and original result file, and continued without repeating
+the passing tests. This recovery is in the attempt's `producer-retention-recovery.json`.
+
+All nine offline gate lanes passed on that source. Site build returned direct task exit 201:
+Docusaurus rejects the introduced HTML comment delimiter at
+`website/docs/status/where-this-stands.md:43`. The actual MDX failure and successful preceding
+WASM/browser-lab checks remain in `gate-bbecd8911f8d-attempt2/site-build.log`. Planning had not yet
+run in that interrupted sequence. This is a real introduced source defect, unlike the two
+collector issues; no full-gate success is asserted.
+
+The same implementor resumes the existing unit at `9dbc7a9d` for exactly two source files:
+`crates/edge/ess-xtask/src/support.rs` and the status page. Its new scratch is unit
+`target/review-boundaries-14/public-support/integration-correction-1`, with CARGO_HOME/TMP inside
+that scratch and the same frozen 1.98.1 sysroot, offline two-job configuration and explicitly empty
+wrappers. Replace the delimiters with passive Markdown reference definitions and separating
+blank lines; preserve every support cell, test and assertion. Root will review this bounded gate
+correction, not open a third attack. The next complete gate runs site-build first, then all nine
+ordered offline lanes, then planning; fresh output/TMP roots retain every result. It reuses only
+owned coordinator Cargo/Go caches and hash-verified immutable input/tool snapshots.
+
+Website support checkout `ess-wave14-website-verification` was provisioned at Atlas's exact
+`fc4571534765c098ed861bc326da4d3da0d1df63`; npm ci --ignore-scripts returned zero in 20.4559 seconds.
+The setup script's final clean-tree assertion refused its own expected untracked target directory;
+root verified that this was the only untracked path and no tracked source changed. The correction
+receipt is `preparation/website-provision/setup-readback.json`.
+
+Atlas's full fence returned 1 with the same three pre-existing workspace issues: AgentIDE v4
+against the older collector, primary Website's old Docs System pin, and Widgets' missing Serves
+section. All 149 Rust cases and the live Pages lane passed; organization-wide green is not claimed.
+A fresh release read at 06:39:10Z still identifies 0.20.0, record 383642123, with metadata SHA256
+`2ce2479a525e9ffbffb5778333109e16995d1a323df7fabc89c7365435f449a7`. No asset was downloaded.
+
+## Final browser candidate review
+
+Root recorded `review-result:browser-replay-binding-pass2` after reading all 17,427 report bytes
+and verifying 39 inputs (966,296 bytes). Report SHA256 is
+`31673ff9360b515f894d32a5e4cde9fcb8f546a98d87e813bc7849ead0c6fbef`.
+It found no remaining candidate issue and executed zero tests. The corrected v2 conservative
+replay direction is accepted; implementation remains unselected. At bbecd891 all six existing
+browser write owners and semantic inputs are unchanged and both proposed paths remain absent.
+Before scheduling, synchronize the story's eight exact typed reservations. Fuzz's six reservations
+have no write-path overlap, but both units change inputs to the CLI and need combined integration
+verification. Neither preparation establishes runtime success.
+
+Complete browser findings comparison:
+
+```json
+{
+  "artifact": "story:review-browser-replay-fidelity",
+  "reviews": 10,
+  "from": "review-result:browser-replay-binding-pass1",
+  "from_reviewer": "unattributed",
+  "to": "review-result:browser-replay-binding-pass2",
+  "to_reviewer": "unattributed",
+  "carried": [],
+  "new": [],
+  "resolved": [
+    {
+      "file": "target/review-boundaries-14/preparation/browser-replay-candidate/binding-draft-v1.md",
+      "line": 64,
+      "category": "acceptance",
+      "severity": "warning",
+      "verdict": "NEEDS-CHANGE",
+      "origin": "introduced",
+      "message": "B06's authored insertion-order variants serialize to the same input order, so they do not exercise opposite first-reference choices in the emitted players."
+    }
+  ]
+}
+```
+
+
+## Reviewed integration correction
+
+The same implementor returned the two-file marker correction with 37 → 37 package cases,
+formatting, strict Clippy, render and support-check all zero. Root read the complete 23,041-byte
+report (SHA256 `8e7b9499a44fcb93199f39fd3250ed3ef45e775d82e9b85bb0848dd7a340cd09`),
+verified the seal, all source/command payload hashes and the complete native target census:
+553 directories, 2,474 regular files (1,993,964,873 bytes) and eight literal symlinks.
+Root independently confirmed the entire test module is byte-identical and the public page changes
+only the two markers and blank-line isolation. No assertion was removed or relaxed.
+
+Bot commit `2004bb1575d12656521216acce47d74acba49882` contains exactly that correction;
+both author and committer were verified. The first commit invocation refused a relative message
+path before creating a commit; its direct status and outputs remain retained. The retry supplied
+the reviewed absolute path. No source changed during that retry.
+
+Root readback is `target/review-boundaries-14/preparation/integration-correction-readback/verified.json`.
+The site-first full integration attempt and rendered-cell comparison remain required before
+publishing this source. The unit remains quiescent and its retention helper is explicitly held
+pending the corrected integrated commit and successful source publication.
