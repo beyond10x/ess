@@ -65,7 +65,7 @@ reconciliation is assigned.
 | Cargo bookkeeping | target/review-boundaries-17/cargo-home inside the unit |
 | Assigned temporary root | ~/.cache/ess-w17-discovery-tmp |
 | Lease | ess-review-authored-discovery-wave17 |
-| Stage | First source review running in authored_discovery_source_pass1 |
+| Stage | Integrated gate complete; closing record and publication in progress |
 
 Initial free space was 23,472,275,456 bytes; later preflight measured 20,236,275,712 bytes. Use one
 producer, two Rust jobs, a 10 GiB combined unit target/TMP allowance and an 8 GiB free floor. This
@@ -280,3 +280,57 @@ Unit commit 6701d88ce66bd63a1ae6307450d0c0589ea8b925 contains exactly the 15 ver
 Both author and committer are b10x-bot[bot], and the unit is clean. This commit is local and awaits
 the integrated repository/site gate and publication. The coordinator's pending metadata and
 Unreleased changelog entry travel with that integration.
+
+## Integrated gate and story closure
+
+Reviewed unit 6701d88ce66bd63a1ae6307450d0c0589ea8b925 merged cleanly at
+f82fbc67a4c1cfaef920ac94ca1449bf8d947575; the merge tree matched its preflight exactly.
+Every introduced direct commit has the required bot author and committer. Root ran all eleven
+current repository/site gate lanes on that clean merge, with individual direct statuses:
+
+| Lane | Exit | Seconds | Passing Rust cases / summaries |
+|---|---:|---:|---:|
+| site-build | 0 | 29.042834 | 0 / 0 |
+| fmt-check | 0 | 1.603639 | 0 / 0 |
+| clippy | 0 | 41.351392 | 0 / 0 |
+| test | 0 | 423.613815 | 2233 / 198 |
+| doc-check | 0 | 19.124404 | 0 / 0 |
+| example-check | 0 | 1.703664 | 0 / 0 |
+| projection-check | 0 | 9.512717 | 0 / 0 |
+| support-check | 0 | 2.204249 | 0 / 0 |
+| release-check | 0 | 0.101745 | 0 / 0 |
+| action-check | 0 | 0.101654 | 0 / 0 |
+| planning | 0 | 38.545587 | 0 / 0 |
+
+The complete gate finished at 2026-09-07T20:15:17.585456Z. Root observed session 99580 exit
+zero and independently verified all eleven raw log hashes and direct-child records, the complete
+1,191-file source manifest unchanged, and 2,233 passing Rust cases across 198 native summaries,
+zero failed or ignored. Site-build executed the real WASM/browser lab (21 claims, 28 deterministic
+steps, 64 rows) and built the static site. Existing npm dependency/install warnings remain in its
+raw output; no dependency or Docs System upgrade is part of this wave.
+
+Actual Rust, Go and control producer records are retained, together with independently verified
+native copies of their executed CLI and test binary. The ten observed process PIDs were absent at
+root readback. The CLI alias had changed in a later build; the runner retained the exact recorded
+fb21c5c258f8c02093715d39c7aa4af13b20733920478fb8e9833b281b8c27bd executable from its matching
+native deps path, never a reconstructed substitute. The immutable old-reader control was explicitly
+supplied and pinned. Live-cluster tests remain outside this offline gate.
+
+Records: target/review-boundaries-17/gate-f82fbc67a4c1-attempt1.
+Completion SHA256 99fcf39445faf2fe8a0c4723b7fc76804dffa2694a4a5cb7e0faa75f0e5db3e4;
+results SHA256 915337861a2d16d7a2baaf87fa645d9a1ddd1cd1e31b96cc93b9e2efbd85045d.
+Root independent readback SHA256 f4de5a168e2da23b33cbf21e3d89adf7134a72dc72ca4ceda41a508df33d2622
+at preparation/integration-gate-root-readback.json. Aggregate agent tokens and tool-use counts
+are unavailable in this harness; they are not estimated. Individual native durations are retained.
+
+The closing story body confirms all nine actual reservations, preserving the original cited or
+inferred provenance and the baseline executable limitation. Six inferred typed scope entries are
+now cited. AEP rejected the fractional evidence timestamp, so the successful record uses the same
+observed finish time at whole-second precision; the full native timestamp is unchanged. Completion
+evidence names the exact gated merge. Story closure and validation receipts are retained in
+preparation/closure. The only changes after the gate are this wave record and AEP planning metadata.
+
+Source publication and exact managed-unit retirement remain the next operations. The unit target
+and both assigned temporary roots are still present. Three prepared complete native archives and
+separate readbacks are required before removing those owned disposable roots. The coordinator is
+retained for the remaining remediation work. No release tag or downstream delivery is claimed.
