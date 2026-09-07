@@ -10,6 +10,142 @@ use serde_json::{json, Value};
 const SENTINEL: &str = "SYNTHETIC-MALFORMED-SECRET-SENTINEL";
 const PREVIOUS: &[u8] = b"previous sanitized observation";
 
+const TOPOLOGY_PRIVATE: &str = "SYNTHETIC-TOPOLOGY-PRIVATE-PAYLOAD";
+
+fn topology_case(edit: impl FnOnce(&Path), failure: Option<&str>) -> (Output, PathBuf, PathBuf) {
+    static NEXT: AtomicUsize = AtomicUsize::new(0);
+    let root = fixture_root().join(format!("topology-{}", NEXT.fetch_add(1, Ordering::Relaxed)));
+    std::fs::create_dir_all(&root).unwrap();
+    for kind in ess_kubernetes::KINDS {
+        std::fs::write(root.join(format!("{kind}.json")), r#"{"items":[]}"#).unwrap();
+    }
+    let metadata = |name: &str| {
+        json!({"name": name, "namespace": "app", "uid": name,
+        "annotations": {"private": TOPOLOGY_PRIVATE, "kubectl.kubernetes.io/last-applied-configuration": TOPOLOGY_PRIVATE}})
+    };
+    let resources = [
+        (
+            "namespace",
+            json!({"metadata": {"name": "app", "uid": "ns-1"}}),
+        ),
+        (
+            "node",
+            json!({"metadata": {"name": "node-a", "uid": "node-1"}}),
+        ),
+        (
+            "deployments",
+            json!({"items": [{"metadata": metadata("web"), "spec": {
+                "selector": {"matchLabels": {"app": "web"}}, "replicas": 2,
+                "template": {"metadata": {"labels": {"app": "web"}}, "spec": {"containers": [{
+                    "name": "web", "image": "web:1", "command": [TOPOLOGY_PRIVATE], "args": [TOPOLOGY_PRIVATE],
+                    "env": [{"name": "PRIVATE", "value": TOPOLOGY_PRIVATE},
+                        {"name": "MODE", "valueFrom": {"configMapKeyRef": {"name": "settings", "key": "mode"}}}],
+                    "readinessProbe": {"httpGet": {"port": 80, "httpHeaders": [{"name": "Authorization", "value": TOPOLOGY_PRIVATE}]}}
+                }], "initContainers": [{"name": "private", "command": [TOPOLOGY_PRIVATE]}]}}
+            }}]}),
+        ),
+        (
+            "pods",
+            json!({"items": [{"metadata": metadata("web-1"), "spec": {"nodeName": "node-a"}}]}),
+        ),
+        (
+            "configmaps",
+            json!({"items": [{"metadata": metadata("settings"), "data": {"mode": TOPOLOGY_PRIVATE}, "binaryData": {"private": TOPOLOGY_PRIVATE}}]}),
+        ),
+        (
+            "secrets",
+            json!({"items": [{"metadata": metadata("creds"), "data": {"token": TOPOLOGY_PRIVATE}, "stringData": {"private": TOPOLOGY_PRIVATE}}]}),
+        ),
+    ];
+    for (kind, value) in resources {
+        std::fs::write(root.join(format!("{kind}.json")), value.to_string()).unwrap();
+    }
+    edit(&root);
+    let destination = root.join("observation.json");
+    std::fs::write(&destination, PREVIOUS).unwrap();
+    let mut command = Command::new(env!("CARGO_BIN_EXE_ess-kubernetes"));
+    command
+        .args([
+            "scan",
+            "--context",
+            "synthetic-context",
+            "--namespace",
+            "app",
+            "--out",
+        ])
+        .arg(&destination)
+        .env("PATH", fixture_root().join("bin"))
+        .env("ESS_TEST_TOPOLOGY_DIRECTORY", &root);
+    if let Some(kind) = failure {
+        command.env("ESS_TEST_TOPOLOGY_FAILURE", kind);
+    }
+    (command.output().unwrap(), destination, root)
+}
+
+#[test]
+fn namespace_topology_is_bounded_sanitized_and_admitted_with_coverage() {
+    let (output, destination, root) = topology_case(|_| {}, None);
+    assert!(output.status.success(), "{output:?}");
+    let bytes = std::fs::read(destination).unwrap();
+    for data in [&bytes, &output.stdout, &output.stderr] {
+        assert!(!String::from_utf8_lossy(data).contains(TOPOLOGY_PRIVATE));
+    }
+    let value: Value = serde_json::from_slice(&bytes).unwrap();
+    assert_eq!(value["format"], "infra-observation/2");
+    assert_eq!(
+        value["coverage"],
+        json!({"profile": "namespace_topology", "namespace": "app"})
+    );
+    let raw: infra_domain::RawBundle = serde_json::from_value(value).unwrap();
+    let observation = infra_domain::Observation::try_from(raw).unwrap();
+    assert_eq!(
+        observation.workloads[0].template.containers[0].image,
+        "web:1"
+    );
+    assert!(observation.config_maps[0].keys.is_empty());
+    let calls = std::fs::read_to_string(root.join("calls")).unwrap();
+    assert_eq!(calls.lines().count(), ess_kubernetes::KINDS.len());
+    assert!(calls.starts_with("--context synthetic-context get namespace app -o json\n"));
+    assert!(calls.ends_with("--context synthetic-context get node node-a -o json\n"));
+    assert!(!calls.contains(" -A "));
+    assert!(!calls.contains("get nodes"));
+}
+
+#[test]
+fn scoped_failures_and_cross_scope_responses_preserve_the_destination() {
+    for kind in ["namespace", "deployments", "secrets", "node"] {
+        let (output, destination, _) = topology_case(|_| {}, Some(kind));
+        assert!(!output.status.success());
+        assert_eq!(std::fs::read(destination).unwrap(), PREVIOUS);
+        assert!(!String::from_utf8_lossy(&output.stderr).contains(TOPOLOGY_PRIVATE));
+    }
+    for (kind, malformed) in [
+        (
+            "pods",
+            json!({"items": [{"metadata": {"name": "foreign", "namespace": "elsewhere"}}]}),
+        ),
+        ("namespace", json!({"metadata": {"name": "elsewhere"}})),
+        ("node", json!({"metadata": {"name": "node-b"}})),
+        (
+            "services",
+            json!({"metadata": {"continue": "opaque"}, "items": []}),
+        ),
+        (
+            "deployments",
+            json!({"items": [{"metadata": {"name": "web", "namespace": "app"}, "spec": {"selector": {"matchExpressions": []}}}]}),
+        ),
+    ] {
+        let (output, destination, _) = topology_case(
+            |root| {
+                std::fs::write(root.join(format!("{kind}.json")), malformed.to_string()).unwrap();
+            },
+            None,
+        );
+        assert!(!output.status.success(), "{kind}: {output:?}");
+        assert_eq!(std::fs::read(destination).unwrap(), PREVIOUS);
+    }
+}
+
 fn fixture_root() -> &'static Path {
     static ROOT: OnceLock<PathBuf> = OnceLock::new();
     ROOT.get_or_init(|| {
@@ -231,7 +367,7 @@ fn failed_secret_subprocess_diagnostics_do_not_echo_secret_values() {
         "a failed scan must not print a response"
     );
     let stderr = String::from_utf8_lossy(&output.stderr);
-    assert!(stderr.contains("kubectl get resources failed"));
+    assert!(stderr.contains("kubectl get resources in all namespaces failed"));
     assert!(stderr.contains('1'), "exit status must remain visible");
 }
 
@@ -291,7 +427,7 @@ fn every_kubectl_caller_uses_value_free_failure_diagnostics() {
                 let label = match operation {
                     "contexts" => "list contexts",
                     "current-context" => "read current context",
-                    _ => "get resources",
+                    _ => "get resources in all namespaces",
                 };
                 assert!(
                     stderr.contains(&format!("kubectl {label} failed")),
@@ -301,10 +437,8 @@ fn every_kubectl_caller_uses_value_free_failure_diagnostics() {
                 let calls = std::fs::read_to_string(call_log).expect("recorded operations");
                 if ess_kubernetes::KINDS.contains(&operation) {
                     assert!(
-                        calls.ends_with(&format!(
-                            "{operation}:all_namespaces=true\n{operation}:all_namespaces=false\n"
-                        )),
-                        "both resource attempts must be preserved: {calls}"
+                        calls.ends_with(&format!("{operation}:all_namespaces=true\n")),
+                        "the failed request must not retry with a narrower scope: {calls}"
                     );
                 } else {
                     assert_eq!(calls, format!("{operation}:all_namespaces=false\n"));
@@ -315,11 +449,8 @@ fn every_kubectl_caller_uses_value_free_failure_diagnostics() {
 }
 
 #[test]
-fn successful_resource_retry_preserves_context_order_and_observation_bytes() {
+fn failed_all_namespace_request_cannot_fall_back_to_current_namespace() {
     let root = fixture_root();
-    let (baseline, baseline_path) = scan("{\"items\":[]}", false);
-    assert!(baseline.status.success());
-    let baseline_bytes = std::fs::read(baseline_path).expect("baseline observation");
     for explicit_context in [false, true] {
         let destination = root.join(format!("successful-retry-{explicit_context}.json"));
         let call_log = destination.with_extension("calls");
@@ -337,30 +468,20 @@ fn successful_resource_retry_preserves_context_order_and_observation_bytes() {
             .env("ESS_TEST_FAILURE_FIRST_ATTEMPT_ONLY", "1")
             .env("ESS_TEST_INVALID_UTF8_STDERR", "1")
             .output()
-            .expect("successful retry");
+            .expect("scope-changing retry regression");
         assert!(
-            output.status.success(),
-            "successful fallback must complete scan"
+            !output.status.success(),
+            "a narrower successful response must never rescue a failed cluster scan"
         );
         assert!(output.stdout.is_empty());
         assert!(!String::from_utf8_lossy(&output.stderr).contains(SENTINEL));
-        assert_eq!(
-            std::fs::read(destination).expect("retry observation"),
-            baseline_bytes
-        );
+        assert!(!destination.exists());
         let mut expected = if explicit_context {
             String::new()
         } else {
             "current-context:all_namespaces=false\n".to_owned()
         };
-        for kind in ess_kubernetes::KINDS {
-            use std::fmt::Write as _;
-            write!(
-                expected,
-                "{kind}:all_namespaces=true\n{kind}:all_namespaces=false\n"
-            )
-            .expect("render expected invocation");
-        }
+        expected.push_str("namespaces:all_namespaces=true\n");
         assert_eq!(
             std::fs::read_to_string(call_log).expect("recorded retry order"),
             expected
@@ -427,7 +548,7 @@ fn signal_terminated_kubectl_discards_both_streams_before_refusing() {
         let calls = std::fs::read_to_string(destination.with_extension("calls"))
             .expect("recorded signal invocations");
         if operation == "secrets" {
-            assert!(calls.ends_with("secrets:all_namespaces=true\nsecrets:all_namespaces=false\n"));
+            assert!(calls.ends_with("secrets:all_namespaces=true\n"));
         } else {
             assert_eq!(calls, format!("{operation}:all_namespaces=false\n"));
         }
@@ -435,21 +556,22 @@ fn signal_terminated_kubectl_discards_both_streams_before_refusing() {
 }
 
 #[test]
-fn retry_failure_reports_the_final_exit_status_without_child_values() {
+fn failed_collection_reports_original_exit_status_without_child_values() {
     let (output, destination) = adversary_failure("secrets", "statuses", true);
     assert_eq!(output.status.code(), Some(1));
     assert!(output.stdout.is_empty());
     let stderr = String::from_utf8(output.stderr).expect("safe diagnostic UTF-8");
     assert!(!stderr.contains(SENTINEL));
-    assert!(stderr.ends_with("error: kubectl get resources failed: exit status: 254\n"));
-    assert!(!stderr.contains("exit status: 23"));
+    assert!(stderr
+        .ends_with("error: kubectl get resources in all namespaces failed: exit status: 23\n"));
+    assert!(!stderr.contains("exit status: 254"));
     assert_eq!(
         std::fs::read(&destination).expect("preserved output"),
         PREVIOUS
     );
     let calls = std::fs::read_to_string(destination.with_extension("calls"))
         .expect("recorded retry invocations");
-    assert!(calls.ends_with("secrets:all_namespaces=true\nsecrets:all_namespaces=false\n"));
+    assert!(calls.ends_with("secrets:all_namespaces=true\n"));
 }
 
 #[test]

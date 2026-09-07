@@ -10,6 +10,9 @@ use std::process::Command;
 
 use sha2::Digest;
 
+mod topology;
+pub use topology::scan_namespace;
+
 /// Kubernetes API collections included in an observation, in deterministic order.
 pub const KINDS: &[&str] = &[
     "namespaces",
@@ -72,15 +75,9 @@ pub fn scan(context: Option<&str>, output_path: &Path) -> Result<(), String> {
         let raw = kubectl(
             "get resources in all namespaces",
             &["--context", &context, "get", kind, "-A", "-o", "json"],
-        )
-        .or_else(|_| {
-            kubectl(
-                "get resources",
-                &["--context", &context, "get", kind, "-o", "json"],
-            )
-        })?;
+        )?;
         let mut value: serde_json::Value = serde_json::from_slice(&raw)
-            .map_err(|error| format!("kubectl get {kind}: not JSON: {error}"))?;
+            .map_err(|_| format!("kubectl get {kind}: response is not JSON"))?;
         if *kind == "secrets" {
             sanitize_secret_list(&mut value)?;
         }

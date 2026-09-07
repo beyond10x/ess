@@ -23,6 +23,9 @@ The Kubernetes credential-edge adapter inside ESS. The repository-wide contract 
 6. Live scans use `kubectl` intentionally so exec plugins and API-version negotiation stay at the
    credential edge. Replacing it with a client library is a design change.
 7. This adapter reads clusters. It never applies or mutates infrastructure.
+8. Namespace topology uses the domain's raw DTOs as its serialization allowlist, then omits
+   payload-bearing fields before serialization. A raw DTO field addition changes that collection
+   surface: review it for leakage and coverage meaning, and extend the boundary fixtures.
 
 ## Gate
 

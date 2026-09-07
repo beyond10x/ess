@@ -141,7 +141,7 @@ pub(crate) fn infrastructure(path: &Path) -> Result<LoadedInfra> {
     let value: serde_json::Value =
         serde_json::from_str(&text).with_context(|| format!("{} is not JSON", path.display()))?;
     match value.get("format").and_then(serde_json::Value::as_str) {
-        Some(infra_domain::OBSERVATION_FORMAT) => {
+        Some(infra_domain::OBSERVATION_FORMAT | "infra-observation/2") => {
             let raw: infra_domain::RawBundle = serde_json::from_value(value)
                 .with_context(|| format!("{} is not an observation bundle", path.display()))?;
             Ok(match infra_domain::Observation::try_from(raw) {
@@ -149,10 +149,12 @@ pub(crate) fn infrastructure(path: &Path) -> Result<LoadedInfra> {
                 Err(errors) => LoadedInfra::Refused(errors),
             })
         }
-        Some(infra_compiler::IR_FORMAT) => Ok(match infra_compiler::read_document(&value) {
-            Ok(ir) => LoadedInfra::Ir(Box::new(ir)),
-            Err(errors) => LoadedInfra::Refused(errors),
-        }),
+        Some(infra_compiler::IR_FORMAT | "infra-ir/2") => {
+            Ok(match infra_compiler::read_document(&value) {
+                Ok(ir) => LoadedInfra::Ir(Box::new(ir)),
+                Err(errors) => LoadedInfra::Refused(errors),
+            })
+        }
         other => bail!(
             "{} declares format {:?}; expected `{}` or `{}`",
             path.display(),

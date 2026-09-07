@@ -504,6 +504,20 @@ impl EnvVar {
                 value: raw.value.clone().unwrap_or_default(),
             },
             Some(reference) => {
+                let sources = [
+                    reference.config_map_key_ref.is_some(),
+                    reference.secret_key_ref.is_some(),
+                    reference.field_ref.is_some(),
+                    reference.resource_field_ref.is_some(),
+                ];
+                if sources.iter().filter(|present| **present).count() != 1 {
+                    errors.refuse(
+                        InfraCode::UnsupportedEnvironmentSource,
+                        location,
+                        "valueFrom requires exactly one supported source",
+                    );
+                    return None;
+                }
                 if let Some(key_ref) = &reference.config_map_key_ref {
                     EnvSource::ConfigMapKey {
                         name: key_ref.name.clone().unwrap_or_default(),
@@ -523,11 +537,7 @@ impl EnvVar {
                 } else if reference.resource_field_ref.is_some() {
                     EnvSource::ResourceFieldRef
                 } else {
-                    // A `valueFrom` with no recognised branch: the kubelet would reject it, and
-                    // treating it as an empty literal would invent a value nobody declared.
-                    EnvSource::Literal {
-                        value: raw.value.clone().unwrap_or_default(),
-                    }
+                    unreachable!("the source count was checked before selecting a branch")
                 }
             }
         };

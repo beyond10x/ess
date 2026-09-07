@@ -205,7 +205,7 @@ fn an_edited_document_with_a_dangling_claim_reports_both_defects_in_one_run() {
 #[test]
 fn a_foreign_format_is_refused_before_anything_else_is_believed() {
     let mut document = persisted();
-    document["format"] = serde_json::json!("infra-ir/2");
+    document["format"] = serde_json::json!("infra-ir/99");
     let errors = infra_compiler::read_document(&document).expect_err("a foreign format");
     assert!(
         errors.contains(InfraCode::IrUnsupportedFormat),

@@ -84,6 +84,33 @@ pub struct WorkloadFacts {
 /// ownership that decides `observed_pods` is the same walk `properties_with` reads.
 #[must_use]
 pub fn workload_facts(ir: &InfraIr, graph: &InfraGraph) -> BTreeMap<String, WorkloadFacts> {
+    if let Some(coverage) = &ir.model().coverage {
+        return ir
+            .model()
+            .workloads
+            .keys()
+            .map(|key| {
+                (
+                    key.clone(),
+                    WorkloadFacts {
+                        workload: key.clone(),
+                        store: FactStore::default(),
+                        withheld: WORKLOAD_FACTS
+                            .iter()
+                            .map(|path| {
+                                (
+                                    (*path).to_owned(),
+                                    UnknownReason::CollectionLimited {
+                                        coverage: coverage.clone(),
+                                    },
+                                )
+                            })
+                            .collect(),
+                    },
+                )
+            })
+            .collect();
+    }
     let ownership_blind = namespaces_with_underived_pods(ir, graph);
     properties_with(ir, graph)
         .into_iter()

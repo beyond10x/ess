@@ -63,7 +63,7 @@ pub fn read_document(value: &serde_json::Value) -> Result<InfraIr, ValidationErr
     let mut errors = ValidationErrors::new();
 
     let declared = value.get("format").and_then(serde_json::Value::as_str);
-    if declared != Some(IR_FORMAT) {
+    if declared != Some(IR_FORMAT) && declared != Some("infra-ir/2") {
         errors.refuse(
             InfraCode::IrUnsupportedFormat,
             "format",
@@ -82,6 +82,15 @@ pub fn read_document(value: &serde_json::Value) -> Result<InfraIr, ValidationErr
             return Err(errors);
         }
     };
+
+    if (declared == Some("infra-ir/2")) != document.model.get("coverage").is_some() {
+        errors.refuse(
+            InfraCode::IrMalformed,
+            "model.coverage",
+            "IR/2 requires coverage; IR/1 forbids it",
+        );
+        return Err(errors);
+    }
 
     // The digest first, over the model exactly as persisted: compact key-sorted re-serialization
     // of the parsed value reproduces the canonical bytes the writer hashed.
@@ -112,13 +121,134 @@ pub fn read_document(value: &serde_json::Value) -> Result<InfraIr, ValidationErr
             return Err(errors);
         }
     };
+    if declared == Some("infra-ir/2")
+        && !model.coverage.as_ref().is_some_and(|raw| {
+            infra_domain::coverage::CollectionCoverage::try_from(raw.clone()).is_ok()
+        })
+    {
+        errors.refuse(
+            InfraCode::IrMalformed,
+            "model.coverage",
+            "IR/2 requires valid collection coverage",
+        );
+        return Err(errors);
+    }
 
     let ir = model.into_ir(document.provenance, &mut errors);
+    validate_qualified_model(&ir, &mut errors);
     if errors.is_empty() {
         Ok(ir)
     } else {
         Err(errors)
     }
+}
+
+fn validate_qualified_model(ir: &InfraIr, errors: &mut ValidationErrors) {
+    let model = ir.model();
+    let Some(coverage) = &model.coverage else {
+        return;
+    };
+    let namespace = coverage.namespace();
+    let value = serde_json::to_value(model).expect("typed model serializes");
+    let mut valid = model.namespaces.len() == 1
+        && model.namespaces.get(namespace).is_some_and(|object| {
+            object.identity.name == namespace && object.identity.namespace.is_none()
+        });
+    for kind in [
+        "services",
+        "ingresses",
+        "config_maps",
+        "secrets",
+        "service_accounts",
+        "claims",
+        "pods",
+        "replica_sets",
+        "jobs",
+        "cron_jobs",
+        "pod_disruption_budgets",
+        "horizontal_pod_autoscalers",
+    ] {
+        let Some(objects) = value[kind].as_object() else {
+            valid = false;
+            continue;
+        };
+        valid &= objects
+            .iter()
+            .all(|(key, object)| qualified_key_matches(key, object, namespace));
+    }
+    valid &= model.workloads.iter().all(|(key, workload)| {
+        *key == format!(
+            "{namespace}/{}/{}",
+            workload.kind.as_str(),
+            workload.identity.name
+        ) && workload.identity.namespace.as_deref() == Some(namespace)
+    });
+    let nodes: std::collections::BTreeSet<&str> = model
+        .pods
+        .values()
+        .filter_map(|pod| match &pod.node {
+            Some(Reference::Resolved { key }) => Some(key.key()),
+            _ => None,
+        })
+        .collect();
+    valid &= model
+        .nodes
+        .keys()
+        .map(String::as_str)
+        .collect::<std::collections::BTreeSet<_>>()
+        == nodes;
+    valid &= model
+        .nodes
+        .iter()
+        .all(|(key, node)| *key == node.identity.name && node.identity.namespace.is_none());
+    valid &= model
+        .pods
+        .values()
+        .all(|pod| !matches!(pod.node, Some(Reference::Unresolved { .. })));
+    valid &= model
+        .config_maps
+        .values()
+        .all(|config| config.keys.is_empty())
+        && model.secrets.values().all(|secret| secret.keys.is_empty());
+    valid &= model.workloads.values().all(|workload| {
+        workload.containers.iter().all(|container| {
+            container.probes.liveness.is_none()
+                && container.probes.readiness.is_none()
+                && container.probes.startup.is_none()
+                && container
+                    .env
+                    .iter()
+                    .all(|env| !matches!(env.source, ResolvedEnvSource::Literal { .. }))
+        })
+    });
+    valid &= model.unresolved.iter().all(|reference| {
+        !matches!(
+            reference.target,
+            UnresolvedTarget::ConfigMapKey { .. } | UnresolvedTarget::SecretKey { .. }
+        )
+    });
+    if !valid {
+        errors.refuse(
+            InfraCode::IrMalformed,
+            "model.coverage",
+            "model contradicts its namespace topology scope or omitted content",
+        );
+    }
+}
+
+fn qualified_key_matches(key: &str, object: &serde_json::Value, namespace: &str) -> bool {
+    let Some(name) = object
+        .pointer("/identity/name")
+        .and_then(serde_json::Value::as_str)
+    else {
+        return false;
+    };
+    let expected = format!("{namespace}/{name}");
+    key == expected
+        && object
+            .pointer("/identity/namespace")
+            .and_then(serde_json::Value::as_str)
+            == Some(namespace)
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -157,6 +287,7 @@ struct ProvenanceMirror {
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
 struct ModelMirror {
+    coverage: Option<infra_domain::raw::RawCollectionCoverage>,
     namespaces: BTreeMap<String, NamespaceMirror>,
     nodes: BTreeMap<String, NodeMirror>,
     workloads: BTreeMap<String, WorkloadMirror>,
@@ -1251,6 +1382,9 @@ impl ModelMirror {
                 scout_version: provenance.scout_version,
             },
             model: InfraModel {
+                coverage: self
+                    .coverage
+                    .and_then(|raw| infra_domain::coverage::CollectionCoverage::try_from(raw).ok()),
                 namespaces,
                 nodes,
                 workloads,

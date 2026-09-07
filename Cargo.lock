@@ -423,6 +423,7 @@ name = "ess-kubernetes"
 version = "0.20.0"
 dependencies = [
  "clap",
+ "infra-domain",
  "serde",
  "serde_json",
  "sha2",

@@ -1,0 +1,41 @@
+{
+  "format": "infra-observation/2",
+  "context": "synthetic-context",
+  "scanned_at": "2026-09-07T00:00:00Z",
+  "scout_version": "synthetic",
+  "coverage": {"profile": "namespace_topology", "namespace": "app"},
+  "kinds": {
+    "namespaces": {"items": [{"metadata": {"name": "app", "uid": "ns-1"}}]},
+    "nodes": {"items": []},
+    "deployments": {"items": [{
+      "metadata": {"name": "web", "namespace": "app", "uid": "workload-1"},
+      "spec": {
+        "replicas": 2,
+        "selector": {"matchLabels": {"app": "web"}},
+        "template": {
+          "metadata": {"labels": {"app": "web"}},
+          "spec": {
+            "containers": [{"name": "web", "image": "web:1", "env": [
+              {"name": "MODE", "valueFrom": {"configMapKeyRef": {"name": "settings", "key": "mode"}}},
+              {"name": "TOKEN", "valueFrom": {"secretKeyRef": {"name": "creds", "key": "token"}}}
+            ]}]
+          }
+        }
+      }
+    }]},
+    "statefulsets": {"items": []},
+    "daemonsets": {"items": []},
+    "replicasets": {"items": []},
+    "jobs": {"items": []},
+    "cronjobs": {"items": []},
+    "pods": {"items": []},
+    "services": {"items": [{"metadata": {"name": "web", "namespace": "app", "uid": "service-1"}, "spec": {"selector": {"app": "web"}, "ports": [{"port": 80}]}}]},
+    "ingresses": {"items": []},
+    "configmaps": {"items": [{"metadata": {"name": "settings", "namespace": "app", "uid": "config-1"}}]},
+    "secrets": {"items": [{"metadata": {"name": "creds", "namespace": "app", "uid": "secret-1"}}]},
+    "serviceaccounts": {"items": [{"metadata": {"name": "default", "namespace": "app", "uid": "account-1"}}]},
+    "persistentvolumeclaims": {"items": []},
+    "poddisruptionbudgets": {"items": []},
+    "horizontalpodautoscalers": {"items": []}
+  }
+}

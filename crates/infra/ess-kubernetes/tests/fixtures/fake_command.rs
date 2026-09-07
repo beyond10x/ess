@@ -7,6 +7,12 @@ fn main() {
     let executable = std::env::args().next().expect("executable name");
     let args: Vec<String> = std::env::args().skip(1).collect();
     let args: Vec<&str> = args.iter().map(String::as_str).collect();
+    if Path::new(&executable).file_stem().expect("command name") != "date" {
+        if let Some(directory) = std::env::var_os("ESS_TEST_TOPOLOGY_DIRECTORY") {
+            topology(&args, Path::new(&directory));
+            return;
+        }
+    }
     let response = if Path::new(&executable).file_stem().expect("command name") == "date" {
         assert_eq!(args, ["-u", "+%Y-%m-%dT%H:%M:%SZ"]);
         "2026-09-05T00:00:00Z\n".to_owned()
@@ -101,4 +107,21 @@ fn main() {
     std::io::stdout()
         .write_all(response.as_bytes())
         .expect("fixture response");
+}
+
+fn topology(args: &[&str], directory: &Path) {
+    let kind = match args {
+        ["--context", "synthetic-context", "get", "namespace", "app", "-o", "json"] => "namespace",
+        ["--context", "synthetic-context", "get", "node", "node-a", "-o", "json"] => "node",
+        ["--context", "synthetic-context", "get", kind, "--namespace", "app", "-o", "json"] => kind,
+        _ => panic!("unexpected scope or authority"),
+    };
+    let mut log = std::fs::OpenOptions::new().create(true).append(true).open(directory.join("calls")).expect("call log");
+    writeln!(log, "{}", args.join(" ")).expect("record exact request");
+    if std::env::var("ESS_TEST_TOPOLOGY_FAILURE").ok().as_deref() == Some(kind) {
+        eprintln!("SYNTHETIC-TOPOLOGY-PRIVATE-PAYLOAD");
+        std::process::exit(17);
+    }
+    let bytes = std::fs::read(directory.join(format!("{kind}.json"))).expect("synthetic response");
+    std::io::stdout().write_all(&bytes).expect("fixture response");
 }

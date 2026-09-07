@@ -60,6 +60,8 @@ pub const DRIFT_FORMAT: &str = "infra-drift/1";
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 #[serde(tag = "refusal", rename_all = "snake_case")]
 pub enum DriftRefusal {
+    /// Collection scope/profile differs; omitted and absent membership cannot be compared.
+    DifferentCoverage,
     /// The two scans targeted different kubeconfig contexts.
     DifferentContext {
         /// The context the `from` snapshot was scanned in.
@@ -72,6 +74,7 @@ pub enum DriftRefusal {
 impl fmt::Display for DriftRefusal {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
+            Self::DifferentCoverage => f.write_str("the snapshots have different collection scope or coverage; drift comparison is refused"),
             Self::DifferentContext { from, to } => write!(
                 f,
                 "the two snapshots were scanned in different contexts, `{from}` and `{to}`: \
@@ -335,11 +338,18 @@ pub enum InfraChange {
         /// What it named.
         target: String,
     },
+    /// Qualified model content changed outside the comparator's detailed field rules.
+    /// The report's side digests identify the exact differing models; omitted payloads do not
+    /// participate in either digest. Emitted only in drift/2.
+    TopologyDigestChanged,
 }
 
 impl fmt::Display for InfraChange {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
+            Self::TopologyDigestChanged => {
+                f.write_str("observed topology digest changed outside the detailed drift rules")
+            }
             Self::Added { kind, subject } => write!(f, "{kind} {subject} added"),
             Self::Removed { kind, subject } => write!(f, "{kind} {subject} removed"),
             Self::ReplicasChanged { subject, from, to } => write!(
@@ -423,6 +433,9 @@ pub struct DriftSideRef {
 /// What moved between two snapshots of one cluster.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct InfraDrift {
+    /// Compared scope/profile; omitted content is unobserved even with no reported changes.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub coverage: Option<infra_domain::coverage::CollectionCoverage>,
     /// The format claim, `infra-drift/1`.
     pub format: &'static str,
     /// The snapshot compared from.
@@ -445,7 +458,8 @@ impl InfraDrift {
         rendered
     }
 
-    /// `true` when the two snapshots are semantically identical.
+    /// `true` when no change was found in the fields this comparator observes.
+    /// This does not establish equality of content omitted by `coverage`.
     #[must_use]
     pub fn is_empty(&self) -> bool {
         self.changes.is_empty()
@@ -458,6 +472,9 @@ impl InfraDrift {
 ///
 /// [`DriftRefusal::DifferentContext`] when the two scans targeted different clusters.
 pub fn drift(from: &InfraIr, to: &InfraIr) -> Result<InfraDrift, DriftRefusal> {
+    if from.model().coverage != to.model().coverage {
+        return Err(DriftRefusal::DifferentCoverage);
+    }
     if from.provenance.context != to.provenance.context {
         return Err(DriftRefusal::DifferentContext {
             from: from.provenance.context.clone(),
@@ -472,12 +489,14 @@ pub fn drift(from: &InfraIr, to: &InfraIr) -> Result<InfraDrift, DriftRefusal> {
         &keys(&to.model().namespaces),
         &mut changes,
     );
-    membership(
-        MemberKind::Node,
-        &keys(&from.model().nodes),
-        &keys(&to.model().nodes),
-        &mut changes,
-    );
+    if from.model().coverage.is_none() {
+        membership(
+            MemberKind::Node,
+            &keys(&from.model().nodes),
+            &keys(&to.model().nodes),
+            &mut changes,
+        );
+    }
     membership(
         MemberKind::Claim,
         &keys(&from.model().claims),
@@ -492,10 +511,19 @@ pub fn drift(from: &InfraIr, to: &InfraIr) -> Result<InfraDrift, DriftRefusal> {
     claims(from, to, &mut changes);
     references(from, to, &mut changes);
 
+    if from.model().coverage.is_some() && changes.is_empty() && from.digest() != to.digest() {
+        changes.push(InfraChange::TopologyDigestChanged);
+    }
+
     changes.sort();
     changes.dedup();
     Ok(InfraDrift {
-        format: DRIFT_FORMAT,
+        format: if from.model().coverage.is_some() {
+            "infra-drift/2"
+        } else {
+            DRIFT_FORMAT
+        },
+        coverage: from.model().coverage.clone(),
         from: DriftSideRef {
             context: from.provenance.context.clone(),
             digest: from.digest(),

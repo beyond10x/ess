@@ -18,6 +18,9 @@ enum Command {
         /// Kubeconfig context; the current context when omitted.
         #[arg(long)]
         context: Option<String>,
+        /// Collect only this namespace's safe topology and its referenced nodes (observation/2).
+        #[arg(long, requires = "context")]
+        namespace: Option<String>,
         /// Destination for the sanitized observation.
         #[arg(long)]
         out: std::path::PathBuf,
@@ -27,7 +30,18 @@ enum Command {
 fn main() -> std::process::ExitCode {
     let result = match Cli::parse().command {
         Command::Contexts => ess_kubernetes::contexts(),
-        Command::Scan { context, out } => ess_kubernetes::scan(context.as_deref(), &out),
+        Command::Scan {
+            context,
+            namespace,
+            out,
+        } => match namespace {
+            Some(namespace) => ess_kubernetes::scan_namespace(
+                context.as_deref().expect("clap requires context"),
+                &namespace,
+                &out,
+            ),
+            None => ess_kubernetes::scan(context.as_deref(), &out),
+        },
     };
     match result {
         Ok(()) => std::process::ExitCode::SUCCESS,
