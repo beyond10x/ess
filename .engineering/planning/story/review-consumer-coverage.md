@@ -13,6 +13,8 @@ relations:
 - depends_on: story:review-semantic-diff-coverage
 scope:
 - confidence: inferred
+  path: .github/workflows/ci.yml
+- confidence: inferred
   path: Cargo.lock
 - confidence: cited
   path: Taskfile.yml
@@ -22,7 +24,7 @@ scope:
   path: crates/verify/ess-diff/tests/consumer_coverage_f01.rs
 - confidence: inferred
   path: docs/design/review-consumer-coverage.md
-revision: 14
+revision: 16
 ---
 ## Finding and source
 
@@ -148,3 +150,18 @@ mandatory witnesses and the production causal mutations, then returns for indepe
 source adversary review and the entire repository gate plus site-build. Root owns shared
 Taskfile/design/planning edits, accepted eligibility, Git, integration and publication.
 Stage 1 alone does not satisfy the acceptance statement or move this story to implemented.
+
+## Enforcement workflow profile reservation
+
+Coordinator source inspection on 2026-09-07 found that
+crates/edge/ess-xtask/src/consumer_coverage/mod.rs::validate_build admits the selected
+Rust/Cargo 1.98.1 x86_64 Linux debug profile, while .github/workflows/ci.yml:44
+currently provisions the moving stable toolchain before task check at line 67.
+Root therefore adds the exact .github/workflows/ci.yml write reservation as inferred:
+its existing Rust setup step must provision 1.98.1 explicitly. This is an integration
+requirement derived from the accepted profile, not a change to the coverage policy.
+The existing action identity, components, targets, permissions, triggers and gate
+command remain intact. Root owns the edit; the implementor's source reservation is
+unchanged. The separately named Taskfile consumer-check lane will declare the selected
+build settings and all existing gate lanes retain their relative order. No downstream
+publication, deployment or release authority is added.

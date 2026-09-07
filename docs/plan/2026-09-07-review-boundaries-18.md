@@ -379,3 +379,75 @@ ess-review-consumer-mutations-wave18. It will have its own default target and a 
 measured allowance before execution. The exact optional RawSpecFile field and reusable-row
 Struct invariant projection mutations are selected; no copied-source producer starts before
 this bounded provisioning handoff. Full independent source attacks so far: zero.
+
+## Stage 2 launch and completed-build capacity
+
+Root checkpoint metadata commit 3bf7268276ea2cdd5d9c8ddef3338d2e7cbcf955 was merged
+into the unit as b817e44e30d4aa1150d4e62a31c5878a023ee771. The only merge conflict
+was the shared binding; root verified that its resolved bytes preserve the complete
+Stage 1 policy as a prefix and add only the accepted checkpoint. Both commits have the
+verified bot author and committer. The Stage 2 source launch now contains its independent
+follow-up artifact and scope. Its actual binding hash is
+8e0602489e273b9638a65b8efbe28cae681ac71bbaf02d7f1687ae733bceda8a.
+
+The same implementor acquired its new lease and resumed Stage 2. Before its new ess-diff
+owner edits, the affected package baseline returned zero: 161 passed, zero failed/ignored,
+27.130 seconds, with nine original native test executables retained. This does not replace
+Stage 1's original 37-case or final 71-case xtask baseline evidence.
+
+To retain the free-space floor for forthcoming mutation builds, root briefly held new
+unit producers while the implementor continued source preparation. The coordinator's
+exact target/debug from completed published waves was archived without exclusions, then
+a separate reader verified all 5,955 entries and 4,288,705,893 regular bytes, including
+25 hardlink members. The 1,031,075,811-byte archive SHA256 is
+b6ebc83033621f0456d00ce0bc6a406c5993f8eb3561139a6a9c58ed738c6a8f. Archive and
+independent reader exited zero in 48.666 and 46.433 seconds. Minimum archive-write free
+space was 9,202,143,232 bytes, above the 8 GiB floor.
+
+After a fresh complete native/source census, unchanged coordinator Git proof and quiescence
+checks, exact build-output retirement returned zero in 10.188 seconds. Coordinator
+ target/debug is absent; free space afterward was 13,292,109,824 bytes. Every executable
+payload remains in the verified archive under
+~/.cache/ess-review/2026-09-06-resume/coordinator-debug-wave18-retirement, alongside full
+source manifests, archive/native readbacks, direct results and deletion intent. No managed
+worktree, unit build output, Stage 1 scratch/TMP or toolchain was removed. The implementor's
+producer hold was released under the unchanged resource allowance. Future coordinator
+builds must create new debug output; an old target/debug path is no longer executable evidence.
+
+## Stage 2 mechanisms and workflow profile
+
+The first ten accounting/parser cases failed against placeholders (direct 101). The next
+run passed ten and failed one because an initial implementation compared the live pair count
+with the frozen initial partition, preventing a new obligation from gaining actual behavior
+coverage. Its correction keeps unknown eligibility fixed while allowing new supported/refused
+cells. All eleven cases then passed, direct zero. These are controlled mechanism probes;
+production case orchestration and both causal mutations remain pending.
+
+The five reserved F01 owner cases now compile and pass, direct zero, with no ignored or
+filtered cases. The first compilation's ambiguous collect() is retained as a setup failure.
+Root compared the complete source with the original candidate: only an explicit Vec<_>
+annotation changed; every typed assertion remains intact. Root independently read all five
+original lane stdout/stderr streams and direct statuses, compared their complete before/after
+source maps and verified all eight retained native copies. Readback records in preparation:
+root-stage2-first-mechanisms-readback.json, SHA256
+e0965a2d23f850a64db4557b32b93b1ebac015fd0ac369e13a7c084361f2c9a7;
+root-stage2-first-native-readback.json, SHA256
+157ae7a73488effedd43cade721b2491193abcbf839dba9c87f370c144ac1203.
+The unit source is still in progress; this is not its final package or source-review result.
+
+Root reserved .github/workflows/ci.yml through AEP before changing its existing Rust setup
+to provision the accepted 1.98.1 profile. Story revision 16 has six exact reservations.
+The existing action, permissions, triggers, components, targets and task check invocation
+are retained. AEP validates all 206 artifacts with the same 43 historical advisories.
+The new Taskfile consumer-check lane follows support-check; root compared every prior task
+body byte-for-byte and verified their unchanged relative order.
+
+A readiness probe exposed go-task 3.52.0 environment precedence: all twelve deliberately
+invalid inherited values overrode task-level env defaults despite a successful child exit.
+The corrected lane uses explicit env command assignments. The same controlled inherited
+values then produced all twelve exact expected values, direct zero. Both original probes
+and task dry-run output remain in preparation/task-profile-readiness and its -2 successor.
+Final Taskfile SHA256 is 864abbe6193ef6aa5b1a34df887c864c290901116c0df69c16dfb3b918604349.
+Root shared changes will enter the unit at its explicit source hold before final producer
+verification. The wave18 integration runner is prepared only, not launched; it will retain
+ten declared check lanes plus site-build and planning validation, each with its direct exit.

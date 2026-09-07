@@ -1,8 +1,8 @@
 # Consumer coverage for model extensions
 
 Status: accepted implementation policy for story:review-consumer-coverage, 2026-09-07.
-The coordinator selects its finite extraction stage under the recorded standing implementation
-approval. No baseline eligibility has been accepted, and no completion or release is claimed.
+The coordinator has accepted the finite Stage 1 eligibility checkpoint and selected Stage 2
+enforcement under the recorded standing implementation approval. Completion remains pending.
 The complete reviewed v3 policy below is unchanged; its historical remaining-selection language
 is resolved only by the explicit current assignment at the end of this document.
 
@@ -356,3 +356,18 @@ remains broken, with its concrete repair separately owned by the existing fuzz s
 Stage 2 now implements enforcement, actual exact-case execution and the required same-source
 production mutations. Source review by the independent adversary and all repository check
 lanes plus site-build still precede implementation completion and publication.
+
+## Enforcement workflow profile
+
+`task consumer-check` declares the reviewed Rust 1.98.1 profile, two build jobs, offline Cargo,
+empty Rust wrappers, disabled incremental compilation and debug builds without debug information.
+The existing CI Rust setup step provisions 1.98.1 before the offline repository gate. Local
+callers provision the same version beforehand; the lane selects it through `RUSTUP_TOOLCHAIN`
+without choosing a private home, temporary directory or target directory. A directly selected
+compiler still must satisfy the checker’s measured identity and source/profile checks.
+
+The separately named lane follows `support-check`; every existing lane retains its relative
+order. Each invocation creates a fresh retained result directory under `target/consumer-coverage`
+and prints that path. The explicit `--output` option also requires a fresh directory. Repeated
+checks preserve earlier results. A future toolchain or target change requires a reviewed profile
+migration; a moving CI default cannot silently transfer the initial unknown eligibility.
