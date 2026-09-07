@@ -2,7 +2,7 @@
 format: aep.planning-md/1
 id: story:review-glossary-boundaries
 kind: story
-status: draft
+status: active
 title: Disambiguate ESS logical, interface and delivery concepts
 tags:
 - P2
@@ -19,7 +19,7 @@ scope:
   path: website/docs/guides/record-realization.md
 - confidence: cited
   path: website/docs/guides/write-a-specification.md
-revision: 11
+revision: 14
 ---
 ## Finding and source
 
@@ -109,3 +109,28 @@ scope above so the correction is visible. This does not expand into a new model 
 Binding acceptance and wave selection remain pending. The preferred-label candidate needs its
 public-page reservation and exact delivery checks updated to include all three public pages;
 no source implementation or executed tests are claimed by this preparation.
+
+
+## Accepted terminology and interface binding — wave 13
+
+Root accepts `docs/design/review-concept-boundaries.md` under the standing remediation approval.
+The retained candidate v2 is SHA256
+`c104139cc76790960c049a5e889f24d1981464aaabb7c170eca4c77877a5f1b5`; acceptance changes its
+status/source references and makes its existing-contract documentation choices binding.
+The fresh published base is `3464ea639258be53355f4f738c766efad2b6a3ba`, whose relevant code
+and public source bytes match the independently inspected `dbe78c5` subject.
+
+Select this story alone with the same four reservations, including all three named public pages.
+Semantic reach and CLI grammar remain current authored/compiled model contracts. Physical
+invocation, attachment, support and entrypoint prerequisites remain realization descriptions;
+implementation identity and model identity have their documented distinct inputs. Multiple
+physical entrypoint records do not establish simultaneous semantic CLI/HTTP reach or synthesis.
+The glossary documents current owners and explicit supported limitations, with no new model,
+persisted field, execution behavior or additive multiple-interface capability selected.
+
+The implementor returns exact term/example-to-owner citations and confirms every inferred Scope
+line. An independent document adversary checks all three changed pages against the existing
+owners and complete F12 acceptance. Because this is explanatory prose, meaningful source review
+and link/build checks apply; no phrase-matching test or fabricated red case is required. The
+coordinator still runs the entire declared integration gate and exact public delivery before
+recording completion. Earlier pending-selection statements above describe preparation history.
