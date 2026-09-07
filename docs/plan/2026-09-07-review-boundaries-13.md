@@ -151,3 +151,136 @@ The previously inferred binding reservation is now cited: the accepted binding e
 opening commit. No review findings require outcomes. Root's changelog and this execution record
 accompany the immutable review addition before integration. The subsequent full integration
 gate must bind the exact integrated commit and the three reviewed public source hashes.
+
+The integrated commit is `ecb7efc22ad9b19b85ef4debd8143491d6a66ef3`. Its complete first
+gate attempt finished at 2026-09-07T03:13:52Z with ten direct zero statuses and unchanged
+tracked source. The test lane executed 2,093 passing cases, zero failures and zero ignored
+cases across 189 Rust summaries, in 331.025796699 seconds. No gate lane skipped itself.
+The site lane additionally reported 21 browser-boundary claims and 28 deterministic lab steps
+over 64 rows. These are the source check's printed counts, separate from workspace tests.
+
+| Gate lane | Direct exit | Seconds |
+|---|---:|---:|
+| fmt-check | 0 | 1.603 |
+| clippy | 0 | 43.143 |
+| test | 0 | 331.026 |
+| doc-check | 0 | 17.417 |
+| example-check | 0 | 10.511 |
+| projection-check | 0 | 9.710 |
+| release-check | 0 | 0.101 |
+| action-check | 0 | 0.101 |
+| site-build | 0 | 15.318 |
+| planning | 0 | 23.223 |
+
+Raw evidence is under `target/review-boundaries-13/gate-ecb7efc22ad9-attempt1`.
+The final receipt is SHA256 `49e1579d54cd6afb39a52a65821bc20cccf3a8cf4ad876a9c61830614086d9fd`;
+lane results are `41196d18385f213a22f1d4feca25e5e1c6f7b0d24a2080e90112a9af2c65a88e`, and
+the full test log is `0672624ac305c405718c3128ba79db606dd12a6e7aa46131ffc254fd9ef03419`.
+All 378 frozen toolchain manifest entries were verified around every lane. Free space was
+13,665,558,528 bytes before the first lane and 12,325,797,888 after planning; the floor held.
+The planning output equals the previously relayed validation byte-for-byte, including the
+known advisory that treats valid empty findings blocks as missing; its direct status was zero.
+
+Source publication through the exact clean Atlas authority exited zero at 03:14:31Z. Fresh
+remote readback confirms `main` is exactly `ecb7efc`; all four introduced direct commits have
+the required bot author and committer. The prior remote was `3464ea6`. The push receipt and
+raw log remain under `target/review-boundaries-13/delivery`. CI `34078983021`, documentation
+validation `34078983036` and source bundle `34078983078` were observed running at that exact
+commit. Public delivery and terminal story evidence are still pending at this checkpoint.
+
+## Public delivery and completed story
+
+All three exact source runs completed successfully. Under the standing publication approval,
+root dispatched Atlas reconciliation once, at 03:25:09Z, after checking the latest runs and
+finding no active publication. Run `34079580209` completed successfully at the unchanged
+Atlas authority `d10b7484d64c28830774c9dae0ec531fcc47acb2`, with both actor fields equal to
+`b10x-bot[bot]`. Artifact `10003271836` is 32,844,062 bytes and SHA256
+`d81a24f8f10523c586df4bf1cbdd2e905ed13ce44c62fc5483c461c849ad01da`, matching GitHub's digest.
+Root inspected all 1,714 ZIP entries before safe extraction into the assigned Website support
+tree. The source-set SHA256 is
+`08d8cb4d6250b7b8917c0953949841e1e073156adca4329713ffb0d1525129a0`. It names exact ESS
+`ecb7efc`, AEP `658cf76e6371b1628f6de69548e724b52803f5c2`, Website runtime
+`fc4571534765c098ed861bc326da4d3da0d1df63`, and the same Atlas control commit.
+
+The local immutable-artifact verifier exited zero in 0.464609126 seconds, reporting 357
+routes, 1,332 files and layout-v2 deployment agreement. The full Website gate exited zero in
+140.969673426 seconds: 99 passing tests, zero failed, skipped, cancelled or todo cases.
+Artifact inventories remained identical around both lanes, with SHA256
+`47512887c9a98e387b431458466af70318f4715952e915fdf4db50feb412db0c`.
+The Website complete receipt is
+`abf3e90e01f673addb22b7283e6deb0aa18a62205f23190360f7cb17d5bf7ade` and its gate log is
+`78ab3c00971bfc7c053a06885a834875905b3155382a6501b8a6711520cfb723`.
+
+At 03:32:13Z, both provenance endpoints and each changed public page returned HTTP 200 with
+bytes identical to the artifact. The complete response bodies, headers, statuses and hashes
+remain under coordinator `target/review-boundaries-13/delivery/live-34079580209`.
+
+| Live route | SHA256 |
+|---|---|
+| `/PROVENANCE.json` and `/.well-known/b10x-docs.json` | `3826502121a70a4023de2558a556b19c962cf5800a230dcd4d03acdba049f1ff` |
+| `/docs/ess/concepts/ess/index.html` | `148792844aa4c9390912b953c1cb58c8509bb27030d74f3fcc3722d761385d57` |
+| `/docs/ess/guides/write-a-specification/index.html` | `dcdbc2eb8c911ebb4ff6ef0e41d189b5ccbaf103793154b1e0432bf761c7ed4a` |
+| `/docs/ess/guides/record-realization/index.html` | `c5a580bc2cd47e558a96679a26819277cb0bc25dae2f3b74940247a510a26182` |
+
+Final Atlas `docs verify-pages` exited zero at 03:34:08Z in 155.095452445 seconds, reporting
+37 repository states, 26 Pages repositories and 52 delivery routes with one Website commit.
+Its log SHA256 is `a6a26e4955634ed5c582a6b50aef3dc2d6a9e2611ff20acfe7ad31b7b5812106`.
+The full Atlas fence separately exited one in 173.366383333 seconds with the same three
+baseline red lanes as wave 12: AgentIDE's v4 manifest under the old collector, the primary
+Website checkout's old Docs System pin, and Widgets' missing `Serves` section. All 149 Atlas
+Rust tests passed. Source stayed clean. The whole-fence log is
+`54a912d8f6a308d51a81e5d2fe033d1f3616adf51b058f9ef25231c8b8d9ee08`; no organization-wide
+convergence is claimed from the green glossary delivery.
+
+Root rewrote the story Scope from the implementor's confirmation table, retained the earlier
+incomplete/inferred scope as history, recorded the observed test/publication evidence and moved
+`story:review-glossary-boundaries` to `implemented` at revision 17 through AEP. Validation exited
+zero; its entire output equals the previously relayed output byte-for-byte. The epic now has
+21 implemented stories and 10 drafts. The separate executor-recovery implementation obligation
+remains open; neither its completed design story nor this glossary wave fulfills it.
+
+The completion notifications expose no isolated per-agent token, tool-use or total wall-time
+metrics for the resumed threads. Those fields remain unavailable. The reported command timings
+and executed-case counts above are measured; they are not estimates of aggregate agent cost.
+
+## Retention and retirement
+
+Root retained complete unit and Website payloads outside the managed trees, then independently
+verified archive members, bytes and native inventories. Immediately before retirement it checked
+the archives and source inventories again and found no owned running process. The unit archive
+contains 328 entries and is 543,623 bytes, SHA256
+`01e50a14b3a6f836775a75f910cb8dbda145fecae0ab2831b36a11a0ce63ba58`. The Website archive
+contains 61,424 entries and is 446,659,170 bytes, SHA256
+`5eba3392f620c9fd7f2c497972bd1ad36fc839946ba808fd98dcb7e492186cba`.
+
+The first Website temporary-directory archive refused a leftover Chromium socket. Root retained
+its full native metadata, confirmed no matching owned process or kernel endpoint and observed
+connection refusal before unlinking that exact dead socket. A fresh complete archive of the
+remaining 554 entries is 1,150,114 bytes, SHA256
+`12e522b445f860a780631ec5ed4d0f46d991bc95ed005d5e0eaf7427d94cb47f`. Both attempts, the
+refusal and the explicit metadata disposition remain retained. This is not a payload archive
+claim for the socket. Records live under the external `glossary-unit-retirement` and
+`glossary-website-retirement` directories in the continuing session retention root.
+
+All eight exact owned raw roots were verified absent after bounded retirement. Both leases ended
+and both clean worktrees passed `worktree finish`. Root read every one of the 24 workspace GC
+assessments and selected only `ess-glossary-boundaries` and `ess-wave13-website-verification`.
+Exact-ID GC exited zero at 04:00:26Z, with fresh advertised remote recovery proof for both heads.
+Both managed paths are absent. Non-forced deletion removed the merged
+`impl/review-glossary-boundaries` branch. The lifecycle receipts remain under the Website
+retirement record's `lifecycle` directory; other eligible workspace trees were not selected.
+The continuing coordinator and Atlas authority retain their own gate and preparation records.
+
+Closing changes are limited to the glossary story, planning journal and this wave page. Public
+source bytes remain those of the fully gated and delivered `ecb7efc`. Closing checks reuse the
+continuing coordinator's frozen toolchain and owned short `ess-w13-gate-attempt1-tmp` root.
+Formatting, action-contract, site and diff checks all exited zero. The closing site check took
+14.349870800 seconds. Direct statuses and unchanged-source hashes remain under
+`target/review-boundaries-13/preparation/closing/checks`. The closing bot commit records these
+observed results and the completed lifecycle; implementation and public bytes are unchanged.
+
+Read-only preparation produced an independently reviewed public-support candidate and an
+authored-discovery candidate. Neither has been selected in this wave. The execution-recovery
+vocabulary candidate explicitly leaves authority and persistence contracts unmapped; it has
+not been validated and does not discharge the open implementation obligation. No follow-up
+story was created by these preparation passes.

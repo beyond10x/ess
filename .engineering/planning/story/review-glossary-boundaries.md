@@ -2,7 +2,7 @@
 format: aep.planning-md/1
 id: story:review-glossary-boundaries
 kind: story
-status: active
+status: implemented
 title: Disambiguate ESS logical, interface and delivery concepts
 tags:
 - P2
@@ -19,7 +19,7 @@ scope:
   path: website/docs/guides/record-realization.md
 - confidence: cited
   path: website/docs/guides/write-a-specification.md
-revision: 15
+revision: 17
 ---
 ## Finding and source
 
@@ -76,7 +76,7 @@ binding document; no model migration, new type, implemented glossary or next-wav
 is established by this scope refresh.
 
 
-## Scope
+## Preimplementation scope (retained)
 
 Derived 2026-09-07 by `aep-drive:story-scoper` 0.8.0 against ESS dbe78c5b15df478ec2cd4883c67d0012cdf90e17 — cited.
 
@@ -134,3 +134,35 @@ owners and complete F12 acceptance. Because this is explanatory prose, meaningfu
 and link/build checks apply; no phrase-matching test or fabricated red case is required. The
 coordinator still runs the entire declared integration gate and exact public delivery before
 recording completion. Earlier pending-selection statements above describe preparation history.
+
+
+## Scope
+
+Confirmed by the implementor at `c99776eb14173b467143525947cd0933b983b459`, with the complete source attack recorded as `review-result:glossary-source-pass1`. Root independently verified the returned source and input inventories before integration.
+
+- **Primary public reference:** `website/docs/concepts/ess.md` — cited; the implemented glossary names logical, interface and delivery owners and accounts for all original naming proposals and example families.
+- **Authoring explanation:** `website/docs/guides/write-a-specification.md` — cited; states all three semantic reaches, the model-owned CLI contract and its distinction from physical invocation.
+- **Realization explanation:** `website/docs/guides/record-realization.md` — cited; describes invocation, attachment and support choices separately from model reach/CLI layout and names the realization digest boundary.
+- **Binding:** `docs/design/review-concept-boundaries.md` — cited; the accepted file exists at opening `38cfefc`, SHA256 `271910e53562be0e018db7b39fa9d52f2aee7333201d6bf437f7793cd7a563cd`. It was read before implementation and remained unchanged. The earlier inferred absence describes the frozen scoping subject; its resolution is explicit here and in the implementor confirmation table.
+- **Read-only owners:** existing Rust model, compiler, composition, realization and deployment sources and all example fixtures — cited; none changed in this documentation unit.
+- **Boundaries:** existing contracts only, with one semantic reach per logical component and no combined CLI/HTTP synthesis implied by multiple physical entrypoint descriptions. No persisted type/format or execution behavior changed — cited.
+- **Confidence and collisions:** high, cited; the observed three-page diff and existing binding establish these exact four reservations. Earlier whole-website and incomplete three-file reservations remain above as corrected history.
+
+## Reviewed implementation
+
+The bot-authored unit `c99776eb14173b467143525947cd0933b983b459` was integrated as `ecb7efc22ad9b19b85ef4debd8143491d6a66ef3`. The independent document attack returned an empty findings block, with all 50 source inputs and 80 command receipts verified by root. Its exact report SHA256 is `035d6d1a4fcfe077dc9d03dd929be245e16358c36f4806583638d2c40198db59`.
+
+The implementor report is SHA256 `7a3d758cf5e47267ec0545e5ce3c5020c7f690e75945f1ea6df52ac958dd9dbb`. It confirms each inferred Scope line, all 13 original naming-proposal rows and the bounded CLI, HTTP, simultaneous-entrypoint, billing, Todo/Usage and Oracle examples. The unchanged Markdown-only output claim remains F16 under the existing `story:review-public-support-claims`; this glossary wave adds no follow-up story.
+
+
+## Completion evidence — wave 13
+
+The complete first integration attempt at `ecb7efc22ad9b19b85ef4debd8143491d6a66ef3` returned zero for all ten lanes: fmt-check, clippy, test, doc-check, example-check, projection-check, release-check, action-check, site-build and planning. The workspace test lane executed 2,093 passing cases, zero failures and zero ignored cases across 189 summaries in 331.025796699 seconds. Tracked bytes and the full frozen toolchain manifest remained unchanged. The final gate receipt is SHA256 `49e1579d54cd6afb39a52a65821bc20cccf3a8cf4ad876a9c61830614086d9fd`; the test log is `0672624ac305c405718c3128ba79db606dd12a6e7aa46131ffc254fd9ef03419`.
+
+The exact source commit is published on remote main. CI [34078983021](https://github.com/beyond10x/ess/actions/runs/34078983021), documentation validation 34078983036 and source bundle 34078983078 completed successfully for that commit. Atlas publication 34079580209 completed successfully under both bot actors at clean authority `d10b7484d64c28830774c9dae0ec531fcc47acb2`. Its artifact 10003271836 has archive SHA256 `d81a24f8f10523c586df4bf1cbdd2e905ed13ce44c62fc5483c461c849ad01da`; the immutable source-set SHA256 is `08d8cb4d6250b7b8917c0953949841e1e073156adca4329713ffb0d1525129a0` and names exact ESS `ecb7efc`, AEP `658cf76e6371b1628f6de69548e724b52803f5c2` and Website runtime `fc4571534765c098ed861bc326da4d3da0d1df63`.
+
+The independent local immutable-artifact check exited zero and reported 357 routes and 1,332 files. The Website gate exited zero in 140.969673426 seconds with 99 passing tests and zero failures, skipped or cancelled tests. Both provenance endpoints and all three changed public page responses returned HTTP 200 and matched the artifact byte-for-byte. Final Atlas `docs verify-pages` exited zero in 155.095452445 seconds, reporting 37 repository states, 26 Pages repositories and 52 delivery routes.
+
+The whole Atlas fence retains the same unrelated baseline failures as wave 12: AgentIDE's manifest under the old collector, the primary Website checkout's old Docs System pin, and Widgets' missing Serves section. Its 149 Rust tests passed. These are recorded separately; no organization-wide convergence claim is made. The exact glossary source, artifact, Website and live-delivery checks above passed.
+
+Complete gate/publication receipts remain under coordinator `target/review-boundaries-13`, and source review is committed in `review-result:glossary-source-pass1`. The whole unit scratch has been archived and independently read back: 328 native entries, 2,051,916 regular payload bytes, archive SHA256 `01e50a14b3a6f836775a75f910cb8dbda145fecae0ab2831b36a11a0ce63ba58`. Managed lifecycle cleanup is recorded in the wave page after final retention checks. No release, tag, installation or actual deployment execution was performed by this wave.
