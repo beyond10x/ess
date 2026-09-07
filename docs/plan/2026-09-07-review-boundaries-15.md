@@ -270,3 +270,41 @@ implements discovery. Its original source anchor and complete report remain unch
 validation returned zero for 197 artifacts and emitted 39 no-findings-block advisories, including
 this report despite its literal empty findings block. This records the CLI's output, not a claim
 that the retained block is absent. No additional story was created.
+
+## Integration preparation
+
+Final source pass 2 found no product defect. Its three new focused cases passed, then the combined
+browser runner executed 34 cases with no failures or ignored cases; formatting and strict package
+Clippy returned zero. Its first metadata fixture supplied a u64 maximum to an elapsed-u32 field;
+the retained admission failure was corrected before browser execution and is not a product finding.
+Root read the complete final report, all three added cases and the producer runner, verified 21
+sealed references, 72 producer references and ten source pins, and observed all 91 recorded
+producer/browser/harness PIDs absent. The inherited 46,352-byte test prefix remains identical.
+
+The report is retained verbatim as `review-result:browser-replay-source-pass2`, SHA256
+`80c2d1fe8a9cde725ac2a8adae97b9cb83a0c9da67142d4ad831a8ba4744fe5f`, with a no-op outcome.
+AEP returned zero for 199 artifacts and 41 no-findings-block advisories. Its exact source-pass
+ledger lists `carried: []`, `new: []`, `resolved: []`; the interrupted first report has no structured
+finding block, so this ledger does not establish a machine-recorded resolution of its null defect.
+The separate root reproduction, correction and fixed outcome establish what happened to that case.
+No third source pass was opened. Harness token/tool-use statistics are not exposed by these
+collaboration results; command durations and actual runner counts remain in the retained receipts.
+
+The clean unit commit is `1a416a607f84cfb531cb4ed2c7279a5ad189801a`, with verified bot author and
+committer. The coordinator records its review before merging. The full gate uses the coordinator's
+default target and the prepared eleven-lane runner, SHA256
+`4d7c0c67d3ee8a2fa10d3db11599e3d14c294afb310194ee22d07fbc6bf5ed68`, against the exact clean
+integrated commit and final source review. Its newly assigned temporary root is
+`/home/timo/.cache/ess-w15-gate-attempt1-tmp`; gate scratch is
+`target/review-boundaries-15/gate-<integrated-head-prefix>-attempt1` with five private XDG paths.
+The retained frozen Rust/Firefox payloads, private coordinator Cargo/Go caches and 8 GiB free-space
+floor apply. All eleven lanes run fresh. No public Website allowlist file changes in this unit;
+site-build still runs, while Website source-lock/render publication is not triggered by internal
+planning/design records or generated replay README wording.
+
+Delivery trust binding pass 1 also returned no concrete finding. Its exact report is recorded as
+`review-result:delivery-trust-binding-pass1`, SHA256
+`627b6b1ddc88f8d7afcda3405ef44032196f900efc8a1ca95baaeadfd85a627d`, with a no-op outcome.
+Root read the full report and independently verified 70 input references and its output. The
+candidate remains unaccepted and unselected pending the next fresh replan; no additional source
+implementation or runtime result is claimed.
