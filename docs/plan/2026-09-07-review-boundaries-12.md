@@ -187,3 +187,22 @@ SHA256 `a86179e2100bb20dd6e7e66b4d2798d6053dbc5c0f6fc765c5eff5747e8c723f`.
 All AEP source, planning, other evidence and the managed tree remain intact. The archive operation
 took 417.207951954 seconds and measured 24,666,288,128 free bytes immediately afterward;
 the later dispatch measurement is the current resource observation.
+
+During the source attack, root retained the independent glossary scope report at
+`target/review-boundaries-12/preparation/glossary-scope/report.md`, SHA256
+`4e672add7a68de89fd7edb43ddfaa7f50eb679b0aa41efcf1a90f826a4d07d1d`, and verified all 34
+inputs, including 32 frozen `bab9206` Git blobs. The draft now reserves the existing concept
+page, specification-writing guide and inferred internal concept-boundaries design instead of
+all public documentation. Its source map distinguishes model-owned reach/CLI layout from
+realization entrypoint descriptions. No terminology binding or next-wave selection is accepted.
+
+The delivery preflight reconfirmed current Atlas `d10b7484` and Website runtime
+`fc4571534765c098ed861bc326da4d3da0d1df63`. Root provisioned managed support tree
+`ess-wave12-website-verification` at that runtime, with lease `ess-wave12-website-delivery`.
+Its `npm ci --ignore-scripts` setup exited zero in 18.982012567 seconds with all tracked
+source bytes unchanged. Setup logs, npm cache and setup temporary files belong to its
+`target/review-boundaries-12/preparation` directory. Website does not ignore `target`, so
+that exact untracked root is explicitly accounted; an initial all-files-clean assertion refused
+before npm ran and was corrected to tracked-source cleanliness plus that owned root allowance.
+No source file or ignore rule changed. The assigned publication-verification external temporary
+root remains uncreated until the prepared runner executes against the future published artifact.
