@@ -25,6 +25,13 @@
 
 ### Fixed
 
+- Release commands distinguish consistency checks, OCI content verification and
+  conformance qualification. New check-conformance and publish-conformance routes
+  require a complete nonempty passing report for the exact expected selection and
+  compiled context. The release action snapshots those inputs before checks, rejects
+  inconsistent context before effects, and uploads the checked report bytes. Action
+  adopters must update its required inputs and ESS revision together; producer origin,
+  signatures and artifact execution remain unverified.
 - Both generic replay players preserve typed inputs and ordered declarations, mark
   unavailable assignment, subject and view results as unknown, and cancel stale
   playback callbacks after reset, selection or pause. Expectations remain

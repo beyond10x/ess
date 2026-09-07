@@ -132,3 +132,245 @@ query; recovery remains draft and unselected. Their main.rs, command_surface.rs 
 page reservations overlap, so no parallel recovery unit is dispatched. Original review progress
 remains24 of31 complete; delivery is active, six originals remain draft, and recovery is separately
 draft. Root records all these facts before provisioning the one selected delivery worktree.
+
+## Dispatch observed
+
+The opening commit is d9c9905546b774c7520755289933c125a005b1d1. Root verified both bot identities;
+its eight files contain planning and design records, with runtime, tests, lock and public-site
+bytes unchanged from published 95ef. All four opening checks returned zero: formatting, action
+validation, site build and diff checking. The site build took 23.725663 seconds and exercised the
+actual Rust/WASM path with 21 claims and 28 steps. The frozen Rust inventory remained unchanged.
+
+Managed worktree ess-delivery-trust-contract was created at that opening commit on
+impl/review-delivery-trust-contract, with active lease ess-review-delivery-trust-implementation.
+Its path is /home/timo/.local/state/worktree/trees/b10x/ess/ess-delivery-trust-contract; its private
+build directory is target and its evidence scratch is target/review-boundaries-16/delivery-trust.
+The external scratch root is /home/timo/.cache/ess-w16-delivery-tmp. Provisioning, branch creation
+and lease start each returned zero; the complete 50-entry Firefox inventory was verified first.
+Cargo bookkeeping, Go caches and XDG directories are private to this unit; HOME is preserved.
+
+At 2026-09-07T11:22:38.030891Z, the filesystem had 69,044,490,240 free bytes. The combined unit target
+and external scratch allowance is 8,589,934,592 bytes, with the same free-space floor. The unit
+admits one producer with two Rust build jobs. The implementor received the complete charter,
+B01–B07 binding, T01–T18 matrix, all fourteen paths and the exact launch environment.
+
+Dispatch pins are retained in target/review-boundaries-16/preparation/dispatch-readback.json:
+brief SHA256 8c30dd0596d260ab2fe209cf9fd771cc62c16bd9a1702b9d3b534e2c47fe1fb0,
+binding SHA256 1dde14f26ea30ab59f26c97004c6e2c0c3c6b8447000c1229a3e43f243feb0c2,
+active revision 13 story SHA256 c1b26fc9a46f54074ecf60fb7e310c7ee7567f6c734595172577372492295543,
+and launch environment SHA256 6295a7eb145cf66061a485c58f7df9ff761e1b1b661431224cf94d8b405a6206.
+The delivery_trust_implementor agent owns this source unit. Root retains coordination and may
+prepare other candidates independently; no second implementation is selected.
+
+## Documentation delivery preparation
+
+The three public pages require the workspace's source-lock, Atlas snapshot and delivery gates.
+Prepare a managed Website tree at observed remote main 02271aa02022818a75a99ca3702c8cc00d135b1f,
+ID ess-wave16-website-delivery, path /home/timo/.local/state/worktree/trees/b10x/website/ess-wave16-website-delivery.
+Read its own AGENTS.md and keep source-lock refresh after ESS source publication. The Website
+work includes bot-authored commits for the deterministic lock and generated snapshot, followed
+by its gate and publication checks. No Website runtime or organization delivery-control promotion
+is selected. Atlas remains clean at exact remote d10b7484d64c28830774c9dae0ec531fcc47acb2.
+
+Website preparation/evidence belongs under .cache/ess-review-boundaries-16/preparation in that tree,
+with external TMP /home/timo/.cache/ess-w16-website-tmp and private npm cache under preparation.
+Retain all owned node_modules, .cache, build and generated outputs for the same evidence-first
+managed cleanup procedure. The assigned combined Website checkout/TMP allowance is 8 GiB and
+the free-space floor is 8 GiB; provisioning records actual free bytes. The owned lease is
+ess-review-wave16-website. Dependency installation may run while the ESS unit completes its tests;
+it does not refresh sources or publish anything.
+
+Provisioning and lease start returned zero; npm ci --ignore-scripts returned zero in 19.565552
+seconds. The first post-install cleanliness assertion found only the owned untracked target/
+scratch: Website does not ignore that Rust-style directory. Root moved its preparation into the
+existing ignored .cache path above, verified every retained file's bytes/mode/size and literal
+link, and removed only the empty owned target parents. No installation was repeated and no
+product file changed. The managed Website checkout is clean and remains detached at the exact
+observed commit until the source-lock work begins. Full receipts remain in the coordinator's
+target/review-boundaries-16/preparation/website-provision directory.
+
+## Delivery implementation handoff and source attack1
+
+The implementor returned quiescent at base d9c9905. Complete affected packages ran287→316
+(43 summaries, no failed/ignored cases), and18 conformance controls passed. Both actual old/new
+action/ESS directions, strict Clippy, formatting and action-check exited zero. Historical fixture
+failures and reused Go export counters remain qualified in its report; fresh per-producer exports
+are mandatory. Root read the full report and production/action/document changes, independently
+verified every producer seal and all68,499 native entries including49,537 regular-file hashes,
+and confirmed all14 source pins equal the final package run. Current /proc owned cwd/executable
+scan found no unit producer; the agent reports every session completed.
+
+Source attack1 uses the complete aep-drive:adversary0.8.0 charter through the collaboration adapter,
+with the inherited dirty implementation distinguished from the reviewer’s test-only delta. Its
+scratch is /home/timo/.local/state/worktree/trees/b10x/ess/ess-delivery-trust-contract/target/review-boundaries-16/adversary-pass-1,
+assigned TMP /home/timo/.cache/ess-w16-delivery-adversary-1-tmp.
+Counted roots are unit target, implementation TMP and review TMP; combined allowance12GiB,
+free floor8GiB, one producer/two Rust jobs, exact frozen tools and private launch environment.
+At 2026-09-07T12:26:58.185046+00:00, 6773899264 bytes allocated; 54931144704 bytes free.
+Brief SHA256 c0bbfcc23ee8c314b5e3e1976a58bebc4cc8a5df9ddde719bda15e07c800f042.
+Root receipt: target/review-boundaries-16/preparation/delivery-source-pass-1/dispatch-readback.json.
+No third source attack is authorized. Root owns result recording, correction routing and publication.
+
+## Source attack1 result and correction routing
+
+Recorded review-result:delivery-trust-source-pass1 verbatim (report SHA256
+34fbce6c32bf09aad900a5ff0f1691520f26ba340664cfd899df6ae71298c55b). Its two red cases
+measure one introduced defect in the new qualifier: a descriptor runtime release unit absent from
+build outputs passes both positive CLI routes and reaches generic checks plus four action evidence
+uploads before inherited final release validation refuses. No invalid bundle upload is claimed.
+The supplied descriptor/CLI/action route is ordinary and reachable; root confirmed B03.3/B06.1
+and the existing component/build/release owners. It returns to the same implementor for correction1.
+No case has failed after a correction, and no new story is created. The fixed outcome awaits
+an actual correction. Root’s separate Markdown table observation joins the same correction.
+
+Relevant suites ran49→52: delivery29passed2failed, deployment21passed,0ignored; Clippy/fmt0.
+The own delta is86 appended lines in delivery_trust.rs, all13 other source pins unchanged.
+Root read the full report, three added cases, runner/sealer and original focused failure, then
+independently verified all72,467 native entries/52,421 regular files/7,385,709,191 bytes, every
+handoff/producer seal,280 source copies, final14pins and absence of12 recorded PIDs. The runner’s
+literal-escape source header remains qualified; actual source rows/copies were independently read.
+No owned cwd/executable process remained. Full root receipt is
+target/review-boundaries-16/preparation/delivery-source-pass-1/final-root-readback.json.
+
+## Correction 1 dispatch
+
+The same implementor receives the full recorded source-pass1 report and all fourteen current
+source snapshots. Its filled brief is unit target/review-boundaries-16/delivery-fix1/brief.md,
+SHA256 eb4454a75677b8da738870f47262e2e761a2a7e4032f5de813d47c88a2038a81. The private edge qualifier must reject descriptor
+units lacking the existing required build kind before positive qualification. Root also routes
+the unchanged Markdown table row relocation. Both independent red cases and the snapshot
+control are preserved. No new story or broader contract is introduced.
+
+Assigned scratch is unit target/review-boundaries-16/delivery-fix1; external TMP is
+/home/timo/.cache/ess-w16-delivery-fix1-tmp. The 12 GiB allowance includes unit target and
+all three implementation/review/correction TMP roots; the free floor is 8 GiB. Root measured
+7,227,965,440 allocated and 72,546,304,000 free bytes at 12:59Z and completed the full frozen
+tool precheck before dispatch. The final package run must count actual execution; the new
+review tests bring the pre-correction inventory to 319. Root owns AEP and final review/gates.
+
+## Website base refresh during correction
+
+Website remote main advanced to487649f62e30eee02aaf07f8ea023ae495bec061. Root fetched
+and compared the exact six changed paths: the source lock, three snapshot JSON files and
+an unrelated completed release-documentation planning record/journal. Website runtime,
+AGENTS.md, scripts and dependency lock remain byte-identical, so the prepared npm installation
+is reusable. Both commit identities are the bot. The clean managed Website checkout advanced
+detached to that descendant with exit0; full diff and readback remain under
+preparation/website-provision/refresh-487649. ESS remote95ef and clean Atlasd10 remain current.
+
+Atlas verify-portal source-cache expects the normalized bundle layout with collection.json
+and tree children, not Website’s extracted trees directory. The retained-lock gate will omit
+that optional argument and use Website’s actual .cache/sources/{indexes,trees} paths, as the
+current Atlas owner specifies. Production source-set verification keeps its separate layout.
+
+## Correction 1 verification and recorded outcome
+
+The correction changes only the private qualifier,113 appended test lines and the formats
+table row. Root read the full correction and independently captured its Git no-index diff:
+3 files,137 insertions,2 deletions; patch SHA256
+de6962767524f3f11c15c3e9552487169b1b1e77b41372d30e96fcb56bb0aabc.
+All previous delivery test bytes remain an exact prefix. All fourteen current source pins
+match both sides of the complete package run. Root observed direct package exit0 in
+243.879246 seconds,43 summaries,323 passed,0 failed/ignored. Delivery ran35 cases;
+strict Clippy and both formatting checks returned zero.
+
+Root recorded fixed for review-result:delivery-trust-source-pass1 through AEP after this
+source/case verification, then validated the201-artifact store successfully. Original
+fixture compile/admission failures remain qualified in the correction report; the319
+intermediate package inventory was not an executed baseline. Final native evidence
+readback and the second source attack remain required before integration.
+
+## Final source attack 2 dispatch
+
+The correction handoff is fully read and independently verified:206 seal references,
+100,927 native entries,72,759 regular files and10,131,115,538 bytes;364 source copies
+and all fifteen recorded producer/observer/bootstrap PIDs absent. The first root reader
+omitted special filesystem nodes and refused at a retained test socket; corrected exact
+mode/size handling verified all21 special nodes without opening them. Full retained
+readback is preparation/delivery-fix1/final-root-readback.json, SHA256
+e11073803123ea463cef54ee72074b9e294fa08aa1cfd7ead20e01e72c207d18.
+
+A fresh aep-drive:adversary0.8.0 runs the second and final source attack through the
+collaboration adapter. Unit target/review-boundaries-16/adversary-pass-2 is its scratch;
+/home/timo/.cache/ess-w16-delivery-adversary-2-tmp is its owned TMP. All five target/TMP
+roots count toward12 GiB; free floor8 GiB. At13:26:32Z root measured9,975,328,768 allocated
+and39,141,732,352 free bytes. Full frozen-tool pre-bootstrap verification completed
+before dispatch. Current executed baseline is35 delivery and21 deployment,323 full
+packages. Brief SHA256 c76753d33fedb2a0e0431c93ab171cafc0aa748f4aa812862f2a6581613b0259.
+No third source attack is authorized. Root owns immutable review recording and all later
+integration/publication/cleanup. Exact dispatch facts are in preparation/delivery-source-pass-2.
+
+## Concurrent main changes before integration
+
+At 13:50Z, remote ESS main was bbbe0de65e01ad7dc22fd329bb5f73d70e648d1d,
+a descendant of the wave baseline 95ef5be70dbce966056d0484b66db7ed836fa406.
+Both new commits have exact bot author and committer. They add observed implementation
+bindings, opt-in realization v2, exclusive observation publication, and a Firefox startup
+readiness fix. Their independent planning task is task:verify-observed-bindings.
+The complete fetched diff is retained under preparation/main-refresh-bbbe0de, SHA256
+db37aeb1482490cf241f9d3489f37d56d4d81d0c4473f94462041f644a1d296f.
+
+Root's merge preview finds no delivery implementation or delivery-test overlap. The two
+reference pages merge cleanly. main.rs conflicts only at the enumerated command-leaf count:
+the common 52 grows by this unit's two commands and upstream's one binding command, so
+the combined expectation is 55 (coordinator inference from both declared additions).
+The planning journal contains disjoint artifact histories. Git's union preview preserves
+the common prefix and both exact CLI-produced event suffixes without rewriting an event;
+actual integration must still pass AEP validation. The final unit attack remains on its
+assigned source; root will gate the combined source and retain the upstream merge delta
+separately from the review's source pins. No new main publication is claimed here.
+
+## Source review 2 closure and integration
+
+The second source attack found no new defect: 38 delivery and 21 deployment cases
+passed, with strict Clippy and both formatting checks returning zero. The complete
+770-line report is recorded verbatim as review-result:delivery-trust-source-pass2,
+SHA256 caef11903152a9f3d7e52444b6fe3671ae5ae566f4f358e2290282d5092f3236.
+Its own delta is 299 appended test lines, three cases and two helpers; every handed
+assertion remains unchanged. The initial comment-only model fixture red and test-length
+lint refusal are retained and qualified as fixture issues, not product findings.
+
+Root independently read the entire report, test delta and runner/sealer changes, then
+verified 1,056 seal references, 109,515 native entries, 79,043 regular files and
+11,210,035,796 logical bytes, plus 476 exact source copies and all 19 producer/bootstrap/
+observer PIDs absent. The 31 special nodes were checked without opening them. Complete
+readback is preparation/delivery-source-pass-2/final-root-readback.json, SHA256
+2adad097304a567434ad28cf16fb8aefff6d893297bbd2a93bc64d3551f17cc6.
+The verification exited zero in 33.285352 seconds.
+
+AEP creation and validation exited zero. The validator emits 42 no-findings-block
+advisories, including its treatment of this report's explicit empty findings array;
+the complete unmodified output is retained in preparation/delivery-source-pass-2.
+The two source passes establish one finding then zero, with zero carried/new and one
+resolved. AEP's exact comparison follows:
+
+```json
+{
+  "artifact": "story:review-delivery-trust-contract",
+  "reviews": 11,
+  "from": "review-result:delivery-trust-source-pass1",
+  "from_reviewer": "unattributed",
+  "to": "review-result:delivery-trust-source-pass2",
+  "to_reviewer": "unattributed",
+  "carried": [],
+  "new": [],
+  "resolved": [
+    {
+      "file": "crates/edge/ess-cli/src/release_evidence.rs",
+      "line": 138,
+      "category": "contract-drift",
+      "severity": "blocker",
+      "verdict": "CONFIRMED",
+      "origin": "introduced",
+      "message": "The new conformance qualifier accepts a component runtime release unit absent from the supplied build, so both positive CLI routes succeed and the action performs generic checks and four evidence uploads before its later release verifier refuses."
+    }
+  ]
+}
+```
+
+The previously recorded fixed outcome remains the action taken on pass 1; pass 2 has
+no finding requiring an outcome. No third source attack ran. The unit's bot commit is
+70c2321d84a499f1b7b5a6ffa34e5db073a2d7a7, 13 files with 2,963 insertions and
+50 deletions. Both author and committer were verified, the unit is clean, and root
+fast-forwarded to that commit. All fourteen reviewed source pins match at integration.
+This is still local work pending the concurrent-main merge and complete gate.
