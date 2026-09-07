@@ -1,0 +1,22 @@
+domain: discovery.inputs
+
+types:
+  - name: discovery.inputs.ManifestFormat
+    kind: enum
+    variants: ["ess-inputs/1"]
+
+  - name: discovery.inputs.RelativeInputPath
+    kind: newtype
+    of: String
+    invariants:
+      - 'value != ""'
+
+  - name: discovery.inputs.InputManifest
+    kind: struct
+    fields:
+      - name: format
+        type: discovery.inputs.ManifestFormat
+      - name: specification
+        type: List<discovery.inputs.RelativeInputPath>
+      - name: scenarios
+        type: List<discovery.inputs.RelativeInputPath>

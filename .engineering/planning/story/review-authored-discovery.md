@@ -2,7 +2,7 @@
 format: aep.planning-md/1
 id: story:review-authored-discovery
 kind: story
-status: draft
+status: active
 title: Define predictable discovery for co-located ESS documents
 tags:
 - P1
@@ -15,12 +15,22 @@ scope:
 - confidence: cited
   path: crates/edge/ess-cli
 - confidence: inferred
+  path: docs/design/models/authored-discovery/domains/discovery.yaml
+- confidence: inferred
+  path: docs/design/models/authored-discovery/system.yaml
+- confidence: inferred
   path: docs/design/review-authored-discovery.md
+- confidence: inferred
+  path: docs/design/review-format-catalog.md
 - confidence: cited
   path: website/docs/guides/verify-conformance.md
 - confidence: cited
   path: website/docs/guides/write-a-specification.md
-revision: 6
+- confidence: inferred
+  path: website/docs/reference/cli.md
+- confidence: inferred
+  path: website/docs/reference/formats.md
+revision: 11
 ---
 ## Finding and source
 
@@ -46,14 +56,44 @@ The existing scenarios-directory-compiles-nothing story owns the immediate zero-
 
 ## Scope
 
-Derived 2026-09-07 by `story-scoper` against ESS `25a1b47486190f24d5928e808d9baae7d6ce6d5e` — cited.
+Derived 2026-09-07 by aep-drive:story-scoper 0.8.0 at ESS `603dd90f855e994ce41aeab4788ea72f4fa01dbe`, refreshing the retained optional-manifest candidate against source `57e242e8a0eaa721968c3970099b4bc561cb91aa` — cited.
 
-- **Primary surface:** `crates/edge/ess-cli` — cited; owns specification filesystem discovery, both current authored-scenario discovery implementations, their command dispatch and CLI help, and package-local regression tests.
-- **Symbols:** `load::specification_files`, `load::specification`, `resolved`, `authored_sources`, `fresh_legacy_run_suite`, `synthesize_suite`, `author_suite`, `conform_web`, `coverage::sources`, `coverage::fresh`, `coverage::generate`, and `coverage::web` — cited; these select, read, or consume the authored input sets.
-- **Existing tests:** the authored-scenarios and authored-scenarios-adversary integration matrices, coverage-CLI source identity tests, command-surface alias tests, and model-types/normalization model-input cases within the primary package — cited.
-- **Binding:** `docs/design/review-authored-discovery.md` — inferred; the story requires a discovery contract before implementation, and this reserved design path does not exist at the frozen subject.
-- **Public specification layout:** `website/docs/guides/write-a-specification.md` — cited; its Layout section owns the existing directory and single-file input guidance and is the concrete place to document the accepted mixed layout.
-- **Public scenario discovery:** `website/docs/guides/verify-conformance.md` — cited; it expressly promises shallow authored discovery and documents suite/5 source identities, exact text digests and selected-symlink refusals.
-- **Boundary:** imported specification and conformance types remain evidence inputs unless the accepted design changes their parsing, identity or persisted contracts — inferred; filesystem selection can be implemented in the owning CLI package without changing those libraries.
-- **Confidence:** medium — inferred; the present owners and callers are established, but choosing a new persisted manifest instead of a package-local discovery contract could introduce additional owners and compatibility work.
-- **Would collide with:** any unit changing the ess-cli package, the reserved discovery binding, specification layout guidance or conformance acquisition guidance — cited; the four paths above are the proposed machine-readable reservations.
+- **Primary acquisition:** `crates/edge/ess-cli` — cited. Own the shared package-local manifest/discovery reader, proposed as `src/input_discovery.rs`; specification, legacy-authored and coverage-authored adapters; deterministic legacy traversal; CLI help; complete acquisition-caller and A1–A24 tests/fixtures. Preserve legacy direct-file, omitted-scenario, shallow discovery, link-policy, source-identity and committed-suite distinctions. Include the current observed-bindings and release-qualification model callers.
+- **Binding:** `docs/design/review-authored-discovery.md` — inferred. Record the root-accepted optional `ess-inputs/1` contract, original A1–A24 matrix, explicit model-expression limits and the source-current caller/refusal clarifications below.
+- **Public model layout:** `website/docs/guides/write-a-specification.md` — cited. Document directory opt-in and the mixed layout while retaining existing specification layouts and semantic qualifications.
+- **Public authored discovery:** `website/docs/guides/verify-conformance.md` — cited. Distinguish manifest selection from unchanged shallow legacy discovery, explicit-file selection and omitted scenarios. Preserve suite/5 identity/digest and source-versus-release qualifications.
+- **CLI reference:** `website/docs/reference/cli.md` — inferred. Document directory configuration, active roles and bypass behavior without adding a flag. Preserve the current observed-bindings, release qualification and output-protection descriptions.
+- **Public format reference:** `website/docs/reference/formats.md` — inferred. Add the closed acquisition-configuration contract, reader/version admission, role-specific filesystem checks, compatibility refusal and absence of a persisted manifest digest.
+- **Engineering format catalog:** `docs/design/review-format-catalog.md` — inferred. Add only a source-cited acquisition-configuration entry corresponding to the new public format entry; preserve historical baselines and existing entries.
+- **Model header:** `docs/design/models/authored-discovery/system.yaml` — inferred. Proposed tracked home for the retained 74-byte model declaration, conditional on root acceptance.
+- **Model values:** `docs/design/models/authored-discovery/domains/discovery.yaml` — inferred. Proposed tracked home for the retained 538-byte ManifestFormat, RelativeInputPath and InputManifest declarations. Preserve explicit reader obligations and the absence of entity identity, ownership or lifecycle semantics.
+- **Library boundary:** domain/compiler parsers and conformance source/identity types remain semantic authorities consumed by the package-local reader; this scope introduces no library writer, universal registry, generated-schema owner or dependency change — inferred.
+- **Prerequisite:** preserve the implemented scenarios-directory-compiles-nothing refusal, omitted-scenario behavior and committed-input branches — cited.
+- **Would collide with:** any writer inside ess-cli, either named public guide, either reference page, the engineering format catalog or the exact binding/model files — cited.
+- **Confidence:** high for these conditional manifest-choice reservations: actual acquisition owners and new callers are established, and the additional catalog path maintains an existing inventory promise. Selecting another discovery contract requires a new concrete scope decision — cited.
+
+## Accepted implementation decision
+
+On 2026-09-07 the coordinator selects the optional immediate-directory ess-inputs.yaml contract
+in docs/design/review-authored-discovery.md under the recorded standing implementation approval.
+The complete A1–A24 matrix remains required. This updates the former four-reservation Scope to
+nine, including the public CLI/formats reference, the engineering format catalog and two named
+model files; the former source citations and inference history remain in Git. The current
+read-only scoper refresh at 603dd90 confirms the same package-local acquisition owners and adds
+observed-bindings and delivery qualification to A19/A21. No new library or dependency owner is
+selected. These decisions are coordinator choices informed by actual source, not runtime results.
+
+The retained candidate was already reviewed by review-result:authored-discovery-binding-pass1
+with no findings. The unchanged named model now lives at docs/design/models/authored-discovery/
+(system.yaml and domains/discovery.yaml). Current-source ESS 0.20.0 validation and compilation
+each exited zero; validation printed `discovery v1 — 2 file(s), valid`. Compilation produced
+2,192 bytes. The retained validator SHA256 is 94983b7227d8b5c3c69cdb448cf4dfe7a4d8c65b086ae7ce54d1db75c607ebf8.
+These checks establish named declaration validity only. Reader behavior, path/filesystem policy,
+whole configuration admission and the complete executed acceptance matrix remain owed.
+
+The new wave is docs/plan/2026-09-07-review-boundaries-17.md. Root verified the scoper's 10 current
+source pins against exact 603dd90 Git blobs in target/review-boundaries-17/preparation/scoper-root-readback.json.
+The previously implemented scenarios-directory-compiles-nothing prerequisite stays intact.
+The operator explicitly stopped Atlas follow-up during this continuation; source implementation,
+its required source/site checks and incremental publication remain authorized. No release tag,
+version bump or live ESS deployment is authorized.

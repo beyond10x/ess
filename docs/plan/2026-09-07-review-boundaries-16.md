@@ -481,3 +481,35 @@ The completed unit's records will be archived and independently verified before 
 owned retirement; quiescent Unix socket nodes retain their full native metadata without
 claiming recoverable live IPC state. Only published, clean, quiescent managed trees may
 be finished. The source wave still authorizes no release or live ESS deployment.
+
+## Published source and subsequent scope change
+
+The bot push published 4c941557f4bdc894b4e61ec03dbb0f9972df0bae to main; fresh remote
+readback matched it. All seven introduced commits had the required direct bot author and
+committer. Source-bundle and documentation-validation workflows succeeded. The first CI run
+was cancelled after a newer main run began, and is not reported as a successful CI run.
+The later 603dd90 main commit changes only the reviewed AGENTS.md release block. This brings
+the original remediation count to 25 of 31 published stories; execution recovery remains owed.
+
+Documentation publication run 34135541592 succeeded, selecting exact ESS 4c94155. Its downloaded
+33,638,680-byte artifact matched SHA256
+352d4105bcf65efeadfac77dbabda42090b5b606faeb54a1ee303f8a93a695fe.
+Native verification admitted 357 routes and 1,332 files. Both live provenance documents and the
+component-delivery, CLI and formats pages returned 200 and matched the artifact byte for byte.
+The local Website nineteen-step gate exited zero with 99 passing tests and no skipped cases;
+native portal verification passed. Broad workspace reconciliation separately refused the primary
+Docs System collector's unsupported Agentide v4 schema; no organization-wide green claim is made.
+
+All five assigned delivery-unit archives were independently verified before removal. The target
+archive SHA256 is 70daa11714bb0a282365d4bf475d89622de30fd0a37c064df84c0be2cb9d4a88.
+Thirty-one quiescent socket nodes retain exact metadata only, not recoverable IPC state. Complete
+receipts remain in the private continuation archive's delivery-trust-unit-retirement directory.
+The managed unit, merged branch and all four temporary roots are absent. Fresh GC reviewed all
+22 rows and applied only ess-delivery-trust-contract; the other 21 records were retained.
+
+The operator then instructed, “please forget about atlas.” Further Atlas refresh, build and
+reconciliation stopped before execution. Website's three local commits through
+a21fe584e79c93d7daab31ad01c9ab486ebc2af6, active task, worktree and evidence remain preserved.
+They are not claimed as published Website source or completed cleanup. ESS resumes with a fresh
+wave 17 replan under the standing implementation/publication approvals. No tag, version bump or
+live ESS deployment occurred.
