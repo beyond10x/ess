@@ -19,6 +19,16 @@ use crate::{kubectl, utc_timestamp, KINDS};
 /// Explicit context and namespace are required. There is no fallback and no output on failed
 /// acquisition or validation. Values and unmodeled API fields are dropped before serialization.
 pub fn scan_namespace(context: &str, namespace: &str, out: &Path) -> Result<(), String> {
+    let bytes = collect_namespace(context, namespace)?;
+    std::fs::write(out, bytes).map_err(|error| format!("writing observation: {error}"))?;
+    Ok(())
+}
+
+/// Collects and admits sanitized observation/2 bytes without selecting a publication policy.
+///
+/// Callers can create an output exclusively after acquisition, without a check/write race or
+/// changing the existing scanner's explicit overwrite behavior. No raw payload is returned.
+pub fn collect_namespace(context: &str, namespace: &str) -> Result<Vec<u8>, String> {
     let coverage = CollectionCoverage::NamespaceTopology {
         namespace: namespace.to_owned(),
     };
@@ -105,9 +115,7 @@ pub fn scan_namespace(context: &str, namespace: &str, out: &Path) -> Result<(), 
     infra_domain::Observation::try_from(raw).map_err(|_| {
         "topology response violates the supported observation subset; no observation written"
     })?;
-    let bytes = serde_json::to_vec_pretty(&bundle).map_err(|_| "cannot serialize topology")?;
-    std::fs::write(out, bytes).map_err(|error| format!("writing observation: {error}"))?;
-    Ok(())
+    serde_json::to_vec_pretty(&bundle).map_err(|_| "cannot serialize topology".to_owned())
 }
 
 fn read(args: &[&str]) -> Result<Value, String> {

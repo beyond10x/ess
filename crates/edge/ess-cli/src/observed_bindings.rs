@@ -563,12 +563,12 @@ pub(crate) fn run(args: &Args) -> Result<ExitCode> {
                         .as_ref()
                         .context("live read requires observation output")?;
                     new_output(output, true)?;
-                    ess_kubernetes::scan_namespace(
+                    let bytes = ess_kubernetes::collect_namespace(
                         &bindings.scope.context,
                         &bindings.scope.namespace,
-                        output,
                     )
                     .map_err(anyhow::Error::msg)?;
+                    write_new(output, &bytes)?;
                     output
                 } else {
                     args.infra
@@ -590,14 +590,7 @@ pub(crate) fn run(args: &Args) -> Result<ExitCode> {
     if let Some(path) = &args.markdown_out {
         // A refused output contract must not clobber that output while reporting its own refusal.
         if report.binding_digest.is_some() {
-            use std::io::Write;
-            let written = (|| -> std::io::Result<()> {
-                let mut file = fs::OpenOptions::new()
-                    .write(true)
-                    .create_new(true)
-                    .open(path)?;
-                file.write_all(report.markdown().as_bytes())
-            })();
+            let written = write_new(path, report.markdown().as_bytes());
             if let Err(error) = written {
                 report.fail(
                     "OBS-BIND-007",
@@ -612,4 +605,35 @@ pub(crate) fn run(args: &Args) -> Result<ExitCode> {
         super::MachineFormat::Text => print!("{}", report.markdown()),
     }
     Ok(ExitCode::from(report.status.exit()))
+}
+
+fn write_new(path: &Path, bytes: &[u8]) -> std::io::Result<()> {
+    use std::io::Write;
+    let mut file = fs::OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .open(path)?;
+    file.write_all(bytes)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{fs, new_output, write_new};
+
+    #[test]
+    fn an_output_created_after_preflight_is_preserved() {
+        let root =
+            std::env::temp_dir().join(format!("ess-binding-output-race-{}", std::process::id()));
+        fs::create_dir(&root).unwrap();
+        let path = root.join("observation.json");
+        new_output(&path, true).unwrap();
+        // Another acquisition publishes while this acquisition is still collecting.
+        fs::write(&path, b"other acquisition").unwrap();
+        assert_eq!(
+            write_new(&path, b"our acquisition").unwrap_err().kind(),
+            std::io::ErrorKind::AlreadyExists
+        );
+        assert_eq!(fs::read(&path).unwrap(), b"other acquisition");
+        fs::remove_dir_all(root).unwrap();
+    }
 }
