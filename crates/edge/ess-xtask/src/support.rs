@@ -13,8 +13,8 @@ use std::fs;
 use std::path::Path;
 use std::time::{SystemTime, UNIX_EPOCH};
 
-const BEGIN: &str = "<!-- ess-source-support:begin -->";
-const END: &str = "<!-- ess-source-support:end -->";
+const BEGIN: &str = "[ess-source-support-begin]: #";
+const END: &str = "[ess-source-support-end]: #";
 const STATUS: &str = "website/docs/status/where-this-stands.md";
 
 pub(super) fn run(root: &Path, check: bool) -> Result<String> {
@@ -443,7 +443,7 @@ fn render(root: &Path) -> Result<String> {
         coverage_suite,
     } = observe_conformance(root)?;
 
-    let mut output = format!("{BEGIN}\nThe source checkout’s workspace version is `{version}` and includes separately documented unreleased changes.\n\n| Capability | Current source | Limits and evidence |\n|---|---|---|\n");
+    let mut output = format!("{BEGIN}\n\nThe source checkout’s workspace version is `{version}` and includes separately documented unreleased changes.\n\n| Capability | Current source | Limits and evidence |\n|---|---|---|\n");
     row(&mut output, "Default projections", &code_list(&names), &format!("Generator inventory and actual CLI artifacts; {}. `docs-ir` is an additional explicit choice.", source("ess-gen", "crates/generate/ess-gen/src/lib.rs")));
     row(&mut output, "Documentation", "`docs`: Markdown with Mermaid diagrams", &format!("A projection of the document model; {} establishes rendering, not implementation behavior.", source("docs emitter", "crates/generate/ess-gen/src/docs.rs")));
     row(&mut output, "Site", "`site`: HTML and local stylesheet/Mermaid assets; explicit output at `index.html` and `assets/`, combined output under `site/`", &format!("Explicit authored pages and downloads are supported; ESS does not host the site. {}.", source("authored-site tests", "crates/edge/ess-cli/tests/authored_site.rs")));
@@ -501,7 +501,7 @@ fn render(root: &Path) -> Result<String> {
     );
     row(&mut output, "Explicit executors", "`execute`, `publish`, `fetch`, `reconcile` invoke external clients; reconciliation applies the affected set from supplied current/desired documents", &format!("Caller-supplied state and credentials remain material; no continuous control plane or automatic recovery proof. {}. The support check invokes none of these verbs.", source("CLI executor owner", "crates/edge/ess-cli/src/main.rs")));
     row(&mut output, "Schema commands", &code_list(&schema_commands), "Current-source command inventory for import, validation, types and normalization; [CLI reference](../reference/cli.md#adopter-owned-schema-contracts) describes the selected operations. Availability is independent of the dated release record.");
-    write!(output, "{END}")?;
+    write!(output, "\n{END}")?;
     Ok(output)
 }
 
