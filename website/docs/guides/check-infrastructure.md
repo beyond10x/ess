@@ -104,3 +104,74 @@ Diagnosis reports the limited observation, intent simulation returns unknown, an
 projection refuses this profile. These consumers cannot treat omitted values or probes as absent.
 Existing version 1 documents remain readable without reclassification as complete observations.
 Upgrade readers before selecting this profile; older readers reject version 2.
+
+## Connect implementation selections to observed workloads
+
+`ess verify bindings` is available in the source preview; pin an exact published Git revision
+containing this command. Released ESS 0.19.0 does not provide it. The service owns its semantic
+model and realization; the system owns environment-specific `ess-observed-bindings/1` declarations.
+Infrastructure remains a separate observed authority. A monolith may assign several components
+to one implementation and bind that implementation to several named deployment roles.
+
+Compile the service's realization to obtain its exact `realization_digest`. Existing
+`ess-realization/1` requires a primary executable entrypoint. Use explicit `ess-realization/2`
+when only source implementation membership is evidenced: components and implementations remain
+nonempty, while entrypoints and actors are empty and conformance is absent. Do not invent an
+executable interface. Version 2 has a separate digest domain; old readers reject it.
+
+```yaml
+format: ess-observed-bindings/1
+id: billing-qa
+realization_digest: sha256:REPLACE_WITH_COMPILED_REALIZATION_DIGEST
+scope:
+  context: my-read-only-context
+  namespace: app
+bindings:
+  - id: api
+    implementation: billing-binary
+    workload:
+      kind: deployment
+      name: billing
+    container: billing
+    image: registry.example/billing:1.2.3
+```
+
+Component membership is inherited from the exact admitted realization. Supported workload kinds
+are `deployment`, `statefulset` and `daemonset`. Optional per-binding `evidence` entries contain
+`repository`, an exact 40-character Git `revision`, and relative `path`; they record attribution
+without fetching or verifying those files. Unknown fields, duplicate targets, empty selections
+and invalid references are refused before collection.
+
+```shell-session
+$ ess verify bindings --spec service/model --realization service/realization.yaml \
+    --bindings system/qa.yaml --infra /external/qa.ir.json --format json
+$ ess verify bindings --spec service/model --realization service/realization.yaml \
+    --bindings system/qa.yaml --live --observation-out /external/new-qa.observation.json \
+    --format json --markdown-out /external/new-qa.md
+```
+
+Output parents must exist and output files must be new. Live observations must be outside Git
+checkouts. Live mode performs a fresh namespace-topology read with the document's explicit context
+and namespace; collection failure produces an unknown report without falling back to an old file.
+Offline mode is byte-deterministic for the same inputs and uses the observation's timestamp.
+Neither mode changes a cluster or promotes observations into an accepted baseline.
+
+The report checks scope, workload, container and exact workload-template image reference.
+Missing targets within admitted scope and changed images violate the declaration. Wrong context
+or missing/different namespace coverage leaves the result unknown. A digest-pinned container
+artifact and identical digest-pinned template reference can establish immutable reference
+agreement. Source artifacts and tag-only images leave that check unknown, even when the image
+reference matches. Resolving a registry tag alone does not prove which source built it.
+
+| Exit | Report status | Meaning |
+|---|---|---|
+| 0 | `satisfied` | Every supported selected check is satisfied. |
+| 1 | `violated` | A check violated the declaration or the authored contract was refused. |
+| 2 | `unknown` | Required evidence or acquisition is unavailable, with no known violation. |
+
+A violation takes precedence over unknown; all applicable findings remain in the JSON report.
+Syntax/argument errors can terminate at the CLI parser before a report exists. The report and
+generated Markdown explicitly exclude running Pod image IDs, source-to-image build attestations,
+runtime behavior, profile-specific operation exposure, health, replicas and omitted secret/config
+values. A satisfied reference check is not runtime conformance. These checks can run unchanged
+in a scheduled job; no AI interpretation is part of the verdict.

@@ -141,10 +141,7 @@ impl Browser {
         let mut child = OwnedChild(command.spawn().expect("required actual Firefox starts"));
         fs::write(evidence.join("firefox.pid"), format!("{}\n", child.0.id())).unwrap();
         let deadline = Instant::now() + Duration::from_secs(30);
-        let mut stream = loop {
-            if let Ok(stream) = TcpStream::connect(("127.0.0.1", port)) {
-                break stream;
-            }
+        let (stream, response) = loop {
             assert!(
                 child.0.try_wait().unwrap().is_none(),
                 "Firefox exited; read firefox.stderr"
@@ -153,23 +150,34 @@ impl Browser {
                 Instant::now() < deadline,
                 "Firefox did not expose BiDi; read firefox.stderr"
             );
-            thread::sleep(Duration::from_millis(50));
+            let Ok(mut stream) = TcpStream::connect(("127.0.0.1", port)) else {
+                thread::sleep(Duration::from_millis(50));
+                continue;
+            };
+            stream
+                .set_read_timeout(Some(Duration::from_secs(20)))
+                .unwrap();
+            stream
+                .set_write_timeout(Some(Duration::from_secs(20)))
+                .unwrap();
+            let handshake = format!("GET /session HTTP/1.1\r\nHost: 127.0.0.1:{port}\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==\r\nSec-WebSocket-Version: 13\r\n\r\n");
+            stream.write_all(handshake.as_bytes()).unwrap();
+            let mut response = Vec::new();
+            while !response.ends_with(b"\r\n\r\n") {
+                let mut byte = [0];
+                stream.read_exact(&mut byte).unwrap();
+                response.push(byte[0]);
+            }
+            let response = String::from_utf8(response).unwrap();
+            // Firefox can listen before registering /session. TCP readiness alone is not
+            // BiDi readiness. Keep the startup response as evidence; retain the same deadline.
+            if response.starts_with("HTTP/1.1 404 ") {
+                fs::write(evidence.join("websocket-startup-response.txt"), &response).unwrap();
+                thread::sleep(Duration::from_millis(50));
+                continue;
+            }
+            break (stream, response);
         };
-        stream
-            .set_read_timeout(Some(Duration::from_secs(20)))
-            .unwrap();
-        stream
-            .set_write_timeout(Some(Duration::from_secs(20)))
-            .unwrap();
-        let handshake = format!("GET /session HTTP/1.1\r\nHost: 127.0.0.1:{port}\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==\r\nSec-WebSocket-Version: 13\r\n\r\n");
-        stream.write_all(handshake.as_bytes()).unwrap();
-        let mut response = Vec::new();
-        while !response.ends_with(b"\r\n\r\n") {
-            let mut byte = [0];
-            stream.read_exact(&mut byte).unwrap();
-            response.push(byte[0]);
-        }
-        let response = String::from_utf8(response).unwrap();
         fs::write(evidence.join("websocket-handshake.txt"), &response).unwrap();
         assert!(response.starts_with("HTTP/1.1 101"), "{response}");
         assert!(

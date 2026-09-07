@@ -374,3 +374,19 @@ no finding requiring an outcome. No third source attack ran. The unit's bot comm
 50 deletions. Both author and committer were verified, the unit is clean, and root
 fast-forwarded to that commit. All fourteen reviewed source pins match at integration.
 This is still local work pending the concurrent-main merge and complete gate.
+
+## Concurrent main integrated for the gate
+
+The current remote bbbe0de65e01ad7dc22fd329bb5f73d70e648d1d is merged locally
+with the reviewed delivery unit and its recorded reviews. Git reported the expected
+journal, changelog and command-count conflicts. The resolved journal preserves the
+common prefix plus each disjoint CLI-produced event suffix byte for byte; AEP validated
+all 203 artifacts with exit zero and the same 42 advisories. Both changelog additions
+remain. The combined CLI declares 55 command leaves.
+
+Only main.rs and the two reference pages differ from the fourteen reviewed source pins;
+the exact upstream additions and the counted-command adjustment are separately retained
+in preparation/main-refresh-bbbe0de/integration-source-review.json. All other reviewed
+source bytes and ten disjoint upstream paths match their respective inputs exactly.
+The full gate will run against this combined clean commit, with all tracked source
+retained before execution. No prior unit or upstream check is reported as that gate.

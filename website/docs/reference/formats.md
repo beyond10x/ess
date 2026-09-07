@@ -22,7 +22,7 @@ that major as a number. Delivery release versions and constraints use SemVer ind
 | **Whole contract**: whole-model `contract_digest` | SHA-256 of a compact, key-sorted construct payload. Bare 64 lowercase hex; the payload differs from the compiled-model hash input. [Source][provenance] |
 | **Sliced contract**: Constructs `contract_digest` | `slice-sha256/2:<64 lowercase hex>`, from the selected constructs and their dependency closure. The profile prefix is part of identity; a bare legacy slice digest requires regeneration. [Source][provenance] |
 | **Delivery document**: `Digest` | `sha256:<64 lowercase hex>`. Canonical delivery `digest()` methods hash pretty JSON including its final LF. Artifact/OCI digests can use the same spelling for different bytes. [Source][delivery-identity] |
-| **Realization**: `realization_digest` | Prefixed SHA-256 of the compact specification/synthesis/implementations tuple, not the entire realization document. [Source][realization] |
+| **Realization**: `realization_digest` | Prefixed SHA-256 of the compact specification/synthesis/implementations tuple in v1; v2 prepends `ess-realization/2` to that tuple. Not the entire realization document. [Source][realization] |
 | **Infrastructure model**: InfraIR `digest` | Bare SHA-256 of compact, key-sorted `model` JSON, excluding the envelope and observation provenance. [Source][infra-ir] |
 | **Infrastructure intent**: `InfraSpec::digest()`, projection `provenance.specification_digest` | Bare 64 lowercase SHA-256 of compact, key-sorted serialized typed `InfraSpec`: `format`, `name` and `expectations`, with no appended newline. Array order, including declared expectation order, remains significant. This differs from authored-file, InfraIR-model and whole-projection identity. [Digest][infra-spec-digest], [consumer][infra-project] |
 
@@ -45,6 +45,8 @@ the row says otherwise; it does not imply that those bytes are hashed.
 | Client plan: `format: ess-client-plan/1` | Composition key and the same selected service metadata/names | Derived from compiled composition; Serialize-only. No complete payload or codec definitions. Pretty JSON; no client-plan byte digest or live service identity check. [Source][composition] |
 | Authored realization: **`type: ess-realization/1`** | Realization id and specification/synthesis identities | Closed JSON/YAML DTO, then compilation against supplied ESS authority. No raw-document digest contract. [Source][realization] |
 | Compiled realization: **`type: ess-realization-ir/1`** | Same identities plus realization digest | Serialize-only compiled output. Pretty JSON; **realization** tuple digest. [Source][realization] |
+| Authored realization: **`type: ess-realization/2`** | Realization id and specification/synthesis identities | Opt-in implementation-only selection: empty entrypoints allowed only without actors or conformance claims. Nonempty entrypoints retain v1 rules. Closed DTO and semantic compilation; v1 readers reject this version. [Source][realization] |
+| Compiled realization: **`type: ess-realization-ir/2`** | Same identities plus version-separated realization digest | Serialize-only compiled output; pretty JSON. V1 canonical bytes and identity remain unchanged. [Source][realization] |
 | `plan.json`: **unversioned** `SynthesisPlan` | Specification provenance | Neutral generated plan, consumed as a typed value by emitters. Pretty JSON and `PLAN.md`; **compiled-model/whole-contract** references, no plan-file hash. [Source][plan] |
 | `target.json`: **unversioned** `TargetReport` | Target name and specification provenance | Successful Go/Web/Clap synthesis includes this refusal/weakening report; successful Rust has `target: None` and no target metadata. No persisted admission reader. Unchanged pretty JSON and `TARGET.md`; provenance references, no report-file hash. [Source][synthesis] |
 | Complete failure: `format: ess-target-failure/1` | Target `rust` or `web`; unchanged neutral plan and its provenance | Serialize-only `TargetFailure` has `format`, `target`, `plan`, nonempty `causes`; private construction, read-only accessors, no Deserialize/admission reader. Typed pretty JSON+LF or CLI YAML; no failure-file digest or artifacts. [Source][target-failure] |
@@ -242,6 +244,16 @@ resources offline, and its successful records identify the selected envelopes. I
 whole-system semantic validity or support in the separate restricted TypeScript projector.
 
 ## Infrastructure records
+
+The source-preview `ess verify bindings` command connects admitted realization selections to
+native infrastructure observations. `ess-observed-bindings/1` is a closed authored JSON/YAML DTO;
+its binding digest hashes compact typed JSON after sorting bindings by id and sorting
+declared evidence. It retains all authored image expectations and the exact realization digest.
+`ess-observed-bindings-report/1` is serialize-only, deterministic pretty JSON plus LF with no
+whole-report digest or report-admission reader. It carries that binding digest, realization digest,
+observation model digest and provenance, per-binding results and explicit exclusions. These
+identities name different bytes. Missing evidence produces unknown, never an empty successful
+comparison. [Binding guide](../guides/check-infrastructure.md#connect-implementation-selections-to-observed-workloads).
 
 The namespace topology profile adds `infra-observation/2`, `infra-ir/2`, `infra-graph/2`,
 `infra-drift/2` and `infra-simulation/2`. Its closed coverage claim names the namespace and

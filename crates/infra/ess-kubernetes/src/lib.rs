@@ -11,7 +11,7 @@ use std::process::Command;
 use sha2::Digest;
 
 mod topology;
-pub use topology::scan_namespace;
+pub use topology::{collect_namespace, scan_namespace};
 
 /// Kubernetes API collections included in an observation, in deterministic order.
 pub const KINDS: &[&str] = &[

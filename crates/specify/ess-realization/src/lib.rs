@@ -1,7 +1,8 @@
 //! A concrete implementation and its human or machine entrypoints, bound to one exact ESS.
 //!
-//! [`RealizationSpec`] is adopter-authored `ess-realization/1`. [`compile`] resolves that document
-//! against one [`EssIr`] and emits deterministic `ess-realization-ir/1`. This is deliberately a
+//! [`RealizationSpec`] is adopter-authored `ess-realization/1` or opt-in implementation-only `/2`.
+//! [`compile`] resolves it against one [`EssIr`] and emits the matching deterministic IR version.
+//! This is deliberately a
 //! sibling of `EssIr`: a semantic system does not change when it is exposed through a local TUI,
 //! a JSON CLI, or a hosted workbench.
 
@@ -19,6 +20,11 @@ pub const REALIZATION_FORMAT: &str = "ess-realization/1";
 
 /// The compiled realization format.
 pub const REALIZATION_IR_FORMAT: &str = "ess-realization-ir/1";
+
+/// Opt-in realization format admitting an implementation selection with no executable entrypoint.
+pub const REALIZATION_FORMAT_V2: &str = "ess-realization/2";
+/// Compiled v2 implementation selection; v1 readers must not silently admit its wider meaning.
+pub const REALIZATION_IR_FORMAT_V2: &str = "ess-realization-ir/2";
 
 /// A path-safe, stable identifier.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, serde::Serialize)]
@@ -193,6 +199,21 @@ pub struct Artifact {
     kind: ArtifactKind,
     locator: String,
     identity: ArtifactIdentity,
+}
+
+impl Artifact {
+    /// The declared artifact family; this is not evidence of runtime conformance.
+    pub fn kind(&self) -> ArtifactKind {
+        self.kind
+    }
+    /// The declared artifact location.
+    pub fn locator(&self) -> &str {
+        &self.locator
+    }
+    /// The immutable identity selected by the author.
+    pub fn identity(&self) -> &ArtifactIdentity {
+        &self.identity
+    }
 }
 
 /// One implementation choice in the source document.
@@ -429,6 +450,17 @@ pub struct Implementation {
     artifact: Artifact,
 }
 
+impl Implementation {
+    /// Semantic components assigned to this implementation by the admitted realization.
+    pub fn components(&self) -> &BTreeSet<ComponentRef> {
+        &self.components
+    }
+    /// The selected implementation artifact.
+    pub fn artifact(&self) -> &Artifact {
+        &self.artifact
+    }
+}
+
 /// A compiled and resolved entrypoint.
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
 pub struct EntryPoint {
@@ -464,6 +496,10 @@ pub struct RealizationIr {
 }
 
 impl RealizationIr {
+    /// Admitted implementation selections, without mutable access or inferred deployment meaning.
+    pub fn implementations(&self) -> &BTreeMap<RealizationId, Implementation> {
+        &self.implementations
+    }
     /// The stable realization identifier.
     pub fn id(&self) -> &RealizationId {
         &self.id
@@ -498,6 +534,10 @@ impl RealizationIr {
             self.specification.version,
             self.specification.source_digest
         );
+        if self.entrypoints.is_empty() {
+            output.push_str("This is an implementation selection only. No executable entrypoint, actor access or runtime conformance is declared.\n");
+            return output;
+        }
         output.push_str("| Mode | Interaction | Attachment | Availability | Support | Start |\n");
         output.push_str("|---|---|---|---|---|---|\n");
         for entrypoint in self.entrypoints.values() {
@@ -670,9 +710,14 @@ pub fn compile(
         &specification.specification,
         &specification.synthesis,
         &implementations,
+        specification.format == REALIZATION_FORMAT_V2,
     );
     Ok(RealizationIr {
-        format: REALIZATION_IR_FORMAT,
+        format: if specification.format == REALIZATION_FORMAT_V2 {
+            REALIZATION_IR_FORMAT_V2
+        } else {
+            REALIZATION_IR_FORMAT
+        },
         id: specification.id.clone(),
         realization_digest: digest,
         specification: specification.specification.clone(),
@@ -690,13 +735,13 @@ fn validate_header(
     ess: &EssIr,
     diagnostics: &mut Vec<RealizationDiagnostic>,
 ) {
-    if specification.format != REALIZATION_FORMAT {
+    if specification.format != REALIZATION_FORMAT && specification.format != REALIZATION_FORMAT_V2 {
         refuse(
             diagnostics,
             RealizationCode::UnsupportedFormat,
             "type",
             format!(
-                "expected `{REALIZATION_FORMAT}`, found {:?}",
+                "expected `{REALIZATION_FORMAT}` or `{REALIZATION_FORMAT_V2}`, found {:?}",
                 specification.format
             ),
         );
@@ -883,6 +928,13 @@ fn resolve_entrypoints(
     diagnostics: &mut Vec<RealizationDiagnostic>,
 ) -> BTreeMap<RealizationId, EntryPoint> {
     let mut entrypoints = BTreeMap::new();
+    if specification.format == REALIZATION_FORMAT_V2 && specification.entrypoints.is_empty() {
+        if !specification.actors.is_empty() || specification.conformance.is_some() {
+            refuse(diagnostics, RealizationCode::ReferenceOutsideRealization, "entrypoints",
+                "an implementation-only realization cannot declare actor access or conformance evidence");
+        }
+        return entrypoints;
+    }
     let mut primary_count = 0_usize;
     for (index, entrypoint) in specification.entrypoints.iter().enumerate() {
         let path = format!("entrypoints[{index}]");
@@ -1048,9 +1100,20 @@ fn realization_digest(
     specification: &SpecificationIdentity,
     synthesis: &SynthesisIdentity,
     implementations: &BTreeMap<RealizationId, Implementation>,
+    version_two: bool,
 ) -> ArtifactIdentity {
-    let bytes = serde_json::to_vec(&(specification, synthesis, implementations))
-        .unwrap_or_else(|error| panic!("realization identity serializes: {error}"));
+    // V1 bytes remain unchanged. V2's wider entrypoint meaning has its own identity domain.
+    let bytes = if version_two {
+        serde_json::to_vec(&(
+            REALIZATION_FORMAT_V2,
+            specification,
+            synthesis,
+            implementations,
+        ))
+    } else {
+        serde_json::to_vec(&(specification, synthesis, implementations))
+    }
+    .unwrap_or_else(|error| panic!("realization identity serializes: {error}"));
     let digest = Sha256::digest(bytes);
     let mut value = String::with_capacity(71);
     value.push_str("sha256:");
