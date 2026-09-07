@@ -11,7 +11,7 @@ relations:
 - decomposes: epic:review-boundary-remediation
 - serves: vision:O2
 scope:
-- confidence: inferred
+- confidence: cited
   path: docs/design/review-concept-boundaries.md
 - confidence: cited
   path: website/docs/concepts/ess.md
@@ -19,7 +19,7 @@ scope:
   path: website/docs/guides/record-realization.md
 - confidence: cited
   path: website/docs/guides/write-a-specification.md
-revision: 14
+revision: 15
 ---
 ## Finding and source
 

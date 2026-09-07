@@ -84,3 +84,70 @@ must cover all three changed public pages plus production provenance. Completion
 only against those results, then every assigned unit/support root is retained and retired through
 the managed lifecycle. No release, tag, version, installation, default switch or real deployment
 is part of this wave.
+
+## Opening and dispatch
+
+The checked opening commit is `38cfefc07ae27ccc5e9b51ca2159b5015fab1f50`, with both
+direct commit identities verified as the organization bot. Its formatting, action contract,
+site build and diff checks each exited zero; the site lane took 14.815651829 seconds.
+The complete raw commands, outputs and source inventory remain under
+`target/review-boundaries-13/preparation/opening/checks`. These are opening checks, not the
+integrated glossary gate.
+
+The manager created `ess-glossary-boundaries` at that exact opening commit. Root created
+`impl/review-glossary-boundaries`, started lease `ess-review-glossary-implementation` and dispatched
+the existing implementor with the file `target/review-boundaries-13/glossary/brief.md` in its unit.
+The accepted binding hash is
+`271910e53562be0e018db7b39fa9d52f2aee7333201d6bf437f7793cd7a563cd`.
+The brief corrects an earlier scratch draft's inaccurate “published opening” wording: the
+opening is local; its parent `3464ea6` is published. Provisioning receipts and exact copied input
+hashes remain under coordinator `target/review-boundaries-13/preparation/provision`.
+
+The prepared full gate assigns the short external temporary root
+`/home/timo/.cache/ess-w13-gate-attempt1-tmp`, to be created only when the reviewed integrated
+source is ready. Its output will be `target/review-boundaries-13/gate-<commit-prefix>-attempt1`
+within the coordinator. It reuses the complete frozen toolchain read-only, validates its entire
+manifest around each lane and retains the direct exit status before later checks. Preparation
+measured 16,990,343,168 free bytes; the 8,589,934,592-byte floor applies before every lane.
+
+Public delivery support is assigned managed ID `ess-wave13-website-verification`, at
+`/home/timo/.local/state/worktree/trees/b10x/website/ess-wave13-website-verification`, detached
+at the current Atlas-controlled Website runtime `fc4571534765c098ed861bc326da4d3da0d1df63`.
+Build and scratch remain under that tree's `target/review-boundaries-13`; npm dependencies
+and ordinary Website build outputs are owned within the same tree. The delivery runner assigns
+`/home/timo/.cache/ess-w13-website-tmp` for its browser processes. No Website source edit is
+selected. Source-set and artifact verification start only after green ESS source publication.
+The corresponding Atlas fence records belong under
+`/home/timo/.local/state/worktree/trees/b10x/atlas/wt-53892beacf0d/target/ess-review-wave13-delivery-fence`.
+They must report any unrelated organization-wide baseline failures separately from the exact
+source-set, Website gate and live Pages results.
+
+## Reviewed source and integration
+
+The clean implementation commit is `c99776eb14173b467143525947cd0933b983b459` on
+`impl/review-glossary-boundaries`, based on the exact opening `38cfefc`. Both author and
+committer were verified as `b10x-bot[bot]`. It changes only the three assigned public pages:
+123 insertions and 10 deletions. Root read the complete implementor report and diff, then
+verified the 71-entry native scratch inventory, 36 before and 47 final input snapshots,
+12 real command receipts and 20 local link checks. The report is SHA256
+`7a3d758cf5e47267ec0545e5ce3c5020c7f690e75945f1ea6df52ac958dd9dbb`.
+
+The separate source document attack returned pass 1 with an empty findings block. Its complete
+report is recorded as `review-result:glossary-source-pass1`, SHA256
+`035d6d1a4fcfe077dc9d03dd929be245e16358c36f4806583638d2c40198db59`.
+After the adversary relinquished all writes, root independently checked all 255 scratch census
+entries, 252 payload entries, 50 exact inputs, 80 command receipts and two final HEAD/status
+receipts. File bytes and native metadata match, excluding observational access times. The
+three-dot diff from the opening to the reviewed commit equals the recorded review diff,
+SHA256 `5a55232eaa95d53bece7bdd792d25113331b8b2954bbe932c6caa22e7784d892`.
+Readback evidence remains under
+`target/review-boundaries-13/preparation/source-review-pass1-readback` in the coordinator.
+The attack covers all 13 original preferred-name rows and six example families. Its 20 link
+checks establish exact local source targets; rendered and live publication remain separate gates.
+
+The unchanged Markdown-only site-output claim is existing F16 work already owned by
+`story:review-public-support-claims`. It is outside this glossary diff and creates no new story.
+The previously inferred binding reservation is now cited: the accepted binding exists at the
+opening commit. No review findings require outcomes. Root's changelog and this execution record
+accompany the immutable review addition before integration. The subsequent full integration
+gate must bind the exact integrated commit and the three reviewed public source hashes.
