@@ -283,6 +283,98 @@ fn normalized_type_collisions_refuse_before_returning_rust() {
     refusal(&core("types:\n  - name: demo.core.FooBar\n    kind: newtype\n    of: String\n  - name: demo.core.Foo_Bar\n    kind: newtype\n    of: String\n", ""), "symbol-collision", "type-collision");
 }
 
+fn snapshot_view_fixture(reverse: bool, occupied_fallback: bool) -> EssIr {
+    let mut names = vec!["ApprovalCheckpoint", "ContextPin", "Workbench"];
+    if reverse {
+        names.reverse();
+    }
+    let mut body = String::from("entities:\n");
+    for name in &names {
+        writeln!(body, "  - name: demo.core.{name}\n    identity: {{name: id, type: String}}\n    fields:\n      - {{name: marker, type: String}}\n    lifecycle:\n      initial: Active\n      states: [Active]\n      terminal: [Active]").unwrap();
+    }
+    body.push_str("views:\n");
+    for name in &names {
+        writeln!(body, "  - name: demo.core.{name}Snapshot\n    source: demo.core.{name}\n    consistency: read_your_writes\n    fields:\n      - {{name: id, type: String}}\n      - {{name: marker, type: String}}").unwrap();
+    }
+    if occupied_fallback {
+        body.push_str("types:\n  - {name: demo.core.ContextPinEntitySnapshot, kind: newtype, of: String}\n  - {name: demo.core.ContextPinEntitySnapshot2, kind: newtype, of: String}\n");
+    }
+    core(&body, "")
+}
+
+#[test]
+fn entity_snapshot_names_preserve_authored_view_records() {
+    let ir = snapshot_view_fixture(false, false);
+    let synthesis = synthesize(&ir).expect("entity helpers must not consume authored view names");
+    let source = &synthesis.artifacts["crates/demo-types/src/core.rs"].contents;
+    for name in ["ApprovalCheckpoint", "ContextPin", "Workbench"] {
+        assert!(source.contains(&format!("pub struct {name}Snapshot {{")));
+        assert!(source.contains(&format!("pub struct {name}EntitySnapshot {{")));
+        assert!(source.contains(&format!("pub fn snapshot(self) -> {name}EntitySnapshot")));
+        assert!(source.contains(&format!("impl {name}EntitySnapshot {{")));
+    }
+    let reordered = synthesize(&snapshot_view_fixture(true, false)).unwrap();
+    assert_eq!(synthesis.artifacts, reordered.artifacts);
+    assert_eq!(synthesis.plan, SynthesisPlan::of(&ir));
+    let directory = scratch("authored-snapshot-views");
+    write_emission(&directory, &synthesis);
+    check_generated(&directory);
+}
+
+#[test]
+fn entity_snapshot_names_avoid_occupied_fallbacks() {
+    let synthesis = synthesize(&snapshot_view_fixture(false, true))
+        .expect("fallbacks share the domain's authored declaration namespace");
+    let source = &synthesis.artifacts["crates/demo-types/src/core.rs"].contents;
+    assert!(source.contains("pub struct ContextPinEntitySnapshot3 {"));
+    assert!(source.contains("pub struct ContextPinSnapshot {"));
+    assert!(source.contains("pub struct ContextPinEntitySnapshot("));
+    assert!(source.contains("pub struct ContextPinEntitySnapshot2("));
+    let directory = scratch("occupied-snapshot-fallbacks");
+    write_emission(&directory, &synthesis);
+    check_generated(&directory);
+}
+
+#[test]
+fn entity_snapshot_names_reserve_other_entities_ordinary_boundaries() {
+    let ir = core("entities:\n  - name: demo.core.Pin\n    identity: {name: id, type: String}\n    fields: []\n    lifecycle: {initial: Active, states: [Active], terminal: [Active]}\n  - name: demo.core.PinEntity\n    identity: {name: id, type: String}\n    fields: []\n    lifecycle: {initial: Active, states: [Active], terminal: [Active]}\ntypes:\n  - {name: demo.core.PinSnapshot, kind: newtype, of: String}\n", "");
+    let synthesis = synthesize(&ir).unwrap();
+    let source = &synthesis.artifacts["crates/demo-types/src/core.rs"].contents;
+    assert!(source.contains("pub struct PinEntitySnapshot {"));
+    assert!(source.contains("pub struct PinEntitySnapshot2 {"));
+    assert!(source.contains("pub struct PinSnapshot("));
+    let directory = scratch("reserved-ordinary-snapshots");
+    write_emission(&directory, &synthesis);
+    check_generated(&directory);
+}
+
+#[test]
+fn entity_snapshot_names_allocate_per_domain() {
+    let entity = "entities:\n  - name: demo.DOMAIN.Pin\n    identity: {name: id, type: String}\n    fields: []\n    lifecycle: {initial: Active, states: [Active], terminal: [Active]}\n";
+    let ir = fixture(&[
+        ("system.yaml", "format: ess/1\nsystem: demo\nversion: v1\ndomains: [demo.alpha, demo.beta]\n"),
+        ("alpha.yaml", &format!("domain: demo.alpha\n{}types:\n  - {{name: demo.alpha.PinSnapshot, kind: newtype, of: String}}\n", entity.replace("DOMAIN", "alpha"))),
+        ("beta.yaml", &format!("domain: demo.beta\n{}", entity.replace("DOMAIN", "beta"))),
+    ]);
+    let synthesis = synthesize(&ir).unwrap();
+    assert!(synthesis.artifacts["crates/demo-types/src/alpha.rs"]
+        .contents
+        .contains("pub struct PinEntitySnapshot {"));
+    let beta = &synthesis.artifacts["crates/demo-types/src/beta.rs"].contents;
+    assert!(beta.contains("pub struct PinSnapshot {"));
+    assert!(!beta.contains("PinEntitySnapshot"));
+}
+
+#[test]
+fn entity_snapshot_names_keep_uncontested_boundary_names() {
+    let ir = core("entities:\n  - name: demo.core.ContextPin\n    identity: {name: id, type: String}\n    fields: []\n    lifecycle:\n      initial: Active\n      states: [Active]\n      terminal: [Active]\n", "");
+    let synthesis = synthesize(&ir).unwrap();
+    let source = &synthesis.artifacts["crates/demo-types/src/core.rs"].contents;
+    assert!(source.contains("pub struct ContextPinSnapshot {"));
+    assert!(source.contains("pub fn snapshot(self) -> ContextPinSnapshot"));
+    assert!(!source.contains("ContextPinEntitySnapshot"));
+}
+
 #[test]
 fn normalized_fields_share_their_actual_struct_scope() {
     refusal(&core("types:\n  - name: demo.core.Value\n    kind: struct\n    fields:\n      - name: fooBar\n        type: String\n      - name: foo_bar\n        type: String\n", ""), "symbol-collision", "field-collision");

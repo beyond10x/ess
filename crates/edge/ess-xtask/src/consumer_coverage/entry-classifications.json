@@ -28896,6 +28896,11 @@
     "macro_ast_sha256": null,
     "reason": "Concrete owned implementation/helper entry within the bounded caller families. Complete body evidence remains visible and changes require ordinary behavioral review; this finite classification grants no independent support or nonreachability."
   },
+  "ess_synth::lib(ess_synth)::rust::layout::fn::entity_snapshots": {
+    "class": "OwnedHelper",
+    "macro_ast_sha256": null,
+    "reason": "Rust Layout::of allocates entity boundary names per domain for the already-bound Rust synthesis consumer. This helper reserves authored declarations and ordinary helper names before deterministic fallback allocation; its classification grants no independent support or nonreachability."
+  },
   "ess_synth::lib(ess_synth)::rust::layout::fn::module_idents": {
     "class": "OwnedHelper",
     "macro_ast_sha256": null,
@@ -28920,6 +28925,11 @@
     "class": "OwnedHelper",
     "macro_ast_sha256": null,
     "reason": "Concrete owned implementation/helper entry within the bounded caller families. Complete body evidence remains visible and changes require ordinary behavioral review; this finite classification grants no independent support or nonreachability."
+  },
+  "ess_synth::lib(ess_synth)::rust::layout::impl<Layout;>::entity_snapshot": {
+    "class": "OwnedHelper",
+    "macro_ast_sha256": null,
+    "reason": "Total lookup of the entity boundary name allocated by Rust Layout::of, shared by feasibility checking and entity rendering behind the already-bound Rust synthesis consumer. This accessor grants no independent support or nonreachability."
   },
   "ess_synth::lib(ess_synth)::rust::layout::impl<Layout;>::has_owner": {
     "class": "OwnedHelper",

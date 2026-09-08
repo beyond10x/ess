@@ -5,7 +5,7 @@
 //! IR, rather than a convention each renderer re-implements. It is deterministic because its inputs
 //! are: [`EssIr`]'s collections are ordered, and nothing here reads anything else.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 use ess_compiler::ir::{EssIr, ResolvedTypeRef};
 use ess_domain::component::ComponentName;
@@ -34,6 +34,8 @@ pub struct Layout {
     modules: BTreeMap<QualifiedName, String>,
     /// The bounded context that owns each declaration.
     owners: BTreeMap<QualifiedName, QualifiedName>,
+    /// Derived entity boundary names, allocated without consuming authored declarations.
+    entity_snapshots: BTreeMap<QualifiedName, String>,
     /// Package name per component, keyed by the component's name.
     component_packages: BTreeMap<ComponentName, String>,
 }
@@ -69,12 +71,14 @@ impl Layout {
                 owners.insert(view.name().clone(), domain.name.clone());
             }
         }
+        let entity_snapshots = entity_snapshots(ir, &owners);
         Self {
             package,
             system_package,
             server_package,
             modules,
             owners,
+            entity_snapshots,
             component_packages,
         }
     }
@@ -155,6 +159,16 @@ impl Layout {
     /// The Rust type name of a declaration, unqualified.
     pub fn type_name(&self, declared: &QualifiedName) -> String {
         name::type_name(declared, self.owner(declared).segments().len())
+    }
+
+    /// The entity's runtime boundary struct, allocated once for checking and rendering.
+    ///
+    /// Total for this IR's entities, like [`Self::owner`] for its declarations.
+    pub fn entity_snapshot(&self, entity: &QualifiedName) -> &str {
+        self.entity_snapshots.get(entity).map_or_else(
+            || panic!("`{entity}` is not an entity this layout knows: it was derived from a different IR"),
+            String::as_str,
+        )
     }
 
     /// How a declaration is spelled from inside `from` — bare when `from` owns it, `crate::`
@@ -256,6 +270,53 @@ fn module_idents(ir: &EssIr) -> BTreeMap<QualifiedName, String> {
         }
     }
     candidates
+}
+
+/// Keep ordinary snapshot names when available, reserving every ordinary candidate before
+/// allocating fallbacks so one repair cannot rename another entity's existing boundary.
+fn entity_snapshots(
+    ir: &EssIr,
+    owners: &BTreeMap<QualifiedName, QualifiedName>,
+) -> BTreeMap<QualifiedName, String> {
+    let mut snapshots = BTreeMap::new();
+    for domain in ir.domains().keys() {
+        let local_name =
+            |declared: &QualifiedName| name::type_name(declared, domain.segments().len());
+        let mut occupied: BTreeSet<String> = owners
+            .iter()
+            .filter(|(_, owner)| *owner == domain)
+            .map(|(declared, _)| local_name(declared))
+            .collect();
+        let entities: Vec<_> = ir
+            .entities()
+            .keys()
+            .filter(|entity| owners.get(*entity) == Some(domain))
+            .map(|entity| (entity, local_name(entity)))
+            .collect();
+        for (_, ty) in &entities {
+            occupied.extend([
+                format!("{ty}Data"),
+                format!("Any{ty}"),
+                format!("{}_state", name::value_ident(ty)),
+            ]);
+        }
+        let mut reserved = occupied.clone();
+        reserved.extend(entities.iter().map(|(_, ty)| format!("{ty}Snapshot")));
+        for (entity, ty) in entities {
+            let mut candidate = format!("{ty}Snapshot");
+            if occupied.contains(&candidate) {
+                candidate = format!("{ty}EntitySnapshot");
+                let mut suffix = 2;
+                while reserved.contains(&candidate) {
+                    candidate = format!("{ty}EntitySnapshot{suffix}");
+                    suffix += 1;
+                }
+            }
+            reserved.insert(candidate.clone());
+            snapshots.insert(entity.clone(), candidate);
+        }
+    }
+    snapshots
 }
 
 /// One package name per component, collision-free by rule rather than by luck.
