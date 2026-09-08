@@ -522,3 +522,153 @@ actual named raw/wire accounting failure and any actual classification refusal; 
 not invent a separate classification failure. This is diagnostic attribution only and
 admits no new unknown cell. Full production execution, both mutations, source review and
 the integration gate remain pending.
+
+## Held Stage 2 source and selected causal checks
+
+The implementor held source after actual matching package checks: ess-diff increased
+from 161 to 166 passing cases and ess-xtask from 71 to 88. The combined package command
+also passed 254 cases. Final strict Clippy and formatting returned zero. These suite
+results do not themselves admit consumer cells. The held checkpoint is
+consumer-coverage-stage2/source-hold-1/checkpoint.json, SHA256
+caa85389744c9a4e9b695a198917ac954f11004a7d9af8c41228aefc7080c3dd.
+
+Root independently compared all 1,213 current source paths and bytes, original direct
+statuses and stream hashes, and all 33 retained native copies from the seven selected
+green/refusal lanes. The root readback is preparation/stage2-source-hold-readback/root-readback.json,
+SHA256 4b551be8941751146d6060d80c494af7d8854120544bb0e038628b6890f1b4a1.
+The complete source checkpoint is local bot commit 2bf01a2e06d0543609f54b92646489dbf1187195.
+Root shared configuration c03bfc6b6a340ea21c1607883ba5ba2260d44aa2 was then merged into
+the unit as 7caf8cc5e935357c8b5f715c336cf6ea9c001c84. All six changed shared files match
+root exactly; the other 1,207 source files and accepted baseline are unchanged. Both direct
+commit identities were verified. The initial merge readback used an incorrect journal path;
+the merge itself succeeded, and the corrected reader verified the actual journal.jsonl.
+
+Root provisioned managed ess-consumer-coverage-mutations-wave18 at that same 7caf8cc5
+commit, branch probe/consumer-coverage-wave18. Its complete 1,213-file source equals the
+unit. Assigned scratch is target/review-boundaries-18/consumer-mutations and TMP is
+~/.cache/ess-w18-consumer-mutations-tmp. Root lease is ess-review-consumer-mutations-wave18;
+the implementor owns ess-consumer-coverage-stage2-mutations. Mutation target plus TMP is
+limited to 3,221,225,472 bytes; the unit's existing 10 GiB allowance and global 8 GiB free
+floor remain. Both trees share one heavy-producer slot and two Rust jobs, with separate
+default targets and the unchanged read-only Stage 1 toolchain. Grant-time free space was
+12,544,106,496 bytes. Provisioning receipt SHA256 is
+6c74c77f0629913ba87a41be17143ba6f272e945b635e921a8f4e0e53c4aa415.
+
+The hold is released for post-sync extraction, actual checker execution and the two
+previously selected sequential production mutations. Source must be restored between
+the optional RawSpecFile field and Struct invariant-annotation suppression, and the
+final restored authority must pass matching actual execution before handoff. No causal
+mutation or final source-adversary result is claimed by this provisioning record.
+
+## Coordinator Cargo test scratch retained and retired
+
+To make room for those isolated builds, root retained the complete owned coordinator
+target/tmp directory. Production integration tests explicitly write their generated
+fixtures and native builds under CARGO_TARGET_TMPDIR. The full 562-entry top-level list,
+source citations, clean coordinator c03bfc6 identity and process visibility checks are
+retained; no visible process referenced the exact directory. The same eight protected
+service/zombie descriptor limitations remain explicit.
+
+Archive creation returned zero in 50.194 seconds. All 29,152 native entries, including
+24,704 regular files, 62 literal symlinks and 210 tar hard-link aliases, are preserved.
+The archive has 992,213,754 bytes, SHA256
+c3e20e5000a714a0e8ed7e3982e734629a38c63792d8a5a680591d91dcc866bc.
+Its logical regular payload is 3,421,318,310 bytes; no entry was excluded.
+
+The first reader repeatedly sought through gzip for hard-link aliases. Root stopped that
+exact owned verifier after 325.192 seconds (direct signal -15); its incomplete attempt is
+retained and is not a success. A separate streaming reader verified every stored payload,
+every alias against its earlier verified payload hash/length/native identity, the full PAX
+metadata and a fresh complete source-file hash census. It returned zero in 27.045 seconds.
+The archive stayed unchanged. Minimum archive-write free space was 9,226,842,112 bytes.
+
+Exact retirement after fresh source and process checks returned zero in 9.929 seconds.
+No directory permission adjustment was needed. Coordinator target/tmp is absent, and
+free space afterward was 12,532,621,312 bytes. Full archive, original/interrupted/streaming
+reader records, native manifests and retirement intent remain outside the worktree under
+~/.cache/ess-review/2026-09-06-resume/coordinator-cargo-test-tmp-retirement. No managed tree,
+unit target, Stage 1 records or assigned unit TMP was removed.
+
+## Actual consumer execution and causal regression checks
+
+The post-sync checker at 7caf8cc5 returned zero in 571.010 seconds: 22 exact cases,
+54 Supported cells, zero Refused cells and the exact 157,068 accepted BaselineUnknown
+cells. It retained seven independent provider/test images and all 72 direct commands:
+six locked/offline owner builds and 22 listing, ignored-listing and execution triples.
+Only 12.420 seconds were spent waiting for those child commands; the remaining
+558.590 seconds are measured outer elapsed time without profiler attribution.
+
+In the isolated mutation checkout, adding the optional RawSpecFile field
+consumer_coverage_optional_probe compiled successfully and the actual checker refused
+with exit one in 39.164 seconds. The field is absent from all six Billing fixtures.
+Discovery found one new Rust field obligation and five wire obligations, increasing
+the model count from 1,806 to 1,812. The refusal named 522 new pairs and 261 stale
+shape/profile pairs, without executing cases or creating a qualification receipt.
+The full 1,213-file mutant source archive has SHA256
+c5777c64d03abb42581aaa8215be868d9e8b10529e9ff13e6a7e5063d2058980.
+
+After restoring every source byte, the second mutation removed only Struct invariant
+annotation projection from ess-gen types.rs. The model, wire, profile and mandatory
+inventories remained byte-identical to the original green. The actual checker returned
+one in 476.786 seconds: 17 preceding exact cases passed, then
+reusable_row_invariant_change_reaches_its_openapi_artifact failed with direct 101 at
+its output-body inequality assertion after provenance removal. The full mutant archive
+has SHA256 f01ba00ae2c36f2decc01da2b2414e00079c4675ff9c65d620501d9827485293.
+This establishes annotation preservation and invalidation, not runtime invariant execution.
+
+All 1,213 source bytes were restored again to 7caf8cc5. The restored actual checker
+returned zero in 587.415 seconds, including the previously failing exact row case,
+and reproduced the 22 cases, 54 supported cells and exact accepted baseline set.
+Root independently hashed the native copies and complete mutant archive payloads,
+read all original command streams, checked direct statuses and source observations,
+and compared both qualified cell sets against the accepted baseline and mandatory
+requirements. Its reader first selected direct.json instead of direct-result.json;
+that read-only attempt failed before writing a receipt. The corrected readback passed:
+preparation/stage2-result-readback/root-readback.json, SHA256
+99034035c30c6953b1f92798e50724f23fec705b9585c0c57af2a657037ce373.
+Source-adversary review and full integration remain pending.
+
+## Explicit provider Cargo locking
+
+The historical successful post-sync invocation used the xtask alias under the selected
+offline environment, with unchanged Cargo.lock. Its nested owner builds already passed
+explicit --locked --offline arguments. The alias did not explicitly lock the outer
+provider build. Root therefore changed only this Taskfile command to
+cargo run --locked --offline --quiet --package ess-xtask -- consumer-check and clarified
+the binding. The Struct mutation and restored-green launches used this explicit command;
+the earlier optional-field launch used the offline alias, with unchanged Cargo.lock.
+The 7caf8cc5 source authority was kept intact throughout the causal checks.
+
+The actual task environment was checked again under fourteen hostile inherited names;
+all thirteen assignments and the encoded-flags removal remained exact, with task exit
+zero in 0.050 seconds and dry-run exit zero. Receipt:
+preparation/task-profile-readiness-4/result.json. The amended Taskfile SHA256 is
+a14b155a234c03e16adc99908463a5255b4c4a64d3faaa455fe27be5e07a5129.
+This shared amendment must be synchronized before source review and integration;
+it does not change the accepted e005 baseline or eligibility grammar.
+
+## Sealed Stage 2 handoff
+
+The implementor returned a green handoff at 7caf8cc5, with both source trees restored
+and both own leases released. Its complete 2,602,434-byte report is
+consumer-coverage-stage2/report.md, SHA256
+fc92ce3134ead2695c8a06cfbe6da62f73516bfdcd393e706aeb7d67196b1cd8.
+Final seal SHA256 is 6b5b10321be722fa9db6b455c084ac0d0d8e9b507a09e4be2ceaf0fe38f4130f;
+the native inventory SHA256 is 328cd5370fa02a75e1daf84546a76e8d216d0cbaf125c484f20d6b196b7a5eda.
+The separate native producer and reader both returned zero.
+
+Root independently compared the complete current 8,184-entry native path set across
+both targets and three assigned TMP roots, hashing all 10,195,776,716 regular-file bytes
+and checking every recorded native identity and literal symlink. It verified all 31
+final evidence/status pins and all 496 original stdout/stderr payloads embedded in the
+report, covering 45 outer lanes and 203 native commands. The narrative acceptance,
+limits and outside-path sections were read separately; this is not a claim of semantic
+reading of every embedded Cargo metadata line. Root readback returned zero in 17.410
+seconds: preparation/stage2-final-seal-readback/readback.json, SHA256
+0222573d99ef87c0ede7b373231c5be4981905c93e2e80f306a5a393fd45ab36.
+
+The old Stage 1 TMP comparison recorded one additional 586-byte commit-message file
+and the parent directory's changed mtime/ctime. Root checked its original tool call at
+2026-09-07T22:50:00.528Z and confirmed that checkpoint bookkeeping. Every original
+payload remains, and no timestamp or file was restored to hide the discrepancy.
+No producer remains. Root leases are retained for review and publication.
