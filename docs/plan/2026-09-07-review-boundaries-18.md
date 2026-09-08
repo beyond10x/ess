@@ -635,8 +635,9 @@ offline environment, with unchanged Cargo.lock. Its nested owner builds already 
 explicit --locked --offline arguments. The alias did not explicitly lock the outer
 provider build. Root therefore changed only this Taskfile command to
 cargo run --locked --offline --quiet --package ess-xtask -- consumer-check and clarified
-the binding. All mutation and restored-green launches already used this explicit command;
-their 7caf8cc5 source authority was kept intact throughout the causal checks.
+the binding. The Struct mutation and restored-green launches used this explicit command;
+the earlier optional-field launch used the offline alias, with unchanged Cargo.lock.
+The 7caf8cc5 source authority was kept intact throughout the causal checks.
 
 The actual task environment was checked again under fourteen hostile inherited names;
 all thirteen assignments and the encoded-flags removal remained exact, with task exit
@@ -645,3 +646,29 @@ preparation/task-profile-readiness-4/result.json. The amended Taskfile SHA256 is
 a14b155a234c03e16adc99908463a5255b4c4a64d3faaa455fe27be5e07a5129.
 This shared amendment must be synchronized before source review and integration;
 it does not change the accepted e005 baseline or eligibility grammar.
+
+## Sealed Stage 2 handoff
+
+The implementor returned a green handoff at 7caf8cc5, with both source trees restored
+and both own leases released. Its complete 2,602,434-byte report is
+consumer-coverage-stage2/report.md, SHA256
+fc92ce3134ead2695c8a06cfbe6da62f73516bfdcd393e706aeb7d67196b1cd8.
+Final seal SHA256 is 6b5b10321be722fa9db6b455c084ac0d0d8e9b507a09e4be2ceaf0fe38f4130f;
+the native inventory SHA256 is 328cd5370fa02a75e1daf84546a76e8d216d0cbaf125c484f20d6b196b7a5eda.
+The separate native producer and reader both returned zero.
+
+Root independently compared the complete current 8,184-entry native path set across
+both targets and three assigned TMP roots, hashing all 10,195,776,716 regular-file bytes
+and checking every recorded native identity and literal symlink. It verified all 31
+final evidence/status pins and all 496 original stdout/stderr payloads embedded in the
+report, covering 45 outer lanes and 203 native commands. The narrative acceptance,
+limits and outside-path sections were read separately; this is not a claim of semantic
+reading of every embedded Cargo metadata line. Root readback returned zero in 17.410
+seconds: preparation/stage2-final-seal-readback/readback.json, SHA256
+0222573d99ef87c0ede7b373231c5be4981905c93e2e80f306a5a393fd45ab36.
+
+The old Stage 1 TMP comparison recorded one additional 586-byte commit-message file
+and the parent directory's changed mtime/ctime. Root checked its original tool call at
+2026-09-07T22:50:00.528Z and confirmed that checkpoint bookkeeping. Every original
+payload remains, and no timestamp or file was restored to hide the discrepancy.
+No producer remains. Root leases are retained for review and publication.
