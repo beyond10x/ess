@@ -169,7 +169,7 @@ tasks:
         CARGO_BUILD_JOBS=2 CARGO_NET_OFFLINE=true CARGO_INCREMENTAL=0
         CARGO_PROFILE_DEV_DEBUG=0 CARGO_PROFILE_TEST_DEBUG=0
         CARGO_PROFILE_DEV_INCREMENTAL=false CARGO_PROFILE_TEST_INCREMENTAL=false
-        cargo xtask consumer-check
+        cargo run --locked --offline --quiet --package ess-xtask -- consumer-check
 
   check:
     cmds:

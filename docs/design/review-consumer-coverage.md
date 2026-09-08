@@ -381,3 +381,7 @@ The Rust 1.98.1 x86_64 GNU toolchain supplies its bundled LLD driver and linker;
 linked and executed readiness probe verified the sysroot `gcc-ld` selection in the actual
 link command. These tool bytes remain execution evidence. Additional or changed flags
 refuse admission; this clarification changes neither the baseline nor its fingerprints.
+
+The gate builds the schema provider with explicit `--locked --offline` Cargo arguments,
+then applies those same constraints to every selected test target.
+The existing `xtask` alias remains available for other maintenance work.
