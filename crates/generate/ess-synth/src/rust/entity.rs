@@ -36,6 +36,8 @@ pub(super) fn lifecycle(out: &mut String, emit: &Emit<'_>, entity: &ResolvedEnti
 struct Entity {
     /// The entity's own type name — `Invoice`.
     type_name: String,
+    /// The allocated runtime boundary struct, which must not shadow authored declarations.
+    snapshot_name: String,
     /// The runtime state enum — `InvoiceState`.
     state_enum: String,
     /// The marker module — `invoice_state`.
@@ -46,6 +48,7 @@ impl Entity {
     fn of(emit: &Emit<'_>, entity: &ResolvedEntity) -> Self {
         let type_name = emit.layout.type_name(&entity.name);
         Self {
+            snapshot_name: emit.layout.entity_snapshot(&entity.name).to_owned(),
             state_enum: emit.layout.type_name(entity.state_type.name()),
             state_module: format!("{}_state", name::value_ident(&type_name)),
             type_name,
@@ -61,11 +64,11 @@ fn data_struct(out: &mut String, emit: &Emit<'_>, entity: &ResolvedEntity, conte
         "\n/// What {} — `{}` — holds, apart from where it is in its lifecycle.\n///\n/// The \
          identity and every declared field. The state is deliberately not one: inside the domain \
          it\n/// is carried by the type parameter of [`{}<S>`], and at a boundary by \
-         [`{}Snapshot::state`].",
+         [`{}::state`].",
         entity.naming.display_or(&entity.name),
         entity.name,
         context.type_name,
-        context.type_name
+        context.snapshot_name
     );
     items::invariant_doc(out, &entity.invariants);
     let _ = writeln!(
@@ -166,6 +169,7 @@ fn typed_entity(out: &mut String, entity: &ResolvedEntity, context: &Entity) {
         type_name,
         state_enum,
         state_module,
+        snapshot_name,
     } = context;
     let _ = writeln!(
         out,
@@ -173,12 +177,10 @@ fn typed_entity(out: &mut String, entity: &ResolvedEntity, context: &Entity) {
          constructor rests in `{}`, and the only way to change `S` is a method generated from\n/// \
          a declared transition. A move the specification does not declare is therefore not an \
          error\n/// case: it does not compile. Where the state is data — wire, storage — use \
-         [`{}Snapshot`]\n/// and [`{}Snapshot::refine`].",
+         [`{snapshot_name}`]\n/// and [`{snapshot_name}::refine`].",
         entity.naming.display_or(&entity.name),
         entity.name,
-        entity.lifecycle.initial,
-        type_name,
-        type_name
+        entity.lifecycle.initial
     );
     let _ = writeln!(
         out,
@@ -272,14 +274,15 @@ fn boundary(out: &mut String, entity: &ResolvedEntity, context: &Entity) {
         type_name,
         state_enum,
         state_module,
+        snapshot_name,
     } = context;
 
     let _ = writeln!(
         out,
         "\n/// `{}` as it crosses a boundary: the state as a value beside the data.\n///\n/// Wire \
-         and storage know states only at runtime; [`{type_name}Snapshot::refine`] is the one door \
+         and storage know states only at runtime; [`{snapshot_name}::refine`] is the one door \
          back\n/// into the typed lifecycle.\n#[derive(Debug, Clone, PartialEq, Eq)]\npub struct \
-         {type_name}Snapshot {{\n    /// Where the instance is in its lifecycle.\n    pub state: \
+         {snapshot_name} {{\n    /// Where the instance is in its lifecycle.\n    pub state: \
          {state_enum},\n    /// What it holds.\n    pub data: {type_name}Data,\n}}",
         entity.name
     );
@@ -299,7 +302,7 @@ fn boundary(out: &mut String, entity: &ResolvedEntity, context: &Entity) {
 
     let _ = writeln!(
         out,
-        "\nimpl {type_name}Snapshot {{\n    /// Refines the runtime state into the typed one.\n    \
+        "\nimpl {snapshot_name} {{\n    /// Refines the runtime state into the typed one.\n    \
          ///\n    /// Total: every declared state has an arm, and an undeclared state cannot reach \
          here because\n    /// `{state_enum}` cannot spell one.\n    pub fn refine(self) -> \
          Any{type_name} {{\n        match self.state {{"
@@ -330,12 +333,12 @@ fn boundary(out: &mut String, entity: &ResolvedEntity, context: &Entity) {
     out.push_str("        }\n    }\n\n    /// Back to the boundary shape.\n");
     let _ = writeln!(
         out,
-        "    pub fn snapshot(self) -> {type_name}Snapshot {{\n        match self {{"
+        "    pub fn snapshot(self) -> {snapshot_name} {{\n        match self {{"
     );
     for state in &entity.lifecycle.states {
         let _ = writeln!(
             out,
-            "            Self::{state}(instance) => {type_name}Snapshot {{\n                \
+            "            Self::{state}(instance) => {snapshot_name} {{\n                \
              state: {state_enum}::{state},\n                data: instance.into_data(),"
         );
         out.push_str("            },\n");

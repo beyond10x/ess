@@ -348,7 +348,10 @@ fn entity_declarations(inventory: &mut Inventory, ir: &EssIr, layout: &Layout) {
         for (token, role) in [
             (ty.clone(), "entity"),
             (format!("{ty}Data"), "entity data"),
-            (format!("{ty}Snapshot"), "entity snapshot"),
+            (
+                layout.entity_snapshot(&entity.name).to_owned(),
+                "entity snapshot",
+            ),
             (format!("Any{ty}"), "entity sum"),
             (format!("{}_state", name::value_ident(&ty)), "state module"),
         ] {
