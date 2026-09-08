@@ -1,0 +1,139 @@
+domain: output.ownership
+
+types:
+  - name: output.ownership.NativeComponent
+    kind: newtype
+    of: String
+    invariants: ['value != ""']
+
+  - name: output.ownership.NativePath
+    kind: struct
+    fields:
+      - name: components
+        type: List<output.ownership.NativeComponent>
+
+  - name: output.ownership.Digest
+    kind: newtype
+    of: String
+    invariants: ['value != ""']
+
+entities:
+  - name: output.ownership.Anchor
+    identity:
+      name: anchor_id
+      type: Uuid
+    fields:
+      - name: native_root
+        type: output.ownership.NativePath
+      - name: settled_ledger_digest
+        type: output.ownership.Digest
+    relations:
+      - name: current_transaction
+        kind: owns
+        target: output.ownership.Transaction
+        cardinality: one
+        via: anchor_id
+    # Enrollment remains after the last owned output is retired. There is no automatic
+    # anchor removal or relocation command in this change.
+    lifecycle:
+      initial: Enrolled
+      states: [Enrolled]
+      terminal: [Enrolled]
+
+  - name: output.ownership.Transaction
+    identity:
+      name: transaction_id
+      type: Uuid
+    fields:
+      - name: anchor_id
+        type: Uuid
+      - name: old_inventory_digest
+        type: output.ownership.Digest
+      - name: new_inventory_digest
+        type: output.ownership.Digest
+    # These states describe the durable decision. Cleanup preserves the terminal
+    # decision until the anchor's settled checkpoint no longer contains a transaction.
+    lifecycle:
+      initial: Staging
+      states: [Staging, Prepared, Committed, Restored]
+      terminal: [Committed, Restored]
+      transitions:
+        - name: prepare
+          from: [Staging]
+          to: Prepared
+        - name: commit
+          from: [Prepared]
+          to: Committed
+        - name: restore
+          from: [Staging, Prepared]
+          to: Restored
+
+commands:
+  - name: output.ownership.Prepare
+    input:
+      - name: transaction_id
+        type: Uuid
+    outcomes:
+      - name: prepared
+        moves: output.ownership.Transaction.prepare
+        instance: transaction_id
+        emits: [output.ownership.Prepared]
+        payload:
+          output.ownership.Prepared:
+            transaction_id: input.transaction_id
+        summary: Complete preimages and new stages precede the durable prepared decision.
+      - name: wrong-state
+        wrong_state: true
+        error: output.ownership.StateConflict
+
+  - name: output.ownership.Commit
+    input:
+      - name: transaction_id
+        type: Uuid
+    outcomes:
+      - name: committed
+        moves: output.ownership.Transaction.commit
+        instance: transaction_id
+        emits: [output.ownership.Committed]
+        payload:
+          output.ownership.Committed:
+            transaction_id: input.transaction_id
+        summary: The complete new output is synchronized before committing its ledger.
+      - name: wrong-state
+        wrong_state: true
+        error: output.ownership.StateConflict
+
+  - name: output.ownership.Restore
+    input:
+      - name: transaction_id
+        type: Uuid
+    outcomes:
+      - name: restored
+        moves: output.ownership.Transaction.restore
+        instance: transaction_id
+        emits: [output.ownership.Restored]
+        payload:
+          output.ownership.Restored:
+            transaction_id: input.transaction_id
+        summary: The actual old output is restored before recording the durable old decision.
+      - name: wrong-state
+        wrong_state: true
+        error: output.ownership.StateConflict
+
+events:
+  - name: output.ownership.Prepared
+    fields:
+      - name: transaction_id
+        type: Uuid
+  - name: output.ownership.Committed
+    fields:
+      - name: transaction_id
+        type: Uuid
+  - name: output.ownership.Restored
+    fields:
+      - name: transaction_id
+        type: Uuid
+
+errors:
+  - name: output.ownership.StateConflict
+    summary: The retained decision does not admit this transition.
