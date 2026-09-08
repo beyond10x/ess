@@ -46,6 +46,15 @@ Canonical layout notation:
 
 ## Source-driven integration additions
 
+The output-ownership wave introduces the private `ess-output-state/1` reader/writer at the CLI
+edge. Its selected [binding](review-output-ownership.md) defines canonical sorted-key JSON plus
+LF, native `UnixBytes1` components, fixed owner inventory, root binding, transaction decisions and
+checksum coverage. Strict admission rejects malformed/noncanonical/unknown state and preserves
+the evidence. This format is independent of all generated artifact formats and their digests;
+an older ESS generator does not participate in its ownership or recovery contract. The public
+[format reference](../../website/docs/reference/formats.md#generated-output-state) records the same
+boundary. Runtime and native platform validation remain owed at wave opening.
+
 This section reconciles the catalogue with the schema/data work and the frozen Rust feasibility
 implementation. It describes the combined integration preview, not an ESS release or a migrated
 external consumer. The public [format reference](../../website/docs/reference/formats.md) carries

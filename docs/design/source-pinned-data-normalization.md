@@ -448,13 +448,16 @@ version 1 for recipes 1/2, version 2 for recipe 3, and version 3 for recipes 4/5
 Admission and target feasibility finish before output preflight. All generated
 paths pass the existing shared containment, symlink, hard-link, case-alias and
 file/directory checks before any write. Canonical source input paths must not
-equal any generated destination. This retains the existing trusted-parent
-assumption and does not claim rollback on subsequent I/O failure.
+equal any generated destination. Publication follows the selected
+[output ownership and recovery contract](review-output-ownership.md), retaining the trusted-parent
+assumption. The fixed normalization owner replaces its complete file set across target changes;
+the checkpoint records the actual old files before publication.
 
 `--check` compares every planned file byte-for-byte without creating directories
 or changing files. Missing or stale files are listed deterministically and give a
 nonzero exit. It checks the generated file set, not ownership of unrelated files
-in an adopter's directory; neither mode deletes obsolete or unowned files.
+in an adopter's directory. Check mode neither retires files nor changes ownership state. Ordinary
+generation retires only obsolete files already owned by normalization and preserves unowned files.
 Source/target refusals still apply in check mode. Tests compare all three targets with
 the library output and cover input protection, complete preflight, read-only drift,
 invalid unused branches and target refusals before publication.

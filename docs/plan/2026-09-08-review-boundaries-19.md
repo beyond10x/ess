@@ -19,7 +19,7 @@ The selected story's containment prerequisite is implemented. The store reports 
 artifacts or dependency cycles. The complete current computed selection is reproduced below.
 Root selects N=1 because this change spans the CLI generator families and shared consumer metadata,
 and only one build fits the measured budget. Other candidates remain in their existing scope;
-they are not silently absorbed into this unit. Six typed paths are cited; eight are inferred
+they are not silently absorbed into this unit. Six typed paths are cited; nine are inferred
 reservations, with consumer profiles/candidates conditional on actual behavioral attribution.
 
 Scoping used aep-drive:story-scoper; implementation and the independent source attack use
@@ -47,8 +47,8 @@ wave19-retained-inputs directory. Their inventory receipts preserve old-source p
 
 | Role | Managed worktree | Branch | Build and scratch | Stage |
 |---|---|---|---|---|
-| Coordinator | /home/timo/.local/state/worktree/trees/b10x/ess/ess-review-boundaries-19 | wave/review-boundaries-19 | target/review-boundaries-19/preparation; no compiler build | Opening records at published baseline |
-| Implementor | Planned id ess-output-ownership-wave19 | impl/review-output-ownership-wave19 | Its own target/ and target/review-output-ownership-wave19/ | Awaiting opening commit and managed creation |
+| Coordinator | /home/timo/.local/state/worktree/trees/b10x/ess/ess-review-boundaries-19 | wave/review-boundaries-19 | target/review-boundaries-19/preparation; no compiler build | Opening commit 11bf599fa4680ee4adb8d93e3523f86ec0b30cab; integration work |
+| Implementor | /home/timo/.local/state/worktree/trees/b10x/ess/ess-output-ownership-wave19 | impl/review-output-ownership-wave19 | Its own target/ and target/review-output-ownership-wave19/ | Implementor dispatched at 11bf599fa4680ee4adb8d93e3523f86ec0b30cab |
 
 Root lease: ess-review-boundaries-coordinator-wave19. The unit's actual path, opening SHA and
 lease are recorded immediately after provisioning. Root will reuse the unit checkout for the
@@ -99,723 +99,77 @@ Native macOS ownership witnesses must run before completion; adding an exact CI 
 
 ## Computed opening waves
 
-The following is the complete waves command output, unfiltered and unabridged, exit 0.
+The [complete unfiltered command output](../reviews/2026-09-08-review-boundaries-19-opening-waves.md)
+retains every computed wave, collision, unassessed story and cycle verbatim, actual exit 0.
+Its scope reservations include future implementation paths.
 
-```json
-{
-  "waves": [
-    {
-      "wave": 1,
-      "artifacts": [
-        {
-          "id": "story:architecture-review-and-outlook",
-          "inferred": false,
-          "scope": [
-            {
-              "confidence": "cited",
-              "path": "docs/reviews/2026-09-05-architecture-review.md"
-            },
-            {
-              "confidence": "cited",
-              "path": "website/docs/status/outlook.md"
-            },
-            {
-              "confidence": "cited",
-              "path": "website/docs/status/roadmap.md"
-            },
-            {
-              "confidence": "cited",
-              "path": "website/sidebars.ts"
-            }
-          ]
-        },
-        {
-          "id": "story:component-declares-its-settings",
-          "inferred": false,
-          "scope": [
-            {
-              "confidence": "cited",
-              "path": "crates/generate/ess-deployment/src/runtime.rs"
-            },
-            {
-              "confidence": "cited",
-              "path": "crates/specify/ess-compiler/src/ir.rs"
-            },
-            {
-              "confidence": "cited",
-              "path": "crates/specify/ess-domain/src/component.rs"
-            },
-            {
-              "confidence": "cited",
-              "path": "schemas/generated/ess.schema.json"
-            }
-          ]
-        },
-        {
-          "id": "story:create-only-command-cannot-refuse",
-          "inferred": true,
-          "scope": [
-            {
-              "confidence": "inferred",
-              "path": "crates/generate/ess-gen"
-            },
-            {
-              "confidence": "inferred",
-              "path": "crates/generate/ess-synth"
-            },
-            {
-              "confidence": "cited",
-              "path": "crates/specify/ess-compiler"
-            },
-            {
-              "confidence": "cited",
-              "path": "crates/specify/ess-domain"
-            },
-            {
-              "confidence": "cited",
-              "path": "crates/verify/ess-conformance"
-            },
-            {
-              "confidence": "inferred",
-              "path": "crates/verify/ess-diff"
-            },
-            {
-              "confidence": "inferred",
-              "path": "docs/design"
-            }
-          ]
-        },
-        {
-          "id": "story:integrate-source-driven-realizations",
-          "inferred": false,
-          "scope": [
-            {
-              "confidence": "cited",
-              "path": "CHANGELOG.md"
-            },
-            {
-              "confidence": "cited",
-              "path": "crates/edge/ess-cli/src/main.rs"
-            },
-            {
-              "confidence": "cited",
-              "path": "crates/generate/ess-synth/tests/feasibility.rs"
-            },
-            {
-              "confidence": "cited",
-              "path": "docs/design/review-format-catalog.md"
-            },
-            {
-              "confidence": "cited",
-              "path": "docs/design/review-rust-target-feasibility.md"
-            },
-            {
-              "confidence": "cited",
-              "path": "website/docs/reference/formats.md"
-            }
-          ]
-        },
-        {
-          "id": "story:native-realization-ci",
-          "inferred": false,
-          "scope": [
-            {
-              "confidence": "cited",
-              "path": ".github/workflows/ci.yml"
-            },
-            {
-              "confidence": "cited",
-              "path": "Taskfile.yml"
-            },
-            {
-              "confidence": "cited",
-              "path": "crates/generate/schema-contract/Cargo.toml"
-            }
-          ]
-        },
-        {
-          "id": "story:normalization-equality-eligibility",
-          "inferred": true,
-          "scope": [
-            {
-              "confidence": "inferred",
-              "path": "docs/design/normalization-equality-eligibility.md"
-            }
-          ]
-        },
-        {
-          "id": "story:release-status-publication-state",
-          "inferred": false,
-          "scope": [
-            {
-              "confidence": "cited",
-              "path": "crates/edge/ess-xtask/src/main.rs"
-            }
-          ]
-        }
-      ]
-    },
-    {
-      "wave": 2,
-      "artifacts": [
-        {
-          "id": "story:enum-variant-in-an-entity-invariant",
-          "inferred": true,
-          "scope": [
-            {
-              "confidence": "inferred",
-              "path": "crates/specify/ess-compiler/tests/billing.rs"
-            },
-            {
-              "confidence": "cited",
-              "path": "crates/specify/ess-domain"
-            },
-            {
-              "confidence": "cited",
-              "path": "crates/specify/ess-domain/src/entity.rs"
-            },
-            {
-              "confidence": "inferred",
-              "path": "crates/specify/ess-domain/src/view.rs"
-            }
-          ]
-        },
-        {
-          "id": "story:fuzz-the-specification-surface",
-          "inferred": true,
-          "scope": [
-            {
-              "confidence": "cited",
-              "path": "Taskfile.yml"
-            },
-            {
-              "confidence": "inferred",
-              "path": "crates/edge/ess-cli/tests/target_failure.rs"
-            },
-            {
-              "confidence": "cited",
-              "path": "crates/generate/ess-synth"
-            },
-            {
-              "confidence": "inferred",
-              "path": "docs/design/review-specification-fuzzing.md"
-            },
-            {
-              "confidence": "cited",
-              "path": "fuzz"
-            },
-            {
-              "confidence": "inferred",
-              "path": "website/docs/reference/formats.md"
-            }
-          ]
-        },
-        {
-          "id": "story:java-conformance-target",
-          "inferred": false,
-          "scope": [
-            {
-              "confidence": "cited",
-              "path": "crates/edge/ess-cli"
-            },
-            {
-              "confidence": "cited",
-              "path": "crates/verify/ess-conformance"
-            }
-          ]
-        },
-        {
-          "id": "story:review-execution-recovery-implementation",
-          "inferred": true,
-          "scope": [
-            {
-              "confidence": "cited",
-              "path": "Cargo.lock"
-            },
-            {
-              "confidence": "cited",
-              "path": "crates/edge/ess-cli/Cargo.toml"
-            },
-            {
-              "confidence": "inferred",
-              "path": "crates/edge/ess-cli/src/lib.rs"
-            },
-            {
-              "confidence": "cited",
-              "path": "crates/edge/ess-cli/src/main.rs"
-            },
-            {
-              "confidence": "cited",
-              "path": "crates/edge/ess-cli/src/oci_cache.rs"
-            },
-            {
-              "confidence": "inferred",
-              "path": "crates/edge/ess-cli/src/recovery/authority.rs"
-            },
-            {
-              "confidence": "inferred",
-              "path": "crates/edge/ess-cli/src/recovery/chart.rs"
-            },
-            {
-              "confidence": "inferred",
-              "path": "crates/edge/ess-cli/src/recovery/journal.rs"
-            },
-            {
-              "confidence": "inferred",
-              "path": "crates/edge/ess-cli/src/recovery/mod.rs"
-            },
-            {
-              "confidence": "inferred",
-              "path": "crates/edge/ess-cli/src/recovery/model.rs"
-            },
-            {
-              "confidence": "inferred",
-              "path": "crates/edge/ess-cli/src/recovery/observe.rs"
-            },
-            {
-              "confidence": "inferred",
-              "path": "crates/edge/ess-cli/src/recovery/process.rs"
-            },
-            {
-              "confidence": "cited",
-              "path": "crates/edge/ess-cli/tests/cache_origin.rs"
-            },
-            {
-              "confidence": "cited",
-              "path": "crates/edge/ess-cli/tests/cache_origin_adversary_pass1.rs"
-            },
-            {
-              "confidence": "cited",
-              "path": "crates/edge/ess-cli/tests/command_surface.rs"
-            },
-            {
-              "confidence": "inferred",
-              "path": "crates/edge/ess-cli/tests/execution_recovery.rs"
-            },
-            {
-              "confidence": "cited",
-              "path": "crates/edge/ess-cli/tests/persisted_delivery.rs"
-            },
-            {
-              "confidence": "cited",
-              "path": "crates/edge/ess-cli/tests/support/cache_origin_attack_client.rs"
-            },
-            {
-              "confidence": "cited",
-              "path": "crates/edge/ess-cli/tests/support/fake_delivery.rs"
-            },
-            {
-              "confidence": "cited",
-              "path": "crates/edge/ess-cli/tests/support/fake_oci.rs"
-            },
-            {
-              "confidence": "inferred",
-              "path": "crates/edge/ess-cli/tests/support/fake_recovery.rs"
-            },
-            {
-              "confidence": "inferred",
-              "path": "crates/edge/ess-cli/tests/support/recovery_driver.rs"
-            },
-            {
-              "confidence": "cited",
-              "path": "crates/edge/ess-xtask/src/support.rs"
-            },
-            {
-              "confidence": "cited",
-              "path": "crates/infra/ess-kubernetes/Cargo.toml"
-            },
-            {
-              "confidence": "cited",
-              "path": "crates/infra/ess-kubernetes/src/lib.rs"
-            },
-            {
-              "confidence": "inferred",
-              "path": "crates/infra/ess-kubernetes/src/recovery.rs"
-            },
-            {
-              "confidence": "inferred",
-              "path": "crates/infra/ess-kubernetes/tests/recovery_adapter.rs"
-            },
-            {
-              "confidence": "cited",
-              "path": "docs/design/review-execution-recovery.md"
-            },
-            {
-              "confidence": "cited",
-              "path": "models/execution-recovery/domains/execution.yaml"
-            },
-            {
-              "confidence": "cited",
-              "path": "models/execution-recovery/system.yaml"
-            },
-            {
-              "confidence": "cited",
-              "path": "website/docs/concepts/component-delivery.md"
-            },
-            {
-              "confidence": "cited",
-              "path": "website/docs/reference/cli.md"
-            },
-            {
-              "confidence": "cited",
-              "path": "website/docs/status/limitations.md"
-            },
-            {
-              "confidence": "cited",
-              "path": "website/docs/status/where-this-stands.md"
-            }
-          ]
-        }
-      ]
-    },
-    {
-      "wave": 3,
-      "artifacts": [
-        {
-          "id": "story:review-output-ownership",
-          "inferred": true,
-          "scope": [
-            {
-              "confidence": "inferred",
-              "path": ".github/workflows/ci.yml"
-            },
-            {
-              "confidence": "inferred",
-              "path": "Cargo.lock"
-            },
-            {
-              "confidence": "cited",
-              "path": "crates/edge/ess-cli"
-            },
-            {
-              "confidence": "cited",
-              "path": "crates/edge/ess-xtask/src/consumer_coverage/entry-classifications.json"
-            },
-            {
-              "confidence": "inferred",
-              "path": "crates/edge/ess-xtask/src/consumer_coverage/profiles.json"
-            },
-            {
-              "confidence": "inferred",
-              "path": "crates/edge/ess-xtask/src/consumer_coverage/reviewed-candidates.json"
-            },
-            {
-              "confidence": "cited",
-              "path": "crates/edge/ess-xtask/src/main.rs"
-            },
-            {
-              "confidence": "inferred",
-              "path": "docs/design/review-format-catalog.md"
-            },
-            {
-              "confidence": "cited",
-              "path": "docs/design/review-output-ownership.md"
-            },
-            {
-              "confidence": "cited",
-              "path": "docs/design/source-pinned-data-normalization.md"
-            },
-            {
-              "confidence": "cited",
-              "path": "models/output-ownership"
-            },
-            {
-              "confidence": "inferred",
-              "path": "website/docs/guides/generate-artifacts.md"
-            },
-            {
-              "confidence": "inferred",
-              "path": "website/docs/reference/cli.md"
-            },
-            {
-              "confidence": "inferred",
-              "path": "website/docs/reference/formats.md"
-            }
-          ]
-        },
-        {
-          "id": "story:review-primitive-semantics",
-          "inferred": true,
-          "scope": [
-            {
-              "confidence": "cited",
-              "path": "crates/generate/ess-gen"
-            },
-            {
-              "confidence": "cited",
-              "path": "crates/generate/ess-synth"
-            },
-            {
-              "confidence": "cited",
-              "path": "crates/specify/ess-primitives"
-            },
-            {
-              "confidence": "cited",
-              "path": "crates/verify/ess-conformance"
-            },
-            {
-              "confidence": "inferred",
-              "path": "docs/design/review-primitive-semantics.md"
-            }
-          ]
-        },
-        {
-          "id": "story:review-typed-diagnostics",
-          "inferred": true,
-          "scope": [
-            {
-              "confidence": "cited",
-              "path": "crates/specify/ess-compiler"
-            },
-            {
-              "confidence": "inferred",
-              "path": "crates/specify/ess-domain"
-            },
-            {
-              "confidence": "inferred",
-              "path": "docs/design/review-typed-diagnostics.md"
-            }
-          ]
-        }
-      ]
-    },
-    {
-      "wave": 4,
-      "artifacts": [
-        {
-          "id": "story:schema-unique-items-signed-zero",
-          "inferred": true,
-          "scope": [
-            {
-              "confidence": "cited",
-              "path": "Cargo.lock"
-            },
-            {
-              "confidence": "inferred",
-              "path": "Cargo.toml"
-            },
-            {
-              "confidence": "inferred",
-              "path": "crates/generate/schema-contract/Cargo.toml"
-            },
-            {
-              "confidence": "cited",
-              "path": "crates/generate/schema-contract/src/bundle.rs"
-            },
-            {
-              "confidence": "cited",
-              "path": "crates/generate/schema-contract/src/realize/normalize/source.rs"
-            },
-            {
-              "confidence": "inferred",
-              "path": "crates/generate/schema-contract/tests/schema_unique_items.rs"
-            }
-          ]
-        },
-        {
-          "id": "story:the-generated-go-runtime-is-gofmt-clean",
-          "inferred": true,
-          "scope": [
-            {
-              "confidence": "cited",
-              "path": "Taskfile.yml"
-            },
-            {
-              "confidence": "inferred",
-              "path": "crates/edge/ess-xtask"
-            },
-            {
-              "confidence": "cited",
-              "path": "crates/verify/ess-conformance"
-            }
-          ]
-        }
-      ]
-    }
-  ],
-  "collisions": [
-    {
-      "a": "story:create-only-command-cannot-refuse",
-      "b": "story:enum-variant-in-an-entity-invariant",
-      "path": "crates/specify/ess-domain",
-      "confidence": "cited"
-    },
-    {
-      "a": "story:create-only-command-cannot-refuse",
-      "b": "story:fuzz-the-specification-surface",
-      "path": "crates/generate/ess-synth",
-      "confidence": "inferred"
-    },
-    {
-      "a": "story:create-only-command-cannot-refuse",
-      "b": "story:java-conformance-target",
-      "path": "crates/verify/ess-conformance",
-      "confidence": "cited"
-    },
-    {
-      "a": "story:create-only-command-cannot-refuse",
-      "b": "story:review-primitive-semantics",
-      "path": "crates/generate/ess-gen",
-      "confidence": "inferred"
-    },
-    {
-      "a": "story:create-only-command-cannot-refuse",
-      "b": "story:review-primitive-semantics",
-      "path": "crates/generate/ess-synth",
-      "confidence": "inferred"
-    },
-    {
-      "a": "story:create-only-command-cannot-refuse",
-      "b": "story:review-primitive-semantics",
-      "path": "crates/verify/ess-conformance",
-      "confidence": "cited"
-    },
-    {
-      "a": "story:create-only-command-cannot-refuse",
-      "b": "story:review-typed-diagnostics",
-      "path": "crates/specify/ess-compiler",
-      "confidence": "cited"
-    },
-    {
-      "a": "story:create-only-command-cannot-refuse",
-      "b": "story:review-typed-diagnostics",
-      "path": "crates/specify/ess-domain",
-      "confidence": "inferred"
-    },
-    {
-      "a": "story:create-only-command-cannot-refuse",
-      "b": "story:the-generated-go-runtime-is-gofmt-clean",
-      "path": "crates/verify/ess-conformance",
-      "confidence": "cited"
-    },
-    {
-      "a": "story:enum-variant-in-an-entity-invariant",
-      "b": "story:review-typed-diagnostics",
-      "path": "crates/specify/ess-domain",
-      "confidence": "inferred"
-    },
-    {
-      "a": "story:fuzz-the-specification-surface",
-      "b": "story:integrate-source-driven-realizations",
-      "path": "website/docs/reference/formats.md",
-      "confidence": "inferred"
-    },
-    {
-      "a": "story:fuzz-the-specification-surface",
-      "b": "story:native-realization-ci",
-      "path": "Taskfile.yml",
-      "confidence": "cited"
-    },
-    {
-      "a": "story:fuzz-the-specification-surface",
-      "b": "story:review-output-ownership",
-      "path": "website/docs/reference/formats.md",
-      "confidence": "inferred"
-    },
-    {
-      "a": "story:fuzz-the-specification-surface",
-      "b": "story:review-primitive-semantics",
-      "path": "crates/generate/ess-synth",
-      "confidence": "cited"
-    },
-    {
-      "a": "story:fuzz-the-specification-surface",
-      "b": "story:the-generated-go-runtime-is-gofmt-clean",
-      "path": "Taskfile.yml",
-      "confidence": "cited"
-    },
-    {
-      "a": "story:integrate-source-driven-realizations",
-      "b": "story:review-execution-recovery-implementation",
-      "path": "crates/edge/ess-cli/src/main.rs",
-      "confidence": "cited"
-    },
-    {
-      "a": "story:integrate-source-driven-realizations",
-      "b": "story:review-output-ownership",
-      "path": "docs/design/review-format-catalog.md",
-      "confidence": "inferred"
-    },
-    {
-      "a": "story:integrate-source-driven-realizations",
-      "b": "story:review-output-ownership",
-      "path": "website/docs/reference/formats.md",
-      "confidence": "inferred"
-    },
-    {
-      "a": "story:java-conformance-target",
-      "b": "story:review-output-ownership",
-      "path": "crates/edge/ess-cli",
-      "confidence": "cited"
-    },
-    {
-      "a": "story:java-conformance-target",
-      "b": "story:review-primitive-semantics",
-      "path": "crates/verify/ess-conformance",
-      "confidence": "cited"
-    },
-    {
-      "a": "story:java-conformance-target",
-      "b": "story:the-generated-go-runtime-is-gofmt-clean",
-      "path": "crates/verify/ess-conformance",
-      "confidence": "cited"
-    },
-    {
-      "a": "story:native-realization-ci",
-      "b": "story:review-output-ownership",
-      "path": ".github/workflows/ci.yml",
-      "confidence": "inferred"
-    },
-    {
-      "a": "story:native-realization-ci",
-      "b": "story:schema-unique-items-signed-zero",
-      "path": "crates/generate/schema-contract/Cargo.toml",
-      "confidence": "inferred"
-    },
-    {
-      "a": "story:native-realization-ci",
-      "b": "story:the-generated-go-runtime-is-gofmt-clean",
-      "path": "Taskfile.yml",
-      "confidence": "cited"
-    },
-    {
-      "a": "story:release-status-publication-state",
-      "b": "story:review-output-ownership",
-      "path": "crates/edge/ess-xtask/src/main.rs",
-      "confidence": "cited"
-    },
-    {
-      "a": "story:review-execution-recovery-implementation",
-      "b": "story:review-output-ownership",
-      "path": "Cargo.lock",
-      "confidence": "inferred"
-    },
-    {
-      "a": "story:review-execution-recovery-implementation",
-      "b": "story:review-output-ownership",
-      "path": "website/docs/reference/cli.md",
-      "confidence": "inferred"
-    },
-    {
-      "a": "story:review-execution-recovery-implementation",
-      "b": "story:schema-unique-items-signed-zero",
-      "path": "Cargo.lock",
-      "confidence": "cited"
-    },
-    {
-      "a": "story:review-output-ownership",
-      "b": "story:schema-unique-items-signed-zero",
-      "path": "Cargo.lock",
-      "confidence": "inferred"
-    },
-    {
-      "a": "story:review-primitive-semantics",
-      "b": "story:the-generated-go-runtime-is-gofmt-clean",
-      "path": "crates/verify/ess-conformance",
-      "confidence": "cited"
-    }
-  ],
-  "unassessed": [],
-  "cycles": []
-}
-```
+
+Implementation brief: target/review-output-ownership-wave19/brief.md in the unit tree. Agent
+consumer_coverage_stage1_implementor is reused for this distinct unit with the exact implementor
+charter. Own lease: ess-output-ownership-wave19-implementor. Root setup lease ended before dispatch.
+Opening AEP validation: 208 artifacts, valid, 43 historical missing-findings-block advisories;
+model validate/compile, formatting and diff checks each exited 0. Story is active revision9.
+
+## Baseline environment correction
+
+The first CLI package baseline exited101 (287.908s, agent report; original streams retained).
+Root read five panics across four targets: three Unix socket SUN_LEN setup failures and two
+intentional observation-output refusals inside Git. Root's original TMPDIR was too long and
+inside the checkout. No source change caused these failures. The exact replacement ordinary
+TMPDIR is /home/timo/.cache/e19-tmp, verified on the checkout device and outside Git; it is an
+additional owned scratch root for eventual cleanup. The original records remain. Only affected
+targets are rerun to establish the corrected baseline, with assertions unchanged. The unit's
+brief-correction-tmp.md records this correction. Browser/Go tmpfs roots remain separate.
+
+Adoption selector grammar is now selected: fixed --owner FAMILY, plus --file NAME required only
+for standalone families. Tree/compose families reject --file. Output management has the ordinary
+visible generate-area verb and hidden flat alias. No arbitrary owner or location remapping.
+
+The first xtask package baseline exposed the opening page quoting 14 future reserved paths in
+its literal-current-path inventory. The raw command JSON is now in the established review-evidence
+location, byte-for-byte unchanged, linked above. No layout assertion or source-scan scope changed.
+
+## Shared guard checkpoint
+
+Root measured xtask110 baseline cases after the layout-only correction. Bypassing the new guard
+made3 of5 selected sync cases fail (actual101). Restored package:109 unit+5 layout=114 passed;
+Clippy/fmt each0. Evidence: unit target/review-boundaries-19-root-checks/summary.json and direct
+streams. All root producer PIDs were absent before the slot returned to the CLI implementor.
+The CLI first behavioral target had0 passed/3 failed before implementation; its corrected four
+baseline targets passed114 cases. No source gate or native macOS success is claimed yet.
+
+## Lock protocol integration
+
+The preflight-only sync guard passed its first package checks but does not exclude a CLI writer
+that enrolls after preflight. Root selected compatible nonblocking directory flock locks held
+through preflight, writes and pruning, plus refusal of planned output aliases. The implementor
+confirmed shared ancestor and exclusive existing-anchor/nearest-existing-parent operations match
+its CLI module. A fifteenth typed scope reservation adds crates/edge/ess-xtask/Cargo.toml for the
+same rustix1.1.4 fs dependency. Offline lock resolution added errno0.3.14, linux-raw-sys0.12.1
+and rustix1.1.4 without replacing an existing package. Root measured the deterministic
+same/missing/nested-root lock test: omitting the lock made its one executed case fail on an
+unexpected successful write (actual101). Restored package:110 unit+5 layout=115 passed;
+strict Clippy/fmt each0. The unit's target/review-boundaries-19-root-lock-checks/summary.json
+retains the direct statuses and confirms all root producer PIDs absent before handback.
+Mac CI will execute both CLI protocol and repository sync cases. Story is active revision12.
+
+## CLI protocol checkpoint
+
+The first native ownership target passed7 cases, actual0, with no resource stop. It exercised
+194 publication process cuts and194 injected publication I/O boundaries, plus142 recovery
+process cuts and142 injected recovery I/O boundaries. Ordinary unowned-file refusal,
+withdrawn-copy retirement, authored neighbours, actual edited preimages, file/directory
+transitions and byte-for-byte enrollment no-ops are included. Root read the actual command
+streams in the unit's target/review-output-ownership-wave19/ownership-protocol1 directory.
+Initialization, adoption, malformed-state and remaining caller witnesses are still being added;
+this checkpoint does not claim the full story or any native macOS execution complete.
+
+The bounded read-only primitive-semantics preparation is complete and quiescent. Root read the
+report and independently verified all50 pinned inputs under coordinator
+target/review-boundaries-19/preparation/primitive-scope-refresh. Report SHA256:
+4a2c77d47f097a782c76aedf5b1fa24cf3ffd069b19bebdc04f77e52a610e436.
+It selects no next wave, semantic profile or format, and made no source or AEP changes.
+
+Connectors0.7.0 returned an empty admitted-operation set for GitHub pull requests and Actions.
+No alternative client was invoked for a wave19 PR yet; the integration capability gap will be
+reported before using the existing authorized Git/App path for native validation.

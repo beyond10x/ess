@@ -1,5 +1,5 @@
-# CI provisions the environment and delegates verification to the repository's one gate.
-# The Taskfile remains the one gate; CI only provisions Rust and the pinned task runner.
+# CI provisions the complete repository gate and the native macOS ownership witnesses.
+# The Taskfile remains the complete gate; macOS exercises the platform-specific protocol.
 name: CI
 
 on:
@@ -67,3 +67,47 @@ jobs:
 
       - name: Run the repository gate
         run: task check
+
+  output-ownership-macos:
+    name: Output ownership (${{ matrix.runner }})
+    # Branch/PR validation qualifies the new protocol on both shipped macOS architectures.
+    # A release backfill can ask this reusable workflow to gate an older source commit that
+    # predates this test target; its own Taskfile and native packaging remain authoritative.
+    if: ${{ inputs.checkout-ref == '' }}
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        # Match both native architectures already shipped by the release workflow.
+        runner: [macos-15-intel, macos-15]
+    env:
+      CARGO_BUILD_JOBS: "2"
+      CARGO_INCREMENTAL: "0"
+      CARGO_PROFILE_DEV_DEBUG: "0"
+      CARGO_PROFILE_TEST_DEBUG: "0"
+      RUST_TEST_THREADS: "2"
+    steps:
+      - name: Prepare native scratch
+        run: |
+          mkdir -p "$RUNNER_TEMP/ess-ownership"
+          echo "TMPDIR=$RUNNER_TEMP/ess-ownership" >> "$GITHUB_ENV"
+
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          ref: ${{ inputs.checkout-ref || github.sha }}
+
+      - uses: dtolnay/rust-toolchain@4360b52568e2003a75bf9bc1d59f33a8e3fc893c # stable
+        with:
+          toolchain: 1.98.1
+
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2
+
+      - name: Fetch locked dependencies
+        run: cargo fetch --locked
+
+      - name: Exercise native ownership and interrupted recovery
+        run: cargo test --offline --locked -p ess-cli --test output_ownership
+
+      - name: Exercise native repository sync isolation
+        run: cargo test --offline --locked -p ess-xtask --bin ess-xtask tests::sync_

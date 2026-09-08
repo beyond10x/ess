@@ -47,6 +47,58 @@ moves for no reason is one every reader learns to ignore.
 See [the worked example](../examples/specification-to-contracts.md) for one command's source next to
 each generated document.
 
+## Repeated generation and recovery
+
+Output ownership is an unreleased source change. Generation records the files it owns beneath
+the output root in `.ess-output`. Repeating a command replaces that owner's files and removes
+its obsolete files, while preserving authored neighbours. A selected projection updates only
+its own files; generating all five projections publishes their combined change as one
+recoverable operation. Changing a synthesis or data-library target replaces that generator's
+previous file set.
+
+First generation refuses a destination file it does not already own, even when the bytes match.
+For existing output, generate a reference in a separate fresh directory, then use
+`ess output adopt` to enroll the chosen owner. Adoption requires exact reference bytes for every
+existing file it enrolls; unrelated files remain unowned. Use `ess output adopt --help` for the
+owner selector. Keep the reference and destination directories separate, with neither inside
+the other. An edited or interrupted reference cannot authorize adoption.
+
+For example, adopt only the documentation projection in an existing tree:
+
+```sh
+ess generate --path examples/billing --kind docs --out target/reference-docs
+ess output adopt --ownership-root target/projections \
+  --from target/reference-docs --owner projection:docs
+```
+
+Repeat adoption for each generator family you intend to manage. Adoption accepts first enrollment
+or an exact repetition of that owner's inventory; it cannot discard an existing inventory by
+using a smaller reference. Standalone file owners additionally require `--file NAME`, matching
+the generated filename in both directories.
+
+If a write is interrupted, generation identifies the pending output root and refuses a new
+operation. Recover it explicitly before generating again:
+
+```sh
+ess output recover --ownership-root target/projections
+```
+
+Recovery uses the recorded operation, so it does not require the original model inputs. Before
+commit it restores the actual previous files, including prior edits or missing owned files.
+After commit it keeps the complete new result and finishes cleanup. Recovery can itself be
+repeated after interruption. Preserve `.ess-output` and any reported recovery files until
+recovery finishes; copying or deleting the state directory is not an ownership transfer.
+
+This contract applies to cooperating ESS writers on one local mounted filesystem on Linux or
+macOS, with controlled parent directories. Each file replacement is atomic; readers can see
+intermediate changes across several files. Synchronization failures are reported and retained
+for recovery. Storage must honor synchronization calls; this is not an unconditional guarantee
+against hardware failure. Older ESS versions do not participate in this protocol.
+
+No-output and check modes do not create ownership state or recover pending writes. The
+repository's separate `cargo xtask generate` inventory refuses an intersecting ownership tree
+before writing or pruning it.
+
 ## Generated schemas in a local registry
 
 The generated contract schemas and `schemas/generated/ess.schema.json` have no root `$id`.

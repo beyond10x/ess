@@ -18,6 +18,8 @@ scope:
   path: Cargo.lock
 - confidence: cited
   path: crates/edge/ess-cli
+- confidence: inferred
+  path: crates/edge/ess-xtask/Cargo.toml
 - confidence: cited
   path: crates/edge/ess-xtask/src/consumer_coverage/entry-classifications.json
 - confidence: inferred
@@ -40,7 +42,7 @@ scope:
   path: website/docs/reference/cli.md
 - confidence: inferred
   path: website/docs/reference/formats.md
-revision: 9
+revision: 12
 ---
 ## Finding and source
 
@@ -89,6 +91,8 @@ Confidence: medium before implementation; exact current callers and interface co
 
 The coordinator owns planning, wave records, accepted binding/model, CI and other shared integration files. The unit brief assigns source and test writes before dispatch. No implementor writes the planning store.
 
+- `crates/edge/ess-xtask/Cargo.toml` — inferred; the sync guard must hold the same native directory locks as CLI writers throughout preflight, writes and pruning. Add the same safe rustix fs dependency. A preflight-only check can race enrollment; a deterministic lock-conflict witness is required.
+
 ## Selected output-ownership binding and model — 2026-09-08
 
 The coordinator selects `docs/design/review-output-ownership.md` under the existing standing implementation approval. Ordinary generation keeps its real signatures and fixed default roots. Legacy adoption is a separate operation comparing a settled, unmodified generated reference with exact target bytes; first enrollment for the selected owner or exact idempotence cannot discard another owner's or prior stale inventory. Compose uses one explicit enclosing root. The fixed G01–G14 owners, authored preservation, selected stale retirement, no-write checks and explicit recovery are retained.
@@ -100,3 +104,15 @@ The selected protocol uses anchor-local, same-mount staging; top-down shared anc
 All original W01–W17 obligations remain with the adoption/platform/cross-mount revisions recorded in the binding. Changing each of four bound flat consumer signatures would affect1806 cells (7224 combined); changing either nine-profile signature would affect16254. The chosen ordinary defaults avoid unnecessary declaration changes. Actual signature/profile changes still require new behavioral accounting; helper/body edits still need review and direct same-source execution. No dead wrapper, hidden context or baseline expansion is allowed.
 
 Wave19 uses one implementation unit. Four original stories and the separate recovery implementation were outstanding after wave18; this selects only output ownership. The earlier consumer remediation is published at1e618d2 with CI34194913016 and documentation validation34194912907 successful; all three owned wave18 worktrees and their exact outputs were retired after complete evidence retention. No tag, version bump, release or downstream publication is selected.
+
+## Wave19 implementation checkpoint
+
+Root selected the concrete adoption spelling: --owner FAMILY; standalone owners additionally require --file NAME as one native filename. Tree/compose owners reject --file. Output management is visible under ess generate output and keeps its hidden ess output flat alias. This refines the selected binding without widening ordinary bound generator signatures.
+
+At source base11bf599fa4680ee4adb8d93e3523f86ec0b30cab, the CLI implementor observed three new behavioral failures: unowned destination overwritten with exit0, withdrawn site publication left stale, and no enrollment state. The runner printed 0 passed/3 failed/0 ignored and exited101. Original streams are retained in the unit's target/review-output-ownership-wave19/first-behavioral-red; root separately read all three assertions and retained stream hashes. They establish the current defects, not a completed fix.
+
+The initial CLI package baseline had five environment panics across four targets because root assigned a long TMPDIR inside Git. The corrected short external TMPDIR /home/timo/.cache/e19-tmp is on the same SSD. The implementor then observed all114 cases in those four targets pass, actual0; the original baseline is preserved and its assertions are unchanged.
+
+Root added repository projection-sync preflight with four meaningful preservation tests. The initial xtask baseline observed105 unit passes and4/5 layout passes: the new wave page's verbatim command output quoted14 future paths where the checker requires current paths. Root moved that raw output unchanged into the established review-evidence location and linked it from the plan; the layout rerun observed5/5 passes. The bypass mutation then observed2 passed/3 failed among5 sync cases, exit101. Restoring the guard gave109 unit+5 layout=114 passes, package/Clippy/fmt each0. Final source main.rs SHA256: 1ebb62860c73f3d878474ff69648df05e4aa286d1f6e8fed056b1bf1ddf61ade. Actual commands, statuses, streams and producer-PID absence are retained in the unit's target/review-boundaries-19-root-checks. The four new helpers have explicit finite classifications; no baseline eligibility or e005 change was made.
+
+Root's documentation and two-architecture native macOS CI additions remain integration drafts. The native CI lane is branch/PR validation; release backfills keep the checked-out historical Taskfile and existing native packaging authority. CLI ownership/adoption/recovery implementation, its complete fault/process-cut witnesses, native macOS results, independent source review and full integration gate remain owed. This checkpoint is not story completion or source publication.

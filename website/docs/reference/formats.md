@@ -30,6 +30,26 @@ A digest field identifies only the bytes its producer defines. Matching syntax d
 that two digest domains are interchangeable, that a report covers its exact suite, or that a remote
 artifact has been fetched and verified.
 
+## Generated output state
+
+`ess-output-state/1` is an unreleased private checkpoint format for CLI generation, adoption and
+recovery. Its `.ess-output` directory binds an enrolled root to its fixed generator owners,
+file inventory and any pending transaction. It is not part of a generated artifact's format or
+model digest. Generated artifact bytes retain their existing identities.
+
+The reader accepts canonical sorted-key JSON with a final LF and rejects unknown versions,
+fields, duplicate keys, noncanonical bytes, unsafe paths and contradictory inventories.
+`UnixBytes1` encodes native path components as lowercase hexadecimal; it preserves native names
+without interpreting them as UTF-8. File digests use lowercase SHA-256. The checkpoint checksum
+covers its canonical payload without the checksum member and detects inconsistent bytes; it
+does not authenticate another writer.
+
+Recovery follows the recorded staging, prepared, committed or restored decision and retains it
+until cleanup finishes. An unpublished `state.next` is not recovery authority. Preserve unknown
+state and initialization entries for diagnosis. Older ESS versions have no reader or lock
+protocol for this format. See [the generation workflow](../guides/generate-artifacts.md#repeated-generation-and-recovery)
+for the filesystem assumptions and recovery command.
+
 ## Directory input configuration
 
 This format is available in current source and is unreleased.

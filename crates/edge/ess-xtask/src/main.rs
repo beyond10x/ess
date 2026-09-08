@@ -652,6 +652,8 @@ fn sync(
     check: bool,
     excluded: &[&str],
 ) -> AnyResult<String> {
+    let _ownership_locks = lock_projection_output(out)?;
+    refuse_output_ownership_intersection(out, expected, excluded)?;
     let mut differing = Vec::new();
     let mut written = 0_usize;
     let mut removed = 0_usize;
@@ -717,6 +719,188 @@ fn sync(
     Ok(format!(
         "projections written: {written} changed, {removed} no longer generated\n"
     ))
+}
+
+/// This repository's committed projections use a separate, whole-tree inventory. They must not
+/// overwrite or prune an independently enrolled CLI output tree, including its recovery records.
+fn lock_projection_output(out: &Path) -> AnyResult<Vec<fs::File>> {
+    let absolute = std::path::absolute(out)?;
+    let mut existing = absolute.as_path();
+    loop {
+        match fs::symlink_metadata(existing) {
+            Ok(_) => break,
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+                existing = existing
+                    .parent()
+                    .context("no existing projection ancestor")?;
+            }
+            Err(error) => return Err(error.into()),
+        }
+    }
+    let resolved = fs::canonicalize(existing)?;
+    let paths: Vec<_> = resolved
+        .ancestors()
+        .collect::<Vec<_>>()
+        .into_iter()
+        .rev()
+        .collect();
+    let mut locks: Vec<fs::File> = Vec::new();
+    let flags = rustix::fs::OFlags::RDONLY
+        | rustix::fs::OFlags::DIRECTORY
+        | rustix::fs::OFlags::NOFOLLOW
+        | rustix::fs::OFlags::CLOEXEC;
+    for (index, path) in paths.iter().enumerate() {
+        let descriptor = if let Some(parent) = locks.last() {
+            rustix::fs::openat(
+                parent,
+                path.file_name().context("projection ancestor name")?,
+                flags,
+                rustix::fs::Mode::empty(),
+            )?
+        } else {
+            rustix::fs::open(*path, flags, rustix::fs::Mode::empty())?
+        };
+        let file = fs::File::from(descriptor);
+        let operation = if index + 1 == paths.len() {
+            rustix::fs::FlockOperation::NonBlockingLockExclusive
+        } else {
+            rustix::fs::FlockOperation::NonBlockingLockShared
+        };
+        rustix::fs::flock(&file, operation)
+            .with_context(|| format!("projection output ownership busy at {}", path.display()))?;
+        locks.push(file);
+    }
+    // For an absent output root, the exclusive nearest-parent lock remains held while the
+    // root is created. A CLI writer must acquire that same parent before enrolling it.
+    Ok(locks)
+}
+
+fn refuse_output_ownership_intersection(
+    out: &Path,
+    expected: &BTreeMap<String, String>,
+    excluded: &[&str],
+) -> AnyResult<()> {
+    refuse_enrolled_ancestors(out)?;
+    for path in expected.keys() {
+        safe_relative_path(path)?;
+        for component in Path::new(path).components() {
+            if reserved_output_state_name(component.as_os_str()) {
+                bail!("projection path intersects reserved output ownership state: {path}");
+            }
+        }
+        // Resolve existing destination aliases before any write, including a symlink to a file
+        // in an enrolled tree outside `out`. Scanning only `out` cannot see that intersection.
+        refuse_enrolled_ancestors(&out.join(path))?;
+    }
+    let mut pending = vec![(out.to_path_buf(), String::new())];
+    while let Some((directory, prefix)) = pending.pop() {
+        if !directory.is_dir() {
+            continue;
+        }
+        // Native lookup also detects a differently cased state name on a case-insensitive
+        // filesystem. Comparing directory-entry spelling alone would miss it.
+        refuse_state_directory(&directory)?;
+        for entry in
+            fs::read_dir(&directory).with_context(|| format!("reading {}", directory.display()))?
+        {
+            let entry = entry?;
+            let name = entry.file_name();
+            let relative = if prefix.is_empty() {
+                name.to_string_lossy().into_owned()
+            } else {
+                format!("{prefix}/{}", name.to_string_lossy())
+            };
+            if is_excluded(&relative, excluded) {
+                continue;
+            }
+            if reserved_output_state_name(&name) {
+                bail!(
+                    "projection tree intersects reserved output ownership state: {}",
+                    entry.path().display()
+                );
+            }
+            if entry.file_type()?.is_dir() {
+                pending.push((entry.path(), relative));
+            }
+        }
+    }
+    Ok(())
+}
+
+fn reserved_output_state_name(name: &std::ffi::OsStr) -> bool {
+    let bytes = name.as_encoded_bytes();
+    let initialization_prefix = b".ess-output-init-";
+    bytes.eq_ignore_ascii_case(b".ess-output")
+        || bytes
+            .get(..initialization_prefix.len())
+            .is_some_and(|prefix| prefix.eq_ignore_ascii_case(initialization_prefix))
+}
+
+fn refuse_enrolled_ancestors(path: &Path) -> AnyResult<()> {
+    for ancestor in path.ancestors().filter(|path| !path.as_os_str().is_empty()) {
+        match fs::symlink_metadata(ancestor) {
+            Ok(metadata) if metadata.file_type().is_symlink() => {
+                bail!(
+                    "projection destination follows a symbolic link: {}",
+                    ancestor.display()
+                );
+            }
+            Ok(_) => {}
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+            Err(error) => return Err(error.into()),
+        }
+    }
+    if path
+        .components()
+        .any(|component| reserved_output_state_name(component.as_os_str()))
+    {
+        bail!(
+            "projection destination intersects reserved output ownership state: {}",
+            path.display()
+        );
+    }
+    let mut existing = path;
+    loop {
+        match fs::symlink_metadata(existing) {
+            Ok(_) => break,
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+                existing = existing
+                    .parent()
+                    .context("projection path has no existing ancestor")?;
+                if existing.as_os_str().is_empty() {
+                    existing = Path::new(".");
+                }
+            }
+            Err(error) => return Err(error.into()),
+        }
+    }
+    let resolved = fs::canonicalize(existing)
+        .with_context(|| format!("resolving projection destination {}", existing.display()))?;
+    for ancestor in resolved.ancestors() {
+        if ancestor.file_name().is_some_and(reserved_output_state_name) {
+            bail!(
+                "projection destination intersects reserved output ownership state: {}",
+                ancestor.display()
+            );
+        }
+        if !ancestor.is_dir() {
+            continue;
+        }
+        refuse_state_directory(ancestor)?;
+    }
+    Ok(())
+}
+
+fn refuse_state_directory(directory: &Path) -> AnyResult<()> {
+    let state = directory.join(".ess-output");
+    match fs::symlink_metadata(&state) {
+        Ok(_) => bail!(
+            "projection destination intersects reserved output ownership state: {}",
+            state.display()
+        ),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(()),
+        Err(error) => Err(error.into()),
+    }
 }
 
 /// Every owned file below a committed output root, as a `/`-separated relative path.
@@ -929,6 +1113,141 @@ mod tests {
         );
 
         fs::remove_dir_all(root).expect("remove test fixture");
+    }
+
+    #[test]
+    fn sync_refuses_reserved_state_before_writing_or_pruning() {
+        for state in [
+            ".ess-output",
+            "nested/.ess-output",
+            "nested/.ess-output-init-partial",
+            "nested/.ESS-OUTPUT-INIT-partial",
+        ] {
+            let sequence = TEMP_DIRECTORY_SEQUENCE.fetch_add(1, Ordering::Relaxed);
+            let root = std::env::temp_dir()
+                .join(format!("ess-xtask-owned-{}-{sequence}", std::process::id()));
+            fs::create_dir_all(root.join(state)).expect("create state fixture");
+            fs::write(root.join(state).join("state.json"), "retained checkpoint")
+                .expect("write state");
+            fs::write(root.join("old.md"), "authored sentinel").expect("write sentinel");
+            let expected = BTreeMap::from([("new.md".to_owned(), "generated".to_owned())]);
+            for check in [true, false] {
+                let error = sync(&root, &expected, check, &[]).expect_err("refuse enrolled tree");
+                assert!(error
+                    .to_string()
+                    .contains("reserved output ownership state"));
+                assert!(!root.join("new.md").exists());
+                assert_eq!(
+                    fs::read(root.join("old.md")).expect("sentinel remains"),
+                    b"authored sentinel"
+                );
+                assert_eq!(
+                    fs::read(root.join(state).join("state.json")).expect("checkpoint remains"),
+                    b"retained checkpoint"
+                );
+            }
+            fs::remove_dir_all(root).expect("remove fixture");
+        }
+    }
+
+    #[test]
+    fn sync_refuses_enrolled_ancestor_and_reserved_planned_paths() {
+        let sequence = TEMP_DIRECTORY_SEQUENCE.fetch_add(1, Ordering::Relaxed);
+        let root = std::env::temp_dir().join(format!(
+            "ess-xtask-owner-ancestor-{}-{sequence}",
+            std::process::id()
+        ));
+        fs::create_dir_all(root.join(".ess-output")).expect("create enrolled ancestor");
+        let out = root.join("missing/output");
+        let expected = BTreeMap::from([("file.md".to_owned(), "generated".to_owned())]);
+        assert!(sync(&out, &expected, false, &[]).is_err());
+        assert!(!root.join("missing").exists());
+        fs::remove_dir(root.join(".ess-output")).expect("remove empty fixture state");
+        for path in [
+            ".ess-output/state.json",
+            "nested/.ess-output-init-partial/file",
+        ] {
+            let expected = BTreeMap::from([(path.to_owned(), "generated".to_owned())]);
+            assert!(sync(&out, &expected, false, &[]).is_err());
+            assert!(!root.join("missing").exists());
+        }
+        fs::remove_dir_all(root).expect("remove fixture");
+    }
+
+    #[test]
+    fn sync_preserves_explicit_exclusions_without_excluding_all_hidden_files() {
+        let sequence = TEMP_DIRECTORY_SEQUENCE.fetch_add(1, Ordering::Relaxed);
+        let root = std::env::temp_dir().join(format!(
+            "ess-xtask-owned-excluded-{}-{sequence}",
+            std::process::id()
+        ));
+        fs::create_dir_all(root.join("go/.ess-output")).expect("create excluded state");
+        fs::write(root.join("go/.ess-output/state.json"), "checkpoint").expect("write state");
+        fs::write(root.join(".orphan"), "stale projection").expect("write hidden orphan");
+        sync(&root, &BTreeMap::new(), false, &["go"])
+            .expect("excluded ownership does not intersect");
+        assert!(!root.join(".orphan").exists());
+        assert_eq!(
+            fs::read(root.join("go/.ess-output/state.json")).expect("excluded state remains"),
+            b"checkpoint"
+        );
+        fs::remove_dir_all(root).expect("remove fixture");
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn sync_refuses_destination_alias_into_an_enrolled_tree() {
+        let sequence = TEMP_DIRECTORY_SEQUENCE.fetch_add(1, Ordering::Relaxed);
+        let root = std::env::temp_dir().join(format!(
+            "ess-xtask-owner-alias-{}-{sequence}",
+            std::process::id()
+        ));
+        fs::create_dir_all(root.join("owned/.ess-output")).expect("create ownership state");
+        fs::create_dir_all(root.join("projection")).expect("create projection root");
+        fs::write(root.join("owned/file.md"), "owned sentinel").expect("write owned output");
+        std::os::unix::fs::symlink(root.join("owned/file.md"), root.join("projection/file.md"))
+            .expect("create alias");
+        let expected = BTreeMap::from([("file.md".to_owned(), "new".to_owned())]);
+        assert!(sync(&root.join("projection"), &expected, false, &[]).is_err());
+        assert_eq!(
+            fs::read(root.join("owned/file.md")).expect("owned bytes remain"),
+            b"owned sentinel"
+        );
+        fs::remove_dir_all(root).expect("remove fixture");
+    }
+
+    #[test]
+    fn sync_locks_existing_missing_and_nested_roots_before_any_mutation() {
+        let sequence = TEMP_DIRECTORY_SEQUENCE.fetch_add(1, Ordering::Relaxed);
+        let root = std::env::temp_dir().join(format!(
+            "ess-xtask-owner-lock-{}-{sequence}",
+            std::process::id()
+        ));
+        fs::create_dir_all(root.join("existing")).expect("create output root");
+        let expected = BTreeMap::from([("file.md".to_owned(), "new".to_owned())]);
+        for (out, locked_directory) in [
+            (root.join("existing"), root.join("existing")),
+            (root.join("missing/child"), root.clone()),
+        ] {
+            // Independently hold the directory inode the CLI protocol locks. Using our own
+            // acquisition helper here could let both sides agree on the wrong lock object.
+            let lock = fs::File::open(locked_directory).expect("open competing directory");
+            rustix::fs::flock(&lock, rustix::fs::FlockOperation::NonBlockingLockExclusive)
+                .expect("acquire competing native lock");
+            for destination in [&out, &out.join("nested")] {
+                let error = sync(destination, &expected, false, &[])
+                    .expect_err("competing writer must refuse");
+                assert!(error.to_string().contains("ownership busy"));
+                assert!(!destination.join("file.md").exists());
+            }
+            drop(lock);
+            sync(&out, &expected, false, &[]).expect("writer proceeds after lock release");
+            assert_eq!(
+                fs::read(out.join("file.md")).expect("published output"),
+                b"new"
+            );
+        }
+        fs::remove_dir_all(root).expect("remove fixture");
     }
 
     #[test]

@@ -14,7 +14,7 @@ lists exactly those:
 | Area | The verbs it holds |
 |---|---|
 | `ess specify` | `validate`, `compile`, `compose`, `inspect`, `graph`, `realization`, `runtime` |
-| `ess generate` | `generate`, `synthesize`, `project`, `schema`, `build`, `component`, `release`, `stack`, `deployment` |
+| `ess generate` | `generate`, `synthesize`, `project`, `schema`, `output`, `build`, `component`, `release`, `stack`, `deployment` |
 | `ess verify` | `bindings`, `conform`, `diff`, `impact` |
 | `ess infra` | `infra`, `import` |
 
@@ -98,10 +98,15 @@ mkdir -p target/composition-example
 ess specify compose --path "$fixture/compositions/workbench.yaml" \
   --service "todo=$fixture/two-components" \
   --service "usage=$fixture/two-components" \
+  --ownership-root target/composition-example \
   --out target/composition-example/composition.json \
   --client-plan-out target/composition-example/client-plan.json \
   --client-rust-out target/composition-example/rust-client
 ```
+
+Writing composition outputs requires `--ownership-root` enclosing every selected file and client
+directory. These outputs share one owner: omitting a previously selected output on a later run
+retires its owned files. Listing composition without output destinations remains nonwriting.
 
 The emitted Rust client exposes `service_todo::COMMAND_CREATE_LIST`. `Operation` has private fields
 and a private constructor, constraining normal downstream Rust callers to emitted descriptors.
@@ -161,6 +166,7 @@ forwarding alone do not establish end-to-end typed payload compatibility.
 | `ess generate synthesize …` | Emit supported structural implementation artifacts plus obligations. |
 | `ess generate project <adapter> …` | Project typed IR into concrete artifacts. |
 | `ess generate schema validate …` | Validate adopter-owned JSON Schema contracts. |
+| `ess generate output adopt\|recover …` | Enroll exact legacy output from a generated reference, or recover an interrupted write. Also available as `ess output …`. |
 | `ess generate build compile\|graph\|execute …` | Validate and compile `ess-build/1`, render its DAG, or explicitly execute its BuildKit projection. |
 | `ess generate component compile …` | Validate a repository-owned component descriptor. |
 | `ess generate release verify\|bundle\|verify-bundle\|publish\|fetch\|check-conformance\|publish-conformance …` | Check release consistency, qualify supplied local reports, or explicitly cross the OCI credential edge. |
@@ -176,6 +182,11 @@ arguments.
 Omitting `--kind` generates every projection. Omitting `--out` lists or serializes artifacts
 without writing them. The repository-only `cargo xtask generate` command reconciles the committed
 `generated/` projection tree; `cargo xtask generate --check` compares it without writing.
+
+Generated tree outputs use their output root as the ownership root; a standalone generated file
+uses its parent. Existing unowned destinations refuse. See [repeated generation and recovery](../guides/generate-artifacts.md#repeated-generation-and-recovery)
+for adoption, stale-file retirement, and the filesystem contract. Output-management commands are
+an unreleased source addition.
 
 ## Component delivery
 

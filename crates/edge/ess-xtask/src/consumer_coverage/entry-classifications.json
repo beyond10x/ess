@@ -30018,6 +30018,11 @@
     "macro_ast_sha256": null,
     "reason": "Maintenance/extractor infrastructure entry. Its source and fixture tests are inventoried; it emits evidence or proposals and grants no ESS semantic behavior support."
   },
+  "ess_xtask::bin(ess-xtask)::fn::lock_projection_output": {
+    "class": "OwnedHelper",
+    "macro_ast_sha256": null,
+    "reason": "Concrete repository sync directory-lock helper, using the CLI cooperative flock protocol to hold preflight, publication and pruning against same or nested enrollment. Its native conflict witnesses remain ordinary behavioral evidence; this classification grants no model support or nonreachability."
+  },
   "ess_xtask::bin(ess-xtask)::fn::main": {
     "class": "OwnedHelper",
     "macro_ast_sha256": null,
@@ -30058,6 +30063,21 @@
     "macro_ast_sha256": null,
     "reason": "Maintenance/extractor infrastructure entry. Its source and fixture tests are inventoried; it emits evidence or proposals and grants no ESS semantic behavior support."
   },
+  "ess_xtask::bin(ess-xtask)::fn::refuse_enrolled_ancestors": {
+    "class": "OwnedHelper",
+    "macro_ast_sha256": null,
+    "reason": "Concrete repository projection-sync preflight helper: refuses intersecting CLI output ownership or recovery state before whole-tree writes and pruning. Its source and behavioral fixtures remain visible to ordinary review; this classification grants no model support or nonreachability."
+  },
+  "ess_xtask::bin(ess-xtask)::fn::refuse_output_ownership_intersection": {
+    "class": "OwnedHelper",
+    "macro_ast_sha256": null,
+    "reason": "Concrete repository projection-sync preflight helper: refuses intersecting CLI output ownership or recovery state before whole-tree writes and pruning. Its source and behavioral fixtures remain visible to ordinary review; this classification grants no model support or nonreachability."
+  },
+  "ess_xtask::bin(ess-xtask)::fn::refuse_state_directory": {
+    "class": "OwnedHelper",
+    "macro_ast_sha256": null,
+    "reason": "Concrete repository projection-sync preflight helper: refuses intersecting CLI output ownership or recovery state before whole-tree writes and pruning. Its source and behavioral fixtures remain visible to ordinary review; this classification grants no model support or nonreachability."
+  },
   "ess_xtask::bin(ess-xtask)::fn::release_inputs": {
     "class": "OwnedHelper",
     "macro_ast_sha256": null,
@@ -30077,6 +30097,11 @@
     "class": "OwnedHelper",
     "macro_ast_sha256": null,
     "reason": "Maintenance/extractor infrastructure entry. Its source and fixture tests are inventoried; it emits evidence or proposals and grants no ESS semantic behavior support."
+  },
+  "ess_xtask::bin(ess-xtask)::fn::reserved_output_state_name": {
+    "class": "OwnedHelper",
+    "macro_ast_sha256": null,
+    "reason": "Concrete repository projection-sync preflight helper: refuses intersecting CLI output ownership or recovery state before whole-tree writes and pruning. Its source and behavioral fixtures remain visible to ordinary review; this classification grants no model support or nonreachability."
   },
   "ess_xtask::bin(ess-xtask)::fn::run": {
     "class": "OwnedHelper",

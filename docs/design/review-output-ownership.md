@@ -34,13 +34,19 @@ The model declares Anchor (UUID, native root binding, ledger digest) and its at-
 
 Preserve W01–W17 from the retained scoper reports, updated for separate reference adoption and Linux/macOS support. Require meaningful red-before-green tests for interrupted staging, every mutation and cleanup boundary, repeat/recovery, stale ownership, authored sentinels, native names, collisions, changed compose outputs, selected-owner isolation and no-write checks. Keep every existing gate, finite initial consumer eligibility and exact attributed cases. New helper declarations receive explicit classifications; ordinary function bodies still require behavior evidence. Any actual signature/profile change is a new accounting obligation, not permission to expand e005.
 
-Excluded named compile/import/data/execution-report outputs remain outside generated-output ownership, as the fixed route table specifies. Repository projection sync must refuse intersecting reserved ownership state before its existing blanket orphan deletion. No generic hidden-file exclusion, new release or downstream publication is selected.
+Excluded named compile/import/data/execution-report outputs remain outside generated-output ownership, as the fixed route table specifies. Repository projection sync must hold the same shared-ancestor/exclusive-anchor native directory locks throughout preflight, writes and pruning, then refuse intersecting reserved ownership state before its existing blanket orphan deletion. A missing output root keeps its nearest existing parent exclusively locked while creating the root. Planned output aliases refuse so a write cannot escape this lock scope. No generic hidden-file exclusion, new release or downstream publication is selected.
 
 ## Fixed owner families
 
 `@r` means a tree location relative to the anchor; `@f` means an exact native filename.
 The owner flag selects an existing fixed key from the reference; it cannot rename an owner or
 its paths. Ordinary tree roots use their root location; standalone filenames must match.
+
+The CLI spells a selector as `--owner FAMILY`, for example `--owner projection:site` at its
+default tree location. Standalone families additionally require `--file NAME`, one native
+filename with no directory components. Tree and compose families reject `--file`. There is no
+free-form `@` suffix, path remapping or arbitrary owner rename. `ess generate output` exposes
+the management verbs and `ess output` retains the normal hidden flat alias.
 
 | Routes | Recommended family and aliases |
 |---|---|
