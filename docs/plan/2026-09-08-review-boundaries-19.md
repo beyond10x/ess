@@ -47,8 +47,9 @@ wave19-retained-inputs directory. Their inventory receipts preserve old-source p
 
 | Role | Managed worktree | Branch | Build and scratch | Stage |
 |---|---|---|---|---|
-| Coordinator | /home/timo/.local/state/worktree/trees/b10x/ess/ess-review-boundaries-19 | wave/review-boundaries-19 | target/review-boundaries-19/preparation; no compiler build | Opening commit 11bf599fa4680ee4adb8d93e3523f86ec0b30cab; integration work |
-| Implementor | /home/timo/.local/state/worktree/trees/b10x/ess/ess-output-ownership-wave19 | impl/review-output-ownership-wave19 | Its own target/ and target/review-output-ownership-wave19/ | Implementor dispatched at 11bf599fa4680ee4adb8d93e3523f86ec0b30cab |
+| Coordinator | /home/timo/.local/state/worktree/trees/b10x/ess/ess-review-boundaries-19 | wave/review-boundaries-19 | target/review-boundaries-19/preparation; no Cargo build | Integrated candidate 050c416650119852d213d464dfb76c51673121c6; finite classification and review |
+| Implementation and integration | /home/timo/.local/state/worktree/trees/b10x/ess/ess-output-ownership-wave19 | wave/review-boundaries-19-final (implementation branch impl/review-output-ownership-wave19 retained) | Its own target/; target/review-output-ownership-wave19/; target/review-boundaries-19-integration/; target/review-boundaries-19-root-native/ | CLI6bdac90 committed and integrated; implementor quiescent, root integration lease |
+| Adversary pass1 | /home/timo/.local/state/worktree/trees/b10x/ess/ess-output-ownership-adversary-wave19 | probe/output-ownership-wave19 | Its own target/ and target/review-output-ownership-adversary-wave19/ | Exact candidate 050c416650119852d213d464dfb76c51673121c6; tests-only attack |
 
 Root lease: ess-review-boundaries-coordinator-wave19. The unit's actual path, opening SHA and
 lease are recorded immediately after provisioning. Root will reuse the unit checkout for the
@@ -173,3 +174,50 @@ It selects no next wave, semantic profile or format, and made no source or AEP c
 Connectors0.7.0 returned an empty admitted-operation set for GitHub pull requests and Actions.
 No alternative client was invoked for a wave19 PR yet; the integration capability gap will be
 reported before using the existing authorized Git/App path for native validation.
+
+## Implementation handoff and integration
+
+The implementor's final unfiltered CLI package executed372 cases across43 targets, all passed,
+zero failed/ignored/filtered, actual0 in618.675s. The ownership target executed29 cases in304.79s.
+Its five finite exercised plans produced613 process cuts and613 injected I/O boundaries:
+publication194, recovery142, initialization166, adoption103 and missing-anchor8 each. One
+assertion-neutral test semicolon was corrected afterward; that exact case passed1/1, and final
+strict Clippy/fmt each exited0. Production source and the package-run CLI did not change.
+Root independently verified all1229 source paths/64564383 bytes, three retained native images,
+the report hash and final executed counts. The full raw report remains366135 bytes at unit
+target/review-output-ownership-wave19/report.md, SHA256
+5645945db5d4e360db664de02bb4a9c33cfc2c006d1e9bf73533f3783372aeb0.
+Root's readback states its semantic-reading boundary; it does not claim every historical log
+line was separately interpreted. The implementor released its own lease and no producer remained.
+
+Bot CLI commit6bdac90efaf9e5850e19aca4d4cacbb0b55d5e9b and shared checkpoint26c2e434ac6eca7c55760e92ecc3ca1560f61f5a
+merged without conflict as050c416650119852d213d464dfb76c51673121c6. Both author and committer were
+verified on each direct commit. The former unit is now the warm integration checkout, clean at
+that head before classification. Root lease: ess-output-ownership-wave19-root-integration.
+Its earlier root-owned shared copies were backed up individually; wanted bytes were committed
+before exact-path restoration/switching. No implementation change was discarded.
+
+Root compiled and ran a standalone Rust same-device bind-mount witness against the retained
+package CLI, SHA256e29737a2ad9f2281c058dd265b8f9922d4d48812610347d0ccabd94e777b2ab4.
+An isolated unprivileged user/mount namespace admitted the setup. Ordinary generation exited0;
+the same-device/different-mount-ID case exited1 before any output, mode or ownership change.
+Device66306, native mount IDs3532/4077, one witness passed; its bind mount was unmounted before
+the namespace exited. The actual ordinary fixture is /home/timo/.cache/e19-tmp/wave19-bind-mount-01.
+Source is coordinator preparation/bind-mount-witness.rs; compile/run direct logs are the unit's
+root-bind-mount-compile and root-bind-mount-run lanes. This is Linux evidence only.
+
+The exact consumer extraction then exited1 at the first new unclassified CLI declaration,
+retaining the complete raw inventory. Root reviewed165 additions:5 routing,44 protocol,
+29 filesystem and87 private-state declarations. Three former write helpers are now cfg(test),
+so their production classifications are removed. No bound profile, reviewed-case declaration
+or e005 baseline was changed. The classification-only update is not full consumer execution.
+
+Fresh SSD free at09:10:28Z was108810231808 bytes, so the adversary has an ordinary isolated target
+instead of the earlier undispatched source-only workaround. Its exact target plus assigned
+/home/timo/.cache/e19-adversary-tmp remains capped at5GiB; SSD floor2GiB and memory floor8GiB.
+One ESS compiler producer remains the rule. Root's extraction producer1983765 finished and was
+absent before the slot passed to consumer_coverage_source_pass1. Its exact brief SHA256 is
+2a282b834bab69e697a0cb1b3de5a851c4dbd2fc3bcd67f94eebb461fe93ec48. The agent uses the installed
+adversary charter and owns only new tests, its named lease and recorded scratch. No third attack
+is authorized. Native macOS, adversarial completion, full integration/site gates and main
+publication remain pending; no wave19 branch has been pushed.

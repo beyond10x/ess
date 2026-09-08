@@ -614,6 +614,11 @@
     "macro_ast_sha256": null,
     "reason": "Concrete owned data/API declaration retained alongside the named behavioral callers. Its presence is not a behavior case and does not prove nonreachability."
   },
+  "ess_cli::bin(ess)::enum::GenerateCommand/variant/Output": {
+    "class": "OwnedHelper",
+    "macro_ast_sha256": null,
+    "reason": "Concrete CLI output-management or publication adapter over already-rendered artifact bytes, fixed owner selectors and explicit compose paths. G01\u2013G14 route and original package cases exercise this caller path. This finite helper classification grants no new ESS model support or nonreachability; ordinary bound profiles stay unchanged."
+  },
   "ess_cli::bin(ess)::enum::GenerateCommand/variant/Project": {
     "class": "OwnedHelper",
     "macro_ast_sha256": null,
@@ -1179,6 +1184,11 @@
     "macro_ast_sha256": null,
     "reason": "Concrete owned implementation/helper entry within the bounded caller families. Complete body evidence remains visible and changes require ordinary behavioral review; this finite classification grants no independent support or nonreachability."
   },
+  "ess_cli::bin(ess)::fn::publish_composition_outputs": {
+    "class": "OwnedHelper",
+    "macro_ast_sha256": null,
+    "reason": "Concrete CLI output-management or publication adapter over already-rendered artifact bytes, fixed owner selectors and explicit compose paths. G01\u2013G14 route and original package cases exercise this caller path. This finite helper classification grants no new ESS model support or nonreachability; ordinary bound profiles stay unchanged."
+  },
   "ess_cli::bin(ess)::fn::qualify_release_report": {
     "class": "BoundEntry",
     "macro_ast_sha256": null,
@@ -1289,27 +1299,27 @@
     "macro_ast_sha256": null,
     "reason": "Concrete owned implementation/helper entry within the bounded caller families. Complete body evidence remains visible and changes require ordinary behavioral review; this finite classification grants no independent support or nonreachability."
   },
-  "ess_cli::bin(ess)::fn::write_artifacts": {
-    "class": "OwnedHelper",
-    "macro_ast_sha256": null,
-    "reason": "Concrete owned implementation/helper entry within the bounded caller families. Complete body evidence remains visible and changes require ordinary behavioral review; this finite classification grants no independent support or nonreachability."
-  },
   "ess_cli::bin(ess)::fn::write_canonical": {
     "class": "OwnedHelper",
     "macro_ast_sha256": null,
     "reason": "Concrete owned implementation/helper entry within the bounded caller families. Complete body evidence remains visible and changes require ordinary behavioral review; this finite classification grants no independent support or nonreachability."
   },
-  "ess_cli::bin(ess)::fn::write_generated_files": {
+  "ess_cli::bin(ess)::fn::write_owned_artifacts": {
     "class": "OwnedHelper",
     "macro_ast_sha256": null,
-    "reason": "Concrete owned implementation/helper entry within the bounded caller families. Complete body evidence remains visible and changes require ordinary behavioral review; this finite classification grants no independent support or nonreachability."
+    "reason": "Concrete CLI output-management or publication adapter over already-rendered artifact bytes, fixed owner selectors and explicit compose paths. G01\u2013G14 route and original package cases exercise this caller path. This finite helper classification grants no new ESS model support or nonreachability; ordinary bound profiles stay unchanged."
+  },
+  "ess_cli::bin(ess)::fn::write_owned_files": {
+    "class": "OwnedHelper",
+    "macro_ast_sha256": null,
+    "reason": "Concrete CLI output-management or publication adapter over already-rendered artifact bytes, fixed owner selectors and explicit compose paths. G01\u2013G14 route and original package cases exercise this caller path. This finite helper classification grants no new ESS model support or nonreachability; ordinary bound profiles stay unchanged."
+  },
+  "ess_cli::bin(ess)::fn::write_owned_projection_files": {
+    "class": "OwnedHelper",
+    "macro_ast_sha256": null,
+    "reason": "Concrete CLI output-management or publication adapter over already-rendered artifact bytes, fixed owner selectors and explicit compose paths. G01\u2013G14 route and original package cases exercise this caller path. This finite helper classification grants no new ESS model support or nonreachability; ordinary bound profiles stay unchanged."
   },
   "ess_cli::bin(ess)::fn::write_preflighted_files": {
-    "class": "OwnedHelper",
-    "macro_ast_sha256": null,
-    "reason": "Concrete owned implementation/helper entry within the bounded caller families. Complete body evidence remains visible and changes require ordinary behavioral review; this finite classification grants no independent support or nonreachability."
-  },
-  "ess_cli::bin(ess)::fn::write_projection_files": {
     "class": "OwnedHelper",
     "macro_ast_sha256": null,
     "reason": "Concrete owned implementation/helper entry within the bounded caller families. Complete body evidence remains visible and changes require ordinary behavioral review; this finite classification grants no independent support or nonreachability."
@@ -2052,6 +2062,806 @@
     "class": "OwnedHelper",
     "macro_ast_sha256": null,
     "reason": "Concrete owned data/API declaration retained alongside the named behavioral callers. Its presence is not a behavior case and does not prove nonreachability."
+  },
+  "ess_cli::bin(ess)::output_ownership::enum::Command": {
+    "class": "OwnedHelper",
+    "macro_ast_sha256": null,
+    "reason": "Concrete edge output ownership/adoption/recovery helper over fixed owner keys, native paths, rendered bytes and transaction state. The CLI ownership and interruption cases exercise its actual publisher or reader. This finite classification grants no independent ESS model support or nonreachability and does not replace an ordinary bound entrypoint."
+  },
+  "ess_cli::bin(ess)::output_ownership::enum::Command/variant/Adopt": {
+    "class": "OwnedHelper",
+    "macro_ast_sha256": null,
+    "reason": "Concrete edge output ownership/adoption/recovery helper over fixed owner keys, native paths, rendered bytes and transaction state. The CLI ownership and interruption cases exercise its actual publisher or reader. This finite classification grants no independent ESS model support or nonreachability and does not replace an ordinary bound entrypoint."
+  },
+  "ess_cli::bin(ess)::output_ownership::enum::Command/variant/Recover": {
+    "class": "OwnedHelper",
+    "macro_ast_sha256": null,
+    "reason": "Concrete edge output ownership/adoption/recovery helper over fixed owner keys, native paths, rendered bytes and transaction state. The CLI ownership and interruption cases exercise its actual publisher or reader. This finite classification grants no independent ESS model support or nonreachability and does not replace an ordinary bound entrypoint."
+  },
+  "ess_cli::bin(ess)::output_ownership::filesystem::const::DIRECTORY": {
+    "class": "OwnedHelper",
+    "macro_ast_sha256": null,
+    "reason": "Concrete descriptor, native path, mount, lock or ordinary file-metadata helper for the edge output publisher. Native ownership interruption, containment and lock witnesses exercise this boundary; native macOS validation is separately required. This exact declaration classification grants no ESS model support or nonreachability."
+  },
+  "ess_cli::bin(ess)::output_ownership::filesystem::enum::Access": {
+    "class": "OwnedHelper",
+    "macro_ast_sha256": null,
+    "reason": "Concrete descriptor, native path, mount, lock or ordinary file-metadata helper for the edge output publisher. Native ownership interruption, containment and lock witnesses exercise this boundary; native macOS validation is separately required. This exact declaration classification grants no ESS model support or nonreachability."
+  },
+  "ess_cli::bin(ess)::output_ownership::filesystem::enum::Access/variant/Exclusive": {
+    "class": "OwnedHelper",
+    "macro_ast_sha256": null,
+    "reason": "Concrete descriptor, native path, mount, lock or ordinary file-metadata helper for the edge output publisher. Native ownership interruption, containment and lock witnesses exercise this boundary; native macOS validation is separately required. This exact declaration classification grants no ESS model support or nonreachability."
+  },
+  "ess_cli::bin(ess)::output_ownership::filesystem::enum::Access/variant/Shared": {
+    "class": "OwnedHelper",
+    "macro_ast_sha256": null,
+    "reason": "Concrete descriptor, native path, mount, lock or ordinary file-metadata helper for the edge output publisher. Native ownership interruption, containment and lock witnesses exercise this boundary; native macOS validation is separately required. This exact declaration classification grants no ESS model support or nonreachability."
+  },
+  "ess_cli::bin(ess)::output_ownership::filesystem::fn::absolute": {
+    "class": "OwnedHelper",
+    "macro_ast_sha256": null,
+    "reason": "Concrete descriptor, native path, mount, lock or ordinary file-metadata helper for the edge output publisher. Native ownership interruption, containment and lock witnesses exercise this boundary; native macOS validation is separately required. This exact declaration classification grants no ESS model support or nonreachability."
+  },
+  "ess_cli::bin(ess)::output_ownership::filesystem::fn::aliases": {
+    "class": "OwnedHelper",
+    "macro_ast_sha256": null,
+    "reason": "Concrete descriptor, native path, mount, lock or ordinary file-metadata helper for the edge output publisher. Native ownership interruption, containment and lock witnesses exercise this boundary; native macOS validation is separately required. This exact declaration classification grants no ESS model support or nonreachability."
+  },
+  "ess_cli::bin(ess)::output_ownership::filesystem::fn::discovery": {
+    "class": "OwnedHelper",
+    "macro_ast_sha256": null,
+    "reason": "Concrete descriptor, native path, mount, lock or ordinary file-metadata helper for the edge output publisher. Native ownership interruption, containment and lock witnesses exercise this boundary; native macOS validation is separately required. This exact declaration classification grants no ESS model support or nonreachability."
+  },
+  "ess_cli::bin(ess)::output_ownership::filesystem::fn::identity": {
+    "class": "OwnedHelper",
+    "macro_ast_sha256": null,
+    "reason": "Concrete descriptor, native path, mount, lock or ordinary file-metadata helper for the edge output publisher. Native ownership interruption, containment and lock witnesses exercise this boundary; native macOS validation is separately required. This exact declaration classification grants no ESS model support or nonreachability."
+  },
+  "ess_cli::bin(ess)::output_ownership::filesystem::fn::image": {
+    "class": "OwnedHelper",
+    "macro_ast_sha256": null,
+    "reason": "Concrete descriptor, native path, mount, lock or ordinary file-metadata helper for the edge output publisher. Native ownership interruption, containment and lock witnesses exercise this boundary; native macOS validation is separately required. This exact declaration classification grants no ESS model support or nonreachability."
+  },
+  "ess_cli::bin(ess)::output_ownership::filesystem::fn::mkdir": {
+    "class": "OwnedHelper",
+    "macro_ast_sha256": null,
+    "reason": "Concrete descriptor, native path, mount, lock or ordinary file-metadata helper for the edge output publisher. Native ownership interruption, containment and lock witnesses exercise this boundary; native macOS validation is separately required. This exact declaration classification grants no ESS model support or nonreachability."
+  },
+  "ess_cli::bin(ess)::output_ownership::filesystem::fn::names": {
+    "class": "OwnedHelper",
+    "macro_ast_sha256": null,
+    "reason": "Concrete descriptor, native path, mount, lock or ordinary file-metadata helper for the edge output publisher. Native ownership interruption, containment and lock witnesses exercise this boundary; native macOS validation is separately required. This exact declaration classification grants no ESS model support or nonreachability."
+  },
+  "ess_cli::bin(ess)::output_ownership::filesystem::fn::open_directory": {
+    "class": "OwnedHelper",
+    "macro_ast_sha256": null,
+    "reason": "Concrete descriptor, native path, mount, lock or ordinary file-metadata helper for the edge output publisher. Native ownership interruption, containment and lock witnesses exercise this boundary; native macOS validation is separately required. This exact declaration classification grants no ESS model support or nonreachability."
+  },
+  "ess_cli::bin(ess)::output_ownership::filesystem::fn::ordinary_metadata": {
+    "class": "OwnedHelper",
+    "macro_ast_sha256": null,
+    "reason": "Concrete descriptor, native path, mount, lock or ordinary file-metadata helper for the edge output publisher. Native ownership interruption, containment and lock witnesses exercise this boundary; native macOS validation is separately required. This exact declaration classification grants no ESS model support or nonreachability."
+  },
+  "ess_cli::bin(ess)::output_ownership::filesystem::fn::parent": {
+    "class": "OwnedHelper",
+    "macro_ast_sha256": null,
+    "reason": "Concrete descriptor, native path, mount, lock or ordinary file-metadata helper for the edge output publisher. Native ownership interruption, containment and lock witnesses exercise this boundary; native macOS validation is separately required. This exact declaration classification grants no ESS model support or nonreachability."
+  },
+  "ess_cli::bin(ess)::output_ownership::filesystem::fn::remove": {
+    "class": "OwnedHelper",
+    "macro_ast_sha256": null,
+    "reason": "Concrete descriptor, native path, mount, lock or ordinary file-metadata helper for the edge output publisher. Native ownership interruption, containment and lock witnesses exercise this boundary; native macOS validation is separately required. This exact declaration classification grants no ESS model support or nonreachability."
+  },
+  "ess_cli::bin(ess)::output_ownership::filesystem::fn::rename": {
+    "class": "OwnedHelper",
+    "macro_ast_sha256": null,
+    "reason": "Concrete descriptor, native path, mount, lock or ordinary file-metadata helper for the edge output publisher. Native ownership interruption, containment and lock witnesses exercise this boundary; native macOS validation is separately required. This exact declaration classification grants no ESS model support or nonreachability."
+  },
+  "ess_cli::bin(ess)::output_ownership::filesystem::fn::sync": {
+    "class": "OwnedHelper",
+    "macro_ast_sha256": null,
+    "reason": "Concrete descriptor, native path, mount, lock or ordinary file-metadata helper for the edge output publisher. Native ownership interruption, containment and lock witnesses exercise this boundary; native macOS validation is separately required. This exact declaration classification grants no ESS model support or nonreachability."
+  },
+  "ess_cli::bin(ess)::output_ownership::filesystem::fn::write_new": {
+    "class": "OwnedHelper",
+    "macro_ast_sha256": null,
+    "reason": "Concrete descriptor, native path, mount, lock or ordinary file-metadata helper for the edge output publisher. Native ownership interruption, containment and lock witnesses exercise this boundary; native macOS validation is separately required. This exact declaration classification grants no ESS model support or nonreachability."
+  },
+  "ess_cli::bin(ess)::output_ownership::filesystem::impl<Locks;>::acquire": {
+    "class": "OwnedHelper",
+    "macro_ast_sha256": null,
+    "reason": "Concrete descriptor, native path, mount, lock or ordinary file-metadata helper for the edge output publisher. Native ownership interruption, containment and lock witnesses exercise this boundary; native macOS validation is separately required. This exact declaration classification grants no ESS model support or nonreachability."
+  },
+  "ess_cli::bin(ess)::output_ownership::filesystem::impl<Locks;>::create_root": {
+    "class": "OwnedHelper",
+    "macro_ast_sha256": null,
+    "reason": "Concrete descriptor, native path, mount, lock or ordinary file-metadata helper for the edge output publisher. Native ownership interruption, containment and lock witnesses exercise this boundary; native macOS validation is separately required. This exact declaration classification grants no ESS model support or nonreachability."
+  },
+  "ess_cli::bin(ess)::output_ownership::filesystem::impl<Locks;>::existing": {
+    "class": "OwnedHelper",
+    "macro_ast_sha256": null,
+    "reason": "Concrete descriptor, native path, mount, lock or ordinary file-metadata helper for the edge output publisher. Native ownership interruption, containment and lock witnesses exercise this boundary; native macOS validation is separately required. This exact declaration classification grants no ESS model support or nonreachability."
+  },
+  "ess_cli::bin(ess)::output_ownership::filesystem::impl<Locks;>::nearest": {
+    "class": "OwnedHelper",
+    "macro_ast_sha256": null,
+    "reason": "Concrete descriptor, native path, mount, lock or ordinary file-metadata helper for the edge output publisher. Native ownership interruption, containment and lock witnesses exercise this boundary; native macOS validation is separately required. This exact declaration classification grants no ESS model support or nonreachability."
+  },
+  "ess_cli::bin(ess)::output_ownership::filesystem::impl<Locks;>::revalidate": {
+    "class": "OwnedHelper",
+    "macro_ast_sha256": null,
+    "reason": "Concrete descriptor, native path, mount, lock or ordinary file-metadata helper for the edge output publisher. Native ownership interruption, containment and lock witnesses exercise this boundary; native macOS validation is separately required. This exact declaration classification grants no ESS model support or nonreachability."
+  },
+  "ess_cli::bin(ess)::output_ownership::filesystem::impl<Mount;>::check": {
+    "class": "OwnedHelper",
+    "macro_ast_sha256": null,
+    "reason": "Concrete descriptor, native path, mount, lock or ordinary file-metadata helper for the edge output publisher. Native ownership interruption, containment and lock witnesses exercise this boundary; native macOS validation is separately required. This exact declaration classification grants no ESS model support or nonreachability."
+  },
+  "ess_cli::bin(ess)::output_ownership::filesystem::impl<Mount;>::of": {
+    "class": "OwnedHelper",
+    "macro_ast_sha256": null,
+    "reason": "Concrete descriptor, native path, mount, lock or ordinary file-metadata helper for the edge output publisher. Native ownership interruption, containment and lock witnesses exercise this boundary; native macOS validation is separately required. This exact declaration classification grants no ESS model support or nonreachability."
+  },
+  "ess_cli::bin(ess)::output_ownership::filesystem::module": {
+    "class": "OwnedHelper",
+    "macro_ast_sha256": null,
+    "reason": "Concrete descriptor, native path, mount, lock or ordinary file-metadata helper for the edge output publisher. Native ownership interruption, containment and lock witnesses exercise this boundary; native macOS validation is separately required. This exact declaration classification grants no ESS model support or nonreachability."
+  },
+  "ess_cli::bin(ess)::output_ownership::filesystem::struct::Locks": {
+    "class": "OwnedHelper",
+    "macro_ast_sha256": null,
+    "reason": "Concrete descriptor, native path, mount, lock or ordinary file-metadata helper for the edge output publisher. Native ownership interruption, containment and lock witnesses exercise this boundary; native macOS validation is separately required. This exact declaration classification grants no ESS model support or nonreachability."
+  },
+  "ess_cli::bin(ess)::output_ownership::filesystem::struct::Mount": {
+    "class": "OwnedHelper",
+    "macro_ast_sha256": null,
+    "reason": "Concrete descriptor, native path, mount, lock or ordinary file-metadata helper for the edge output publisher. Native ownership interruption, containment and lock witnesses exercise this boundary; native macOS validation is separately required. This exact declaration classification grants no ESS model support or nonreachability."
+  },
+  "ess_cli::bin(ess)::output_ownership::filesystem::type::Observer": {
+    "class": "OwnedHelper",
+    "macro_ast_sha256": null,
+    "reason": "Concrete descriptor, native path, mount, lock or ordinary file-metadata helper for the edge output publisher. Native ownership interruption, containment and lock witnesses exercise this boundary; native macOS validation is separately required. This exact declaration classification grants no ESS model support or nonreachability."
+  },
+  "ess_cli::bin(ess)::output_ownership::fn::adopt": {
+    "class": "OwnedHelper",
+    "macro_ast_sha256": null,
+    "reason": "Concrete edge output ownership/adoption/recovery helper over fixed owner keys, native paths, rendered bytes and transaction state. The CLI ownership and interruption cases exercise its actual publisher or reader. This finite classification grants no independent ESS model support or nonreachability and does not replace an ordinary bound entrypoint."
+  },
+  "ess_cli::bin(ess)::output_ownership::fn::adopt_observed": {
+    "class": "OwnedHelper",
+    "macro_ast_sha256": null,
+    "reason": "Concrete edge output ownership/adoption/recovery helper over fixed owner keys, native paths, rendered bytes and transaction state. The CLI ownership and interruption cases exercise its actual publisher or reader. This finite classification grants no independent ESS model support or nonreachability and does not replace an ordinary bound entrypoint."
+  },
+  "ess_cli::bin(ess)::output_ownership::fn::apply_forward": {
+    "class": "OwnedHelper",
+    "macro_ast_sha256": null,
+    "reason": "Concrete edge output ownership/adoption/recovery helper over fixed owner keys, native paths, rendered bytes and transaction state. The CLI ownership and interruption cases exercise its actual publisher or reader. This finite classification grants no independent ESS model support or nonreachability and does not replace an ordinary bound entrypoint."
+  },
+  "ess_cli::bin(ess)::output_ownership::fn::check": {
+    "class": "OwnedHelper",
+    "macro_ast_sha256": null,
+    "reason": "Concrete edge output ownership/adoption/recovery helper over fixed owner keys, native paths, rendered bytes and transaction state. The CLI ownership and interruption cases exercise its actual publisher or reader. This finite classification grants no independent ESS model support or nonreachability and does not replace an ordinary bound entrypoint."
+  },
+  "ess_cli::bin(ess)::output_ownership::fn::cleanup": {
+    "class": "OwnedHelper",
+    "macro_ast_sha256": null,
+    "reason": "Concrete edge output ownership/adoption/recovery helper over fixed owner keys, native paths, rendered bytes and transaction state. The CLI ownership and interruption cases exercise its actual publisher or reader. This finite classification grants no independent ESS model support or nonreachability and does not replace an ordinary bound entrypoint."
+  },
+  "ess_cli::bin(ess)::output_ownership::fn::current": {
+    "class": "OwnedHelper",
+    "macro_ast_sha256": null,
+    "reason": "Concrete edge output ownership/adoption/recovery helper over fixed owner keys, native paths, rendered bytes and transaction state. The CLI ownership and interruption cases exercise its actual publisher or reader. This finite classification grants no independent ESS model support or nonreachability and does not replace an ordinary bound entrypoint."
+  },
+  "ess_cli::bin(ess)::output_ownership::fn::ensure_idle": {
+    "class": "OwnedHelper",
+    "macro_ast_sha256": null,
+    "reason": "Concrete edge output ownership/adoption/recovery helper over fixed owner keys, native paths, rendered bytes and transaction state. The CLI ownership and interruption cases exercise its actual publisher or reader. This finite classification grants no independent ESS model support or nonreachability and does not replace an ordinary bound entrypoint."
+  },
+  "ess_cli::bin(ess)::output_ownership::fn::initialize": {
+    "class": "OwnedHelper",
+    "macro_ast_sha256": null,
+    "reason": "Concrete edge output ownership/adoption/recovery helper over fixed owner keys, native paths, rendered bytes and transaction state. The CLI ownership and interruption cases exercise its actual publisher or reader. This finite classification grants no independent ESS model support or nonreachability and does not replace an ordinary bound entrypoint."
+  },
+  "ess_cli::bin(ess)::output_ownership::fn::install": {
+    "class": "OwnedHelper",
+    "macro_ast_sha256": null,
+    "reason": "Concrete edge output ownership/adoption/recovery helper over fixed owner keys, native paths, rendered bytes and transaction state. The CLI ownership and interruption cases exercise its actual publisher or reader. This finite classification grants no independent ESS model support or nonreachability and does not replace an ordinary bound entrypoint."
+  },
+  "ess_cli::bin(ess)::output_ownership::fn::make_output_directory": {
+    "class": "OwnedHelper",
+    "macro_ast_sha256": null,
+    "reason": "Concrete edge output ownership/adoption/recovery helper over fixed owner keys, native paths, rendered bytes and transaction state. The CLI ownership and interruption cases exercise its actual publisher or reader. This finite classification grants no independent ESS model support or nonreachability and does not replace an ordinary bound entrypoint."
+  },
+  "ess_cli::bin(ess)::output_ownership::fn::named": {
+    "class": "OwnedHelper",
+    "macro_ast_sha256": null,
+    "reason": "Concrete edge output ownership/adoption/recovery helper over fixed owner keys, native paths, rendered bytes and transaction state. The CLI ownership and interruption cases exercise its actual publisher or reader. This finite classification grants no independent ESS model support or nonreachability and does not replace an ordinary bound entrypoint."
+  },
+  "ess_cli::bin(ess)::output_ownership::fn::only_recorded_descendants": {
+    "class": "OwnedHelper",
+    "macro_ast_sha256": null,
+    "reason": "Concrete edge output ownership/adoption/recovery helper over fixed owner keys, native paths, rendered bytes and transaction state. The CLI ownership and interruption cases exercise its actual publisher or reader. This finite classification grants no independent ESS model support or nonreachability and does not replace an ordinary bound entrypoint."
+  },
+  "ess_cli::bin(ess)::output_ownership::fn::ordered_changes": {
+    "class": "OwnedHelper",
+    "macro_ast_sha256": null,
+    "reason": "Concrete edge output ownership/adoption/recovery helper over fixed owner keys, native paths, rendered bytes and transaction state. The CLI ownership and interruption cases exercise its actual publisher or reader. This finite classification grants no independent ESS model support or nonreachability and does not replace an ordinary bound entrypoint."
+  },
+  "ess_cli::bin(ess)::output_ownership::fn::plan": {
+    "class": "OwnedHelper",
+    "macro_ast_sha256": null,
+    "reason": "Concrete edge output ownership/adoption/recovery helper over fixed owner keys, native paths, rendered bytes and transaction state. The CLI ownership and interruption cases exercise its actual publisher or reader. This finite classification grants no independent ESS model support or nonreachability and does not replace an ordinary bound entrypoint."
+  },
+  "ess_cli::bin(ess)::output_ownership::fn::publish": {
+    "class": "OwnedHelper",
+    "macro_ast_sha256": null,
+    "reason": "Concrete edge output ownership/adoption/recovery helper over fixed owner keys, native paths, rendered bytes and transaction state. The CLI ownership and interruption cases exercise its actual publisher or reader. This finite classification grants no independent ESS model support or nonreachability and does not replace an ordinary bound entrypoint."
+  },
+  "ess_cli::bin(ess)::output_ownership::fn::publish_observed": {
+    "class": "OwnedHelper",
+    "macro_ast_sha256": null,
+    "reason": "Concrete edge output ownership/adoption/recovery helper over fixed owner keys, native paths, rendered bytes and transaction state. The CLI ownership and interruption cases exercise its actual publisher or reader. This finite classification grants no independent ESS model support or nonreachability and does not replace an ordinary bound entrypoint."
+  },
+  "ess_cli::bin(ess)::output_ownership::fn::read_state": {
+    "class": "OwnedHelper",
+    "macro_ast_sha256": null,
+    "reason": "Concrete edge output ownership/adoption/recovery helper over fixed owner keys, native paths, rendered bytes and transaction state. The CLI ownership and interruption cases exercise its actual publisher or reader. This finite classification grants no independent ESS model support or nonreachability and does not replace an ordinary bound entrypoint."
+  },
+  "ess_cli::bin(ess)::output_ownership::fn::recover": {
+    "class": "OwnedHelper",
+    "macro_ast_sha256": null,
+    "reason": "Concrete edge output ownership/adoption/recovery helper over fixed owner keys, native paths, rendered bytes and transaction state. The CLI ownership and interruption cases exercise its actual publisher or reader. This finite classification grants no independent ESS model support or nonreachability and does not replace an ordinary bound entrypoint."
+  },
+  "ess_cli::bin(ess)::output_ownership::fn::recover_observed": {
+    "class": "OwnedHelper",
+    "macro_ast_sha256": null,
+    "reason": "Concrete edge output ownership/adoption/recovery helper over fixed owner keys, native paths, rendered bytes and transaction state. The CLI ownership and interruption cases exercise its actual publisher or reader. This finite classification grants no independent ESS model support or nonreachability and does not replace an ordinary bound entrypoint."
+  },
+  "ess_cli::bin(ess)::output_ownership::fn::remove_output": {
+    "class": "OwnedHelper",
+    "macro_ast_sha256": null,
+    "reason": "Concrete edge output ownership/adoption/recovery helper over fixed owner keys, native paths, rendered bytes and transaction state. The CLI ownership and interruption cases exercise its actual publisher or reader. This finite classification grants no independent ESS model support or nonreachability and does not replace an ordinary bound entrypoint."
+  },
+  "ess_cli::bin(ess)::output_ownership::fn::restore": {
+    "class": "OwnedHelper",
+    "macro_ast_sha256": null,
+    "reason": "Concrete edge output ownership/adoption/recovery helper over fixed owner keys, native paths, rendered bytes and transaction state. The CLI ownership and interruption cases exercise its actual publisher or reader. This finite classification grants no independent ESS model support or nonreachability and does not replace an ordinary bound entrypoint."
+  },
+  "ess_cli::bin(ess)::output_ownership::fn::run": {
+    "class": "OwnedHelper",
+    "macro_ast_sha256": null,
+    "reason": "Concrete edge output ownership/adoption/recovery helper over fixed owner keys, native paths, rendered bytes and transaction state. The CLI ownership and interruption cases exercise its actual publisher or reader. This finite classification grants no independent ESS model support or nonreachability and does not replace an ordinary bound entrypoint."
+  },
+  "ess_cli::bin(ess)::output_ownership::fn::run_plan": {
+    "class": "OwnedHelper",
+    "macro_ast_sha256": null,
+    "reason": "Concrete edge output ownership/adoption/recovery helper over fixed owner keys, native paths, rendered bytes and transaction state. The CLI ownership and interruption cases exercise its actual publisher or reader. This finite classification grants no independent ESS model support or nonreachability and does not replace an ordinary bound entrypoint."
+  },
+  "ess_cli::bin(ess)::output_ownership::fn::subtree_owned": {
+    "class": "OwnedHelper",
+    "macro_ast_sha256": null,
+    "reason": "Concrete edge output ownership/adoption/recovery helper over fixed owner keys, native paths, rendered bytes and transaction state. The CLI ownership and interruption cases exercise its actual publisher or reader. This finite classification grants no independent ESS model support or nonreachability and does not replace an ordinary bound entrypoint."
+  },
+  "ess_cli::bin(ess)::output_ownership::fn::transaction": {
+    "class": "OwnedHelper",
+    "macro_ast_sha256": null,
+    "reason": "Concrete edge output ownership/adoption/recovery helper over fixed owner keys, native paths, rendered bytes and transaction state. The CLI ownership and interruption cases exercise its actual publisher or reader. This finite classification grants no independent ESS model support or nonreachability and does not replace an ordinary bound entrypoint."
+  },
+  "ess_cli::bin(ess)::output_ownership::fn::tx_name": {
+    "class": "OwnedHelper",
+    "macro_ast_sha256": null,
+    "reason": "Concrete edge output ownership/adoption/recovery helper over fixed owner keys, native paths, rendered bytes and transaction state. The CLI ownership and interruption cases exercise its actual publisher or reader. This finite classification grants no independent ESS model support or nonreachability and does not replace an ordinary bound entrypoint."
+  },
+  "ess_cli::bin(ess)::output_ownership::fn::verify_blob": {
+    "class": "OwnedHelper",
+    "macro_ast_sha256": null,
+    "reason": "Concrete edge output ownership/adoption/recovery helper over fixed owner keys, native paths, rendered bytes and transaction state. The CLI ownership and interruption cases exercise its actual publisher or reader. This finite classification grants no independent ESS model support or nonreachability and does not replace an ordinary bound entrypoint."
+  },
+  "ess_cli::bin(ess)::output_ownership::fn::verify_blobs": {
+    "class": "OwnedHelper",
+    "macro_ast_sha256": null,
+    "reason": "Concrete edge output ownership/adoption/recovery helper over fixed owner keys, native paths, rendered bytes and transaction state. The CLI ownership and interruption cases exercise its actual publisher or reader. This finite classification grants no independent ESS model support or nonreachability and does not replace an ordinary bound entrypoint."
+  },
+  "ess_cli::bin(ess)::output_ownership::fn::verify_images": {
+    "class": "OwnedHelper",
+    "macro_ast_sha256": null,
+    "reason": "Concrete edge output ownership/adoption/recovery helper over fixed owner keys, native paths, rendered bytes and transaction state. The CLI ownership and interruption cases exercise its actual publisher or reader. This finite classification grants no independent ESS model support or nonreachability and does not replace an ordinary bound entrypoint."
+  },
+  "ess_cli::bin(ess)::output_ownership::impl<Publication;>::compose": {
+    "class": "OwnedHelper",
+    "macro_ast_sha256": null,
+    "reason": "Concrete edge output ownership/adoption/recovery helper over fixed owner keys, native paths, rendered bytes and transaction state. The CLI ownership and interruption cases exercise its actual publisher or reader. This finite classification grants no independent ESS model support or nonreachability and does not replace an ordinary bound entrypoint."
+  },
+  "ess_cli::bin(ess)::output_ownership::impl<Publication;>::named": {
+    "class": "OwnedHelper",
+    "macro_ast_sha256": null,
+    "reason": "Concrete edge output ownership/adoption/recovery helper over fixed owner keys, native paths, rendered bytes and transaction state. The CLI ownership and interruption cases exercise its actual publisher or reader. This finite classification grants no independent ESS model support or nonreachability and does not replace an ordinary bound entrypoint."
+  },
+  "ess_cli::bin(ess)::output_ownership::impl<Publication;>::new": {
+    "class": "OwnedHelper",
+    "macro_ast_sha256": null,
+    "reason": "Concrete edge output ownership/adoption/recovery helper over fixed owner keys, native paths, rendered bytes and transaction state. The CLI ownership and interruption cases exercise its actual publisher or reader. This finite classification grants no independent ESS model support or nonreachability and does not replace an ordinary bound entrypoint."
+  },
+  "ess_cli::bin(ess)::output_ownership::impl<Publication;>::tree": {
+    "class": "OwnedHelper",
+    "macro_ast_sha256": null,
+    "reason": "Concrete edge output ownership/adoption/recovery helper over fixed owner keys, native paths, rendered bytes and transaction state. The CLI ownership and interruption cases exercise its actual publisher or reader. This finite classification grants no independent ESS model support or nonreachability and does not replace an ordinary bound entrypoint."
+  },
+  "ess_cli::bin(ess)::output_ownership::impl<Session < '_ >;>::checkpoint": {
+    "class": "OwnedHelper",
+    "macro_ast_sha256": null,
+    "reason": "Concrete edge output ownership/adoption/recovery helper over fixed owner keys, native paths, rendered bytes and transaction state. The CLI ownership and interruption cases exercise its actual publisher or reader. This finite classification grants no independent ESS model support or nonreachability and does not replace an ordinary bound entrypoint."
+  },
+  "ess_cli::bin(ess)::output_ownership::impl<Session < '_ >;>::tx_directory": {
+    "class": "OwnedHelper",
+    "macro_ast_sha256": null,
+    "reason": "Concrete edge output ownership/adoption/recovery helper over fixed owner keys, native paths, rendered bytes and transaction state. The CLI ownership and interruption cases exercise its actual publisher or reader. This finite classification grants no independent ESS model support or nonreachability and does not replace an ordinary bound entrypoint."
+  },
+  "ess_cli::bin(ess)::output_ownership::impl<Session < '_ >;>::validate": {
+    "class": "OwnedHelper",
+    "macro_ast_sha256": null,
+    "reason": "Concrete edge output ownership/adoption/recovery helper over fixed owner keys, native paths, rendered bytes and transaction state. The CLI ownership and interruption cases exercise its actual publisher or reader. This finite classification grants no independent ESS model support or nonreachability and does not replace an ordinary bound entrypoint."
+  },
+  "ess_cli::bin(ess)::output_ownership::module": {
+    "class": "OwnedHelper",
+    "macro_ast_sha256": null,
+    "reason": "Concrete edge output ownership/adoption/recovery helper over fixed owner keys, native paths, rendered bytes and transaction state. The CLI ownership and interruption cases exercise its actual publisher or reader. This finite classification grants no independent ESS model support or nonreachability and does not replace an ordinary bound entrypoint."
+  },
+  "ess_cli::bin(ess)::output_ownership::state::const::FORMAT": {
+    "class": "OwnedHelper",
+    "macro_ast_sha256": null,
+    "reason": "Concrete private ess-output-state/1 data, canonical codec or inventory-validation helper for output ownership and recovery. Canonical/malformed-state, adoption and phase witnesses exercise its actual reader. It is outside the ESS model semantics inventory; this finite classification grants no model support, inherited eligibility or nonreachability."
+  },
+  "ess_cli::bin(ess)::output_ownership::state::const::INIT_PREFIX": {
+    "class": "OwnedHelper",
+    "macro_ast_sha256": null,
+    "reason": "Concrete private ess-output-state/1 data, canonical codec or inventory-validation helper for output ownership and recovery. Canonical/malformed-state, adoption and phase witnesses exercise its actual reader. It is outside the ESS model semantics inventory; this finite classification grants no model support, inherited eligibility or nonreachability."
+  },
+  "ess_cli::bin(ess)::output_ownership::state::const::RESERVED": {
+    "class": "OwnedHelper",
+    "macro_ast_sha256": null,
+    "reason": "Concrete private ess-output-state/1 data, canonical codec or inventory-validation helper for output ownership and recovery. Canonical/malformed-state, adoption and phase witnesses exercise its actual reader. It is outside the ESS model semantics inventory; this finite classification grants no model support, inherited eligibility or nonreachability."
+  },
+  "ess_cli::bin(ess)::output_ownership::state::enum::Checkpoint": {
+    "class": "OwnedHelper",
+    "macro_ast_sha256": null,
+    "reason": "Concrete private ess-output-state/1 data, canonical codec or inventory-validation helper for output ownership and recovery. Canonical/malformed-state, adoption and phase witnesses exercise its actual reader. It is outside the ESS model semantics inventory; this finite classification grants no model support, inherited eligibility or nonreachability."
+  },
+  "ess_cli::bin(ess)::output_ownership::state::enum::Checkpoint/variant/Committed": {
+    "class": "OwnedHelper",
+    "macro_ast_sha256": null,
+    "reason": "Concrete private ess-output-state/1 data, canonical codec or inventory-validation helper for output ownership and recovery. Canonical/malformed-state, adoption and phase witnesses exercise its actual reader. It is outside the ESS model semantics inventory; this finite classification grants no model support, inherited eligibility or nonreachability."
+  },
+  "ess_cli::bin(ess)::output_ownership::state::enum::Checkpoint/variant/Idle": {
+    "class": "OwnedHelper",
+    "macro_ast_sha256": null,
+    "reason": "Concrete private ess-output-state/1 data, canonical codec or inventory-validation helper for output ownership and recovery. Canonical/malformed-state, adoption and phase witnesses exercise its actual reader. It is outside the ESS model semantics inventory; this finite classification grants no model support, inherited eligibility or nonreachability."
+  },
+  "ess_cli::bin(ess)::output_ownership::state::enum::Checkpoint/variant/Prepared": {
+    "class": "OwnedHelper",
+    "macro_ast_sha256": null,
+    "reason": "Concrete private ess-output-state/1 data, canonical codec or inventory-validation helper for output ownership and recovery. Canonical/malformed-state, adoption and phase witnesses exercise its actual reader. It is outside the ESS model semantics inventory; this finite classification grants no model support, inherited eligibility or nonreachability."
+  },
+  "ess_cli::bin(ess)::output_ownership::state::enum::Checkpoint/variant/Restored": {
+    "class": "OwnedHelper",
+    "macro_ast_sha256": null,
+    "reason": "Concrete private ess-output-state/1 data, canonical codec or inventory-validation helper for output ownership and recovery. Canonical/malformed-state, adoption and phase witnesses exercise its actual reader. It is outside the ESS model semantics inventory; this finite classification grants no model support, inherited eligibility or nonreachability."
+  },
+  "ess_cli::bin(ess)::output_ownership::state::enum::Checkpoint/variant/Staging": {
+    "class": "OwnedHelper",
+    "macro_ast_sha256": null,
+    "reason": "Concrete private ess-output-state/1 data, canonical codec or inventory-validation helper for output ownership and recovery. Canonical/malformed-state, adoption and phase witnesses exercise its actual reader. It is outside the ESS model semantics inventory; this finite classification grants no model support, inherited eligibility or nonreachability."
+  },
+  "ess_cli::bin(ess)::output_ownership::state::enum::Encoding": {
+    "class": "OwnedHelper",
+    "macro_ast_sha256": null,
+    "reason": "Concrete private ess-output-state/1 data, canonical codec or inventory-validation helper for output ownership and recovery. Canonical/malformed-state, adoption and phase witnesses exercise its actual reader. It is outside the ESS model semantics inventory; this finite classification grants no model support, inherited eligibility or nonreachability."
+  },
+  "ess_cli::bin(ess)::output_ownership::state::enum::Encoding/variant/UnixBytes1": {
+    "class": "OwnedHelper",
+    "macro_ast_sha256": null,
+    "reason": "Concrete private ess-output-state/1 data, canonical codec or inventory-validation helper for output ownership and recovery. Canonical/malformed-state, adoption and phase witnesses exercise its actual reader. It is outside the ESS model semantics inventory; this finite classification grants no model support, inherited eligibility or nonreachability."
+  },
+  "ess_cli::bin(ess)::output_ownership::state::enum::Family": {
+    "class": "OwnedHelper",
+    "macro_ast_sha256": null,
+    "reason": "Concrete private ess-output-state/1 data, canonical codec or inventory-validation helper for output ownership and recovery. Canonical/malformed-state, adoption and phase witnesses exercise its actual reader. It is outside the ESS model semantics inventory; this finite classification grants no model support, inherited eligibility or nonreachability."
+  },
+  "ess_cli::bin(ess)::output_ownership::state::enum::Family/variant/Asyncapi": {
+    "class": "OwnedHelper",
+    "macro_ast_sha256": null,
+    "reason": "Concrete private ess-output-state/1 data, canonical codec or inventory-validation helper for output ownership and recovery. Canonical/malformed-state, adoption and phase witnesses exercise its actual reader. It is outside the ESS model semantics inventory; this finite classification grants no model support, inherited eligibility or nonreachability."
+  },
+  "ess_cli::bin(ess)::output_ownership::state::enum::Family/variant/Buildkit": {
+    "class": "OwnedHelper",
+    "macro_ast_sha256": null,
+    "reason": "Concrete private ess-output-state/1 data, canonical codec or inventory-validation helper for output ownership and recovery. Canonical/malformed-state, adoption and phase witnesses exercise its actual reader. It is outside the ESS model semantics inventory; this finite classification grants no model support, inherited eligibility or nonreachability."
+  },
+  "ess_cli::bin(ess)::output_ownership::state::enum::Family/variant/Compose": {
+    "class": "OwnedHelper",
+    "macro_ast_sha256": null,
+    "reason": "Concrete private ess-output-state/1 data, canonical codec or inventory-validation helper for output ownership and recovery. Canonical/malformed-state, adoption and phase witnesses exercise its actual reader. It is outside the ESS model semantics inventory; this finite classification grants no model support, inherited eligibility or nonreachability."
+  },
+  "ess_cli::bin(ess)::output_ownership::state::enum::Family/variant/ConformanceBrowser": {
+    "class": "OwnedHelper",
+    "macro_ast_sha256": null,
+    "reason": "Concrete private ess-output-state/1 data, canonical codec or inventory-validation helper for output ownership and recovery. Canonical/malformed-state, adoption and phase witnesses exercise its actual reader. It is outside the ESS model semantics inventory; this finite classification grants no model support, inherited eligibility or nonreachability."
+  },
+  "ess_cli::bin(ess)::output_ownership::state::enum::Family/variant/ConformanceGo": {
+    "class": "OwnedHelper",
+    "macro_ast_sha256": null,
+    "reason": "Concrete private ess-output-state/1 data, canonical codec or inventory-validation helper for output ownership and recovery. Canonical/malformed-state, adoption and phase witnesses exercise its actual reader. It is outside the ESS model semantics inventory; this finite classification grants no model support, inherited eligibility or nonreachability."
+  },
+  "ess_cli::bin(ess)::output_ownership::state::enum::Family/variant/Docs": {
+    "class": "OwnedHelper",
+    "macro_ast_sha256": null,
+    "reason": "Concrete private ess-output-state/1 data, canonical codec or inventory-validation helper for output ownership and recovery. Canonical/malformed-state, adoption and phase witnesses exercise its actual reader. It is outside the ESS model semantics inventory; this finite classification grants no model support, inherited eligibility or nonreachability."
+  },
+  "ess_cli::bin(ess)::output_ownership::state::enum::Family/variant/DocsIr": {
+    "class": "OwnedHelper",
+    "macro_ast_sha256": null,
+    "reason": "Concrete private ess-output-state/1 data, canonical codec or inventory-validation helper for output ownership and recovery. Canonical/malformed-state, adoption and phase witnesses exercise its actual reader. It is outside the ESS model semantics inventory; this finite classification grants no model support, inherited eligibility or nonreachability."
+  },
+  "ess_cli::bin(ess)::output_ownership::state::enum::Family/variant/Helm": {
+    "class": "OwnedHelper",
+    "macro_ast_sha256": null,
+    "reason": "Concrete private ess-output-state/1 data, canonical codec or inventory-validation helper for output ownership and recovery. Canonical/malformed-state, adoption and phase witnesses exercise its actual reader. It is outside the ESS model semantics inventory; this finite classification grants no model support, inherited eligibility or nonreachability."
+  },
+  "ess_cli::bin(ess)::output_ownership::state::enum::Family/variant/Kubernetes": {
+    "class": "OwnedHelper",
+    "macro_ast_sha256": null,
+    "reason": "Concrete private ess-output-state/1 data, canonical codec or inventory-validation helper for output ownership and recovery. Canonical/malformed-state, adoption and phase witnesses exercise its actual reader. It is outside the ESS model semantics inventory; this finite classification grants no model support, inherited eligibility or nonreachability."
+  },
+  "ess_cli::bin(ess)::output_ownership::state::enum::Family/variant/ModelTypes": {
+    "class": "OwnedHelper",
+    "macro_ast_sha256": null,
+    "reason": "Concrete private ess-output-state/1 data, canonical codec or inventory-validation helper for output ownership and recovery. Canonical/malformed-state, adoption and phase witnesses exercise its actual reader. It is outside the ESS model semantics inventory; this finite classification grants no model support, inherited eligibility or nonreachability."
+  },
+  "ess_cli::bin(ess)::output_ownership::state::enum::Family/variant/Normalization": {
+    "class": "OwnedHelper",
+    "macro_ast_sha256": null,
+    "reason": "Concrete private ess-output-state/1 data, canonical codec or inventory-validation helper for output ownership and recovery. Canonical/malformed-state, adoption and phase witnesses exercise its actual reader. It is outside the ESS model semantics inventory; this finite classification grants no model support, inherited eligibility or nonreachability."
+  },
+  "ess_cli::bin(ess)::output_ownership::state::enum::Family/variant/Openapi": {
+    "class": "OwnedHelper",
+    "macro_ast_sha256": null,
+    "reason": "Concrete private ess-output-state/1 data, canonical codec or inventory-validation helper for output ownership and recovery. Canonical/malformed-state, adoption and phase witnesses exercise its actual reader. It is outside the ESS model semantics inventory; this finite classification grants no model support, inherited eligibility or nonreachability."
+  },
+  "ess_cli::bin(ess)::output_ownership::state::enum::Family/variant/OpenapiFile": {
+    "class": "OwnedHelper",
+    "macro_ast_sha256": null,
+    "reason": "Concrete private ess-output-state/1 data, canonical codec or inventory-validation helper for output ownership and recovery. Canonical/malformed-state, adoption and phase witnesses exercise its actual reader. It is outside the ESS model semantics inventory; this finite classification grants no model support, inherited eligibility or nonreachability."
+  },
+  "ess_cli::bin(ess)::output_ownership::state::enum::Family/variant/RealizationMarkdown": {
+    "class": "OwnedHelper",
+    "macro_ast_sha256": null,
+    "reason": "Concrete private ess-output-state/1 data, canonical codec or inventory-validation helper for output ownership and recovery. Canonical/malformed-state, adoption and phase witnesses exercise its actual reader. It is outside the ESS model semantics inventory; this finite classification grants no model support, inherited eligibility or nonreachability."
+  },
+  "ess_cli::bin(ess)::output_ownership::state::enum::Family/variant/Schema": {
+    "class": "OwnedHelper",
+    "macro_ast_sha256": null,
+    "reason": "Concrete private ess-output-state/1 data, canonical codec or inventory-validation helper for output ownership and recovery. Canonical/malformed-state, adoption and phase witnesses exercise its actual reader. It is outside the ESS model semantics inventory; this finite classification grants no model support, inherited eligibility or nonreachability."
+  },
+  "ess_cli::bin(ess)::output_ownership::state::enum::Family/variant/Site": {
+    "class": "OwnedHelper",
+    "macro_ast_sha256": null,
+    "reason": "Concrete private ess-output-state/1 data, canonical codec or inventory-validation helper for output ownership and recovery. Canonical/malformed-state, adoption and phase witnesses exercise its actual reader. It is outside the ESS model semantics inventory; this finite classification grants no model support, inherited eligibility or nonreachability."
+  },
+  "ess_cli::bin(ess)::output_ownership::state::enum::Family/variant/Synthesis": {
+    "class": "OwnedHelper",
+    "macro_ast_sha256": null,
+    "reason": "Concrete private ess-output-state/1 data, canonical codec or inventory-validation helper for output ownership and recovery. Canonical/malformed-state, adoption and phase witnesses exercise its actual reader. It is outside the ESS model semantics inventory; this finite classification grants no model support, inherited eligibility or nonreachability."
+  },
+  "ess_cli::bin(ess)::output_ownership::state::enum::Family/variant/TypesBundle": {
+    "class": "OwnedHelper",
+    "macro_ast_sha256": null,
+    "reason": "Concrete private ess-output-state/1 data, canonical codec or inventory-validation helper for output ownership and recovery. Canonical/malformed-state, adoption and phase witnesses exercise its actual reader. It is outside the ESS model semantics inventory; this finite classification grants no model support, inherited eligibility or nonreachability."
+  },
+  "ess_cli::bin(ess)::output_ownership::state::enum::Family/variant/TypescriptFile": {
+    "class": "OwnedHelper",
+    "macro_ast_sha256": null,
+    "reason": "Concrete private ess-output-state/1 data, canonical codec or inventory-validation helper for output ownership and recovery. Canonical/malformed-state, adoption and phase witnesses exercise its actual reader. It is outside the ESS model semantics inventory; this finite classification grants no model support, inherited eligibility or nonreachability."
+  },
+  "ess_cli::bin(ess)::output_ownership::state::enum::Image": {
+    "class": "OwnedHelper",
+    "macro_ast_sha256": null,
+    "reason": "Concrete private ess-output-state/1 data, canonical codec or inventory-validation helper for output ownership and recovery. Canonical/malformed-state, adoption and phase witnesses exercise its actual reader. It is outside the ESS model semantics inventory; this finite classification grants no model support, inherited eligibility or nonreachability."
+  },
+  "ess_cli::bin(ess)::output_ownership::state::enum::Image/variant/Absent": {
+    "class": "OwnedHelper",
+    "macro_ast_sha256": null,
+    "reason": "Concrete private ess-output-state/1 data, canonical codec or inventory-validation helper for output ownership and recovery. Canonical/malformed-state, adoption and phase witnesses exercise its actual reader. It is outside the ESS model semantics inventory; this finite classification grants no model support, inherited eligibility or nonreachability."
+  },
+  "ess_cli::bin(ess)::output_ownership::state::enum::Image/variant/Directory": {
+    "class": "OwnedHelper",
+    "macro_ast_sha256": null,
+    "reason": "Concrete private ess-output-state/1 data, canonical codec or inventory-validation helper for output ownership and recovery. Canonical/malformed-state, adoption and phase witnesses exercise its actual reader. It is outside the ESS model semantics inventory; this finite classification grants no model support, inherited eligibility or nonreachability."
+  },
+  "ess_cli::bin(ess)::output_ownership::state::enum::Image/variant/File": {
+    "class": "OwnedHelper",
+    "macro_ast_sha256": null,
+    "reason": "Concrete private ess-output-state/1 data, canonical codec or inventory-validation helper for output ownership and recovery. Canonical/malformed-state, adoption and phase witnesses exercise its actual reader. It is outside the ESS model semantics inventory; this finite classification grants no model support, inherited eligibility or nonreachability."
+  },
+  "ess_cli::bin(ess)::output_ownership::state::enum::Profile": {
+    "class": "OwnedHelper",
+    "macro_ast_sha256": null,
+    "reason": "Concrete private ess-output-state/1 data, canonical codec or inventory-validation helper for output ownership and recovery. Canonical/malformed-state, adoption and phase witnesses exercise its actual reader. It is outside the ESS model semantics inventory; this finite classification grants no model support, inherited eligibility or nonreachability."
+  },
+  "ess_cli::bin(ess)::output_ownership::state::enum::Profile/variant/LinuxLocal1": {
+    "class": "OwnedHelper",
+    "macro_ast_sha256": null,
+    "reason": "Concrete private ess-output-state/1 data, canonical codec or inventory-validation helper for output ownership and recovery. Canonical/malformed-state, adoption and phase witnesses exercise its actual reader. It is outside the ESS model semantics inventory; this finite classification grants no model support, inherited eligibility or nonreachability."
+  },
+  "ess_cli::bin(ess)::output_ownership::state::enum::Profile/variant/MacosLocal1": {
+    "class": "OwnedHelper",
+    "macro_ast_sha256": null,
+    "reason": "Concrete private ess-output-state/1 data, canonical codec or inventory-validation helper for output ownership and recovery. Canonical/malformed-state, adoption and phase witnesses exercise its actual reader. It is outside the ESS model semantics inventory; this finite classification grants no model support, inherited eligibility or nonreachability."
+  },
+  "ess_cli::bin(ess)::output_ownership::state::enum::Purpose": {
+    "class": "OwnedHelper",
+    "macro_ast_sha256": null,
+    "reason": "Concrete private ess-output-state/1 data, canonical codec or inventory-validation helper for output ownership and recovery. Canonical/malformed-state, adoption and phase witnesses exercise its actual reader. It is outside the ESS model semantics inventory; this finite classification grants no model support, inherited eligibility or nonreachability."
+  },
+  "ess_cli::bin(ess)::output_ownership::state::enum::Purpose/variant/Adopt": {
+    "class": "OwnedHelper",
+    "macro_ast_sha256": null,
+    "reason": "Concrete private ess-output-state/1 data, canonical codec or inventory-validation helper for output ownership and recovery. Canonical/malformed-state, adoption and phase witnesses exercise its actual reader. It is outside the ESS model semantics inventory; this finite classification grants no model support, inherited eligibility or nonreachability."
+  },
+  "ess_cli::bin(ess)::output_ownership::state::enum::Purpose/variant/Publish": {
+    "class": "OwnedHelper",
+    "macro_ast_sha256": null,
+    "reason": "Concrete private ess-output-state/1 data, canonical codec or inventory-validation helper for output ownership and recovery. Canonical/malformed-state, adoption and phase witnesses exercise its actual reader. It is outside the ESS model semantics inventory; this finite classification grants no model support, inherited eligibility or nonreachability."
+  },
+  "ess_cli::bin(ess)::output_ownership::state::fn::canonical": {
+    "class": "OwnedHelper",
+    "macro_ast_sha256": null,
+    "reason": "Concrete private ess-output-state/1 data, canonical codec or inventory-validation helper for output ownership and recovery. Canonical/malformed-state, adoption and phase witnesses exercise its actual reader. It is outside the ESS model semantics inventory; this finite classification grants no model support, inherited eligibility or nonreachability."
+  },
+  "ess_cli::bin(ess)::output_ownership::state::fn::decode": {
+    "class": "OwnedHelper",
+    "macro_ast_sha256": null,
+    "reason": "Concrete private ess-output-state/1 data, canonical codec or inventory-validation helper for output ownership and recovery. Canonical/malformed-state, adoption and phase witnesses exercise its actual reader. It is outside the ESS model semantics inventory; this finite classification grants no model support, inherited eligibility or nonreachability."
+  },
+  "ess_cli::bin(ess)::output_ownership::state::fn::digest": {
+    "class": "OwnedHelper",
+    "macro_ast_sha256": null,
+    "reason": "Concrete private ess-output-state/1 data, canonical codec or inventory-validation helper for output ownership and recovery. Canonical/malformed-state, adoption and phase witnesses exercise its actual reader. It is outside the ESS model semantics inventory; this finite classification grants no model support, inherited eligibility or nonreachability."
+  },
+  "ess_cli::bin(ess)::output_ownership::state::fn::encode": {
+    "class": "OwnedHelper",
+    "macro_ast_sha256": null,
+    "reason": "Concrete private ess-output-state/1 data, canonical codec or inventory-validation helper for output ownership and recovery. Canonical/malformed-state, adoption and phase witnesses exercise its actual reader. It is outside the ESS model semantics inventory; this finite classification grants no model support, inherited eligibility or nonreachability."
+  },
+  "ess_cli::bin(ess)::output_ownership::state::fn::hex": {
+    "class": "OwnedHelper",
+    "macro_ast_sha256": null,
+    "reason": "Concrete private ess-output-state/1 data, canonical codec or inventory-validation helper for output ownership and recovery. Canonical/malformed-state, adoption and phase witnesses exercise its actual reader. It is outside the ESS model semantics inventory; this finite classification grants no model support, inherited eligibility or nonreachability."
+  },
+  "ess_cli::bin(ess)::output_ownership::state::fn::insert_path": {
+    "class": "OwnedHelper",
+    "macro_ast_sha256": null,
+    "reason": "Concrete private ess-output-state/1 data, canonical codec or inventory-validation helper for output ownership and recovery. Canonical/malformed-state, adoption and phase witnesses exercise its actual reader. It is outside the ESS model semantics inventory; this finite classification grants no model support, inherited eligibility or nonreachability."
+  },
+  "ess_cli::bin(ess)::output_ownership::state::fn::mode": {
+    "class": "OwnedHelper",
+    "macro_ast_sha256": null,
+    "reason": "Concrete private ess-output-state/1 data, canonical codec or inventory-validation helper for output ownership and recovery. Canonical/malformed-state, adoption and phase witnesses exercise its actual reader. It is outside the ESS model semantics inventory; this finite classification grants no model support, inherited eligibility or nonreachability."
+  },
+  "ess_cli::bin(ess)::output_ownership::state::fn::new_uuid": {
+    "class": "OwnedHelper",
+    "macro_ast_sha256": null,
+    "reason": "Concrete private ess-output-state/1 data, canonical codec or inventory-validation helper for output ownership and recovery. Canonical/malformed-state, adoption and phase witnesses exercise its actual reader. It is outside the ESS model semantics inventory; this finite classification grants no model support, inherited eligibility or nonreachability."
+  },
+  "ess_cli::bin(ess)::output_ownership::state::fn::reserved": {
+    "class": "OwnedHelper",
+    "macro_ast_sha256": null,
+    "reason": "Concrete private ess-output-state/1 data, canonical codec or inventory-validation helper for output ownership and recovery. Canonical/malformed-state, adoption and phase witnesses exercise its actual reader. It is outside the ESS model semantics inventory; this finite classification grants no model support, inherited eligibility or nonreachability."
+  },
+  "ess_cli::bin(ess)::output_ownership::state::fn::strictly_sorted": {
+    "class": "OwnedHelper",
+    "macro_ast_sha256": null,
+    "reason": "Concrete private ess-output-state/1 data, canonical codec or inventory-validation helper for output ownership and recovery. Canonical/malformed-state, adoption and phase witnesses exercise its actual reader. It is outside the ESS model semantics inventory; this finite classification grants no model support, inherited eligibility or nonreachability."
+  },
+  "ess_cli::bin(ess)::output_ownership::state::fn::unhex": {
+    "class": "OwnedHelper",
+    "macro_ast_sha256": null,
+    "reason": "Concrete private ess-output-state/1 data, canonical codec or inventory-validation helper for output ownership and recovery. Canonical/malformed-state, adoption and phase witnesses exercise its actual reader. It is outside the ESS model semantics inventory; this finite classification grants no model support, inherited eligibility or nonreachability."
+  },
+  "ess_cli::bin(ess)::output_ownership::state::fn::uuid": {
+    "class": "OwnedHelper",
+    "macro_ast_sha256": null,
+    "reason": "Concrete private ess-output-state/1 data, canonical codec or inventory-validation helper for output ownership and recovery. Canonical/malformed-state, adoption and phase witnesses exercise its actual reader. It is outside the ESS model semantics inventory; this finite classification grants no model support, inherited eligibility or nonreachability."
+  },
+  "ess_cli::bin(ess)::output_ownership::state::fn::validate": {
+    "class": "OwnedHelper",
+    "macro_ast_sha256": null,
+    "reason": "Concrete private ess-output-state/1 data, canonical codec or inventory-validation helper for output ownership and recovery. Canonical/malformed-state, adoption and phase witnesses exercise its actual reader. It is outside the ESS model semantics inventory; this finite classification grants no model support, inherited eligibility or nonreachability."
+  },
+  "ess_cli::bin(ess)::output_ownership::state::impl<Family;>::parse": {
+    "class": "OwnedHelper",
+    "macro_ast_sha256": null,
+    "reason": "Concrete private ess-output-state/1 data, canonical codec or inventory-validation helper for output ownership and recovery. Canonical/malformed-state, adoption and phase witnesses exercise its actual reader. It is outside the ESS model semantics inventory; this finite classification grants no model support, inherited eligibility or nonreachability."
+  },
+  "ess_cli::bin(ess)::output_ownership::state::impl<Family;>::standalone": {
+    "class": "OwnedHelper",
+    "macro_ast_sha256": null,
+    "reason": "Concrete private ess-output-state/1 data, canonical codec or inventory-validation helper for output ownership and recovery. Canonical/malformed-state, adoption and phase witnesses exercise its actual reader. It is outside the ESS model semantics inventory; this finite classification grants no model support, inherited eligibility or nonreachability."
+  },
+  "ess_cli::bin(ess)::output_ownership::state::impl<FileData;>::of": {
+    "class": "OwnedHelper",
+    "macro_ast_sha256": null,
+    "reason": "Concrete private ess-output-state/1 data, canonical codec or inventory-validation helper for output ownership and recovery. Canonical/malformed-state, adoption and phase witnesses exercise its actual reader. It is outside the ESS model semantics inventory; this finite classification grants no model support, inherited eligibility or nonreachability."
+  },
+  "ess_cli::bin(ess)::output_ownership::state::impl<FileData;>::validate": {
+    "class": "OwnedHelper",
+    "macro_ast_sha256": null,
+    "reason": "Concrete private ess-output-state/1 data, canonical codec or inventory-validation helper for output ownership and recovery. Canonical/malformed-state, adoption and phase witnesses exercise its actual reader. It is outside the ESS model semantics inventory; this finite classification grants no model support, inherited eligibility or nonreachability."
+  },
+  "ess_cli::bin(ess)::output_ownership::state::impl<Image;>::validate": {
+    "class": "OwnedHelper",
+    "macro_ast_sha256": null,
+    "reason": "Concrete private ess-output-state/1 data, canonical codec or inventory-validation helper for output ownership and recovery. Canonical/malformed-state, adoption and phase witnesses exercise its actual reader. It is outside the ESS model semantics inventory; this finite classification grants no model support, inherited eligibility or nonreachability."
+  },
+  "ess_cli::bin(ess)::output_ownership::state::impl<Ledger;>::files": {
+    "class": "OwnedHelper",
+    "macro_ast_sha256": null,
+    "reason": "Concrete private ess-output-state/1 data, canonical codec or inventory-validation helper for output ownership and recovery. Canonical/malformed-state, adoption and phase witnesses exercise its actual reader. It is outside the ESS model semantics inventory; this finite classification grants no model support, inherited eligibility or nonreachability."
+  },
+  "ess_cli::bin(ess)::output_ownership::state::impl<Ledger;>::validate": {
+    "class": "OwnedHelper",
+    "macro_ast_sha256": null,
+    "reason": "Concrete private ess-output-state/1 data, canonical codec or inventory-validation helper for output ownership and recovery. Canonical/malformed-state, adoption and phase witnesses exercise its actual reader. It is outside the ESS model semantics inventory; this finite classification grants no model support, inherited eligibility or nonreachability."
+  },
+  "ess_cli::bin(ess)::output_ownership::state::impl<NativePath;>::absolute": {
+    "class": "OwnedHelper",
+    "macro_ast_sha256": null,
+    "reason": "Concrete private ess-output-state/1 data, canonical codec or inventory-validation helper for output ownership and recovery. Canonical/malformed-state, adoption and phase witnesses exercise its actual reader. It is outside the ESS model semantics inventory; this finite classification grants no model support, inherited eligibility or nonreachability."
+  },
+  "ess_cli::bin(ess)::output_ownership::state::impl<NativePath;>::from_relative": {
+    "class": "OwnedHelper",
+    "macro_ast_sha256": null,
+    "reason": "Concrete private ess-output-state/1 data, canonical codec or inventory-validation helper for output ownership and recovery. Canonical/malformed-state, adoption and phase witnesses exercise its actual reader. It is outside the ESS model semantics inventory; this finite classification grants no model support, inherited eligibility or nonreachability."
+  },
+  "ess_cli::bin(ess)::output_ownership::state::impl<NativePath;>::output": {
+    "class": "OwnedHelper",
+    "macro_ast_sha256": null,
+    "reason": "Concrete private ess-output-state/1 data, canonical codec or inventory-validation helper for output ownership and recovery. Canonical/malformed-state, adoption and phase witnesses exercise its actual reader. It is outside the ESS model semantics inventory; this finite classification grants no model support, inherited eligibility or nonreachability."
+  },
+  "ess_cli::bin(ess)::output_ownership::state::impl<NativePath;>::path": {
+    "class": "OwnedHelper",
+    "macro_ast_sha256": null,
+    "reason": "Concrete private ess-output-state/1 data, canonical codec or inventory-validation helper for output ownership and recovery. Canonical/malformed-state, adoption and phase witnesses exercise its actual reader. It is outside the ESS model semantics inventory; this finite classification grants no model support, inherited eligibility or nonreachability."
+  },
+  "ess_cli::bin(ess)::output_ownership::state::impl<NativePath;>::root": {
+    "class": "OwnedHelper",
+    "macro_ast_sha256": null,
+    "reason": "Concrete private ess-output-state/1 data, canonical codec or inventory-validation helper for output ownership and recovery. Canonical/malformed-state, adoption and phase witnesses exercise its actual reader. It is outside the ESS model semantics inventory; this finite classification grants no model support, inherited eligibility or nonreachability."
+  },
+  "ess_cli::bin(ess)::output_ownership::state::impl<NativePath;>::validate": {
+    "class": "OwnedHelper",
+    "macro_ast_sha256": null,
+    "reason": "Concrete private ess-output-state/1 data, canonical codec or inventory-validation helper for output ownership and recovery. Canonical/malformed-state, adoption and phase witnesses exercise its actual reader. It is outside the ESS model semantics inventory; this finite classification grants no model support, inherited eligibility or nonreachability."
+  },
+  "ess_cli::bin(ess)::output_ownership::state::impl<OwnerKey;>::file": {
+    "class": "OwnedHelper",
+    "macro_ast_sha256": null,
+    "reason": "Concrete private ess-output-state/1 data, canonical codec or inventory-validation helper for output ownership and recovery. Canonical/malformed-state, adoption and phase witnesses exercise its actual reader. It is outside the ESS model semantics inventory; this finite classification grants no model support, inherited eligibility or nonreachability."
+  },
+  "ess_cli::bin(ess)::output_ownership::state::impl<OwnerKey;>::tree": {
+    "class": "OwnedHelper",
+    "macro_ast_sha256": null,
+    "reason": "Concrete private ess-output-state/1 data, canonical codec or inventory-validation helper for output ownership and recovery. Canonical/malformed-state, adoption and phase witnesses exercise its actual reader. It is outside the ESS model semantics inventory; this finite classification grants no model support, inherited eligibility or nonreachability."
+  },
+  "ess_cli::bin(ess)::output_ownership::state::impl<OwnerKey;>::validate": {
+    "class": "OwnedHelper",
+    "macro_ast_sha256": null,
+    "reason": "Concrete private ess-output-state/1 data, canonical codec or inventory-validation helper for output ownership and recovery. Canonical/malformed-state, adoption and phase witnesses exercise its actual reader. It is outside the ESS model semantics inventory; this finite classification grants no model support, inherited eligibility or nonreachability."
+  },
+  "ess_cli::bin(ess)::output_ownership::state::impl<Profile;>::current": {
+    "class": "OwnedHelper",
+    "macro_ast_sha256": null,
+    "reason": "Concrete private ess-output-state/1 data, canonical codec or inventory-validation helper for output ownership and recovery. Canonical/malformed-state, adoption and phase witnesses exercise its actual reader. It is outside the ESS model semantics inventory; this finite classification grants no model support, inherited eligibility or nonreachability."
+  },
+  "ess_cli::bin(ess)::output_ownership::state::impl<Transaction;>::member_names": {
+    "class": "OwnedHelper",
+    "macro_ast_sha256": null,
+    "reason": "Concrete private ess-output-state/1 data, canonical codec or inventory-validation helper for output ownership and recovery. Canonical/malformed-state, adoption and phase witnesses exercise its actual reader. It is outside the ESS model semantics inventory; this finite classification grants no model support, inherited eligibility or nonreachability."
+  },
+  "ess_cli::bin(ess)::output_ownership::state::impl<Transaction;>::validate": {
+    "class": "OwnedHelper",
+    "macro_ast_sha256": null,
+    "reason": "Concrete private ess-output-state/1 data, canonical codec or inventory-validation helper for output ownership and recovery. Canonical/malformed-state, adoption and phase witnesses exercise its actual reader. It is outside the ESS model semantics inventory; this finite classification grants no model support, inherited eligibility or nonreachability."
+  },
+  "ess_cli::bin(ess)::output_ownership::state::module": {
+    "class": "OwnedHelper",
+    "macro_ast_sha256": null,
+    "reason": "Concrete private ess-output-state/1 data, canonical codec or inventory-validation helper for output ownership and recovery. Canonical/malformed-state, adoption and phase witnesses exercise its actual reader. It is outside the ESS model semantics inventory; this finite classification grants no model support, inherited eligibility or nonreachability."
+  },
+  "ess_cli::bin(ess)::output_ownership::state::struct::Blob": {
+    "class": "OwnedHelper",
+    "macro_ast_sha256": null,
+    "reason": "Concrete private ess-output-state/1 data, canonical codec or inventory-validation helper for output ownership and recovery. Canonical/malformed-state, adoption and phase witnesses exercise its actual reader. It is outside the ESS model semantics inventory; this finite classification grants no model support, inherited eligibility or nonreachability."
+  },
+  "ess_cli::bin(ess)::output_ownership::state::struct::Change": {
+    "class": "OwnedHelper",
+    "macro_ast_sha256": null,
+    "reason": "Concrete private ess-output-state/1 data, canonical codec or inventory-validation helper for output ownership and recovery. Canonical/malformed-state, adoption and phase witnesses exercise its actual reader. It is outside the ESS model semantics inventory; this finite classification grants no model support, inherited eligibility or nonreachability."
+  },
+  "ess_cli::bin(ess)::output_ownership::state::struct::Envelope": {
+    "class": "OwnedHelper",
+    "macro_ast_sha256": null,
+    "reason": "Concrete private ess-output-state/1 data, canonical codec or inventory-validation helper for output ownership and recovery. Canonical/malformed-state, adoption and phase witnesses exercise its actual reader. It is outside the ESS model semantics inventory; this finite classification grants no model support, inherited eligibility or nonreachability."
+  },
+  "ess_cli::bin(ess)::output_ownership::state::struct::FileData": {
+    "class": "OwnedHelper",
+    "macro_ast_sha256": null,
+    "reason": "Concrete private ess-output-state/1 data, canonical codec or inventory-validation helper for output ownership and recovery. Canonical/malformed-state, adoption and phase witnesses exercise its actual reader. It is outside the ESS model semantics inventory; this finite classification grants no model support, inherited eligibility or nonreachability."
+  },
+  "ess_cli::bin(ess)::output_ownership::state::struct::Identity": {
+    "class": "OwnedHelper",
+    "macro_ast_sha256": null,
+    "reason": "Concrete private ess-output-state/1 data, canonical codec or inventory-validation helper for output ownership and recovery. Canonical/malformed-state, adoption and phase witnesses exercise its actual reader. It is outside the ESS model semantics inventory; this finite classification grants no model support, inherited eligibility or nonreachability."
+  },
+  "ess_cli::bin(ess)::output_ownership::state::struct::Ledger": {
+    "class": "OwnedHelper",
+    "macro_ast_sha256": null,
+    "reason": "Concrete private ess-output-state/1 data, canonical codec or inventory-validation helper for output ownership and recovery. Canonical/malformed-state, adoption and phase witnesses exercise its actual reader. It is outside the ESS model semantics inventory; this finite classification grants no model support, inherited eligibility or nonreachability."
+  },
+  "ess_cli::bin(ess)::output_ownership::state::struct::NativePath": {
+    "class": "OwnedHelper",
+    "macro_ast_sha256": null,
+    "reason": "Concrete private ess-output-state/1 data, canonical codec or inventory-validation helper for output ownership and recovery. Canonical/malformed-state, adoption and phase witnesses exercise its actual reader. It is outside the ESS model semantics inventory; this finite classification grants no model support, inherited eligibility or nonreachability."
+  },
+  "ess_cli::bin(ess)::output_ownership::state::struct::OwnedDirectory": {
+    "class": "OwnedHelper",
+    "macro_ast_sha256": null,
+    "reason": "Concrete private ess-output-state/1 data, canonical codec or inventory-validation helper for output ownership and recovery. Canonical/malformed-state, adoption and phase witnesses exercise its actual reader. It is outside the ESS model semantics inventory; this finite classification grants no model support, inherited eligibility or nonreachability."
+  },
+  "ess_cli::bin(ess)::output_ownership::state::struct::OwnedFile": {
+    "class": "OwnedHelper",
+    "macro_ast_sha256": null,
+    "reason": "Concrete private ess-output-state/1 data, canonical codec or inventory-validation helper for output ownership and recovery. Canonical/malformed-state, adoption and phase witnesses exercise its actual reader. It is outside the ESS model semantics inventory; this finite classification grants no model support, inherited eligibility or nonreachability."
+  },
+  "ess_cli::bin(ess)::output_ownership::state::struct::Owner": {
+    "class": "OwnedHelper",
+    "macro_ast_sha256": null,
+    "reason": "Concrete private ess-output-state/1 data, canonical codec or inventory-validation helper for output ownership and recovery. Canonical/malformed-state, adoption and phase witnesses exercise its actual reader. It is outside the ESS model semantics inventory; this finite classification grants no model support, inherited eligibility or nonreachability."
+  },
+  "ess_cli::bin(ess)::output_ownership::state::struct::OwnerKey": {
+    "class": "OwnedHelper",
+    "macro_ast_sha256": null,
+    "reason": "Concrete private ess-output-state/1 data, canonical codec or inventory-validation helper for output ownership and recovery. Canonical/malformed-state, adoption and phase witnesses exercise its actual reader. It is outside the ESS model semantics inventory; this finite classification grants no model support, inherited eligibility or nonreachability."
+  },
+  "ess_cli::bin(ess)::output_ownership::state::struct::Payload": {
+    "class": "OwnedHelper",
+    "macro_ast_sha256": null,
+    "reason": "Concrete private ess-output-state/1 data, canonical codec or inventory-validation helper for output ownership and recovery. Canonical/malformed-state, adoption and phase witnesses exercise its actual reader. It is outside the ESS model semantics inventory; this finite classification grants no model support, inherited eligibility or nonreachability."
+  },
+  "ess_cli::bin(ess)::output_ownership::state::struct::Transaction": {
+    "class": "OwnedHelper",
+    "macro_ast_sha256": null,
+    "reason": "Concrete private ess-output-state/1 data, canonical codec or inventory-validation helper for output ownership and recovery. Canonical/malformed-state, adoption and phase witnesses exercise its actual reader. It is outside the ESS model semantics inventory; this finite classification grants no model support, inherited eligibility or nonreachability."
+  },
+  "ess_cli::bin(ess)::output_ownership::struct::CheckGuard": {
+    "class": "OwnedHelper",
+    "macro_ast_sha256": null,
+    "reason": "Concrete edge output ownership/adoption/recovery helper over fixed owner keys, native paths, rendered bytes and transaction state. The CLI ownership and interruption cases exercise its actual publisher or reader. This finite classification grants no independent ESS model support or nonreachability and does not replace an ordinary bound entrypoint."
+  },
+  "ess_cli::bin(ess)::output_ownership::struct::Plan": {
+    "class": "OwnedHelper",
+    "macro_ast_sha256": null,
+    "reason": "Concrete edge output ownership/adoption/recovery helper over fixed owner keys, native paths, rendered bytes and transaction state. The CLI ownership and interruption cases exercise its actual publisher or reader. This finite classification grants no independent ESS model support or nonreachability and does not replace an ordinary bound entrypoint."
+  },
+  "ess_cli::bin(ess)::output_ownership::struct::Publication": {
+    "class": "OwnedHelper",
+    "macro_ast_sha256": null,
+    "reason": "Concrete edge output ownership/adoption/recovery helper over fixed owner keys, native paths, rendered bytes and transaction state. The CLI ownership and interruption cases exercise its actual publisher or reader. This finite classification grants no independent ESS model support or nonreachability and does not replace an ordinary bound entrypoint."
+  },
+  "ess_cli::bin(ess)::output_ownership::struct::Session": {
+    "class": "OwnedHelper",
+    "macro_ast_sha256": null,
+    "reason": "Concrete edge output ownership/adoption/recovery helper over fixed owner keys, native paths, rendered bytes and transaction state. The CLI ownership and interruption cases exercise its actual publisher or reader. This finite classification grants no independent ESS model support or nonreachability and does not replace an ordinary bound entrypoint."
   },
   "ess_cli::bin(ess)::release_evidence::fn::bundle_context": {
     "class": "OwnedHelper",
