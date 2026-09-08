@@ -2,11 +2,11 @@
 format: aep.planning-md/1
 id: story:explicit-flat-field-comparison
 kind: story
-status: draft
+status: archived
 title: Represent a flat sibling field as an explicit comparison operand
 relations:
 - informed_by: story:review-expression-typechecking
-revision: 1
+revision: 3
 ---
 ## Observed consumer refusal
 Published ESS 0.20.0 correctly refuses the authored numeric invariant `processed <= total` when both sibling struct fields are Integer: the current predicate parser classifies bare right-hand words as Text literals. Existing consumers previously admitted by older validation therefore fail current typechecking. The synthetic example expresses a numeric relation, not comparison to the text "total".
@@ -18,3 +18,6 @@ Do not suggest deleting the invariant, changing the public data shape to add art
 
 ## Ownership
 This is a brain consumer compatibility request against the published release. ESS agents own investigation, implementation and release if required. The brain session will validate a published compatible result without implementing or releasing ESS. No private source, operator, customer or instance data belongs in this request or its fixtures.
+
+## Withdrawn: consumer modeling correction
+The request was filed prematurely. Published ESS 0.20.0 already supports a transparent newtype over a struct representation. Its invariant environment exposes that representation as `value`, permitting `value.processed <= value.total` with both operands resolved as numeric facts. The representation remains the existing flat object; `value` is an invariant pseudo-field, not a serialized wrapper property. The brain consumer now validates and compiles all nine intended cross-field constraints using this existing contract. No ESS implementation or release is requested. Preserve this original request and correction as evidence of the mistaken escalation.
