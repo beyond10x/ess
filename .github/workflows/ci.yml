@@ -110,7 +110,7 @@ jobs:
         run: cargo test --offline --locked -p ess-cli --test output_ownership
 
       - name: Exercise native ownership caller and alias regressions
-        run: cargo test --offline --locked -p ess-cli --test output_ownership_adversary
+        run: cargo test --offline --locked -p ess-cli --test output_ownership_adversary --test output_ownership_correction
 
       - name: Exercise native repository sync isolation
         run: cargo test --offline --locked -p ess-xtask --bin ess-xtask tests::sync_
