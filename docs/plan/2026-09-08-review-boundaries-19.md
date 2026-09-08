@@ -405,3 +405,13 @@ Seventeen exact new helper classifications are prepared, with no changed or remo
 inventory extraction is still owed. Native CI will use two harness workers with the target's
 fixture guard and print actual alias/boundary observations. Corrected native validation, package
 completion, pass2 and the full integration gate remain pending.
+
+Root committed shared validation/design bytes as20fa9e903f6138d7cde57c5f5863ecadd3c515ea and
+the seven CLI source paths asb359b84efb2c7afd8c90def766c204aa1c94d692, verifying both bot author
+and committer identities. Seven source pins remained exact across shared synchronization.
+Actual source extraction exited0 in23.399s:7900 declarations, exactly17 additions and no removals;
+no old classification changed. This is source accounting, with behavior qualification still owed.
+The exact retained CLI also passed the Linux same-device bind-mount witness again: ordinary
+control0, cross-mount refusal1, complete bytes/modes/state unchanged, distinct mount IDs2741/3555
+on device66306, explicit unmount0. Its fresh fixture and raw logs remain retained. The candidate
+is ready for the next native CI run on draft PR14; main remains unchanged.
