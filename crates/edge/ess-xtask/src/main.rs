@@ -56,7 +56,13 @@ struct Cli {
 
 #[derive(Debug, Subcommand)]
 enum Command {
-    /// Extract finite Stage 1 consumer candidates; no eligibility is accepted.
+    /// Check exact consumer accounting and execute its linked behavioral cases.
+    ConsumerCheck {
+        /// Fresh evidence directory; defaults to a new run under target/consumer-coverage.
+        #[arg(long)]
+        output: Option<PathBuf>,
+    },
+    /// Extract source candidates without qualifying their behavioral cases.
     ConsumerExtract {
         /// Fresh directory for private extraction work products.
         #[arg(long)]
@@ -121,6 +127,9 @@ fn main() -> ExitCode {
 fn run(cli: Cli) -> Result<String, String> {
     let root = workspace_root()?;
     match cli.command {
+        Command::ConsumerCheck { output } => {
+            consumer_coverage::check(&root, output.as_deref()).map_err(|error| format!("{error:#}"))
+        }
         Command::ConsumerExtract { output } => {
             consumer_coverage::run(&root, &output).map_err(|error| format!("{error:#}"))
         }

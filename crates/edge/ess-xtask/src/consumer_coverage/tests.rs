@@ -328,12 +328,12 @@ fn measured_build_profile_refuses_unsupported_target_features_and_wrappers() {
         "environment": {
             "TARGET":"x86_64-unknown-linux-gnu", "HOST":"x86_64-unknown-linux-gnu",
             "CARGO_CFG_TARGET_ARCH":"x86_64", "CARGO_CFG_TARGET_OS":"linux",
-            "CARGO_CFG_TARGET_FAMILY":"unix", "CARGO_CFG_FEATURE":"",
+            "CARGO_CFG_TARGET_FAMILY":"unix", "CARGO_CFG_FEATURE":"", "CARGO_ENCODED_RUSTFLAGS":"-C\u{1f}link-arg=-fuse-ld=lld",
             "PROFILE":"debug", "OPT_LEVEL":"0", "DEBUG":"false", "NUM_JOBS":"2",
             "RUSTC_WRAPPER":"", "RUSTC_WORKSPACE_WRAPPER":"",
             "CARGO_BUILD_RUSTC_WRAPPER":"", "CARGO_BUILD_RUSTC_WORKSPACE_WRAPPER":""
         },
-        "tools":{"CARGO":identity, "RUSTC":identity},
+        "tools":{"CARGO":identity, "RUSTC":identity, "RUST_LLD":identity, "LD_LLD":identity},
         "cargo_configuration":{"measured-config":super::hash_bytes(bytes)}
     });
     let empty_wrapper = |_: &str| Some(String::new());
@@ -343,6 +343,11 @@ fn measured_build_profile_refuses_unsupported_target_features_and_wrappers() {
         ("TARGET", "aarch64-unknown-linux-gnu"),
         ("CARGO_FEATURE_HIDDEN", "1"),
         ("RUSTC_WRAPPER", "unreviewed-wrapper"),
+        ("CARGO_ENCODED_RUSTFLAGS", ""),
+        (
+            "CARGO_ENCODED_RUSTFLAGS",
+            "-C\u{1f}link-arg=-fuse-ld=lld\u{1f}-Copt-level=3",
+        ),
     ] {
         let mut p = actual.clone();
         p["environment"][key] = json!(value);
@@ -353,12 +358,28 @@ fn measured_build_profile_refuses_unsupported_target_features_and_wrappers() {
     }
     assert!(super::validate_build(&actual, |_| None, read).is_err());
     assert!(super::validate_build(&actual, empty_wrapper, |_| Ok(b"changed".to_vec())).is_err());
+    for key in ["RUST_LLD", "LD_LLD"] {
+        let mut changed = actual.clone();
+        changed["tools"][key]["sha256"] = json!("changed linker bytes");
+        assert!(
+            super::validate_build(&changed, empty_wrapper, read).is_err(),
+            "{key}"
+        );
+        let mut missing = actual.clone();
+        missing["tools"].as_object_mut().unwrap().remove(key);
+        assert!(
+            super::validate_build(&missing, empty_wrapper, read).is_err(),
+            "{key}"
+        );
+    }
     let mut changed_config = actual.clone();
     changed_config["cargo_configuration"]["measured-config"] = json!("changed");
     assert!(super::validate_build(&changed_config, empty_wrapper, read).is_err());
-    let mut changed_compiler = actual;
-    changed_compiler["tools"]["RUSTC"]["version"] = json!("tool 1.99.0");
-    assert!(super::validate_build(&changed_compiler, empty_wrapper, read).is_err());
+    for version in ["tool 1.99.0", "tool 1.98.10"] {
+        let mut changed_compiler = actual.clone();
+        changed_compiler["tools"]["RUSTC"]["version"] = json!(version);
+        assert!(super::validate_build(&changed_compiler, empty_wrapper, read).is_err());
+    }
 }
 #[test]
 fn file_level_production_cfg_cannot_hide_from_the_graph() {
@@ -476,5 +497,366 @@ fn classified_nonmodel_macro_definition_and_invocation_drift_refuse() {
     ] {
         let new = super::consumer::fixture(&changed).unwrap()["entries"].clone();
         assert!(super::proposal::classification_fixture(&new, &classes).is_err());
+    }
+}
+
+fn stage2_rows() -> (
+    serde_json::Value,
+    serde_json::Value,
+    serde_json::Value,
+    serde_json::Value,
+) {
+    let models = json!({"m":"shape", "n":"other-shape"});
+    let profiles = json!({"c":"profile"});
+    let baseline = json!({
+        "format":"ess-consumer-initial-eligibility/1", "status":"ACCEPTED_INITIAL_ELIGIBILITY",
+        "eligible_pairs":1, "mandatory_pairs_excluded":1,
+        "stage1_source_commit":"source-commit", "stage1_binding_sha256":"binding",
+        "source_checkpoint_sha256":"checkpoint", "extraction_profile":"closed fixture",
+        "models":models,
+        "groups":[{"consumer":"c", "profile":"profile", "exact_model_ids":["m"],
+            "owner":"model-owner", "follow_up":"epic:independent-follow-up", "reason":"Unproven exact behavior"}]
+    });
+    let claims = json!([{"model":"n", "consumer":"c", "cases":["owner:test:target:case"],
+        "kind":"Supported", "reason":"Exact value assertion"}]);
+    (models, profiles, baseline, claims)
+}
+#[test]
+fn stage2_exact_finite_baseline_plus_behavioral_case_covers_two_pairs() {
+    let (m, p, b, c) = stage2_rows();
+    let plan = super::enforce::plan(&m, &p, &b, &c).unwrap();
+    assert_eq!(plan["cells"].as_array().unwrap().len(), 2);
+}
+#[test]
+fn stage2_new_optional_or_string_backed_member_cannot_inherit_unknown() {
+    let (mut m, p, b, c) = stage2_rows();
+    m["new_optional"] = json!("new-shape");
+    assert!(super::enforce::plan(&m, &p, &b, &c).is_err());
+    let (mut m, p, b, c) = stage2_rows();
+    m["m"] = json!("changed-string-backed-shape");
+    assert!(super::enforce::plan(&m, &p, &b, &c).is_err());
+}
+#[test]
+fn stage2_new_consumer_and_changed_profile_cannot_inherit_unknown() {
+    let (m, mut p, b, c) = stage2_rows();
+    p["new-target"] = json!("new-profile");
+    assert!(super::enforce::plan(&m, &p, &b, &c).is_err());
+    let (m, mut p, b, c) = stage2_rows();
+    p["c"] = json!("changed-profile");
+    assert!(super::enforce::plan(&m, &p, &b, &c).is_err());
+}
+#[test]
+fn stage2_refusal_counts_only_current_eligible_unknown_cells() {
+    let (mut m, p, b, c) = stage2_rows();
+    m["new_optional"] = json!("new-shape");
+    let error = super::enforce::plan(&m, &p, &b, &c).unwrap_err();
+    let report: serde_json::Value = serde_json::from_str(&error.to_string()).unwrap();
+    assert_eq!(report["BaselineUnknown"], 1);
+    m["m"] = json!("changed-shape");
+    let error = super::enforce::plan(&m, &p, &b, &c).unwrap_err();
+    let report: serde_json::Value = serde_json::from_str(&error.to_string()).unwrap();
+    assert_eq!(report["BaselineUnknown"], 0);
+    assert_eq!(report["Supported"], 0);
+    assert_eq!(report["Refused"], 0);
+}
+#[test]
+fn stage2_classification_refusal_preserves_actual_accounting_diagnostics() {
+    let (mut models, profiles, baseline, claims) = stage2_rows();
+    models["new_optional"] = json!("shape");
+    let accounting = super::enforce::plan(&models, &profiles, &baseline, &claims);
+    let refusal =
+        super::reconcile_extraction(Err(anyhow::anyhow!("unclassified new API")), accounting)
+            .unwrap_err()
+            .to_string();
+    assert!(refusal.contains("unclassified new API"));
+    assert!(refusal.contains("unaccounted new_optional c"));
+    let (m, p, b, c) = stage2_rows();
+    assert!(super::reconcile_extraction(
+        Err(anyhow::anyhow!("classification failed")),
+        super::enforce::plan(&m, &p, &b, &c)
+    )
+    .is_err());
+    assert!(
+        super::reconcile_extraction(Ok(String::new()), super::enforce::plan(&m, &p, &b, &c))
+            .is_ok()
+    );
+}
+#[test]
+fn stage2_removed_duplicate_and_missing_pairs_refuse() {
+    let (mut m, p, b, c) = stage2_rows();
+    m.as_object_mut().unwrap().remove("m");
+    assert!(super::enforce::plan(&m, &p, &b, &c).is_err());
+    let (m, p, mut b, c) = stage2_rows();
+    b["groups"][0]["exact_model_ids"] = json!(["m", "m"]);
+    assert!(super::enforce::plan(&m, &p, &b, &c).is_err());
+    let (m, p, b, c) = stage2_rows();
+    assert!(super::enforce::plan(&m, &p, &b, &json!([])).is_err());
+    let duplicate = json!([c[0], c[0]]);
+    assert!(super::enforce::plan(&m, &p, &b, &duplicate).is_err());
+}
+#[test]
+fn stage2_unknown_requires_independent_owner_and_closed_manifest() {
+    for (key, value) in [
+        ("owner", ""),
+        ("follow_up", "story:review-consumer-coverage"),
+        ("reason", ""),
+    ] {
+        let (m, p, mut b, c) = stage2_rows();
+        b["groups"][0][key] = json!(value);
+        assert!(super::enforce::plan(&m, &p, &b, &c).is_err(), "{key}");
+    }
+    let (m, p, mut b, c) = stage2_rows();
+    b["unreviewed_extension"] = json!(true);
+    assert!(super::enforce::plan(&m, &p, &b, &c).is_err());
+}
+#[test]
+fn stage2_claims_need_cases_and_named_refusal_without_contradictions() {
+    let (m, p, b, mut c) = stage2_rows();
+    c[0]["cases"] = json!([]);
+    assert!(super::enforce::plan(&m, &p, &b, &c).is_err());
+    let (m, p, b, mut c) = stage2_rows();
+    c[0]["kind"] = json!("Refused");
+    c[0]["refusal"] = json!("");
+    assert!(super::enforce::plan(&m, &p, &b, &c).is_err());
+    let (m, p, b, mut c) = stage2_rows();
+    c[0]["model"] = json!("m");
+    assert!(super::enforce::plan(&m, &p, &b, &c).is_err());
+}
+fn stage2_success_output() -> &'static str {
+    "\nrunning 1 test\ntest case ... ok\n\ntest result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 65 filtered out; finished in 0.00s\n\n"
+}
+#[test]
+fn stage2_measured_stable_listing_requires_exact_nonignored_case() {
+    super::executor::listing("case: test\n\n1 test, 0 benchmarks\n", "case", false).unwrap();
+    super::executor::listing("0 tests, 0 benchmarks\n", "case", true).unwrap();
+    for output in [
+        "0 tests, 0 benchmarks\n",
+        "renamed: test\n\n1 test, 0 benchmarks\n",
+        "case: test\ncase: test\n\n2 tests, 0 benchmarks\n",
+    ] {
+        assert!(super::executor::listing(output, "case", false).is_err());
+    }
+    assert!(
+        super::executor::listing("case: test\n\n1 test, 0 benchmarks\n", "case", true).is_err()
+    );
+}
+#[test]
+fn stage2_one_actual_pass_requires_successful_direct_exit() {
+    let output = stage2_success_output();
+    super::executor::result(output, "", "case", Some(0)).unwrap();
+    for exit in [Some(1), Some(101), None] {
+        assert!(super::executor::result(output, "", "case", exit).is_err());
+    }
+    assert!(super::executor::result(output, "panic escaped capture", "case", Some(0)).is_err());
+}
+#[test]
+fn stage2_zero_selected_ignored_failing_and_forged_results_refuse() {
+    let output = stage2_success_output();
+    for bad in [
+        output.replace("1 passed", "0 passed"),
+        output.replace("0 ignored", "1 ignored"),
+        output.replace("0 failed", "1 failed"),
+        output.replace("case ... ok", "other ... ok"),
+        format!("{output}{output}"),
+        format!("forged prelude\n{output}"),
+        output.replace("0.00s", "unknown-time"),
+        output.replace("running 1 test", "running 0 tests"),
+    ] {
+        assert!(
+            super::executor::result(&bad, "", "case", Some(0)).is_err(),
+            "{bad}"
+        );
+    }
+}
+#[test]
+fn stage2_swallowed_panic_and_skipped_nested_branches_do_not_qualify() {
+    let good = json!({"ignored":false,"contains_catch_unwind":false,"contains_early_return":false,"nested_command_candidates":[]});
+    super::executor::source_contract(&good).unwrap();
+    for key in ["ignored", "contains_catch_unwind", "contains_early_return"] {
+        let mut bad = good.clone();
+        bad[key] = json!(true);
+        assert!(super::executor::source_contract(&bad).is_err());
+    }
+    let mut bad = good;
+    bad["nested_command_candidates"] = json!(["unobserved Go branch"]);
+    assert!(super::executor::source_contract(&bad).is_err());
+}
+
+#[test]
+fn stage2_new_obligation_can_gain_behavior_without_expanding_initial_unknowns() {
+    let (mut m, p, b, mut c) = stage2_rows();
+    m["new_optional"] = json!("new-shape");
+    c.as_array_mut().unwrap().push(json!({"model":"new_optional","consumer":"c","cases":["owner:test:target:new_case"],"kind":"Supported","reason":"New field is actually asserted"}));
+    let plan = super::enforce::plan(&m, &p, &b, &c).unwrap();
+    assert_eq!(plan["cells"].as_array().unwrap().len(), 3);
+    assert_eq!(plan["BaselineUnknown"], 1);
+}
+
+struct Stage2FakeRunner {
+    outputs: std::collections::VecDeque<super::executor::Captured>,
+    commands: Vec<Vec<String>>,
+    checks: usize,
+    drift_at: Option<usize>,
+}
+impl super::executor::CaseRunner for Stage2FakeRunner {
+    fn authority(&mut self) -> anyhow::Result<()> {
+        self.checks += 1;
+        if self.drift_at == Some(self.checks) {
+            anyhow::bail!("source/profile drift");
+        }
+        Ok(())
+    }
+    fn command(&mut self, args: &[String]) -> anyhow::Result<super::executor::Captured> {
+        self.commands.push(args.to_vec());
+        self.outputs
+            .pop_front()
+            .ok_or_else(|| anyhow::anyhow!("missing actual result"))
+    }
+}
+fn stage2_fake_runner() -> Stage2FakeRunner {
+    Stage2FakeRunner {
+        outputs: [
+            "case: test\n\n1 test, 0 benchmarks\n",
+            "0 tests, 0 benchmarks\n",
+            stage2_success_output(),
+        ]
+        .map(|stdout| super::executor::Captured {
+            stdout: stdout.into(),
+            stderr: String::new(),
+            exit: Some(0),
+        })
+        .into(),
+        commands: Vec::new(),
+        checks: 0,
+        drift_at: None,
+    }
+}
+#[test]
+fn stage2_case_engine_lists_filters_and_executes_before_qualifying() {
+    let mut runner = stage2_fake_runner();
+    super::executor::execute_case(&mut runner, "case").unwrap();
+    assert_eq!(runner.commands.len(), 3);
+    assert_eq!(
+        runner.commands[0],
+        ["--list", "--exact", "case", "--color", "never"]
+    );
+    assert_eq!(
+        runner.commands[1],
+        ["--list", "--ignored", "--exact", "case", "--color", "never"]
+    );
+    assert_eq!(
+        runner.commands[2],
+        ["--exact", "case", "--test-threads", "1", "--color", "never"]
+    );
+    assert_eq!(runner.checks, 4);
+    assert!(runner.outputs.is_empty());
+}
+#[test]
+fn stage2_case_engine_refuses_source_drift_or_missing_actual_result() {
+    for checkpoint in 1..=4 {
+        let mut runner = stage2_fake_runner();
+        runner.drift_at = Some(checkpoint);
+        assert!(super::executor::execute_case(&mut runner, "case").is_err());
+    }
+    let mut runner = stage2_fake_runner();
+    runner.outputs.pop_back();
+    assert!(super::executor::execute_case(&mut runner, "case").is_err());
+    let mut runner = stage2_fake_runner();
+    runner.outputs[1].exit = Some(1);
+    assert!(super::executor::execute_case(&mut runner, "case").is_err());
+}
+
+#[test]
+fn stage2_current_flags_target_tools_and_complete_configuration_set_are_bound() {
+    let build = json!({"environment":{"TARGET":"x86_64-unknown-linux-gnu"},"tools":{"CARGO":{"sha256":"cargo"},"RUSTC":{"sha256":"rustc"}},"cargo_configuration":{"config":"bytes"}});
+    let invocation = json!({"environment":{},"tool_sha256":{"CARGO":"cargo","RUSTC":"rustc"},"cargo_configuration":{"config":"bytes"}});
+    super::validate_invocation(&build, &invocation).unwrap();
+    for (key, flags) in [
+        ("RUSTFLAGS", "-C link-arg=-fuse-ld=lld"),
+        ("CARGO_ENCODED_RUSTFLAGS", "-C\u{1f}link-arg=-fuse-ld=lld"),
+        ("CARGO_BUILD_RUSTFLAGS", "-C link-arg=-fuse-ld=lld"),
+        (
+            "CARGO_TARGET_X86_64_UNKNOWN_LINUX_GNU_RUSTFLAGS",
+            "-C link-arg=-fuse-ld=lld",
+        ),
+    ] {
+        let mut good = invocation.clone();
+        good["environment"][key] = json!(flags);
+        super::validate_invocation(&build, &good).unwrap();
+        good["environment"][key] = json!(format!("{flags} --cfg unreviewed"));
+        assert!(super::validate_invocation(&build, &good).is_err(), "{key}");
+        good["environment"][key] = json!("");
+        assert!(
+            super::validate_invocation(&build, &good).is_err(),
+            "empty explicit {key}"
+        );
+    }
+    for key in [
+        "RUSTFLAGS",
+        "CARGO_ENCODED_RUSTFLAGS",
+        "CARGO_BUILD_RUSTFLAGS",
+        "CARGO_TARGET_X86_64_UNKNOWN_LINUX_GNU_RUSTFLAGS",
+    ] {
+        let mut bad = invocation.clone();
+        bad["environment"][key] = json!("unreviewed flags");
+        assert!(super::validate_invocation(&build, &bad).is_err(), "{key}");
+    }
+    let mut bad = invocation.clone();
+    bad["environment"]["CARGO_BUILD_TARGET"] = json!("aarch64-unknown-linux-gnu");
+    assert!(super::validate_invocation(&build, &bad).is_err());
+    let mut bad = invocation.clone();
+    bad["tool_sha256"]["RUSTC"] = json!("another compiler");
+    assert!(super::validate_invocation(&build, &bad).is_err());
+    let mut bad = invocation.clone();
+    bad["cargo_configuration"]["added config"] = json!("bytes");
+    assert!(super::validate_invocation(&build, &bad).is_err());
+    let mut bad = invocation;
+    bad["cargo_configuration"].as_object_mut().unwrap().clear();
+    assert!(super::validate_invocation(&build, &bad).is_err());
+}
+
+fn stage2_artifact_fixture() -> serde_json::Value {
+    json!({"reason":"compiler-artifact","package_id":"package","manifest_path":"Cargo.toml",
+        "target":{"kind":["test"],"crate_types":["bin"],"name":"target","src_path":"source.rs","edition":"2021","doc":false,"doctest":false,"test":true},
+        "profile":{"opt_level":"0","debuginfo":0,"debug_assertions":true,"overflow_checks":true,"test":true},
+        "features":[],"filenames":["fixture.bin"],"executable":"fixture.bin","fresh":true})
+}
+#[test]
+fn stage2_cargo_artifact_requires_exact_owner_target_profile_and_completed_build() {
+    let artifact = stage2_artifact_fixture();
+    let finished = json!({"reason":"build-finished","success":true});
+    let text = format!("{artifact}\n{finished}\n");
+    assert_eq!(
+        super::executor::artifact(&text, "package", "target", "source.rs").unwrap()["executable"],
+        "fixture.bin"
+    );
+    for (path, value) in [
+        ("/package_id", json!("other")),
+        ("/target/name", json!("other")),
+        ("/target/src_path", json!("other.rs")),
+        ("/profile/debuginfo", json!(2)),
+        ("/features", json!(["hidden"])),
+        ("/executable", serde_json::Value::Null),
+    ] {
+        let mut bad = artifact.clone();
+        *bad.pointer_mut(path).unwrap() = value;
+        assert!(
+            super::executor::artifact(
+                &format!("{bad}\n{finished}\n"),
+                "package",
+                "target",
+                "source.rs"
+            )
+            .is_err(),
+            "{path}"
+        );
+    }
+    for bad in [
+        format!("{artifact}\n{artifact}\n{finished}\n"),
+        format!("{artifact}\n"),
+        format!("{artifact}\n{{\"reason\":\"build-finished\",\"success\":false}}\n"),
+        format!("{text}{{\"reason\":\"unreviewed\"}}\n"),
+    ] {
+        assert!(super::executor::artifact(&bad, "package", "target", "source.rs").is_err());
     }
 }

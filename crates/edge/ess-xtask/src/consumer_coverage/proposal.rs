@@ -32,18 +32,18 @@ enum CandidateStatus {
 }
 #[derive(Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
-struct CaseIdentity {
-    package: String,
-    target_kind: TestTarget,
-    target_name: String,
-    full_name: String,
-    features: Vec<String>,
-    target_profile: String,
-    tool_requirements: Vec<String>,
-    nested_runtime: String,
+pub(super) struct CaseIdentity {
+    pub package: String,
+    pub target_kind: TestTarget,
+    pub target_name: String,
+    pub full_name: String,
+    pub features: Vec<String>,
+    pub target_profile: String,
+    pub tool_requirements: Vec<String>,
+    pub nested_runtime: String,
 }
 #[derive(Deserialize, Serialize)]
-enum TestTarget {
+pub(super) enum TestTarget {
     #[serde(rename = "test")]
     Test,
 }
@@ -65,6 +65,17 @@ struct Requirement {
     consumers: Vec<String>,
     cases: Vec<String>,
     reason: String,
+    #[serde(default)]
+    behavior: ClaimedBehavior,
+}
+#[derive(Deserialize, Serialize, Default)]
+#[serde(tag = "kind", deny_unknown_fields)]
+enum ClaimedBehavior {
+    #[default]
+    Supported,
+    Refused {
+        refusal: String,
+    },
 }
 #[derive(Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
@@ -254,6 +265,52 @@ struct ProposalCells {
     rows: Vec<Cell>,
     groups: BTreeMap<String, Value>,
     matrix: Value,
+}
+// This produces accounting inputs, never approval of an unclassified inventory.
+// The successful extraction path must separately satisfy every finite classification.
+pub(super) fn accounting_inputs(inventory: &Value, build: &Value) -> Result<(Value, Value)> {
+    let profiles: Vec<Profile> = serde_json::from_str(include_str!("profiles.json"))?;
+    let reviewed: Reviewed = serde_json::from_str(include_str!("reviewed-candidates.json"))?;
+    let mut entries = BTreeMap::new();
+    for package in inventory["packages"]
+        .as_object()
+        .context("packages")?
+        .values()
+    {
+        for (id, row) in package["entries"].as_object().context("entries")? {
+            if entries.insert(id.clone(), row.clone()).is_some() {
+                bail!("duplicate workspace consumer identity {id}");
+            }
+        }
+    }
+    let mut identities = BTreeMap::new();
+    for profile in profiles {
+        if profile.classification == ProfileClass::ModelConsumer {
+            let shape = fingerprint(
+                &serde_json::to_value(&profile)?,
+                &profile.entrypoints,
+                &entries,
+                build,
+            )?;
+            if identities.insert(profile.id.clone(), shape).is_some() {
+                bail!("duplicate declared consumer profile {}", profile.id);
+            }
+        }
+    }
+    let mut claims = Vec::new();
+    for requirement in reviewed.requirements {
+        for model in &requirement.models {
+            for consumer in &requirement.consumers {
+                let behavior = serde_json::to_value(&requirement.behavior)?;
+                let mut claim = json!({"model":model,"consumer":consumer,"cases":requirement.cases,"kind":behavior["kind"],"reason":requirement.reason});
+                if let Some(refusal) = behavior.get("refusal") {
+                    claim["refusal"] = refusal.clone();
+                }
+                claims.push(claim);
+            }
+        }
+    }
+    Ok((json!(identities), json!(claims)))
 }
 fn materialize(
     models: &Value,

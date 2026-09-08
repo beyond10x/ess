@@ -1,6 +1,9 @@
 //! Stage 1: closed extraction and unaccepted candidate accounting.
 mod account;
 mod consumer;
+mod enforce;
+mod executor;
+mod native;
 mod proposal;
 mod rust;
 #[cfg(test)]
@@ -55,7 +58,19 @@ pub(super) fn run(root: &Path, output: &Path) -> Result<String> {
         .into_iter()
         .filter_map(|(p, b)| String::from_utf8(b).ok().map(|s| (p, s)))
         .collect::<BTreeMap<_, _>>();
-    let cargo = std::env::var_os("CARGO").unwrap_or_else(|| "cargo".into());
+    let build: Value = serde_json::from_str(include_str!(concat!(
+        env!("OUT_DIR"),
+        "/consumer-build.json"
+    )))?;
+    validate_build(
+        &build,
+        |key| std::env::var(key).ok(),
+        |path| Ok(fs::read(path)?),
+    )?;
+    let current_invocation = invocation(root, &build)?;
+    let cargo = build["tools"]["CARGO"]["path"]
+        .as_str()
+        .context("compiled Cargo path")?;
     let metadata = Command::new(cargo)
         .args([
             "metadata",
@@ -80,16 +95,7 @@ pub(super) fn run(root: &Path, output: &Path) -> Result<String> {
     let wire = wire::extract(&schema)?;
     consumers["generated_diagnostic_symbols"] = model["diagnostic_macros"].clone();
     let executable = std::env::current_exe()?;
-    let build: Value = serde_json::from_str(include_str!(concat!(
-        env!("OUT_DIR"),
-        "/consumer-build.json"
-    )))?;
-    validate_build(
-        &build,
-        |key| std::env::var(key).ok(),
-        |path| Ok(fs::read(path)?),
-    )?;
-    let profile = json!({"stage":"source-output-checkpoint","eligibility":"UNACCEPTED","source":files,"compiled_provider_source":compiled,"provider_executable_sha256":hash_bytes(&fs::read(executable)?),"compiled_build":build,"rust_roots":rust::ROOTS});
+    let profile = json!({"stage":"source-output-checkpoint","eligibility":"UNACCEPTED","source":files,"compiled_provider_source":compiled,"provider_executable_sha256":hash_bytes(&fs::read(executable)?),"compiled_build":build,"current_invocation":current_invocation,"rust_roots":rust::ROOTS});
     fs::create_dir(output)
         .with_context(|| format!("create fresh extraction output {}", output.display()))?;
     for (name, v) in [
@@ -148,6 +154,7 @@ fn validate_build(
         ("CARGO_CFG_TARGET_OS", "linux"),
         ("CARGO_CFG_TARGET_FAMILY", "unix"),
         ("CARGO_CFG_FEATURE", ""),
+        ("CARGO_ENCODED_RUSTFLAGS", "-C\u{1f}link-arg=-fuse-ld=lld"),
         ("PROFILE", "debug"),
         ("OPT_LEVEL", "0"),
         ("DEBUG", "false"),
@@ -177,12 +184,23 @@ fn validate_build(
         let identity = &profile["tools"][key];
         let path = identity["path"].as_str().context("compiled tool path")?;
         if identity["sha256"] != hash_bytes(&read(path)?)
-            || !identity["version"]
+            || identity["version"]
                 .as_str()
                 .context("compiled tool version")?
-                .contains("1.98.1")
+                .split_whitespace()
+                .nth(1)
+                != Some("1.98.1")
         {
             bail!("compiled tool identity changed or unsupported: {key} {path}");
+        }
+    }
+    for key in ["RUST_LLD", "LD_LLD"] {
+        let identity = &profile["tools"][key];
+        let path = identity["path"]
+            .as_str()
+            .context("missing bundled linker path")?;
+        if identity["sha256"] != hash_bytes(&read(path)?) {
+            bail!("bundled linker identity changed: {key} {path}");
         }
     }
     for (path, expected) in profile["cargo_configuration"]
@@ -221,4 +239,198 @@ fn source_files(root: &Path) -> Result<BTreeMap<String, String>> {
             Ok((p.clone(), hash_bytes(&fs::read(root.join(p))?)))
         })
         .collect()
+}
+
+fn validate_invocation(build: &Value, invocation: &Value) -> Result<()> {
+    let env = invocation["environment"]
+        .as_object()
+        .context("current invocation environment")?;
+    for (key, value) in env {
+        let flags = matches!(
+            key.as_str(),
+            "RUSTFLAGS" | "CARGO_ENCODED_RUSTFLAGS" | "CARGO_BUILD_RUSTFLAGS"
+        ) || (key.starts_with("CARGO_TARGET_") && key.ends_with("_RUSTFLAGS"));
+        if flags {
+            let value = value.as_str().context("current flags must be text")?;
+            let args = if key == "CARGO_ENCODED_RUSTFLAGS" {
+                value.split('\u{1f}').collect::<Vec<_>>()
+            } else {
+                value.split_whitespace().collect::<Vec<_>>()
+            };
+            if args != ["-C", "link-arg=-fuse-ld=lld"] {
+                bail!("unreviewed current flags {key}");
+            }
+        }
+        if key == "CARGO_TARGET_DIR"
+            || (key == "CARGO_BUILD_TARGET" && value != &build["environment"]["TARGET"])
+        {
+            bail!("unreviewed current target/output selection {key}");
+        }
+    }
+    for key in ["CARGO", "RUSTC"] {
+        if invocation["tool_sha256"][key] != build["tools"][key]["sha256"] {
+            bail!("current selected tool differs from compiled provider: {key}");
+        }
+    }
+    if invocation["cargo_configuration"] != build["cargo_configuration"] {
+        bail!("complete current Cargo configuration set differs from provider build");
+    }
+    Ok(())
+}
+fn invocation(root: &Path, build: &Value) -> Result<Value> {
+    let environment = std::env::vars()
+        .filter(|(key, _)| {
+            key.starts_with("CARGO_")
+                || key.starts_with("RUST")
+                || matches!(key.as_str(), "CARGO" | "PATH" | "HOME" | "TMPDIR")
+                || key.starts_with("XDG_")
+        })
+        .filter(|(key, _)| {
+            !key.contains("TOKEN") && !key.contains("PASSWORD") && !key.contains("SECRET")
+        })
+        .collect::<BTreeMap<_, _>>();
+    let mut tool_paths = BTreeMap::new();
+    let mut tool_sha256 = BTreeMap::new();
+    for key in ["CARGO", "RUSTC"] {
+        // The provider's exact tools are the default. An explicit caller override must
+        // select those same bytes; owner builds never guess another tool from PATH.
+        let path = std::env::var(key).ok().unwrap_or_else(|| {
+            build["tools"][key]["path"]
+                .as_str()
+                .unwrap_or_default()
+                .into()
+        });
+        let path = std::path::PathBuf::from(path);
+        let path = if path.components().count() == 1 {
+            std::env::split_paths(&std::env::var_os("PATH").unwrap_or_default())
+                .map(|p| p.join(&path))
+                .find(|p| p.is_file())
+                .context("selected current tool not found")?
+        } else {
+            path
+        };
+        tool_sha256.insert(key, hash_bytes(&fs::read(&path)?));
+        tool_paths.insert(key, path);
+    }
+    let cargo_home = std::env::var_os("CARGO_HOME").map_or_else(
+        || std::path::PathBuf::from(std::env::var_os("HOME").unwrap_or_default()).join(".cargo"),
+        std::path::PathBuf::from,
+    );
+    let mut configuration = BTreeMap::new();
+    for dir in root
+        .ancestors()
+        .map(|p| p.join(".cargo"))
+        .chain(std::iter::once(cargo_home))
+    {
+        for name in ["config", "config.toml"] {
+            let path = dir.join(name);
+            if path.is_file() {
+                configuration.insert(path, hash_bytes(&fs::read(dir.join(name))?));
+            }
+        }
+    }
+    let current = json!({"environment":environment,"tool_paths":tool_paths,"tool_sha256":tool_sha256,"cargo_configuration":configuration});
+    validate_invocation(build, &current)?;
+    Ok(current)
+}
+
+pub(super) fn check(root: &Path, selected_output: Option<&Path>) -> Result<String> {
+    let output = if let Some(path) = selected_output {
+        path.to_owned()
+    } else {
+        let parent = root.join("target/consumer-coverage");
+        fs::create_dir_all(&parent)?;
+        let nanos = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)?
+            .as_nanos();
+        parent.join(format!("run-{nanos}-{}", std::process::id()))
+    };
+    fs::create_dir(&output).with_context(|| {
+        format!(
+            "consumer checker requires a fresh output directory: {}",
+            output.display()
+        )
+    })?;
+    let result = check_at(root, &output);
+    if let Err(error) = &result {
+        write_json(
+            &output.join("refusal.json"),
+            &json!({"status":"CHECK_REFUSED","error":format!("{error:#}"),"Supported":0,"Refused":0,"note":"No completed qualification receipt was produced; partial subprocess evidence remains."}),
+        )?;
+    }
+    result.with_context(|| format!("consumer evidence directory {}", output.display()))
+}
+fn reconcile_extraction(extraction: Result<String>, accounting: Result<Value>) -> Result<Value> {
+    match (extraction, accounting) {
+        (Ok(_), plan) => plan,
+        (Err(error), accounting) => {
+            let diagnostic = match accounting {
+                Ok(plan) => {
+                    json!({"status":"PROVISIONAL_ONLY_CLASSIFICATION_REFUSED","discovered_models":plan["discovered_models"],"bound_profiles":plan["bound_profiles"],"candidate_initial_unknowns":plan["BaselineUnknown"],"Supported":0,"Refused":0,"BaselineUnknown":0})
+                }
+                Err(error) => {
+                    json!({"status":"PROVISIONAL_ACCOUNTING_REFUSAL","details":error.to_string(),"no_cells_admitted":true})
+                }
+            };
+            bail!("extraction/classification refused: {error:#}; accounting diagnostics: {diagnostic}");
+        }
+    }
+}
+fn read_extraction(extraction: &Path, name: &str) -> Result<Value> {
+    Ok(serde_json::from_slice(&fs::read(extraction.join(name))?)?)
+}
+fn plan_extraction(extraction: &Path) -> Result<Value> {
+    let rust = read_extraction(extraction, "rust-inventory.json")?;
+    let wire = read_extraction(extraction, "wire-inventory.json")?;
+    let mut models = rust["obligations"]
+        .as_object()
+        .context("Rust obligations")?
+        .clone();
+    for (id, shape) in wire["obligations"]
+        .as_object()
+        .context("wire obligations")?
+    {
+        if models.insert(id.clone(), shape.clone()).is_some() {
+            bail!("duplicate Rust/wire obligation {id}");
+        }
+    }
+    let (profiles, claims) = proposal::accounting_inputs(
+        &read_extraction(extraction, "consumer-inventory-unclassified.json")?,
+        &read_extraction(extraction, "source-profile.json")?,
+    )?;
+    let baseline_bytes = include_bytes!("initial-baseline.json");
+    if hash_bytes(baseline_bytes)
+        != "e005a2e74e067ad51315e594151643b702381dc174bb9af5c355c3eeeb17ad51"
+    {
+        bail!("root-owned initial eligibility differs from accepted exact bytes");
+    }
+    let baseline: Value = serde_json::from_slice(baseline_bytes)?;
+    enforce::plan(&json!(models), &profiles, &baseline, &claims)
+}
+fn check_at(root: &Path, output: &Path) -> Result<String> {
+    let extraction = output.join("extraction");
+    let extracted = run(root, &extraction);
+    // Diagnostics use the same model, canonical fingerprint and accounting code even
+    // when finite API classification refuses. Only both successful paths reach execution.
+    let plan = reconcile_extraction(extracted, plan_extraction(&extraction))?;
+    let read = |name: &str| read_extraction(&extraction, name);
+    write_json(&output.join("execution-plan.json"), &plan)?;
+    let required = serde_json::from_value(plan["required_cases"].clone())?;
+    let source_profile = read("source-profile.json")?;
+    let verified = native::execute(
+        root,
+        &output.join("cases"),
+        &source_profile,
+        &read("reviewed-case-candidates.json")?,
+        &required,
+        &read("cargo-metadata.json")?,
+    )?;
+    let result = enforce::qualify(&plan, &verified)?;
+    if json!(source_files(root)?) != source_profile["source"] {
+        bail!("source changed before final consumer admission");
+    }
+    write_json(&output.join("qualified-cells.json"), &result)?;
+    let summary = json!({"discovered_models":plan["discovered_models"],"bound_profiles":plan["bound_profiles"],"cells":result["cells"].as_array().context("qualified cells")?.len(),"counts":result["counts"],"executed_cases":verified.ids().len(),"source_sha256":hash_json(&source_profile["source"]),"provider_sha256":source_profile["provider_executable_sha256"],"output":output,"unknown_limit":"Accepted initial gaps remain unproven; this is not complete consumer support."});
+    write_json(&output.join("summary.json"), &summary)?;
+    Ok(format!("Consumer coverage: {summary}\n"))
 }

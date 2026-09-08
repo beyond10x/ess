@@ -322,6 +322,101 @@
       "reviewed_assertion": "Assert actual OpenAPI carrying-property x-ess-relation equals the independent complete relation literal plus the exact owned-entity $ref and assert the referenced entity exists.",
       "attribution_limit": "Witnessed Billing many/owns relation only; no alternative cardinality or changed-input invalidation is proven.",
       "source_file_sha256": "f7d2c389b7df5ece9359d8838a04f08df0057bc1929a349ef07594d10ad68855"
+    },
+    "ess-diff:test:consumer_coverage_f01:relation_kind_is_compared_with_unchanged_carriers_and_cardinality": {
+      "identity": {
+        "package": "ess-diff",
+        "target_kind": "test",
+        "target_name": "consumer_coverage_f01",
+        "full_name": "relation_kind_is_compared_with_unchanged_carriers_and_cardinality",
+        "features": [],
+        "target_profile": "x86_64-unknown-linux-gnu/default",
+        "tool_requirements": [
+          "frozen Rust 1.98.1; locked offline owner-target build"
+        ],
+        "nested_runtime": "None claimed; direct Rust assertions only"
+      },
+      "source": "crates/verify/ess-diff/tests/consumer_coverage_f01.rs",
+      "case_ast_sha256": "8bb2784d94c2f720d143aa49d924a2746d6d995e7d08fe0bb0f837eadee7f316",
+      "reviewed_assertion": "The complete authored fixture validates and resolves; an unchanged control has no semantic changes, exactly one typed change is asserted, and the complete payload survives checked current-format roundtrip. The sole relation kind changes from owns to references; RelationsChanged preserves the exact before/after name, target, cardinality and carrier.",
+      "attribution_limit": "This witnesses the selected owns-to-references comparison only, with unchanged carrier/cardinality; it does not establish generator output or runtime relation evaluation.",
+      "source_file_sha256": "1c8fb751b14fcf2fd70b020a5bf303fe600afc31c9d5b4bc8b6703b2273d41fb"
+    },
+    "ess-diff:test:consumer_coverage_f01:relation_target_is_compared_with_both_targets_already_declared": {
+      "identity": {
+        "package": "ess-diff",
+        "target_kind": "test",
+        "target_name": "consumer_coverage_f01",
+        "full_name": "relation_target_is_compared_with_both_targets_already_declared",
+        "features": [],
+        "target_profile": "x86_64-unknown-linux-gnu/default",
+        "tool_requirements": [
+          "frozen Rust 1.98.1; locked offline owner-target build"
+        ],
+        "nested_runtime": "None claimed; direct Rust assertions only"
+      },
+      "source": "crates/verify/ess-diff/tests/consumer_coverage_f01.rs",
+      "case_ast_sha256": "0f7757d3e655fdca1f5de6915e93a7253159e997a7b3bffb6d0bc87fe2f3098f",
+      "reviewed_assertion": "The complete authored fixture validates and resolves; an unchanged control has no semantic changes, exactly one typed change is asserted, and the complete payload survives checked current-format roundtrip. The sole relation target changes from First to the already declared Second; RelationsChanged contains the exact before/after relation payload.",
+      "attribution_limit": "Both targets already exist in both inputs. This witnesses target comparison, not target runtime behavior or every possible target type.",
+      "source_file_sha256": "1c8fb751b14fcf2fd70b020a5bf303fe600afc31c9d5b4bc8b6703b2273d41fb"
+    },
+    "ess-diff:test:consumer_coverage_f01:relation_carrier_is_compared_with_both_fields_already_declared": {
+      "identity": {
+        "package": "ess-diff",
+        "target_kind": "test",
+        "target_name": "consumer_coverage_f01",
+        "full_name": "relation_carrier_is_compared_with_both_fields_already_declared",
+        "features": [],
+        "target_profile": "x86_64-unknown-linux-gnu/default",
+        "tool_requirements": [
+          "frozen Rust 1.98.1; locked offline owner-target build"
+        ],
+        "nested_runtime": "None claimed; direct Rust assertions only"
+      },
+      "source": "crates/verify/ess-diff/tests/consumer_coverage_f01.rs",
+      "case_ast_sha256": "132161de9dea171fbe793aa155742c28310f6d3b7cbd924d35a18295f5addddd",
+      "reviewed_assertion": "The complete authored fixture validates and resolves; an unchanged control has no semantic changes, exactly one typed change is asserted, and the complete payload survives checked current-format roundtrip. The sole relation carrier changes from link_id to the already declared alternate_id; RelationsChanged contains the exact before/after relation payload.",
+      "attribution_limit": "Both carrier fields already exist in both inputs. This witnesses carrier comparison, not runtime traversal or generated carrier behavior.",
+      "source_file_sha256": "1c8fb751b14fcf2fd70b020a5bf303fe600afc31c9d5b4bc8b6703b2273d41fb"
+    },
+    "ess-diff:test:consumer_coverage_f01:parameter_order_is_compared_without_changing_filter_or_field_types": {
+      "identity": {
+        "package": "ess-diff",
+        "target_kind": "test",
+        "target_name": "consumer_coverage_f01",
+        "full_name": "parameter_order_is_compared_without_changing_filter_or_field_types",
+        "features": [],
+        "target_profile": "x86_64-unknown-linux-gnu/default",
+        "tool_requirements": [
+          "frozen Rust 1.98.1; locked offline owner-target build"
+        ],
+        "nested_runtime": "None claimed; direct Rust assertions only"
+      },
+      "source": "crates/verify/ess-diff/tests/consumer_coverage_f01.rs",
+      "case_ast_sha256": "c5af7e4935b16e53b51b99bd2b6ba2dbe0592328f81a9d094a1116f765ed5484",
+      "reviewed_assertion": "The complete authored fixture validates and resolves; an unchanged control has no semantic changes, exactly one typed change is asserted, and the complete payload survives checked current-format roundtrip. The two existing String parameters swap order; ParamsChanged contains the exact ordered before/after ParameterContract values.",
+      "attribution_limit": "The filter and types stay fixed. Self-comparison expressions only witness typed parameter admission; no query or filter runtime execution is claimed.",
+      "source_file_sha256": "1c8fb751b14fcf2fd70b020a5bf303fe600afc31c9d5b4bc8b6703b2273d41fb"
+    },
+    "ess-diff:test:consumer_coverage_f01:parameter_type_is_compared_without_changing_filter_names_or_order": {
+      "identity": {
+        "package": "ess-diff",
+        "target_kind": "test",
+        "target_name": "consumer_coverage_f01",
+        "full_name": "parameter_type_is_compared_without_changing_filter_names_or_order",
+        "features": [],
+        "target_profile": "x86_64-unknown-linux-gnu/default",
+        "tool_requirements": [
+          "frozen Rust 1.98.1; locked offline owner-target build"
+        ],
+        "nested_runtime": "None claimed; direct Rust assertions only"
+      },
+      "source": "crates/verify/ess-diff/tests/consumer_coverage_f01.rs",
+      "case_ast_sha256": "9ba9bf4149cb957b5315985c321244550044aacefd76fe3d1738805d2f3ebc5d",
+      "reviewed_assertion": "The complete authored fixture validates and resolves; an unchanged control has no semantic changes, exactly one typed change is asserted, and the complete payload survives checked current-format roundtrip. The first parameter changes from String to Integer; ParamsChanged contains exact before/after types with names and order unchanged.",
+      "attribution_limit": "This witnesses the selected parameter type change with a fixed self-comparison filter, not runtime filter evaluation or every type alternative.",
+      "source_file_sha256": "1c8fb751b14fcf2fd70b020a5bf303fe600afc31c9d5b4bc8b6703b2273d41fb"
     }
   },
   "requirements": [
@@ -341,19 +436,6 @@
         "ess-diff:test:families:review_relation_cardinality_name_and_removal_are_changes"
       ],
       "reason": "Source candidates only. These assertions do not establish runtime execution or effects of other model members."
-    },
-    {
-      "id": "F01-other-relation-aspects",
-      "models": [
-        "rust:ess_compiler::ir::ResolvedRelation/field/kind",
-        "rust:ess_compiler::ir::ResolvedRelation/field/target",
-        "rust:ess_compiler::ir::ResolvedRelation/field/via"
-      ],
-      "consumers": [
-        "semantic-diff"
-      ],
-      "cases": [],
-      "reason": "The reviewed three-control relation case does not separately mutate kind, target or via. Exact assertion attribution remains unqualified."
     },
     {
       "id": "F01-component-reach",
@@ -429,18 +511,6 @@
         "ess-diff:test:families:review_view_parameter_naming_is_compared_without_a_filter_edit"
       ],
       "reason": "Only parameter naming in this fixture is attributed; shared Field naming in other contexts remains unproven."
-    },
-    {
-      "id": "F01-parameter-order-and-type-comparison",
-      "models": [
-        "rust:ess_compiler::ir::ResolvedView/field/params",
-        "rust:ess_compiler::ir::ResolvedField/field/type_ref"
-      ],
-      "consumers": [
-        "semantic-diff"
-      ],
-      "cases": [],
-      "reason": "Reviewed naming case does not change parameter order or type. The graph case proves dependency edges, not these diff behaviors."
     },
     {
       "id": "F01-parameter-types-and-CLI-dependencies",
@@ -579,6 +649,71 @@
         "ess-gen:test:relations:the_openapi_document_states_the_relation_and_links_the_targets_schema"
       ],
       "reason": "Exact relation keyword output and linked entity for the witnessed many/owns relation; other alternatives remain unproven."
+    },
+    {
+      "id": "F01-relation-kind-comparison",
+      "models": [
+        "rust:ess_compiler::ir::ResolvedRelation/field/kind"
+      ],
+      "consumers": [
+        "semantic-diff"
+      ],
+      "cases": [
+        "ess-diff:test:consumer_coverage_f01:relation_kind_is_compared_with_unchanged_carriers_and_cardinality"
+      ],
+      "reason": "The sole relation kind changes from owns to references; RelationsChanged preserves the exact before/after name, target, cardinality and carrier. This witnesses the selected owns-to-references comparison only, with unchanged carrier/cardinality; it does not establish generator output or runtime relation evaluation."
+    },
+    {
+      "id": "F01-relation-target-comparison",
+      "models": [
+        "rust:ess_compiler::ir::ResolvedRelation/field/target"
+      ],
+      "consumers": [
+        "semantic-diff"
+      ],
+      "cases": [
+        "ess-diff:test:consumer_coverage_f01:relation_target_is_compared_with_both_targets_already_declared"
+      ],
+      "reason": "The sole relation target changes from First to the already declared Second; RelationsChanged contains the exact before/after relation payload. Both targets already exist in both inputs. This witnesses target comparison, not target runtime behavior or every possible target type."
+    },
+    {
+      "id": "F01-relation-carrier-comparison",
+      "models": [
+        "rust:ess_compiler::ir::ResolvedRelation/field/via"
+      ],
+      "consumers": [
+        "semantic-diff"
+      ],
+      "cases": [
+        "ess-diff:test:consumer_coverage_f01:relation_carrier_is_compared_with_both_fields_already_declared"
+      ],
+      "reason": "The sole relation carrier changes from link_id to the already declared alternate_id; RelationsChanged contains the exact before/after relation payload. Both carrier fields already exist in both inputs. This witnesses carrier comparison, not runtime traversal or generated carrier behavior."
+    },
+    {
+      "id": "F01-parameter-order-comparison",
+      "models": [
+        "rust:ess_compiler::ir::ResolvedView/field/params"
+      ],
+      "consumers": [
+        "semantic-diff"
+      ],
+      "cases": [
+        "ess-diff:test:consumer_coverage_f01:parameter_order_is_compared_without_changing_filter_or_field_types"
+      ],
+      "reason": "The two existing String parameters swap order; ParamsChanged contains the exact ordered before/after ParameterContract values. The filter and types stay fixed. Self-comparison expressions only witness typed parameter admission; no query or filter runtime execution is claimed."
+    },
+    {
+      "id": "F01-parameter-type-comparison",
+      "models": [
+        "rust:ess_compiler::ir::ResolvedField/field/type_ref"
+      ],
+      "consumers": [
+        "semantic-diff"
+      ],
+      "cases": [
+        "ess-diff:test:consumer_coverage_f01:parameter_type_is_compared_without_changing_filter_names_or_order"
+      ],
+      "reason": "The first parameter changes from String to Integer; ParamsChanged contains exact before/after types with names and order unchanged. This witnesses the selected parameter type change with a fixed self-comparison filter, not runtime filter evaluation or every type alternative."
     }
   ]
 }
