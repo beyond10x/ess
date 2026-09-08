@@ -426,16 +426,68 @@ fn recorded_directories_change_shape_but_authored_children_and_adopted_directori
 
 #[test]
 fn native_filenames_are_lossless_while_alias_links_and_reserved_paths_refuse() {
-    use std::os::unix::{ffi::OsStringExt, fs::symlink};
+    use std::os::unix::{
+        ffi::OsStringExt,
+        fs::{symlink, MetadataExt},
+    };
     let f = Fixture::new();
     let root = f.0.join("native");
     fs::create_dir(&root).unwrap();
     let name = std::ffi::OsString::from_vec(b"native-\xff\\copy.json".to_vec());
-    ownership::named(&root.join(&name), "typescript-file", "opaque name").unwrap();
-    assert_eq!(fs::read(root.join(&name)).unwrap(), b"opaque name");
+    let probe = f.0.join("native-capability");
+    fs::create_dir(&probe).unwrap();
+    assert_eq!(
+        fs::metadata(&probe).unwrap().dev(),
+        fs::metadata(&root).unwrap().dev()
+    );
+    match fs::write(probe.join(&name), b"independent native filename probe") {
+        Ok(()) => {
+            assert_eq!(
+                fs::read(probe.join(&name)).unwrap(),
+                b"independent native filename probe"
+            );
+            println!("native filesystem admitted the exact invalid-UTF8 filename");
+            ownership::named(&root.join(&name), "typescript-file", "opaque name").unwrap();
+            assert_eq!(fs::read(root.join(&name)).unwrap(), b"opaque name");
+            let state = fs::read_to_string(root.join(".ess-output/state.json")).unwrap();
+            assert!(state.contains("UnixBytes1"));
+            assert!(state.contains("6e61746976652dff5c636f70792e6a736f6e"));
+        }
+        Err(native) => {
+            let eilseq = rustix::io::Errno::ILSEQ.raw_os_error();
+            assert_eq!(native.raw_os_error(), Some(eilseq), "{native:?}");
+            assert!(snapshot(&probe).is_empty());
+            let before = snapshot(&root);
+            let refusal =
+                ownership::named(&root.join(&name), "typescript-file", "opaque name").unwrap_err();
+            assert!(
+                refusal.chain().any(|cause| {
+                    cause.downcast_ref::<rustix::io::Errno>() == Some(&rustix::io::Errno::ILSEQ)
+                        || cause
+                            .downcast_ref::<std::io::Error>()
+                            .is_some_and(|error| error.raw_os_error() == Some(eilseq))
+                }),
+                "native={native:?}; ownership={refusal:#}"
+            );
+            assert_eq!(snapshot(&root), before);
+            assert!(!root.join(".ess-output").exists());
+            println!("native filename refusal preserved the complete target: {refusal:#}");
+        }
+    }
+    let unicode = "native-λ\\copy.json";
+    ownership::named(
+        &root.join(unicode),
+        "typescript-file",
+        "Unicode and backslash",
+    )
+    .unwrap();
+    assert_eq!(
+        fs::read(root.join(unicode)).unwrap(),
+        b"Unicode and backslash"
+    );
     let state = fs::read_to_string(root.join(".ess-output/state.json")).unwrap();
     assert!(state.contains("UnixBytes1"));
-    assert!(state.contains("6e61746976652dff5c636f70792e6a736f6e"));
+    assert!(state.contains("6e61746976652dcebb5c636f70792e6a736f6e"));
     for path in [
         ".ess-output/file",
         ".ESS-OUTPUT/file",
