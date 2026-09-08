@@ -2,7 +2,7 @@
 format: aep.planning-md/1
 id: story:fuzz-the-specification-surface
 kind: story
-status: active
+status: implemented
 title: Fuzz the specification surface
 summary: Anything validate accepts, every projection and every synthesis target survives — asserted rather than hoped.
 owner: ess
@@ -22,7 +22,7 @@ scope:
   path: fuzz
 - confidence: inferred
   path: website/docs/reference/formats.md
-revision: 16
+revision: 18
 ---
 # Fuzz the specification surface
 
@@ -164,3 +164,39 @@ The wave page is docs/plan/2026-09-08-review-boundaries-20.md. Root owns AEP, bo
 independent source review, complete task check and site-build, verified main publication and exact
 managed cleanup. Current user scope excludes downstream Website/Atlas delivery, superseding the
 historical Delivery scope line. No new product format, release tag or version bump is selected.
+
+## Wave20 closure — 2026-09-09
+
+Source on ESS main: PR #15 (merge 3d0f8ff, source 0be587a), PR #16 (51dd8a7, workstation paths
+removed from the wave records) and PR #17 (725549b: d50b1b4 and 954fb43). PR #17 closed what
+publication left open: `consumer-check` on main refused the unclassified
+`ess_synth::lib(ess_synth)::go::fn::type_owners` (main CI 34280793309, exit 201; the wave-20
+local gate stopped on the same line, `resume/task-check.exit` = 201); the independent source
+review's finding that a compact carrier within 65,536 bytes whose retained pretty form exceeds it
+turned an admitted input into an engine `exit(74)` (`fuzz/src/carrier.rs`, `fuzz/engine/src/lib.rs`)
+is fixed at decode with the regression
+`compact_carrier_whose_retained_form_exceeds_the_ceiling_is_refused_at_decode` in
+`fuzz/tests/harness.rs`, which supersedes the reviewer's untracked reproducer; and the standalone
+lock is kept inside the root graph (`indexmap` 2.14.1, `syn` 3.0.4, rule in `fuzz/README.md`)
+because CI fetches only the root graph before the offline gate (run 34285219066).
+
+Gate: PR #17 CI run 34288754559, job 102272521028, exit 0 on every lane including
+`consumer-check` and `fuzz-check`. Its first attempt failed three Firefox tests at
+`crates/edge/ess-cli/tests/support/browser.rs:151` (30-second BiDi startup deadline), a
+pre-existing fixture defect unrelated to this change, filed as
+story:browser-fixture-startup-deadline and re-run. Local: `task fuzz-check` exit 0 (19 harness
+tests, 25 replay cases) and `task consumer-check` exit 0 (22 executed cases, 0 refused) on the
+closure tree.
+
+Wave-20 receipts read out of the implementor tree's untracked scratch before teardown
+(`target/review-specification-fuzzing-wave20/`): stage 1 sealed, `stage1/report.md` SHA256
+555fb7364229256ed4ac3eec8016c0c8716cd9647bfc390f93bf379fc48968ec; finite campaigns on the
+dated-nightly ASan engine, both direct status 0 — byte-carrier 2048 runs in 9 s, admission
+attempts 2048 / compiled 5 / input-refused 1997 / parse-refused 45 / validation-refused 1;
+structured 2048 runs in 77 s, admission compiled 2048 with every stage 2048 started, 2048
+succeeded. The engine lane stays local by design (`fuzz/README.md`); the gate replays seeds.
+
+Open, not this story: the stable harness is a standalone workspace, so CI compiles the four ESS
+crates a second time (`fuzz/target` 1,918,361,600 bytes on the wave-20 tree) and its lock can
+drift from the root lock; folding it into the root workspace and keeping only `fuzz/engine`
+standalone would remove the lane and the drift class. Not filed.

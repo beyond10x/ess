@@ -82,7 +82,7 @@ scope:
   path: website/docs/status/limitations.md
 - confidence: cited
   path: website/docs/status/where-this-stands.md
-revision: 3
+revision: 5
 ---
 # Story: Implement finite deployment recovery for the existing F11 obligation
 
@@ -206,49 +206,21 @@ The supported result remains direct-resource observation at a point in time. Tes
 
 ## Scope
 
-Refreshed by aep-drive:story-scoper 0.8.0 against published ESS 95ef5be70dbce966056d0484b66db7ed836fa406. These are the exact 34 coordinator-accepted write paths. The historical 57e scope and namespace-main refresh are retained. Only the two now-published model paths change confidence from inferred to cited; every other confidence is unchanged.
+Refreshed 2026-09-09 by `aep-drive:story-scoper` 0.8.1 against ESS 51dd8a7 (95ef5be7 is an
+ancestor; 62 commits between, spanning the delivery-trust, authored-discovery, consumer-coverage,
+output-ownership and fuzz waves). The 34 coordinator-accepted reservations are kept unchanged.
+Every line is **cited** or **inferred**; "changed" means `git log 95ef5be7..51dd8a7 -- <path>` is
+non-empty. The 2026-09-07 scope text and the historical 57e/a45 refreshes remain retained provenance.
 
-- crates/edge/ess-cli/src/main.rs — cited.
-- crates/edge/ess-cli/src/oci_cache.rs — cited.
-- crates/edge/ess-cli/src/lib.rs — inferred.
-- crates/edge/ess-cli/src/recovery/mod.rs — inferred.
-- crates/edge/ess-cli/src/recovery/model.rs — inferred.
-- crates/edge/ess-cli/src/recovery/authority.rs — inferred.
-- crates/edge/ess-cli/src/recovery/journal.rs — inferred.
-- crates/edge/ess-cli/src/recovery/chart.rs — inferred.
-- crates/edge/ess-cli/src/recovery/observe.rs — inferred.
-- crates/edge/ess-cli/src/recovery/process.rs — inferred.
-- crates/infra/ess-kubernetes/src/lib.rs — cited.
-- crates/infra/ess-kubernetes/Cargo.toml — cited.
-- crates/infra/ess-kubernetes/src/recovery.rs — inferred.
-- crates/infra/ess-kubernetes/tests/recovery_adapter.rs — inferred.
-- crates/edge/ess-cli/Cargo.toml — cited.
-- Cargo.lock — cited.
-- crates/edge/ess-cli/tests/persisted_delivery.rs — cited.
-- crates/edge/ess-cli/tests/cache_origin.rs — cited.
-- crates/edge/ess-cli/tests/cache_origin_adversary_pass1.rs — cited.
-- crates/edge/ess-cli/tests/command_surface.rs — cited.
-- crates/edge/ess-cli/tests/support/fake_delivery.rs — cited.
-- crates/edge/ess-cli/tests/support/fake_oci.rs — cited.
-- crates/edge/ess-cli/tests/support/cache_origin_attack_client.rs — cited.
-- crates/edge/ess-cli/tests/execution_recovery.rs — inferred.
-- crates/edge/ess-cli/tests/support/recovery_driver.rs — inferred.
-- crates/edge/ess-cli/tests/support/fake_recovery.rs — inferred.
-- models/execution-recovery/system.yaml — cited; inferred in the historical scope, now present with the exact validated model-v2 bytes.
-- models/execution-recovery/domains/execution.yaml — cited; inferred in the historical scope, now present with the exact validated model-v2 bytes.
-- docs/design/review-execution-recovery.md — cited.
-- website/docs/concepts/component-delivery.md — cited.
-- website/docs/reference/cli.md — cited.
-- website/docs/status/where-this-stands.md — cited.
-- website/docs/status/limitations.md — cited.
-- crates/edge/ess-xtask/src/support.rs — cited.
-
-- **Primary surface:** crates/edge/ess-cli — cited; the current finite executor and tests own this outcome.
-- **Read-only reuse:** crates/generate/ess-deployment/src/{lib,environment,runtime}.rs; Cargo.toml; AGENTS.md; Taskfile.yml; crates/edge/ess-xtask/src/main.rs — cited; no write reservation or new dependency edge is implied.
-- **Confidence:** high for the accepted finite contract and 34 reservations — cited; 51 prior/current evidence paths were compared from namespace-main a45 to 95ef: 47 are unchanged, main.rs changes only browser Web help, the reviewed consolidated binding is published and the two exact model files are added. Historical 57e marker and namespace-main findings remain retained. The supplied graph matches frozen target states and has no implementation story. Root refreshes changes before creation/dispatch if source or store moves.
-- **New-module layout confidence:** medium — inferred; concrete internal linkage/dependency choices are bounded implementation work.
-- **Would collide with:** CLI command/help, cache consumers/tests, Kubernetes credential edge, Cargo.lock, the four public pages and ess-xtask support.rs — cited.
-- **Resource boundary:** one implementation worktree with owned TMPDIR/cache/fault fixtures and a serialized full gate; root alone mutates planning — inferred.
+- **Primary surface:** `crates/edge/ess-cli` — cited; `DeploymentCommand::Reconcile` and `reconcile_release` live in `src/main.rs`.
+- **Existing paths changed since 95ef (7):** `crates/edge/ess-cli/src/main.rs` — cited; 6 commits, 40 hunks, none inside lines 1781-1894 or 3421-3464 (the reconcile arm and helper). `crates/edge/ess-cli/Cargo.toml` — cited; adds `rustix`, `sha2`, `getrandom`. `Cargo.lock` — cited; 3 commits. `crates/edge/ess-cli/tests/command_surface.rs` — cited; +1 test (`release_help_exposes_seven_routes_and_identical_alias_options`). `crates/infra/ess-kubernetes/src/lib.rs` — cited; re-export now `pub use topology::{collect_namespace, scan_namespace};`. `website/docs/reference/cli.md` — cited; 5 commits, +85 lines, none mentioning reconcile. `website/docs/concepts/component-delivery.md` — cited; +75 lines, only the frontmatter description mentions reconcile.
+- **Existing paths unchanged since 95ef (14):** `crates/edge/ess-cli/src/oci_cache.rs`; `crates/edge/ess-cli/tests/persisted_delivery.rs`, `tests/cache_origin.rs`, `tests/cache_origin_adversary_pass1.rs`, `tests/support/fake_delivery.rs`, `tests/support/fake_oci.rs`, `tests/support/cache_origin_attack_client.rs`; `crates/edge/ess-xtask/src/support.rs` (`Explicit executors` row :502, markers :16-17); `crates/infra/ess-kubernetes/Cargo.toml`; `docs/design/review-execution-recovery.md` (SHA256 9699f5ed… matches the pin); `models/execution-recovery/system.yaml` (c981b332… matches); `models/execution-recovery/domains/execution.yaml` (e03ca97f… matches); `website/docs/status/where-this-stands.md` (markers :43/:70, 20 data rows); `website/docs/status/limitations.md` — all cited.
+- **Paths not yet in the tree (13, all new):** `crates/edge/ess-cli/src/lib.rs` — inferred; `ess-cli` has only a `[[bin]]` target, so this implies a new `[lib]` stanza in `ess-cli/Cargo.toml`. `crates/edge/ess-cli/src/recovery/{mod,model,authority,journal,chart,observe,process}.rs` — inferred; `src/recovery/` does not exist. `crates/edge/ess-cli/tests/execution_recovery.rs`, `tests/support/recovery_driver.rs`, `tests/support/fake_recovery.rs` — inferred. `crates/infra/ess-kubernetes/src/recovery.rs`, `crates/infra/ess-kubernetes/tests/recovery_adapter.rs` — inferred; `tests/` holds only `secret_boundary.rs`.
+- **Symbols:** `DeploymentCommand::Reconcile`, `reconcile_release`, `oci_cache::payload`, `oci_cache::Profile::Helm`, `ess_deployment::project_helm`, `ess_kubernetes::scan_namespace` — cited.
+- **Read-only reuse:** `crates/generate/ess-deployment/src/{lib,environment,runtime}.rs`, `crates/edge/ess-xtask/src/main.rs`, `Cargo.toml`, `AGENTS.md`, `Taskfile.yml` — cited; no write reservation.
+- **Confidence:** high for the 21 existing paths and the three byte pins — cited; medium for the 13 new-module paths, whose layout is an implementation choice — inferred.
+- **Would collide with:** any unit touching `crates/edge/ess-cli/src/main.rs` (6 commits since 95ef, the most-changed file in the range), `Cargo.lock`, `website/docs/reference/cli.md` (5 commits), `component-delivery.md`, `tests/command_surface.rs`, the `ess-kubernetes` re-export line, `ess-xtask/src/support.rs` and the support-marker block in `where-this-stands.md` — cited. Within this wave: story:review-primitive-semantics shares `Cargo.lock` (inferred on its side).
+- **Resource boundary:** one implementation worktree with owned TMPDIR, cache and fault fixtures, and a serialized full gate on the integration branch; root alone mutates planning — inferred.
 
 ## Validation and completion
 
@@ -277,3 +249,61 @@ No new review objective or decomposition beyond this single existing obligation;
 ## Open Questions
 
 No unresolved stakeholder input or real deployment credential is required to prepare this bounded offline unit. Any newly discovered semantic prerequisite must be named to root before extending the model or scope; it is not silently discharged by this draft.
+
+## Implementation pointers — 2026-09-09
+
+Written 2026-09-09 by the wave coordinator from the scoper report and the tree at 51dd8a7. Each
+line is cited (a `file:line`) or marked inferred. The accepted binding and the R01-R29 matrix
+above are unchanged; this section says where the existing code is.
+
+**Production code to reuse (cited):** `crates/edge/ess-cli/src/main.rs:905` `enum
+DeploymentCommand`, `:927` `Reconcile {` (`allow_removals` at `:939`); handler arm `:1781-1894`
+validates desired/current and spawns `helm uninstall` at `:1879`; `fn reconcile_release`
+`:3421-3464` calls `oci_cache::payload(.., Profile::Helm)` at `:3435`, writes transient values at
+`:3436-3453`, spawns `helm upgrade --install` at `:3455`; `ess_deployment::project_helm` at
+`:3302`; `ess_kubernetes::scan_namespace`/`scan` at `:3132/:3137`.
+`crates/edge/ess-cli/src/oci_cache.rs:33` `Profile`, `:283` `read_proof`, `:378` `publish`,
+`:428` `fetch`, `:490` `acquire`, `:543` `pub(crate) fn payload` — the only cross-module entry
+point; everything else is private. `crates/generate/ess-deployment/src/environment.rs:100`
+`DeploymentRelease`, `:137` `DeploymentIr`, `:590` `HelmProjection` (`files()` `:596`), `:638`
+`project_helm(&RuntimeIr, &Identifier, &Version)`; `runtime.rs:233` `RuntimeIr`, `:482`
+`compile_runtime`. `crates/infra/ess-kubernetes/src/lib.rs:14` re-export, `:61` `scan`;
+`topology.rs:21` `scan_namespace`.
+
+**Tests to keep green (cited, `grep -c '#[test]'`):** `persisted_delivery.rs` 6,
+`cache_origin.rs` 21, `cache_origin_adversary_pass1.rs` 9, `command_surface.rs` 6 — 42 in the
+four reserved test files.
+
+**Story versus tree at 51dd8a7 (cited):** `cache_origin_attack_client.rs:22-35` still hard-codes
+`--create-namespace` (line 25, `args.len() == 16`, `--atomic --wait --timeout 5m` at 27) — the
+deliberate adaptation the story names is still owed. F11 is still at
+`docs/reviews/2026-09-05-architecture-review.md:394` with the execution finding at `:411-415`;
+the review's own link targets `main.rs#L1613`, the arm is now at `:1781` (review-doc drift, not
+story drift). Binding `C12` `:471`, R01 `:479`, R29 `:507`, `C13` `:537` — the story's `471-536`
+citation holds. Support markers exist only in `where-this-stands.md` (`:43/:70`); the other three
+reserved pages carry none, and `support.rs:502` matches the page byte for byte. `sha2`,
+`getrandom` and `rustix` are already `ess-cli` dependencies since 6bdac90.
+
+**Layout decision the implementor must take (inferred):** "real independent Rust driver
+processes sharing the production parser, handler, admission, reconciliation, chart, journal and
+process logic" needs the production code reachable from a second binary. `ess-cli` has no library
+target, so the reserved `src/lib.rs` plus a `[lib]` stanza in `ess-cli/Cargo.toml` (with `main.rs`
+kept as the bin) is the smallest shape; a `[[bin]]` driver under `tests/support/recovery_driver.rs`
+compiled as an integration-test helper is the alternative that adds no public crate surface.
+Either is inside the 34 reservations; say which in the report. The dependency-boundary test in
+the gate must still pass.
+
+**Order of work (inferred, from the accepted stage split):** model and journal types first
+(`recovery/model.rs`, `recovery/journal.rs`, declared by
+`models/execution-recovery/domains/execution.yaml`, 44 named types), then authority admission
+(`recovery/authority.rs`), then chart admission and observation (`recovery/chart.rs`,
+`recovery/observe.rs`, `ess-kubernetes/src/recovery.rs`), then process control
+(`recovery/process.rs`), then the driver and the matrix (`tests/execution_recovery.rs`,
+`tests/support/recovery_driver.rs`, `tests/support/fake_recovery.rs`). R01-R03 and R22 need no
+process control and are the first red tests; R13/R14/R23/R24 need the fault-injecting fake Helm;
+R28/R29 need the second driver process and the journal publication barriers. Record the real
+runner counts per family in the report, never "29 tests".
+
+**Cargo.lock:** the coordinator re-resolves the lockfile at merge; a dependency added here is
+declared in `ess-cli/Cargo.toml` (and `[workspace.dependencies]` if shared) and named in the
+report.

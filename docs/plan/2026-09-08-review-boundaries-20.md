@@ -47,12 +47,30 @@ Any further production defect receives a concrete owner decision; it is not sile
 | Role | Managed id and branch | Build and scratch | Current stage |
 |---|---|---|---|
 | Coordinator | ess-review-boundaries-20; wave/review-boundaries-20 | Own target; target/review-boundaries-20/preparation | Opening design/store record and cheap gate |
-| Implementor | Planned ess-specification-fuzzing-wave20; impl/fuzz-the-specification-surface | Own root target, standalone and engine targets; target/review-specification-fuzzing-wave20 | Not provisioned until opening checks pass |
+| Implementor | ess-specification-fuzzing-wave20; impl/fuzz-the-specification-surface | Own root target, standalone and engine targets; target/review-specification-fuzzing-wave20 | Stage 1 evidence sealed; stage 2 published (PR #15) |
 | Adversary | Assigned after source handoff | Separate managed tree and task-owned records | Not dispatched |
 
 Coordinator workspace: repository root.
-Root lease: ess-review-boundaries-coordinator-wave20. Actual opening commit, provisioned unit,
-scratch, TMP and compiler authorities are added before dispatch.
+Root lease: ess-review-boundaries-coordinator-wave20. Opening fdb2a27 passed `task fmt-check`,
+`task action-check`, and `cargo test --locked --offline -p ess-xtask --test layout` (the first
+layout invocation reached no compiler because `/usr/bin/time` was unavailable; the direct rerun
+passed). The unit is managed id ess-specification-fuzzing-wave20; its lease was
+`ess-review-specification-fuzzing-implementation`, its ignored scratch is
+`target/review-specification-fuzzing-wave20`, and its root build target is the unit's `target`.
+The root-created short TMP authority was a per-wave directory under the user cache, empty at
+dispatch and used only by commands in this unit. The unit-local Cargo home is
+`target/review-specification-fuzzing-wave20/cargo-home`.
+
+At 2026-09-08T19:55:53Z, fresh capacity was 76,585,025,536 SSD bytes, 24,523,976,704 tmpfs bytes,
+and 43,776,790,528 memory-available bytes; the unit target and short TMP were both 0 bytes.
+Stage 1 is sealed at the unit's `target/review-specification-fuzzing-wave20/stage1/report.md`
+(SHA256 `555fb7364229256ed4ac3eec8016c0c8716cd9647bfc390f93bf379fc48968ec`): both offline graphs
+passed unchanged locks, the exact tool payload and dated-nightly ASan readiness passed, and nine
+positive Go cases passed through facade and direct emission. Root independently read the report and
+removed 14 accidental out-of-scope generated-Rust formatter edits using the retained exact reverse
+patch `stage1/unexpected-generated-rustfmt.patch` (SHA256
+`47fab184c06ee834f1f93e6e7f26b963be68466d4df36ba4a08d07f37971f80b`). This paragraph was recovered
+on 2026-09-09 from the coordinator tree's uncommitted edit, with workstation paths removed.
 
 Fresh preflight measured 84,316,540,928 available SSD bytes, 24,538,263,552 tmpfs bytes and
 43,074,191,360 memory-available bytes. The opening compiler target allowance is 2 GiB; the selected
@@ -72,3 +90,43 @@ Root refreshes capacity before integration and records every task check lane plu
 
 The wave completes at verified ESS main publication and owned-worktree cleanup. No release tag,
 version bump or downstream Website/Atlas work is selected.
+
+## Resumption after publication
+
+The preceding sections retain the opening plan. Source commit
+`0be587a11c4ff384d5984780ddb67c3b9ed797f9` reached main through PR #15, merge
+`3d0f8ff1f54f1a17e623772355e0755f46c33c36`. PR #16 removed workstation paths from
+the new wave records; current published main is `51dd8a798c0259559a2ff035256a16ba9d396773`.
+Future tracked evidence uses repository-relative paths and managed ids.
+
+Publication preceded complete wave closure. The story is still active: a full local gate and
+independent source attack remain required, and cleanup has not happened. Earlier focused checks
+and two 2048-input campaigns are retained under the implementation tree's
+`target/review-specification-fuzzing-wave20`. They do not stand in for the full gate.
+The previous local gate failed in the authored-discovery Unix socket fixture: its staging path
+must be short and on the checkout filesystem. Resumption runs the unchanged source with a verified
+short temporary directory on that filesystem. Its log and direct exit status are retained at
+`target/review-specification-fuzzing-wave20/resume/task-check.log` and `task-check.exit`.
+
+| Role | Managed id | Branch or source | Current work |
+|---|---|---|---|
+| Closing coordinator | ess-review-boundaries-20-path-correction | wave/review-boundaries-20-close | Closure records; own lease ess-review-resume-coordinator |
+| Gate | ess-specification-fuzzing-wave20 | 51dd8a798c0259559a2ff035256a16ba9d396773 | Local gate; own lease ess-review-resume-root |
+| Source attack | ess-fuzz-source-audit | 51dd8a798c0259559a2ff035256a16ba9d396773 | aep-drive:adversary 0.8.1; own fuzz/target and target/fuzz-source-audit scratch |
+
+The source attacker receives the installed charter through a file-backed collaboration brief;
+this harness does not expose a plugin subagent-type selector. Compiler work is serialized and
+each tree owns its build output. Resumption measured 48,444,764,160 available filesystem bytes
+and 40,482,500 KiB memory available. The gate tree occupied 17,871,667,200 bytes before resumption;
+The full workspace build grows beyond the focused-check footprint. Before reaching the former
+20 GiB cap, the coordinator raised the gate tree allowance to 24 GiB after measuring
+45,262,000,128 available filesystem bytes; the 8 GiB free-space floor remains in force.
+The attacker has a separate 2 GiB build allowance.
+
+Remote documentation validation run 34280793314 succeeded for this exact main commit. CI run
+34280793309 was observed running; success is not yet claimed. Connectors returned no admitted
+GitHub operation, so the authorized GitHub CLI fallback supplies these observations.
+
+After the fuzzing story closes, three review fixes remain: primitive semantics, typed diagnostics,
+and execution recovery implementation. The latter discharges the existing F11 obligation; it is
+additional to the original 31-story count. No other backlog work is included.
