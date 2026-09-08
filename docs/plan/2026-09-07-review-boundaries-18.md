@@ -672,3 +672,57 @@ and the parent directory's changed mtime/ctime. Root checked its original tool c
 2026-09-07T22:50:00.528Z and confirmed that checkpoint bookkeeping. Every original
 payload remains, and no timestamp or file was restored to hide the discrepancy.
 No producer remains. Root leases are retained for review and publication.
+
+## Source pass 1 and correction routing
+
+Root synchronized the three shared configuration/documentation files as unit
+b37572e410a7b4a4d18e2abb4fd99ed0db5401f5; the other 1,210 source files were unchanged.
+The first source adversary then appended four tests in the reserved cfg(test) file,
+preserving the complete original byte prefix. Every targeted first execution returned
+101 with exactly one failed case. The following package command executed 92 cases:
+88 original cases passed and those four additions failed. No setup failure occurred.
+
+The report records two introduced NEEDS-CHANGE findings: discarded absolute external
+qualification in model paths/imports, and omitted associated consumer constants/types.
+Its associated-output fixture demonstrates a future bound-contract hole; none of the
+current 55 selected entries uses that Iterator::Item profile. No current baseline transfer
+is claimed for that subcase. Both defects return to the current implementation scope.
+
+The complete 42,194-byte report is recorded verbatim as
+review-result:consumer-coverage-source-pass1, SHA256
+6564e6d04d8194a98fdf09d895596e4fac8f5f4c3f566e3fb12963f133ce0263.
+Seal SHA256 is 3d86cb7dec4c9256b3c6e6468cfad62b73c671c1c3f5baa288c3c88107ca7b60.
+Root independently verified all five original lanes, the complete 1,213-file source
+archive, the unchanged original-test prefix, and the full 5,822-entry native census
+containing 8,233,562,641 regular-file bytes. Root readback:
+preparation/consumer-source-pass1-readback/readback.json, SHA256
+cd3ea02bcdc4881d06fe7a47daef4e67fc3b5b9d9cad5788f82cc65ba337d5f8.
+All reviewer producers are absent and only its own lease was released.
+
+The original story remains active at revision 17 with correction routing appended.
+AEP validates 207 artifacts; the same 43 historical findings-block advisories remain
+in the verbatim validation output. The two current findings have a machine-readable
+findings block. One further full source attack remains after correction.
+
+## Earlier published gate records retained for build capacity
+
+Root archived and independently verified three exact completed gate directories before
+retiring their working copies. Their source commits are ancestors of observed published
+main a0cf3ca8; all original gate statuses and payloads remain in the archives. Fresh
+complete source/native censuses matched before retirement. No observable process used
+the exact roots, with the same eight documented protected descriptor limitations.
+
+| Exact retired gate | Archive bytes | Entries / logical regular bytes | Archive SHA256 |
+| --- | ---: | ---: | --- |
+| review-boundaries-11/gate-a333949e6581 | 216291560 | 6738 / 634669247 | b4559f2cd2142760b71a68e674c2b68ea8b1309ee15de6259cae0d333ecd88a5 |
+| review-boundaries-13/gate-ecb7efc22ad9-attempt1 | 239918915 | 6761 / 689573890 | 93c91b406fe649c410bdc5e1de9ec5f8394331d86bddf1bb39770b99566b0d48 |
+| review-boundaries-12/gate-dbe78c5b15df-attempt3 | 239827081 | 6761 / 689292025 | 1881d511ccd7f921f3282fef09c4381db126d08e23225e9262fa94acaac3d9ea |
+
+Each archive, streaming readback and exact retirement returned zero; no directory
+permission change was required. Each archive preserves two literal symlinks and every
+regular payload, directory, native record and original gate log without exclusions.
+Records are outside the checkout under ~/.cache/ess-review/2026-09-06-resume in
+wave11-gate-records-retirement, wave13-gate-records-retirement and
+wave12-final-gate-records-retirement. The W12 preparation toolchain, W14 gate caches,
+W17 preparation CLI, both earlier W12 attempts and all active consumer records remain.
+No managed worktree was removed. More space is still needed before the cold full gate.

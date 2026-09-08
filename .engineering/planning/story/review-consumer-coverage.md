@@ -24,7 +24,7 @@ scope:
   path: crates/verify/ess-diff/tests/consumer_coverage_f01.rs
 - confidence: inferred
   path: docs/design/review-consumer-coverage.md
-revision: 16
+revision: 17
 ---
 ## Finding and source
 
@@ -165,3 +165,32 @@ command remain intact. Root owns the edit; the implementor's source reservation 
 unchanged. The separately named Taskfile consumer-check lane will declare the selected
 build settings and all existing gate lanes retain their relative order. No downstream
 publication, deployment or release authority is added.
+
+## Source review correction 1
+
+The first source attack is recorded verbatim as
+review-result:consumer-coverage-source-pass1 against b37572e410a7b4a4d18e2abb4fd99ed0db5401f5
+plus four additive tests. It found two introduced NEEDS-CHANGE defects: loss of absolute
+external qualification in model type/import resolution, and omitted associated consumer
+constants/types. All four cases failed on first actual execution; the package then ran
+92 cases, with its original 88 passing and the four added cases failing.
+
+Root independently read the complete report, original five command streams/direct results,
+complete current 1,213-file source archive and 5,822-entry native census (8,233,562,641 regular
+bytes). Report SHA256 6564e6d04d8194a98fdf09d895596e4fac8f5f4c3f566e3fb12963f133ce0263;
+root readback SHA256 cd3ea02bcdc4881d06fe7a47daef4e67fc3b5b9d9cad5788f82cc65ba337d5f8.
+
+Both defects return to the existing implementor within the current xtask reservation.
+Preserve every original/adversarial assertion; explicitly account associated declarations
+and keep absolute external authority separate from local shadowing. The associated-output
+case is a constructed future bound profile, not an observed transfer of a currently
+eligible production pair. Correct that declared-contract mechanism without claiming a
+current baseline incident. Exact newly discovered member classifications require reading
+their actual owners. Initial baseline e005 remains read-only and may not expand or be
+regenerated. Record any actual current model/profile identity change before proceeding.
+
+Package/Clippy/format verification and matching actual 22-case consumer execution must be
+renewed on the corrected source. The original downstream causal probes remain retained
+witnesses for unchanged semantics; no mechanical rerun is selected. At most one additional
+full source attack remains. Root owns shared files, all AEP/Git operations, integration,
+publication and cleanup. This is correction of the original story, not another story.
