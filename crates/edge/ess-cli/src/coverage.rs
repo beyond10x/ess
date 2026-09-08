@@ -62,8 +62,9 @@ pub(super) fn generate(
         SuiteTarget::Go => {
             let files = ess_conformance::go::emit_input(&admitted)?;
             if let Some(out) = out {
-                super::write_generated_files(
+                super::write_owned_files(
                     out,
+                    "conformance-go",
                     files.iter().map(|f| (f.path.as_str(), f.contents.as_str())),
                 )?;
             }
@@ -126,7 +127,7 @@ pub(super) fn web(
     };
     let admitted = fresh(&ir, scenarios, None, true)?;
     let artifacts = ess_conformance::web::emit_input(&ir, &admitted)?;
-    super::write_artifacts(out, &artifacts)?;
+    super::write_owned_artifacts(out, "conformance-browser", &artifacts)?;
     Ok(
         if admitted
             .selected()

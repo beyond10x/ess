@@ -167,14 +167,7 @@ pub fn generate(args: &GenerateArgs) -> Result<ExitCode> {
                 .context("the Go target requires --module")?,
         )?,
     };
-    let root = crate::preflight_generated_files(
-        &args.out,
-        &generated
-            .files
-            .keys()
-            .map(String::as_str)
-            .collect::<Vec<_>>(),
-    )?;
+    let root = crate::resolve_output_directory(&args.out)?;
     for input in args.sources.paths() {
         let input = fs::canonicalize(input)?;
         if (input.is_dir() && root.starts_with(&input))
@@ -184,13 +177,24 @@ pub fn generate(args: &GenerateArgs) -> Result<ExitCode> {
         }
     }
     if args.check {
+        let _guard = crate::output_ownership::check(&root)?;
+        crate::preflight_generated_files(
+            &root,
+            &generated
+                .files
+                .keys()
+                .map(String::as_str)
+                .collect::<Vec<_>>(),
+        )?;
         return check_files(&root, &generated.files);
     }
-    crate::write_preflighted_files(
+    crate::write_owned_files(
+        &root,
+        "normalization",
         generated
             .files
             .iter()
-            .map(|(path, contents)| (root.join(path), contents.as_str())),
+            .map(|(path, contents)| (path.as_str(), contents.as_str())),
     )?;
     println!(
         "{} file(s), written to {}; provenance in normalization-report.json",

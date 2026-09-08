@@ -51,8 +51,9 @@ pub fn run(args: &Args) -> Result<ExitCode> {
     {
         bail!("model type output must not replace or reside within its specification input");
     }
-    crate::write_generated_files(
+    crate::write_owned_files(
         &destination,
+        "model-types",
         files
             .iter()
             .map(|(path, contents)| (path.as_str(), contents.as_str())),

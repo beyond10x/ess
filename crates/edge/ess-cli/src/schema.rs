@@ -169,6 +169,13 @@ fn typescript(args: &TypeScriptArgs) -> Result<ExitCode> {
         return Ok(ExitCode::SUCCESS);
     };
     if args.check {
+        let _guard = crate::output_ownership::check(
+            output
+                .parent()
+                .filter(|p| !p.as_os_str().is_empty())
+                .unwrap_or(Path::new(".")),
+        )?;
+        crate::preflight_named_output(output)?;
         let existing = fs::read_to_string(output)
             .with_context(|| format!("reading generated projection {}", output.display()))?;
         if existing == generated {
@@ -242,21 +249,5 @@ fn documents<'a>(paths: &'a [PathBuf], values: &'a [Value]) -> Vec<JsonDocument<
 }
 
 fn write_projection(path: &Path, contents: &str) -> Result<()> {
-    let parent = path.parent().unwrap_or_else(|| Path::new("."));
-    fs::create_dir_all(parent)
-        .with_context(|| format!("creating projection directory {}", parent.display()))?;
-    let filename = path
-        .file_name()
-        .and_then(|name| name.to_str())
-        .context("the projection output must have a UTF-8 filename")?;
-    let temporary = parent.join(format!(".{filename}.ess-schema.tmp"));
-    fs::write(&temporary, contents)
-        .with_context(|| format!("writing temporary projection {}", temporary.display()))?;
-    fs::rename(&temporary, path).with_context(|| {
-        format!(
-            "installing generated projection {} from {}",
-            path.display(),
-            temporary.display()
-        )
-    })
+    crate::output_ownership::named(path, "typescript-file", contents)
 }

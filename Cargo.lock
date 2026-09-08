@@ -323,16 +323,19 @@ dependencies = [
  "ess-realization",
  "ess-synth",
  "fluent-uri",
+ "getrandom",
  "infra-analyze",
  "infra-compiler",
  "infra-domain",
  "infra-project",
  "infra-spec",
+ "rustix",
  "schema-contract",
  "semver",
  "serde",
  "serde_json",
  "serde_yaml",
+ "sha2",
 ]
 
 [[package]]

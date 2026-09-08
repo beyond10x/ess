@@ -120,6 +120,8 @@ fn noncanonical_and_platform_paths_are_refused_before_writing() {
 #[test]
 fn a_valid_nested_include_keeps_the_existing_site_layout_and_bytes() {
     let fixture = Fixture::new();
+    // This success fixture starts fresh; an existing unowned destination now requires adoption.
+    fs::remove_file(fixture.0.join("out/index.html")).unwrap();
     let output = fixture.site(&["plan/board"]);
     assert!(
         output.status.success(),
@@ -188,7 +190,7 @@ fn a_hardlinked_destination_is_refused_before_other_files_change() {
     fixture.assert_refused_without_writes(&output);
 }
 
-fn composition_command() -> Command {
+fn composition_command(fixture: &Fixture) -> Command {
     let fixtures = workspace_root().join("crates/specify/ess-composition/tests/fixtures");
     let mut command = Command::new(env!("CARGO_BIN_EXE_ess"));
     command.args(["compose", "--path"]);
@@ -199,6 +201,7 @@ fn composition_command() -> Command {
             fixtures.join("two-components").display()
         ));
     }
+    command.arg("--ownership-root").arg(&fixture.0);
     command
 }
 
@@ -254,7 +257,7 @@ fn composition_companions_form_one_output_set_even_without_a_generated_tree() {
             fs::create_dir(fixture.0.join("working")).unwrap();
             fs::write(fixture.0.join("same.json"), "companion sentinel").unwrap();
             let before = output_snapshot(&fixture.0);
-            let mut command = composition_command();
+            let mut command = composition_command(&fixture);
             command
                 .current_dir(&fixture.0)
                 .arg("--out")
@@ -304,7 +307,7 @@ fn composition_preflight_includes_companion_generated_aliases_and_both_companion
             } else {
                 "--out"
             };
-            let output = composition_command()
+            let output = composition_command(&fixture)
                 .current_dir(&fixture.0)
                 .arg(flag)
                 .arg(collision)
@@ -327,7 +330,7 @@ fn composition_keeps_disjoint_caller_selected_filenames_and_parent_roots() {
     let fixture = Fixture::new();
     fs::create_dir(fixture.0.join("working")).unwrap();
     fs::create_dir(fixture.0.join("reports ü")).unwrap();
-    let mut command = composition_command();
+    let mut command = composition_command(&fixture);
     command.current_dir(fixture.0.join("working")).args([
         "--out",
         "../reports ü/composition +copy.json",
@@ -367,7 +370,7 @@ fn composition_does_not_reinterpret_directory_spelling_as_a_named_output_file() 
             } else {
                 "--out"
             };
-            let output = composition_command()
+            let output = composition_command(&fixture)
                 .current_dir(&fixture.0)
                 .args([
                     flag,
@@ -416,7 +419,7 @@ fn composition_refuses_companion_links_before_any_other_output_changes() {
             } else {
                 "--out"
             };
-            let output = composition_command()
+            let output = composition_command(&fixture)
                 .current_dir(&fixture.0)
                 .args([
                     flag,
@@ -437,7 +440,7 @@ fn composition_refuses_companion_links_before_any_other_output_changes() {
 #[test]
 fn composition_companion_outputs_cannot_collide_with_the_generated_client_tree() {
     let control = Fixture::new();
-    let valid = composition_command()
+    let valid = composition_command(&control)
         .arg("--out")
         .arg(control.0.join("composition.json"))
         .arg("--client-plan-out")
@@ -455,7 +458,7 @@ fn composition_companion_outputs_cannot_collide_with_the_generated_client_tree()
         for collision in ["Cargo.toml", "src"] {
             let fixture = Fixture::new();
             fs::write(fixture.0.join("out/Cargo.toml"), "client manifest sentinel").unwrap();
-            let output = composition_command()
+            let output = composition_command(&fixture)
                 .arg(flag)
                 .arg(fixture.0.join("out").join(collision))
                 .arg("--client-rust-out")
@@ -496,6 +499,7 @@ fn site_at(fixture: &Fixture, root: &Path) -> Output {
 #[test]
 fn requested_root_normalization_preserves_parent_roots_and_rejects_hidden_files() {
     let fixture = Fixture::new();
+    fs::remove_file(fixture.0.join("out/index.html")).unwrap();
     let ordinary = fixture.site(&[]);
     assert!(ordinary.status.success());
     let bytes = fs::read(fixture.0.join("out/index.html")).unwrap();
@@ -571,6 +575,7 @@ fn local_composition_command(fixture: &Fixture) -> Command {
             .arg("--service")
             .arg(format!("{name}={}", local.join("services").display()));
     }
+    command.arg("--ownership-root").arg(&fixture.0);
     command
 }
 
@@ -725,6 +730,9 @@ fn assert_local_tree_refuses_late_conflicts(fixture: &Fixture, workflow: &str) {
     let files: Vec<_> = control_bytes
         .iter()
         .filter(|(_, (kind, _))| kind == "file")
+        // The new private checkpoint is tested separately. This fixture's late blocker must
+        // remain a producer artifact, rather than corrupting enrollment during setup.
+        .filter(|(path, _)| !path.starts_with(".ess-output"))
         .map(|(path, _)| path)
         .collect();
     assert!(
