@@ -37,19 +37,22 @@ pub(super) fn orphan(name: &OsStr) -> bool {
 #[derive(Default)]
 struct Node {
     children: BTreeMap<OsString, Node>,
+    required: bool,
 }
 
 pub(super) fn paths(
     locks: &Locks,
     anchor: &Path,
     paths: impl IntoIterator<Item = PathBuf>,
+    creations: impl IntoIterator<Item = PathBuf>,
     mut observer: Observer<'_>,
 ) -> Result<()> {
     let (parent_path, parent) = locks.nearest_binding(anchor)?;
     let prefix = anchor.strip_prefix(parent_path)?;
     let mut tree = Node::default();
-    for path in
-        std::iter::once(prefix.to_path_buf()).chain(paths.into_iter().map(|p| prefix.join(p)))
+    for (path, required) in std::iter::once((prefix.to_path_buf(), true))
+        .chain(paths.into_iter().map(|p| (prefix.join(p), false)))
+        .chain(creations.into_iter().map(|p| (prefix.join(p), true)))
     {
         let mut node = &mut tree;
         for component in path.components() {
@@ -57,6 +60,7 @@ pub(super) fn paths(
                 .children
                 .entry(component.as_os_str().to_owned())
                 .or_default();
+            node.required |= required;
         }
     }
     if tree.children.is_empty() {
@@ -181,6 +185,27 @@ fn same(parent: &File, name: &OsStr, expected: &Identity, directory: bool) -> Re
 }
 
 fn inspect(parent: &File, node: &Node, mount: &Mount, observer: &mut Observer<'_>) -> Result<()> {
+    // Existing exact names already demonstrate native coexistence. Missing inventory
+    // members are still inspected, but only a planned creation needs a private namespace.
+    let mut needs_probe = false;
+    let mut directories = BTreeMap::new();
+    for (name, child) in &node.children {
+        filesystem::aliases(parent, Path::new(name), mount)?;
+        match fs::statat(parent, name, AtFlags::SYMLINK_NOFOLLOW) {
+            Ok(_) if child.children.is_empty() => {}
+            Ok(stat) if FileType::from_raw_mode(stat.st_mode) == FileType::Directory => {
+                directories.insert(name, filesystem::open_directory(parent, name, mount)?);
+            }
+            Ok(_) | Err(Errno::NOENT) => needs_probe |= child.required,
+            Err(error) => return Err(error).context("inspecting existing admission namespace"),
+        }
+    }
+    if !needs_probe {
+        for (name, directory) in directories {
+            inspect(&directory, &node.children[name], mount, observer)?;
+        }
+        return Ok(());
+    }
     let mut namespace = Namespace::create(parent, mount, observer)?;
     let root = namespace.root.try_clone()?;
     let outcome = inherited(parent, &root)
@@ -229,7 +254,7 @@ fn populate(
             // An existing descendant may have a different casefold policy. Its own private
             // child, rather than this ancestor's emulation, supplies its native admission.
             inspect(&existing, child, mount, observer)?;
-        } else {
+        } else if child.children.values().any(|node| node.required) {
             populate(namespace, &fd, None, child, mount, observer)?;
         }
     }

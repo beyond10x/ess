@@ -267,6 +267,7 @@ fn adopt_observers(
             .chain(expected.files.iter().map(|f| &f.path))
             .map(NativePath::output)
             .collect::<Result<Vec<_>>>()?,
+        std::iter::empty(),
         admission_observer,
     )?;
     let root = locks.create_root(&path, &mut observer)?;
@@ -895,6 +896,15 @@ fn publish_observers(
                     .map(|d| &d.path),
             )
             .map(NativePath::output)
+            .collect::<Result<Vec<_>>>()?,
+        planned
+            .transaction
+            .changes
+            .iter()
+            .filter(|change| {
+                change.before != change.after && !matches!(change.after, Image::Absent)
+            })
+            .map(|change| change.path.output())
             .collect::<Result<Vec<_>>>()?,
         admission_observer,
     )?;

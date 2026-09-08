@@ -2,9 +2,137 @@ use super::{ownership, serial, snapshot, Fixture};
 use std::{
     collections::BTreeMap,
     fs,
+    os::unix::fs::PermissionsExt,
     path::{Path, PathBuf},
     process::Command,
 };
+
+fn permission_snapshot(root: &Path) -> BTreeMap<PathBuf, (u32, Vec<u8>)> {
+    std::iter::once((PathBuf::new(), Vec::new()))
+        .chain(snapshot(root))
+        .map(|(path, bytes)| {
+            let mode = fs::symlink_metadata(root.join(&path))
+                .unwrap()
+                .permissions()
+                .mode()
+                & 0o7777;
+            (path, (mode, bytes))
+        })
+        .collect()
+}
+
+fn permission_cli(args: &[&str]) -> std::process::Output {
+    let output = Command::new(env!("CARGO_BIN_EXE_ess"))
+        .args(args)
+        .output()
+        .unwrap();
+    println!(
+        "CLI {args:?}: {}\nstdout:\n{}\nstderr:\n{}",
+        output.status,
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+    output
+}
+
+#[test]
+fn read_only_unselected_owner_subtree_needs_no_write_permission_even_with_a_missing_file() {
+    let _serial = serial();
+    let model = super::workspace().join("examples/billing");
+    for present in [true, false] {
+        let f = Fixture::new();
+        let root = f.0.join("target");
+        assert!(permission_cli(&[
+            "generate",
+            "--path",
+            model.to_str().unwrap(),
+            "--out",
+            root.to_str().unwrap(),
+        ])
+        .status
+        .success());
+        let untouched = root.join("schema");
+        let file = untouched.join("types/billing.invoice.AccountId.schema.json");
+        if !present {
+            fs::remove_file(&file).unwrap();
+        }
+        fs::set_permissions(&untouched, fs::Permissions::from_mode(0o555)).unwrap();
+        fs::set_permissions(untouched.join("types"), fs::Permissions::from_mode(0o555)).unwrap();
+        let before = permission_snapshot(&untouched);
+        let result = permission_cli(&[
+            "generate",
+            "--path",
+            model.to_str().unwrap(),
+            "--kind",
+            "site",
+            "--out",
+            root.to_str().unwrap(),
+        ]);
+        assert_eq!(permission_snapshot(&untouched), before);
+        assert_eq!(file.exists(), present);
+        assert!(result.status.success(), "present={present}: {result:?}");
+        assert!(root.join("index.html").is_file());
+    }
+}
+
+#[test]
+fn read_only_matching_adoption_subtree_needs_no_write_permission_even_with_a_missing_file() {
+    let _serial = serial();
+    let model = super::workspace().join("examples/billing");
+    for present in [true, false] {
+        let f = Fixture::new();
+        let reference = f.0.join("reference");
+        assert!(permission_cli(&[
+            "generate",
+            "--path",
+            model.to_str().unwrap(),
+            "--kind",
+            "site",
+            "--out",
+            reference.to_str().unwrap(),
+        ])
+        .status
+        .success());
+        let root = f.0.join("target");
+        fs::create_dir(&root).unwrap();
+        for path in snapshot(&reference)
+            .keys()
+            .filter(|p| !p.starts_with(".ess-output"))
+        {
+            let source = reference.join(path);
+            if source.is_dir() {
+                fs::create_dir_all(root.join(path)).unwrap();
+            } else {
+                fs::copy(source, root.join(path)).unwrap();
+            }
+        }
+        let file = root.join("assets/style.css");
+        if !present {
+            fs::remove_file(&file).unwrap();
+        }
+        fs::set_permissions(root.join("assets"), fs::Permissions::from_mode(0o555)).unwrap();
+        let before = permission_snapshot(&root);
+        let result = permission_cli(&[
+            "output",
+            "adopt",
+            "--ownership-root",
+            root.to_str().unwrap(),
+            "--from",
+            reference.to_str().unwrap(),
+            "--owner",
+            "projection:site",
+        ]);
+        let visible = permission_snapshot(&root)
+            .into_iter()
+            .filter(|(p, _)| !p.starts_with(".ess-output"))
+            .collect::<BTreeMap<_, _>>();
+        assert_eq!(visible, before);
+        assert_eq!(file.exists(), present);
+        assert!(result.status.success(), "present={present}: {result:?}");
+        assert!(root.join(".ess-output/state.json").is_file());
+    }
+}
+
 fn refused(
     root: &Path,
     observer: &mut dyn FnMut(&str) -> anyhow::Result<()>,
@@ -293,6 +421,10 @@ fn prepare(kind: &str) -> (Fixture, PathBuf) {
             fs::write(root.join("shape/child"), "now a directory").unwrap();
             fs::write(root.join("shape/authored"), "nested authored sentinel").unwrap();
         }
+        "adopt-missing" => {
+            let reference = f.0.join("reference");
+            ownership::probe::publish(&reference, NEXT, &mut |_| Ok(())).unwrap();
+        }
         "missing" => {}
         _ => panic!("unknown fixture"),
     }
@@ -304,7 +436,7 @@ fn invoke(
     kind: &str,
     observer: &mut dyn FnMut(&str) -> anyhow::Result<()>,
 ) -> anyhow::Result<()> {
-    if kind == "adopt" {
+    if matches!(kind, "adopt" | "adopt-missing") {
         ownership::probe::adopt_admission(root, &root.parent().unwrap().join("reference"), observer)
     } else {
         ownership::probe::publish_admission(root, NEXT, observer)
@@ -347,9 +479,40 @@ fn preserved(
 }
 
 #[test]
+fn existing_only_adoption_retains_its_files_and_absences_without_any_admission_mutation() {
+    let _serial = serial();
+    // This is the original adoption cut fixture. Its artifacts already exist or will
+    // remain absent, so the permission correction deliberately removes its probe writes.
+    let (f, root) = prepare("adopt");
+    let before = snapshot(&f.0);
+    let mut events = Vec::new();
+    invoke(&root, "adopt", &mut |event| {
+        events.push(event.to_owned());
+        anyhow::bail!("existing-only adoption attempted admission mutation");
+    })
+    .unwrap();
+    assert!(events.is_empty());
+    let after = snapshot(&f.0);
+    let visible = after
+        .iter()
+        .filter(|(path, _)| !path.starts_with("target/.ess-output"))
+        .map(|(path, bytes)| (path.clone(), bytes.clone()))
+        .collect::<BTreeMap<_, _>>();
+    assert_eq!(visible, before);
+    assert!(!root.join("same").exists());
+    assert!(!root.join("new").exists());
+    assert!(root.join(".ess-output/state.json").is_file());
+    for _ in 0..2 {
+        ownership::recover(&root).unwrap();
+        assert_eq!(snapshot(&f.0), after);
+    }
+    println!("original existing-only adoption fixture: 0 admission mutations; all artifact bytes/absences retained");
+}
+
+#[test]
 fn every_native_admission_process_and_io_boundary_preserves_outputs_state_and_exact_orphans() {
     let _serial = serial();
-    for kind in ["nested", "missing", "adopt"] {
+    for kind in ["nested", "missing", "adopt-missing"] {
         let (_control, root) = prepare(kind);
         let mut trace = Vec::new();
         invoke(&root, kind, &mut |event| {
@@ -359,7 +522,6 @@ fn every_native_admission_process_and_io_boundary_preserves_outputs_state_and_ex
         .unwrap();
         for required in [
             "after:create:admission-name",
-            "after:write:admission-name",
             "before:remove:admission-name",
             "after:sync:removed-entry-parent",
         ] {
@@ -368,6 +530,11 @@ fn every_native_admission_process_and_io_boundary_preserves_outputs_state_and_ex
                 "{kind}: {required}"
             );
         }
+        let wrote_probe_file = trace
+            .iter()
+            .any(|event| event == "after:write:admission-name");
+        assert_eq!(wrote_probe_file, kind != "adopt-missing",
+            "publication must exercise probe file writes; missing-anchor adoption creates only its directory");
         let mut retained_nested = false;
         for (cut, event) in trace.iter().enumerate() {
             for process in [false, true] {
@@ -383,7 +550,7 @@ fn every_native_admission_process_and_io_boundary_preserves_outputs_state_and_ex
                         .env("ESS_OWNERSHIP_TEST_ROOT", &root)
                         .env(
                             "ESS_OWNERSHIP_TEST_ACTION",
-                            if kind == "adopt" {
+                            if kind == "adopt-missing" {
                                 "admit-adopt"
                             } else {
                                 "admit-publish"
@@ -427,7 +594,7 @@ fn every_native_admission_process_and_io_boundary_preserves_outputs_state_and_ex
                 }
             }
         }
-        if kind != "missing" {
+        if kind == "nested" {
             assert!(retained_nested, "no actual nested orphan witnessed");
         }
         println!(
