@@ -2,7 +2,7 @@
 format: aep.planning-md/1
 id: story:review-output-ownership
 kind: story
-status: active
+status: implemented
 title: Make generated output replacement recoverable and ownership-aware
 tags:
 - P1
@@ -22,10 +22,6 @@ scope:
   path: crates/edge/ess-xtask/Cargo.toml
 - confidence: cited
   path: crates/edge/ess-xtask/src/consumer_coverage/entry-classifications.json
-- confidence: inferred
-  path: crates/edge/ess-xtask/src/consumer_coverage/profiles.json
-- confidence: inferred
-  path: crates/edge/ess-xtask/src/consumer_coverage/reviewed-candidates.json
 - confidence: cited
   path: crates/edge/ess-xtask/src/main.rs
 - confidence: inferred
@@ -42,7 +38,7 @@ scope:
   path: website/docs/reference/cli.md
 - confidence: inferred
   path: website/docs/reference/formats.md
-revision: 12
+revision: 15
 ---
 ## Finding and source
 
@@ -68,30 +64,40 @@ Input discovery policy is separate; do not delete unknown files or infer ownersh
 
 ## Scope
 
-Derived from the published-source scoper at `1e618d225f7f60f79c3ace7c0fa60f356cbc44d9`, then selected by the coordinator for wave19. Full report SHA256 `6a8a354085aa204cfc2f716c97cb6a8fd7cc0436811d5e870b23f3991b6c9974`; all28 input hashes independently verified. The report distinguishes fresh source reads from reused semantic analysis.
+Closure scope confirmed against the complete final source, consumer qualification and native
+integration results at f6ebe903. Opening inferences remain visible below. The opening scoper report at1e618d2 remains
+SHA2566a8a354085aa204cfc2f716c97cb6a8fd7cc0436811d5e870b23f3991b6c9974 with28 independently
+verified inputs. The implementor's original confirmation table is retained in
+target/review-output-ownership-wave19/scope-confirmation.md; root owns shared-file confirmation.
 
-- `crates/edge/ess-cli` — cited; current edge/source boundary or selected typed design home.
-- `crates/edge/ess-xtask/src/main.rs` — cited; current edge/source boundary or selected typed design home.
-- `crates/edge/ess-xtask/src/consumer_coverage/entry-classifications.json` — cited; current edge/source boundary or selected typed design home.
-- `docs/design/review-output-ownership.md` — cited; current edge/source boundary or selected typed design home.
-- `docs/design/source-pinned-data-normalization.md` — cited; current edge/source boundary or selected typed design home.
-- `models/output-ownership` — cited; current edge/source boundary or selected typed design home.
-- `website/docs/guides/generate-artifacts.md` — inferred; selected documentation, dependency, platform-validation or conditional consumer-evidence integration reservation.
-- `website/docs/reference/cli.md` — inferred; selected documentation, dependency, platform-validation or conditional consumer-evidence integration reservation.
-- `docs/design/review-format-catalog.md` — inferred; selected documentation, dependency, platform-validation or conditional consumer-evidence integration reservation.
-- `website/docs/reference/formats.md` — inferred; selected documentation, dependency, platform-validation or conditional consumer-evidence integration reservation.
-- `Cargo.lock` — inferred; selected documentation, dependency, platform-validation or conditional consumer-evidence integration reservation.
-- `.github/workflows/ci.yml` — inferred; selected documentation, dependency, platform-validation or conditional consumer-evidence integration reservation.
-- `crates/edge/ess-xtask/src/consumer_coverage/profiles.json` — inferred; selected documentation, dependency, platform-validation or conditional consumer-evidence integration reservation.
-- `crates/edge/ess-xtask/src/consumer_coverage/reviewed-candidates.json` — inferred; selected documentation, dependency, platform-validation or conditional consumer-evidence integration reservation.
+| Path | Opening confidence | Confirmed implementation surface |
+|---|---|---|
+| crates/edge/ess-cli | cited | Fixed generated-output owners and all actual caller routes, native filesystem/state/admission adapters, explicit adoption/recovery, ordinary CLI exposure, preservation and interruption tests. |
+| crates/edge/ess-xtask/src/main.rs | cited | Compatible native directory locks held across projection-sync preflight, writes and pruning; intersecting ownership/reserved-state and planned-alias refusal. The original preflight-only hypothesis was corrected after a measured lock-bypass failure. |
+| crates/edge/ess-xtask/Cargo.toml | inferred, added at revision12 | Confirmed rustix fs dependency for the same descriptor-lock protocol used by the CLI. |
+| crates/edge/ess-xtask/src/consumer_coverage/entry-classifications.json | cited | Exact finite classifications for 7902 actual production declarations; final consumer-check verifies source accounting and current attributed behavior. |
+| docs/design/review-output-ownership.md | cited | Selected fixed-owner, private checkpoint, native admission, platform and recovery contract; records the tested permission refinement. |
+| docs/design/source-pinned-data-normalization.md | cited | Reconciled generated-library stale retirement, ownership, recovery and nonwriting checks. |
+| models/output-ownership | cited | Validated Anchor/Transaction typed model and relation, with Prepare/Commit/Restore outcomes; static modeling does not substitute for native runtime evidence. |
+| website/docs/guides/generate-artifacts.md | inferred | Confirmed adopter workflow for authored preservation, first generation, reference adoption, stale retirement, interruption and explicit recovery. |
+| website/docs/reference/cli.md | inferred | Confirmed visible generate/output and hidden output alias, exact adoption selectors and explicit enclosing compose anchor. |
+| docs/design/review-format-catalog.md | inferred | Confirmed new private ess-output-state/1 reader/writer and canonical-byte/compatibility policy. |
+| website/docs/reference/formats.md | inferred | Confirmed unreleased private checkpoint format and recovery authority documentation. |
+| Cargo.lock | inferred | Confirmed only errno0.3.14, linux-raw-sys0.12.1 and rustix1.1.4 added, with no existing package replacement. |
+| .github/workflows/ci.yml | inferred | Confirmed both shipped macOS architecture witnesses and retained Linux gate; actual platform tests are required, and historical release backfills keep their own source authority. |
 
-The whole CLI package covers current main, coverage, model-types, normalization, schema and schema-bundle writers and their tests. New IO helpers remain edge-owned. Existing artifact bytes and actual route ownership stay explicit. The format catalogs and native macOS CI reservation were added by root after reading the persisted-format policy and current Linux/macOS release matrix. Profile/case files are conditional; their reservation grants no change to e005 eligibility.
+The opening consumer profiles.json and reviewed-candidates.json paths were conditional inferred
+reservations. Their current bytes are unchanged from the published baseline (SHA256
+6e6787c7ea5b643b98658aafbab8d6ab6017a9e727499fca09c29e12cf0520ba and
+9c7d6ec69e6ed4c792cd9cc60461f68789736994be9a8fe897c4c27a81d5f120 respectively). Final consumer-check confirms unchanged reviewed eligibility; their two conditional typed
+reservations are retired, with this opening history retained. No e005 expansion or baseline regeneration is authorized.
 
-Confidence: medium before implementation; exact current callers and interface consequences are established, while native adapters and failure handling require tests. This intersects CLI IO/tests, xtask synchronization/classification, the named documentation/model and selected dependency/evidence paths. N=1 prevents concurrent source claims; no disjointness is inferred from differing directory/file tokens.
+The independently published mainb7a0303 entity-snapshot allocation change was incorporated as
+49c193d. Its synthesis files and two helper classifications are already-main work and do not
+become output-ownership scope by appearing in this integration tree.
 
-The coordinator owns planning, wave records, accepted binding/model, CI and other shared integration files. The unit brief assigns source and test writes before dispatch. No implementor writes the planning store.
-
-- `crates/edge/ess-xtask/Cargo.toml` — inferred; the sync guard must hold the same native directory locks as CLI writers throughout preflight, writes and pruning. Add the same safe rustix fs dependency. A preflight-only check can race enrollment; a deterministic lock-conflict witness is required.
+Final confidence: high for these 13 confirmed surfaces. Both review findings are resolved;
+final native, integration and consumer evidence is recorded below.
 
 ## Selected output-ownership binding and model — 2026-09-08
 
@@ -116,3 +122,60 @@ The initial CLI package baseline had five environment panics across four targets
 Root added repository projection-sync preflight with four meaningful preservation tests. The initial xtask baseline observed105 unit passes and4/5 layout passes: the new wave page's verbatim command output quoted14 future paths where the checker requires current paths. Root moved that raw output unchanged into the established review-evidence location and linked it from the plan; the layout rerun observed5/5 passes. The bypass mutation then observed2 passed/3 failed among5 sync cases, exit101. Restoring the guard gave109 unit+5 layout=114 passes, package/Clippy/fmt each0. Final source main.rs SHA256: 1ebb62860c73f3d878474ff69648df05e4aa286d1f6e8fed056b1bf1ddf61ade. Actual commands, statuses, streams and producer-PID absence are retained in the unit's target/review-boundaries-19-root-checks. The four new helpers have explicit finite classifications; no baseline eligibility or e005 change was made.
 
 Root's documentation and two-architecture native macOS CI additions remain integration drafts. The native CI lane is branch/PR validation; release backfills keep the checked-out historical Taskfile and existing native packaging authority. CLI ownership/adoption/recovery implementation, its complete fault/process-cut witnesses, native macOS results, independent source review and full integration gate remain owed. This checkpoint is not story completion or source publication.
+
+## Final source review and integration preparation
+
+The corrected source and final additive tests are published to PR14 at
+f6ebe903e5753b42c817835204245f4780e7bd44. The complete final adversary report is recorded
+unchanged as review-result:output-ownership-adversary-wave19-pass2, SHA256
+eb51852d6dcbca41e6eb3b83f5017dc29bf6c8d116fac62947e7b7b0e4beace3.
+Its three added cases passed their first isolated executions; the complete touched target
+ran7 cases with0 failures, preserving the original230-line prefix. Clippy and formatting
+also passed. The computed comparison reports0 carried,0 new and2 resolved findings:
+the pass1 count fell from2 to0. No third attack is selected.
+
+Root read the complete report and additive diff, verified78 sealed payloads,1234 source
+pins and both native executables. The completed adversary tree and assigned TMP were archived
+in full and compared before removal. Exact managed cleanup and branch retirement succeeded.
+Reports and archives are retained at
+/home/timo/.cache/ess-review/2026-09-06-resume/wave19-adversary-final-retention;
+its completion receipt SHA256 is60a317cfdddc30dd7d0902ce3b7c71fc3fbe72b21e142ddd4a9375398608e334.
+
+At f6ebe903, both native Mac jobs passed all7 adversary cases, including the new actual case
+and normalization alias branches and exact255-byte filename adoption in a read-only root.
+ARM explicitly reports38 ownership+7 adversary+5 correction+6 sync cases. Intel explicitly
+reports38 ownership+7 adversary+6 sync cases; its correction step succeeded and announced5
+cases, but the ending runner summary is absent from both identical job-log downloads.
+No missing runner summary is invented. The actual synthetic checkout52fb1d982f1797e8906c9517ad11e5f29c36e21c
+has a tree identical to f6ebe903. Documentation run34227509027 executed task site-build
+successfully. This validates source; it is not documentation deployment.
+
+## Final implementation evidence — 2026-09-08 13:49:28 UTC
+
+All required Taskfile lanes are verified at f6ebe903. CI34227509228 actually ran the complete
+task check with exit0 and2372 passing cases across202 runner summaries. Local formatting,
+strict Clippy, rustdoc, examples, projections, support, consumer coverage, release consistency
+and action checks each returned0. The original local workspace test attempt remains201:
+its scratch monitor stopped it on an ENOENT while scanning a changing temporary directory.
+The corrected scratch monitor tolerated only disappearing descendants; source and test
+assertions were unchanged. The retained inventory reconciles38 completed native targets,
+22 initially passed ownership cases plus17 continuation passes,143 pending native targets
+and20 doctest targets. Fifteen incidental repeated targets are not counted twice. All182
+unique native targets plus20 doctest targets account for2356 native+16 doctest=2372 passes,
+with no failed or ignored cases. This is explicit continuation, not a relabeled original exit.
+
+Final consumer qualification executed22 cases through72 commands, all actual0, with87 profiles,
+1806 models and157122 cells:54 Supported,0 Refused,157068 BaselineUnknown. The source digest is
+bc67910a754bd394993cbee4faf27f4242df95b24a28bd56d080ce9efaa21868, identical to the successful CI
+source observation. Accepted initial gaps remain unproven; this is not complete consumer support.
+Profiles, reviewed candidates and the e005 initial eligibility bytes remain unchanged.
+The final consumer report crossed the10GiB scratch cap by43917312 bytes; the precise raw sample
+is10781335552 bytes, the monitor attempted INT, and the child still returned0 with the complete
+qualified result. No no-resource-stop claim is made. Root verified quiescence and removed only
+81571840 bytes of reproducible target/doc output before the last two successful gate lanes.
+
+The exact per-step exits, elapsed times, executable manifest digest, consumer result,
+platform observations, resource event and unavailable aggregate agent-cost counters are in
+docs/reviews/2026-09-08-output-ownership-closure.json. Retained raw records are selected for
+/home/timo/.cache/ess-review/2026-09-06-resume/wave19-final-retention before owned cleanup.
+Publication and cleanup follow this implementation evidence; no release or deployment is selected.

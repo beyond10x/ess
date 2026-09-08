@@ -1,0 +1,164 @@
+{
+  "at": "2026-09-08 13:49:28 UTC",
+  "source": "f6ebe903e5753b42c817835204245f4780e7bd44",
+  "localGate": {
+    "fmt-check": {
+      "exit": 0,
+      "seconds": 4.920826116
+    },
+    "clippy": {
+      "exit": 0,
+      "seconds": 43.435637304
+    },
+    "test": {
+      "state": "complete via explicitly recorded continuation",
+      "originalExit": 201,
+      "uniqueNativeTargets": 182,
+      "docTargets": 20,
+      "uniqueCases": 2372,
+      "failed": 0,
+      "ignored": 0
+    },
+    "doc-check": {
+      "exit": 0,
+      "seconds": 16.635007234
+    },
+    "example-check": {
+      "exit": 0,
+      "seconds": 1.868710848
+    },
+    "projection-check": {
+      "exit": 0,
+      "seconds": 10.901378191
+    },
+    "support-check": {
+      "exit": 0,
+      "seconds": 7.284092312
+    },
+    "consumer-check": {
+      "exit": 0,
+      "seconds": 593.362719515,
+      "consumer": {
+        "bound_profiles": 87,
+        "cells": 157122,
+        "counts": {
+          "BaselineUnknown": 157068,
+          "Refused": 0,
+          "Supported": 54
+        },
+        "discovered_models": 1806,
+        "executed_cases": 22,
+        "output": "/home/timo/.local/state/worktree/trees/b10x/ess/ess-output-ownership-wave19/target/consumer-coverage/run-1788874650051110967-838523",
+        "provider_sha256": "fdee56edf401306efed7dbe51e5714fb086ca1a5339c41b558a513e0a0e37067",
+        "source_sha256": "bc67910a754bd394993cbee4faf27f4242df95b24a28bd56d080ce9efaa21868",
+        "unknown_limit": "Accepted initial gaps remain unproven; this is not complete consumer support."
+      },
+      "underlyingCommands": 72,
+      "allUnderlyingCommandsExit": 0,
+      "resourceStop": "resource limit (10781335552, 77550960640, 15015403520, 9418715136, 35604869120)",
+      "note": "Final result printed and actual child exit0; monitor attempted INT at final cap sample. Original actual0 and stop are preserved; no rerun or no-resource-stop claim."
+    },
+    "release-check": {
+      "exit": 0,
+      "seconds": 5.539221148
+    },
+    "action-check": {
+      "exit": 0,
+      "seconds": 1.83836332
+    }
+  },
+  "tests": {
+    "uniqueNativeTargets": 182,
+    "doctestTargets": 20,
+    "nativePassed": 2356,
+    "doctestsPassed": 16,
+    "totalPassed": 2372,
+    "failed": 0,
+    "ignored": 0,
+    "originalExit": 201,
+    "continuations": {
+      "ownership": {
+        "exit": 0,
+        "seconds": 435.910983963,
+        "passed": 17,
+        "previouslyPassed": 22
+      },
+      "native": {
+        "exit": 0,
+        "seconds": 218.173574412,
+        "targets": 158,
+        "reselectedTargets": 15
+      },
+      "doctests": {
+        "exit": 0,
+        "seconds": 3.717426235
+      }
+    },
+    "inventoryReceiptSha256": "d36e7b03c4fbf4758b1413bf3da0b5d39ab48816ae52924a6142e313d15c3b9c",
+    "nativeImagePins": 183,
+    "nativeImageManifestSha256": "bc6ebebbab0f9d5addf0a565ae8a8dcdf4a550da46f04f51bce833a7c119ce0d"
+  },
+  "ci": {
+    "run": 34227509228,
+    "actualTaskCheckExit": 0,
+    "passed": 2372,
+    "runnerSummaries": 202,
+    "macArm": "38 ownership + 7 adversary + 5 correction + 6 sync, explicit successful summaries",
+    "macIntel": "38 ownership + 7 adversary + 6 sync, explicit successful summaries; correction step completed/success and running5 announced, but ending runner summary absent in two identical log downloads",
+    "nativeNewAliasBranches": true,
+    "syntheticCheckout": "52fb1d982f1797e8906c9517ad11e5f29c36e21c",
+    "treeIdenticalToSource": true,
+    "docsRun": 34227509027,
+    "actualSiteBuildExit": 0,
+    "documentationDeploymentVerified": false
+  },
+  "scope": {
+    "confirmedPaths": 13,
+    "removedConditionalInferredReservations": [
+      "crates/edge/ess-xtask/src/consumer_coverage/profiles.json",
+      "crates/edge/ess-xtask/src/consumer_coverage/reviewed-candidates.json"
+    ],
+    "classifications": 7902,
+    "profilesSha256": "6e6787c7ea5b643b98658aafbab8d6ab6017a9e727499fca09c29e12cf0520ba",
+    "candidatesSha256": "9c7d6ec69e6ed4c792cd9cc60461f68789736994be9a8fe897c4c27a81d5f120",
+    "baselineSha256": "e005a2e74e067ad51315e594151643b702381dc174bb9af5c355c3eeeb17ad51"
+  },
+  "adversary": {
+    "review": "review-result:output-ownership-adversary-wave19-pass2",
+    "reportSha256": "eb51852d6dcbca41e6eb3b83f5017dc29bf6c8d116fac62947e7b7b0e4beace3",
+    "carried": 0,
+    "new": 0,
+    "resolved": 2,
+    "treeRetired": true,
+    "retention": "/home/timo/.cache/ess-review/2026-09-06-resume/wave19-adversary-final-retention"
+  },
+  "resources": {
+    "consumerFinalCapSample": [
+      10781335552,
+      77550960640,
+      15015403520,
+      9418715136,
+      35604869120
+    ],
+    "consumerExit": 0,
+    "allConsumerCommandsExit": 0,
+    "consumerCommands": 72,
+    "disposableRustdocRemoved": {
+      "path": "/home/timo/.local/state/worktree/trees/b10x/ess/ess-output-ownership-wave19/target/doc",
+      "allocatedBytes": 81571840,
+      "exit": 0,
+      "purpose": "Restore unchanged 10GiB target+ordinary TMP cap before last two lanes; native producers quiescent, rustdoc logs retained."
+    }
+  },
+  "retention": {
+    "preparation": "/home/timo/.local/state/worktree/trees/b10x/ess/ess-review-boundaries-19/target/review-boundaries-19/preparation",
+    "unitScratch": "/home/timo/.local/state/worktree/trees/b10x/ess/ess-output-ownership-wave19/target/review-output-ownership-wave19",
+    "selectedFinalLocation": "/home/timo/.cache/ess-review/2026-09-06-resume/wave19-final-retention",
+    "state": "Unit/coordinator retirement follows publication and archive readback."
+  },
+  "agentCost": {
+    "consumer_coverage_scope_refresh": "Harness does not expose aggregate tokens, tool uses or wall duration; no totals invented.",
+    "consumer_coverage_stage1_implementor": "Harness does not expose aggregate tokens, tool uses or wall duration; command-level direct times retained.",
+    "consumer_coverage_source_pass1": "Harness does not expose aggregate tokens, tool uses or wall duration; command-level direct times retained."
+  }
+}

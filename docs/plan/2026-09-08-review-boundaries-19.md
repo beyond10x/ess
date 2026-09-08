@@ -47,9 +47,9 @@ wave19-retained-inputs directory. Their inventory receipts preserve old-source p
 
 | Role | Managed worktree | Branch | Build and scratch | Stage |
 |---|---|---|---|---|
-| Coordinator | /home/timo/.local/state/worktree/trees/b10x/ess/ess-review-boundaries-19 | wave/review-boundaries-19 | target/review-boundaries-19/preparation; no Cargo build | Candidate f004678 published to draft PR14; main integration and cleanup remain owed |
-| Implementation and integration | /home/timo/.local/state/worktree/trees/b10x/ess/ess-output-ownership-wave19 | wave/review-boundaries-19-final (implementation branch impl/review-output-ownership-wave19 retained) | Its own target/; target/review-output-ownership-wave19/; target/review-boundaries-19-integration/; target/review-boundaries-19-root-native/ | Complete corrected CLI package391/45, Clippy and formatting pass; native Macs, Linux CI gate and documentation build succeed at f004678; implementor quiescent |
-| Adversary pass2 | /home/timo/.local/state/worktree/trees/b10x/ess/ess-output-ownership-adversary-wave19 | probe/output-ownership-wave19 | Its own target/; preserved target/review-output-ownership-adversary-wave19/; new target/review-output-ownership-adversary-wave19-pass2/ | Final attack dispatched at clean f004678; pass1 evidence and assertions preserved |
+| Coordinator | /home/timo/.local/state/worktree/trees/b10x/ess/ess-review-boundaries-19 | wave/review-boundaries-19 | target/review-boundaries-19/preparation; no Cargo build | Final f6ebe903 gate and review complete; story implemented revision15; closing record ready for main publication and cleanup |
+| Implementation and integration | /home/timo/.local/state/worktree/trees/b10x/ess/ess-output-ownership-wave19 | wave/review-boundaries-19-final (implementation branch impl/review-output-ownership-wave19 retained) | Its own target/; target/review-output-ownership-wave19/; target/review-boundaries-19-integration/; target/review-boundaries-19-root-native/ | Final integration accounts for2372 unique passing cases; every required lane verified; CI/Linux/native Macs and documentation build pass; all local producers quiescent |
+| Adversary pass2 | /home/timo/.local/state/worktree/trees/b10x/ess/ess-output-ownership-adversary-wave19 | probe/output-ownership-wave19 | Its own target/; preserved target/review-output-ownership-adversary-wave19/; new target/review-output-ownership-adversary-wave19-pass2/ | Pass2 complete:0 carried,0 new,2 resolved; report preserved unchanged; full target/TMP archives compared and exact managed tree/branch retired |
 
 Root lease: ess-review-boundaries-coordinator-wave19. The unit's actual path, opening SHA and
 lease are recorded immediately after provisioning. Root will reuse the unit checkout for the
@@ -555,3 +555,67 @@ Root will publish the additive cases to PR14, execute their native Mac branches,
 individual final integration step statuses before completion and main publication. No completion
 claim is inferred from this review handoff. Agent token/tool/duration totals are unavailable
 from this harness; the retained commands provide their actual execution times.
+
+## Final implementation closure — 2026-09-08 13:49:28 UTC
+
+Story review-output-ownership is implemented revision15. Its confirmed scope has13 paths;
+the two conditional consumer profile/candidate reservations were removed after final behavioral
+qualification, with their opening inference and unchanged hashes retained in the story body.
+The [closing evidence record](../reviews/2026-09-08-output-ownership-closure.json) contains every
+local lane's actual status and elapsed time, the test reconciliation, consumer result, native
+platform observations, resource events and aggregate agent-cost availability.
+
+| Required lane | Actual result at f6ebe903 |
+|---|---|
+| fmt-check | 0;4.920826116s |
+| clippy | 0;43.435637304s |
+| test | Original local201 retained; explicit successful continuations account for all182 unique native targets and20 doctest targets,2372 passes. Full same-source CI task check exits0. |
+| doc-check | 0;16.635007234s |
+| example-check | 0;1.868710848s |
+| projection-check | 0;10.901378191s |
+| support-check | 0;7.284092312s |
+| consumer-check | 0;593.362719515s;22 cases,72 underlying commands all0; final scratch-cap event retained |
+| release-check | 0;5.539221148s; consistency check only |
+| action-check | 0;1.83836332s |
+| site-build | Actual CI34227509027 completed/success at the same source tree |
+
+The interrupted local test was stopped by root's scratch monitor on a disappearing-directory
+ENOENT, while all measured resources were within limits. Its original direct201, partial streams
+and monitor remain unchanged. The corrected monitor tolerates only ENOENT during descendant
+opening/iteration, retaining all other errors and the same limits. The continuation inventory
+checks every Cargo executable against the182-target original inventory and removes15 incidental
+repeated targets from the count. Ownership has22 original completed cases plus17 continuation
+passes; native and doctest totals are2356+16. No original interrupted status is relabeled0.
+
+Consumer-check completed source validation, all72 actual commands, qualification and final summary
+before returning0. The final monitor sample crossed its10GiB target/ordinary-TMP cap by43917312
+bytes and attempted INT as the command finished; resource_stop is recorded, not erased. All
+owned producers were then absent. Root removed only81571840 bytes of reproducible target/doc,
+retaining rustdoc streams, before the last two successful gate lanes. The final matrix has87
+profiles,1806 models,157122 cells,54 Supported,0 Refused and157068 BaselineUnknown. The source
+SHA256bc67910a754bd394993cbee4faf27f4242df95b24a28bd56d080ce9efaa21868 matches successful CI;
+profiles, candidates and the e005 eligibility baseline are unchanged. Existing unknowns remain
+unproven. The7902 classifications include two independently published main helpers; they do not
+expand this story's ownership.
+
+Final CI34227509228 passes Linux and both native Mac architectures. Both Macs execute the new
+case/normalization alias branches and255-byte native filename case. ARM reports38+7+5+6 cases.
+Intel reports38+7+6; its correction step is completed/success and announces5, but the ending
+summary is absent from two identical log downloads. The evidence does not invent that summary.
+The synthetic checkout52fb1d982f1797e8906c9517ad11e5f29c36e21c has the identical f6ebe903 tree.
+This is source validation, with no documentation deployment claim.
+
+The immutable final adversary report remains SHA256
+eb51852d6dcbca41e6eb3b83f5017dc29bf6c8d116fac62947e7b7b0e4beace3.
+Its completed managed tree, assigned TMP and exact branch are retired after complete archives
+and readbacks at /home/timo/.cache/ess-review/2026-09-06-resume/wave19-adversary-final-retention.
+Unit/coordinator records and exact owned scratch are selected for final retention at
+/home/timo/.cache/ess-review/2026-09-06-resume/wave19-final-retention before their retirement.
+The harness exposes no aggregate token/tool/wall counters for the three agents; none are invented.
+Command-level durations and all actual runner counts are retained. Final AEP validation returns0:
+210 artifacts,44 pre-existing advisories at f6ebe903,valid. Its empty-findings advisory also flags
+the unchanged pass2 report, whose machine comparison nevertheless resolves both findings.
+
+This closing record is authorized for main integration. Publication and exact owned cleanup are
+the next actions; four total review fixes remain after this source reaches main. No release tag,
+version bump, downstream publication or new wave is selected by this closing record.
