@@ -3,6 +3,10 @@
 `task fuzz-check` runs the independent stable workspace's format check, strict Clippy, tests and
 finite replay. Neither this workspace nor `engine` is a root workspace member. The engine has its
 own lock and nightly dependencies; the ordinary offline gate needs only the stable graph.
+Keep every crate version in `fuzz/Cargo.lock` equal to the root `Cargo.lock`: CI fetches only
+the root graph before the offline gate, so a version present in this lock alone fails
+`fuzz-check` with "attempting to make an HTTP request, but --offline was specified" (PR #17,
+run 34285219066). Align with `cargo update --manifest-path fuzz/Cargo.toml -p <crate> --precise <root version>`.
 
 The input is closed JSON containing ordered `documents` with `label` and `text` strings. Labels
 are opaque diagnostics and never filesystem paths. The decoder enforces the accepted byte and

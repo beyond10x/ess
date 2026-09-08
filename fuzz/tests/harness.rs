@@ -558,3 +558,50 @@ fn typed_compile_refusal_preserves_remaining_stages_without_claiming_a_source_fa
     assert_eq!(summary.compiled, 0);
     assert_eq!(summary.stages["compile"].refused, 1);
 }
+#[test]
+fn compact_carrier_whose_retained_form_exceeds_the_ceiling_is_refused_at_decode() {
+    // Tabs cost two JSON bytes each, so two maximal documents put the carrier near the ceiling;
+    // scanning the label length finds a compact encoding inside it whose pretty form is not.
+    let texts = [
+        "format: ess/1\nsystem: demo\nversion: v1\ndomains: [demo.core]\n",
+        "domain: demo.core\n",
+    ]
+    .map(|header| {
+        format!(
+            "{header}#{}",
+            "\t".repeat(carrier::MAX_TEXT - header.len() - 1)
+        )
+    });
+    let (b, compact) = (1..=carrier::MAX_LABEL)
+        .find_map(|n| {
+            let b = Bundle {
+                documents: texts
+                    .iter()
+                    .enumerate()
+                    .map(|(i, text)| Document {
+                        label: if i == 0 { "s" } else { "c" }.repeat(n),
+                        text: text.clone(),
+                    })
+                    .collect(),
+            };
+            let compact = serde_json::to_vec(&b).unwrap();
+            let pretty = serde_json::to_vec_pretty(&b).unwrap().len() + 1;
+            (compact.len() <= carrier::MAX_ENCODED && pretty > carrier::MAX_ENCODED)
+                .then_some((b, compact))
+        })
+        .expect("a compact carrier inside the ceiling whose pretty form crosses it");
+    assert!(b.validate().is_ok());
+    assert!(b.encode().unwrap_err().to_string().contains("encoded"));
+    assert!(carrier::decode(&compact)
+        .unwrap_err()
+        .to_string()
+        .contains("encoded"));
+    let root = fresh("compact-carrier");
+    let mut w = Writer::create(&root).unwrap();
+    assert_eq!(
+        pipeline::run(&mut w, Entry::ByteCarrier, &compact, Control::None).unwrap(),
+        observation::Outcome::InputRefused
+    );
+    let s = observation::admit(&root).unwrap();
+    assert_eq!((s.attempts, s.compiled), (1, 0));
+}

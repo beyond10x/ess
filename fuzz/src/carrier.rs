@@ -57,6 +57,9 @@ pub fn decode(bytes: &[u8]) -> crate::Result<Bundle> {
     }
     // Typed deserialization rejects nested wrong shapes; its recursion limit remains enabled.
     let bundle: Bundle = serde_json::from_slice(bytes)?;
-    bundle.validate()?;
+    // The observation retains the pretty encoding, so the ceiling is decided on that form here:
+    // a compact carrier that fits while its retained form does not is an input refusal, not a
+    // later observation failure.
+    bundle.encode()?;
     Ok(bundle)
 }

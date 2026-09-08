@@ -50,7 +50,9 @@ Retain them even if corpus minimization would remove them.
 
 The sampled input budget is 1–8 source documents, 1–64 UTF-8 bytes per opaque label, at most
 16,384 bytes per source text, 32,768 total source-text bytes and 65,536 encoded bytes. Check the
-encoded budget before decoding and the remaining bounds before model parsing. Preserve supplied
+encoded budget before decoding and the remaining bounds before model parsing. The encoded budget
+also binds the retained pretty form: a compact carrier that fits while its retained form does not
+is an input refusal decided at decode, never a later observation failure. Preserve supplied
 document order; names are not sorted to conceal input-order defects. The JSON carrier has a
 fixed shallow schema; use a bounded decoder and reject nested wrong shapes. Raw YAML mutation
 is bounded by byte, time and memory budgets, without pretending those impose a semantic YAML
