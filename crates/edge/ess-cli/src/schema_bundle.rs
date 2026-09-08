@@ -147,8 +147,9 @@ pub fn types(args: &TypesArgs) -> Result<ExitCode> {
     {
         bail!("type realization output must not replace its source input");
     }
-    crate::write_generated_files(
+    crate::write_owned_files(
         &destination,
+        "types-bundle",
         files
             .iter()
             .map(|(path, contents)| (path.as_str(), contents.as_str())),
