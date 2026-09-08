@@ -278,15 +278,30 @@ fn adopt_observed(
 }
 
 pub(crate) fn named(path: &Path, family: &str, contents: &str) -> Result<()> {
-    let name = path
-        .file_name()
-        .context("output requires one native filename")?;
+    let name = filename(path)?;
     publish(
         path.parent()
             .filter(|p| !p.as_os_str().is_empty())
             .unwrap_or(Path::new(".")),
         vec![Publication::named(family, name, contents)?],
     )
+}
+
+/// Check the original spelling before `Path::file_name` discards directory syntax.
+pub(crate) fn filename(path: &Path) -> Result<&OsStr> {
+    let last = path
+        .as_os_str()
+        .as_encoded_bytes()
+        .rsplit(|byte| std::path::is_separator(char::from(*byte)))
+        .next()
+        .unwrap_or_default();
+    ensure!(
+        !last.is_empty() && last != b"." && last != b"..",
+        "output must name a file, not a directory: {}",
+        path.display()
+    );
+    path.file_name()
+        .context("output requires one native filename")
 }
 
 fn ensure_idle<'a>(payload: &'a Payload, root: &Path) -> Result<&'a Ledger> {

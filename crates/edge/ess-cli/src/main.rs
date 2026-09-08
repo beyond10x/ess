@@ -2051,17 +2051,17 @@ fn compose(
         (client_plan_out, &client_plan_json),
     ] {
         if let Some(path) = path {
-            outputs.push((preflight_named_output(path)?, contents.as_str()));
+            outputs.push((resolve_composition_output(path, true)?, contents.as_str()));
         }
     }
     if let Some(root) = client_rust_out {
-        let root = preflight_generated_files(
-            root,
-            &client_artifacts
+        ess_gen::artifact::validate_paths(
+            client_artifacts
                 .values()
-                .map(ess_composition::ClientArtifact::path)
-                .collect::<Vec<_>>(),
-        )?;
+                .map(ess_composition::ClientArtifact::path),
+        )
+        .map_err(anyhow::Error::msg)?;
+        let root = resolve_composition_output(root, false)?;
         outputs.extend(
             client_artifacts
                 .values()
@@ -2127,6 +2127,61 @@ fn publish_composition_outputs(
         &anchor,
         vec![output_ownership::Publication::compose(relative)?],
     )
+}
+
+/// Resolve spelling and refuse links before normalization, while leaving selected-owner
+/// file/directory transitions to the locked, complete ownership plan.
+fn resolve_composition_output(path: &Path, named: bool) -> Result<PathBuf> {
+    if named {
+        output_ownership::filename(path)?;
+    }
+    let absolute = if path.is_absolute() {
+        path.to_path_buf()
+    } else {
+        std::env::current_dir()?.join(path)
+    };
+    let mut resolved = PathBuf::new();
+    for component in absolute.components() {
+        match component {
+            std::path::Component::ParentDir => {
+                // A cancelled component is absent from the ownership plan, so it cannot
+                // acquire permission for a file/directory transition through that plan.
+                inspect_output_entry(&resolved, false)?;
+                resolved.pop();
+            }
+            std::path::Component::CurDir => {}
+            _ => resolved.push(component.as_os_str()),
+        }
+        match fs::symlink_metadata(&resolved) {
+            Ok(metadata) => anyhow::ensure!(
+                !metadata.file_type().is_symlink() && (metadata.is_dir() || metadata.is_file()),
+                "output path has an incompatible file type or symlink: {}",
+                resolved.display()
+            ),
+            Err(error)
+                if matches!(
+                    error.kind(),
+                    std::io::ErrorKind::NotFound | std::io::ErrorKind::NotADirectory
+                ) => {}
+            Err(error) => {
+                return Err(error).with_context(|| format!("inspecting {}", resolved.display()))
+            }
+        }
+    }
+    if named {
+        // Retain the original named-companion existing-parent rule. A currently owned file
+        // at that parent can become a directory only when the complete plan admits it.
+        let parent = resolved.parent().context("output filename lacks parent")?;
+        match fs::symlink_metadata(parent) {
+            Ok(_) => {}
+            Err(error) if error.kind() == std::io::ErrorKind::NotADirectory => {}
+            Err(error) => {
+                return Err(error)
+                    .with_context(|| format!("inspecting output parent {}", parent.display()))
+            }
+        }
+    }
+    Ok(resolved)
 }
 
 fn inspect(path: &Path, name: &str, format: Format) -> Result<ExitCode> {
@@ -2385,23 +2440,7 @@ fn preflight_generated_files(root: &Path, paths: &[&str]) -> Result<PathBuf> {
 /// generated-name alphabet on it. Parent directories must already exist, as for the original
 /// single-file writer. Existing links and incompatible file types are refused before any output.
 fn preflight_named_output(path: &Path) -> Result<PathBuf> {
-    // Path::file_name drops trailing separators. Keep a caller's directory request a directory
-    // request: `report/` must not become a successful write to a new file called `report`.
-    let last = path
-        .as_os_str()
-        .as_encoded_bytes()
-        .rsplit(|byte| std::path::is_separator(char::from(*byte)))
-        .next()
-        .unwrap_or_default();
-    if last.is_empty() || last == b"." || last == b".." {
-        bail!(
-            "output must name a file, not a directory: {}",
-            path.display()
-        );
-    }
-    let name = path
-        .file_name()
-        .with_context(|| format!("output must name a file: {}", path.display()))?;
+    let name = output_ownership::filename(path)?;
     let parent = resolve_output_directory(path.parent().unwrap_or(Path::new(".")))?;
     for entry in fs::read_dir(&parent)
         .with_context(|| format!("inspecting output parent {}", parent.display()))?

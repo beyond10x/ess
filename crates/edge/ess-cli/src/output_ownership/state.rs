@@ -185,6 +185,10 @@ impl OwnerKey {
         })
     }
     pub(super) fn file(family: Family, name: &OsStr) -> Result<Self> {
+        ensure!(
+            super::filename(Path::new(name))? == name,
+            "standalone owner requires one exact native filename"
+        );
         let result = Self {
             family,
             location: NativePath::from_relative(Path::new(name))?,

@@ -449,6 +449,7 @@ pub(super) fn write_new(
     observer: &mut Observer<'_>,
     label: &str,
 ) -> Result<Identity> {
+    let native_mode = ordinary_mode(mode)?;
     mount.check(parent)?;
     observer(&format!("before:create:{label}"))?;
     let mut file = File::from(fs::openat(
@@ -467,7 +468,7 @@ pub(super) fn write_new(
     file.write_all(&bytes[middle..])?;
     observer(&format!("after:write:{label}"))?;
     observer(&format!("before:mode:{label}"))?;
-    fs::fchmod(&file, Mode::from_raw_mode(mode))?;
+    fs::fchmod(&file, native_mode)?;
     observer(&format!("after:mode:{label}"))?;
     sync(&file, observer, label)?;
     let id = identity(&file)?;
@@ -541,15 +542,25 @@ pub(super) fn mkdir(
     observer: &mut Observer<'_>,
     label: &str,
 ) -> Result<File> {
+    let native_mode = ordinary_mode(mode)?;
     mount.check(parent)?;
     observer(&format!("before:mkdir:{label}"))?;
-    fs::mkdirat(parent, name, Mode::from_raw_mode(mode))?;
+    fs::mkdirat(parent, name, native_mode)?;
     observer(&format!("after:mkdir:{label}"))?;
     let fd = open_directory(parent, name, mount)?;
-    fs::fchmod(&fd, Mode::from_raw_mode(mode))?;
+    fs::fchmod(&fd, native_mode)?;
     sync(&fd, observer, "created-directory")?;
     sync(parent, observer, "created-directory-parent")?;
     Ok(fd)
+}
+
+fn ordinary_mode(mode: u32) -> Result<Mode> {
+    state::mode(mode)?;
+    // Darwin's mode_t is u16; Linux's is u32. Validate the persisted grammar first,
+    // then check the narrowing conversion before any file or directory is created.
+    #[cfg(target_os = "macos")]
+    let mode = u16::try_from(mode).context("ordinary mode exceeds native mode_t")?;
+    Ok(Mode::from_raw_mode(mode))
 }
 pub(super) fn discovery(root: &File, mount: &Mount, at_anchor: bool) -> Result<()> {
     for name in names(root)? {
