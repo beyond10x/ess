@@ -162,7 +162,8 @@ tasks:
     cmds:
       # Command assignments override inherited variables, unlike task-level env defaults.
       - >-
-        env RUSTUP_TOOLCHAIN=1.98.1
+        env -u CARGO_ENCODED_RUSTFLAGS RUSTUP_TOOLCHAIN=1.98.1
+        RUSTFLAGS='-C link-arg=-fuse-ld=lld'
         RUSTC_WRAPPER= RUSTC_WORKSPACE_WRAPPER=
         CARGO_BUILD_RUSTC_WRAPPER= CARGO_BUILD_RUSTC_WORKSPACE_WRAPPER=
         CARGO_BUILD_JOBS=2 CARGO_NET_OFFLINE=true CARGO_INCREMENTAL=0

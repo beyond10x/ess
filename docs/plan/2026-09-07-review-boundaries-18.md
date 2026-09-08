@@ -451,3 +451,74 @@ Final Taskfile SHA256 is 864abbe6193ef6aa5b1a34df887c864c290901116c0df69c16dfb3b
 Root shared changes will enter the unit at its explicit source hold before final producer
 verification. The wave18 integration runner is prepared only, not launched; it will retain
 ten declared check lanes plus site-build and planning validation, each with its direct exit.
+
+## Completed wave 17 gate-record retention
+
+The shared workflow checkpoint is local bot commit
+953fc9e6d741b6b1ab74a3fdeba8437959e5b275; both identities were verified and it is
+unpublished. Unit synchronization remains pending its source hold.
+
+Root measured the completed published wave 17 gate-record directory at 1,755,746,304
+allocated bytes and held new unit producers at an acknowledged idle boundary. Source work
+continued. All eleven original gate steps remain zero with 2,233 tests; the original complete
+and results hashes match their recorded pins. All twenty-one recorded gate process IDs were
+absent, with no observable reference to the exact record directory; the eight previously
+classified protected-process visibility limits remain explicit.
+
+The entire target/review-boundaries-17/gate-f82fbc67a4c1-attempt1 was archived outside
+the worktree without exclusions. All 19,064 entries, 1,692,900,355 regular bytes and two
+literal symlinks were independently verified. The archive contains 624,595,830 bytes,
+SHA256 92e05b2d0880251c3c58c135607415f8fb02cdf12c0c2e12bcd1d6b90e8c26d9.
+Archive and independent readback returned zero in 29.963 and 14.906 seconds; the minimum
+archive-write free space was 10,361,884,672 bytes.
+
+The first retirement returned one after a PermissionError in the read-only AEP protocol
+cache, with its original intent and error retained. Recovery verified every one of the
+7,446 remaining entries against the full original archive, preserving metadata changes
+caused by partial deletion. It added owner-write only to 182 exact archived cache
+directories, changed no regular-file mode or symlink target, then removed the remaining
+owned records. Recovery returned zero in 3.076 seconds. The exact gate-record root is
+absent; no managed worktree, unit target/TMP, Stage 1 record or live tool was removed.
+
+All archive, verification, failure and recovery records remain under
+~/.cache/ess-review/2026-09-06-resume/wave17-gate-records-retirement. Old gate paths now
+refer to members of that archive, not runnable files. Root's future gate runner still
+uses its separate retained wave14 tools/caches and wave17 preparation CLI; those remain.
+Free space after recovery was 13,097,447,424 bytes. The implementor's build hold was
+released under its unchanged allowance and floor.
+
+## Accepted linker profile and resumed Stage 2
+
+The first real Stage 2 discovery refused the accepted ancestor-configured linker flag
+before extraction or case execution. The original Stage 1 compiled environment already
+contains the exact encoded arguments `-C` and `link-arg=-fuse-ld=lld`, and every accepted
+profile fingerprint includes them. Root selected exact admission of those arguments;
+neither the finite baseline nor its fingerprint grammar changes. Additional flags remain
+outside the admitted profile.
+
+Root independently linked and executed a small readiness probe using the retained Rust
+1.98.1 toolchain. The printed linker command selects its sysroot gcc-ld directory, and
+both bundled linker programs identify LLD 22.1.8. The link and executable returned zero.
+All original commands, outputs and direct statuses are retained in
+preparation/linker-profile-readiness. The implementor reports that compiled and current
+tool receipts now also check the bundled linker bytes; final source review remains owed.
+
+The Taskfile now explicitly removes inherited CARGO_ENCODED_RUSTFLAGS and assigns the
+equivalent RUSTFLAGS along with the twelve previously selected environment values.
+Root ran the actual task runner with deliberately invalid inherited values for all
+fourteen inspected names: the child observed all thirteen required assignments and the
+encoded variable absent, direct zero in 0.042 seconds. Dry-run returned zero; all twelve
+previous task bodies and the previous nine-lane order are byte-preserved. The current
+Taskfile SHA256 is aef6214e5b205ce6a5462dca0b318a920e2802e7130e11c0d9868c97b6db0e41.
+This supersedes the earlier twelve-variable readiness hash, whose records remain intact.
+The new receipt is preparation/task-profile-readiness-3/result.json.
+
+At resumption the same implementor remained active on unit b817e44e; no root producer
+or cleanup command was running. It reports 51 passing mechanism cases, including coupled
+classification and accounting diagnostics without case execution on refusal. A normal
+struct field belongs to its declaration shape rather than necessarily introducing a
+separate consumer API ID. The planned RawSpecFile mutation must therefore preserve the
+actual named raw/wire accounting failure and any actual classification refusal; it must
+not invent a separate classification failure. This is diagnostic attribution only and
+admits no new unknown cell. Full production execution, both mutations, source review and
+the integration gate remain pending.

@@ -371,3 +371,13 @@ order. Each invocation creates a fresh retained result directory under `target/c
 and prints that path. The explicit `--output` option also requires a fresh directory. Repeated
 checks preserve earlier results. A future toolchain or target change requires a reviewed profile
 migration; a moving CI default cannot silently transfer the initial unknown eligibility.
+
+The accepted Stage 1 profile already contains the two Rust arguments `-C` and
+`link-arg=-fuse-ld=lld`; their encoded value participates in every profile fingerprint.
+Enforcement admits exactly those arguments. The lane removes an inherited
+`CARGO_ENCODED_RUSTFLAGS` and supplies the equivalent explicit `RUSTFLAGS`, so the same
+configuration is selected without depending on a private ancestor Cargo configuration.
+The Rust 1.98.1 x86_64 GNU toolchain supplies its bundled LLD driver and linker; root's
+linked and executed readiness probe verified the sysroot `gcc-ld` selection in the actual
+link command. These tool bytes remain execution evidence. Additional or changed flags
+refuse admission; this clarification changes neither the baseline nor its fingerprints.
