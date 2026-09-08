@@ -2068,6 +2068,76 @@
     "macro_ast_sha256": null,
     "reason": "Concrete owned data/API declaration retained alongside the named behavioral callers. Its presence is not a behavior case and does not prove nonreachability."
   },
+  "ess_cli::bin(ess)::output_ownership::admission::const::PREFIX": {
+    "class": "OwnedHelper",
+    "macro_ast_sha256": null,
+    "reason": "Concrete native-name admission, private probe lifecycle or descriptor-binding helper for generated-output ownership. Exact filesystem name/refusal and admission interruption witnesses qualify behavior separately. This finite declaration classification grants no ESS model support, inherited eligibility or nonreachability."
+  },
+  "ess_cli::bin(ess)::output_ownership::admission::fn::inherited": {
+    "class": "OwnedHelper",
+    "macro_ast_sha256": null,
+    "reason": "Concrete native-name admission, private probe lifecycle or descriptor-binding helper for generated-output ownership. Exact filesystem name/refusal and admission interruption witnesses qualify behavior separately. This finite declaration classification grants no ESS model support, inherited eligibility or nonreachability."
+  },
+  "ess_cli::bin(ess)::output_ownership::admission::fn::inspect": {
+    "class": "OwnedHelper",
+    "macro_ast_sha256": null,
+    "reason": "Concrete native-name admission, private probe lifecycle or descriptor-binding helper for generated-output ownership. Exact filesystem name/refusal and admission interruption witnesses qualify behavior separately. This finite declaration classification grants no ESS model support, inherited eligibility or nonreachability."
+  },
+  "ess_cli::bin(ess)::output_ownership::admission::fn::orphan": {
+    "class": "OwnedHelper",
+    "macro_ast_sha256": null,
+    "reason": "Concrete native-name admission, private probe lifecycle or descriptor-binding helper for generated-output ownership. Exact filesystem name/refusal and admission interruption witnesses qualify behavior separately. This finite declaration classification grants no ESS model support, inherited eligibility or nonreachability."
+  },
+  "ess_cli::bin(ess)::output_ownership::admission::fn::paths": {
+    "class": "OwnedHelper",
+    "macro_ast_sha256": null,
+    "reason": "Concrete native-name admission, private probe lifecycle or descriptor-binding helper for generated-output ownership. Exact filesystem name/refusal and admission interruption witnesses qualify behavior separately. This finite declaration classification grants no ESS model support, inherited eligibility or nonreachability."
+  },
+  "ess_cli::bin(ess)::output_ownership::admission::fn::populate": {
+    "class": "OwnedHelper",
+    "macro_ast_sha256": null,
+    "reason": "Concrete native-name admission, private probe lifecycle or descriptor-binding helper for generated-output ownership. Exact filesystem name/refusal and admission interruption witnesses qualify behavior separately. This finite declaration classification grants no ESS model support, inherited eligibility or nonreachability."
+  },
+  "ess_cli::bin(ess)::output_ownership::admission::fn::same": {
+    "class": "OwnedHelper",
+    "macro_ast_sha256": null,
+    "reason": "Concrete native-name admission, private probe lifecycle or descriptor-binding helper for generated-output ownership. Exact filesystem name/refusal and admission interruption witnesses qualify behavior separately. This finite declaration classification grants no ESS model support, inherited eligibility or nonreachability."
+  },
+  "ess_cli::bin(ess)::output_ownership::admission::impl<Namespace;>::cleanup": {
+    "class": "OwnedHelper",
+    "macro_ast_sha256": null,
+    "reason": "Concrete native-name admission, private probe lifecycle or descriptor-binding helper for generated-output ownership. Exact filesystem name/refusal and admission interruption witnesses qualify behavior separately. This finite declaration classification grants no ESS model support, inherited eligibility or nonreachability."
+  },
+  "ess_cli::bin(ess)::output_ownership::admission::impl<Namespace;>::create": {
+    "class": "OwnedHelper",
+    "macro_ast_sha256": null,
+    "reason": "Concrete native-name admission, private probe lifecycle or descriptor-binding helper for generated-output ownership. Exact filesystem name/refusal and admission interruption witnesses qualify behavior separately. This finite declaration classification grants no ESS model support, inherited eligibility or nonreachability."
+  },
+  "ess_cli::bin(ess)::output_ownership::admission::impl<Namespace;>::entry": {
+    "class": "OwnedHelper",
+    "macro_ast_sha256": null,
+    "reason": "Concrete native-name admission, private probe lifecycle or descriptor-binding helper for generated-output ownership. Exact filesystem name/refusal and admission interruption witnesses qualify behavior separately. This finite declaration classification grants no ESS model support, inherited eligibility or nonreachability."
+  },
+  "ess_cli::bin(ess)::output_ownership::admission::module": {
+    "class": "OwnedHelper",
+    "macro_ast_sha256": null,
+    "reason": "Concrete native-name admission, private probe lifecycle or descriptor-binding helper for generated-output ownership. Exact filesystem name/refusal and admission interruption witnesses qualify behavior separately. This finite declaration classification grants no ESS model support, inherited eligibility or nonreachability."
+  },
+  "ess_cli::bin(ess)::output_ownership::admission::struct::Entry": {
+    "class": "OwnedHelper",
+    "macro_ast_sha256": null,
+    "reason": "Concrete native-name admission, private probe lifecycle or descriptor-binding helper for generated-output ownership. Exact filesystem name/refusal and admission interruption witnesses qualify behavior separately. This finite declaration classification grants no ESS model support, inherited eligibility or nonreachability."
+  },
+  "ess_cli::bin(ess)::output_ownership::admission::struct::Namespace": {
+    "class": "OwnedHelper",
+    "macro_ast_sha256": null,
+    "reason": "Concrete native-name admission, private probe lifecycle or descriptor-binding helper for generated-output ownership. Exact filesystem name/refusal and admission interruption witnesses qualify behavior separately. This finite declaration classification grants no ESS model support, inherited eligibility or nonreachability."
+  },
+  "ess_cli::bin(ess)::output_ownership::admission::struct::Node": {
+    "class": "OwnedHelper",
+    "macro_ast_sha256": null,
+    "reason": "Concrete native-name admission, private probe lifecycle or descriptor-binding helper for generated-output ownership. Exact filesystem name/refusal and admission interruption witnesses qualify behavior separately. This finite declaration classification grants no ESS model support, inherited eligibility or nonreachability."
+  },
   "ess_cli::bin(ess)::output_ownership::enum::Command": {
     "class": "OwnedHelper",
     "macro_ast_sha256": null,
@@ -2198,6 +2268,11 @@
     "macro_ast_sha256": null,
     "reason": "Concrete descriptor, native path, mount, lock or ordinary file-metadata helper for the edge output publisher. Native ownership interruption, containment and lock witnesses exercise this boundary; native macOS validation is separately required. This exact declaration classification grants no ESS model support or nonreachability."
   },
+  "ess_cli::bin(ess)::output_ownership::filesystem::impl<Locks;>::nearest_binding": {
+    "class": "OwnedHelper",
+    "macro_ast_sha256": null,
+    "reason": "Concrete native-name admission, private probe lifecycle or descriptor-binding helper for generated-output ownership. Exact filesystem name/refusal and admission interruption witnesses qualify behavior separately. This finite declaration classification grants no ESS model support, inherited eligibility or nonreachability."
+  },
   "ess_cli::bin(ess)::output_ownership::filesystem::impl<Locks;>::revalidate": {
     "class": "OwnedHelper",
     "macro_ast_sha256": null,
@@ -2242,6 +2317,11 @@
     "class": "OwnedHelper",
     "macro_ast_sha256": null,
     "reason": "Concrete edge output ownership/adoption/recovery helper over fixed owner keys, native paths, rendered bytes and transaction state. The CLI ownership and interruption cases exercise its actual publisher or reader. This finite classification grants no independent ESS model support or nonreachability and does not replace an ordinary bound entrypoint."
+  },
+  "ess_cli::bin(ess)::output_ownership::fn::adopt_observers": {
+    "class": "OwnedHelper",
+    "macro_ast_sha256": null,
+    "reason": "Concrete native-name admission, private probe lifecycle or descriptor-binding helper for generated-output ownership. Exact filesystem name/refusal and admission interruption witnesses qualify behavior separately. This finite declaration classification grants no ESS model support, inherited eligibility or nonreachability."
   },
   "ess_cli::bin(ess)::output_ownership::fn::apply_forward": {
     "class": "OwnedHelper",
@@ -2317,6 +2397,11 @@
     "class": "OwnedHelper",
     "macro_ast_sha256": null,
     "reason": "Concrete edge output ownership/adoption/recovery helper over fixed owner keys, native paths, rendered bytes and transaction state. The CLI ownership and interruption cases exercise its actual publisher or reader. This finite classification grants no independent ESS model support or nonreachability and does not replace an ordinary bound entrypoint."
+  },
+  "ess_cli::bin(ess)::output_ownership::fn::publish_observers": {
+    "class": "OwnedHelper",
+    "macro_ast_sha256": null,
+    "reason": "Concrete native-name admission, private probe lifecycle or descriptor-binding helper for generated-output ownership. Exact filesystem name/refusal and admission interruption witnesses qualify behavior separately. This finite declaration classification grants no ESS model support, inherited eligibility or nonreachability."
   },
   "ess_cli::bin(ess)::output_ownership::fn::read_state": {
     "class": "OwnedHelper",

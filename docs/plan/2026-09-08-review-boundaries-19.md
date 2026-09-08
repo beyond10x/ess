@@ -47,8 +47,8 @@ wave19-retained-inputs directory. Their inventory receipts preserve old-source p
 
 | Role | Managed worktree | Branch | Build and scratch | Stage |
 |---|---|---|---|---|
-| Coordinator | /home/timo/.local/state/worktree/trees/b10x/ess/ess-review-boundaries-19 | wave/review-boundaries-19 | target/review-boundaries-19/preparation; no Cargo build | Candidatebe7a852 published to draft PR14; native runtime qualification pending |
-| Implementation and integration | /home/timo/.local/state/worktree/trees/b10x/ess/ess-output-ownership-wave19 | wave/review-boundaries-19-final (implementation branch impl/review-output-ownership-wave19 retained) | Its own target/; target/review-output-ownership-wave19/; target/review-boundaries-19-integration/; target/review-boundaries-19-root-native/ | CLI correction committed; interrupted package continuation and native fixture correction; exclusive compiler slot |
+| Coordinator | /home/timo/.local/state/worktree/trees/b10x/ess/ess-review-boundaries-19 | wave/review-boundaries-19 | target/review-boundaries-19/preparation; no Cargo build | Candidate0abe797 published to draft PR14; native refusal corrections active |
+| Implementation and integration | /home/timo/.local/state/worktree/trees/b10x/ess/ess-output-ownership-wave19 | wave/review-boundaries-19-final (implementation branch impl/review-output-ownership-wave19 retained) | Its own target/; target/review-output-ownership-wave19/; target/review-boundaries-19-integration/; target/review-boundaries-19-root-native/ | Correction1 sealed381 Linux cases; same implementor fixing native admission and fixture overlap with exclusive compiler slot |
 | Adversary pass1 | /home/timo/.local/state/worktree/trees/b10x/ess/ess-output-ownership-adversary-wave19 | probe/output-ownership-wave19 | Its own target/ and target/review-output-ownership-adversary-wave19/ | Pass1 preserved; tree advanced cleanly to be7a852 for an undispatched pass2 |
 
 Root lease: ess-review-boundaries-coordinator-wave19. The unit's actual path, opening SHA and
@@ -329,3 +329,79 @@ A separately named supervisor will change only that allocation ceiling. The impl
 only the five unfinished targets and separately exercises the one changed native filename case;
 completed40 targets and the original baseline are not repeated. No caches or foreign outputs
 were deleted. This is an active correction, not a completed wave.
+
+## Serial native results and correction continuation
+
+The test-only native capability revision0abe797cd88b38d79609ca6065a39c9b263028a9 was published
+to draft PR14. Production bytes remain those of be7a852. The five unfinished Linux package
+targets completed54 cases, actual0 in61.524s: browser30, schema bundle8, registry identity9,
+registry adversary6 and target failure1. Combined with the40 completed targets, this is381
+unique passing cases across45 targets. The changed native filename case separately passed on
+Linux with its exact opaque-byte roundtrip. It replaces that case's previous evidence and is
+not counted twice. The old resource interruption remains an interruption. The correction1
+report is immutable at SHA256 e9d69463d889cdf4553d5047b93c44ad39b71b762ab7e3918e0cc4af4317e470;
+root independently verified all eight retained native images. The implementor released its
+correction1 lease, then resumed the same unit under a fresh lease for the results below.
+
+CI34214071680 at0abe797 completed/failure. Both macOS jobs executed the serial29-case protocol
+target:28 passed/1 failed. All interruption and recovery cases passed. The remaining failure
+is the unchanged before-mutation assertion for a filename that native creation rejects with
+EILSEQ: publication preserves that cause but has already left a Prepared ownership ledger.
+Both architectures also executed the unchanged four-case adversary target:3 passed/1 failed.
+Their actual native lookup aliases the Unicode companion spellings; compose refuses only
+after state and partial output publication. The original two pass1 findings and all five
+correction controls pass. Both native repository sync groups pass6 cases,104 filtered.
+Complete Intel102021571093 and ARM102021571200 job logs are retained in coordinator preparation.
+
+The same run's Linux Gate also completed/failure before cancellation was needed. Its ownership
+target passed28 and failed1: injected publication recovery at cut10, after:rename:checkpoint,
+returned EAGAIN11 at an independently named fixture. This is additional evidence of parallel
+fixture/process-spawn interference, not proof of its exact mechanism. The complete Linux log
+is retained. The continuation must establish deterministic harness separation while preserving
+all dedicated lock-contention assertions, and move native filename/alias admission before
+enrollment or output mutation without weakening the two platform assertions. No retries,
+skips, lock weakening or platform scope reduction are authorized by these results.
+
+Documentation validation34214071485 at0abe797 completed/success. Main remains1e618d225f7f60f79c3ace7c0fa60f356cbc44d9.
+Pass2 remains prepared and undispatched; the full root integration gate has not started.
+
+The coordinator selected per-parent native admission probes with measured Linux CASEFOLD
+inheritance where available and ordinary inheritance when both optional inode-flag queries
+report unsupported. A broad filesystem refusal/whitelist was rejected as outside the selected
+support contract. Exact canonical admission orphans remain opaque and unowned at any depth.
+Admission receives its own process-cut/IO observation seam so the original transaction matrix
+and complete output assertions stay unchanged. The binding design records these implementation
+decisions. Implementation and native validation are still owed; the decision itself is not evidence
+that either platform passes. Connectors returned no admitted search operation before the coordinator
+consulted primary kernel documentation through the web fallback.
+
+## Native admission candidate held for publication
+
+The same implementor returned seven held CLI source paths and the compiler slot. Root verified
+their source manifest and four retained native images; the final CLI SHA256 is
+be75fb0bedc69d3de588d66ea7c02c701a12ff06ed8229b33d1342b3d095b602. The new admission module probes
+exact names per existing parent, checks prospective inheritance, and cleans only recorded entries
+with matching identities. Native spelling checks also cover locked root components, existing
+destinations and every file in the settled adoption reference. The existing transaction observer
+and assertions remain unchanged; a separate admission observer exercises private probe lifecycle.
+
+Focused1 exited0 in711.841s:32 ownership,4 unchanged adversary and5 correction cases passed.
+It preserved the original613 process cuts and613 injected boundaries, and separately passed206
+admission process cuts and206 injected boundaries (nested76, missing64, adoption66). Four new
+controls then measured16 refusal-cleanup process cuts and16 injected boundaries, Unicode parent
+and other-owner aliases, legacy/reference adoption spellings, and actual Linux directory flags.
+Two first-run control failures used the portable synthesis fixture API for native filenames;
+those are retained as setup failures. Correct native compose/standalone fixtures passed each
+unchanged assertion. The host returned matching GETFLAGS values on ext4 and tmpfs, so the optional
+unsupported-query branch was not executed. An isolated owned-directory chattr+F attempt returned
+operation-not-supported; no host feature or mount was changed.
+
+Final lightweight verification exited0 in36.514s for29 ownership+4 adversary+5 correction cases;
+seven previously passed heavy cases were retained separately. All36 Linux ownership cases have
+executed green across these lanes; macOS has35 because the inode-flags control is Linux-specific.
+Strict package Clippy2 and final package formatting exited0. Earlier Clippy style diagnostics and
+an incorrectly broad formatter invocation are preserved; excluded generated Rust was not edited.
+Seventeen exact new helper classifications are prepared, with no changed or removed old entries;
+inventory extraction is still owed. Native CI will use two harness workers with the target's
+fixture guard and print actual alias/boundary observations. Corrected native validation, package
+completion, pass2 and the full integration gate remain pending.
