@@ -1039,3 +1039,22 @@ protected process descriptor limitations were recorded; no whole-machine visibil
 Free space after retention was 13831499776 bytes. Full integration still needs
 a fresh measured grant and its unchanged 8 GiB reserve. No branch transition or gate run is
 claimed by this evidence relocation.
+
+## Complete integration and publication handoff — 2026-09-08
+
+The warm integration at `49732ec39da306e277eaf4f1d820e246e08797cf` passed all twelve selected lanes.
+The full test lane reports 2,311 passed, 0 failed and 0 ignored, including 30 actual browser cases and
+40 synthesis feasibility cases. Consumer-check executed 22 exact cases through 72 successful native
+commands and retained 54 Supported, 0 Refused and 157,068 BaselineUnknown. Every final cell matches the
+accepted correction2 result; e005 was not expanded. Both source-review outcomes are fixed.
+
+[The final integration record](../reviews/2026-09-08-consumer-coverage-integration.md) carries the
+per-lane status/duration/count table, native readback, all source-identical runner failures and
+resource decisions, and complete retention receipts. The first three successful lanes are retained
+from attempt2; continuation7 completed the remaining nine. No original result was overwritten.
+
+Root's AEP closure confirms the Scope and typed reservations, records the named test result and
+moves the story to implemented. Publication and managed cleanup use the existing standing approval.
+The resulting published-original count is 27 of 31 once remote main is verified. Four originals and
+the separate execution-recovery implementation remain. Cost counters remain unavailable rather
+than estimated. No tag, version bump, release, deployment or downstream work is selected.

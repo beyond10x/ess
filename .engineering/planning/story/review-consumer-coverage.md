@@ -2,7 +2,7 @@
 format: aep.planning-md/1
 id: story:review-consumer-coverage
 kind: story
-status: active
+status: implemented
 title: Require explicit consumer coverage for model extensions
 tags:
 - P1
@@ -12,19 +12,19 @@ relations:
 - serves: vision:O2
 - depends_on: story:review-semantic-diff-coverage
 scope:
-- confidence: inferred
+- confidence: cited
   path: .github/workflows/ci.yml
-- confidence: inferred
+- confidence: cited
   path: Cargo.lock
 - confidence: cited
   path: Taskfile.yml
 - confidence: cited
   path: crates/edge/ess-xtask
-- confidence: inferred
+- confidence: cited
   path: crates/verify/ess-diff/tests/consumer_coverage_f01.rs
-- confidence: inferred
+- confidence: cited
   path: docs/design/review-consumer-coverage.md
-revision: 20
+revision: 24
 ---
 ## Finding and source
 
@@ -50,22 +50,46 @@ Do not rewrite passing gates or claim every target supports every construct; unk
 
 ## Scope
 
-Derived 2026-09-07 by `aep-drive:story-scoper` 0.8.1 against ESS `a0cf3ca8681ce06f6fbdbc988d457b23f2136c04` and draft story revision 9 — cited.
+Confirmed implementation scope for wave18. The earlier scope derivation and staged decisions
+remain in this story's history and journal. Root read back the final correction and merged
+planning evidence against integration source 49732ec39da306e277eaf4f1d820e246e08797cf.
 
-- **Primary write reservation:** `crates/edge/ess-xtask` — cited; the story names this Rust gate owner, whose dispatcher and actual compiled RawSpecFile schema provider remain the implementation home.
-- **Gate write reservation:** `Taskfile.yml` — cited; add the separately named consumer lane while preserving every existing check and its order, including support-check.
-- **Dependency write reservation:** `Cargo.lock` — inferred; a measured package-local extractor dependency change may require updated resolution.
-- **Binding write reservation:** `docs/design/review-consumer-coverage.md` — inferred; the intended internal design home is still absent, and the reviewed v3 candidate remains unaccepted preparation.
-- **Model boundary:** RawSpecFile, Specification, EssIr, private EssIrParts, EssSemanticRef and SemanticDependencyGraph, their reachable production declarations, and the separate compiled RawSpecFile Draft 7 wire inventory — cited; the three authoritative ESS model package trees are byte-unchanged from the preceding a45b4081 source checkpoint.
-- **First-stage boundary:** implement closed source/profile/model/wire/consumer extraction, exact candidate case attribution and finite unaccepted baseline output, then stop at a root checkpoint before any BaselineUnknown admission — cited; the preserved v3 policy and finite first-stage work order explicitly require this sequence.
-- **Authored acquisition refresh:** classify specification, authored-scenario and coverage acquisition separately across immediate manifest selection, legacy directory policies, direct files and omitted scenarios; retain original input identities and bytes, inactive-role boundaries and refusal-before-output behavior — cited; the newly integrated shared acquisition owner changes these consumer profiles without adding another semantic model root.
-- **Model-caller refresh:** include release report qualification and observed-binding comparison among the explicit callers of shared specification loading; distinguish admitted model/selection consistency, declared realization identity and qualified infrastructure comparison from execution or producer authentication — cited.
-- **Other integrated consumer refresh:** retain the previous coverage, cache and support classifications; refresh current legacy and paired browser playback, realization v1/v2 alternatives, namespace collection entry points and release-action/build inputs — cited; these source and case identities changed after a45b4081 and cannot inherit an old package-level claim.
-- **Behavioral boundary:** Supported or Refused requires exact attributed assertions and actual case execution under the bound profile; browser unknown-state presentation, release consistency checking, fixture presence and an aggregate green suite do not establish stronger semantic behavior — cited.
-- **Conditional additional writes:** propose an exact owner-test reservation only when a mandatory behavioral cell cannot be established by existing meaningful assertions and observable execution — inferred; this refresh selects no additional test owner or consumer repair.
-- **Validation boundary:** retain package checks, the complete repository gate and site-build for the validation-workflow change; retain mandatory F01 attribution and same-source causal mutation requirements — cited.
-- **Confidence:** medium — inferred; current write owners and relevant source deltas are established, while complete extracted inventories, exact case/profile attribution and finite baseline eligibility remain first-stage outputs.
-- **Would collide with:** edits to the xtask package, Taskfile validation sequence, dependency lockfile or exact internal binding document — inferred; model, consumer and case owners remain read dependencies whose changes require refreshed inventory and evidence checkpoints.
+- **Rust checker owner — cited and confirmed:** `crates/edge/ess-xtask`; actual Stage1/Stage2 source
+  and both corrections implement closed source/model/wire/consumer extraction, finite classifications,
+  explicit accounting and execution of exactly attributed native owner cases. Source: Stage1 report
+  scope confirmations, Stage2 report sections1–2, and both correction reports/readbacks.
+- **Existing gate sequence — cited and confirmed:** `Taskfile.yml`; root adds exactly one
+  consumer-check lane after support-check, preserving every existing gate lane and relative order.
+  Its command pins the selected locked/offline1.98.1 provider profile. Root source comparison and
+  Task-profile readiness records establish the change; The complete integration result is recorded separately below.
+- **Workflow profile — formerly inferred, confirmed:** `.github/workflows/ci.yml`; provision1.98.1
+  in the existing Rust setup so the actual provider meets its declared profile. Existing permissions,
+  triggers, action identity, components, targets and task-check command are unchanged.
+- **Dependency resolution — formerly inferred, confirmed:** `Cargo.lock`; Stage1 adds only five
+  ess-xtask dependency edges, with no package/version additions. Stage2 and corrections add none.
+  Source: Stage1 report scope confirmations and retained before/after resolution comparison.
+- **Accepted internal binding — formerly inferred, confirmed:** `docs/design/review-consumer-coverage.md`;
+  root accepted and synchronized the reviewed v3 policy. Historical prose calling this home absent
+  describes the earlier proposal state and no longer describes current source.
+- **Exact F01 owner cases — formerly conditional/inferred, selected and confirmed:**
+  `crates/verify/ess-diff/tests/consumer_coverage_f01.rs`; five cases isolate relation kind, target
+  and carrier and view-parameter order/type, each with unchanged control, exact typed delta and
+  current-format roundtrip. Source: Stage2 report sections1–2 and original direct owner-case results.
+- **Read dependencies — cited:** RawSpecFile, Specification, EssIr/private EssIrParts,
+  EssSemanticRef/SemanticDependencyGraph, reachable authoritative declarations and separate compiled
+  RawSpecFile Draft7 wire graph; current inventoried consumers and attributed tests. No production
+  model or consumer semantic repair was selected by this checker story.
+- **Finite initial unknowns — selected and measured:** exactly157068 initial model/profile pairs
+  remain pinned by baseline e005a2e74e067ad51315e594151643b702381dc174bb9af5c355c3eeeb17ad51.
+  Qualification belongs to separate draft epic:qualify-initial-consumer-baseline. Existing unknowns
+  do not establish support/refusal; new identities require explicit reviewed behavior evidence.
+- **Validation boundary — cited:** both independent source attacks, original and corrected cases,
+  preserved same-source production mutations/restored green, exact attributed consumer execution,
+  and every repository gate lane plus site-build. The root verifies correction2 after the second
+  attack; no third attack is assigned. Full integration status comes from its own actual records.
+- **Collisions and exclusions — coordinator inference grounded in actual writes:** reserve the six
+  machine scope entries above. General fuzzing and the known Go panic remain with their existing
+  story; broad initial qualification, downstream delivery and source release are outside this wave.
 
 ## Candidate binding review
 
@@ -387,3 +411,19 @@ warm runner v3 SHA256319bbdc52cca2627835bdbf4d4c7aa023332e2cd57ad682a3c038ba098e
 adds exact Task retention before gate lanes and preserves the v2 source. No branch handoff or gate
 has run. Its8GiBreserve is unchanged. Agent cost counters were not supplied by this harness;
 no token/tool-use values are invented. No tag, release, deployment or downstream delivery is selected.
+
+## Complete consumer integration — 2026-09-08
+
+All ten `task check` lanes, `task site-build` and planning validation passed at
+`49732ec39da306e277eaf4f1d820e246e08797cf`. Full test: 2,311 passed, zero failed/ignored, 199 summaries;
+all 30 browser cases and 40 synthesis feasibility cases included. Consumer-check ran 72 successful direct
+commands and 22 exact native cases: 54 Supported, 0 Refused and 157,068 BaselineUnknown, with all 157,122
+cell records identical to accepted correction2. Root reverified all 1,215 source files, original
+streams, exact case results and seven native checker images with separate retained root copies.
+
+[Complete integration record](../../../docs/reviews/2026-09-08-consumer-coverage-integration.md)
+retains every lane's actual result, both corrected source attacks, all interrupted or refused
+runner attempts, the prospective capacity revision, exact archive receipts and the limits of
+these claims. Root readback SHA256 `6c62998a3c951d26d6df63efdb6837d803bde1cad2240ce3f239c47a543fbfa5`. Original reports and initial eligibility remain
+unchanged. The final Scope confirms all six write reservations, including formerly inferred paths.
+Publication and cleanup follow under the standing approval; no release or downstream work is selected.
