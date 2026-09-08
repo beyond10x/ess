@@ -24,7 +24,7 @@ scope:
   path: crates/verify/ess-diff/tests/consumer_coverage_f01.rs
 - confidence: inferred
   path: docs/design/review-consumer-coverage.md
-revision: 19
+revision: 20
 ---
 ## Finding and source
 
@@ -305,3 +305,85 @@ claimed from the constructed macro fixture. Agent judgement remains a review.
   ]
 }
 ```
+
+## Correction2 bounded verification and preserved historical records — 2026-09-08
+
+Root read the complete correction2 source diff, all four original pass2 cases and seven new controls,
+all42 finite classification decisions, and the five initial correction-control failures. Independent
+readback verified all1214 current source files, eight actual lanes and retained native images,
+all103 prior assertions (one repeated blank line removed by rustfmt), and all7671 old classifications.
+It reconstructed all93 profile fingerprints from both actual inventories, compared55 selected
+entries, nine parent trait hashes, Rust/wire/provider schema and the e005 baseline. No profile or
+baseline eligibility changed. Receipt preparation/consumer-correction2-bounded-root-readback.json
+SHA256 b21e577f34e4eea3f30ebb7a6faeac75e137730da429b542ed6a41880d4986eb; actual0.
+
+The original two new red cases each now pass alone,1passed/0failed/0ignored/97filtered.
+Seven additional controls first ran2passed/5failed, then7passed/0failed/98filtered.
+The affected package ran110passed/0failed/0ignored (105main+5layout), strictClippy and fmt returned0.
+The one production discovery returned1 for the named unclassified Identity::entity_identity trait
+callable before finite classification. Final delta:40 concrete callable entries across nine existing
+traits plus trait_associated_contract and AssociatedNames::visit_macro;42additions,zero removals.
+The implementation retains parent-trait hashes, required/default/cfg boundaries, selected same-trait
+associated contracts and explicit opaque-macro refusal in signatures, headers and selected declarations.
+Ordinary bodies and unselected associated declarations stay outside callable eligibility identity.
+
+After all assigned producers held, root archived, independently verified and retired only the four
+historical coordinator target/review-boundaries-{7,8,9,10} record roots. All12 actual commands returned0.
+Original successes, failures, raw streams, source snapshots and native metadata/payloads remain in
+/home/timo/.cache/ess-review/2026-09-06-resume/waves7-10-historical-records-retirement.
+Complete receipt SHA256 d71c6c53f60a0c5d5a1241da577eddf610aabae18339b1ccdd4ddf92d8c443ad.
+No managed source checkout, current unit target/TMP, frozen tool or Git branch was removed.
+
+One literal Task consumer-check is selected under the separate grant
+preparation/consumer-correction2-full-checker-grant-01.json, SHA256
+e6d1a1182d6b749cfac4f42014567312116a224c098ac4aca11696aba90c22a4.
+Measured aggregate9808551936bytes; cap10882293760 (+1GiB including completion records),
+free7618129920bytes,6GiBreserve; one heavy producer/two Rust jobs. Actual complete checker,
+final source/native seal, root final verification, source commit, integration and publication remain
+unclaimed at this bounded checkpoint. No third source attack or downstream work is selected.
+
+### Final correction2 source acceptance — 2026-09-08
+
+Root accepts bot commit af8ae3b95317ef351e8e4251d883d818c6e71b0f after both source attacks
+and independent correction verification. It changes only consumer.rs, tests.rs and finite
+entry-classifications.json. Both author and committer are the organization bot. All1214
+measured source bytes are unchanged by the commit; the unit is clean and remains unpublished.
+
+The literal /usr/local/bin/task consumer-check returned0 in589.4778127779718seconds:
+72successful direct commands,22exact nonignored cases,1806models,87behavioral profiles,
+54Supported/0Refused/157068BaselineUnknown. All157122 cell records equal the preceding
+accepted actual output; all93profiles,55selected entries, nine parent traits and Rust/wire/schema
+inventories remain unchanged. The original two source-pass2 cases and all seven correction
+controls now pass, with every prior assertion preserved. Package110, strictClippy and fmt are green.
+
+Report unit target/review-boundaries-18/consumer-correction-2/report.md is865577bytes,
+SHA256 e47ac9271830ee2610096c5a166e09d551c853a3a3b30de02e4951db7396f69e.
+Final seal SHA256 3e4c5eec9bf7758f8bc8638865f254e4f0d7ba777295b1cd468c22332fe92b18;
+source manifest SHA256 9dd9226b883067655511071402ed2c39d2467b6cfea614bcd3d06728c2d79c99;
+complete source archive SHA256 143ea90b7fa38052846f1b430ffa7c130e01c09ddcec463cd652207888a6a64a.
+Native census/readback both0:7676entries,10741693120regular bytes. The implementor released
+its own lease after quiescence; root leases remain. Final allocation10609344512 was below cap.
+
+Root read all report prose, the complete source diff, original/new test assertions and exact42
+classification decisions. Independent reader actual0 in23.021481973002665seconds verified every
+current native payload/recorded metadata/path, all final pins, the unique1214-file archive,
+all72 actual checker streams/cases and all157122 cell records. Receipt
+preparation/consumer-correction2-readback/readback.json SHA256
+48c9963408791c3c068e0245251b8ab692d7d6a545558e584d7f54672ca1bb23.
+No assertion was removed or relaxed; the only prior-test text change is one repeated blank line
+removed by rustfmt. There is no third source attack.
+
+Two bookkeeping discrepancies remain explicit. A preflight Task-image copy returned1 for an
+absent scratch directory, and the already-authorized checker launched before that result was
+inspected. The exact still-live Task image was independently captured50.68899154663086seconds
+after launch, matching the pinned bytes; no checker rerun occurred. A later read-only forecast
+incorrectly counted retained copies twice and returned1, while actual allocation remained within
+cap. Its original tool output was truncated and the complete traceback is unavailable; no full
+forecast-stream claim is made. All product-command streams remain complete and actual green.
+
+Source pass2 outcome is now fixed by the exact accepted source commit and root verification.
+Full combined integration, site-build, publication and worktree cleanup remain owed. The prepared
+warm runner v3 SHA256319bbdc52cca2627835bdbf4d4c7aa023332e2cd57ad682a3c038ba098eb5b9d
+adds exact Task retention before gate lanes and preserves the v2 source. No branch handoff or gate
+has run. Its8GiBreserve is unchanged. Agent cost counters were not supplied by this harness;
+no token/tool-use values are invented. No tag, release, deployment or downstream delivery is selected.
