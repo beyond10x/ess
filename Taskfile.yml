@@ -155,6 +155,22 @@ tasks:
     cmds:
       - cargo xtask support --check
 
+  consumer-check:
+    desc: Account for model obligations and execute their exact attributed consumer cases.
+    # Provision this toolchain before the offline gate; CI installs it in its Rust setup step.
+    # Storage paths remain caller-owned. A changed compiler or target needs a reviewed profile.
+    cmds:
+      # Command assignments override inherited variables, unlike task-level env defaults.
+      - >-
+        env -u CARGO_ENCODED_RUSTFLAGS RUSTUP_TOOLCHAIN=1.98.1
+        RUSTFLAGS='-C link-arg=-fuse-ld=lld'
+        RUSTC_WRAPPER= RUSTC_WORKSPACE_WRAPPER=
+        CARGO_BUILD_RUSTC_WRAPPER= CARGO_BUILD_RUSTC_WORKSPACE_WRAPPER=
+        CARGO_BUILD_JOBS=2 CARGO_NET_OFFLINE=true CARGO_INCREMENTAL=0
+        CARGO_PROFILE_DEV_DEBUG=0 CARGO_PROFILE_TEST_DEBUG=0
+        CARGO_PROFILE_DEV_INCREMENTAL=false CARGO_PROFILE_TEST_INCREMENTAL=false
+        cargo xtask consumer-check
+
   check:
     cmds:
       - task: fmt-check
@@ -164,5 +180,6 @@ tasks:
       - task: example-check
       - task: projection-check
       - task: support-check
+      - task: consumer-check
       - task: release-check
       - task: action-check

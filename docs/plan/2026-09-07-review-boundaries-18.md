@@ -379,3 +379,146 @@ ess-review-consumer-mutations-wave18. It will have its own default target and a 
 measured allowance before execution. The exact optional RawSpecFile field and reusable-row
 Struct invariant projection mutations are selected; no copied-source producer starts before
 this bounded provisioning handoff. Full independent source attacks so far: zero.
+
+## Stage 2 launch and completed-build capacity
+
+Root checkpoint metadata commit 3bf7268276ea2cdd5d9c8ddef3338d2e7cbcf955 was merged
+into the unit as b817e44e30d4aa1150d4e62a31c5878a023ee771. The only merge conflict
+was the shared binding; root verified that its resolved bytes preserve the complete
+Stage 1 policy as a prefix and add only the accepted checkpoint. Both commits have the
+verified bot author and committer. The Stage 2 source launch now contains its independent
+follow-up artifact and scope. Its actual binding hash is
+8e0602489e273b9638a65b8efbe28cae681ac71bbaf02d7f1687ae733bceda8a.
+
+The same implementor acquired its new lease and resumed Stage 2. Before its new ess-diff
+owner edits, the affected package baseline returned zero: 161 passed, zero failed/ignored,
+27.130 seconds, with nine original native test executables retained. This does not replace
+Stage 1's original 37-case or final 71-case xtask baseline evidence.
+
+To retain the free-space floor for forthcoming mutation builds, root briefly held new
+unit producers while the implementor continued source preparation. The coordinator's
+exact target/debug from completed published waves was archived without exclusions, then
+a separate reader verified all 5,955 entries and 4,288,705,893 regular bytes, including
+25 hardlink members. The 1,031,075,811-byte archive SHA256 is
+b6ebc83033621f0456d00ce0bc6a406c5993f8eb3561139a6a9c58ed738c6a8f. Archive and
+independent reader exited zero in 48.666 and 46.433 seconds. Minimum archive-write free
+space was 9,202,143,232 bytes, above the 8 GiB floor.
+
+After a fresh complete native/source census, unchanged coordinator Git proof and quiescence
+checks, exact build-output retirement returned zero in 10.188 seconds. Coordinator
+ target/debug is absent; free space afterward was 13,292,109,824 bytes. Every executable
+payload remains in the verified archive under
+~/.cache/ess-review/2026-09-06-resume/coordinator-debug-wave18-retirement, alongside full
+source manifests, archive/native readbacks, direct results and deletion intent. No managed
+worktree, unit build output, Stage 1 scratch/TMP or toolchain was removed. The implementor's
+producer hold was released under the unchanged resource allowance. Future coordinator
+builds must create new debug output; an old target/debug path is no longer executable evidence.
+
+## Stage 2 mechanisms and workflow profile
+
+The first ten accounting/parser cases failed against placeholders (direct 101). The next
+run passed ten and failed one because an initial implementation compared the live pair count
+with the frozen initial partition, preventing a new obligation from gaining actual behavior
+coverage. Its correction keeps unknown eligibility fixed while allowing new supported/refused
+cells. All eleven cases then passed, direct zero. These are controlled mechanism probes;
+production case orchestration and both causal mutations remain pending.
+
+The five reserved F01 owner cases now compile and pass, direct zero, with no ignored or
+filtered cases. The first compilation's ambiguous collect() is retained as a setup failure.
+Root compared the complete source with the original candidate: only an explicit Vec<_>
+annotation changed; every typed assertion remains intact. Root independently read all five
+original lane stdout/stderr streams and direct statuses, compared their complete before/after
+source maps and verified all eight retained native copies. Readback records in preparation:
+root-stage2-first-mechanisms-readback.json, SHA256
+e0965a2d23f850a64db4557b32b93b1ebac015fd0ac369e13a7c084361f2c9a7;
+root-stage2-first-native-readback.json, SHA256
+157ae7a73488effedd43cade721b2491193abcbf839dba9c87f370c144ac1203.
+The unit source is still in progress; this is not its final package or source-review result.
+
+Root reserved .github/workflows/ci.yml through AEP before changing its existing Rust setup
+to provision the accepted 1.98.1 profile. Story revision 16 has six exact reservations.
+The existing action, permissions, triggers, components, targets and task check invocation
+are retained. AEP validates all 206 artifacts with the same 43 historical advisories.
+The new Taskfile consumer-check lane follows support-check; root compared every prior task
+body byte-for-byte and verified their unchanged relative order.
+
+A readiness probe exposed go-task 3.52.0 environment precedence: all twelve deliberately
+invalid inherited values overrode task-level env defaults despite a successful child exit.
+The corrected lane uses explicit env command assignments. The same controlled inherited
+values then produced all twelve exact expected values, direct zero. Both original probes
+and task dry-run output remain in preparation/task-profile-readiness and its -2 successor.
+Final Taskfile SHA256 is 864abbe6193ef6aa5b1a34df887c864c290901116c0df69c16dfb3b918604349.
+Root shared changes will enter the unit at its explicit source hold before final producer
+verification. The wave18 integration runner is prepared only, not launched; it will retain
+ten declared check lanes plus site-build and planning validation, each with its direct exit.
+
+## Completed wave 17 gate-record retention
+
+The shared workflow checkpoint is local bot commit
+953fc9e6d741b6b1ab74a3fdeba8437959e5b275; both identities were verified and it is
+unpublished. Unit synchronization remains pending its source hold.
+
+Root measured the completed published wave 17 gate-record directory at 1,755,746,304
+allocated bytes and held new unit producers at an acknowledged idle boundary. Source work
+continued. All eleven original gate steps remain zero with 2,233 tests; the original complete
+and results hashes match their recorded pins. All twenty-one recorded gate process IDs were
+absent, with no observable reference to the exact record directory; the eight previously
+classified protected-process visibility limits remain explicit.
+
+The entire target/review-boundaries-17/gate-f82fbc67a4c1-attempt1 was archived outside
+the worktree without exclusions. All 19,064 entries, 1,692,900,355 regular bytes and two
+literal symlinks were independently verified. The archive contains 624,595,830 bytes,
+SHA256 92e05b2d0880251c3c58c135607415f8fb02cdf12c0c2e12bcd1d6b90e8c26d9.
+Archive and independent readback returned zero in 29.963 and 14.906 seconds; the minimum
+archive-write free space was 10,361,884,672 bytes.
+
+The first retirement returned one after a PermissionError in the read-only AEP protocol
+cache, with its original intent and error retained. Recovery verified every one of the
+7,446 remaining entries against the full original archive, preserving metadata changes
+caused by partial deletion. It added owner-write only to 182 exact archived cache
+directories, changed no regular-file mode or symlink target, then removed the remaining
+owned records. Recovery returned zero in 3.076 seconds. The exact gate-record root is
+absent; no managed worktree, unit target/TMP, Stage 1 record or live tool was removed.
+
+All archive, verification, failure and recovery records remain under
+~/.cache/ess-review/2026-09-06-resume/wave17-gate-records-retirement. Old gate paths now
+refer to members of that archive, not runnable files. Root's future gate runner still
+uses its separate retained wave14 tools/caches and wave17 preparation CLI; those remain.
+Free space after recovery was 13,097,447,424 bytes. The implementor's build hold was
+released under its unchanged allowance and floor.
+
+## Accepted linker profile and resumed Stage 2
+
+The first real Stage 2 discovery refused the accepted ancestor-configured linker flag
+before extraction or case execution. The original Stage 1 compiled environment already
+contains the exact encoded arguments `-C` and `link-arg=-fuse-ld=lld`, and every accepted
+profile fingerprint includes them. Root selected exact admission of those arguments;
+neither the finite baseline nor its fingerprint grammar changes. Additional flags remain
+outside the admitted profile.
+
+Root independently linked and executed a small readiness probe using the retained Rust
+1.98.1 toolchain. The printed linker command selects its sysroot gcc-ld directory, and
+both bundled linker programs identify LLD 22.1.8. The link and executable returned zero.
+All original commands, outputs and direct statuses are retained in
+preparation/linker-profile-readiness. The implementor reports that compiled and current
+tool receipts now also check the bundled linker bytes; final source review remains owed.
+
+The Taskfile now explicitly removes inherited CARGO_ENCODED_RUSTFLAGS and assigns the
+equivalent RUSTFLAGS along with the twelve previously selected environment values.
+Root ran the actual task runner with deliberately invalid inherited values for all
+fourteen inspected names: the child observed all thirteen required assignments and the
+encoded variable absent, direct zero in 0.042 seconds. Dry-run returned zero; all twelve
+previous task bodies and the previous nine-lane order are byte-preserved. The current
+Taskfile SHA256 is aef6214e5b205ce6a5462dca0b318a920e2802e7130e11c0d9868c97b6db0e41.
+This supersedes the earlier twelve-variable readiness hash, whose records remain intact.
+The new receipt is preparation/task-profile-readiness-3/result.json.
+
+At resumption the same implementor remained active on unit b817e44e; no root producer
+or cleanup command was running. It reports 51 passing mechanism cases, including coupled
+classification and accounting diagnostics without case execution on refusal. A normal
+struct field belongs to its declaration shape rather than necessarily introducing a
+separate consumer API ID. The planned RawSpecFile mutation must therefore preserve the
+actual named raw/wire accounting failure and any actual classification refusal; it must
+not invent a separate classification failure. This is diagnostic attribution only and
+admits no new unknown cell. Full production execution, both mutations, source review and
+the integration gate remain pending.
