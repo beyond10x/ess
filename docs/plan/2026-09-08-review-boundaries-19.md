@@ -47,9 +47,9 @@ wave19-retained-inputs directory. Their inventory receipts preserve old-source p
 
 | Role | Managed worktree | Branch | Build and scratch | Stage |
 |---|---|---|---|---|
-| Coordinator | /home/timo/.local/state/worktree/trees/b10x/ess/ess-review-boundaries-19 | wave/review-boundaries-19 | target/review-boundaries-19/preparation; no Cargo build | Integrated candidate 050c416650119852d213d464dfb76c51673121c6; finite classification and review |
-| Implementation and integration | /home/timo/.local/state/worktree/trees/b10x/ess/ess-output-ownership-wave19 | wave/review-boundaries-19-final (implementation branch impl/review-output-ownership-wave19 retained) | Its own target/; target/review-output-ownership-wave19/; target/review-boundaries-19-integration/; target/review-boundaries-19-root-native/ | CLI6bdac90 committed and integrated; implementor quiescent, root integration lease |
-| Adversary pass1 | /home/timo/.local/state/worktree/trees/b10x/ess/ess-output-ownership-adversary-wave19 | probe/output-ownership-wave19 | Its own target/ and target/review-output-ownership-adversary-wave19/ | Exact candidate 050c416650119852d213d464dfb76c51673121c6; tests-only attack |
+| Coordinator | /home/timo/.local/state/worktree/trees/b10x/ess/ess-review-boundaries-19 | wave/review-boundaries-19 | target/review-boundaries-19/preparation; no Cargo build | Candidate5ae2758 published to draft PR14; pass1 record and native CI update |
+| Implementation and integration | /home/timo/.local/state/worktree/trees/b10x/ess/ess-output-ownership-wave19 | wave/review-boundaries-19-final (implementation branch impl/review-output-ownership-wave19 retained) | Its own target/; target/review-output-ownership-wave19/; target/review-boundaries-19-integration/; target/review-boundaries-19-root-native/ | Same implementor correcting2 CLI findings and native macOS compile errors; exclusive compiler slot |
+| Adversary pass1 | /home/timo/.local/state/worktree/trees/b10x/ess/ess-output-ownership-adversary-wave19 | probe/output-ownership-wave19 | Its own target/ and target/review-output-ownership-adversary-wave19/ | Held050c416 plus4 additive cases;2 red/2 green; report sealed and own lease released |
 
 Root lease: ess-review-boundaries-coordinator-wave19. The unit's actual path, opening SHA and
 lease are recorded immediately after provisioning. Root will reuse the unit checkout for the
@@ -172,8 +172,8 @@ target/review-boundaries-19/preparation/primitive-scope-refresh. Report SHA256:
 It selects no next wave, semantic profile or format, and made no source or AEP changes.
 
 Connectors0.7.0 returned an empty admitted-operation set for GitHub pull requests and Actions.
-No alternative client was invoked for a wave19 PR yet; the integration capability gap will be
-reported before using the existing authorized Git/App path for native validation.
+Root reported that capability gap before using the existing authorized Git/App path for the
+wave19 draft pull request and native validation. No Fluxplane or downstream delivery was used.
 
 ## Implementation handoff and integration
 
@@ -219,5 +219,56 @@ One ESS compiler producer remains the rule. Root's extraction producer1983765 fi
 absent before the slot passed to consumer_coverage_source_pass1. Its exact brief SHA256 is
 2a282b834bab69e697a0cb1b3de5a851c4dbd2fc3bcd67f94eebb461fe93ec48. The agent uses the installed
 adversary charter and owns only new tests, its named lease and recorded scratch. No third attack
-is authorized. Native macOS, adversarial completion, full integration/site gates and main
-publication remain pending; no wave19 branch has been pushed.
+is authorized. The following checkpoint records the returned pass and candidate publication.
+
+## First review and native validation
+
+The finite classification commit5ae27589be5b9944b1b8bf503fd7e15ffcdc30d5 was published to
+wave/review-boundaries-19 through the bot wrapper, actual0. Draft PR14 is
+https://github.com/beyond10x/ess/pull/14. Main remains1e618d225f7f60f79c3ace7c0fa60f356cbc44d9.
+The classified source extraction exited0 in25.849s; its own output still identifies a Stage1
+checkpoint with157122 unaccepted cells. Full consumer behavioral qualification remains owed.
+
+Local site-build constituents completed separately with direct statuses: pinned npm ci0
+(12.892s), task site-lab0(2.846s), npm production rendering0(5.733s). The lab compared440 authored
+lines, exercised21 browser-boundary claims and28 deterministic steps over64 rows. A mistakenly
+named scratch lane root-site-build invoked only task --list; that0 is excluded from validation.
+The actual rendering lane is root-site-render. No source or dependency lock changed.
+
+Pass1's full32102-byte report is recorded unchanged as
+review-result:output-ownership-adversary-wave19-pass1, SHA256
+28ff2871068e9ddbcfda8bfca33a40d6968749959a6ad7b4e3814e0ffdd6ed8a.
+Its four new cases ran individually and together:2 passed/2 failed, no ignored/filtered cases,
+suite exit101; strict target Clippy/fmt0. Root read the whole report and all new assertions,
+verified46 sealed payload pins,1230 source pins and both actual native executables. The source
+and native archives passed the agent's complete readbacks. Own pass1 lease release exited0;
+no producer remains in that tree. Source/TMP stay held for correction readback and final retention.
+
+The measured findings both have concrete public CLI callers. A TypeScript destination spelled
+out/record.ts/ is silently normalized to a file and enrolled; the central named publisher must
+reject directory spelling before mutation. Compose owns anchor/client as a companion, then
+rejects a same-owner switch to a Rust client directory at that path before the ownership engine
+can perform its selected transition. Both cases are introduced acceptance/boundary findings;
+their exact signatures and origins are in the immutable review. Linux Unicode companions were
+measured distinct and passed; that result does not execute the test's native alias branch.
+Edited0400 preimage rollback with an unselected sibling owner and authored file also passed.
+
+Native CI34210352726 at5ae2758 failed compilation on both shipped macOS architectures. The
+arm job102009598031 log identifies filesystem.rs470,546,549: Darwin Mode::from_raw_mode takes
+u16 while the private state carries u32. Root retained that complete72448-byte job log separately
+from the adversary report. The obsolete run was cancelled after this error; terminal status was
+observed, both macOS jobs failure and Linux Gate cancelled. No native runtime success is claimed.
+Documentation validation34210352724 at the same head completed successfully.
+
+The same implementor resumed correction1 under its new own lease and reproduced both red cases
+unchanged in the warm unit:4 executed,2 passed/2 failed, actual101. It owns the exclusive compiler
+slot. The correction covers caller classes, reciprocal owned transitions and portable native
+mode conversion; all earlier assertions remain. Root added the new caller/Unicode target to
+both macOS jobs. Corrected native execution, pass2, the full integration gate and main publication
+remain pending. Harness token/cost metrics are unavailable and are not estimated.
+
+The earlier external AEP build path disappeared before recording this review. The installed
+protocol0.54.0 executable was retained independently under wave19-retained-inputs, SHA256
+77913286bc66a834c0a3e7306dfe4a06605c7e466286dc47c85c38fc8d689a91. Its CLI vocabulary was read
+before the single record creation; validation then exited0 for209 artifacts with the same43
+historical missing-findings-block advisories. No planning file was edited directly.
