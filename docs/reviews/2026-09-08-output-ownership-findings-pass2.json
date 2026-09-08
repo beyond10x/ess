@@ -1,0 +1,30 @@
+{
+  "artifact": "story:review-output-ownership",
+  "reviews": 10,
+  "from": "review-result:output-ownership-adversary-wave19-pass1",
+  "from_reviewer": "unattributed",
+  "to": "review-result:output-ownership-adversary-wave19-pass2",
+  "to_reviewer": "unattributed",
+  "carried": [],
+  "new": [],
+  "resolved": [
+    {
+      "file": "crates/edge/ess-cli/src/output_ownership/mod.rs",
+      "line": 280,
+      "category": "boundary",
+      "severity": "blocker",
+      "verdict": "NEEDS-CHANGE",
+      "origin": "introduced",
+      "message": "The standalone publisher drops trailing directory syntax and returns success after enrolling and creating a file for `--out out/record.ts/`."
+    },
+    {
+      "file": "crates/edge/ess-cli/src/main.rs",
+      "line": 2058,
+      "category": "acceptance",
+      "severity": "blocker",
+      "verdict": "NEEDS-CHANGE",
+      "origin": "introduced",
+      "message": "Compose's preflight rejects an owned companion-to-client directory transition before the ownership transaction can retire the selected owner's file."
+    }
+  ]
+}

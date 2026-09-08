@@ -47,9 +47,9 @@ wave19-retained-inputs directory. Their inventory receipts preserve old-source p
 
 | Role | Managed worktree | Branch | Build and scratch | Stage |
 |---|---|---|---|---|
-| Coordinator | /home/timo/.local/state/worktree/trees/b10x/ess/ess-review-boundaries-19 | wave/review-boundaries-19 | target/review-boundaries-19/preparation; no Cargo build | Candidatee0636f9 published to draft PR14; concurrent main integrated as49c193d |
-| Implementation and integration | /home/timo/.local/state/worktree/trees/b10x/ess/ess-output-ownership-wave19 | wave/review-boundaries-19-final (implementation branch impl/review-output-ownership-wave19 retained) | Its own target/; target/review-output-ownership-wave19/; target/review-boundaries-19-integration/; target/review-boundaries-19-root-native/ | Native admission passes both Mac runners and all45 selected Linux cases; whole corrected package pending; untouched-parent permission witness active |
-| Adversary pass1 | /home/timo/.local/state/worktree/trees/b10x/ess/ess-output-ownership-adversary-wave19 | probe/output-ownership-wave19 | Its own target/ and target/review-output-ownership-adversary-wave19/ | Pass1 preserved; tree advanced cleanly to be7a852 for an undispatched pass2 |
+| Coordinator | /home/timo/.local/state/worktree/trees/b10x/ess/ess-review-boundaries-19 | wave/review-boundaries-19 | target/review-boundaries-19/preparation; no Cargo build | Candidate f004678 published to draft PR14; main integration and cleanup remain owed |
+| Implementation and integration | /home/timo/.local/state/worktree/trees/b10x/ess/ess-output-ownership-wave19 | wave/review-boundaries-19-final (implementation branch impl/review-output-ownership-wave19 retained) | Its own target/; target/review-output-ownership-wave19/; target/review-boundaries-19-integration/; target/review-boundaries-19-root-native/ | Complete corrected CLI package391/45, Clippy and formatting pass; native Macs, Linux CI gate and documentation build succeed at f004678; implementor quiescent |
+| Adversary pass2 | /home/timo/.local/state/worktree/trees/b10x/ess/ess-output-ownership-adversary-wave19 | probe/output-ownership-wave19 | Its own target/; preserved target/review-output-ownership-adversary-wave19/; new target/review-output-ownership-adversary-wave19-pass2/ | Final attack dispatched at clean f004678; pass1 evidence and assertions preserved |
 
 Root lease: ess-review-boundaries-coordinator-wave19. The unit's actual path, opening SHA and
 lease are recorded immediately after provisioning. Root will reuse the unit checkout for the
@@ -476,3 +476,82 @@ earlier66 probe cuts remain retained evidence of the superseded behavior. The mi
 adoption fixture asserts directory creation/cleanup/sync without claiming file-write coverage;
 both publication fixtures still require file-write boundaries. Original transaction assertions
 are unchanged. Strict Clippy, final source/native handoff and whole CLI package remain pending.
+
+## Corrected package handoff and final attack
+
+The previous paragraph is the pre-package checkpoint. Final source f00467883985a04caf72bd9364642252212a56a6
+is now published to draft PR14. The implementor returned the complete report at SHA256
+7d5505f6343a35fc8b41e9bb8920a9efc815ad7f70843345fed9c5359130e026 (428874 bytes).
+The actual whole CLI package exited0 in1107.147446449 seconds:45 completed targets,
+391 passed,0 failed,0 ignored and0 filtered. The ownership target ran39 cases;
+the original adversary4 and correction5 remain green. The30-case browser replay target ran.
+Original transaction boundaries remain613 process cuts and613 injected errors;
+current admission boundaries remain174 of each, with explicit zero-event existing-only adoption.
+There was no resource stop. Strict Clippy and package formatting also exited0.
+
+Root read the complete semantic report, final three-file production/test delta and all45 package
+runner summaries. Root verified the seven source pins, four independently retained native copies
+and all46 live native hashes (45 test executables plus CLI). The latter readback SHA256 is
+9f6e91c2a3bac4a5dd097ec91a064fde8e370476ecd24c2c015b06c57c69f0c0.
+Firefox's50-path manifest,304148344 regular payload bytes and wrapper matched before and after.
+The full ordinary/browser/Go native-byte census remains retained; historical entries confer
+no additional ownership or cleanup authority. The implementor consumed its producer sessions,
+returned compiler and TMP holds, and released its own named lease, actual0.
+
+CI34221599693 at f004678 completed successfully. Native Intel102045761442 and ARM102045761680
+each executed38 ownership,4 adversary,5 correction and6 selected sync cases, with actual case
+and normalization aliases. Linux has one additional native GETFLAGS case. The actual tested
+synthetic checkout fd115bcee4f06e9db155dc563c4a82fd4a61d1e5 has parents b7a0303 and f004678;
+root verified its tree is identical to f004678. Linux102045761606 ran all10 task-check steps,
+including22 consumer cases,87 profiles,1806 models and157122 cells:54 Supported,0 Refused,
+157068 BaselineUnknown. Its retained full raw log SHA256 is
+126e366d3d0691d40d8002387f599dc4c240fcc7bb4719f7e265731a24caff85.
+Docs34221599648 executed the actual task site-build successfully, including lab/WASM checks,
+npm ci and Docusaurus rendering. This is source validation, not documentation deployment.
+
+Root recorded pass1's outcome as fixed through AEP after confirming both corrections and all
+four unchanged cases in the final package. Validation exited0:209 artifacts and the same43
+historical prose-only-review advisories. Story completion has not been asserted.
+
+The final adversary attack now runs at f004678 under lease ess-output-ownership-adversary-wave19-pass2.
+Its dispatch brief SHA256 is9ebc3077053681f22309f4d87278cdcf21c826fee29b7275571ee1a5263c0528.
+It has the sole local compiler slot, its own default target and assigned short TMP, with a5GiB
+combined cap and unchanged2GiB SSD/8GiB memory free floors. It must preserve old assertions,
+write each new case before its individual first execution, then run the touched target.
+The complete report, findings comparison and any final correction remain owed. No third attack
+is selected. Root's subsequent integration gate remains pending, with individually captured
+steps and a prospective10GiB target/TMP and16GiB assigned-tmpfs cap constrained by the unchanged
+free-space and memory floors. Exact resource measurements will be refreshed before launch.
+
+## Final adversary handoff
+
+Pass2 returned no findings at f004678 plus249 appended test lines. The complete unchanged report
+is recorded as review-result:output-ownership-adversary-wave19-pass2, SHA256
+eb51852d6dcbca41e6eb3b83f5017dc29bf6c8d116fac62947e7b7b0e4beace3 (40934 bytes).
+Its three new cases each passed on their first isolated execution, and the full touched target
+ran7 passed,0 failed,0 ignored and0 filtered. Strict target Clippy and package formatting
+exited0. The original230-line prefix and all four previous assertions remain byte-identical.
+Root read the entire report and additive diff, verified all78 sealed payloads and1234 source
+pins, and checked the CLI and test executable hashes. The first seal read used the wrong working
+directory and found no relative paths; the corrected scratch-relative read verified all78.
+No source or evidence bytes were changed by that correction. Archive content/metadata readback
+and own lease release each exited0. Root holds the tree for integration and exact cleanup.
+
+The new cases exercise a nested admission orphan through real CLI regeneration and stale
+retirement, a filename-alias refusal before an owned file becomes a directory, and exact native
+filename adoption into an already enrolled0555 root while retaining its0400 file. The orphan
+is produced by an injected callback error, not a new process-death witness. Both native-name
+pairs were distinct on this Linux filesystem; the new aliases=true branches still require
+native macOS execution. The existing full transaction/admission matrices are unchanged.
+
+The [verbatim findings comparison](../reviews/2026-09-08-output-ownership-findings-pass2.json)
+reports0 carried,0 new and2 resolved. Findings fell from2 in pass1 to0 in pass2.
+There is no third attack. AEP0.54.0 validation exited0 with210 artifacts and44 advisories:
+the validator now flags this explicit empty findings block as prose-only, although the exact
+record contains the required fenced empty list and the findings command produced the comparison
+above. The immutable report is preserved unchanged; the advisory is not a new ESS defect.
+
+Root will publish the additive cases to PR14, execute their native Mac branches, then retain
+individual final integration step statuses before completion and main publication. No completion
+claim is inferred from this review handoff. Agent token/tool/duration totals are unavailable
+from this harness; the retained commands provide their actual execution times.
