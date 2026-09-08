@@ -24,7 +24,7 @@ scope:
   path: crates/verify/ess-diff/tests/consumer_coverage_f01.rs
 - confidence: inferred
   path: docs/design/review-consumer-coverage.md
-revision: 18
+revision: 19
 ---
 ## Finding and source
 
@@ -232,3 +232,76 @@ grant33e3dddd93cd14ab6c0f92bee088c834904399bcad5156f8d8d8c26868c36375. Its subje
 the complete unit diff against published a0cf3ca8681ce06f6fbdbc988d457b23f2136c04. No
 second-pass result or final integration success is claimed yet. Story remains active; source
 publication, required CI and owned cleanup remain owed. No release or downstream delivery is selected.
+
+### Source pass2 routed to correction2 — 2026-09-08
+
+The immutable review-result:consumer-coverage-source-pass2 records two introduced NEEDS-CHANGE
+findings: concrete default trait callable inventory and opaque signature type-macro associated
+contract traversal. Both cases failed on first exact execution. Affected package executed103,
+101passed/2failed/0ignored; all99 prior cases and both new controls passed. Complete report
+SHA25613d2815e847af96c566c02a88d234b841a63a278f553b75ac59fd28c32296e76 and final seal
+SHA2562ac8c947b12bf462587145ebecb8fa1930b9ce9be43287d2fb13cf54ba17b65b remain unchanged.
+Root independently verified6906native entries/9650245277regular bytes, complete1214-file
+source archive and every original test stream; reader actual0 in17.280772335943766seconds,
+preparation/consumer-source-pass2-readback/readback.json SHA256
+ de91a6ad56d5db78a60a3a1a7caf08ef5a6155e8cd2b920ebf5f1c937cdd813f.
+
+AEP's actual comparison is0carried/2new/2resolved, with the full original output below. Findings
+remain2→2 while all first-pass signatures are resolved. The same implementor receives this new
+ground under preparation/consumer-correction-2-work-order.md; root will verify the correction
+and assertions. No third full source attack is assigned. No second-pass outcome is marked fixed
+before the correction lands. Source/integration/publication remain held until green; source
+eligibility and the e005 initial baseline remain fixed, and no current production incident is
+claimed from the constructed macro fixture. Agent judgement remains a review.
+
+```json
+{
+  "artifact": "story:review-consumer-coverage",
+  "reviews": 12,
+  "from": "review-result:consumer-coverage-source-pass1",
+  "from_reviewer": "unattributed",
+  "to": "review-result:consumer-coverage-source-pass2",
+  "to_reviewer": "unattributed",
+  "carried": [],
+  "new": [
+    {
+      "file": "crates/edge/ess-xtask/src/consumer_coverage/consumer.rs",
+      "line": 525,
+      "category": "acceptance",
+      "severity": "blocker",
+      "verdict": "NEEDS-CHANGE",
+      "origin": "introduced",
+      "message": "A newly added public default trait method keeps the old finite consumer classification set because trait methods are skipped as concrete API entries."
+    },
+    {
+      "file": "crates/edge/ess-xtask/src/consumer_coverage/consumer.rs",
+      "line": 587,
+      "category": "contract-drift",
+      "severity": "blocker",
+      "verdict": "NEEDS-CHANGE",
+      "origin": "introduced",
+      "message": "An admitted type macro in a callable signature hides its Self-associated dependency, so changing that associated type can preserve the callable declaration fingerprint."
+    }
+  ],
+  "resolved": [
+    {
+      "file": "crates/edge/ess-xtask/src/consumer_coverage/rust.rs",
+      "line": 445,
+      "category": "contract-drift",
+      "severity": "blocker",
+      "verdict": "NEEDS-CHANGE",
+      "origin": "introduced",
+      "message": "The model resolver discards absolute path qualification in types and imports, so a local module can replace the actual external type owner in the authoritative model graph."
+    },
+    {
+      "file": "crates/edge/ess-xtask/src/consumer_coverage/consumer.rs",
+      "line": 471,
+      "category": "acceptance",
+      "severity": "blocker",
+      "verdict": "NEEDS-CHANGE",
+      "origin": "introduced",
+      "message": "Implementation scanning omits associated constants and types, allowing a new public constant to retain old finite classifications and an associated result type to escape its bound callable fingerprint."
+    }
+  ]
+}
+```

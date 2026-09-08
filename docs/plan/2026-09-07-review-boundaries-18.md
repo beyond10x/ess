@@ -867,3 +867,57 @@ with its own warm target, on a separate recorded integration branch. No branch/c
 or full gate has occurred. Fresh capacity and explicit frozen tool/cache/source authority are
 still required; the8GiB full-integration floor remains unchanged. No tag, release, deployment
 or downstream delivery is selected.
+
+## Second source attack and final correction routing — 2026-09-08
+
+The second source attack returned two introduced NEEDS-CHANGE findings. A newly added default
+trait method can retain the old finite classification set because trait callables are not
+individual entries. A type macro in a callable signature can hide a selected associated type
+from the declaration fingerprint. The latter is a compiler-checked same-impl fixture; no
+current production baseline transfer is claimed. Both first exact executions failed101.
+Two added executor/wire boundary controls passed. The affected package executed103 cases:
+101passed/2failed/0ignored, including all99 prior cases still green. No full checker,
+extraction, old mutation or third attack ran during this review.
+
+The test-only diff appends106lines/four cases, leaving the complete c375 test file unchanged
+as a prefix. Report `unit target/review-boundaries-18/consumer-source-pass-2/report.md` is
+38761bytes, SHA256 `13d2815e847af96c566c02a88d234b841a63a278f553b75ac59fd28c32296e76`.
+Its final seal SHA256 is `2ac8c947b12bf462587145ebecb8fa1930b9ce9be43287d2fb13cf54ba17b65b`;
+source manifest SHA256 `8e4d131f8dee51a822d205dc1ab14932d59bfb4e91b670da07a6e17fe18febb2`;
+complete source archive10050941bytes, SHA256
+`e2a3e8b3b948cd51f1074b67755db85dbf51bac78f0aa9bb1aa1a609dd7b9b89`.
+All owned review producers ended and its own lease was released.
+
+Root read the complete report prose, all four exact added cases and first-red outputs, then
+independently verified all6906native entries/9650245277regular bytes, full source archive,
+final pins, command outputs and unchanged original test prefix. Reader actual0 in
+17.280772335943766seconds; `preparation/consumer-source-pass2-readback/readback.json`
+SHA256 `de91a6ad56d5db78a60a3a1a7caf08ef5a6155e8cd2b920ebf5f1c937cdd813f`.
+
+The report is recorded verbatim as `review-result:consumer-coverage-source-pass2`. AEP's
+complete `findings` output is retained in `preparation/consumer-source-pass2-record/` and
+appended verbatim to the story routing and correction brief:0carried,2new,2resolved. Findings
+remain2→2, with the original two signatures resolved and two new signatures at consumer.rs:525
+and:587. Store validation returned0 for208artifacts, with the same43 historical findings-block
+advisories. No outcome is marked fixed for this pass before its correction lands.
+
+The same implementor now owns correction2; no prior corrected case failed again. Work order
+`preparation/consumer-correction-2-work-order.md` SHA256
+`1618f52da23b063df4c2b5697f41796af40b8b5f9cc46877db0b065296e8ad33` assigns individual
+trait callables, their bounded associated contracts and explicit opaque-macro refusal across
+selected signature/declaration traversal. It preserves ordinary body and unselected declaration
+stability, parent trait identity, all103 assertions, all existing profiles and the e005 baseline.
+Root will verify this correction; no third full attack is assigned.
+
+The fresh bounded-phase grant SHA256 `cf422edf6e9edafc69c36ab26d7b63e8dcc79969d91ba60dccc1d2042bce4a21`
+allows384MiB above9515081728observed aggregate bytes, cap9917734912,6GiB reserve,
+initial free7018434560, one heavy producer/two Rust jobs. Full Task checker remains held for
+its separate final-source grant. No integration, publication, release or downstream work is claimed.
+
+A warm integration runner is prepared as `preparation/run_integration_gate_v2.py`, SHA256
+`23b60db120c0422b24ff0394fb27b11d26c19eec6a66c65c8147aa54dd21058a`, syntax-checked only.
+It requires a future exact integration grant and `wave/review-boundaries-18-final` in the
+existing consumer managed checkout. It counts the whole unit including website build output
+plus assigned TMP roots, uses the unit's own frozen toolchain and private default target,
+and retains readonly coordinator browser/cache/old-CLI authorities. No branch/checkout
+transition or runner launch has occurred. The full-integration8GiB reserve remains unchanged.
