@@ -1324,6 +1324,10 @@
     "macro_ast_sha256": null,
     "reason": "Concrete owned implementation/helper entry within the bounded caller families. Complete body evidence remains visible and changes require ordinary behavioral review; this finite classification grants no independent support or nonreachability."
   },
+  "ess_cli::bin(ess)::impl<ServiceInput;std :: str :: FromStr>::type::Err": {
+    "class": "OwnedHelper",
+    "reason": "Declares String as the parsing failure contract of ServiceInput::from_str This exact declaration grants no inherited support or baseline eligibility."
+  },
   "ess_cli::bin(ess)::impl<SynthesisTarget;>::target": {
     "class": "OwnedHelper",
     "macro_ast_sha256": null,
@@ -2654,6 +2658,10 @@
     "macro_ast_sha256": null,
     "reason": "Concrete owned implementation/helper entry within the bounded caller families. Complete body evidence remains visible and changes require ordinary behavioral review; this finite classification grants no independent support or nonreachability."
   },
+  "ess_compiler::lib(ess_compiler)::expression::impl<Environment < '_ >;TypeEnvironment>::type::Type": {
+    "class": "OwnedHelper",
+    "reason": "Declares ResolvedTypeRef as the concrete reference type for this expression-checking environment adapter This exact declaration grants no inherited support or baseline eligibility."
+  },
   "ess_compiler::lib(ess_compiler)::expression::impl<Environment < 'a >;>::new": {
     "class": "OwnedHelper",
     "macro_ast_sha256": null,
@@ -2828,6 +2836,10 @@
     "class": "OwnedHelper",
     "macro_ast_sha256": null,
     "reason": "Concrete owned implementation/helper entry within the bounded caller families. Complete body evidence remains visible and changes require ordinary behavioral review; this finite classification grants no independent support or nonreachability."
+  },
+  "ess_compiler::lib(ess_compiler)::graph::impl<DependencyRelation;>::const::ALL": {
+    "class": "OwnedHelper",
+    "reason": "Lists the 26 dependency-relation alternatives used by graph vocabulary checks This exact declaration grants no inherited support or baseline eligibility."
   },
   "ess_compiler::lib(ess_compiler)::graph::impl<DependencyRelation;>::verb": {
     "class": "OwnedHelper",
@@ -3733,6 +3745,10 @@
     "class": "OwnedHelper",
     "macro_ast_sha256": null,
     "reason": "Concrete owned implementation/helper entry within the bounded caller families. Complete body evidence remains visible and changes require ordinary behavioral review; this finite classification grants no independent support or nonreachability."
+  },
+  "ess_compiler::lib(ess_compiler)::refs::impl<BindingRef;FromStr>::type::Err": {
+    "class": "OwnedHelper",
+    "reason": "Declares ParseError as the parsing failure contract of BindingRef::from_str This exact declaration grants no inherited support or baseline eligibility."
   },
   "ess_compiler::lib(ess_compiler)::refs::impl<BindingRef;fmt :: Display>::fmt": {
     "class": "OwnedHelper",
@@ -4909,6 +4925,10 @@
     "macro_ast_sha256": null,
     "reason": "Concrete owned implementation/helper entry within the bounded caller families. Complete body evidence remains visible and changes require ordinary behavioral review; this finite classification grants no independent support or nonreachability."
   },
+  "ess_composition::lib(ess_composition)::impl<ServiceKey;FromStr>::type::Err": {
+    "class": "OwnedHelper",
+    "reason": "Declares KeyError as the parsing failure contract of ServiceKey::from_str This exact declaration grants no inherited support or baseline eligibility."
+  },
   "ess_composition::lib(ess_composition)::impl<ServiceKey;fmt :: Display>::fmt": {
     "class": "OwnedHelper",
     "macro_ast_sha256": null,
@@ -4938,6 +4958,10 @@
     "class": "OwnedHelper",
     "macro_ast_sha256": null,
     "reason": "Concrete owned implementation/helper entry within the bounded caller families. Complete body evidence remains visible and changes require ordinary behavioral review; this finite classification grants no independent support or nonreachability."
+  },
+  "ess_composition::lib(ess_composition)::impl<SourceDigest;FromStr>::type::Err": {
+    "class": "OwnedHelper",
+    "reason": "Declares DigestError as the parsing failure contract of SourceDigest::from_str This exact declaration grants no inherited support or baseline eligibility."
   },
   "ess_composition::lib(ess_composition)::impl<SourceDigest;fmt :: Display>::fmt": {
     "class": "OwnedHelper",
@@ -5459,6 +5483,10 @@
     "macro_ast_sha256": null,
     "reason": "Concrete owned implementation/helper entry within the bounded caller families. Complete body evidence remains visible and changes require ordinary behavioral review; this finite classification grants no independent support or nonreachability."
   },
+  "ess_conformance::lib(ess_conformance)::authored::impl<Cause;>::const::FAMILY": {
+    "class": "DiagnosticSurface",
+    "reason": "Names the AUTHOR diagnostic-code family for authored-scenario admission This exact declaration grants no inherited support or baseline eligibility."
+  },
   "ess_conformance::lib(ess_conformance)::authored::impl<Cause;>::hint": {
     "class": "OwnedHelper",
     "macro_ast_sha256": null,
@@ -5638,6 +5666,14 @@
     "class": "OwnedHelper",
     "macro_ast_sha256": null,
     "reason": "Concrete owned implementation/helper entry within the bounded caller families. Complete body evidence remains visible and changes require ordinary behavioral review; this finite classification grants no independent support or nonreachability."
+  },
+  "ess_conformance::lib(ess_conformance)::authored::impl<Written;>::const::INSTANCE": {
+    "class": "OwnedHelper",
+    "reason": "Defines the $instance sigil in authored scenario values This exact declaration grants no inherited support or baseline eligibility."
+  },
+  "ess_conformance::lib(ess_conformance)::authored::impl<Written;>::const::OBSERVED": {
+    "class": "OwnedHelper",
+    "reason": "Defines the $observed sigil in authored scenario values This exact declaration grants no inherited support or baseline eligibility."
   },
   "ess_conformance::lib(ess_conformance)::authored::impl<Written;>::literal": {
     "class": "OwnedHelper",
@@ -7899,6 +7935,10 @@
     "macro_ast_sha256": null,
     "reason": "Concrete owned implementation/helper entry within the bounded caller families. Complete body evidence remains visible and changes require ordinary behavioral review; this finite classification grants no independent support or nonreachability."
   },
+  "ess_conformance::lib(ess_conformance)::reference::impl<Billing;>::const::DEFAULT_LAG": {
+    "class": "FixtureRealization",
+    "reason": "Sets the handwritten Billing fixture projection lag to two further reads This exact declaration grants no inherited support or baseline eligibility."
+  },
   "ess_conformance::lib(ess_conformance)::reference::impl<Billing;>::create_invoice": {
     "class": "OwnedHelper",
     "macro_ast_sha256": null,
@@ -7974,10 +8014,38 @@
     "macro_ast_sha256": null,
     "reason": "Concrete owned implementation/helper entry within the bounded caller families. Complete body evidence remains visible and changes require ordinary behavioral review; this finite classification grants no independent support or nonreachability."
   },
+  "ess_conformance::lib(ess_conformance)::reference::impl<Move;>::const::CANCEL": {
+    "class": "FixtureRealization",
+    "reason": "Defines the handwritten Oracle cancellation command, allowed states, target state and emitted event This exact declaration grants no inherited support or baseline eligibility."
+  },
+  "ess_conformance::lib(ess_conformance)::reference::impl<Move;>::const::HOLD": {
+    "class": "FixtureRealization",
+    "reason": "Defines the handwritten Oracle hold command, allowed state, target state and emitted event This exact declaration grants no inherited support or baseline eligibility."
+  },
+  "ess_conformance::lib(ess_conformance)::reference::impl<Move;>::const::SHIP": {
+    "class": "FixtureRealization",
+    "reason": "Defines the handwritten Oracle shipping command, allowed state, target state and emitted event This exact declaration grants no inherited support or baseline eligibility."
+  },
   "ess_conformance::lib(ess_conformance)::reference::impl<Oracle;>::amend_order": {
     "class": "OwnedHelper",
     "macro_ast_sha256": null,
     "reason": "Concrete owned implementation/helper entry within the bounded caller families. Complete body evidence remains visible and changes require ordinary behavioral review; this finite classification grants no independent support or nonreachability."
+  },
+  "ess_conformance::lib(ess_conformance)::reference::impl<Oracle;>::const::ATTEMPTS": {
+    "class": "FixtureRealization",
+    "reason": "Bounds the handwritten Oracle fixture retry loop at three attempts This exact declaration grants no inherited support or baseline eligibility."
+  },
+  "ess_conformance::lib(ess_conformance)::reference::impl<Oracle;>::const::HANDOFF_ON_HELD": {
+    "class": "FixtureRealization",
+    "reason": "Names the handwritten Oracle handoff binding with escalation This exact declaration grants no inherited support or baseline eligibility."
+  },
+  "ess_conformance::lib(ess_conformance)::reference::impl<Oracle;>::const::HANDOFF_ON_PLACED": {
+    "class": "FixtureRealization",
+    "reason": "Names the handwritten Oracle handoff binding with retry This exact declaration grants no inherited support or baseline eligibility."
+  },
+  "ess_conformance::lib(ess_conformance)::reference::impl<Oracle;>::const::HANDOFF_ON_SHIPPED": {
+    "class": "FixtureRealization",
+    "reason": "Names the handwritten Oracle handoff binding with silent drop This exact declaration grants no inherited support or baseline eligibility."
   },
   "ess_conformance::lib(ess_conformance)::reference::impl<Oracle;>::move_order": {
     "class": "OwnedHelper",
@@ -8394,6 +8462,10 @@
     "macro_ast_sha256": null,
     "reason": "Concrete owned implementation/helper entry within the bounded caller families. Complete body evidence remains visible and changes require ordinary behavioral review; this finite classification grants no independent support or nonreachability."
   },
+  "ess_conformance::lib(ess_conformance)::report::impl<CheckCode;>::const::ALL": {
+    "class": "DiagnosticSurface",
+    "reason": "Lists the 16 conformance report check-code alternatives This exact declaration grants no inherited support or baseline eligibility."
+  },
   "ess_conformance::lib(ess_conformance)::report::impl<CheckCode;>::parse": {
     "class": "OwnedHelper",
     "macro_ast_sha256": null,
@@ -8408,6 +8480,10 @@
     "class": "OwnedHelper",
     "macro_ast_sha256": null,
     "reason": "Concrete owned implementation/helper entry within the bounded caller families. Complete body evidence remains visible and changes require ordinary behavioral review; this finite classification grants no independent support or nonreachability."
+  },
+  "ess_conformance::lib(ess_conformance)::report::impl<CheckCode;TryFrom < String >>::type::Error": {
+    "class": "DiagnosticSurface",
+    "reason": "Declares String as the failure contract when converting written conformance report check codes This exact declaration grants no inherited support or baseline eligibility."
   },
   "ess_conformance::lib(ess_conformance)::report::impl<CheckCode;fmt :: Display>::fmt": {
     "class": "OwnedHelper",
@@ -8849,6 +8925,14 @@
     "macro_ast_sha256": null,
     "reason": "Concrete owned implementation/helper entry within the bounded caller families. Complete body evidence remains visible and changes require ordinary behavioral review; this finite classification grants no independent support or nonreachability."
   },
+  "ess_conformance::lib(ess_conformance)::runner::impl<AdvancingClock;>::const::DEFAULT_START_MS": {
+    "class": "OwnedHelper",
+    "reason": "Sets the deterministic conformance clock origin in milliseconds This exact declaration grants no inherited support or baseline eligibility."
+  },
+  "ess_conformance::lib(ess_conformance)::runner::impl<AdvancingClock;>::const::DEFAULT_STEP_MS": {
+    "class": "OwnedHelper",
+    "reason": "Sets the conformance clock increment per read This exact declaration grants no inherited support or baseline eligibility."
+  },
   "ess_conformance::lib(ess_conformance)::runner::impl<AdvancingClock;>::new": {
     "class": "OwnedHelper",
     "macro_ast_sha256": null,
@@ -8903,6 +8987,10 @@
     "class": "OwnedHelper",
     "macro_ast_sha256": null,
     "reason": "Concrete owned implementation/helper entry within the bounded caller families. Complete body evidence remains visible and changes require ordinary behavioral review; this finite classification grants no independent support or nonreachability."
+  },
+  "ess_conformance::lib(ess_conformance)::runner::impl<ExecutedRun;std :: ops :: Deref>::type::Target": {
+    "class": "OwnedHelper",
+    "reason": "Declares ConformanceReport as the dereference view of an executed conformance run This exact declaration grants no inherited support or baseline eligibility."
   },
   "ess_conformance::lib(ess_conformance)::runner::impl<Ids;>::correlation": {
     "class": "OwnedHelper",
@@ -9013,6 +9101,10 @@
     "class": "OwnedHelper",
     "macro_ast_sha256": null,
     "reason": "Concrete owned implementation/helper entry within the bounded caller families. Complete body evidence remains visible and changes require ordinary behavioral review; this finite classification grants no independent support or nonreachability."
+  },
+  "ess_conformance::lib(ess_conformance)::runner::impl<RunnerConfig;>::const::DEFAULT_EVENTUAL_TIMEOUT_MS": {
+    "class": "OwnedHelper",
+    "reason": "Sets the default conformance polling budget to 5000 clock milliseconds This exact declaration grants no inherited support or baseline eligibility."
   },
   "ess_conformance::lib(ess_conformance)::runner::impl<RunnerConfig;>::new": {
     "class": "OwnedHelper",
@@ -9354,6 +9446,10 @@
     "macro_ast_sha256": null,
     "reason": "Concrete owned implementation/helper entry within the bounded caller families. Complete body evidence remains visible and changes require ordinary behavioral review; this finite classification grants no independent support or nonreachability."
   },
+  "ess_conformance::lib(ess_conformance)::scenario::impl<AuthoredName;>::const::PATTERN": {
+    "class": "OwnedHelper",
+    "reason": "Publishes the lower-kebab authored-scenario name schema pattern This exact declaration grants no inherited support or baseline eligibility."
+  },
   "ess_conformance::lib(ess_conformance)::scenario::impl<AuthoredName;>::new": {
     "class": "OwnedHelper",
     "macro_ast_sha256": null,
@@ -9364,6 +9460,10 @@
     "macro_ast_sha256": null,
     "reason": "Concrete owned implementation/helper entry within the bounded caller families. Complete body evidence remains visible and changes require ordinary behavioral review; this finite classification grants no independent support or nonreachability."
   },
+  "ess_conformance::lib(ess_conformance)::scenario::impl<AuthoredName;FromStr>::type::Err": {
+    "class": "OwnedHelper",
+    "reason": "Declares ParseError as the parsing failure contract of AuthoredName::from_str This exact declaration grants no inherited support or baseline eligibility."
+  },
   "ess_conformance::lib(ess_conformance)::scenario::impl<AuthoredName;fmt :: Display>::fmt": {
     "class": "OwnedHelper",
     "macro_ast_sha256": null,
@@ -9373,6 +9473,10 @@
     "class": "OwnedHelper",
     "macro_ast_sha256": null,
     "reason": "Concrete owned implementation/helper entry within the bounded caller families. Complete body evidence remains visible and changes require ordinary behavioral review; this finite classification grants no independent support or nonreachability."
+  },
+  "ess_conformance::lib(ess_conformance)::scenario::impl<BindingAspect;>::const::ALL": {
+    "class": "OwnedHelper",
+    "reason": "Lists the four binding aspects and their written names used by conformance synthesis This exact declaration grants no inherited support or baseline eligibility."
   },
   "ess_conformance::lib(ess_conformance)::scenario::impl<BindingAspect;>::expected": {
     "class": "OwnedHelper",
@@ -9479,6 +9583,10 @@
     "macro_ast_sha256": null,
     "reason": "Concrete owned implementation/helper entry within the bounded caller families. Complete body evidence remains visible and changes require ordinary behavioral review; this finite classification grants no independent support or nonreachability."
   },
+  "ess_conformance::lib(ess_conformance)::scenario::impl<Elapsed;FromStr>::type::Err": {
+    "class": "OwnedHelper",
+    "reason": "Declares ParseError as the parsing failure contract of Elapsed::from_str This exact declaration grants no inherited support or baseline eligibility."
+  },
   "ess_conformance::lib(ess_conformance)::scenario::impl<Elapsed;fmt :: Display>::fmt": {
     "class": "OwnedHelper",
     "macro_ast_sha256": null,
@@ -9499,6 +9607,10 @@
     "macro_ast_sha256": null,
     "reason": "Concrete owned implementation/helper entry within the bounded caller families. Complete body evidence remains visible and changes require ordinary behavioral review; this finite classification grants no independent support or nonreachability."
   },
+  "ess_conformance::lib(ess_conformance)::scenario::impl<InstanceName;>::const::PATTERN": {
+    "class": "OwnedHelper",
+    "reason": "Publishes the lower-kebab arranged-instance schema pattern This exact declaration grants no inherited support or baseline eligibility."
+  },
   "ess_conformance::lib(ess_conformance)::scenario::impl<InstanceName;>::new": {
     "class": "OwnedHelper",
     "macro_ast_sha256": null,
@@ -9508,6 +9620,10 @@
     "class": "OwnedHelper",
     "macro_ast_sha256": null,
     "reason": "Concrete owned implementation/helper entry within the bounded caller families. Complete body evidence remains visible and changes require ordinary behavioral review; this finite classification grants no independent support or nonreachability."
+  },
+  "ess_conformance::lib(ess_conformance)::scenario::impl<InstanceName;FromStr>::type::Err": {
+    "class": "OwnedHelper",
+    "reason": "Declares ParseError as the parsing failure contract of InstanceName::from_str This exact declaration grants no inherited support or baseline eligibility."
   },
   "ess_conformance::lib(ess_conformance)::scenario::impl<InstanceName;fmt :: Display>::fmt": {
     "class": "OwnedHelper",
@@ -9524,6 +9640,10 @@
     "macro_ast_sha256": null,
     "reason": "Concrete owned implementation/helper entry within the bounded caller families. Complete body evidence remains visible and changes require ordinary behavioral review; this finite classification grants no independent support or nonreachability."
   },
+  "ess_conformance::lib(ess_conformance)::scenario::impl<InstantName;>::const::PATTERN": {
+    "class": "OwnedHelper",
+    "reason": "Publishes the marked-instant schema pattern by referring to InstanceName::PATTERN This exact declaration grants no inherited support or baseline eligibility."
+  },
   "ess_conformance::lib(ess_conformance)::scenario::impl<InstantName;>::new": {
     "class": "OwnedHelper",
     "macro_ast_sha256": null,
@@ -9533,6 +9653,10 @@
     "class": "OwnedHelper",
     "macro_ast_sha256": null,
     "reason": "Concrete owned implementation/helper entry within the bounded caller families. Complete body evidence remains visible and changes require ordinary behavioral review; this finite classification grants no independent support or nonreachability."
+  },
+  "ess_conformance::lib(ess_conformance)::scenario::impl<InstantName;FromStr>::type::Err": {
+    "class": "OwnedHelper",
+    "reason": "Declares ParseError as the parsing failure contract of InstantName::from_str This exact declaration grants no inherited support or baseline eligibility."
   },
   "ess_conformance::lib(ess_conformance)::scenario::impl<InstantName;fmt :: Display>::fmt": {
     "class": "OwnedHelper",
@@ -9584,6 +9708,30 @@
     "macro_ast_sha256": null,
     "reason": "Concrete owned implementation/helper entry within the bounded caller families. Complete body evidence remains visible and changes require ordinary behavioral review; this finite classification grants no independent support or nonreachability."
   },
+  "ess_conformance::lib(ess_conformance)::scenario::impl<ScenarioId;>::const::AUTHORED": {
+    "class": "OwnedHelper",
+    "reason": "Names the authored segment in the semantic scenario identifier parser and renderer This exact declaration grants no inherited support or baseline eligibility."
+  },
+  "ess_conformance::lib(ess_conformance)::scenario::impl<ScenarioId;>::const::BINDING": {
+    "class": "OwnedHelper",
+    "reason": "Names the binding segment in the semantic scenario identifier parser and renderer This exact declaration grants no inherited support or baseline eligibility."
+  },
+  "ess_conformance::lib(ess_conformance)::scenario::impl<ScenarioId;>::const::INVARIANT": {
+    "class": "OwnedHelper",
+    "reason": "Names the invariant segment in the semantic scenario identifier parser and renderer This exact declaration grants no inherited support or baseline eligibility."
+  },
+  "ess_conformance::lib(ess_conformance)::scenario::impl<ScenarioId;>::const::OUTCOME": {
+    "class": "OwnedHelper",
+    "reason": "Names the outcome segment in the semantic scenario identifier parser and renderer This exact declaration grants no inherited support or baseline eligibility."
+  },
+  "ess_conformance::lib(ess_conformance)::scenario::impl<ScenarioId;>::const::STATE": {
+    "class": "OwnedHelper",
+    "reason": "Names the state segment in the semantic scenario identifier parser and renderer This exact declaration grants no inherited support or baseline eligibility."
+  },
+  "ess_conformance::lib(ess_conformance)::scenario::impl<ScenarioId;>::const::TRANSITION": {
+    "class": "OwnedHelper",
+    "reason": "Names the transition segment in the semantic scenario identifier parser and renderer This exact declaration grants no inherited support or baseline eligibility."
+  },
   "ess_conformance::lib(ess_conformance)::scenario::impl<ScenarioId;>::parse": {
     "class": "OwnedHelper",
     "macro_ast_sha256": null,
@@ -9593,6 +9741,10 @@
     "class": "OwnedHelper",
     "macro_ast_sha256": null,
     "reason": "Concrete owned implementation/helper entry within the bounded caller families. Complete body evidence remains visible and changes require ordinary behavioral review; this finite classification grants no independent support or nonreachability."
+  },
+  "ess_conformance::lib(ess_conformance)::scenario::impl<ScenarioId;FromStr>::type::Err": {
+    "class": "OwnedHelper",
+    "reason": "Declares ParseError as the parsing failure contract of ScenarioId::from_str This exact declaration grants no inherited support or baseline eligibility."
   },
   "ess_conformance::lib(ess_conformance)::scenario::impl<ScenarioId;Ord>::cmp": {
     "class": "OwnedHelper",
@@ -9624,6 +9776,10 @@
     "macro_ast_sha256": null,
     "reason": "Concrete owned implementation/helper entry within the bounded caller families. Complete body evidence remains visible and changes require ordinary behavioral review; this finite classification grants no independent support or nonreachability."
   },
+  "ess_conformance::lib(ess_conformance)::scenario::impl<ScenarioPurpose;>::const::MAX_LENGTH": {
+    "class": "OwnedHelper",
+    "reason": "Bounds authored scenario purpose text at 200 characters This exact declaration grants no inherited support or baseline eligibility."
+  },
   "ess_conformance::lib(ess_conformance)::scenario::impl<ScenarioPurpose;>::new": {
     "class": "OwnedHelper",
     "macro_ast_sha256": null,
@@ -9633,6 +9789,10 @@
     "class": "OwnedHelper",
     "macro_ast_sha256": null,
     "reason": "Concrete owned implementation/helper entry within the bounded caller families. Complete body evidence remains visible and changes require ordinary behavioral review; this finite classification grants no independent support or nonreachability."
+  },
+  "ess_conformance::lib(ess_conformance)::scenario::impl<ScenarioPurpose;FromStr>::type::Err": {
+    "class": "OwnedHelper",
+    "reason": "Declares ParseError as the parsing failure contract of ScenarioPurpose::from_str This exact declaration grants no inherited support or baseline eligibility."
   },
   "ess_conformance::lib(ess_conformance)::scenario::impl<ScenarioPurpose;fmt :: Display>::fmt": {
     "class": "OwnedHelper",
@@ -9694,6 +9854,14 @@
     "macro_ast_sha256": null,
     "reason": "Concrete owned implementation/helper entry within the bounded caller families. Complete body evidence remains visible and changes require ordinary behavioral review; this finite classification grants no independent support or nonreachability."
   },
+  "ess_conformance::lib(ess_conformance)::scenario::impl<SuiteFormat;>::const::CURRENT": {
+    "class": "OwnedHelper",
+    "reason": "Names the current conformance suite format through Version::V4 This exact declaration grants no inherited support or baseline eligibility."
+  },
+  "ess_conformance::lib(ess_conformance)::scenario::impl<SuiteFormat;>::const::PREFIX": {
+    "class": "OwnedHelper",
+    "reason": "Defines the ess-conformance/ wire prefix This exact declaration grants no inherited support or baseline eligibility."
+  },
   "ess_conformance::lib(ess_conformance)::scenario::impl<SuiteFormat;>::is_supported": {
     "class": "OwnedHelper",
     "macro_ast_sha256": null,
@@ -9713,6 +9881,10 @@
     "class": "OwnedHelper",
     "macro_ast_sha256": null,
     "reason": "Concrete owned implementation/helper entry within the bounded caller families. Complete body evidence remains visible and changes require ordinary behavioral review; this finite classification grants no independent support or nonreachability."
+  },
+  "ess_conformance::lib(ess_conformance)::scenario::impl<SuiteFormat;FromStr>::type::Err": {
+    "class": "OwnedHelper",
+    "reason": "Declares ParseError as the parsing failure contract of SuiteFormat::from_str This exact declaration grants no inherited support or baseline eligibility."
   },
   "ess_conformance::lib(ess_conformance)::scenario::impl<SuiteFormat;fmt :: Display>::fmt": {
     "class": "OwnedHelper",
@@ -10398,6 +10570,10 @@
     "class": "OwnedHelper",
     "macro_ast_sha256": null,
     "reason": "Concrete owned implementation/helper entry within the bounded caller families. Complete body evidence remains visible and changes require ordinary behavioral review; this finite classification grants no independent support or nonreachability."
+  },
+  "ess_conformance::lib(ess_conformance)::synthesize::impl<RefusalCause;>::const::FAMILY": {
+    "class": "DiagnosticSurface",
+    "reason": "Names the SYNTH diagnostic-code family for scenario synthesis refusal This exact declaration grants no inherited support or baseline eligibility."
   },
   "ess_conformance::lib(ess_conformance)::synthesize::impl<RefusalCause;>::hint": {
     "class": "OwnedHelper",
@@ -11138,6 +11314,10 @@
     "class": "OwnedHelper",
     "macro_ast_sha256": null,
     "reason": "Concrete owned implementation/helper entry within the bounded caller families. Complete body evidence remains visible and changes require ordinary behavioral review; this finite classification grants no independent support or nonreachability."
+  },
+  "ess_conformance::lib(ess_conformance)::witness::impl<Distinction;>::const::PLAIN": {
+    "class": "OwnedHelper",
+    "reason": "Selects the subject witness with distinction zero in conformance witness generation This exact declaration grants no inherited support or baseline eligibility."
   },
   "ess_conformance::lib(ess_conformance)::witness::impl<Distinction;>::further": {
     "class": "OwnedHelper",
@@ -11964,6 +12144,10 @@
     "macro_ast_sha256": null,
     "reason": "Concrete owned implementation/helper entry within the bounded caller families. Complete body evidence remains visible and changes require ordinary behavioral review; this finite classification grants no independent support or nonreachability."
   },
+  "ess_deployment::lib(ess_deployment)::identity::impl<Digest;FromStr>::type::Err": {
+    "class": "OwnedHelper",
+    "reason": "Declares DigestError as the parsing failure contract of Digest::from_str This exact declaration grants no inherited support or baseline eligibility."
+  },
   "ess_deployment::lib(ess_deployment)::identity::impl<Digest;fmt :: Display>::fmt": {
     "class": "OwnedHelper",
     "macro_ast_sha256": null,
@@ -11988,6 +12172,10 @@
     "class": "OwnedHelper",
     "macro_ast_sha256": null,
     "reason": "Concrete owned implementation/helper entry within the bounded caller families. Complete body evidence remains visible and changes require ordinary behavioral review; this finite classification grants no independent support or nonreachability."
+  },
+  "ess_deployment::lib(ess_deployment)::identity::impl<Identifier;FromStr>::type::Err": {
+    "class": "OwnedHelper",
+    "reason": "Declares IdentifierError as the parsing failure contract of Identifier::from_str This exact declaration grants no inherited support or baseline eligibility."
   },
   "ess_deployment::lib(ess_deployment)::identity::impl<Identifier;fmt :: Display>::fmt": {
     "class": "OwnedHelper",
@@ -14219,6 +14407,18 @@
     "macro_ast_sha256": null,
     "reason": "Concrete owned implementation/helper entry within the bounded caller families. Complete body evidence remains visible and changes require ordinary behavioral review; this finite classification grants no independent support or nonreachability."
   },
+  "ess_diff::lib(ess_diff)::delta::impl<DeltaFormat;>::const::CURRENT": {
+    "class": "OwnedHelper",
+    "reason": "Names the current delta format through Version::V2 This exact declaration grants no inherited support or baseline eligibility."
+  },
+  "ess_diff::lib(ess_diff)::delta::impl<DeltaFormat;>::const::LEGACY": {
+    "class": "OwnedHelper",
+    "reason": "Names the frozen legacy delta format through Version::V1 This exact declaration grants no inherited support or baseline eligibility."
+  },
+  "ess_diff::lib(ess_diff)::delta::impl<DeltaFormat;>::const::PREFIX": {
+    "class": "OwnedHelper",
+    "reason": "Defines the ess-diff/ wire prefix This exact declaration grants no inherited support or baseline eligibility."
+  },
   "ess_diff::lib(ess_diff)::delta::impl<DeltaFormat;>::is_supported": {
     "class": "OwnedHelper",
     "macro_ast_sha256": null,
@@ -14248,6 +14448,10 @@
     "class": "OwnedHelper",
     "macro_ast_sha256": null,
     "reason": "Concrete owned implementation/helper entry within the bounded caller families. Complete body evidence remains visible and changes require ordinary behavioral review; this finite classification grants no independent support or nonreachability."
+  },
+  "ess_diff::lib(ess_diff)::delta::impl<DeltaFormat;std :: str :: FromStr>::type::Err": {
+    "class": "OwnedHelper",
+    "reason": "Declares ParseError as the parsing failure contract of DeltaFormat::from_str This exact declaration grants no inherited support or baseline eligibility."
   },
   "ess_diff::lib(ess_diff)::delta::impl<DeltaWriteRefusal;fmt :: Display>::fmt": {
     "class": "OwnedHelper",
@@ -15094,6 +15298,10 @@
     "macro_ast_sha256": null,
     "reason": "Concrete owned implementation/helper entry within the bounded caller families. Complete body evidence remains visible and changes require ordinary behavioral review; this finite classification grants no independent support or nonreachability."
   },
+  "ess_diff::lib(ess_diff)::raw::impl<EssDelta;TryFrom < RawEssDelta >>::type::Error": {
+    "class": "OwnedHelper",
+    "reason": "Declares ValidationErrors as the raw-to-admitted conversion failure contract for EssDelta This exact declaration grants no inherited support or baseline eligibility."
+  },
   "ess_diff::lib(ess_diff)::raw::module": {
     "class": "OwnedHelper",
     "macro_ast_sha256": null,
@@ -15354,6 +15562,10 @@
     "macro_ast_sha256": null,
     "reason": "Concrete owned implementation/helper entry within the bounded caller families. Complete body evidence remains visible and changes require ordinary behavioral review; this finite classification grants no independent support or nonreachability."
   },
+  "ess_domain::lib(ess_domain)::actor::impl<ActorSpec;TryFrom < RawActorSpec >>::type::Error": {
+    "class": "OwnedHelper",
+    "reason": "Declares ValidationErrors as the raw-to-admitted conversion failure contract for ActorSpec This exact declaration grants no inherited support or baseline eligibility."
+  },
   "ess_domain::lib(ess_domain)::actor::module": {
     "class": "OwnedHelper",
     "macro_ast_sha256": null,
@@ -15509,6 +15721,10 @@
     "macro_ast_sha256": null,
     "reason": "Concrete owned implementation/helper entry within the bounded caller families. Complete body evidence remains visible and changes require ordinary behavioral review; this finite classification grants no independent support or nonreachability."
   },
+  "ess_domain::lib(ess_domain)::binding::impl<BindingName;>::const::PATTERN": {
+    "class": "OwnedHelper",
+    "reason": "Publishes the lower-kebab binding-name schema pattern This exact declaration grants no inherited support or baseline eligibility."
+  },
   "ess_domain::lib(ess_domain)::binding::impl<BindingName;>::new": {
     "class": "OwnedHelper",
     "macro_ast_sha256": null,
@@ -15543,6 +15759,10 @@
     "class": "OwnedHelper",
     "macro_ast_sha256": null,
     "reason": "Concrete owned implementation/helper entry within the bounded caller families. Complete body evidence remains visible and changes require ordinary behavioral review; this finite classification grants no independent support or nonreachability."
+  },
+  "ess_domain::lib(ess_domain)::binding::impl<BindingSpec;TryFrom < RawBindingSpec >>::type::Error": {
+    "class": "OwnedHelper",
+    "reason": "Declares ValidationErrors as the raw-to-admitted conversion failure contract for BindingSpec This exact declaration grants no inherited support or baseline eligibility."
   },
   "ess_domain::lib(ess_domain)::binding::impl<Ends < '_ >;>::at": {
     "class": "OwnedHelper",
@@ -15589,6 +15809,10 @@
     "macro_ast_sha256": null,
     "reason": "Concrete owned implementation/helper entry within the bounded caller families. Complete body evidence remains visible and changes require ordinary behavioral review; this finite classification grants no independent support or nonreachability."
   },
+  "ess_domain::lib(ess_domain)::binding::impl<Failure;>::const::WORDS": {
+    "class": "OwnedHelper",
+    "reason": "Lists retry, escalate and drop words for binding failure-policy parsing and refusal messages This exact declaration grants no inherited support or baseline eligibility."
+  },
   "ess_domain::lib(ess_domain)::binding::impl<Failure;>::parse": {
     "class": "OwnedHelper",
     "macro_ast_sha256": null,
@@ -15598,6 +15822,10 @@
     "class": "OwnedHelper",
     "macro_ast_sha256": null,
     "reason": "Concrete owned implementation/helper entry within the bounded caller families. Complete body evidence remains visible and changes require ordinary behavioral review; this finite classification grants no independent support or nonreachability."
+  },
+  "ess_domain::lib(ess_domain)::binding::impl<MappingSource;>::const::EVENT_PREFIX": {
+    "class": "OwnedHelper",
+    "reason": "Defines the event. prefix distinguishing event-field mappings from literals This exact declaration grants no inherited support or baseline eligibility."
   },
   "ess_domain::lib(ess_domain)::binding::impl<MappingSource;>::parse": {
     "class": "OwnedHelper",
@@ -15929,6 +16157,10 @@
     "macro_ast_sha256": null,
     "reason": "Concrete owned implementation/helper entry within the bounded caller families. Complete body evidence remains visible and changes require ordinary behavioral review; this finite classification grants no independent support or nonreachability."
   },
+  "ess_domain::lib(ess_domain)::command::impl<CommandSpec;TryFrom < RawCommandSpec >>::type::Error": {
+    "class": "OwnedHelper",
+    "reason": "Declares ValidationErrors as the raw-to-admitted conversion failure contract for CommandSpec This exact declaration grants no inherited support or baseline eligibility."
+  },
   "ess_domain::lib(ess_domain)::command::impl<Effect;>::transition": {
     "class": "OwnedHelper",
     "macro_ast_sha256": null,
@@ -15954,6 +16186,10 @@
     "macro_ast_sha256": null,
     "reason": "Concrete owned implementation/helper entry within the bounded caller families. Complete body evidence remains visible and changes require ordinary behavioral review; this finite classification grants no independent support or nonreachability."
   },
+  "ess_domain::lib(ess_domain)::command::impl<ErrorSpec;TryFrom < RawErrorSpec >>::type::Error": {
+    "class": "OwnedHelper",
+    "reason": "Declares ValidationErrors as the raw-to-admitted conversion failure contract for ErrorSpec This exact declaration grants no inherited support or baseline eligibility."
+  },
   "ess_domain::lib(ess_domain)::command::impl<EventSpec;>::field": {
     "class": "OwnedHelper",
     "macro_ast_sha256": null,
@@ -15968,6 +16204,10 @@
     "class": "OwnedHelper",
     "macro_ast_sha256": null,
     "reason": "Concrete owned implementation/helper entry within the bounded caller families. Complete body evidence remains visible and changes require ordinary behavioral review; this finite classification grants no independent support or nonreachability."
+  },
+  "ess_domain::lib(ess_domain)::command::impl<EventSpec;TryFrom < RawEventSpec >>::type::Error": {
+    "class": "OwnedHelper",
+    "reason": "Declares ValidationErrors as the raw-to-admitted conversion failure contract for EventSpec This exact declaration grants no inherited support or baseline eligibility."
   },
   "ess_domain::lib(ess_domain)::command::impl<InstanceSurface;>::as_str": {
     "class": "OwnedHelper",
@@ -16034,6 +16274,10 @@
     "macro_ast_sha256": null,
     "reason": "Concrete owned implementation/helper entry within the bounded caller families. Complete body evidence remains visible and changes require ordinary behavioral review; this finite classification grants no independent support or nonreachability."
   },
+  "ess_domain::lib(ess_domain)::command::impl<Outcome;TryFrom < RawOutcome >>::type::Error": {
+    "class": "OwnedHelper",
+    "reason": "Declares ValidationErrors as the raw-to-admitted conversion failure contract for Outcome This exact declaration grants no inherited support or baseline eligibility."
+  },
   "ess_domain::lib(ess_domain)::command::impl<OutcomeCondition;>::cause": {
     "class": "OwnedHelper",
     "macro_ast_sha256": null,
@@ -16054,6 +16298,10 @@
     "macro_ast_sha256": null,
     "reason": "Concrete owned implementation/helper entry within the bounded caller families. Complete body evidence remains visible and changes require ordinary behavioral review; this finite classification grants no independent support or nonreachability."
   },
+  "ess_domain::lib(ess_domain)::command::impl<OutcomeName;>::const::PATTERN": {
+    "class": "OwnedHelper",
+    "reason": "Publishes the lower-kebab command outcome-name schema pattern This exact declaration grants no inherited support or baseline eligibility."
+  },
   "ess_domain::lib(ess_domain)::command::impl<OutcomeName;>::new": {
     "class": "OwnedHelper",
     "macro_ast_sha256": null,
@@ -16063,6 +16311,10 @@
     "class": "OwnedHelper",
     "macro_ast_sha256": null,
     "reason": "Concrete owned implementation/helper entry within the bounded caller families. Complete body evidence remains visible and changes require ordinary behavioral review; this finite classification grants no independent support or nonreachability."
+  },
+  "ess_domain::lib(ess_domain)::command::impl<OutcomeName;FromStr>::type::Err": {
+    "class": "OwnedHelper",
+    "reason": "Declares ParseError as the parsing failure contract of OutcomeName::from_str This exact declaration grants no inherited support or baseline eligibility."
   },
   "ess_domain::lib(ess_domain)::command::impl<OutcomeName;fmt :: Debug>::fmt": {
     "class": "OwnedHelper",
@@ -16118,6 +16370,10 @@
     "class": "OwnedHelper",
     "macro_ast_sha256": null,
     "reason": "Concrete owned implementation/helper entry within the bounded caller families. Complete body evidence remains visible and changes require ordinary behavioral review; this finite classification grants no independent support or nonreachability."
+  },
+  "ess_domain::lib(ess_domain)::command::impl<PayloadSource;>::const::INPUT_PREFIX": {
+    "class": "OwnedHelper",
+    "reason": "Defines the input. prefix distinguishing command input-field payload mappings from literals This exact declaration grants no inherited support or baseline eligibility."
   },
   "ess_domain::lib(ess_domain)::command::impl<PayloadSource;>::parse": {
     "class": "OwnedHelper",
@@ -16339,6 +16595,10 @@
     "macro_ast_sha256": null,
     "reason": "Concrete owned implementation/helper entry within the bounded caller families. Complete body evidence remains visible and changes require ordinary behavioral review; this finite classification grants no independent support or nonreachability."
   },
+  "ess_domain::lib(ess_domain)::component::impl<CliName;>::const::PATTERN": {
+    "class": "OwnedHelper",
+    "reason": "Publishes the lower-kebab command-line name schema pattern This exact declaration grants no inherited support or baseline eligibility."
+  },
   "ess_domain::lib(ess_domain)::component::impl<CliName;>::new": {
     "class": "OwnedHelper",
     "macro_ast_sha256": null,
@@ -16363,6 +16623,10 @@
     "class": "OwnedHelper",
     "macro_ast_sha256": null,
     "reason": "Concrete owned implementation/helper entry within the bounded caller families. Complete body evidence remains visible and changes require ordinary behavioral review; this finite classification grants no independent support or nonreachability."
+  },
+  "ess_domain::lib(ess_domain)::component::impl<ComponentName;>::const::PATTERN": {
+    "class": "OwnedHelper",
+    "reason": "Publishes the lower-kebab component-name schema pattern This exact declaration grants no inherited support or baseline eligibility."
   },
   "ess_domain::lib(ess_domain)::component::impl<ComponentName;>::new": {
     "class": "OwnedHelper",
@@ -16419,10 +16683,18 @@
     "macro_ast_sha256": null,
     "reason": "Concrete owned implementation/helper entry within the bounded caller families. Complete body evidence remains visible and changes require ordinary behavioral review; this finite classification grants no independent support or nonreachability."
   },
+  "ess_domain::lib(ess_domain)::component::impl<ComponentSpec;TryFrom < RawComponentSpec >>::type::Error": {
+    "class": "OwnedHelper",
+    "reason": "Declares ValidationErrors as the raw-to-admitted conversion failure contract for ComponentSpec This exact declaration grants no inherited support or baseline eligibility."
+  },
   "ess_domain::lib(ess_domain)::component::impl<Reach;>::as_str": {
     "class": "OwnedHelper",
     "macro_ast_sha256": null,
     "reason": "Concrete owned implementation/helper entry within the bounded caller families. Complete body evidence remains visible and changes require ordinary behavioral review; this finite classification grants no independent support or nonreachability."
+  },
+  "ess_domain::lib(ess_domain)::component::impl<Reach;>::const::ALL": {
+    "class": "OwnedHelper",
+    "reason": "Lists in-process, network and command-line component reach alternatives This exact declaration grants no inherited support or baseline eligibility."
   },
   "ess_domain::lib(ess_domain)::component::impl<Reach;>::is_in_process": {
     "class": "OwnedHelper",
@@ -16579,10 +16851,18 @@
     "macro_ast_sha256": null,
     "reason": "Concrete owned implementation/helper entry within the bounded caller families. Complete body evidence remains visible and changes require ordinary behavioral review; this finite classification grants no independent support or nonreachability."
   },
+  "ess_domain::lib(ess_domain)::domain::impl<DomainSpec;TryFrom < RawDomainSpec >>::type::Error": {
+    "class": "OwnedHelper",
+    "reason": "Declares ValidationErrors as the raw-to-admitted conversion failure contract for DomainSpec This exact declaration grants no inherited support or baseline eligibility."
+  },
   "ess_domain::lib(ess_domain)::domain::impl<MemberKind;>::as_str": {
     "class": "OwnedHelper",
     "macro_ast_sha256": null,
     "reason": "Concrete owned implementation/helper entry within the bounded caller families. Complete body evidence remains visible and changes require ordinary behavioral review; this finite classification grants no independent support or nonreachability."
+  },
+  "ess_domain::lib(ess_domain)::domain::impl<MemberKind;>::const::ALL": {
+    "class": "OwnedHelper",
+    "reason": "Lists the seven domain membership declaration kinds This exact declaration grants no inherited support or baseline eligibility."
   },
   "ess_domain::lib(ess_domain)::domain::impl<MemberKind;>::field": {
     "class": "OwnedHelper",
@@ -16729,6 +17009,14 @@
     "macro_ast_sha256": null,
     "reason": "Concrete owned implementation/helper entry within the bounded caller families. Complete body evidence remains visible and changes require ordinary behavioral review; this finite classification grants no independent support or nonreachability."
   },
+  "ess_domain::lib(ess_domain)::entity::impl<EntitySpec;>::const::STATE": {
+    "class": "OwnedHelper",
+    "reason": "Names the observable lifecycle pseudo-field used by entity validation and projection This exact declaration grants no inherited support or baseline eligibility."
+  },
+  "ess_domain::lib(ess_domain)::entity::impl<EntitySpec;>::const::STATE_TYPE": {
+    "class": "OwnedHelper",
+    "reason": "Names the synthesized lifecycle enum suffix used by entity observables This exact declaration grants no inherited support or baseline eligibility."
+  },
   "ess_domain::lib(ess_domain)::entity::impl<EntitySpec;>::dependencies": {
     "class": "OwnedHelper",
     "macro_ast_sha256": null,
@@ -16758,6 +17046,10 @@
     "class": "OwnedHelper",
     "macro_ast_sha256": null,
     "reason": "Concrete owned implementation/helper entry within the bounded caller families. Complete body evidence remains visible and changes require ordinary behavioral review; this finite classification grants no independent support or nonreachability."
+  },
+  "ess_domain::lib(ess_domain)::entity::impl<EntitySpec;TryFrom < RawEntitySpec >>::type::Error": {
+    "class": "OwnedHelper",
+    "reason": "Declares ValidationErrors as the raw-to-admitted conversion failure contract for EntitySpec This exact declaration grants no inherited support or baseline eligibility."
   },
   "ess_domain::lib(ess_domain)::entity::impl<Invariant;>::from_node": {
     "class": "OwnedHelper",
@@ -16884,6 +17176,10 @@
     "macro_ast_sha256": null,
     "reason": "Concrete owned implementation/helper entry within the bounded caller families. Complete body evidence remains visible and changes require ordinary behavioral review; this finite classification grants no independent support or nonreachability."
   },
+  "ess_domain::lib(ess_domain)::entity::impl<StateName;>::const::PATTERN": {
+    "class": "OwnedHelper",
+    "reason": "Publishes the UpperCamelCase lifecycle state-name schema pattern This exact declaration grants no inherited support or baseline eligibility."
+  },
   "ess_domain::lib(ess_domain)::entity::impl<StateName;>::new": {
     "class": "OwnedHelper",
     "macro_ast_sha256": null,
@@ -16893,6 +17189,10 @@
     "class": "OwnedHelper",
     "macro_ast_sha256": null,
     "reason": "Concrete owned implementation/helper entry within the bounded caller families. Complete body evidence remains visible and changes require ordinary behavioral review; this finite classification grants no independent support or nonreachability."
+  },
+  "ess_domain::lib(ess_domain)::entity::impl<StateName;FromStr>::type::Err": {
+    "class": "OwnedHelper",
+    "reason": "Declares ParseError as the parsing failure contract of StateName::from_str This exact declaration grants no inherited support or baseline eligibility."
   },
   "ess_domain::lib(ess_domain)::entity::impl<StateName;fmt :: Debug>::fmt": {
     "class": "OwnedHelper",
@@ -17139,6 +17439,10 @@
     "macro_ast_sha256": null,
     "reason": "Concrete owned implementation/helper entry within the bounded caller families. Complete body evidence remains visible and changes require ordinary behavioral review; this finite classification grants no independent support or nonreachability."
   },
+  "ess_domain::lib(ess_domain)::expression::impl<DomainEnvironment < '_ >;TypeEnvironment>::type::Type": {
+    "class": "OwnedHelper",
+    "reason": "Declares TypeRef as the concrete reference type for this expression-checking environment adapter This exact declaration grants no inherited support or baseline eligibility."
+  },
   "ess_domain::lib(ess_domain)::expression::impl<DomainEnvironment < 'a >;>::new": {
     "class": "OwnedHelper",
     "macro_ast_sha256": null,
@@ -17229,6 +17533,10 @@
     "macro_ast_sha256": null,
     "reason": "Concrete owned data/API declaration retained alongside the named behavioral callers. Its presence is not a behavior case and does not prove nonreachability."
   },
+  "ess_domain::lib(ess_domain)::expression::trait::TypeEnvironment::type::Type": {
+    "class": "OwnedHelper",
+    "reason": "Declares the Clone + Display type-reference parameter of the expression-checking environment interface This exact declaration grants no inherited support or baseline eligibility."
+  },
   "ess_domain::lib(ess_domain)::locate::enum::DeclarationKind": {
     "class": "OwnedHelper",
     "macro_ast_sha256": null,
@@ -17288,6 +17596,10 @@
     "class": "OwnedHelper",
     "macro_ast_sha256": null,
     "reason": "Concrete owned implementation/helper entry within the bounded caller families. Complete body evidence remains visible and changes require ordinary behavioral review; this finite classification grants no independent support or nonreachability."
+  },
+  "ess_domain::lib(ess_domain)::locate::impl<DeclarationKind;>::const::ALL": {
+    "class": "OwnedHelper",
+    "reason": "Lists the nine declaration-locator kinds used by parsing and listing This exact declaration grants no inherited support or baseline eligibility."
   },
   "ess_domain::lib(ess_domain)::locate::impl<DeclarationKind;>::entity_type": {
     "class": "OwnedHelper",
@@ -17369,6 +17681,10 @@
     "macro_ast_sha256": null,
     "reason": "Concrete owned implementation/helper entry within the bounded caller families. Complete body evidence remains visible and changes require ordinary behavioral review; this finite classification grants no independent support or nonreachability."
   },
+  "ess_domain::lib(ess_domain)::name::impl<QualifiedName;>::const::PATTERN": {
+    "class": "OwnedHelper",
+    "reason": "Publishes the dotted qualified-name schema pattern This exact declaration grants no inherited support or baseline eligibility."
+  },
   "ess_domain::lib(ess_domain)::name::impl<QualifiedName;>::from_segments": {
     "class": "OwnedHelper",
     "macro_ast_sha256": null,
@@ -17404,6 +17720,10 @@
     "macro_ast_sha256": null,
     "reason": "Concrete owned implementation/helper entry within the bounded caller families. Complete body evidence remains visible and changes require ordinary behavioral review; this finite classification grants no independent support or nonreachability."
   },
+  "ess_domain::lib(ess_domain)::name::impl<QualifiedName;FromStr>::type::Err": {
+    "class": "OwnedHelper",
+    "reason": "Declares ParseError as the parsing failure contract of QualifiedName::from_str This exact declaration grants no inherited support or baseline eligibility."
+  },
   "ess_domain::lib(ess_domain)::name::impl<QualifiedName;fmt :: Debug>::fmt": {
     "class": "OwnedHelper",
     "macro_ast_sha256": null,
@@ -17434,6 +17754,26 @@
     "macro_ast_sha256": null,
     "reason": "Concrete owned implementation/helper entry within the bounded caller families. Complete body evidence remains visible and changes require ordinary behavioral review; this finite classification grants no independent support or nonreachability."
   },
+  "ess_domain::lib(ess_domain)::name::impl<Version;>::const::PATTERN": {
+    "class": "OwnedHelper",
+    "reason": "Publishes the nonzero v-prefixed major-version schema pattern This exact declaration grants no inherited support or baseline eligibility."
+  },
+  "ess_domain::lib(ess_domain)::name::impl<Version;>::const::V1": {
+    "class": "OwnedHelper",
+    "reason": "Names major version 1 for format owners This exact declaration grants no inherited support or baseline eligibility."
+  },
+  "ess_domain::lib(ess_domain)::name::impl<Version;>::const::V2": {
+    "class": "OwnedHelper",
+    "reason": "Names major version 2 for format owners This exact declaration grants no inherited support or baseline eligibility."
+  },
+  "ess_domain::lib(ess_domain)::name::impl<Version;>::const::V3": {
+    "class": "OwnedHelper",
+    "reason": "Names major version 3 for format owners This exact declaration grants no inherited support or baseline eligibility."
+  },
+  "ess_domain::lib(ess_domain)::name::impl<Version;>::const::V4": {
+    "class": "OwnedHelper",
+    "reason": "Names major version 4 for format owners This exact declaration grants no inherited support or baseline eligibility."
+  },
   "ess_domain::lib(ess_domain)::name::impl<Version;>::from_number": {
     "class": "OwnedHelper",
     "macro_ast_sha256": null,
@@ -17458,6 +17798,10 @@
     "class": "OwnedHelper",
     "macro_ast_sha256": null,
     "reason": "Concrete owned implementation/helper entry within the bounded caller families. Complete body evidence remains visible and changes require ordinary behavioral review; this finite classification grants no independent support or nonreachability."
+  },
+  "ess_domain::lib(ess_domain)::name::impl<Version;FromStr>::type::Err": {
+    "class": "OwnedHelper",
+    "reason": "Declares ParseError as the parsing failure contract of Version::from_str This exact declaration grants no inherited support or baseline eligibility."
   },
   "ess_domain::lib(ess_domain)::name::impl<Version;fmt :: Display>::fmt": {
     "class": "OwnedHelper",
@@ -17698,6 +18042,10 @@
     "class": "OwnedHelper",
     "macro_ast_sha256": null,
     "reason": "Concrete owned implementation/helper entry within the bounded caller families. Complete body evidence remains visible and changes require ordinary behavioral review; this finite classification grants no independent support or nonreachability."
+  },
+  "ess_domain::lib(ess_domain)::refs::impl<ExternalRef;FromStr>::type::Err": {
+    "class": "OwnedHelper",
+    "reason": "Declares ParseError as the parsing failure contract of ExternalRef::from_str This exact declaration grants no inherited support or baseline eligibility."
   },
   "ess_domain::lib(ess_domain)::refs::impl<ExternalRef;fmt :: Display>::fmt": {
     "class": "OwnedHelper",
@@ -17954,6 +18302,22 @@
     "macro_ast_sha256": null,
     "reason": "Concrete owned implementation/helper entry within the bounded caller families. Complete body evidence remains visible and changes require ordinary behavioral review; this finite classification grants no independent support or nonreachability."
   },
+  "ess_domain::lib(ess_domain)::system::impl<FormatVersion;>::const::PATTERN": {
+    "class": "OwnedHelper",
+    "reason": "Publishes the nonzero ess/-prefixed format schema pattern This exact declaration grants no inherited support or baseline eligibility."
+  },
+  "ess_domain::lib(ess_domain)::system::impl<FormatVersion;>::const::PREFIX": {
+    "class": "OwnedHelper",
+    "reason": "Defines the ess/ specification format prefix This exact declaration grants no inherited support or baseline eligibility."
+  },
+  "ess_domain::lib(ess_domain)::system::impl<FormatVersion;>::const::V1": {
+    "class": "OwnedHelper",
+    "reason": "Names specification format major 1 This exact declaration grants no inherited support or baseline eligibility."
+  },
+  "ess_domain::lib(ess_domain)::system::impl<FormatVersion;>::const::V2": {
+    "class": "OwnedHelper",
+    "reason": "Names specification format major 2 This exact declaration grants no inherited support or baseline eligibility."
+  },
   "ess_domain::lib(ess_domain)::system::impl<FormatVersion;>::is_supported": {
     "class": "OwnedHelper",
     "macro_ast_sha256": null,
@@ -17978,6 +18342,10 @@
     "class": "OwnedHelper",
     "macro_ast_sha256": null,
     "reason": "Concrete owned implementation/helper entry within the bounded caller families. Complete body evidence remains visible and changes require ordinary behavioral review; this finite classification grants no independent support or nonreachability."
+  },
+  "ess_domain::lib(ess_domain)::system::impl<FormatVersion;FromStr>::type::Err": {
+    "class": "OwnedHelper",
+    "reason": "Declares ParseError as the parsing failure contract of FormatVersion::from_str This exact declaration grants no inherited support or baseline eligibility."
   },
   "ess_domain::lib(ess_domain)::system::impl<FormatVersion;fmt :: Display>::fmt": {
     "class": "OwnedHelper",
@@ -18048,6 +18416,10 @@
     "class": "OwnedHelper",
     "macro_ast_sha256": null,
     "reason": "Concrete owned implementation/helper entry within the bounded caller families. Complete body evidence remains visible and changes require ordinary behavioral review; this finite classification grants no independent support or nonreachability."
+  },
+  "ess_domain::lib(ess_domain)::system::impl<Source;>::const::DOCUMENT": {
+    "class": "OwnedHelper",
+    "reason": "Labels the provenance of a specification received as one document This exact declaration grants no inherited support or baseline eligibility."
   },
   "ess_domain::lib(ess_domain)::system::impl<Source;>::document": {
     "class": "OwnedHelper",
@@ -18203,6 +18575,10 @@
     "class": "OwnedHelper",
     "macro_ast_sha256": null,
     "reason": "Concrete owned implementation/helper entry within the bounded caller families. Complete body evidence remains visible and changes require ordinary behavioral review; this finite classification grants no independent support or nonreachability."
+  },
+  "ess_domain::lib(ess_domain)::topology::impl<Topology;TryFrom < RawTopology >>::type::Error": {
+    "class": "OwnedHelper",
+    "reason": "Declares ValidationErrors as the raw-to-admitted conversion failure contract for Topology This exact declaration grants no inherited support or baseline eligibility."
   },
   "ess_domain::lib(ess_domain)::topology::impl<Workload;>::check": {
     "class": "OwnedHelper",
@@ -18444,6 +18820,10 @@
     "macro_ast_sha256": null,
     "reason": "Concrete owned implementation/helper entry within the bounded caller families. Complete body evidence remains visible and changes require ordinary behavioral review; this finite classification grants no independent support or nonreachability."
   },
+  "ess_domain::lib(ess_domain)::types::impl<Field;>::const::PATTERN": {
+    "class": "OwnedHelper",
+    "reason": "Publishes the declared field-name schema pattern This exact declaration grants no inherited support or baseline eligibility."
+  },
   "ess_domain::lib(ess_domain)::types::impl<Field;>::new": {
     "class": "OwnedHelper",
     "macro_ast_sha256": null,
@@ -18458,6 +18838,10 @@
     "class": "OwnedHelper",
     "macro_ast_sha256": null,
     "reason": "Concrete owned implementation/helper entry within the bounded caller families. Complete body evidence remains visible and changes require ordinary behavioral review; this finite classification grants no independent support or nonreachability."
+  },
+  "ess_domain::lib(ess_domain)::types::impl<NamedType;>::const::VALUE": {
+    "class": "OwnedHelper",
+    "reason": "Names the newtype representation pseudo-field used by invariant validation This exact declaration grants no inherited support or baseline eligibility."
   },
   "ess_domain::lib(ess_domain)::types::impl<NamedType;>::dependencies": {
     "class": "OwnedHelper",
@@ -18479,6 +18863,10 @@
     "macro_ast_sha256": null,
     "reason": "Concrete owned implementation/helper entry within the bounded caller families. Complete body evidence remains visible and changes require ordinary behavioral review; this finite classification grants no independent support or nonreachability."
   },
+  "ess_domain::lib(ess_domain)::types::impl<NamedType;TryFrom < RawNamedType >>::type::Error": {
+    "class": "OwnedHelper",
+    "reason": "Declares ValidationErrors as the raw-to-admitted conversion failure contract for NamedType This exact declaration grants no inherited support or baseline eligibility."
+  },
   "ess_domain::lib(ess_domain)::types::impl<NamedType;schemars :: JsonSchema>::json_schema": {
     "class": "OwnedHelper",
     "macro_ast_sha256": null,
@@ -18493,6 +18881,10 @@
     "class": "OwnedHelper",
     "macro_ast_sha256": null,
     "reason": "Concrete owned implementation/helper entry within the bounded caller families. Complete body evidence remains visible and changes require ordinary behavioral review; this finite classification grants no independent support or nonreachability."
+  },
+  "ess_domain::lib(ess_domain)::types::impl<Primitive;>::const::ALL": {
+    "class": "OwnedHelper",
+    "reason": "Lists the nine ESS primitive type-name alternatives used by parsing This exact declaration grants no inherited support or baseline eligibility."
   },
   "ess_domain::lib(ess_domain)::types::impl<Primitive;>::parse": {
     "class": "OwnedHelper",
@@ -18573,6 +18965,10 @@
     "class": "OwnedHelper",
     "macro_ast_sha256": null,
     "reason": "Concrete owned implementation/helper entry within the bounded caller families. Complete body evidence remains visible and changes require ordinary behavioral review; this finite classification grants no independent support or nonreachability."
+  },
+  "ess_domain::lib(ess_domain)::types::impl<TypeRef;std :: str :: FromStr>::type::Err": {
+    "class": "OwnedHelper",
+    "reason": "Declares ParseError as the parsing failure contract of TypeRef::from_str This exact declaration grants no inherited support or baseline eligibility."
   },
   "ess_domain::lib(ess_domain)::types::impl<TypeRegistry;>::get": {
     "class": "OwnedHelper",
@@ -18784,6 +19180,10 @@
     "macro_ast_sha256": null,
     "reason": "Concrete owned implementation/helper entry within the bounded caller families. Complete body evidence remains visible and changes require ordinary behavioral review; this finite classification grants no independent support or nonreachability."
   },
+  "ess_domain::lib(ess_domain)::view::impl<ViewSpec;>::const::PARAM": {
+    "class": "OwnedHelper",
+    "reason": "Names the view filter parameter namespace This exact declaration grants no inherited support or baseline eligibility."
+  },
   "ess_domain::lib(ess_domain)::view::impl<ViewSpec;>::field": {
     "class": "OwnedHelper",
     "macro_ast_sha256": null,
@@ -18823,6 +19223,10 @@
     "class": "OwnedHelper",
     "macro_ast_sha256": null,
     "reason": "Concrete owned implementation/helper entry within the bounded caller families. Complete body evidence remains visible and changes require ordinary behavioral review; this finite classification grants no independent support or nonreachability."
+  },
+  "ess_domain::lib(ess_domain)::view::impl<ViewSpec;TryFrom < RawViewSpec >>::type::Error": {
+    "class": "OwnedHelper",
+    "reason": "Declares ValidationErrors as the raw-to-admitted conversion failure contract for ViewSpec This exact declaration grants no inherited support or baseline eligibility."
   },
   "ess_domain::lib(ess_domain)::view::module": {
     "class": "OwnedHelper",
@@ -20909,6 +21313,10 @@
     "macro_ast_sha256": null,
     "reason": "Concrete owned implementation/helper entry within the bounded caller families. Complete body evidence remains visible and changes require ordinary behavioral review; this finite classification grants no independent support or nonreachability."
   },
+  "ess_gen::lib(ess_gen)::provenance::impl<Provenance;>::const::REGENERATE": {
+    "class": "OwnedHelper",
+    "reason": "Supplies the ess generate command in generated artifact provenance comments This exact declaration grants no inherited support or baseline eligibility."
+  },
   "ess_gen::lib(ess_gen)::provenance::impl<Provenance;>::html_comment": {
     "class": "OwnedHelper",
     "macro_ast_sha256": null,
@@ -22189,6 +22597,10 @@
     "macro_ast_sha256": null,
     "reason": "Concrete owned implementation/helper entry within the bounded caller families. Complete body evidence remains visible and changes require ordinary behavioral review; this finite classification grants no independent support or nonreachability."
   },
+  "ess_primitives::lib(ess_primitives)::entity::impl<EntityLocator;>::const::PATTERN": {
+    "class": "OwnedHelper",
+    "reason": "Publishes the four-segment ep:// logical entity locator schema pattern This exact declaration grants no inherited support or baseline eligibility."
+  },
   "ess_primitives::lib(ess_primitives)::entity::impl<EntityLocator;>::key": {
     "class": "OwnedHelper",
     "macro_ast_sha256": null,
@@ -22223,6 +22635,10 @@
     "class": "OwnedHelper",
     "macro_ast_sha256": null,
     "reason": "Concrete owned implementation/helper entry within the bounded caller families. Complete body evidence remains visible and changes require ordinary behavioral review; this finite classification grants no independent support or nonreachability."
+  },
+  "ess_primitives::lib(ess_primitives)::entity::impl<EntityLocator;FromStr>::type::Err": {
+    "class": "OwnedHelper",
+    "reason": "Declares ParseError as the parsing failure contract of EntityLocator::from_str This exact declaration grants no inherited support or baseline eligibility."
   },
   "ess_primitives::lib(ess_primitives)::entity::impl<EntityLocator;fmt :: Debug>::fmt": {
     "class": "OwnedHelper",
@@ -22354,6 +22770,10 @@
     "macro_ast_sha256": null,
     "reason": "Concrete owned implementation/helper entry within the bounded caller families. Complete body evidence remains visible and changes require ordinary behavioral review; this finite classification grants no independent support or nonreachability."
   },
+  "ess_primitives::lib(ess_primitives)::error::impl<ParseError;>::const::ECHO_LIMIT": {
+    "class": "DiagnosticSurface",
+    "reason": "Bounds offending-value echo in depth refusal diagnostics to 60 bytes This exact declaration grants no inherited support or baseline eligibility."
+  },
   "ess_primitives::lib(ess_primitives)::error::impl<ParseError;>::identifier": {
     "class": "OwnedHelper",
     "macro_ast_sha256": null,
@@ -22459,6 +22879,14 @@
     "macro_ast_sha256": null,
     "reason": "Concrete owned implementation/helper entry within the bounded caller families. Complete body evidence remains visible and changes require ordinary behavioral review; this finite classification grants no independent support or nonreachability."
   },
+  "ess_primitives::lib(ess_primitives)::error::impl<ValidationErrors;IntoIterator>::type::IntoIter": {
+    "class": "DiagnosticSurface",
+    "reason": "Declares std::vec::IntoIter<ValidationError> as the owned validation-error iterator This exact declaration grants no inherited support or baseline eligibility."
+  },
+  "ess_primitives::lib(ess_primitives)::error::impl<ValidationErrors;IntoIterator>::type::Item": {
+    "class": "DiagnosticSurface",
+    "reason": "Declares the owned ValidationError iteration item This exact declaration grants no inherited support or baseline eligibility."
+  },
   "ess_primitives::lib(ess_primitives)::error::impl<ValidationErrors;fmt :: Display>::fmt": {
     "class": "OwnedHelper",
     "macro_ast_sha256": null,
@@ -22493,6 +22921,14 @@
     "class": "OwnedHelper",
     "macro_ast_sha256": null,
     "reason": "Concrete owned implementation/helper entry within the bounded caller families. Complete body evidence remains visible and changes require ordinary behavioral review; this finite classification grants no independent support or nonreachability."
+  },
+  "ess_primitives::lib(ess_primitives)::evidence::impl<SpecDigest;>::const::MAX_LENGTH": {
+    "class": "OwnedHelper",
+    "reason": "Bounds admitted hexadecimal specification digest length at 64 characters This exact declaration grants no inherited support or baseline eligibility."
+  },
+  "ess_primitives::lib(ess_primitives)::evidence::impl<SpecDigest;>::const::MIN_LENGTH": {
+    "class": "OwnedHelper",
+    "reason": "Preserves the 16-character legacy specification digest minimum This exact declaration grants no inherited support or baseline eligibility."
   },
   "ess_primitives::lib(ess_primitives)::evidence::impl<SpecDigest;>::new": {
     "class": "OwnedHelper",
@@ -22569,6 +23005,10 @@
     "macro_ast_sha256": null,
     "reason": "Concrete owned implementation/helper entry within the bounded caller families. Complete body evidence remains visible and changes require ordinary behavioral review; this finite classification grants no independent support or nonreachability."
   },
+  "ess_primitives::lib(ess_primitives)::facts::impl<FactPath;>::const::PATTERN": {
+    "class": "OwnedHelper",
+    "reason": "Publishes the dotted fact-path schema pattern This exact declaration grants no inherited support or baseline eligibility."
+  },
   "ess_primitives::lib(ess_primitives)::facts::impl<FactPath;>::from_segments": {
     "class": "OwnedHelper",
     "macro_ast_sha256": null,
@@ -22593,6 +23033,10 @@
     "class": "OwnedHelper",
     "macro_ast_sha256": null,
     "reason": "Concrete owned implementation/helper entry within the bounded caller families. Complete body evidence remains visible and changes require ordinary behavioral review; this finite classification grants no independent support or nonreachability."
+  },
+  "ess_primitives::lib(ess_primitives)::facts::impl<FactPath;FromStr>::type::Err": {
+    "class": "OwnedHelper",
+    "reason": "Declares ParseError as the parsing failure contract of FactPath::from_str This exact declaration grants no inherited support or baseline eligibility."
   },
   "ess_primitives::lib(ess_primitives)::facts::impl<FactPath;fmt :: Debug>::fmt": {
     "class": "OwnedHelper",
@@ -22619,6 +23063,10 @@
     "macro_ast_sha256": null,
     "reason": "Concrete owned implementation/helper entry within the bounded caller families. Complete body evidence remains visible and changes require ordinary behavioral review; this finite classification grants no independent support or nonreachability."
   },
+  "ess_primitives::lib(ess_primitives)::facts::impl<FactPattern;>::const::PATTERN": {
+    "class": "OwnedHelper",
+    "reason": "Publishes the dotted wildcard fact-pattern schema pattern This exact declaration grants no inherited support or baseline eligibility."
+  },
   "ess_primitives::lib(ess_primitives)::facts::impl<FactPattern;>::matches": {
     "class": "OwnedHelper",
     "macro_ast_sha256": null,
@@ -22633,6 +23081,10 @@
     "class": "OwnedHelper",
     "macro_ast_sha256": null,
     "reason": "Concrete owned implementation/helper entry within the bounded caller families. Complete body evidence remains visible and changes require ordinary behavioral review; this finite classification grants no independent support or nonreachability."
+  },
+  "ess_primitives::lib(ess_primitives)::facts::impl<FactPattern;FromStr>::type::Err": {
+    "class": "OwnedHelper",
+    "reason": "Declares ParseError as the parsing failure contract of FactPattern::from_str This exact declaration grants no inherited support or baseline eligibility."
   },
   "ess_primitives::lib(ess_primitives)::facts::impl<FactPattern;fmt :: Debug>::fmt": {
     "class": "OwnedHelper",
@@ -22958,6 +23410,10 @@
     "class": "OwnedHelper",
     "macro_ast_sha256": null,
     "reason": "Concrete owned implementation/helper entry within the bounded caller families. Complete body evidence remains visible and changes require ordinary behavioral review; this finite classification grants no independent support or nonreachability."
+  },
+  "ess_primitives::lib(ess_primitives)::ids::impl<CorrelationId;>::const::MAX_LENGTH": {
+    "class": "OwnedHelper",
+    "reason": "Bounds admitted correlation identifier text at 200 characters This exact declaration grants no inherited support or baseline eligibility."
   },
   "ess_primitives::lib(ess_primitives)::ids::impl<CorrelationId;>::new": {
     "class": "OwnedHelper",
@@ -23534,6 +23990,10 @@
     "macro_ast_sha256": null,
     "reason": "Concrete owned implementation/helper entry within the bounded caller families. Complete body evidence remains visible and changes require ordinary behavioral review; this finite classification grants no independent support or nonreachability."
   },
+  "ess_primitives::lib(ess_primitives)::predicate::impl<Predicate;std :: str :: FromStr>::type::Err": {
+    "class": "OwnedHelper",
+    "reason": "Declares ParseError as the parsing failure contract of Predicate::from_str This exact declaration grants no inherited support or baseline eligibility."
+  },
   "ess_primitives::lib(ess_primitives)::predicate::impl<PredicateOutcome;>::is_satisfied": {
     "class": "OwnedHelper",
     "macro_ast_sha256": null,
@@ -23859,6 +24319,10 @@
     "macro_ast_sha256": null,
     "reason": "Concrete owned implementation/helper entry within the bounded caller families. Complete body evidence remains visible and changes require ordinary behavioral review; this finite classification grants no independent support or nonreachability."
   },
+  "ess_primitives::lib(ess_primitives)::time::impl<CivilDate;std :: str :: FromStr>::type::Err": {
+    "class": "OwnedHelper",
+    "reason": "Declares ParseError as the parsing failure contract of CivilDate::from_str This exact declaration grants no inherited support or baseline eligibility."
+  },
   "ess_primitives::lib(ess_primitives)::time::impl<Horizon;>::as_days": {
     "class": "OwnedHelper",
     "macro_ast_sha256": null,
@@ -23868,6 +24332,10 @@
     "class": "OwnedHelper",
     "macro_ast_sha256": null,
     "reason": "Concrete owned implementation/helper entry within the bounded caller families. Complete body evidence remains visible and changes require ordinary behavioral review; this finite classification grants no independent support or nonreachability."
+  },
+  "ess_primitives::lib(ess_primitives)::time::impl<Horizon;>::const::MAX_DAYS": {
+    "class": "OwnedHelper",
+    "reason": "Bounds admitted evidence horizons at 3650 days This exact declaration grants no inherited support or baseline eligibility."
   },
   "ess_primitives::lib(ess_primitives)::time::impl<Horizon;>::covers": {
     "class": "OwnedHelper",
@@ -23913,6 +24381,10 @@
     "class": "OwnedHelper",
     "macro_ast_sha256": null,
     "reason": "Concrete owned implementation/helper entry within the bounded caller families. Complete body evidence remains visible and changes require ordinary behavioral review; this finite classification grants no independent support or nonreachability."
+  },
+  "ess_primitives::lib(ess_primitives)::time::impl<Horizon;std :: str :: FromStr>::type::Err": {
+    "class": "OwnedHelper",
+    "reason": "Declares ParseError as the parsing failure contract of Horizon::from_str This exact declaration grants no inherited support or baseline eligibility."
   },
   "ess_primitives::lib(ess_primitives)::time::impl<ObservedAt;>::age_days": {
     "class": "OwnedHelper",
@@ -23968,6 +24440,10 @@
     "class": "OwnedHelper",
     "macro_ast_sha256": null,
     "reason": "Concrete owned implementation/helper entry within the bounded caller families. Complete body evidence remains visible and changes require ordinary behavioral review; this finite classification grants no independent support or nonreachability."
+  },
+  "ess_primitives::lib(ess_primitives)::time::impl<Timestamp;>::const::EPOCH": {
+    "class": "OwnedHelper",
+    "reason": "Names the timestamp at zero Unix epoch milliseconds This exact declaration grants no inherited support or baseline eligibility."
   },
   "ess_primitives::lib(ess_primitives)::time::impl<Timestamp;>::epoch_millis": {
     "class": "OwnedHelper",
@@ -28519,17 +28995,16 @@
     "macro_ast_sha256": null,
     "reason": "Maintenance/extractor infrastructure entry. Its source and fixture tests are inventoried; it emits evidence or proposals and grants no ESS semantic behavior support."
   },
+  "ess_xtask::bin(ess-xtask)::consumer_coverage::consumer::fn::associated_contract": {
+    "class": "OwnedHelper",
+    "reason": "Selects same-impl associated type/constant declarations reached by a callable signature, including transitive Self projections This exact declaration grants no inherited support or baseline eligibility."
+  },
   "ess_xtask::bin(ess-xtask)::consumer_coverage::consumer::fn::attributes": {
     "class": "OwnedHelper",
     "macro_ast_sha256": null,
     "reason": "Maintenance/extractor infrastructure entry. Its source and fixture tests are inventoried; it emits evidence or proposals and grants no ESS semantic behavior support."
   },
   "ess_xtask::bin(ess-xtask)::consumer_coverage::consumer::fn::conditions": {
-    "class": "OwnedHelper",
-    "macro_ast_sha256": null,
-    "reason": "Maintenance/extractor infrastructure entry. Its source and fixture tests are inventoried; it emits evidence or proposals and grants no ESS semantic behavior support."
-  },
-  "ess_xtask::bin(ess-xtask)::consumer_coverage::consumer::fn::conditions_fn": {
     "class": "OwnedHelper",
     "macro_ast_sha256": null,
     "reason": "Maintenance/extractor infrastructure entry. Its source and fixture tests are inventoried; it emits evidence or proposals and grants no ESS semantic behavior support."
@@ -28549,6 +29024,14 @@
     "macro_ast_sha256": null,
     "reason": "Maintenance/extractor infrastructure entry. Its source and fixture tests are inventoried; it emits evidence or proposals and grants no ESS semantic behavior support."
   },
+  "ess_xtask::bin(ess-xtask)::consumer_coverage::consumer::fn::implementation_attributes": {
+    "class": "OwnedHelper",
+    "reason": "Reads the explicitly supported associated-item attributes for cfg classification This exact declaration grants no inherited support or baseline eligibility."
+  },
+  "ess_xtask::bin(ess-xtask)::consumer_coverage::consumer::fn::implementation_context": {
+    "class": "OwnedHelper",
+    "reason": "Builds impl declaration context including generics, bounds, trait and self type for member identities This exact declaration grants no inherited support or baseline eligibility."
+  },
   "ess_xtask::bin(ess-xtask)::consumer_coverage::consumer::fn::normalize": {
     "class": "OwnedHelper",
     "macro_ast_sha256": null,
@@ -28563,6 +29046,22 @@
     "class": "OwnedHelper",
     "macro_ast_sha256": null,
     "reason": "Maintenance/extractor infrastructure entry. Its source and fixture tests are inventoried; it emits evidence or proposals and grants no ESS semantic behavior support."
+  },
+  "ess_xtask::bin(ess-xtask)::consumer_coverage::consumer::impl<AssociatedNames;>::qualified": {
+    "class": "OwnedHelper",
+    "reason": "Checks a Self-qualified associated path against the exact current impl trait owner This exact declaration grants no inherited support or baseline eligibility."
+  },
+  "ess_xtask::bin(ess-xtask)::consumer_coverage::consumer::impl<AssociatedNames;Visit < 'ast >>::visit_expr_path": {
+    "class": "OwnedHelper",
+    "reason": "Discovers associated constants in expression paths within callable declaration types This exact declaration grants no inherited support or baseline eligibility."
+  },
+  "ess_xtask::bin(ess-xtask)::consumer_coverage::consumer::impl<AssociatedNames;Visit < 'ast >>::visit_path": {
+    "class": "OwnedHelper",
+    "reason": "Discovers unqualified Self-associated paths in callable declaration types This exact declaration grants no inherited support or baseline eligibility."
+  },
+  "ess_xtask::bin(ess-xtask)::consumer_coverage::consumer::impl<AssociatedNames;Visit < 'ast >>::visit_type_path": {
+    "class": "OwnedHelper",
+    "reason": "Discovers qualified Self-associated type paths in callable declaration types This exact declaration grants no inherited support or baseline eligibility."
   },
   "ess_xtask::bin(ess-xtask)::consumer_coverage::consumer::impl<Body;Visit < 'ast >>::visit_expr_call": {
     "class": "OwnedHelper",
@@ -28619,6 +29118,10 @@
     "macro_ast_sha256": null,
     "reason": "Maintenance/extractor infrastructure entry. Its source and fixture tests are inventoried; it emits evidence or proposals and grants no ESS semantic behavior support."
   },
+  "ess_xtask::bin(ess-xtask)::consumer_coverage::consumer::impl<Inventory;>::trait_declaration": {
+    "class": "OwnedHelper",
+    "reason": "Preserves the parent trait declaration and separately inventories associated constants and types, refusing unsupported active forms This exact declaration grants no inherited support or baseline eligibility."
+  },
   "ess_xtask::bin(ess-xtask)::consumer_coverage::consumer::impl<Inventory;>::walk": {
     "class": "OwnedHelper",
     "macro_ast_sha256": null,
@@ -28628,6 +29131,10 @@
     "class": "OwnedHelper",
     "macro_ast_sha256": null,
     "reason": "Maintenance/extractor infrastructure entry. Its source and fixture tests are inventoried; it emits evidence or proposals and grants no ESS semantic behavior support."
+  },
+  "ess_xtask::bin(ess-xtask)::consumer_coverage::consumer::struct::AssociatedNames": {
+    "class": "OwnedHelper",
+    "reason": "Carries the finite associated-name worklist and unresolved-owner refusal state This exact declaration grants no inherited support or baseline eligibility."
   },
   "ess_xtask::bin(ess-xtask)::consumer_coverage::consumer::struct::Body": {
     "class": "OwnedHelper",
@@ -29098,6 +29605,10 @@
     "class": "OwnedHelper",
     "macro_ast_sha256": null,
     "reason": "Maintenance/extractor infrastructure entry. Its source and fixture tests are inventoried; it emits evidence or proposals and grants no ESS semantic behavior support."
+  },
+  "ess_xtask::bin(ess-xtask)::consumer_coverage::rust::fn::external_namespace": {
+    "class": "OwnedHelper",
+    "reason": "Recognizes only namespace prefixes of the existing closed standard external type table; namespaces never become opaque type leaves This exact declaration grants no inherited support or baseline eligibility."
   },
   "ess_xtask::bin(ess-xtask)::consumer_coverage::rust::fn::extract": {
     "class": "OwnedHelper",
@@ -29839,6 +30350,10 @@
     "macro_ast_sha256": null,
     "reason": "Explicit InfraIR/observation domain entry; shared primitives do not import InfraIR into the six ESS model roots. This finite ID is classified separately, not granted semantic support."
   },
+  "infra_analyze::lib(infra_analyze)::code::impl<Severity;>::const::ALL": {
+    "class": "ForeignContext",
+    "reason": "Lists severity alternatives for infrastructure analysis reports in the separate infrastructure observation/specification context This exact declaration grants no inherited support or baseline eligibility."
+  },
   "infra_analyze::lib(infra_analyze)::code::impl<Severity;fmt :: Display>::fmt": {
     "class": "ForeignContext",
     "macro_ast_sha256": null,
@@ -30228,6 +30743,10 @@
     "class": "ForeignContext",
     "macro_ast_sha256": null,
     "reason": "Explicit InfraIR/observation domain entry; shared primitives do not import InfraIR into the six ESS model roots. This finite ID is classified separately, not granted semantic support."
+  },
+  "infra_analyze::lib(infra_analyze)::graph::impl<EdgeRelation;>::const::ALL": {
+    "class": "ForeignContext",
+    "reason": "Lists the ten observed infrastructure graph edge relations in the separate infrastructure observation/specification context This exact declaration grants no inherited support or baseline eligibility."
   },
   "infra_analyze::lib(infra_analyze)::graph::impl<EdgeRelation;>::verb": {
     "class": "ForeignContext",
@@ -31929,6 +32448,10 @@
     "macro_ast_sha256": null,
     "reason": "Explicit InfraIR/observation domain entry; shared primitives do not import InfraIR into the six ESS model roots. This finite ID is classified separately, not granted semantic support."
   },
+  "infra_domain::lib(infra_domain)::coverage::impl<CollectionCoverage;TryFrom < crate :: raw :: RawCollectionCoverage >>::type::Error": {
+    "class": "ForeignContext",
+    "reason": "Declares ValidationErrors as the raw-to-admitted conversion failure contract for CollectionCoverage in the separate infrastructure observation/specification context This exact declaration grants no inherited support or baseline eligibility."
+  },
   "infra_domain::lib(infra_domain)::coverage::module": {
     "class": "ForeignContext",
     "macro_ast_sha256": null,
@@ -32123,6 +32646,10 @@
     "class": "ForeignContext",
     "macro_ast_sha256": null,
     "reason": "Explicit InfraIR/observation domain entry; shared primitives do not import InfraIR into the six ESS model roots. This finite ID is classified separately, not granted semantic support."
+  },
+  "infra_domain::lib(infra_domain)::observation::impl<Observation;TryFrom < RawBundle >>::type::Error": {
+    "class": "ForeignContext",
+    "reason": "Declares ValidationErrors as the raw-to-admitted conversion failure contract for Observation in the separate infrastructure observation/specification context This exact declaration grants no inherited support or baseline eligibility."
   },
   "infra_domain::lib(infra_domain)::observation::impl<PersistentVolumeClaim;>::from_raw": {
     "class": "ForeignContext",
@@ -34309,6 +34836,10 @@
     "macro_ast_sha256": null,
     "reason": "Explicit InfraIR/observation domain entry; shared primitives do not import InfraIR into the six ESS model roots. This finite ID is classified separately, not granted semantic support."
   },
+  "infra_spec::lib(infra_spec)::raw::impl<InfraSpec;TryFrom < RawInfraSpec >>::type::Error": {
+    "class": "ForeignContext",
+    "reason": "Declares ValidationErrors as the raw-to-admitted conversion failure contract for InfraSpec in the separate infrastructure observation/specification context This exact declaration grants no inherited support or baseline eligibility."
+  },
   "infra_spec::lib(infra_spec)::raw::module": {
     "class": "ForeignContext",
     "macro_ast_sha256": null,
@@ -35013,6 +35544,10 @@
     "class": "ForeignContext",
     "macro_ast_sha256": null,
     "reason": "Explicit InfraIR/observation domain entry; shared primitives do not import InfraIR into the six ESS model roots. This finite ID is classified separately, not granted semantic support."
+  },
+  "infra_spec::lib(infra_spec)::spec::impl<ExpectationKind;>::const::ALL": {
+    "class": "ForeignContext",
+    "reason": "Lists the infrastructure expectation wire discriminants in the separate infrastructure observation/specification context This exact declaration grants no inherited support or baseline eligibility."
   },
   "infra_spec::lib(infra_spec)::spec::impl<ExpectationKind;>::subject_class": {
     "class": "ForeignContext",

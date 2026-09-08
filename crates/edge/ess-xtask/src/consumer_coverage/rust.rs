@@ -224,10 +224,12 @@ fn imports(tree: &UseTree, prefix: &str, out: &mut BTreeMap<String, String>) -> 
             if n.rename == "_" {
                 return Ok(());
             }
-            if out
-                .insert(n.rename.to_string(), format!("{prefix}{}", n.ident))
-                .is_some()
-            {
+            let target = if n.ident == "self" {
+                prefix.trim_end_matches("::").to_owned()
+            } else {
+                format!("{prefix}{}", n.ident)
+            };
+            if out.insert(n.rename.to_string(), target).is_some() {
                 bail!("ambiguous alias {}", n.rename);
             }
             Ok(())
@@ -259,7 +261,9 @@ impl Graph {
             }
             match item {
                 Item::Use(u) => {
-                    imports(&u.tree, "", &mut uses).with_context(|| format!("{module}: import"))?;
+                    let prefix = if u.leading_colon.is_some() { "::" } else { "" };
+                    imports(&u.tree, prefix, &mut uses)
+                        .with_context(|| format!("{module}: import"))?;
                 }
                 Item::Mod(m) => {
                     attrs(&m.attrs, module)?;
@@ -381,10 +385,19 @@ impl Graph {
         if !visiting.insert(key.clone()) {
             bail!("{module}: cyclic unresolved alias {path}");
         }
-        let parts: Vec<_> = path.split("::").collect();
+        let absolute = path.strip_prefix("::");
+        let parts: Vec<_> = absolute.unwrap_or(path).split("::").collect();
         let first = parts[0];
         let suffix = parts[1..].join("::");
-        let target = if first == "crate" {
+        let target = if let Some(external_path) = absolute {
+            if !self.modules.contains(first)
+                && !(first == "std"
+                    && (external(external_path).is_some() || external_namespace(external_path)))
+            {
+                bail!("{module}: unknown absolute external owner {path}");
+            }
+            external_path.into()
+        } else if first == "crate" {
             format!(
                 "{}::{suffix}",
                 module.split("::").next().context("crate owner")?
@@ -414,6 +427,7 @@ impl Graph {
             || self.modules.contains(first)
             || self.diagnostic_symbols.contains_key(path)
             || external(path).is_some()
+            || external_namespace(path)
         {
             path.into()
         } else {
@@ -425,6 +439,7 @@ impl Graph {
         let result = if self.declarations.contains_key(&target)
             || self.modules.contains(&target)
             || external(&target).is_some()
+            || external_namespace(&target)
         {
             target
         } else if let Some((owner, name)) = target.rsplit_once("::") {
@@ -442,13 +457,16 @@ impl Graph {
     fn ty(&self, module: &str, ty: &Type, edges: &mut BTreeSet<String>) -> Result<Value> {
         match ty {
             Type::Path(p) if p.qself.is_none() => {
-                let raw = p
+                let mut raw = p
                     .path
                     .segments
                     .iter()
                     .map(|s| s.ident.to_string())
                     .collect::<Vec<_>>()
                     .join("::");
+                if p.path.leading_colon.is_some() {
+                    raw.insert_str(0, "::");
+                }
                 let mut args = Vec::new();
                 for (i, s) in p.path.segments.iter().enumerate() {
                     match &s.arguments {
@@ -471,6 +489,9 @@ impl Graph {
                         bail!("{module}: container {resolved} requires {arity} arguments");
                     }
                 } else {
+                    if external_namespace(&resolved) {
+                        bail!("{module}: external namespace {resolved} is not a type");
+                    }
                     if !args.is_empty() {
                         bail!("{module}: unresolved generic declaration {resolved}");
                     }
@@ -567,6 +588,14 @@ impl Graph {
             json!({"obligations":out,"references":relations,"macro_definitions":self.macros,"diagnostic_macros":self.diagnostics}),
         )
     }
+}
+// Only prefixes of the closed external type table may serve as import namespaces.
+// Resolving a namespace never admits it as an opaque model type.
+fn external_namespace(path: &str) -> bool {
+    matches!(
+        path,
+        "std" | "std::option" | "std::boxed" | "std::vec" | "std::collections" | "std::string"
+    )
 }
 fn external(path: &str) -> Option<usize> {
     match path {

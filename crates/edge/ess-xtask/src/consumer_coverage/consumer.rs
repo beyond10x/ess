@@ -275,7 +275,7 @@ impl Inventory {
                     self.entry(format!("{module_owner}::type::{}", a.ident), common)?;
                 }
                 Item::Trait(t) if !test => {
-                    self.entry(format!("{module_owner}::trait::{}", t.ident), common)?;
+                    self.trait_declaration(&module_owner, t, &common)?;
                 }
                 Item::Const(c) if !test => {
                     self.entry(format!("{module_owner}::const::{}", c.ident), common)?;
@@ -467,35 +467,79 @@ impl Inventory {
                 .as_ref()
                 .map_or_else(String::new, |(_, p, _)| text(p))
         );
+        let context = implementation_context(i);
         for member in &i.items {
-            if let syn::ImplItem::Fn(f) = member {
-                let (t, p) = conditions_fn(&f.attrs)?;
-                if !t {
-                    let mut v = common.clone();
-                    v["source_item_sha256"] = json!(super::hash_bytes(text(f).as_bytes()));
+            let (test, profile) = conditions(implementation_attributes(member))
+                .with_context(|| format!("{module_owner}::{implementation}"))?;
+            if test {
+                continue;
+            }
+            let (name, declaration) = match member {
+                syn::ImplItem::Fn(f) => {
                     let attrs = &f.attrs;
                     let visibility = &f.vis;
                     let signature = &f.sig;
-                    let generics = &i.generics;
-                    let where_clause = &i.generics.where_clause;
-                    let implementation_attrs = &i.attrs;
-                    let self_type = &i.self_ty;
-                    let trait_path = i.trait_.as_ref().map(|(_, path, _)| path);
-                    let unsafety = &i.unsafety;
-                    v["declaration_sha256"] = json!(super::hash_bytes(
-                        without_docs(quote!(#(#implementation_attrs)* #unsafety #generics #where_clause #self_type #trait_path #(#attrs)* #visibility #signature))
-                            .to_string()
-                            .as_bytes()
-                    ));
-                    v["member_profile_conditions"] = json!(p);
-                    self.entry(
-                        format!("{module_owner}::{implementation}::{}", f.sig.ident),
-                        v,
-                    )?;
+                    let defaultness = &f.defaultness;
+                    let associated = associated_contract(i, signature)?;
+                    (f.sig.ident.to_string(), quote!(#context #(#attrs)* #visibility #defaultness #signature #associated))
                 }
-            }
+                syn::ImplItem::Const(c) => (format!("const::{}", c.ident), quote!(#context #c)),
+                syn::ImplItem::Type(t) => (format!("type::{}", t.ident), quote!(#context #t)),
+                _ => bail!("{module_owner}::{implementation}: unsupported active associated declaration {}", text(member)),
+            };
+            let mut row = common.clone();
+            row["source_item_sha256"] = json!(super::hash_bytes(text(member).as_bytes()));
+            row["declaration_sha256"] = json!(super::hash_bytes(
+                without_docs(declaration).to_string().as_bytes()
+            ));
+            row["member_profile_conditions"] = json!(profile);
+            self.entry(format!("{module_owner}::{implementation}::{name}"), row)?;
         }
 
+        Ok(())
+    }
+    fn trait_declaration(
+        &mut self,
+        module_owner: &str,
+        item: &syn::ItemTrait,
+        common: &Value,
+    ) -> Result<()> {
+        let owner = format!("{module_owner}::trait::{}", item.ident);
+        // Preserve the existing full parent declaration, including its methods.
+        self.entry(owner.clone(), common.clone())?;
+        let mut context = item.clone();
+        context.items.clear();
+        for member in &item.items {
+            let attrs: &[Attribute] = match member {
+                syn::TraitItem::Fn(f) => &f.attrs,
+                syn::TraitItem::Const(c) => &c.attrs,
+                syn::TraitItem::Type(t) => &t.attrs,
+                syn::TraitItem::Macro(m) => &m.attrs,
+                _ => &[],
+            };
+            let (test, profile) = conditions(attrs).with_context(|| owner.clone())?;
+            if test {
+                continue;
+            }
+            let name = match member {
+                syn::TraitItem::Fn(_) => continue,
+                syn::TraitItem::Const(c) => format!("const::{}", c.ident),
+                syn::TraitItem::Type(t) => format!("type::{}", t.ident),
+                _ => bail!(
+                    "{owner}: unsupported active associated declaration {}",
+                    text(member)
+                ),
+            };
+            let mut row = common.clone();
+            row["source_item_sha256"] = json!(super::hash_bytes(text(member).as_bytes()));
+            row["declaration_sha256"] = json!(super::hash_bytes(
+                without_docs(quote!(#context #member))
+                    .to_string()
+                    .as_bytes()
+            ));
+            row["member_profile_conditions"] = json!(profile);
+            self.entry(format!("{owner}::{name}"), row)?;
+        }
         Ok(())
     }
     fn entry(&mut self, id: String, value: Value) -> Result<()> {
@@ -504,6 +548,134 @@ impl Inventory {
         }
         self.entries.insert(id, value);
         Ok(())
+    }
+}
+fn implementation_context(i: &syn::ItemImpl) -> proc_macro2::TokenStream {
+    let attrs = &i.attrs;
+    let unsafety = &i.unsafety;
+    let defaultness = &i.defaultness;
+    let generics = &i.generics;
+    let where_clause = &i.generics.where_clause;
+    let self_type = &i.self_ty;
+    let trait_path = i.trait_.as_ref().map(|(_, path, _)| path);
+    let negative = i
+        .trait_
+        .as_ref()
+        .and_then(|(negative, _, _)| negative.as_ref());
+    quote!(#(#attrs)* #unsafety #generics #where_clause #self_type #negative #trait_path #defaultness)
+}
+fn implementation_attributes(member: &syn::ImplItem) -> &[Attribute] {
+    match member {
+        syn::ImplItem::Fn(f) => &f.attrs,
+        syn::ImplItem::Const(c) => &c.attrs,
+        syn::ImplItem::Type(t) => &t.attrs,
+        syn::ImplItem::Macro(m) => &m.attrs,
+        _ => &[],
+    }
+}
+// A callable contract includes the associated declarations actually selected by its
+// signature, recursively. Method bodies and unrelated associated members remain
+// checkpoint evidence rather than eligibility identity.
+fn associated_contract(
+    i: &syn::ItemImpl,
+    signature: &syn::Signature,
+) -> Result<proc_macro2::TokenStream> {
+    let mut names = AssociatedNames {
+        trait_path: i.trait_.as_ref().map(|(_, path, _)| text(path)),
+        ..AssociatedNames::default()
+    };
+    names.visit_signature(signature);
+    let mut visited = BTreeSet::new();
+    let mut declarations = BTreeMap::new();
+    while let Some(name) = names.names.pop_first() {
+        if !visited.insert(name.clone()) {
+            continue;
+        }
+        for member in &i.items {
+            let selected = match member {
+                syn::ImplItem::Type(t) => t.ident == name,
+                syn::ImplItem::Const(c) => c.ident == name,
+                _ => false,
+            };
+            if selected && !conditions(implementation_attributes(member))?.0 {
+                // Visiting the declaration discovers transitive Self:: references.
+                names.visit_impl_item(member);
+                declarations
+                    .entry(name.clone())
+                    .or_insert_with(Vec::new)
+                    .push(member);
+            }
+        }
+        if !declarations.contains_key(&name) {
+            bail!(
+                "{}::{}: unresolved associated contract Self::{name}",
+                text(&i.self_ty),
+                signature.ident
+            );
+        }
+    }
+    if let Some(error) = names.error {
+        bail!("{}::{}: {error}", text(&i.self_ty), signature.ident);
+    }
+    let declarations = declarations.values().flatten();
+    Ok(quote!(#(#declarations)*))
+}
+#[derive(Default)]
+struct AssociatedNames {
+    names: BTreeSet<String>,
+    trait_path: Option<String>,
+    error: Option<String>,
+    references_self: bool,
+}
+impl AssociatedNames {
+    fn qualified(&mut self, qself: Option<&syn::QSelf>, path: &syn::Path) {
+        let Some(qself) = qself else { return };
+        if !matches!(&*qself.ty, syn::Type::Path(p) if p.qself.is_none() && p.path.is_ident("Self"))
+        {
+            let mut receiver = Self::default();
+            receiver.visit_type(&qself.ty);
+            if receiver.references_self {
+                self.error = Some(format!(
+                    "unresolved associated contract through receiver {}",
+                    text(&qself.ty)
+                ));
+            }
+            return;
+        }
+        if qself.position > 0 {
+            let mut owner = path.clone();
+            owner.segments = path.segments.iter().take(qself.position).cloned().collect();
+            if self.trait_path.as_deref() != Some(text(&owner).as_str()) {
+                self.error = Some(format!(
+                    "unresolved qualified associated contract <Self as {}>",
+                    text(&owner)
+                ));
+                return;
+            }
+        }
+        if let Some(member) = path.segments.iter().nth(qself.position) {
+            self.names.insert(member.ident.to_string());
+        }
+    }
+}
+impl<'ast> Visit<'ast> for AssociatedNames {
+    fn visit_path(&mut self, path: &'ast syn::Path) {
+        if path.leading_colon.is_none() && path.segments.first().is_some_and(|s| s.ident == "Self")
+        {
+            self.references_self = true;
+            if let Some(member) = path.segments.iter().nth(1) {
+                self.names.insert(member.ident.to_string());
+            }
+        }
+        visit::visit_path(self, path);
+    }
+    fn visit_type_path(&mut self, path: &'ast syn::TypePath) {
+        self.qualified(path.qself.as_ref(), &path.path);
+        visit::visit_type_path(self, path);
+    }
+    fn visit_expr_path(&mut self, path: &'ast syn::ExprPath) {
+        self.qualified(path.qself.as_ref(), &path.path);
+        visit::visit_expr_path(self, path);
     }
 }
 struct CheckedDeserialize(syn::Ident);
@@ -522,9 +694,6 @@ impl syn::parse::Parse for CheckedDeserialize {
         }
         Ok(Self(name))
     }
-}
-fn conditions_fn(attrs: &[Attribute]) -> Result<(bool, Vec<String>)> {
-    conditions(attrs)
 }
 #[derive(Default)]
 struct Body {

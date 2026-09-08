@@ -860,3 +860,251 @@ fn stage2_cargo_artifact_requires_exact_owner_target_profile_and_completed_build
         assert!(super::executor::artifact(&bad, "package", "target", "source.rs").is_err());
     }
 }
+
+#[test]
+fn adversary_absolute_external_type_is_not_shadowed_by_a_local_module() {
+    let direct = model("struct Root { value: ::std::string::String }").unwrap();
+    let shadowed = model(
+        "mod std { pub mod string { pub struct String { hidden: u32 } } } \
+         struct Root { value: ::std::string::String }",
+    )
+    .unwrap();
+    assert_eq!(
+        direct, shadowed,
+        "an absolute external path still names std::string::String; an unused local module is outside the reachable model graph"
+    );
+}
+
+#[test]
+fn adversary_absolute_external_import_keeps_its_external_owner() {
+    let direct = model("use ::std::string::String; struct Root { value: String }").unwrap();
+    let shadowed = model(
+        "mod std { pub mod string { pub struct String { hidden: u32 } } } \
+         use ::std::string::String; struct Root { value: String }",
+    )
+    .unwrap();
+    assert_eq!(
+        direct, shadowed,
+        "a leading-colon use must not bind a local module of the same name"
+    );
+}
+
+#[test]
+fn adversary_new_public_associated_constant_requires_a_concrete_classification() {
+    let before =
+        super::consumer::fixture("pub struct Owner; impl Owner { pub fn consume(&self) {} }")
+            .unwrap();
+    let after = super::consumer::fixture(
+        "pub struct Owner; impl Owner { pub const NEW_MODE: bool = true; pub fn consume(&self) {} }",
+    )
+    .unwrap();
+    let classifications = serde_json::Value::Object(
+        before["entries"]
+            .as_object()
+            .unwrap()
+            .keys()
+            .map(|id| {
+                (
+                    id.clone(),
+                    json!({"class":"OwnedHelper", "reason":"Previously reviewed exact entry"}),
+                )
+            })
+            .collect(),
+    );
+    super::proposal::classification_fixture(&before["entries"], &classifications).unwrap();
+    assert!(
+        super::proposal::classification_fixture(&after["entries"], &classifications).is_err(),
+        "adding a public associated constant is a new API declaration and must not inherit the old finite classifications"
+    );
+}
+
+#[test]
+fn adversary_changed_associated_output_type_invalidates_its_consumer_contract() {
+    let shape = |output: &str| {
+        let source = format!(
+            "pub struct Owner; impl Iterator for Owner {{ \
+             type Item = {output}; fn next(&mut self) -> Option<Self::Item> {{ None }} }}"
+        );
+        let inventory = super::consumer::fixture(&source).unwrap();
+        let entries = inventory["entries"]
+            .as_object()
+            .unwrap()
+            .iter()
+            .map(|(id, entry)| (id.clone(), entry.clone()))
+            .collect();
+        super::proposal::fingerprint(
+            &json!({"id":"fixture-iterator", "execution":"default-rust"}),
+            &["fixture::impl<Owner;Iterator>::next".into()],
+            &entries,
+            &json!({"compiled_build":{"environment":{"TARGET":"x86_64-unknown-linux-gnu"}}}),
+        )
+        .unwrap()
+    };
+    assert_ne!(
+        shape("u8"),
+        shape("u16"),
+        "Iterator::Item changes the callable result contract even when the method spells Self::Item and its body is unchanged"
+    );
+}
+
+#[test]
+fn correction_absolute_external_groups_renames_and_reexports_preserve_the_owner() {
+    let expected = model("struct Root { value: ::std::string::String }").unwrap();
+    for imports in [
+        "use ::std::{string::{String as Value}};",
+        "mod bridge { pub use ::std::string::String as Leaf; } use crate::bridge::Leaf as Value;",
+        "use ::std::string::{self as names}; type Value = names::String;",
+    ] {
+        let source = format!("mod std {{ pub mod string {{ pub struct String {{ hidden: u8 }} }} }} {imports} struct Root {{ value: Value }}");
+        let graph = model(&source).unwrap();
+        assert!(graph["references"]
+            .as_object()
+            .unwrap()
+            .values()
+            .all(|edges| {
+                edges
+                    .as_array()
+                    .unwrap()
+                    .iter()
+                    .all(|edge| !edge.as_str().unwrap().contains("fixture::std"))
+            }));
+        if !imports.contains("type Value") {
+            assert_eq!(expected, graph);
+        }
+    }
+    let local = model("mod std { pub mod string { pub struct String { hidden: u8 } } } struct Root { value: std::string::String }").unwrap();
+    assert!(local["obligations"]
+        .get("rust:fixture::std::string::String/field/hidden")
+        .is_some());
+    for source in [
+        "struct Root { value: ::unknown::Thing }",
+        "struct Root { value: ::std::unknown::Thing }",
+        "struct Root { value: ::String }",
+        "struct Root { value: ::std::string }",
+        "struct Root { value: ::std::option::Option }",
+        "struct Root { value: ::std::string::String<u8> }",
+    ] {
+        assert!(model(source).is_err(), "{source}");
+    }
+}
+
+fn correction_method_shape(source: &str) -> serde_json::Value {
+    let inventory = super::consumer::fixture(source).unwrap();
+    inventory["entries"]
+        .as_object()
+        .unwrap()
+        .iter()
+        .find(|(id, _)| id.ends_with("::consume"))
+        .unwrap()
+        .1["declaration_sha256"]
+        .clone()
+}
+
+#[test]
+fn correction_associated_contract_tracks_selected_transitive_declarations_only() {
+    let source = "struct Owner; impl Owner { type Result = Self::Value; type Value = u8; type Unused = u32; fn consume(&self) -> Self::Result { todo!() } }";
+    let shape = correction_method_shape(source);
+    for stable in [
+        source.replace("todo!()", "panic!(\"different body\")"),
+        source.replace("type Unused = u32", "type Unused = u64"),
+        source.replace(
+            "type Value = u8",
+            "/// Output documentation.\n type Value = u8",
+        ),
+    ] {
+        assert_eq!(shape, correction_method_shape(&stable));
+    }
+    assert_ne!(
+        shape,
+        correction_method_shape(&source.replace("type Value = u8", "type Value = u16"))
+    );
+    let inventory = super::consumer::fixture(source).unwrap();
+    for name in ["Result", "Value", "Unused"] {
+        assert!(inventory["entries"]
+            .get(format!("fixture::impl<Owner;>::type::{name}"))
+            .is_some());
+    }
+}
+
+#[test]
+fn correction_associated_member_profiles_and_unsupported_forms_remain_closed() {
+    let inventory = super::consumer::fixture("struct Owner; impl Owner { #[cfg(unix)] pub const MODE: bool = true; #[cfg(test)] const TEST_ONLY: u8 = 1; }").unwrap();
+    let entry = &inventory["entries"]["fixture::impl<Owner;>::const::MODE"];
+    assert_eq!(entry["member_profile_conditions"], json!(["unix"]));
+    assert!(entry["declaration_sha256"].is_string());
+    assert!(inventory["entries"]
+        .get("fixture::impl<Owner;>::const::TEST_ONLY")
+        .is_none());
+    let error = super::consumer::fixture("struct Owner; impl Owner { generated!(); }")
+        .unwrap_err()
+        .to_string();
+    assert!(
+        error.contains("impl<Owner;>") && error.contains("generated"),
+        "{error}"
+    );
+    assert!(
+        super::consumer::fixture("struct Owner; impl Owner { #[cfg(test)] generated!(); }").is_ok()
+    );
+    assert!(super::consumer::fixture(
+        "struct Owner; impl Owner { #[cfg(unknown)] type Value = u8; }"
+    )
+    .is_err());
+}
+
+#[test]
+fn correction_qualified_associated_constants_participate_in_declared_array_results() {
+    let source = "struct Owner; impl Contract for Owner { const SIZE: usize = 1; fn consume(&self) -> [u8; <Self as Contract>::SIZE] { todo!() } }";
+    assert_ne!(
+        correction_method_shape(source),
+        correction_method_shape(&source.replace("SIZE: usize = 1", "SIZE: usize = 2"))
+    );
+}
+
+#[test]
+fn correction_unresolved_self_contracts_do_not_borrow_an_unrelated_trait_member() {
+    for source in [
+        "struct Owner; impl Iterator for Owner { type Item = u8; fn consume(&self) -> <Self as Other>::Item { todo!() } }",
+        "struct Owner; impl Iterator for Owner { fn consume(&self) -> Self::Item { todo!() } }",
+    ] {
+        assert!(super::consumer::fixture(source).is_err(), "{source}");
+    }
+}
+
+#[test]
+fn correction_trait_associated_declarations_require_their_own_classifications() {
+    let before = super::consumer::fixture("pub trait Owner { fn consume(&self); }").unwrap();
+    let after = super::consumer::fixture("pub trait Owner { type Item: Clone; #[cfg(unix)] const MODE: bool; fn consume(&self); #[cfg(test)] type TestOnly; }").unwrap();
+    let classes = serde_json::Value::Object(before["entries"].as_object().unwrap().keys()
+        .map(|id| (id.clone(), json!({"class":"OwnedHelper","reason":"Previously reviewed exact trait declaration"}))).collect());
+    super::proposal::classification_fixture(&before["entries"], &classes).unwrap();
+    assert!(super::proposal::classification_fixture(&after["entries"], &classes).is_err());
+    assert!(
+        after["entries"]["fixture::trait::Owner::type::Item"]["declaration_sha256"].is_string()
+    );
+    assert_eq!(
+        after["entries"]["fixture::trait::Owner::const::MODE"]["member_profile_conditions"],
+        json!(["unix"])
+    );
+    assert!(after["entries"]
+        .get("fixture::trait::Owner::type::TestOnly")
+        .is_none());
+    assert_ne!(
+        before["entries"]["fixture::trait::Owner"]["declaration_sha256"],
+        after["entries"]["fixture::trait::Owner"]["declaration_sha256"]
+    );
+    assert!(super::consumer::fixture("pub trait Owner { generated!(); }").is_err());
+}
+
+#[test]
+fn correction_wrapped_self_projection_requires_a_resolved_associated_owner() {
+    for receiver in ["Box<Self>", "&Self", "(Self,)"] {
+        let source = format!(
+            "struct Owner; impl Contract for Owner {{ type Item = u8; \
+             fn consume(&self) -> <{receiver} as Other>::Item {{ todo!() }} }}"
+        );
+        let result = super::consumer::fixture(&source);
+        assert!(result.is_err(), "{source}");
+        let error = result.unwrap_err().to_string();
+        assert!(error.contains("associated contract"), "{error}");
+    }
+}
