@@ -2,7 +2,7 @@
 format: aep.planning-md/1
 id: story:review-execution-recovery-implementation
 kind: story
-status: draft
+status: active
 title: Implement finite deployment recovery for the existing F11 obligation
 summary: Implement the complete finite deployment recovery contract and offline fault matrix already owed by obligation:review-execution-recovery-implementation.
 tags:
@@ -82,7 +82,7 @@ scope:
   path: website/docs/status/limitations.md
 - confidence: cited
   path: website/docs/status/where-this-stands.md
-revision: 5
+revision: 7
 ---
 # Story: Implement finite deployment recovery for the existing F11 obligation
 

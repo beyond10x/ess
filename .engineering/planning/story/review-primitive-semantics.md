@@ -2,7 +2,7 @@
 format: aep.planning-md/1
 id: story:review-primitive-semantics
 kind: story
-status: draft
+status: active
 title: Align primitive admission and exact numeric semantics
 tags:
 - P1
@@ -54,7 +54,7 @@ scope:
   path: crates/verify/ess-conformance/src/witness.rs
 - confidence: inferred
   path: docs/design/review-primitive-semantics.md
-revision: 26
+revision: 28
 ---
 ## Finding and source
 

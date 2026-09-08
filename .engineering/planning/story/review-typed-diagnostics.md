@@ -2,7 +2,7 @@
 format: aep.planning-md/1
 id: story:review-typed-diagnostics
 kind: story
-status: draft
+status: active
 title: Carry diagnostic identity independently of rendered wording
 tags:
 - P2
@@ -43,7 +43,7 @@ scope:
   path: docs/design/review-typed-diagnostics.md
 - confidence: cited
   path: website/docs/guides/write-a-specification.md
-revision: 21
+revision: 23
 ---
 ## Finding and source
 
