@@ -24,7 +24,7 @@ scope:
   path: crates/verify/ess-diff/tests/consumer_coverage_f01.rs
 - confidence: inferred
   path: docs/design/review-consumer-coverage.md
-revision: 17
+revision: 18
 ---
 ## Finding and source
 
@@ -194,3 +194,41 @@ renewed on the corrected source. The original downstream causal probes remain re
 witnesses for unchanged semantics; no mechanical rerun is selected. At most one additional
 full source attack remains. Root owns shared files, all AEP/Git operations, integration,
 publication and cleanup. This is correction of the original story, not another story.
+
+### Source pass1 correction and final attack handoff — 2026-09-08
+
+The two introduced findings in review-result:consumer-coverage-source-pass1 were addressed
+by bot commit c375e35def175b51a61c259e73b3b00749399539. The original four first-red cases
+remain unchanged and each now passes. Seven additive correction cases cover external-owner
+resolution, associated declarations/contracts and unresolved nested Self projections. No
+assertion was dropped; root independently checked the original complete tests as an unchanged
+prefix. The final affected package executed99 cases with99passed/0failed/0ignored, and strict
+Clippy and formatting returned0. The original intermediate control failures remain retained.
+
+The literal task consumer-check returned0 in592.2704340390628seconds:72 direct commands,
+22 exact attributed cases,1806models,87behavioral profiles,54Supported/0Refused/157068
+BaselineUnknown. All93 existing profiles, all157122 cell records and exact Rust/wire/provider
+schema JSON equal the prior accepted extraction. The baseline remains e005a2e74e067ad51315e594151643b702381dc174bb9af5c355c3eeeb17ad51; no unknown was silently qualified.
+
+The additional concrete classification inventory is125 associated declarations plus10 extractor
+helpers. Their finite reviewed classifications are114OwnedHelper,7DiagnosticSurface,
+8FixtureRealization,6ForeignContext. The removed conditions_fn helper is the sole stale row
+retired. The implementor read43 non-xtask and2 xtask owner files. These are extractor coverage
+changes inside the assigned surface, with no product model or dependency changes.
+
+Implementor report: unit target/review-boundaries-18/consumer-correction-1/report.md, SHA256
+0b55a51528c2d791dadf4757ad1cdb3c55c893579e423f028deb861d95b318e7. Final seal SHA256
+4fd41234f70f42e552dcd77dd35ad69a7070bad2a84483b357b167cd6ba1bdad. Root readback:
+coordinator preparation/consumer-correction1-readback/readback.json, SHA256
+c74974609e6953fde944a9509e1ab98e61228ee3056bcf5d45a0bd766906ea99, actual0 in
+19.951905607944354seconds. It checks all6720native entries/9338655895regular bytes,49 final
+payload pins, every complete source archive file, all raw command streams and exact cell sets.
+Agent judgement remains a review; it is not independent verifier evidence.
+
+The second and final source attack is now assigned to the same adversary under
+preparation/consumer-source-pass-2-work-order.md, SHA256
+b49624de2c70ea5ffe29eefcc9cc1bdc9bd9fe131bd863044fc23f0a8a104146, and fresh execution
+grant33e3dddd93cd14ab6c0f92bee088c834904399bcad5156f8d8d8c26868c36375. Its subject is
+the complete unit diff against published a0cf3ca8681ce06f6fbdbc988d457b23f2136c04. No
+second-pass result or final integration success is claimed yet. Story remains active; source
+publication, required CI and owned cleanup remain owed. No release or downstream delivery is selected.

@@ -777,3 +777,93 @@ followed by meaningful controls, the affected package, strict Clippy/formatting 
 inventory comparison. The expensive actual consumer checker needs a separate measured
 grant. Grant: preparation/consumer-correction1-execution-grant-01.json, SHA256
 bb8273b382abd25fc465508f2af79c58f0fb734964ed74e17b0da631b95b935f.
+
+## Correction 1 accepted for the second source attack — 2026-09-08
+
+The original two source-pass1 findings are corrected in bot commit
+`c375e35def175b51a61c259e73b3b00749399539`, local only. Both author and committer were
+verified as b10x-bot[bot]. The four original adversarial cases remain unchanged; seven
+additional correction cases cover grouped/re-exported absolute paths, relative shadowing,
+closed external types, associated declarations and selected contracts, and unresolved nested
+Self projections. The final package executed99 cases, all passed; strict Clippy and formatting
+returned0. Original intermediate failures remain in the complete correction report.
+
+The literal `task consumer-check` returned actual0 in592.2704340390628seconds with72 direct
+commands and22 exact attributed cases:1806models,87behavioral profiles,54Supported,
+0Refused and157068BaselineUnknown. All93 profiles, all157122 cell records and exact
+Rust/wire/provider-schema JSON match the prior accepted production extraction. The e005
+baseline is unchanged. This is the corrected-source checker result; full integration remains owed.
+
+The correction adds135 finite classifications:125 associated const/type declarations and10
+extractor helpers. The classes are114OwnedHelper,7DiagnosticSurface,8FixtureRealization,
+6ForeignContext. The removed conditions_fn helper is the only stale row retired. The final
+owner reading count is43 non-xtask files plus2 xtask files; the earlier44-owner shorthand is
+superseded by that measured final inventory. None of these classifications inherits support.
+
+Final correction evidence in unit `target/review-boundaries-18/consumer-correction-1/`:
+
+- `report.md` SHA256 `0b55a51528c2d791dadf4757ad1cdb3c55c893579e423f028deb861d95b318e7`.
+- `seal/seal.json` SHA256 `4fd41234f70f42e552dcd77dd35ad69a7070bad2a84483b357b167cd6ba1bdad`.
+- `final-source-manifest.json`:1214files, SHA256 `ff6b667dc98557fb032d08f3a2c74691549cf7ff3e5329559d12ca66ac9eb3d9`.
+- `final-source-2.tar.gz`:9877904bytes, SHA256 `0e3ca86acb27ce8d1e7fe77f35861bdd63ed06c8a89816a00ddb1f77dd2b880f`.
+- Native inventory:6720entries/9338655895regular bytes, SHA256 `878e4e95fd9f2d5f4dfe876482ceddeb8902a11fe5be66b08246c0cf0586eab4`.
+
+Root readback `preparation/consumer-correction1-readback/readback.json`, SHA256
+`c74974609e6953fde944a9509e1ab98e61228ee3056bcf5d45a0bd766906ea99`, returned0 in
+19.951905607944354seconds. Root read all report prose and checked every embedded original
+and corrected raw stream against the retained command files; the program also verified all
+native payloads/recorded metadata,49 final pins, complete source archive, actual checker
+commands and exact cell sets. The local bot commit preserved all1214 measured source bytes.
+
+The bounded correction execution grant02 prospectively used a6GiB free reserve with the
+same8634200064aggregate cap. The full-checker grant allowed9188249600bytes, retaining6GiB.
+Its checker completed without a resource stop. The later records command returned1 during
+source archival,237568bytes above its cap; its807-file partial archive and original streams
+remain unchanged. Root's records-only completion grant allowed9255870464bytes (+64MiB
+from a fresh measurement) with4GiB archival reserve while all builds were held. Fresh source
+archive/readback and final native producer/reader returned0, using9202806784allocated bytes
+at handoff. These prospective operational allowances did not change any acceptance requirement.
+
+### Additional exact published-record retention
+
+Root retained and independently read every regular payload, PAX native record, literal link,
+hidden/empty directory and source identity before retiring these four exact owned W12 roots.
+All source/Git/worktrees and the frozen toolchain remain live. The earlier gate attempts still
+record their original test201 results; their later successful source publication does not turn
+those original attempts green. Full command receipts are under the outside retention directories.
+
+- W12 preparation/source-review-pass1-binaries:78entries/421254502regular bytes; archive105061799bytes,
+  SHA256 `501764edde0f49f6224ea5e8c4b8b95a6c6c9a743898449b71b1c573e2bec67f`.
+- W12 preparation/implementor-commit:82entries/403211947regular bytes; archive101135932bytes,
+  SHA256 `8113134367734b2667e68c1107026214c997ccb694e2dc92002089591b8d5bdf`.
+- W12 gate-dbe78c5b15df:6740entries/512051511regular bytes; archive189986308bytes,
+  SHA256 `172008a15845e7b5dc64dd60363d27d8194bf0efe90749149586bfcfa8c8bd05`.
+- W12 gate-dbe78c5b15df-attempt2:6742entries/565518039regular bytes; archive213131258bytes,
+  SHA256 `d36275dc6292d6743f42b6b20e93646318c41c268dd0e517525a1c51164f94d0`.
+
+Every archive, independent verifier and exact retirement command returned0. Full receipts:
+`/home/timo/.cache/ess-review/2026-09-06-resume/wave12-preparation-records-retirement/complete.json`
+SHA256 `b910f966eda5522bacfa5793876f73afebc13fd9ec205fdcade2bfd27e1fd94b`, and
+`wave12-earlier-gate-records-retirement/complete.json` under the same outside base,
+SHA256 `79c3cd9d181db3590912b37f78d9f614c90984b1019dd2cd373cc23032e1f75d`.
+The prior W12 final gate archive, all earlier completed retentions and all original failures
+remain intact. The protected-proc visibility limitation is recorded; no whole-machine view is claimed.
+
+### Second attack dispatch
+
+The same adversary now owns the second and final source attack at clean `c375e35`.
+`preparation/consumer-source-pass-2-work-order.md` SHA256
+`b49624de2c70ea5ffe29eefcc9cc1bdc9bd9fe131bd863044fc23f0a8a104146` pins the complete
+handoff. Its fresh grant SHA256 `33e3dddd93cd14ab6c0f92bee088c834904399bcad5156f8d8d8c26868c36375`
+allows512MiB above9202819072observed aggregate bytes, cap9739689984,6GiB free reserve,
+one heavy producer and2Rust jobs. Initial free space was7355617280bytes. Its reserved tests
+are additive, each concrete case executes alone before its affected suite, and no baseline
+suite/extraction/full-checker/mutation rerun is selected. The root owns all planning, Git,
+integration, publication and cleanup. No second-pass verdict is claimed at dispatch.
+
+`preparation/warm-integration-checkout-plan.md` is preparation only: after final review and
+agent handoff, root may continue final integration in this existing managed consumer checkout
+with its own warm target, on a separate recorded integration branch. No branch/checkout change
+or full gate has occurred. Fresh capacity and explicit frozen tool/cache/source authority are
+still required; the8GiB full-integration floor remains unchanged. No tag, release, deployment
+or downstream delivery is selected.
