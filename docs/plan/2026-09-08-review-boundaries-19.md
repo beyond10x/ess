@@ -47,8 +47,8 @@ wave19-retained-inputs directory. Their inventory receipts preserve old-source p
 
 | Role | Managed worktree | Branch | Build and scratch | Stage |
 |---|---|---|---|---|
-| Coordinator | /home/timo/.local/state/worktree/trees/b10x/ess/ess-review-boundaries-19 | wave/review-boundaries-19 | target/review-boundaries-19/preparation; no Cargo build | Candidate0abe797 published to draft PR14; native refusal corrections active |
-| Implementation and integration | /home/timo/.local/state/worktree/trees/b10x/ess/ess-output-ownership-wave19 | wave/review-boundaries-19-final (implementation branch impl/review-output-ownership-wave19 retained) | Its own target/; target/review-output-ownership-wave19/; target/review-boundaries-19-integration/; target/review-boundaries-19-root-native/ | Correction1 sealed381 Linux cases; same implementor fixing native admission and fixture overlap with exclusive compiler slot |
+| Coordinator | /home/timo/.local/state/worktree/trees/b10x/ess/ess-review-boundaries-19 | wave/review-boundaries-19 | target/review-boundaries-19/preparation; no Cargo build | Candidatee0636f9 published to draft PR14; concurrent main integrated as49c193d |
+| Implementation and integration | /home/timo/.local/state/worktree/trees/b10x/ess/ess-output-ownership-wave19 | wave/review-boundaries-19-final (implementation branch impl/review-output-ownership-wave19 retained) | Its own target/; target/review-output-ownership-wave19/; target/review-boundaries-19-integration/; target/review-boundaries-19-root-native/ | Native admission passes both Mac runners and all45 selected Linux cases; whole corrected package pending; untouched-parent permission witness active |
 | Adversary pass1 | /home/timo/.local/state/worktree/trees/b10x/ess/ess-output-ownership-adversary-wave19 | probe/output-ownership-wave19 | Its own target/ and target/review-output-ownership-adversary-wave19/ | Pass1 preserved; tree advanced cleanly to be7a852 for an undispatched pass2 |
 
 Root lease: ess-review-boundaries-coordinator-wave19. The unit's actual path, opening SHA and
@@ -415,3 +415,64 @@ The exact retained CLI also passed the Linux same-device bind-mount witness agai
 control0, cross-mount refusal1, complete bytes/modes/state unchanged, distinct mount IDs2741/3555
 on device66306, explicit unmount0. Its fresh fixture and raw logs remain retained. The candidate
 is ready for the next native CI run on draft PR14; main remains unchanged.
+
+## Native admission validation and concurrent main integration
+
+Candidate e0636f9 was published to draft PR14. CI34218980564 completed both macOS jobs
+successfully: ARM102037367052 and Intel102037367125 each passed35 ownership,4 unchanged
+adversary,5 correction and6 selected sync cases. Both executed the original613 process cuts
+and613 injected boundaries plus222 admission cuts and222 injected boundaries. Actual native
+lookup reported both case and normalization pairs as aliases; the before-mutation refusal
+assertions passed. Documentation run34218980589 completed successfully. The Linux gate was
+still running at this observation; these results do not close the wave.
+
+Remote main independently advanced to b7a0303bd4ca771a409449a0a2b7c59efaf5cffc, preserving
+authored Rust names when allocating entity snapshots. Root read its six-file change and
+integrated it without conflict as49c193d6d1eb531d9a6f74ae57a17856e661d430, with verified bot
+author and committer. This tree is byte-identical to the actual native CI checkout
+38abff5ea713c2c212d2d0d0685ee5d378956f08, whose parents are b7a0303 and e0636f9. The earlier
+PR metadata reported the old base; the fetched merge object and native checkout logs establish
+the actual tested source. This is an independently published ESS source fix, not wave19 landing.
+
+The held candidate report remains immutable at SHA256
+9cdfb0c3c866b5280a0ebc9655916c10eb475767b0aace8f200ae6fb7bacc2a9. A source-read concern is
+being measured against its retained CLI: unconditional admission probes may require write
+permission in an untouched unselected owner's directory or a matching adoption subdirectory.
+No correction or passing permission claim is inferred before that fixture executes. The whole
+corrected CLI package, final adversary pass and full integration gate remain owed.
+
+The retained CLI confirmed both permission concerns: site publication with an unselected schema
+directory at0555 exited1, and matching site-reference adoption with target assets at0555 exited1,
+each with native EACCES13. Complete before/after bytes and modes matched for both targets.
+The separate witness report SHA256 is
+af1d388f8e2ca2e2f140abbf07993011bce602af16ecc35c1b196075ce7b1af0. Root read the full report
+and the actual CLI streams. The original candidate report and successful Mac evidence remain
+unchanged. Unit source fast-forwarded to49c193 with all seven CLI pins unchanged.
+
+The same implementor is authorized to add the two regressions first, correct unnecessary probes
+for existing exact sibling sets, and check the same permission class when an unselected or
+reference file is already missing and remains uncreated. Existing alias and mutation assertions
+stay intact. The corrected whole CLI package is required before pass2. Its prospective resource
+grant uses the existing full-gate supervisor:8GiB target plus ordinary TMP,14GiB assigned browser
+and Go tmpfs, and unchanged2GiB SSD/8GiB tmpfs and memory free floors. Current measurements were
+3,194,617,856 target bytes plus1,590,849,536 ordinary TMP bytes,10,553,462,784 assigned tmpfs bytes,
+91,333,890,048 SSD free,14,038,065,152 tmpfs free and38,037,996KiB memory available. One compiler
+producer remains the rule; the earlier lower-limit interruption remains recorded.
+
+The two additive tests first failed against unchanged production (0passed/2failed, actual101).
+An initial complete-sibling shortcut made both existing-file variants pass, but both missing-file
+variants still refused with EACCES. The selected correction retains the complete inventory and
+marks actual non-absent planned changes separately. Only required absent/type-transition names
+trigger a private parent probe; that probe still includes all siblings to detect aliases against
+dormant owners. Adoption creates no artifacts and marks only a required missing anchor.
+
+The unchanged two permission tests then passed both variants, actual0 in20.024s. The complete
+admission target filter passed10 cases with29 original protocol cases filtered, actual0 in79.027s.
+Its current matrix measured76 nested publication,64 missing publication and18 missing-anchor
+adoption process cuts and matching injected boundaries, plus16 refusal-cleanup cuts and16 injected
+boundaries:174 of each in total. The original existing-only adoption fixture remains as an explicit
+zero-admission-event control, preserving every artifact byte/absence and repeated recovery. Its
+earlier66 probe cuts remain retained evidence of the superseded behavior. The missing-anchor
+adoption fixture asserts directory creation/cleanup/sync without claiming file-write coverage;
+both publication fixtures still require file-write boundaries. Original transaction assertions
+are unchanged. Strict Clippy, final source/native handoff and whole CLI package remain pending.

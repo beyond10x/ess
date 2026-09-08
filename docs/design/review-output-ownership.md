@@ -19,9 +19,18 @@ Preserve Linux and macOS support declared by the current release matrix. Use saf
 The guarantee covers process interruption and injected I/O failures on one local mounted filesystem with controlled parents and cooperating writers. Preserve descriptor-relative containment, no-follow/type/link checks, top-down nonblocking shared ancestor/exclusive anchor locks, fresh-anchor parent locking, and enrolled ancestor/descendant refusal. No hostile-writer, cross-filesystem transaction, simultaneous cross-directory visibility, or unconditional power-loss guarantee is made. Use actual file/directory synchronization calls and record/refuse failures; document underlying storage assumptions. No empty hardware admission registry or ext4-only rule is selected. Linux same-device bind mounts still require mount-identity checking before mutation. The macOS equivalent and sync behavior must be established from APIs and native validation.
 
 Native name admission precedes anchor creation, enrollment and output publication. In writing
-operations, check exact component creation and alias behavior in private descriptor-relative
-namespaces under each relevant existing parent; prospective directories follow their immediate
-parent. Remove only the current invocation's recorded entries with matching identities and
+operations, check the complete ownership inventory with exact native lookup and directory-entry
+spelling. Existing names establish native admission without probe writes. Mark separately the
+non-absent after-images that this operation actually plans to create, plus any missing anchor
+prefix. Probe an existing parent only when one of those required names is absent or must change
+from a file to a directory. Include all inventory siblings in that probe, including missing
+unselected-owner names, so a new selected name cannot alias a dormant owner's name. Recurse and
+probe deeper only where actual creation requires it; untouched missing paths remain absent and
+untouched directory modes need no extra write permission. Adoption creates no artifact files;
+matching targets and missing reference-file targets therefore need only read-only admission,
+with missing-anchor creation checked separately. Real inspection errors still refuse.
+Prospective directories follow their immediate parent in private descriptor-relative namespaces.
+Remove only the current invocation's recorded entries with matching identities and
 synchronize cleanup before publication. An ordinary name refusal whose cleanup succeeds leaves
 the complete output snapshot unchanged and preserves the native error cause. Check and no-output
 operations remain nonwriting. The parent naming policy must remain stable during the operation.
