@@ -1,0 +1,11 @@
+components:
+  - component: worker
+    owns:
+      domains:
+        - demo.core
+    accepts:
+      commands:
+        - demo.core.Fire
+    publishes:
+      events:
+        - demo.core.Fired

@@ -171,6 +171,14 @@ tasks:
         CARGO_PROFILE_DEV_INCREMENTAL=false CARGO_PROFILE_TEST_INCREMENTAL=false
         cargo run --locked --offline --quiet --package ess-xtask -- consumer-check
 
+  fuzz-check:
+    desc: Check the standalone stable specification replay and its observation verifier.
+    cmds:
+      - cargo fmt --manifest-path fuzz/Cargo.toml --package ess-specification-fuzz -- --check
+      - cargo clippy --manifest-path fuzz/Cargo.toml --locked --offline --all-targets -- -D warnings
+      - cargo test --manifest-path fuzz/Cargo.toml --locked --offline
+      - cargo run --manifest-path fuzz/Cargo.toml --locked --offline --bin replay -- --regressions
+
   check:
     cmds:
       - task: fmt-check
@@ -181,5 +189,6 @@ tasks:
       - task: projection-check
       - task: support-check
       - task: consumer-check
+      - task: fuzz-check
       - task: release-check
       - task: action-check

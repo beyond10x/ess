@@ -1,0 +1,12 @@
+domain: demo.core
+events:
+  - name: demo.core.Fired
+    fields:
+      - name: value
+        type: String
+commands:
+  - name: demo.core.Fire
+    outcomes:
+      - name: done
+        emits:
+          - demo.core.Fired

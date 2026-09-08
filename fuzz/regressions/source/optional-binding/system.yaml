@@ -1,0 +1,5 @@
+format: ess/1
+system: demo
+version: v1
+domains:
+  - demo.core

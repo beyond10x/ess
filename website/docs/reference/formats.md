@@ -109,7 +109,7 @@ the row says otherwise; it does not imply that those bytes are hashed.
 | `plan.json`: **unversioned** `SynthesisPlan` | Specification provenance | Neutral generated plan, consumed as a typed value by emitters. Pretty JSON and `PLAN.md`; **compiled-model/whole-contract** references, no plan-file hash. [Source][plan] |
 | `target.json`: **unversioned** `TargetReport` | Target name and specification provenance | Successful Go/Web/Clap synthesis includes this refusal/weakening report; successful Rust has `target: None` and no target metadata. No persisted admission reader. Unchanged pretty JSON and `TARGET.md`; provenance references, no report-file hash. [Source][synthesis] |
 | Complete failure: `format: ess-target-failure/1` | Target `rust` or `web`; unchanged neutral plan and its provenance | Serialize-only `TargetFailure` has `format`, `target`, `plan`, nonempty `causes`; private construction, read-only accessors, no Deserialize/admission reader. Typed pretty JSON+LF or CLI YAML; no failure-file digest or artifacts. [Source][target-failure] |
-| Complete failure: `format: ess-target-failure/2` | Target `go` or `clap`; unchanged neutral plan and provenance | New located finite Binary64 codec refusal with the same failure fields and no artifacts. Rust/Web keep target-failure/1. [Source][target-failure] |
+| Complete failure: `format: ess-target-failure/2` | Target `go` or `clap`; unchanged neutral plan and provenance | Located finite Binary64 codec refusal, or Go missing-type-owner refusal, with the same failure fields and no artifacts. Rust/Web keep target-failure/1. [Source][target-failure] |
 
 Composition selects commands from the component's `accepts` and views from its owned domains.
 Its named-type traversal covers command inputs, event/error fields and query row shapes/fields,
@@ -136,6 +136,9 @@ are also sorted and deduplicated. Current codes are `invalid-identifier`, `symbo
 `path-collision`, `recursive-layout`, `binding-assignment`, `missing-type-owner`, `wire-collision`
 and `missing-representation`. A plan with zero capabilities can still fail. The typed error
 implements `Display` and `std::error::Error`; it carries no independent digest.
+Go checks every named type against the actual domain type rosters before package allocation,
+including unreferenced types. A missing owner returns `missing-type-owner` with that qualified
+type as its source; the existing Binary64 refusal takes precedence.
 These checks do not constitute a universal compiler proof; internal coverage assertions remain,
 and direct workspace calls require the plan for the supplied IR.
 [Error][target-failure], [API limits][synthesis].

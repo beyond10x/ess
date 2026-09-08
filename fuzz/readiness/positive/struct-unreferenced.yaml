@@ -1,0 +1,6 @@
+domain: probe.core
+types:
+  - name: probe.core.Value
+    kind: struct
+    fields:
+      - {name: text, type: String}

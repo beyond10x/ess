@@ -275,6 +275,7 @@ impl<'a> Emit<'a> {
 /// allowed to tell.
 pub fn workspace(ir: &EssIr, plan: &SynthesisPlan) -> Result<Emission, crate::TargetFailure> {
     crate::failure::binary64(ir, plan, crate::Target::Go)?;
+    type_owners(ir, plan)?;
     let refusals = TargetRefusals::of(ir, plan);
     let layout = Layout::of(ir, plan, &refusals);
     let provenance = &plan.provenance;
@@ -355,6 +356,34 @@ pub fn workspace(ir: &EssIr, plan: &SynthesisPlan) -> Result<Emission, crate::Ta
                 .collect(),
         },
     })
+}
+
+/// Every declared type needs an actual domain roster entry before Go allocates package names.
+/// System-level types are valid ESS, including unused types; a qualified prefix cannot assign
+/// them to a package on behalf of the author.
+fn type_owners(ir: &EssIr, plan: &SynthesisPlan) -> Result<(), crate::TargetFailure> {
+    let owned = ir
+        .domains()
+        .values()
+        .flat_map(|domain| domain.types.iter().map(ess_compiler::ir::TypeHandle::name))
+        .collect::<BTreeSet<_>>();
+    let causes = ir
+        .types()
+        .keys()
+        .filter(|name| !owned.contains(*name))
+        .map(|name| {
+            crate::TargetFailureCause::new(
+                crate::TargetFailureCode::MissingTypeOwner,
+                vec![name.to_string()],
+                format!("Go cannot assign a package to type {name}: no domain owns it"),
+            )
+        })
+        .collect::<Vec<_>>();
+    if causes.is_empty() {
+        Ok(())
+    } else {
+        Err(crate::TargetFailure::new(crate::Target::Go, plan, causes))
+    }
 }
 
 /// Holds the emitter to the plan: emitted is exactly generated minus target-refused, and stubbed

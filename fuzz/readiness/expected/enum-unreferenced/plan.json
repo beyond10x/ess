@@ -1,0 +1,20 @@
+{
+  "provenance": {
+    "system": "probe",
+    "specification_version": "v1",
+    "source_digest": "7df1896edb53ff9b9cc3be6b5af4b11c3c6eeb2e81db899084e39a3c9bd68397",
+    "contract_digest": "c1d09d06bfa466b5c69362996c174a9621e3627064e1d9e602c3126135f11832"
+  },
+  "scope": {
+    "profile": "component-skeletons"
+  },
+  "capabilities": [
+    {
+      "kind": "domain_type",
+      "source": "probe.core.Value",
+      "disposition": {
+        "disposition": "generated"
+      }
+    }
+  ]
+}

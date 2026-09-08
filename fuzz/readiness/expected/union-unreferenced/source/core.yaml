@@ -1,0 +1,8 @@
+domain: probe.core
+types:
+  - name: probe.core.Value
+    kind: union
+    tag: kind
+    variants:
+      text: String
+      count: Integer

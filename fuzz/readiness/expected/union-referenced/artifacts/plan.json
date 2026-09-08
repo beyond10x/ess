@@ -1,0 +1,27 @@
+{
+  "provenance": {
+    "system": "probe",
+    "specification_version": "v1",
+    "source_digest": "27242364f02f9693903e3e9667e3538f90f1b128a4b5f2e479b78c733c767ab3",
+    "contract_digest": "6593e243bf4d7e9c281af5622aca66399d95e84990e6f5aa29adfbd094dcf58f"
+  },
+  "scope": {
+    "profile": "component-skeletons"
+  },
+  "capabilities": [
+    {
+      "kind": "domain_type",
+      "source": "probe.core.Holder",
+      "disposition": {
+        "disposition": "generated"
+      }
+    },
+    {
+      "kind": "domain_type",
+      "source": "probe.core.Value",
+      "disposition": {
+        "disposition": "generated"
+      }
+    }
+  ]
+}
