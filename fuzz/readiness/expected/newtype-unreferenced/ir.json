@@ -1,0 +1,44 @@
+{
+  "system": "probe",
+  "version": 1,
+  "naming": {},
+  "domains": {
+    "probe.core": {
+      "name": "probe.core",
+      "naming": {},
+      "types": [
+        "probe.core.Value"
+      ],
+      "entities": [],
+      "commands": [],
+      "events": [],
+      "errors": [],
+      "views": [],
+      "actors": []
+    }
+  },
+  "types": {
+    "probe.core.Value": {
+      "name": "probe.core.Value",
+      "body": {
+        "kind": "newtype",
+        "of": {
+          "kind": "primitive",
+          "name": "string"
+        },
+        "invariants": []
+      },
+      "naming": {}
+    }
+  },
+  "conversions": [],
+  "entities": {},
+  "commands": {},
+  "events": {},
+  "errors": {},
+  "views": {},
+  "actors": {},
+  "bindings": {},
+  "components": {},
+  "workloads": {}
+}

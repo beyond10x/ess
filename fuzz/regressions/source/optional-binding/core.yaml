@@ -1,0 +1,16 @@
+domain: demo.core
+events:
+  - name: demo.core.Fired
+    fields:
+      - name: value
+        type: String
+  - name: demo.core.Handled
+commands:
+  - name: demo.core.Handle
+    input:
+      - name: value
+        type: Optional<String>
+    outcomes:
+      - name: done
+        emits:
+          - demo.core.Handled

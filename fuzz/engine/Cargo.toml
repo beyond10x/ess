@@ -1,0 +1,30 @@
+[package]
+name = "ess-specification-fuzz-engine"
+version = "0.1.0"
+edition = "2021"
+publish = false
+
+[package.metadata]
+cargo-fuzz = true
+
+[workspace]
+resolver = "2"
+
+[dependencies]
+ess-specification-fuzz = { path = ".." }
+libfuzzer-sys = "=0.4.13"
+arbitrary = { version = "=1.4.2", features = ["derive"] }
+
+[[bin]]
+name = "byte_carrier"
+path = "fuzz_targets/byte_carrier.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "structured"
+path = "fuzz_targets/structured.rs"
+test = false
+doc = false
+bench = false

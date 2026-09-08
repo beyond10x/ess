@@ -1,0 +1,9 @@
+domain: probe.core
+types:
+  - name: probe.core.Value
+    kind: enum
+    variants: [First, Second]
+  - name: probe.core.Holder
+    kind: struct
+    fields:
+      - {name: value, type: probe.core.Value}

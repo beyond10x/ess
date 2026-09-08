@@ -1,0 +1,22 @@
+components:
+  - component: worker
+    owns:
+      domains:
+        - demo.core
+    accepts:
+      commands:
+        - demo.core.Handle
+    publishes:
+      events:
+        - demo.core.Fired
+        - demo.core.Handled
+bindings:
+  - id: handle-fired
+    when:
+      event: demo.core.Fired
+    invoke:
+      command: demo.core.Handle
+    mapping:
+      value: event.value
+    delivery: at_least_once
+    on_failure: drop

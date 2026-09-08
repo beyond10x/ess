@@ -1,0 +1,526 @@
+[
+  {
+    "artifact_files": [
+      {
+        "bytes": 894,
+        "path": "PLAN.md",
+        "sha256": "356deeea7e6d30192b4defc7a16def9b3a0b25f8a62a6ff325889e3dd0b5de2f"
+      },
+      {
+        "bytes": 2881,
+        "path": "TARGET.md",
+        "sha256": "1663a6c5ba0e3461b2f0680b792a528f7008ad95035a0c43ffde489dba86d764"
+      },
+      {
+        "bytes": 280,
+        "path": "go.mod",
+        "sha256": "039ee8f73bcefff7d2fc701cfae4de2623f0487e1f46b176aa1280748eaacd91"
+      },
+      {
+        "bytes": 486,
+        "path": "plan.json",
+        "sha256": "521d9fb2a4f031f5ffe775717f14f9a36fad6bd85729a896204a33d396e784d8"
+      },
+      {
+        "bytes": 2656,
+        "path": "target.json",
+        "sha256": "649a1b68aa11d33c0f5c46bc9f18a174f5f72d5e444e420b859fb3991bf27e34"
+      },
+      {
+        "bytes": 1106,
+        "path": "types/core/core.go",
+        "sha256": "a5da64583ac57b090128585d56b6c597182a99feaf3ed364ccff479c81ad54b5"
+      },
+      {
+        "bytes": 3818,
+        "path": "types/primitives/primitives.go",
+        "sha256": "52cf901a77f82d3fb406c989e8390b83ef72c4a97922fbe5dfe9bea0e4364c06"
+      }
+    ],
+    "family": "newtype",
+    "name": "newtype-unreferenced",
+    "neutral_plan_sha256": "521d9fb2a4f031f5ffe775717f14f9a36fad6bd85729a896204a33d396e784d8",
+    "owned": [
+      "probe.core.Value"
+    ],
+    "referenced": false,
+    "sources": [
+      {
+        "bytes": 62,
+        "label": "system.yaml",
+        "sha256": "8fa5a1066e91aa75d4833769c2f002ce44dd0519b9f4e205a8104f95eed07a4e"
+      },
+      {
+        "bytes": 86,
+        "label": "core.yaml",
+        "sha256": "1bf24b0c826d8ad5bed54519a3fc1dc4ed71f8f17bf54b76d002a6eb7433711c"
+      }
+    ]
+  },
+  {
+    "artifact_files": [
+      {
+        "bytes": 932,
+        "path": "PLAN.md",
+        "sha256": "f9778c599c54fa100904259e69669a954d00eae600bc987e1860a67dca1ac4e7"
+      },
+      {
+        "bytes": 2881,
+        "path": "TARGET.md",
+        "sha256": "b6848761494172164af961a0274c0b589f00e1a1a32991ec9f4baa2e2529f904"
+      },
+      {
+        "bytes": 280,
+        "path": "go.mod",
+        "sha256": "f0d3f8d8ec8fcfe5eeff88d796592d8d340440e3befde6d7f5286e7536240056"
+      },
+      {
+        "bytes": 631,
+        "path": "plan.json",
+        "sha256": "f9839220c265fdb1edae082e8e5d427fc3d9a8a910276a9ece6460ab8fcece7a"
+      },
+      {
+        "bytes": 2656,
+        "path": "target.json",
+        "sha256": "6444050d58796a58657dd9ed5d41b2805f527c8148e4349766a34f6e254f4636"
+      },
+      {
+        "bytes": 1233,
+        "path": "types/core/core.go",
+        "sha256": "fcb5ef42527f72ea1e18fccf4eba015f35a0cbaadc3baf6e578f10fafd0b159f"
+      },
+      {
+        "bytes": 3818,
+        "path": "types/primitives/primitives.go",
+        "sha256": "9d32758fba293fe5cb6a4d062329cbe39e15d4bb9bf8e8722271cedcc979c73f"
+      }
+    ],
+    "family": "newtype",
+    "name": "newtype-referenced",
+    "neutral_plan_sha256": "f9839220c265fdb1edae082e8e5d427fc3d9a8a910276a9ece6460ab8fcece7a",
+    "owned": [
+      "probe.core.Holder",
+      "probe.core.Value"
+    ],
+    "referenced": true,
+    "sources": [
+      {
+        "bytes": 62,
+        "label": "system.yaml",
+        "sha256": "8fa5a1066e91aa75d4833769c2f002ce44dd0519b9f4e205a8104f95eed07a4e"
+      },
+      {
+        "bytes": 189,
+        "label": "core.yaml",
+        "sha256": "3961904cf2941d28ee8b3a800b7cd643a111a94eec05b5ca2733c1b17dff6fd6"
+      }
+    ]
+  },
+  {
+    "artifact_files": [
+      {
+        "bytes": 894,
+        "path": "PLAN.md",
+        "sha256": "9b714cae1cb4e651f5f9607042d1b2362f919315c7ffe23a171ca8f4c5f45ed9"
+      },
+      {
+        "bytes": 2881,
+        "path": "TARGET.md",
+        "sha256": "d597c8a67b6aa62dac680ae00419582e5c8211fdb3cdb6b65e7d0112d3650d20"
+      },
+      {
+        "bytes": 280,
+        "path": "go.mod",
+        "sha256": "4647e430871effa3e7619d1ccc20977f3496987aaa4c0c005a3572b2d0c0442f"
+      },
+      {
+        "bytes": 486,
+        "path": "plan.json",
+        "sha256": "0f2c5cbf9277f33dc1730e23d5c465b6f6c8feb680fb6160dce159d7a3c42ffc"
+      },
+      {
+        "bytes": 2656,
+        "path": "target.json",
+        "sha256": "260a4cacbe65334552e1f76ed7e42c395f01fd72c3c9c27179a218cdf710ae9a"
+      },
+      {
+        "bytes": 598,
+        "path": "types/core/core.go",
+        "sha256": "8b387731711986c0d38a88353bae53cd2e7aa1c49a3d0d7526d192af875a7ddb"
+      },
+      {
+        "bytes": 3818,
+        "path": "types/primitives/primitives.go",
+        "sha256": "76a4198aa24e4e39460bb853d38073650c8801899b68b3012b863a64cb7bd7eb"
+      }
+    ],
+    "family": "struct",
+    "name": "struct-unreferenced",
+    "neutral_plan_sha256": "0f2c5cbf9277f33dc1730e23d5c465b6f6c8feb680fb6160dce159d7a3c42ffc",
+    "owned": [
+      "probe.core.Value"
+    ],
+    "referenced": false,
+    "sources": [
+      {
+        "bytes": 62,
+        "label": "system.yaml",
+        "sha256": "8fa5a1066e91aa75d4833769c2f002ce44dd0519b9f4e205a8104f95eed07a4e"
+      },
+      {
+        "bytes": 117,
+        "label": "core.yaml",
+        "sha256": "42d758c2a3f9a90dfa57f67a547e4291d8db9d10f75d3654e558cb86f217c186"
+      }
+    ]
+  },
+  {
+    "artifact_files": [
+      {
+        "bytes": 932,
+        "path": "PLAN.md",
+        "sha256": "580b0b0842af5ec99ca7f0144b19173c22a9aeef7eb826efc0ebdf719207266f"
+      },
+      {
+        "bytes": 2881,
+        "path": "TARGET.md",
+        "sha256": "bd6ee46c9a4e6f1d70182a9563f61a3ddfc9644a9104c469a6a58583bea814ff"
+      },
+      {
+        "bytes": 280,
+        "path": "go.mod",
+        "sha256": "b3849ebff7104dd67967daa8cd02bd1909e6fc65e07511e0d0c674d5cd06ab21"
+      },
+      {
+        "bytes": 631,
+        "path": "plan.json",
+        "sha256": "988969231efb30f9f8ab60e4e2a138e508e35e4e8033b9570661b9f95ad76fe8"
+      },
+      {
+        "bytes": 2656,
+        "path": "target.json",
+        "sha256": "f9f33a7e6a358a969d4bf5d8f60aed751c73efc931cd83776f74d3748d259d17"
+      },
+      {
+        "bytes": 725,
+        "path": "types/core/core.go",
+        "sha256": "b5553c54946e95be1b774b1fb93f205cf73c66043494a5a6d3733cee72819436"
+      },
+      {
+        "bytes": 3818,
+        "path": "types/primitives/primitives.go",
+        "sha256": "a7ceda9c4c00de8a1302598b866580fd4937fac89cb441532d9e76989176d2db"
+      }
+    ],
+    "family": "struct",
+    "name": "struct-referenced",
+    "neutral_plan_sha256": "988969231efb30f9f8ab60e4e2a138e508e35e4e8033b9570661b9f95ad76fe8",
+    "owned": [
+      "probe.core.Holder",
+      "probe.core.Value"
+    ],
+    "referenced": true,
+    "sources": [
+      {
+        "bytes": 62,
+        "label": "system.yaml",
+        "sha256": "8fa5a1066e91aa75d4833769c2f002ce44dd0519b9f4e205a8104f95eed07a4e"
+      },
+      {
+        "bytes": 220,
+        "label": "core.yaml",
+        "sha256": "a4b422576986cc8f001489c416e919b9ce910af35d364f3b0a8c9455818b4fa8"
+      }
+    ]
+  },
+  {
+    "artifact_files": [
+      {
+        "bytes": 894,
+        "path": "PLAN.md",
+        "sha256": "1f2ffc0536f7cf413ab546bdac560daac0174f630340e5af73623a76cd30e242"
+      },
+      {
+        "bytes": 2881,
+        "path": "TARGET.md",
+        "sha256": "a1b646b99a8002d119b5ab9932b125466e5a1fe98071f99e74448cade1864c58"
+      },
+      {
+        "bytes": 280,
+        "path": "go.mod",
+        "sha256": "ebb095ba00a430e07d939abcc41e76c7c3dd841635f1592a309298efd285237f"
+      },
+      {
+        "bytes": 486,
+        "path": "plan.json",
+        "sha256": "ac5bd55d656304cbaede00c44e44cced17560e1f85c79ab29185791ad04653e7"
+      },
+      {
+        "bytes": 2656,
+        "path": "target.json",
+        "sha256": "03cec0a6df586bb236a5112edff8a317f4b11de16cba75452d5a91b6b0c025d0"
+      },
+      {
+        "bytes": 1057,
+        "path": "types/core/core.go",
+        "sha256": "fa8dd67be7a84c6892ec6ca62c8ef97f85cf1fbe4409c8e672fdebafcc074525"
+      },
+      {
+        "bytes": 3818,
+        "path": "types/primitives/primitives.go",
+        "sha256": "e703423d3335f627e68b36a725c66e1e95d4e1af4847b32c59c3efa3227556cc"
+      }
+    ],
+    "family": "enum",
+    "name": "enum-unreferenced",
+    "neutral_plan_sha256": "ac5bd55d656304cbaede00c44e44cced17560e1f85c79ab29185791ad04653e7",
+    "owned": [
+      "probe.core.Value"
+    ],
+    "referenced": false,
+    "sources": [
+      {
+        "bytes": 62,
+        "label": "system.yaml",
+        "sha256": "8fa5a1066e91aa75d4833769c2f002ce44dd0519b9f4e205a8104f95eed07a4e"
+      },
+      {
+        "bytes": 98,
+        "label": "core.yaml",
+        "sha256": "2b6b36eb6d019b3bb4cade0e6c797ce21f1632d09202276584bca772f379c448"
+      }
+    ]
+  },
+  {
+    "artifact_files": [
+      {
+        "bytes": 932,
+        "path": "PLAN.md",
+        "sha256": "738a2db22c4f13ff646c6d5ead05c7a6a78d03ca81830a916842fe898daf87b8"
+      },
+      {
+        "bytes": 2881,
+        "path": "TARGET.md",
+        "sha256": "b6a7819dc855be7c72876d817561f00998a3f3c4128c477d57b5698f32a459f8"
+      },
+      {
+        "bytes": 280,
+        "path": "go.mod",
+        "sha256": "6ab38ba485d66318acce5acbff0dfadab27432f26614c42dbcff7c092c32c154"
+      },
+      {
+        "bytes": 631,
+        "path": "plan.json",
+        "sha256": "0187b88d3edd701f2726e916f9933a9f6ac4b9d6d55b5e3d3ebe7b80ee47f19f"
+      },
+      {
+        "bytes": 2656,
+        "path": "target.json",
+        "sha256": "9826e4b92596417d07c1de79b57152856889c99c237080bc24f321737d50248e"
+      },
+      {
+        "bytes": 1184,
+        "path": "types/core/core.go",
+        "sha256": "19116c57a0c689685071de73015a223a70e713b482c29701d9222c3e88024bc5"
+      },
+      {
+        "bytes": 3818,
+        "path": "types/primitives/primitives.go",
+        "sha256": "99cf6a45f80ed9eae981e2561e49ca3281a2acc3518925fcb74f8334ca650f3a"
+      }
+    ],
+    "family": "enum",
+    "name": "enum-referenced",
+    "neutral_plan_sha256": "0187b88d3edd701f2726e916f9933a9f6ac4b9d6d55b5e3d3ebe7b80ee47f19f",
+    "owned": [
+      "probe.core.Holder",
+      "probe.core.Value"
+    ],
+    "referenced": true,
+    "sources": [
+      {
+        "bytes": 62,
+        "label": "system.yaml",
+        "sha256": "8fa5a1066e91aa75d4833769c2f002ce44dd0519b9f4e205a8104f95eed07a4e"
+      },
+      {
+        "bytes": 201,
+        "label": "core.yaml",
+        "sha256": "e7a171805182e5e6f0f54f13919b034f542a1625ecd9c24699dc6970f97af9f9"
+      }
+    ]
+  },
+  {
+    "artifact_files": [
+      {
+        "bytes": 894,
+        "path": "PLAN.md",
+        "sha256": "92659ae9ffd3c9a74aff3ccff7e7cc50e90a80e8418f6ca652a8dcedda55610a"
+      },
+      {
+        "bytes": 2881,
+        "path": "TARGET.md",
+        "sha256": "c1c4ff40fcf925b14c0fa5906fc51caec1038a6bf73f2a22ed62918a17b73142"
+      },
+      {
+        "bytes": 280,
+        "path": "go.mod",
+        "sha256": "148a9665186cf09d628578411a46bf7654b37cfc9fa504fcecc8b3c3e55b806f"
+      },
+      {
+        "bytes": 486,
+        "path": "plan.json",
+        "sha256": "855f29de967e3d1f0a62eff981ed1b3abba0c517fca495253c8495e36d632f49"
+      },
+      {
+        "bytes": 2656,
+        "path": "target.json",
+        "sha256": "538a9703966f84bf5244c5b3fd75ccd3be835dfb6f66db3d341ba0f7b3720c37"
+      },
+      {
+        "bytes": 1247,
+        "path": "types/core/core.go",
+        "sha256": "273127bcde09a596566e0c92b1c065dcde821cda391694f9dacb683061457d47"
+      },
+      {
+        "bytes": 3818,
+        "path": "types/primitives/primitives.go",
+        "sha256": "dbebb44bb2f762c7a75dac06ef4b2513871d9b69aa13ac9ff680eee52be88f68"
+      }
+    ],
+    "family": "union",
+    "name": "union-unreferenced",
+    "neutral_plan_sha256": "855f29de967e3d1f0a62eff981ed1b3abba0c517fca495253c8495e36d632f49",
+    "owned": [
+      "probe.core.Value"
+    ],
+    "referenced": false,
+    "sources": [
+      {
+        "bytes": 62,
+        "label": "system.yaml",
+        "sha256": "8fa5a1066e91aa75d4833769c2f002ce44dd0519b9f4e205a8104f95eed07a4e"
+      },
+      {
+        "bytes": 137,
+        "label": "core.yaml",
+        "sha256": "2f19779620feda4d66ebe811da2785c91593baaf8e23c46404ac667286d559d1"
+      }
+    ]
+  },
+  {
+    "artifact_files": [
+      {
+        "bytes": 932,
+        "path": "PLAN.md",
+        "sha256": "9b576b3dd6b8dbfc6a6c06a272c322a678d427bd7bc4411b6300ee2e4c307754"
+      },
+      {
+        "bytes": 2881,
+        "path": "TARGET.md",
+        "sha256": "9762d4046be93455a31acbb7c8a5c7e2f5432fbe560b1baa550dd41e7b74c430"
+      },
+      {
+        "bytes": 280,
+        "path": "go.mod",
+        "sha256": "9261d83b0e1016a491416e179e217cd973a93b28fbb21cdec471493b64783309"
+      },
+      {
+        "bytes": 631,
+        "path": "plan.json",
+        "sha256": "c60624d79460aac8fd1e2ee29ebaf30c0ff8ff72b7c8bb7e302fe502c7bf576d"
+      },
+      {
+        "bytes": 2656,
+        "path": "target.json",
+        "sha256": "4aa5bc0a256ae11142f8eae5184bb57adb69d9a61b19b547d7986b254e876ab4"
+      },
+      {
+        "bytes": 1374,
+        "path": "types/core/core.go",
+        "sha256": "18eef3ac1e5da33682ba149e1fced8a07c9fb7d4457f909681160d0ea2dfb4b2"
+      },
+      {
+        "bytes": 3818,
+        "path": "types/primitives/primitives.go",
+        "sha256": "c7aaf6b5bcc8a6b6f6cdaebce2bd4211d774692ebc4d9be9decc2581627898a9"
+      }
+    ],
+    "family": "union",
+    "name": "union-referenced",
+    "neutral_plan_sha256": "c60624d79460aac8fd1e2ee29ebaf30c0ff8ff72b7c8bb7e302fe502c7bf576d",
+    "owned": [
+      "probe.core.Holder",
+      "probe.core.Value"
+    ],
+    "referenced": true,
+    "sources": [
+      {
+        "bytes": 62,
+        "label": "system.yaml",
+        "sha256": "8fa5a1066e91aa75d4833769c2f002ce44dd0519b9f4e205a8104f95eed07a4e"
+      },
+      {
+        "bytes": 240,
+        "label": "core.yaml",
+        "sha256": "de126d2411cb4814cdd23fc1e33f648740cea20fd07affb4b09b4266a4777b46"
+      }
+    ]
+  },
+  {
+    "artifact_files": [
+      {
+        "bytes": 857,
+        "path": "PLAN.md",
+        "sha256": "6de41b5550957e419a1d9781c829966f584d83d5591f0b6ab29884c11a8cadb1"
+      },
+      {
+        "bytes": 2881,
+        "path": "TARGET.md",
+        "sha256": "5b893c8fe9276c19357336d9e10205447388f336fbb81e7f22f9a727d31afc3a"
+      },
+      {
+        "bytes": 280,
+        "path": "go.mod",
+        "sha256": "2a84b3b927abc56bdb5c2b4a9e4f4f232c1096fd513002b648b9c8ad6b13f832"
+      },
+      {
+        "bytes": 340,
+        "path": "plan.json",
+        "sha256": "9dc580dceaddaf1a122e87802170c2e01a43b9d751bfa0c2a780a0ddfc5f1b05"
+      },
+      {
+        "bytes": 2656,
+        "path": "target.json",
+        "sha256": "ae2c6664cd6279626a4c67282237817730a30eda0a5e287cf3fbb180020184ff"
+      },
+      {
+        "bytes": 487,
+        "path": "types/core/core.go",
+        "sha256": "ca3ec2dba688448bc8c909a531aa8d41dcfea023e33b4dd66943d3d279c817fb"
+      },
+      {
+        "bytes": 3818,
+        "path": "types/primitives/primitives.go",
+        "sha256": "e09faf87cee0b56d6c648f38d69497e0e3877454f8dc7a95d4fb60bae4ec1d76"
+      }
+    ],
+    "family": "empty-domain",
+    "name": "empty-domain",
+    "neutral_plan_sha256": "9dc580dceaddaf1a122e87802170c2e01a43b9d751bfa0c2a780a0ddfc5f1b05",
+    "owned": [],
+    "referenced": false,
+    "sources": [
+      {
+        "bytes": 62,
+        "label": "system.yaml",
+        "sha256": "8fa5a1066e91aa75d4833769c2f002ce44dd0519b9f4e205a8104f95eed07a4e"
+      },
+      {
+        "bytes": 19,
+        "label": "core.yaml",
+        "sha256": "462aebc2e55a0b338cfd81d264a92d2f3933ba53a05b0228fbfc4b038a6114f0"
+      }
+    ]
+  }
+]

@@ -1,0 +1,29 @@
+{
+  "system": "probe",
+  "version": 1,
+  "naming": {},
+  "domains": {
+    "probe.core": {
+      "name": "probe.core",
+      "naming": {},
+      "types": [],
+      "entities": [],
+      "commands": [],
+      "events": [],
+      "errors": [],
+      "views": [],
+      "actors": []
+    }
+  },
+  "types": {},
+  "conversions": [],
+  "entities": {},
+  "commands": {},
+  "events": {},
+  "errors": {},
+  "views": {},
+  "actors": {},
+  "bindings": {},
+  "components": {},
+  "workloads": {}
+}

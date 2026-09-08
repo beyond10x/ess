@@ -1,0 +1,16 @@
+{
+  "documents": [
+    {
+      "label": "system.yaml",
+      "text": "format: ess/1\nsystem: demo\nversion: v1\ndomains:\n  - demo.core\n"
+    },
+    {
+      "label": "core.yaml",
+      "text": "domain: demo.core\nevents:\n  - name: demo.core.Fired\n    fields:\n      - name: value\n        type: String\ncommands:\n  - name: demo.core.Fire\n    outcomes:\n      - name: done\n        emits:\n          - demo.core.Fired\n"
+    },
+    {
+      "label": "wiring.yaml",
+      "text": "components:\n  - component: worker\n    owns:\n      domains:\n        - demo.core\n    accepts:\n      commands:\n        - demo.core.Fire\n    publishes:\n      events:\n        - demo.core.Fired\n"
+    }
+  ]
+}

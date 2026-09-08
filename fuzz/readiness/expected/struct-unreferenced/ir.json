@@ -1,0 +1,50 @@
+{
+  "system": "probe",
+  "version": 1,
+  "naming": {},
+  "domains": {
+    "probe.core": {
+      "name": "probe.core",
+      "naming": {},
+      "types": [
+        "probe.core.Value"
+      ],
+      "entities": [],
+      "commands": [],
+      "events": [],
+      "errors": [],
+      "views": [],
+      "actors": []
+    }
+  },
+  "types": {
+    "probe.core.Value": {
+      "name": "probe.core.Value",
+      "body": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "text",
+            "type_ref": {
+              "kind": "primitive",
+              "name": "string"
+            },
+            "naming": {}
+          }
+        ],
+        "invariants": []
+      },
+      "naming": {}
+    }
+  },
+  "conversions": [],
+  "entities": {},
+  "commands": {},
+  "events": {},
+  "errors": {},
+  "views": {},
+  "actors": {},
+  "bindings": {},
+  "components": {},
+  "workloads": {}
+}

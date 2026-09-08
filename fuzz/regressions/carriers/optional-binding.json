@@ -1,0 +1,16 @@
+{
+  "documents": [
+    {
+      "label": "system.yaml",
+      "text": "format: ess/1\nsystem: demo\nversion: v1\ndomains:\n  - demo.core\n"
+    },
+    {
+      "label": "core.yaml",
+      "text": "domain: demo.core\nevents:\n  - name: demo.core.Fired\n    fields:\n      - name: value\n        type: String\n  - name: demo.core.Handled\ncommands:\n  - name: demo.core.Handle\n    input:\n      - name: value\n        type: Optional<String>\n    outcomes:\n      - name: done\n        emits:\n          - demo.core.Handled\n"
+    },
+    {
+      "label": "wiring.yaml",
+      "text": "components:\n  - component: worker\n    owns:\n      domains:\n        - demo.core\n    accepts:\n      commands:\n        - demo.core.Handle\n    publishes:\n      events:\n        - demo.core.Fired\n        - demo.core.Handled\nbindings:\n  - id: handle-fired\n    when:\n      event: demo.core.Fired\n    invoke:\n      command: demo.core.Handle\n    mapping:\n      value: event.value\n    delivery: at_least_once\n    on_failure: drop\n"
+    }
+  ]
+}

@@ -1,0 +1,9 @@
+domain: probe.core
+types:
+  - name: probe.core.Value
+    kind: newtype
+    of: String
+  - name: probe.core.Holder
+    kind: struct
+    fields:
+      - {name: value, type: probe.core.Value}

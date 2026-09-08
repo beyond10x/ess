@@ -307,3 +307,14 @@ report a crossed floor; retain existing evidence and do not remove targets, cach
 sessions' outputs to recover capacity. The preparation's historical measurements are not a launch
 reservation. Root selects one unit at a time. Consumer coverage, browser delivery and output ownership are
 already integrated at the source baseline; preserve their existing checks and behavior.
+
+## Wave20 implementation evidence boundary
+
+Stage one is retained separately from implementation: both independent graphs resolved offline,
+the selected payloads were verified, and nine positive Go fixtures produced complete facade/direct
+artifact maps and plans before the repair. Their original bytes are checked by the stable workspace.
+The implementation's replay and engine share the source pipeline; live callback receipts are
+independently matched to exact observed attempts. The sixteen finite rendered-source identities
+are pinned under `fuzz/regressions`, and the stable Taskfile lane names that standalone workspace
+explicitly. These mechanisms establish no generated-program execution claim. Actual campaign,
+mutation and package outcomes belong to the unit's command records and coordinator review.

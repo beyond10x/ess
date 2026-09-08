@@ -1,0 +1,12 @@
+{
+  "documents": [
+    {
+      "label": "system.yaml",
+      "text": "format: ess/1\nsystem: demo\nversion: v1\ndomains:\n  - demo.core\ntypes:\n  - name: demo.Code\n    kind: newtype\n    of: String\n"
+    },
+    {
+      "label": "core.yaml",
+      "text": "domain: demo.core\n"
+    }
+  ]
+}

@@ -1,0 +1,17 @@
+[package]
+name = "ess-specification-fuzz"
+version = "0.1.0"
+edition = "2021"
+publish = false
+
+[workspace]
+resolver = "2"
+
+[dependencies]
+ess-domain = { path = "../crates/specify/ess-domain" }
+ess-compiler = { path = "../crates/specify/ess-compiler" }
+ess-gen = { path = "../crates/generate/ess-gen" }
+ess-synth = { path = "../crates/generate/ess-synth" }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+sha2 = "0.11"
