@@ -1108,3 +1108,259 @@ fn correction_wrapped_self_projection_requires_a_resolved_associated_owner() {
         assert!(error.contains("associated contract"), "{error}");
     }
 }
+
+#[test]
+fn adversary_pass2_new_default_trait_method_needs_its_own_classification() {
+    let before = super::consumer::fixture(
+        "pub struct Model; pub trait Owner { fn consume(&self, model: &Model); }",
+    )
+    .unwrap();
+    let after = super::consumer::fixture(
+        "pub struct Model; pub trait Owner { fn consume(&self, model: &Model); \
+         fn added_consumer(&self, _model: &Model) {} }",
+    )
+    .unwrap();
+    let classifications = serde_json::Value::Object(
+        before["entries"]
+            .as_object()
+            .unwrap()
+            .keys()
+            .map(|id| {
+                (
+                    id.clone(),
+                    json!({"class":"OwnedHelper", "reason":"Previously reviewed exact API declaration"}),
+                )
+            })
+            .collect(),
+    );
+    super::proposal::classification_fixture(&before["entries"], &classifications).unwrap();
+    assert!(
+        super::proposal::classification_fixture(&after["entries"], &classifications).is_err(),
+        "a new public default trait method is a concrete API addition even when its parent trait is an owned helper"
+    );
+}
+
+#[test]
+fn adversary_pass2_type_macro_cannot_hide_a_selected_associated_contract() {
+    // This compiler-checked control establishes that the signature macro is a
+    // valid Rust type form, independent of the source extractor's fixture parser.
+    macro_rules! identity_type {
+        ($ty:ty) => {
+            $ty
+        };
+    }
+    trait Contract {
+        type Item;
+        fn consume(&self) -> Self::Item;
+    }
+    struct Owner;
+    impl Contract for Owner {
+        type Item = u8;
+        fn consume(&self) -> identity_type!(Self::Item) {
+            7
+        }
+    }
+    assert_eq!(Owner.consume(), 7u8);
+
+    let source = "macro_rules! identity_type { ($ty:ty) => { $ty }; } \
+        trait Contract { type Item; fn consume(&self) -> Self::Item; } \
+        struct Owner; impl Contract for Owner { type Item = u8; \
+        fn consume(&self) -> identity_type!(Self::Item) { todo!() } }";
+    let changed = source.replace("type Item = u8", "type Item = u16");
+    let before = super::consumer::fixture(source);
+    let after = super::consumer::fixture(&changed);
+    match (before, after) {
+        (Ok(before), Ok(after)) => assert_ne!(
+            before["entries"]["fixture::impl<Owner;Contract>::consume"]["declaration_sha256"],
+            after["entries"]["fixture::impl<Owner;Contract>::consume"]["declaration_sha256"],
+            "an admitted signature macro must not erase its selected Self::Item dependency"
+        ),
+        (Err(error), _) | (_, Err(error)) => assert!(
+            error.to_string().contains("macro") || error.to_string().contains("contract"),
+            "a closed refusal must identify the unsupported callable contract: {error}"
+        ),
+    }
+}
+
+#[test]
+fn adversary_pass2_expected_panic_and_surplus_results_do_not_qualify_support() {
+    for output in [
+        stage2_success_output().replace("test case ... ok", "test case - should panic ... ok"),
+        stage2_success_output().replace("0 measured", "1 measured"),
+        format!("{}test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s\n", stage2_success_output()),
+    ] {
+        assert!(super::executor::result(&output, "", "case", Some(0)).is_err());
+    }
+}
+
+#[test]
+fn adversary_pass2_wire_literal_refs_and_escaped_definition_names_keep_their_positions() {
+    let source = json!({
+        "properties":{"description":{"$ref":"#/definitions/a~1b~0c"}},
+        "definitions":{"a/b~c":{"type":"string", "description":"annotation"}},
+        "default":{"$ref":"https://literal.invalid/data", "description":[{"title":"literal"}]}
+    });
+    let before = wire(&source).unwrap();
+    assert_eq!(before["references"].as_array().unwrap().len(), 1);
+    assert_eq!(
+        before["references"][0]["target"],
+        "wire:RawSpecFile#/definitions/a~1b~0c"
+    );
+    let mut annotation = source.clone();
+    annotation["definitions"]["a/b~c"]["description"] = json!("changed prose");
+    assert_eq!(before, wire(&annotation).unwrap());
+    let mut literal = source;
+    literal["default"]["description"][0]["title"] = json!("changed literal");
+    assert_ne!(before, wire(&literal).unwrap());
+}
+
+#[test]
+fn correction2_trait_callable_entries_keep_signature_and_cfg_boundaries() {
+    let source = "#[cfg(unix)] pub trait Owner<T>: Clone where T: Copy { \
+        fn required(&self, value: T); #[cfg(not(unix))] fn consume(&self) -> u8 { 1 } \
+        #[cfg(test)] fn test_only(&self) {} }";
+    let scan = super::consumer::fixture(source).unwrap();
+    let row = &scan["entries"]["fixture::trait::Owner::fn::consume"];
+    assert_eq!(row["profile_conditions"], json!(["unix"]));
+    assert_eq!(row["member_profile_conditions"], json!(["not (unix)"]));
+    assert!(scan["entries"]
+        .get("fixture::trait::Owner::fn::required")
+        .is_some());
+    assert!(scan["entries"]
+        .get("fixture::trait::Owner::fn::test_only")
+        .is_none());
+    assert_eq!(
+        correction_method_shape(source),
+        correction_method_shape(&source.replace("{ 1 }", "{ 2 }"))
+    );
+    assert_ne!(
+        scan["entries"]["fixture::trait::Owner"]["declaration_sha256"],
+        super::consumer::fixture(&source.replace("{ 1 }", "{ 2 }")).unwrap()["entries"]
+            ["fixture::trait::Owner"]["declaration_sha256"]
+    );
+    for changed in [
+        source.replace("{ 1 }", ";"),
+        source.replace("-> u8", "-> u16"),
+        source.replace("T: Copy", "T: Clone"),
+        source.replace("pub trait", "trait"),
+    ] {
+        assert_ne!(
+            correction_method_shape(source),
+            correction_method_shape(&changed)
+        );
+    }
+    assert!(super::consumer::fixture("trait Owner { #[cfg(mystery)] fn consume(); }").is_err());
+}
+
+#[test]
+fn correction2_trait_contract_tracks_selected_associated_types_and_constants() {
+    let source = "pub trait Owner<T> { type Item: Iterator<Item = Self::Value>; \
+        type Value: Clone; type Unused: Clone; const COUNT: usize = Self::BASE; \
+        const BASE: usize = 2; fn consume(&self) -> (<Self as Owner<T>>::Item, [u8; Self::COUNT]) { todo!() } }";
+    let profile = |source: &str| {
+        let scan = super::consumer::fixture(source).unwrap();
+        let entries = scan["entries"]
+            .as_object()
+            .unwrap()
+            .iter()
+            .map(|(k, v)| (k.clone(), v.clone()))
+            .collect();
+        super::proposal::fingerprint(
+            &json!({"id":"trait-profile","execution":"host-rust"}),
+            &["fixture::trait::Owner::fn::consume".into()],
+            &entries,
+            &json!({"compiled_build":{"environment":{"TARGET":"linux"}}}),
+        )
+        .unwrap()
+    };
+    let before = profile(source);
+    for changed in [
+        source.replace("type Value: Clone", "type Value: Copy"),
+        source.replace("BASE: usize = 2", "BASE: usize = 3"),
+    ] {
+        assert_ne!(before, profile(&changed));
+    }
+    for stable in [
+        source.replace("type Unused: Clone", "type Unused: Copy"),
+        source.replace("todo!()", "panic!(\"body only\")"),
+        source.replace("type Value: Clone", "/// docs\n type Value: Clone"),
+    ] {
+        assert_eq!(before, profile(&stable));
+    }
+}
+
+#[test]
+fn correction2_trait_contract_refuses_unresolved_qualified_and_wrapped_owners() {
+    for source in [
+        "trait Owner { fn consume() -> Self::Missing; }",
+        "trait Owner: Other { fn consume() -> Self::Inherited; }",
+        "trait Owner { type Item; fn consume() -> <Self as Other>::Item; }",
+        "trait Owner { type Item; fn consume() -> <Box<Self> as Other>::Item; }",
+        "trait Owner { #[cfg(test)] type Item; fn consume() -> Self::Item; }",
+    ] {
+        let error = super::consumer::fixture(source).unwrap_err().to_string();
+        assert!(
+            error.contains("contract") && error.contains("consume"),
+            "{source}: {error}"
+        );
+    }
+}
+
+#[test]
+fn correction2_opaque_macros_refuse_every_callable_signature() {
+    for signature in [
+        "fn consume() -> opaque!(u8)",
+        "fn consume(value: Vec<opaque!(u8)>)",
+        "fn consume() -> [u8; opaque!(2)]",
+    ] {
+        for source in [
+            format!("pub {signature} {{ todo!() }}"),
+            format!("struct Owner; impl Owner {{ {signature} {{ todo!() }} }}"),
+            format!("trait Owner {{ {signature}; }}"),
+        ] {
+            let error = super::consumer::fixture(&source).unwrap_err().to_string();
+            assert!(
+                error.contains("macro") && error.contains("consume"),
+                "{source}: {error}"
+            );
+        }
+    }
+}
+
+#[test]
+fn correction2_selected_associated_macros_refuse_transitively() {
+    for members in [
+        "type Item = Self::Hidden; type Hidden = opaque!(u8); fn consume() -> Self::Item { todo!() }",
+        "const COUNT: usize = Self::BASE; const BASE: usize = opaque!(2); fn consume() -> [u8; Self::COUNT] { todo!() }",
+        "const COUNT: usize = { opaque!(); 2 }; fn consume() -> [u8; Self::COUNT] { todo!() }",
+        "type Item = [u8; opaque!(2)]; fn consume() -> Self::Item { todo!() }",
+    ] {
+        for source in [format!("struct Owner; impl Owner {{ {members} }}"), format!("trait Owner {{ {members} }}")] {
+            let error = super::consumer::fixture(&source).unwrap_err().to_string();
+            assert!(error.contains("macro") && error.contains("consume"), "{source}: {error}");
+        }
+    }
+}
+
+#[test]
+fn correction2_bodies_and_unselected_associated_macros_stay_outside_callable_identity() {
+    for source in [
+        "fn consume() -> u8 { opaque!() }",
+        "struct Owner; impl Owner { type Unused = opaque!(u8); const UNUSED: usize = opaque!(2); fn consume() -> u8 { opaque!() } }",
+        "trait Owner { type Unused = opaque!(u8); const UNUSED: usize = opaque!(2); fn consume() -> u8 { opaque!() } }",
+    ] {
+        assert_eq!(correction_method_shape(source), correction_method_shape(&source.replace("opaque!", "changed!")));
+    }
+}
+
+#[test]
+fn correction2_header_constraints_track_associated_dependencies_and_refuse_macros() {
+    for source in [
+        "struct Owner; impl Contract for Owner where Self: Bound<Self::Item> { type Item = u8; fn consume() {} }",
+        "trait Owner: Bound<Self::Item> { type Item = u8; fn consume() {} }",
+    ] {
+        assert_ne!(correction_method_shape(source), correction_method_shape(&source.replace("type Item = u8", "type Item = u16")));
+        let error = super::consumer::fixture(&source.replace("Bound<Self::Item>", "Bound<opaque!(Self::Item)>")).unwrap_err().to_string();
+        assert!(error.contains("macro") && error.contains("consume"), "{error}");
+    }
+}

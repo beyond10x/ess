@@ -449,6 +449,18 @@ impl Inventory {
                 bail!("duplicate source case {name}");
             }
         } else if !test {
+            let mut contract = AssociatedNames::default();
+            contract.visit_signature(&f.sig);
+            if let Some(error) = contract.error {
+                bail!("{module_owner}::{}: {error}", f.sig.ident);
+            }
+            if !contract.names.is_empty() {
+                bail!(
+                    "{module_owner}::{}: unresolved free callable associated contract {:?}",
+                    f.sig.ident,
+                    contract.names
+                );
+            }
             self.entry(format!("{module_owner}::fn::{}", f.sig.ident), common)?;
         }
 
@@ -521,10 +533,25 @@ impl Inventory {
             if test {
                 continue;
             }
-            let name = match member {
-                syn::TraitItem::Fn(_) => continue,
-                syn::TraitItem::Const(c) => format!("const::{}", c.ident),
-                syn::TraitItem::Type(t) => format!("type::{}", t.ident),
+            let (name, declaration) = match member {
+                syn::TraitItem::Fn(f) => {
+                    let attrs = &f.attrs;
+                    let signature = &f.sig;
+                    let availability = if f.default.is_some() {
+                        quote!(provided)
+                    } else {
+                        quote!(required)
+                    };
+                    let associated = trait_associated_contract(item, signature)?;
+                    (
+                        format!("fn::{}", f.sig.ident),
+                        quote!(#context #(#attrs)* #signature #availability #associated),
+                    )
+                }
+                syn::TraitItem::Const(c) => {
+                    (format!("const::{}", c.ident), quote!(#context #member))
+                }
+                syn::TraitItem::Type(t) => (format!("type::{}", t.ident), quote!(#context #member)),
                 _ => bail!(
                     "{owner}: unsupported active associated declaration {}",
                     text(member)
@@ -533,9 +560,7 @@ impl Inventory {
             let mut row = common.clone();
             row["source_item_sha256"] = json!(super::hash_bytes(text(member).as_bytes()));
             row["declaration_sha256"] = json!(super::hash_bytes(
-                without_docs(quote!(#context #member))
-                    .to_string()
-                    .as_bytes()
+                without_docs(declaration).to_string().as_bytes()
             ));
             row["member_profile_conditions"] = json!(profile);
             self.entry(format!("{owner}::{name}"), row)?;
@@ -584,6 +609,9 @@ fn associated_contract(
         trait_path: i.trait_.as_ref().map(|(_, path, _)| text(path)),
         ..AssociatedNames::default()
     };
+    let mut header = i.clone();
+    header.items.clear();
+    names.visit_item_impl(&header);
     names.visit_signature(signature);
     let mut visited = BTreeSet::new();
     let mut declarations = BTreeMap::new();
@@ -616,6 +644,53 @@ fn associated_contract(
     }
     if let Some(error) = names.error {
         bail!("{}::{}: {error}", text(&i.self_ty), signature.ident);
+    }
+    let declarations = declarations.values().flatten();
+    Ok(quote!(#(#declarations)*))
+}
+fn trait_associated_contract(
+    item: &syn::ItemTrait,
+    signature: &syn::Signature,
+) -> Result<proc_macro2::TokenStream> {
+    let ident = &item.ident;
+    let (_, arguments, _) = item.generics.split_for_impl();
+    let mut names = AssociatedNames {
+        trait_path: Some(text(&quote!(#ident #arguments))),
+        ..AssociatedNames::default()
+    };
+    let mut header = item.clone();
+    header.items.clear();
+    names.visit_item_trait(&header);
+    names.visit_signature(signature);
+    let mut visited = BTreeSet::new();
+    let mut declarations = BTreeMap::new();
+    while let Some(name) = names.names.pop_first() {
+        if !visited.insert(name.clone()) {
+            continue;
+        }
+        for member in &item.items {
+            let attrs = match member {
+                syn::TraitItem::Type(t) if t.ident == name => &t.attrs,
+                syn::TraitItem::Const(c) if c.ident == name => &c.attrs,
+                _ => continue,
+            };
+            if !conditions(attrs)?.0 {
+                names.visit_trait_item(member);
+                declarations
+                    .entry(name.clone())
+                    .or_insert_with(Vec::new)
+                    .push(member);
+            }
+        }
+        if !declarations.contains_key(&name) {
+            bail!(
+                "{ident}::{}: unresolved trait associated contract Self::{name}",
+                signature.ident
+            );
+        }
+    }
+    if let Some(error) = names.error {
+        bail!("{ident}::{}: {error}", signature.ident);
     }
     let declarations = declarations.values().flatten();
     Ok(quote!(#(#declarations)*))
@@ -659,6 +734,12 @@ impl AssociatedNames {
     }
 }
 impl<'ast> Visit<'ast> for AssociatedNames {
+    fn visit_macro(&mut self, node: &'ast syn::Macro) {
+        self.error = Some(format!(
+            "opaque macro in associated contract {}",
+            text(node)
+        ));
+    }
     fn visit_path(&mut self, path: &'ast syn::Path) {
         if path.leading_colon.is_none() && path.segments.first().is_some_and(|s| s.ident == "Self")
         {

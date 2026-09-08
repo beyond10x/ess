@@ -5775,6 +5775,10 @@
     "macro_ast_sha256": null,
     "reason": "Concrete owned data/API declaration retained alongside the named behavioral callers. Its presence is not a behavior case and does not prove nonreachability."
   },
+  "ess_conformance::lib(ess_conformance)::authored::trait::Identity::fn::entity_identity": {
+    "class": "OwnedHelper",
+    "reason": "Private authored-scenario identity adapter reads one entity identity type from EssIr. This exact declaration grants no behavioral support; execution remains attributed to separately bound consumer profiles."
+  },
   "ess_conformance::lib(ess_conformance)::count_json::enum::Kind": {
     "class": "OwnedHelper",
     "macro_ast_sha256": null,
@@ -9161,6 +9165,10 @@
     "macro_ast_sha256": null,
     "reason": "Concrete owned data/API declaration retained alongside the named behavioral callers. Its presence is not a behavior case and does not prove nonreachability."
   },
+  "ess_conformance::lib(ess_conformance)::runner::trait::Clock::fn::now": {
+    "class": "OwnedHelper",
+    "reason": "Injected conformance clock advances and reports time; the declaration alone does not execute a temporal scenario. This exact declaration grants no behavioral support; execution remains attributed to separately bound consumer profiles."
+  },
   "ess_conformance::lib(ess_conformance)::scenario::const::SUPPORTED_SUITE_FORMATS": {
     "class": "OwnedHelper",
     "macro_ast_sha256": null,
@@ -10924,6 +10932,54 @@
     "class": "OwnedHelper",
     "macro_ast_sha256": null,
     "reason": "Concrete owned data/API declaration retained alongside the named behavioral callers. Its presence is not a behavior case and does not prove nonreachability."
+  },
+  "ess_conformance::lib(ess_conformance)::target::trait::ConformanceTarget::fn::begin_scenario": {
+    "class": "OwnedHelper",
+    "reason": "Abstract conformance target opens an isolated scenario context. This exact declaration grants no behavioral support; execution remains attributed to separately bound consumer profiles."
+  },
+  "ess_conformance::lib(ess_conformance)::target::trait::ConformanceTarget::fn::configure_external_outcome": {
+    "class": "OwnedHelper",
+    "reason": "Abstract conformance target supplies the next controlled external outcome. This exact declaration grants no behavioral support; execution remains attributed to separately bound consumer profiles."
+  },
+  "ess_conformance::lib(ess_conformance)::target::trait::ConformanceTarget::fn::end_scenario": {
+    "class": "OwnedHelper",
+    "reason": "Abstract conformance target closes the isolated scenario context. This exact declaration grants no behavioral support; execution remains attributed to separately bound consumer profiles."
+  },
+  "ess_conformance::lib(ess_conformance)::target::trait::ConformanceTarget::fn::execute_command": {
+    "class": "OwnedHelper",
+    "reason": "Abstract conformance target submits a semantic command and returns observable output. This exact declaration grants no behavioral support; execution remains attributed to separately bound consumer profiles."
+  },
+  "ess_conformance::lib(ess_conformance)::target::trait::ConformanceTarget::fn::identity": {
+    "class": "OwnedHelper",
+    "reason": "Abstract conformance target reports implementation identity. This exact declaration grants no behavioral support; execution remains attributed to separately bound consumer profiles."
+  },
+  "ess_conformance::lib(ess_conformance)::target::trait::ConformanceTarget::fn::mark_instant": {
+    "class": "OwnedHelper",
+    "reason": "Abstract conformance target records a temporal marker; its default returns Unsupported. This exact declaration grants no behavioral support; execution remains attributed to separately bound consumer profiles."
+  },
+  "ess_conformance::lib(ess_conformance)::target::trait::ConformanceTarget::fn::observe_elapsed": {
+    "class": "OwnedHelper",
+    "reason": "Abstract conformance target reports elapsed-window observations; its default returns Unsupported. This exact declaration grants no behavioral support; execution remains attributed to separately bound consumer profiles."
+  },
+  "ess_conformance::lib(ess_conformance)::target::trait::ConformanceTarget::fn::observe_events": {
+    "class": "OwnedHelper",
+    "reason": "Abstract conformance target reports event occurrences subject to a deadline. This exact declaration grants no behavioral support; execution remains attributed to separately bound consumer profiles."
+  },
+  "ess_conformance::lib(ess_conformance)::target::trait::ConformanceTarget::fn::observe_invocations": {
+    "class": "OwnedHelper",
+    "reason": "Abstract conformance target reports binding invocations; its default returns Unsupported. This exact declaration grants no behavioral support; execution remains attributed to separately bound consumer profiles."
+  },
+  "ess_conformance::lib(ess_conformance)::target::trait::ConformanceTarget::fn::query_view": {
+    "class": "OwnedHelper",
+    "reason": "Abstract conformance target reads a view with its request boundary. This exact declaration grants no behavioral support; execution remains attributed to separately bound consumer profiles."
+  },
+  "ess_conformance::lib(ess_conformance)::target::trait::ConformanceTarget::fn::redeliver_event": {
+    "class": "OwnedHelper",
+    "reason": "Abstract conformance target redelivers a published event for delivery-semantics scenarios. This exact declaration grants no behavioral support; execution remains attributed to separately bound consumer profiles."
+  },
+  "ess_conformance::lib(ess_conformance)::target::trait::ConformanceTarget::fn::scan_view": {
+    "class": "OwnedHelper",
+    "reason": "Abstract conformance target reports ordered production and early termination; its default returns Unsupported. This exact declaration grants no behavioral support; execution remains attributed to separately bound consumer profiles."
   },
   "ess_conformance::lib(ess_conformance)::target::type::ViewRow": {
     "class": "OwnedHelper",
@@ -17533,6 +17589,30 @@
     "macro_ast_sha256": null,
     "reason": "Concrete owned data/API declaration retained alongside the named behavioral callers. Its presence is not a behavior case and does not prove nonreachability."
   },
+  "ess_domain::lib(ess_domain)::expression::trait::TypeEnvironment::fn::cardinality_type": {
+    "class": "OwnedHelper",
+    "reason": "Expression type-environment adapter supplies the cardinality Integer reference. This exact declaration grants no behavioral support; execution remains attributed to separately bound consumer profiles."
+  },
+  "ess_domain::lib(ess_domain)::expression::trait::TypeEnvironment::fn::has_parameters": {
+    "class": "OwnedHelper",
+    "reason": "Expression type-environment adapter exposes parameter namespace availability, defaulting to false. This exact declaration grants no behavioral support; execution remains attributed to separately bound consumer profiles."
+  },
+  "ess_domain::lib(ess_domain)::expression::trait::TypeEnvironment::fn::member": {
+    "class": "OwnedHelper",
+    "reason": "Expression type-environment adapter selects a declared member without wire aliases. This exact declaration grants no behavioral support; execution remains attributed to separately bound consumer profiles."
+  },
+  "ess_domain::lib(ess_domain)::expression::trait::TypeEnvironment::fn::parameter": {
+    "class": "OwnedHelper",
+    "reason": "Expression type-environment adapter selects a filter parameter, defaulting to None. This exact declaration grants no behavioral support; execution remains attributed to separately bound consumer profiles."
+  },
+  "ess_domain::lib(ess_domain)::expression::trait::TypeEnvironment::fn::root": {
+    "class": "OwnedHelper",
+    "reason": "Expression type-environment adapter resolves an observable root to its declared associated Type. This exact declaration grants no behavioral support; execution remains attributed to separately bound consumer profiles."
+  },
+  "ess_domain::lib(ess_domain)::expression::trait::TypeEnvironment::fn::shape": {
+    "class": "OwnedHelper",
+    "reason": "Expression type-environment adapter exposes one shallow shape over its associated Type. This exact declaration grants no behavioral support; execution remains attributed to separately bound consumer profiles."
+  },
   "ess_domain::lib(ess_domain)::expression::trait::TypeEnvironment::type::Type": {
     "class": "OwnedHelper",
     "reason": "Declares the Clone + Display type-reference parameter of the expression-checking environment interface This exact declaration grants no inherited support or baseline eligibility."
@@ -19253,6 +19333,14 @@
     "macro_ast_sha256": null,
     "reason": "Concrete owned data/API declaration retained alongside the named behavioral callers. Its presence is not a behavior case and does not prove nonreachability."
   },
+  "ess_domain::lib(ess_domain)::view::trait::EntityFields::fn::entity_fields": {
+    "class": "OwnedHelper",
+    "reason": "View-validation adapter exposes observable entity fields including identity and lifecycle state. This exact declaration grants no behavioral support; execution remains attributed to separately bound consumer profiles."
+  },
+  "ess_domain::lib(ess_domain)::view::trait::EntityFields::fn::entity_names": {
+    "class": "OwnedHelper",
+    "reason": "View-validation adapter lists declared entity names for diagnostics. This exact declaration grants no behavioral support; execution remains attributed to separately bound consumer profiles."
+  },
   "ess_domain::lib(ess_domain)::wire::fn::check_fields": {
     "class": "OwnedHelper",
     "macro_ast_sha256": null,
@@ -19342,6 +19430,22 @@
     "class": "OwnedHelper",
     "macro_ast_sha256": null,
     "reason": "Concrete owned data/API declaration retained alongside the named behavioral callers. Its presence is not a behavior case and does not prove nonreachability."
+  },
+  "ess_gen::lib(ess_gen)::artifact::trait::Generator::fn::describes": {
+    "class": "OwnedHelper",
+    "reason": "Abstract projection interface supplies help text for a concrete generator. This exact declaration grants no behavioral support; execution remains attributed to separately bound consumer profiles."
+  },
+  "ess_gen::lib(ess_gen)::artifact::trait::Generator::fn::directory": {
+    "class": "OwnedHelper",
+    "reason": "Abstract projection interface supplies the output subdirectory for a concrete generator. This exact declaration grants no behavioral support; execution remains attributed to separately bound consumer profiles."
+  },
+  "ess_gen::lib(ess_gen)::artifact::trait::Generator::fn::generate": {
+    "class": "OwnedHelper",
+    "reason": "Abstract projection interface accepts EssIr and its provenance mint; concrete generator profiles own the actual projection behavior. This exact declaration grants no behavioral support; execution remains attributed to separately bound consumer profiles."
+  },
+  "ess_gen::lib(ess_gen)::artifact::trait::Generator::fn::name": {
+    "class": "OwnedHelper",
+    "reason": "Abstract projection interface names the concrete generator selected by separately enumerated generator profiles. This exact declaration grants no behavioral support; execution remains attributed to separately bound consumer profiles."
   },
   "ess_gen::lib(ess_gen)::asyncapi::const::ASYNCAPI_VERSION": {
     "class": "OwnedHelper",
@@ -23405,6 +23509,18 @@
     "class": "OwnedHelper",
     "macro_ast_sha256": null,
     "reason": "Concrete owned data/API declaration retained alongside the named behavioral callers. Its presence is not a behavior case and does not prove nonreachability."
+  },
+  "ess_primitives::lib(ess_primitives)::facts::trait::FactSource::fn::cardinality": {
+    "class": "OwnedHelper",
+    "reason": "Predicate fact-source adapter defaults collection length to the observed count convention and rejects invalid numeric counts. This exact declaration grants no behavioral support; execution remains attributed to separately bound consumer profiles."
+  },
+  "ess_primitives::lib(ess_primitives)::facts::trait::FactSource::fn::fact": {
+    "class": "OwnedHelper",
+    "reason": "Predicate fact-source adapter resolves one observed scalar path. This exact declaration grants no behavioral support; execution remains attributed to separately bound consumer profiles."
+  },
+  "ess_primitives::lib(ess_primitives)::facts::trait::FactSource::fn::scales": {
+    "class": "OwnedHelper",
+    "reason": "Predicate fact-source adapter supplies ordered scales, with an empty default. This exact declaration grants no behavioral support; execution remains attributed to separately bound consumer profiles."
   },
   "ess_primitives::lib(ess_primitives)::ids::impl<CorrelationId;>::as_str": {
     "class": "OwnedHelper",
@@ -28360,6 +28476,42 @@
     "macro_ast_sha256": null,
     "reason": "Concrete owned data/API declaration retained alongside the named behavioral callers. Its presence is not a behavior case and does not prove nonreachability."
   },
+  "ess_synth::lib(ess_synth)::rust::wire::trait::Surface::fn::ir": {
+    "class": "OwnedHelper",
+    "reason": "Shared Rust wire-emitter surface exposes the resolved model. This exact declaration grants no behavioral support; execution remains attributed to separately bound consumer profiles."
+  },
+  "ess_synth::lib(ess_synth)::rust::wire::trait::Surface::fn::layout": {
+    "class": "OwnedHelper",
+    "reason": "Shared Rust wire-emitter surface exposes target layout. This exact declaration grants no behavioral support; execution remains attributed to separately bound consumer profiles."
+  },
+  "ess_synth::lib(ess_synth)::rust::wire::trait::Surface::fn::path": {
+    "class": "OwnedHelper",
+    "reason": "Shared Rust wire-emitter surface derives a declared type path from its layout and types path. This exact declaration grants no behavioral support; execution remains attributed to separately bound consumer profiles."
+  },
+  "ess_synth::lib(ess_synth)::rust::wire::trait::Surface::fn::presents_command": {
+    "class": "OwnedHelper",
+    "reason": "Shared Rust wire-emitter surface selects command inputs and outcomes crossing the JSON boundary. This exact declaration grants no behavioral support; execution remains attributed to separately bound consumer profiles."
+  },
+  "ess_synth::lib(ess_synth)::rust::wire::trait::Surface::fn::presents_error": {
+    "class": "OwnedHelper",
+    "reason": "Shared Rust wire-emitter surface selects errors crossing the JSON boundary. This exact declaration grants no behavioral support; execution remains attributed to separately bound consumer profiles."
+  },
+  "ess_synth::lib(ess_synth)::rust::wire::trait::Surface::fn::presents_event": {
+    "class": "OwnedHelper",
+    "reason": "Shared Rust wire-emitter surface selects events crossing the JSON boundary. This exact declaration grants no behavioral support; execution remains attributed to separately bound consumer profiles."
+  },
+  "ess_synth::lib(ess_synth)::rust::wire::trait::Surface::fn::presents_type": {
+    "class": "OwnedHelper",
+    "reason": "Shared Rust wire-emitter surface selects declared types crossing the JSON boundary. This exact declaration grants no behavioral support; execution remains attributed to separately bound consumer profiles."
+  },
+  "ess_synth::lib(ess_synth)::rust::wire::trait::Surface::fn::presents_view": {
+    "class": "OwnedHelper",
+    "reason": "Shared Rust wire-emitter surface selects view rows crossing the JSON boundary. This exact declaration grants no behavioral support; execution remains attributed to separately bound consumer profiles."
+  },
+  "ess_synth::lib(ess_synth)::rust::wire::trait::Surface::fn::types": {
+    "class": "OwnedHelper",
+    "reason": "Shared Rust wire-emitter surface supplies the generated types-crate path. This exact declaration grants no behavioral support; execution remains attributed to separately bound consumer profiles."
+  },
   "ess_synth::lib(ess_synth)::struct::Synthesis": {
     "class": "OwnedHelper",
     "macro_ast_sha256": null,
@@ -29042,6 +29194,10 @@
     "macro_ast_sha256": null,
     "reason": "Maintenance/extractor infrastructure entry. Its source and fixture tests are inventoried; it emits evidence or proposals and grants no ESS semantic behavior support."
   },
+  "ess_xtask::bin(ess-xtask)::consumer_coverage::consumer::fn::trait_associated_contract": {
+    "class": "OwnedHelper",
+    "reason": "Extractor walks only the same trait declarations selected by callable signatures or header constraints, retaining their bounded declaration contract and refusing unresolved dependencies. This helper supplies no behavioral eligibility."
+  },
   "ess_xtask::bin(ess-xtask)::consumer_coverage::consumer::fn::without_docs": {
     "class": "OwnedHelper",
     "macro_ast_sha256": null,
@@ -29054,6 +29210,10 @@
   "ess_xtask::bin(ess-xtask)::consumer_coverage::consumer::impl<AssociatedNames;Visit < 'ast >>::visit_expr_path": {
     "class": "OwnedHelper",
     "reason": "Discovers associated constants in expression paths within callable declaration types This exact declaration grants no inherited support or baseline eligibility."
+  },
+  "ess_xtask::bin(ess-xtask)::consumer_coverage::consumer::impl<AssociatedNames;Visit < 'ast >>::visit_macro": {
+    "class": "OwnedHelper",
+    "reason": "Extractor refuses opaque macros reached while visiting callable signatures, header constraints or selected associated declarations; no macro expansion or behavioral eligibility is inferred."
   },
   "ess_xtask::bin(ess-xtask)::consumer_coverage::consumer::impl<AssociatedNames;Visit < 'ast >>::visit_path": {
     "class": "OwnedHelper",
@@ -29280,6 +29440,14 @@
     "class": "OwnedHelper",
     "macro_ast_sha256": null,
     "reason": "Exact consumer gate infrastructure entry: parses finite accounting or runs and records reviewed Rust cases. This entry does not itself establish ESS model semantics; consumer behavior remains attributed only to the separately named owner cases."
+  },
+  "ess_xtask::bin(ess-xtask)::consumer_coverage::executor::trait::CaseRunner::fn::authority": {
+    "class": "OwnedHelper",
+    "reason": "Checker command boundary verifies the current execution authority before and after exact case operations. This exact declaration grants no behavioral support; execution remains attributed to separately bound consumer profiles."
+  },
+  "ess_xtask::bin(ess-xtask)::consumer_coverage::executor::trait::CaseRunner::fn::command": {
+    "class": "OwnedHelper",
+    "reason": "Checker command boundary captures actual subprocess streams and exit; a trait declaration is not an execution receipt. This exact declaration grants no behavioral support; execution remains attributed to separately bound consumer profiles."
   },
   "ess_xtask::bin(ess-xtask)::consumer_coverage::fn::check": {
     "class": "OwnedHelper",
