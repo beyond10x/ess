@@ -1,0 +1,60 @@
+{
+  "at": "2026-09-08 18:51:58 UTC",
+  "source": "9ab8a1b16dec7c08ba2dd2ac3b507f48254514f5",
+  "selected": "story:fuzz-the-specification-surface",
+  "skill": "aep-drive:wave 0.8.1",
+  "authority": [
+    "approval-record:review-remediation-standing-implementation",
+    "approval-record:review-remediation-standing-publication"
+  ],
+  "scope": {
+    "cited": 3,
+    "inferred": 3,
+    "unchanged": true,
+    "report": "/home/timo/.cache/ess-review/2026-09-06-resume/wave19-final-retention/fuzz-scope-refresh.md",
+    "report_sha256": "51ac170cd2490c0d7a45d2f3acecaaa059f5020be609c772a26efd0b24e5cb8a",
+    "input_manifest": "/home/timo/.cache/ess-review/2026-09-06-resume/wave19-final-retention/fuzz-scope-inputs.sha256",
+    "input_manifest_sha256": "1efa1c9be32ee4531ca6ad083d74d48f056ce5f9cf95af00e935427520d62ce7",
+    "verified_inputs": 24,
+    "report_form": "Root retention/synthesis with the exact full binding-read addendum, not an immutable adversary verdict"
+  },
+  "recovered": {
+    "root": "/home/timo/.cache/ess-review/2026-09-06-resume/wave19-final-retention/next-fuzz-retained",
+    "regular_files_verified": 237,
+    "manifest": "/home/timo/.cache/ess-review/2026-09-06-resume/wave19-final-retention/fuzz-original-files.sha256",
+    "extract_exit": 0,
+    "hash_readback_exit": 0,
+    "v3_sha256": "225d2561dc92a8884180fee2e828ad1b9f2b211a72b5d75844e9066240a80f43",
+    "publication_draft_sha256": "fc6adbeaac0a1f860efa6a03950f71b700c6f1c04804261ac79276e5065c3132"
+  },
+  "stable_tools": {
+    "root": "/home/timo/.cache/ess-review/2026-09-06-resume/wave19-retained-inputs/rust-toolchain",
+    "regular_file_hashes_verified": 362,
+    "sha256sum_exit": 0,
+    "original_inventory_entries": 382,
+    "original_regular_file_bytes": 1494790763,
+    "readback": "/home/timo/.local/state/worktree/trees/b10x/ess/ess-review-boundaries-20/target/review-boundaries-20/preparation/stable-tools-readback.log",
+    "note": "Regular hashes freshly verified. Stage one additionally verifies full required kinds/modes/runtime payloads and actual instrumented setup."
+  },
+  "resources": {
+    "ssd_available_bytes": 84309065728,
+    "tmpfs_available_bytes": 24516272128,
+    "memory_available_bytes": 42721775616,
+    "coordinator_target_ceiling_bytes": 2147483648,
+    "unit_targets_and_scratch_ceiling_bytes": 21474836480,
+    "ssd_available_floor_bytes": 8589934592,
+    "memory_available_floor_bytes": 8589934592,
+    "build_jobs": 2,
+    "test_threads": 2,
+    "owned_compiler_producers": 1
+  },
+  "preflight": {
+    "validation_exit": 0,
+    "artifacts": 210,
+    "advisories": 44,
+    "blocked": "nothing is blocked",
+    "waves": "/home/timo/.local/state/worktree/trees/b10x/ess/ess-review-boundaries-20/target/review-boundaries-20/preparation/opening-waves.json"
+  },
+  "previous_wave_completion": "/home/timo/.cache/ess-review/2026-09-06-resume/wave19-final-retention/complete.json",
+  "completion_boundary": "Verified ESS source main, required check and site-build evidence, owned managed cleanup; no release or downstream Atlas/Website work."
+}
