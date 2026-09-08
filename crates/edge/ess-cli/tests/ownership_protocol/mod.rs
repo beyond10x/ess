@@ -64,6 +64,7 @@ fn child(root: &Path, action: &str, cut: usize) -> std::process::Output {
 }
 #[test]
 fn native_process_driver() {
+    let _serial = super::serial();
     if let Some(root) = std::env::var_os("ESS_OWNERSHIP_TEST_ROOT") {
         let root = PathBuf::from(root);
         let cut = std::env::var("ESS_OWNERSHIP_TEST_CUT")
@@ -80,6 +81,15 @@ fn native_process_driver() {
             Ok(())
         };
         match std::env::var("ESS_OWNERSHIP_TEST_ACTION").unwrap().as_str() {
+            "admit-publish" => {
+                ownership::probe::publish_admission(&root, NEW, &mut observer).unwrap();
+            }
+            "admit-adopt" => ownership::probe::adopt_admission(
+                &root,
+                &root.parent().unwrap().join("reference"),
+                &mut observer,
+            )
+            .unwrap(),
             "recover" => ownership::probe::recover(&root, &mut observer).unwrap(),
             "adopt" => ownership::probe::adopt(
                 &root,
@@ -97,6 +107,7 @@ fn native_process_driver() {
 }
 #[test]
 fn every_publication_syscall_boundary_refuses_then_recovers_the_actual_preimage_or_committed_set() {
+    let _serial = super::serial();
     let (_control, root) = prepare();
     let old = visible(&root);
     let mut trace = Vec::new();
@@ -143,6 +154,7 @@ fn every_publication_syscall_boundary_refuses_then_recovers_the_actual_preimage_
 }
 #[test]
 fn every_publication_process_cut_recovers_without_current_inputs() {
+    let _serial = super::serial();
     let (_control, root) = prepare();
     let old = visible(&root);
     let mut count = 0;
@@ -181,6 +193,7 @@ fn interrupt_prepared(root: &Path) {
 }
 #[test]
 fn every_recovery_process_cut_and_io_failure_keeps_restoration_repeatable() {
+    let _serial = super::serial();
     let (_control, root) = prepare();
     let old = visible(&root);
     interrupt_prepared(&root);
@@ -251,6 +264,7 @@ fn fresh(adoption: bool) -> (Fixture, PathBuf) {
 }
 #[test]
 fn initialization_and_metadata_only_adoption_survive_each_process_cut_and_io_failure() {
+    let _serial = super::serial();
     for adoption in [false, true] {
         let (_control, root) = fresh(adoption);
         let old = visible(&root);
@@ -350,6 +364,7 @@ fn initialization_and_metadata_only_adoption_survive_each_process_cut_and_io_fai
 
 #[test]
 fn adoption_is_exact_metadata_only_and_never_shrinks_an_enrolled_owner() {
+    let _serial = super::serial();
     let f = Fixture::new();
     let reference = f.0.join("reference");
     publish(&reference, OLD);
@@ -381,6 +396,7 @@ fn adoption_is_exact_metadata_only_and_never_shrinks_an_enrolled_owner() {
 
 #[test]
 fn different_owners_never_claim_or_retire_each_others_files() {
+    let _serial = super::serial();
     let f = Fixture::new();
     let root = f.0.join("owners");
     publish(&root, &[("first", "one")]);
@@ -403,6 +419,7 @@ fn different_owners_never_claim_or_retire_each_others_files() {
 
 #[test]
 fn recorded_directories_change_shape_but_authored_children_and_adopted_directories_survive() {
+    let _serial = super::serial();
     let f = Fixture::new();
     let root = f.0.join("shapes");
     publish(&root, &[("node/leaf", "owned")]);
@@ -430,6 +447,7 @@ fn native_filenames_are_lossless_while_alias_links_and_reserved_paths_refuse() {
         ffi::OsStringExt,
         fs::{symlink, MetadataExt},
     };
+    let _serial = super::serial();
     let f = Fixture::new();
     let root = f.0.join("native");
     fs::create_dir(&root).unwrap();
@@ -512,6 +530,7 @@ fn native_filenames_are_lossless_while_alias_links_and_reserved_paths_refuse() {
 #[test]
 fn directory_locks_serialize_same_nested_and_missing_roots_and_allow_readers() {
     use rustix::fs::{flock, FlockOperation};
+    let _serial = super::serial();
     let f = Fixture::new();
     let root = f.0.join("locks");
     fs::create_dir(&root).unwrap();
@@ -543,6 +562,7 @@ fn directory_locks_serialize_same_nested_and_missing_roots_and_allow_readers() {
 
 #[test]
 fn actual_native_mount_identity_distinguishes_a_foreign_mount_before_mutation() {
+    let _serial = super::serial();
     let f = Fixture::new();
     let before = snapshot(&f.0);
     ownership::probe::check_mount(&f.0, &f.0).unwrap();
@@ -566,6 +586,7 @@ fn canonical_state(value: &mut serde_json::Value) -> Vec<u8> {
 }
 #[test]
 fn canonical_reader_refuses_bad_versions_fields_paths_owners_root_and_checksums_without_cleanup() {
+    let _serial = super::serial();
     for case in [
         "version",
         "extra",
@@ -631,6 +652,7 @@ fn canonical_reader_refuses_bad_versions_fields_paths_owners_root_and_checksums_
 }
 #[test]
 fn prepared_state_requires_complete_inventory_exact_preimages_and_no_unexplained_members() {
+    let _serial = super::serial();
     for case in [
         "omitted-change",
         "missing-backup",
@@ -673,6 +695,7 @@ fn prepared_state_requires_complete_inventory_exact_preimages_and_no_unexplained
 
 #[test]
 fn check_and_pending_invalid_new_inputs_never_initialize_or_recover() {
+    let _serial = super::serial();
     let f = Fixture::new();
     let missing = f.0.join("not-created/deeper");
     let before = snapshot(&f.0);
@@ -702,6 +725,7 @@ fn check_and_pending_invalid_new_inputs_never_initialize_or_recover() {
 
 #[test]
 fn a_checksummed_adoption_checkpoint_cannot_drop_an_existing_owners_retirement_authority() {
+    let _serial = super::serial();
     let (_f, root) = fresh(true);
     let reference = root.parent().unwrap().join("reference");
     let result = ownership::probe::adopt(&root, &reference, &mut |event| {
@@ -729,6 +753,7 @@ fn a_checksummed_adoption_checkpoint_cannot_drop_an_existing_owners_retirement_a
 
 #[test]
 fn losing_the_locked_anchor_binding_stops_before_installing_output() {
+    let _serial = super::serial();
     let (f, root) = prepare();
     let old = visible(&root);
     let moved = f.0.join("moved-anchor");
@@ -747,6 +772,7 @@ fn losing_the_locked_anchor_binding_stops_before_installing_output() {
 
 #[test]
 fn adoption_refuses_mismatched_targets_and_dirty_pending_or_corrupt_references() {
+    let _serial = super::serial();
     for case in [
         "target-mismatch",
         "dirty-reference",
@@ -783,6 +809,7 @@ fn adoption_refuses_mismatched_targets_and_dirty_pending_or_corrupt_references()
 
 #[test]
 fn missing_anchor_creation_cuts_preserve_authored_parents_and_never_publish_partial_output() {
+    let _serial = super::serial();
     let control = Fixture::new();
     let root = control.0.join("missing/deeper");
     let mut trace = Vec::new();

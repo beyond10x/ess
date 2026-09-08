@@ -2,6 +2,7 @@
 #[allow(dead_code)]
 #[path = "../src/output_ownership/mod.rs"]
 mod ownership;
+mod ownership_admission;
 mod ownership_protocol;
 mod ownership_routes;
 use std::{
@@ -13,6 +14,15 @@ use std::{
 };
 
 struct Fixture(PathBuf);
+// A subprocess spawn may briefly inherit another thread's open flock descriptors before
+// CLOEXEC closes them. Serialize this target's fixtures and child lifetimes so a recovery
+// assertion cannot race that unrelated inheritance. Explicit contention still happens
+// inside its dedicated test, using independently opened native directory descriptors.
+fn serial() -> std::sync::MutexGuard<'static, ()> {
+    static TEST: std::sync::Mutex<()> = std::sync::Mutex::new(());
+    TEST.lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
+}
 impl Fixture {
     fn new() -> Self {
         static NEXT: AtomicUsize = AtomicUsize::new(0);
@@ -75,6 +85,7 @@ fn snapshot(root: &Path) -> BTreeMap<PathBuf, Vec<u8>> {
 
 #[test]
 fn ordinary_generation_refuses_existing_unowned_destination_before_any_write() {
+    let _serial = serial();
     let f = Fixture::new();
     fs::create_dir(f.0.join("out")).unwrap();
     fs::write(
@@ -93,6 +104,7 @@ fn ordinary_generation_refuses_existing_unowned_destination_before_any_write() {
 
 #[test]
 fn selected_site_regeneration_retires_withdrawn_copy_and_keeps_authored_neighbors() {
+    let _serial = serial();
     let f = Fixture::new();
     let first = f.site(true);
     assert!(first.status.success(), "{first:?}");
@@ -111,6 +123,7 @@ fn selected_site_regeneration_retires_withdrawn_copy_and_keeps_authored_neighbor
 
 #[test]
 fn identical_generation_keeps_complete_enrollment_bytes_and_repairs_owned_edits() {
+    let _serial = serial();
     let f = Fixture::new();
     let first = f.site(false);
     assert!(first.status.success(), "{first:?}");

@@ -83,6 +83,7 @@ fn changed(root: &Path, old: &BTreeSet<PathBuf>, new: &BTreeSet<PathBuf>) {
 
 #[test]
 fn all_projection_owners_are_separate_and_selected_site_uses_artifact_paths() {
+    let _serial = super::serial();
     let f = Fixture::new();
     let path = workspace().join("examples/billing");
     good(
@@ -143,6 +144,7 @@ fn all_projection_owners_are_separate_and_selected_site_uses_artifact_paths() {
 
 #[test]
 fn synthesis_and_model_type_target_switches_retire_the_fixed_family_set() {
+    let _serial = super::serial();
     let f = Fixture::new();
     model(&f);
     let path = workspace().join("examples/billing");
@@ -195,6 +197,7 @@ fn synthesis_and_model_type_target_switches_retire_the_fixed_family_set() {
 
 #[test]
 fn every_composition_companion_combination_replaces_one_explicit_anchor_owner() {
+    let _serial = super::serial();
     let f = Fixture::new();
     let source = workspace().join("crates/specify/ess-composition/tests/fixtures");
     let plan = source.join("compositions/workbench.yaml");
@@ -254,6 +257,7 @@ fn every_composition_companion_combination_replaces_one_explicit_anchor_owner() 
 
 #[test]
 fn conformance_legacy_and_coverage_writers_share_owners_and_preserve_authored_skin() {
+    let _serial = super::serial();
     let f = Fixture::new();
     let path = workspace().join("examples/billing");
     fs::write(
@@ -310,6 +314,7 @@ fn conformance_legacy_and_coverage_writers_share_owners_and_preserve_authored_sk
 fn bundle_and_normalization_targets_keep_independent_owners_and_checks_do_not_write() {
     use schema_contract::bundle::{import, Dialect};
     use schema_contract::realize::normalize::Root;
+    let _serial = super::serial();
     let f = Fixture::new();
     let schema = json!({"components":{"schemas":{"Input":{"type":"string"}}}}).to_string();
     let bundle = import(
@@ -365,6 +370,7 @@ fn bundle_and_normalization_targets_keep_independent_owners_and_checks_do_not_wr
 #[test]
 #[allow(clippy::too_many_lines)]
 fn standalone_writers_and_output_management_use_fixed_native_file_owners() {
+    let _serial = super::serial();
     let f = Fixture::new();
     let path = workspace().join("examples/billing");
     good(
@@ -534,6 +540,7 @@ fn standalone_writers_and_output_management_use_fixed_native_file_owners() {
 #[allow(clippy::too_many_lines)]
 fn native_projection_routes_enroll_and_build_execution_waits_for_publication() {
     use std::os::unix::fs::PermissionsExt;
+    let _serial = super::serial();
     let f = Fixture::new();
     let build="format: ess-build/1\nbuild: ownership-fixture\nplatforms: [{os: linux, architecture: amd64}]\nnodes:\n  - {id: source, kind: source, path: ., destination: /src}\n  - {id: output, kind: artifact, from: source, path: /src/fixture.bin}\noutputs:\n  - {name: binary, release_unit: ownership-fixture, node: output, kind: binary}\n";
     fs::write(f.0.join("build.yaml"), build).unwrap();
@@ -663,6 +670,7 @@ fn native_projection_routes_enroll_and_build_execution_waits_for_publication() {
 
 #[test]
 fn a_published_incomplete_coverage_suite_keeps_semantic_exit_one() {
+    let _serial = super::serial();
     let f = Fixture::new();
     fs::write(f.0.join("refused.yaml"), "not: a scenario\n").unwrap();
     let output = cli(

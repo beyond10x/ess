@@ -173,6 +173,18 @@ impl Locks {
         };
         for (path, access) in paths {
             let fd = if let Some(parent) = path.parent() {
+                ensure!(
+                    names(
+                        result
+                            .directories
+                            .get(parent)
+                            .context("missing locked ancestor")?
+                    )?
+                    .iter()
+                    .any(|name| Some(name.as_os_str()) == path.file_name()),
+                    "output root aliases an existing native directory: {}",
+                    path.display()
+                );
                 File::from(fs::openat(
                     result
                         .directories
@@ -244,6 +256,13 @@ impl Locks {
             .find_map(|p| self.directories.get(p))
             .context("no locked ancestor")?
             .try_clone()?)
+    }
+    pub(super) fn nearest_binding(&self, root: &Path) -> Result<(PathBuf, File)> {
+        let (path, fd) = root
+            .ancestors()
+            .find_map(|path| self.directories.get(path).map(|fd| (path, fd)))
+            .context("no locked admission ancestor")?;
+        Ok((path.to_path_buf(), fd.try_clone()?))
     }
     pub(super) fn create_root(&mut self, root: &Path, observer: &mut Observer<'_>) -> Result<File> {
         ensure!(
@@ -564,6 +583,16 @@ fn ordinary_mode(mode: u32) -> Result<Mode> {
 }
 pub(super) fn discovery(root: &File, mount: &Mount, at_anchor: bool) -> Result<()> {
     for name in names(root)? {
+        if super::admission::orphan(&name) {
+            ensure!(
+                FileType::from_raw_mode(
+                    fs::statat(root, &name, AtFlags::SYMLINK_NOFOLLOW)?.st_mode
+                ) == FileType::Directory,
+                "admission orphan has an incompatible native type"
+            );
+            // This exact private grammar carries no output or cleanup authority, at any depth.
+            continue;
+        }
         if state::reserved(&name) {
             if at_anchor
                 && (name == OsStr::new(state::RESERVED)
@@ -589,7 +618,17 @@ pub(super) fn aliases(root: &File, path: &Path, mount: &Mount) -> Result<()> {
     let mut parts = path.components().peekable();
     while let Some(part) = parts.next() {
         let name = part.as_os_str();
-        for entry in names(&fd)? {
+        let entries = names(&fd)?;
+        match fs::statat(&fd, name, AtFlags::SYMLINK_NOFOLLOW) {
+            Ok(_) => ensure!(
+                entries.iter().any(|entry| entry == name),
+                "output path aliases an existing native entry: {}",
+                path.display()
+            ),
+            Err(Errno::NOENT) => {}
+            Err(e) => return Err(e).context("inspecting native output name"),
+        }
+        for entry in entries {
             ensure!(
                 entry == name || !entry.eq_ignore_ascii_case(name),
                 "output path aliases an existing entry: {}",

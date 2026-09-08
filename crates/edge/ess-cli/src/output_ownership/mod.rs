@@ -1,6 +1,7 @@
 //! Edge-owned generated output: explicit enrollment, complete-owner publication and recovery.
 //! Controlled parents and cooperating directory-lock participants are required. Publication is
 //! sequential across directories; successful native synchronization is not a hardware guarantee.
+mod admission;
 mod filesystem;
 mod state;
 
@@ -138,7 +139,19 @@ fn adopt_observed(
     reference: &Path,
     family: &str,
     file: Option<&OsStr>,
+    observer: Observer<'_>,
+) -> Result<()> {
+    adopt_observers(anchor, reference, family, file, observer, &mut |_| Ok(()))
+}
+
+#[allow(clippy::too_many_lines)]
+fn adopt_observers(
+    anchor: &Path,
+    reference: &Path,
+    family: &str,
+    file: Option<&OsStr>,
     mut observer: Observer<'_>,
+    admission_observer: Observer<'_>,
 ) -> Result<()> {
     let family = Family::parse(family)?;
     let owner = match file {
@@ -168,6 +181,7 @@ fn adopt_observed(
         .context("reference has no settled generated ownership state")?;
     let reference_ledger = ensure_idle(&reference_state, &reference)?;
     for (relative, (_, data)) in reference_ledger.files() {
+        filesystem::aliases(&reference_fd, &relative.output()?, &reference_mount)?;
         ensure!(
             filesystem::image(&reference_fd, &relative.output()?, &reference_mount)?.0
                 == Image::File { data },
@@ -243,6 +257,18 @@ fn adopt_observed(
     after.owners.push(selected);
     after.owners.sort_by(|a, b| a.key.cmp(&b.key));
     after.validate()?;
+    admission::paths(
+        &locks,
+        &path,
+        before
+            .files()
+            .keys()
+            .chain(after.files().keys())
+            .chain(expected.files.iter().map(|f| &f.path))
+            .map(NativePath::output)
+            .collect::<Result<Vec<_>>>()?,
+        admission_observer,
+    )?;
     let root = locks.create_root(&path, &mut observer)?;
     let (directory, mut payload) = match admitted {
         Some(value) => value,
@@ -804,7 +830,16 @@ fn subtree_owned(
 fn publish_observed(
     anchor: &Path,
     publications: Vec<Publication>,
+    observer: Observer<'_>,
+) -> Result<()> {
+    publish_observers(anchor, publications, observer, &mut |_| Ok(()))
+}
+
+fn publish_observers(
+    anchor: &Path,
+    publications: Vec<Publication>,
     mut observer: Observer<'_>,
+    admission_observer: Observer<'_>,
 ) -> Result<()> {
     let path = filesystem::absolute(anchor)?;
     let mut locks = Locks::acquire(&[(path.clone(), Access::Exclusive)])?;
@@ -834,6 +869,35 @@ fn publish_observed(
     {
         return Ok(());
     }
+    admission::paths(
+        &locks,
+        &path,
+        planned
+            .transaction
+            .before
+            .files()
+            .keys()
+            .chain(planned.transaction.after.files().keys())
+            .chain(
+                planned
+                    .transaction
+                    .before
+                    .directories
+                    .iter()
+                    .map(|d| &d.path),
+            )
+            .chain(
+                planned
+                    .transaction
+                    .after
+                    .directories
+                    .iter()
+                    .map(|d| &d.path),
+            )
+            .map(NativePath::output)
+            .collect::<Result<Vec<_>>>()?,
+        admission_observer,
+    )?;
     locks.revalidate()?;
     let root = locks.create_root(&path, &mut observer)?;
     let (directory, mut payload) = match admitted {
@@ -1348,6 +1412,32 @@ fn restore(session: &mut Session<'_>, payload: &mut Payload, mut tx: Transaction
 #[allow(dead_code)]
 pub(crate) mod probe {
     use super::*;
+    pub(crate) fn publish_admission(
+        anchor: &Path,
+        files: &[(&str, &str)],
+        observer: &mut dyn FnMut(&str) -> Result<()>,
+    ) -> Result<()> {
+        publish_observers(
+            anchor,
+            vec![Publication::tree("synthesis", files.iter().copied())?],
+            &mut |_| Ok(()),
+            observer,
+        )
+    }
+    pub(crate) fn adopt_admission(
+        anchor: &Path,
+        reference: &Path,
+        observer: &mut dyn FnMut(&str) -> Result<()>,
+    ) -> Result<()> {
+        adopt_observers(
+            anchor,
+            reference,
+            "synthesis",
+            None,
+            &mut |_| Ok(()),
+            observer,
+        )
+    }
     pub(crate) fn publish(
         anchor: &Path,
         files: &[(&str, &str)],
