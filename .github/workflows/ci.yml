@@ -86,7 +86,9 @@ jobs:
       CARGO_INCREMENTAL: "0"
       CARGO_PROFILE_DEV_DEBUG: "0"
       CARGO_PROFILE_TEST_DEBUG: "0"
-      RUST_TEST_THREADS: "2"
+      # Do not overlap the process-cut fixtures with unrelated test-process spawns.
+      # Dedicated witnesses still exercise same/nested-root lock contention.
+      RUST_TEST_THREADS: "1"
     steps:
       - name: Prepare native scratch
         run: |
@@ -104,13 +106,17 @@ jobs:
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2
 
       - name: Fetch locked dependencies
+        id: ownership_dependencies
         run: cargo fetch --locked
 
       - name: Exercise native ownership and interrupted recovery
+        if: ${{ !cancelled() && steps.ownership_dependencies.outcome == 'success' }}
         run: cargo test --offline --locked -p ess-cli --test output_ownership
 
       - name: Exercise native ownership caller and alias regressions
-        run: cargo test --offline --locked -p ess-cli --test output_ownership_adversary --test output_ownership_correction
+        if: ${{ !cancelled() && steps.ownership_dependencies.outcome == 'success' }}
+        run: cargo test --offline --locked --no-fail-fast -p ess-cli --test output_ownership_adversary --test output_ownership_correction
 
       - name: Exercise native repository sync isolation
+        if: ${{ !cancelled() && steps.ownership_dependencies.outcome == 'success' }}
         run: cargo test --offline --locked -p ess-xtask --bin ess-xtask tests::sync_

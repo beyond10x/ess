@@ -47,9 +47,9 @@ wave19-retained-inputs directory. Their inventory receipts preserve old-source p
 
 | Role | Managed worktree | Branch | Build and scratch | Stage |
 |---|---|---|---|---|
-| Coordinator | /home/timo/.local/state/worktree/trees/b10x/ess/ess-review-boundaries-19 | wave/review-boundaries-19 | target/review-boundaries-19/preparation; no Cargo build | Candidate5ae2758 published to draft PR14; pass1 record and native CI update |
-| Implementation and integration | /home/timo/.local/state/worktree/trees/b10x/ess/ess-output-ownership-wave19 | wave/review-boundaries-19-final (implementation branch impl/review-output-ownership-wave19 retained) | Its own target/; target/review-output-ownership-wave19/; target/review-boundaries-19-integration/; target/review-boundaries-19-root-native/ | Same implementor correcting2 CLI findings and native macOS compile errors; exclusive compiler slot |
-| Adversary pass1 | /home/timo/.local/state/worktree/trees/b10x/ess/ess-output-ownership-adversary-wave19 | probe/output-ownership-wave19 | Its own target/ and target/review-output-ownership-adversary-wave19/ | Held050c416 plus4 additive cases;2 red/2 green; report sealed and own lease released |
+| Coordinator | /home/timo/.local/state/worktree/trees/b10x/ess/ess-review-boundaries-19 | wave/review-boundaries-19 | target/review-boundaries-19/preparation; no Cargo build | Candidatebe7a852 published to draft PR14; native runtime qualification pending |
+| Implementation and integration | /home/timo/.local/state/worktree/trees/b10x/ess/ess-output-ownership-wave19 | wave/review-boundaries-19-final (implementation branch impl/review-output-ownership-wave19 retained) | Its own target/; target/review-output-ownership-wave19/; target/review-boundaries-19-integration/; target/review-boundaries-19-root-native/ | CLI correction committed; interrupted package continuation and native fixture correction; exclusive compiler slot |
+| Adversary pass1 | /home/timo/.local/state/worktree/trees/b10x/ess/ess-output-ownership-adversary-wave19 | probe/output-ownership-wave19 | Its own target/ and target/review-output-ownership-adversary-wave19/ | Pass1 preserved; tree advanced cleanly to be7a852 for an undispatched pass2 |
 
 Root lease: ess-review-boundaries-coordinator-wave19. The unit's actual path, opening SHA and
 lease are recorded immediately after provisioning. Root will reuse the unit checkout for the
@@ -272,3 +272,60 @@ protocol0.54.0 executable was retained independently under wave19-retained-input
 77913286bc66a834c0a3e7306dfe4a06605c7e466286dc47c85c38fc8d689a91. Its CLI vocabulary was read
 before the single record creation; validation then exited0 for209 artifacts with the same43
 historical missing-findings-block advisories. No planning file was edited directly.
+
+
+## Corrected candidate and platform follow-up
+
+Both source trees advanced to bot commitbe7a852c71221be71295417f82826a72c8ad4ebe, published to
+PR14. Root verified the six held CLI source files before and after shared synchronization.
+Focused verification passed28 cases:19 containment,4 unchanged adversary,5 correction controls;
+strict package Clippy/fmt0. Exact finite extraction0 confirmed7883 declarations, with only the
+three reviewed helpers added and none retired. Profiles, reviewed candidates and e005 remain
+unchanged. The shared review/CI checkpoint is c5ea2f61333235193527fcf0ab4d4ecfe27ee3d3 and the
+three-helper classification checkpoint is893f56cac95bae0dbe8fe19a0768777dd31a0756. All direct
+commit author/committer identities were independently verified before publication.
+
+The adversary tree was prepared atbe7a852 without dispatching pass2. Root retained the exact old
+untracked test before its identical committed copy was installed; its original report,46 sealed
+payloads and source/native archives remain. The temporary root setup lease was released0.
+Pass2 still waits for the current correction's package and native qualification.
+
+Native CI34212264377 now compiled both Mac architectures, then executed the original29-case
+ownership target. Intel job102015768394:25 passed/4 failed in17.72s; ARM102015768690:26 passed/
+3 failed in25.69s, each actual101. Both reported transient EAGAIN35 at different recovery
+boundaries and EILSEQ92 for an unconditional invalid-byte filename success assertion. Intel
+also observed Idle where the interrupted fixture expected Prepared. Complete logs are retained
+in coordinator preparation. Subsequent caller/alias and sync steps did not execute. Root observed
+the obsolete overall run completed/cancelled; both native jobs failed and Linux Gate cancelled.
+Documentation validation34212264304 atbe7a852 completed successfully. The first candidate's
+Intel log was also read in full: it confirms the same three Darwin type errors as the ARM log.
+
+The descriptor/harness read found O_CLOEXEC on lock descriptors and no explicit retained guard
+across callback-return recovery. Incidental parallel fixture/process-spawn inheritance remains
+a hypothesis, not a measured production defect. The next native run uses one test thread while
+retaining all process-cut counts and dedicated contention cases. Independent native groups run
+after dependency-fetch success even if another test group fails; failures still fail the job,
+and the two caller targets use --no-fail-fast. The invalid-byte case will independently probe
+the exact filename on the same filesystem: retain exact-byte roundtrip assertions where legal,
+or require native EILSEQ and unchanged complete ownership target where illegal. A valid Unicode/
+backslash roundtrip and all existing reserved/alias/link assertions execute in both branches.
+
+The Linux correction package stopped on its resource guard after541.460s, actual child signal
+(no exit code), supervisor128. Forty completed target summaries total327 passed,0 failed/
+ignored/filtered. Its complete29-case protocol matrix passed all613 process cuts and613 injected
+boundaries. The interrupted replay_fidelity_browser target printed26 individual successes but
+no target summary; those are not counted as completed qualification. Five targets remain:
+replay_fidelity_browser, schema_bundle, schema_registry_identity, schema_registry_identity_adversary
+and target_failure. The agent corrected an initial progress-message attribution to a different
+target after reading full stderr. Process group2569645 had no members after the stop.
+
+The stop sampled8641101824 assigned tmpfs bytes against the8589934592 cap; browser8121622528,
+Go519479296. SSD target+ordinary TMP3878907904 and SSD free90238955520 remained within grant.
+Fresh root measurement found tmpfs free15965626368 and MemAvailable39122989056. Root therefore
+prospectively grants12GiB assigned tmpfs allocation, keeping8GiB free and memory floors plus
+5GiB SSD allocation/2GiB free unchanged. The additional4.24GB allowance still leaves over11GB
+free tmpfs at this measurement. The old stopped run is preserved; its verdict is not rewritten.
+A separately named supervisor will change only that allocation ceiling. The implementor resumes
+only the five unfinished targets and separately exercises the one changed native filename case;
+completed40 targets and the original baseline are not repeated. No caches or foreign outputs
+were deleted. This is an active correction, not a completed wave.
