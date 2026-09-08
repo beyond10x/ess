@@ -726,3 +726,54 @@ wave11-gate-records-retirement, wave13-gate-records-retirement and
 wave12-final-gate-records-retirement. The W12 preparation toolchain, W14 gate caches,
 W17 preparation CLI, both earlier W12 attempts and all active consumer records remain.
 No managed worktree was removed. More space is still needed before the cold full gate.
+
+## Correction execution and storage recovery
+
+The implementation unit now has the synchronized review routing at
+0c0133265706bcce39eaa26bd14e87d7fdebeb64. Correction 1 preserves the four adversarial
+assertions and addresses absolute external paths/imports, concrete associated declarations,
+and the associated contract selected by a bound method. Root included trait associated
+constants/types in the same declaration-accounting correction, preserving the parent trait
+hash. The frozen initial baseline remains root-owned and cannot be expanded or regenerated.
+
+Both published W16 gate directories have now been retained in full and retired:
+
+| Exact retired gate | Archive bytes | Entries / logical regular bytes | Archive SHA256 |
+| --- | ---: | ---: | --- |
+| review-boundaries-16/gate-922dd160263a-attempt1 | 364675880 | 12171 / 744325857 | a2d17f89db410f66cf07166d4d88fc992cb9e672abaf1e55c7e524b76657779b |
+| review-boundaries-16/gate-b11d36ee02cb-attempt1 | 364686356 | 12171 / 744335373 | 3562b12a4103e54db9c87f7043acd0367d57f0f5218894dac6483d06c3a19de5 |
+
+Archive, independent readback and exact retirement succeeded for both. The second archive
+completed with at least 9,002,074,112 bytes free during compressed writes. Shared filesystem
+allocation subsequently reduced free space: its first verifier refused with 8,351,789,056
+bytes free, before creating a verification directory. That failed command and its complete
+output remain intact. A separately recorded recovery reader used at most 64 MiB of output
+and a 4 GiB recovery reserve, while all builds stayed held under the unchanged 8 GiB build
+reserve. Verification attempt 02 read every archive payload/native record and rechecked
+the complete source census, then exact retirement succeeded. Each retirement adjusted only
+182 already archived, user-owned read-only directories. These records are under
+~/.cache/ess-review/2026-09-06-resume/wave16-first-gate-records-retirement and
+wave16-second-gate-records-retirement.
+
+The completed mutation target was also retained in a full independent archive. Its source
+remains the clean local, unpublished 7caf8cc5e935357c8b5f715c336cf6ea9c001c84; this retention
+does not claim publication. The implementor confirmed that remaining corrections do not
+execute from the mutation target. Root had already read its complete Stage 2 source/native
+records. Archive/readback/exact target retirement returned zero in 22.863/13.266/5.180 seconds.
+The archive contains 2,535 native entries, 2,361,150,500 logical regular bytes, two literal
+symlinks and every original mutant source archive, native image, stream and cache. It is
+460,124,372 bytes with SHA256
+c6147e65535284063e47a863badb3423b63b3762c10748a2c3f992f87b13d145, retained at
+~/.cache/ess-review/2026-09-06-resume/consumer-mutation-target-retirement/consumer-mutation-target-01/retained-records.tar.gz.
+The old mutation target paths are now archive member names. Its source checkout, Git,
+branch and empty private TMP remain intact. The implementation unit's records/tools were
+not changed. No managed worktree was removed.
+
+After recovery, the correction execution grant measured 9,346,465,792 free bytes and
+8,097,329,152 allocated bytes across the implementation target and four assigned TMP roots.
+It permits 512 MiB additional allocation, one heavy producer and two Rust jobs, retaining
+the 8 GiB free reserve and the original frozen tools. Four adversarial cases run first,
+followed by meaningful controls, the affected package, strict Clippy/formatting and current
+inventory comparison. The expensive actual consumer checker needs a separate measured
+grant. Grant: preparation/consumer-correction1-execution-grant-01.json, SHA256
+bb8273b382abd25fc465508f2af79c58f0fb734964ed74e17b0da631b95b935f.
