@@ -50,7 +50,7 @@ Any further production defect receives a concrete owner decision; it is not sile
 | Implementor | Planned ess-specification-fuzzing-wave20; impl/fuzz-the-specification-surface | Own root target, standalone and engine targets; target/review-specification-fuzzing-wave20 | Not provisioned until opening checks pass |
 | Adversary | Assigned after source handoff | Separate managed tree and task-owned records | Not dispatched |
 
-Coordinator path: /home/timo/.local/state/worktree/trees/b10x/ess/ess-review-boundaries-20.
+Coordinator workspace: repository root.
 Root lease: ess-review-boundaries-coordinator-wave20. Actual opening commit, provisioned unit,
 scratch, TMP and compiler authorities are added before dispatch.
 

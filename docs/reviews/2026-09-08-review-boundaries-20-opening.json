@@ -28,12 +28,12 @@
     "publication_draft_sha256": "fc6adbeaac0a1f860efa6a03950f71b700c6f1c04804261ac79276e5065c3132"
   },
   "stable_tools": {
-    "root": "/home/timo/.cache/ess-review/2026-09-06-resume/wave19-retained-inputs/rust-toolchain",
+    "root": "retained wave19 toolchain snapshot",
     "regular_file_hashes_verified": 362,
     "sha256sum_exit": 0,
     "original_inventory_entries": 382,
     "original_regular_file_bytes": 1494790763,
-    "readback": "/home/timo/.local/state/worktree/trees/b10x/ess/ess-review-boundaries-20/target/review-boundaries-20/preparation/stable-tools-readback.log",
+    "readback": "target/review-boundaries-20/preparation/stable-tools-readback.log",
     "note": "Regular hashes freshly verified. Stage one additionally verifies full required kinds/modes/runtime payloads and actual instrumented setup."
   },
   "resources": {
@@ -53,8 +53,8 @@
     "artifacts": 210,
     "advisories": 44,
     "blocked": "nothing is blocked",
-    "waves": "/home/timo/.local/state/worktree/trees/b10x/ess/ess-review-boundaries-20/target/review-boundaries-20/preparation/opening-waves.json"
+    "waves": "target/review-boundaries-20/preparation/opening-waves.json"
   },
-  "previous_wave_completion": "/home/timo/.cache/ess-review/2026-09-06-resume/wave19-final-retention/complete.json",
+  "previous_wave_completion": "retained wave19 completion receipt",
   "completion_boundary": "Verified ESS source main, required check and site-build evidence, owned managed cleanup; no release or downstream Atlas/Website work."
 }
