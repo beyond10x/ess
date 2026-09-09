@@ -32,3 +32,17 @@ commands:
         payload:
           shop.repeat.Filed:
             note: input.note
+  - name: shop.repeat.Solo
+    input:
+      - name: note
+        type: String
+    outcomes:
+      - name: noted
+        emits:
+          - shop.repeat.Filed
+        payload:
+          shop.repeat.Filed:
+            note: input.note
+      - name: noted
+        emits:
+          - shop.repeat.Filed

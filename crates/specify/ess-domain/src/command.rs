@@ -1040,7 +1040,7 @@ impl CommandSpec {
     /// Every refusal below is built from this rather than from a `format!`, so the family the
     /// compiler emits and the source line it cites are functions of the command, not of how the
     /// path happened to be spelled. See `docs/design/review-typed-diagnostics.md`.
-    fn site(&self) -> ConstructRef {
+    pub(crate) fn site(&self) -> ConstructRef {
         ConstructRef::new(ConstructKind::Command, self.name.to_string())
     }
 
@@ -1570,10 +1570,11 @@ impl CommandSpec {
         errors: &BTreeSet<QualifiedName>,
     ) -> Result<(), ValidationErrors> {
         let mut found = self.validate_shape(Some(types));
-        let at = |suffix: &str| format!("command.{}.{suffix}", self.name);
-
         for (index, field) in self.input.iter().enumerate() {
-            found.extend(types.resolve(&field.type_ref, &at(&format!("input[{index}].type"))));
+            found.extend(types.resolve_at(
+                &field.type_ref,
+                &self.site().key("input").index(index).key("type"),
+            ));
         }
 
         for outcome in &self.outcomes {
@@ -2440,9 +2441,15 @@ impl TryFrom<RawCommandSpec> for CommandSpec {
             match Outcome::try_from(raw_outcome) {
                 Ok(outcome) => outcomes.push(outcome),
                 Err(nested) => {
-                    for mut error in nested {
-                        error.location = format!("command.{}.{}", raw.name, error.location);
-                        errors.push(error);
+                    for error in nested {
+                        // `rebase`, not an assignment to `location`: a sited refusal is its
+                        // site's to name and a string prefix cannot update one (adversary pass 2,
+                        // F6). Admission's refusals have no site, so this is the one shape that
+                        // may be re-rooted, and `rebase` is where that rule lives.
+                        errors.push(error.rebase(&ConstructRef::new(
+                            ConstructKind::Command,
+                            raw.name.to_string(),
+                        )));
                     }
                 }
             }

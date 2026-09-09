@@ -44,7 +44,9 @@ use std::fmt;
 use std::fmt::Write as _;
 use std::str::FromStr;
 
-use ess_primitives::error::{ParseError, ValidationCode, ValidationError, ValidationErrors};
+use ess_primitives::error::{
+    ConstructRef, ParseError, ValidationCode, ValidationError, ValidationErrors,
+};
 use ess_primitives::node::Node;
 use ess_primitives::predicate::Predicate;
 
@@ -931,17 +933,18 @@ pub fn validate_lifecycle_causes(
             let Some(subject) = &outcome.subject else {
                 continue;
             };
-            let at = format!(
-                "command.{}.outcomes.{}.{}",
-                command.name,
-                outcome.name,
-                subject.effect.verb()
-            );
+            // A `command.…` location, so a `command`-family site: the family a refusal belongs to
+            // is the construct it is about, not the file the rule lives in (adversary pass 2, F1).
+            let at = command
+                .site()
+                .key("outcomes")
+                .named(outcome.name.as_str())
+                .key(subject.effect.verb());
             let Some(entity) = entities.get(&subject.entity) else {
                 errors.push(
-                    ValidationError::new(
-                        ValidationCode::UndeclaredReference,
+                    ValidationError::at(
                         at,
+                        ValidationCode::UndeclaredReference,
                         format!(
                             "outcome `{}` of `{}` {} `{}`, which is not a declared entity",
                             outcome.name,
@@ -963,9 +966,9 @@ pub fn validate_lifecycle_causes(
             };
             if entity.states.transition(transition).is_none() {
                 errors.push(
-                    ValidationError::new(
-                        ValidationCode::UndeclaredReference,
+                    ValidationError::at(
                         at,
+                        ValidationCode::UndeclaredReference,
                         format!(
                             "outcome `{}` of `{}` takes `{}`, which `{}` does not declare as a \
                              transition",
@@ -1067,9 +1070,12 @@ fn validate_wrong_state_is_reachable(
     }
 
     errors.push(
-        ValidationError::new(
+        ValidationError::at(
+            command
+                .site()
+                .key("outcomes")
+                .named(outcome.name.as_str()),
             ValidationCode::UnreachableBranch,
-            format!("command.{}.outcomes.{}", command.name, outcome.name),
             if moved.is_empty() {
                 format!(
                     "outcome `{}` is taken when the subject is in a state no move starts from, and \
@@ -1122,10 +1128,11 @@ fn validate_instance(
 
     let mut errors = ValidationErrors::new();
     let surface = subject.surface();
-    let at = format!(
-        "command.{}.outcomes.{}.instance",
-        command.name, outcome.name
-    );
+    let at: ConstructRef = command
+        .site()
+        .key("outcomes")
+        .named(outcome.name.as_str())
+        .key("instance");
 
     // Every field the name could have referred to, with where it was found, so a mistyped name and a
     // mistyped *type* are told apart rather than both reported as "not declared".
@@ -1186,7 +1193,7 @@ fn validate_instance(
                 ),
             )
         };
-        errors.push(ValidationError::new(code, at, message).with_hint(format!(
+        errors.push(ValidationError::at(at, code, message).with_hint(format!(
             "the {surface} must be typed `{}` — declared: {}",
             entity.identity.type_ref,
             names(available.into_iter())

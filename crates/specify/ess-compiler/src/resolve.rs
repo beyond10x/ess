@@ -638,6 +638,19 @@ fn family_of_kind(kind: ConstructKind) -> &'static str {
 /// answer with. `needles_of_site(c) == needles_for(&c.render())` holds for every construct by
 /// construction, and is asserted over the shapes below and over every fixture the suite has.
 fn needles_of_site(construct: &ConstructRef) -> Vec<String> {
+    let tokens = tokens_of_site(construct);
+    needles_from_tokens(&tokens.iter().map(String::as_str).collect::<Vec<_>>())
+}
+
+/// A construct's own tokens: what [`split_path`] would produce from its render, without the render.
+///
+/// Every segment contributes, including [`Segment::Index`]. No needle turns on an index *yet* — an
+/// index sits behind a `STRUCTURAL` key in every path the migrated producers write, so it never
+/// reaches [`needles_from_tokens`]'s trailing-key test (adversary pass 2, F7). It is emitted anyway,
+/// because the contract this function owes is token fidelity, not needle fidelity: the two paths
+/// must be looking at the same path. `typed_tokens_are_the_string_tokens_for_every_segment_shape`
+/// is the check, and it fails if the index arm is deleted.
+fn tokens_of_site(construct: &ConstructRef) -> Vec<String> {
     let mut tokens: Vec<String> = vec![construct.kind().as_str().to_owned()];
     tokens.extend(split_path(construct.name()));
     for member in construct.members() {
@@ -647,7 +660,7 @@ fn needles_of_site(construct: &ConstructRef) -> Vec<String> {
             Segment::Index(index) => tokens.push(index.to_string()),
         }
     }
-    needles_from_tokens(&tokens.iter().map(String::as_str).collect::<Vec<_>>())
+    tokens
 }
 
 /// A document path broken the one way this module breaks one.
@@ -3268,18 +3281,16 @@ mod tests {
     #[test]
     fn a_sited_refusal_with_a_syntax_span_does_not_search_the_sources() {
         let mut errors = ValidationErrors::new();
-        errors.push(
-            ValidationError::at(
-                ConstructRef::new(ConstructKind::Command, "shop.orders.PlaceOrder").key("outcomes"),
-                ValidationCode::EmptyDeclaration,
-                "declares no outcomes",
-            )
-            .with_span(SyntaxSpan {
+        errors.push(ValidationError::at_span(
+            ConstructRef::new(ConstructKind::Command, "shop.orders.PlaceOrder").key("outcomes"),
+            SyntaxSpan {
                 source: "elsewhere.yaml".to_owned(),
                 line: 41,
                 column: 7,
-            }),
-        );
+            },
+            ValidationCode::EmptyDeclaration,
+            "declares no outcomes",
+        ));
 
         let empty = SourceMap::new();
         let diagnostics = bridge(&errors, &Locator::new(&empty, &[] as &[&str]));
@@ -3349,6 +3360,55 @@ mod tests {
                 needles_of_site(&construct),
                 needles_for(&construct.render()),
                 "the typed and string derivations disagree for {}",
+                construct.render()
+            );
+        }
+    }
+
+    /// The stronger half of the same contract: the *tokens* agree, not only the needles.
+    ///
+    /// Needle equality alone let a segment arm be deleted without any test noticing, because no
+    /// needle currently turns on an index (adversary pass 2, F7). Token equality is what
+    /// `needles_of_site` actually owes — that the two paths are looking at the same path — and it
+    /// fails the moment a segment stops contributing.
+    #[test]
+    fn typed_tokens_are_the_string_tokens_for_every_segment_shape() {
+        let shapes = [
+            ConstructRef::new(ConstructKind::Command, "shop.repeat.File")
+                .key("input")
+                .index(1),
+            ConstructRef::new(ConstructKind::Command, "shop.orders.PlaceOrder")
+                .key("outcomes")
+                .index(0)
+                .key("emits")
+                .index(12),
+            // The space-separated head, which is a separator this module also splits on.
+            ConstructRef::new(ConstructKind::Entity, "shop.wrong.Order")
+                .key("transitions")
+                .index(0),
+            ConstructRef::new(ConstructKind::Component, "invoice-service")
+                .key("accepts")
+                .key("commands"),
+            ConstructRef::new(ConstructKind::Command, "shop.cross.Announce")
+                .key("outcomes")
+                .named("announced")
+                .key("payload")
+                .named("shop.cross.Announced")
+                .named("headline"),
+        ]
+        .into_iter()
+        .chain(ConstructKind::ALL.iter().map(|kind| {
+            ConstructRef::new(*kind, "shop.any.Thing")
+                .key("fields")
+                .index(3)
+        }));
+
+        for construct in shapes {
+            assert_eq!(
+                tokens_of_site(&construct),
+                split_path(&construct.render()),
+                "a segment of {} contributes no token, so the typed path is reading a shorter \
+                 path than the string it renders",
                 construct.render()
             );
         }

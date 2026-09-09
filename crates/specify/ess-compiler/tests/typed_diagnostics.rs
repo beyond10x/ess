@@ -202,6 +202,31 @@ fn a_name_used_more_than_once_falls_back_to_the_declaration_that_owns_it() {
                 path: "command.shop.repeat.File.outcomes".to_owned(),
                 located: None,
             },
+            // …and the same hazard where the search *can* answer. `shop.repeat.Solo` repeats an
+            // outcome name too, and no other declaration's name contains its own, so the fallback
+            // needle is unique and both refusals are cited at the line the command is declared on.
+            // The story's Validation clause asks that repeated names "retain correct
+            // codes/locations"; the unlocated half above cannot check the second half of that, and
+            // answering the round-1 finding by making the whole fixture unlocated left nothing that
+            // did (adversary pass 2, F5). Both halves are pinned now.
+            Cited {
+                code: "ESS-COMMAND-006".to_owned(),
+                source: "repeated_names.yaml".to_owned(),
+                path: "command.shop.repeat.Solo.outcomes.noted".to_owned(),
+                located: Some(Location {
+                    line: 35,
+                    column: 5,
+                }),
+            },
+            Cited {
+                code: "ESS-COMMAND-004".to_owned(),
+                source: "repeated_names.yaml".to_owned(),
+                path: "command.shop.repeat.Solo.outcomes".to_owned(),
+                located: Some(Location {
+                    line: 35,
+                    column: 5,
+                }),
+            },
         ]
     );
     assert_eq!(reworded(&errors), cited, "wording moved the machine facts");
@@ -224,7 +249,7 @@ fn a_name_used_more_than_once_falls_back_to_the_declaration_that_owns_it() {
     let all_unconditional = errors
         .as_slice()
         .iter()
-        .find(|error| error.location.ends_with(".outcomes"))
+        .find(|error| error.location == "command.shop.repeat.File.outcomes")
         .expect("the unconditional-outcomes refusal");
     assert_eq!(
         all_unconditional
@@ -277,9 +302,14 @@ fn a_reference_across_files_is_cited_in_the_file_that_wrote_it() {
 /// the page carries a machine-readable block and this test is the check: a file with sites that the
 /// block omits, a count that has drifted, and a file the block lists that has no sites, are each a
 /// failure. Migrating another family cannot go green without moving the page.
+/// The repository root, from this crate's manifest directory.
+fn repository_root() -> std::path::PathBuf {
+    std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../..")
+}
+
 #[test]
 fn the_inventory_on_the_design_page_is_the_count_in_the_tree() {
-    let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../..");
+    let root = repository_root();
     let page = std::fs::read_to_string(root.join("docs/design/review-typed-diagnostics.md"))
         .expect("the design page exists");
     let block = page
@@ -344,6 +374,277 @@ fn the_inventory_on_the_design_page_is_the_count_in_the_tree() {
     assert_eq!(
         claimed, measured,
         "the inventory in `docs/design/review-typed-diagnostics.md` and the tree disagree"
+    );
+}
+
+/// Production `ess-domain` source, with `#[cfg(test)]` modules removed.
+///
+/// A `#[cfg(test)]` module in this repository is written at the top level, so it ends at the first
+/// `}` in column zero. An assertion inside one pins a location; it does not produce one, and
+/// counting it as a producer is how a census stops meaning anything.
+fn production(text: &str) -> String {
+    let mut kept = String::with_capacity(text.len());
+    let mut skipping = false;
+    for line in text.lines() {
+        if !skipping && line.trim() == "#[cfg(test)]" {
+            skipping = true;
+            continue;
+        }
+        if skipping {
+            if line == "}" {
+                skipping = false;
+            }
+            continue;
+        }
+        kept.push_str(line);
+        kept.push('\n');
+    }
+    kept
+}
+
+/// Every `ess-domain` source file, as `(file name, production text)`, in file order.
+fn domain_sources() -> Vec<(String, String)> {
+    let sources = repository_root().join("crates/specify/ess-domain/src");
+    let mut found = Vec::new();
+    for entry in std::fs::read_dir(&sources).expect("ess-domain sources are readable") {
+        let path = entry.expect("a readable entry").path();
+        if path.extension().is_none_or(|kind| kind != "rs") {
+            continue;
+        }
+        found.push((
+            path.file_name()
+                .expect("a file name")
+                .to_string_lossy()
+                .into_owned(),
+            std::fs::read_to_string(&path).expect("readable"),
+        ));
+    }
+    found.sort();
+    found
+}
+
+/// The block between two markers in the design page, as whitespace-split rows.
+fn page_block(page: &str, marker: &str) -> Vec<Vec<String>> {
+    let block = page
+        .split_once(&format!("<!-- {marker}:begin -->"))
+        .unwrap_or_else(|| panic!("the page carries a `{marker}` block"))
+        .1
+        .split_once(&format!("<!-- {marker}:end -->"))
+        .unwrap_or_else(|| panic!("the `{marker}` block is closed"))
+        .0;
+    block
+        .lines()
+        .map(str::trim)
+        .filter(|line| !line.is_empty() && !line.starts_with("```"))
+        .map(|line| line.split_whitespace().map(str::to_owned).collect())
+        .collect()
+}
+
+/// A family is the location head a refusal writes, not the file the rule lives in.
+///
+/// The class adversary pass 2 found (F1, F2): the page's per-file inventory booked four `command.…`
+/// refusals under `entity.rs`, and the page then said the command family was migrated. Rewording one
+/// of those paths moved `ESS-COMMAND-012` to `ESS-SPEC-012`, because the refusal carried no site.
+/// Counting by head instead of by file is what makes that unbookable: a `command.…` literal in any
+/// file lands in the `command` rows, and the page has to say why each one is still there.
+#[test]
+fn the_head_census_on_the_design_page_is_the_count_in_the_tree() {
+    // Every head `ess-compiler`'s `family_of` matches, plus the plural spellings the producers
+    // write. A location literal opens with one of these followed by the separator its family uses.
+    const HEADS: &[&str] = &[
+        "actor",
+        "actors",
+        "binding",
+        "bindings",
+        "command",
+        "commands",
+        "component",
+        "components",
+        "conversion",
+        "conversions",
+        "domain",
+        "domains",
+        "entity",
+        "entities",
+        "error",
+        "errors",
+        "event",
+        "events",
+        "spec",
+        "topology",
+        "type",
+        "types",
+        "view",
+        "views",
+    ];
+
+    let mut measured: Vec<(String, String, usize)> = Vec::new();
+    for (file, text) in domain_sources() {
+        let text = production(&text);
+        let mut counts: std::collections::BTreeMap<&str, usize> = std::collections::BTreeMap::new();
+        let bytes = text.as_bytes();
+        for (index, _) in text.match_indices('"') {
+            let rest = &text[index + 1..];
+            let Some(head) = HEADS
+                .iter()
+                .filter(|head| rest.starts_with(**head))
+                .filter(|head| matches!(rest.as_bytes().get(head.len()), Some(b'.' | b' ')))
+                // The longest match, so `types.` is not counted as `type`.
+                .max_by_key(|head| head.len())
+            else {
+                continue;
+            };
+            // Not an escaped quote inside another literal.
+            if index > 0 && bytes[index - 1] == b'\\' {
+                continue;
+            }
+            *counts.entry(head).or_default() += 1;
+        }
+        for (head, count) in counts {
+            measured.push((head.to_owned(), file.clone(), count));
+        }
+    }
+    measured.sort();
+
+    let page =
+        std::fs::read_to_string(repository_root().join("docs/design/review-typed-diagnostics.md"))
+            .expect("the design page exists");
+    let claimed: Vec<(String, String, usize)> = page_block(&page, "heads")
+        .into_iter()
+        .map(|row| {
+            assert_eq!(
+                row.len(),
+                3,
+                "a head row is `<head> <file> <count>`: {row:?}"
+            );
+            (
+                row[0].clone(),
+                row[1].clone(),
+                row[2].parse().expect("a count"),
+            )
+        })
+        .collect();
+
+    assert_eq!(
+        claimed, measured,
+        "the head census in `docs/design/review-typed-diagnostics.md` and the tree disagree"
+    );
+
+    // The migrated family, stated as the rule rather than left to the reader of a table.
+    let command_writers: Vec<&(String, String, usize)> = measured
+        .iter()
+        .filter(|(head, ..)| head == "command")
+        .collect();
+    assert_eq!(
+        command_writers
+            .iter()
+            .map(|(_, file, count)| (file.as_str(), *count))
+            .collect::<Vec<_>>(),
+        vec![("primitive_admission.rs", 1), ("wire.rs", 1)],
+        "a `command.…` location is written somewhere the design page does not account for; the \
+         command family is the one this wave migrated"
+    );
+}
+
+/// The design page's type table describes the types it names, attribute for attribute.
+///
+/// The class adversary pass 2 found (F4): the summary row said `ConstructKind` is
+/// `#[non_exhaustive]` while the prose two sections down, the type's doc comment and the declaration
+/// all said the opposite — and the row is what a reader adding a kind reads first. The round-1 check
+/// compared *identifiers* the page names against the tree; this compares a *claim* about each of
+/// them.
+#[test]
+fn the_type_table_agrees_with_the_declarations_it_describes() {
+    let root = repository_root();
+    let page = std::fs::read_to_string(root.join("docs/design/review-typed-diagnostics.md"))
+        .expect("the design page exists");
+    let source = std::fs::read_to_string(root.join("crates/specify/ess-primitives/src/error.rs"))
+        .expect("the error module exists");
+
+    let mut checked = 0;
+    for name in [
+        "ConstructKind",
+        "Segment",
+        "ConstructRef",
+        "SyntaxSpan",
+        "Site",
+    ] {
+        let row = page
+            .lines()
+            .find(|line| line.starts_with(&format!("| `{name}` |")))
+            .unwrap_or_else(|| panic!("the page's type table has a `{name}` row"));
+        // The same rule the adversary's own check uses: the attribute is named in the row, or it
+        // is not. A row that mentions the attribute in order to deny it is a row a reader skims
+        // wrongly, so the token itself is the claim.
+        let claimed = row.contains("#[non_exhaustive]");
+
+        let declaration = source
+            .split_once(&format!("pub enum {name} {{"))
+            .or_else(|| source.split_once(&format!("pub struct {name} {{")))
+            .unwrap_or_else(|| panic!("`{name}` is declared in `error.rs`"))
+            .0;
+        let attributes = declaration
+            .rsplit_once("#[derive(")
+            .expect("the declaration carries a derive")
+            .1;
+        let declared = attributes.contains("#[non_exhaustive]");
+
+        assert_eq!(
+            claimed, declared,
+            "the page's `{name}` row says `#[non_exhaustive]` is {claimed} and `error.rs` \
+             declares it {declared}"
+        );
+        checked += 1;
+    }
+    assert_eq!(checked, 5, "a type in the table was skipped");
+}
+
+/// No production code assigns to a refusal's `location`.
+///
+/// The class adversary pass 2 found (F6): `location` and the private site are two representations of
+/// one fact, and `location` is `pub`. It stays `pub` because the suite's own rewording
+/// transformation assigns to it to prove the machine facts do not follow — so the guard cannot be
+/// the type system, and is this instead. `ValidationError::rebase` is the one supported re-rooting
+/// and it refuses a sited refusal; a `#[cfg(test)]` assignment is the deliberate case and is
+/// excluded, as is the accessor's own module.
+#[test]
+fn no_production_code_assigns_a_refusals_location() {
+    let root = repository_root();
+    let mut offenders: Vec<String> = Vec::new();
+    for directory in [
+        "crates/specify/ess-domain/src",
+        "crates/specify/ess-compiler/src",
+        "crates/specify/ess-primitives/src",
+    ] {
+        let mut pending = vec![root.join(directory)];
+        while let Some(path) = pending.pop() {
+            for entry in std::fs::read_dir(&path).expect("the source tree is readable") {
+                let path = entry.expect("a readable entry").path();
+                if path.is_dir() {
+                    pending.push(path);
+                    continue;
+                }
+                if path.extension().is_none_or(|kind| kind != "rs") {
+                    continue;
+                }
+                // `error.rs` is where `location` is defined and where `rebase` writes it.
+                if path.ends_with("error.rs") {
+                    continue;
+                }
+                let text = production(&std::fs::read_to_string(&path).expect("readable"));
+                for (number, line) in text.lines().enumerate() {
+                    let line = line.trim();
+                    if line.contains(".location =") || line.contains(".location=") {
+                        offenders.push(format!("{}:{}: {line}", path.display(), number + 1));
+                    }
+                }
+            }
+        }
+    }
+    assert!(
+        offenders.is_empty(),
+        "production code assigns to a refusal's `location`; use `ValidationError::rebase`, which \
+         refuses a sited refusal: {offenders:?}"
     );
 }
 

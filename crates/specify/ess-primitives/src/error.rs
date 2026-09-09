@@ -452,6 +452,33 @@ impl ConstructKind {
         Self::Topology,
     ];
 
+    /// What separates this kind's head from the name it qualifies, in a rendered location.
+    ///
+    /// Not cosmetic and not a choice this type gets to make: the producers already wrote these
+    /// strings and adopters already read them. `entity billing.invoice.Invoice` and
+    /// `command.billing.invoice.CreateInvoice` are both in the tree at the base commit
+    /// (`ess-domain/src/entity.rs:830`, `command.rs:1052`), and a renderer that emitted one shape
+    /// for both would change the adopter-facing string of every entity and component refusal —
+    /// which is a location change, not a wording change, and outside what
+    /// `story:review-typed-diagnostics` may do. So the separator is a property of the kind.
+    pub fn separator(self) -> char {
+        match self {
+            // The two families whose producers write `entity <name>` and `component <name>`.
+            Self::Entity | Self::Component => ' ',
+            Self::Type
+            | Self::Conversion
+            | Self::Command
+            | Self::Event
+            | Self::Error
+            | Self::View
+            | Self::Actor
+            | Self::Binding
+            | Self::Topology
+            | Self::Domain
+            | Self::Specification => '.',
+        }
+    }
+
     /// The token this kind renders as at the head of a location, such as `command`.
     pub fn as_str(self) -> &'static str {
         match self {
@@ -556,10 +583,13 @@ impl ConstructRef {
     /// The one definition of a sited refusal's [`ValidationError::location`]. Keeping it in one
     /// function is what makes "the adopter-facing string does not move" a property that can be
     /// checked, rather than a promise made once per call site.
+    ///
+    /// The head separator comes from [`ConstructKind::separator`], because two families write a
+    /// space where the rest write a dot and neither spelling is this type's to change.
     pub fn render(&self) -> String {
         let mut rendered = String::with_capacity(self.name.len() + 16);
         rendered.push_str(self.kind.as_str());
-        rendered.push('.');
+        rendered.push(self.kind.separator());
         rendered.push_str(&self.name);
         for member in &self.members {
             match member {
@@ -687,14 +717,46 @@ impl ValidationError {
         self.site.as_deref()
     }
 
-    /// Records where the construct was written.
+    /// Builds a validation error about a construct whose parser position is known.
     ///
-    /// Ignored on a refusal that has no site: a position without a construct is the heuristic this
-    /// story exists to remove, wearing a typed hat.
+    /// A span is only meaningful beside a construct, so it is an argument of the constructor that
+    /// takes one rather than a builder step that could be applied to a refusal with no site. The
+    /// earlier `with_span` was exactly that: called on a string-only refusal it discarded its
+    /// argument and said nothing (adversary pass 2, F8). An API that can silently drop what it is
+    /// given is a defect whether or not anybody has called it that way yet, and the repair is to
+    /// make the call unspellable rather than to document it.
+    pub fn at_span(
+        construct: ConstructRef,
+        span: SyntaxSpan,
+        code: ValidationCode,
+        message: impl Into<String>,
+    ) -> Self {
+        Self {
+            code,
+            location: construct.render(),
+            message: message.into(),
+            hint: None,
+            site: Some(Box::new(Site {
+                construct,
+                span: Some(span),
+            })),
+        }
+    }
+
+    /// Re-roots a refusal whose location was written relative to a construct it did not know.
+    ///
+    /// Admission builds `outcomes.<name>.<key>` before anything knows which command owns it, and
+    /// the owner used to prepend its prefix by assigning to [`Self::location`] directly
+    /// (`ess-domain/src/command.rs`). That is two representations of one fact with one of them
+    /// writable from anywhere (adversary pass 2, F6). This is the only supported re-rooting, and it
+    /// **refuses a sited refusal**: on one of those the site is the authority for `location`, a
+    /// string prefix cannot update it, and silently producing a location its own site does not
+    /// render is the drift the whole story is about. A sited refusal is returned untouched, which
+    /// is checked by `a_sited_refusal_cannot_be_rebased_by_a_string_prefix`.
     #[must_use]
-    pub fn with_span(mut self, span: SyntaxSpan) -> Self {
-        if let Some(site) = self.site.as_mut() {
-            site.span = Some(span);
+    pub fn rebase(mut self, at: &ConstructRef) -> Self {
+        if self.site.is_none() {
+            self.location = format!("{}{}{}", at.render(), '.', self.location);
         }
         self
     }
@@ -921,6 +983,20 @@ mod tests {
                 ConstructRef::new(ConstructKind::Type, "shop.orders.OrderId").key("of"),
                 "type.shop.orders.OrderId.of",
             ),
+            // The two families whose producers write a space. `ess-domain/src/entity.rs:1004`
+            // and `component.rs:987` are the strings these reproduce, byte for byte.
+            (
+                ConstructRef::new(ConstructKind::Entity, "shop.wrong.Order")
+                    .key("transitions")
+                    .index(0),
+                "entity shop.wrong.Order.transitions[0]",
+            ),
+            (
+                ConstructRef::new(ConstructKind::Component, "invoice-service")
+                    .key("accepts")
+                    .key("commands"),
+                "component invoice-service.accepts.commands",
+            ),
         ];
         for (construct, expected) in cases {
             assert_eq!(construct.render(), expected);
@@ -972,19 +1048,71 @@ mod tests {
         assert_eq!(sited.location, string_only.location);
     }
 
+    /// A sited refusal is the site's to name; a string prefix may not re-root one.
+    ///
+    /// The other half is the case admission actually uses, where there is no site and the prefix is
+    /// the only thing that can carry the owner.
+    #[test]
+    fn a_sited_refusal_cannot_be_rebased_by_a_string_prefix() {
+        let owner = ConstructRef::new(ConstructKind::Command, "shop.orders.PlaceOrder");
+
+        let relative = ValidationError::new(
+            ValidationCode::MissingDeclaration,
+            "outcomes.placed.moves",
+            "names no entity",
+        )
+        .rebase(&owner);
+        assert_eq!(
+            relative.location,
+            "command.shop.orders.PlaceOrder.outcomes.placed.moves"
+        );
+        assert!(relative.site().is_none());
+
+        let sited = ValidationError::at(
+            ConstructRef::new(ConstructKind::Command, "shop.orders.PlaceOrder")
+                .key("outcomes")
+                .named("placed"),
+            ValidationCode::EmptyChange,
+            "nothing is observable",
+        );
+        let rebased = sited.clone().rebase(&owner);
+        assert_eq!(
+            rebased, sited,
+            "a sited refusal was re-rooted by a string prefix, so its location no longer renders \
+             from its own site"
+        );
+    }
+
+    /// The separator is a property of the kind, and every kind has one this module agrees with.
+    #[test]
+    fn every_kind_renders_the_separator_its_producers_write() {
+        for kind in ConstructKind::ALL {
+            let rendered = ConstructRef::new(*kind, "a.b").render();
+            let expected = format!("{}{}a.b", kind.as_str(), kind.separator());
+            assert_eq!(rendered, expected);
+            assert!(
+                matches!(kind.separator(), '.' | ' '),
+                "{kind:?} renders a separator no producer writes"
+            );
+        }
+        assert_eq!(ConstructKind::Entity.separator(), ' ');
+        assert_eq!(ConstructKind::Component.separator(), ' ');
+        assert_eq!(ConstructKind::Command.separator(), '.');
+    }
+
     /// The site travels in-process only, so the serialized bytes and the schema do not move.
     #[test]
     fn a_site_does_not_reach_the_serialized_form() {
-        let sited = ValidationError::at(
+        let sited = ValidationError::at_span(
             ConstructRef::new(ConstructKind::Command, "shop.orders.PlaceOrder").key("outcomes"),
+            SyntaxSpan {
+                source: "orders.yaml".to_owned(),
+                line: 12,
+                column: 5,
+            },
             ValidationCode::EmptyDeclaration,
             "declares no outcomes",
-        )
-        .with_span(SyntaxSpan {
-            source: "orders.yaml".to_owned(),
-            line: 12,
-            column: 5,
-        });
+        );
         let string_only = ValidationError::new(
             ValidationCode::EmptyDeclaration,
             "command.shop.orders.PlaceOrder.outcomes",

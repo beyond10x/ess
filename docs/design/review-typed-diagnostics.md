@@ -31,7 +31,7 @@ Added to `crates/specify/ess-primitives/src/error.rs`.
 
 | Item | Shape | Why |
 |---|---|---|
-| `ConstructKind` | `#[non_exhaustive]` C-like enum: `Type`, `Conversion`, `Entity`, `Command`, `Event`, `Error`, `View`, `Actor`, `Binding`, `Component`, `Topology`, `Domain`, `Specification` | Exactly the eleven heads `family_of` matches, plus `Specification` for its `_ =>` arm. `as_str` is the same token the producers spell today, so a rendered path is byte-identical. |
+| `ConstructKind` | An **exhaustive** C-like enum — deliberately unmarked, see *The bridge* —: `Type`, `Conversion`, `Entity`, `Command`, `Event`, `Error`, `View`, `Actor`, `Binding`, `Component`, `Topology`, `Domain`, `Specification` | Exactly the eleven heads `family_of` matches, plus `Specification` for its `_ =>` arm. `as_str` is the same token the producers spell today, and `separator` is the character they write after it, so a rendered path is byte-identical. |
 | `Segment` | `Key(String)` \| `Name(String)` \| `Index(usize)` | The member path as segments, not a dotted string. `Key` is a schema key (`outcomes`, `payload`); `Name` is something the author wrote (`accepted`, `recipient`); `Index` is a positional element. The `Key`/`Name` split is what replaces the `STRUCTURAL` stop-list: the producer knows which it wrote, so no consumer has to guess. |
 | `ConstructRef` | `{ kind, name: String, members: Vec<Segment> }`, built by `new(kind, name).key(..).named(..).index(..)` | Kind plus qualified name plus member segments. |
 | `SyntaxSpan` | `{ source: String, line: usize, column: usize }` | The optional syntax span. |
@@ -53,8 +53,18 @@ hand. Measured: `cargo clippy --locked -p ess-primitives -p ess-domain -p ess-co
 `ConstructRef::render` is the single definition of `location` for a sited error:
 
 ```
-render = kind.as_str() , { "." Key | "." Name | "[" Index "]" }
+render = kind.as_str() kind.separator() name , { "." Key | "." Name | "[" Index "]" }
 ```
+
+`separator` is `' '` for `Entity` and `Component` and `'.'` for every other kind, because that is what
+the producers already write: `entity billing.invoice.Invoice` (`ess-domain/src/entity.rs:830`) beside
+`command.billing.invoice.CreateInvoice` (`command.rs:1052`). A renderer that emitted one shape for
+both would change the adopter-facing string of every entity and component refusal — a **location**
+change, not a wording change, which is exactly what the `validate_sets` row below puts outside this
+story. The first version of this page instead said the deferred families were "the same shape as
+`command.rs`", which was false for at least 35 of the 102 deferred sites (adversary pass 2, F3);
+the separator is the fix, and it makes the entity and component migrations wording-preserving when
+they come.
 
 `ValidationError::at` sets `location = construct.render()` and nothing else may set both. The field
 is private precisely so the two cannot drift; `ValidationError::new` (the string path) leaves
@@ -123,8 +133,14 @@ producer able to supply a position needs no further change here; its consumption
 Order is by family, largest first, because the largest family is also the one the adopter-facing guide
 prints (`ESS-COMMAND-001`).
 
-**Migrated (this wave):** the `command` family in `crates/specify/ess-domain/src/command.rs` — every
-site whose location is built locally from `CommandSpec::name`:
+**A family is the location head a refusal writes, not the file the rule lives in.** The first version
+of this page booked sites by file and therefore claimed the `command` family was migrated while
+`ess-domain/src/entity.rs` was still writing four `command.…` refusals with `ValidationError::new`
+(adversary pass 2, F1, F2) — rewording one of those paths moved `ESS-COMMAND-012` to `ESS-SPEC-012`.
+The *Machine-checked inventory* below now carries a per-head census as well as a per-file one, so a
+`command.…` site in any file counts against the command family and cannot hide in another row.
+
+**Migrated (this wave):** the `command` family, wherever it is written:
 
 | Function | `file:line` (working tree) | Sites |
 |---|---|---|
@@ -140,7 +156,11 @@ site whose location is built locally from `CommandSpec::name`:
 | `CommandSpec::validate` | `command.rs:1566` | 2 |
 | `check_payload_entry` | `command.rs:1662` | 2 |
 | `check_payload_literal` | `command.rs:1819` | 4 |
-| **total** | | **28** |
+| `CommandSpec::validate`, through `TypeRegistry::resolve_at` | `command.rs:1566`, `types.rs:900` | 1 |
+| `validate_lifecycle_causes` (**`entity.rs`**) | `entity.rs:929` | 2 |
+| `validate_wrong_state_is_reachable` (**`entity.rs`**) | `entity.rs:1073` | 1 |
+| `validate_instance` (**`entity.rs`**) | `entity.rs:1129` | 1 |
+| **total** | | **33** |
 
 Those functions take a `&ConstructRef` where they took an `&str` location, so the path is typed the
 whole way down rather than re-parsed at the end.
@@ -163,11 +183,14 @@ compatibility clause. Nothing here is a silent omission.
 | `command.rs` `field_shape` (`:1987`), used by `ErrorSpec::validate` (`:1974`) | 1 | deferred | Shared with the `error` family; migrating it belongs with that family, not with `command`. |
 | `TypeRegistry::resolve(&type_ref, &location)` call sites (`command.rs:1573`, `:1978`; the signature is `types.rs:900`) | 0 of `command.rs`'s own | deferred | These pass a location *into* `types.rs`, which constructs the refusal; they are counted against `types.rs`, not `command.rs`. `validate_typed_guard` is the same shape into `expression.rs` and is handled the same way — it passes `owner.render()`, so the two spellings cannot drift. |
 | `Outcome::try_from` (`command.rs:2163`), `keyed_sets` (`:2259`), `keyed_payload` (`:2286`), `subject_of` (`:2336`) — relative locations rebased by string concatenation at `command.rs:2447` | 1 + 1 + 2 + 4 = **8** | deferred | These build a location *relative* to a construct they do not know, and the prefix is prepended later by mutating `error.location`. The typed replacement is a `ConstructRef` passed into admission; it is a signature change on the raw→admitted conversion and is the next unit of this migration. |
-| `ess-domain/src/entity.rs` (20), `binding.rs` (17), `component.rs` (15), `view.rs` (11), `topology.rs` (10), `system.rs` (10), `spec.rs` (7), `types.rs` (6), `domain.rs` (5), `wire.rs` (1) | 102 | deferred, by family | Same shape as `command.rs`; each is one family's worth of work with its own fixtures. |
+| `ess-domain/src/entity.rs` (16), `binding.rs` (17), `component.rs` (15), `view.rs` (11), `topology.rs` (10), `system.rs` (10), `spec.rs` (7), `types.rs` (6), `domain.rs` (5), `wire.rs` (1) | 98 | deferred, by family | **Not** "the same shape as `command.rs`", which is what this row used to say. `entity.rs` and `component.rs` write `entity <name>` and `component <name>` with a space — 16 of the location literals in the head census below open that way (`entity entity.rs 4`, `component component.rs 12`), and every refusal those two files raise is rooted at one of them; `system.rs` and `types.rs` write the plural heads `types.` and `domain.`, for which no `ConstructKind` exists. The space form is now renderable (`ConstructKind::separator`), so those two families migrate without moving a string. The plural heads are not, and migrating them would move the string — the same result as the `validate_sets` row. |
+| `ess-domain/src/wire.rs:30`, one `command.…` location | 1 | **deferred with a stated reason** | `wire.rs`'s `Namespace` helper is shared by five heads, one of which is `types.` — a head no `ConstructKind` renders. Migrating only its command caller needs the helper to accept "a site or a string", which is the shape this story is removing. It moves with the `type` family. Pinned at 1 by the head census. |
+| `ess-domain/src/primitive_admission.rs:96`, one `command.…` location | 1 | **not this unit** | `story:review-primitive-semantics` owns the file. A ready patch is at `target/review-boundaries-21/scratch/primitive-admission-command-site.patch`; it is not applied. Pinned at 1 by the head census, so it cannot grow unnoticed. |
 | `command.rs` `validate_sets` (`:1727`) + `field_shape` (`:1987`) + the eight admission sites above | 11 | see rows above | `grep -c 'ValidationError::new' crates/specify/ess-domain/src/command.rs` = 11, which is 2 + 1 + 8. |
 | `ess-domain/src/actor.rs` | 1 | deferred | An `actor`-family site the story's own scope does not list; recorded here so the inventory is complete rather than equal to the scope. |
 | `ess-domain/src/expression.rs` (1), `primitive_admission.rs` (2) | 3 | **not this unit** | `story:review-primitive-semantics`, same wave. `CommandSpec::validate_typed_guard` hands `check_predicate` the *rendered* form of its own site, so the two spellings cannot drift while that file waits. |
 | `ess-primitives/src/error.rs:78` `ParseError::Shape { location: String }` | — | deferred | The same pattern on the *parse* side. A parse error has a real `serde_yaml` position, so its typed form is a `SyntaxSpan`, not a `ConstructRef`; different work. |
+| A positional segment choosing a source line | — | **explicitly unsupported** | `Segment::Index` contributes a token and no needle: an index always sits behind a `STRUCTURAL` key in the paths the migrated producers write, so it never reaches the trailing-key test. `command.…input[1]` is cited at the command's own declaration, not at the second input field. Making the index choose the line means counting occurrences of a key inside a block, which `Locator`'s whole-file substring search cannot do; it is parser-position work, beside `SyntaxSpan`. The arm is kept and pinned by `typed_tokens_are_the_string_tokens_for_every_segment_shape`, which fails if it stops contributing (adversary pass 2, F7). |
 | `crates/infra/infra-domain/src/code.rs:190` | — | **out of this story** | The second `ValidationError { location: String }` envelope F14 names. Recorded here, deliberately not fixed: `crates/infra/**` is another unit's assignment in this wave. |
 
 `ess-domain/src/locate.rs` is **not** in this table: the story's scope lists it as a file whose
@@ -175,6 +198,33 @@ constructors would need migrating, and it constructs no `ValidationError` at all
 lines). That scope line is wrong and nothing was built on it.
 
 `bridge`'s string fallback stays until this table is empty.
+
+## Two representations of one fact
+
+`ValidationError::location` is `pub`, and a sited refusal renders it from its site. Nothing in the
+type system stops a caller writing to it, and `ess-domain/src/command.rs` used to do exactly that,
+prefixing admission's relative locations by assignment (adversary pass 2, F6).
+
+`location` is **not** made private, and the reason is a constraint rather than a preference: the
+suite's own rewording transformation — pass 1's
+`a_sited_refusal_takes_its_family_from_the_construct_not_the_location_head` and pass 2's
+`rewording_the_path_of_a_command_family_refusal_does_not_move_its_code` — *assigns* to `location` to
+prove the machine facts do not follow it. An accessor-only field would make the story's own
+acceptance statement unverifiable.
+
+What is fixed instead is the writer. `ValidationError::rebase(&ConstructRef)` is the only supported
+re-rooting; it prefixes a string-only refusal and **returns a sited one untouched**, because on a
+sited refusal the site is the authority and a string prefix cannot update it. `command.rs` calls it,
+no production file assigns to `.location` any more, and
+`no_production_code_assigns_a_refusals_location` is the check that keeps it that way — the class,
+not the instance. What remains, and is stated rather than hidden: a *test* may still assign to
+`location`, which is the point, and `bridge` ignores `location` entirely for a sited refusal
+(`resolve.rs`), so an assignment cannot move a code or a line.
+
+`with_span` is gone. It took a span, and on a refusal with no site it discarded it and said nothing
+(adversary pass 2, F8). A span is only meaningful beside a construct, so it is now an argument of
+`ValidationError::at_span(construct, span, code, message)` — the discarding call is unspellable
+rather than documented.
 
 ## Machine-checked inventory
 
@@ -190,17 +240,65 @@ binding.rs 17 0
 command.rs 11 28
 component.rs 15 0
 domain.rs 5 0
-entity.rs 20 0
+entity.rs 16 4
 expression.rs 1 0
 primitive_admission.rs 2 0
 spec.rs 7 0
 system.rs 10 0
 topology.rs 10 0
-types.rs 6 0
+types.rs 6 1
 view.rs 11 0
 wire.rs 1 0
 ```
 <!-- inventory:end -->
+
+### By location head
+
+The same census grouped by the head each site writes, `<head> <file> <count>`, counting every
+production string literal that opens a document path — the rule adversary pass 2 F1 asked for, so a
+`command.…` site booked in the `entity.rs` row cannot pass for entity work. Literals inside
+`#[cfg(test)]` modules are excluded: an assertion pinning a location is a reader, not a producer.
+
+**The `command` head is the one this wave migrated, and every remaining writer of it is named with a
+reason in the table above.** There are two, both pinned at 1.
+
+<!-- heads:begin -->
+```text
+actor actor.rs 1
+actors actor.rs 1
+binding binding.rs 9
+command primitive_admission.rs 1
+command wire.rs 1
+commands command.rs 1
+component component.rs 12
+components component.rs 1
+conversions types.rs 1
+domain component.rs 1
+domain domain.rs 5
+domain spec.rs 1
+domain system.rs 4
+domains domain.rs 1
+entity entity.rs 4
+entity primitive_admission.rs 2
+entity wire.rs 1
+error command.rs 3
+error primitive_admission.rs 1
+error wire.rs 1
+event binding.rs 1
+event command.rs 3
+event component.rs 1
+event primitive_admission.rs 1
+event wire.rs 1
+topology topology.rs 6
+types primitive_admission.rs 1
+types system.rs 3
+types types.rs 4
+types wire.rs 1
+view primitive_admission.rs 2
+view view.rs 5
+view wire.rs 2
+```
+<!-- heads:end -->
 
 ## Consumer accounting
 
@@ -224,6 +322,14 @@ entry (as `error::struct::ValidationError` has), the implementation wording for 
    first. The first version of this page claimed the fixture asserted `None` while the test pinned
    all three refusals to line 12 (adversary pass 1, F3, F4); the fixture now does what the page says,
    and `adversary_typed_diagnostics_pass1.rs` holds it to that.
+
+   It also carries the **located** half, added because answering pass 1's F3 by making every refusal
+   unlocated left the suite checking no location at all for the hazard the story's Validation clause
+   names (adversary pass 2, F5). `shop.repeat.Solo` repeats an outcome name too, and no other
+   declaration's name contains its own, so its fallback needle is unique and both of its refusals are
+   cited at `repeated_names.yaml:35:5` — pinned exactly, beside the three unlocated ones. Neither
+   half was removed to make the other pass; a fixture that answers a finding by deleting the evidence
+   is how F5 happened.
 2. `nested.yaml` — a `payload:` entry three member levels below the command, so the member path is
    more than one segment deep.
 3. `cross_file_a.yaml` + `cross_file_b.yaml` — a command in one file emitting an event declared in
