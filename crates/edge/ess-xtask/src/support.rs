@@ -843,7 +843,7 @@ mod tests {
             .filter(|(_, line)| line.starts_with("| ") && !line.starts_with("| Capability |"))
             .map(|(index, _)| index)
             .collect();
-        assert_eq!(rows.len(), 20);
+        assert_eq!(rows.len(), 21);
         let mut refused = 0;
         for &index in &rows {
             let cells: Vec<_> = lines[index].split('|').map(str::to_owned).collect();
@@ -873,7 +873,8 @@ mod tests {
         let extra = expected.replace(END, &format!("| Extra | supported | unowned |\n{END}"));
         assert!(compare(&extra, &expected).is_err());
         println!(
-            "all 20 actual rows attacked: {} mutation refusals",
+            "all {} actual rows attacked: {} mutation refusals",
+            rows.len(),
             refused + 1
         );
     }

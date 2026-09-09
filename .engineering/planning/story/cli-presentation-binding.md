@@ -52,7 +52,7 @@ scope:
   path: website/docs/reference/cli.md
 - confidence: inferred
   path: website/docs/status/where-this-stands.md
-revision: 21
+revision: 22
 ---
 ## Operator authorization
 The Connectors operator approved closing necessary ESS gaps upstream to specify its local CLI. Work is local in the isolated cli-binding-ess-20260909 managed tree; preserve the live review-boundaries-21 wave and current main. Serving objective O2. No release/external publication or production provider/credential execution.
@@ -187,3 +187,21 @@ all workspace tests/Clippy and 315 scenarios. Website build, reference drift, 15
 example tests, browser walkthroughs and UI checks pass. The browser-fixture-only
 follow-up is preserved as a new exact source candidate before final ESS validation
 and the final downstream pin refresh. No full ESS gate success is claimed yet.
+
+## Tooling gate follow-up
+
+Full gate 05 passed the native ownership and browser suites, then stopped on two
+xtask assertions. The support adversary expected 20 rows despite the new typed CLI
+support row; it now expects 21 and prints the measured count, retaining every cell,
+removal, duplicate and ordering mutation. The compiled-provider guard correctly
+refused a duplicate native linker flag: the coordinator's target-scoped environment
+flag was appended to the existing machine Cargo target flag. Unsetting that
+environment override leaves the already configured single native-only flag and
+keeps WASM unaffected. No profile authority or production semantics were weakened.
+
+All 123 xtask unit tests and five layout integration tests pass with this corrected
+environment, including the real compiled-provider guard and the full material-row
+adversary. Log: .local/tmp/cli-wave/xtask-gate-regression-01.log. The failed full run
+remains in ess-full-gate-05.log. Preflight the later gate stages before repeating
+the full required task check. Neither this focused success nor any earlier partial
+consumer qualification is a full-gate success.
