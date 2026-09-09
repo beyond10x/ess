@@ -175,6 +175,10 @@ Per-lane exit codes (`target/review-boundaries-21/gate-run3/*.exit`): fmt-check 
 
 No lane skipped itself (the word appears only in two test names). Runs 1–3 (d81245f, 144aa95, f346f27) are recorded above with their red lanes and the correction each produced. `task site-build` at e448671e: exit 0 (`gate-run4/site-build.exit`; site-lab WASM smoke and `_run.test.mjs` passed, Docusaurus generated static files).
 
+## Base moved: main merged into the wave, whole gate run 5
+
+After the closing commit 31ded04 the pull request was `DIRTY`: main had gained 19de6406 (Binary64 fixture isolation, `tempfile`) and d77ba7bb (docs-system pin) during the wave. Merge 965a84dc resolves the journal tail as the union of both additions ordered by `payload.at` (no shared memory id; `aep artifact validate` valid) and takes the wave's `Cargo.lock`; edaf29a2 carries main's `tempfile 3.27.0` and `fastrand 2.5.0` into the lock (the merge commit's lock step had failed inside a masked pipeline). Whole gate run 5 at edaf29a2 (`target/review-boundaries-21/gate-run5/*.exit`): fmt-check 0, clippy 0, test 0 (217 lanes, 2561 passed, 0 failed), doc-check 0, example-check 0, projection-check 0, support-check 0, consumer-check 0 (BaselineUnknown 157677, Supported 54, Refused 0), fuzz-check 0, release-check 0, action-check 0, site-build 0. A second `test_result` is recorded on each story against this run.
+
 ## What the wave cost
 
 Harness-reported figures per agent; a resumed agent's token figure is cumulative across its rounds (inferred from the monotone series), tool uses and wall time are per round and summed here.
