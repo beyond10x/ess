@@ -53,7 +53,9 @@ use ess_domain::system::Source;
 use ess_domain::topology::Workload;
 use ess_domain::types::{is_assignable, Field, NamedType, TypeBody, TypeRef, TypeRegistry};
 use ess_domain::view::ViewSpec;
-use ess_primitives::error::{ValidationCode, ValidationErrors};
+use ess_primitives::error::{
+    ConstructKind, ConstructRef, Segment, Site, SyntaxSpan, ValidationCode, ValidationErrors,
+};
 
 use crate::diagnostic::{Code, Detail, Diagnostic, Diagnostics, Severity};
 use crate::ir::{
@@ -540,21 +542,111 @@ pub fn diagnose_locating(
 }
 
 /// [`diagnose`], against a locator that already exists.
+///
+/// Two paths, and the typed one is the one that is growing. A refusal built by
+/// [`ValidationError::at`](ess_primitives::error::ValidationError::at) carries a
+/// [`Site`]: its family comes from the construct's kind and its needles from the construct's own
+/// segments, so neither [`family_of`] nor [`needles_for`] is consulted and rewording the rendered
+/// path cannot move either. A refusal built by `ValidationError::new` still carries only a string,
+/// and is bridged exactly as before. The fallback stays until the inventory in
+/// `docs/design/review-typed-diagnostics.md` is empty.
 fn bridge(errors: &ValidationErrors, locator: &Locator<'_>) -> Diagnostics {
     let mut diagnostics = Diagnostics::new();
     for error in errors.as_slice() {
+        let (family, span) = match error.site() {
+            Some(site) => (
+                family_of_kind(site.construct.kind()),
+                span_of_site(site, locator),
+            ),
+            None => (
+                family_of(&error.location),
+                locator.span(error.location.clone(), &needles_for(&error.location)),
+            ),
+        };
         diagnostics.push(Diagnostic {
-            code: Code::new(family_of(&error.location), class_of(error.code)),
+            code: Code::new(family, class_of(error.code)),
             severity: Severity::Error,
             message: error.message.clone(),
             details: vec![Detail::Note {
                 text: format!("`ess-domain` refuses this as `{}`", error.code.as_str()),
             }],
             hint: error.hint.clone(),
-            span: Some(locator.span(error.location.clone(), &needles_for(&error.location))),
+            span: Some(span),
         });
     }
     diagnostics
+}
+
+/// Where a sited refusal points.
+///
+/// A producer that knows its parser position is believed; one that does not still gets the
+/// [`Locator`]'s search, driven by the construct rather than by the rendered string.
+fn span_of_site(site: &Site, locator: &Locator<'_>) -> Span {
+    let path = site.construct.render();
+    match &site.span {
+        Some(SyntaxSpan {
+            source,
+            line,
+            column,
+        }) => Span {
+            source: source.clone(),
+            path,
+            located: Some(Location {
+                line: *line,
+                column: *column,
+            }),
+        },
+        None => locator.span(path, &needles_of_site(&site.construct)),
+    }
+}
+
+/// Which layer a construct is in.
+///
+/// The typed replacement for [`family_of`]: a total match on the kind, with no string to parse and
+/// no unrecognised head to fall back from.
+fn family_of_kind(kind: ConstructKind) -> &'static str {
+    match kind {
+        ConstructKind::Type | ConstructKind::Conversion => codes::family::TYPE,
+        ConstructKind::Entity => codes::family::ENTITY,
+        ConstructKind::Command => codes::family::COMMAND,
+        ConstructKind::Event => codes::family::EVENT,
+        ConstructKind::Error => codes::family::ERROR,
+        ConstructKind::View => codes::family::VIEW,
+        ConstructKind::Actor => codes::family::ACTOR,
+        ConstructKind::Binding => codes::family::BINDING,
+        ConstructKind::Component => codes::family::COMPONENT,
+        ConstructKind::Topology => codes::family::TOPOLOGY,
+        ConstructKind::Domain => codes::family::DOMAIN,
+        _ => codes::family::SPEC,
+    }
+}
+
+/// Needles for a typed construct, most specific first.
+///
+/// The typed replacement for [`needles_for`], and the reason [`STRUCTURAL`] is not consulted: a
+/// [`Segment::Key`] is already known not to name a declaration, so nothing has to be guessed from a
+/// stop-list. The trailing [`Segment::Name`] is used as a key only when it starts with an ASCII
+/// lowercase letter, which is the one part of the heuristic that was right — a type or event name
+/// such as `InvoiceCreated` is a value in the documents this repository has, not a key, and
+/// searching for `InvoiceCreated:` would move lines that are pinned today.
+fn needles_of_site(construct: &ConstructRef) -> Vec<String> {
+    let mut needles = Vec::new();
+    if let Some(Segment::Name(last)) = construct.members().last() {
+        if last
+            .chars()
+            .next()
+            .is_some_and(|first| first.is_ascii_lowercase())
+        {
+            needles.push(format!("{last}:"));
+        }
+    }
+    let declared = construct.name();
+    if !declared.is_empty() {
+        needles.push(format!("name: {declared}"));
+        needles.push(format!("id: {declared}"));
+        needles.push(format!("component: {declared}"));
+    }
+    needles
 }
 
 /// Which layer a document path is in.
@@ -2841,6 +2933,8 @@ fn condition_of(outcome: &Outcome) -> ResolvedCondition {
 
 #[cfg(test)]
 mod tests {
+    use ess_primitives::error::ValidationError;
+
     use super::*;
 
     /// The register is the interface a harness matches on, so its shape is asserted rather than
@@ -3081,5 +3175,126 @@ mod tests {
         );
         assert!(span.located.is_none());
         assert_eq!(span.path, "events.billing.invoice.InvoiceCreated");
+    }
+
+    /// Sources holding one command declaration and one member key, for the sited-bridge tests.
+    fn sited_sources() -> SourceMap {
+        let mut sources = SourceMap::new();
+        sources.insert(
+            "orders.yaml",
+            "commands:\n  - name: shop.orders.PlaceOrder\n    outcomes:\n      - name: placed\n        headline: input.total\n",
+        );
+        sources
+    }
+
+    /// A sited refusal whose rendered `location` has been rewritten as a wording change would
+    /// rewrite it. The family must come from the construct's kind, not from the string's head.
+    #[test]
+    fn a_sited_refusal_takes_its_family_from_the_construct_not_the_location_head() {
+        let mut error = ValidationError::at(
+            ConstructRef::new(ConstructKind::Command, "shop.orders.PlaceOrder")
+                .key("outcomes")
+                .named("placed")
+                .key("emits"),
+            ValidationCode::UndeclaredReference,
+            "`shop.orders.Missing` is not a declared event",
+        );
+        // Exactly what `family_of` reads, spelled as no family it knows.
+        error.location = "reworded.shop.orders.PlaceOrder.outcomes.placed.emits".to_owned();
+        let mut errors = ValidationErrors::new();
+        errors.push(error);
+
+        let sources = sited_sources();
+        let diagnostics = bridge(&errors, &Locator::new(&sources, &["orders.yaml"]));
+
+        assert_eq!(
+            diagnostics.as_slice()[0].code,
+            codes::COMMAND_UNDECLARED_REFERENCE,
+            "the family came from the location string, not from the site"
+        );
+    }
+
+    /// The needles must be derived from the typed construct, not by re-tokenising the string.
+    #[test]
+    fn a_sited_refusal_takes_its_needles_from_the_construct_not_the_location_path() {
+        let mut error = ValidationError::at(
+            ConstructRef::new(ConstructKind::Command, "shop.orders.PlaceOrder")
+                .key("outcomes")
+                .named("placed")
+                .named("headline"),
+            ValidationCode::UndeclaredReference,
+            "`headline` is not a field it carries",
+        );
+        error.location = "reworded.entirely".to_owned();
+        let mut errors = ValidationErrors::new();
+        errors.push(error);
+
+        let sources = sited_sources();
+        let diagnostics = bridge(&errors, &Locator::new(&sources, &["orders.yaml"]));
+        let span = diagnostics.as_slice()[0]
+            .span
+            .as_ref()
+            .expect("a sited refusal still gets a span");
+
+        assert_eq!(span.source, "orders.yaml");
+        assert_eq!(
+            span.located.expect("`headline:` occurs exactly once").line,
+            5
+        );
+        assert_eq!(
+            span.path, "command.shop.orders.PlaceOrder.outcomes.placed.headline",
+            "the cited path is the site's render, not the reworded string"
+        );
+    }
+
+    /// A site that already knows its parser position is used verbatim; no file is searched.
+    #[test]
+    fn a_sited_refusal_with_a_syntax_span_does_not_search_the_sources() {
+        let mut errors = ValidationErrors::new();
+        errors.push(
+            ValidationError::at(
+                ConstructRef::new(ConstructKind::Command, "shop.orders.PlaceOrder").key("outcomes"),
+                ValidationCode::EmptyDeclaration,
+                "declares no outcomes",
+            )
+            .with_span(SyntaxSpan {
+                source: "elsewhere.yaml".to_owned(),
+                line: 41,
+                column: 7,
+            }),
+        );
+
+        let empty = SourceMap::new();
+        let diagnostics = bridge(&errors, &Locator::new(&empty, &[] as &[&str]));
+        let span = diagnostics.as_slice()[0].span.as_ref().expect("a span");
+
+        assert_eq!(span.source, "elsewhere.yaml");
+        assert_eq!(
+            span.located,
+            Some(Location {
+                line: 41,
+                column: 7
+            })
+        );
+    }
+
+    /// The string fallback stays until the inventory in `docs/design/review-typed-diagnostics.md`
+    /// is empty: an unsited refusal is bridged exactly as it was before.
+    #[test]
+    fn an_unsited_refusal_is_still_bridged_from_its_location_string() {
+        let mut errors = ValidationErrors::new();
+        errors.push(ValidationError::new(
+            ValidationCode::UndeclaredReference,
+            "command.shop.orders.PlaceOrder.outcomes.placed.headline",
+            "`headline` is not a field it carries",
+        ));
+
+        let sources = sited_sources();
+        let diagnostics = bridge(&errors, &Locator::new(&sources, &["orders.yaml"]));
+        let diagnostic = &diagnostics.as_slice()[0];
+
+        assert_eq!(diagnostic.code, codes::COMMAND_UNDECLARED_REFERENCE);
+        let span = diagnostic.span.as_ref().expect("a span");
+        assert_eq!(span.located.expect("located").line, 5);
     }
 }

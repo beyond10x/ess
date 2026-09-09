@@ -1,0 +1,17 @@
+format: ess/1
+system: shop
+version: v1
+domains: [shop.cross]
+domain: shop.cross
+commands:
+  - name: shop.cross.Announce
+    input:
+      - name: subject
+        type: String
+    outcomes:
+      - name: announced
+        emits:
+          - shop.cross.Announced
+        payload:
+          shop.cross.Announced:
+            headline: input.subject

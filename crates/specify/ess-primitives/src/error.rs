@@ -10,6 +10,7 @@
 //!   first.
 
 use std::fmt;
+use std::fmt::Write as _;
 
 /// A value that is not well formed.
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
@@ -385,6 +386,208 @@ impl fmt::Display for ValidationCode {
     }
 }
 
+/// What kind of construct a refusal is about.
+///
+/// The typed half of what [`ValidationError::location`] used to be spelled as prose. A consumer
+/// reading a diagnostic needs the layer the defect is in — `ESS-COMMAND-001`'s `COMMAND` — and
+/// deriving that by splitting a human-facing path on `.` and `[` makes the emitted code a function
+/// of how a producer wrote a `format!`. See `docs/design/review-typed-diagnostics.md`.
+///
+/// [`Self::as_str`] is the token the producers already write at the head of a location, so a
+/// rendered path is byte-identical to the string it replaces.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[non_exhaustive]
+pub enum ConstructKind {
+    /// A named type.
+    Type,
+    /// A declared conversion between two types.
+    Conversion,
+    /// An entity or its lifecycle.
+    Entity,
+    /// A command.
+    Command,
+    /// An event.
+    Event,
+    /// A declared error.
+    Error,
+    /// A view.
+    View,
+    /// An actor.
+    Actor,
+    /// A binding, including its mapping.
+    Binding,
+    /// A component.
+    Component,
+    /// The topology.
+    Topology,
+    /// A bounded context.
+    Domain,
+    /// The specification as a whole, or something with no better home.
+    Specification,
+}
+
+impl ConstructKind {
+    /// The token this kind renders as at the head of a location, such as `command`.
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Type => "type",
+            Self::Conversion => "conversion",
+            Self::Entity => "entity",
+            Self::Command => "command",
+            Self::Event => "event",
+            Self::Error => "error",
+            Self::View => "view",
+            Self::Actor => "actor",
+            Self::Binding => "binding",
+            Self::Component => "component",
+            Self::Topology => "topology",
+            Self::Domain => "domain",
+            Self::Specification => "spec",
+        }
+    }
+}
+
+impl fmt::Display for ConstructKind {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(self.as_str())
+    }
+}
+
+/// One step of the path from a construct to the member a refusal is about.
+///
+/// The distinction a dotted string cannot carry. `outcomes` is a key of the schema and `accepted`
+/// is a name its author chose, and a consumer looking for the line an author wrote has to know
+/// which is which. The compiler used to guess, with a fifty-entry stop-list of keys that never name
+/// a declaration; the producer already knows, so it says so here instead.
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub enum Segment {
+    /// A key of the specification language, such as `outcomes` or `payload`.
+    Key(String),
+    /// A name the author wrote, such as an outcome name or a field name.
+    Name(String),
+    /// A positional element of a list, such as the second declared input.
+    Index(usize),
+}
+
+/// The construct a refusal is about: its kind, its qualified name, and the path to the member.
+///
+/// Built left to right — `ConstructRef::new(kind, name).key("outcomes").named("accepted")` — and
+/// rendered by [`Self::render`] into the string [`ValidationError::location`] has always carried.
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct ConstructRef {
+    kind: ConstructKind,
+    name: String,
+    members: Vec<Segment>,
+}
+
+impl ConstructRef {
+    /// The construct itself, with no member path yet.
+    pub fn new(kind: ConstructKind, name: impl Into<String>) -> Self {
+        Self {
+            kind,
+            name: name.into(),
+            members: Vec::new(),
+        }
+    }
+
+    /// What kind of construct this is.
+    pub fn kind(&self) -> ConstructKind {
+        self.kind
+    }
+
+    /// The construct's qualified name.
+    pub fn name(&self) -> &str {
+        &self.name
+    }
+
+    /// The path from the construct to the member, in order.
+    pub fn members(&self) -> &[Segment] {
+        &self.members
+    }
+
+    /// Descends through a key of the specification language.
+    #[must_use]
+    pub fn key(mut self, key: impl Into<String>) -> Self {
+        self.members.push(Segment::Key(key.into()));
+        self
+    }
+
+    /// Descends through a name the author wrote.
+    #[must_use]
+    pub fn named(mut self, name: impl Into<String>) -> Self {
+        self.members.push(Segment::Name(name.into()));
+        self
+    }
+
+    /// Descends into a positional element.
+    #[must_use]
+    pub fn index(mut self, index: usize) -> Self {
+        self.members.push(Segment::Index(index));
+        self
+    }
+
+    /// The document path, exactly as a producer used to write it with `format!`.
+    ///
+    /// The one definition of a sited refusal's [`ValidationError::location`]. Keeping it in one
+    /// function is what makes "the adopter-facing string does not move" a property that can be
+    /// checked, rather than a promise made once per call site.
+    pub fn render(&self) -> String {
+        let mut rendered = String::with_capacity(self.name.len() + 16);
+        rendered.push_str(self.kind.as_str());
+        rendered.push('.');
+        rendered.push_str(&self.name);
+        for member in &self.members {
+            match member {
+                Segment::Key(key) => {
+                    rendered.push('.');
+                    rendered.push_str(key);
+                }
+                Segment::Name(name) => {
+                    rendered.push('.');
+                    rendered.push_str(name);
+                }
+                Segment::Index(index) => {
+                    let _ = write!(rendered, "[{index}]");
+                }
+            }
+        }
+        rendered
+    }
+}
+
+impl fmt::Display for ConstructRef {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(&self.render())
+    }
+}
+
+/// Where a construct was written, when the producer knows.
+///
+/// Nothing supplies one yet: `serde_yaml` discards positions for a semantic error, so the compiler
+/// still finds the line by searching the source text. The type exists because the first producer
+/// that can supply a position needs no change to the bridge that consumes it.
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct SyntaxSpan {
+    /// The file, as the specification labelled it.
+    pub source: String,
+    /// The line, 1-based.
+    pub line: usize,
+    /// The column, 1-based.
+    pub column: usize,
+}
+
+/// What a refusal is about, independently of how it is worded.
+///
+/// The rule's identity is [`ValidationError::code`] and always was; what was missing is the
+/// construct and the position, both of which used to be recovered by parsing prose.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Site {
+    /// The construct and the member path within it.
+    pub construct: ConstructRef,
+    /// Where it was written, when that is known.
+    pub span: Option<SyntaxSpan>,
+}
+
 /// One semantic validation failure.
 #[derive(
     Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize, schemars::JsonSchema,
@@ -394,16 +597,38 @@ pub struct ValidationError {
     /// Stable classification.
     pub code: ValidationCode,
     /// Where the problem is, in dotted document form, such as `workflow.transitions[3].to`.
+    ///
+    /// Adopter-facing output. On a refusal built by [`Self::at`] it is exactly
+    /// [`ConstructRef::render`] of that refusal's site and is never read back to recover a fact.
     pub location: String,
     /// What is wrong.
     pub message: String,
     /// How to fix it, when there is an obvious remedy.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub hint: Option<String>,
+    /// The typed site, on producers that have been migrated to one.
+    ///
+    /// Private, so that nothing can set a site without also setting the [`Self::location`] it
+    /// renders; [`Self::at`] is the only way in, and it sets both from one value.
+    ///
+    /// `#[serde(skip)]`: this struct is `deny_unknown_fields` and appears in no generated schema,
+    /// so serializing the site would make it a wire-visible field change for a fact that is only
+    /// ever consumed in-process by `ess-compiler`'s bridge. The serialized bytes do not move.
+    ///
+    /// Boxed: a `ValidationError` is returned in `Result::Err` by `TypeRegistry::insert` and its
+    /// siblings, and an unboxed `Site` puts the error variant at 176 bytes — which
+    /// `clippy::result_large_err` refuses, and rightly: the site is present on a minority of
+    /// refusals and absent on every success.
+    #[serde(skip)]
+    site: Option<Box<Site>>,
 }
 
 impl ValidationError {
-    /// Builds a validation error.
+    /// Builds a validation error from a document path written as a string.
+    ///
+    /// The untyped path, kept while the migration in `docs/design/review-typed-diagnostics.md`
+    /// runs. A refusal built this way carries no [`Self::site`], and the compiler falls back to
+    /// deriving its family and its source line from `location`.
     pub fn new(
         code: ValidationCode,
         location: impl Into<String>,
@@ -414,7 +639,39 @@ impl ValidationError {
             location: location.into(),
             message: message.into(),
             hint: None,
+            site: None,
         }
+    }
+
+    /// Builds a validation error about a construct, rendering its location from that construct.
+    pub fn at(construct: ConstructRef, code: ValidationCode, message: impl Into<String>) -> Self {
+        Self {
+            code,
+            location: construct.render(),
+            message: message.into(),
+            hint: None,
+            site: Some(Box::new(Site {
+                construct,
+                span: None,
+            })),
+        }
+    }
+
+    /// The typed site, on a refusal built by [`Self::at`].
+    pub fn site(&self) -> Option<&Site> {
+        self.site.as_deref()
+    }
+
+    /// Records where the construct was written.
+    ///
+    /// Ignored on a refusal that has no site: a position without a construct is the heuristic this
+    /// story exists to remove, wearing a typed hat.
+    #[must_use]
+    pub fn with_span(mut self, span: SyntaxSpan) -> Self {
+        if let Some(site) = self.site.as_mut() {
+            site.span = Some(span);
+        }
+        self
     }
 
     /// Attaches a remediation hint.
@@ -596,5 +853,116 @@ mod tests {
         let rendered = errors.to_string();
         assert!(rendered.contains("2 validation errors"), "{rendered}");
         assert!(rendered.contains("hint: add a transition"), "{rendered}");
+    }
+
+    /// The rendering rule, over every shape a producer writes today.
+    ///
+    /// `location` is the adopter-facing string and is pinned by the guide, by 48 in-crate
+    /// assertions and by `ess specify validate`'s own output. It must be a function of the typed
+    /// site and nothing else, so the table is the definition and this is the check.
+    #[test]
+    fn a_construct_reference_renders_the_location_string_its_producer_used_to_write() {
+        let cases: Vec<(ConstructRef, &str)> = vec![
+            (
+                ConstructRef::new(ConstructKind::Command, "shop.orders.PlaceOrder"),
+                "command.shop.orders.PlaceOrder",
+            ),
+            (
+                ConstructRef::new(ConstructKind::Command, "shop.orders.PlaceOrder").key("outcomes"),
+                "command.shop.orders.PlaceOrder.outcomes",
+            ),
+            (
+                ConstructRef::new(ConstructKind::Command, "shop.orders.PlaceOrder")
+                    .key("outcomes")
+                    .named("placed"),
+                "command.shop.orders.PlaceOrder.outcomes.placed",
+            ),
+            (
+                ConstructRef::new(ConstructKind::Command, "shop.repeat.FileOne")
+                    .key("input")
+                    .index(1),
+                "command.shop.repeat.FileOne.input[1]",
+            ),
+            (
+                ConstructRef::new(ConstructKind::Command, "shop.cross.Announce")
+                    .key("outcomes")
+                    .named("announced")
+                    .key("payload")
+                    .named("shop.cross.Announced")
+                    .named("headline"),
+                "command.shop.cross.Announce.outcomes.announced.payload.shop.cross.Announced.headline",
+            ),
+            (
+                ConstructRef::new(ConstructKind::Type, "shop.orders.OrderId").key("of"),
+                "type.shop.orders.OrderId.of",
+            ),
+        ];
+        for (construct, expected) in cases {
+            assert_eq!(construct.render(), expected);
+        }
+    }
+
+    /// The invariant that keeps the rendered string honest: nothing may set one without the other.
+    #[test]
+    fn a_sited_error_renders_its_location_from_its_site_and_a_string_error_has_no_site() {
+        let construct = ConstructRef::new(ConstructKind::Command, "shop.orders.PlaceOrder")
+            .key("outcomes")
+            .named("placed")
+            .key("emits");
+        let sited = ValidationError::at(
+            construct.clone(),
+            ValidationCode::UndeclaredReference,
+            "`shop.orders.Missing` is not a declared event",
+        );
+        assert_eq!(sited.location, construct.render());
+        assert_eq!(
+            sited.location,
+            "command.shop.orders.PlaceOrder.outcomes.placed.emits"
+        );
+        let site = sited.site().expect("a sited error carries its site");
+        assert_eq!(site.construct.kind(), ConstructKind::Command);
+        assert_eq!(site.construct.name(), "shop.orders.PlaceOrder");
+        assert_eq!(
+            site.construct.members(),
+            &[
+                Segment::Key("outcomes".to_owned()),
+                Segment::Name("placed".to_owned()),
+                Segment::Key("emits".to_owned()),
+            ]
+        );
+        assert!(site.span.is_none(), "no producer has a parser position yet");
+
+        let string_only = ValidationError::new(
+            ValidationCode::UndeclaredReference,
+            "command.shop.orders.PlaceOrder.outcomes.placed.emits",
+            "`shop.orders.Missing` is not a declared event",
+        );
+        assert!(string_only.site().is_none());
+        assert_eq!(sited.location, string_only.location);
+    }
+
+    /// The site travels in-process only, so the serialized bytes and the schema do not move.
+    #[test]
+    fn a_site_does_not_reach_the_serialized_form() {
+        let sited = ValidationError::at(
+            ConstructRef::new(ConstructKind::Command, "shop.orders.PlaceOrder").key("outcomes"),
+            ValidationCode::EmptyDeclaration,
+            "declares no outcomes",
+        )
+        .with_span(SyntaxSpan {
+            source: "orders.yaml".to_owned(),
+            line: 12,
+            column: 5,
+        });
+        let string_only = ValidationError::new(
+            ValidationCode::EmptyDeclaration,
+            "command.shop.orders.PlaceOrder.outcomes",
+            "declares no outcomes",
+        );
+        assert_eq!(
+            serde_json::to_string(&sited).expect("serialises"),
+            serde_json::to_string(&string_only).expect("serialises"),
+            "a serialized ValidationError must be byte-identical with and without a site"
+        );
     }
 }

@@ -155,7 +155,9 @@ use std::fmt;
 use std::fmt::Write as _;
 use std::str::FromStr;
 
-use ess_primitives::error::{ParseError, ValidationCode, ValidationError, ValidationErrors};
+use ess_primitives::error::{
+    ConstructKind, ConstructRef, ParseError, ValidationCode, ValidationError, ValidationErrors,
+};
 use ess_primitives::predicate::Predicate;
 
 use crate::name::{Naming, QualifiedName};
@@ -247,16 +249,16 @@ impl From<OutcomeName> for String {
 /// Lifted out of [`CommandSpec::validate_outcome`] to keep that function readable. Both directions
 /// are checked, and the second is the one `refuses:` made possible: a branch that says the command
 /// does not refuse and then names the error it reports leaves a generated assertion picking one.
-fn validate_wrong_state_answer(outcome: &Outcome, location: &str) -> ValidationErrors {
+fn validate_wrong_state_answer(outcome: &Outcome, at: &ConstructRef) -> ValidationErrors {
     let mut errors = ValidationErrors::new();
     if outcome.condition != OutcomeCondition::WrongState {
         return errors;
     }
     if outcome.refuses && outcome.error.is_none() {
         errors.push(
-            ValidationError::new(
+            ValidationError::at(
+                at.clone().key("error"),
                 ValidationCode::MissingDeclaration,
-                format!("{location}.error"),
                 format!(
                     "outcome `{}` is the branch taken when the subject is in a state no move \
                      starts from, and names no error; the states are already declared and the \
@@ -272,9 +274,9 @@ fn validate_wrong_state_answer(outcome: &Outcome, location: &str) -> ValidationE
     }
     if !outcome.refuses && outcome.error.is_some() {
         errors.push(
-            ValidationError::new(
+            ValidationError::at(
+                at.clone().key("error"),
                 ValidationCode::ConflictingDeclaration,
-                format!("{location}.error"),
                 format!(
                     "outcome `{}` declares `refuses: false` and an `error:`; a command that \
                      accepts a state reports nothing from it",
@@ -1033,6 +1035,15 @@ impl CommandSpec {
             .collect()
     }
 
+    /// This command as a diagnostic site, before any member path.
+    ///
+    /// Every refusal below is built from this rather than from a `format!`, so the family the
+    /// compiler emits and the source line it cites are functions of the command, not of how the
+    /// path happened to be spelled. See `docs/design/review-typed-diagnostics.md`.
+    fn site(&self) -> ConstructRef {
+        ConstructRef::new(ConstructKind::Command, self.name.to_string())
+    }
+
     /// Checks everything that can be checked without knowing what else the domain declares.
     ///
     /// Run by [`TryFrom<RawCommandSpec>`], so a `CommandSpec` obtained by parsing is already
@@ -1040,13 +1051,12 @@ impl CommandSpec {
     /// and a hand-built value has not been through the conversion.
     fn validate_shape(&self, types: Option<&TypeRegistry>) -> ValidationErrors {
         let mut errors = ValidationErrors::new();
-        let at = |suffix: &str| format!("command.{}.{suffix}", self.name);
 
         if self.outcomes.is_empty() {
             errors.push(
-                ValidationError::new(
+                ValidationError::at(
+                    self.site().key("outcomes"),
                     ValidationCode::EmptyDeclaration,
-                    at("outcomes"),
                     format!(
                         "`{}` declares no outcomes, so nothing is specified to happen when it is \
                          issued",
@@ -1064,9 +1074,9 @@ impl CommandSpec {
         for outcome in &self.outcomes {
             if !seen.insert(outcome.name.as_str()) {
                 errors.push(
-                    ValidationError::new(
+                    ValidationError::at(
+                        self.site().key("outcomes").named(outcome.name.as_str()),
                         ValidationCode::DuplicateDeclaration,
-                        at(&format!("outcomes.{}", outcome.name)),
                         format!(
                             "outcome `{}` is declared more than once; two branches with one name \
                              generate one scenario and lose the other",
@@ -1077,7 +1087,7 @@ impl CommandSpec {
                 );
             }
             errors.extend(self.validate_outcome(outcome, &inputs));
-            let location = at(&format!("outcomes.{}", outcome.name));
+            let location = self.site().key("outcomes").named(outcome.name.as_str());
             errors.extend(match types {
                 Some(types) => self.validate_typed_guard(outcome, types, &location),
                 None => self.validate_guard(outcome, &inputs, &location),
@@ -1094,9 +1104,9 @@ impl CommandSpec {
         let mut errors = ValidationErrors::new();
         for (index, field) in self.input.iter().enumerate() {
             if !inputs.insert(field.name.as_str()) {
-                errors.push(ValidationError::new(
+                errors.push(ValidationError::at(
+                    self.site().key("input").index(index),
                     ValidationCode::DuplicateDeclaration,
-                    format!("command.{}.input[{index}]", self.name),
                     format!("input field `{}` is declared more than once", field.name),
                 ));
             }
@@ -1108,7 +1118,7 @@ impl CommandSpec {
     /// condition is decidable from what the caller supplied.
     fn validate_outcome(&self, outcome: &Outcome, inputs: &BTreeSet<&str>) -> ValidationErrors {
         let mut errors = ValidationErrors::new();
-        let location = format!("command.{}.outcomes.{}", self.name, outcome.name);
+        let location = self.site().key("outcomes").named(outcome.name.as_str());
 
         // An accepting wrong-state branch is the one outcome that observably does neither. What a
         // generated scenario checks is that the command answered *this branch* and the subject did
@@ -1119,9 +1129,9 @@ impl CommandSpec {
             outcome.condition == OutcomeCondition::WrongState && !outcome.refuses;
         if outcome.emits.is_empty() && outcome.error.is_none() && !accepts_wrong_state {
             errors.push(
-                ValidationError::new(
-                    ValidationCode::EmptyChange,
+                ValidationError::at(
                     location.clone(),
+                    ValidationCode::EmptyChange,
                     format!(
                         "outcome `{}` neither emits an event nor names an error, so nothing \
                              about it is observable and no test can check it",
@@ -1138,9 +1148,9 @@ impl CommandSpec {
         if let Some(error) = &outcome.error {
             if !outcome.emits.is_empty() {
                 errors.push(
-                    ValidationError::new(
-                        ValidationCode::RefusalMutatedState,
+                    ValidationError::at(
                         location.clone(),
+                        ValidationCode::RefusalMutatedState,
                         format!(
                             "outcome `{}` reports `{error}` and also emits {}; a refused \
                                  command changes nothing, so this is two outcomes wearing one name",
@@ -1160,9 +1170,9 @@ impl CommandSpec {
             // have to refuse.
             if let Some(subject) = &outcome.subject {
                 errors.push(
-                    ValidationError::new(
-                        ValidationCode::RefusalMutatedState,
+                    ValidationError::at(
                         location.clone(),
+                        ValidationCode::RefusalMutatedState,
                         format!(
                             "outcome `{}` reports `{error}` and also {} `{}`; a refused command \
                              changes nothing, so a refusal has no subject",
@@ -1188,9 +1198,9 @@ impl CommandSpec {
         if let OutcomeCondition::External { cause } = &outcome.condition {
             if cause.trim().is_empty() {
                 errors.push(
-                    ValidationError::new(
+                    ValidationError::at(
+                        location.clone().key("external"),
                         ValidationCode::UnexplainedDecision,
-                        format!("{location}.external"),
                         format!(
                             "outcome `{}` is decided outside the input but states no cause; a \
                              test runner cannot inject a fault nobody named",
@@ -1214,15 +1224,15 @@ impl CommandSpec {
         &self,
         outcome: &Outcome,
         inputs: &BTreeSet<&str>,
-        location: &str,
+        location: &ConstructRef,
     ) -> ValidationErrors {
         let mut errors = ValidationErrors::new();
         for (event, fields) in &outcome.payload {
             if !outcome.emits.contains(event) {
                 errors.push(
-                    ValidationError::new(
+                    ValidationError::at(
+                        location.clone().key("payload").named(event.to_string()),
                         ValidationCode::UndeclaredReference,
-                        format!("{location}.payload.{event}"),
                         format!(
                             "outcome `{}` says where `{event}`'s payload comes from and does not \
                              emit it, so the sources describe an event this branch never publishes",
@@ -1243,9 +1253,13 @@ impl CommandSpec {
                 };
                 if !inputs.contains(field.as_str()) {
                     errors.push(
-                        ValidationError::new(
+                        ValidationError::at(
+                            location
+                                .clone()
+                                .key("payload")
+                                .named(event.to_string())
+                                .named(target),
                             ValidationCode::UndeclaredReference,
-                            format!("{location}.payload.{event}.{target}"),
                             format!(
                                 "`{source}` reads `{field}`, which `{}` does not declare as input",
                                 self.name
@@ -1267,7 +1281,7 @@ impl CommandSpec {
         &self,
         outcome: &Outcome,
         inputs: &BTreeSet<&str>,
-        location: &str,
+        location: &ConstructRef,
     ) -> ValidationErrors {
         let mut errors = ValidationErrors::new();
         if outcome.sets.is_empty() {
@@ -1276,9 +1290,9 @@ impl CommandSpec {
 
         if outcome.subject.is_none() {
             errors.push(
-                ValidationError::new(
+                ValidationError::at(
+                    location.clone().key("sets"),
                     ValidationCode::UnobservableFact,
-                    format!("{location}.sets"),
                     format!(
                         "outcome `{}` sets entity fields and acts on no entity, so the sources \
                          describe an instance this branch never touches",
@@ -1298,9 +1312,9 @@ impl CommandSpec {
             };
             if !inputs.contains(field.as_str()) {
                 errors.push(
-                    ValidationError::new(
+                    ValidationError::at(
+                        location.clone().key("sets").named(target),
                         ValidationCode::UndeclaredReference,
-                        format!("{location}.sets.{target}"),
                         format!(
                             "`{source}` reads `{field}`, which `{}` does not declare as input",
                             self.name
@@ -1322,7 +1336,7 @@ impl CommandSpec {
         &self,
         outcome: &Outcome,
         inputs: &BTreeSet<&str>,
-        location: &str,
+        location: &ConstructRef,
     ) -> ValidationErrors {
         let mut errors = ValidationErrors::new();
         let Some(predicate) = outcome.condition.predicate() else {
@@ -1333,9 +1347,9 @@ impl CommandSpec {
             let root = path.namespace();
             if !inputs.contains(root) {
                 errors.push(
-                    ValidationError::new(
+                    ValidationError::at(
+                        location.clone().key("when"),
                         ValidationCode::UnobservableFact,
-                        format!("{location}.when"),
                         format!(
                             "`{path}` reads `{root}`, which `{}` does not declare as input; a \
                              condition on something the caller never supplied cannot be decided \
@@ -1357,9 +1371,9 @@ impl CommandSpec {
             };
             if subject.surface() == InstanceSurface::CommandInput && root == subject.instance {
                 errors.push(
-                    ValidationError::new(
+                    ValidationError::at(
+                        location.clone().key("when"),
                         ValidationCode::UnobservableFact,
-                        format!("{location}.when"),
                         format!(
                             "outcome `{}` is decided by `{path}`, and `{}` names the instance it \
                              acts on; an identity is opaque, so no branch may be chosen by reading \
@@ -1382,14 +1396,18 @@ impl CommandSpec {
         &self,
         outcome: &Outcome,
         types: &TypeRegistry,
-        location: &str,
+        location: &ConstructRef,
     ) -> ValidationErrors {
         let Some(predicate) = outcome.condition.predicate() else {
             return ValidationErrors::new();
         };
-        let owner = format!("{location}.when");
+        // `check_predicate` lives in `expression.rs`, which is still on the string path — see the
+        // inventory in `docs/design/review-typed-diagnostics.md` — so it is handed the rendered
+        // form of the same site rather than a second spelling of it.
+        let owner = location.clone().key("when");
+        let rendered = owner.render();
         let environment = crate::expression::DomainEnvironment::new(types, &self.input);
-        let checked = crate::expression::check_predicate(&environment, predicate, &owner);
+        let checked = crate::expression::check_predicate(&environment, predicate, &rendered);
         let mut errors = ValidationErrors::new();
         for error in &checked.errors {
             let mut diagnostic = error.validation_error();
@@ -1422,8 +1440,9 @@ impl CommandSpec {
                     .iter()
                     .filter(|read| read.free && read.path.namespace() == subject.instance)
                 {
-                    errors.push(ValidationError::new(
-                        ValidationCode::UnobservableFact, owner.clone(),
+                    errors.push(ValidationError::at(
+                        owner.clone(),
+                        ValidationCode::UnobservableFact,
                         format!("outcome `{}` reads `{}`, and `{}` names its subject instance; an identity is opaque",
                             outcome.name, read.path, subject.instance),
                     ));
@@ -1437,7 +1456,6 @@ impl CommandSpec {
     /// one branch is reachable by choosing an input at all.
     fn validate_branch_coverage(&self) -> ValidationErrors {
         let mut errors = ValidationErrors::new();
-        let at = |suffix: &str| format!("command.{}.{suffix}", self.name);
 
         if self.outcomes.is_empty() {
             // Already reported as a command with no outcomes; saying it three more ways is noise.
@@ -1458,11 +1476,11 @@ impl CommandSpec {
 
         match unconditional.len() {
             0 => errors.push(
-                ValidationError::new(
+                ValidationError::at(
+                    self.site().key("outcomes"),
                     // Not `DeadEndState`: that is what an entity whose lifecycle wedges emits, and
                     // one code for two subjects is a consumer that cannot tell which to repair.
                     ValidationCode::NonExhaustiveBranches,
-                    at("outcomes"),
                     format!(
                         "every outcome of `{}` is conditional, so there is input the \
                              specification says nothing about",
@@ -1476,9 +1494,9 @@ impl CommandSpec {
             ),
             1 => {}
             _ => errors.push(
-                ValidationError::new(
+                ValidationError::at(
+                    self.site().key("outcomes"),
                     ValidationCode::ConflictingDeclaration,
-                    at("outcomes"),
                     format!(
                         "outcomes {} are all unconditional, so the result of `{}` is not \
                              determined by its input",
@@ -1492,12 +1510,12 @@ impl CommandSpec {
 
         if decidable_from_input == 0 {
             errors.push(
-                ValidationError::new(
+                ValidationError::at(
+                    self.site().key("outcomes"),
                     // Not `EmptyDeclaration`: this command declares outcomes, and a consumer that
                     // cannot separate "declares nothing" from "declares only faults" repairs the
                     // wrong one.
                     ValidationCode::UnreachableBranch,
-                    at("outcomes"),
                     format!(
                         "every outcome of `{}` is decided outside its input, so the command has \
                          no specified behaviour a test can construct an input for",
@@ -1520,9 +1538,9 @@ impl CommandSpec {
             .collect();
         if refusing.len() > 1 {
             errors.push(
-                ValidationError::new(
+                ValidationError::at(
+                    self.site().key("outcomes"),
                     ValidationCode::ConflictingDeclaration,
-                    at("outcomes"),
                     format!(
                         "outcomes {} are all `wrong_state`, so `{}` declares more than one answer \
                          for one situation",
@@ -1559,13 +1577,13 @@ impl CommandSpec {
         }
 
         for outcome in &self.outcomes {
-            let location = at(&format!("outcomes.{}", outcome.name));
+            let location = self.site().key("outcomes").named(outcome.name.as_str());
             for event in &outcome.emits {
                 if !events.contains(event) {
                     found.push(
-                        ValidationError::new(
+                        ValidationError::at(
+                            location.clone().key("emits"),
                             ValidationCode::UndeclaredReference,
-                            format!("{location}.emits"),
                             format!("`{event}` is not a declared event"),
                         )
                         .with_hint(format!("declared events: {}", join(events.iter()))),
@@ -1575,9 +1593,9 @@ impl CommandSpec {
             if let Some(error) = &outcome.error {
                 if !errors.contains(error) {
                     found.push(
-                        ValidationError::new(
+                        ValidationError::at(
+                            location.clone().key("error"),
                             ValidationCode::UndeclaredReference,
-                            format!("{location}.error"),
                             format!("`{error}` is not a declared error"),
                         )
                         .with_hint(format!("declared errors: {}", join(errors.iter()))),
@@ -1617,10 +1635,13 @@ pub fn validate_payloads(
                     continue;
                 };
                 for (target, source) in fields {
-                    let at = format!(
-                        "command.{}.outcomes.{}.payload.{event_name}.{target}",
-                        command.name, outcome.name
-                    );
+                    let at = command
+                        .site()
+                        .key("outcomes")
+                        .named(outcome.name.as_str())
+                        .key("payload")
+                        .named(event_name.to_string())
+                        .named(target);
                     errors.extend(check_payload_entry(
                         &at,
                         command,
@@ -1639,7 +1660,7 @@ pub fn validate_payloads(
 
 /// One payload entry: the event field it fills, the value it takes, and whether the two agree.
 fn check_payload_entry(
-    at: &str,
+    at: &ConstructRef,
     command: &CommandSpec,
     event: &EventSpec,
     target: &str,
@@ -1651,9 +1672,9 @@ fn check_payload_entry(
 
     let Some(filled) = event.field(target) else {
         errors.push(
-            ValidationError::new(
+            ValidationError::at(
+                at.clone(),
                 ValidationCode::UndeclaredReference,
-                at.to_owned(),
                 format!("`{target}` is not a field `{}` carries", event.name),
             )
             .with_hint(crate::binding::readable(event)),
@@ -1672,9 +1693,9 @@ fn check_payload_entry(
                 return errors;
             }
             errors.push(
-                ValidationError::new(
+                ValidationError::at(
+                    at.clone(),
                     ValidationCode::TypeMismatch,
-                    at.to_owned(),
                     format!(
                         "`{}.{field}` has type `{}`, and `{}.{target}` requires `{}`; no \
                          conversion is declared",
@@ -1796,7 +1817,7 @@ pub fn validate_sets(
 /// prefix; `amount: inptu.amount` misspells the prefix; and a well-meant literal still has to be
 /// spellable as the field's representation, which only text and an enum variant are.
 fn check_payload_literal(
-    at: &str,
+    at: &ConstructRef,
     command: &CommandSpec,
     event: &EventSpec,
     target: &str,
@@ -1811,9 +1832,9 @@ fn check_payload_literal(
 
     if command.input_field(value).is_some() {
         errors.push(
-            ValidationError::new(
+            ValidationError::at(
+                at.clone(),
                 ValidationCode::MisspelledReference,
-                at.to_owned(),
                 format!(
                     "`{value}` is an input of `{}` and is written here as literal text",
                     command.name
@@ -1834,9 +1855,9 @@ fn check_payload_literal(
         let meant_event = written == "event" && is_field_name(rest);
         if meant_input || meant_event {
             errors.push(
-                ValidationError::new(
+                ValidationError::at(
+                    at.clone(),
                     ValidationCode::MisspelledReference,
-                    at.to_owned(),
                     format!(
                         "`{value}` reads as the literal text `{value}`; a payload source reads \
                          the command's input, written `{prefix}<field>`"
@@ -1852,22 +1873,20 @@ fn check_payload_literal(
     }
 
     let refuse = |reason: String| {
-        ValidationError::new(ValidationCode::TypeMismatch, at.to_owned(), reason).with_hint(
-            format!(
-                "only text and the variants of an enum can be written as a literal; take the \
+        ValidationError::at(at.clone(), ValidationCode::TypeMismatch, reason).with_hint(format!(
+            "only text and the variants of an enum can be written as a literal; take the \
                  value from an input of `{}` instead",
-                command.name
-            ),
-        )
+            command.name
+        ))
     };
     match representation(&filled.type_ref, types) {
         Some(Representation::Text) | None => {}
         Some(Representation::Variants(variants)) => {
             if !variants.iter().any(|variant| variant == value) {
                 errors.push(
-                    ValidationError::new(
+                    ValidationError::at(
+                        at.clone(),
                         ValidationCode::TypeMismatch,
-                        at.to_owned(),
                         format!(
                             "`{value}` is not a variant of what `{}.{target}` carries",
                             event.name
