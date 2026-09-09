@@ -1209,11 +1209,6 @@
     "macro_ast_sha256": null,
     "reason": "Concrete owned implementation/helper entry within the bounded caller families. Complete body evidence remains visible and changes require ordinary behavioral review; this finite classification grants no independent support or nonreachability."
   },
-  "ess_cli::bin(ess)::fn::reconcile_release": {
-    "class": "OwnedHelper",
-    "macro_ast_sha256": null,
-    "reason": "Concrete owned implementation/helper entry within the bounded caller families. Complete body evidence remains visible and changes require ordinary behavioral review; this finite classification grants no independent support or nonreachability."
-  },
   "ess_cli::bin(ess)::fn::refused": {
     "class": "OwnedHelper",
     "macro_ast_sha256": null,
@@ -26162,6 +26157,131 @@
     "reason": "Explicit InfraIR/observation domain entry; shared primitives do not import InfraIR into the six ESS model roots. This finite ID is classified separately, not granted semantic support."
   },
   "ess_kubernetes::lib(ess_kubernetes)::module": {
+    "class": "ForeignContext",
+    "macro_ast_sha256": null,
+    "reason": "Explicit InfraIR/observation domain entry; shared primitives do not import InfraIR into the six ESS model roots. This finite ID is classified separately, not granted semantic support."
+  },
+  "ess_kubernetes::lib(ess_kubernetes)::recovery::const::REQUEST_TIMEOUT": {
+    "class": "ForeignContext",
+    "macro_ast_sha256": null,
+    "reason": "Explicit InfraIR/observation domain entry; shared primitives do not import InfraIR into the six ESS model roots. This finite ID is classified separately, not granted semantic support."
+  },
+  "ess_kubernetes::lib(ess_kubernetes)::recovery::const::RESPONSE_LIMIT": {
+    "class": "ForeignContext",
+    "macro_ast_sha256": null,
+    "reason": "Explicit InfraIR/observation domain entry; shared primitives do not import InfraIR into the six ESS model roots. This finite ID is classified separately, not granted semantic support."
+  },
+  "ess_kubernetes::lib(ess_kubernetes)::recovery::enum::RecoveryError": {
+    "class": "ForeignContext",
+    "macro_ast_sha256": null,
+    "reason": "Explicit InfraIR/observation domain entry; shared primitives do not import InfraIR into the six ESS model roots. This finite ID is classified separately, not granted semantic support."
+  },
+  "ess_kubernetes::lib(ess_kubernetes)::recovery::enum::RecoveryError/variant/Decode": {
+    "class": "ForeignContext",
+    "macro_ast_sha256": null,
+    "reason": "Explicit InfraIR/observation domain entry; shared primitives do not import InfraIR into the six ESS model roots. This finite ID is classified separately, not granted semantic support."
+  },
+  "ess_kubernetes::lib(ess_kubernetes)::recovery::enum::RecoveryError/variant/Endpoint": {
+    "class": "ForeignContext",
+    "macro_ast_sha256": null,
+    "reason": "Explicit InfraIR/observation domain entry; shared primitives do not import InfraIR into the six ESS model roots. This finite ID is classified separately, not granted semantic support."
+  },
+  "ess_kubernetes::lib(ess_kubernetes)::recovery::enum::RecoveryError/variant/Response": {
+    "class": "ForeignContext",
+    "macro_ast_sha256": null,
+    "reason": "Explicit InfraIR/observation domain entry; shared primitives do not import InfraIR into the six ESS model roots. This finite ID is classified separately, not granted semantic support."
+  },
+  "ess_kubernetes::lib(ess_kubernetes)::recovery::enum::RecoveryError/variant/Status": {
+    "class": "ForeignContext",
+    "macro_ast_sha256": null,
+    "reason": "Explicit InfraIR/observation domain entry; shared primitives do not import InfraIR into the six ESS model roots. This finite ID is classified separately, not granted semantic support."
+  },
+  "ess_kubernetes::lib(ess_kubernetes)::recovery::enum::RecoveryError/variant/Transport": {
+    "class": "ForeignContext",
+    "macro_ast_sha256": null,
+    "reason": "Explicit InfraIR/observation domain entry; shared primitives do not import InfraIR into the six ESS model roots. This finite ID is classified separately, not granted semantic support."
+  },
+  "ess_kubernetes::lib(ess_kubernetes)::recovery::enum::RecoveryError/variant/TrustAnchor": {
+    "class": "ForeignContext",
+    "macro_ast_sha256": null,
+    "reason": "Explicit InfraIR/observation domain entry; shared primitives do not import InfraIR into the six ESS model roots. This finite ID is classified separately, not granted semantic support."
+  },
+  "ess_kubernetes::lib(ess_kubernetes)::recovery::enum::Request": {
+    "class": "ForeignContext",
+    "macro_ast_sha256": null,
+    "reason": "Explicit InfraIR/observation domain entry; shared primitives do not import InfraIR into the six ESS model roots. This finite ID is classified separately, not granted semantic support."
+  },
+  "ess_kubernetes::lib(ess_kubernetes)::recovery::enum::Request/variant/Namespace": {
+    "class": "ForeignContext",
+    "macro_ast_sha256": null,
+    "reason": "Explicit InfraIR/observation domain entry; shared primitives do not import InfraIR into the six ESS model roots. This finite ID is classified separately, not granted semantic support."
+  },
+  "ess_kubernetes::lib(ess_kubernetes)::recovery::enum::Request/variant/SelfSubject": {
+    "class": "ForeignContext",
+    "macro_ast_sha256": null,
+    "reason": "Explicit InfraIR/observation domain entry; shared primitives do not import InfraIR into the six ESS model roots. This finite ID is classified separately, not granted semantic support."
+  },
+  "ess_kubernetes::lib(ess_kubernetes)::recovery::enum::Request/variant/Service": {
+    "class": "ForeignContext",
+    "macro_ast_sha256": null,
+    "reason": "Explicit InfraIR/observation domain entry; shared primitives do not import InfraIR into the six ESS model roots. This finite ID is classified separately, not granted semantic support."
+  },
+  "ess_kubernetes::lib(ess_kubernetes)::recovery::enum::Request/variant/Workload": {
+    "class": "ForeignContext",
+    "macro_ast_sha256": null,
+    "reason": "Explicit InfraIR/observation domain entry; shared primitives do not import InfraIR into the six ESS model roots. This finite ID is classified separately, not granted semantic support."
+  },
+  "ess_kubernetes::lib(ess_kubernetes)::recovery::fn::decode": {
+    "class": "ForeignContext",
+    "macro_ast_sha256": null,
+    "reason": "Explicit InfraIR/observation domain entry; shared primitives do not import InfraIR into the six ESS model roots. This finite ID is classified separately, not granted semantic support."
+  },
+  "ess_kubernetes::lib(ess_kubernetes)::recovery::fn::sanitize": {
+    "class": "ForeignContext",
+    "macro_ast_sha256": null,
+    "reason": "Explicit InfraIR/observation domain entry; shared primitives do not import InfraIR into the six ESS model roots. This finite ID is classified separately, not granted semantic support."
+  },
+  "ess_kubernetes::lib(ess_kubernetes)::recovery::impl<RecoveryClient;>::connect": {
+    "class": "ForeignContext",
+    "macro_ast_sha256": null,
+    "reason": "Explicit InfraIR/observation domain entry; shared primitives do not import InfraIR into the six ESS model roots. This finite ID is classified separately, not granted semantic support."
+  },
+  "ess_kubernetes::lib(ess_kubernetes)::recovery::impl<RecoveryClient;>::request": {
+    "class": "ForeignContext",
+    "macro_ast_sha256": null,
+    "reason": "Explicit InfraIR/observation domain entry; shared primitives do not import InfraIR into the six ESS model roots. This finite ID is classified separately, not granted semantic support."
+  },
+  "ess_kubernetes::lib(ess_kubernetes)::recovery::impl<RecoveryClient;std :: fmt :: Debug>::fmt": {
+    "class": "ForeignContext",
+    "macro_ast_sha256": null,
+    "reason": "Explicit InfraIR/observation domain entry; shared primitives do not import InfraIR into the six ESS model roots. This finite ID is classified separately, not granted semantic support."
+  },
+  "ess_kubernetes::lib(ess_kubernetes)::recovery::impl<RecoveryError;std :: fmt :: Display>::fmt": {
+    "class": "ForeignContext",
+    "macro_ast_sha256": null,
+    "reason": "Explicit InfraIR/observation domain entry; shared primitives do not import InfraIR into the six ESS model roots. This finite ID is classified separately, not granted semantic support."
+  },
+  "ess_kubernetes::lib(ess_kubernetes)::recovery::impl<Request;>::path": {
+    "class": "ForeignContext",
+    "macro_ast_sha256": null,
+    "reason": "Explicit InfraIR/observation domain entry; shared primitives do not import InfraIR into the six ESS model roots. This finite ID is classified separately, not granted semantic support."
+  },
+  "ess_kubernetes::lib(ess_kubernetes)::recovery::impl<Request;>::posts": {
+    "class": "ForeignContext",
+    "macro_ast_sha256": null,
+    "reason": "Explicit InfraIR/observation domain entry; shared primitives do not import InfraIR into the six ESS model roots. This finite ID is classified separately, not granted semantic support."
+  },
+  "ess_kubernetes::lib(ess_kubernetes)::recovery::module": {
+    "class": "ForeignContext",
+    "macro_ast_sha256": null,
+    "reason": "Explicit InfraIR/observation domain entry; shared primitives do not import InfraIR into the six ESS model roots. This finite ID is classified separately, not granted semantic support."
+  },
+  "ess_kubernetes::lib(ess_kubernetes)::recovery::struct::RecoveryClient": {
+    "class": "ForeignContext",
+    "macro_ast_sha256": null,
+    "reason": "Explicit InfraIR/observation domain entry; shared primitives do not import InfraIR into the six ESS model roots. This finite ID is classified separately, not granted semantic support."
+  },
+  "ess_kubernetes::lib(ess_kubernetes)::recovery::struct::Response": {
     "class": "ForeignContext",
     "macro_ast_sha256": null,
     "reason": "Explicit InfraIR/observation domain entry; shared primitives do not import InfraIR into the six ESS model roots. This finite ID is classified separately, not granted semantic support."
