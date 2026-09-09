@@ -398,7 +398,7 @@ fn admit_document(json: &serde_json::Value, namespace: &Text) -> Admitted<Object
 
 /// Parses a complete rendered document stream and refuses everything outside the profile.
 ///
-/// The per-document rejections are [`admit_document`]'s; what this function adds is the stream:
+/// The per-document rejections are `admit_document`'s; what this function adds is the stream:
 /// a duplicate address across documents, and an empty stream. An empty one is refused too — a
 /// render that produced nothing is not a render that produced the inventory.
 pub fn admit_rendered(text: &str, namespace: &Text) -> Admitted<Vec<RenderedObject>> {

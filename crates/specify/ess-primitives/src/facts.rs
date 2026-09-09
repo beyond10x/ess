@@ -472,7 +472,7 @@ impl Ord for Number {
     /// the scaled integers says which is which.
     ///
     /// **The order is total, and the argument is one function away.** The `total_cmp` arm runs only
-    /// when the two variants differ, and [`Repr::exact`]'s second postcondition is that the variant
+    /// when the two variants differ, and `Repr::exact`'s second postcondition is that the variant
     /// is a function of the carried binary64 — so differing variants never carry one `f64`, the
     /// arm is never a tie, and the two arms never disagree about one pair. The earlier version of
     /// this comment argued it from magnitude bands instead, and that argument was false:
