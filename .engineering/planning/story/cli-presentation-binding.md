@@ -24,6 +24,8 @@ scope:
   path: crates/edge/ess-cli/src/main.rs
 - confidence: cited
   path: crates/edge/ess-cli/src/output_ownership/state.rs
+- confidence: cited
+  path: crates/edge/ess-cli/tests/cache_origin.rs
 - confidence: inferred
   path: crates/edge/ess-cli/tests/cli_binding.rs
 - confidence: inferred
@@ -48,7 +50,7 @@ scope:
   path: website/docs/reference/cli.md
 - confidence: inferred
   path: website/docs/status/where-this-stands.md
-revision: 17
+revision: 19
 ---
 ## Operator authorization
 The Connectors operator approved closing necessary ESS gaps upstream to specify its local CLI. Work is local in the isolated cli-binding-ess-20260909 managed tree; preserve the live review-boundaries-21 wave and current main. Serving objective O2. No release/external publication or production provider/credential execution.
@@ -125,3 +127,38 @@ required checks pass. The story remains active. The separately required site
 build already passed. Current Atlas authority is clean at verified remote main
 0602933d597c47f900d86a9946940b2fad74ad96; its new foundation extraction records do
 not expand Connectors scope or authorize external publication.
+
+## Candidate integration and fixture correction
+
+Candidate fbd9b7a3ce751c8077a862f05e00c20751b08b80 is committed with the bot
+identity and preserved on the local recovery branch candidate/cli-binding-20260909.
+It is not merged or externally published. Connectors built that exact clean source
+in an independent clone and produced its executable receipt. Its selected CLI
+generates 10 artifacts; 64 structural fixtures, 2 cached expectations, 5 acquisition
+and 3 page-consistency checks pass, and all 7 downstream CLI conformance tests pass.
+
+Full gate 03 exposed an existing cache test fixture race: two independent recovery
+drivers both truncated the same synthetic registry while another admitted it. Each
+cache caller now provisions a separate synthetic authority root while retaining
+the same cache, desired input, fake executors, concurrency barrier and exact
+publication assertions. No production authority or cache code changed. The exact
+two-writer regression passes for both bundle and Helm paths. Log:
+.local/tmp/cli-wave/cache-writer-fixture-regression-01.log.
+
+Downstream Cargo integration established that an independent generated workspace
+cannot be nested under an existing member package without conflicting with Cargo
+membership. Removing its workspace header instead silently enrolls the fixture in
+the outer workspace; that attempted change was rejected and restored. The ESS
+generator and its format remain unchanged. Connectors now generates the independent
+fixture at apps/connectors-cli-contract, beside the runtime package, and excludes
+it from ordinary workspace membership. A new Rust integration test compiles and
+executes an enclosing consumer of the generated library, and proves exactly the
+two declared runtime/consumer packages remain members. The nested layout's refusal
+is retained in workspace-consumer-red-02.log; the supported layout passes in
+workspace-consumer-sibling.log. The first exploratory control also passed with a
+sibling layout; workspace-consumer-green-01.log records the rejected header removal.
+
+The scope includes the cache fixture correction. Preserve this follow-up as a local
+candidate, then rerun the full ESS gate with native-only linker flags and select
+the exact clean follow-up source for final Connectors regeneration. No full gate
+success or implemented lifecycle move is claimed yet.

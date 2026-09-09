@@ -45,14 +45,16 @@ impl Fixture {
     /// below keeps its exact meaning. `authority: false` is the control that proves it.
     fn acquire(&self, plan: &Path, authority: bool) -> Output {
         static NEXT_JOB: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
-        let job = self.0.join(format!(
-            "job-{}.json",
-            NEXT_JOB.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
-        ));
+        let job_id = NEXT_JOB.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        let job = self.0.join(format!("job-{job_id}.json"));
+        // Each caller provisions its own synthetic authority before admission.
+        // They still race on the same cache and fixture executors; provisioning
+        // must not truncate a registry the other caller is already reading.
+        let authority_root = self.0.join(format!("authority-{job_id}"));
         std::fs::write(
             &job,
             serde_json::to_vec(&serde_json::json!({
-                "root": self.0, "mode": "cache", "nonces": [],
+                "root": authority_root, "mode": "cache", "nonces": [],
                 "fail": null, "interrupt": null, "open_journal": false,
                 "plan": plan, "cache": self.0.join("cache"), "authority": authority
             }))
