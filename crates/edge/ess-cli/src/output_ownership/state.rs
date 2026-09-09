@@ -151,6 +151,8 @@ pub(super) enum Family {
     TypesBundle,
     #[serde(rename = "model-types")]
     ModelTypes,
+    #[serde(rename = "cli-binding")]
+    CliBinding,
     #[serde(rename = "normalization")]
     Normalization,
     #[serde(rename = "typescript-file")]

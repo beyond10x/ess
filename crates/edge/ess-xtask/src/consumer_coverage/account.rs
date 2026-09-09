@@ -4,6 +4,39 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::collections::BTreeSet;
 
+pub(super) const FORMAT: &str = "ess-consumer-accounting/1";
+
+#[derive(Debug, Serialize, Deserialize)]
+pub(super) enum Format {
+    #[serde(rename = "ess-consumer-accounting/1")]
+    V1,
+}
+#[derive(Debug, Serialize, Deserialize)]
+pub(super) enum CandidateStage {
+    #[serde(rename = "candidate")]
+    Candidate,
+}
+#[derive(Debug, Serialize, Deserialize)]
+pub(super) enum ExecutionStage {
+    #[serde(rename = "execution-plan")]
+    ExecutionPlan,
+}
+#[derive(Debug, Serialize, Deserialize)]
+pub(super) enum QualifiedStage {
+    #[serde(rename = "qualified")]
+    Qualified,
+}
+#[derive(Debug, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub(super) struct Candidates {
+    pub format: Format,
+    pub stage: CandidateStage,
+    pub cells: Vec<Cell>,
+}
+pub(super) fn read_candidates(value: &Value) -> Result<Candidates> {
+    Ok(serde_json::from_value(value.clone())?)
+}
+
 #[derive(Debug, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub(super) struct Cell {
@@ -38,6 +71,9 @@ pub(super) enum Disposition {
         requirement: String,
         cases: Vec<String>,
         reason: String,
+    },
+    SchemaDocumentMetadataCandidate {
+        evidence: super::metadata::Row,
     },
 }
 #[cfg(test)]
@@ -100,6 +136,10 @@ pub(super) fn check(models: &Value, consumers: &Value, rows: &[Cell]) -> Result<
                 }
                 ("CaseCandidate", reason)
             }
+            Disposition::SchemaDocumentMetadataCandidate { evidence } => {
+                evidence.matches_cell(&row.model, &row.shape, &row.consumer, &row.profile)?;
+                ("SchemaDocumentMetadataCandidate", &evidence.reason)
+            }
         };
         if reason.trim().is_empty() {
             bail!("checkpoint cell lacks a precise unproven behavior statement");
@@ -114,6 +154,6 @@ pub(super) fn check(models: &Value, consumers: &Value, rows: &[Cell]) -> Result<
         }
     }
     Ok(
-        serde_json::json!({"accounting_complete":true,"eligibility_valid":false,"status":"UNACCEPTED","discovered_models":models.len(),"bound_consumer_profiles":consumers.len(),"cells":rows.len(),"dispositions":counts,"Supported":0,"Refused":0,"BaselineUnknown":0,"reason":"Stage 1 source candidates are unexecuted; ownerless and mandatory records cannot be admitted as baseline unknowns."}),
+        serde_json::json!({"format":FORMAT,"stage":"candidate","accounting_complete":true,"eligibility_valid":false,"status":"UNACCEPTED","discovered_models":models.len(),"bound_consumer_profiles":consumers.len(),"cells":rows.len(),"dispositions":counts,"Supported":0,"Refused":0,"BaselineUnknown":0,"SchemaDocumentMetadata":0,"executed_cases":0,"executed_metadata_guards":0,"reason":"Stage 1 source candidates are unexecuted; ownerless and mandatory records cannot be admitted as baseline unknowns."}),
     )
 }

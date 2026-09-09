@@ -9,6 +9,8 @@ tasks:
         cargo fmt
         --package billing-realization
         --package ess-cli
+        --package ess-cli-contract
+        --package ess-cli-project
         --package ess-compiler
         --package ess-composition
         --package ess-conformance

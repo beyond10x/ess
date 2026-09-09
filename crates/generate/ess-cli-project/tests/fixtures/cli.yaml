@@ -1,0 +1,52 @@
+format: ess-cli/1
+binary: demo
+about: Fixture CLI
+globals: {config: config, state: state-dir, output: output}
+callables:
+  store:
+    target: {kind: local, owner: demo.cli, action: store-credential}
+    input: demo.Input
+    result: demo.Stored
+    errors: {store_failed: demo.Failure}
+  show:
+    target: {kind: local, owner: demo.cli, action: show}
+    input: null
+    result: demo.Stored
+  typed:
+    target: {kind: local, owner: demo.cli, action: typed}
+    input: demo.Typed
+    result: demo.Stored
+  invoke:
+    target: {kind: dynamic, owner: demo.cli, operation_field: operation, schema_field: schema, payload_field: payload}
+    input: demo.Dynamic
+    result: demo.Stored
+    errors: {store_failed: demo.Failure}
+commands:
+  - path: [credential, store]
+    aliases: [[credential, set]]
+    callable: store
+    about: Store through the fixture handler
+    arguments:
+      - {field: profile, source: {kind: option, long: profile}}
+      - field: secret
+        source: {kind: protected, file: secret-file, stdin: secret-stdin, hidden_tty: secret-prompt}
+  - path: [show]
+    callable: show
+    about: A parameterless action
+    arguments: []
+  - path: [typed]
+    callable: typed
+    about: Typed values
+    arguments:
+      - {field: count, source: {kind: positional, index: 1}}
+      - {field: enabled, source: {kind: option, long: enabled}}
+      - {field: mode, source: {kind: option, long: mode}}
+      - {field: note, source: {kind: option, long: note}}
+      - {field: items, source: {kind: option, long: items}}
+  - path: [invoke]
+    callable: invoke
+    about: Dynamic schema selection
+    arguments:
+      - {field: operation, source: {kind: option, long: operation}}
+      - {field: schema, source: {kind: option, long: schema}}
+      - {field: payload, source: {kind: document, inline: input-json, file: input-file, stdin: input-stdin}}

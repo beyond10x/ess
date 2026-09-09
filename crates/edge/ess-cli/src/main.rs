@@ -1,5 +1,6 @@
 //! The `ess` command: a deterministic shell over the ESS libraries and explicit adapters.
 
+mod cli_binding;
 mod coverage;
 mod input_discovery;
 mod load;
@@ -40,7 +41,7 @@ enum Command {
     /// Author a system, resolve what it says, and inspect the result.
     Specify {
         #[command(subcommand)]
-        command: SpecifyCommand,
+        command: SpecifyAreaCommand,
     },
     /// Turn a resolved system into artifacts and cross explicit delivery executor boundaries.
     ///
@@ -82,6 +83,16 @@ enum Command {
 }
 
 /// `ess specify`: an authored system becomes a validated, resolved IR — `crates/specify/`.
+#[derive(Debug, Subcommand)]
+enum SpecifyAreaCommand {
+    /// Validate a typed CLI presentation binding against its selected ESS model.
+    Cli(cli_binding::Input),
+    /// Existing specification verbs retain their flat spellings.
+    #[command(flatten)]
+    Other(SpecifyCommand),
+}
+
+/// Existing specification verbs with backwards-compatible flat spellings.
 #[derive(Debug, Subcommand)]
 enum SpecifyCommand {
     /// Validate and resolve an ESS specification.
@@ -158,6 +169,8 @@ enum GenerateAreaCommand {
     /// rendered, a runbook. Both are markdown somebody wrote, read into the document and styled
     /// like every other page.
     Generate(GenerateArgs),
+    /// Generate a parser and process adapter from a typed CLI presentation binding.
+    Cli(cli_binding::Generate),
     /// Everything else the area offers, which is also spelled flat at the top level.
     #[command(flatten)]
     Other(GenerateCommand),
@@ -1031,10 +1044,15 @@ fn main() -> ExitCode {
 
 fn run(cli: Cli) -> Result<ExitCode> {
     match cli.command {
-        Command::Specify { command } | Command::FlatSpecify(command) => specify_area(command),
+        Command::Specify { command } => match command {
+            SpecifyAreaCommand::Cli(input) => cli_binding::validate(&input),
+            SpecifyAreaCommand::Other(command) => specify_area(command),
+        },
+        Command::FlatSpecify(command) => specify_area(command),
         Command::Generate { command, direct } => match command {
             None => generate_projections(&direct),
             Some(GenerateAreaCommand::Generate(spelled)) => generate_projections(&spelled),
+            Some(GenerateAreaCommand::Cli(args)) => cli_binding::generate(&args),
             Some(GenerateAreaCommand::Other(command)) => generate_area(command),
         },
         Command::FlatGenerate(command) => generate_area(command),
@@ -3706,9 +3724,8 @@ mod tests {
     /// Every leaf of the tree, as the path of names that reaches it.
     ///
     /// A leaf is a command with nothing below it — the thing that actually does the work. The
-    /// tree carries each one twice, once under its area and once as a flat spelling, and the
-    /// cases below are about that pairing, so the enumeration has to come from the tree rather
-    /// than from a list somebody keeps up to date.
+    /// Legacy leaves have both area and flat spellings. New area-only routes are explicit
+    /// below; they cannot share a flat `cli` spelling because they perform different actions.
     fn leaf_paths(command: &clap::Command) -> Vec<Vec<String>> {
         fn walk(command: &clap::Command, prefix: &[String], leaves: &mut Vec<Vec<String>>) {
             let mut children = command.get_subcommands().peekable();
@@ -3790,7 +3807,8 @@ mod tests {
     ///
     /// Written down on purpose. A verb added to the tree and to no area would otherwise be
     /// counted by the enumeration it is missing from and pass every case below.
-    const AREA_LEAVES: usize = 57;
+    const AREA_LEAVES: usize = 59;
+    const AREA_ONLY_LEAVES: [&[&str]; 2] = [&["specify", "cli"], &["generate", "cli"]];
 
     /// The order they are offered in is checked where it is rendered, in
     /// `tests/command_surface.rs`: `mut_subcommand` moves what it touches to the end of the list,
@@ -3807,7 +3825,7 @@ mod tests {
     }
 
     #[test]
-    fn every_leaf_is_reachable_by_its_area_path_and_by_its_flat_spelling() {
+    fn every_leaf_has_its_area_path_and_each_legacy_leaf_keeps_its_flat_spelling() {
         let command = command();
         let leaves = leaf_paths(&command);
         let (grouped, flat): (Vec<Vec<String>>, Vec<Vec<String>>) = leaves
@@ -3818,9 +3836,9 @@ mod tests {
         assert_eq!(grouped.len(), AREA_LEAVES, "grouped leaves: {grouped:?}");
         assert_eq!(
             flat.len(),
-            AREA_LEAVES - 1,
-            "`ess generate` is the one flat spelling that is not a leaf of the tree, because the \
-             area of that name carries the verb's arguments itself: {flat:?}"
+            AREA_LEAVES - AREA_ONLY_LEAVES.len() - 1,
+            "The two CLI routes are area-only; `ess generate` carries its old flat arguments \
+             on the area itself: {flat:?}"
         );
 
         for path in &grouped {
@@ -3833,6 +3851,11 @@ mod tests {
             let alias = &path[1..];
             let flat_spelling = alias.join(" ");
             let leaf = node(&command, path).expect("the path came from the tree");
+
+            if AREA_ONLY_LEAVES.iter().any(|expected| path == expected) {
+                assert!(node(&command, alias).is_none(), "unexpected flat CLI alias");
+                continue;
+            }
 
             if alias == ["generate"] {
                 let area = node(&command, alias).expect("the generate area is the first level");
@@ -3884,8 +3907,11 @@ mod tests {
             );
         }
 
-        let mut spellings: BTreeSet<Vec<String>> =
-            grouped.iter().map(|path| path[1..].to_vec()).collect();
+        let mut spellings: BTreeSet<Vec<String>> = grouped
+            .iter()
+            .filter(|path| !AREA_ONLY_LEAVES.iter().any(|expected| path == expected))
+            .map(|path| path[1..].to_vec())
+            .collect();
         assert!(spellings.remove(&vec!["generate".to_owned()]));
         assert_eq!(
             spellings,

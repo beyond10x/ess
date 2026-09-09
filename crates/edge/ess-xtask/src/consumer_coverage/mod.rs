@@ -3,6 +3,7 @@ mod account;
 mod consumer;
 mod enforce;
 mod executor;
+mod metadata;
 mod native;
 mod proposal;
 mod rust;
@@ -129,7 +130,7 @@ pub(super) fn run(root: &Path, output: &Path) -> Result<String> {
     if files != source_files(root)? {
         bail!("complete source changed during extraction; outputs are invalid");
     }
-    Ok(format!("Stage 1 source/output checkpoint: {} exact unaccepted cells; zero Supported, Refused or BaselineUnknown. Eligibility remains invalid pending root review, owners and actual case qualification.\n",summary["cells"]))
+    Ok(format!("Stage 1 source/output checkpoint: {} exact unaccepted cells; zero Supported, Refused, BaselineUnknown or SchemaDocumentMetadata. Eligibility remains invalid pending root review, owners and actual case/guard qualification.\n",summary["cells"]))
 }
 fn write_json(path: &Path, value: &Value) -> Result<()> {
     use std::io::Write;
@@ -353,9 +354,13 @@ pub(super) fn check(root: &Path, selected_output: Option<&Path>) -> Result<Strin
     })?;
     let result = check_at(root, &output);
     if let Err(error) = &result {
+        let pending_metadata = read_extraction(&output, "execution-plan.json")
+            .ok()
+            .and_then(|plan| plan["pending_metadata_candidates"].as_u64())
+            .unwrap_or(0);
         write_json(
             &output.join("refusal.json"),
-            &json!({"status":"CHECK_REFUSED","error":format!("{error:#}"),"Supported":0,"Refused":0,"note":"No completed qualification receipt was produced; partial subprocess evidence remains."}),
+            &json!({"format":account::FORMAT,"status":"CHECK_REFUSED","error":format!("{error:#}"),"Supported":0,"Refused":0,"SchemaDocumentMetadata":0,"pending_metadata_candidates":pending_metadata,"note":"No completed qualification receipt was produced; partial case/guard evidence remains diagnostic only."}),
         )?;
     }
     result.with_context(|| format!("consumer evidence directory {}", output.display()))
@@ -366,10 +371,10 @@ fn reconcile_extraction(extraction: Result<String>, accounting: Result<Value>) -
         (Err(error), accounting) => {
             let diagnostic = match accounting {
                 Ok(plan) => {
-                    json!({"status":"PROVISIONAL_ONLY_CLASSIFICATION_REFUSED","discovered_models":plan["discovered_models"],"bound_profiles":plan["bound_profiles"],"candidate_initial_unknowns":plan["BaselineUnknown"],"Supported":0,"Refused":0,"BaselineUnknown":0})
+                    json!({"format":account::FORMAT,"status":"PROVISIONAL_ONLY_CLASSIFICATION_REFUSED","discovered_models":plan["discovered_models"],"bound_profiles":plan["bound_profiles"],"candidate_initial_unknowns":plan["BaselineUnknown"],"pending_metadata_candidates":plan["pending_metadata_candidates"],"Supported":0,"Refused":0,"BaselineUnknown":0,"SchemaDocumentMetadata":0})
                 }
                 Err(error) => {
-                    json!({"status":"PROVISIONAL_ACCOUNTING_REFUSAL","details":error.to_string(),"no_cells_admitted":true})
+                    json!({"format":account::FORMAT,"status":"PROVISIONAL_ACCOUNTING_REFUSAL","details":error.to_string(),"SchemaDocumentMetadata":0,"no_cells_admitted":true})
                 }
             };
             bail!("extraction/classification refused: {error:#}; accounting diagnostics: {diagnostic}");
@@ -379,7 +384,7 @@ fn reconcile_extraction(extraction: Result<String>, accounting: Result<Value>) -
 fn read_extraction(extraction: &Path, name: &str) -> Result<Value> {
     Ok(serde_json::from_slice(&fs::read(extraction.join(name))?)?)
 }
-fn plan_extraction(extraction: &Path) -> Result<Value> {
+fn extracted_accounting_inputs(extraction: &Path) -> Result<(Value, Value, Value)> {
     let rust = read_extraction(extraction, "rust-inventory.json")?;
     let wire = read_extraction(extraction, "wire-inventory.json")?;
     let mut models = rust["obligations"]
@@ -398,6 +403,15 @@ fn plan_extraction(extraction: &Path) -> Result<Value> {
         &read_extraction(extraction, "consumer-inventory-unclassified.json")?,
         &read_extraction(extraction, "source-profile.json")?,
     )?;
+    Ok((json!(models), profiles, claims))
+}
+fn plan_extraction(extraction: &Path) -> Result<Value> {
+    let (models, profiles, claims) = extracted_accounting_inputs(extraction)?;
+    if extraction.join("unaccepted-cells.json").is_file() {
+        let candidates =
+            account::read_candidates(&read_extraction(extraction, "unaccepted-cells.json")?)?;
+        account::check(&models, &profiles, &candidates.cells)?;
+    }
     let baseline_bytes = include_bytes!("initial-baseline.json");
     if hash_bytes(baseline_bytes)
         != "3dd8dff59335c8a77c93c2734118566fd1b2d5165c0590d0aa9be397374a47de"
@@ -405,7 +419,8 @@ fn plan_extraction(extraction: &Path) -> Result<Value> {
         bail!("root-owned initial eligibility differs from accepted exact bytes");
     }
     let baseline: Value = serde_json::from_slice(baseline_bytes)?;
-    enforce::plan(&json!(models), &profiles, &baseline, &claims)
+    let metadata = metadata::candidates(&models, &profiles)?;
+    enforce::plan_with_metadata(&models, &profiles, &baseline, &claims, Some(&metadata))
 }
 fn check_at(root: &Path, output: &Path) -> Result<String> {
     let extraction = output.join("extraction");
@@ -417,6 +432,16 @@ fn check_at(root: &Path, output: &Path) -> Result<String> {
     write_json(&output.join("execution-plan.json"), &plan)?;
     let required = serde_json::from_value(plan["required_cases"].clone())?;
     let source_profile = read("source-profile.json")?;
+    let authority = metadata::Authority::capture(root, &source_profile)?;
+    let (models, profiles, _) = extracted_accounting_inputs(&extraction)?;
+    let metadata = metadata::execute(
+        &authority,
+        &read("provider-schema.json")?,
+        &read("wire-inventory.json")?,
+        &models,
+        &profiles,
+    )?;
+    write_json(&output.join("metadata-guard.json"), metadata.receipt())?;
     let verified = native::execute(
         root,
         &output.join("cases"),
@@ -425,12 +450,12 @@ fn check_at(root: &Path, output: &Path) -> Result<String> {
         &required,
         &read("cargo-metadata.json")?,
     )?;
-    let result = enforce::qualify(&plan, &verified)?;
+    let result = enforce::qualify(&plan, &verified, &authority, &metadata)?;
     if json!(source_files(root)?) != source_profile["source"] {
         bail!("source changed before final consumer admission");
     }
     write_json(&output.join("qualified-cells.json"), &result)?;
-    let summary = json!({"discovered_models":plan["discovered_models"],"bound_profiles":plan["bound_profiles"],"cells":result["cells"].as_array().context("qualified cells")?.len(),"counts":result["counts"],"executed_cases":verified.ids().len(),"source_sha256":hash_json(&source_profile["source"]),"provider_sha256":source_profile["provider_executable_sha256"],"output":output,"unknown_limit":"Accepted initial gaps remain unproven; this is not complete consumer support."});
+    let summary = json!({"format":account::FORMAT,"stage":"qualified","discovered_models":plan["discovered_models"],"bound_profiles":plan["bound_profiles"],"cells":result["cells"].as_array().context("qualified cells")?.len(),"counts":result["counts"],"executed_cases":verified.ids().len(),"executed_metadata_guards":1,"source_sha256":hash_json(&source_profile["source"]),"provider_sha256":source_profile["provider_executable_sha256"],"output":output,"unknown_limit":"Accepted initial gaps remain unproven; schema metadata is bookkeeping, not behavioral coverage; this is not complete consumer support."});
     write_json(&output.join("summary.json"), &summary)?;
     Ok(format!("Consumer coverage: {summary}\n"))
 }

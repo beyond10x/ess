@@ -7,12 +7,14 @@ members = [
     "crates/specify/ess-compiler",
     "crates/specify/ess-composition",
     "crates/specify/ess-realization",
+    "crates/specify/ess-cli-contract",
     # generate — that IR becomes artifacts; nothing here applies anything.
     "crates/generate/ess-gen",
     "crates/generate/ess-synth",
     "crates/generate/ess-openapi",
     "crates/generate/schema-contract",
     "crates/generate/ess-deployment",
+    "crates/generate/ess-cli-project",
     # verify — an implementation is measured against the specification.
     "crates/verify/ess-conformance",
     "crates/verify/ess-diff",
@@ -51,6 +53,8 @@ ess-domain = { path = "crates/specify/ess-domain", version = "0.20.0" }
 ess-compiler = { path = "crates/specify/ess-compiler", version = "0.20.0" }
 ess-composition = { path = "crates/specify/ess-composition", version = "0.20.0" }
 ess-realization = { path = "crates/specify/ess-realization", version = "0.20.0" }
+ess-cli-contract = { path = "crates/specify/ess-cli-contract", version = "0.20.0" }
+ess-cli-project = { path = "crates/generate/ess-cli-project", version = "0.20.0" }
 ess-deployment = { path = "crates/generate/ess-deployment", version = "0.20.0" }
 ess-gen = { path = "crates/generate/ess-gen", version = "0.20.0" }
 ess-conformance = { path = "crates/verify/ess-conformance", version = "0.20.0" }

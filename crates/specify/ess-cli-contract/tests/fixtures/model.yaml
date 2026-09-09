@@ -1,0 +1,17 @@
+format: ess/1
+system: demo
+version: v1
+types:
+  - name: demo.Input
+    kind: struct
+    fields:
+      - {name: profile, type: String}
+      - {name: secret, type: String}
+  - name: demo.Stored
+    kind: struct
+    fields:
+      - {name: profile, type: String}
+  - name: demo.Failure
+    kind: struct
+    fields:
+      - {name: reason, type: String}

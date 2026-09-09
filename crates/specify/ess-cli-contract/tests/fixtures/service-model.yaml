@@ -1,0 +1,53 @@
+format: ess/1
+system: demo
+version: v1
+domains: [demo.records, demo.foreign]
+domain: demo.records
+types:
+  - name: demo.records.RenameInput
+    kind: struct
+    fields: [{name: name, type: String}]
+  - name: demo.records.QueryInput
+    kind: struct
+    fields: [{name: prefix, type: String}]
+  - name: demo.records.WrongInput
+    kind: struct
+    fields: [{name: name, type: Integer}]
+  - name: demo.records.WrongQuery
+    kind: struct
+    fields: [{name: prefix, type: Integer}]
+  - name: demo.records.Row
+    kind: struct
+    fields: [{name: name, type: String}]
+  - name: demo.records.WrongRow
+    kind: struct
+    fields: [{name: name, type: Integer}]
+entities:
+  - name: demo.records.Record
+    identity: {name: record_id, type: String}
+    fields: [{name: name, type: String}]
+    lifecycle: {initial: Active, states: [Active], terminal: [Active]}
+commands:
+  - name: demo.records.Rename
+    input: [{name: name, type: String}]
+    outcomes:
+      - name: renamed
+        emits: [demo.records.Renamed]
+        payload:
+          demo.records.Renamed: {name: input.name}
+events:
+  - name: demo.records.Renamed
+    fields: [{name: name, type: String}]
+views:
+  - name: demo.records.NamedRecords
+    source: demo.records.Record
+    fields: [{name: name, type: String}]
+    params: [{name: prefix, type: String}]
+    filter: {all: [name == param.prefix]}
+    consistency: eventual
+components:
+  - component: owner-service
+    owns: {domains: [demo.records]}
+    accepts: {commands: [demo.records.Rename]}
+  - component: foreign-service
+    owns: {domains: [demo.foreign]}

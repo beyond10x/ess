@@ -394,6 +394,30 @@
     "macro_ast_sha256": null,
     "reason": "Concrete example realization entry used by generated/runtime fixture boundaries. Its actual target behavior remains a case-owned execution obligation; no independent support is inferred from source."
   },
+  "ess_cli::bin(ess)::cli_binding::fn::compile": {
+    "class": "OwnedHelper",
+    "reason": "Exact CLI input/loading/rendering/output-ownership helper for the cli-binding-resolution, cli-binding-rust-emission and cli-binding-process-execution pipelines. Model admission is performed by their bound compile owner; this helper grants no inherited support."
+  },
+  "ess_cli::bin(ess)::cli_binding::fn::generate": {
+    "class": "OwnedHelper",
+    "reason": "Exact CLI input/loading/rendering/output-ownership helper for the cli-binding-resolution, cli-binding-rust-emission and cli-binding-process-execution pipelines. Model admission is performed by their bound compile owner; this helper grants no inherited support."
+  },
+  "ess_cli::bin(ess)::cli_binding::fn::validate": {
+    "class": "OwnedHelper",
+    "reason": "Exact CLI input/loading/rendering/output-ownership helper for the cli-binding-resolution, cli-binding-rust-emission and cli-binding-process-execution pipelines. Model admission is performed by their bound compile owner; this helper grants no inherited support."
+  },
+  "ess_cli::bin(ess)::cli_binding::module": {
+    "class": "OwnedHelper",
+    "reason": "Exact CLI input/loading/rendering/output-ownership helper for the cli-binding-resolution, cli-binding-rust-emission and cli-binding-process-execution pipelines. Model admission is performed by their bound compile owner; this helper grants no inherited support."
+  },
+  "ess_cli::bin(ess)::cli_binding::struct::Generate": {
+    "class": "OwnedHelper",
+    "reason": "Exact CLI input/loading/rendering/output-ownership helper for the cli-binding-resolution, cli-binding-rust-emission and cli-binding-process-execution pipelines. Model admission is performed by their bound compile owner; this helper grants no inherited support."
+  },
+  "ess_cli::bin(ess)::cli_binding::struct::Input": {
+    "class": "OwnedHelper",
+    "reason": "Exact CLI input/loading/rendering/output-ownership helper for the cli-binding-resolution, cli-binding-rust-emission and cli-binding-process-execution pipelines. Model admission is performed by their bound compile owner; this helper grants no inherited support."
+  },
   "ess_cli::bin(ess)::const::AREAS": {
     "class": "OwnedHelper",
     "macro_ast_sha256": null,
@@ -584,6 +608,10 @@
     "macro_ast_sha256": null,
     "reason": "Concrete owned data/API declaration retained alongside the named behavioral callers. Its presence is not a behavior case and does not prove nonreachability."
   },
+  "ess_cli::bin(ess)::enum::GenerateAreaCommand/variant/Cli": {
+    "class": "OwnedHelper",
+    "reason": "Exact area-only CLI presentation routing declaration. Existing flat specification and generation verbs retain their owners and spellings; routing alone grants no model behavior support."
+  },
   "ess_cli::bin(ess)::enum::GenerateAreaCommand/variant/Generate": {
     "class": "OwnedHelper",
     "macro_ast_sha256": null,
@@ -617,7 +645,7 @@
   "ess_cli::bin(ess)::enum::GenerateCommand/variant/Output": {
     "class": "OwnedHelper",
     "macro_ast_sha256": null,
-    "reason": "Concrete CLI output-management or publication adapter over already-rendered artifact bytes, fixed owner selectors and explicit compose paths. G01\u2013G14 route and original package cases exercise this caller path. This finite helper classification grants no new ESS model support or nonreachability; ordinary bound profiles stay unchanged."
+    "reason": "Concrete CLI output-management or publication adapter over already-rendered artifact bytes, fixed owner selectors and explicit compose paths. G01–G14 route and original package cases exercise this caller path. This finite helper classification grants no new ESS model support or nonreachability; ordinary bound profiles stay unchanged."
   },
   "ess_cli::bin(ess)::enum::GenerateCommand/variant/Project": {
     "class": "OwnedHelper",
@@ -898,6 +926,18 @@
     "class": "OwnedHelper",
     "macro_ast_sha256": null,
     "reason": "Concrete owned data/API declaration retained alongside the named behavioral callers. Its presence is not a behavior case and does not prove nonreachability."
+  },
+  "ess_cli::bin(ess)::enum::SpecifyAreaCommand": {
+    "class": "OwnedHelper",
+    "reason": "Exact area-only CLI presentation routing declaration. Existing flat specification and generation verbs retain their owners and spellings; routing alone grants no model behavior support."
+  },
+  "ess_cli::bin(ess)::enum::SpecifyAreaCommand/variant/Cli": {
+    "class": "OwnedHelper",
+    "reason": "Exact area-only CLI presentation routing declaration. Existing flat specification and generation verbs retain their owners and spellings; routing alone grants no model behavior support."
+  },
+  "ess_cli::bin(ess)::enum::SpecifyAreaCommand/variant/Other": {
+    "class": "OwnedHelper",
+    "reason": "Exact area-only CLI presentation routing declaration. Existing flat specification and generation verbs retain their owners and spellings; routing alone grants no model behavior support."
   },
   "ess_cli::bin(ess)::enum::SpecifyCommand": {
     "class": "OwnedHelper",
@@ -1192,7 +1232,7 @@
   "ess_cli::bin(ess)::fn::publish_composition_outputs": {
     "class": "OwnedHelper",
     "macro_ast_sha256": null,
-    "reason": "Concrete CLI output-management or publication adapter over already-rendered artifact bytes, fixed owner selectors and explicit compose paths. G01\u2013G14 route and original package cases exercise this caller path. This finite helper classification grants no new ESS model support or nonreachability; ordinary bound profiles stay unchanged."
+    "reason": "Concrete CLI output-management or publication adapter over already-rendered artifact bytes, fixed owner selectors and explicit compose paths. G01–G14 route and original package cases exercise this caller path. This finite helper classification grants no new ESS model support or nonreachability; ordinary bound profiles stay unchanged."
   },
   "ess_cli::bin(ess)::fn::qualify_release_report": {
     "class": "BoundEntry",
@@ -1312,17 +1352,17 @@
   "ess_cli::bin(ess)::fn::write_owned_artifacts": {
     "class": "OwnedHelper",
     "macro_ast_sha256": null,
-    "reason": "Concrete CLI output-management or publication adapter over already-rendered artifact bytes, fixed owner selectors and explicit compose paths. G01\u2013G14 route and original package cases exercise this caller path. This finite helper classification grants no new ESS model support or nonreachability; ordinary bound profiles stay unchanged."
+    "reason": "Concrete CLI output-management or publication adapter over already-rendered artifact bytes, fixed owner selectors and explicit compose paths. G01–G14 route and original package cases exercise this caller path. This finite helper classification grants no new ESS model support or nonreachability; ordinary bound profiles stay unchanged."
   },
   "ess_cli::bin(ess)::fn::write_owned_files": {
     "class": "OwnedHelper",
     "macro_ast_sha256": null,
-    "reason": "Concrete CLI output-management or publication adapter over already-rendered artifact bytes, fixed owner selectors and explicit compose paths. G01\u2013G14 route and original package cases exercise this caller path. This finite helper classification grants no new ESS model support or nonreachability; ordinary bound profiles stay unchanged."
+    "reason": "Concrete CLI output-management or publication adapter over already-rendered artifact bytes, fixed owner selectors and explicit compose paths. G01–G14 route and original package cases exercise this caller path. This finite helper classification grants no new ESS model support or nonreachability; ordinary bound profiles stay unchanged."
   },
   "ess_cli::bin(ess)::fn::write_owned_projection_files": {
     "class": "OwnedHelper",
     "macro_ast_sha256": null,
-    "reason": "Concrete CLI output-management or publication adapter over already-rendered artifact bytes, fixed owner selectors and explicit compose paths. G01\u2013G14 route and original package cases exercise this caller path. This finite helper classification grants no new ESS model support or nonreachability; ordinary bound profiles stay unchanged."
+    "reason": "Concrete CLI output-management or publication adapter over already-rendered artifact bytes, fixed owner selectors and explicit compose paths. G01–G14 route and original package cases exercise this caller path. This finite helper classification grants no new ESS model support or nonreachability; ordinary bound profiles stay unchanged."
   },
   "ess_cli::bin(ess)::fn::write_preflighted_files": {
     "class": "OwnedHelper",
@@ -2297,6 +2337,10 @@
     "class": "OwnedHelper",
     "macro_ast_sha256": null,
     "reason": "Concrete private ess-output-state/1 data, canonical codec or inventory-validation helper for output ownership and recovery. Canonical/malformed-state, adoption and phase witnesses exercise its actual reader. It is outside the ESS model semantics inventory; this finite classification grants no model support, inherited eligibility or nonreachability."
+  },
+  "ess_cli::bin(ess)::output_ownership::state::enum::Family/variant/CliBinding": {
+    "class": "OwnedHelper",
+    "reason": "Exact CLI-binding generated-output ownership family discriminator. It selects existing publication/ownership checks over already rendered files and grants no model semantics."
   },
   "ess_cli::bin(ess)::output_ownership::state::enum::Family/variant/Compose": {
     "class": "OwnedHelper",
@@ -6517,6 +6561,470 @@
     "class": "OwnedHelper",
     "macro_ast_sha256": null,
     "reason": "Concrete owned data/API declaration retained alongside the named behavioral callers. Its presence is not a behavior case and does not prove nonreachability."
+  },
+  "ess_cli_contract::lib(ess_cli_contract)::fn::required_input": {
+    "class": "OwnedHelper",
+    "reason": "Exact authored-reader or read-only compiled-binding declaration within the CLI binding pipelines. Model resolution remains bound to resolve::compile; serialization/getters/reexports do not independently qualify model cells."
+  },
+  "ess_cli_contract::lib(ess_cli_contract)::impl<Binding;>::from_yaml": {
+    "class": "OwnedHelper",
+    "reason": "Exact authored-reader or read-only compiled-binding declaration within the CLI binding pipelines. Model resolution remains bound to resolve::compile; serialization/getters/reexports do not independently qualify model cells."
+  },
+  "ess_cli_contract::lib(ess_cli_contract)::impl<CompiledBinding;>::plan": {
+    "class": "OwnedHelper",
+    "reason": "Exact authored-reader or read-only compiled-binding declaration within the CLI binding pipelines. Model resolution remains bound to resolve::compile; serialization/getters/reexports do not independently qualify model cells."
+  },
+  "ess_cli_contract::lib(ess_cli_contract)::impl<CompiledBinding;>::to_canonical_json": {
+    "class": "OwnedHelper",
+    "reason": "Exact authored-reader or read-only compiled-binding declaration within the CLI binding pipelines. Model resolution remains bound to resolve::compile; serialization/getters/reexports do not independently qualify model cells."
+  },
+  "ess_cli_contract::lib(ess_cli_contract)::module": {
+    "class": "OwnedHelper",
+    "reason": "Exact authored-reader or read-only compiled-binding declaration within the CLI binding pipelines. Model resolution remains bound to resolve::compile; serialization/getters/reexports do not independently qualify model cells."
+  },
+  "ess_cli_contract::lib(ess_cli_contract)::reexport::compile": {
+    "class": "OwnedHelper",
+    "reason": "Exact authored-reader or read-only compiled-binding declaration within the CLI binding pipelines. Model resolution remains bound to resolve::compile; serialization/getters/reexports do not independently qualify model cells."
+  },
+  "ess_cli_contract::lib(ess_cli_contract)::resolve::fn::compile": {
+    "class": "BoundEntry",
+    "reason": "Exact shared admission entry for cli-binding-resolution, cli-binding-rust-emission and cli-binding-process-execution. Named admission refusals stop those pipelines before downstream emission or process execution; successful claims require their actual attributed boundary behavior."
+  },
+  "ess_cli_contract::lib(ess_cli_contract)::resolve::fn::contract": {
+    "class": "OwnedHelper",
+    "reason": "Exact helper for the bound CLI binding compiler: selected model type shapes, field names, command grammar or owner/operation admission. Meaningful behavior is attributed through the three explicitly admitted pipelines, never from helper presence."
+  },
+  "ess_cli_contract::lib(ess_cli_contract)::resolve::fn::field_name": {
+    "class": "OwnedHelper",
+    "reason": "Exact helper for the bound CLI binding compiler: selected model type shapes, field names, command grammar or owner/operation admission. Meaningful behavior is attributed through the three explicitly admitted pipelines, never from helper presence."
+  },
+  "ess_cli_contract::lib(ess_cli_contract)::resolve::fn::fields_shape": {
+    "class": "OwnedHelper",
+    "reason": "Exact helper for the bound CLI binding compiler: selected model type shapes, field names, command grammar or owner/operation admission. Meaningful behavior is attributed through the three explicitly admitted pipelines, never from helper presence."
+  },
+  "ess_cli_contract::lib(ess_cli_contract)::resolve::fn::identifier": {
+    "class": "OwnedHelper",
+    "reason": "Exact helper for the bound CLI binding compiler: selected model type shapes, field names, command grammar or owner/operation admission. Meaningful behavior is attributed through the three explicitly admitted pipelines, never from helper presence."
+  },
+  "ess_cli_contract::lib(ess_cli_contract)::resolve::fn::input_fields": {
+    "class": "OwnedHelper",
+    "reason": "Exact helper for the bound CLI binding compiler: selected model type shapes, field names, command grammar or owner/operation admission. Meaningful behavior is attributed through the three explicitly admitted pipelines, never from helper presence."
+  },
+  "ess_cli_contract::lib(ess_cli_contract)::resolve::fn::named": {
+    "class": "OwnedHelper",
+    "reason": "Exact helper for the bound CLI binding compiler: selected model type shapes, field names, command grammar or owner/operation admission. Meaningful behavior is attributed through the three explicitly admitted pipelines, never from helper presence."
+  },
+  "ess_cli_contract::lib(ess_cli_contract)::resolve::fn::primitive": {
+    "class": "OwnedHelper",
+    "reason": "Exact helper for the bound CLI binding compiler: selected model type shapes, field names, command grammar or owner/operation admission. Meaningful behavior is attributed through the three explicitly admitted pipelines, never from helper presence."
+  },
+  "ess_cli_contract::lib(ess_cli_contract)::resolve::fn::refuse": {
+    "class": "OwnedHelper",
+    "reason": "Exact helper for the bound CLI binding compiler: selected model type shapes, field names, command grammar or owner/operation admission. Meaningful behavior is attributed through the three explicitly admitted pipelines, never from helper presence."
+  },
+  "ess_cli_contract::lib(ess_cli_contract)::resolve::fn::reserve": {
+    "class": "OwnedHelper",
+    "reason": "Exact helper for the bound CLI binding compiler: selected model type shapes, field names, command grammar or owner/operation admission. Meaningful behavior is attributed through the three explicitly admitted pipelines, never from helper presence."
+  },
+  "ess_cli_contract::lib(ess_cli_contract)::resolve::fn::resolved_ref": {
+    "class": "OwnedHelper",
+    "reason": "Exact helper for the bound CLI binding compiler: selected model type shapes, field names, command grammar or owner/operation admission. Meaningful behavior is attributed through the three explicitly admitted pipelines, never from helper presence."
+  },
+  "ess_cli_contract::lib(ess_cli_contract)::resolve::fn::token": {
+    "class": "OwnedHelper",
+    "reason": "Exact helper for the bound CLI binding compiler: selected model type shapes, field names, command grammar or owner/operation admission. Meaningful behavior is attributed through the three explicitly admitted pipelines, never from helper presence."
+  },
+  "ess_cli_contract::lib(ess_cli_contract)::resolve::fn::type_shape": {
+    "class": "OwnedHelper",
+    "reason": "Exact helper for the bound CLI binding compiler: selected model type shapes, field names, command grammar or owner/operation admission. Meaningful behavior is attributed through the three explicitly admitted pipelines, never from helper presence."
+  },
+  "ess_cli_contract::lib(ess_cli_contract)::resolve::fn::validate_command": {
+    "class": "OwnedHelper",
+    "reason": "Exact helper for the bound CLI binding compiler: selected model type shapes, field names, command grammar or owner/operation admission. Meaningful behavior is attributed through the three explicitly admitted pipelines, never from helper presence."
+  },
+  "ess_cli_contract::lib(ess_cli_contract)::resolve::fn::validate_target": {
+    "class": "OwnedHelper",
+    "reason": "Exact helper for the bound CLI binding compiler: selected model type shapes, field names, command grammar or owner/operation admission. Meaningful behavior is attributed through the three explicitly admitted pipelines, never from helper presence."
+  },
+  "ess_cli_contract::lib(ess_cli_contract)::resolve::module": {
+    "class": "OwnedHelper",
+    "reason": "Exact helper for the bound CLI binding compiler: selected model type shapes, field names, command grammar or owner/operation admission. Meaningful behavior is attributed through the three explicitly admitted pipelines, never from helper presence."
+  },
+  "ess_cli_contract::lib(ess_cli_contract)::struct::Binding": {
+    "class": "OwnedHelper",
+    "reason": "Exact authored-reader or read-only compiled-binding declaration within the CLI binding pipelines. Model resolution remains bound to resolve::compile; serialization/getters/reexports do not independently qualify model cells."
+  },
+  "ess_cli_contract::lib(ess_cli_contract)::struct::CallableDeclaration": {
+    "class": "OwnedHelper",
+    "reason": "Exact authored-reader or read-only compiled-binding declaration within the CLI binding pipelines. Model resolution remains bound to resolve::compile; serialization/getters/reexports do not independently qualify model cells."
+  },
+  "ess_cli_contract::lib(ess_cli_contract)::struct::CompiledBinding": {
+    "class": "OwnedHelper",
+    "reason": "Exact authored-reader or read-only compiled-binding declaration within the CLI binding pipelines. Model resolution remains bound to resolve::compile; serialization/getters/reexports do not independently qualify model cells."
+  },
+  "ess_cli_contract::lib(ess_cli_contract)::struct::Error": {
+    "class": "OwnedHelper",
+    "reason": "Exact authored-reader or read-only compiled-binding declaration within the CLI binding pipelines. Model resolution remains bound to resolve::compile; serialization/getters/reexports do not independently qualify model cells."
+  },
+  "ess_cli_contract::lib(ess_cli_contract)::wire::enum::ArgumentSource": {
+    "class": "OwnedHelper",
+    "reason": "Exact closed compiled CLI plan or structural-value helper shared by emission and direct runtime. Shape validation participates in their bound model behavior; declaring this helper neither qualifies support nor proves nonreachability."
+  },
+  "ess_cli_contract::lib(ess_cli_contract)::wire::enum::ArgumentSource/variant/Document": {
+    "class": "OwnedHelper",
+    "reason": "Exact closed compiled CLI plan or structural-value helper shared by emission and direct runtime. Shape validation participates in their bound model behavior; declaring this helper neither qualifies support nor proves nonreachability."
+  },
+  "ess_cli_contract::lib(ess_cli_contract)::wire::enum::ArgumentSource/variant/Option": {
+    "class": "OwnedHelper",
+    "reason": "Exact closed compiled CLI plan or structural-value helper shared by emission and direct runtime. Shape validation participates in their bound model behavior; declaring this helper neither qualifies support nor proves nonreachability."
+  },
+  "ess_cli_contract::lib(ess_cli_contract)::wire::enum::ArgumentSource/variant/Positional": {
+    "class": "OwnedHelper",
+    "reason": "Exact closed compiled CLI plan or structural-value helper shared by emission and direct runtime. Shape validation participates in their bound model behavior; declaring this helper neither qualifies support nor proves nonreachability."
+  },
+  "ess_cli_contract::lib(ess_cli_contract)::wire::enum::ArgumentSource/variant/Protected": {
+    "class": "OwnedHelper",
+    "reason": "Exact closed compiled CLI plan or structural-value helper shared by emission and direct runtime. Shape validation participates in their bound model behavior; declaring this helper neither qualifies support nor proves nonreachability."
+  },
+  "ess_cli_contract::lib(ess_cli_contract)::wire::enum::Shape": {
+    "class": "OwnedHelper",
+    "reason": "Exact closed compiled CLI plan or structural-value helper shared by emission and direct runtime. Shape validation participates in their bound model behavior; declaring this helper neither qualifies support nor proves nonreachability."
+  },
+  "ess_cli_contract::lib(ess_cli_contract)::wire::enum::Shape/variant/Boolean": {
+    "class": "OwnedHelper",
+    "reason": "Exact closed compiled CLI plan or structural-value helper shared by emission and direct runtime. Shape validation participates in their bound model behavior; declaring this helper neither qualifies support nor proves nonreachability."
+  },
+  "ess_cli_contract::lib(ess_cli_contract)::wire::enum::Shape/variant/Enum": {
+    "class": "OwnedHelper",
+    "reason": "Exact closed compiled CLI plan or structural-value helper shared by emission and direct runtime. Shape validation participates in their bound model behavior; declaring this helper neither qualifies support nor proves nonreachability."
+  },
+  "ess_cli_contract::lib(ess_cli_contract)::wire::enum::Shape/variant/Integer": {
+    "class": "OwnedHelper",
+    "reason": "Exact closed compiled CLI plan or structural-value helper shared by emission and direct runtime. Shape validation participates in their bound model behavior; declaring this helper neither qualifies support nor proves nonreachability."
+  },
+  "ess_cli_contract::lib(ess_cli_contract)::wire::enum::Shape/variant/List": {
+    "class": "OwnedHelper",
+    "reason": "Exact closed compiled CLI plan or structural-value helper shared by emission and direct runtime. Shape validation participates in their bound model behavior; declaring this helper neither qualifies support nor proves nonreachability."
+  },
+  "ess_cli_contract::lib(ess_cli_contract)::wire::enum::Shape/variant/Map": {
+    "class": "OwnedHelper",
+    "reason": "Exact closed compiled CLI plan or structural-value helper shared by emission and direct runtime. Shape validation participates in their bound model behavior; declaring this helper neither qualifies support nor proves nonreachability."
+  },
+  "ess_cli_contract::lib(ess_cli_contract)::wire::enum::Shape/variant/Optional": {
+    "class": "OwnedHelper",
+    "reason": "Exact closed compiled CLI plan or structural-value helper shared by emission and direct runtime. Shape validation participates in their bound model behavior; declaring this helper neither qualifies support nor proves nonreachability."
+  },
+  "ess_cli_contract::lib(ess_cli_contract)::wire::enum::Shape/variant/String": {
+    "class": "OwnedHelper",
+    "reason": "Exact closed compiled CLI plan or structural-value helper shared by emission and direct runtime. Shape validation participates in their bound model behavior; declaring this helper neither qualifies support nor proves nonreachability."
+  },
+  "ess_cli_contract::lib(ess_cli_contract)::wire::enum::Shape/variant/Struct": {
+    "class": "OwnedHelper",
+    "reason": "Exact closed compiled CLI plan or structural-value helper shared by emission and direct runtime. Shape validation participates in their bound model behavior; declaring this helper neither qualifies support nor proves nonreachability."
+  },
+  "ess_cli_contract::lib(ess_cli_contract)::wire::enum::Target": {
+    "class": "OwnedHelper",
+    "reason": "Exact closed compiled CLI plan or structural-value helper shared by emission and direct runtime. Shape validation participates in their bound model behavior; declaring this helper neither qualifies support nor proves nonreachability."
+  },
+  "ess_cli_contract::lib(ess_cli_contract)::wire::enum::Target/variant/Dynamic": {
+    "class": "OwnedHelper",
+    "reason": "Exact closed compiled CLI plan or structural-value helper shared by emission and direct runtime. Shape validation participates in their bound model behavior; declaring this helper neither qualifies support nor proves nonreachability."
+  },
+  "ess_cli_contract::lib(ess_cli_contract)::wire::enum::Target/variant/Local": {
+    "class": "OwnedHelper",
+    "reason": "Exact closed compiled CLI plan or structural-value helper shared by emission and direct runtime. Shape validation participates in their bound model behavior; declaring this helper neither qualifies support nor proves nonreachability."
+  },
+  "ess_cli_contract::lib(ess_cli_contract)::wire::enum::Target/variant/ServiceForward": {
+    "class": "OwnedHelper",
+    "reason": "Exact closed compiled CLI plan or structural-value helper shared by emission and direct runtime. Shape validation participates in their bound model behavior; declaring this helper neither qualifies support nor proves nonreachability."
+  },
+  "ess_cli_contract::lib(ess_cli_contract)::wire::impl<Shape;>::accepts": {
+    "class": "OwnedHelper",
+    "reason": "Exact closed compiled CLI plan or structural-value helper shared by emission and direct runtime. Shape validation participates in their bound model behavior; declaring this helper neither qualifies support nor proves nonreachability."
+  },
+  "ess_cli_contract::lib(ess_cli_contract)::wire::impl<Shape;>::optional": {
+    "class": "OwnedHelper",
+    "reason": "Exact closed compiled CLI plan or structural-value helper shared by emission and direct runtime. Shape validation participates in their bound model behavior; declaring this helper neither qualifies support nor proves nonreachability."
+  },
+  "ess_cli_contract::lib(ess_cli_contract)::wire::impl<Shape;>::required": {
+    "class": "OwnedHelper",
+    "reason": "Exact closed compiled CLI plan or structural-value helper shared by emission and direct runtime. Shape validation participates in their bound model behavior; declaring this helper neither qualifies support nor proves nonreachability."
+  },
+  "ess_cli_contract::lib(ess_cli_contract)::wire::module": {
+    "class": "OwnedHelper",
+    "reason": "Exact closed compiled CLI plan or structural-value helper shared by emission and direct runtime. Shape validation participates in their bound model behavior; declaring this helper neither qualifies support nor proves nonreachability."
+  },
+  "ess_cli_contract::lib(ess_cli_contract)::wire::struct::Argument": {
+    "class": "OwnedHelper",
+    "reason": "Exact closed compiled CLI plan or structural-value helper shared by emission and direct runtime. Shape validation participates in their bound model behavior; declaring this helper neither qualifies support nor proves nonreachability."
+  },
+  "ess_cli_contract::lib(ess_cli_contract)::wire::struct::Callable": {
+    "class": "OwnedHelper",
+    "reason": "Exact closed compiled CLI plan or structural-value helper shared by emission and direct runtime. Shape validation participates in their bound model behavior; declaring this helper neither qualifies support nor proves nonreachability."
+  },
+  "ess_cli_contract::lib(ess_cli_contract)::wire::struct::Command": {
+    "class": "OwnedHelper",
+    "reason": "Exact closed compiled CLI plan or structural-value helper shared by emission and direct runtime. Shape validation participates in their bound model behavior; declaring this helper neither qualifies support nor proves nonreachability."
+  },
+  "ess_cli_contract::lib(ess_cli_contract)::wire::struct::Globals": {
+    "class": "OwnedHelper",
+    "reason": "Exact closed compiled CLI plan or structural-value helper shared by emission and direct runtime. Shape validation participates in their bound model behavior; declaring this helper neither qualifies support nor proves nonreachability."
+  },
+  "ess_cli_contract::lib(ess_cli_contract)::wire::struct::Plan": {
+    "class": "OwnedHelper",
+    "reason": "Exact closed compiled CLI plan or structural-value helper shared by emission and direct runtime. Shape validation participates in their bound model behavior; declaring this helper neither qualifies support nor proves nonreachability."
+  },
+  "ess_cli_contract::lib(ess_cli_contract)::wire::struct::ValueContract": {
+    "class": "OwnedHelper",
+    "reason": "Exact closed compiled CLI plan or structural-value helper shared by emission and direct runtime. Shape validation participates in their bound model behavior; declaring this helper neither qualifies support nor proves nonreachability."
+  },
+  "ess_cli_project::lib(ess_cli_project)::fn::project": {
+    "class": "BoundEntry",
+    "reason": "Exact artifact-emission entry of cli-binding-rust-emission after binding admission. Artifact bytes do not qualify generated-package execution."
+  },
+  "ess_cli_project::lib(ess_cli_project)::fn::reference": {
+    "class": "OwnedHelper",
+    "reason": "Exact reference/artifact/reexport helper of cli-binding-rust-emission. The bound project entry owns emitted bytes; these declarations do not establish generated-code execution."
+  },
+  "ess_cli_project::lib(ess_cli_project)::module": {
+    "class": "OwnedHelper",
+    "reason": "Exact reference/artifact/reexport helper of cli-binding-rust-emission. The bound project entry owns emitted bytes; these declarations do not establish generated-code execution."
+  },
+  "ess_cli_project::lib(ess_cli_project)::reexport::wire": {
+    "class": "OwnedHelper",
+    "reason": "Exact reference/artifact/reexport helper of cli-binding-rust-emission. The bound project entry owns emitted bytes; these declarations do not establish generated-code execution."
+  },
+  "ess_cli_project::lib(ess_cli_project)::runtime::const::MAX_PROTECTED_BYTES": {
+    "class": "OwnedHelper",
+    "reason": "Exact grammar, process, acquisition, dispatch or value-validation helper of cli-binding-process-execution; grammar construction also serves cli-binding-rust-emission. Concrete platform/handler/validator obligations remain visible and no helper grants inherited support."
+  },
+  "ess_cli_project::lib(ess_cli_project)::runtime::enum::AcquireError": {
+    "class": "OwnedHelper",
+    "reason": "Exact grammar, process, acquisition, dispatch or value-validation helper of cli-binding-process-execution; grammar construction also serves cli-binding-rust-emission. Concrete platform/handler/validator obligations remain visible and no helper grants inherited support."
+  },
+  "ess_cli_project::lib(ess_cli_project)::runtime::enum::AcquireError/variant/Interrupted": {
+    "class": "OwnedHelper",
+    "reason": "Exact grammar, process, acquisition, dispatch or value-validation helper of cli-binding-process-execution; grammar construction also serves cli-binding-rust-emission. Concrete platform/handler/validator obligations remain visible and no helper grants inherited support."
+  },
+  "ess_cli_project::lib(ess_cli_project)::runtime::enum::AcquireError/variant/Unavailable": {
+    "class": "OwnedHelper",
+    "reason": "Exact grammar, process, acquisition, dispatch or value-validation helper of cli-binding-process-execution; grammar construction also serves cli-binding-rust-emission. Concrete platform/handler/validator obligations remain visible and no helper grants inherited support."
+  },
+  "ess_cli_project::lib(ess_cli_project)::runtime::enum::DynamicError": {
+    "class": "OwnedHelper",
+    "reason": "Exact grammar, process, acquisition, dispatch or value-validation helper of cli-binding-process-execution; grammar construction also serves cli-binding-rust-emission. Concrete platform/handler/validator obligations remain visible and no helper grants inherited support."
+  },
+  "ess_cli_project::lib(ess_cli_project)::runtime::enum::DynamicError/variant/Interrupted": {
+    "class": "OwnedHelper",
+    "reason": "Exact grammar, process, acquisition, dispatch or value-validation helper of cli-binding-process-execution; grammar construction also serves cli-binding-rust-emission. Concrete platform/handler/validator obligations remain visible and no helper grants inherited support."
+  },
+  "ess_cli_project::lib(ess_cli_project)::runtime::enum::DynamicError/variant/InvalidValue": {
+    "class": "OwnedHelper",
+    "reason": "Exact grammar, process, acquisition, dispatch or value-validation helper of cli-binding-process-execution; grammar construction also serves cli-binding-rust-emission. Concrete platform/handler/validator obligations remain visible and no helper grants inherited support."
+  },
+  "ess_cli_project::lib(ess_cli_project)::runtime::enum::DynamicError/variant/Unavailable": {
+    "class": "OwnedHelper",
+    "reason": "Exact grammar, process, acquisition, dispatch or value-validation helper of cli-binding-process-execution; grammar construction also serves cli-binding-rust-emission. Concrete platform/handler/validator obligations remain visible and no helper grants inherited support."
+  },
+  "ess_cli_project::lib(ess_cli_project)::runtime::enum::DynamicPhase": {
+    "class": "OwnedHelper",
+    "reason": "Exact grammar, process, acquisition, dispatch or value-validation helper of cli-binding-process-execution; grammar construction also serves cli-binding-rust-emission. Concrete platform/handler/validator obligations remain visible and no helper grants inherited support."
+  },
+  "ess_cli_project::lib(ess_cli_project)::runtime::enum::DynamicPhase/variant/Error": {
+    "class": "OwnedHelper",
+    "reason": "Exact grammar, process, acquisition, dispatch or value-validation helper of cli-binding-process-execution; grammar construction also serves cli-binding-rust-emission. Concrete platform/handler/validator obligations remain visible and no helper grants inherited support."
+  },
+  "ess_cli_project::lib(ess_cli_project)::runtime::enum::DynamicPhase/variant/Input": {
+    "class": "OwnedHelper",
+    "reason": "Exact grammar, process, acquisition, dispatch or value-validation helper of cli-binding-process-execution; grammar construction also serves cli-binding-rust-emission. Concrete platform/handler/validator obligations remain visible and no helper grants inherited support."
+  },
+  "ess_cli_project::lib(ess_cli_project)::runtime::enum::DynamicPhase/variant/Result": {
+    "class": "OwnedHelper",
+    "reason": "Exact grammar, process, acquisition, dispatch or value-validation helper of cli-binding-process-execution; grammar construction also serves cli-binding-rust-emission. Concrete platform/handler/validator obligations remain visible and no helper grants inherited support."
+  },
+  "ess_cli_project::lib(ess_cli_project)::runtime::enum::HandlerReply": {
+    "class": "OwnedHelper",
+    "reason": "Exact grammar, process, acquisition, dispatch or value-validation helper of cli-binding-process-execution; grammar construction also serves cli-binding-rust-emission. Concrete platform/handler/validator obligations remain visible and no helper grants inherited support."
+  },
+  "ess_cli_project::lib(ess_cli_project)::runtime::enum::HandlerReply/variant/Error": {
+    "class": "OwnedHelper",
+    "reason": "Exact grammar, process, acquisition, dispatch or value-validation helper of cli-binding-process-execution; grammar construction also serves cli-binding-rust-emission. Concrete platform/handler/validator obligations remain visible and no helper grants inherited support."
+  },
+  "ess_cli_project::lib(ess_cli_project)::runtime::enum::HandlerReply/variant/Interrupted": {
+    "class": "OwnedHelper",
+    "reason": "Exact grammar, process, acquisition, dispatch or value-validation helper of cli-binding-process-execution; grammar construction also serves cli-binding-rust-emission. Concrete platform/handler/validator obligations remain visible and no helper grants inherited support."
+  },
+  "ess_cli_project::lib(ess_cli_project)::runtime::enum::HandlerReply/variant/Success": {
+    "class": "OwnedHelper",
+    "reason": "Exact grammar, process, acquisition, dispatch or value-validation helper of cli-binding-process-execution; grammar construction also serves cli-binding-rust-emission. Concrete platform/handler/validator obligations remain visible and no helper grants inherited support."
+  },
+  "ess_cli_project::lib(ess_cli_project)::runtime::enum::HandlerReply/variant/Unavailable": {
+    "class": "OwnedHelper",
+    "reason": "Exact grammar, process, acquisition, dispatch or value-validation helper of cli-binding-process-execution; grammar construction also serves cli-binding-rust-emission. Concrete platform/handler/validator obligations remain visible and no helper grants inherited support."
+  },
+  "ess_cli_project::lib(ess_cli_project)::runtime::enum::HandlerReply/variant/UsageError": {
+    "class": "OwnedHelper",
+    "reason": "Exact grammar, process, acquisition, dispatch or value-validation helper of cli-binding-process-execution; grammar construction also serves cli-binding-rust-emission. Concrete platform/handler/validator obligations remain visible and no helper grants inherited support."
+  },
+  "ess_cli_project::lib(ess_cli_project)::runtime::enum::OutputMode": {
+    "class": "OwnedHelper",
+    "reason": "Exact grammar, process, acquisition, dispatch or value-validation helper of cli-binding-process-execution; grammar construction also serves cli-binding-rust-emission. Concrete platform/handler/validator obligations remain visible and no helper grants inherited support."
+  },
+  "ess_cli_project::lib(ess_cli_project)::runtime::enum::OutputMode/variant/Human": {
+    "class": "OwnedHelper",
+    "reason": "Exact grammar, process, acquisition, dispatch or value-validation helper of cli-binding-process-execution; grammar construction also serves cli-binding-rust-emission. Concrete platform/handler/validator obligations remain visible and no helper grants inherited support."
+  },
+  "ess_cli_project::lib(ess_cli_project)::runtime::enum::OutputMode/variant/Json": {
+    "class": "OwnedHelper",
+    "reason": "Exact grammar, process, acquisition, dispatch or value-validation helper of cli-binding-process-execution; grammar construction also serves cli-binding-rust-emission. Concrete platform/handler/validator obligations remain visible and no helper grants inherited support."
+  },
+  "ess_cli_project::lib(ess_cli_project)::runtime::enum::ProtectedSource": {
+    "class": "OwnedHelper",
+    "reason": "Exact grammar, process, acquisition, dispatch or value-validation helper of cli-binding-process-execution; grammar construction also serves cli-binding-rust-emission. Concrete platform/handler/validator obligations remain visible and no helper grants inherited support."
+  },
+  "ess_cli_project::lib(ess_cli_project)::runtime::enum::ProtectedSource/variant/DocumentFile": {
+    "class": "OwnedHelper",
+    "reason": "Exact grammar, process, acquisition, dispatch or value-validation helper of cli-binding-process-execution; grammar construction also serves cli-binding-rust-emission. Concrete platform/handler/validator obligations remain visible and no helper grants inherited support."
+  },
+  "ess_cli_project::lib(ess_cli_project)::runtime::enum::ProtectedSource/variant/DocumentStdin": {
+    "class": "OwnedHelper",
+    "reason": "Exact grammar, process, acquisition, dispatch or value-validation helper of cli-binding-process-execution; grammar construction also serves cli-binding-rust-emission. Concrete platform/handler/validator obligations remain visible and no helper grants inherited support."
+  },
+  "ess_cli_project::lib(ess_cli_project)::runtime::enum::ProtectedSource/variant/File": {
+    "class": "OwnedHelper",
+    "reason": "Exact grammar, process, acquisition, dispatch or value-validation helper of cli-binding-process-execution; grammar construction also serves cli-binding-rust-emission. Concrete platform/handler/validator obligations remain visible and no helper grants inherited support."
+  },
+  "ess_cli_project::lib(ess_cli_project)::runtime::enum::ProtectedSource/variant/HiddenTty": {
+    "class": "OwnedHelper",
+    "reason": "Exact grammar, process, acquisition, dispatch or value-validation helper of cli-binding-process-execution; grammar construction also serves cli-binding-rust-emission. Concrete platform/handler/validator obligations remain visible and no helper grants inherited support."
+  },
+  "ess_cli_project::lib(ess_cli_project)::runtime::enum::ProtectedSource/variant/Stdin": {
+    "class": "OwnedHelper",
+    "reason": "Exact grammar, process, acquisition, dispatch or value-validation helper of cli-binding-process-execution; grammar construction also serves cli-binding-rust-emission. Concrete platform/handler/validator obligations remain visible and no helper grants inherited support."
+  },
+  "ess_cli_project::lib(ess_cli_project)::runtime::fn::acquire_error": {
+    "class": "OwnedHelper",
+    "reason": "Exact grammar, process, acquisition, dispatch or value-validation helper of cli-binding-process-execution; grammar construction also serves cli-binding-rust-emission. Concrete platform/handler/validator obligations remain visible and no helper grants inherited support."
+  },
+  "ess_cli_project::lib(ess_cli_project)::runtime::fn::acquired": {
+    "class": "OwnedHelper",
+    "reason": "Exact grammar, process, acquisition, dispatch or value-validation helper of cli-binding-process-execution; grammar construction also serves cli-binding-rust-emission. Concrete platform/handler/validator obligations remain visible and no helper grants inherited support."
+  },
+  "ess_cli_project::lib(ess_cli_project)::runtime::fn::argument_text": {
+    "class": "OwnedHelper",
+    "reason": "Exact grammar, process, acquisition, dispatch or value-validation helper of cli-binding-process-execution; grammar construction also serves cli-binding-rust-emission. Concrete platform/handler/validator obligations remain visible and no helper grants inherited support."
+  },
+  "ess_cli_project::lib(ess_cli_project)::runtime::fn::bounded_read": {
+    "class": "OwnedHelper",
+    "reason": "Exact grammar, process, acquisition, dispatch or value-validation helper of cli-binding-process-execution; grammar construction also serves cli-binding-rust-emission. Concrete platform/handler/validator obligations remain visible and no helper grants inherited support."
+  },
+  "ess_cli_project::lib(ess_cli_project)::runtime::fn::command": {
+    "class": "OwnedHelper",
+    "reason": "Exact grammar, process, acquisition, dispatch or value-validation helper of cli-binding-process-execution; grammar construction also serves cli-binding-rust-emission. Concrete platform/handler/validator obligations remain visible and no helper grants inherited support."
+  },
+  "ess_cli_project::lib(ess_cli_project)::runtime::fn::dynamic_failure": {
+    "class": "OwnedHelper",
+    "reason": "Exact grammar, process, acquisition, dispatch or value-validation helper of cli-binding-process-execution; grammar construction also serves cli-binding-rust-emission. Concrete platform/handler/validator obligations remain visible and no helper grants inherited support."
+  },
+  "ess_cli_project::lib(ess_cli_project)::runtime::fn::failure": {
+    "class": "OwnedHelper",
+    "reason": "Exact grammar, process, acquisition, dispatch or value-validation helper of cli-binding-process-execution; grammar construction also serves cli-binding-rust-emission. Concrete platform/handler/validator obligations remain visible and no helper grants inherited support."
+  },
+  "ess_cli_project::lib(ess_cli_project)::runtime::fn::field_shapes": {
+    "class": "OwnedHelper",
+    "reason": "Exact grammar, process, acquisition, dispatch or value-validation helper of cli-binding-process-execution; grammar construction also serves cli-binding-rust-emission. Concrete platform/handler/validator obligations remain visible and no helper grants inherited support."
+  },
+  "ess_cli_project::lib(ess_cli_project)::runtime::fn::internal": {
+    "class": "OwnedHelper",
+    "reason": "Exact grammar, process, acquisition, dispatch or value-validation helper of cli-binding-process-execution; grammar construction also serves cli-binding-rust-emission. Concrete platform/handler/validator obligations remain visible and no helper grants inherited support."
+  },
+  "ess_cli_project::lib(ess_cli_project)::runtime::fn::json_argument": {
+    "class": "OwnedHelper",
+    "reason": "Exact payload JSON reader helper of cli-binding-process-execution. It preserves integer negative-zero tokens outside strings before the existing JSON reader; explicit runtime grammar witnesses remain required and this helper grants no inherited support."
+  },
+  "ess_cli_project::lib(ess_cli_project)::runtime::fn::leaf_command": {
+    "class": "OwnedHelper",
+    "reason": "Exact grammar, process, acquisition, dispatch or value-validation helper of cli-binding-process-execution; grammar construction also serves cli-binding-rust-emission. Concrete platform/handler/validator obligations remain visible and no helper grants inherited support."
+  },
+  "ess_cli_project::lib(ess_cli_project)::runtime::fn::payload": {
+    "class": "OwnedHelper",
+    "reason": "Exact grammar, process, acquisition, dispatch or value-validation helper of cli-binding-process-execution; grammar construction also serves cli-binding-rust-emission. Concrete platform/handler/validator obligations remain visible and no helper grants inherited support."
+  },
+  "ess_cli_project::lib(ess_cli_project)::runtime::fn::protected_file": {
+    "class": "OwnedHelper",
+    "reason": "Exact grammar, process, acquisition, dispatch or value-validation helper of cli-binding-process-execution; grammar construction also serves cli-binding-rust-emission. Concrete platform/handler/validator obligations remain visible and no helper grants inherited support."
+  },
+  "ess_cli_project::lib(ess_cli_project)::runtime::fn::render_reply": {
+    "class": "OwnedHelper",
+    "reason": "Exact grammar, process, acquisition, dispatch or value-validation helper of cli-binding-process-execution; grammar construction also serves cli-binding-rust-emission. Concrete platform/handler/validator obligations remain visible and no helper grants inherited support."
+  },
+  "ess_cli_project::lib(ess_cli_project)::runtime::fn::run": {
+    "class": "BoundEntry",
+    "reason": "Exact direct runtime entry of cli-binding-process-execution after binding admission. Successful claims execute the source runtime with attributed input/result/control assertions; generated subprocess behavior remains outside this profile."
+  },
+  "ess_cli_project::lib(ess_cli_project)::runtime::fn::selected_json": {
+    "class": "OwnedHelper",
+    "reason": "Exact grammar, process, acquisition, dispatch or value-validation helper of cli-binding-process-execution; grammar construction also serves cli-binding-rust-emission. Concrete platform/handler/validator obligations remain visible and no helper grants inherited support."
+  },
+  "ess_cli_project::lib(ess_cli_project)::runtime::fn::value_arg": {
+    "class": "OwnedHelper",
+    "reason": "Exact grammar, process, acquisition, dispatch or value-validation helper of cli-binding-process-execution; grammar construction also serves cli-binding-rust-emission. Concrete platform/handler/validator obligations remain visible and no helper grants inherited support."
+  },
+  "ess_cli_project::lib(ess_cli_project)::runtime::impl<OsSources;Sources>::acquire": {
+    "class": "OwnedHelper",
+    "reason": "Exact grammar, process, acquisition, dispatch or value-validation helper of cli-binding-process-execution; grammar construction also serves cli-binding-rust-emission. Concrete platform/handler/validator obligations remain visible and no helper grants inherited support."
+  },
+  "ess_cli_project::lib(ess_cli_project)::runtime::impl<UnavailableHandler;Handler>::call": {
+    "class": "OwnedHelper",
+    "reason": "Exact grammar, process, acquisition, dispatch or value-validation helper of cli-binding-process-execution; grammar construction also serves cli-binding-rust-emission. Concrete platform/handler/validator obligations remain visible and no helper grants inherited support."
+  },
+  "ess_cli_project::lib(ess_cli_project)::runtime::module": {
+    "class": "OwnedHelper",
+    "reason": "Exact grammar, process, acquisition, dispatch or value-validation helper of cli-binding-process-execution; grammar construction also serves cli-binding-rust-emission. Concrete platform/handler/validator obligations remain visible and no helper grants inherited support."
+  },
+  "ess_cli_project::lib(ess_cli_project)::runtime::struct::Context": {
+    "class": "OwnedHelper",
+    "reason": "Exact grammar, process, acquisition, dispatch or value-validation helper of cli-binding-process-execution; grammar construction also serves cli-binding-rust-emission. Concrete platform/handler/validator obligations remain visible and no helper grants inherited support."
+  },
+  "ess_cli_project::lib(ess_cli_project)::runtime::struct::Invocation": {
+    "class": "OwnedHelper",
+    "reason": "Exact grammar, process, acquisition, dispatch or value-validation helper of cli-binding-process-execution; grammar construction also serves cli-binding-rust-emission. Concrete platform/handler/validator obligations remain visible and no helper grants inherited support."
+  },
+  "ess_cli_project::lib(ess_cli_project)::runtime::struct::OsSources": {
+    "class": "OwnedHelper",
+    "reason": "Exact grammar, process, acquisition, dispatch or value-validation helper of cli-binding-process-execution; grammar construction also serves cli-binding-rust-emission. Concrete platform/handler/validator obligations remain visible and no helper grants inherited support."
+  },
+  "ess_cli_project::lib(ess_cli_project)::runtime::struct::ProcessOutput": {
+    "class": "OwnedHelper",
+    "reason": "Exact grammar, process, acquisition, dispatch or value-validation helper of cli-binding-process-execution; grammar construction also serves cli-binding-rust-emission. Concrete platform/handler/validator obligations remain visible and no helper grants inherited support."
+  },
+  "ess_cli_project::lib(ess_cli_project)::runtime::struct::UnavailableHandler": {
+    "class": "OwnedHelper",
+    "reason": "Exact grammar, process, acquisition, dispatch or value-validation helper of cli-binding-process-execution; grammar construction also serves cli-binding-rust-emission. Concrete platform/handler/validator obligations remain visible and no helper grants inherited support."
+  },
+  "ess_cli_project::lib(ess_cli_project)::runtime::trait::DynamicValidator": {
+    "class": "OwnedHelper",
+    "reason": "Exact grammar, process, acquisition, dispatch or value-validation helper of cli-binding-process-execution; grammar construction also serves cli-binding-rust-emission. Concrete platform/handler/validator obligations remain visible and no helper grants inherited support."
+  },
+  "ess_cli_project::lib(ess_cli_project)::runtime::trait::DynamicValidator::fn::validate": {
+    "class": "OwnedHelper",
+    "reason": "Exact grammar, process, acquisition, dispatch or value-validation helper of cli-binding-process-execution; grammar construction also serves cli-binding-rust-emission. Concrete platform/handler/validator obligations remain visible and no helper grants inherited support."
+  },
+  "ess_cli_project::lib(ess_cli_project)::runtime::trait::Handler": {
+    "class": "OwnedHelper",
+    "reason": "Exact grammar, process, acquisition, dispatch or value-validation helper of cli-binding-process-execution; grammar construction also serves cli-binding-rust-emission. Concrete platform/handler/validator obligations remain visible and no helper grants inherited support."
+  },
+  "ess_cli_project::lib(ess_cli_project)::runtime::trait::Handler::fn::call": {
+    "class": "OwnedHelper",
+    "reason": "Exact grammar, process, acquisition, dispatch or value-validation helper of cli-binding-process-execution; grammar construction also serves cli-binding-rust-emission. Concrete platform/handler/validator obligations remain visible and no helper grants inherited support."
+  },
+  "ess_cli_project::lib(ess_cli_project)::runtime::trait::Sources": {
+    "class": "OwnedHelper",
+    "reason": "Exact grammar, process, acquisition, dispatch or value-validation helper of cli-binding-process-execution; grammar construction also serves cli-binding-rust-emission. Concrete platform/handler/validator obligations remain visible and no helper grants inherited support."
+  },
+  "ess_cli_project::lib(ess_cli_project)::runtime::trait::Sources::fn::acquire": {
+    "class": "OwnedHelper",
+    "reason": "Exact grammar, process, acquisition, dispatch or value-validation helper of cli-binding-process-execution; grammar construction also serves cli-binding-rust-emission. Concrete platform/handler/validator obligations remain visible and no helper grants inherited support."
   },
   "ess_compiler::lib(ess_compiler)::binary64::fn::fields": {
     "class": "OwnedHelper",
@@ -33657,6 +34165,21 @@
     "macro_ast_sha256": null,
     "reason": "Maintenance/extractor infrastructure entry. Its source and fixture tests are inventoried; it emits evidence or proposals and grants no ESS semantic behavior support."
   },
+  "ess_xtask::bin(ess-xtask)::consumer_coverage::account::const::FORMAT": {
+    "class": "OwnedHelper",
+    "macro_ast_sha256": null,
+    "reason": "Exact gate accounting envelope, planning or qualification helper under docs/design/cli-schema-metadata-accounting.md. Behavioral proof still requires exact executed cases; the six metadata relationships require a separate opaque current-run guard proof."
+  },
+  "ess_xtask::bin(ess-xtask)::consumer_coverage::account::enum::CandidateStage": {
+    "class": "OwnedHelper",
+    "macro_ast_sha256": null,
+    "reason": "Exact gate accounting envelope, planning or qualification helper under docs/design/cli-schema-metadata-accounting.md. Behavioral proof still requires exact executed cases; the six metadata relationships require a separate opaque current-run guard proof."
+  },
+  "ess_xtask::bin(ess-xtask)::consumer_coverage::account::enum::CandidateStage/variant/Candidate": {
+    "class": "OwnedHelper",
+    "macro_ast_sha256": null,
+    "reason": "Exact gate accounting envelope, planning or qualification helper under docs/design/cli-schema-metadata-accounting.md. Behavioral proof still requires exact executed cases; the six metadata relationships require a separate opaque current-run guard proof."
+  },
   "ess_xtask::bin(ess-xtask)::consumer_coverage::account::enum::Disposition": {
     "class": "OwnedHelper",
     "macro_ast_sha256": null,
@@ -33677,10 +34200,45 @@
     "macro_ast_sha256": null,
     "reason": "Maintenance/extractor infrastructure entry. Its source and fixture tests are inventoried; it emits evidence or proposals and grants no ESS semantic behavior support."
   },
+  "ess_xtask::bin(ess-xtask)::consumer_coverage::account::enum::Disposition/variant/SchemaDocumentMetadataCandidate": {
+    "class": "OwnedHelper",
+    "macro_ast_sha256": null,
+    "reason": "Exact gate accounting envelope, planning or qualification helper under docs/design/cli-schema-metadata-accounting.md. Behavioral proof still requires exact executed cases; the six metadata relationships require a separate opaque current-run guard proof."
+  },
   "ess_xtask::bin(ess-xtask)::consumer_coverage::account::enum::Disposition/variant/UnknownProposal": {
     "class": "OwnedHelper",
     "macro_ast_sha256": null,
     "reason": "Maintenance/extractor infrastructure entry. Its source and fixture tests are inventoried; it emits evidence or proposals and grants no ESS semantic behavior support."
+  },
+  "ess_xtask::bin(ess-xtask)::consumer_coverage::account::enum::ExecutionStage": {
+    "class": "OwnedHelper",
+    "macro_ast_sha256": null,
+    "reason": "Exact gate accounting envelope, planning or qualification helper under docs/design/cli-schema-metadata-accounting.md. Behavioral proof still requires exact executed cases; the six metadata relationships require a separate opaque current-run guard proof."
+  },
+  "ess_xtask::bin(ess-xtask)::consumer_coverage::account::enum::ExecutionStage/variant/ExecutionPlan": {
+    "class": "OwnedHelper",
+    "macro_ast_sha256": null,
+    "reason": "Exact gate accounting envelope, planning or qualification helper under docs/design/cli-schema-metadata-accounting.md. Behavioral proof still requires exact executed cases; the six metadata relationships require a separate opaque current-run guard proof."
+  },
+  "ess_xtask::bin(ess-xtask)::consumer_coverage::account::enum::Format": {
+    "class": "OwnedHelper",
+    "macro_ast_sha256": null,
+    "reason": "Exact gate accounting envelope, planning or qualification helper under docs/design/cli-schema-metadata-accounting.md. Behavioral proof still requires exact executed cases; the six metadata relationships require a separate opaque current-run guard proof."
+  },
+  "ess_xtask::bin(ess-xtask)::consumer_coverage::account::enum::Format/variant/V1": {
+    "class": "OwnedHelper",
+    "macro_ast_sha256": null,
+    "reason": "Exact gate accounting envelope, planning or qualification helper under docs/design/cli-schema-metadata-accounting.md. Behavioral proof still requires exact executed cases; the six metadata relationships require a separate opaque current-run guard proof."
+  },
+  "ess_xtask::bin(ess-xtask)::consumer_coverage::account::enum::QualifiedStage": {
+    "class": "OwnedHelper",
+    "macro_ast_sha256": null,
+    "reason": "Exact gate accounting envelope, planning or qualification helper under docs/design/cli-schema-metadata-accounting.md. Behavioral proof still requires exact executed cases; the six metadata relationships require a separate opaque current-run guard proof."
+  },
+  "ess_xtask::bin(ess-xtask)::consumer_coverage::account::enum::QualifiedStage/variant/Qualified": {
+    "class": "OwnedHelper",
+    "macro_ast_sha256": null,
+    "reason": "Exact gate accounting envelope, planning or qualification helper under docs/design/cli-schema-metadata-accounting.md. Behavioral proof still requires exact executed cases; the six metadata relationships require a separate opaque current-run guard proof."
   },
   "ess_xtask::bin(ess-xtask)::consumer_coverage::account::enum::Status": {
     "class": "OwnedHelper",
@@ -33697,10 +34255,20 @@
     "macro_ast_sha256": null,
     "reason": "Maintenance/extractor infrastructure entry. Its source and fixture tests are inventoried; it emits evidence or proposals and grants no ESS semantic behavior support."
   },
+  "ess_xtask::bin(ess-xtask)::consumer_coverage::account::fn::read_candidates": {
+    "class": "OwnedHelper",
+    "macro_ast_sha256": null,
+    "reason": "Exact gate accounting envelope, planning or qualification helper under docs/design/cli-schema-metadata-accounting.md. Behavioral proof still requires exact executed cases; the six metadata relationships require a separate opaque current-run guard proof."
+  },
   "ess_xtask::bin(ess-xtask)::consumer_coverage::account::module": {
     "class": "OwnedHelper",
     "macro_ast_sha256": null,
     "reason": "Maintenance/extractor infrastructure entry. Its source and fixture tests are inventoried; it emits evidence or proposals and grants no ESS semantic behavior support."
+  },
+  "ess_xtask::bin(ess-xtask)::consumer_coverage::account::struct::Candidates": {
+    "class": "OwnedHelper",
+    "macro_ast_sha256": null,
+    "reason": "Exact gate accounting envelope, planning or qualification helper under docs/design/cli-schema-metadata-accounting.md. Behavioral proof still requires exact executed cases; the six metadata relationships require a separate opaque current-run guard proof."
   },
   "ess_xtask::bin(ess-xtask)::consumer_coverage::account::struct::Cell": {
     "class": "OwnedHelper",
@@ -33906,10 +34474,30 @@
     "macro_ast_sha256": null,
     "reason": "Exact consumer gate infrastructure entry: parses finite accounting or runs and records reviewed Rust cases. This entry does not itself establish ESS model semantics; consumer behavior remains attributed only to the separately named owner cases."
   },
+  "ess_xtask::bin(ess-xtask)::consumer_coverage::enforce::enum::Disposition/variant/SchemaDocumentMetadata": {
+    "class": "OwnedHelper",
+    "macro_ast_sha256": null,
+    "reason": "Exact gate accounting envelope, planning or qualification helper under docs/design/cli-schema-metadata-accounting.md. Behavioral proof still requires exact executed cases; the six metadata relationships require a separate opaque current-run guard proof."
+  },
   "ess_xtask::bin(ess-xtask)::consumer_coverage::enforce::enum::Disposition/variant/Supported": {
     "class": "OwnedHelper",
     "macro_ast_sha256": null,
     "reason": "Exact consumer gate infrastructure entry: parses finite accounting or runs and records reviewed Rust cases. This entry does not itself establish ESS model semantics; consumer behavior remains attributed only to the separately named owner cases."
+  },
+  "ess_xtask::bin(ess-xtask)::consumer_coverage::enforce::enum::Pending": {
+    "class": "OwnedHelper",
+    "macro_ast_sha256": null,
+    "reason": "Exact gate accounting envelope, planning or qualification helper under docs/design/cli-schema-metadata-accounting.md. Behavioral proof still requires exact executed cases; the six metadata relationships require a separate opaque current-run guard proof."
+  },
+  "ess_xtask::bin(ess-xtask)::consumer_coverage::enforce::enum::Pending/variant/Execution": {
+    "class": "OwnedHelper",
+    "macro_ast_sha256": null,
+    "reason": "Exact gate accounting envelope, planning or qualification helper under docs/design/cli-schema-metadata-accounting.md. Behavioral proof still requires exact executed cases; the six metadata relationships require a separate opaque current-run guard proof."
+  },
+  "ess_xtask::bin(ess-xtask)::consumer_coverage::enforce::fn::baseline_cells": {
+    "class": "OwnedHelper",
+    "macro_ast_sha256": null,
+    "reason": "Exact gate accounting envelope, planning or qualification helper under docs/design/cli-schema-metadata-accounting.md. Behavioral proof still requires exact executed cases; the six metadata relationships require a separate opaque current-run guard proof."
   },
   "ess_xtask::bin(ess-xtask)::consumer_coverage::enforce::fn::behavior": {
     "class": "OwnedHelper",
@@ -33921,15 +34509,25 @@
     "macro_ast_sha256": null,
     "reason": "Exact consumer gate infrastructure entry: parses finite accounting or runs and records reviewed Rust cases. This entry does not itself establish ESS model semantics; consumer behavior remains attributed only to the separately named owner cases."
   },
-  "ess_xtask::bin(ess-xtask)::consumer_coverage::enforce::fn::plan": {
+  "ess_xtask::bin(ess-xtask)::consumer_coverage::enforce::fn::plan_with_metadata": {
     "class": "OwnedHelper",
     "macro_ast_sha256": null,
-    "reason": "Exact consumer gate infrastructure entry: parses finite accounting or runs and records reviewed Rust cases. This entry does not itself establish ESS model semantics; consumer behavior remains attributed only to the separately named owner cases."
+    "reason": "Exact gate accounting envelope, planning or qualification helper under docs/design/cli-schema-metadata-accounting.md. Behavioral proof still requires exact executed cases; the six metadata relationships require a separate opaque current-run guard proof."
   },
   "ess_xtask::bin(ess-xtask)::consumer_coverage::enforce::fn::qualify": {
     "class": "OwnedHelper",
     "macro_ast_sha256": null,
     "reason": "Exact consumer gate infrastructure entry: parses finite accounting or runs and records reviewed Rust cases. This entry does not itself establish ESS model semantics; consumer behavior remains attributed only to the separately named owner cases."
+  },
+  "ess_xtask::bin(ess-xtask)::consumer_coverage::enforce::fn::qualify_cells": {
+    "class": "OwnedHelper",
+    "macro_ast_sha256": null,
+    "reason": "Exact gate accounting envelope, planning or qualification helper under docs/design/cli-schema-metadata-accounting.md. Behavioral proof still requires exact executed cases; the six metadata relationships require a separate opaque current-run guard proof."
+  },
+  "ess_xtask::bin(ess-xtask)::consumer_coverage::enforce::fn::read_plan": {
+    "class": "OwnedHelper",
+    "macro_ast_sha256": null,
+    "reason": "Exact gate accounting envelope, planning or qualification helper under docs/design/cli-schema-metadata-accounting.md. Behavioral proof still requires exact executed cases; the six metadata relationships require a separate opaque current-run guard proof."
   },
   "ess_xtask::bin(ess-xtask)::consumer_coverage::enforce::fn::validate_header": {
     "class": "OwnedHelper",
@@ -33950,6 +34548,11 @@
     "class": "OwnedHelper",
     "macro_ast_sha256": null,
     "reason": "Exact consumer gate infrastructure entry: parses finite accounting or runs and records reviewed Rust cases. This entry does not itself establish ESS model semantics; consumer behavior remains attributed only to the separately named owner cases."
+  },
+  "ess_xtask::bin(ess-xtask)::consumer_coverage::enforce::struct::ExecutionPlan": {
+    "class": "OwnedHelper",
+    "macro_ast_sha256": null,
+    "reason": "Exact gate accounting envelope, planning or qualification helper under docs/design/cli-schema-metadata-accounting.md. Behavioral proof still requires exact executed cases; the six metadata relationships require a separate opaque current-run guard proof."
   },
   "ess_xtask::bin(ess-xtask)::consumer_coverage::enforce::struct::Group": {
     "class": "OwnedHelper",
@@ -34019,6 +34622,11 @@
     "macro_ast_sha256": null,
     "reason": "Exact consumer gate infrastructure entry: parses finite accounting or runs and records reviewed Rust cases. This entry does not itself establish ESS model semantics; consumer behavior remains attributed only to the separately named owner cases."
   },
+  "ess_xtask::bin(ess-xtask)::consumer_coverage::fn::extracted_accounting_inputs": {
+    "class": "OwnedHelper",
+    "macro_ast_sha256": null,
+    "reason": "Exact gate accounting envelope, planning or qualification helper under docs/design/cli-schema-metadata-accounting.md. Behavioral proof still requires exact executed cases; the six metadata relationships require a separate opaque current-run guard proof."
+  },
   "ess_xtask::bin(ess-xtask)::consumer_coverage::fn::hash_bytes": {
     "class": "OwnedHelper",
     "macro_ast_sha256": null,
@@ -34073,6 +34681,176 @@
     "class": "OwnedHelper",
     "macro_ast_sha256": null,
     "reason": "Maintenance/extractor infrastructure entry. Its source and fixture tests are inventoried; it emits evidence or proposals and grants no ESS semantic behavior support."
+  },
+  "ess_xtask::bin(ess-xtask)::consumer_coverage::metadata::const::COMMON": {
+    "class": "OwnedHelper",
+    "macro_ast_sha256": null,
+    "reason": "Exact gate-owned schema metadata manifest, role or current-provider proof helper under docs/design/cli-schema-metadata-accounting.md. It accounts for six literal schema-document relationships, grants no behavioral support, and cannot expand the frozen baseline."
+  },
+  "ess_xtask::bin(ess-xtask)::consumer_coverage::metadata::const::CONSUMERS": {
+    "class": "OwnedHelper",
+    "macro_ast_sha256": null,
+    "reason": "Exact gate-owned schema metadata manifest, role or current-provider proof helper under docs/design/cli-schema-metadata-accounting.md. It accounts for six literal schema-document relationships, grants no behavioral support, and cannot expand the frozen baseline."
+  },
+  "ess_xtask::bin(ess-xtask)::consumer_coverage::metadata::const::DECISION": {
+    "class": "OwnedHelper",
+    "macro_ast_sha256": null,
+    "reason": "Exact gate-owned schema metadata manifest, role or current-provider proof helper under docs/design/cli-schema-metadata-accounting.md. It accounts for six literal schema-document relationships, grants no behavioral support, and cannot expand the frozen baseline."
+  },
+  "ess_xtask::bin(ess-xtask)::consumer_coverage::metadata::const::DIALECT": {
+    "class": "OwnedHelper",
+    "macro_ast_sha256": null,
+    "reason": "Exact gate-owned schema metadata manifest, role or current-provider proof helper under docs/design/cli-schema-metadata-accounting.md. It accounts for six literal schema-document relationships, grants no behavioral support, and cannot expand the frozen baseline."
+  },
+  "ess_xtask::bin(ess-xtask)::consumer_coverage::metadata::const::GUARD": {
+    "class": "OwnedHelper",
+    "macro_ast_sha256": null,
+    "reason": "Exact gate-owned schema metadata manifest, role or current-provider proof helper under docs/design/cli-schema-metadata-accounting.md. It accounts for six literal schema-document relationships, grants no behavioral support, and cannot expand the frozen baseline."
+  },
+  "ess_xtask::bin(ess-xtask)::consumer_coverage::metadata::const::LIMIT": {
+    "class": "OwnedHelper",
+    "macro_ast_sha256": null,
+    "reason": "Exact gate-owned schema metadata manifest, role or current-provider proof helper under docs/design/cli-schema-metadata-accounting.md. It accounts for six literal schema-document relationships, grants no behavioral support, and cannot expand the frozen baseline."
+  },
+  "ess_xtask::bin(ess-xtask)::consumer_coverage::metadata::const::SOURCE": {
+    "class": "OwnedHelper",
+    "macro_ast_sha256": null,
+    "reason": "Exact gate-owned schema metadata manifest, role or current-provider proof helper under docs/design/cli-schema-metadata-accounting.md. It accounts for six literal schema-document relationships, grants no behavioral support, and cannot expand the frozen baseline."
+  },
+  "ess_xtask::bin(ess-xtask)::consumer_coverage::metadata::enum::ManifestFormat": {
+    "class": "OwnedHelper",
+    "macro_ast_sha256": null,
+    "reason": "Exact gate-owned schema metadata manifest, role or current-provider proof helper under docs/design/cli-schema-metadata-accounting.md. It accounts for six literal schema-document relationships, grants no behavioral support, and cannot expand the frozen baseline."
+  },
+  "ess_xtask::bin(ess-xtask)::consumer_coverage::metadata::enum::ManifestFormat/variant/V1": {
+    "class": "OwnedHelper",
+    "macro_ast_sha256": null,
+    "reason": "Exact gate-owned schema metadata manifest, role or current-provider proof helper under docs/design/cli-schema-metadata-accounting.md. It accounts for six literal schema-document relationships, grants no behavioral support, and cannot expand the frozen baseline."
+  },
+  "ess_xtask::bin(ess-xtask)::consumer_coverage::metadata::enum::Relationship": {
+    "class": "OwnedHelper",
+    "macro_ast_sha256": null,
+    "reason": "Exact gate-owned schema metadata manifest, role or current-provider proof helper under docs/design/cli-schema-metadata-accounting.md. It accounts for six literal schema-document relationships, grants no behavioral support, and cannot expand the frozen baseline."
+  },
+  "ess_xtask::bin(ess-xtask)::consumer_coverage::metadata::enum::Relationship/variant/RootDefinitionsContainer": {
+    "class": "OwnedHelper",
+    "macro_ast_sha256": null,
+    "reason": "Exact gate-owned schema metadata manifest, role or current-provider proof helper under docs/design/cli-schema-metadata-accounting.md. It accounts for six literal schema-document relationships, grants no behavioral support, and cannot expand the frozen baseline."
+  },
+  "ess_xtask::bin(ess-xtask)::consumer_coverage::metadata::enum::Relationship/variant/RootDialectIdentifier": {
+    "class": "OwnedHelper",
+    "macro_ast_sha256": null,
+    "reason": "Exact gate-owned schema metadata manifest, role or current-provider proof helper under docs/design/cli-schema-metadata-accounting.md. It accounts for six literal schema-document relationships, grants no behavioral support, and cannot expand the frozen baseline."
+  },
+  "ess_xtask::bin(ess-xtask)::consumer_coverage::metadata::fn::candidates": {
+    "class": "OwnedHelper",
+    "macro_ast_sha256": null,
+    "reason": "Exact gate-owned schema metadata manifest, role or current-provider proof helper under docs/design/cli-schema-metadata-accounting.md. It accounts for six literal schema-document relationships, grants no behavioral support, and cannot expand the frozen baseline."
+  },
+  "ess_xtask::bin(ess-xtask)::consumer_coverage::metadata::fn::execute": {
+    "class": "OwnedHelper",
+    "macro_ast_sha256": null,
+    "reason": "Exact gate-owned schema metadata manifest, role or current-provider proof helper under docs/design/cli-schema-metadata-accounting.md. It accounts for six literal schema-document relationships, grants no behavioral support, and cannot expand the frozen baseline."
+  },
+  "ess_xtask::bin(ess-xtask)::consumer_coverage::metadata::fn::expected": {
+    "class": "OwnedHelper",
+    "macro_ast_sha256": null,
+    "reason": "Exact gate-owned schema metadata manifest, role or current-provider proof helper under docs/design/cli-schema-metadata-accounting.md. It accounts for six literal schema-document relationships, grants no behavioral support, and cannot expand the frozen baseline."
+  },
+  "ess_xtask::bin(ess-xtask)::consumer_coverage::metadata::fn::guard_digest": {
+    "class": "OwnedHelper",
+    "macro_ast_sha256": null,
+    "reason": "Exact gate-owned schema metadata manifest, role or current-provider proof helper under docs/design/cli-schema-metadata-accounting.md. It accounts for six literal schema-document relationships, grants no behavioral support, and cannot expand the frozen baseline."
+  },
+  "ess_xtask::bin(ess-xtask)::consumer_coverage::metadata::fn::observe_schema": {
+    "class": "OwnedHelper",
+    "macro_ast_sha256": null,
+    "reason": "Exact gate-owned schema metadata manifest, role or current-provider proof helper under docs/design/cli-schema-metadata-accounting.md. It accounts for six literal schema-document relationships, grants no behavioral support, and cannot expand the frozen baseline."
+  },
+  "ess_xtask::bin(ess-xtask)::consumer_coverage::metadata::fn::validate": {
+    "class": "OwnedHelper",
+    "macro_ast_sha256": null,
+    "reason": "Exact gate-owned schema metadata manifest, role or current-provider proof helper under docs/design/cli-schema-metadata-accounting.md. It accounts for six literal schema-document relationships, grants no behavioral support, and cannot expand the frozen baseline."
+  },
+  "ess_xtask::bin(ess-xtask)::consumer_coverage::metadata::fn::validate_entries": {
+    "class": "OwnedHelper",
+    "macro_ast_sha256": null,
+    "reason": "Exact gate-owned schema metadata manifest, role or current-provider proof helper under docs/design/cli-schema-metadata-accounting.md. It accounts for six literal schema-document relationships, grants no behavioral support, and cannot expand the frozen baseline."
+  },
+  "ess_xtask::bin(ess-xtask)::consumer_coverage::metadata::fn::verify_schema": {
+    "class": "OwnedHelper",
+    "macro_ast_sha256": null,
+    "reason": "Exact gate-owned schema metadata manifest, role or current-provider proof helper under docs/design/cli-schema-metadata-accounting.md. It accounts for six literal schema-document relationships, grants no behavioral support, and cannot expand the frozen baseline."
+  },
+  "ess_xtask::bin(ess-xtask)::consumer_coverage::metadata::impl<Authority;>::capture": {
+    "class": "OwnedHelper",
+    "macro_ast_sha256": null,
+    "reason": "Exact gate-owned schema metadata manifest, role or current-provider proof helper under docs/design/cli-schema-metadata-accounting.md. It accounts for six literal schema-document relationships, grants no behavioral support, and cannot expand the frozen baseline."
+  },
+  "ess_xtask::bin(ess-xtask)::consumer_coverage::metadata::impl<Authority;>::verify": {
+    "class": "OwnedHelper",
+    "macro_ast_sha256": null,
+    "reason": "Exact gate-owned schema metadata manifest, role or current-provider proof helper under docs/design/cli-schema-metadata-accounting.md. It accounts for six literal schema-document relationships, grants no behavioral support, and cannot expand the frozen baseline."
+  },
+  "ess_xtask::bin(ess-xtask)::consumer_coverage::metadata::impl<Candidates;>::digest": {
+    "class": "OwnedHelper",
+    "macro_ast_sha256": null,
+    "reason": "Exact gate-owned schema metadata manifest, role or current-provider proof helper under docs/design/cli-schema-metadata-accounting.md. It accounts for six literal schema-document relationships, grants no behavioral support, and cannot expand the frozen baseline."
+  },
+  "ess_xtask::bin(ess-xtask)::consumer_coverage::metadata::impl<Candidates;>::rows": {
+    "class": "OwnedHelper",
+    "macro_ast_sha256": null,
+    "reason": "Exact gate-owned schema metadata manifest, role or current-provider proof helper under docs/design/cli-schema-metadata-accounting.md. It accounts for six literal schema-document relationships, grants no behavioral support, and cannot expand the frozen baseline."
+  },
+  "ess_xtask::bin(ess-xtask)::consumer_coverage::metadata::impl<Candidates;>::verify_shapes": {
+    "class": "OwnedHelper",
+    "macro_ast_sha256": null,
+    "reason": "Exact gate-owned schema metadata manifest, role or current-provider proof helper under docs/design/cli-schema-metadata-accounting.md. It accounts for six literal schema-document relationships, grants no behavioral support, and cannot expand the frozen baseline."
+  },
+  "ess_xtask::bin(ess-xtask)::consumer_coverage::metadata::impl<Row;>::matches_cell": {
+    "class": "OwnedHelper",
+    "macro_ast_sha256": null,
+    "reason": "Exact gate-owned schema metadata manifest, role or current-provider proof helper under docs/design/cli-schema-metadata-accounting.md. It accounts for six literal schema-document relationships, grants no behavioral support, and cannot expand the frozen baseline."
+  },
+  "ess_xtask::bin(ess-xtask)::consumer_coverage::metadata::impl<Verified < '_ >;>::check": {
+    "class": "OwnedHelper",
+    "macro_ast_sha256": null,
+    "reason": "Exact gate-owned schema metadata manifest, role or current-provider proof helper under docs/design/cli-schema-metadata-accounting.md. It accounts for six literal schema-document relationships, grants no behavioral support, and cannot expand the frozen baseline."
+  },
+  "ess_xtask::bin(ess-xtask)::consumer_coverage::metadata::impl<Verified < '_ >;>::receipt": {
+    "class": "OwnedHelper",
+    "macro_ast_sha256": null,
+    "reason": "Exact gate-owned schema metadata manifest, role or current-provider proof helper under docs/design/cli-schema-metadata-accounting.md. It accounts for six literal schema-document relationships, grants no behavioral support, and cannot expand the frozen baseline."
+  },
+  "ess_xtask::bin(ess-xtask)::consumer_coverage::metadata::module": {
+    "class": "OwnedHelper",
+    "macro_ast_sha256": null,
+    "reason": "Exact gate-owned schema metadata manifest, role or current-provider proof helper under docs/design/cli-schema-metadata-accounting.md. It accounts for six literal schema-document relationships, grants no behavioral support, and cannot expand the frozen baseline."
+  },
+  "ess_xtask::bin(ess-xtask)::consumer_coverage::metadata::struct::Authority": {
+    "class": "OwnedHelper",
+    "macro_ast_sha256": null,
+    "reason": "Exact gate-owned schema metadata manifest, role or current-provider proof helper under docs/design/cli-schema-metadata-accounting.md. It accounts for six literal schema-document relationships, grants no behavioral support, and cannot expand the frozen baseline."
+  },
+  "ess_xtask::bin(ess-xtask)::consumer_coverage::metadata::struct::Candidates": {
+    "class": "OwnedHelper",
+    "macro_ast_sha256": null,
+    "reason": "Exact gate-owned schema metadata manifest, role or current-provider proof helper under docs/design/cli-schema-metadata-accounting.md. It accounts for six literal schema-document relationships, grants no behavioral support, and cannot expand the frozen baseline."
+  },
+  "ess_xtask::bin(ess-xtask)::consumer_coverage::metadata::struct::Manifest": {
+    "class": "OwnedHelper",
+    "macro_ast_sha256": null,
+    "reason": "Exact gate-owned schema metadata manifest, role or current-provider proof helper under docs/design/cli-schema-metadata-accounting.md. It accounts for six literal schema-document relationships, grants no behavioral support, and cannot expand the frozen baseline."
+  },
+  "ess_xtask::bin(ess-xtask)::consumer_coverage::metadata::struct::Row": {
+    "class": "OwnedHelper",
+    "macro_ast_sha256": null,
+    "reason": "Exact gate-owned schema metadata manifest, role or current-provider proof helper under docs/design/cli-schema-metadata-accounting.md. It accounts for six literal schema-document relationships, grants no behavioral support, and cannot expand the frozen baseline."
+  },
+  "ess_xtask::bin(ess-xtask)::consumer_coverage::metadata::struct::Verified": {
+    "class": "OwnedHelper",
+    "macro_ast_sha256": null,
+    "reason": "Exact gate-owned schema metadata manifest, role or current-provider proof helper under docs/design/cli-schema-metadata-accounting.md. It accounts for six literal schema-document relationships, grants no behavioral support, and cannot expand the frozen baseline."
   },
   "ess_xtask::bin(ess-xtask)::consumer_coverage::module": {
     "class": "OwnedHelper",
@@ -34777,6 +35555,10 @@
     "class": "OwnedHelper",
     "macro_ast_sha256": null,
     "reason": "Maintenance/extractor infrastructure entry. Its source and fixture tests are inventoried; it emits evidence or proposals and grants no ESS semantic behavior support."
+  },
+  "ess_xtask::bin(ess-xtask)::support::fn::observe_cli_binding": {
+    "class": "OwnedHelper",
+    "reason": "Exact offline CLI-presentation metadata/artifact observation helper under support-maintenance. It executes no generated application or provider and grants no semantic model support."
   },
   "ess_xtask::bin(ess-xtask)::support::fn::observe_conformance": {
     "class": "OwnedHelper",

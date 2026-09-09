@@ -1,5 +1,52 @@
 [
   {
+    "id": "cli-binding-resolution",
+    "entrypoints": [
+      "ess_domain::lib(ess_domain)::spec::impl<RawSpecFile;>::parse",
+      "ess_domain::lib(ess_domain)::spec::impl<Specification;>::assemble",
+      "ess_compiler::lib(ess_compiler)::resolve::fn::compile",
+      "ess_cli_contract::lib(ess_cli_contract)::resolve::fn::compile"
+    ],
+    "claim_boundary": "Admit authored ESS source text through the actual reader, assembly validator and ESS compiler, then read and compile its selected ess-cli/1 binding. Attribute a named refusal to the stage actually entered, with later stages unentered and a matched admitted terminal control. Successful cells assert the compiled binding. This source-text pipeline does not qualify filesystem discovery, artifact emission or process execution.",
+    "execution_profile": "default-rust",
+    "classification": "model-consumer",
+    "evidence_status": "UNACCEPTED_SOURCE_CANDIDATE",
+    "follow_up": null,
+    "owner": null
+  },
+  {
+    "id": "cli-binding-rust-emission",
+    "entrypoints": [
+      "ess_domain::lib(ess_domain)::spec::impl<RawSpecFile;>::parse",
+      "ess_domain::lib(ess_domain)::spec::impl<Specification;>::assemble",
+      "ess_compiler::lib(ess_compiler)::resolve::fn::compile",
+      "ess_cli_contract::lib(ess_cli_contract)::resolve::fn::compile",
+      "ess_cli_project::lib(ess_cli_project)::fn::project"
+    ],
+    "claim_boundary": "Admit authored ESS source text through the actual reader, assembly validator and ESS compiler, then read/compile the selected binding and emit its deterministic Rust/Clap artifact map. Attribute a named refusal to its actual admission stage, prove later stages unentered, and pair it with an admitted artifact control. Successful cells assert concrete emitted facts or complete unchanged bytes. Filesystem discovery and generated-package execution are outside this source-text pipeline.",
+    "execution_profile": "default-rust",
+    "classification": "model-consumer",
+    "evidence_status": "UNACCEPTED_SOURCE_CANDIDATE",
+    "follow_up": null,
+    "owner": null
+  },
+  {
+    "id": "cli-binding-process-execution",
+    "entrypoints": [
+      "ess_domain::lib(ess_domain)::spec::impl<RawSpecFile;>::parse",
+      "ess_domain::lib(ess_domain)::spec::impl<Specification;>::assemble",
+      "ess_compiler::lib(ess_compiler)::resolve::fn::compile",
+      "ess_cli_contract::lib(ess_cli_contract)::resolve::fn::compile",
+      "ess_cli_project::lib(ess_cli_project)::runtime::fn::run"
+    ],
+    "claim_boundary": "Admit authored ESS source text through the actual reader, assembly validator and ESS compiler, then read/compile the selected binding and directly execute its source runtime with attributed handler/input/result assertions. Named refusal belongs to the actual admission stage, with later stages unentered and an admitted runtime control. This test pipeline does not mean an installed binary parses ESS on invocation; filesystem discovery, generated-package subprocesses, providers and application business implementation remain outside the claim.",
+    "execution_profile": "default-rust",
+    "classification": "model-consumer",
+    "evidence_status": "UNACCEPTED_SOURCE_CANDIDATE",
+    "follow_up": null,
+    "owner": null
+  },
+  {
     "id": "authored-admission",
     "entrypoints": [
       "ess_domain::lib(ess_domain)::spec::impl<RawSpecFile;>::parse"

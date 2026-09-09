@@ -1,0 +1,24 @@
+format: ess-cli/1
+binary: records
+about: Forward to the declared service owner
+globals: {config: config, state: state-dir, output: output}
+callables:
+  rename:
+    target: {kind: service_forward, owner: owner-service, operation: demo.records.Rename}
+    input: demo.records.RenameInput
+    result: demo.records.Row
+  query:
+    target: {kind: service_forward, owner: owner-service, operation: demo.records.NamedRecords}
+    input: demo.records.QueryInput
+    result: List<demo.records.Row>
+commands:
+  - path: [rename]
+    callable: rename
+    about: Rename through the owning service
+    arguments:
+      - {field: name, source: {kind: option, long: name}}
+  - path: [records, find]
+    callable: query
+    about: Query the parameterized view
+    arguments:
+      - {field: prefix, source: {kind: option, long: prefix}}

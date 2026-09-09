@@ -132,11 +132,12 @@ pub(super) fn build(
         output: profile_output,
     } = bind_profiles(&profiles, &entries, &classifications, build_profile)?;
     let case_output = review_cases(&reviewed, &cases, source, build_profile)?;
+    let metadata = super::metadata::candidates(models, &json!(profile_ids))?;
     let ProposalCells {
         rows,
         groups,
         matrix,
-    } = materialize(models, &profile_ids, &profiles, &reviewed)?;
+    } = materialize(models, &profile_ids, &profiles, &reviewed, &metadata)?;
     for package in inventory["packages"]
         .as_object_mut()
         .context("packages")?
@@ -154,7 +155,14 @@ pub(super) fn build(
             json!(reviewed.requirements),
         ),
         ("pending-owner-groups.json".into(), json!(groups)),
-        ("unaccepted-cells.json".into(), json!(rows)),
+        (
+            "unaccepted-cells.json".into(),
+            json!(super::account::Candidates {
+                format: super::account::Format::V1,
+                stage: super::account::CandidateStage::Candidate,
+                cells: rows,
+            }),
+        ),
         ("checkpoint-summary.json".into(), matrix),
     ]))
 }
@@ -317,6 +325,7 @@ fn materialize(
     profile_ids: &BTreeMap<String, Value>,
     profiles: &[Profile],
     reviewed: &Reviewed,
+    metadata: &super::metadata::Candidates,
 ) -> Result<ProposalCells> {
     let models = models.as_object().context("model IDs")?;
     let mut required = BTreeMap::new();
@@ -353,6 +362,16 @@ fn materialize(
         let reason=format!("No exact behavior assertion is yet qualified for this model obligation under {}. Boundary: {} Root must select independent follow-up ownership after inspecting the finite cells; source candidates remain unexecuted.",profile.id,profile.claim_boundary);
         let mut pending = Vec::new();
         for (model, shape) in models {
+            let metadata_row = metadata
+                .rows()
+                .iter()
+                .find(|row| row.model == *model && row.consumer == profile.id);
+            if metadata_row.is_some() && required.contains_key(&(model, &profile.id)) {
+                bail!(
+                    "contradictory behavioral/schema metadata pair {model} {}",
+                    profile.id
+                );
+            }
             let disposition = if let Some(r) = required.get(&(model, &profile.id)) {
                 if r.cases.is_empty() {
                     Disposition::MandatoryUnqualified {
@@ -365,6 +384,10 @@ fn materialize(
                         cases: r.cases.clone(),
                         reason: r.reason.clone(),
                     }
+                }
+            } else if let Some(evidence) = metadata_row {
+                Disposition::SchemaDocumentMetadataCandidate {
+                    evidence: evidence.clone(),
                 }
             } else {
                 pending.push(model);

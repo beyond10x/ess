@@ -1,0 +1,71 @@
+{
+  "format": "ess-consumer-schema-metadata/1",
+  "rows": [
+    {
+      "model": "wire:RawSpecFile#/$schema",
+      "shape": "cf52a3245371a85692e1ad26501421c150066c5a5d839f2b27bc54020d5d7630",
+      "consumer": "cli-binding-resolution",
+      "profile": "d6053254374dbef8a24773e7a01869c0f0c5fc6f3ffb0c6dac06a87c6a13f974",
+      "relationship": "RootDialectIdentifier",
+      "guard": "cli-schema-document-metadata",
+      "guard_source_sha256": "07b8f86dcb78b2e98df93cae493b47218600c1242d8a0718dbd245ae20fb8dc4",
+      "reason": "The generated schema's Draft 7 dialect identifier belongs to the schema document. This reviewed authored-input CLI pipeline does not receive that document; the guard establishes its representation and source boundary identity, not CLI behavior or schema evaluation.",
+      "decision": "docs/design/cli-schema-metadata-accounting.md"
+    },
+    {
+      "model": "wire:RawSpecFile#/$schema",
+      "shape": "cf52a3245371a85692e1ad26501421c150066c5a5d839f2b27bc54020d5d7630",
+      "consumer": "cli-binding-rust-emission",
+      "profile": "6586c839bd5f66210652d1b21a80e81de557dc851972916dd5a0a07e85012579",
+      "relationship": "RootDialectIdentifier",
+      "guard": "cli-schema-document-metadata",
+      "guard_source_sha256": "07b8f86dcb78b2e98df93cae493b47218600c1242d8a0718dbd245ae20fb8dc4",
+      "reason": "The generated schema's Draft 7 dialect identifier belongs to the schema document. This reviewed authored-input CLI pipeline does not receive that document; the guard establishes its representation and source boundary identity, not CLI behavior or schema evaluation.",
+      "decision": "docs/design/cli-schema-metadata-accounting.md"
+    },
+    {
+      "model": "wire:RawSpecFile#/$schema",
+      "shape": "cf52a3245371a85692e1ad26501421c150066c5a5d839f2b27bc54020d5d7630",
+      "consumer": "cli-binding-process-execution",
+      "profile": "27ada91bfca1d41a4e5b917f68344b284cc5f54297235c535ec9fc507ec0878e",
+      "relationship": "RootDialectIdentifier",
+      "guard": "cli-schema-document-metadata",
+      "guard_source_sha256": "07b8f86dcb78b2e98df93cae493b47218600c1242d8a0718dbd245ae20fb8dc4",
+      "reason": "The generated schema's Draft 7 dialect identifier belongs to the schema document. This reviewed authored-input CLI pipeline does not receive that document; the guard establishes its representation and source boundary identity, not CLI behavior or schema evaluation.",
+      "decision": "docs/design/cli-schema-metadata-accounting.md"
+    },
+    {
+      "model": "wire:RawSpecFile#/definitions",
+      "shape": "3515c009028136bab26f2c1e31a6a5a15f8a44eba3f3ae6444e47a3aa5aab244",
+      "consumer": "cli-binding-resolution",
+      "profile": "d6053254374dbef8a24773e7a01869c0f0c5fc6f3ffb0c6dac06a87c6a13f974",
+      "relationship": "RootDefinitionsContainer",
+      "guard": "cli-schema-document-metadata",
+      "guard_source_sha256": "07b8f86dcb78b2e98df93cae493b47218600c1242d8a0718dbd245ae20fb8dc4",
+      "reason": "The generated schema's root definitions container belongs to the schema document. This reviewed authored-input CLI pipeline receives model documents; every descendant retains its own behavioral obligation. The guard establishes the complete container hash, references and boundary identity, not CLI behavior or schema evaluation.",
+      "decision": "docs/design/cli-schema-metadata-accounting.md"
+    },
+    {
+      "model": "wire:RawSpecFile#/definitions",
+      "shape": "3515c009028136bab26f2c1e31a6a5a15f8a44eba3f3ae6444e47a3aa5aab244",
+      "consumer": "cli-binding-rust-emission",
+      "profile": "6586c839bd5f66210652d1b21a80e81de557dc851972916dd5a0a07e85012579",
+      "relationship": "RootDefinitionsContainer",
+      "guard": "cli-schema-document-metadata",
+      "guard_source_sha256": "07b8f86dcb78b2e98df93cae493b47218600c1242d8a0718dbd245ae20fb8dc4",
+      "reason": "The generated schema's root definitions container belongs to the schema document. This reviewed authored-input CLI pipeline receives model documents; every descendant retains its own behavioral obligation. The guard establishes the complete container hash, references and boundary identity, not CLI behavior or schema evaluation.",
+      "decision": "docs/design/cli-schema-metadata-accounting.md"
+    },
+    {
+      "model": "wire:RawSpecFile#/definitions",
+      "shape": "3515c009028136bab26f2c1e31a6a5a15f8a44eba3f3ae6444e47a3aa5aab244",
+      "consumer": "cli-binding-process-execution",
+      "profile": "27ada91bfca1d41a4e5b917f68344b284cc5f54297235c535ec9fc507ec0878e",
+      "relationship": "RootDefinitionsContainer",
+      "guard": "cli-schema-document-metadata",
+      "guard_source_sha256": "07b8f86dcb78b2e98df93cae493b47218600c1242d8a0718dbd245ae20fb8dc4",
+      "reason": "The generated schema's root definitions container belongs to the schema document. This reviewed authored-input CLI pipeline receives model documents; every descendant retains its own behavioral obligation. The guard establishes the complete container hash, references and boundary identity, not CLI behavior or schema evaluation.",
+      "decision": "docs/design/cli-schema-metadata-accounting.md"
+    }
+  ]
+}

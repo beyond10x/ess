@@ -1,0 +1,19 @@
+format: ess-cli/1
+binary: demo
+about: Fixture CLI
+globals: {config: config, state: state-dir, output: output}
+callables:
+  store:
+    target: {kind: local, owner: demo.cli, action: store-credential}
+    input: demo.Input
+    result: demo.Stored
+    errors: {store_failed: demo.Failure}
+commands:
+  - path: [credential, store]
+    aliases: [[credential, set]]
+    callable: store
+    about: Store through the fixture handler
+    arguments:
+      - {field: profile, source: {kind: option, long: profile}}
+      - field: secret
+        source: {kind: protected, file: secret-file, stdin: secret-stdin, hidden_tty: secret-prompt}

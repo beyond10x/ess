@@ -1,0 +1,34 @@
+format: ess/1
+system: demo
+version: v1
+types:
+  - name: demo.Input
+    kind: struct
+    fields:
+      - {name: profile, type: String}
+      - {name: secret, type: String}
+  - name: demo.Stored
+    kind: struct
+    fields:
+      - {name: profile, type: String}
+  - name: demo.Failure
+    kind: struct
+    fields:
+      - {name: reason, type: String}
+  - name: demo.Mode
+    kind: enum
+    variants: [Safe, Fast]
+  - name: demo.Typed
+    kind: struct
+    fields:
+      - {name: count, type: Integer}
+      - {name: enabled, type: Boolean}
+      - {name: mode, type: demo.Mode}
+      - {name: note, type: 'Optional<String>'}
+      - {name: items, type: 'List<Integer>'}
+  - name: demo.Dynamic
+    kind: struct
+    fields:
+      - {name: operation, type: String}
+      - {name: schema, type: String}
+      - {name: payload, type: String}

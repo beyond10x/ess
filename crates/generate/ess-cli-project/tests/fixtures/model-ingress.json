@@ -1,0 +1,401 @@
+[
+  {
+    "format": "ess/1",
+    "system": "model",
+    "version": "v1",
+    "summary": "Model ingress witness.",
+    "domains": [
+      "model.data",
+      "model.cli"
+    ],
+    "components": [
+      {
+        "component": "data-service",
+        "owns": {
+          "domains": [
+            "model.data"
+          ]
+        },
+        "accepts": {
+          "commands": [
+            "model.data.Create",
+            "model.data.Finish",
+            "model.data.Notify"
+          ]
+        },
+        "publishes": {
+          "events": [
+            "model.data.Created",
+            "model.data.Finished",
+            "model.data.Notified",
+            "model.data.Escalated"
+          ]
+        },
+        "reached_by": "network",
+        "refs": [
+          "fixture:initial"
+        ]
+      }
+    ],
+    "bindings": [
+      {
+        "id": "data-react",
+        "when": {
+          "event": "model.data.Created"
+        },
+        "invoke": {
+          "command": "model.data.Notify"
+        },
+        "mapping": {
+          "tag": "event.tag",
+          "note": "created"
+        },
+        "delivery": "at_least_once",
+        "on_failure": {
+          "escalate": {
+            "emits": "model.data.Escalated"
+          }
+        }
+      }
+    ],
+    "topology": {
+      "workloads": {
+        "data-service": {
+          "replicas": {
+            "min": 1,
+            "max": 3
+          },
+          "stateless": true,
+          "requires": [
+            {
+              "database": "records"
+            }
+          ]
+        }
+      }
+    },
+    "conversions": []
+  },
+  {
+    "domain": "model.data",
+    "naming": {
+      "wire": "data",
+      "display": "Model data"
+    },
+    "types": [
+      {
+        "name": "model.data.Tag",
+        "kind": "newtype",
+        "of": "String"
+      },
+      {
+        "name": "model.data.Alias",
+        "kind": "newtype",
+        "of": "model.data.Tag"
+      },
+      {
+        "name": "model.data.Choice",
+        "kind": "union",
+        "tag": "kind",
+        "variants": {
+          "tag": "model.data.Tag",
+          "alias": "model.data.Alias"
+        }
+      },
+      {
+        "name": "model.data.Row",
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "parent_id",
+            "type": "String"
+          },
+          {
+            "name": "tag",
+            "type": "model.data.Tag"
+          },
+          {
+            "name": "amount",
+            "type": "Integer"
+          }
+        ]
+      }
+    ],
+    "entities": [
+      {
+        "name": "model.data.Parent",
+        "identity": {
+          "name": "parent_id",
+          "type": "String"
+        },
+        "fields": [
+          {
+            "name": "amount",
+            "type": "Integer"
+          },
+          {
+            "name": "tag",
+            "type": "model.data.Tag"
+          },
+          {
+            "name": "choice",
+            "type": "model.data.Choice"
+          },
+          {
+            "name": "link_id",
+            "type": "List<String>"
+          },
+          {
+            "name": "alternate_link",
+            "type": "List<String>"
+          }
+        ],
+        "relations": [
+          {
+            "name": "children",
+            "kind": "owns",
+            "target": "model.data.Child",
+            "cardinality": "many",
+            "via": "link_id"
+          }
+        ],
+        "invariants": [
+          "amount >= 0"
+        ],
+        "lifecycle": {
+          "initial": "Draft",
+          "states": [
+            "Draft",
+            "Done"
+          ],
+          "terminal": [
+            "Done"
+          ],
+          "transitions": [
+            {
+              "name": "finish",
+              "from": [
+                "Draft"
+              ],
+              "to": "Done"
+            }
+          ]
+        }
+      },
+      {
+        "name": "model.data.Child",
+        "identity": {
+          "name": "child_id",
+          "type": "String"
+        },
+        "fields": [
+          {
+            "name": "link_id",
+            "type": "String"
+          },
+          {
+            "name": "alternate_link",
+            "type": "String"
+          }
+        ],
+        "lifecycle": {
+          "initial": "Active",
+          "states": [
+            "Active"
+          ],
+          "terminal": [
+            "Active"
+          ]
+        }
+      },
+      {
+        "name": "model.data.Other",
+        "identity": {
+          "name": "other_id",
+          "type": "String"
+        },
+        "fields": [
+          {
+            "name": "link_id",
+            "type": "String"
+          },
+          {
+            "name": "alternate_link",
+            "type": "String"
+          }
+        ],
+        "lifecycle": {
+          "initial": "Active",
+          "states": [
+            "Active"
+          ],
+          "terminal": [
+            "Active"
+          ]
+        }
+      }
+    ],
+    "commands": [
+      {
+        "name": "model.data.Create",
+        "input": [
+          {
+            "name": "tag",
+            "type": "model.data.Tag"
+          },
+          {
+            "name": "amount",
+            "type": "Integer"
+          }
+        ],
+        "outcomes": [
+          {
+            "name": "created",
+            "creates": "model.data.Parent",
+            "instance": "parent_id",
+            "emits": [
+              "model.data.Created"
+            ]
+          }
+        ]
+      },
+      {
+        "name": "model.data.Finish",
+        "input": [
+          {
+            "name": "parent_id",
+            "type": "String"
+          }
+        ],
+        "outcomes": [
+          {
+            "name": "finished",
+            "moves": "model.data.Parent.finish",
+            "instance": "parent_id",
+            "emits": [
+              "model.data.Finished"
+            ]
+          },
+          {
+            "name": "wrong-state",
+            "wrong_state": true,
+            "error": "model.data.WrongState"
+          }
+        ]
+      },
+      {
+        "name": "model.data.Notify",
+        "input": [
+          {
+            "name": "tag",
+            "type": "model.data.Tag"
+          },
+          {
+            "name": "note",
+            "type": "String"
+          }
+        ],
+        "outcomes": [
+          {
+            "name": "notified",
+            "emits": [
+              "model.data.Notified"
+            ]
+          }
+        ]
+      }
+    ],
+    "events": [
+      {
+        "name": "model.data.Created",
+        "fields": [
+          {
+            "name": "parent_id",
+            "type": "String"
+          },
+          {
+            "name": "tag",
+            "type": "model.data.Tag"
+          },
+          {
+            "name": "amount",
+            "type": "Integer"
+          }
+        ]
+      },
+      {
+        "name": "model.data.Finished",
+        "fields": [
+          {
+            "name": "parent_id",
+            "type": "String"
+          }
+        ]
+      },
+      {
+        "name": "model.data.Notified",
+        "fields": [
+          {
+            "name": "tag",
+            "type": "model.data.Tag"
+          }
+        ]
+      },
+      {
+        "name": "model.data.Escalated",
+        "fields": []
+      }
+    ],
+    "errors": [
+      {
+        "name": "model.data.WrongState",
+        "fields": [
+          {
+            "name": "state",
+            "type": "model.data.Parent.State"
+          }
+        ]
+      }
+    ],
+    "views": [
+      {
+        "name": "model.data.Rows",
+        "source": "model.data.Parent",
+        "shape": "model.data.Row",
+        "params": [
+          {
+            "name": "wanted",
+            "type": "model.data.Tag"
+          }
+        ],
+        "filter": "tag == param.wanted",
+        "consistency": "eventual"
+      }
+    ],
+    "actors": [
+      {
+        "name": "model.data.Operator",
+        "may": [
+          "model.data.Create",
+          "model.data.Finish"
+        ]
+      }
+    ]
+  },
+  {
+    "domain": "model.cli",
+    "types": [
+      {
+        "name": "model.cli.Input",
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "value",
+            "type": "Integer"
+          }
+        ]
+      }
+    ]
+  }
+]
+

@@ -412,6 +412,86 @@ fn observe_conformance(root: &Path) -> Result<ConformanceFacts> {
     })
 }
 
+/// Observe this separately invoked projection without executing its generated application.
+fn observe_cli_binding(root: &Path) -> Result<(String, String, String)> {
+    let specify = cli(root, &["specify", "cli", "--help"])?;
+    let generate = cli(root, &["generate", "cli", "--help"])?;
+    for help in [&specify, &generate] {
+        for flag in ["--path", "--binding", "--format"] {
+            option(help, flag)?;
+        }
+    }
+    for flag in ["--out", "--check"] {
+        option(&generate, flag)?;
+    }
+    if choices(&specify, "--format")? != choices(&generate, "--format")? {
+        bail!("CLI binding routes disagree on their output format choices");
+    }
+    let inputs = [
+        "--path",
+        "crates/generate/ess-cli-project/tests/fixtures/model.yaml",
+        "--binding",
+        "crates/generate/ess-cli-project/tests/fixtures/cli.yaml",
+        "--format",
+        "json",
+    ];
+    let mut args = vec!["specify", "cli"];
+    args.extend(inputs);
+    let compiled = cli(root, &args)?;
+    let plan_format = json_marker(&compiled, "/format")?;
+
+    let nonce = SystemTime::now().duration_since(UNIX_EPOCH)?.as_nanos();
+    let parent = root.join("target/ess-support-check");
+    fs::create_dir_all(&parent)?;
+    let scratch = parent.join(format!("cli-{}-{nonce}", std::process::id()));
+    fs::create_dir(&scratch)?;
+    let destination = scratch.join("package");
+    let out = destination.to_str().context("UTF-8 CLI output path")?;
+    let mut args = vec!["generate", "cli"];
+    args.extend(inputs);
+    args.extend(["--out", out]);
+    let report = cli(root, &args)?;
+    let report_format = json_marker(&report, "/format")?;
+    let report: Value = serde_json::from_str(&report)?;
+    let files = report["files"].as_array().context("CLI generation files")?;
+    for name in [
+        "Cargo.toml",
+        "binding.json",
+        "manifest.json",
+        "src/lib.rs",
+        "src/main.rs",
+        "src/runtime.rs",
+        "src/wire.rs",
+        "help.txt",
+        "README.md",
+        "completions/demo.bash",
+    ] {
+        if !files.contains(&Value::String(name.into()))
+            || fs::read(destination.join(name))?.is_empty()
+        {
+            bail!("CLI projection did not emit its declared {name} artifact");
+        }
+    }
+    let written_binding: Value =
+        serde_json::from_str(&fs::read_to_string(destination.join("binding.json"))?)?;
+    if written_binding != serde_json::from_str::<Value>(&compiled)? {
+        bail!("CLI projection changed the validated binding document");
+    }
+    let manifest_format = json_marker(
+        &fs::read_to_string(destination.join("manifest.json"))?,
+        "/format",
+    )?;
+    args.push("--check");
+    let checked: Value = serde_json::from_str(&cli(root, &args)?)?;
+    if report["checked"] != false
+        || checked["checked"] != true
+        || checked["files"] != report["files"]
+    {
+        bail!("CLI generation and drift-check inventories disagree");
+    }
+    Ok((plan_format, manifest_format, report_format))
+}
+
 fn render(root: &Path) -> Result<String> {
     let manifest = fs::read_to_string(root.join("Cargo.toml"))?;
     let version = crate::workspace_version(&manifest)
@@ -430,6 +510,7 @@ fn render(root: &Path) -> Result<String> {
         "--target",
     )?;
     let schema_commands = commands(&cli(root, &["generate", "schema", "--help"])?)?;
+    let (cli_plan, cli_artifacts, cli_generation) = observe_cli_binding(root)?;
     let ConformanceFacts {
         suite_default,
         suite_choices,
@@ -483,6 +564,7 @@ fn render(root: &Path) -> Result<String> {
     row(&mut output, "BuildKit and Helm projection", "Checked build IR to Dockerfile/Bake inputs; runtime IR to a configuration-neutral Helm chart", &format!("These projections neither execute BuildKit nor apply a chart or establish live resource availability. {}.", source("deployment projection tests", "crates/generate/ess-deployment/tests/deployment.rs")));
     row(&mut output, "Structural synthesis", &code_list(&targets), &format!("Generated structure plus obligations/refusals, not business behavior. All four full targets refuse modeled Binary64; separate structural data libraries have their own support boundary. {} and [synthesis guide](../guides/synthesize.md).", source("feasibility tests", "crates/generate/ess-synth/tests/feasibility.rs")));
     row(&mut output, "Clap synthesis", "Command grammar, completion support and handler seams receiving `clap::ArgMatches`; generated `clap` and `clap_complete` 4 dependencies", &format!("No additional type layer or implemented command behavior. {} and {}.", source("Clap emitter", "crates/generate/ess-synth/src/clap/mod.rs"), source("handler tests", "crates/generate/ess-synth/tests/clap.rs")));
+    row(&mut output, "Typed CLI presentation", &format!("`specify cli` validates `ess-cli/1` to `{cli_plan}`; `generate cli` emits a Rust/Clap package, help, Bash completion and reference with `{cli_artifacts}` and `{cli_generation}`; `--check` compares generated bytes"), &format!("Typed inputs, results and declared errors remain model-owned; unsupported types and invariants refuse. Process context is separate from payloads. Application behavior requires `Handler`, dynamic native validation requires `DynamicValidator`, and the generated default handler is unavailable. {} and {}.", source("binding admission tests", "crates/specify/ess-cli-contract/tests/binding.rs"), source("projection and process tests", "crates/generate/ess-cli-project/tests/projection.rs")));
     row(&mut output, "Conformance targets", &code_list(&reference_targets), "Built-in reference implementations. A production adapter must establish its own execution boundary; these targets do not prove independent deployment.");
     row(&mut output, "Conformance formats", &format!("Defaults: `{default_suite}`, `{default_report}`. Explicit count surfaces: `{report_format}`, `{run_format}`. CLI suite choices: {} (default `{suite_default}`); report choices: {} (default `{report_default}`).", code_list(&suite_choices), code_list(&report_choices)), &format!("Actual report markers and CLI metadata; all-pass legacy execution can still mean inconclusive conformance. {}.", source("count-report tests", "crates/edge/ess-cli/tests/count_reports.rs")));
     row(&mut output, "Coverage qualification", &format!("Current-source `{coverage_suite}` requires explicit report/2 before execution"), &format!("Only a nonempty all-pass selection with complete inventory and no in-scope refusal can qualify. Suite/5, carrier and paired replay are unreleased relative to the dated 0.20.0 observation. {} and [conformance guide](../guides/verify-conformance.md#opt-into-declared-coverage).", source("coverage CLI tests", "crates/edge/ess-cli/tests/coverage_cli.rs")));

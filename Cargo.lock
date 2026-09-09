@@ -218,6 +218,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "clap_complete"
+version = "4.6.9"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "3be2ad0423bdbbb0e25bc89add796f3559706d4a95e1bc98e4d9662a957b6a19"
+dependencies = [
+ "clap",
+]
+
+[[package]]
 name = "clap_derive"
 version = "4.6.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -341,6 +350,8 @@ version = "0.20.0"
 dependencies = [
  "anyhow",
  "clap",
+ "ess-cli-contract",
+ "ess-cli-project",
  "ess-compiler",
  "ess-composition",
  "ess-conformance",
@@ -369,6 +380,35 @@ dependencies = [
  "serde_yaml",
  "sha2",
  "tar",
+ "tempfile",
+]
+
+[[package]]
+name = "ess-cli-contract"
+version = "0.20.0"
+dependencies = [
+ "ess-compiler",
+ "ess-domain",
+ "serde",
+ "serde_json",
+ "serde_yaml",
+ "thiserror",
+]
+
+[[package]]
+name = "ess-cli-project"
+version = "0.20.0"
+dependencies = [
+ "clap",
+ "clap_complete",
+ "ess-cli-contract",
+ "ess-compiler",
+ "ess-domain",
+ "ess-primitives",
+ "rpassword",
+ "rustix",
+ "serde",
+ "serde_json",
  "tempfile",
 ]
 
@@ -1248,6 +1288,27 @@ dependencies = [
  "libc",
  "untrusted",
  "windows-sys 0.52.0",
+]
+
+[[package]]
+name = "rpassword"
+version = "7.5.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "2da316a15f47e3d053de9cb2c439650bd8fa4aaeb9365f2e5f27f492ff73c196"
+dependencies = [
+ "libc",
+ "rtoolbox",
+ "windows-sys 0.61.2",
+]
+
+[[package]]
+name = "rtoolbox"
+version = "0.0.6"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "9a1efe12a1469752d0e6ff5ebec0b6ef4924cc5c4c71046b0ec730040535819d"
+dependencies = [
+ "libc",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]

@@ -135,6 +135,10 @@ and profile fingerprint, and one disposition:
   A panic, arbitrary nonzero exit or unexamined diagnostic is not refusal evidence.
 - BaselineUnknown: an exact pair/shape/profile in the separately accepted initial baseline, with
   an owner and existing follow-up artifact plus a precise unproven/broken behavior statement.
+- SchemaDocumentMetadata: exactly the six reviewed schema-document relationships in
+  [the CLI metadata decision](cli-schema-metadata-accounting.md), admitted only by
+  its executed fresh-provider guard. This is representation bookkeeping, separately
+  counted, and establishes no CLI behavior or runtime conformance.
 
 The initial baseline is a finite manifest pinned to the source commit and extraction profile
 after coverage integration. The future unit has two explicit stages. First, implement and review
@@ -144,7 +148,8 @@ and freezes exact baseline eligibility in a recorded checkpoint. Only afterward 
 enforcement stage admit BaselineUnknown. Neither bootstrap nor an ordinary gate may create
 Supported/Refused evidence from enumeration. Tool-assisted enumeration is allowed once; checking the
 gate never regenerates baseline eligibility from today's source. New fields, variants, changed
-shapes, consumers or profiles require Supported/Refused execution for their new obligations.
+shapes, consumers or profiles require Supported/Refused execution for their new obligations,
+except the six literal metadata relationships covered by that accepted decision.
 An old BaselineUnknown does not transfer to a changed obligation. Reject duplicates, missing or
 stale cells, unknown consumer/model IDs, contradictory dispositions and missing follow-up owners.
 
@@ -167,6 +172,27 @@ The baseline manifest may compactly group an explicit finite list of exact IDs u
 owner/explanation. The gate expands only the pinned list, never a live prefix. It must print total
 discovered obligations and Supported/Refused/BaselineUnknown counts, including exact unaccounted
 IDs on failure, without calling unknown coverage complete support.
+
+**Exact CLI schema metadata amendment (2026-09-09).** The root `$schema` and
+`definitions` nodes remain inventoried with their existing conservative hashes.
+Only their relationships to cli-binding-resolution, cli-binding-rust-emission and
+cli-binding-process-execution may have the new metadata disposition. Descendants
+and future consumers retain ordinary obligations. The closed six-row
+ess-consumer-schema-metadata/1 manifest pins each model/profile/guard identity.
+A private proof constructed by the current run's fresh compiled schema provider
+checks exact roles, hashes, reference inventory, source and build authority;
+saved receipts cannot construct it. Qualification requires exact planned/proved
+sets. Report one executed guard and six metadata cells separately from actual
+behavior cases. Preserve the existing baseline bytes and pre-existing profiles.
+
+The accounting products now use the first explicit ess-consumer-accounting/1
+envelope with closed candidate, execution-plan and qualified stages. Legacy
+unversioned products are historical receipts, not reusable qualification inputs.
+Missing/unknown formats and wrong stages refuse at typed input boundaries.
+Candidate/refused output reports zero qualified metadata cells. Final totals
+conserve Supported + Refused + BaselineUnknown + SchemaDocumentMetadata across
+the complete Cartesian matrix. This amendment does not change ESS model formats,
+wire canonicalization, behavioral case identities or the native execution protocol.
 
 ## Actual behavior execution
 
