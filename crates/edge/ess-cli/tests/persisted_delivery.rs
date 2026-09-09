@@ -50,6 +50,32 @@ impl Fixture {
         }
         command.output().unwrap()
     }
+    /// Executes through the driver with a synthetic admitted authority.
+    ///
+    /// `reconcile` is authority-gated, and the shipped binary's own controls in this file are the
+    /// refusal and dry-run ones, which still run through `ess`. Only the case that must actually
+    /// reach both executors needs an admitted authority, and the offline qualification's answer to
+    /// that is a real driver process running the production code under a test-only injected
+    /// arrangement.
+    fn execute(&self, desired: &Path) -> Output {
+        let job = self.0.join("job.json");
+        std::fs::write(
+            &job,
+            serde_json::to_vec(&serde_json::json!({
+                "root": self.0, "mode": "cache", "nonces": [],
+                "fail": null, "interrupt": null, "open_journal": false,
+                "plan": desired, "cache": self.0.join("cache"), "authority": true
+            }))
+            .unwrap(),
+        )
+        .unwrap();
+        Command::new(env!("CARGO_BIN_EXE_ess-recovery-driver"))
+            .env("PATH", executors())
+            .env("ESS_TEST_DELIVERY_LOG", self.0.join("calls"))
+            .arg(&job)
+            .output()
+            .unwrap()
+    }
     fn assert_no_calls(&self) {
         assert!(
             !self.0.join("calls").exists(),
@@ -189,7 +215,7 @@ fn valid_plan_reaches_both_local_fake_executors_in_rollout_order() {
     )
     .unwrap();
     let desired = fixture.write("desired.json", &desired);
-    let output = fixture.reconcile(&desired, None, false);
+    let output = fixture.execute(&desired);
     assert!(
         output.status.success(),
         "{}",
@@ -197,8 +223,37 @@ fn valid_plan_reaches_both_local_fake_executors_in_rollout_order() {
     );
     assert_eq!(
         std::fs::read_to_string(fixture.0.join("calls")).unwrap(),
-        "oras\noras\noras\nhelm\nhelm\n"
+        "oras\noras\noras\nhelm\nhelm\n",
+        "validation, then acquisition, then one executor call per release in rollout order"
     );
+
+    // The control: without the admitted authority the identical plan reaches neither executor.
+    let withheld = Fixture::new();
+    for name in ["manifest", "config", "chart", "identities"] {
+        std::fs::copy(fixture.0.join(name), withheld.0.join(name)).unwrap();
+    }
+    let plan = withheld.0.join("desired.json");
+    std::fs::copy(&desired, &plan).unwrap();
+    let job = withheld.0.join("job.json");
+    std::fs::write(
+        &job,
+        serde_json::to_vec(&serde_json::json!({
+            "root": withheld.0, "mode": "cache", "nonces": [],
+            "fail": null, "interrupt": null, "open_journal": false,
+            "plan": plan, "cache": withheld.0.join("cache"), "authority": false
+        }))
+        .unwrap(),
+    )
+    .unwrap();
+    let refused = Command::new(env!("CARGO_BIN_EXE_ess-recovery-driver"))
+        .env("PATH", executors())
+        .env("ESS_TEST_DELIVERY_LOG", withheld.0.join("calls"))
+        .arg(&job)
+        .output()
+        .unwrap();
+    assert!(!refused.status.success(), "{refused:?}");
+    assert!(String::from_utf8_lossy(&refused.stderr).contains("authority"));
+    withheld.assert_no_calls();
 }
 
 #[test]

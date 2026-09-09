@@ -10,6 +10,7 @@ use std::process::Command;
 
 use sha2::Digest;
 
+pub mod recovery;
 mod topology;
 pub use topology::{collect_namespace, scan_namespace};
 

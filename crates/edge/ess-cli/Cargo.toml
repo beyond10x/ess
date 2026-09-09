@@ -8,6 +8,10 @@ license.workspace = true
 repository.workspace = true
 authors.workspace = true
 
+[lib]
+name = "ess_cli"
+path = "src/lib.rs"
+
 [[bin]]
 name = "ess"
 path = "src/main.rs"
@@ -41,6 +45,25 @@ fluent-uri = "0.4.1"
 rustix = { version = "=1.1.4", features = ["fs", "process"] }
 sha2 = "0.11"
 getrandom = "0.3"
+# The recovery profile admits ESS-generated charts only, so the chart payload is decoded through a
+# bounded pure-Rust reader and compared member by member with `project_helm`'s five files. No C
+# backend: `rust_backend` keeps the decompressor inside the Rust toolchain the MSRV pins.
+flate2 = { version = "1", default-features = false, features = ["rust_backend"] }
+tar = { version = "0.4", default-features = false }
+
+[[bin]]
+# Test-only. The offline qualification requires real, separate driver processes running the same
+# production parser, admission, chart, journal and process code, and a `[[bin]]`-only crate cannot
+# give a second process that code. This target is that entry point; it ships no bypass into `ess`.
+name = "ess-recovery-driver"
+path = "tests/support/recovery_driver.rs"
+
+[[bin]]
+# Test-only. The independently controlled synthetic target and the fault-injecting stand-in for
+# the admitted Helm artifact. It outlives the first driver, which is what makes a restart case a
+# restart rather than a replay.
+name = "ess-recovery-fake"
+path = "tests/support/fake_recovery.rs"
 
 [dev-dependencies]
 # `tests/go_conformance.rs` writes a scenario by hand, in the same types synthesis writes one in, so

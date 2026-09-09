@@ -56,6 +56,32 @@ impl Fixture {
             .map(|l| l.split('\t').map(str::to_owned).collect())
             .collect()
     }
+    /// Acquires the pinned chart through the driver, with or without an admitted authority.
+    fn acquire(&self, plan: &serde_json::Value, authority: bool) -> Output {
+        static NEXT: AtomicU64 = AtomicU64::new(0);
+        let n = NEXT.fetch_add(1, Ordering::Relaxed);
+        let path = self.0.join(format!("plan-{n}.json"));
+        std::fs::write(&path, serde_json::to_vec(plan).unwrap()).unwrap();
+        let job = self.0.join(format!("job-{n}.json"));
+        std::fs::write(
+            &job,
+            serde_json::to_vec(&serde_json::json!({
+                "root": self.0, "mode": "cache", "nonces": [],
+                "fail": null, "interrupt": null, "open_journal": false,
+                "plan": path, "cache": self.0.join("cache"), "authority": authority
+            }))
+            .unwrap(),
+        )
+        .unwrap();
+        let output = Command::new(env!("CARGO_BIN_EXE_ess-recovery-driver"))
+            .env("PATH", clients())
+            .env("ESS_CACHE_ATTACK", &self.0)
+            .arg(&job)
+            .output()
+            .unwrap();
+        self.save("driver", &output);
+        output
+    }
 }
 fn clients() -> &'static Path {
     static CLIENTS: OnceLock<PathBuf> = OnceLock::new();
@@ -201,17 +227,20 @@ impl Graph {
         serde_json::json!({"format":"ess-deployment/1","environment":"attack","stack_digest":d,"cluster":"test-cluster","rollout_order":["first"],"releases":{"first":{"service":"first","release_name":"first","namespace":"test","service_account":"default","chart":{"build_output":"chart","kind":"helm_chart","reference":format!("oci://{REPO}"),"digest":d},"images":{"app":{"build_output":"app","kind":"oci_image","reference":"registry.invalid/app","digest":d,"platforms":{"linux/amd64":d}}}}}})
     }
     fn run(&self, f: &Fixture) -> Output {
-        let mut c = f.command();
-        if self.bundle {
-            c.args(["release", "fetch", "--from"])
-                .arg(format!("{REPO}@{}", self.digest()))
-                .arg("--out")
-                .arg(f.0.join("out"));
-        } else {
-            let path = f.0.join("plan.json");
-            std::fs::write(&path, serde_json::to_vec(&self.plan()).unwrap()).unwrap();
-            c.args(["deployment", "reconcile", "--path"]).arg(path);
+        if !self.bundle {
+            // `reconcile` is authority-gated, so the Helm-profile vectors reach the cache through
+            // the driver with a synthetic admitted authority — the test-only Rust adapter the
+            // offline qualification allows. The production OCI proof, the ORAS argument vectors
+            // and the cache layout are unchanged, which is why every assertion below still binds.
+            // `the_helm_vectors_reach_their_boundary_only_because_an_authority_admitted_them` is
+            // the control that proves the authority is what lets them through.
+            return f.acquire(&self.plan(), true);
         }
+        let mut c = f.command();
+        c.args(["release", "fetch", "--from"])
+            .arg(format!("{REPO}@{}", self.digest()))
+            .arg("--out")
+            .arg(f.0.join("out"));
         c.arg("--cache").arg(f.0.join("cache"));
         let output = c.output().unwrap();
         f.save("cli", &output);
@@ -620,4 +649,37 @@ fn offline_helm_consumes_the_owned_snapshot_after_shared_entry_replacement() {
         std::fs::read(f.0.join("consumed-first")).unwrap(),
         g.blobs[g.payload]
     );
+}
+
+/// The control that keeps the Helm-profile vectors above from passing on an earlier refusal.
+///
+/// The same shape as `cache_origin.rs`'s control, and for the same reason: with the synthetic
+/// authority withheld, an otherwise identical vector must stop before the first ORAS call, before
+/// the cache exists and before the consumer runs.
+#[test]
+fn the_helm_vectors_reach_their_boundary_only_because_an_authority_admitted_them() {
+    let g = Graph::new(false, false, Content::Original, false);
+    let f = Fixture::new();
+    g.install(&f);
+    let admitted = f.acquire(&g.plan(), true);
+    assert!(
+        admitted.status.success(),
+        "with an admitted authority the vector completes: {}",
+        String::from_utf8_lossy(&admitted.stderr)
+    );
+    assert!(f.0.join("cache/oci-proof-v1").exists());
+    assert!(f.calls().iter().any(|call| call[0] == "oras"));
+
+    let withheld = Fixture::new();
+    g.install(&withheld);
+    let refused = withheld.acquire(&g.plan(), false);
+    assert!(!refused.status.success(), "{refused:?}");
+    assert!(
+        String::from_utf8_lossy(&refused.stderr).contains("authority"),
+        "the refusal is the authority's: {}",
+        String::from_utf8_lossy(&refused.stderr)
+    );
+    assert!(!withheld.0.join("cache").exists());
+    assert!(!withheld.0.join("consumed-first").exists());
+    assert!(withheld.calls().is_empty(), "{:?}", withheld.calls());
 }
