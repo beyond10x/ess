@@ -176,32 +176,31 @@ fn a_nested_member_path_is_cited_by_construct_and_line() {
 fn a_name_used_more_than_once_falls_back_to_the_declaration_that_owns_it() {
     let (errors, cited) = cited(&[("repeated_names.yaml", REPEATED)]);
 
-    // `filed:` appears three times, so it locates nothing; the command's own `name:` line does.
-    // A confidently wrong line would be worse than this one.
-    let owner = Some(Location {
-        line: 12,
-        column: 5,
-    });
+    // Nothing here is located, and that is the point of the fixture. The outcome is written
+    // `- name: filed`, so the needle `filed:` occurs zero times in the document; the fallback
+    // needle `name: shop.repeat.File` occurs three times as a substring — the command itself, the
+    // sibling `shop.repeat.FileTwo`, and the event `shop.repeat.Filed`. A substring search that
+    // matches three lines knows nothing, and `Locator` says so instead of picking the first.
     assert_eq!(
         cited,
         vec![
             Cited {
                 code: "ESS-COMMAND-006".to_owned(),
-                source: "repeated_names.yaml".to_owned(),
-                path: "command.shop.repeat.FileOne.input[1]".to_owned(),
-                located: owner,
+                source: "<document>".to_owned(),
+                path: "command.shop.repeat.File.input[1]".to_owned(),
+                located: None,
             },
             Cited {
                 code: "ESS-COMMAND-006".to_owned(),
-                source: "repeated_names.yaml".to_owned(),
-                path: "command.shop.repeat.FileOne.outcomes.filed".to_owned(),
-                located: owner,
+                source: "<document>".to_owned(),
+                path: "command.shop.repeat.File.outcomes.filed".to_owned(),
+                located: None,
             },
             Cited {
                 code: "ESS-COMMAND-004".to_owned(),
-                source: "repeated_names.yaml".to_owned(),
-                path: "command.shop.repeat.FileOne.outcomes".to_owned(),
-                located: owner,
+                source: "<document>".to_owned(),
+                path: "command.shop.repeat.File.outcomes".to_owned(),
+                located: None,
             },
         ]
     );
@@ -266,6 +265,85 @@ fn a_reference_across_files_is_cited_in_the_file_that_wrote_it() {
     assert!(
         site.span.is_none(),
         "no producer supplies a parser position yet; the design page says so"
+    );
+}
+
+/// The design page's inventory is the count in the tree, in both directions.
+///
+/// The class adversary pass 1 found (F5): the page's inventory was written by hand and was wrong
+/// twice in one table — a row said seven sites where the tree had eight, and the per-function
+/// totals did not add up to the grep. A hand-maintained census of a migration in progress is a
+/// defect, not a document, because the only thing that keeps it true is somebody re-counting. So
+/// the page carries a machine-readable block and this test is the check: a file with sites that the
+/// block omits, a count that has drifted, and a file the block lists that has no sites, are each a
+/// failure. Migrating another family cannot go green without moving the page.
+#[test]
+fn the_inventory_on_the_design_page_is_the_count_in_the_tree() {
+    let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../..");
+    let page = std::fs::read_to_string(root.join("docs/design/review-typed-diagnostics.md"))
+        .expect("the design page exists");
+    let block = page
+        .split_once("<!-- inventory:begin -->")
+        .expect("the page carries a machine-readable inventory")
+        .1
+        .split_once("<!-- inventory:end -->")
+        .expect("the inventory block is closed")
+        .0;
+
+    let mut claimed: Vec<(String, usize, usize)> = Vec::new();
+    for line in block.lines() {
+        let line = line.trim();
+        if line.is_empty() || line.starts_with("```") {
+            continue;
+        }
+        let mut parts = line.split_whitespace();
+        let file = parts.next().expect("a file name").to_owned();
+        let untyped = parts
+            .next()
+            .and_then(|count| count.parse().ok())
+            .unwrap_or_else(|| panic!("`{line}` does not carry a `ValidationError::new` count"));
+        let typed = parts
+            .next()
+            .and_then(|count| count.parse().ok())
+            .unwrap_or_else(|| panic!("`{line}` does not carry a `ValidationError::at` count"));
+        assert!(
+            parts.next().is_none(),
+            "`{line}` has more than three fields"
+        );
+        claimed.push((file, untyped, typed));
+    }
+    assert!(
+        claimed.windows(2).all(|pair| pair[0].0 < pair[1].0),
+        "the inventory block is not in file order, so a reader cannot find a row"
+    );
+
+    let sources = root.join("crates/specify/ess-domain/src");
+    let mut measured: Vec<(String, usize, usize)> = Vec::new();
+    for entry in std::fs::read_dir(&sources).expect("ess-domain sources are readable") {
+        let path = entry.expect("a readable entry").path();
+        if path.extension().is_none_or(|kind| kind != "rs") {
+            continue;
+        }
+        let text = std::fs::read_to_string(&path).expect("readable");
+        let untyped = text.matches("ValidationError::new").count();
+        let typed = text.matches("ValidationError::at").count();
+        if untyped == 0 && typed == 0 {
+            continue;
+        }
+        measured.push((
+            path.file_name()
+                .expect("a file name")
+                .to_string_lossy()
+                .into_owned(),
+            untyped,
+            typed,
+        ));
+    }
+    measured.sort();
+
+    assert_eq!(
+        claimed, measured,
+        "the inventory in `docs/design/review-typed-diagnostics.md` and the tree disagree"
     );
 }
 

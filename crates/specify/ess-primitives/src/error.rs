@@ -395,8 +395,13 @@ impl fmt::Display for ValidationCode {
 ///
 /// [`Self::as_str`] is the token the producers already write at the head of a location, so a
 /// rendered path is byte-identical to the string it replaces.
+///
+/// Deliberately **not** `#[non_exhaustive]`, unlike [`ValidationCode`]. The set of layers is closed
+/// — it is `ess-compiler`'s `codes::family::ALL` — and a downstream crate matching a
+/// `#[non_exhaustive]` enum is forced to write a wildcard arm, which is exactly how a kind reaches
+/// the compiler's `SPEC` fallback without anybody deciding that it should. Keeping it exhaustive
+/// makes adding a variant a compile error at every mapping, which is the review this type wants.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
-#[non_exhaustive]
 pub enum ConstructKind {
     /// A named type.
     Type,
@@ -427,6 +432,26 @@ pub enum ConstructKind {
 }
 
 impl ConstructKind {
+    /// Every kind, in the order a specification is read.
+    ///
+    /// The same order as `ess-compiler`'s `codes::family::ALL`, so the two lists can be checked
+    /// against each other rather than trusted.
+    pub const ALL: &'static [Self] = &[
+        Self::Specification,
+        Self::Domain,
+        Self::Type,
+        Self::Conversion,
+        Self::Entity,
+        Self::Command,
+        Self::Event,
+        Self::Error,
+        Self::View,
+        Self::Actor,
+        Self::Binding,
+        Self::Component,
+        Self::Topology,
+    ];
+
     /// The token this kind renders as at the head of a location, such as `command`.
     pub fn as_str(self) -> &'static str {
         match self {
@@ -931,6 +956,12 @@ mod tests {
             ]
         );
         assert!(site.span.is_none(), "no producer has a parser position yet");
+        assert_eq!(
+            ConstructKind::ALL.len(),
+            13,
+            "a kind was added or removed; `family_of_kind` in `ess-compiler` and \
+             `docs/design/review-typed-diagnostics.md` both enumerate this list"
+        );
 
         let string_only = ValidationError::new(
             ValidationCode::UndeclaredReference,

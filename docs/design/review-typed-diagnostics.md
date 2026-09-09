@@ -86,17 +86,32 @@ it keeps the serialized bytes and the generated schema identical and costs nothi
 | `site = Some(Site { span: None, .. })` | `family_of_kind(site.construct.kind())` | `locator.span(construct.render(), needles_of_site(construct))` |
 | `site = None` | `family_of(&error.location)` | `locator.span(error.location, needles_for(&error.location))` |
 
-`family_of` and `needles_for` are **not consulted** when a site is present — that is a test, not a
-comment (`resolve.rs` in-crate `a_sited_refusal_ignores_the_location_strings_head` and
-`a_sited_refusal_takes_its_needles_from_the_construct_not_the_path`).
+`family_of_kind` names every `ConstructKind` and has no wildcard arm. That is why `ConstructKind` is
+exhaustive while `ValidationCode` is `#[non_exhaustive]`: a downstream crate matching a
+non-exhaustive enum must write `_`, and a `_` here is how a new kind arrives silently in `SPEC`
+without anybody deciding it should. `every_construct_kind_maps_to_a_declared_family_and_back` checks
+both directions — no kind falls outside `codes::family::ALL`, and no family is unreachable.
 
-`needles_of_site` derives the same needles the heuristic derives, from typed data instead of tokens:
-the trailing `Segment::Name` as `"<name>:"` when it starts with an ASCII lowercase letter, then
-`"name: <qualified>"`, `"id: <qualified>"`, `"component: <qualified>"`. It never consults `STRUCTURAL`,
-because a `Key` segment is already known not to be a declaration name. The lowercase test is kept
-rather than dropped: an event name written `InvoiceCreated` is a `Name` segment but is not a YAML key
-in the documents this repository has, and pushing `InvoiceCreated:` as a needle would move located
-lines that are pinned today.
+`family_of` and `needles_for` are **not consulted** when a site is present — that is a test, not a
+comment (`resolve.rs` in-crate `a_sited_refusal_takes_its_family_from_the_construct_not_the_location_head`
+and `a_sited_refusal_takes_its_needles_from_the_construct_not_the_location_path`).
+
+`needles_of_site` is **not** a second derivation. `needles_for` and `needles_of_site` call one body,
+`needles_from_tokens`; the only difference is where the tokens come from — `needles_for` splits the
+location string, `needles_of_site` builds them from `kind`, `name` and `members`. That is the whole
+of what the typed site buys here, and it is enough: the tokens are a function of the construct, so
+rewording `ValidationError::location` cannot move the cited line, and the two paths cannot disagree
+about which line a path names.
+
+The first draft of this page claimed the opposite — that the `Key`/`Name` split *replaces* the
+`STRUCTURAL` stop-list and that a trailing `Name` needs no stop-list check. Adversary pass 1 refuted
+it twice (F1, F2, `crates/specify/ess-compiler/tests/adversary_typed_diagnostics_pass1.rs`): a
+trailing qualified event name such as `shop.tail.Missing` starts with a lowercase letter and *is* a
+YAML key in every `payload:` block, and an outcome an author names `error` is one of the fifty
+stop-list words. In both, the sited refusal and its own rendered string cited different lines for one
+defect. Two answers to "which line does this path name" is worse than either answer alone, so there
+is now one body to answer with, and `needles_of_site(c) == needles_for(&c.render())` is asserted for
+every segment shape (`resolve.rs`, `typed_needles_are_the_string_needles_for_every_segment_shape`).
 
 No parser position source exists yet — `serde_yaml` discards positions for semantic errors
 (`ess-compiler/src/source.rs:1-11`) — so every migrated producer in this wave sets `span: None` and the
@@ -111,15 +126,31 @@ prints (`ESS-COMMAND-001`).
 **Migrated (this wave):** the `command` family in `crates/specify/ess-domain/src/command.rs` — every
 site whose location is built locally from `CommandSpec::name`:
 
-| Function | `file:line` (base) | Sites |
+| Function | `file:line` (working tree) | Sites |
 |---|---|---|
-| `validate_wrong_state_answer` | `command.rs:250` | 2 |
-| `CommandSpec::validate_shape` | `command.rs:1040` | 18 |
-| `CommandSpec::validate` | `command.rs:1546` | 2 |
-| `validate_payloads` / `check_payload_entry` / `check_payload_literal` | `command.rs:1610`, `:1679`, `:1793` | 7 |
+| `validate_wrong_state_answer` | `command.rs:252` | 2 |
+| `CommandSpec::validate_shape` | `command.rs:1052` | 2 |
+| `CommandSpec::declared_input` | `command.rs:1102` | 1 |
+| `CommandSpec::validate_outcome` | `command.rs:1119` | 4 |
+| `CommandSpec::validate_payload_shape` | `command.rs:1223` | 2 |
+| `CommandSpec::validate_sets_shape` | `command.rs:1280` | 2 |
+| `CommandSpec::validate_guard` | `command.rs:1335` | 2 |
+| `CommandSpec::validate_typed_guard` | `command.rs:1395` | 1 |
+| `CommandSpec::validate_branch_coverage` | `command.rs:1457` | 4 |
+| `CommandSpec::validate` | `command.rs:1566` | 2 |
+| `check_payload_entry` | `command.rs:1662` | 2 |
+| `check_payload_literal` | `command.rs:1819` | 4 |
+| **total** | | **28** |
 
 Those functions take a `&ConstructRef` where they took an `&str` location, so the path is typed the
 whole way down rather than re-parsed at the end.
+
+28 is `grep -c 'ValidationError::at' crates/specify/ess-domain/src/command.rs`, and the inventory
+below is the same grep for `ValidationError::new`. The first version of this page counted by hand and
+was wrong twice in one table (adversary pass 1, F5), so the counts are no longer prose: the block
+under *Machine-checked inventory* is read by
+`crates/specify/ess-compiler/tests/typed_diagnostics.rs::the_inventory_on_the_design_page_is_the_count_in_the_tree`,
+which fails when the page and the tree disagree in either direction.
 
 ## Inventory: what is still on the string heuristic
 
@@ -129,10 +160,11 @@ compatibility clause. Nothing here is a silent omission.
 | Path | Sites | Result | Reason |
 |---|---|---|---|
 | `command.rs` `validate_sets` (`:1722`) | 2 | **unsupported this wave** | It writes `commands.<name>.…` — plural. `family_of` trims a trailing `s` so the code is right by accident. Rendering it from a `ConstructRef` produces `command.…`, which is a **location change, not a wording change**, and is therefore outside this story's acceptance. Filed for a follow-up that may change the string. |
-| `command.rs` `field_shape` (`:1968`), used by `ErrorSpec::validate` (`:1960`) | 1 | deferred | Shared with the `error` family; migrating it belongs with that family, not with `command`. |
-| `TypeRegistry::resolve(&type_ref, &location)` call sites (`command.rs:1558`, `:1963`, and `types.rs`) | 3 in `command.rs` | deferred | The location crosses a crate module boundary into `types.rs`, whose signature is the `type` family's migration. |
-| `Outcome::try_from` / `subject_of` relative locations (`command.rs:2151`–`:2402`), rebased by string concatenation at `command.rs:2425` | 7 | deferred | These build a location *relative* to a construct they do not know, and the prefix is prepended later by mutating `error.location`. The typed replacement is a `ConstructRef` passed into admission; it is a signature change on the raw→admitted conversion and is the next unit of this migration. |
+| `command.rs` `field_shape` (`:1987`), used by `ErrorSpec::validate` (`:1974`) | 1 | deferred | Shared with the `error` family; migrating it belongs with that family, not with `command`. |
+| `TypeRegistry::resolve(&type_ref, &location)` call sites (`command.rs:1573`, `:1978`; the signature is `types.rs:900`) | 0 of `command.rs`'s own | deferred | These pass a location *into* `types.rs`, which constructs the refusal; they are counted against `types.rs`, not `command.rs`. `validate_typed_guard` is the same shape into `expression.rs` and is handled the same way — it passes `owner.render()`, so the two spellings cannot drift. |
+| `Outcome::try_from` (`command.rs:2163`), `keyed_sets` (`:2259`), `keyed_payload` (`:2286`), `subject_of` (`:2336`) — relative locations rebased by string concatenation at `command.rs:2447` | 1 + 1 + 2 + 4 = **8** | deferred | These build a location *relative* to a construct they do not know, and the prefix is prepended later by mutating `error.location`. The typed replacement is a `ConstructRef` passed into admission; it is a signature change on the raw→admitted conversion and is the next unit of this migration. |
 | `ess-domain/src/entity.rs` (20), `binding.rs` (17), `component.rs` (15), `view.rs` (11), `topology.rs` (10), `system.rs` (10), `spec.rs` (7), `types.rs` (6), `domain.rs` (5), `wire.rs` (1) | 102 | deferred, by family | Same shape as `command.rs`; each is one family's worth of work with its own fixtures. |
+| `command.rs` `validate_sets` (`:1727`) + `field_shape` (`:1987`) + the eight admission sites above | 11 | see rows above | `grep -c 'ValidationError::new' crates/specify/ess-domain/src/command.rs` = 11, which is 2 + 1 + 8. |
 | `ess-domain/src/actor.rs` | 1 | deferred | An `actor`-family site the story's own scope does not list; recorded here so the inventory is complete rather than equal to the scope. |
 | `ess-domain/src/expression.rs` (1), `primitive_admission.rs` (2) | 3 | **not this unit** | `story:review-primitive-semantics`, same wave. `CommandSpec::validate_typed_guard` hands `check_predicate` the *rendered* form of its own site, so the two spellings cannot drift while that file waits. |
 | `ess-primitives/src/error.rs:78` `ParseError::Shape { location: String }` | — | deferred | The same pattern on the *parse* side. A parse error has a real `serde_yaml` position, so its typed form is a `SyntaxSpan`, not a `ConstructRef`; different work. |
@@ -143,6 +175,32 @@ constructors would need migrating, and it constructs no `ValidationError` at all
 lines). That scope line is wrong and nothing was built on it.
 
 `bridge`'s string fallback stays until this table is empty.
+
+## Machine-checked inventory
+
+Every `ValidationError` construction site in `crates/specify/ess-domain/src/`, as
+`<file> <ValidationError::new sites> <ValidationError::at sites>`. Read and checked against the tree
+by `crates/specify/ess-compiler/tests/typed_diagnostics.rs`; a file with sites that is missing from
+this block, a count that does not match, and a listed file that has none, are each a failing test.
+
+<!-- inventory:begin -->
+```text
+actor.rs 1 0
+binding.rs 17 0
+command.rs 11 28
+component.rs 15 0
+domain.rs 5 0
+entity.rs 20 0
+expression.rs 1 0
+primitive_admission.rs 2 0
+spec.rs 7 0
+system.rs 10 0
+topology.rs 10 0
+types.rs 6 0
+view.rs 11 0
+wire.rs 1 0
+```
+<!-- inventory:end -->
 
 ## Consumer accounting
 
@@ -158,9 +216,14 @@ entry (as `error::struct::ValidationError` has), the implementation wording for 
 `crates/specify/ess-compiler/tests/typed_diagnostics.rs` against
 `crates/specify/ess-compiler/tests/fixtures/typed_diagnostics/`:
 
-1. `repeated_names.yaml` — one outcome name used in two commands, and one field name repeated inside
-   one command, so a needle that is *not* unique is exercised and the honest `located: None` is
-   asserted rather than a confidently wrong line.
+1. `repeated_names.yaml` — every refusal it produces is **unlocated**, and that is what it is for.
+   The outcome is written `- name: filed`, so the needle `filed:` occurs zero times; the fallback
+   needle `name: shop.repeat.File` occurs three times as a substring — the command itself, the
+   sibling command `shop.repeat.FileTwo`, and the event `shop.repeat.Filed`. A substring search
+   matching three lines knows nothing, and `Locator` reports `located: None` instead of picking the
+   first. The first version of this page claimed the fixture asserted `None` while the test pinned
+   all three refusals to line 12 (adversary pass 1, F3, F4); the fixture now does what the page says,
+   and `adversary_typed_diagnostics_pass1.rs` holds it to that.
 2. `nested.yaml` — a `payload:` entry three member levels below the command, so the member path is
    more than one segment deep.
 3. `cross_file_a.yaml` + `cross_file_b.yaml` — a command in one file emitting an event declared in

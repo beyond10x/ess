@@ -9,7 +9,7 @@ events:
       - name: note
         type: String
 commands:
-  - name: shop.repeat.FileOne
+  - name: shop.repeat.File
     input:
       - name: note
         type: String

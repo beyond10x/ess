@@ -5010,6 +5010,11 @@
     "macro_ast_sha256": null,
     "reason": "Concrete owned implementation/helper entry within the bounded caller families. Complete body evidence remains visible and changes require ordinary behavioral review; this finite classification grants no independent support or nonreachability."
   },
+  "ess_compiler::lib(ess_compiler)::resolve::fn::needles_from_tokens": {
+    "class": "OwnedHelper",
+    "macro_ast_sha256": null,
+    "reason": "Concrete owned implementation/helper entry within the bounded caller families. Complete body evidence remains visible and changes require ordinary behavioral review; this finite classification grants no independent support or nonreachability."
+  },
   "ess_compiler::lib(ess_compiler)::resolve::fn::needles_of_site": {
     "class": "OwnedHelper",
     "macro_ast_sha256": null,
@@ -5021,6 +5026,11 @@
     "reason": "Concrete owned implementation/helper entry within the bounded caller families. Complete body evidence remains visible and changes require ordinary behavioral review; this finite classification grants no independent support or nonreachability."
   },
   "ess_compiler::lib(ess_compiler)::resolve::fn::spec_type_ref": {
+    "class": "OwnedHelper",
+    "macro_ast_sha256": null,
+    "reason": "Concrete owned implementation/helper entry within the bounded caller families. Complete body evidence remains visible and changes require ordinary behavioral review; this finite classification grants no independent support or nonreachability."
+  },
+  "ess_compiler::lib(ess_compiler)::resolve::fn::split_path": {
     "class": "OwnedHelper",
     "macro_ast_sha256": null,
     "reason": "Concrete owned implementation/helper entry within the bounded caller families. Complete body evidence remains visible and changes require ordinary behavioral review; this finite classification grants no independent support or nonreachability."
@@ -23890,6 +23900,11 @@
     "reason": "Concrete owned implementation/helper entry within the bounded caller families. Complete body evidence remains visible and changes require ordinary behavioral review; this finite classification grants no independent support or nonreachability."
   },
   "ess_primitives::lib(ess_primitives)::error::impl<ConstructKind;>::as_str": {
+    "class": "OwnedHelper",
+    "macro_ast_sha256": null,
+    "reason": "Concrete owned implementation/helper entry within the bounded caller families. Complete body evidence remains visible and changes require ordinary behavioral review; this finite classification grants no independent support or nonreachability."
+  },
+  "ess_primitives::lib(ess_primitives)::error::impl<ConstructKind;>::const::ALL": {
     "class": "OwnedHelper",
     "macro_ast_sha256": null,
     "reason": "Concrete owned implementation/helper entry within the bounded caller families. Complete body evidence remains visible and changes require ordinary behavioral review; this finite classification grants no independent support or nonreachability."
