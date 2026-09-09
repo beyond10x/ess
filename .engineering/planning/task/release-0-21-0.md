@@ -7,7 +7,7 @@ title: Prepare and publish ESS 0.21.0 from merged source
 relations:
 - serves: vision:O2
 - derived_from: story:cli-presentation-binding
-revision: 3
+revision: 4
 ---
 ## Authorization and outcome
 
@@ -37,3 +37,21 @@ This is release preparation and verification, not new provider, MCP or productio
 CLI implementation. It does not authorize Atlas catalog changes, consumer
 promotion or documentation deployment. One bounded release task is selected;
 there is no new multi-story decomposition to send to a critic panel.
+
+## Release candidate correction
+
+Candidate 70274767448005dca71018fa03b7444a0998dd7f passed task site-build,
+including task site-lab. Its full task check stopped in coverage_producers after
+175 passing tests: the live billing reference identified package version 0.21.0,
+while the independently frozen semantic plan expected 0.20.0.
+
+Preserve that historical plan and its SHA-256 unchanged. Resolve only its sixteen
+Rust billing-reference implementation labels and the corresponding target identity
+from the current workspace package version before producer execution; retain the
+original and resolved plans separately in the fixture evidence. Keep the strict
+report comparison, semantic expectations and other target labels unchanged.
+
+The focused coverage_producers test passed all three cases after this correction.
+Fresh full-gate and browser/site checks on the corrected committed candidate are
+still required before any release tag or public main push. Initial and corrected
+logs are retained under .local/cli-contract-wave-20260909/release-0.21.0/.

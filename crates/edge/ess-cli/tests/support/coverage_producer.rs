@@ -93,7 +93,7 @@ fn setup(profile: &str) -> (PathBuf, Value, BTreeMap<String, AdmittedInput>) {
     let directory = base.join(profile);
     fs::create_dir_all(&directory).unwrap();
     let fixture = fixtures();
-    let plan = read_json(&fixture.join("semantic-plan.json"));
+    let mut plan = read_json(&fixture.join("semantic-plan.json"));
     assert_eq!(
         hash(&fixture.join("semantic-plan.json")),
         "5a378b14f7747ce7b3f1eac9b6d6e8c5962c02f81e4e116f7e74d478bcae6ef1"
@@ -109,6 +109,27 @@ fn setup(profile: &str) -> (PathBuf, Value, BTreeMap<String, AdmittedInput>) {
         directory.join("semantic-plan.json"),
     )
     .unwrap();
+    // Preserve the independently frozen 0.20.0 plan above. Before running a producer,
+    // resolve only its package-version identity against this workspace release;
+    // outcomes, counts, source identities and the other target names stay pinned.
+    let baseline_identity = "billing-reference 0.20.0";
+    let current_identity = json!(concat!("billing-reference ", env!("CARGO_PKG_VERSION")));
+    assert_eq!(
+        plan["target_contracts"]["billing-reference"]["identity"],
+        baseline_identity
+    );
+    plan["target_contracts"]["billing-reference"]["identity"] = current_identity.clone();
+    let mut resolved = 0;
+    for instance in plan["requested_report_instances"].as_array_mut().unwrap() {
+        if instance["target"] == "billing-reference" {
+            assert_eq!(instance["producer_profile"], "rust-scenario-status/1");
+            assert_eq!(instance["expected_implementation"], baseline_identity);
+            instance["expected_implementation"] = current_identity.clone();
+            resolved += 1;
+        }
+    }
+    assert_eq!(resolved, 16);
+    write_json(&directory.join("resolved-semantic-plan.json"), &plan);
     source_receipt(&directory);
     let structures = structures(&plan, &directory);
     (directory, plan, structures)
