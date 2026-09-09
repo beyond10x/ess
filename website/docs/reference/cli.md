@@ -171,7 +171,7 @@ forwarding alone do not establish end-to-end typed payload compatibility.
 | `ess generate component compile …` | Validate a repository-owned component descriptor. |
 | `ess generate release verify\|bundle\|verify-bundle\|publish\|fetch\|check-conformance\|publish-conformance …` | Check release consistency, qualify supplied local reports, or explicitly cross the OCI credential edge. |
 | `ess generate stack resolve\|validate …` | Resolve generic product stacks from an offline release catalogue. |
-| `ess generate deployment compile\|diff\|reconcile …` | Bind an exact stack lock, compare deployments, or explicitly reconcile the affected Helm releases. |
+| `ess generate deployment compile\|diff\|reconcile …` | Bind an exact stack lock, compare deployments, or explicitly reconcile the affected Helm releases under an admitted recovery authority. |
 
 The [current-source support matrix](../status/where-this-stands.md#support-boundaries) records
 projection kinds, adapter directions and their limits separately from the dated release observation.
@@ -197,7 +197,7 @@ an unreleased source addition.
 | `ess generate release bundle …` | Check runtime/chart consistency and write one canonical OCI payload. |
 | `ess generate release publish --path FILE --to OCI_TAG` | Publish a consistency-checked bundle and print its OCI manifest digest. Optional local report qualification is described below. |
 | `ess generate release fetch --from OCI_REF@sha256:… --cache DIR` | Fetch a digest-pinned bundle, revalidate it, and cache canonical bytes. |
-| `ess generate deployment reconcile --path FILE --current FILE --cache DIR` | Apply only added or changed Helm releases in rollout order. |
+| `ess generate deployment reconcile --path FILE --current FILE --cache DIR --authority UUID` | Apply only added or changed Helm releases in rollout order. `--current` is an admitted baseline desired deployment, not a record of what was applied. `--authority` names one entry of the protected recovery registry and is **required** for execution: without it the command refuses before any external call, cache write or recovery write. `--dry-run` remains a local unverified preview and needs no authority. |
 
 The seven release routes also have identical flat `ess release …` aliases. Existing canonical
 JSON/YAML streams and output files keep their bytes. Text success describes consistency; fetch

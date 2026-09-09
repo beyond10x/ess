@@ -166,8 +166,11 @@ pub(crate) const INTEGER_TEXT_PATTERN: &str = r"^-?(0|[1-9][0-9]*)$";
 
 /// A UUID in the canonical hyphenated form.
 ///
-/// The `urn:uuid:` and brace-wrapped forms are refused. Nothing in this repository parses these
-/// values, so this projection is where the wire form is decided, and one form is the decision.
+/// The `urn:uuid:` and brace-wrapped forms are refused. This projection is where the wire form is
+/// decided, and one form is the decision — and since
+/// `docs/design/review-primitive-semantics.md` it is also the form every admitter in this
+/// repository enforces, spelt as `ess_primitives::facts::is_canonical_uuid` for Rust, as
+/// `canonicalUUID` in the Go conformance runtime and as `canonicalUUID` in the browser adapter.
 pub(crate) const UUID_PATTERN: &str =
     "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$";
 
@@ -988,6 +991,122 @@ pub(crate) fn field_leaves(fields: &[ResolvedField]) -> Vec<&TypeHandle> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Every published primitive node, byte for byte.
+    ///
+    /// A `format` or a `pattern` here is a *published contract*: a validator asserts it, and a
+    /// consumer pinned to a generated schema breaks when one moves. The exact-number and
+    /// tightened-admission work of `docs/design/review-primitive-semantics.md` deliberately moves
+    /// none of them — it makes the readers in this repository enforce what these already said —
+    /// and this is the assertion that says so for all nine variants at once, rather than for the
+    /// three that happened to have a test.
+    #[test]
+    fn every_primitive_publishes_the_type_format_and_pattern_it_already_published() {
+        /// One published node: the primitive, its `type`, `format`, `pattern` and
+        /// `contentEncoding`.
+        type Published = (
+            Primitive,
+            &'static str,
+            Option<&'static str>,
+            Option<&'static str>,
+            Option<&'static str>,
+        );
+        let expected: [Published; 9] = [
+            (Primitive::String, "string", None, None, None),
+            (Primitive::Boolean, "boolean", None, None, None),
+            (Primitive::Integer, "integer", None, None, None),
+            (
+                Primitive::Decimal,
+                "string",
+                Some("decimal"),
+                Some(r"^-?(0|[1-9][0-9]*)(\.[0-9]+)?$"),
+                None,
+            ),
+            (Primitive::Binary64, "number", None, None, None),
+            (
+                Primitive::Timestamp,
+                "string",
+                Some("date-time"),
+                None,
+                None,
+            ),
+            (Primitive::Duration, "string", Some("duration"), None, None),
+            (
+                Primitive::Uuid,
+                "string",
+                Some("uuid"),
+                Some(
+                    "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$",
+                ),
+                None,
+            ),
+            (
+                Primitive::Bytes,
+                "string",
+                None,
+                Some("^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$"),
+                Some("base64"),
+            ),
+        ];
+        assert_eq!(
+            expected.len(),
+            Primitive::ALL.len(),
+            "a new primitive publishes a node nothing pinned"
+        );
+        for (which, kind, format, pattern, encoding) in expected {
+            let node = primitive(which);
+            assert_eq!(node.kind, Some(kind), "{which}: type");
+            assert_eq!(node.format, format, "{which}: format");
+            assert_eq!(node.pattern, pattern, "{which}: pattern");
+            assert_eq!(node.content_encoding, encoding, "{which}: contentEncoding");
+        }
+    }
+
+    /// The published grammar and the grammar every reader enforces are one grammar.
+    ///
+    /// `UUID_PATTERN` and `BASE64_PATTERN` are what a validator applies to a generated schema;
+    /// `ess_primitives::facts::is_canonical_uuid` and `is_padded_base64` are what this
+    /// repository's Rust, Go and browser admitters apply to the same value. Two spellings of one
+    /// rule drift, so the corpus that decides the second decides the first.
+    #[test]
+    fn the_published_patterns_and_the_admission_grammars_answer_one_corpus() {
+        #[derive(serde::Deserialize)]
+        struct Corpus {
+            admission: Vec<Vector>,
+        }
+        #[derive(serde::Deserialize)]
+        struct Vector {
+            name: String,
+            kind: String,
+            value: serde_json::Value,
+            admitted: bool,
+        }
+        let corpus: Corpus = serde_json::from_str(include_str!(
+            "../../../specify/ess-primitives/tests/vectors/primitive-semantics.json"
+        ))
+        .expect("the corpus is readable");
+        let mut checked = 0;
+        for vector in corpus.admission {
+            let Some(text) = vector.value.as_str() else {
+                continue;
+            };
+            let (grammar, pattern): (fn(&str) -> bool, &str) = match vector.kind.as_str() {
+                "uuid" => (ess_primitives::facts::is_canonical_uuid, UUID_PATTERN),
+                "bytes" => (ess_primitives::facts::is_padded_base64, BASE64_PATTERN),
+                _ => continue,
+            };
+            assert!(
+                pattern.starts_with('^') && pattern.ends_with('$'),
+                "an unanchored pattern asserts less than the grammar does"
+            );
+            assert_eq!(grammar(text), vector.admitted, "{}", vector.name);
+            checked += 1;
+        }
+        assert!(
+            checked >= 15,
+            "the corpus reached {checked} constrained vectors"
+        );
+    }
 
     #[test]
     fn a_decimal_is_written_as_an_exact_string_because_a_json_number_is_read_as_a_float() {

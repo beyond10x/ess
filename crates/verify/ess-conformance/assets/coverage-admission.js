@@ -3,7 +3,37 @@
 // Original suite strings and unsigned metadata never pass through JSON.parse's Number conversion.
 const fail = reason => { throw new Error(`Invalid coverage replay: ${reason}`) }
 const require = (condition, reason) => { if (!condition) fail(reason) }
+// A number kept as the digits it was written with.
+//
+// **No `toJSON` and no `toString`.** Round 3 of this unit added both, on the reasoning that a token
+// reaching the player should render as its number; that changed how *every* preserved token
+// projects, from `{"raw": "4294967295"}` to the JSON string `"4294967295"`, and this repository
+// pins the first spelling in three places — `replay_fidelity_browser.rs:1197` and `:666`, and
+// `coverage_writer_adversary_pass2.rs::assert_payload_projection`. A token is projected as the
+// token it is, and the exact-integer path below changes which values are kept, never how a kept
+// value is rendered.
 class NumberToken { constructor(raw) { this.raw = raw } }
+// An integer token JS `Number` cannot hold exactly, canonicalised to its digits — or `null`.
+//
+// `Number(raw)` collapses every integer above 2^53, so `9007199254740992` and `9007199254740993`
+// were one value here and two in Rust: a child scenario that swapped one for the other compared
+// equal in the browser and unequal in the runner, and the browser admitted a replay the runner
+// refuses (`ess-cli/tests/support/coverage_cases.rs`). `equal` already compares a NumberToken by
+// its exact digits; this is what keeps one rather than throwing it away. See *One rule for
+// comparing integers* in docs/design/review-primitive-semantics.md.
+// It is only ever called with a JSON *number* token's digits, or with a predicate expression's own
+// literal text, which the predicate grammar has always read as a number. A JSON string value is
+// never passed here and is never reinterpreted: `node()` returns a string unchanged, and
+// `primitiveAdmits` still refuses a string for `integer`/`decimal`.
+const exactInteger = raw => {
+  const match = /^([+-]?)(0|[1-9][0-9]*)(?:\.0*)?$/.exec(String(raw))
+  if (match === null) return null
+  const approximate = Number(raw)
+  // A token no binary64 holds is refused, exactly as `Number::new` refuses an infinity, and a token
+  // binary64 does hold exactly needs no digits kept.
+  if (!Number.isFinite(approximate) || Number.isSafeInteger(approximate)) return null
+  return new NumberToken((match[1] === '-' ? -BigInt(match[2]) : BigInt(match[2])).toString())
+}
 const own = (value, key) => Object.hasOwn(value, key)
 const object = value => {
   require(value !== null && typeof value === 'object' && !Array.isArray(value) && !(value instanceof NumberToken), 'expected object')
@@ -159,7 +189,11 @@ const suiteReference = value => {
 }
 const referenceFor = suite => ({ version: 'ess-conformance/5', digest_profile: 'sha256-json-bytes/1', digest: suite.digest })
 function node(value) {
-  if (value instanceof NumberToken) { const result = Number(value.raw); require(Number.isFinite(result), 'non-finite Node number'); return result }
+  if (value instanceof NumberToken) {
+    const exact = exactInteger(value.raw)
+    if (exact !== null) return exact
+    const result = Number(value.raw); require(Number.isFinite(result), 'non-finite Node number'); return result
+  }
   if (Array.isArray(value)) return value.map(node)
   if (value !== null && typeof value === 'object') return Object.fromEntries(keys(value).map(key => [key, node(value[key])]))
   return value
@@ -185,7 +219,7 @@ const scalar = value => {
   if (trimmed.length >= 2 && ['"', "'"].includes(trimmed[0]) && trimmed.at(-1) === trimmed[0]) return trimmed.slice(1, -1)
   if (trimmed === 'true' || trimmed === 'false') return trimmed === 'true'
   // f64's decimal grammar, without JavaScript's hexadecimal/empty-string coercions.
-  if (/^[+-]?(?:[0-9]+(?:\.[0-9]*)?|\.[0-9]+)(?:[eE][+-]?[0-9]+)?$/.test(trimmed) && Number.isFinite(Number(trimmed))) return Number(trimmed)
+  if (/^[+-]?(?:[0-9]+(?:\.[0-9]*)?|\.[0-9]+)(?:[eE][+-]?[0-9]+)?$/.test(trimmed) && Number.isFinite(Number(trimmed))) return exactInteger(trimmed) ?? Number(trimmed)
   return trimmed
 }
 const operand = value => {
@@ -287,6 +321,41 @@ function expectation(value) {
   }
   return result
 }
+// A UUID in the one hyphenated form the specification publishes: 8-4-4-4-12 hexadecimal digits, in
+// either case. urn:uuid: and brace-wrapped spellings are refused, because one value has one
+// spelling. The same grammar as ess-gen's UUID_PATTERN, ess_primitives::facts::is_canonical_uuid
+// and the Go runtime's canonicalUUID, checked from all four against one corpus
+// (crates/specify/ess-primitives/tests/vectors/primitive-semantics.json).
+const canonicalUUID = /^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/
+// The admitted Integer range: [-2^63, 2^63], the binary64 image of [i64::MIN, i64::MAX] and not
+// that interval. A JSON number is a binary64 here, and i64::MAX written and read back is 2^63; an
+// exclusive bound refused every integer above 9223372036854775296, which the Rust admitter accepts.
+// See the round-trip law in docs/design/review-primitive-semantics.md.
+const integerBound = 9223372036854775808
+// Base64 with padding, the standard alphabet only, as ess-gen's BASE64_PATTERN publishes it.
+const paddedBase64 = /^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/
+// Whether a value is one the declared primitive admits.
+//
+// A grammar, not merely a kind name. Every kind was admitted by name alone, so this adapter showed
+// a replay a `uuid` field holding `x` that every schema the same specification publishes refuses —
+// review finding F08, docs/design/review-primitive-semantics.md.
+export const primitiveAdmits = (kind, value) => {
+  switch (kind) {
+    case 'string': case 'timestamp': case 'duration': return typeof value === 'string'
+    case 'boolean': return typeof value === 'boolean'
+    // A kept token is an integer beyond 2^53, and its digits let this lane draw the declared range
+    // exactly — `[i64::MIN, i64::MAX]`, the range `as_i64` and the generated int64 codec answer on.
+    // A plain JS number reached this from a JSON value rather than a token, and the float image is
+    // the narrowest range it can be given: see *One range, and the lane that can draw it*.
+    case 'integer':
+      if (value instanceof NumberToken) { const exact = BigInt(value.raw); return exact >= -9223372036854775808n && exact <= 9223372036854775807n }
+      return typeof value === 'number' && Number.isInteger(value) && value >= -integerBound && value <= integerBound
+    case 'decimal': return value instanceof NumberToken || (typeof value === 'number' && Number.isFinite(value))
+    case 'uuid': return typeof value === 'string' && canonicalUUID.test(value)
+    case 'bytes': return typeof value === 'string' && paddedBase64.test(value)
+    default: return false
+  }
+}
 function shape(value) {
   return Object.fromEntries(Object.entries(object(value)).map(([key, leaf]) => {
     oneOf(object(leaf).holds, 'primitive enum list map union')
@@ -296,6 +365,23 @@ function shape(value) {
     const optional = own(leaf, 'optional') ? boolean(leaf.optional) : false
     return [key, { ...leaf, optional }]
   }))
+}
+// A step declares both what a field holds and what its declared type permits there, and until this
+// ran nothing compared them. Only the fields the payload names: a shape is a claim about the
+// declaration and a payload is a partial claim about values, so requiring every declared leaf to be
+// present would refuse suites this repository already writes. `admission.rs`'s
+// `payload_agrees_with_its_shape` applies the identical rule, so the two admitters cannot disagree
+// about one document.
+const payloadAgreesWithShape = (payload, declared) => {
+  for (const [field, leaf] of Object.entries(declared)) {
+    if (!own(payload, field) || payload[field] === null) continue
+    const value = payload[field]
+    const admitted = leaf.holds === 'primitive' ? primitiveAdmits(leaf.kind, value)
+      : leaf.holds === 'enum' ? leaf.variants.includes(value)
+      : leaf.holds === 'list' ? Array.isArray(value)
+      : value !== null && typeof value === 'object' && !Array.isArray(value)
+    require(admitted, 'payload value the step\'s own shape does not admit')
+  }
 }
 const stepFields = {
   configure_external_outcome: ['force', ''], execute_command: ['command', 'actor input'], expect_outcome: ['outcome', ''],
@@ -330,6 +416,7 @@ function step(value) {
       default: qualified(field)
     }
   }
+  if (own(result, 'payload') && own(result, 'shape')) payloadAgreesWithShape(result.payload, result.shape)
   return result
 }
 const includes = (selection, origin) => selection.origins === 'generated_and_authored' || selection.origins === origin
@@ -408,7 +495,7 @@ function inventory(suite) {
   }
   for (const [identity, source] of Object.entries(c.authored_sources)) require(source.disposition !== 'refused' || refusedSources.has(identity), 'missing source refusal')
 }
-async function admitSuite(original) {
+export async function admitSuite(original) {
   const document = closed(parse(original), 'provenance scenarios coverage')
   const p = closed(document.provenance, 'suite_version system specification_version spec_digest contract_digest', 'component')
   require(p.suite_version === 'ess-conformance/5', 'replay requires suite/5')

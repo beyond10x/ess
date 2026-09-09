@@ -48,7 +48,9 @@ use std::fmt;
 
 use ess_compiler::ir::{EssIr, ResolvedBody, ResolvedCommand, ResolvedField, ResolvedTypeRef};
 use ess_domain::types::{Primitive, MAX_TYPE_DEPTH};
-use ess_primitives::facts::{FactPath, FactSource, FactStore, FactValue, Scales};
+use ess_primitives::facts::{
+    is_canonical_uuid, is_padded_base64, FactPath, FactSource, FactStore, FactValue, Scales,
+};
 use ess_primitives::node::Node;
 use ess_primitives::predicate::{Operand, Predicate, Truth};
 
@@ -589,14 +591,20 @@ pub(crate) fn primitive_value(primitive: Primitive, value: &Node) -> Option<Fact
         (Primitive::Integer, Node::Number(number)) if number.is_integral() => {
             Some(FactValue::Number(*number))
         }
-        (
-            Primitive::String
-            | Primitive::Timestamp
-            | Primitive::Duration
-            | Primitive::Uuid
-            | Primitive::Bytes,
-            Node::Text(text),
-        ) => Some(FactValue::text(text)),
+        // A grammar, not merely a shape. `Uuid` bound any text at all, so a candidate spelling an
+        // identifier `x` was admitted by a runner and refused by every schema this repository
+        // publishes for the same field (`ess-gen`'s `UUID_PATTERN`) — review finding F08. The two
+        // constrained primitives now ask the one grammar `ess-primitives` holds, which the Go
+        // runtime and the browser adapter ask in their own words against the same corpus.
+        (Primitive::Uuid, Node::Text(text)) if is_canonical_uuid(text) => {
+            Some(FactValue::text(text))
+        }
+        (Primitive::Bytes, Node::Text(text)) if is_padded_base64(text) => {
+            Some(FactValue::text(text))
+        }
+        (Primitive::String | Primitive::Timestamp | Primitive::Duration, Node::Text(text)) => {
+            Some(FactValue::text(text))
+        }
         _ => None,
     }
 }
@@ -757,7 +765,7 @@ mod tests {
     #[test]
     fn every_primitive_projects_to_the_one_fact_value_that_can_hold_it() {
         let text = Node::Text("x".to_owned());
-        let table: [(Primitive, Node, Option<FactValue>); 8] = [
+        let table: [(Primitive, Node, Option<FactValue>); 10] = [
             (
                 Primitive::Boolean,
                 Node::Bool(true),
@@ -774,7 +782,12 @@ mod tests {
                 Some(FactValue::Number(Number::from(2_i64))),
             ),
             (Primitive::String, text.clone(), Some(FactValue::text("x"))),
-            (Primitive::Uuid, text.clone(), Some(FactValue::text("x"))),
+            (Primitive::Uuid, text.clone(), None),
+            (
+                Primitive::Uuid,
+                Node::Text("0f8fad5b-d9cb-469f-a165-70867728950e".to_owned()),
+                Some(FactValue::text("0f8fad5b-d9cb-469f-a165-70867728950e")),
+            ),
             (
                 Primitive::Timestamp,
                 text.clone(),
@@ -785,7 +798,12 @@ mod tests {
                 text.clone(),
                 Some(FactValue::text("x")),
             ),
-            (Primitive::Bytes, text, Some(FactValue::text("x"))),
+            (Primitive::Bytes, text, None),
+            (
+                Primitive::Bytes,
+                Node::Text("AA==".to_owned()),
+                Some(FactValue::text("AA==")),
+            ),
         ];
         for (primitive, node, expected) in table {
             assert_eq!(

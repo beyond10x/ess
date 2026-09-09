@@ -36,6 +36,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"math"
 	"os"
 	"reflect"
 	"regexp"
@@ -698,6 +699,9 @@ func meaningScalar(value any) any {
 		return false
 	}
 	if meaningDecimal.MatchString(raw) {
+		if digits, ok := exactInteger(raw); ok {
+			return exactNumber{digits: digits}
+		}
 		if number, err := strconv.ParseFloat(raw, 64); err == nil {
 			return number
 		}
@@ -961,9 +965,65 @@ func valuesMeaning(values map[string]any) any {
 	}
 	return result
 }
+// exactNumber is an integer token float64 cannot hold exactly, kept as its canonical digits.
+//
+// A distinct type so reflect.DeepEqual tells it apart from both a float64 and a string node, and so
+// it can never be mistaken for a value an implementation returned: it exists only inside
+// scenarioMeaning, which compares two documents and never reaches a target.
+type exactNumber struct{ digits string }
+
+// exactInteger returns the canonical digits of an integer token float64 cannot hold exactly.
+//
+// float64 collapses every integer above 2^53, so 9007199254740992 and 9007199254740993 were one
+// value here and two in the Rust admitter and the browser adapter: a child scenario that swapped
+// one for the other compared equal in this runtime and unequal in the other two lanes, and the
+// generated Go suite admitted a lineage they refuse. See *One rule for comparing integers* in
+// docs/design/review-primitive-semantics.md. Admission is untouched: primitive() still answers on
+// the float64 an implementation returned.
+func exactInteger(raw string) (string, bool) {
+	body, negative := raw, false
+	if strings.HasPrefix(body, "+") {
+		body = body[1:]
+	} else if strings.HasPrefix(body, "-") {
+		body, negative = body[1:], true
+	}
+	// An integer written with a fractional part of zeroes is the same integer.
+	if dot := strings.IndexByte(body, '.'); dot >= 0 {
+		if strings.Trim(body[dot+1:], "0") != "" {
+			return "", false
+		}
+		body = body[:dot]
+	}
+	if body == "" {
+		return "", false
+	}
+	for index := 0; index < len(body); index++ {
+		if body[index] < '0' || body[index] > '9' {
+			return "", false
+		}
+	}
+	number, err := strconv.ParseFloat(raw, 64)
+	// A token no float64 holds keeps whatever answer this runtime already gave it, and a token
+	// float64 holds exactly needs no digits kept.
+	if err != nil || math.IsInf(number, 0) || (number == math.Trunc(number) && math.Abs(number) <= 9007199254740991) {
+		return "", false
+	}
+	body = strings.TrimLeft(body, "0")
+	if body == "" {
+		body = "0"
+	}
+	if negative && body != "0" {
+		return "-" + body, true
+	}
+	return body, true
+}
+
 func nodeMeaning(value any) any {
 	switch value := value.(type) {
 	case json.Number:
+		if digits, ok := exactInteger(value.String()); ok {
+			return exactNumber{digits: digits}
+		}
 		number, _ := value.Float64()
 		return number
 	case []any:
@@ -2531,16 +2591,103 @@ func lookup(payload map[string]Node, path string) (Node, bool) {
 	return current, true
 }
 
-// primitive reports why a value is not of the declared kind, or "" when it is.
-func primitive(kind string, value Node) string {
-	switch kind {
-	case "string", "uuid", "timestamp", "duration":
-		if _, ok := value.(string); !ok {
-			return fmt.Sprintf("holds %s and the specification declares a %s", render(value), kind)
+// canonicalUUID reports whether text is a UUID in the one hyphenated form the specification
+// publishes: eight, four, four, four and twelve hexadecimal digits, in either case. The urn:uuid:
+// and brace-wrapped spellings are refused, because one value has one spelling.
+//
+// The same grammar as ess-gen's UUID_PATTERN and ess_primitives::facts::is_canonical_uuid, checked
+// against one corpus from all three (crates/specify/ess-primitives/tests/vectors).
+func canonicalUUID(text string) bool {
+	widths := []int{8, 4, 4, 4, 12}
+	groups := strings.Split(text, "-")
+	if len(groups) != len(widths) {
+		return false
+	}
+	for i, group := range groups {
+		if len(group) != widths[i] {
+			return false
 		}
-	case "integer", "decimal":
+		for _, r := range group {
+			isHex := (r >= '0' && r <= '9') || (r >= 'a' && r <= 'f') || (r >= 'A' && r <= 'F')
+			if !isHex {
+				return false
+			}
+		}
+	}
+	return true
+}
+
+// paddedBase64 reports whether text is base64 with padding, the standard alphabet only.
+//
+// Padding is a *suffix*: strip up to two trailing '=', then every remaining byte must be in the
+// alphabet. A scan that admitted '=' at either of the last two positions accepted "AA=A" — padding
+// followed by data — which ess_primitives::facts::is_padded_base64, ess-gen's BASE64_PATTERN and
+// the browser adapter's regular expression all refuse. One grammar means one answer, and the corpus
+// carries those vectors so all three lanes are asked.
+func paddedBase64(text string) bool {
+	if len(text)%4 != 0 {
+		return false
+	}
+	alphabet := func(b byte) bool {
+		return (b >= 'A' && b <= 'Z') || (b >= 'a' && b <= 'z') || (b >= '0' && b <= '9') || b == '+' || b == '/'
+	}
+	padding := 0
+	for padding < 2 && padding < len(text) && text[len(text)-1-padding] == '=' {
+		padding++
+	}
+	for i := 0; i < len(text)-padding; i++ {
+		if !alphabet(text[i]) {
+			return false
+		}
+	}
+	return true
+}
+
+// integral reports whether a number has no fractional part and is in the admitted Integer range.
+//
+// The range is [-2^63, 2^63], the binary64 image of [math.MinInt64, math.MaxInt64] and not that
+// interval: this runtime sees a float64, and math.MaxInt64 written as a binary64 and read back is
+// 2^63. Comparing against 2^63 exclusively refused every integer above 9223372036854775296,
+// including the math.MaxInt64 the Rust admitter accepts. See the round-trip law in
+// docs/design/review-primitive-semantics.md.
+const integerBound = 9223372036854775808.0
+
+func integral(value float64) bool {
+	return value == math.Trunc(value) && value >= -integerBound && value <= integerBound
+}
+
+// primitive reports why a value is not of the declared kind, or "" when it is.
+//
+// A grammar, not merely a shape. "uuid" admitted any string at all and "bytes" admitted anything
+// whatever, so this runtime accepted candidates that every schema the same specification publishes
+// refuses — review finding F08. See docs/design/review-primitive-semantics.md.
+func primitive(kind string, value Node) string {
+	mismatch := func() string {
+		return fmt.Sprintf("holds %s and the specification declares a %s", render(value), kind)
+	}
+	switch kind {
+	case "string", "timestamp", "duration":
+		if _, ok := value.(string); !ok {
+			return mismatch()
+		}
+	case "uuid":
+		text, ok := value.(string)
+		if !ok || !canonicalUUID(text) {
+			return mismatch()
+		}
+	case "bytes":
+		text, ok := value.(string)
+		if !ok || !paddedBase64(text) {
+			return mismatch()
+		}
+	case "integer":
+		number, ok := asNumber(value)
+		if !ok || !integral(number) {
+			return mismatch()
+		}
+	case "decimal":
 		if _, ok := asNumber(value); !ok {
-			return fmt.Sprintf("holds %s and the specification declares a %s", render(value), kind)
+			return mismatch()
 		}
 	case "boolean":
 		if _, ok := value.(bool); !ok {

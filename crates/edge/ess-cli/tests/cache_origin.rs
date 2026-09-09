@@ -32,11 +32,37 @@ impl Fixture {
             NEXT_PLAN.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
         ));
         std::fs::write(&path, serde_json::to_vec(&plan).unwrap()).unwrap();
-        self.command()
-            .args(["deployment", "reconcile", "--path"])
-            .arg(path)
-            .arg("--cache")
-            .arg(self.0.join("cache"))
+        self.acquire(&path, true)
+    }
+
+    /// Acquires the pinned chart through the driver, with or without an admitted authority.
+    ///
+    /// `reconcile` is authority-gated now, so a vector that ran the shipped binary without one
+    /// would stop at the authority and never reach the cache boundary it exists to decide — the
+    /// vacuity C12 forbids. The driver is the test-only Rust adapter the offline qualification
+    /// allows: it admits a *synthetic* authority through the production registry scan and then
+    /// acquires the payload through the production OCI proof, so every original-byte assertion
+    /// below keeps its exact meaning. `authority: false` is the control that proves it.
+    fn acquire(&self, plan: &Path, authority: bool) -> Output {
+        static NEXT_JOB: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+        let job = self.0.join(format!(
+            "job-{}.json",
+            NEXT_JOB.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
+        ));
+        std::fs::write(
+            &job,
+            serde_json::to_vec(&serde_json::json!({
+                "root": self.0, "mode": "cache", "nonces": [],
+                "fail": null, "interrupt": null, "open_journal": false,
+                "plan": plan, "cache": self.0.join("cache"), "authority": authority
+            }))
+            .unwrap(),
+        )
+        .unwrap();
+        Command::new(env!("CARGO_BIN_EXE_ess-recovery-driver"))
+            .env("PATH", executors())
+            .env("ESS_CACHE_FIXTURE", &self.0)
+            .arg(&job)
             .output()
             .unwrap()
     }
@@ -1206,14 +1232,7 @@ fn failed_later_chart_stops_its_helm_call_after_preserving_earlier_release() {
     .unwrap();
     let desired = f.0.join("sequence.json");
     std::fs::write(&desired, serde_json::to_vec(&plan).unwrap()).unwrap();
-    let output = f
-        .command()
-        .args(["deployment", "reconcile", "--path"])
-        .arg(&desired)
-        .arg("--cache")
-        .arg(f.0.join("cache"))
-        .output()
-        .unwrap();
+    let output = f.acquire(&desired, true);
     std::fs::write(f.0.join("sequence.stdout"), &output.stdout).unwrap();
     std::fs::write(f.0.join("sequence.stderr"), &output.stderr).unwrap();
     assert!(!output.status.success());
@@ -1229,4 +1248,190 @@ fn failed_later_chart_stops_its_helm_call_after_preserving_earlier_release() {
     assert_eq!(calls[3][3], "first");
     assert_eq!(calls[4][5], format!("{}@{bad}", g.repository()));
     assert!(!g.entry(&f, &bad).exists());
+}
+
+/// The control that keeps every vector above from passing on an earlier refusal.
+///
+/// Each case in this file now reaches the cache through a driver that admits a *synthetic*
+/// authority first. That is only sound if the authority is what lets it through — so this runs an
+/// otherwise identical vector with the authority withheld and requires it to stop **before** the
+/// first ORAS call, before the cache directory exists and before Helm. Without this, "the cache
+/// refused" and "the authority refused" would be indistinguishable from the outside, and every
+/// original-byte assertion above would be vacuous.
+#[test]
+fn the_cache_vectors_reach_their_boundary_only_because_an_authority_admitted_them() {
+    let g = Graph::helm(false, false, false);
+    let requested = g.digest();
+
+    let admitted = Fixture::new();
+    g.install(&admitted, &requested);
+    let plan = admitted.0.join("control.json");
+    write_plan(&admitted, &plan, &requested);
+    let allowed = admitted.acquire(&plan, true);
+    assert!(
+        allowed.status.success(),
+        "with an admitted authority the vector reaches and completes the cache boundary: {}",
+        String::from_utf8_lossy(&allowed.stderr)
+    );
+    assert!(admitted.0.join("cache/oci-proof-v1").exists());
+    assert!(admitted.0.join("helm-chart").exists());
+    assert!(
+        calls(&admitted).iter().any(|call| call[0] == "oras"),
+        "the admitted run really fetched"
+    );
+
+    let withheld = Fixture::new();
+    g.install(&withheld, &requested);
+    let plan = withheld.0.join("control.json");
+    write_plan(&withheld, &plan, &requested);
+    let refused = withheld.acquire(&plan, false);
+    assert!(!refused.status.success(), "{refused:?}");
+    assert!(
+        String::from_utf8_lossy(&refused.stderr).contains("authority"),
+        "the refusal is the authority's: {}",
+        String::from_utf8_lossy(&refused.stderr)
+    );
+    assert!(
+        !withheld.0.join("cache").exists(),
+        "no cache is populated before an authority admits"
+    );
+    assert!(!withheld.0.join("helm-chart").exists());
+    assert!(
+        calls(&withheld).is_empty(),
+        "no external client is invoked: {:?}",
+        calls(&withheld)
+    );
+}
+
+/// Writes the one-release desired document the control vectors use.
+fn write_plan(f: &Fixture, path: &Path, digest: &Digest) {
+    let d = digest.as_str();
+    let plan = serde_json::json!({"format":"ess-deployment/1", "environment":"test", "stack_digest":d, "cluster":"test-cluster", "rollout_order":["first"], "releases":{"first":{"service":"first", "release_name":"first", "namespace":"test", "service_account":"default", "images":{"app":{"build_output":"app", "kind":"oci_image", "reference":"example.invalid/app", "digest":d, "platforms":{"linux/amd64":d}}}, "chart":{"build_output":"chart", "kind":"helm_chart", "reference":"oci://example.invalid/chart", "digest":d}}}});
+    let _ = f;
+    std::fs::write(path, serde_json::to_vec(&plan).unwrap()).unwrap();
+}
+
+/// R07: staged residue from a completed fetch is neither a cache hit nor application evidence.
+///
+/// A fetch that finished writing its outputs and was then interrupted before the bounded read,
+/// the proof assembly or the chart preparation leaves an acquisition directory behind. It looks
+/// exactly like a successful fetch and it establishes nothing: the next run fetches again, and the
+/// residue is still there afterwards because nothing here repairs or consumes it.
+#[test]
+fn r07_completed_fetch_residue_is_neither_a_cache_hit_nor_application_evidence() {
+    let g = Graph::helm(false, false, false);
+    let requested = g.digest();
+    let f = Fixture::new();
+    g.install(&f, &requested);
+
+    // The residue: an acquisition directory holding exactly what a completed fetch writes.
+    let parent = g.entry(&f, &requested).parent().unwrap().to_path_buf();
+    let residue = parent.join("acquire-interrupted");
+    std::fs::create_dir_all(&residue).unwrap();
+    for (name, bytes) in [
+        ("manifest", g.manifest.clone()),
+        ("blob-0", g.blobs[0].clone()),
+        ("blob-1", g.blobs[1].clone()),
+    ] {
+        std::fs::write(residue.join(name), bytes).unwrap();
+    }
+    assert!(!g.entry(&f, &requested).exists(), "and no published entry");
+
+    let plan = f.0.join("r07.json");
+    write_plan(&f, &plan, &requested);
+    let output = f.acquire(&plan, true);
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    // Not a cache hit: the client really ran again.
+    assert!(
+        calls(&f).iter().any(|call| call[0] == "oras"),
+        "staged residue is not a warm entry: {:?}",
+        calls(&f)
+    );
+    // Not application evidence either: the consumer ran once, after the proof was published.
+    assert_eq!(
+        std::fs::read(g.entry(&f, &requested)).unwrap(),
+        g.proof(),
+        "the published proof comes from the fresh acquisition"
+    );
+    assert_eq!(std::fs::read(f.0.join("helm-chart")).unwrap(), g.blobs[1]);
+    assert_eq!(
+        calls(&f).iter().filter(|call| call[0] == "helm").count(),
+        1,
+        "the residue caused no extra consumer call"
+    );
+    // Preserved, untouched, for diagnosis.
+    assert_eq!(std::fs::read(residue.join("manifest")).unwrap(), g.manifest);
+}
+
+/// R09: an unpublished stage is ignored, and publication never replaces an existing entry.
+///
+/// Two halves of the same rule. A partial file beside the entry name is not an entry, so a cold
+/// run ignores it, publishes properly and leaves it exactly where it was. And an entry that is
+/// already published is not replaced by a later run: the warm path revalidates the bytes that are
+/// there instead of writing over them.
+#[test]
+fn r09_an_unpublished_stage_is_ignored_and_publication_never_replaces_an_entry() {
+    let g = Graph::helm(false, false, false);
+    let requested = g.digest();
+    let f = Fixture::new();
+    g.install(&f, &requested);
+
+    let entry = g.entry(&f, &requested);
+    let parent = entry.parent().unwrap().to_path_buf();
+    std::fs::create_dir_all(&parent).unwrap();
+    let stage = parent.join(format!(
+        "{}.entry.stage",
+        requested.as_str().strip_prefix("sha256:").unwrap()
+    ));
+    let partial = b"ESSOCI1\n\x00\x00\x00".to_vec();
+    std::fs::write(&stage, &partial).unwrap();
+
+    let plan = f.0.join("r09.json");
+    write_plan(&f, &plan, &requested);
+    let cold = f.acquire(&plan, true);
+    assert!(
+        cold.status.success(),
+        "{}",
+        String::from_utf8_lossy(&cold.stderr)
+    );
+    assert_eq!(
+        std::fs::read(&entry).unwrap(),
+        g.proof(),
+        "the entry is published from the fresh acquisition, not from the stage"
+    );
+    assert_eq!(
+        std::fs::read(&stage).unwrap(),
+        partial,
+        "an incomplete stage is retained exactly as it was"
+    );
+    let cold_calls = calls(&f).len();
+    assert!(cold_calls > 1, "the cold run really fetched");
+
+    // The no-replacement half: with the client trapped, the warm run revalidates and consumes the
+    // bytes that are already published, and does not write over them.
+    std::fs::write(f.0.join("trap"), b"").unwrap();
+    std::fs::remove_file(f.0.join("helm-chart")).unwrap();
+    let warm = f.acquire(&plan, true);
+    assert!(
+        warm.status.success(),
+        "{}",
+        String::from_utf8_lossy(&warm.stderr)
+    );
+    assert_eq!(
+        std::fs::read(&entry).unwrap(),
+        g.proof(),
+        "the published entry's bytes are unchanged"
+    );
+    assert_eq!(std::fs::read(f.0.join("helm-chart")).unwrap(), g.blobs[1]);
+    assert_eq!(
+        calls(&f).iter().filter(|call| call[0] == "oras").count(),
+        cold_calls - 1,
+        "no client ran for the warm entry"
+    );
+    assert_eq!(std::fs::read(&stage).unwrap(), partial);
 }

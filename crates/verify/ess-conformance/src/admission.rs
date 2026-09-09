@@ -2,6 +2,7 @@
 use crate::count_json::Json;
 use crate::{scenario::SuiteFormat, ConformanceSuite, Holds, ScenarioStep};
 use ess_domain::Primitive;
+use ess_primitives::node::Node;
 use sha2::{Digest, Sha256};
 use std::fmt;
 use std::fmt::Write;
@@ -47,6 +48,48 @@ impl fmt::Display for AdmissionError {
 }
 impl std::error::Error for AdmissionError {}
 
+/// Refuses a step whose payload carries a value its own declared shape does not admit.
+///
+/// A step declares both — `payload` says what a field holds, `shape` says what its declared type
+/// permits there — and until this ran nothing compared them, so a suite could assert an event
+/// carries the `Uuid` `"x"` and be admitted by every reader (review finding F08,
+/// `docs/design/review-primitive-semantics.md`).
+///
+/// **Only the fields the payload names.** A shape is a claim about the declaration and a payload is
+/// a partial claim about values; requiring every declared leaf to be present would refuse the
+/// suites this repository already writes, which is a different rule from the one being fixed. The
+/// browser adapter's `primitiveAdmits` applies the identical rule to the identical document, so the
+/// two admitters cannot disagree about one suite.
+fn payload_agrees_with_its_shape(suite: &ConformanceSuite) -> Result<(), AdmissionError> {
+    for (id, scenario) in &suite.scenarios {
+        for (position, step) in scenario.steps.iter().enumerate() {
+            let (ScenarioStep::ExpectEvent { payload, shape, .. }
+            | ScenarioStep::EventuallyEvent { payload, shape, .. }) = step
+            else {
+                continue;
+            };
+            for (field, leaf) in shape.leaves() {
+                let Some(value) = payload.get(field) else {
+                    continue;
+                };
+                if matches!(value, Node::Null) || leaf.holds.admits(value) {
+                    continue;
+                }
+                return Err(AdmissionError::new(
+                    "InvalidSuite",
+                    format!("$suite.scenarios.{id}.steps.{position}.payload.{field}"),
+                    format!(
+                        "the payload holds {} and the step's own shape declares {}",
+                        crate::report::quote(value),
+                        leaf.holds
+                    ),
+                ));
+            }
+        }
+    }
+    Ok(())
+}
+
 /// An immutable original suite and its admitted execution value.
 #[derive(Debug, Clone)]
 pub struct AdmittedSuite {
@@ -77,6 +120,7 @@ impl AdmittedSuite {
         validate_suite(&value)?;
         let suite: ConformanceSuite = serde_json::from_str(original)
             .map_err(|e| AdmissionError::new("InvalidSuite", "$suite", e.to_string()))?;
+        payload_agrees_with_its_shape(&suite)?;
         let coverage = value
             .object()?
             .get("coverage")

@@ -2,7 +2,7 @@
 format: aep.planning-md/1
 id: story:review-primitive-semantics
 kind: story
-status: draft
+status: implemented
 title: Align primitive admission and exact numeric semantics
 tags:
 - P1
@@ -12,10 +12,10 @@ relations:
 - serves: vision:O2
 - depends_on: story:review-format-catalog
 scope:
-- confidence: inferred
-  path: Cargo.lock
-- confidence: inferred
-  path: Cargo.toml
+- confidence: cited
+  path: crates/edge/ess-xtask/src/consumer_coverage/entry-classifications.json
+- confidence: cited
+  path: crates/edge/ess-xtask/src/consumer_coverage/initial-baseline.json
 - confidence: cited
   path: crates/generate/ess-gen
 - confidence: cited
@@ -23,38 +23,26 @@ scope:
 - confidence: cited
   path: crates/generate/ess-synth
 - confidence: cited
-  path: crates/generate/ess-synth/src/go/http.rs
-- confidence: cited
-  path: crates/generate/ess-synth/src/go/layout.rs
-- confidence: cited
-  path: crates/generate/ess-synth/src/rust/mod.rs
-- confidence: cited
-  path: crates/generate/ess-synth/src/rust/wire.rs
-- confidence: inferred
-  path: crates/generate/schema-contract/src/realize/normalize/numeric.rs
-- confidence: cited
-  path: crates/specify/ess-domain/src/expression.rs
-- confidence: inferred
-  path: crates/specify/ess-domain/src/primitive_admission.rs
-- confidence: cited
   path: crates/specify/ess-primitives/src/facts.rs
 - confidence: cited
   path: crates/specify/ess-primitives/src/node.rs
 - confidence: cited
-  path: crates/specify/ess-primitives/src/predicate.rs
+  path: crates/specify/ess-primitives/tests/vectors/primitive-semantics.json
 - confidence: cited
   path: crates/verify/ess-conformance
 - confidence: cited
   path: crates/verify/ess-conformance/assets/coverage-admission.js
+- confidence: cited
+  path: crates/verify/ess-conformance/src/admission.rs
 - confidence: cited
   path: crates/verify/ess-conformance/src/go/runtime.go
 - confidence: cited
   path: crates/verify/ess-conformance/src/input.rs
 - confidence: cited
   path: crates/verify/ess-conformance/src/witness.rs
-- confidence: inferred
+- confidence: cited
   path: docs/design/review-primitive-semantics.md
-revision: 26
+revision: 47
 ---
 ## Finding and source
 
@@ -166,3 +154,58 @@ change there is inside this unit's reservation, a change to `Primitive` itself i
 **Not this unit:** `ess-primitives/src/error.rs`, every `ess-domain` validator file, and
 `ess-compiler` belong to story:review-typed-diagnostics in the same wave; `ess-primitives/src/lib.rs`
 is the coordinator's (patch to scratch, name it in the report).
+
+## Scope confirmation — wave 21
+
+Written by the wave-21 coordinator from the implementor's confirmation tables (rounds 0-2) and
+the unit's diff against 2900f62 (commits d107b53, 33f4568, 12ec9f1, 70ba641). The 2026-09-09
+Scope above stays as the hypothesis; this is what landed.
+
+- **Landed (cited, from the diff):** `crates/specify/ess-primitives/src/facts.rs`, `src/node.rs`,
+  `tests/primitive_corpus.rs`, `tests/vectors/primitive-semantics.json`;
+  `crates/verify/ess-conformance/src/input.rs`, `src/admission.rs` (new), `src/go/runtime.go`,
+  `assets/coverage-admission.js`, `tests/witness.rs`, `tests/primitive_corpus.rs`,
+  `tests/primitive_divergence.rs`, `tests/adversary_integer_bound_pass2.rs`;
+  `crates/specify/ess-primitives/tests/adversary_round_trip_law_pass2.rs`;
+  `crates/generate/ess-gen/src/types.rs`; `docs/design/review-primitive-semantics.md`;
+  `crates/edge/ess-xtask/src/consumer_coverage/entry-classifications.json`,
+  `initial-baseline.json`, `mod.rs` (coordinator re-freeze); `docs/design/review-consumer-coverage.md`
+  (coordinator clause).
+- **Inferred lines that were wrong:** `crates/specify/ess-domain/src/primitive_admission.rs` is
+  Binary64 format-version admission, not this story's — untouched. `Cargo.toml`/`Cargo.lock` —
+  no dependency was needed (scaled `i128`). `crates/generate/schema-contract/.../numeric.rs` —
+  Binary64 territory, untouched. `crates/specify/ess-domain/src/expression.rs` — the matrix keeps
+  Integer/Decimal/Binary64 as one `ScalarKind::Number`, untouched.
+- **Cited lines not reached:** `crates/specify/ess-primitives/src/predicate.rs` and the four
+  `crates/generate/ess-synth` files — no edit was needed to keep emitted bytes; `cargo xtask
+  generate --check` is the proof.
+- **Not this wave, filed:** story:primitive-canonical-serialization (the decimal half of the
+  wire, behind a format version, under obligation:review-contract-rollout-coordination).
+
+## Wave 21 closure — 2026-09-09
+
+Source on ESS main through wave/review-boundaries-21: unit commits d107b53 (exact `Number`,
+one admission grammar, the corpus), 33f4568 (the round-trip law, base64 and integer bounds
+answered), 12ec9f1 (one `Integer` range, `Repr::exact` as the sole constructor of an exact
+value), 70ba641 (coordinator: consumer-coverage baseline re-freeze under the new
+representation-only clause of `docs/design/review-consumer-coverage.md`), 154d269 (the
+coverage lineage no longer pins the binary64 collapse; the browser adapter compares integer
+tokens by digits). Design page `docs/design/review-primitive-semantics.md`, written first.
+
+Reviews: review-result:primitive-semantics-adversary-wave21-pass1 (5 findings, 4 red cases,
+all introduced) and -pass2 (5 findings, 4 red cases; 1 pre-existing filed as
+story:primitive-canonical-serialization); ledger between the passes carried 0, new 5,
+resolved 5; both answered, review_outcome fixed recorded for each. The coordinator verified
+each correction's diff for dropped assertions and relaxed pins.
+
+What this stage delivers against the acceptance: fact numbers are exact where binary64 is not
+(2^53 and 2^53+1 are two values in every constructor and through a document), `Integer` is one
+range in every lane, admission is one grammar answered from one corpus
+(`crates/specify/ess-primitives/tests/vectors/primitive-semantics.json`, 47 admission vectors)
+by Rust, the Go runtime and the browser adapter, and every persisted spelling binary64 carries
+is unchanged (witness `1.0` pin, `cargo xtask generate --check`, `schema --check`). A value
+binary64 never carried is now written as its exact integer token instead of a rounded float;
+the page argues this moves no byte any reader has received. The decimal half of the wire is
+story:primitive-canonical-serialization, held by obligation:review-contract-rollout-coordination.
+
+Whole gate run 4 at e448671e (integration branch wave/review-boundaries-21, every lane run individually, exit codes in the wave page's gate table): fmt-check 0, clippy 0, test 0 (217 lanes, 2561 passed, 0 failed, 0 ignored), doc-check 0, example-check 0, projection-check 0, support-check 0, consumer-check 0 (BaselineUnknown 157677, Supported 54, Refused 0), fuzz-check 0 (25 replay cases), release-check 0 (0.20.0 consistent), action-check 0. Runs 1-3 at d81245f, 144aa95 and f346f27 were red on lanes the wave page records; each defect was answered before run 4.

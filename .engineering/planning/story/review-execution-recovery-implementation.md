@@ -2,7 +2,7 @@
 format: aep.planning-md/1
 id: story:review-execution-recovery-implementation
 kind: story
-status: draft
+status: implemented
 title: Implement finite deployment recovery for the existing F11 obligation
 summary: Implement the complete finite deployment recovery contract and offline fault matrix already owed by obligation:review-execution-recovery-implementation.
 tags:
@@ -18,25 +18,25 @@ scope:
   path: Cargo.lock
 - confidence: cited
   path: crates/edge/ess-cli/Cargo.toml
-- confidence: inferred
+- confidence: cited
   path: crates/edge/ess-cli/src/lib.rs
 - confidence: cited
   path: crates/edge/ess-cli/src/main.rs
 - confidence: cited
   path: crates/edge/ess-cli/src/oci_cache.rs
-- confidence: inferred
+- confidence: cited
   path: crates/edge/ess-cli/src/recovery/authority.rs
-- confidence: inferred
+- confidence: cited
   path: crates/edge/ess-cli/src/recovery/chart.rs
-- confidence: inferred
+- confidence: cited
   path: crates/edge/ess-cli/src/recovery/journal.rs
-- confidence: inferred
+- confidence: cited
   path: crates/edge/ess-cli/src/recovery/mod.rs
-- confidence: inferred
+- confidence: cited
   path: crates/edge/ess-cli/src/recovery/model.rs
-- confidence: inferred
+- confidence: cited
   path: crates/edge/ess-cli/src/recovery/observe.rs
-- confidence: inferred
+- confidence: cited
   path: crates/edge/ess-cli/src/recovery/process.rs
 - confidence: cited
   path: crates/edge/ess-cli/tests/cache_origin.rs
@@ -44,7 +44,7 @@ scope:
   path: crates/edge/ess-cli/tests/cache_origin_adversary_pass1.rs
 - confidence: cited
   path: crates/edge/ess-cli/tests/command_surface.rs
-- confidence: inferred
+- confidence: cited
   path: crates/edge/ess-cli/tests/execution_recovery.rs
 - confidence: cited
   path: crates/edge/ess-cli/tests/persisted_delivery.rs
@@ -54,9 +54,9 @@ scope:
   path: crates/edge/ess-cli/tests/support/fake_delivery.rs
 - confidence: cited
   path: crates/edge/ess-cli/tests/support/fake_oci.rs
-- confidence: inferred
+- confidence: cited
   path: crates/edge/ess-cli/tests/support/fake_recovery.rs
-- confidence: inferred
+- confidence: cited
   path: crates/edge/ess-cli/tests/support/recovery_driver.rs
 - confidence: cited
   path: crates/edge/ess-xtask/src/support.rs
@@ -64,9 +64,9 @@ scope:
   path: crates/infra/ess-kubernetes/Cargo.toml
 - confidence: cited
   path: crates/infra/ess-kubernetes/src/lib.rs
-- confidence: inferred
+- confidence: cited
   path: crates/infra/ess-kubernetes/src/recovery.rs
-- confidence: inferred
+- confidence: cited
   path: crates/infra/ess-kubernetes/tests/recovery_adapter.rs
 - confidence: cited
   path: docs/design/review-execution-recovery.md
@@ -82,7 +82,7 @@ scope:
   path: website/docs/status/limitations.md
 - confidence: cited
   path: website/docs/status/where-this-stands.md
-revision: 5
+revision: 36
 ---
 # Story: Implement finite deployment recovery for the existing F11 obligation
 
@@ -307,3 +307,58 @@ runner counts per family in the report, never "29 tests".
 **Cargo.lock:** the coordinator re-resolves the lockfile at merge; a dependency added here is
 declared in `ess-cli/Cargo.toml` (and `[workspace.dependencies]` if shared) and named in the
 report.
+
+## Scope confirmation — wave 21
+
+Written by the wave-21 coordinator from the implementor's confirmation (rounds 1-3) and the
+unit's diff against 2900f62 (commits 67d9e95, 4f9dfba, 6a8aff7, c2d8cc1). The 2026-09-09 Scope
+above stays as the hypothesis; this is what landed.
+
+- **All 34 reservations were exercised and none was wrong.** The 13 paths marked inferred (the
+  `recovery/` modules, `src/lib.rs`, the three test-support files, the two `ess-kubernetes`
+  recovery files) now exist and are cited. The layout decision: `[lib] ess_cli` with `main.rs`
+  kept as the `ess` binary, plus two test-only bins `ess-recovery-driver` and
+  `ess-recovery-fake` at the reserved `tests/support/` paths; `oci_cache` moved into the lib.
+- **Dependencies added:** `ess-cli` `flate2 1.1.10` (`rust_backend`), `tar 0.4.46`;
+  `ess-kubernetes` `rustls 0.23.44`, `rustls-pemfile 2.2.0`, dev `rcgen 0.13.2`; `Cargo.lock`
+  carries their transitives.
+- **Unchanged by design:** `docs/design/review-execution-recovery.md` (SHA256 9699f5ed…) and the
+  two model files (c981b332…, e03ca97f…); no declaration change, so no `ess specify validate`
+  was owed.
+- **Deliberate adaptation:** `tests/support/cache_origin_attack_client.rs` now expects the
+  recovery lane's 21-argument Helm invocation and asserts `--create-namespace`, `--keep-history`,
+  `--ignore-not-found` and `--post-renderer` absent.
+- **Would collide with (confirmed):** `crates/edge/ess-cli/src/main.rs`, `Cargo.lock`, the four
+  public pages, `ess-xtask/src/support.rs`, the `ess-kubernetes` re-export line.
+
+## Wave 21 closure — 2026-09-09
+
+Source on ESS main through wave/review-boundaries-21: unit commits 67d9e95 (model, journal,
+authority, chart, observation, process; 7 of 29 families), 4f9dfba (`reconcile` requires an
+admitted authority; the 30 cache vectors reach their boundary through a synthetic authority
+with non-vacuity controls; 25 families), 6a8aff7 (a reviewed `repair_from` snapshot admits;
+every decision function has a production caller — which found the C07 step-8 authored
+comparison and the C05 generation floor unwired; full-engine driver lanes including R28 with
+two engines racing one store; R07, R09, R18), c2d8cc1 (authored fields compared before
+`DesiredMatches`; both halves of the generation rule; exact call lists in every process lane;
+the C08 case asserts only the states the binding defines). The accepted binding
+`docs/design/review-execution-recovery.md` (SHA256 9699f5ed…) and the two model files are
+unchanged.
+
+Reviews: review-result:execution-recovery-adversary-wave21-pass1 (4 findings, 2 red cases)
+and -pass2 (4 findings, 2 red cases), all introduced; ledger carried 0, new 4, resolved 4;
+both answered, review_outcome fixed recorded for each. The coordinator verified each
+correction's diff; the four adversary cases are intact.
+
+Layout: `[lib] ess_cli` with `main.rs` as the `ess` binary and two test-only bins
+(`ess-recovery-driver`, `ess-recovery-fake`) at the reserved `tests/support/` paths;
+`oci_cache` moved into the lib. Dependencies: `flate2 1.1.10`, `tar 0.4.46` (ess-cli);
+`rustls 0.23.44`, `rustls-pemfile 2.2.0`, dev `rcgen 0.13.2` (ess-kubernetes). Every family
+R01–R29 and the named dimensions have executable cases with real runner counts
+(`tests/execution_recovery.rs` 108 cases, `cache_origin.rs` 24, `recovery_adapter.rs` 11);
+two production defects were found red-first and fixed in round 1 and two more in round 2.
+The consumer-coverage classification was reconciled for the new lib, the test bins and the
+kubernetes adapter (4e63718, 144aa95). This discharges
+obligation:review-execution-recovery-implementation on the gate record below.
+
+Whole gate run 4 at e448671e (integration branch wave/review-boundaries-21, every lane run individually, exit codes in the wave page's gate table): fmt-check 0, clippy 0, test 0 (217 lanes, 2561 passed, 0 failed, 0 ignored), doc-check 0, example-check 0, projection-check 0, support-check 0, consumer-check 0 (BaselineUnknown 157677, Supported 54, Refused 0), fuzz-check 0 (25 replay cases), release-check 0 (0.20.0 consistent), action-check 0. Runs 1-3 at d81245f, 144aa95 and f346f27 were red on lanes the wave page records; each defect was answered before run 4.

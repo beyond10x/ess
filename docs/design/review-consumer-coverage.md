@@ -147,6 +147,19 @@ gate never regenerates baseline eligibility from today's source. New fields, var
 shapes, consumers or profiles require Supported/Refused execution for their new obligations.
 An old BaselineUnknown does not transfer to a changed obligation. Reject duplicates, missing or
 stale cells, unknown consumer/model IDs, contradictory dispositions and missing follow-up owners.
+
+**Representation-only shape changes (2026-09-09, wave 21).** A `rust:` model whose declaration
+shape changes while its `wire:` shape, every generated projection and every persisted spelling
+are unchanged by executed assertion re-freezes the affected `rust:` cells as BaselineUnknown
+instead of requiring per-profile execution, because no consumer's obligation changed — only the
+declaration behind it. The re-freeze is root's act and its checkpoint names the assertions that
+licence it: `cargo xtask generate --check` and `cargo xtask schema --check` exit 0, the
+byte-preservation tests of the change, and the unit's adversary passes. The first such re-freeze
+is `rust:ess_primitives::facts::Number` (story:review-primitive-semantics): `Number(f64)` became
+`Number(Repr)` with `Repr` and its seven variant/field models; the witness `1.0` pin,
+`generate --check`, `schema --check`, the corpus lanes and review-result:primitive-semantics-adversary-wave21-pass2
+are the assertions. A shape change that moves a wire byte, a projection or a spelling is not
+this case and takes the rule above.
 No future wildcard, prefix expansion, automatic NotApplicable or package-wide test alias closes
 an obligation. Removal of a model/consumer produces stale cells to reconcile explicitly.
 

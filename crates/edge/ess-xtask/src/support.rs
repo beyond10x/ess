@@ -499,7 +499,7 @@ fn render(root: &Path) -> Result<String> {
             )
         ),
     );
-    row(&mut output, "Explicit executors", "`execute`, `publish`, `fetch`, `reconcile` invoke external clients; reconciliation applies the affected set from supplied current/desired documents", &format!("Caller-supplied state and credentials remain material; no continuous control plane or automatic recovery proof. {}. The support check invokes none of these verbs.", source("CLI executor owner", "crates/edge/ess-cli/src/main.rs")));
+    row(&mut output, "Explicit executors", "`execute`, `publish`, `fetch`, `reconcile` invoke external clients; reconciliation requires `--authority` naming a protected registry entry and refuses without one, compares an admitted baseline desired deployment with the desired one, and attempts at most one admitted mutation per release", &format!("Caller-supplied state, authority and credentials remain material; a supplied baseline is admitted intent rather than proof of application, and a stopped invocation leaves the affected release unknown rather than absent or rolled back. {}. The support check invokes none of these verbs.", source("CLI executor owner", "crates/edge/ess-cli/src/main.rs")));
     row(&mut output, "Schema commands", &code_list(&schema_commands), "Current-source command inventory for import, validation, types and normalization; [CLI reference](../reference/cli.md#adopter-owned-schema-contracts) describes the selected operations. Availability is independent of the dated release record.");
     write!(output, "\n{END}")?;
     Ok(output)

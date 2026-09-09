@@ -2,7 +2,7 @@
 format: aep.planning-md/1
 id: story:review-typed-diagnostics
 kind: story
-status: draft
+status: implemented
 title: Carry diagnostic identity independently of rendered wording
 tags:
 - P2
@@ -12,38 +12,24 @@ relations:
 - serves: vision:O2
 scope:
 - confidence: cited
+  path: crates/edge/ess-xtask/src/consumer_coverage/entry-classifications.json
+- confidence: cited
   path: crates/specify/ess-compiler
-- confidence: inferred
-  path: crates/specify/ess-domain/src/binding.rs
-- confidence: inferred
+- confidence: cited
+  path: crates/specify/ess-compiler/src/resolve.rs
+- confidence: cited
+  path: crates/specify/ess-compiler/tests/typed_diagnostics.rs
+- confidence: cited
   path: crates/specify/ess-domain/src/command.rs
-- confidence: inferred
-  path: crates/specify/ess-domain/src/component.rs
-- confidence: inferred
-  path: crates/specify/ess-domain/src/domain.rs
-- confidence: inferred
+- confidence: cited
   path: crates/specify/ess-domain/src/entity.rs
-- confidence: inferred
-  path: crates/specify/ess-domain/src/locate.rs
-- confidence: inferred
-  path: crates/specify/ess-domain/src/spec.rs
-- confidence: inferred
-  path: crates/specify/ess-domain/src/system.rs
-- confidence: inferred
-  path: crates/specify/ess-domain/src/topology.rs
-- confidence: inferred
+- confidence: cited
   path: crates/specify/ess-domain/src/types.rs
-- confidence: inferred
-  path: crates/specify/ess-domain/src/view.rs
-- confidence: inferred
-  path: crates/specify/ess-domain/src/wire.rs
 - confidence: cited
   path: crates/specify/ess-primitives/src/error.rs
-- confidence: inferred
-  path: docs/design/review-typed-diagnostics.md
 - confidence: cited
-  path: website/docs/guides/write-a-specification.md
-revision: 21
+  path: docs/design/review-typed-diagnostics.md
+revision: 44
 ---
 ## Finding and source
 
@@ -149,3 +135,57 @@ it here — cited.
 **Not this unit:** `ess-primitives/src/facts.rs`, `node.rs`, `predicate.rs`, `ess-domain/src/expression.rs`
 and `primitive_admission.rs` belong to story:review-primitive-semantics in the same wave;
 `ess-primitives/src/lib.rs` is the coordinator's (patch to scratch, name it in the report).
+
+## Scope confirmation — wave 21
+
+Written by the wave-21 coordinator from the implementor's confirmation tables (rounds 0-2) and
+the unit's diff against 2900f62 (commits 36fa1df, 1b0368b, ba6cb7b). The 2026-09-09 Scope above
+stays as the hypothesis; this is what landed.
+
+- **Landed (cited, from the diff):** `crates/specify/ess-primitives/src/error.rs`;
+  `crates/specify/ess-compiler/src/resolve.rs`, `tests/typed_diagnostics.rs`,
+  `tests/fixtures/typed_diagnostics/*.yaml`, `tests/adversary_typed_diagnostics_pass1.rs`,
+  `tests/adversary_typed_diagnostics_pass2.rs`; `crates/specify/ess-domain/src/command.rs`,
+  `src/entity.rs`, `src/types.rs`; `docs/design/review-typed-diagnostics.md`;
+  `crates/edge/ess-xtask/src/consumer_coverage/entry-classifications.json`.
+- **Inferred lines that were wrong:** `crates/specify/ess-domain/src/locate.rs` — 0
+  `ValidationError` references; `actor.rs` has 1 site the scope did not list. The migration is
+  by location head, not by file: `entity.rs` writes `command.…` heads and was migrated for them.
+- **Inferred lines not reached this wave:** `binding.rs`, `component.rs`, `view.rs`,
+  `topology.rs`, `system.rs`, `spec.rs`, `domain.rs`, `wire.rs`, `refs.rs`, `actor.rs` — the
+  remaining families, inventoried by head and file in the design page's machine-checked block
+  with a stated result each; `website/docs/guides/write-a-specification.md` — unchanged and pinned
+  by a test.
+- **Left for the next unit:** `crates/specify/ess-domain/src/primitive_admission.rs:96` writes one
+  `command.…` location (unit U1's file this wave; patch retained in the unit's scratch, pinned at
+  1 by the head census); `crates/infra/infra-domain/src/code.rs:190` is the second
+  `ValidationError { location: String }` envelope F14 names.
+
+## Wave 21 closure — 2026-09-09
+
+Source on ESS main through wave/review-boundaries-21: unit commits 36fa1df (the typed site,
+the bridge reading it, 29 command-family sites migrated), 1b0368b (one needle derivation, a
+machine-checked inventory, no wildcard kind), ba6cb7b (every command-head writer sited, a
+separator grammar per kind, `rebase` as the one door to `location`, `at_span` instead of a
+discarding `with_span`). Design page `docs/design/review-typed-diagnostics.md`, written
+first, with two machine-readable blocks a test greps against the tree.
+
+Reviews: review-result:typed-diagnostics-adversary-wave21-pass1 (6 findings, 3 red cases) and
+-pass2 (8 findings, 5 red cases), all introduced; ledger between the passes carried 0, new 8,
+resolved 6; both answered, review_outcome fixed recorded for each. The coordinator verified
+each correction's diff: no assertion removed, one pin tightened, the adversary files untouched.
+
+What this delivers against the acceptance: for the `command` head, every writer carries a
+typed construct reference, rule identity and optional syntax span; rewording a migrated rule
+changes neither its code nor its cited location, pinned by fixtures for repeated names (both
+the located and the honestly unlocated case), nesting and a cross-file reference; the rendered
+`location` string is byte-identical everywhere. The remaining heads are inventoried per file
+and per head with a stated result each: `entity ` and `component ` (space form, renderable
+through `ConstructKind::separator`), the plural `types.`/`domain.` heads no kind renders, one
+`command.…` writer in `primitive_admission.rs:96` (patch retained, pinned at 1) and one in
+`wire.rs:30` (shared helper), and `crates/infra/infra-domain/src/code.rs:190`, the second
+envelope F14 names. Those are the next unit of this migration, not this story's close
+condition, which the story's compatibility clause defines as a typed replacement or an
+explicit unsupported result per path.
+
+Whole gate run 4 at e448671e (integration branch wave/review-boundaries-21, every lane run individually, exit codes in the wave page's gate table): fmt-check 0, clippy 0, test 0 (217 lanes, 2561 passed, 0 failed, 0 ignored), doc-check 0, example-check 0, projection-check 0, support-check 0, consumer-check 0 (BaselineUnknown 157677, Supported 54, Refused 0), fuzz-check 0 (25 replay cases), release-check 0 (0.20.0 consistent), action-check 0. Runs 1-3 at d81245f, 144aa95 and f346f27 were red on lanes the wave page records; each defect was answered before run 4.
