@@ -7,9 +7,9 @@ decomposing epic:review-boundary-remediation:
 
 | unit | story | tags | scope confidence |
 |---|---|---|---|
-| U1 | story:review-primitive-semantics | P1 | high on the four packages and defect sites, medium on vector location — 17 cited / 4 inferred entries |
-| U2 | story:review-typed-diagnostics | P2 | medium — compiler files cited, `ess-primitives/src/error.rs` cited from `resolve.rs:528`, 12 `ess-domain` files inferred — 4 cited / 13 inferred entries |
-| U3 | story:review-execution-recovery-implementation | P1 | high on 21 existing paths and three byte pins, medium on 13 new-module paths — 21 cited / 13 inferred entries |
+| U1 | implementor d107b53; adversary pass 1 red 5; correction 1 33f4568; adversary pass 2 red 5 (1 pre-existing → story:primitive-canonical-serialization), ledger 0/5/5; correction 2 green (1094→1100) 12ec9f1, coordinator-verified, review_outcome fixed ×2; accounting decision A taken: consumer-coverage design clause + baseline re-freeze 70ba641, consumer-check exit 0 (BaselineUnknown 157677, Supported 54); **merged** into wave/review-boundaries-21 at b3427b1 | 70ba641 |
+| U2 | implementor 36fa1df; adversary pass 1 red 6; correction 1 1b0368b; adversary pass 2 red 8, ledger 0/8/6; correction 2 green (520→531; 322,741 tokens, 175 tool uses, 23.0 min) ba6cb7b, coordinator-verified (no assert removed, one pin tightened, adversary files untouched), review_outcome fixed ×2; **merged** into wave/review-boundaries-21 at 0175113 | ba6cb7b |
+| U3 | 67d9e95, 4f9dfba, 6a8aff7; adversary pass 1 red 4 (fixed), pass 2 red 4 (review-result:execution-recovery-adversary-wave21-pass2), ledger 0/4/4; correction 3 green (646→650; 742,098 tokens, 31 tool uses, 44.6 min) c2d8cc1, coordinator-verified (four adversary cases intact, removed assertions replaced or justified), review_outcome fixed ×2; **merged** into wave/review-boundaries-21 at d81245f | c2d8cc1 |
 
 This is the whole remaining draft set of the epic: 28 stories are `implemented`,
 story:fuzz-the-specification-surface closes in the commit preceding this wave's opening commit,
@@ -119,6 +119,10 @@ is re-read when each unit returns.
 Model budget: no number was given; N=3 is the operator's stated set. If HTTP 429 kills an
 agent, its branch head and stage are written here and the unit is resumed, never re-dispatched.
 
+## Disk during the wave
+
+Re-read at each unit return. 2026-09-09 after both correction rounds: 11,086,360,576 bytes free against the 8,589,934,592 floor; unit build directories measured 15,410,388,430 (U1), 7,339,739,652 (U2), 11,525,699,721 (U3); `~/.cache/e21-tmp` 4,458,323,184; `~/.cache/sccache` at its 10 GB cap. Freed: the primary checkout's stale `target` (6,378,802,981 bytes, not a wave tree) and all but the three newest `target/consumer-coverage/run-*` directories in U1 (35 runs, 2,403,931,242 bytes) and U2 (5 runs). Unit build directories are removed after each merge and before the integration gate runs.
+
 ## Pre-flight refusals to clear before dispatch
 
 1. PR #17 green and merged; story:fuzz-the-specification-surface `implemented` on the closure
@@ -133,12 +137,73 @@ agent, its branch head and stage are written here and the unit is resumed, never
    (eventlog-wave-published-gate-input) are other sessions' clean detached trees; they are left
    standing and named here.
 
+## Integration checkpoints
+
+After U2 (0175113) and U1 (b3427b1) merged, the six package lanes of both units ran together on the integration branch (`target/review-boundaries-21/integ/*.exit`): fmt 0, clippy 0, test 0 (1215 passed, 0 failed across ess-primitives, ess-domain, ess-compiler, ess-conformance, ess-gen, ess-synth), `cargo xtask generate --check` 0, `cargo xtask schema --check` 0, `task consumer-check` 0 (BaselineUnknown 157677, Supported 54, Refused 0). The whole gate runs once after U3.
+
+## Whole gate, run 1 (integration branch at d81245f)
+
+Per-lane exit codes (`target/review-boundaries-21/gate/*.exit`): fmt-check 0, clippy 0, **test 201**, **doc-check 201**, example-check 0, projection-check 0, support-check 0, **consumer-check 201**, fuzz-check 0 (25 replay cases), release-check 0, action-check 0. No lane skipped itself. `test` stopped at its first failing target (`cargo test --workspace --locked` has no `--no-fail-fast`): 22 of the workspace's lanes ran, 160 passed, 1 failed — `crates/edge/ess-cli/tests/coverage_browser.rs:336`, coverage case `predicate-equivalent-12` (the pair 2^53 / 2^53+1 listed as an equivalence at `tests/support/coverage_cases.rs:146-149`) now refused by the exact `Number`; routed to U1's implementor as correction 3. doc-check: two public doc links to private items (facts.rs:475, recovery/chart.rs:401), fixed by the coordinator. consumer-check: `ess_cli::bin(ess)::fn::parse_invocation` unclassified, classified by the coordinator. The gate runs again in full after the U1 correction merges.
+
+## Integration corrections before whole-gate run 2
+
+08ee01a (rustdoc private links; parse_invocation classified); 0bdb9f5 merges U1 correction 3 (154d269: the coverage lineage pinned the binary64 collapse in two places, `coverage_cases.rs:146` and the `finite-node-{owner}` cases; the browser adapter now compares integer tokens by digits; corpus 2^53 vectors); 4e63718 and 144aa95 reconcile `entry-classifications.json` against the extraction in both directions — 57 ids moved from `bin(ess)` to `lib(ess_cli)`, 413 new lib entries, 212 test-only bin entries (FixtureRealization), 25 kubernetes recovery entries (ForeignContext), 58 stale ids removed; 8,630 entries. 144aa95's message overstates the total by one and names the class loosely; a git note on the commit corrects it. Whole gate run 2 starts at 144aa95.
+
+## Whole gate, run 2 (integration branch at 144aa95)
+
+Per-lane exit codes (`target/review-boundaries-21/gate-run2/*.exit`): fmt-check 0, clippy 0, **test 201**, doc-check 0, example-check 0, projection-check 0, support-check 0, **consumer-check 201**, fuzz-check 0 (25 replay cases), release-check 0, action-check 0. `test` stopped at `crates/edge/ess-cli/tests/coverage_lineage.rs:162`: the generated Go runtime's `TestOriginalLineage` admits the five collapse cases round 3 added (`admitted=true want=false`), the third lane of the same class — routed to U1's implementor as correction 4. `consumer-check`: `missing bound entry cache-acquisition ess_cli::bin(ess)::oci_cache::fn::acquire` — the profile named the id U3 moved into the lib; fixed by the coordinator at d5f0848; `task consumer-check` at d5f0848 exit 0 (BaselineUnknown 157677, Supported 54, Refused 0; an intermediate attempt refused `complete source changed during extraction` because the coordinator edited this page in the tree mid-run — no writes to the integration tree during a run from here on). The earlier no-fail-fast run at 08ee01a (`gate2/test-nff.log`, 217 lanes, 2558 passed, 3 failed) had found the same Go lane plus the browser lineage case (fixed in correction 3) and a corpus self-check racing my own mid-run merge.
+
+## Whole gate, run 3 (integration branch at f346f27)
+
+Per-lane exit codes (`target/review-boundaries-21/gate-run3/*.exit`): fmt-check 0, clippy 0, **test 201**, doc-check 0, example-check 0, projection-check 0, support-check 0, consumer-check 0 (BaselineUnknown 157677, Supported 54), fuzz-check 0, release-check 0, action-check 0. The `--no-fail-fast` enumeration that followed (`gate-run3/test-nff.log`): 217 lanes, 2558 passed, 3 failed, all in `ess-cli` browser tests — `coverage_writer_adversary_pass2.rs:124`, `replay_fidelity_browser.rs:1197` and `:666` — one class: round 3's browser-adapter change reinterprets numeric-looking JSON *strings* as number tokens and projects them as `{raw}`. Routed to U1's implementor as correction 5 with the whole `ess-cli` package as its gate.
+
+## Whole gate, run 4 (integration branch at e448671e) — the closing record
+
+| lane | exit | evidence |
+|---|---|---|
+| fmt-check | 0 | `gate-run4/fmt-check.exit` |
+| clippy | 0 | |
+| test | 0 | 217 lanes, 2561 passed, 0 failed, 0 ignored (`cargo test --workspace --locked`) |
+| doc-check | 0 | |
+| example-check | 0 | |
+| projection-check | 0 | `generate --check` and `schema --check` current |
+| support-check | 0 | |
+| consumer-check | 0 | BaselineUnknown 157677, Supported 54, Refused 0, 22 executed cases |
+| fuzz-check | 0 | 25 replay cases |
+| release-check | 0 | release 0.20.0: workspace version and changelog agree |
+| action-check | 0 | |
+
+No lane skipped itself (the word appears only in two test names). Runs 1–3 (d81245f, 144aa95, f346f27) are recorded above with their red lanes and the correction each produced. `task site-build` at e448671e: exit 0 (`gate-run4/site-build.exit`; site-lab WASM smoke and `_run.test.mjs` passed, Docusaurus generated static files).
+
+## What the wave cost
+
+Harness-reported figures per agent; a resumed agent's token figure is cumulative across its rounds (inferred from the monotone series), tool uses and wall time are per round and summed here.
+
+| agent | rounds | tokens | tool uses | wall |
+|---|---|---|---|---|
+| U1 implementor (Opus) | 6 | 490,314 | 874 | 169.8 min |
+| U1 adversary pass 1 / pass 2 | 2 | 117,737 / 136,921 | 42 / 55 | 12.3 / 13.4 min |
+| U2 implementor (Opus) | 3 | 322,741 | 392 | 69.5 min |
+| U2 adversary pass 1 / pass 2 | 2 | 135,367 / 160,136 | 47 / 52 | 23.3 / 14.0 min |
+| U3 implementor (Opus) | 4 | 742,098 | 608 | 293.4 min (one HTTP 429 after round 1's report) |
+| U3 adversary pass 1 / pass 2 | 2 | 152,100 / 135,464 | 64 / 58 | 33.0 / 37.6 min |
+| story-scopers ×3 (stage 1) | 1 each | 59,268 / 44,968 / 52,034 | 27 / 26 / 8 | 1.0 / 0.8 / 2.2 min (one HTTP 429 each before resuming) |
+| **total sub-agent tokens** | | **2,549,148** | | |
+
+Executed-case counts per unit at merge: U1 1076 → 1100 (package), U2 502 → 531, U3 527 → 650; whole workspace 2561. Adversary findings per pass: U1 5 → 5, U2 6 → 8, U3 4 → 4; ledger between passes carried 0 for every unit.
+
+## Commits the wave made
+
+Opening 2900f62; units — U1 d107b53, 33f4568, 12ec9f1, 70ba641 (coordinator re-freeze), 154d269, cbce0c1, 42f1b3b; U2 36fa1df, 1b0368b, ba6cb7b; U3 67d9e95, 4f9dfba, 6a8aff7, c2d8cc1; merges 0175113 (U2), b3427b1 (U1), d81245f (U3), 0bdb9f5, f346f27, e448671e (U1 corrections 3–5); coordinator integration fixes 08ee01a, 4e63718, 144aa95 (+ git note), d5f0848; the closing store commit; the merge to main through a bot pull request. No tag, no release.
+
 ## Stage record
 
-Updated by the coordinator as units change stage.
+Final, 2026-09-09.
 
 | unit | stage | head |
 |---|---|---|
-| U1 | proposed | — |
-| U2 | proposed | — |
-| U3 | proposed | — |
+| U1 | implemented on the gate's record; merged (b3427b1, 0bdb9f5, f346f27, e448671e) | 42f1b3b |
+| U2 | implemented on the gate's record; merged (0175113) | ba6cb7b |
+| U3 | implemented on the gate's record; merged (d81245f); obligation:review-execution-recovery-implementation met | c2d8cc1 |
+
+Filed on the way, outside the wave: story:browser-fixture-startup-deadline (Firefox 30 s deadline, pre-existing), story:fixtures-carry-workstation-paths (two coverage fixtures since 874962d, pre-existing), story:primitive-canonical-serialization (F08's decimal wire half, the epic's one remaining draft). The epic stays active for that draft.
