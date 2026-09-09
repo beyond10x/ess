@@ -3,7 +3,26 @@
 // Original suite strings and unsigned metadata never pass through JSON.parse's Number conversion.
 const fail = reason => { throw new Error(`Invalid coverage replay: ${reason}`) }
 const require = (condition, reason) => { if (!condition) fail(reason) }
-class NumberToken { constructor(raw) { this.raw = raw } }
+// A number kept as the digits it was written with. `toJSON`/`toString` so a token that reaches the
+// player or a stringifier renders as the number rather than as its wrapper.
+class NumberToken { constructor(raw) { this.raw = raw } toJSON() { return this.raw } toString() { return this.raw } }
+// An integer token JS `Number` cannot hold exactly, canonicalised to its digits — or `null`.
+//
+// `Number(raw)` collapses every integer above 2^53, so `9007199254740992` and `9007199254740993`
+// were one value here and two in Rust: a child scenario that swapped one for the other compared
+// equal in the browser and unequal in the runner, and the browser admitted a replay the runner
+// refuses (`ess-cli/tests/support/coverage_cases.rs`). `equal` already compares a NumberToken by
+// its exact digits; this is what keeps one rather than throwing it away. See *One rule for
+// comparing integers* in docs/design/review-primitive-semantics.md.
+const exactInteger = raw => {
+  const match = /^([+-]?)(0|[1-9][0-9]*)(?:\.0*)?$/.exec(String(raw))
+  if (match === null) return null
+  const approximate = Number(raw)
+  // A token no binary64 holds is refused, exactly as `Number::new` refuses an infinity, and a token
+  // binary64 does hold exactly needs no digits kept.
+  if (!Number.isFinite(approximate) || Number.isSafeInteger(approximate)) return null
+  return new NumberToken((match[1] === '-' ? -BigInt(match[2]) : BigInt(match[2])).toString())
+}
 const own = (value, key) => Object.hasOwn(value, key)
 const object = value => {
   require(value !== null && typeof value === 'object' && !Array.isArray(value) && !(value instanceof NumberToken), 'expected object')
@@ -159,7 +178,11 @@ const suiteReference = value => {
 }
 const referenceFor = suite => ({ version: 'ess-conformance/5', digest_profile: 'sha256-json-bytes/1', digest: suite.digest })
 function node(value) {
-  if (value instanceof NumberToken) { const result = Number(value.raw); require(Number.isFinite(result), 'non-finite Node number'); return result }
+  if (value instanceof NumberToken) {
+    const exact = exactInteger(value.raw)
+    if (exact !== null) return exact
+    const result = Number(value.raw); require(Number.isFinite(result), 'non-finite Node number'); return result
+  }
   if (Array.isArray(value)) return value.map(node)
   if (value !== null && typeof value === 'object') return Object.fromEntries(keys(value).map(key => [key, node(value[key])]))
   return value
@@ -185,7 +208,7 @@ const scalar = value => {
   if (trimmed.length >= 2 && ['"', "'"].includes(trimmed[0]) && trimmed.at(-1) === trimmed[0]) return trimmed.slice(1, -1)
   if (trimmed === 'true' || trimmed === 'false') return trimmed === 'true'
   // f64's decimal grammar, without JavaScript's hexadecimal/empty-string coercions.
-  if (/^[+-]?(?:[0-9]+(?:\.[0-9]*)?|\.[0-9]+)(?:[eE][+-]?[0-9]+)?$/.test(trimmed) && Number.isFinite(Number(trimmed))) return Number(trimmed)
+  if (/^[+-]?(?:[0-9]+(?:\.[0-9]*)?|\.[0-9]+)(?:[eE][+-]?[0-9]+)?$/.test(trimmed) && Number.isFinite(Number(trimmed))) return exactInteger(trimmed) ?? Number(trimmed)
   return trimmed
 }
 const operand = value => {
@@ -309,8 +332,14 @@ export const primitiveAdmits = (kind, value) => {
   switch (kind) {
     case 'string': case 'timestamp': case 'duration': return typeof value === 'string'
     case 'boolean': return typeof value === 'boolean'
-    case 'integer': return typeof value === 'number' && Number.isInteger(value) && value >= -integerBound && value <= integerBound
-    case 'decimal': return typeof value === 'number' && Number.isFinite(value)
+    // A kept token is an integer beyond 2^53, and its digits let this lane draw the declared range
+    // exactly — `[i64::MIN, i64::MAX]`, the range `as_i64` and the generated int64 codec answer on.
+    // A plain JS number reached this from a JSON value rather than a token, and the float image is
+    // the narrowest range it can be given: see *One range, and the lane that can draw it*.
+    case 'integer':
+      if (value instanceof NumberToken) { const exact = BigInt(value.raw); return exact >= -9223372036854775808n && exact <= 9223372036854775807n }
+      return typeof value === 'number' && Number.isInteger(value) && value >= -integerBound && value <= integerBound
+    case 'decimal': return value instanceof NumberToken || (typeof value === 'number' && Number.isFinite(value))
     case 'uuid': return typeof value === 'string' && canonicalUUID.test(value)
     case 'bytes': return typeof value === 'string' && paddedBase64.test(value)
     default: return false

@@ -33,6 +33,8 @@
     {"name": "boolean-text", "kind": "boolean", "value": "true", "admitted": false},
     {"name": "integer-whole", "kind": "integer", "value": 2, "admitted": true},
     {"name": "integer-negative", "kind": "integer", "value": -2, "admitted": true},
+    {"name": "integer-two-to-53", "kind": "integer", "value": 9007199254740992, "admitted": true},
+    {"name": "integer-two-to-53-plus-one", "kind": "integer", "value": 9007199254740993, "admitted": true},
     {"name": "integer-fractional", "kind": "integer", "value": 1.5, "admitted": false},
     {"name": "integer-text", "kind": "integer", "value": "2", "admitted": false},
     {"name": "integer-boolean", "kind": "integer", "value": true, "admitted": false},

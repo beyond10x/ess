@@ -143,10 +143,11 @@ fn predicate_pairs() -> Vec<(Value, Value)> {
         (json!({"x":{"gte":"other.0"}}), json!("x >= other.0")),
         (json!({"x":{"not_in":null}}), json!({"x":{"none_of":[]}})),
         (json!({"x":{"truthy":{"not":"an expression"}}}), json!("x")),
-        (
-            json!({"x":9_007_199_254_740_992_u64}),
-            json!({"x":9_007_199_254_740_993_u64}),
-        ),
+        // `1` and `1.0` are one predicate: binary64 carries both, so the two spellings name one
+        // value in every lane. The pair that used to sit here — `9007199254740992` against
+        // `9007199254740993` — is *not* an equivalence and now sits in `refusal_cases` under
+        // `child-swaps-two-integers-binary64-collapses`; see story:review-primitive-semantics.
+        (json!({"x":1}), json!({"x":1.0})),
         (json!({"x":"\u{feff}word"}), json!("x == '\u{feff}word'")),
         (json!({"x":1}), json!("x ==\u{85}1")),
         (json!(true), json!("\u{85}true")),
@@ -217,12 +218,25 @@ fn node_cases(result: &mut Vec<Case>) {
         };
         step[owner] = wrapped(json!({"nested":[9_007_199_254_740_992_u64,0]}));
         let left = json!([step.clone()]);
-        step[owner] = wrapped(json!({"nested":[9_007_199_254_740_993_u64,-0.0]}));
+        // The two spellings of zero are one value — `docs/design/review-primitive-semantics.md`
+        // gives `units × 10^-scale` one zero, and every lane agrees. The integer beside it is the
+        // *same* integer on both sides; it used to be `9007199254740993`, and that expectation was
+        // the F08 defect (two integers binary64 collapses were one value), not a fact about
+        // finiteness. The swap it used to assert is now asserted the other way, below.
+        step[owner] = wrapped(json!({"nested":[9_007_199_254_740_992_u64,-0.0]}));
         append(
             result,
             &format!("finite-node-{owner}"),
             &pair(&left, &json!([step.clone()])),
             true,
+        );
+        // Two integers binary64 collapses are two nodes, in Rust and in the browser adapter alike.
+        step[owner] = wrapped(json!({"nested":[9_007_199_254_740_993_u64,0]}));
+        append(
+            result,
+            &format!("collapsed-node-{owner}"),
+            &pair(&left, &json!([step.clone()])),
+            false,
         );
         step[owner] = wrapped(json!({"nested":[9_007_199_254_740_994_u64,0]}));
         append(
@@ -417,6 +431,27 @@ fn refusal_cases(result: &mut Vec<Case>) -> Value {
         input["suite_json"] = json!(selected.to_string());
         append(result, &format!("refusal-parent-{mutation}"), &input, false);
     }
+
+    // Two integers binary64 collapses are two predicates, so a child that swaps one for the other
+    // has changed the scenario and lineage refuses it.
+    //
+    // This pair was listed as an *equivalence* until story:review-primitive-semantics, and the
+    // expectation was the F08 defect itself: `ess_primitives::facts::Number` was an `f64`, both
+    // literals were one value, and a child that replaced one with the other appeared to change
+    // nothing. `Number` is exact now, so `x == 9007199254740992` and `x == 9007199254740993` are
+    // two guards over the same fact and a suite may not silently become the other one. The browser
+    // adapter agrees because `coverage-admission.js` keeps an integer token JS `Number` cannot hold
+    // — see *One rule for comparing integers* in `docs/design/review-primitive-semantics.md`.
+    let step = |predicate| json!([{"step":"expect_view","view":"example.All","expectation":{"expect":"satisfies","predicate":predicate}}]);
+    append(
+        result,
+        "child-swaps-two-integers-binary64-collapses",
+        &pair(
+            &step(json!({"x":9_007_199_254_740_992_u64})),
+            &step(json!({"x":9_007_199_254_740_993_u64})),
+        ),
+        false,
+    );
     incomplete
 }
 
