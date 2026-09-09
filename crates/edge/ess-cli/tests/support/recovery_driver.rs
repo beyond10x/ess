@@ -326,7 +326,10 @@ fn cache_lane(job: &Job) -> Result<String, String> {
                 .to_owned(),
         );
     }
-    let arrangement = job.root.join("recovery");
+    // Each driver provisions its own synthetic authority. Concurrent cache writers must share
+    // the OCI cache, but must not truncate one another's registry during authority admission.
+    // A driver handles one job per process, so the PID separates all simultaneously live writers.
+    let arrangement = job.root.join(format!("recovery-{}", std::process::id()));
     let id = fake_recovery::provision_cache_lane(&arrangement, &bytes, &services)
         .map_err(|error| format!("the fixture arrangement could not be laid out: {error}"))?;
     let host = fake_recovery::FixtureHost::new(&arrangement, vec![uuid_of(0x40)]);
