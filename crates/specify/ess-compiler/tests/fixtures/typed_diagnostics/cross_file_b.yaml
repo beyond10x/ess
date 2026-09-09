@@ -1,0 +1,6 @@
+domain: shop.cross
+events:
+  - name: shop.cross.Announced
+    fields:
+      - name: caption
+        type: String

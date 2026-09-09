@@ -53,7 +53,9 @@ use ess_domain::system::Source;
 use ess_domain::topology::Workload;
 use ess_domain::types::{is_assignable, Field, NamedType, TypeBody, TypeRef, TypeRegistry};
 use ess_domain::view::ViewSpec;
-use ess_primitives::error::{ValidationCode, ValidationErrors};
+use ess_primitives::error::{
+    ConstructKind, ConstructRef, Segment, Site, SyntaxSpan, ValidationCode, ValidationErrors,
+};
 
 use crate::diagnostic::{Code, Detail, Diagnostic, Diagnostics, Severity};
 use crate::ir::{
@@ -540,21 +542,133 @@ pub fn diagnose_locating(
 }
 
 /// [`diagnose`], against a locator that already exists.
+///
+/// Two paths, and the typed one is the one that is growing. A refusal built by
+/// [`ValidationError::at`](ess_primitives::error::ValidationError::at) carries a
+/// [`Site`]: its family comes from the construct's kind and its needles from the construct's own
+/// segments, so neither [`family_of`] nor [`needles_for`] is consulted and rewording the rendered
+/// path cannot move either. A refusal built by `ValidationError::new` still carries only a string,
+/// and is bridged exactly as before. The fallback stays until the inventory in
+/// `docs/design/review-typed-diagnostics.md` is empty.
 fn bridge(errors: &ValidationErrors, locator: &Locator<'_>) -> Diagnostics {
     let mut diagnostics = Diagnostics::new();
     for error in errors.as_slice() {
+        let (family, span) = match error.site() {
+            Some(site) => (
+                family_of_kind(site.construct.kind()),
+                span_of_site(site, locator),
+            ),
+            None => (
+                family_of(&error.location),
+                locator.span(error.location.clone(), &needles_for(&error.location)),
+            ),
+        };
         diagnostics.push(Diagnostic {
-            code: Code::new(family_of(&error.location), class_of(error.code)),
+            code: Code::new(family, class_of(error.code)),
             severity: Severity::Error,
             message: error.message.clone(),
             details: vec![Detail::Note {
                 text: format!("`ess-domain` refuses this as `{}`", error.code.as_str()),
             }],
             hint: error.hint.clone(),
-            span: Some(locator.span(error.location.clone(), &needles_for(&error.location))),
+            span: Some(span),
         });
     }
     diagnostics
+}
+
+/// Where a sited refusal points.
+///
+/// A producer that knows its parser position is believed; one that does not still gets the
+/// [`Locator`]'s search, driven by the construct rather than by the rendered string.
+fn span_of_site(site: &Site, locator: &Locator<'_>) -> Span {
+    let path = site.construct.render();
+    match &site.span {
+        Some(SyntaxSpan {
+            source,
+            line,
+            column,
+        }) => Span {
+            source: source.clone(),
+            path,
+            located: Some(Location {
+                line: *line,
+                column: *column,
+            }),
+        },
+        None => locator.span(path, &needles_of_site(&site.construct)),
+    }
+}
+
+/// Which layer a construct is in.
+///
+/// The typed replacement for [`family_of`]: no string to parse, and no wildcard. [`ConstructKind`]
+/// is exhaustive on purpose, so a kind added upstream is a compile error here rather than a silent
+/// arrival in [`family::SPEC`](codes::family::SPEC) — which is what a `_` arm on a
+/// `#[non_exhaustive]` enum would have made it.
+fn family_of_kind(kind: ConstructKind) -> &'static str {
+    match kind {
+        ConstructKind::Type | ConstructKind::Conversion => codes::family::TYPE,
+        ConstructKind::Entity => codes::family::ENTITY,
+        ConstructKind::Command => codes::family::COMMAND,
+        ConstructKind::Event => codes::family::EVENT,
+        ConstructKind::Error => codes::family::ERROR,
+        ConstructKind::View => codes::family::VIEW,
+        ConstructKind::Actor => codes::family::ACTOR,
+        ConstructKind::Binding => codes::family::BINDING,
+        ConstructKind::Component => codes::family::COMPONENT,
+        ConstructKind::Topology => codes::family::TOPOLOGY,
+        ConstructKind::Domain => codes::family::DOMAIN,
+        ConstructKind::Specification => codes::family::SPEC,
+    }
+}
+
+/// Needles for a typed construct, most specific first.
+///
+/// Not a second implementation of [`needles_for`]: the same body, handed tokens taken from the
+/// construct's own segments instead of from a string. That is the whole difference the typed site
+/// makes here — the tokens come from `kind`, `name` and `members`, so rewording
+/// [`ValidationError::location`](ess_primitives::error::ValidationError::location) cannot move the
+/// cited line — and it is *all* of the difference, deliberately.
+///
+/// Adversary pass 1 found the cost of the other arrangement. A second implementation skipped
+/// [`STRUCTURAL`] and treated a trailing qualified event name as one token, so a sited refusal and
+/// its own rendered string cited different lines for one defect. Two answers to "which line does
+/// this path name" is worse than either answer alone, and the fix is that there is only one body to
+/// answer with. `needles_of_site(c) == needles_for(&c.render())` holds for every construct by
+/// construction, and is asserted over the shapes below and over every fixture the suite has.
+fn needles_of_site(construct: &ConstructRef) -> Vec<String> {
+    let tokens = tokens_of_site(construct);
+    needles_from_tokens(&tokens.iter().map(String::as_str).collect::<Vec<_>>())
+}
+
+/// A construct's own tokens: what [`split_path`] would produce from its render, without the render.
+///
+/// Every segment contributes, including [`Segment::Index`]. No needle turns on an index *yet* — an
+/// index sits behind a `STRUCTURAL` key in every path the migrated producers write, so it never
+/// reaches [`needles_from_tokens`]'s trailing-key test (adversary pass 2, F7). It is emitted anyway,
+/// because the contract this function owes is token fidelity, not needle fidelity: the two paths
+/// must be looking at the same path. `typed_tokens_are_the_string_tokens_for_every_segment_shape`
+/// is the check, and it fails if the index arm is deleted.
+fn tokens_of_site(construct: &ConstructRef) -> Vec<String> {
+    let mut tokens: Vec<String> = vec![construct.kind().as_str().to_owned()];
+    tokens.extend(split_path(construct.name()));
+    for member in construct.members() {
+        match member {
+            Segment::Key(key) => tokens.extend(split_path(key)),
+            Segment::Name(name) => tokens.extend(split_path(name)),
+            Segment::Index(index) => tokens.push(index.to_string()),
+        }
+    }
+    tokens
+}
+
+/// A document path broken the one way this module breaks one.
+fn split_path(path: &str) -> Vec<String> {
+    path.split(['.', ' ', '[', ']'])
+        .filter(|token| !token.is_empty())
+        .map(str::to_owned)
+        .collect()
 }
 
 /// Which layer a document path is in.
@@ -698,6 +812,14 @@ fn needles_for(location: &str) -> Vec<String> {
         .split(['.', ' ', '[', ']'])
         .filter(|token| !token.is_empty())
         .collect();
+    needles_from_tokens(&tokens)
+}
+
+/// Needles for a path already broken into tokens, most specific first.
+///
+/// The one body [`needles_for`] and [`needles_of_site`] share; see the second for why there is
+/// only one.
+fn needles_from_tokens(tokens: &[&str]) -> Vec<String> {
     let mut needles = Vec::new();
 
     // The last segment, when it is a key an author wrote — `recipient:`, `invoice-service:`.
@@ -2841,6 +2963,8 @@ fn condition_of(outcome: &Outcome) -> ResolvedCondition {
 
 #[cfg(test)]
 mod tests {
+    use ess_primitives::error::ValidationError;
+
     use super::*;
 
     /// The register is the interface a harness matches on, so its shape is asserted rather than
@@ -3081,5 +3205,259 @@ mod tests {
         );
         assert!(span.located.is_none());
         assert_eq!(span.path, "events.billing.invoice.InvoiceCreated");
+    }
+
+    /// Sources holding one command declaration and one member key, for the sited-bridge tests.
+    fn sited_sources() -> SourceMap {
+        let mut sources = SourceMap::new();
+        sources.insert(
+            "orders.yaml",
+            "commands:\n  - name: shop.orders.PlaceOrder\n    outcomes:\n      - name: placed\n        headline: input.total\n",
+        );
+        sources
+    }
+
+    /// A sited refusal whose rendered `location` has been rewritten as a wording change would
+    /// rewrite it. The family must come from the construct's kind, not from the string's head.
+    #[test]
+    fn a_sited_refusal_takes_its_family_from_the_construct_not_the_location_head() {
+        let mut error = ValidationError::at(
+            ConstructRef::new(ConstructKind::Command, "shop.orders.PlaceOrder")
+                .key("outcomes")
+                .named("placed")
+                .key("emits"),
+            ValidationCode::UndeclaredReference,
+            "`shop.orders.Missing` is not a declared event",
+        );
+        // Exactly what `family_of` reads, spelled as no family it knows.
+        error.location = "reworded.shop.orders.PlaceOrder.outcomes.placed.emits".to_owned();
+        let mut errors = ValidationErrors::new();
+        errors.push(error);
+
+        let sources = sited_sources();
+        let diagnostics = bridge(&errors, &Locator::new(&sources, &["orders.yaml"]));
+
+        assert_eq!(
+            diagnostics.as_slice()[0].code,
+            codes::COMMAND_UNDECLARED_REFERENCE,
+            "the family came from the location string, not from the site"
+        );
+    }
+
+    /// The needles must be derived from the typed construct, not by re-tokenising the string.
+    #[test]
+    fn a_sited_refusal_takes_its_needles_from_the_construct_not_the_location_path() {
+        let mut error = ValidationError::at(
+            ConstructRef::new(ConstructKind::Command, "shop.orders.PlaceOrder")
+                .key("outcomes")
+                .named("placed")
+                .named("headline"),
+            ValidationCode::UndeclaredReference,
+            "`headline` is not a field it carries",
+        );
+        error.location = "reworded.entirely".to_owned();
+        let mut errors = ValidationErrors::new();
+        errors.push(error);
+
+        let sources = sited_sources();
+        let diagnostics = bridge(&errors, &Locator::new(&sources, &["orders.yaml"]));
+        let span = diagnostics.as_slice()[0]
+            .span
+            .as_ref()
+            .expect("a sited refusal still gets a span");
+
+        assert_eq!(span.source, "orders.yaml");
+        assert_eq!(
+            span.located.expect("`headline:` occurs exactly once").line,
+            5
+        );
+        assert_eq!(
+            span.path, "command.shop.orders.PlaceOrder.outcomes.placed.headline",
+            "the cited path is the site's render, not the reworded string"
+        );
+    }
+
+    /// A site that already knows its parser position is used verbatim; no file is searched.
+    #[test]
+    fn a_sited_refusal_with_a_syntax_span_does_not_search_the_sources() {
+        let mut errors = ValidationErrors::new();
+        errors.push(ValidationError::at_span(
+            ConstructRef::new(ConstructKind::Command, "shop.orders.PlaceOrder").key("outcomes"),
+            SyntaxSpan {
+                source: "elsewhere.yaml".to_owned(),
+                line: 41,
+                column: 7,
+            },
+            ValidationCode::EmptyDeclaration,
+            "declares no outcomes",
+        ));
+
+        let empty = SourceMap::new();
+        let diagnostics = bridge(&errors, &Locator::new(&empty, &[] as &[&str]));
+        let span = diagnostics.as_slice()[0].span.as_ref().expect("a span");
+
+        assert_eq!(span.source, "elsewhere.yaml");
+        assert_eq!(
+            span.located,
+            Some(Location {
+                line: 41,
+                column: 7
+            })
+        );
+    }
+
+    /// The typed needles and the string needles are one derivation, over every segment shape.
+    ///
+    /// The class adversary pass 1 found (F1, F2): a second implementation of "which line does this
+    /// path name" disagreed with the first on a trailing qualified name and on an author-chosen
+    /// name that is a `STRUCTURAL` word. Both are in the table; so is every shape the migrated
+    /// producers emit, including an index, a bare construct, and a `Name` carrying a space.
+    #[test]
+    fn typed_needles_are_the_string_needles_for_every_segment_shape() {
+        let shapes = [
+            // The bare construct: no member path at all.
+            ConstructRef::new(ConstructKind::Command, "shop.orders.PlaceOrder"),
+            // A structural key, which names no declaration.
+            ConstructRef::new(ConstructKind::Command, "shop.orders.PlaceOrder").key("outcomes"),
+            // An author-chosen name under it.
+            ConstructRef::new(ConstructKind::Command, "shop.orders.PlaceOrder")
+                .key("outcomes")
+                .named("placed"),
+            // F2: an author-chosen name that is one of the fifty `STRUCTURAL` words.
+            ConstructRef::new(ConstructKind::Command, "shop.stop.Halt")
+                .key("outcomes")
+                .named("error"),
+            // F1: a trailing *qualified* event name, whose first character is lowercase.
+            ConstructRef::new(ConstructKind::Command, "shop.tail.Note")
+                .key("outcomes")
+                .named("noted")
+                .key("payload")
+                .named("shop.tail.Missing"),
+            // The deepest shape a migrated producer emits.
+            ConstructRef::new(ConstructKind::Command, "shop.cross.Announce")
+                .key("outcomes")
+                .named("announced")
+                .key("payload")
+                .named("shop.cross.Announced")
+                .named("headline"),
+            // A positional element.
+            ConstructRef::new(ConstructKind::Command, "shop.repeat.File")
+                .key("input")
+                .index(1),
+            // A name carrying a separator this module also splits on.
+            ConstructRef::new(ConstructKind::Component, "invoice service").key("replicas"),
+            // Every kind, so no head token is special-cased by accident.
+        ]
+        .into_iter()
+        .chain(
+            ConstructKind::ALL
+                .iter()
+                .map(|kind| ConstructRef::new(*kind, "shop.any.Thing").key("outcomes")),
+        );
+
+        for construct in shapes {
+            assert_eq!(
+                needles_of_site(&construct),
+                needles_for(&construct.render()),
+                "the typed and string derivations disagree for {}",
+                construct.render()
+            );
+        }
+    }
+
+    /// The stronger half of the same contract: the *tokens* agree, not only the needles.
+    ///
+    /// Needle equality alone let a segment arm be deleted without any test noticing, because no
+    /// needle currently turns on an index (adversary pass 2, F7). Token equality is what
+    /// `needles_of_site` actually owes — that the two paths are looking at the same path — and it
+    /// fails the moment a segment stops contributing.
+    #[test]
+    fn typed_tokens_are_the_string_tokens_for_every_segment_shape() {
+        let shapes = [
+            ConstructRef::new(ConstructKind::Command, "shop.repeat.File")
+                .key("input")
+                .index(1),
+            ConstructRef::new(ConstructKind::Command, "shop.orders.PlaceOrder")
+                .key("outcomes")
+                .index(0)
+                .key("emits")
+                .index(12),
+            // The space-separated head, which is a separator this module also splits on.
+            ConstructRef::new(ConstructKind::Entity, "shop.wrong.Order")
+                .key("transitions")
+                .index(0),
+            ConstructRef::new(ConstructKind::Component, "invoice-service")
+                .key("accepts")
+                .key("commands"),
+            ConstructRef::new(ConstructKind::Command, "shop.cross.Announce")
+                .key("outcomes")
+                .named("announced")
+                .key("payload")
+                .named("shop.cross.Announced")
+                .named("headline"),
+        ]
+        .into_iter()
+        .chain(ConstructKind::ALL.iter().map(|kind| {
+            ConstructRef::new(*kind, "shop.any.Thing")
+                .key("fields")
+                .index(3)
+        }));
+
+        for construct in shapes {
+            assert_eq!(
+                tokens_of_site(&construct),
+                split_path(&construct.render()),
+                "a segment of {} contributes no token, so the typed path is reading a shorter \
+                 path than the string it renders",
+                construct.render()
+            );
+        }
+    }
+
+    /// Every kind reaches a family the register knows, and every family is reached by some kind.
+    ///
+    /// Both directions, because either alone hides a defect: a kind falling through to `SPEC` is
+    /// what the `_` arm used to do silently, and a family no kind reaches is a layer the typed path
+    /// can never emit. `Type` and `Conversion` share one family on purpose, so the two lists are
+    /// compared as sets rather than by length.
+    #[test]
+    fn every_construct_kind_maps_to_a_declared_family_and_back() {
+        let mut reached: Vec<&'static str> = Vec::new();
+        for kind in ConstructKind::ALL {
+            let family = family_of_kind(*kind);
+            assert!(
+                codes::family::ALL.contains(&family),
+                "{kind:?} maps to {family}, which is not a declared family"
+            );
+            if !reached.contains(&family) {
+                reached.push(family);
+            }
+        }
+        for family in codes::family::ALL {
+            assert!(
+                reached.contains(family),
+                "no `ConstructKind` maps to {family}, so no sited refusal can ever carry it"
+            );
+        }
+    }
+
+    /// The string fallback stays until the inventory in `docs/design/review-typed-diagnostics.md`
+    /// is empty: an unsited refusal is bridged exactly as it was before.
+    #[test]
+    fn an_unsited_refusal_is_still_bridged_from_its_location_string() {
+        let mut errors = ValidationErrors::new();
+        errors.push(ValidationError::new(
+            ValidationCode::UndeclaredReference,
+            "command.shop.orders.PlaceOrder.outcomes.placed.headline",
+            "`headline` is not a field it carries",
+        ));
+
+        let sources = sited_sources();
+        let diagnostics = bridge(&errors, &Locator::new(&sources, &["orders.yaml"]));
+        let diagnostic = &diagnostics.as_slice()[0];
+
+        assert_eq!(diagnostic.code, codes::COMMAND_UNDECLARED_REFERENCE);
+        let span = diagnostic.span.as_ref().expect("a span");
+        assert_eq!(span.located.expect("located").line, 5);
     }
 }

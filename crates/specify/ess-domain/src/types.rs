@@ -19,7 +19,9 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt;
 
-use ess_primitives::error::{ParseError, ValidationCode, ValidationError, ValidationErrors};
+use ess_primitives::error::{
+    ConstructRef, ParseError, ValidationCode, ValidationError, ValidationErrors,
+};
 
 use crate::entity::{Invariant, RawInvariant};
 use crate::name::{Naming, QualifiedName};
@@ -892,6 +894,38 @@ impl TypeRegistry {
         let mut errors = ValidationErrors::new();
         for declared in self.iter() {
             errors.extend(declared.validate_invariants(self));
+        }
+        errors
+    }
+
+    /// [`Self::resolve`], about a construct rather than about a string.
+    ///
+    /// The refusal a caller gets from here carries the caller's typed site, so its family and its
+    /// cited line do not depend on how the caller spelled the path. `resolve` stays for the callers
+    /// whose own family has not been migrated — the inventory in
+    /// `docs/design/review-typed-diagnostics.md` lists them.
+    pub fn resolve_at(&self, reference: &TypeRef, at: &ConstructRef) -> ValidationErrors {
+        let mut errors = ValidationErrors::new();
+        let rendered = at.render();
+        crate::primitive_admission::reference(reference, None, &rendered, &mut errors);
+        for name in reference.named_dependencies() {
+            if !self.types.contains_key(name) {
+                errors.push(
+                    ValidationError::at(
+                        at.clone(),
+                        ValidationCode::UndeclaredReference,
+                        format!("`{name}` is not a declared type"),
+                    )
+                    .with_hint(format!(
+                        "declared types: {}",
+                        self.types
+                            .keys()
+                            .map(ToString::to_string)
+                            .collect::<Vec<_>>()
+                            .join(", ")
+                    )),
+                );
+            }
         }
         errors
     }

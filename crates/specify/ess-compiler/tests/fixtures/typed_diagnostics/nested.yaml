@@ -1,0 +1,46 @@
+format: ess/1
+system: shop
+version: v1
+domains: [shop.orders]
+domain: shop.orders
+types:
+  - name: shop.orders.OrderId
+    kind: newtype
+    of: Uuid
+entities:
+  - name: shop.orders.Order
+    identity:
+      name: order_id
+      type: shop.orders.OrderId
+    fields:
+      - name: total
+        type: Decimal
+    lifecycle:
+      initial: Open
+      states: [Open, Closed]
+      terminal: [Closed]
+      transitions:
+        - name: close
+          from: [Open]
+          to: Closed
+events:
+  - name: shop.orders.OrderPlaced
+    fields:
+      - name: order_id
+        type: shop.orders.OrderId
+commands:
+  - name: shop.orders.PlaceOrder
+    input:
+      - name: total
+        type: Decimal
+    outcomes:
+      - name: placed
+        creates: shop.orders.Order
+        instance: order_id
+        emits:
+          - shop.orders.OrderPlaced
+        payload:
+          shop.orders.OrderPlaced:
+            reference: input.total
+        sets:
+          total: input.total
