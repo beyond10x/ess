@@ -1070,7 +1070,7 @@
   {
     "id": "cache-acquisition",
     "entrypoints": [
-      "ess_cli::bin(ess)::oci_cache::fn::acquire"
+      "ess_cli::lib(ess_cli)::oci_cache::fn::acquire"
     ],
     "claim_boundary": "Cached OCI digest/manifest/payload acquisition with provenance; cache identity is not semantic support.",
     "execution_profile": "oci-bytes",
