@@ -14,8 +14,8 @@ use std::collections::BTreeMap;
 
 use super::chart::RenderedObject;
 use super::model::{
-    canonical_digest, ownership_marker, Admitted, Digest, HelmIdentity, Index, ObjectAddress,
-    ObjectRead, Observation, PresentObject, PrincipalPin, Refusal, RefusalCode, ReleasePermit,
+    canonical_digest, ownership_marker, Admitted, Digest, HelmIdentity, ObjectAddress, ObjectRead,
+    Observation, PresentObject, PrincipalPin, Refusal, RefusalCode, ReleasePermit,
     ReleaseProjection, ReleaseSnapshot, TargetPin, Text, Uuid, FRESHNESS_BUDGET_MS,
 };
 
@@ -187,8 +187,24 @@ pub fn snapshot(
     permit: &ReleasePermit,
     helm: Option<HelmIdentity>,
 ) -> Admitted<ReleaseSnapshot> {
+    Ok(observe(api, permit, helm)?.0)
+}
+
+/// The snapshot, and the complete live objects it was taken over.
+///
+/// The snapshot keeps digests, because that is what is compared and what is persisted. The live
+/// objects are kept beside it for exactly one reason: C07 step 8 requires comparing *every authored
+/// rendered field* as well as the caller-approved projection digest, and a digest cannot do that.
+/// A caller fingerprint that happened to approve an object with the wrong image would otherwise
+/// silently override the chart.
+pub fn observe(
+    api: &dyn Api,
+    permit: &ReleasePermit,
+    helm: Option<HelmIdentity>,
+) -> Admitted<(ReleaseSnapshot, BTreeMap<ObjectAddress, serde_json::Value>)> {
     let union = permit.union();
     let mut objects = Vec::with_capacity(union.len());
+    let mut live = BTreeMap::new();
     for address in &union {
         let read = api.object(permit.namespace.name.as_str(), address)?;
         objects.push(match read {
@@ -197,17 +213,21 @@ pub fn snapshot(
                 uid,
                 resource_version,
                 object,
-            } => ObjectRead::Present(PresentObject {
-                object: address.clone(),
-                uid: Text::new(uid)?,
-                resource_version: Text::new(resource_version)?,
-                content_digest: projection_digest(&object),
-            }),
+            } => {
+                let present = ObjectRead::Present(PresentObject {
+                    object: address.clone(),
+                    uid: Text::new(uid)?,
+                    resource_version: Text::new(resource_version)?,
+                    content_digest: projection_digest(&object),
+                });
+                live.insert(address.clone(), object);
+                present
+            }
         });
     }
     let snapshot = ReleaseSnapshot { helm, objects };
     snapshot.covers(&union)?;
-    Ok(snapshot)
+    Ok((snapshot, live))
 }
 
 /// Requires an observation to be within the freshness budget at the final pre-launch check.
@@ -337,10 +357,20 @@ pub fn decide(
                 "a release exists at this address and the authority admits no baseline for it",
             )
         })?;
-        admit_manifest(helm, baseline)?;
-        if !projection_holds(snapshot, baseline) {
-            return Err(drift(permit, snapshot));
+        // The admitted baseline pre-state, *or* the exact independently reviewed one. C07's second
+        // predicate is one sentence with an `unless` in it, and this is the `unless`: a differing
+        // observed pre-state is refused unless a new caller authority revision supplies the exact
+        // reviewed `repair_from` snapshot, in which case that snapshot *is* the admitted pre-state
+        // and the manifest and projection checks are the caller's review rather than this
+        // reader's.
+        if !repair_admits(permit, snapshot) {
+            admit_manifest(helm, baseline)?;
+            if !projection_holds(snapshot, baseline) {
+                return Err(drift());
+            }
         }
+        // What a repair never waives. Foreign ownership is decided above, before either branch;
+        // a competing occupant at a newly desired address is decided here, after both.
         if !addresses_absent(snapshot, &permit.desired_only()) {
             return Err(Refusal::new(
                 RefusalCode::OwnershipConflict,
@@ -389,25 +419,23 @@ fn decide_retirement(permit: &ReleasePermit, snapshot: &ReleaseSnapshot) -> Admi
         ));
     }
     let helm = snapshot.helm.as_ref().expect("checked just above");
-    admit_manifest(helm, baseline)?;
-    if !projection_holds(snapshot, baseline) {
-        return Err(drift(permit, snapshot));
+    // C07's fourth predicate carries the same `unless`: the admitted baseline pre-state, or a
+    // separately authorized exact `repair_from` pre-state, before one uninstall.
+    if !repair_admits(permit, snapshot) {
+        admit_manifest(helm, baseline)?;
+        if !projection_holds(snapshot, baseline) {
+            return Err(drift());
+        }
     }
     Ok(Predicate::RemoveBaseline)
 }
 
-fn drift(permit: &ReleasePermit, snapshot: &ReleaseSnapshot) -> Refusal {
-    if permit
-        .repair_from
-        .as_ref()
-        .is_some_and(|repair| repair == snapshot)
-    {
-        return Refusal::new(
-            RefusalCode::ObservedDrift,
-            "the observed pre-state equals the reviewed repair snapshot; this decision is the \
-             caller's to record as a new authority revision",
-        );
-    }
+/// The refusal a differing pre-state produces when no reviewed snapshot authorizes it.
+///
+/// One arm, not two. It used to have a second arm that fired when the reviewed snapshot *did*
+/// match — refusing the one case the contract admits — which is what made `repair_admits` a
+/// function with no production caller.
+fn drift() -> Refusal {
     Refusal::new(
         RefusalCode::ObservedDrift,
         "the observed pre-state differs from the admitted projection and no exact reviewed \
@@ -481,9 +509,4 @@ pub fn authored_holds(
         }
     }
     Ok(())
-}
-
-/// The operation index as a declared `Index`.
-pub fn operation(index: usize) -> Admitted<Index> {
-    super::journal::index(index)
 }

@@ -42,6 +42,12 @@ struct Job {
     fail: Option<String>,
     /// A durability barrier to be interrupted at, as its declared name.
     interrupt: Option<String>,
+    /// The label to fail or interrupt at, or `None` for the first crossing.
+    #[serde(default)]
+    label: Option<String>,
+    /// How far the injected monotonic clock advances per reading.
+    #[serde(default)]
+    step_ms: Option<u64>,
     /// Whether an `Opened` fact is published after the claim.
     open_journal: bool,
     /// The desired `ess-deployment/1` document, for the cache lane.
@@ -50,6 +56,12 @@ struct Job {
     /// The digest-pinned chart cache root, for the cache lane.
     #[serde(default)]
     cache: Option<PathBuf>,
+    /// The authority to select, for the full-engine mode.
+    #[serde(default)]
+    authority_id: Option<String>,
+    /// Which operation index fails, and how, for the full-engine mode.
+    #[serde(default)]
+    faults: Vec<(usize, String)>,
     /// Whether to provision and admit a synthetic authority before touching the cache.
     ///
     /// The **control**. With it false, the same vector must stop at the authority refusal without
@@ -103,6 +115,9 @@ fn run(job: &Job) -> Result<String, String> {
     if job.mode == "cache" {
         return cache_lane(job);
     }
+    if job.mode == "engine" {
+        return engine_lane(job);
+    }
     let nonces: Vec<Uuid> = job
         .nonces
         .iter()
@@ -112,13 +127,13 @@ fn run(job: &Job) -> Result<String, String> {
     if let Some(name) = &job.fail {
         host = host.failing(
             barrier(name).ok_or_else(|| format!("no barrier is named {name}"))?,
-            None,
+            job.label.as_deref(),
         );
     }
     if let Some(name) = &job.interrupt {
         host = host.interrupting(
             barrier(name).ok_or_else(|| format!("no barrier is named {name}"))?,
-            None,
+            job.label.as_deref(),
         );
     }
     let state_root = job.root.join(fake_recovery::STATE);
@@ -164,6 +179,94 @@ fn run(job: &Job) -> Result<String, String> {
             ))
         }
         other => Err(format!("no driver mode is named {other}")),
+    }
+}
+
+/// Runs the complete production engine, in this process, against the arrangement at `root`.
+///
+/// This is the offline qualification's real independent driver: the same admission, journal,
+/// preparation, observation, predicate and process code the shipped binary runs, in a process of
+/// its own, against a synthetic target that outlives it. What the job description supplies is the
+/// injected host and the process outcomes — through the Rust seams — and nothing else.
+///
+/// It exits nonzero on anything short of a complete accounting, so a caller can tell a settled run
+/// from an unresolved one without parsing prose.
+fn engine_lane(job: &Job) -> Result<String, String> {
+    let root = job.root.clone();
+    let authority = job
+        .authority_id
+        .as_ref()
+        .ok_or_else(|| "the engine lane needs an authority".to_owned())?;
+    let authority = Uuid::new(authority.clone()).map_err(|refusal| refusal.detail)?;
+
+    let desired_bytes = std::fs::read_to_string(root.join("desired.json"))
+        .map_err(|error| format!("reading the desired document: {error}"))?;
+    let current_bytes = std::fs::read_to_string(root.join("current.json")).ok();
+    let documents = ess_cli::recovery::Documents {
+        desired: serde_json::from_str(&desired_bytes)
+            .map_err(|error| format!("the desired document: {error}"))?,
+        current: current_bytes
+            .as_deref()
+            .map(serde_json::from_str)
+            .transpose()
+            .map_err(|error| format!("the baseline document: {error}"))?,
+        desired_bytes,
+        current_bytes,
+    };
+
+    let nonces: Vec<Uuid> = job
+        .nonces
+        .iter()
+        .map(|nonce| Uuid::new(nonce.clone()).map_err(|refusal| refusal.detail))
+        .collect::<Result<_, String>>()?;
+    let mut host = fake_recovery::FixtureHost::new(&root, nonces);
+    if let Some(name) = &job.fail {
+        host = host.failing(
+            barrier(name).ok_or_else(|| format!("no barrier is named {name}"))?,
+            job.label.as_deref(),
+        );
+    }
+    if let Some(name) = &job.interrupt {
+        host = host.interrupting(
+            barrier(name).ok_or_else(|| format!("no barrier is named {name}"))?,
+            job.label.as_deref(),
+        );
+    }
+    if let Some(step) = job.step_ms {
+        host = host.stepping(step);
+    }
+
+    let cluster = fake_recovery::Cluster::at(&root);
+    let payload = std::fs::read(root.join("chart.tgz"))
+        .map_err(|error| format!("the proved chart payload: {error}"))?;
+    let mut platform = fake_recovery::FixturePlatform::new(cluster, payload);
+    for (index, name) in &job.faults {
+        let fault = fake_recovery::HelmFault::parse(name)
+            .ok_or_else(|| format!("no Helm fault is named {name}"))?;
+        platform = platform.failing_at(*index, fault);
+    }
+
+    let request = ess_cli::recovery::ReconcileRequest {
+        path: root.join("desired.json"),
+        current: None,
+        cache: root.join("cache"),
+        allow_removals: true,
+        dry_run: false,
+        timeout: "5m".to_owned(),
+        authority: Some(authority),
+        retry_of: None,
+    };
+    let roots = ess_cli::recovery::Roots {
+        registry: root.join(fake_recovery::ADMIN),
+        helm_prefix: format!("{}/", root.join("opt/ess/recovery-tools/helm").display()),
+    };
+    let report = ess_cli::recovery::execute(&host, &roots, &request, &documents, &platform);
+    let calls = platform.calls().join(",");
+    let rendered = format!("{}calls: {calls}\n", report.render());
+    if report.complete() {
+        Ok(rendered)
+    } else {
+        Err(rendered)
     }
 }
 

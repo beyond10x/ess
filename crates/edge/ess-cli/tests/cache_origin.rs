@@ -1310,3 +1310,128 @@ fn write_plan(f: &Fixture, path: &Path, digest: &Digest) {
     let _ = f;
     std::fs::write(path, serde_json::to_vec(&plan).unwrap()).unwrap();
 }
+
+/// R07: staged residue from a completed fetch is neither a cache hit nor application evidence.
+///
+/// A fetch that finished writing its outputs and was then interrupted before the bounded read,
+/// the proof assembly or the chart preparation leaves an acquisition directory behind. It looks
+/// exactly like a successful fetch and it establishes nothing: the next run fetches again, and the
+/// residue is still there afterwards because nothing here repairs or consumes it.
+#[test]
+fn r07_completed_fetch_residue_is_neither_a_cache_hit_nor_application_evidence() {
+    let g = Graph::helm(false, false, false);
+    let requested = g.digest();
+    let f = Fixture::new();
+    g.install(&f, &requested);
+
+    // The residue: an acquisition directory holding exactly what a completed fetch writes.
+    let parent = g.entry(&f, &requested).parent().unwrap().to_path_buf();
+    let residue = parent.join("acquire-interrupted");
+    std::fs::create_dir_all(&residue).unwrap();
+    for (name, bytes) in [
+        ("manifest", g.manifest.clone()),
+        ("blob-0", g.blobs[0].clone()),
+        ("blob-1", g.blobs[1].clone()),
+    ] {
+        std::fs::write(residue.join(name), bytes).unwrap();
+    }
+    assert!(!g.entry(&f, &requested).exists(), "and no published entry");
+
+    let plan = f.0.join("r07.json");
+    write_plan(&f, &plan, &requested);
+    let output = f.acquire(&plan, true);
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    // Not a cache hit: the client really ran again.
+    assert!(
+        calls(&f).iter().any(|call| call[0] == "oras"),
+        "staged residue is not a warm entry: {:?}",
+        calls(&f)
+    );
+    // Not application evidence either: the consumer ran once, after the proof was published.
+    assert_eq!(
+        std::fs::read(g.entry(&f, &requested)).unwrap(),
+        g.proof(),
+        "the published proof comes from the fresh acquisition"
+    );
+    assert_eq!(std::fs::read(f.0.join("helm-chart")).unwrap(), g.blobs[1]);
+    assert_eq!(
+        calls(&f).iter().filter(|call| call[0] == "helm").count(),
+        1,
+        "the residue caused no extra consumer call"
+    );
+    // Preserved, untouched, for diagnosis.
+    assert_eq!(std::fs::read(residue.join("manifest")).unwrap(), g.manifest);
+}
+
+/// R09: an unpublished stage is ignored, and publication never replaces an existing entry.
+///
+/// Two halves of the same rule. A partial file beside the entry name is not an entry, so a cold
+/// run ignores it, publishes properly and leaves it exactly where it was. And an entry that is
+/// already published is not replaced by a later run: the warm path revalidates the bytes that are
+/// there instead of writing over them.
+#[test]
+fn r09_an_unpublished_stage_is_ignored_and_publication_never_replaces_an_entry() {
+    let g = Graph::helm(false, false, false);
+    let requested = g.digest();
+    let f = Fixture::new();
+    g.install(&f, &requested);
+
+    let entry = g.entry(&f, &requested);
+    let parent = entry.parent().unwrap().to_path_buf();
+    std::fs::create_dir_all(&parent).unwrap();
+    let stage = parent.join(format!(
+        "{}.entry.stage",
+        requested.as_str().strip_prefix("sha256:").unwrap()
+    ));
+    let partial = b"ESSOCI1\n\x00\x00\x00".to_vec();
+    std::fs::write(&stage, &partial).unwrap();
+
+    let plan = f.0.join("r09.json");
+    write_plan(&f, &plan, &requested);
+    let cold = f.acquire(&plan, true);
+    assert!(
+        cold.status.success(),
+        "{}",
+        String::from_utf8_lossy(&cold.stderr)
+    );
+    assert_eq!(
+        std::fs::read(&entry).unwrap(),
+        g.proof(),
+        "the entry is published from the fresh acquisition, not from the stage"
+    );
+    assert_eq!(
+        std::fs::read(&stage).unwrap(),
+        partial,
+        "an incomplete stage is retained exactly as it was"
+    );
+    let cold_calls = calls(&f).len();
+    assert!(cold_calls > 1, "the cold run really fetched");
+
+    // The no-replacement half: with the client trapped, the warm run revalidates and consumes the
+    // bytes that are already published, and does not write over them.
+    std::fs::write(f.0.join("trap"), b"").unwrap();
+    std::fs::remove_file(f.0.join("helm-chart")).unwrap();
+    let warm = f.acquire(&plan, true);
+    assert!(
+        warm.status.success(),
+        "{}",
+        String::from_utf8_lossy(&warm.stderr)
+    );
+    assert_eq!(
+        std::fs::read(&entry).unwrap(),
+        g.proof(),
+        "the published entry's bytes are unchanged"
+    );
+    assert_eq!(std::fs::read(f.0.join("helm-chart")).unwrap(), g.blobs[1]);
+    assert_eq!(
+        calls(&f).iter().filter(|call| call[0] == "oras").count(),
+        cold_calls - 1,
+        "no client ran for the warm entry"
+    );
+    assert_eq!(std::fs::read(&stage).unwrap(), partial);
+}

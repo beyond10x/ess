@@ -20,10 +20,9 @@ use std::io::Write as _;
 use std::path::{Path, PathBuf};
 
 use super::model::{
-    canonical_digest, invalid, read_canonical, write_canonical, Admitted, Digest, Index,
-    InvocationContext, InvocationId, JournalEntry, JournalFact, JournalFormat, LockClaim,
-    Observation, ObservationPhase, Prepared, ProcessDisposition, ProcessOutcome, Refusal,
-    RefusalCode, StoreFormat, StoreHeader, Uuid,
+    invalid, read_canonical, write_canonical, Admitted, Digest, Index, InvocationContext,
+    InvocationId, JournalEntry, JournalFact, JournalFormat, LockClaim, ObservationPhase, Prepared,
+    ProcessDisposition, ProcessOutcome, Refusal, RefusalCode, StoreFormat, StoreHeader, Uuid,
 };
 use super::{Barrier, FileFacts, Host, Trust};
 
@@ -257,18 +256,6 @@ fn publish_directory(host: &dyn Host, path: &Path, label: &str) -> Admitted<()> 
         .parent()
         .ok_or_else(|| incomplete("a created directory has a parent"))?;
     sync_directory(host, parent, Barrier::DirectoryParentSync, label)
-}
-
-/// Creates one directory exclusively, then crosses both publication barriers.
-///
-/// C10's reservation rule applies to *every* dynamically created directory, not only to
-/// `invocations/<nonce>/`: synchronizing an entry file and its immediate directory is not the
-/// barrier, because the directory's own name is published by its parent.
-pub fn create_directory(host: &dyn Host, path: &Path, label: &str) -> Admitted<()> {
-    if !create_exclusive(host, path, label)? {
-        return Err(incomplete(format!("{} already exists", path.display())));
-    }
-    publish_directory(host, path, label)
 }
 
 /// Publishes exact bytes under `destination` without replacing anything.
@@ -820,24 +807,6 @@ pub fn scan_store(host: &dyn Host, store: &Store) -> Admitted<Vec<History>> {
         .iter()
         .map(|nonce| read_history(host, store, nonce))
         .collect()
-}
-
-/// The canonical digest of a claim, for a quiescence decision to name.
-pub fn claim_digest(claim: &LockClaim) -> Digest {
-    canonical_digest(claim)
-}
-
-/// Refuses a fact that would follow a terminal one, for a caller building a record by hand.
-pub fn admit_appendable(fact: &JournalFact) -> Admitted<()> {
-    if matches!(fact, JournalFact::Opened(_)) {
-        return Ok(());
-    }
-    Ok(())
-}
-
-/// Builds the durable `Observed` fact for one observation.
-pub fn observed(observation: Observation) -> JournalFact {
-    JournalFact::Observed(observation)
 }
 
 /// Builds the durable `Prepared` fact naming its authorizing observation.

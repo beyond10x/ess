@@ -8,10 +8,10 @@
 
 use ess_cli::recovery::model::{
     canonical_digest, canonical_endpoint, canonical_value, ownership_marker, read_canonical,
-    write_canonical, Authority, AuthorityFormat, ChartSource, Digest, HelmBinary, HelmProtocol,
-    HelmVersion, HostPolicy, Index, InvocationId, NamespacePin, ObjectAddress, ObjectFingerprint,
-    ObjectKind, ObjectRead, PresentObject, PrincipalPin, Profile, RefusalCode, ReleasePermit,
-    ReleaseProjection, ReleaseSnapshot, TargetPin, Text, Uuid, FRESHNESS_BUDGET_MS,
+    write_canonical, Authority, AuthorityFormat, ChartSource, Digest, HelmBinary, HelmIdentity,
+    HelmProtocol, HelmVersion, HostPolicy, Index, InvocationId, NamespacePin, ObjectAddress,
+    ObjectFingerprint, ObjectKind, ObjectRead, PresentObject, PrincipalPin, Profile, RefusalCode,
+    ReleasePermit, ReleaseProjection, ReleaseSnapshot, TargetPin, Text, Uuid, FRESHNESS_BUDGET_MS,
     HELM_INSTALL_PREFIX, IDENTITY_NAMESPACE, INDEX_LIMIT, REFUSAL_CODES,
 };
 
@@ -654,7 +654,26 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 
 fn scratch(name: &str) -> PathBuf {
     static NEXT: AtomicUsize = AtomicUsize::new(0);
-    let root = Path::new(env!("CARGO_TARGET_TMPDIR")).join(format!(
+    static PRUNED: std::sync::Once = std::sync::Once::new();
+    let parent = Path::new(env!("CARGO_TARGET_TMPDIR"));
+    // Each arrangement installs a real copy of the admitted artifact, which is what makes the
+    // executable-admission checks real and also what makes these directories large. Nothing else
+    // reclaims them, so a few runs fill the disk and the next one fails for a reason that has
+    // nothing to do with the contract. Prune the previous processes' arrangements once, on the way
+    // in — never this process's, and never anything outside this prefix.
+    PRUNED.call_once(|| {
+        let mine = format!("-{}-", std::process::id());
+        let Ok(entries) = std::fs::read_dir(parent) else {
+            return;
+        };
+        for entry in entries.filter_map(Result::ok) {
+            let name = entry.file_name().to_string_lossy().into_owned();
+            if name.starts_with("recovery-") && !name.contains(&mine) {
+                let _ = std::fs::remove_dir_all(entry.path());
+            }
+        }
+    });
+    let root = parent.join(format!(
         "recovery-{name}-{}-{}",
         std::process::id(),
         NEXT.fetch_add(1, Ordering::Relaxed)
@@ -994,6 +1013,33 @@ fn a_stopped_journal_is_closed_and_a_short_completion_is_refused() {
             .iter()
             .any(|entry| matches!(entry.fact, JournalFact::Completed(_))),
         "Stopped is a settled stopping decision, not a completion"
+    );
+
+    // And the completion half the name promises: a `Completed` whose count is short of the
+    // selected list is published, and then refused on readback. Publishing it is the point —
+    // a case that only declined to write one would be asserting nothing about the reader.
+    let second = reserve(&host, &store).expect("a second reservation admits");
+    let mut short = Journal::open(&second);
+    let mut context = opened_context();
+    context.selected = vec![text("checkout"), text("billing")];
+    short
+        .append(&host, JournalFact::Opened(Box::new(context)))
+        .expect("Opened publishes");
+    short
+        .append(&host, JournalFact::Completed(Index::new(1).unwrap()))
+        .expect("the short completion is published, exactly as a defective writer would");
+    let refusal = read_history(&host, &store, &second.id().nonce).unwrap_err();
+    assert_eq!(refusal.code, RefusalCode::EvidenceIncomplete);
+    assert!(
+        refusal.detail.contains("completion of 1") && refusal.detail.contains("selected 2"),
+        "the refusal says what was claimed and what was selected: {refusal}"
+    );
+    assert!(
+        second
+            .directory()
+            .join(entry_name(Index::new(1).unwrap()))
+            .exists(),
+        "the short completion's bytes are preserved for diagnosis"
     );
 }
 
@@ -3449,6 +3495,13 @@ fn build_scenario(name: &str) -> Scenario {
         );
     }
 
+    // On disk, so a driver process can read exactly what the in-process lanes read.
+    std::fs::write(arrangement.join("desired.json"), &desired_bytes)
+        .expect("the desired document writes");
+    std::fs::write(arrangement.join("current.json"), &current_bytes)
+        .expect("the baseline document writes");
+    std::fs::write(arrangement.join("chart.tgz"), &payload).expect("the payload writes");
+
     Scenario {
         host: FixtureHost::new(&arrangement, (0x40..0x70).map(uuid).collect()),
         roots: Roots {
@@ -3499,16 +3552,43 @@ impl Scenario {
         FixturePlatform::new(self.cluster.clone(), self.payload.clone())
     }
 
+    /// Republishes the registry with the authority pinning `documents`' exact bytes.
+    ///
+    /// A case that edits the desired document has to move the authority's pin with it, because the
+    /// engine refuses a document the selected authority does not pin — which is the point of
+    /// `admit_documents` and not something a fixture may route around.
+    fn repin(&self, documents: &Documents) {
+        let admitted = read_registry(&self.host, &self.roots.registry).expect("the registry reads");
+        let mut registry = admitted.registry;
+        registry.generation = Index::new(registry.generation.get() + 1).unwrap();
+        let authority = &mut registry.authorities[0];
+        authority.revision = Index::new(authority.revision.get() + 1).unwrap();
+        authority.desired_digest = Digest::of_bytes(documents.desired_bytes.as_bytes());
+        authority.baseline_digest = documents
+            .current_bytes
+            .as_ref()
+            .map(|bytes| Digest::of_bytes(bytes.as_bytes()));
+        publish_registry(&self.root, &registry).expect("the repinned revision publishes");
+    }
+
     fn store(&self) -> ess_cli::recovery::journal::Store {
         open_store(&self.host, &self.root.join(STATE)).expect("the store admits")
     }
 
-    /// Installs a new authority revision carrying the caller's decision about one retained claim.
+    /// Performs C08's quiescence procedure exactly as the binding writes it.
     ///
-    /// This is the administrative procedure of C08, and it comes from the independently controlled
-    /// authority source. A journal record cannot generate it, a successful spawn cannot, and the
-    /// passage of time cannot; the decision names one exact claim by its exact retained bytes.
+    /// "During an execution-disabled administrative window, the caller archives the exact retained
+    /// lock claim, installs a new authority revision containing a decision naming that claim,
+    /// removes the old lock, then re-enables execution." All four steps, in that order — a fixture
+    /// that installed the decision and left the lock would leave every resuming invocation running
+    /// without a claim of its own, and would never have exercised the removal.
     fn grant_quiescence(&self, retained: &ess_cli::recovery::journal::RetainedClaim) {
+        self.record_quiescence(retained);
+        self.archive_claim(retained);
+    }
+
+    /// Installs the decision, and only the decision: the old lock stays where it is.
+    fn record_quiescence(&self, retained: &ess_cli::recovery::journal::RetainedClaim) {
         let admitted = read_registry(&self.host, &self.roots.registry).expect("the registry reads");
         let mut registry = admitted.registry;
         registry.generation = Index::new(registry.generation.get() + 1).unwrap();
@@ -3520,6 +3600,19 @@ impl Scenario {
             statement: QuiescenceStatement::NoFurtherWrites,
         });
         publish_registry(&self.root, &registry).expect("the new revision publishes");
+    }
+
+    /// Archives the exact retained claim's bytes and removes the old lock.
+    fn archive_claim(&self, retained: &ess_cli::recovery::journal::RetainedClaim) {
+        let archive = self.root.join("archived-claims");
+        std::fs::create_dir_all(&archive).expect("the archive directory exists");
+        std::fs::write(
+            archive.join(format!("{}.json", retained.claim.invocation.nonce)),
+            canonical(&retained.claim),
+        )
+        .expect("the exact retained claim is archived before the lock goes");
+        std::fs::remove_file(self.root.join(STATE).join("target.lock"))
+            .expect("the caller removes the old lock");
     }
 }
 
@@ -3906,6 +3999,104 @@ fn r20_manual_drift_refuses_implicit_repair_and_an_exact_repair_snapshot_admits_
     assert!(platform.calls().is_empty(), "nothing is overwritten");
 }
 
+/// R20's other half: a `repair_from` that is not exactly the observed pre-state still refuses.
+///
+/// "Exact" is the whole of the word. A snapshot that reviewed a different digest, a different set
+/// of addresses, or an earlier state of the same address is not the pre-state in front of the
+/// executor, and admitting it would make `repair_from` a force switch.
+#[test]
+fn r20_a_stale_or_differing_repair_snapshot_still_refuses() {
+    let (reviewed, observed) = reviewed_repair_permit();
+    // The control: the exact one admits, so every refusal below is about the difference.
+    assert_eq!(
+        ess_cli::recovery::observe::decide(&reviewed, &observed, &uuid(0x33), false),
+        Ok(ess_cli::recovery::observe::Predicate::ApplyFromBaseline)
+    );
+
+    let mut stale = reviewed.clone();
+    let mut earlier = observed.clone();
+    earlier.objects = vec![ObjectRead::Present(PresentObject {
+        object: address(ObjectKind::Deployment, "api"),
+        uid: text("uid-Deployment-api"),
+        resource_version: text("6"),
+        content_digest: digest("an-earlier-drift"),
+    })];
+    stale.repair_from = Some(earlier);
+    assert_eq!(
+        ess_cli::recovery::observe::decide(&stale, &observed, &uuid(0x33), false)
+            .unwrap_err()
+            .code,
+        RefusalCode::ObservedDrift,
+        "a snapshot of an earlier state is not the pre-state in front of the executor"
+    );
+    assert!(!ess_cli::recovery::observe::repair_admits(
+        &stale, &observed
+    ));
+
+    let mut partial = reviewed.clone();
+    let mut fewer = observed.clone();
+    fewer.objects.clear();
+    partial.repair_from = Some(fewer);
+    assert_eq!(
+        ess_cli::recovery::observe::decide(&partial, &observed, &uuid(0x33), false)
+            .unwrap_err()
+            .code,
+        RefusalCode::ObservedDrift,
+        "a snapshot that omits an address reviewed nothing about it"
+    );
+
+    let mut rebranded = reviewed.clone();
+    let mut foreign = observed.clone();
+    foreign
+        .helm
+        .as_mut()
+        .expect("the fixture has release storage")
+        .revision = Index::new(4).unwrap();
+    rebranded.repair_from = Some(foreign);
+    assert_eq!(
+        ess_cli::recovery::observe::decide(&rebranded, &observed, &uuid(0x33), false)
+            .unwrap_err()
+            .code,
+        RefusalCode::ObservedDrift,
+        "the Helm identity is part of the pre-state a caller reviews"
+    );
+
+    let mut none = reviewed;
+    none.repair_from = None;
+    assert_eq!(
+        ess_cli::recovery::observe::decide(&none, &observed, &uuid(0x33), false)
+            .unwrap_err()
+            .code,
+        RefusalCode::ObservedDrift
+    );
+}
+
+/// The retirement side of the same sentence: an exact reviewed pre-state admits one uninstall.
+#[test]
+fn r20_an_exact_reviewed_repair_pre_state_admits_the_retirement_it_authorizes() {
+    let (apply, observed) = reviewed_repair_permit();
+    let mut retirement = apply;
+    retirement.desired = None;
+    retirement
+        .validate()
+        .expect("a baseline-only permit with a reviewed pre-state is valid");
+    assert_eq!(
+        ess_cli::recovery::observe::decide(&retirement, &observed, &uuid(0x33), true),
+        Ok(ess_cli::recovery::observe::Predicate::RemoveBaseline),
+        "C07 predicate 4 carries the same `unless` as predicate 2"
+    );
+
+    let mut unreviewed = retirement;
+    unreviewed.repair_from = None;
+    assert_eq!(
+        ess_cli::recovery::observe::decide(&unreviewed, &observed, &uuid(0x33), true)
+            .unwrap_err()
+            .code,
+        RefusalCode::ObservedDrift,
+        "and refuses without it"
+    );
+}
+
 /// R29: a failed final `Completed` publication prevents a complete-success claim.
 #[test]
 fn r29_a_failed_final_completion_publication_prevents_a_success_claim() {
@@ -4156,16 +4347,33 @@ fn r15_an_applied_effect_whose_outcome_cannot_be_recorded_is_not_a_success() {
         "the effect happened, and the invocation cannot say so"
     );
 
-    // Before any decision: the retained `Prepared` has no disposition, and the restart must
-    // neither reconstruct `NotLaunched` from the empty tail nor mutate.
+    // Two fences, and each one refuses on its own.
     let history = only_history(&scenario);
     assert_eq!(
         history.unresolved_preparations().len(),
         1,
         "a durable Prepared with no disposition is retained"
     );
+    // The first: the predecessor's claim is still published.
     let blocked = scenario.run(&scenario.platform());
     let refusal = blocked.refusal.as_ref().expect("the restart is blocked");
+    assert_eq!(refusal.code, RefusalCode::MutationBlocked);
+    assert!(
+        refusal.detail.contains("still holds the target claim"),
+        "the refusal names the holder: {refusal}"
+    );
+
+    // The second, and the one a removed lock cannot switch off: the retained `Prepared` has no
+    // durable disposition, so a restart must neither reconstruct `NotLaunched` from the empty tail
+    // nor mutate until the caller's decision names that invocation.
+    let retained = retained_claim(&scenario).expect("the claim is retained");
+    scenario.archive_claim(&retained);
+    assert!(retained_claim(&scenario).is_none(), "the lock is gone");
+    let still = scenario.run(&scenario.platform());
+    let refusal = still
+        .refusal
+        .as_ref()
+        .expect("the restart is still blocked");
     assert_eq!(refusal.code, RefusalCode::MutationBlocked);
     assert!(
         refusal.detail.contains("Prepared with no disposition"),
@@ -4173,8 +4381,7 @@ fn r15_an_applied_effect_whose_outcome_cannot_be_recorded_is_not_a_success() {
     );
 
     // The restart observes; it does not replay and it invents no acknowledgement.
-    let retained = retained_claim(&scenario).expect("the claim is retained");
-    scenario.grant_quiescence(&retained);
+    scenario.record_quiescence(&retained);
     let second = scenario.platform();
     let resumed = scenario.run(&second);
     assert!(resumed.refusal.is_none(), "{}", resumed.render());
@@ -4220,50 +4427,123 @@ fn r19_an_observation_past_the_monotonic_budget_refuses_at_the_launch_check() {
     assert!(dispositions(&history).is_empty());
 }
 
-/// Secret containment: no credential or Secret-shaped value reaches any byte this run produces.
+/// Secret containment: no credential reaches any byte this run produces, at any depth.
+///
+/// Two sentinels, because they are two different obligations. A **credential** — the kubeconfig's
+/// bearer token — must appear nowhere at all. A **secret reference** is the caller's own intent and
+/// legitimately reaches the private values the executor hands the child; what it must never do is
+/// get copied into anything durable, so it is asserted absent from the journal, the evidence and
+/// the report while being present exactly where the caller put it.
 #[test]
-fn no_credential_or_secret_value_reaches_stdout_evidence_or_a_retained_report() {
-    const SENTINEL: &str = "SYNTHETIC-SECRET-SENTINEL";
+fn no_credential_reaches_stdout_evidence_private_values_or_a_retained_report() {
+    const CREDENTIAL: &str = "SYNTHETIC-CREDENTIAL-SENTINEL";
+    const REFERENCE: &str = "synthetic-secret-reference-sentinel";
     let scenario = build_scenario("secrets");
-    // The sentinel goes into the two places a caller's own bytes can carry one: the protected
-    // kubeconfig's credential, and the desired document's secret slot.
+
+    // The credential, where a caller's really is: in the protected kubeconfig.
     let kubeconfig = scenario.roots.registry.join("kubeconfig.yaml");
     let text = std::fs::read_to_string(&kubeconfig).unwrap();
     std::fs::write(
         &kubeconfig,
-        text.replace("token-file: /dev/null", &format!("token: {SENTINEL}")),
+        text.replace("token-file: /dev/null", &format!("token: {CREDENTIAL}")),
     )
     .unwrap();
 
     let platform = scenario.platform();
     let report = scenario.run(&platform);
     assert!(report.refusal.is_none(), "{}", report.render());
-
     assert!(
-        !report.render().contains(SENTINEL),
+        !report.render().contains(CREDENTIAL),
         "the report carries no credential"
     );
-    // Every durable byte the invocation published, and the synthetic cluster's own state.
-    let mut scanned = 0usize;
-    for entry in walk(&scenario.root) {
-        let Ok(bytes) = std::fs::read(&entry) else {
+
+    // Every byte under the scenario root: the journal, the claim, the store, the observations, the
+    // synthetic cluster, and the private chart and values the engine wrote for the child.
+    let scanned = walk(&scenario.root);
+    let private: Vec<&PathBuf> = scanned
+        .iter()
+        .filter(|path| path.to_string_lossy().contains("/private/"))
+        .collect();
+    assert!(
+        private.iter().any(|path| path.ends_with("values.yaml")),
+        "the scan reads the private values the engine wrote: {scanned:?}"
+    );
+    assert!(
+        scanned.len() > 30,
+        "the scan read {} files, which is too few to be looking at the evidence",
+        scanned.len()
+    );
+    let journal: Vec<&PathBuf> = scanned
+        .iter()
+        .filter(|path| path.to_string_lossy().contains("/invocations/"))
+        .collect();
+    assert!(
+        journal.len() > 20,
+        "the scan reads the journal it is making a claim about: {} entries",
+        journal.len()
+    );
+    for path in &scanned {
+        let Ok(bytes) = std::fs::read(path) else {
             continue;
         };
-        scanned += 1;
         assert!(
-            !String::from_utf8_lossy(&bytes).contains(SENTINEL),
+            !String::from_utf8_lossy(&bytes).contains(CREDENTIAL),
             "{} carries a credential",
-            entry.display()
+            path.display()
         );
     }
-    assert!(
-        scanned > 20,
-        "the scan read {scanned} files, which is too few to be looking at the evidence"
-    );
-    // And the kubeconfig itself still has it, so the scan is not passing because nothing does.
+    // And the kubeconfig still has it, so the scan is not passing because nothing does.
     assert!(std::fs::read_to_string(&kubeconfig)
         .unwrap()
-        .contains(SENTINEL));
+        .contains(CREDENTIAL));
+
+    // The reference half. A secret reference the caller authored is transient input, not evidence.
+    let referenced = build_scenario("secret-reference");
+    let mut documents = referenced.documents.clone();
+    let raw = documents.desired_bytes.replace(
+        r#""service_account":"default""#,
+        &format!(
+            r#""service_account":"default","secrets":{{"api-key":{{"name":"{REFERENCE}","key":"token"}}}}"#
+        ),
+    );
+    assert_ne!(raw, documents.desired_bytes, "the secret slot is seeded");
+    documents.desired = serde_json::from_str(&raw).expect("the seeded document admits");
+    documents.desired_bytes = raw;
+    referenced.repin(&documents);
+    let platform = referenced.platform();
+    let report = execute(
+        &referenced.host,
+        &referenced.roots,
+        &referenced.request(),
+        &documents,
+        &platform,
+    );
+    assert!(report.refusal.is_none(), "{}", report.render());
+    assert!(
+        !report.render().contains(REFERENCE),
+        "the report is not intent"
+    );
+
+    let mut in_private = 0usize;
+    for path in walk(&referenced.root) {
+        let Ok(bytes) = std::fs::read(&path) else {
+            continue;
+        };
+        let carries = String::from_utf8_lossy(&bytes).contains(REFERENCE);
+        let transient = path.to_string_lossy().contains("/private/");
+        if carries {
+            assert!(
+                transient,
+                "{} is durable and carries the caller's secret reference",
+                path.display()
+            );
+            in_private += 1;
+        }
+    }
+    assert!(
+        in_private > 0,
+        "the reference really is in the private values, so this scan is not vacuous"
+    );
 }
 
 fn walk(root: &Path) -> Vec<PathBuf> {
@@ -4518,5 +4798,672 @@ fn projection_fidelity_covers_all_three_kinds_and_unknown_server_content() {
         ess_cli::recovery::observe::projection_digest(&authored),
         ess_cli::recovery::observe::projection_digest(&moved),
         "a changed authored field is"
+    );
+}
+
+// --- Adversary pass 1: the exact independently reviewed repair pre-state -------------------------
+//
+// C07 predicate 2 and the C05 mechanical rule are one sentence:
+// "Other drift refuses *unless* a new caller authority revision supplies the exact independently
+// reviewed `repair_from` snapshot" (docs/design/review-execution-recovery.md:459; the same
+// obligation at :260 and :268 for the retirement side). R20's second half is that vector.
+//
+// `observe::repair_admits` is the function that decides it and nothing in `recovery/` calls it:
+// `decide` reaches `drift()`, which returns a `Refusal` on both of its arms, so an exact reviewed
+// pre-state and an unreviewed one refuse alike. The existing R20 case is named
+// `..._and_an_exact_repair_snapshot_admits_it` and asserts only that the refusal *mentions*
+// `repair_from`; it never sets the field, so the missing half is invisible.
+
+/// The drifted pre-state, and the permit whose caller reviewed exactly it.
+fn reviewed_repair_permit() -> (ReleasePermit, ReleaseSnapshot) {
+    let baseline = projection(&[(ObjectKind::Deployment, "api")], "baseline");
+    let desired = projection(&[(ObjectKind::Deployment, "api")], "desired");
+    let mut reviewed = permit("api", Some(baseline.clone()), Some(desired));
+    // This authority's own release, carrying its baseline manifest, with one object whose content
+    // is neither the baseline nor the desired fingerprint: manual drift between invocations.
+    let observed = ReleaseSnapshot {
+        helm: Some(HelmIdentity {
+            description: text(&ownership_marker(&uuid(0x33), &reviewed.incarnation)),
+            revision: Index::new(3).unwrap(),
+            storage_uid: text("release-storage-uid"),
+            manifest: baseline.addresses(),
+            hook_count: Index::new(0).unwrap(),
+        }),
+        objects: vec![ObjectRead::Present(PresentObject {
+            object: address(ObjectKind::Deployment, "api"),
+            uid: text("uid-Deployment-api"),
+            resource_version: text("7"),
+            content_digest: digest("manual-drift"),
+        })],
+    };
+    reviewed.repair_from = Some(observed.clone());
+    (reviewed, observed)
+}
+
+/// An exact reviewed `repair_from` pre-state admits the apply it authorizes.
+#[test]
+fn an_exact_reviewed_repair_pre_state_admits_the_apply_from_baseline() {
+    let (reviewed, observed) = reviewed_repair_permit();
+    reviewed
+        .validate()
+        .expect("a permit carrying a reviewed repair pre-state over its own union is valid");
+    assert!(
+        ess_cli::recovery::observe::repair_admits(&reviewed, &observed),
+        "the reviewed snapshot is the observed pre-state, address for address and digest for \
+         digest"
+    );
+    match ess_cli::recovery::observe::decide(&reviewed, &observed, &uuid(0x33), false) {
+        Ok(predicate) => assert_eq!(
+            predicate,
+            ess_cli::recovery::observe::Predicate::ApplyFromBaseline,
+            "the reviewed pre-state authorizes the change from it"
+        ),
+        Err(refusal) => panic!(
+            "drift refuses unless a new caller authority revision supplies the exact \
+             independently reviewed repair_from snapshot \
+             (docs/design/review-execution-recovery.md:459), and this one supplied it: {:?} {}",
+            refusal.code, refusal.detail
+        ),
+    }
+}
+
+/// The same decision through the production engine, from the caller's documented procedure.
+///
+/// Nothing here is hand built: the reviewed snapshot is the exact pre-state the refused invocation
+/// itself published, read back out of its own journal, and it is installed the way C08's
+/// quiescence decision is installed — as a new authority revision from the independently
+/// controlled registry.
+#[test]
+fn the_engine_performs_the_apply_an_exact_reviewed_repair_snapshot_authorizes() {
+    let scenario = build_scenario("repair-admits");
+    scenario
+        .cluster
+        .drift("app", &address(ObjectKind::Deployment, "api"), "manual");
+
+    let first = scenario.platform();
+    let refused = scenario.run(&first);
+    assert_eq!(
+        refused.refusal.as_ref().map(|refusal| refusal.code),
+        Some(RefusalCode::ObservedDrift),
+        "{}",
+        refused.render()
+    );
+    assert!(first.calls().is_empty(), "nothing was overwritten");
+
+    let store = scenario.store();
+    let observed = scan_store(&scenario.host, &store)
+        .expect("the store scans")
+        .into_iter()
+        .flat_map(|history| history.entries)
+        .find_map(|entry| match entry.fact {
+            JournalFact::Observed(observation)
+                if observation.phase == ObservationPhase::Before
+                    && observation.operation == Index::new(0).unwrap() =>
+            {
+                Some(observation.snapshot)
+            }
+            _ => None,
+        })
+        .expect("the refused invocation published its pre-state observation");
+
+    let retained = retained_claim(&scenario).expect("the claim is retained");
+    let admitted =
+        read_registry(&scenario.host, &scenario.roots.registry).expect("the registry reads");
+    let mut registry = admitted.registry;
+    registry.generation = Index::new(registry.generation.get() + 1).unwrap();
+    {
+        let revised = &mut registry.authorities[0];
+        revised.revision = Index::new(revised.revision.get() + 1).unwrap();
+        revised.quiescence.push(QuiescenceDecision {
+            claim: retained.claim.clone(),
+            claim_digest: retained.digest.clone(),
+            statement: QuiescenceStatement::NoFurtherWrites,
+        });
+        let reviewed = revised
+            .releases
+            .iter_mut()
+            .find(|permit| permit.service.as_str() == "api")
+            .expect("the fixture authority permits api");
+        reviewed.repair_from = Some(observed);
+    }
+    publish_registry(&scenario.root, &registry).expect("the reviewed revision publishes");
+
+    let second = scenario.platform();
+    let resumed = scenario.run(&second);
+    assert!(
+        resumed.refusal.is_none(),
+        "an exact independently reviewed repair_from pre-state authorizes the apply \
+         (docs/design/review-execution-recovery.md:459): {}",
+        resumed.render()
+    );
+    assert!(
+        second.calls().contains(&"apply api".to_owned()),
+        "the authorized repair performs the apply it was reviewed for: {:?}",
+        second.calls()
+    );
+}
+
+// --- The class behind F1: no production decision function without a production caller ------------
+
+/// Every module-level `pub fn` in `recovery/` is called from production code, not only from tests.
+///
+/// This is the check, not the list. `observe::repair_admits` decided the one case C07's second
+/// predicate admits, had no caller anywhere in `recovery/`, and every test that could have caught
+/// it went through `decide` — which refused on both arms. A hand-maintained list of "functions that
+/// ought to be wired" would have needed somebody to remember `repair_admits`; this needs nobody to
+/// remember anything, because a function that loses its last production caller fails here.
+///
+/// Scope: module-level `pub fn` in the seven `recovery/` modules. Inherent methods are excluded —
+/// an accessor with no caller is dead weight, not a contract that silently never runs — and so is
+/// `model.rs`, whose job is to be a vocabulary its readers pick from.
+#[test]
+fn every_production_decision_function_in_recovery_has_a_production_caller() {
+    let recovery = Path::new(env!("CARGO_MANIFEST_DIR")).join("src/recovery");
+    let modules = ["mod", "authority", "chart", "journal", "observe", "process"];
+    let sources: Vec<(String, String)> = modules
+        .iter()
+        .map(|name| {
+            let path = recovery.join(format!("{name}.rs"));
+            (
+                (*name).to_owned(),
+                std::fs::read_to_string(&path)
+                    .unwrap_or_else(|error| panic!("{} reads: {error}", path.display())),
+            )
+        })
+        .collect();
+    assert_eq!(sources.len(), 6, "the scan reads every decision module");
+
+    // The callers are the modules themselves *and* the shipped binary, which is where the engine's
+    // own entry point is called from. Anything else is a test.
+    let mut callers = sources.clone();
+    for outer in ["src/main.rs", "src/lib.rs"] {
+        let path = Path::new(env!("CARGO_MANIFEST_DIR")).join(outer);
+        callers.push((
+            outer.to_owned(),
+            std::fs::read_to_string(&path)
+                .unwrap_or_else(|error| panic!("{} reads: {error}", path.display())),
+        ));
+    }
+    assert!(
+        callers
+            .iter()
+            .any(|(name, text)| name == "src/main.rs" && text.contains("recovery::execute(")),
+        "the shipped binary is in the caller set and really calls the engine"
+    );
+
+    // `pub fn <name>` at column zero: a module-level function, not a method inside an `impl`.
+    let declared: Vec<(String, String)> = sources
+        .iter()
+        .flat_map(|(module, text)| {
+            text.lines().filter_map(move |line| {
+                let rest = line.strip_prefix("pub fn ")?;
+                let name = rest.split(['(', '<']).next()?.trim();
+                (!name.is_empty()).then(|| (module.clone(), name.to_owned()))
+            })
+        })
+        .collect();
+    assert!(
+        declared.len() > 25,
+        "the scan found {} module-level public functions, which is too few to be looking at the \
+         right files",
+        declared.len()
+    );
+    assert!(
+        declared.iter().any(|(_, name)| name == "repair_admits"),
+        "the scan finds the function whose absence of a caller this check exists for"
+    );
+
+    let orphans: Vec<String> = declared
+        .iter()
+        .filter(|(module, name)| {
+            let called = callers.iter().any(|(other, text)| {
+                text.lines()
+                    .filter(|line| !line.trim_start().starts_with("pub fn "))
+                    .any(|line| {
+                        line.contains(&format!("{name}("))
+                            || (other != module && line.contains(&format!("{module}::{name}")))
+                    })
+            });
+            !called
+        })
+        .map(|(module, name)| format!("{module}::{name}"))
+        .collect();
+    assert!(
+        orphans.is_empty(),
+        "these decide something the binding names and nothing in production calls them, so no \
+         test can drive them through the engine: {orphans:?}"
+    );
+}
+
+/// How far [`build_prefix`] takes one journal before it stops.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Upto {
+    Reserved,
+    Opened,
+    Observed,
+    Prepared,
+    Disposition,
+    After,
+    Stopped,
+    Completed,
+}
+
+/// Builds one journal up to exactly one named prefix and stops there.
+fn build_prefix(
+    host: &FixtureHost,
+    store: &ess_cli::recovery::journal::Store,
+    upto: Upto,
+) -> ess_cli::recovery::journal::Reservation {
+    let reserved = reserve(host, store).expect("a reservation admits");
+    if upto == Upto::Reserved {
+        return reserved;
+    }
+    let mut journal = Journal::open(&reserved);
+    journal
+        .append(host, JournalFact::Opened(Box::new(opened_context())))
+        .expect("Opened publishes");
+    if upto == Upto::Opened {
+        return reserved;
+    }
+    let observed = journal
+        .append(host, JournalFact::Observed(before(0)))
+        .expect("Observed publishes");
+    if upto == Upto::Observed {
+        return reserved;
+    }
+    journal
+        .append(
+            host,
+            JournalFact::Prepared(Prepared {
+                operation: Index::new(0).unwrap(),
+                observation_sequence: observed,
+            }),
+        )
+        .expect("Prepared publishes");
+    if upto == Upto::Prepared {
+        return reserved;
+    }
+    journal
+        .append(
+            host,
+            JournalFact::ProcessOutcome(ProcessOutcome {
+                operation: Index::new(0).unwrap(),
+                disposition: ProcessDisposition::Acknowledged,
+            }),
+        )
+        .expect("the disposition publishes");
+    if upto == Upto::Disposition {
+        return reserved;
+    }
+    journal
+        .append(
+            host,
+            JournalFact::Observed(Observation {
+                phase: ObservationPhase::After,
+                ..before(0)
+            }),
+        )
+        .expect("the After observation publishes");
+    if upto == Upto::After {
+        return reserved;
+    }
+    let terminal = if upto == Upto::Stopped {
+        JournalFact::Stopped(Stopped {
+            operation: Some(Index::new(0).unwrap()),
+            reason: RefusalCode::ObservationUnavailable,
+        })
+    } else {
+        JournalFact::Completed(Index::new(1).unwrap())
+    };
+    journal
+        .append(host, terminal)
+        .expect("the terminal fact publishes");
+    reserved
+}
+
+/// R18: every valid incomplete prefix C10 names, built on its own and classified on its own.
+///
+/// One reservation and one assertion per prefix. The grammar case above walks a single journal
+/// through the whole sequence, which is a different statement: it says the classification changes
+/// correctly as facts arrive. This says each named prefix, standing alone, is what C10 calls it —
+/// and in particular that "incomplete" is incompleteness rather than corruption, so the bytes stay
+/// and the next invocation reads them.
+#[test]
+fn r18_every_named_valid_incomplete_prefix_classifies_on_its_own() {
+    let (root, host) = provisioned("r18-prefixes");
+    let store = open_store(&host, &root.join(STATE)).expect("the store admits");
+    let build = |upto: Upto| build_prefix(&host, &store, upto);
+
+    // 1. A reserved directory with no `Opened` is an incomplete reservation, not a completed
+    //    journal, and it authorizes no mutation.
+    let reserved = build(Upto::Reserved);
+    let history = read_history(&host, &store, &reserved.id().nonce).expect("reads");
+    assert_eq!(history.state, JournalState::EmptyReservation);
+    assert!(history.context().is_none());
+
+    // 2. `Opened` only.
+    let opened = build(Upto::Opened);
+    assert_eq!(
+        read_history(&host, &store, &opened.id().nonce)
+            .unwrap()
+            .state,
+        JournalState::Incomplete
+    );
+
+    // 3. `Observed` without `Prepared`: nothing was decided, so nothing is indeterminate.
+    let observed = build(Upto::Observed);
+    let history = read_history(&host, &store, &observed.id().nonce).expect("reads");
+    assert!(history.unresolved_preparations().is_empty());
+
+    // 4. `Prepared` without a disposition: indeterminate, and not reconstructible as a non-launch.
+    let prepared = build(Upto::Prepared);
+    let history = read_history(&host, &store, &prepared.id().nonce).expect("reads");
+    assert_eq!(history.unresolved_preparations().len(), 1);
+
+    // 5. An acknowledged disposition without its required `After` observation.
+    let disposition = build(Upto::Disposition);
+    let history = read_history(&host, &store, &disposition.id().nonce).expect("reads");
+    assert_eq!(
+        history.acknowledged_without_after(),
+        vec![Index::new(0).unwrap()]
+    );
+
+    // 6. Every per-operation fact, and no `Completed`: still incomplete, and nothing outstanding.
+    let after = build(Upto::After);
+    let history = read_history(&host, &store, &after.id().nonce).expect("reads");
+    assert_eq!(history.state, JournalState::Incomplete);
+    assert!(history.unresolved_preparations().is_empty());
+    assert!(history.acknowledged_without_after().is_empty());
+
+    // 7 and 8. The two closed shapes.
+    for (upto, terminal) in [(Upto::Stopped, "Stopped"), (Upto::Completed, "Completed")] {
+        let closed = build(upto);
+        let history = read_history(&host, &store, &closed.id().nonce).expect("reads");
+        assert_eq!(history.state, JournalState::Closed, "{terminal}");
+        assert_eq!(
+            history.entries.last().map(|entry| entry.fact.name()),
+            Some(terminal)
+        );
+    }
+
+    // Every one of them is still there afterwards, and the whole-store scan reads all eight.
+    let histories = scan_store(&host, &store).expect("the store scans");
+    assert_eq!(
+        histories.len(),
+        8,
+        "an incomplete prefix is retained, not cleaned up"
+    );
+    assert_eq!(
+        histories
+            .iter()
+            .filter(|history| history.state == JournalState::Closed)
+            .count(),
+        2
+    );
+}
+
+// --- The process lanes: the same families, through real independent driver processes -------------
+//
+// Everything above runs the engine in this process. These run *the same production engine* in a
+// process of its own, against a synthetic target that outlives it. The distinction is not
+// decoration: a claim retained after its holder died, and a restart that sees only what actually
+// reached the disk, are facts only when the holder really died.
+
+impl Scenario {
+    /// Runs the full production engine in a separate driver process.
+    fn drive(&self, name: &str, job: &serde_json::Value) -> std::process::Output {
+        let mut description = serde_json::json!({
+            "root": self.root, "mode": "engine", "nonces": (0x40..0x70)
+                .map(|byte| uuid(byte).to_string())
+                .collect::<Vec<_>>(),
+            "fail": null, "interrupt": null, "label": null, "step_ms": null,
+            "open_journal": false, "authority": false,
+            "authority_id": self.authority.to_string(), "faults": []
+        });
+        for (key, value) in job.as_object().expect("a job description is an object") {
+            description[key] = value.clone();
+        }
+        let path = self.root.join(format!("engine-job-{name}.json"));
+        std::fs::write(&path, serde_json::to_vec(&description).unwrap()).unwrap();
+        Command::new(env!("CARGO_BIN_EXE_ess-recovery-driver"))
+            .arg(&path)
+            .output()
+            .unwrap()
+    }
+}
+
+fn driver_text(output: &std::process::Output) -> String {
+    format!(
+        "{}{}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    )
+}
+
+/// A separate driver process runs the whole selected sequence and accounts for every operation.
+#[test]
+fn process_lane_a_full_engine_run_completes_in_a_process_of_its_own() {
+    let scenario = build_scenario("process-clean");
+    let output = scenario.drive("clean", &serde_json::json!({}));
+    let text = driver_text(&output);
+    assert!(output.status.success(), "{text}");
+    assert!(
+        text.contains("complete: every selected operation is accounted for"),
+        "{text}"
+    );
+    assert!(
+        text.contains("calls: apply api,apply checkout,apply web,remove legacy-c,remove legacy-b,remove legacy-a"),
+        "{text}"
+    );
+    for service in RETIREMENTS {
+        assert!(!scenario.cluster.has_release("app", service));
+    }
+    assert!(
+        retained_claim(&scenario).is_none(),
+        "ordinary safe completion releases its own claim"
+    );
+}
+
+/// R15/R21/R25 as processes: an effect the driver could not record, and the restart that follows.
+///
+/// The first driver really exits; the target really keeps the effect; the second driver is a
+/// different process reading only what reached the disk.
+#[test]
+fn process_lane_r15_r21_r25_an_effect_survives_the_driver_that_made_it() {
+    for (name, index, expect_call) in [
+        ("apply", 0usize, "apply api"),
+        ("remove", 3, "remove legacy-c"),
+    ] {
+        let scenario = build_scenario(&format!("process-lost-{name}"));
+        let first = scenario.drive(
+            "first",
+            &serde_json::json!({"faults": [[index, "LostAcknowledgement"]]}),
+        );
+        let text = driver_text(&first);
+        assert!(!first.status.success(), "{text}");
+        assert!(text.contains("EffectIndeterminate"), "{text}");
+        assert!(text.contains(expect_call), "{text}");
+
+        // The effect outlived the process that made it.
+        if name == "apply" {
+            assert!(scenario
+                .cluster
+                .has_object("app", &address(ObjectKind::Deployment, "api")));
+        } else {
+            assert!(!scenario.cluster.has_release("app", "legacy-c"));
+        }
+
+        // A second, admitted process observes and does not replay.
+        let retained = retained_claim(&scenario).expect("the claim is retained");
+        scenario.grant_quiescence(&retained);
+        let second = scenario.drive("second", &serde_json::json!({}));
+        let text = driver_text(&second);
+        assert!(second.status.success(), "{text}");
+        assert!(
+            !text.contains(&format!("calls: {expect_call}"))
+                && !text.contains(&format!(",{expect_call}")),
+            "the operation whose state already holds is not repeated: {text}"
+        );
+    }
+}
+
+/// R19 as a process: the monotonic budget is charged inside one invocation's own clock.
+#[test]
+fn process_lane_r19_an_expired_observation_authorizes_no_launch() {
+    let scenario = build_scenario("process-stale");
+    let output = scenario.drive("stale", &serde_json::json!({"step_ms": 20000}));
+    let text = driver_text(&output);
+    assert!(!output.status.success(), "{text}");
+    assert!(text.contains("ObservationStale"), "{text}");
+    assert!(
+        text.contains("calls: \n") || text.contains("calls: "),
+        "{text}"
+    );
+    assert!(
+        scenario
+            .cluster
+            .has_object("app", &address(ObjectKind::Service, "web-old")),
+        "the target is exactly as it was"
+    );
+}
+
+/// R29 as a process: a failed final publication after every call succeeded.
+#[test]
+fn process_lane_r29_a_failed_finalization_after_every_call_succeeded() {
+    let scenario = build_scenario("process-final");
+    let output = scenario.drive(
+        "final",
+        &serde_json::json!({
+            "fail": "Publish",
+            "label": entry_name(Index::new(25).unwrap())
+        }),
+    );
+    let text = driver_text(&output);
+    assert!(!output.status.success(), "{text}");
+    assert!(text.contains("incomplete execution evidence"), "{text}");
+    assert!(text.contains("remove legacy-a"), "every call ran: {text}");
+    let retained = retained_claim(&scenario).expect("the claim is retained");
+    scenario.grant_quiescence(&retained);
+    let second = scenario.drive("second", &serde_json::json!({}));
+    let text = driver_text(&second);
+    assert!(second.status.success(), "{text}");
+    assert!(
+        text.contains("calls: \n") || text.trim_end().ends_with("calls:"),
+        "a later invocation observes instead of replaying every call: {text}"
+    );
+}
+
+/// R28: two full engines race one reservation, and only one of them may mutate.
+///
+/// Two real processes, started together, against one store. Whichever publishes the claim first
+/// proceeds; the other is refused by the claim it did not publish. No timeout, no age, no PID
+/// decides it, and the loser mutates nothing.
+#[test]
+fn r28_two_full_engines_racing_one_store_leave_exactly_one_holder() {
+    let scenario = build_scenario("r28-race");
+    // Distinct nonce pools, so the two processes cannot be told apart by luck alone.
+    let left = serde_json::json!({
+        "nonces": (0x40..0x50).map(|b| uuid(b).to_string()).collect::<Vec<_>>(),
+        "faults": [[0, "LostAcknowledgement"]]
+    });
+    let right = serde_json::json!({
+        "nonces": (0x80..0x90).map(|b| uuid(b).to_string()).collect::<Vec<_>>(),
+        "faults": [[0, "LostAcknowledgement"]]
+    });
+    let first = scenario.drive("race-left", &left);
+    let second = scenario.drive("race-right", &right);
+
+    let outputs = [driver_text(&first), driver_text(&second)];
+    let succeeded = outputs
+        .iter()
+        .filter(|text| text.contains("EffectIndeterminate"))
+        .count();
+    let blocked = outputs
+        .iter()
+        .filter(|text| text.contains("MutationBlocked"))
+        .count();
+    assert_eq!(
+        (succeeded, blocked),
+        (1, 1),
+        "exactly one engine held the claim and exactly one was refused by it: {outputs:?}"
+    );
+    assert!(
+        outputs.iter().any(|text| text.contains("calls: apply api")),
+        "the holder mutated: {outputs:?}"
+    );
+    assert!(
+        outputs
+            .iter()
+            .any(|text| text.contains("MutationBlocked") && text.contains("calls: \n")),
+        "and the loser mutated nothing: {outputs:?}"
+    );
+
+    // The claim is still exactly the holder's, and neither process removed it.
+    let retained = retained_claim(&scenario).expect("the claim is retained");
+    assert!(
+        outputs
+            .iter()
+            .any(|text| text.contains(retained.claim.invocation.nonce.as_str())),
+        "the refusal names the holder: {outputs:?}"
+    );
+}
+
+/// What the retained lock decides, and what the caller's decision decides — separately.
+///
+/// The correction that asked for this expected a decision plus a retained lock to refuse. It does
+/// not, and the reason is worth writing down rather than asserting away: C08 makes the *decision*
+/// authoritative, and the adversary's own repair case depends on an invocation proceeding under one
+/// while the archived claim is still on disk. What the retained lock does decide is that the
+/// resuming invocation publishes no claim of its own — so the claim on disk after it is still,
+/// exactly, the predecessor's. The full procedure is the one that hands the next invocation an
+/// exclusion of its own, and that is the difference this case measures.
+#[test]
+fn a_retained_lock_and_the_callers_decision_decide_different_things() {
+    let scenario = build_scenario("quiescence-lock");
+    let first = scenario.drive(
+        "first",
+        &serde_json::json!({"faults": [[0, "LostAcknowledgement"]]}),
+    );
+    assert!(!first.status.success(), "{}", driver_text(&first));
+    let retained = retained_claim(&scenario).expect("the claim is retained");
+
+    // No decision at all: the next engine is refused by the claim it did not publish.
+    let blocked = scenario.drive("blocked", &serde_json::json!({}));
+    let text = driver_text(&blocked);
+    assert!(!blocked.status.success(), "{text}");
+    assert!(text.contains("MutationBlocked"), "{text}");
+    assert!(text.contains("still holds the target claim"), "{text}");
+    assert!(
+        text.trim_end().ends_with("calls:"),
+        "and mutated nothing: {text}"
+    );
+
+    // The decision, and only the decision: the engine proceeds, and the published claim afterwards
+    // is still the predecessor's, byte for byte.
+    scenario.record_quiescence(&retained);
+    let under_decision = scenario.drive("decided", &serde_json::json!({}));
+    let text = driver_text(&under_decision);
+    assert!(under_decision.status.success(), "{text}");
+    let after = retained_claim(&scenario).expect("the predecessor's claim is still published");
+    assert_eq!(
+        after.claim, retained.claim,
+        "the resuming invocation published no claim of its own and reclaimed nothing"
+    );
+    assert_eq!(after.digest, retained.digest);
+
+    // The complete procedure. Now the next engine publishes its own exclusion and releases it on
+    // ordinary safe completion, which is what leaves the store with no claim at all.
+    scenario.archive_claim(&retained);
+    assert!(scenario
+        .root
+        .join("archived-claims")
+        .join(format!("{}.json", retained.claim.invocation.nonce))
+        .exists());
+    let resumed = scenario.drive("resumed", &serde_json::json!({}));
+    let text = driver_text(&resumed);
+    assert!(resumed.status.success(), "{text}");
+    assert!(
+        retained_claim(&scenario).is_none(),
+        "an invocation that published its own claim releases it"
     );
 }

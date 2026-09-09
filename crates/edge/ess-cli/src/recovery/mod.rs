@@ -282,8 +282,8 @@ use std::path::PathBuf;
 
 use model::{
     Authority, Digest, Index, InvocationContext, InvocationId, JournalFact, LockClaim, LockFormat,
-    ObjectAddress, Observation, ObservationPhase, ProcessDisposition, Profile, ReleasePermit,
-    ReleaseSnapshot, Stopped, Text,
+    Observation, ObservationPhase, ProcessDisposition, Profile, ReleasePermit, ReleaseSnapshot,
+    Stopped, Text,
 };
 
 /// The production installation prefix for the admitted Helm artifact.
@@ -639,11 +639,6 @@ pub fn admits_later_mutation(disposition: ProcessDisposition) -> bool {
     disposition == ProcessDisposition::Acknowledged
 }
 
-/// The addresses one operation's observation must cover.
-pub fn covered(permit: &ReleasePermit) -> Vec<ObjectAddress> {
-    permit.union()
-}
-
 // --- The engine ---------------------------------------------------------------------------------
 
 use chart::PreparedChart;
@@ -802,6 +797,17 @@ impl Run<'_> {
         // Every retained reservation and history in the store, whether or not `--retry-of` named
         // one. An omitted predecessor reference is missing context, never a narrower search.
         let histories = journal::scan_store(self.host, &store)?;
+        // C05: a generation older than retained execution evidence is refused. Retained evidence
+        // names the generation it ran under, and a registry that has gone backwards is not a
+        // policy this invocation may adopt.
+        for history in &histories {
+            if let Some(context) = history.context() {
+                authority::admit_generation(
+                    context.registry.generation,
+                    registry.reference.generation,
+                )?;
+            }
+        }
         // The retained claim is the fence, and the only one. An unresolved `Prepared` is *why* a
         // claim is retained, so it sharpens the refusal rather than adding a second gate — and
         // once the caller's decision names that exact claim, both are satisfied. What quiescence
@@ -810,21 +816,35 @@ impl Run<'_> {
         let retained = journal::read_claim(self.host, &store)?;
         if let Some(retained) = &retained {
             if !quiescence_admits(&authority, retained) {
-                let indeterminate = histories
-                    .iter()
-                    .find(|history| !history.unresolved_preparations().is_empty());
-                return Err(match indeterminate {
-                    Some(history) => Refusal::new(
-                        RefusalCode::MutationBlocked,
-                        format!(
-                            "invocation {} retains a durable Prepared with no disposition, so its \
-                             historical attribution stays unknown; the caller's quiescence \
-                             procedure must name claim {} before any later mutation",
-                            history.nonce, retained.claim.invocation.nonce
-                        ),
+                return Err(blocked_by_predecessor(retained));
+            }
+            // A decision names it, so this invocation may act — but it publishes no claim of its
+            // own and releases nothing at the end. The retained one is still the predecessor's,
+            // and removing it is the caller's step, not this executor's.
+        }
+        // The second half of the same fence, and the half a removed lock cannot switch off. C08's
+        // procedure archives the claim and removes it, so by the time the next invocation runs
+        // there may be nothing on disk to block on — while a retained `Prepared` with no durable
+        // disposition is still exactly as indeterminate as it was. What settles it is the caller's
+        // decision naming *that invocation*, wherever its claim now lives.
+        for history in &histories {
+            if history.unresolved_preparations().is_empty() {
+                continue;
+            }
+            let named = authority
+                .quiescence
+                .iter()
+                .any(|decision| decision.claim.invocation.nonce == history.nonce);
+            if !named {
+                return Err(Refusal::new(
+                    RefusalCode::MutationBlocked,
+                    format!(
+                        "invocation {} retains a durable Prepared with no disposition, so its \
+                         historical attribution stays unknown; the caller's quiescence procedure \
+                         must name its claim before any later mutation",
+                        history.nonce
                     ),
-                    None => blocked_by_predecessor(retained),
-                });
+                ));
             }
         }
         Ok(Admission {
@@ -1005,7 +1025,17 @@ impl Run<'_> {
             ));
         }
 
-        self.confirm(record, authority, api, helm, at, permit, operation)
+        let empty = PreparedChart {
+            chart_path: PathBuf::new(),
+            values_path: PathBuf::new(),
+            values: String::new(),
+            payload_digest: Digest::of_bytes(b""),
+            rendered: Vec::new(),
+        };
+        let admitted = prepared.as_ref().unwrap_or(&empty);
+        self.confirm(
+            record, authority, api, helm, at, permit, operation, admitted,
+        )
     }
 
     /// The required fresh, durable readback after an acknowledged mutation.
@@ -1023,10 +1053,11 @@ impl Run<'_> {
         at: Index,
         permit: &ReleasePermit,
         operation: &Operation,
+        prepared: &PreparedChart,
     ) -> Admitted<()> {
         let started = self.host.now_ms();
         let identity = helm.release(permit, alias_of(authority))?;
-        let snapshot = observe::snapshot(api, permit, identity)?;
+        let (snapshot, live) = observe::observe(api, permit, identity)?;
         let finished = self.host.now_ms();
         let after = observation(
             at,
@@ -1070,6 +1101,11 @@ impl Run<'_> {
                     "a baseline-only object is still present after an acknowledged apply",
                 ));
             }
+            // Every authored rendered field, recursively, as well as the approved projection
+            // digest. The digest alone cannot catch a caller fingerprint that approved an object
+            // whose image, selector, replica count or secret reference is not what the chart
+            // authored — which is exactly what C07 step 8 says it must not silently override.
+            observe::authored_holds(&prepared.rendered, &live)?;
         }
         Ok(())
     }
@@ -1111,7 +1147,10 @@ impl Run<'_> {
         let rendered = helm.render(&prepared, permit, alias_of(authority))?;
         let objects = chart::admit_rendered(&rendered, &permit.namespace.name)?;
         chart::admit_inventory(&objects, desired)?;
-        Ok(prepared)
+        Ok(PreparedChart {
+            rendered: objects,
+            ..prepared
+        })
     }
 }
 

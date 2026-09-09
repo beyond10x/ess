@@ -575,6 +575,14 @@ impl Cluster {
         }
     }
 
+    /// The scenario root this cluster belongs to.
+    pub fn root(&self) -> &Path {
+        self.path
+            .parent()
+            .and_then(Path::parent)
+            .expect("a cluster's state lives two levels under its root")
+    }
+
     fn read(&self) -> serde_json::Value {
         std::fs::read_to_string(&self.path)
             .ok()
@@ -775,6 +783,29 @@ pub enum HelmFault {
     /// The call started, changed the target, and timed out.
     Timeout,
 }
+
+impl HelmFault {
+    /// The fault a driver job names, or `None` for a name no fault has.
+    pub fn parse(name: &str) -> Option<Self> {
+        Some(match name {
+            "NotLaunched" => Self::NotLaunched,
+            "StartedNoEffect" => Self::StartedNoEffect,
+            "EffectThenFailure" => Self::EffectThenFailure,
+            "LostAcknowledgement" => Self::LostAcknowledgement,
+            "Timeout" => Self::Timeout,
+            _ => return None,
+        })
+    }
+}
+
+/// Every `HelmFault` a driver job can name.
+pub const HELM_FAULTS: &[&str] = &[
+    "NotLaunched",
+    "StartedNoEffect",
+    "EffectThenFailure",
+    "LostAcknowledgement",
+    "Timeout",
+];
 
 /// The engine's platform over the synthetic cluster.
 ///
@@ -1155,9 +1186,11 @@ impl Platform for FixturePlatform {
     }
 
     fn private(&self, label: &str) -> Admitted<PathBuf> {
-        let directory = std::env::temp_dir().join(format!(
-            "ess-fixture-private-{}-{label}-{}",
-            std::process::id(),
+        // Under the scenario root, not the process TMPDIR. The private chart and values are bytes
+        // the engine writes, and a containment scan that could not see them would be reporting on
+        // the files it happened to know about.
+        let directory = self.shared.cluster.root().join("private").join(format!(
+            "{label}-{}",
             self.shared.index.load(Ordering::Relaxed)
         ));
         std::fs::create_dir_all(&directory).map_err(|error| {

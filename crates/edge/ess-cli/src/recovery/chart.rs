@@ -211,6 +211,8 @@ pub struct PreparedChart {
     pub values: String,
     /// The digest of the exact chart payload bytes.
     pub payload_digest: Digest,
+    /// The admitted rendered objects, kept for the authored-field comparison after apply.
+    pub rendered: Vec<RenderedObject>,
 }
 
 /// Admits a verified chart payload against the pinned runtime's exact projection.
@@ -302,6 +304,7 @@ pub fn prepare(
         values_path,
         values: values.to_owned(),
         payload_digest: Digest::of_bytes(payload),
+        rendered: Vec::new(),
     })
 }
 
