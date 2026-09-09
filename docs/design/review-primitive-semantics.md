@@ -31,7 +31,7 @@ wave.**
 |---|---|---|---|---|---|
 | `String` | Unicode text | `Text` | string | `{"type":"string"}` | `string` / `String` |
 | `Boolean` | true or false | `Bool` | boolean | `{"type":"boolean"}` | `bool` / `bool` |
-| `Integer` | in-process, an exact integer in `[i64::MIN, i64::MAX]`; **on the wire, an integral binary64 in `[-2^63, 2^63]`** | `Number` (`Repr::Exact`) | number | `{"type":"integer"}` | `int64` / `i64` |
+| `Integer` | an exact integer in `[i64::MIN, i64::MAX]`, in process and on the wire alike | `Number` (`Repr::Exact`) | number | `{"type":"integer"}` | `int64` / `i64` |
 | `Decimal` | an exact decimal, `units × 10⁻ˢᶜᵃˡᵉ` | `Number` (`Repr::Exact`) | number | `{"type":"string","format":"decimal","pattern":DECIMAL_PATTERN}` | `Decimal(string)` / `Decimal(String)` |
 | `Binary64` | a finite IEEE-754 binary64, signed zero preserved | `Number` (`Repr::Binary64`) | number | `{"type":"number"}` | — (ess/2 only) |
 | `Timestamp` | an instant | `Text` | string | `{"type":"string","format":"date-time"}` | `string` / `String` |
@@ -47,55 +47,90 @@ round it (`types.rs:496-501`), while a conformance candidate carries it as a JSO
 `Binary64` has no `primitive_value` row and no witness row; it is refused before either
 (`witness.rs:499-501`) and admitted only in `ess/2` (`primitive_admission.rs:14-19`).
 
-**Why the `Integer` row has two halves, and why the wire half reaches `2^63`.** The wire spelling of
-a number is a binary64 in this stage (below), and `i64::MAX` written as a binary64 and read back is
-`2^63`. An admitter that stopped at `i64::MAX` would therefore refuse, on re-read, a value it had
-just admitted and written — see *The round-trip law*. So the admitted wire range is the binary64
-image of `[i64::MIN, i64::MAX]`, which is the closed range `[-2^63, 2^63]`; the first float above it,
-`2^63 + 2048`, is refused, and a corpus vector says so in all three languages. `Number::as_i64`
-stays strict — `2^63` has no `i64` — so a reader that needs the integer still gets `None` and must
-refuse. The canonical-serialization stage removes the gap by writing the integer.
+**One `Integer` range, and `is_integral` is `as_i64`.** An earlier draft of this page gave the row
+two halves and let the wire half reach `2^63`, on the argument that `i64::MAX` written as a binary64
+comes back as `2^63`. That followed from a read door that rounded, and the door no longer does — see
+*The round-trip law* and *One range, and the lane that can draw it*, which also states the one place
+the float-reading lanes cannot draw the range as narrowly as Rust does.
 
 ## The round-trip law
 
-**In this byte-preserving stage a `Number` that came from a document is a fixed point of
-write∘read.** For every JSON number token `t`:
+**A `Number` is a fixed point of write∘read. Every `Number`, however it was built.** For every
+value `n`:
 
 ```
-read(write(read(t))) == read(t)          and          is_integral(read(t)) == is_integral(read(write(read(t))))
+read(write(n)) == n          and          is_integral(read(write(n))) == is_integral(n)
 ```
 
-The first half is value stability; the second is *admission* stability, and it is the one that has
+The first half is value stability; the second is *admission* stability, and it is the one with
 teeth — a suite this repository writes must be admitted the same way when it is read back
 (`admission.rs::payload_agrees_with_its_shape`), or the repository refuses its own artifact.
 
-The law is forced, not chosen. `Serialize` writes the binary64 and may not do otherwise until a
-format version says so (`docs/design/review-conformance-coverage.md:172-176`, and the `1.0` witness
-pin). A `read` that recovered more precision than `write` emits would make every written value a
-different value on the way back. **So `read` rounds: `Node::from_value` and `Number::deserialize`
-both go through `f64`, and every number that has crossed a document is exactly its binary64.**
+The law admits no in-process exemption, and the earlier draft of this page was wrong to grant one.
+It said exactness beyond binary64 lived in-process and was lost at the first write; that made
+`FactValue::parse_literal("1.0000000000000000001")` a value that was **not** an `Integer`, wrote as
+`1.0`, and came back one — the admission half failing on a constructor this page's own table names.
+A law with an exemption is not a law; it is a place the next reader gets a different answer.
 
-That is the one door. The consequence, stated so nobody has to discover it:
+**Both doors move together, or neither does.** Two constructions make the law hold, and every
+`Number` is one of them:
 
-| where a `Number` comes from | how exact it is |
-|---|---|
-| `From<i64>`, `From<usize>`, `From<u32>` | exact, the whole integer |
-| `FactValue::parse_literal` of an authored decimal | exact, up to 38 significant digits |
-| `Node::from_value` / `Number::deserialize` — anything read from a document | exactly its binary64, and nothing more |
+| the value | its write | its read back |
+|---|---|---|
+| equals the canonical decimal of its binary64 | that **binary64** — the bytes that were always written | the same value |
+| an **integer** binary64 does not carry (`i64::MAX`, `2^53 + 1`) | the **integer token** | the same integer |
 
-So **`9007199254740992` and `9007199254740993` are two facts when they are built from `i64`s, and
-one value once either has been through a document.** That is not the end state; it is what "the
-bytes do not move" costs, and removing it is the whole content of the canonical-serialization stage.
-In-process exactness is lost at the first write, deliberately and visibly — `Number::exact_text`
-is what a caller uses before that happens.
+Anything else — a non-integer carrying more places than binary64 does — is not built at all:
+`Number::parse_decimal` collapses it to the canonical decimal of its binary64, which is what the
+write was always going to say. `Repr::exact` is the one function that builds an exact value, and
+holding this is its first postcondition.
 
-`Number::new` is a fixed point for the same reason: `Repr::of_binary64` is a pure function of the
-`f64`, so a value built from an `f64` is unchanged by any number of writes and reads.
+**Why writing an integer token moves no published byte.** The frozen spelling
+(`docs/design/review-conformance-coverage.md:172-176`, "do not coerce to integer or string", and
+the `1.0` witness pin) protects values that binary64 *carries*, and those still write their
+binary64: `1.0` is `1.0`, `19.99` is `19.99`, `-0.0` is `-0.0`. Every number in every artifact this
+repository has published is in that class, because an artifact's numbers came from a document and
+at the base commit a document's numbers were read through binary64. The second class is a value
+binary64 never carried: at the base it was rounded silently on the way in and written wrong on the
+way out, so writing the integer is not a *change* to a spelling any reader has received — it is the
+first correct one. `cargo xtask generate --check` and the committed suites are what say so.
+
+So **`9007199254740992` and `9007199254740993` are two values, and stay two values through a
+document.** What remains for the canonical-serialization stage is the *decimal* half: an authored
+`0.1000000000000000000001` is still the binary64 `0.1`, because reading a decimal token exactly
+needs `serde_json`'s `arbitrary_precision` on the reader and the exact digits on the writer, and
+those move together behind a format version.
+
+### One range, and the lane that can draw it
+
+`Primitive::Integer` admits exactly `[i64::MIN, i64::MAX]`. `Number::is_integral` **is**
+`Number::as_i64().is_some()` — one question, not two — so a value admitted as an `Integer` always
+carries the integer it was admitted as, and the generated `int64`/`i64` codecs decode every token
+conformance admits. `tests/adversary_integer_bound_pass2.rs` asks the codec lane that directly.
+
+The earlier draft admitted `2^63` as well, on the argument that it is what `i64::MAX` comes back as.
+That was a consequence of the rounding read door, and with the door fixed it is simply wrong: `2^63`
+is not an `i64`, `as_i64` says `None`, and a suite carrying that token is refused by the
+implementation the same specification generates.
+
+**The one place the four lanes do not have the same reach, stated rather than hidden.** Rust reads
+the *token*, so it separates `9223372036854775807` from `9223372036854775808`. The Go conformance
+runtime and the browser adapter are handed a JSON *value* — `float64` and JS `number` — and to them
+those two tokens are one `f64`. They therefore admit the closed float image `[-2^63, 2^63]`, which
+is wider than the declared range by exactly the point `2^63`, and they cannot be made narrower
+without refusing `i64::MAX` as well. Two consequences, both deliberate:
+
+* the shared corpus carries no vector at `2^63`, because its answer depends on which lane reads it;
+  the assertion lives in `ess-primitives/tests/primitive_corpus.rs::the_first_integer_beyond_i64_is_refused_by_the_lane_that_reads_the_token`,
+  the lane that can express it;
+* the residual gap is one value wide, unreachable from any token a generated `int64` codec accepts,
+  and it closes in the canonical-serialization stage when the Go runtime decodes with
+  `json.Decoder.UseNumber` and the adapter keeps its `NumberToken`.
 
 **What a binary64 is carried as.** `Repr::of_binary64` records the *canonical decimal name* of the
 `f64`, by two rules, because one is not enough to be truthful:
 
-* inside the admitted `Integer` range, an integral binary64 is carried as **the integer it is** —
+* below `2^63`, an integral binary64 is carried as **the integer it is** —
   the shortest round-tripping decimal for `2^63` is `9223372036854776000`, a different number, and
   carrying that made `is_integral` refuse the value `i64::MAX` comes back as and made `Display`
   print a number the value is not;
@@ -142,10 +177,15 @@ cmp(a, b) = match (a.exact(), b.exact()) {
 ```
 
 The exact comparison is what fixes F08: `2^53` and `2^53 + 1` are one `f64`, and comparing the
-scaled integers says which is which. The `total_cmp` arm is reached only when one side has no exact
-decimal spelling in an `i128` — a magnitude at or beyond `10^38`, or below `10^-38` — and no `Exact`
-value can have a binary64 in that range, so the two arms never straddle one comparison and the order
-is total.
+scaled integers says which is which.
+
+**The order is total, and the argument is one function away.** The `total_cmp` arm runs only when
+the two variants differ, and `Repr::exact` — the single place an `Exact` is built — refuses to build
+one whose binary64 has no canonical decimal. So the variant is a function of the carried binary64,
+two differing variants never carry one `f64`, that arm is never a tie, and the two arms never
+disagree about one pair. The previous version of this paragraph argued it from magnitude bands, and
+that argument was **false**: `parse_decimal("1e-41")` and `of_binary64(1e20)` are both `Exact`
+inside the band it named. The postcondition replaced the band.
 
 **`-0.0` and `0.0` are one value**, because `units × 10⁻ˢᶜᵃˡᵉ` has one zero and the `Decimal` row of
 the matrix says so. It is also what `PartialEq` answered before this page (`eq` was `f64 ==`), what
@@ -164,8 +204,8 @@ resolved in the direction `eq` already had.
 | method | answer |
 |---|---|
 | `get() -> f64` | unchanged: the binary64, for every existing caller |
-| `is_integral() -> bool` | no fractional part **and** inside the admitted `Integer` range `[-2^63, 2^63]`: `true` for every `i64` including `i64::MAX`, `true` for the `2^63` that `i64::MAX` writes as, `false` for `1.5` and for `2^63 + 2048` |
-| `as_i64() -> Option<i64>` | the exact integer when there is one; `None` for `2^63`, which is admitted but is not an `i64` |
+| `is_integral() -> bool` | literally `as_i64().is_some()`: `true` for every `i64` including `i64::MAX`, `false` for `1.5`, for `2^63` and for anything beyond |
+| `as_i64() -> Option<i64>` | the exact integer when there is one, and the same question `is_integral` answers |
 | `exact_text() -> String` | the exact decimal spelling, no exponent |
 
 `Display` is the carried decimal. Below `2^53` that is the identical string it always was, and so
@@ -234,11 +274,11 @@ So stage two, not this wave:
 
 1. `Serialize` writes `1` for an integral `Number` and the exact decimal string for a `Decimal`,
    behind `ess-conformance/6` and `ess-conformance-report/2`.
-2. `Node::from_value` reads through `serde_json`'s `arbitrary_precision` **and** `Serialize` writes
-   the exact digits, together and behind one format version — neither alone, because either alone
-   breaks *The round-trip law*. Until then the exactness this page delivers is exactness of
-   construction, comparison and admission, and a `Number` that has been through a document is the
-   binary64 it was written as.
+2. The **decimal** half of the read door: `Node::from_value` reads through `serde_json`'s
+   `arbitrary_precision` **and** `Serialize` writes the exact digits, together behind one format
+   version — neither alone, because either alone breaks *The round-trip law*. The integer half is
+   done here; until the decimal half lands, an authored `0.1000000000000000000001` is the binary64
+   `0.1`. Filed as story:primitive-canonical-serialization.
 3. The `Decimal` disagreement between the schema (a string) and the conformance node (a number) is
    resolved in one direction.
 

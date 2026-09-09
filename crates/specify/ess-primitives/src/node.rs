@@ -42,24 +42,28 @@ impl Node {
         match value {
             serde_json::Value::Null => Ok(Self::Null),
             serde_json::Value::Bool(value) => Ok(Self::Bool(value)),
-            // **The read door rounds, and that is the law, not an omission.**
+            // **An integer token is read as the integer, because the writer writes one.**
             //
-            // `Serialize` writes the binary64 and may not do otherwise in this stage
-            // (`docs/design/review-primitive-semantics.md`, *The round-trip law*), so a reader that
-            // recovered the exact integer token would make every written number a different number
-            // on the way back: `9223372036854775807` was admitted as an `Integer`, written as
-            // `9.223372036854776e+18`, and then refused. Reading through `f64` is what makes a
-            // document a fixed point of write∘read. Exactness beyond binary64 exists only for
-            // values built in-process, and the canonical-serialization stage is what moves both
-            // doors at once.
-            serde_json::Value::Number(value) => value
-                .as_f64()
-                .ok_or_else(|| format!("number `{value}` does not fit the domain number"))
-                .and_then(|value| {
-                    Number::new(value)
-                        .map(Self::Number)
-                        .map_err(|e| e.to_string())
-                }),
+            // The two doors are one decision (`docs/design/review-primitive-semantics.md`, *The
+            // round-trip law*). At the base the writer emitted a binary64 for every value, so a
+            // reader that kept the exact integer made `9223372036854775807` a value that was
+            // admitted, written as `9.223372036854776e+18`, and then refused. `Serialize` now
+            // writes the integer for a value binary64 does not carry, so reading it back exactly is
+            // what closes the loop rather than what opens it.
+            serde_json::Value::Number(value) => match value.as_i64() {
+                Some(exact) => Ok(Self::Number(Number::from(exact))),
+                None => match value.as_u64() {
+                    Some(exact) => Ok(Self::Number(Number::from_integer(i128::from(exact)))),
+                    None => value
+                        .as_f64()
+                        .ok_or_else(|| format!("number `{value}` does not fit the domain number"))
+                        .and_then(|value| {
+                            Number::new(value)
+                                .map(Self::Number)
+                                .map_err(|e| e.to_string())
+                        }),
+                },
+            },
             serde_json::Value::String(value) => Ok(Self::Text(value)),
             serde_json::Value::Array(values) => values
                 .into_iter()

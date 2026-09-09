@@ -235,20 +235,45 @@ fn every_in_process_number_keeps_its_admission_across_the_write_that_loses_its_e
             read.is_integral()
         );
     }
-    // And the boundary the range is drawn at, from both sides.
-    assert!(Number::from(i64::MAX).is_integral());
-    assert!(Number::new(9_223_372_036_854_775_808.0)
-        .unwrap()
-        .is_integral());
-    assert_eq!(
-        Number::new(9_223_372_036_854_775_808.0).unwrap().as_i64(),
-        None
-    );
-    assert!(!Number::new(9_223_372_036_854_777_856.0)
-        .unwrap()
-        .is_integral());
-    assert!(Number::from(i64::MIN).is_integral());
-    assert!(!Number::new(-9_223_372_036_854_777_856.0)
-        .unwrap()
-        .is_integral());
+    // The boundary the range is drawn at, from both sides — and `is_integral` and `as_i64` are
+    // one question at every point of it, so a value admitted as an `Integer` carries the integer
+    // it was admitted as.
+    for (value, expected) in [
+        (Number::from(i64::MAX), Some(i64::MAX)),
+        (Number::from(i64::MIN), Some(i64::MIN)),
+        (Number::new(9_223_372_036_854_775_808.0).unwrap(), None),
+        (Number::new(9_223_372_036_854_777_856.0).unwrap(), None),
+        (Number::new(-9_223_372_036_854_777_856.0).unwrap(), None),
+        (
+            Number::from(9_007_199_254_740_993_i64),
+            Some(9_007_199_254_740_993),
+        ),
+    ] {
+        assert_eq!(value.as_i64(), expected, "{value}");
+        assert_eq!(
+            value.is_integral(),
+            expected.is_some(),
+            "{value}: is_integral and as_i64 are one question"
+        );
+    }
+}
+
+/// The token `9223372036854775808` is not an `Integer`, and only the lane that reads tokens can
+/// say so.
+///
+/// This assertion used to be the corpus vector `integer-two-to-63`, and it cannot stay there: the
+/// Go runtime and the browser adapter are handed a JSON *value*, so `9223372036854775808` and the
+/// `9223372036854775807` beside it in the corpus are one `float64` to them and cannot be given two
+/// answers. `docs/design/review-primitive-semantics.md`, *One range, and the lane that can draw
+/// it*, says why. Nothing is lost — the assertion moves to the lane that can express it, and the
+/// float lanes keep every vector they can answer.
+#[test]
+fn the_first_integer_beyond_i64_is_refused_by_the_lane_that_reads_the_token() {
+    let read = |text: &str| serde_json::from_str::<Number>(text).expect("a number token");
+    assert_eq!(read("9223372036854775808").as_i64(), None);
+    assert!(!read("9223372036854775808").is_integral());
+    assert_eq!(read("9223372036854775807").as_i64(), Some(i64::MAX));
+    assert!(read("9223372036854775807").is_integral());
+    // And they are two values, which is what makes the two answers possible at all.
+    assert_ne!(read("9223372036854775808"), read("9223372036854775807"));
 }

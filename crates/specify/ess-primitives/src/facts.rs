@@ -66,19 +66,11 @@ enum Repr {
     Binary64(f64),
 }
 
-/// The top of the admitted `Integer` range: `i64::MAX` written as a binary64 and read back.
+/// The magnitude below which an integral binary64 is carried as the integer it is.
 ///
-/// Not `i64::MAX`. `docs/design/review-primitive-semantics.md`'s round-trip law makes the admitted
-/// wire range the binary64 image of `[i64::MIN, i64::MAX]`, and the image of the top is `2^63`.
-const INTEGER_BOUND: f64 = 9_223_372_036_854_775_808.0;
-
-/// The same bound as an exact integer.
-const INTEGER_BOUND_UNITS: i128 = 9_223_372_036_854_775_808;
-
-/// Whether an exact integer is inside the admitted `Integer` range.
-const fn in_integer_range(units: i128) -> bool {
-    units >= -INTEGER_BOUND_UNITS && units <= INTEGER_BOUND_UNITS
-}
+/// `2^63`. Above it the shortest round-tripping decimal is used, which is what `f64`'s own
+/// `Display` prints and is far outside anything `Primitive::Integer` admits.
+const INTEGER_CARRIER: f64 = 9_223_372_036_854_775_808.0;
 
 /// The largest scale an exact decimal is held at.
 ///
@@ -87,29 +79,82 @@ const fn in_integer_range(units: i128) -> bool {
 const MAX_SCALE: u32 = 255;
 
 impl<'de> serde::Deserialize<'de> for Number {
-    /// Deserialises through [`Number::new`], so a document cannot conjure a value the constructor
-    /// refuses.
+    /// Reads an integer token as the integer, and everything else through [`Number::new`].
     ///
     /// Hand-written rather than derived: `#[serde(transparent)]` with a derived implementation
     /// reads straight into the field and never calls the constructor, which is how `.nan` in a
     /// document produced a `Number` this type's own documentation says cannot exist.
     ///
-    /// Still through `f64`: a number that arrives as JSON is the binary64 it was written as, and
-    /// reading the exact digits off the wire is the canonical-serialization stage, not this one.
+    /// An integer token is read exactly because [`Serialize`](serde::Serialize) writes one exactly
+    /// — the two doors are one decision, and moving only the reader is what made
+    /// `9223372036854775807` a value that was admitted, written, and then refused. See the
+    /// round-trip law in `docs/design/review-primitive-semantics.md`.
     fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
-        let value = f64::deserialize(deserializer)?;
-        Self::new(value).map_err(serde::de::Error::custom)
+        deserializer.deserialize_any(NumberVisitor)
+    }
+}
+
+/// Reads whichever token a self-describing format hands over.
+struct NumberVisitor;
+
+impl serde::de::Visitor<'_> for NumberVisitor {
+    type Value = Number;
+
+    fn expecting(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str("a finite number")
+    }
+
+    fn visit_i64<E: serde::de::Error>(self, value: i64) -> Result<Number, E> {
+        Ok(Number::from(value))
+    }
+
+    fn visit_u64<E: serde::de::Error>(self, value: u64) -> Result<Number, E> {
+        Ok(Number::from_integer(i128::from(value)))
+    }
+
+    fn visit_i128<E: serde::de::Error>(self, value: i128) -> Result<Number, E> {
+        Ok(Number::from_integer(value))
+    }
+
+    fn visit_u128<E: serde::de::Error>(self, value: u128) -> Result<Number, E> {
+        i128::try_from(value)
+            .map(Number::from_integer)
+            .map_err(|_| E::custom("number does not fit the domain number"))
+    }
+
+    fn visit_f64<E: serde::de::Error>(self, value: f64) -> Result<Number, E> {
+        Number::new(value).map_err(E::custom)
     }
 }
 
 impl serde::Serialize for Number {
-    /// The binary64, exactly as `#[serde(transparent)]` over an `f64` wrote it.
+    /// The binary64 for every value binary64 carries, and the exact integer for the ones it does
+    /// not.
     ///
-    /// The one method in this file that must not change until a format version says so: an
-    /// integral witness is `1.0` in every suite artifact already published
-    /// (`ess-conformance/src/witness.rs`), and a report quotes what this writes.
+    /// The first class is every number in every artifact this repository has published: an
+    /// artifact's numbers came from a document, and at the base commit a document's numbers were
+    /// read through binary64, so their carried value *is* the canonical decimal of their binary.
+    /// Those write exactly what they wrote before — an integral witness is still `1.0`
+    /// (`ess-conformance/src/witness.rs`), and a report still quotes what this writes.
+    ///
+    /// The second class is a value binary64 never carried: `i64::MAX`, `2^53 + 1`. At the base
+    /// those were rounded on the way in and written wrong on the way out, so writing the integer
+    /// is not a change to any spelling a reader has ever received — it is the first correct one,
+    /// and it is what makes the round-trip law hold for the constructors the design page names.
     fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
-        serializer.serialize_f64(self.get())
+        match self.0 {
+            // The invariant on `Repr::Exact` guarantees `scale == 0` here: a non-integer whose
+            // binary does not carry it is never admitted to `Exact`.
+            Repr::Exact {
+                units,
+                scale,
+                binary,
+            } if Some((units, scale)) != canonical_decimal(binary) => match i64::try_from(units) {
+                Ok(units) => serializer.serialize_i64(units),
+                Err(_) => serializer.serialize_i128(units),
+            },
+            _ => serializer.serialize_f64(self.get()),
+        }
     }
 }
 
@@ -133,38 +178,22 @@ impl Number {
         }
     }
 
-    /// `true` when the value has no fractional part and lies in the admitted `Integer` range.
+    /// `true` when this value is an exact integer an [`i64`] holds.
     ///
-    /// The range is `[-2^63, 2^63]`, which is the binary64 image of `[i64::MIN, i64::MAX]` and not
-    /// that interval itself. The extra point at the top is `i64::MAX` written as a binary64 and
-    /// read back: an admitter that stopped at `i64::MAX` would refuse, on re-read, a value it had
-    /// just admitted and written, and `docs/design/review-primitive-semantics.md`'s round-trip law
-    /// is what forbids that. [`as_i64`](Self::as_i64) stays strict, so a reader that needs the
-    /// integer still gets `None` there.
+    /// One range, and it is the one [`as_i64`](Self::as_i64) and the generated `int64`/`i64` codecs
+    /// answer on: `[i64::MIN, i64::MAX]`. `is_integral` and `as_i64` are the same question, so a
+    /// value admitted as a `Primitive::Integer` always carries the integer it was admitted as.
     pub fn is_integral(self) -> bool {
-        match self.0 {
-            Repr::Exact {
-                units, scale: 0, ..
-            } => in_integer_range(units),
-            Repr::Exact { .. } => false,
-            // Every integral binary64 inside the range takes the exact arm of
-            // `Repr::of_binary64`, so a `Binary64` is never one. Written as the same predicate
-            // rather than as `false` so a future constructor cannot make this branch wrong.
-            Repr::Binary64(value) => {
-                value.fract() == 0.0 && (-INTEGER_BOUND..=INTEGER_BOUND).contains(&value)
-            }
-        }
+        self.as_i64().is_some()
     }
 
     /// The exact integer, when this value is one that fits an [`i64`].
     ///
-    /// `None` for `2^63` — which [`is_integral`](Self::is_integral) admits, because that is what
-    /// `i64::MAX` comes back as, and which is still not an `i64`.
+    /// `None` for `2^63`, which is not an `i64` however it was spelt, and `None` for anything with
+    /// a fractional part.
     pub fn as_i64(self) -> Option<i64> {
-        // A `Binary64` is a magnitude with no short decimal spelling — at or beyond `10^38`, or
-        // below `10^-38` — because every integral value inside the admitted range takes the exact
-        // arm of `Repr::of_binary64`. None of those is an `i64`, and neither is a value with a
-        // fractional part.
+        // A `Binary64` is a magnitude no `(i128, u8)` spells — at or beyond `10^38`, or below
+        // `10^-38` — so it is never an `i64` either.
         match self.0 {
             Repr::Exact {
                 units, scale: 0, ..
@@ -191,67 +220,103 @@ impl Number {
         }
     }
 
-    /// Reads the exact decimal an author wrote, falling back to the binary64 it parses as.
+    /// An exact integer of any width this type can hold.
+    pub(crate) fn from_integer(units: i128) -> Self {
+        Self(Repr::of_integer(units))
+    }
+
+    /// Reads the exact decimal an author wrote, keeping it only where the write can give it back.
+    ///
+    /// **`Repr::Exact` may only carry a value that survives its own write** — the invariant the
+    /// round-trip law rests on. A value qualifies two ways, and only two:
+    ///
+    /// * it equals the canonical decimal of its binary64, so the write is that binary64; or
+    /// * it is an **integer**, so the write is the integer token and the read door reads it back.
+    ///
+    /// A non-integer with more places than binary64 carries is neither.
+    /// `parse_literal("1.0000000000000000001")` used to keep all twenty digits, write `1.0`, and
+    /// come back integral — admitted differently on the two sides of one write. It now collapses to
+    /// the canonical decimal of `1.0`, which is what the write was always going to say. Reading the
+    /// authored digits back is the canonical-serialization stage, and it moves both doors at once.
     ///
     /// `None` when `text` is not a decimal literal at all.
     pub(crate) fn parse_decimal(text: &str) -> Option<Self> {
         let binary = text.parse::<f64>().ok().filter(|value| value.is_finite())?;
-        Some(Self(match exact_of_decimal_text(text) {
-            Some((units, scale)) => Repr::Exact {
-                units,
-                scale,
-                binary,
-            },
+        let authored = exact_of_decimal_text(text);
+        let survives_the_write = |(units, scale): &(i128, u8)| {
+            *scale == 0 || Some((*units, *scale)) == canonical_decimal(binary)
+        };
+        Some(Self(match authored.filter(survives_the_write) {
+            Some((units, scale)) => Repr::exact(units, scale, binary),
             None => Repr::of_binary64(binary),
         }))
     }
 }
 
 impl Repr {
-    /// The canonical decimal name of a binary64.
+    /// **The only place an [`Exact`](Repr::Exact) is built**, and the two postconditions it holds.
     ///
-    /// Two rules, because one is not enough to be truthful:
+    /// 1. The value survives its own write. `scale == 0` means the write is the integer token,
+    ///    which the read door reads back; otherwise the value must *be* the canonical decimal of
+    ///    its binary, so the write is that binary64. The caller establishes this; a value that
+    ///    holds neither must not reach here.
+    /// 2. **The variant is a function of the carried binary64**: an `Exact` exists only where
+    ///    [`canonical_decimal`] has an answer, so a [`Binary64`](Repr::Binary64) — which exists
+    ///    exactly where it has none — can never carry the same `f64` as an `Exact`.
     ///
-    /// * **Inside the admitted `Integer` range, an integral binary64 is carried as the integer it
-    ///   is.** The shortest round-tripping decimal for `2^63` is `9223372036854776000`, which is a
-    ///   different number; carrying that made [`Number::is_integral`] refuse the value `i64::MAX`
-    ///   comes back as, and made [`Display`](fmt::Display) print a number the value is not.
-    /// * **Otherwise, the shortest decimal that round-trips** — what `f64`'s own `Display` has
-    ///   always printed, and what a reader means by the value.
-    ///
-    /// Both are injective on `f64`, and an integral spelling can never collide with a fractional
-    /// one, so the composition is injective too. That is exactly what the round-trip law needs:
-    /// `Repr::of_binary64` is a pure function of the `f64`, so a value that has crossed a document
-    /// is unchanged by every later write and read.
-    fn of_binary64(value: f64) -> Self {
-        if value.fract() == 0.0 && (-INTEGER_BOUND..=INTEGER_BOUND).contains(&value) {
-            // `|value| <= 2^63` and the value is integral, so the conversion is exact.
-            #[allow(clippy::cast_possible_truncation)]
-            return Self::Exact {
-                units: value as i128,
-                scale: 0,
-                binary: value,
-            };
+    /// The second is checked here rather than argued about elsewhere, which is what makes
+    /// [`Number::cmp`]'s totality a one-function claim: its `total_cmp` arm runs only when the
+    /// variants differ, and two differing variants never carry one `f64`.
+    fn exact(units: i128, scale: u8, binary: f64) -> Self {
+        if canonical_decimal(binary).is_none() {
+            return Self::Binary64(binary);
         }
-        match exact_of_decimal_text(&format!("{value}")) {
-            Some((units, scale)) => Self::Exact {
-                units,
-                scale,
-                binary: value,
-            },
+        Self::Exact {
+            units,
+            scale,
+            binary,
+        }
+    }
+
+    /// The canonical decimal of a binary64, which is by construction a value the write gives back.
+    fn of_binary64(value: f64) -> Self {
+        match canonical_decimal(value) {
+            Some((units, scale)) => Self::exact(units, scale, value),
             None => Self::Binary64(value),
         }
     }
 
-    /// An exact value from an integer of any width this type can hold.
+    /// An exact integer of any width this type can hold.
+    ///
+    /// Always admissible under postcondition 1: an integer's write is the integer token when
+    /// binary64 does not carry it, and the binary64 when it does.
     #[allow(clippy::cast_precision_loss)]
     fn of_integer(units: i128) -> Self {
-        Self::Exact {
-            units,
-            scale: 0,
-            binary: units as f64,
-        }
+        Self::exact(units, 0, units as f64)
     }
+}
+
+/// The decimal a binary64 is carried as, or `None` where `(i128, u8)` cannot spell one.
+///
+/// Two rules, because one is not enough to be truthful:
+///
+/// * **Below `2^63` an integral binary64 is carried as the integer it is.** The shortest
+///   round-tripping decimal for `2^63` is `9223372036854776000`, a different number; carrying that
+///   made [`Number::as_i64`] answer about a value nobody wrote.
+/// * **Otherwise, the shortest decimal that round-trips** — what `f64`'s own `Display` has always
+///   printed, and what a reader means by the value.
+///
+/// This is a pure function of the `f64`, and it is what makes [`Repr`]'s variant a function of the
+/// carried binary64: `Repr::Binary64(v)` exactly when this returns `None` for `v`. Two `Number`s
+/// carrying one binary64 are therefore the same variant, which is the whole of the argument that
+/// [`Number::cmp`] is a total order.
+fn canonical_decimal(value: f64) -> Option<(i128, u8)> {
+    if value.fract() == 0.0 && (-INTEGER_CARRIER..=INTEGER_CARRIER).contains(&value) {
+        // `|value| <= 2^63` and the value is integral, so the conversion is exact.
+        #[allow(clippy::cast_possible_truncation)]
+        return Some((value as i128, 0));
+    }
+    exact_of_decimal_text(&format!("{value}"))
 }
 
 /// Reads a decimal literal — `[+-]?digits[.digits][eE[+-]?digits]` — as `units × 10^-scale`.
@@ -404,10 +469,14 @@ impl Ord for Number {
     /// The exact value, and the binary64 only where there is no exact value.
     ///
     /// The exact comparison is what fixes F08: `2^53` and `2^53 + 1` are one `f64`, and comparing
-    /// the scaled integers says which is which. The `total_cmp` arm is reached only when one side
-    /// has no exact decimal spelling in an `i128` — a magnitude at or beyond `10^38`, or below
-    /// `10^-38` — and no [`Repr::Exact`] can have a binary64 in that range, so the two arms never
-    /// straddle one comparison and the order is total.
+    /// the scaled integers says which is which.
+    ///
+    /// **The order is total, and the argument is one function away.** The `total_cmp` arm runs only
+    /// when the two variants differ, and [`Repr::exact`]'s second postcondition is that the variant
+    /// is a function of the carried binary64 — so differing variants never carry one `f64`, the
+    /// arm is never a tie, and the two arms never disagree about one pair. The earlier version of
+    /// this comment argued it from magnitude bands instead, and that argument was false:
+    /// `parse_decimal("1e-41")` and `of_binary64(1e20)` are both `Exact` inside the band it named.
     ///
     /// **`-0.0` and `0.0` are one value.** `units × 10^-scale` has one zero, which is what the
     /// `Decimal` row of the design page's matrix says; it is what `PartialEq` answered before this
