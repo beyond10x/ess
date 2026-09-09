@@ -30,6 +30,8 @@ scope:
   path: crates/edge/ess-cli/tests/cli_binding.rs
 - confidence: inferred
   path: crates/edge/ess-cli/tests/command_surface.rs
+- confidence: cited
+  path: crates/edge/ess-cli/tests/support/browser.rs
 - confidence: inferred
   path: crates/edge/ess-xtask/src/consumer_coverage
 - confidence: inferred
@@ -50,7 +52,7 @@ scope:
   path: website/docs/reference/cli.md
 - confidence: inferred
   path: website/docs/status/where-this-stands.md
-revision: 19
+revision: 21
 ---
 ## Operator authorization
 The Connectors operator approved closing necessary ESS gaps upstream to specify its local CLI. Work is local in the isolated cli-binding-ess-20260909 managed tree; preserve the live review-boundaries-21 wave and current main. Serving objective O2. No release/external publication or production provider/credential execution.
@@ -162,3 +164,26 @@ The scope includes the cache fixture correction. Preserve this follow-up as a lo
 candidate, then rerun the full ESS gate with native-only linker flags and select
 the exact clean follow-up source for final Connectors regeneration. No full gate
 success or implemented lifecycle move is claimed yet.
+
+## Concurrent browser fixture correction
+
+Full gate 04 passed the cache and all 39 ownership tests before two failures in
+replay_fidelity_browser. Retained commands show b05-identity and b08 both requested
+port 33011 in process 2510104. b05 received "Maximum number of active sessions";
+b08 received EOF when the other fixture's owned browser exited. This is a port
+reservation race in the test harness, not a replay semantic assertion failure.
+
+The harness now launches Firefox with --remote-debugging-port 0 and reads a complete
+assigned-endpoint line from that child's private stderr, using the existing startup
+deadline. It no longer releases a Rust listener and assumes Firefox owns that port.
+Mozilla documents this allocation at
+https://developer.mozilla.org/en-US/docs/Web/WebDriver/How_to/Create_BiDi_connection.
+All 30 unchanged replay browser tests pass concurrently in
+.local/tmp/cli-wave/firefox-port-regression-01.log. No production code changed.
+
+Downstream Connectors full gate --msrv passes against candidate e414b493, including
+the 15-command CLI fixture, shared and five native models, deterministic generation,
+all workspace tests/Clippy and 315 scenarios. Website build, reference drift, 15
+example tests, browser walkthroughs and UI checks pass. The browser-fixture-only
+follow-up is preserved as a new exact source candidate before final ESS validation
+and the final downstream pin refresh. No full ESS gate success is claimed yet.

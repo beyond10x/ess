@@ -102,6 +102,32 @@ pub struct Browser {
     next: u64,
     receipt: File,
 }
+fn assigned_bidi_port(child: &mut OwnedChild, evidence: &Path, deadline: Instant) -> u16 {
+    // Firefox documents the assigned BiDi endpoint on stderr. Read only a
+    // complete line from this child's private log, under the startup deadline.
+    loop {
+        assert!(
+            child.0.try_wait().unwrap().is_none(),
+            "Firefox exited; read firefox.stderr"
+        );
+        assert!(
+            Instant::now() < deadline,
+            "Firefox did not announce BiDi; read firefox.stderr"
+        );
+        let log = fs::read_to_string(evidence.join("firefox.stderr")).unwrap();
+        if let Some(port) = log.split_inclusive('\n').find_map(|line| {
+            line.strip_suffix('\n')?
+                .trim_end()
+                .strip_prefix("WebDriver BiDi listening on ws://127.0.0.1:")?
+                .parse::<u16>()
+                .ok()
+                .filter(|port| *port != 0)
+        }) {
+            return port;
+        }
+        thread::sleep(Duration::from_millis(50));
+    }
+}
 impl Browser {
     pub fn new(evidence: &Path) -> Self {
         static NEXT_PROFILE: AtomicU64 = AtomicU64::new(0);
@@ -113,14 +139,13 @@ impl Browser {
             NEXT_PROFILE.fetch_add(1, Ordering::Relaxed)
         ));
         fs::create_dir_all(&profile).unwrap();
-        let reservation = TcpListener::bind("127.0.0.1:0").unwrap();
-        let port = reservation.local_addr().unwrap().port();
-        drop(reservation);
         let firefox = std::env::var_os("ESS_FIREFOX").unwrap_or_else(|| "firefox".into());
         let mut command = Command::new(firefox);
         command
             .args(["--headless", "--no-remote", "--remote-debugging-port"])
-            .arg(port.to_string())
+            // Firefox binds its own ephemeral port. Releasing a temporary Rust
+            // listener before launch lets another parallel fixture reuse it.
+            .arg("0")
             .arg("--profile")
             .arg(&profile)
             .arg("about:blank")
@@ -141,6 +166,7 @@ impl Browser {
         let mut child = OwnedChild(command.spawn().expect("required actual Firefox starts"));
         fs::write(evidence.join("firefox.pid"), format!("{}\n", child.0.id())).unwrap();
         let deadline = Instant::now() + Duration::from_secs(30);
+        let port = assigned_bidi_port(&mut child, evidence, deadline);
         let (stream, response) = loop {
             assert!(
                 child.0.try_wait().unwrap().is_none(),
