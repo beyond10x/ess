@@ -20,11 +20,32 @@ fn main() {
     )
     .unwrap();
     if helm {
+        // Adapted deliberately for the recovery lane's argument vector, which `process::apply_
+        // arguments` builds. Three differences from the pre-recovery vector, and each is a
+        // requirement rather than a rename: `--create-namespace` is *gone*, because the admitted
+        // namespace must already exist with its pinned UID; `--kubeconfig` is explicit rather than
+        // inherited; and `--description` carries the exact `ess-recovery/1:<authority>:<incarnation>`
+        // ownership marker on every managed apply. The release name is still `args[3]` and the
+        // verified private snapshot is still `args[4]`, so everything this peer does with them is
+        // unchanged.
+        assert_eq!(args.len(), 21, "the recovery lane's exact argument count");
         assert_eq!(&args[1..3], ["upgrade", "--install"]);
-        assert_eq!(args.len(), 16);
-        assert_eq!(&args[5..8], ["--namespace", "test", "--create-namespace"]);
-        assert_eq!(&args[8..11], ["--kube-context", "test-cluster", "--values"]);
-        assert_eq!(&args[12..16], ["--atomic", "--wait", "--timeout", "5m"]);
+        assert_eq!(&args[5..7], ["--namespace", "test"]);
+        assert_eq!(args[7], "--kubeconfig");
+        assert_eq!(&args[9..12], ["--kube-context", "fixture", "--values"]);
+        assert_eq!(args[13], "--description");
+        assert!(
+            args[14].starts_with("ess-recovery/1:"),
+            "every managed apply carries the exact ownership marker: {}",
+            args[14]
+        );
+        assert_eq!(&args[15..21], ["--no-hooks", "--skip-crds", "--atomic", "--wait", "--timeout", "5m"]);
+        for refused in ["--create-namespace", "--keep-history", "--ignore-not-found", "--post-renderer"] {
+            assert!(
+                !args.iter().any(|argument| argument == refused),
+                "this profile never passes {refused}"
+            );
+        }
         if root.join("replace-target").exists() {
             let target = std::fs::read_to_string(root.join("replace-target")).unwrap();
             std::fs::write(root.join("replacement"), b"changed after verification").unwrap();

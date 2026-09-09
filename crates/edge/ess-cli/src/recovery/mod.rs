@@ -802,22 +802,29 @@ impl Run<'_> {
         // Every retained reservation and history in the store, whether or not `--retry-of` named
         // one. An omitted predecessor reference is missing context, never a narrower search.
         let histories = journal::scan_store(self.host, &store)?;
+        // The retained claim is the fence, and the only one. An unresolved `Prepared` is *why* a
+        // claim is retained, so it sharpens the refusal rather than adding a second gate — and
+        // once the caller's decision names that exact claim, both are satisfied. What quiescence
+        // never does is settle the historical attribution: nothing below turns an indeterminate
+        // preparation into an applied fact, and the restart observes and decides again.
         let retained = journal::read_claim(self.host, &store)?;
         if let Some(retained) = &retained {
             if !quiescence_admits(&authority, retained) {
-                return Err(blocked_by_predecessor(retained));
-            }
-        }
-        for history in &histories {
-            if !history.unresolved_preparations().is_empty() && retained.is_some() {
-                return Err(Refusal::new(
-                    RefusalCode::MutationBlocked,
-                    format!(
-                        "invocation {} retains a durable Prepared with no disposition; its \
-                         historical attribution stays unknown",
-                        history.nonce
+                let indeterminate = histories
+                    .iter()
+                    .find(|history| !history.unresolved_preparations().is_empty());
+                return Err(match indeterminate {
+                    Some(history) => Refusal::new(
+                        RefusalCode::MutationBlocked,
+                        format!(
+                            "invocation {} retains a durable Prepared with no disposition, so its \
+                             historical attribution stays unknown; the caller's quiescence \
+                             procedure must name claim {} before any later mutation",
+                            history.nonce, retained.claim.invocation.nonce
+                        ),
                     ),
-                ));
+                    None => blocked_by_predecessor(retained),
+                });
             }
         }
         Ok(Admission {
@@ -839,8 +846,13 @@ impl Run<'_> {
         } = self.admitted(report)?;
         let reservation = journal::reserve(self.host, &store)?;
         report.invocation = Some(reservation.id().clone());
+        // An invocation proceeding under an admitted quiescence decision does not publish a claim
+        // of its own: the predecessor's is still the retained one, and this executor never
+        // reclaims another invocation's claim. Which also means it has nothing to release at the
+        // end — removing the archived claim is the caller's administrative step, not this run's.
         let claim = claim(reservation.id(), &authority, &registry.reference);
-        if retained.is_none() {
+        let published = retained.is_none();
+        if published {
             journal::publish_claim(self.host, &store, &claim)?;
         }
         authority::recheck(self.host, &self.roots.registry, &registry.reference)?;
@@ -883,7 +895,9 @@ impl Run<'_> {
 
         let accounted = journal::index(selected.len())?;
         record.append(self.host, JournalFact::Completed(accounted))?;
-        journal::release_claim(self.host, &store, reservation.id())?;
+        if published {
+            journal::release_claim(self.host, &store, reservation.id())?;
+        }
         Ok(())
     }
 

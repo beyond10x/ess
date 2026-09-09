@@ -197,7 +197,7 @@ an unreleased source addition.
 | `ess generate release bundle …` | Check runtime/chart consistency and write one canonical OCI payload. |
 | `ess generate release publish --path FILE --to OCI_TAG` | Publish a consistency-checked bundle and print its OCI manifest digest. Optional local report qualification is described below. |
 | `ess generate release fetch --from OCI_REF@sha256:… --cache DIR` | Fetch a digest-pinned bundle, revalidate it, and cache canonical bytes. |
-| `ess generate deployment reconcile --path FILE --current FILE --cache DIR [--authority UUID]` | Apply only added or changed Helm releases in rollout order. `--current` is an admitted baseline desired deployment, not a record of what was applied; `--authority` selects one entry from the protected recovery registry and runs the finite recovery contract under it. |
+| `ess generate deployment reconcile --path FILE --current FILE --cache DIR --authority UUID` | Apply only added or changed Helm releases in rollout order. `--current` is an admitted baseline desired deployment, not a record of what was applied. `--authority` names one entry of the protected recovery registry and is **required** for execution: without it the command refuses before any external call, cache write or recovery write. `--dry-run` remains a local unverified preview and needs no authority. |
 
 The seven release routes also have identical flat `ess release …` aliases. Existing canonical
 JSON/YAML streams and output files keep their bytes. Text success describes consistency; fetch

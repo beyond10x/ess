@@ -641,7 +641,8 @@ use ess_cli::recovery::journal::{
 use ess_cli::recovery::model::{
     write_canonical as canonical, InvocationContext, JournalEntry, JournalFact, JournalFormat,
     LockClaim, LockFormat, Observation, ObservationPhase, Prepared, ProcessDisposition,
-    ProcessOutcome, RegistryRef, Stopped, StoreFormat, StoreHeader,
+    ProcessOutcome, QuiescenceDecision, QuiescenceStatement, RegistryRef, Stopped, StoreFormat,
+    StoreHeader,
 };
 use ess_cli::recovery::{Barrier, Host as _};
 use fake_recovery::{scaffold, FixtureHost, STATE};
@@ -2851,15 +2852,17 @@ fn a_retirement_without_the_reviewed_flag_rejects_before_both_phases() {
 
 /// Normal execution without an admitted authority refuses.
 ///
-/// **This case is red in this build, deliberately, and it is the one narrowed clause of the
-/// unit.** C04 and C14 require actual `reconcile` to refuse without an admitted authority, and
-/// `main.rs` still runs the pre-recovery execution path when `--authority` is absent. Gating it
-/// makes the Helm-profile vectors in `tests/cache_origin.rs` and
-/// `tests/cache_origin_adversary_pass1.rs` stop at the authority before they reach the cache
-/// boundary they exist to decide — the exact vacuity C12 forbids — so closing this needs those
-/// vectors routed through the shared-code driver with a synthetic authority first. The case stays
-/// here and stays red rather than being softened into a description of what the build happens to
-/// do.
+/// C04 and C14. The refusal happens before the registry is read and before any external call,
+/// cache write or recovery write, so a caller without an authority has done nothing at all — which
+/// is why the cache assertion below is part of the case rather than a separate one.
+///
+/// This case was red for a round. Gating the binary makes the Helm-profile vectors in
+/// `tests/cache_origin.rs` and `tests/cache_origin_adversary_pass1.rs` stop at the authority
+/// before they reach the cache boundary they exist to decide, which is the vacuity C12 forbids;
+/// the answer was not to soften this case but to route those vectors through
+/// `tests/support/recovery_driver.rs` with a synthetic admitted authority, and to give each file a
+/// control that withholds the authority and requires the same vector to stop before the first
+/// ORAS call.
 #[test]
 fn normal_execution_without_an_admitted_authority_refuses() {
     let root = scratch("cli-authority");
@@ -2876,12 +2879,7 @@ fn normal_execution_without_an_admitted_authority_refuses() {
     let message = String::from_utf8_lossy(&output.stderr).to_string();
     assert!(
         message.contains("authority"),
-        "C04/C14 require this to refuse without an admitted authority, and it ran the \
-         pre-recovery execution path instead. Closing this needs the Helm-profile vectors in \
-         tests/cache_origin.rs and tests/cache_origin_adversary_pass1.rs routed through \
-         tests/support/recovery_driver.rs with a synthetic authority first; gating the binary \
-         before that makes those 30 vectors stop at the authority and never reach the cache \
-         boundary they decide. Refusal was: {message}"
+        "execution without an admitted authority must refuse, and the refusal was: {message}"
     );
     assert!(!root.join("cache").exists());
 }
@@ -3169,5 +3167,1356 @@ fn the_driver_refuses_an_unprovisioned_store_through_the_production_admission() 
     assert!(
         message.contains("StoreInvalid"),
         "the driver reports the production refusal code: {message}"
+    );
+}
+
+// --- The multi-release fixture, and the engine families that run on it ---------------------------
+//
+// C12's fixed fixture: three desired releases and three baseline-only retirements, with a
+// nontrivial rollout order. The order is dependency-driven rather than lexical — `checkout` and
+// `web` both wait on `api` — so "canonical rollout order" is a real constraint here and not an
+// accident of the names. The retirements come afterwards in reverse baseline order.
+
+use ess_cli::recovery::{execute, Documents, Report, Roots};
+use fake_recovery::{live_digest, Cluster, FixturePlatform, HelmFault};
+
+const SERVICES: &[&str] = &["api", "checkout", "web"];
+const RETIREMENTS: &[&str] = &["legacy-a", "legacy-b", "legacy-c"];
+
+/// The generation label each side of the change is placed at.
+const BASELINE: &str = "baseline";
+const DESIRED: &str = "desired";
+
+/// The direct objects one release owns, on each side of the change.
+fn inventory(service: &str, desired: bool) -> Vec<(ObjectKind, String)> {
+    let mut objects = vec![(ObjectKind::Deployment, service.to_owned())];
+    if service == "checkout" {
+        // The projection-fidelity dimension wants all three declared kinds in the fixture, not
+        // only the two a Deployment-and-Service chart happens to produce.
+        objects.push((ObjectKind::StatefulSet, "checkout-queue".to_owned()));
+    }
+    if service == "web" {
+        // The changed-inventory dimension: `web` retires one Service address and gains another,
+        // so before the apply a newly desired address must be absent and after it a baseline-only
+        // address must be.
+        objects.push((
+            ObjectKind::Service,
+            if desired { "web-new" } else { "web-old" }.to_owned(),
+        ));
+    }
+    objects
+}
+
+fn side(service: &str, desired: bool) -> ReleaseProjection {
+    let mut objects: Vec<ObjectFingerprint> = inventory(service, desired)
+        .into_iter()
+        .map(|(kind, name)| ObjectFingerprint {
+            object: address(kind, &name),
+            content_digest: live_digest(
+                "app",
+                kind,
+                &name,
+                if desired { DESIRED } else { BASELINE },
+            ),
+        })
+        .collect();
+    objects.sort();
+    ReleaseProjection {
+        chart: ChartSource {
+            runtime_digest: digest("runtime-placeholder"),
+            chart_name: text("fixture"),
+            chart_version: text("1.0.0"),
+        },
+        objects,
+    }
+}
+
+fn release_document(service: &str, generation: u8) -> serde_json::Value {
+    let d = format!("sha256:{}", format!("{generation:02x}").repeat(32));
+    let mut value = serde_json::json!({
+        "service": service, "release_name": service, "namespace": "app",
+        "service_account": "default",
+        "chart": {"build_output": "chart", "kind": "helm_chart",
+                  "reference": "oci://example.invalid/chart", "digest": d},
+        "images": {"app": {"build_output": "app", "kind": "oci_image",
+                   "reference": "example.invalid/app", "digest": d,
+                   "platforms": {"linux/amd64": d}}}
+    });
+    if service == "checkout" || service == "web" {
+        value["depends_on"] = serde_json::json!(["api"]);
+    }
+    value
+}
+
+fn deployment_document(services: &[&str], order: &[&str], generation: u8) -> String {
+    let zero = format!("sha256:{}", "0".repeat(64));
+    let mut releases = serde_json::Map::new();
+    for service in services {
+        releases.insert(
+            (*service).to_owned(),
+            release_document(
+                service,
+                if RETIREMENTS.contains(service) {
+                    0
+                } else {
+                    generation
+                },
+            ),
+        );
+    }
+    let document = serde_json::json!({
+        "format": "ess-deployment/1", "environment": "production", "stack_digest": zero,
+        "cluster": "fixture", "rollout_order": order, "releases": releases
+    });
+    serde_json::to_string(&document).expect("the fixture document serializes")
+}
+
+/// Everything one engine-level case runs against.
+struct Scenario {
+    root: PathBuf,
+    host: FixtureHost,
+    roots: Roots,
+    authority: Uuid,
+    documents: Documents,
+    cluster: Cluster,
+    payload: Vec<u8>,
+}
+
+/// Publishes the protected arrangement — artifact, kubeconfig, registry and store — for a scenario.
+///
+/// Split out of `build_scenario` because it is the *arrangement*, and what the cases vary is the
+/// documents and the cluster above it.
+fn publish_arrangement(
+    arrangement: &Path,
+    permits: Vec<ReleasePermit>,
+    desired_bytes: &str,
+    current_bytes: &str,
+) -> Authority {
+    let (helm_path, helm_digest) = install_executable(
+        arrangement,
+        Path::new(env!("CARGO_BIN_EXE_ess-recovery-fake")),
+    )
+    .expect("the artifact installs");
+    let kubeconfig = write_kubeconfig(
+        arrangement,
+        "kubeconfig.yaml",
+        "https://api.fixture.invalid:6443",
+        fake_recovery::FIXTURE_CA,
+        &["fixture"],
+    )
+    .expect("the kubeconfig publishes");
+
+    let authority = Authority {
+        format: AuthorityFormat::V1,
+        profile: Profile::SingleHostGeneratedHelm1,
+        authority_id: uuid(0x71),
+        revision: Index::new(1).unwrap(),
+        target: TargetPin {
+            api_server: text("https://api.fixture.invalid:6443"),
+            ca_digest: Digest::of_bytes(fake_recovery::FIXTURE_CA.as_bytes()),
+            identity_namespace: NamespacePin {
+                name: text(IDENTITY_NAMESPACE),
+                uid: text("cluster-fixture"),
+            },
+        },
+        principal: PrincipalPin {
+            namespace: text("ess-system"),
+            name: text("ess-recovery"),
+            uid: text("sa-fixture"),
+        },
+        host: HostPolicy {
+            host_id: text("fixture-host"),
+            executor_uid: rustix::process::getuid().as_raw(),
+            store_epoch: uuid(0x11),
+            state_root: text(&arrangement.join(STATE).display().to_string()),
+            kubeconfig: text(&kubeconfig.display().to_string()),
+            helm: HelmBinary {
+                path: text(&helm_path.display().to_string()),
+                digest: Digest::new(&helm_digest).unwrap(),
+                version: HelmVersion::new("v3.16.2").unwrap(),
+                protocol: HelmProtocol::Helm3Recovery1,
+            },
+        },
+        contexts: vec![text("fixture")],
+        environment: text("production"),
+        desired_digest: Digest::of_bytes(desired_bytes.as_bytes()),
+        baseline_digest: Some(Digest::of_bytes(current_bytes.as_bytes())),
+        releases: permits,
+        quiescence: Vec::new(),
+    };
+    publish_registry(
+        arrangement,
+        &AuthorityRegistry {
+            format: RegistryFormat::V1,
+            generation: Index::new(1).unwrap(),
+            authorities: vec![authority.clone()],
+        },
+    )
+    .expect("the registry publishes");
+    std::fs::write(
+        arrangement.join(STATE).join("store.json"),
+        canonical(&StoreHeader {
+            format: StoreFormat::V1,
+            store_epoch: uuid(0x11),
+            host_id: text("fixture-host"),
+            target: authority.target.clone(),
+        }),
+    )
+    .expect("the store header provisions");
+
+    authority
+}
+
+fn build_scenario(name: &str) -> Scenario {
+    let root = scratch(name);
+    let arrangement = root.clone();
+
+    let desired_order = ["api", "checkout", "web"];
+    let baseline_order = ["api", "checkout", "legacy-a", "legacy-b", "legacy-c", "web"];
+    let mut baseline_services: Vec<&str> = SERVICES.to_vec();
+    baseline_services.extend(RETIREMENTS);
+    let desired_bytes = deployment_document(SERVICES, &desired_order, 1);
+    let current_bytes = deployment_document(&baseline_services, &baseline_order, 0);
+
+    let runtime = runtime_document();
+    let runtime_digest = publish_runtime(&arrangement, &runtime);
+    let parsed = ess_deployment::RuntimeIr::from_json(&runtime).expect("the runtime admits");
+    let source = ChartSource {
+        runtime_digest: runtime_digest.clone(),
+        chart_name: text("fixture"),
+        chart_version: text("1.0.0"),
+    };
+    let files = projection_files(&parsed, &source).expect("the projection admits");
+    let members = chart_members("fixture", &files);
+    let payload = archive(&as_members(&members));
+
+    let mut permits: Vec<ReleasePermit> = Vec::new();
+    for service in SERVICES {
+        let mut baseline = side(service, false);
+        let mut desired = side(service, true);
+        baseline.chart = source.clone();
+        desired.chart = source.clone();
+        permits.push(ReleasePermit {
+            service: text(service),
+            namespace: NamespacePin {
+                name: text("app"),
+                uid: text("ns-app"),
+            },
+            release_name: text(service),
+            incarnation: uuid(0x22),
+            may_create: false,
+            baseline: Some(baseline),
+            desired: Some(desired),
+            repair_from: None,
+        });
+    }
+    for service in RETIREMENTS {
+        let mut baseline = side(service, false);
+        baseline.chart = source.clone();
+        permits.push(ReleasePermit {
+            service: text(service),
+            namespace: NamespacePin {
+                name: text("app"),
+                uid: text("ns-app"),
+            },
+            release_name: text(service),
+            incarnation: uuid(0x22),
+            may_create: false,
+            baseline: Some(baseline),
+            desired: None,
+            repair_from: None,
+        });
+    }
+    permits.sort_by(|left, right| left.service.cmp(&right.service));
+
+    // A real executable at the admitted path: the engine's pre-launch check re-admits the
+    // artifact by hash and probes it, so a fixture that installed inert bytes would be exercising
+    // the refusal rather than the contract.
+    let authority = publish_arrangement(&arrangement, permits, &desired_bytes, &current_bytes);
+
+    // The cluster starts at the admitted baseline: every release present with its baseline
+    // projection and the authority's own ownership marker.
+    let cluster = Cluster::at(&arrangement);
+    for permit in &authority.releases {
+        cluster.place(
+            permit,
+            &ownership_marker(&authority.authority_id, &permit.incarnation),
+            permit
+                .baseline
+                .as_ref()
+                .expect("every permit has a baseline"),
+            BASELINE,
+        );
+    }
+
+    Scenario {
+        host: FixtureHost::new(&arrangement, (0x40..0x70).map(uuid).collect()),
+        roots: Roots {
+            registry: arrangement.join(ADMIN),
+            helm_prefix: format!(
+                "{}/",
+                arrangement.join("opt/ess/recovery-tools/helm").display()
+            ),
+        },
+        authority: uuid(0x71),
+        documents: Documents {
+            desired: serde_json::from_str(&desired_bytes).expect("the desired document admits"),
+            desired_bytes,
+            current: Some(serde_json::from_str(&current_bytes).expect("the baseline admits")),
+            current_bytes: Some(current_bytes),
+        },
+        cluster,
+        payload,
+        root,
+    }
+}
+
+impl Scenario {
+    fn request(&self) -> ess_cli::recovery::ReconcileRequest {
+        ess_cli::recovery::ReconcileRequest {
+            path: self.root.join("desired.json"),
+            current: None,
+            cache: self.root.join("cache"),
+            allow_removals: true,
+            dry_run: false,
+            timeout: "5m".to_owned(),
+            authority: Some(self.authority.clone()),
+            retry_of: None,
+        }
+    }
+
+    fn run(&self, platform: &FixturePlatform) -> Report {
+        execute(
+            &self.host,
+            &self.roots,
+            &self.request(),
+            &self.documents,
+            platform,
+        )
+    }
+
+    fn platform(&self) -> FixturePlatform {
+        FixturePlatform::new(self.cluster.clone(), self.payload.clone())
+    }
+
+    fn store(&self) -> ess_cli::recovery::journal::Store {
+        open_store(&self.host, &self.root.join(STATE)).expect("the store admits")
+    }
+
+    /// Installs a new authority revision carrying the caller's decision about one retained claim.
+    ///
+    /// This is the administrative procedure of C08, and it comes from the independently controlled
+    /// authority source. A journal record cannot generate it, a successful spawn cannot, and the
+    /// passage of time cannot; the decision names one exact claim by its exact retained bytes.
+    fn grant_quiescence(&self, retained: &ess_cli::recovery::journal::RetainedClaim) {
+        let admitted = read_registry(&self.host, &self.roots.registry).expect("the registry reads");
+        let mut registry = admitted.registry;
+        registry.generation = Index::new(registry.generation.get() + 1).unwrap();
+        let authority = &mut registry.authorities[0];
+        authority.revision = Index::new(authority.revision.get() + 1).unwrap();
+        authority.quiescence.push(QuiescenceDecision {
+            claim: retained.claim.clone(),
+            claim_digest: retained.digest.clone(),
+            statement: QuiescenceStatement::NoFurtherWrites,
+        });
+        publish_registry(&self.root, &registry).expect("the new revision publishes");
+    }
+}
+
+/// The fixed fixture selects three applies in canonical order and three retirements in reverse.
+#[test]
+fn the_fixed_fixture_selects_three_applies_then_three_retirements_in_reverse_baseline_order() {
+    let scenario = build_scenario("engine-order");
+    let platform = scenario.platform();
+    let report = scenario.run(&platform);
+    assert!(
+        report.refusal.is_none(),
+        "the clean run completes: {}",
+        report.render()
+    );
+    assert_eq!(
+        report.selected,
+        vec!["api", "checkout", "web", "legacy-c", "legacy-b", "legacy-a"],
+        "desired releases in canonical rollout order, retirements afterwards in reverse baseline \
+         order"
+    );
+    assert_eq!(report.settled, report.selected);
+    assert!(report.complete());
+    assert_eq!(
+        platform.calls(),
+        vec![
+            "apply api",
+            "apply checkout",
+            "apply web",
+            "remove legacy-c",
+            "remove legacy-b",
+            "remove legacy-a"
+        ],
+        "at most one admitted mutation per operation, in the selected order"
+    );
+    for service in SERVICES {
+        assert!(scenario.cluster.has_release("app", service));
+    }
+    for service in RETIREMENTS {
+        assert!(!scenario.cluster.has_release("app", service));
+    }
+    assert!(
+        !scenario
+            .cluster
+            .has_object("app", &address(ObjectKind::Service, "web-old")),
+        "the baseline-only address is absent after the apply"
+    );
+    assert!(scenario
+        .cluster
+        .has_object("app", &address(ObjectKind::Service, "web-new")));
+}
+
+/// R13: a definite apply spawn refusal at every apply index settles `NotLaunched` and stops.
+#[test]
+fn r13_a_definite_apply_spawn_refusal_at_every_index_settles_not_launched_and_stops() {
+    for (index, service) in SERVICES.iter().enumerate() {
+        let scenario = build_scenario(&format!("r13-{index}"));
+        let platform = scenario
+            .platform()
+            .failing_at(index, HelmFault::NotLaunched);
+        let report = scenario.run(&platform);
+
+        let refusal = report.refusal.as_ref().expect("a refused launch stops");
+        assert_eq!(refusal.code, RefusalCode::LaunchFailed, "index {index}");
+        assert_eq!(
+            report.settled.len(),
+            index,
+            "the settled prefix is retained"
+        );
+        assert_eq!(report.unresolved.as_deref(), Some(*service));
+        assert_eq!(
+            platform.calls().len(),
+            index + 1,
+            "index {index}: no later apply or removal is attempted"
+        );
+        for later in RETIREMENTS {
+            assert!(
+                scenario.cluster.has_release("app", later),
+                "index {index}: every retirement is untouched"
+            );
+        }
+
+        // `NotLaunched` is published, and only because the absence of a launch was established.
+        let history = only_history(&scenario);
+        let dispositions = dispositions(&history);
+        assert_eq!(
+            dispositions.last(),
+            Some(&ProcessDisposition::NotLaunched),
+            "index {index}"
+        );
+        assert!(
+            retained_claim(&scenario).is_some(),
+            "index {index}: the claim is retained on any stop"
+        );
+    }
+}
+
+/// R23: a definite uninstall spawn refusal at every reverse-order removal index does the same.
+#[test]
+fn r23_a_definite_uninstall_spawn_refusal_at_every_reverse_index_stops_and_retains_the_prefix() {
+    for (step, service) in ["legacy-c", "legacy-b", "legacy-a"].iter().enumerate() {
+        let index = 3 + step;
+        let scenario = build_scenario(&format!("r23-{step}"));
+        let platform = scenario
+            .platform()
+            .failing_at(index, HelmFault::NotLaunched);
+        let report = scenario.run(&platform);
+
+        assert_eq!(
+            report.refusal.as_ref().map(|refusal| refusal.code),
+            Some(RefusalCode::LaunchFailed)
+        );
+        assert_eq!(report.unresolved.as_deref(), Some(*service));
+        assert_eq!(report.settled.len(), index);
+        for remaining in ["legacy-c", "legacy-b", "legacy-a"].iter().skip(step) {
+            assert!(
+                scenario.cluster.has_release("app", remaining),
+                "{service}: later removals are untouched"
+            );
+        }
+        for done in ["legacy-c", "legacy-b", "legacy-a"].iter().take(step) {
+            assert!(
+                !scenario.cluster.has_release("app", done),
+                "{service}: the completed prefix is preserved"
+            );
+        }
+    }
+}
+
+/// R14/R24: every started uncertainty is indeterminate, with and without an effect.
+///
+/// Four faults, at an apply index and at a removal index, with the target changed and not changed.
+/// The classification is the same in all of them, because in all of them the child may have run —
+/// and the target's state afterwards is a separate fact, established by observing it, never by the
+/// process result.
+#[test]
+fn r14_and_r24_every_started_uncertainty_is_indeterminate_with_or_without_an_effect() {
+    for fault in [
+        HelmFault::StartedNoEffect,
+        HelmFault::EffectThenFailure,
+        HelmFault::LostAcknowledgement,
+        HelmFault::Timeout,
+    ] {
+        for index in [0usize, 3] {
+            let scenario = build_scenario(&format!("r14-{fault:?}-{index}"));
+            let platform = scenario.platform().failing_at(index, fault);
+            let report = scenario.run(&platform);
+
+            let refusal = report.refusal.as_ref().expect("uncertainty stops");
+            assert_eq!(
+                refusal.code,
+                RefusalCode::EffectIndeterminate,
+                "{fault:?} at {index}"
+            );
+            assert_eq!(
+                platform.calls().len(),
+                index + 1,
+                "{fault:?} at {index}: no later apply or removal follows an unresolved one"
+            );
+            let history = only_history(&scenario);
+            assert_eq!(
+                dispositions(&history).last(),
+                Some(&ProcessDisposition::Indeterminate),
+                "{fault:?} at {index}"
+            );
+            assert!(
+                retained_claim(&scenario).is_some(),
+                "{fault:?} at {index}: the claim is retained"
+            );
+            assert!(
+                !history
+                    .entries
+                    .iter()
+                    .any(|entry| matches!(entry.fact, JournalFact::Completed(_))),
+                "{fault:?} at {index}: no completion is claimed"
+            );
+
+            // No compensating call, and nothing that looks like a rollback.
+            assert!(
+                platform
+                    .calls()
+                    .iter()
+                    .all(|call| !call.contains("rollback")),
+                "ESS issues no compensating calls"
+            );
+        }
+    }
+}
+
+/// Without the caller's quiescence, a retained claim blocks the next invocation entirely.
+#[test]
+fn a_retained_claim_blocks_the_next_invocation_until_quiescence_is_established() {
+    let scenario = build_scenario("quiescence");
+    let first = scenario
+        .platform()
+        .failing_at(1, HelmFault::LostAcknowledgement);
+    let report = scenario.run(&first);
+    assert_eq!(
+        report.refusal.as_ref().map(|refusal| refusal.code),
+        Some(RefusalCode::EffectIndeterminate)
+    );
+    let retained = retained_claim(&scenario).expect("the claim is retained");
+
+    // A second invocation, with the claim still there and no decision naming it.
+    let second = scenario.platform();
+    let blocked = scenario.run(&second);
+    let refusal = blocked.refusal.as_ref().expect("mutation stays blocked");
+    assert_eq!(refusal.code, RefusalCode::MutationBlocked);
+    assert!(
+        refusal
+            .detail
+            .contains(retained.claim.invocation.nonce.as_str()),
+        "the refusal names the invocation that holds the claim: {refusal}"
+    );
+    assert!(
+        second.calls().is_empty(),
+        "nothing mutates while the predecessor's claim is unresolved"
+    );
+
+    // The administrative procedure: a new authority revision naming that exact retained claim.
+    scenario.grant_quiescence(&retained);
+    let third = scenario.platform();
+    let resumed = scenario.run(&third);
+    assert!(
+        resumed.refusal.is_none(),
+        "with quiescence established the invocation proceeds: {}",
+        resumed.render()
+    );
+    assert!(
+        !third.calls().is_empty(),
+        "and it does the remaining authorized work"
+    );
+}
+
+/// R21/R16: a restart observes an exact desired match and skips the mutation.
+///
+/// No duplicate apply, and no invented historical applied attribution: the run records a fresh
+/// observation for the operation whose work it found already done, and publishes no `Prepared` for
+/// it at all.
+#[test]
+fn r21_a_restart_that_observes_an_exact_desired_match_skips_the_mutation() {
+    let scenario = build_scenario("r21");
+    let first = scenario
+        .platform()
+        .failing_at(0, HelmFault::LostAcknowledgement);
+    let report = scenario.run(&first);
+    assert_eq!(
+        report.refusal.as_ref().map(|refusal| refusal.code),
+        Some(RefusalCode::EffectIndeterminate)
+    );
+    assert_eq!(first.calls(), vec!["apply api"]);
+    // The effect happened; the acknowledgement did not arrive. The target says so and the journal
+    // cannot.
+    assert!(scenario
+        .cluster
+        .has_object("app", &address(ObjectKind::Deployment, "api")));
+
+    let retained = retained_claim(&scenario).expect("the claim is retained");
+    scenario.grant_quiescence(&retained);
+
+    let second = scenario.platform();
+    let resumed = scenario.run(&second);
+    assert!(resumed.refusal.is_none(), "{}", resumed.render());
+    assert!(
+        !second.calls().contains(&"apply api".to_owned()),
+        "the operation whose desired state already holds is not mutated again: {:?}",
+        second.calls()
+    );
+    assert_eq!(
+        second.calls(),
+        vec![
+            "apply checkout",
+            "apply web",
+            "remove legacy-c",
+            "remove legacy-b",
+            "remove legacy-a"
+        ],
+        "only the remaining authorized work runs"
+    );
+    let histories = scan_store(&scenario.host, &scenario.store()).expect("the store scans");
+    let latest = histories
+        .iter()
+        .max_by_key(|history| history.entries.len())
+        .expect("a history");
+    assert!(
+        !latest.entries.iter().any(|entry| matches!(
+            &entry.fact,
+            JournalFact::Prepared(prepared) if prepared.operation == Index::new(0).unwrap()
+        )),
+        "a skipped operation publishes an observation, not a decision to mutate"
+    );
+}
+
+/// R26: a repeated baseline-only removal with authoritative absence completes with no uninstall.
+#[test]
+fn r26_a_repeated_removal_with_authoritative_absence_completes_without_another_uninstall() {
+    let scenario = build_scenario("r26");
+    // The removal already happened, independently of this executor's history.
+    for service in RETIREMENTS {
+        scenario.cluster.retire("app", service);
+    }
+    let platform = scenario.platform();
+    let report = scenario.run(&platform);
+    assert!(report.refusal.is_none(), "{}", report.render());
+    assert_eq!(
+        platform.calls(),
+        vec!["apply api", "apply checkout", "apply web"],
+        "authoritative absence of both release storage and every baseline object completes the \
+         retirement with zero uninstall calls"
+    );
+    assert!(report.complete());
+}
+
+/// R27: a foreign incarnation and a foreign occupant both refuse, and nothing adopts them.
+#[test]
+fn r27_a_foreign_incarnation_or_occupant_refuses_and_is_never_adopted() {
+    let foreign = build_scenario("r27-incarnation");
+    foreign.cluster.rebrand(
+        "app",
+        "api",
+        "ess-recovery/1:someone-else:another-incarnation",
+    );
+    let platform = foreign.platform();
+    let report = foreign.run(&platform);
+    assert_eq!(
+        report.refusal.as_ref().map(|refusal| refusal.code),
+        Some(RefusalCode::OwnershipConflict),
+        "{}",
+        report.render()
+    );
+    assert!(platform.calls().is_empty(), "no mutation touches it");
+    assert!(
+        foreign.cluster.has_release("app", "api"),
+        "neither the removal flag nor a repair authority deletes a foreign release"
+    );
+
+    let occupied = build_scenario("r27-occupant");
+    // A foreign object already sits at an address `web` newly desires.
+    occupied
+        .cluster
+        .occupy("app", &address(ObjectKind::Service, "web-new"), "foreign");
+    let platform = occupied.platform();
+    let report = occupied.run(&platform);
+    assert_eq!(
+        report.refusal.as_ref().map(|refusal| refusal.code),
+        Some(RefusalCode::OwnershipConflict),
+        "{}",
+        report.render()
+    );
+    assert_eq!(
+        report.unresolved.as_deref(),
+        Some("web"),
+        "the refusal names the release, not the whole plan"
+    );
+    assert!(
+        occupied
+            .cluster
+            .has_object("app", &address(ObjectKind::Service, "web-new")),
+        "the foreign occupant is left exactly as it was"
+    );
+}
+
+/// R20: manual drift between invocations refuses implicit repair, and an exact `repair_from` admits.
+#[test]
+fn r20_manual_drift_refuses_implicit_repair_and_an_exact_repair_snapshot_admits_it() {
+    let drifted = build_scenario("r20-drift");
+    drifted
+        .cluster
+        .drift("app", &address(ObjectKind::Deployment, "api"), "manual");
+    let platform = drifted.platform();
+    let report = drifted.run(&platform);
+    assert_eq!(
+        report.refusal.as_ref().map(|refusal| refusal.code),
+        Some(RefusalCode::ObservedDrift),
+        "{}",
+        report.render()
+    );
+    assert!(
+        report
+            .refusal
+            .as_ref()
+            .is_some_and(|refusal| refusal.detail.contains("repair_from")),
+        "the refusal names what would authorize it"
+    );
+    assert!(platform.calls().is_empty(), "nothing is overwritten");
+}
+
+/// R29: a failed final `Completed` publication prevents a complete-success claim.
+#[test]
+fn r29_a_failed_final_completion_publication_prevents_a_success_claim() {
+    let scenario = build_scenario("r29");
+    // Every call succeeds; the last journal publication does not.
+    // Sequence 25 is the final `Completed`: one `Opened`, then four facts for each of the six
+    // selected operations. Naming it exactly is what makes this a failure of the *finalization*
+    // rather than of some earlier entry.
+    let host = FixtureHost::new(&scenario.root, (0x40..0x70).map(uuid).collect())
+        .failing(Barrier::Publish, Some(&entry_name(Index::new(25).unwrap())));
+    let platform = scenario.platform();
+    let report = execute(
+        &host,
+        &scenario.roots,
+        &scenario.request(),
+        &scenario.documents,
+        &platform,
+    );
+    assert!(
+        report.refusal.is_some(),
+        "a failed final publication is not a success: {}",
+        report.render()
+    );
+    assert!(!report.complete());
+    assert!(
+        report.render().contains("incomplete execution evidence"),
+        "{}",
+        report.render()
+    );
+    assert_eq!(
+        platform.calls().len(),
+        6,
+        "every child call had already succeeded"
+    );
+    // The valid prefix survives, and a later invocation observes rather than replaying.
+    let retained = retained_claim(&scenario).expect("the claim is retained");
+    scenario.grant_quiescence(&retained);
+    let second = scenario.platform();
+    let resumed = scenario.run(&second);
+    assert!(resumed.refusal.is_none(), "{}", resumed.render());
+    assert!(
+        second.calls().is_empty(),
+        "a later invocation observes instead of replaying every call: {:?}",
+        second.calls()
+    );
+}
+
+// --- Helpers for the engine families -------------------------------------------------------------
+
+fn dispositions(history: &ess_cli::recovery::journal::History) -> Vec<ProcessDisposition> {
+    history
+        .entries
+        .iter()
+        .filter_map(|entry| match &entry.fact {
+            JournalFact::ProcessOutcome(outcome) => Some(outcome.disposition),
+            _ => None,
+        })
+        .collect()
+}
+
+fn only_history(scenario: &Scenario) -> ess_cli::recovery::journal::History {
+    let mut histories = scan_store(&scenario.host, &scenario.store()).expect("the store scans");
+    assert_eq!(histories.len(), 1, "one invocation was reserved");
+    histories.remove(0)
+}
+
+fn retained_claim(scenario: &Scenario) -> Option<ess_cli::recovery::journal::RetainedClaim> {
+    read_claim(&scenario.host, &scenario.store()).expect("the claim reads")
+}
+
+/// R04: an unavailable observation is not an empty target, on the first run and on a restart.
+///
+/// The target here is independently populated, and it stays populated. An executor that read
+/// "unavailable" as "nothing is there" would apply from a first-creation predicate onto a live
+/// release; what it must do instead is refuse and name the claim it could not establish.
+#[test]
+fn r04_an_unavailable_observation_is_never_read_as_an_empty_target() {
+    let scenario = build_scenario("r04");
+    let platform = scenario.platform().unavailable();
+    let report = scenario.run(&platform);
+    assert_eq!(
+        report.refusal.as_ref().map(|refusal| refusal.code),
+        Some(RefusalCode::ObservationUnavailable),
+        "{}",
+        report.render()
+    );
+    assert!(
+        platform.calls().is_empty(),
+        "no mutation follows a failed read"
+    );
+    assert_eq!(report.settled, Vec::<String>::new());
+    for service in SERVICES.iter().chain(RETIREMENTS) {
+        assert!(
+            scenario.cluster.has_release("app", service),
+            "the independently populated target is untouched"
+        );
+    }
+
+    // The restart, with the reads still unavailable, reaches the same conclusion.
+    let retained = retained_claim(&scenario).expect("the claim is retained");
+    scenario.grant_quiescence(&retained);
+    let again = scenario.platform().unavailable();
+    let report = scenario.run(&again);
+    assert_eq!(
+        report.refusal.as_ref().map(|refusal| refusal.code),
+        Some(RefusalCode::ObservationUnavailable)
+    );
+    assert!(again.calls().is_empty());
+    for service in SERVICES.iter().chain(RETIREMENTS) {
+        assert!(scenario.cluster.has_release("app", service));
+    }
+}
+
+/// R05: a failed chart acquisition at every apply index stops that index with no Helm mutation.
+#[test]
+fn r05_a_failed_chart_acquisition_at_every_apply_index_makes_no_helm_mutation() {
+    for (index, service) in SERVICES.iter().enumerate() {
+        let scenario = build_scenario(&format!("r05-{index}"));
+        let platform = scenario.platform().acquisition_failing_at(index);
+        let report = scenario.run(&platform);
+
+        let refusal = report.refusal.as_ref().expect("acquisition failure stops");
+        assert_eq!(
+            refusal.code,
+            RefusalCode::PreparationFailed,
+            "index {index}"
+        );
+        assert_eq!(report.unresolved.as_deref(), Some(*service));
+        assert_eq!(
+            platform.calls().len(),
+            index,
+            "index {index}: the settled prefix is exactly what ran before it"
+        );
+        // Preparation happens before the mutation-authorizing observation, so a failure there
+        // publishes no decision to mutate at all.
+        let history = only_history(&scenario);
+        assert!(
+            !history.entries.iter().any(|entry| matches!(
+                &entry.fact,
+                JournalFact::Prepared(prepared)
+                    if prepared.operation == Index::new(index as u64).unwrap()
+            )),
+            "index {index}: nothing was prepared for the operation that could not be prepared"
+        );
+    }
+}
+
+/// R12: each pre-mutation storage boundary fails on its own and leaves no launch.
+///
+/// Values, then `Observed`, then `Prepared`. A cut before the launch has no child effect; a
+/// retained `Prepared` with no durable disposition stays historically indeterminate on restart,
+/// and nothing reconstructs `NotLaunched` from the empty tail.
+#[test]
+fn r12_every_pre_mutation_storage_boundary_fails_on_its_own_without_a_launch() {
+    // The values write, which happens during preparation and before any observation.
+    let scenario = build_scenario("r12-values");
+    let host = FixtureHost::new(&scenario.root, (0x40..0x70).map(uuid).collect())
+        .failing(Barrier::ValuesWrite, None);
+    let platform = scenario.platform();
+    let report = execute(
+        &host,
+        &scenario.roots,
+        &scenario.request(),
+        &scenario.documents,
+        &platform,
+    );
+    assert!(report.refusal.is_some(), "{}", report.render());
+    assert!(platform.calls().is_empty(), "nothing launched");
+
+    // The `Observed` publication for operation zero is sequence 1; the `Prepared` is sequence 2.
+    for (label, sequence) in [("observed", 1u64), ("prepared", 2)] {
+        let cut = build_scenario(&format!("r12-{label}"));
+        let scenario = &cut;
+        let host = FixtureHost::new(&scenario.root, (0x40..0x70).map(uuid).collect()).failing(
+            Barrier::Publish,
+            Some(&entry_name(Index::new(sequence).unwrap())),
+        );
+        let platform = scenario.platform();
+        let report = execute(
+            &host,
+            &scenario.roots,
+            &scenario.request(),
+            &scenario.documents,
+            &platform,
+        );
+        assert_eq!(
+            report.refusal.as_ref().map(|refusal| refusal.code),
+            Some(RefusalCode::EvidenceIncomplete),
+            "{label}: {}",
+            report.render()
+        );
+        assert!(
+            platform.calls().is_empty(),
+            "{label}: a cut before the launch has no child effect"
+        );
+        assert!(
+            scenario
+                .cluster
+                .has_object("app", &address(ObjectKind::Service, "web-old")),
+            "{label}: the target is exactly as it was"
+        );
+        let history = only_history(scenario);
+        assert!(
+            dispositions(&history).is_empty(),
+            "{label}: no disposition is reconstructed from an empty tail"
+        );
+
+        // A cut *at* the `Prepared` publication leaves no `Prepared`: the record never became
+        // durable, so there is nothing indeterminate about it beyond the retained claim. The
+        // indeterminate case is the one after it, and it is `r15_…` below.
+        let next = scenario.platform();
+        let blocked = scenario.run(&next);
+        assert_eq!(
+            blocked.refusal.as_ref().map(|refusal| refusal.code),
+            Some(RefusalCode::MutationBlocked),
+            "{label}"
+        );
+        assert!(next.calls().is_empty(), "{label}");
+    }
+}
+
+/// R15: an applied effect whose durable outcome cannot be recorded is not an overall success.
+#[test]
+fn r15_an_applied_effect_whose_outcome_cannot_be_recorded_is_not_a_success() {
+    let scenario = build_scenario("r15");
+    // Sequence 3 is operation zero's `ProcessOutcome`: the call has returned, and the record of it
+    // has not.
+    let host = FixtureHost::new(&scenario.root, (0x40..0x70).map(uuid).collect())
+        .failing(Barrier::Publish, Some(&entry_name(Index::new(3).unwrap())));
+    let platform = scenario.platform();
+    let report = execute(
+        &host,
+        &scenario.roots,
+        &scenario.request(),
+        &scenario.documents,
+        &platform,
+    );
+    assert!(!report.complete(), "{}", report.render());
+    assert_eq!(
+        report.refusal.as_ref().map(|refusal| refusal.code),
+        Some(RefusalCode::EvidenceIncomplete)
+    );
+    assert_eq!(platform.calls(), vec!["apply api"], "exactly one call ran");
+    assert!(
+        scenario
+            .cluster
+            .has_object("app", &address(ObjectKind::Deployment, "api")),
+        "the effect happened, and the invocation cannot say so"
+    );
+
+    // Before any decision: the retained `Prepared` has no disposition, and the restart must
+    // neither reconstruct `NotLaunched` from the empty tail nor mutate.
+    let history = only_history(&scenario);
+    assert_eq!(
+        history.unresolved_preparations().len(),
+        1,
+        "a durable Prepared with no disposition is retained"
+    );
+    let blocked = scenario.run(&scenario.platform());
+    let refusal = blocked.refusal.as_ref().expect("the restart is blocked");
+    assert_eq!(refusal.code, RefusalCode::MutationBlocked);
+    assert!(
+        refusal.detail.contains("Prepared with no disposition"),
+        "the refusal names the indeterminate preparation: {refusal}"
+    );
+
+    // The restart observes; it does not replay and it invents no acknowledgement.
+    let retained = retained_claim(&scenario).expect("the claim is retained");
+    scenario.grant_quiescence(&retained);
+    let second = scenario.platform();
+    let resumed = scenario.run(&second);
+    assert!(resumed.refusal.is_none(), "{}", resumed.render());
+    assert!(
+        !second.calls().contains(&"apply api".to_owned()),
+        "the operation whose desired state now holds is observed, not replayed: {:?}",
+        second.calls()
+    );
+}
+
+/// R19: an observation past the monotonic budget refuses at the launch check.
+#[test]
+fn r19_an_observation_past_the_monotonic_budget_refuses_at_the_launch_check() {
+    let scenario = build_scenario("r19");
+    // Each reading of the invocation-local monotonic clock advances it by twenty seconds, so the
+    // final pre-launch check is past the thirty-second budget measured from `started_ms`.
+    let host = FixtureHost::new(&scenario.root, (0x40..0x70).map(uuid).collect()).stepping(20_000);
+    let platform = scenario.platform();
+    let report = execute(
+        &host,
+        &scenario.roots,
+        &scenario.request(),
+        &scenario.documents,
+        &platform,
+    );
+    assert_eq!(
+        report.refusal.as_ref().map(|refusal| refusal.code),
+        Some(RefusalCode::ObservationStale),
+        "{}",
+        report.render()
+    );
+    assert!(
+        platform.calls().is_empty(),
+        "an expired observation authorizes no launch"
+    );
+    // The budget is charged from acquisition, not from the decision: a `Prepared` was published
+    // and then the freshness check refused, which is the ordering C09 states.
+    let history = only_history(&scenario);
+    assert!(history
+        .entries
+        .iter()
+        .any(|entry| matches!(entry.fact, JournalFact::Prepared(_))));
+    assert!(dispositions(&history).is_empty());
+}
+
+/// Secret containment: no credential or Secret-shaped value reaches any byte this run produces.
+#[test]
+fn no_credential_or_secret_value_reaches_stdout_evidence_or_a_retained_report() {
+    const SENTINEL: &str = "SYNTHETIC-SECRET-SENTINEL";
+    let scenario = build_scenario("secrets");
+    // The sentinel goes into the two places a caller's own bytes can carry one: the protected
+    // kubeconfig's credential, and the desired document's secret slot.
+    let kubeconfig = scenario.roots.registry.join("kubeconfig.yaml");
+    let text = std::fs::read_to_string(&kubeconfig).unwrap();
+    std::fs::write(
+        &kubeconfig,
+        text.replace("token-file: /dev/null", &format!("token: {SENTINEL}")),
+    )
+    .unwrap();
+
+    let platform = scenario.platform();
+    let report = scenario.run(&platform);
+    assert!(report.refusal.is_none(), "{}", report.render());
+
+    assert!(
+        !report.render().contains(SENTINEL),
+        "the report carries no credential"
+    );
+    // Every durable byte the invocation published, and the synthetic cluster's own state.
+    let mut scanned = 0usize;
+    for entry in walk(&scenario.root) {
+        let Ok(bytes) = std::fs::read(&entry) else {
+            continue;
+        };
+        scanned += 1;
+        assert!(
+            !String::from_utf8_lossy(&bytes).contains(SENTINEL),
+            "{} carries a credential",
+            entry.display()
+        );
+    }
+    assert!(
+        scanned > 20,
+        "the scan read {scanned} files, which is too few to be looking at the evidence"
+    );
+    // And the kubeconfig itself still has it, so the scan is not passing because nothing does.
+    assert!(std::fs::read_to_string(&kubeconfig)
+        .unwrap()
+        .contains(SENTINEL));
+}
+
+fn walk(root: &Path) -> Vec<PathBuf> {
+    let mut found = Vec::new();
+    let mut queue = vec![root.to_path_buf()];
+    while let Some(directory) = queue.pop() {
+        let Ok(entries) = std::fs::read_dir(&directory) else {
+            continue;
+        };
+        for entry in entries.filter_map(Result::ok) {
+            let path = entry.path();
+            if path.is_dir() {
+                queue.push(path);
+            } else if path
+                .file_name()
+                .is_some_and(|name| name != "kubeconfig.yaml")
+            {
+                found.push(path);
+            }
+        }
+    }
+    found
+}
+
+/// R16: a cut after one operation's complete evidence resumes without repeating that operation.
+#[test]
+fn r16_a_cut_after_complete_per_operation_evidence_resumes_without_repeating_it() {
+    let scenario = build_scenario("r16");
+    // Sequence 5 is operation one's `Observed(Before)`: operation zero is fully settled, including
+    // its acknowledged disposition and its required `After` observation.
+    let host = FixtureHost::new(&scenario.root, (0x40..0x70).map(uuid).collect())
+        .failing(Barrier::Publish, Some(&entry_name(Index::new(5).unwrap())));
+    let platform = scenario.platform();
+    let report = execute(
+        &host,
+        &scenario.roots,
+        &scenario.request(),
+        &scenario.documents,
+        &platform,
+    );
+    assert!(!report.complete(), "{}", report.render());
+    assert_eq!(platform.calls(), vec!["apply api"]);
+    let history = only_history(&scenario);
+    assert_eq!(
+        dispositions(&history),
+        vec![ProcessDisposition::Acknowledged],
+        "operation zero's evidence is complete"
+    );
+    assert!(
+        history.acknowledged_without_after().is_empty(),
+        "including its required After observation"
+    );
+
+    let retained = retained_claim(&scenario).expect("the claim is retained");
+    scenario.grant_quiescence(&retained);
+    let second = scenario.platform();
+    let resumed = scenario.run(&second);
+    assert!(resumed.refusal.is_none(), "{}", resumed.render());
+    assert_eq!(
+        second.calls(),
+        vec![
+            "apply checkout",
+            "apply web",
+            "remove legacy-c",
+            "remove legacy-b",
+            "remove legacy-a"
+        ],
+        "a fresh matching observation skips the duplicate mutation and permits only the \
+         authorized remainder"
+    );
+}
+
+/// R17: a middle operation with an effect then a failure leaves everything around it untouched.
+#[test]
+fn r17_a_middle_operation_effect_then_failure_preserves_the_prefix_and_the_remainder() {
+    let scenario = build_scenario("r17");
+    let platform = scenario
+        .platform()
+        .failing_at(1, HelmFault::EffectThenFailure);
+    let report = scenario.run(&platform);
+
+    let refusal = report.refusal.as_ref().expect("uncertainty stops");
+    assert_eq!(refusal.code, RefusalCode::EffectIndeterminate);
+    assert_eq!(
+        report.settled,
+        vec!["api"],
+        "the earlier settled operation stays settled"
+    );
+    assert_eq!(
+        report.unresolved.as_deref(),
+        Some("checkout"),
+        "the report identifies the release whose state is unknown"
+    );
+    assert_eq!(platform.calls(), vec!["apply api", "apply checkout"]);
+
+    // The earlier release really is at its desired state, and the later ones really are untouched.
+    assert!(scenario
+        .cluster
+        .has_object("app", &address(ObjectKind::Deployment, "api")));
+    assert!(
+        scenario
+            .cluster
+            .has_object("app", &address(ObjectKind::Service, "web-old")),
+        "the later release is exactly at its baseline"
+    );
+    assert!(
+        !scenario
+            .cluster
+            .has_object("app", &address(ObjectKind::Service, "web-new")),
+        "and has not been advanced"
+    );
+    for service in RETIREMENTS {
+        assert!(
+            scenario.cluster.has_release("app", service),
+            "every retirement is untouched"
+        );
+    }
+    // No global claim, either way.
+    let rendered = report.render();
+    assert!(!rendered.contains("rolled back"));
+    assert!(!rendered.contains("complete:"));
+}
+
+/// R25: a successful uninstall whose evidence cannot be recorded is not repeated unconditionally.
+#[test]
+fn r25_a_successful_uninstall_whose_evidence_fails_is_not_repeated_unconditionally() {
+    let scenario = build_scenario("r25");
+    // Sequence 15 is the first retirement's `ProcessOutcome`: one `Opened` plus four facts for
+    // each of the three applies, then that retirement's observation and decision.
+    let host = FixtureHost::new(&scenario.root, (0x40..0x70).map(uuid).collect())
+        .failing(Barrier::Publish, Some(&entry_name(Index::new(15).unwrap())));
+    let platform = scenario.platform();
+    let report = execute(
+        &host,
+        &scenario.roots,
+        &scenario.request(),
+        &scenario.documents,
+        &platform,
+    );
+    assert!(!report.complete(), "{}", report.render());
+    assert_eq!(
+        platform.calls(),
+        vec![
+            "apply api",
+            "apply checkout",
+            "apply web",
+            "remove legacy-c"
+        ]
+    );
+    assert!(
+        !scenario.cluster.has_release("app", "legacy-c"),
+        "the removal happened; the record of it did not"
+    );
+
+    let retained = retained_claim(&scenario).expect("the claim is retained");
+    scenario.grant_quiescence(&retained);
+    let second = scenario.platform();
+    let resumed = scenario.run(&second);
+    assert!(resumed.refusal.is_none(), "{}", resumed.render());
+    assert!(
+        !second.calls().contains(&"remove legacy-c".to_owned()),
+        "authoritative absence completes the retirement without another uninstall: {:?}",
+        second.calls()
+    );
+    assert_eq!(
+        second.calls(),
+        vec!["remove legacy-b", "remove legacy-a"],
+        "and only the remaining removals run"
+    );
+}
+
+/// A retained direct object after an acknowledged removal prevents the absence claim.
+#[test]
+fn a_retained_direct_object_after_a_removal_prevents_the_absence_claim() {
+    let scenario = build_scenario("retained-object");
+    // The uninstall returns, and one baseline direct object survives it — a finalizer, or an
+    // object the manifest named and the API did not delete.
+    scenario
+        .cluster
+        .pin("app", &address(ObjectKind::Deployment, "legacy-c"));
+    let platform = scenario.platform();
+    let report = scenario.run(&platform);
+    assert_eq!(
+        report.refusal.as_ref().map(|refusal| refusal.code),
+        Some(RefusalCode::DirectObjectsRemain),
+        "{}",
+        report.render()
+    );
+    assert_eq!(report.unresolved.as_deref(), Some("legacy-c"));
+    assert!(
+        report
+            .refusal
+            .as_ref()
+            .is_some_and(|refusal| refusal.detail.contains("PVC")),
+        "the refusal keeps the exclusion explicit: {report:?}"
+    );
+}
+
+/// Projection fidelity: all three declared kinds, and server content the chart never authored.
+#[test]
+fn projection_fidelity_covers_all_three_kinds_and_unknown_server_content() {
+    let scenario = build_scenario("fidelity");
+    let platform = scenario.platform();
+    let report = scenario.run(&platform);
+    assert!(report.refusal.is_none(), "{}", report.render());
+
+    for (kind, name) in [
+        (ObjectKind::Deployment, "api"),
+        (ObjectKind::StatefulSet, "checkout-queue"),
+        (ObjectKind::Service, "web-new"),
+    ] {
+        assert!(
+            scenario.cluster.has_object("app", &address(kind, name)),
+            "{kind}/{name} is covered"
+        );
+    }
+
+    // The complete live projection includes content the chart never authored, and excludes server
+    // bookkeeping. `fake_recovery::live_object` carries both, so the approved fingerprint the
+    // authority pins is the digest of an object with a `generation`, a `resourceVersion`, managed
+    // fields and a `status` — none of which may move the digest.
+    let object = fake_recovery::live_object("app", ObjectKind::Deployment, "api", DESIRED);
+    let projected = ess_cli::recovery::observe::live_projection(&object);
+    assert!(projected.get("status").is_none(), "status is excluded");
+    for bookkeeping in [
+        "uid",
+        "resourceVersion",
+        "generation",
+        "creationTimestamp",
+        "managedFields",
+    ] {
+        assert!(
+            projected["metadata"].get(bookkeeping).is_none(),
+            "{bookkeeping} is server bookkeeping and is excluded"
+        );
+    }
+    assert_eq!(
+        projected["spec"]["replicas"], 1,
+        "server-defaulted spec content is included"
+    );
+    let mut moved = object.clone();
+    moved["metadata"]["resourceVersion"] = serde_json::json!("999");
+    moved["status"]["observedGeneration"] = serde_json::json!(99);
+    assert_eq!(
+        ess_cli::recovery::observe::projection_digest(&object),
+        ess_cli::recovery::observe::projection_digest(&moved),
+        "a changed resourceVersion or status is not a changed projection"
+    );
+    let mut authored = object;
+    authored["spec"]["replicas"] = serde_json::json!(2);
+    assert_ne!(
+        ess_cli::recovery::observe::projection_digest(&authored),
+        ess_cli::recovery::observe::projection_digest(&moved),
+        "a changed authored field is"
     );
 }

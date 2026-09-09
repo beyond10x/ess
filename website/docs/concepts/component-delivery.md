@@ -78,8 +78,10 @@ deployment* — a document the caller supplies, which says what was requested an
 it was ever applied — follows the declared rollout DAG, and touches only added or changed
 releases. Removal is a separate reviewed operation; it is refused unless explicitly enabled.
 
-`--authority` selects one entry from a protected recovery registry the caller provisions. Under it,
-reconciliation runs the finite recovery contract: it attempts at most one admitted mutation per
+`--authority` names one entry of a protected recovery registry the caller provisions, and execution
+requires it: without an admitted authority `reconcile` refuses before any external call, cache write
+or recovery write. Under one, reconciliation runs the finite recovery contract: it attempts at most
+one admitted mutation per
 release, records what it can establish before attempting the next one, and stops at the first thing
 it cannot. Stopping leaves the affected release's state **unknown** — not absent, not rolled back
 and not reconciled — and a later invocation observes and decides again rather than replaying a

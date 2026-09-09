@@ -44,6 +44,19 @@ struct Job {
     interrupt: Option<String>,
     /// Whether an `Opened` fact is published after the claim.
     open_journal: bool,
+    /// The desired `ess-deployment/1` document, for the cache lane.
+    #[serde(default)]
+    plan: Option<PathBuf>,
+    /// The digest-pinned chart cache root, for the cache lane.
+    #[serde(default)]
+    cache: Option<PathBuf>,
+    /// Whether to provision and admit a synthetic authority before touching the cache.
+    ///
+    /// The **control**. With it false, the same vector must stop at the authority refusal without
+    /// an ORAS call, a cache write or a Helm invocation — which is what proves the vectors with it
+    /// true are reaching the cache boundary rather than passing on an earlier refusal.
+    #[serde(default)]
+    authority: bool,
 }
 
 fn barrier(name: &str) -> Option<Barrier> {
@@ -85,6 +98,11 @@ fn main() -> ExitCode {
 }
 
 fn run(job: &Job) -> Result<String, String> {
+    // The cache lane has no store of its own: it admits an authority and acquires a proof, and a
+    // store it never reads must not be a precondition for either.
+    if job.mode == "cache" {
+        return cache_lane(job);
+    }
     let nonces: Vec<Uuid> = job
         .nonces
         .iter()
@@ -147,6 +165,167 @@ fn run(job: &Job) -> Result<String, String> {
         }
         other => Err(format!("no driver mode is named {other}")),
     }
+}
+
+/// Admits an authority, then acquires and consumes each affected release's proved chart payload.
+///
+/// It admits a synthetic authority through the *production* registry scan and then acquires the
+/// pinned chart payload through the *production* OCI proof, so the original-byte transport
+/// assertions keep their exact meaning. It deliberately stops there: C12 keeps opaque historical
+/// chart fixtures as cache-layer vectors and forbids relabelling them as admissible generated
+/// recovery charts, so this lane hands the proved payload to the fixture's own consumer instead of
+/// rendering and comparing a projection.
+fn cache_lane(job: &Job) -> Result<String, String> {
+    let plan = job
+        .plan
+        .as_ref()
+        .ok_or_else(|| "the cache lane needs a desired document".to_owned())?;
+    let cache = job
+        .cache
+        .as_ref()
+        .ok_or_else(|| "the cache lane needs a cache root".to_owned())?;
+    let bytes = std::fs::read_to_string(plan)
+        .map_err(|error| format!("reading {}: {error}", plan.display()))?;
+    // Whole-input validation first, before the authority and before anything external.
+    let desired: ess_deployment::DeploymentIr = if plan
+        .extension()
+        .is_some_and(|extension| extension == "json")
+    {
+        serde_json::from_str(&bytes)
+            .map_err(|error| format!("parsing {} as JSON: {error}", plan.display()))?
+    } else {
+        serde_yaml::from_str(&bytes)
+            .map_err(|error| format!("parsing {} as YAML: {error}", plan.display()))?
+    };
+    desired
+        .validate()
+        .map_err(|diagnostics| format!("validating desired deployment: {diagnostics:?}"))?;
+
+    let services: Vec<(String, String, String)> = desired
+        .rollout_order
+        .iter()
+        .map(|service| {
+            let release = desired
+                .releases
+                .get(service)
+                .expect("rollout order refers to a release");
+            (
+                service.to_string(),
+                release.namespace.clone(),
+                release.release_name.clone(),
+            )
+        })
+        .collect();
+
+    if !job.authority {
+        return Err(
+            "normal execution requires a caller-provisioned authority selected from the protected              registry; this run supplied none"
+                .to_owned(),
+        );
+    }
+    let arrangement = job.root.join("recovery");
+    let id = fake_recovery::provision_cache_lane(&arrangement, &bytes, &services)
+        .map_err(|error| format!("the fixture arrangement could not be laid out: {error}"))?;
+    let host = fake_recovery::FixtureHost::new(&arrangement, vec![uuid_of(0x40)]);
+    let admin = arrangement.join(fake_recovery::ADMIN);
+    let (_, authority) = ess_cli::recovery::authority::admit(&host, &admin, &id)
+        .map_err(|refusal| refusal.to_string())?;
+    ess_cli::recovery::admit_documents(&authority, &bytes, None)
+        .map_err(|refusal| refusal.to_string())?;
+
+    for (service, _, _) in &services {
+        let identifier =
+            ess_deployment::Identifier::new(service).map_err(|error| format!("{error}"))?;
+        let release = desired
+            .releases
+            .get(&identifier)
+            .ok_or_else(|| format!("no release for {service}"))?;
+        let permit = authority
+            .permit(service)
+            .ok_or_else(|| format!("the authority admits no permit for {service}"))?;
+        consume(release, permit, &authority, cache, &arrangement)?;
+    }
+    Ok(format!(
+        "cache lane: {} release(s) acquired and consumed under authority {id}",
+        services.len()
+    ))
+}
+
+/// Acquires one release's proved payload and hands it to the fixture's consumer.
+fn consume(
+    release: &ess_deployment::DeploymentRelease,
+    permit: &ess_cli::recovery::model::ReleasePermit,
+    authority: &ess_cli::recovery::model::Authority,
+    cache: &Path,
+    arrangement: &Path,
+) -> Result<(), String> {
+    if release.chart.kind != ess_deployment::ArtifactKind::HelmChart {
+        return Err(format!("{} does not select a Helm chart", release.service));
+    }
+    let reference = format!(
+        "{}@{}",
+        release.chart.reference.trim_start_matches("oci://"),
+        release.chart.digest
+    );
+    // The production OCI proof, unchanged: the same original-byte manifest and blob verification,
+    // the same cache layout, the same ORAS argument vectors.
+    let payload = ess_cli::oci_cache::payload(&reference, cache, ess_cli::oci_cache::Profile::Helm)
+        .map_err(|error| format!("{error:#}"))?;
+
+    // The same transient private directory the production path uses, and for the same reason: the
+    // verified snapshot exists for exactly the executor call and is gone afterwards, so nothing
+    // downstream can read a chart that was never re-proved.
+    let _ = arrangement;
+    let private = ess_cli::TemporaryDirectory::create("ess-recovery-cache-lane")
+        .map_err(|error| format!("{error}"))?;
+    let private = private;
+    let chart = private.path().join("chart.tgz");
+    std::fs::write(&chart, &payload).map_err(|error| format!("{error}"))?;
+    let values = private.path().join("values.yaml");
+    let document = ess_cli::recovery::values_document(release).map_err(|r| r.to_string())?;
+    std::fs::write(&values, document).map_err(|error| format!("{error}"))?;
+
+    // The recovery lane's own argument vector, built by production code. `--create-namespace`,
+    // `--keep-history` and `--ignore-not-found` are absent because this is where they would have
+    // to appear, and `admit_arguments` refuses them here as well as everywhere else.
+    let marker =
+        ess_cli::recovery::model::ownership_marker(&authority.authority_id, &permit.incarnation);
+    let arguments =
+        ess_cli::recovery::process::apply_arguments(ess_cli::recovery::process::Apply {
+            release: permit.release_name.as_str(),
+            chart: &chart,
+            values: &values,
+            namespace: permit.namespace.name.as_str(),
+            kubeconfig: authority.host.kubeconfig.as_str(),
+            context: "fixture",
+            marker: &marker,
+            timeout: "5m",
+        });
+    ess_cli::recovery::process::admit_arguments(&arguments).map_err(|r| r.to_string())?;
+    // The consumer is the fixture's own PATH executable, inheriting this process's environment so
+    // its control files stay reachable. It is not the admitted artifact and is not treated as one:
+    // executable admission is decided by its own family.
+    let status = std::process::Command::new("helm")
+        .args(&arguments)
+        .status()
+        .map_err(|error| format!("starting the chart consumer: {error}"))?;
+    if !status.success() {
+        return Err(format!("the chart consumer failed with {status}"));
+    }
+    Ok(())
+}
+
+fn uuid_of(byte: u8) -> Uuid {
+    let hex = format!("{byte:02x}").repeat(16);
+    Uuid::new(format!(
+        "{}-{}-{}-{}-{}",
+        &hex[0..8],
+        &hex[8..12],
+        &hex[12..16],
+        &hex[16..20],
+        &hex[20..32]
+    ))
+    .expect("a fixture UUID admits")
 }
 
 fn claim_for(

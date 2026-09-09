@@ -1845,53 +1845,21 @@ fn deployment(command: DeploymentCommand) -> Result<ExitCode> {
                 return Ok(ExitCode::SUCCESS);
             }
 
-            let Some(authority) = authority
+            // C04 and C14: actual `reconcile` without an admitted authority refuses. It refuses
+            // *here*, before the registry is read and before any external call, cache write or
+            // recovery write, so a caller without an authority has done nothing at all.
+            let authority = authority
                 .as_deref()
                 .map(recovery::model::Uuid::new)
                 .transpose()
                 .map_err(|refusal| anyhow::anyhow!("{}", refusal.detail))?
-            else {
-                // NOT the contract. The accepted binding (C04, C14) requires actual `reconcile`
-                // without an admitted authority to refuse, and this branch is the pre-recovery
-                // execution path instead. It is retained here because authority-gating it makes
-                // the Helm-profile vectors in `tests/cache_origin.rs` and
-                // `tests/cache_origin_adversary_pass1.rs` stop at the authority before they reach
-                // the cache boundary they exist to test — the exact vacuity C12 forbids — and the
-                // adaptation those need (routing them through the shared-code driver with a
-                // synthetic authority) is owed work, not something to leave half done.
-                // `tests/execution_recovery.rs::normal_execution_without_an_admitted_authority_refuses`
-                // is the case that stays red until it lands.
-                for service in &apply {
-                    let service = ess_deployment::Identifier::new(service)?;
-                    let release = desired
-                        .releases
-                        .get(&service)
-                        .expect("rollout order refers to a release");
-                    reconcile_release(&desired.cluster, release, &cache, &timeout)?;
-                }
-                if let Some(current) = &current {
-                    for service in &remove {
-                        let service = ess_deployment::Identifier::new(service)?;
-                        let release = current
-                            .releases
-                            .get(&service)
-                            .expect("the admitted baseline rollout order refers to a release");
-                        let mut process = ProcessCommand::new("helm");
-                        process
-                            .args(["uninstall", &release.release_name, "--namespace"])
-                            .arg(&release.namespace)
-                            .args(["--kube-context", &current.cluster]);
-                        run_external(&mut process, "Helm uninstall")?;
-                    }
-                }
-                println!(
-                    "{} — {} release(s) reconciled, {} removed",
-                    desired.environment,
-                    apply.len(),
-                    remove.len()
-                );
-                return Ok(ExitCode::SUCCESS);
-            };
+                .ok_or_else(|| {
+                    anyhow::anyhow!(
+                        "normal execution requires a caller-provisioned recovery authority: pass \
+                         --authority <UUID> naming an entry of the protected registry, or \
+                         --dry-run for a local unverified preview"
+                    )
+                })?;
             let retry_of = retry_of.as_deref().map(parse_invocation).transpose()?;
             let request = recovery::ReconcileRequest {
                 path: path.clone(),
@@ -3466,51 +3434,6 @@ fn verified_bundle(path: &Path, require_canonical: bool) -> Result<ess_deploymen
         );
     }
     Ok(verified)
-}
-
-fn reconcile_release(
-    cluster: &str,
-    release: &ess_deployment::DeploymentRelease,
-    cache: &Path,
-    timeout: &str,
-) -> Result<()> {
-    if release.chart.kind != ess_deployment::ArtifactKind::HelmChart {
-        bail!("{} does not select a Helm chart artifact", release.service);
-    }
-    let reference = format!(
-        "{}@{}",
-        release.chart.reference.trim_start_matches("oci://"),
-        release.chart.digest
-    );
-    let chart_bytes = oci_cache::payload(&reference, cache, oci_cache::Profile::Helm)?;
-    let staging = TemporaryDirectory::create("ess-helm-values")?;
-    let chart = staging.path().join("chart.tgz");
-    fs::write(&chart, chart_bytes).context("writing verified private Helm chart snapshot")?;
-    let values_path = staging.path().join("values.yaml");
-    let values = serde_yaml::to_string(&serde_json::json!({
-        "serviceAccount": {"name": &release.service_account},
-        "images": release.images.iter().map(|(name, artifact)| {
-            (name.as_str(), serde_json::json!({
-                "repository": &artifact.reference,
-                "digest": &artifact.digest,
-            }))
-        }).collect::<std::collections::BTreeMap<_, _>>(),
-        "config": &release.config,
-        "secrets": &release.secrets,
-        "endpoints": &release.endpoints,
-    }))?;
-    fs::write(&values_path, values)
-        .with_context(|| format!("writing transient Helm values for {}", release.service))?;
-
-    let mut process = ProcessCommand::new("helm");
-    process
-        .args(["upgrade", "--install", &release.release_name])
-        .arg(&chart)
-        .args(["--namespace", &release.namespace, "--create-namespace"])
-        .args(["--kube-context", cluster, "--values"])
-        .arg(&values_path)
-        .args(["--atomic", "--wait", "--timeout", timeout]);
-    run_external(&mut process, "Helm reconciliation")
 }
 
 fn project_openapi_interface(

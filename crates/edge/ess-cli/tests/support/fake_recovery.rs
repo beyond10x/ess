@@ -29,7 +29,7 @@
 
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
-use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
 
 use ess_cli::recovery::model::{invalid, Admitted, Refusal, RefusalCode, Uuid};
 use ess_cli::recovery::{Barrier, FileFacts, Host};
@@ -386,6 +386,785 @@ pub fn install_helm(root: &Path, bytes: &[u8]) -> std::io::Result<(PathBuf, Stri
 pub fn install_executable(root: &Path, source: &Path) -> std::io::Result<(PathBuf, String)> {
     let bytes = std::fs::read(source)?;
     install_helm(root, &bytes)
+}
+
+/// Lays out a complete protected arrangement whose authority admits exactly `desired`.
+///
+/// This is the "synthetic admitted authority" the offline qualification allows a test-only Rust
+/// adapter to inject, and it is what lets the cache-boundary vectors keep their assertions after
+/// `reconcile` became authority-gated. It is built *from the desired document's own bytes*, so the
+/// authority's pinned digest is the digest of the plan the vector actually wrote — which is why the
+/// admission it goes through is the production one, not a stub.
+///
+/// It admits nothing the production reader would not: the registry is scanned whole, each
+/// authority must equal its retained immutable revision, the kubeconfig must resolve to the pinned
+/// endpoint and trust, and the host and executor must match. What is *injected* is the
+/// administrative ownership of the files, and only that.
+pub fn provision_cache_lane(
+    root: &Path,
+    desired_bytes: &str,
+    services: &[(String, String, String)],
+) -> std::io::Result<Uuid> {
+    use ess_cli::recovery::model::{
+        Authority, AuthorityFormat, AuthorityRegistry, ChartSource, Digest, HelmBinary,
+        HelmProtocol, HelmVersion, HostPolicy, Index, NamespacePin, ObjectAddress,
+        ObjectFingerprint, ObjectKind, PrincipalPin, Profile, RegistryFormat, ReleasePermit,
+        ReleaseProjection, TargetPin, Text,
+    };
+    scaffold(root)?;
+    let text = |value: &str| Text::new(value).expect("a fixture Text admits");
+    let (helm_path, helm_digest) = install_helm(root, b"cache-lane fixture artifact")?;
+    let kubeconfig = write_kubeconfig(
+        root,
+        "kubeconfig.yaml",
+        "https://api.fixture.invalid:6443",
+        FIXTURE_CA,
+        &["fixture"],
+    )?;
+    let mut releases: Vec<ReleasePermit> = services
+        .iter()
+        .map(|(service, namespace, release_name)| ReleasePermit {
+            service: text(service),
+            namespace: NamespacePin {
+                name: text(namespace),
+                uid: text(&format!("ns-{namespace}")),
+            },
+            release_name: text(release_name),
+            incarnation: uuid(0x22),
+            may_create: true,
+            baseline: None,
+            desired: Some(ReleaseProjection {
+                chart: ChartSource {
+                    runtime_digest: Digest::of_bytes(service.as_bytes()),
+                    chart_name: text("fixture"),
+                    chart_version: text("1.0.0"),
+                },
+                objects: vec![ObjectFingerprint {
+                    object: ObjectAddress {
+                        kind: ObjectKind::Deployment,
+                        name: text(release_name),
+                    },
+                    content_digest: Digest::of_bytes(release_name.as_bytes()),
+                }],
+            }),
+            repair_from: None,
+        })
+        .collect();
+    releases.sort_by(|left, right| left.service.cmp(&right.service));
+    let authority = Authority {
+        format: AuthorityFormat::V1,
+        profile: Profile::SingleHostGeneratedHelm1,
+        authority_id: uuid(0x71),
+        revision: Index::new(1).expect("a fixture revision admits"),
+        target: TargetPin {
+            api_server: text("https://api.fixture.invalid:6443"),
+            ca_digest: Digest::of_bytes(FIXTURE_CA.as_bytes()),
+            identity_namespace: NamespacePin {
+                name: text("kube-system"),
+                uid: text("cluster-fixture"),
+            },
+        },
+        principal: PrincipalPin {
+            namespace: text("ess-system"),
+            name: text("ess-recovery"),
+            uid: text("sa-fixture"),
+        },
+        host: HostPolicy {
+            host_id: text("fixture-host"),
+            executor_uid: rustix::process::getuid().as_raw(),
+            store_epoch: uuid(0x11),
+            state_root: text(&root.join(STATE).display().to_string()),
+            kubeconfig: text(&kubeconfig.display().to_string()),
+            helm: HelmBinary {
+                path: text(&helm_path.display().to_string()),
+                digest: Digest::new(&helm_digest).expect("the installed digest admits"),
+                version: HelmVersion::new("v3.16.2").expect("a canonical version admits"),
+                protocol: HelmProtocol::Helm3Recovery1,
+            },
+        },
+        contexts: vec![text("fixture")],
+        environment: text("fixture"),
+        desired_digest: Digest::of_bytes(desired_bytes.as_bytes()),
+        baseline_digest: None,
+        releases,
+        quiescence: Vec::new(),
+    };
+    let id = authority.authority_id.clone();
+    publish_registry(
+        root,
+        &AuthorityRegistry {
+            format: RegistryFormat::V1,
+            generation: Index::new(1).expect("a fixture generation admits"),
+            authorities: vec![authority],
+        },
+    )?;
+    Ok(id)
+}
+
+/// The fixture certificate authority's embedded bytes, shared by every arrangement here.
+pub const FIXTURE_CA: &str = "LS0tLUZJWFRVUkUtQ0EtLS0t";
+
+// --- The synthetic cluster, and the platform the engine runs against ---------------------------
+//
+// The cluster's state is a file, not a field. That is the whole point: it outlives the process
+// that mutated it, a restart reads only what was actually written, and the executor's journal
+// never reconstructs it. A synthetic authenticated response is a synthetic authenticated response
+// — it establishes nothing about a real cluster's identity or the caller's authority — but what it
+// *is* is independently controlled, which is what a restart case needs.
+
+use ess_cli::recovery::model::{
+    Authority, Digest, HelmIdentity, Index, ObjectAddress, ObjectKind, ReleasePermit,
+    ReleaseProjection, Text,
+};
+use ess_cli::recovery::observe::{ApiRead, Identity};
+use ess_cli::recovery::process::Outcome;
+use ess_cli::recovery::{chart::PreparedChart, Helm, Platform};
+
+/// One live object as the synthetic cluster reports it, at a named generation.
+///
+/// A real object shape, not a token: the engine takes `observe::projection_digest` of whatever the
+/// API returns, so the caller-approved fingerprint has to be the projection digest of *this*, and
+/// the two differ whenever the generation does.
+pub fn live_object(
+    namespace: &str,
+    kind: ObjectKind,
+    name: &str,
+    generation: &str,
+) -> serde_json::Value {
+    serde_json::json!({
+        "apiVersion": kind.api_version(),
+        "kind": kind.to_string(),
+        "metadata": {
+            "name": name,
+            "namespace": namespace,
+            "labels": {"app.kubernetes.io/instance": name},
+            "annotations": {},
+            "ownerReferences": [],
+            "finalizers": [],
+            "uid": "server-assigned",
+            "resourceVersion": "server-assigned",
+            "generation": 7,
+            "creationTimestamp": "server-assigned",
+            "managedFields": ["server-assigned"]
+        },
+        "spec": {"replicas": 1, "generationTag": generation},
+        "status": {"observedGeneration": 7}
+    })
+}
+
+/// The approved live-projection digest for one address at one generation.
+///
+/// One function so a fingerprint the caller approves and a fingerprint the cluster reports are the
+/// same value by construction. A fixture that computed them separately would be asserting that two
+/// copies of a constant agree.
+pub fn live_digest(namespace: &str, kind: ObjectKind, name: &str, generation: &str) -> Digest {
+    ess_cli::recovery::observe::projection_digest(&live_object(namespace, kind, name, generation))
+}
+
+/// The independently controlled synthetic cluster, stored as one canonical file.
+#[derive(Debug, Clone)]
+pub struct Cluster {
+    path: PathBuf,
+}
+
+impl Cluster {
+    /// Opens the cluster whose state lives at `<root>/target-state/state.json`.
+    pub fn at(root: &Path) -> Self {
+        Self {
+            path: root.join(TARGET).join("state.json"),
+        }
+    }
+
+    fn read(&self) -> serde_json::Value {
+        std::fs::read_to_string(&self.path)
+            .ok()
+            .and_then(|text| serde_json::from_str(&text).ok())
+            .unwrap_or_else(|| serde_json::json!({"releases": {}, "objects": {}}))
+    }
+
+    fn write(&self, value: &serde_json::Value) {
+        if let Some(parent) = self.path.parent() {
+            let _ = std::fs::create_dir_all(parent);
+        }
+        std::fs::write(
+            &self.path,
+            serde_json::to_string(value).expect("the cluster state serializes"),
+        )
+        .expect("the synthetic cluster is writable");
+    }
+
+    /// Places one release exactly as `projection` describes it, marker and all.
+    ///
+    /// The projection carries the caller-approved fingerprints, so the cluster reports exactly what
+    /// the authority approved. A fixture that computed the two separately would be asserting that
+    /// two copies of a constant agree; this way the only thing under test is whether the engine
+    /// compares them.
+    pub fn place(
+        &self,
+        permit: &ReleasePermit,
+        marker: &str,
+        projection: &ReleaseProjection,
+        generation: &str,
+    ) {
+        let mut state = self.read();
+        let key = format!("{}/{}", permit.namespace.name, permit.release_name);
+        // An upgrade replaces the stored manifest, and an address the new manifest does not name
+        // stops existing. Modelling that is what makes "after apply, every baseline-only address
+        // is absent" a fact about the target rather than a fact about this fixture.
+        let previous: Vec<String> = state["releases"][&key]["manifest"]
+            .as_array()
+            .map(|items| {
+                items
+                    .iter()
+                    .filter_map(|item| item.as_str().map(str::to_owned))
+                    .collect()
+            })
+            .unwrap_or_default();
+        let retained: Vec<String> = projection
+            .objects
+            .iter()
+            .map(|object| format!("{}/{}", object.object.kind, object.object.name))
+            .collect();
+        for address in previous {
+            if !retained.contains(&address) {
+                if let Some(map) = state["objects"].as_object_mut() {
+                    map.remove(&format!("{}/{address}", permit.namespace.name));
+                }
+            }
+        }
+        state["releases"][&key] = serde_json::json!({
+            "description": marker,
+            "manifest": projection
+                .objects
+                .iter()
+                .map(|object| format!("{}/{}", object.object.kind, object.object.name))
+                .collect::<Vec<_>>(),
+        });
+        for object in &projection.objects {
+            Self::place_object(
+                &mut state,
+                permit.namespace.name.as_str(),
+                &object.object,
+                generation,
+            );
+        }
+        self.write(&state);
+    }
+
+    fn place_object(
+        state: &mut serde_json::Value,
+        namespace: &str,
+        address: &ObjectAddress,
+        generation: &str,
+    ) {
+        let key = format!("{namespace}/{}/{}", address.kind, address.name);
+        state["objects"][&key] = serde_json::json!({
+            "uid": format!("uid-{}-{}", address.kind, address.name),
+            "resourceVersion": "1",
+            "object": live_object(namespace, address.kind, address.name.as_str(), generation),
+        });
+    }
+
+    /// Places one object with no release, as a foreign occupant.
+    pub fn occupy(&self, namespace: &str, address: &ObjectAddress, generation: &str) {
+        let mut state = self.read();
+        Self::place_object(&mut state, namespace, address, generation);
+        state["objects"][&format!("{namespace}/{}/{}", address.kind, address.name)]["uid"] =
+            serde_json::json!("uid-foreign");
+        self.write(&state);
+    }
+
+    /// Removes one release and every object its manifest named.
+    pub fn retire(&self, namespace: &str, release: &str) {
+        let mut state = self.read();
+        let key = format!("{namespace}/{release}");
+        let manifest: Vec<String> = state["releases"][&key]["manifest"]
+            .as_array()
+            .map(|items| {
+                items
+                    .iter()
+                    .filter_map(|item| item.as_str().map(str::to_owned))
+                    .collect()
+            })
+            .unwrap_or_default();
+        if let Some(map) = state["releases"].as_object_mut() {
+            map.remove(&key);
+        }
+        let pinned: Vec<String> = state["pinned"]
+            .as_array()
+            .map(|items| {
+                items
+                    .iter()
+                    .filter_map(|item| item.as_str().map(str::to_owned))
+                    .collect()
+            })
+            .unwrap_or_default();
+        for address in manifest {
+            let key = format!("{namespace}/{address}");
+            if pinned.contains(&key) {
+                continue;
+            }
+            if let Some(map) = state["objects"].as_object_mut() {
+                map.remove(&key);
+            }
+        }
+        self.write(&state);
+    }
+
+    /// Leaves one object behind after a removal, as a finalizer or a retained direct object would.
+    ///
+    /// Pinned, not raced. A fixture that removed the object concurrently with the run would be
+    /// asserting a scheduling accident; this marks the address as one the uninstall does not
+    /// clear, which is exactly what a finalizer is.
+    pub fn pin(&self, namespace: &str, address: &ObjectAddress) {
+        let mut state = self.read();
+        let key = format!("{namespace}/{}/{}", address.kind, address.name);
+        let mut pinned: Vec<String> = state["pinned"]
+            .as_array()
+            .map(|items| {
+                items
+                    .iter()
+                    .filter_map(|item| item.as_str().map(str::to_owned))
+                    .collect()
+            })
+            .unwrap_or_default();
+        if !pinned.contains(&key) {
+            pinned.push(key);
+        }
+        state["pinned"] = serde_json::json!(pinned);
+        self.write(&state);
+    }
+
+    /// Rewrites one object's content, as manual drift between invocations would.
+    pub fn drift(&self, namespace: &str, address: &ObjectAddress, generation: &str) {
+        let mut state = self.read();
+        Self::place_object(&mut state, namespace, address, generation);
+        self.write(&state);
+    }
+
+    /// Rewrites one release's ownership marker, as a foreign incarnation would.
+    pub fn rebrand(&self, namespace: &str, release: &str, marker: &str) {
+        let mut state = self.read();
+        let key = format!("{namespace}/{release}");
+        state["releases"][&key]["description"] = serde_json::json!(marker);
+        self.write(&state);
+    }
+
+    /// Whether a release's storage is present.
+    pub fn has_release(&self, namespace: &str, release: &str) -> bool {
+        !self.read()["releases"][&format!("{namespace}/{release}")].is_null()
+    }
+
+    /// Whether one direct object address is occupied.
+    pub fn has_object(&self, namespace: &str, address: &ObjectAddress) -> bool {
+        !self.read()["objects"][&format!("{namespace}/{}/{}", address.kind, address.name)].is_null()
+    }
+}
+
+/// What the fixture's Helm does at one operation index.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum HelmFault {
+    /// The launch is definitely refused. Nothing ran.
+    NotLaunched,
+    /// The call started and failed with no effect on the target.
+    StartedNoEffect,
+    /// The call started, changed the target, and then failed.
+    EffectThenFailure,
+    /// The call started, changed the target, and its acknowledgement never arrived.
+    LostAcknowledgement,
+    /// The call started, changed the target, and timed out.
+    Timeout,
+}
+
+/// The engine's platform over the synthetic cluster.
+///
+/// Real production code runs above it: the same admission, the same journal, the same predicates,
+/// the same ordering. What is injected below it is the cluster's answers and the process outcomes,
+/// through the Rust seams the offline qualification names. A compatible answer here is not proof
+/// of stock Helm's semantics and a synthetic UID is not a real cluster's identity.
+pub struct FixturePlatform {
+    shared: std::sync::Arc<Shared>,
+    payload: Vec<u8>,
+}
+
+/// The parts the engine's Helm seam and the test both hold.
+///
+/// Shared by reference count rather than by lifetime: the `Helm` the platform hands back outlives
+/// the borrow that produced it, and a fixture that borrowed would need an escape hatch to say so.
+#[derive(Debug)]
+struct Shared {
+    cluster: Cluster,
+    faults: BTreeMap<usize, HelmFault>,
+    /// The operation index whose chart payload cannot be acquired, if any.
+    payload_fault: Option<usize>,
+    /// Whether authenticated reads are unavailable.
+    ///
+    /// Unavailable, not absent. A failed read establishes nothing about the target, which is the
+    /// whole of R04: an executor that treated it as "nothing is there" would infer empty state.
+    unavailable: bool,
+    calls: std::sync::Mutex<Vec<String>>,
+    index: AtomicUsize,
+    acquisitions: AtomicUsize,
+}
+
+impl std::fmt::Debug for FixturePlatform {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter
+            .debug_struct("FixturePlatform")
+            .field("shared", &self.shared)
+            .finish_non_exhaustive()
+    }
+}
+
+impl FixturePlatform {
+    /// A platform over one cluster, serving `payload` as every release's proved chart bytes.
+    pub fn new(cluster: Cluster, payload: Vec<u8>) -> Self {
+        Self {
+            shared: std::sync::Arc::new(Shared {
+                cluster,
+                faults: BTreeMap::new(),
+                payload_fault: None,
+                unavailable: false,
+                calls: std::sync::Mutex::new(Vec::new()),
+                index: AtomicUsize::new(0),
+                acquisitions: AtomicUsize::new(0),
+            }),
+            payload,
+        }
+    }
+
+    /// The same platform with one operation index failing in a named way.
+    #[must_use]
+    pub fn failing_at(self, index: usize, fault: HelmFault) -> Self {
+        let mut faults = self.shared.faults.clone();
+        faults.insert(index, fault);
+        self.rebuilt(faults, self.shared.payload_fault, self.shared.unavailable)
+    }
+
+    /// The same platform whose chart payload cannot be acquired at one operation index.
+    #[must_use]
+    pub fn acquisition_failing_at(self, index: usize) -> Self {
+        self.rebuilt(
+            self.shared.faults.clone(),
+            Some(index),
+            self.shared.unavailable,
+        )
+    }
+
+    /// The same platform whose authenticated reads are unavailable.
+    #[must_use]
+    pub fn unavailable(self) -> Self {
+        self.rebuilt(self.shared.faults.clone(), self.shared.payload_fault, true)
+    }
+
+    fn rebuilt(
+        &self,
+        faults: BTreeMap<usize, HelmFault>,
+        payload_fault: Option<usize>,
+        unavailable: bool,
+    ) -> Self {
+        Self {
+            shared: std::sync::Arc::new(Shared {
+                cluster: self.shared.cluster.clone(),
+                faults,
+                payload_fault,
+                unavailable,
+                calls: std::sync::Mutex::new(Vec::new()),
+                index: AtomicUsize::new(0),
+                acquisitions: AtomicUsize::new(0),
+            }),
+            payload: self.payload.clone(),
+        }
+    }
+
+    /// Every mutating call this platform was asked for, in order.
+    pub fn calls(&self) -> Vec<String> {
+        self.shared
+            .calls
+            .lock()
+            .expect("the call log is not poisoned")
+            .clone()
+    }
+
+    /// The cluster this platform acts on.
+    pub fn cluster(&self) -> &Cluster {
+        &self.shared.cluster
+    }
+}
+
+impl Shared {
+    fn next_index(&self) -> usize {
+        self.index.fetch_add(1, Ordering::Relaxed)
+    }
+}
+
+struct FixtureApi {
+    cluster: Cluster,
+    unavailable: bool,
+}
+
+impl ess_cli::recovery::observe::Api for FixtureApi {
+    fn identity_namespace(&self) -> Admitted<Identity> {
+        Ok(Identity {
+            name: "kube-system".to_owned(),
+            namespace: None,
+            uid: "cluster-fixture".to_owned(),
+        })
+    }
+
+    fn self_subject(&self) -> Admitted<Identity> {
+        Ok(Identity {
+            name: "ess-recovery".to_owned(),
+            namespace: Some("ess-system".to_owned()),
+            uid: "sa-fixture".to_owned(),
+        })
+    }
+
+    fn namespace(&self, name: &str) -> Admitted<Identity> {
+        Ok(Identity {
+            name: name.to_owned(),
+            namespace: None,
+            uid: format!("ns-{name}"),
+        })
+    }
+
+    fn object(&self, namespace: &str, address: &ObjectAddress) -> Admitted<ApiRead> {
+        if self.unavailable {
+            return Err(ess_cli::recovery::model::Refusal::new(
+                ess_cli::recovery::model::RefusalCode::ObservationUnavailable,
+                "the authenticated read did not complete",
+            ));
+        }
+        let state = self.cluster.read();
+        let key = format!("{namespace}/{}/{}", address.kind, address.name);
+        let found = &state["objects"][&key];
+        if found.is_null() {
+            return Ok(ApiRead::Absent);
+        }
+        Ok(ApiRead::Present {
+            uid: found["uid"].as_str().unwrap_or_default().to_owned(),
+            resource_version: found["resourceVersion"]
+                .as_str()
+                .unwrap_or_default()
+                .to_owned(),
+            // The whole object, exactly as it was placed. The engine takes its own projection
+            // digest of this; nothing here hands it a fingerprint to compare against itself.
+            object: found["object"].clone(),
+        })
+    }
+}
+
+struct FixtureHelm {
+    shared: std::sync::Arc<Shared>,
+}
+
+impl Helm for FixtureHelm {
+    fn release(&self, permit: &ReleasePermit, _context: &str) -> Admitted<Option<HelmIdentity>> {
+        let state = self.shared.cluster.read();
+        let key = format!("{}/{}", permit.namespace.name, permit.release_name);
+        let found = &state["releases"][&key];
+        if found.is_null() {
+            return Ok(None);
+        }
+        let manifest: Vec<ObjectAddress> = found["manifest"]
+            .as_array()
+            .map(|items| {
+                items
+                    .iter()
+                    .filter_map(|item| item.as_str())
+                    .filter_map(parse_address)
+                    .collect()
+            })
+            .unwrap_or_default();
+        Ok(Some(HelmIdentity {
+            description: Text::new(found["description"].as_str().unwrap_or("(none)"))?,
+            revision: Index::new(1)?,
+            storage_uid: Text::new(format!("secret-{key}"))?,
+            manifest,
+            hook_count: Index::new(0)?,
+        }))
+    }
+
+    fn render(
+        &self,
+        _chart: &PreparedChart,
+        permit: &ReleasePermit,
+        _context: &str,
+    ) -> Admitted<String> {
+        use std::fmt::Write as _;
+        let objects = permit
+            .desired
+            .as_ref()
+            .or(permit.baseline.as_ref())
+            .map_or(&[][..], |projection| projection.objects.as_slice());
+        let mut text = String::new();
+        for (index, object) in objects.iter().enumerate() {
+            if index > 0 {
+                text.push_str("---\n");
+            }
+            let kind = object.object.kind;
+            let _ = write!(
+                text,
+                "apiVersion: {}\nkind: {kind}\nmetadata:\n  name: {}\n  namespace: {}\n",
+                kind.api_version(),
+                object.object.name,
+                permit.namespace.name
+            );
+        }
+        Ok(text)
+    }
+
+    fn apply(
+        &self,
+        _chart: &PreparedChart,
+        permit: &ReleasePermit,
+        _context: &str,
+        marker: &str,
+        _timeout: &str,
+    ) -> Admitted<Outcome> {
+        let index = self.shared.next_index();
+        self.shared
+            .calls
+            .lock()
+            .expect("the call log is not poisoned")
+            .push(format!("apply {}", permit.service));
+        let Some(projection) = permit.desired.as_ref() else {
+            return Err(ess_cli::recovery::model::invalid(
+                "an apply was attempted for a permit with no desired projection",
+            ));
+        };
+        let effect = |shared: &Shared| shared.cluster.place(permit, marker, projection, "desired");
+        Ok(settle(&self.shared, index, effect))
+    }
+
+    fn remove(&self, permit: &ReleasePermit, _context: &str, _timeout: &str) -> Admitted<Outcome> {
+        let index = self.shared.next_index();
+        self.shared
+            .calls
+            .lock()
+            .expect("the call log is not poisoned")
+            .push(format!("remove {}", permit.service));
+        let effect = |shared: &Shared| {
+            shared
+                .cluster
+                .retire(permit.namespace.name.as_str(), permit.release_name.as_str());
+        };
+        Ok(settle(&self.shared, index, effect))
+    }
+}
+
+/// Applies the fault at `index`, if any, around the operation's effect on the cluster.
+fn settle(shared: &Shared, index: usize, effect: impl Fn(&Shared)) -> Outcome {
+    let acknowledged = Outcome {
+        launched: true,
+        status: Some(0),
+        timed_out: false,
+        stdout: Vec::new(),
+        stderr: Vec::new(),
+    };
+    match shared.faults.get(&index) {
+        None => {
+            effect(shared);
+            acknowledged
+        }
+        Some(HelmFault::NotLaunched) => Outcome {
+            launched: false,
+            status: None,
+            timed_out: false,
+            stdout: Vec::new(),
+            stderr: b"spawn refused".to_vec(),
+        },
+        Some(HelmFault::StartedNoEffect) => Outcome {
+            launched: true,
+            status: Some(1),
+            timed_out: false,
+            stdout: Vec::new(),
+            stderr: b"started and failed before any effect".to_vec(),
+        },
+        Some(HelmFault::EffectThenFailure) => {
+            effect(shared);
+            Outcome {
+                launched: true,
+                status: Some(1),
+                timed_out: false,
+                stdout: Vec::new(),
+                stderr: b"started, changed the target, then failed".to_vec(),
+            }
+        }
+        Some(HelmFault::LostAcknowledgement) => {
+            effect(shared);
+            Outcome {
+                launched: true,
+                status: None,
+                timed_out: false,
+                stdout: Vec::new(),
+                stderr: b"acknowledgement lost".to_vec(),
+            }
+        }
+        Some(HelmFault::Timeout) => {
+            effect(shared);
+            Outcome {
+                launched: true,
+                status: None,
+                timed_out: true,
+                stdout: Vec::new(),
+                stderr: b"timed out".to_vec(),
+            }
+        }
+    }
+}
+
+fn parse_address(value: &str) -> Option<ObjectAddress> {
+    let (kind, name) = value.split_once('/')?;
+    Some(ObjectAddress {
+        kind: ObjectKind::parse(kind)?,
+        name: Text::new(name).ok()?,
+    })
+}
+
+impl Platform for FixturePlatform {
+    fn api(
+        &self,
+        _authority: &Authority,
+        _context: &str,
+    ) -> Admitted<Box<dyn ess_cli::recovery::observe::Api>> {
+        Ok(Box::new(FixtureApi {
+            cluster: self.shared.cluster.clone(),
+            unavailable: self.shared.unavailable,
+        }))
+    }
+
+    fn helm(&self, _authority: &Authority, _prefix: &str) -> Admitted<Box<dyn Helm>> {
+        Ok(Box::new(FixtureHelm {
+            shared: std::sync::Arc::clone(&self.shared),
+        }))
+    }
+
+    fn payload(&self, release: &ess_deployment::DeploymentRelease) -> Admitted<Vec<u8>> {
+        let index = self.shared.acquisitions.fetch_add(1, Ordering::Relaxed);
+        if self.shared.payload_fault == Some(index) {
+            return Err(ess_cli::recovery::model::Refusal::new(
+                ess_cli::recovery::model::RefusalCode::PreparationFailed,
+                format!(
+                    "the pinned chart payload for {} was not proved: the acquisition failed",
+                    release.service
+                ),
+            ));
+        }
+        Ok(self.payload.clone())
+    }
+
+    fn private(&self, label: &str) -> Admitted<PathBuf> {
+        let directory = std::env::temp_dir().join(format!(
+            "ess-fixture-private-{}-{label}-{}",
+            std::process::id(),
+            self.shared.index.load(Ordering::Relaxed)
+        ));
+        std::fs::create_dir_all(&directory).map_err(|error| {
+            ess_cli::recovery::model::invalid(format!("a private directory: {error}"))
+        })?;
+        Ok(directory)
+    }
 }
 
 /// Builds a gzip/TAR chart archive out of exactly the members it is given.

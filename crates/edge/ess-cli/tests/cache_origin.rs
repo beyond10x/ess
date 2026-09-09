@@ -32,11 +32,37 @@ impl Fixture {
             NEXT_PLAN.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
         ));
         std::fs::write(&path, serde_json::to_vec(&plan).unwrap()).unwrap();
-        self.command()
-            .args(["deployment", "reconcile", "--path"])
-            .arg(path)
-            .arg("--cache")
-            .arg(self.0.join("cache"))
+        self.acquire(&path, true)
+    }
+
+    /// Acquires the pinned chart through the driver, with or without an admitted authority.
+    ///
+    /// `reconcile` is authority-gated now, so a vector that ran the shipped binary without one
+    /// would stop at the authority and never reach the cache boundary it exists to decide — the
+    /// vacuity C12 forbids. The driver is the test-only Rust adapter the offline qualification
+    /// allows: it admits a *synthetic* authority through the production registry scan and then
+    /// acquires the payload through the production OCI proof, so every original-byte assertion
+    /// below keeps its exact meaning. `authority: false` is the control that proves it.
+    fn acquire(&self, plan: &Path, authority: bool) -> Output {
+        static NEXT_JOB: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+        let job = self.0.join(format!(
+            "job-{}.json",
+            NEXT_JOB.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
+        ));
+        std::fs::write(
+            &job,
+            serde_json::to_vec(&serde_json::json!({
+                "root": self.0, "mode": "cache", "nonces": [],
+                "fail": null, "interrupt": null, "open_journal": false,
+                "plan": plan, "cache": self.0.join("cache"), "authority": authority
+            }))
+            .unwrap(),
+        )
+        .unwrap();
+        Command::new(env!("CARGO_BIN_EXE_ess-recovery-driver"))
+            .env("PATH", executors())
+            .env("ESS_CACHE_FIXTURE", &self.0)
+            .arg(&job)
             .output()
             .unwrap()
     }
@@ -1206,14 +1232,7 @@ fn failed_later_chart_stops_its_helm_call_after_preserving_earlier_release() {
     .unwrap();
     let desired = f.0.join("sequence.json");
     std::fs::write(&desired, serde_json::to_vec(&plan).unwrap()).unwrap();
-    let output = f
-        .command()
-        .args(["deployment", "reconcile", "--path"])
-        .arg(&desired)
-        .arg("--cache")
-        .arg(f.0.join("cache"))
-        .output()
-        .unwrap();
+    let output = f.acquire(&desired, true);
     std::fs::write(f.0.join("sequence.stdout"), &output.stdout).unwrap();
     std::fs::write(f.0.join("sequence.stderr"), &output.stderr).unwrap();
     assert!(!output.status.success());
@@ -1229,4 +1248,65 @@ fn failed_later_chart_stops_its_helm_call_after_preserving_earlier_release() {
     assert_eq!(calls[3][3], "first");
     assert_eq!(calls[4][5], format!("{}@{bad}", g.repository()));
     assert!(!g.entry(&f, &bad).exists());
+}
+
+/// The control that keeps every vector above from passing on an earlier refusal.
+///
+/// Each case in this file now reaches the cache through a driver that admits a *synthetic*
+/// authority first. That is only sound if the authority is what lets it through — so this runs an
+/// otherwise identical vector with the authority withheld and requires it to stop **before** the
+/// first ORAS call, before the cache directory exists and before Helm. Without this, "the cache
+/// refused" and "the authority refused" would be indistinguishable from the outside, and every
+/// original-byte assertion above would be vacuous.
+#[test]
+fn the_cache_vectors_reach_their_boundary_only_because_an_authority_admitted_them() {
+    let g = Graph::helm(false, false, false);
+    let requested = g.digest();
+
+    let admitted = Fixture::new();
+    g.install(&admitted, &requested);
+    let plan = admitted.0.join("control.json");
+    write_plan(&admitted, &plan, &requested);
+    let allowed = admitted.acquire(&plan, true);
+    assert!(
+        allowed.status.success(),
+        "with an admitted authority the vector reaches and completes the cache boundary: {}",
+        String::from_utf8_lossy(&allowed.stderr)
+    );
+    assert!(admitted.0.join("cache/oci-proof-v1").exists());
+    assert!(admitted.0.join("helm-chart").exists());
+    assert!(
+        calls(&admitted).iter().any(|call| call[0] == "oras"),
+        "the admitted run really fetched"
+    );
+
+    let withheld = Fixture::new();
+    g.install(&withheld, &requested);
+    let plan = withheld.0.join("control.json");
+    write_plan(&withheld, &plan, &requested);
+    let refused = withheld.acquire(&plan, false);
+    assert!(!refused.status.success(), "{refused:?}");
+    assert!(
+        String::from_utf8_lossy(&refused.stderr).contains("authority"),
+        "the refusal is the authority's: {}",
+        String::from_utf8_lossy(&refused.stderr)
+    );
+    assert!(
+        !withheld.0.join("cache").exists(),
+        "no cache is populated before an authority admits"
+    );
+    assert!(!withheld.0.join("helm-chart").exists());
+    assert!(
+        calls(&withheld).is_empty(),
+        "no external client is invoked: {:?}",
+        calls(&withheld)
+    );
+}
+
+/// Writes the one-release desired document the control vectors use.
+fn write_plan(f: &Fixture, path: &Path, digest: &Digest) {
+    let d = digest.as_str();
+    let plan = serde_json::json!({"format":"ess-deployment/1", "environment":"test", "stack_digest":d, "cluster":"test-cluster", "rollout_order":["first"], "releases":{"first":{"service":"first", "release_name":"first", "namespace":"test", "service_account":"default", "images":{"app":{"build_output":"app", "kind":"oci_image", "reference":"example.invalid/app", "digest":d, "platforms":{"linux/amd64":d}}}, "chart":{"build_output":"chart", "kind":"helm_chart", "reference":"oci://example.invalid/chart", "digest":d}}}});
+    let _ = f;
+    std::fs::write(path, serde_json::to_vec(&plan).unwrap()).unwrap();
 }
