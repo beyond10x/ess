@@ -123,9 +123,41 @@ without refusing `i64::MAX` as well. Two consequences, both deliberate:
 * the shared corpus carries no vector at `2^63`, because its answer depends on which lane reads it;
   the assertion lives in `ess-primitives/tests/primitive_corpus.rs::the_first_integer_beyond_i64_is_refused_by_the_lane_that_reads_the_token`,
   the lane that can express it;
-* the residual gap is one value wide, unreachable from any token a generated `int64` codec accepts,
-  and it closes in the canonical-serialization stage when the Go runtime decodes with
-  `json.Decoder.UseNumber` and the adapter keeps its `NumberToken`.
+* the residual gap **for admission** is one value wide, unreachable from any token a generated
+  `int64` codec accepts, and it closes in the canonical-serialization stage when the Go runtime
+  decodes with `json.Decoder.UseNumber`.
+
+### One rule for comparing integers
+
+The paragraph above is about *admission*, and read as a statement about **comparison** it would be
+wrong — which is how it was first written, and what the whole gate caught. A lane that holds a
+number as a binary64 collapses every integer above `2^53` for equality, not only the one point at
+the top of the range: `9007199254740992` and `9007199254740993` are one value to it. Comparison is
+where that matters most, because lineage admission asks whether a child scenario means the same
+thing as its parent, and "the same thing" must not depend on which language asks.
+
+**The rule every lane now follows: an integer token is compared by its digits, not by the binary64
+it rounds to.**
+
+| lane | how |
+|---|---|
+| Rust | `Number` carries the exact integer and `Ord` compares it (*The exact representation*, decision 3) |
+| browser adapter | `coverage-admission.js::exactInteger` keeps an integer token JS `Number` cannot hold exactly as a `NumberToken`, and `equal` already compares a `NumberToken` by its exact digits |
+| Go conformance runtime | comparison of suite documents is not this runtime's job — it runs a suite it is handed — so the rule reaches it as admission only, and `json.Decoder.UseNumber` in the canonical-serialization stage is what extends it |
+
+The browser adapter's exact path also lets it draw the `Integer` **admission** range exactly —
+`[i64::MIN, i64::MAX]`, from the digits — for any value that reached it as a token; the float image
+above is the range for a value that reached it as a JSON number instead.
+
+`ess-cli/tests/support/coverage_cases.rs` is where the two lanes are asked the same question about
+the same document, case by case. It listed `{"x": 9007199254740992}` against
+`{"x": 9007199254740993}` as an *equivalence*, and that expectation was the F08 defect written down
+as a test: both literals were one `f64`, so a child that replaced one with the other had changed
+nothing. It is now `child-swaps-two-integers-binary64-collapses`, expecting refusal, beside
+`collapsed-node-{input,params,payload,fields}` which asks the same of a `Node` payload; the
+equivalence arm keeps a numeric member in `{"x": 1}` against `{"x": 1.0}`, a value binary64 carries.
+The corpus carries `integer-two-to-53` and `integer-two-to-53-plus-one` so all three admission lanes
+answer at the collapse boundary as well as at the `i64` one.
 
 **What a binary64 is carried as.** `Repr::of_binary64` records the *canonical decimal name* of the
 `f64`, by two rules, because one is not enough to be truthful:
