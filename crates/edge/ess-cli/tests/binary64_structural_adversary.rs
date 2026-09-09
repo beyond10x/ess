@@ -22,10 +22,12 @@ fn snapshot(path: &Path) -> BTreeMap<PathBuf, Vec<u8>> {
 
 #[test]
 fn binary64_publication_never_replaces_sources_or_partially_updates_a_library() {
-    let root = Path::new(env!("CARGO_TARGET_TMPDIR")).join(format!(
-        "binary64-structural-adversary-cli-{}",
-        std::process::id()
-    ));
+    // Cached target output can outlive a runner and its process IDs.
+    let fixture = tempfile::Builder::new()
+        .prefix("binary64-structural-adversary-cli-")
+        .tempdir_in(env!("CARGO_TARGET_TMPDIR"))
+        .unwrap();
+    let root = fixture.path();
     let model = root.join("model");
     fs::create_dir_all(&model).unwrap();
     fs::write(model.join("system.yaml"), "format: ess/2\nsystem: probe\nversion: v1\ndomains: [probe.float]\ndomain: probe.float\ntypes:\n  - {name: probe.float.Number, kind: newtype, of: Binary64}\n").unwrap();

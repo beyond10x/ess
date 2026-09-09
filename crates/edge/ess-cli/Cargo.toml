@@ -69,6 +69,7 @@ path = "tests/support/fake_recovery.rs"
 # `tests/go_conformance.rs` writes a scenario by hand, in the same types synthesis writes one in, so
 # what the emitted Go runner is held to is the serialiser an adopter's suite comes out of.
 ess-primitives.workspace = true
+tempfile = "3.27"
 
 [lints]
 workspace = true
