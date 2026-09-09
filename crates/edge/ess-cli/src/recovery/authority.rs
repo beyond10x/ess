@@ -18,7 +18,7 @@ use std::path::{Path, PathBuf};
 
 use super::journal::{read_protected, under, RECORD_LIMIT};
 use super::model::{
-    canonical_endpoint, read_canonical, Admitted, Authority, AuthorityRegistry, Digest, Index,
+    canonical_endpoint, read_canonical, Admitted, Authority, AuthorityRegistry, Digest,
     ObjectAddress, Refusal, RefusalCode, RegistryFormat, RegistryRef, ReleaseProjection, Text,
     Uuid,
 };
@@ -583,11 +583,29 @@ pub fn recheck(host: &dyn Host, root: &Path, admitted: &RegistryRef) -> Admitted
     Ok(())
 }
 
-/// Refuses a retained generation older than admitted execution evidence.
-pub fn admit_generation(retained: Index, current: Index) -> Admitted<()> {
-    if current < retained {
+/// Admits the active registry against one piece of retained execution evidence.
+///
+/// C05 is one sentence with two halves, and both are decided here: "Reject a generation older than
+/// retained execution evidence, **or different bytes for an already retained generation**."
+///
+/// The second half needs the whole reference, not the generation. A generation is immutable by
+/// contract, so bytes that moved underneath one are a rewritten history — and nothing else in the
+/// reader can see it: `read_registry` compares the active snapshot with its own generation
+/// archive, and republishing at the same generation rewrites both. The retained `Opened` is the
+/// only witness that the bytes were ever different, which is why the binding names it.
+pub fn admit_generation(retained: &RegistryRef, current: &RegistryRef) -> Admitted<()> {
+    if current.generation < retained.generation {
         return Err(mismatch(format!(
-            "the active registry is generation {current} and retained evidence names {retained}"
+            "the active registry is generation {} and retained evidence names {}",
+            current.generation, retained.generation
+        )));
+    }
+    if current.generation == retained.generation && current.digest != retained.digest {
+        return Err(mismatch(format!(
+            "retained execution evidence ran under generation {} with different bytes than the \
+             active registry now carries at that same generation; a generation is immutable and \
+             this one has been rewritten",
+            retained.generation
         )));
     }
     Ok(())

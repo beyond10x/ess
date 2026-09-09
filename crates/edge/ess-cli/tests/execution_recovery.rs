@@ -3571,6 +3571,29 @@ impl Scenario {
         publish_registry(&self.root, &registry).expect("the repinned revision publishes");
     }
 
+    /// Republishes the registry at the next generation, with different bytes.
+    fn bump_generation(&self) {
+        let admitted = read_registry(&self.host, &self.roots.registry).expect("the registry reads");
+        let mut registry = admitted.registry;
+        registry.generation = Index::new(registry.generation.get() + 1).unwrap();
+        let authority = &mut registry.authorities[0];
+        authority.revision = Index::new(authority.revision.get() + 1).unwrap();
+        publish_registry(&self.root, &registry).expect("the next generation publishes");
+    }
+
+    /// Republishes the registry at the *same* generation, with different bytes.
+    ///
+    /// Every check the reader makes on its own still holds afterwards: the active snapshot equals
+    /// its generation archive, and each authority equals its retained revision archive, because
+    /// republishing rewrites all of them. Retained execution evidence is the only witness left.
+    fn rewrite_generation(&self) {
+        let admitted = read_registry(&self.host, &self.roots.registry).expect("the registry reads");
+        let mut registry = admitted.registry;
+        let authority = &mut registry.authorities[0];
+        authority.revision = Index::new(authority.revision.get() + 1).unwrap();
+        publish_registry(&self.root, &registry).expect("the same generation republishes");
+    }
+
     fn store(&self) -> ess_cli::recovery::journal::Store {
         open_store(&self.host, &self.root.join(STATE)).expect("the store admits")
     }
@@ -5232,6 +5255,45 @@ impl Scenario {
     }
 }
 
+/// The mutating calls a driver process reported, parsed from its own `calls:` line.
+///
+/// A list, not a substring. A `contains` over the rendered text is satisfied by *any* call list —
+/// including the one the case is asserting did not happen — so every process lane below compares
+/// the parsed list, and `no_process_lane_asserts_calls_by_substring` keeps it that way.
+fn driver_calls(output: &std::process::Output) -> Vec<String> {
+    let text = driver_text(output);
+    let line = text
+        .lines()
+        .find_map(|line| line.strip_prefix("calls: "))
+        .unwrap_or_else(|| panic!("a driver run reports the calls it made:\n{text}"))
+        .to_owned();
+    line.split(',')
+        .filter(|call| !call.is_empty())
+        .map(str::to_owned)
+        .collect()
+}
+
+/// No process lane decides a call list by substring.
+///
+/// The needle is assembled rather than written, so this case does not match its own source; the
+/// assertion below is what makes that non-vacuous.
+#[test]
+fn no_process_lane_asserts_calls_by_substring() {
+    let path = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/execution_recovery.rs");
+    let text = std::fs::read_to_string(&path).expect("this file reads");
+    let needle = format!("{}(\"calls: ", "contains");
+    assert!(
+        text.contains("fn driver_calls("),
+        "the scan is reading this file"
+    );
+    let offenders: Vec<&str> = text.lines().filter(|line| line.contains(&needle)).collect();
+    assert!(
+        offenders.is_empty(),
+        "a call list decided by substring is satisfied by any call list, including the one the \
+         case says did not happen; compare `driver_calls(..)` instead: {offenders:?}"
+    );
+}
+
 fn driver_text(output: &std::process::Output) -> String {
     format!(
         "{}{}",
@@ -5251,8 +5313,16 @@ fn process_lane_a_full_engine_run_completes_in_a_process_of_its_own() {
         text.contains("complete: every selected operation is accounted for"),
         "{text}"
     );
-    assert!(
-        text.contains("calls: apply api,apply checkout,apply web,remove legacy-c,remove legacy-b,remove legacy-a"),
+    assert_eq!(
+        driver_calls(&output),
+        [
+            "apply api",
+            "apply checkout",
+            "apply web",
+            "remove legacy-c",
+            "remove legacy-b",
+            "remove legacy-a"
+        ],
         "{text}"
     );
     for service in RETIREMENTS {
@@ -5315,9 +5385,10 @@ fn process_lane_r19_an_expired_observation_authorizes_no_launch() {
     let text = driver_text(&output);
     assert!(!output.status.success(), "{text}");
     assert!(text.contains("ObservationStale"), "{text}");
-    assert!(
-        text.contains("calls: \n") || text.contains("calls: "),
-        "{text}"
+    assert_eq!(
+        driver_calls(&output),
+        Vec::<String>::new(),
+        "an expired observation authorizes no launch: {text}"
     );
     assert!(
         scenario
@@ -5347,8 +5418,9 @@ fn process_lane_r29_a_failed_finalization_after_every_call_succeeded() {
     let second = scenario.drive("second", &serde_json::json!({}));
     let text = driver_text(&second);
     assert!(second.status.success(), "{text}");
-    assert!(
-        text.contains("calls: \n") || text.trim_end().ends_with("calls:"),
+    assert_eq!(
+        driver_calls(&second),
+        Vec::<String>::new(),
         "a later invocation observes instead of replaying every call: {text}"
     );
 }
@@ -5387,14 +5459,16 @@ fn r28_two_full_engines_racing_one_store_leave_exactly_one_holder() {
         (1, 1),
         "exactly one engine held the claim and exactly one was refused by it: {outputs:?}"
     );
-    assert!(
-        outputs.iter().any(|text| text.contains("calls: apply api")),
-        "the holder mutated: {outputs:?}"
-    );
-    assert!(
-        outputs
-            .iter()
-            .any(|text| text.contains("MutationBlocked") && text.contains("calls: \n")),
+    let calls = [driver_calls(&first), driver_calls(&second)];
+    let (holder, loser) = if outputs[0].contains("MutationBlocked") {
+        (&calls[1], &calls[0])
+    } else {
+        (&calls[0], &calls[1])
+    };
+    assert_eq!(holder, &["apply api"], "the holder mutated: {outputs:?}");
+    assert_eq!(
+        loser,
+        &Vec::<String>::new(),
         "and the loser mutated nothing: {outputs:?}"
     );
 
@@ -5408,17 +5482,24 @@ fn r28_two_full_engines_racing_one_store_leave_exactly_one_holder() {
     );
 }
 
-/// What the retained lock decides, and what the caller's decision decides — separately.
+/// C08's procedure, over the two states the binding actually defines.
 ///
-/// The correction that asked for this expected a decision plus a retained lock to refuse. It does
-/// not, and the reason is worth writing down rather than asserting away: C08 makes the *decision*
-/// authoritative, and the adversary's own repair case depends on an invocation proceeding under one
-/// while the archived claim is still on disk. What the retained lock does decide is that the
-/// resuming invocation publishes no claim of its own — so the claim on disk after it is still,
-/// exactly, the predecessor's. The full procedure is the one that hands the next invocation an
-/// exclusion of its own, and that is the difference this case measures.
+/// The middle state — a decision installed and the old lock still published — is **not** asserted
+/// here, and that omission is the point. C08 puts the whole procedure inside an execution-disabled
+/// administrative window: "During an execution-disabled administrative window, the caller archives
+/// the exact retained lock claim, installs a new authority revision containing a decision naming
+/// that claim, removes the old lock, then re-enables execution"
+/// (`docs/design/review-execution-recovery.md:296`). Between the second step and the third,
+/// execution is disabled, so the binding says nothing about what an invocation started there
+/// should do — and an earlier version of this case asserted that it *succeeds*, which pinned
+/// behaviour the binding does not state.
+///
+/// The engine's behaviour in that state is still exercised: the repair case
+/// `the_engine_performs_the_apply_an_exact_reviewed_repair_snapshot_authorizes` runs an invocation
+/// under a decision with the claim still on disk. What this case decides is the two ends the
+/// binding does define.
 #[test]
-fn a_retained_lock_and_the_callers_decision_decide_different_things() {
+fn c08_the_procedure_as_written_hands_the_next_engine_an_exclusion_of_its_own() {
     let scenario = build_scenario("quiescence-lock");
     let first = scenario.drive(
         "first",
@@ -5427,43 +5508,323 @@ fn a_retained_lock_and_the_callers_decision_decide_different_things() {
     assert!(!first.status.success(), "{}", driver_text(&first));
     let retained = retained_claim(&scenario).expect("the claim is retained");
 
-    // No decision at all: the next engine is refused by the claim it did not publish.
+    // Before the window: no decision at all, and the next engine is refused by the claim it did
+    // not publish. No timeout, no age and no PID enters into it.
     let blocked = scenario.drive("blocked", &serde_json::json!({}));
     let text = driver_text(&blocked);
     assert!(!blocked.status.success(), "{text}");
     assert!(text.contains("MutationBlocked"), "{text}");
     assert!(text.contains("still holds the target claim"), "{text}");
-    assert!(
-        text.trim_end().ends_with("calls:"),
+    assert_eq!(
+        driver_calls(&blocked),
+        Vec::<String>::new(),
         "and mutated nothing: {text}"
     );
-
-    // The decision, and only the decision: the engine proceeds, and the published claim afterwards
-    // is still the predecessor's, byte for byte.
-    scenario.record_quiescence(&retained);
-    let under_decision = scenario.drive("decided", &serde_json::json!({}));
-    let text = driver_text(&under_decision);
-    assert!(under_decision.status.success(), "{text}");
-    let after = retained_claim(&scenario).expect("the predecessor's claim is still published");
+    let unchanged = retained_claim(&scenario).expect("the claim is still published");
     assert_eq!(
-        after.claim, retained.claim,
-        "the resuming invocation published no claim of its own and reclaimed nothing"
+        (unchanged.claim, unchanged.digest),
+        (retained.claim.clone(), retained.digest.clone()),
+        "a refused executor reclaims nothing"
     );
-    assert_eq!(after.digest, retained.digest);
 
-    // The complete procedure. Now the next engine publishes its own exclusion and releases it on
-    // ordinary safe completion, which is what leaves the store with no claim at all.
-    scenario.archive_claim(&retained);
-    assert!(scenario
-        .root
-        .join("archived-claims")
-        .join(format!("{}.json", retained.claim.invocation.nonce))
-        .exists());
+    // The complete procedure, in the binding's order: archive the exact retained claim, install the
+    // decision naming it, remove the old lock. Only then is execution re-enabled.
+    scenario.grant_quiescence(&retained);
+    assert!(
+        scenario
+            .root
+            .join("archived-claims")
+            .join(format!("{}.json", retained.claim.invocation.nonce))
+            .exists(),
+        "the exact retained claim is archived before the lock goes"
+    );
+    assert!(
+        retained_claim(&scenario).is_none(),
+        "and the old lock is removed, which is what re-enables execution"
+    );
+
+    // After the window: the next engine publishes an exclusion of its own and releases it on
+    // ordinary safe completion.
     let resumed = scenario.drive("resumed", &serde_json::json!({}));
     let text = driver_text(&resumed);
     assert!(resumed.status.success(), "{text}");
     assert!(
         retained_claim(&scenario).is_none(),
         "an invocation that published its own claim releases it"
+    );
+}
+
+// --- Adversary pass 2 ---------------------------------------------------------------------------
+//
+// Two clauses of the binding that the wiring the correction commit added does not reach.
+
+/// A Helm that authors one `spec` field, and is the fixture's in every other respect.
+///
+/// The fixture's own `render` emits `apiVersion`, `kind` and `metadata` and nothing else, so every
+/// existing case's authored-field comparison is over four fields the live object carries by
+/// construction. A real chart authors the image, the selector and the replica count — the four
+/// things C07 step 8 names — so this wrapper renders one of them.
+struct AuthoringHelm {
+    inner: Box<dyn ess_cli::recovery::Helm>,
+}
+
+impl ess_cli::recovery::Helm for AuthoringHelm {
+    fn release(
+        &self,
+        permit: &ReleasePermit,
+        context: &str,
+    ) -> ess_cli::recovery::model::Admitted<Option<HelmIdentity>> {
+        self.inner.release(permit, context)
+    }
+
+    fn render(
+        &self,
+        chart: &ess_cli::recovery::chart::PreparedChart,
+        permit: &ReleasePermit,
+        context: &str,
+    ) -> ess_cli::recovery::model::Admitted<String> {
+        let rendered = self.inner.render(chart, permit, context)?;
+        Ok(rendered
+            .split("---\n")
+            .map(|document| format!("{document}spec:\n  replicas: 3\n"))
+            .collect::<Vec<_>>()
+            .join("---\n"))
+    }
+
+    fn apply(
+        &self,
+        chart: &ess_cli::recovery::chart::PreparedChart,
+        permit: &ReleasePermit,
+        context: &str,
+        marker: &str,
+        timeout: &str,
+    ) -> ess_cli::recovery::model::Admitted<ess_cli::recovery::process::Outcome> {
+        self.inner.apply(chart, permit, context, marker, timeout)
+    }
+
+    fn remove(
+        &self,
+        permit: &ReleasePermit,
+        context: &str,
+        timeout: &str,
+    ) -> ess_cli::recovery::model::Admitted<ess_cli::recovery::process::Outcome> {
+        self.inner.remove(permit, context, timeout)
+    }
+}
+
+/// The fixture platform, with the authoring Helm in place of its own.
+struct AuthoringPlatform {
+    inner: FixturePlatform,
+}
+
+impl ess_cli::recovery::Platform for AuthoringPlatform {
+    fn api(
+        &self,
+        authority: &Authority,
+        context: &str,
+    ) -> ess_cli::recovery::model::Admitted<Box<dyn ess_cli::recovery::observe::Api>> {
+        ess_cli::recovery::Platform::api(&self.inner, authority, context)
+    }
+
+    fn helm(
+        &self,
+        authority: &Authority,
+        prefix: &str,
+    ) -> ess_cli::recovery::model::Admitted<Box<dyn ess_cli::recovery::Helm>> {
+        Ok(Box::new(AuthoringHelm {
+            inner: ess_cli::recovery::Platform::helm(&self.inner, authority, prefix)?,
+        }))
+    }
+
+    fn payload(
+        &self,
+        release: &ess_deployment::DeploymentRelease,
+    ) -> ess_cli::recovery::model::Admitted<Vec<u8>> {
+        ess_cli::recovery::Platform::payload(&self.inner, release)
+    }
+
+    fn private(&self, label: &str) -> ess_cli::recovery::model::Admitted<PathBuf> {
+        ess_cli::recovery::Platform::private(&self.inner, label)
+    }
+}
+
+/// Runs one scenario against any admitted platform, through the production entry point.
+fn run_with(scenario: &Scenario, platform: &dyn ess_cli::recovery::Platform) -> Report {
+    execute(
+        &scenario.host,
+        &scenario.roots,
+        &scenario.request(),
+        &scenario.documents,
+        platform,
+    )
+}
+
+/// C07 step 8 on the predicate whose whole job is to decide that the desired state already holds.
+///
+/// The binding: "The existing authored-field and caller-approved complete live-projection
+/// comparisons apply to the projection being compared"
+/// (`docs/design/review-execution-recovery.md:250`), and step 8's reason for existing — "Thus a
+/// caller fingerprint cannot silently override a differing authored image, selector, replica count
+/// or secret reference" (`:223`). Predicate 1 compares the desired projection, so both comparisons
+/// apply to it.
+///
+/// The first half is the control: the same chart, the same live objects, reached through the
+/// post-mutation readback. It refuses, so the comparison is wired and the wrapper's authored field
+/// is really one the live object contradicts. The second half changes one thing — the live objects
+/// already carry the caller-approved desired fingerprints when the invocation starts, so `decide`
+/// answers `DesiredMatches` and returns before any authored field is looked at. Same chart, same
+/// cluster content, opposite answer.
+#[test]
+fn c07_step8_the_authored_comparison_is_skipped_on_the_desired_matches_predicate() {
+    let control = build_scenario("authored-control");
+    let drifting = AuthoringPlatform {
+        inner: control.platform(),
+    };
+    let refused = run_with(&control, &drifting);
+    assert_eq!(
+        refused.refusal.as_ref().map(|refusal| refusal.code),
+        Some(RefusalCode::ObservedDrift),
+        "the control: an authored replica count the live object does not carry refuses on the \
+         readback after the apply: {}",
+        refused.render()
+    );
+
+    // The same chart against a target that already carries the caller-approved desired
+    // fingerprints. Nothing else differs.
+    let matching = build_scenario("authored-desired-matches");
+    let stock = matching.platform();
+    let first = run_with(&matching, &stock);
+    assert!(
+        first.refusal.is_none(),
+        "the arrangement run: {}",
+        first.render()
+    );
+
+    let second = run_with(
+        &matching,
+        &AuthoringPlatform {
+            inner: matching.platform(),
+        },
+    );
+    assert_eq!(
+        second.refusal.as_ref().map(|refusal| refusal.code),
+        Some(RefusalCode::ObservedDrift),
+        "the desired-matches predicate compares the caller's fingerprint and never the authored \
+         fields, so a live object that contradicts the chart is reported settled: settled {:?}, \
+         complete {}",
+        second.settled,
+        second.complete()
+    );
+}
+
+/// C05's second clause: different bytes for an already retained generation.
+///
+/// The binding is one sentence with two halves: "Reject a generation older than retained execution
+/// evidence, **or different bytes for an already retained generation**"
+/// (`docs/design/review-execution-recovery.md:151`). `authority::admit_generation` takes two
+/// `Index` values and no digest, and its only caller passes it two generations, so the second half
+/// is not decided anywhere: `recheck` compares the bytes only against the snapshot *this*
+/// invocation admitted, which says nothing about what a retained `Opened` ran under.
+///
+/// The registry's own immutable archive cannot catch it either — `read_registry` compares the
+/// active snapshot with `registry-history/<generation>.json`, and republishing at the same
+/// generation rewrites both. The retained execution evidence is the only witness that the bytes
+/// moved, which is exactly why the binding names it.
+#[test]
+fn c05_different_bytes_at_a_retained_generation_are_admitted() {
+    let scenario = build_scenario("registry-same-generation");
+    let platform = scenario.platform();
+    let first = run_with(&scenario, &platform);
+    assert!(first.refusal.is_none(), "{}", first.render());
+
+    // Retained execution evidence names the generation it ran under, and the bytes.
+    let histories = scan_store(&scenario.host, &scenario.store()).expect("the store scans");
+    let evidence = histories
+        .iter()
+        .find_map(ess_cli::recovery::journal::History::context)
+        .expect("the completed invocation retained its context")
+        .registry
+        .clone();
+
+    // A new authority revision at the same generation, with the immutable archives rewritten
+    // under it. Everything the production reader checks still holds: the active snapshot equals
+    // its generation archive, and the authority equals its retained revision archive.
+    let admitted = read_registry(&scenario.host, &scenario.roots.registry).expect("it reads");
+    let mut registry = admitted.registry;
+    let authority = &mut registry.authorities[0];
+    authority.revision = Index::new(authority.revision.get() + 1).expect("a revision admits");
+    publish_registry(&scenario.root, &registry).expect("the same generation republishes");
+    let republished = read_registry(&scenario.host, &scenario.roots.registry).expect("it reads");
+    assert_eq!(
+        republished.reference.generation, evidence.generation,
+        "the same generation"
+    );
+    assert_ne!(
+        republished.reference.digest, evidence.digest,
+        "and different bytes, which is the condition the binding names"
+    );
+
+    let second = run_with(&scenario, &scenario.platform());
+    assert_eq!(
+        second.refusal.as_ref().map(|refusal| refusal.code),
+        Some(RefusalCode::AuthorityMismatch),
+        "different bytes for an already retained generation are rejected: settled {:?}, complete \
+         {}",
+        second.settled,
+        second.complete()
+    );
+}
+
+/// C05's second half is decided against *every* retained `Opened`, not only the newest.
+///
+/// The store is scanned in nonce order, so this arranges for the offending history to sort
+/// **first** and an innocent, newer one to sort last. An implementation that looked only at the
+/// latest retained context — or at the one it happened to reach last — would admit the rewritten
+/// generation and pass every other case in this file.
+#[test]
+fn c05_a_rewritten_generation_is_caught_through_a_retained_context_that_is_not_the_latest() {
+    let scenario = build_scenario("registry-not-latest");
+
+    // The older invocation, at generation 1, with a nonce that sorts last.
+    let first = scenario.drive(
+        "gen1",
+        &serde_json::json!({"nonces": (0x90..0xa0).map(|b| uuid(b).to_string()).collect::<Vec<_>>()}),
+    );
+    assert!(first.status.success(), "{}", driver_text(&first));
+
+    // The newer invocation, at generation 2, with a nonce that sorts first.
+    scenario.bump_generation();
+    let second = scenario.drive(
+        "gen2",
+        &serde_json::json!({"nonces": (0x50..0x60).map(|b| uuid(b).to_string()).collect::<Vec<_>>()}),
+    );
+    assert!(second.status.success(), "{}", driver_text(&second));
+
+    let histories = scan_store(&scenario.host, &scenario.store()).expect("the store scans");
+    assert_eq!(histories.len(), 2);
+    let generations: Vec<u64> = histories
+        .iter()
+        .filter_map(|history| history.context().map(|c| c.registry.generation.get()))
+        .collect();
+    assert_eq!(
+        generations,
+        vec![2, 1],
+        "the offending context is the first the scan reaches and the innocent one is the last"
+    );
+
+    // Generation 2's bytes move underneath it. Only the first retained context can see that.
+    scenario.rewrite_generation();
+    let third = scenario.drive("rewritten", &serde_json::json!({}));
+    let text = driver_text(&third);
+    assert!(!third.status.success(), "{text}");
+    assert!(
+        text.contains("AuthorityMismatch") && text.contains("has been rewritten"),
+        "different bytes at a generation some retained evidence already ran under are refused, \
+         wherever that evidence sits in the scan: {text}"
+    );
+    assert_eq!(
+        driver_calls(&third),
+        Vec::<String>::new(),
+        "and nothing mutates: {text}"
     );
 }

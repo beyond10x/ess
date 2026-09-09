@@ -797,15 +797,13 @@ impl Run<'_> {
         // Every retained reservation and history in the store, whether or not `--retry-of` named
         // one. An omitted predecessor reference is missing context, never a narrower search.
         let histories = journal::scan_store(self.host, &store)?;
-        // C05: a generation older than retained execution evidence is refused. Retained evidence
-        // names the generation it ran under, and a registry that has gone backwards is not a
-        // policy this invocation may adopt.
+        // C05, both halves, against **every** retained `Opened` and not only the newest: a
+        // registry that has gone backwards is not a policy this invocation may adopt, and neither
+        // is one whose bytes moved underneath a generation some retained evidence already ran
+        // under.
         for history in &histories {
             if let Some(context) = history.context() {
-                authority::admit_generation(
-                    context.registry.generation,
-                    registry.reference.generation,
-                )?;
+                authority::admit_generation(&context.registry, &registry.reference)?;
             }
         }
         // The retained claim is the fence, and the only one. An unresolved `Prepared` is *why* a
@@ -921,6 +919,54 @@ impl Run<'_> {
         Ok(())
     }
 
+    /// Whether the pre-state observation settles this operation without a mutation.
+    ///
+    /// C07 step 8 applies to *the projection being compared*, so it belongs beside the predicate
+    /// that compared one and not only to the post-mutation readback. Each of the five predicates
+    /// either compares the authored fields here, or has no rendered projection to compare them
+    /// against:
+    ///
+    /// | predicate | projection compared | authored fields |
+    /// |---|---|---|
+    /// | `DesiredMatches` | desired | **compared**. This is the answer that settles an operation without mutating, so a caller fingerprint approving an object that contradicts the chart would otherwise end the operation on the strength of the digest alone |
+    /// | `ApplyFromBaseline` | baseline | not compared: preparation renders the *desired* chart, and this profile renders no baseline projection, so there are no authored baseline fields in hand. The desired side is compared on the readback |
+    /// | `RemoveBaseline` | baseline | not compared, for the same reason — a retirement prepares no chart at all |
+    /// | `FirstCreation` | none | nothing is present to compare |
+    /// | `AlreadyAbsent` | none | nothing is present to compare |
+    fn settled_without_mutating(
+        permit: &ReleasePermit,
+        snapshot: &ReleaseSnapshot,
+        live: &std::collections::BTreeMap<model::ObjectAddress, serde_json::Value>,
+        authority: &Authority,
+        prepared: Option<&PreparedChart>,
+        operation: &Operation,
+    ) -> Admitted<bool> {
+        match observe::decide(
+            permit,
+            snapshot,
+            &authority.authority_id,
+            operation.retirement,
+        )? {
+            observe::Predicate::DesiredMatches => {
+                let admitted = prepared.ok_or_else(|| {
+                    Refusal::new(
+                        RefusalCode::PreparationFailed,
+                        "the desired predicate compares a projection this operation never rendered",
+                    )
+                })?;
+                observe::authored_holds(&admitted.rendered, live)?;
+                Ok(true)
+            }
+            // An authenticated absence is recorded as an observation and skips the mutation. It
+            // does not require `Prepared`, and it does not fabricate an earlier application fact
+            // to explain what it found.
+            observe::Predicate::AlreadyAbsent => Ok(true),
+            observe::Predicate::ApplyFromBaseline
+            | observe::Predicate::FirstCreation
+            | observe::Predicate::RemoveBaseline => Ok(false),
+        }
+    }
+
     #[allow(clippy::too_many_arguments)]
     fn operation(
         &self,
@@ -954,7 +1000,7 @@ impl Run<'_> {
 
         let started = self.host.now_ms();
         let identity = helm.release(permit, alias_of(authority))?;
-        let snapshot = observe::snapshot(api, permit, identity)?;
+        let (snapshot, live) = observe::observe(api, permit, identity)?;
         let finished = self.host.now_ms();
         let before = observation(
             at,
@@ -965,21 +1011,15 @@ impl Run<'_> {
         )?;
         let sequence = record.append(self.host, JournalFact::Observed(before.clone()))?;
 
-        match observe::decide(
+        if Self::settled_without_mutating(
             permit,
             &snapshot,
-            &authority.authority_id,
-            operation.retirement,
+            &live,
+            authority,
+            prepared.as_ref(),
+            operation,
         )? {
-            observe::Predicate::DesiredMatches | observe::Predicate::AlreadyAbsent => {
-                // A fresh match or an authenticated absence is recorded as an observation and
-                // skips the mutation. It does not require `Prepared`, and it does not fabricate an
-                // earlier application fact to explain what it found.
-                return Ok(());
-            }
-            observe::Predicate::ApplyFromBaseline
-            | observe::Predicate::FirstCreation
-            | observe::Predicate::RemoveBaseline => {}
+            return Ok(());
         }
 
         record.append(self.host, journal::prepared(at, sequence))?;

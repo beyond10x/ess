@@ -178,19 +178,10 @@ pub fn authored_fields_match(authored: &serde_json::Value, live: &serde_json::Va
     }
 }
 
-/// Acquires one complete snapshot over the permit's admitted address union.
+/// Acquires one complete snapshot over the permit's admitted address union, and the live objects.
 ///
 /// The union is the whole union — baseline and desired together — so a changed inventory never
 /// silently omits an address on either side.
-pub fn snapshot(
-    api: &dyn Api,
-    permit: &ReleasePermit,
-    helm: Option<HelmIdentity>,
-) -> Admitted<ReleaseSnapshot> {
-    Ok(observe(api, permit, helm)?.0)
-}
-
-/// The snapshot, and the complete live objects it was taken over.
 ///
 /// The snapshot keeps digests, because that is what is compared and what is persisted. The live
 /// objects are kept beside it for exactly one reason: C07 step 8 requires comparing *every authored
