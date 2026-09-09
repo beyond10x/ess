@@ -2,7 +2,7 @@
 format: aep.planning-md/1
 id: story:cli-presentation-binding
 kind: story
-status: active
+status: implemented
 title: Declare and project typed CLI presentation without changing service ownership
 refs:
 - provider: local
@@ -52,7 +52,7 @@ scope:
   path: website/docs/reference/cli.md
 - confidence: inferred
   path: website/docs/status/where-this-stands.md
-revision: 22
+revision: 24
 ---
 ## Operator authorization
 The Connectors operator approved closing necessary ESS gaps upstream to specify its local CLI. Work is local in the isolated cli-binding-ess-20260909 managed tree; preserve the live review-boundaries-21 wave and current main. Serving objective O2. No release/external publication or production provider/credential execution.
@@ -205,3 +205,37 @@ adversary. Log: .local/tmp/cli-wave/xtask-gate-regression-01.log. The failed ful
 remains in ess-full-gate-05.log. Preflight the later gate stages before repeating
 the full required task check. Neither this focused success nor any earlier partial
 consumer qualification is a full-gate success.
+
+## Completed qualification
+
+The full required task check exits zero on implementation source
+6f7ef46163e758f3401945d1a946e0fc80ebc003. It includes formatting, strict Clippy,
+workspace tests, documentation, examples, projection drift, support observations,
+fresh consumer qualification, fuzz replay and release/action checks. The separate
+task site-build also passed; subsequent follow-ups change test fixtures only.
+
+Fresh run run-1788982243806513564-3053364 executes all 152 exact cases: 130 new
+CLI consumer cases, 20 existing change-detection cases and two existing relation
+projection cases. One fresh metadata guard accounts for exactly six schema
+metadata relationships. The qualified result records 4,305 Supported, 1,182 Refused,
+six SchemaDocumentMetadata and the unchanged 157,677 BaselineUnknown cells.
+Unknown cells remain unproven; metadata accounting is not behavioral support.
+
+The 130 CLI cases exercise authored input, binding admission, artifact projection
+and direct process-adapter behavior through recording handlers. They do not claim
+generated-package subprocess execution or production provider execution; separate
+projection/process and downstream conformance tests cover their declared surfaces.
+
+Durable evidence in the primary ESS checkout is under
+.local/cli-contract-wave-20260909/: ess-full-gate-06.log, summary.json,
+metadata-guard.json, executed-cases.json, qualified-cases.md and
+qualification-and-checkpoints.tar.gz. Earlier failed and partial attempts remain
+in that archive. The long qualification cost is repeated complete-source and
+native/tool identity verification around every case; no guard was disabled.
+
+Connectors selects this exact clean source and its verified executable receipt.
+Its full gate with Rust 1.88 compatibility, regenerated provenance, website build
+and reference drift check pass. The selected source pin stays on this tested
+implementation commit; subsequent closure commits record evidence and lifecycle
+only. Local integration and managed retirement follow this qualification. No
+external publication, release, MCP or production credential/provider work occurred.
