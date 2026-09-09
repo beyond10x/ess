@@ -42,23 +42,24 @@ impl Node {
         match value {
             serde_json::Value::Null => Ok(Self::Null),
             serde_json::Value::Bool(value) => Ok(Self::Bool(value)),
-            // An integer token is read as an integer. `as_f64` alone collapsed `9007199254740993`
-            // onto `9007199254740992` on the way in, so the two arrived as one fact
-            // (`docs/design/review-primitive-semantics.md`, review finding F08). The value still
-            // *writes* as the binary64 it always did; only what it is has been fixed.
-            serde_json::Value::Number(value) => match value.as_i64() {
-                Some(exact) => Ok(Self::Number(Number::from(exact))),
-                // A `u64` above `i64::MAX` and a genuine float are both what they always were: the
-                // model's `Integer` is an `i64`, so there is no exact value here to preserve.
-                None => value
-                    .as_f64()
-                    .ok_or_else(|| format!("number `{value}` does not fit the domain number"))
-                    .and_then(|value| {
-                        Number::new(value)
-                            .map(Self::Number)
-                            .map_err(|e| e.to_string())
-                    }),
-            },
+            // **The read door rounds, and that is the law, not an omission.**
+            //
+            // `Serialize` writes the binary64 and may not do otherwise in this stage
+            // (`docs/design/review-primitive-semantics.md`, *The round-trip law*), so a reader that
+            // recovered the exact integer token would make every written number a different number
+            // on the way back: `9223372036854775807` was admitted as an `Integer`, written as
+            // `9.223372036854776e+18`, and then refused. Reading through `f64` is what makes a
+            // document a fixed point of write∘read. Exactness beyond binary64 exists only for
+            // values built in-process, and the canonical-serialization stage is what moves both
+            // doors at once.
+            serde_json::Value::Number(value) => value
+                .as_f64()
+                .ok_or_else(|| format!("number `{value}` does not fit the domain number"))
+                .and_then(|value| {
+                    Number::new(value)
+                        .map(Self::Number)
+                        .map_err(|e| e.to_string())
+                }),
             serde_json::Value::String(value) => Ok(Self::Text(value)),
             serde_json::Value::Array(values) => values
                 .into_iter()

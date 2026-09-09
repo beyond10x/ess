@@ -2559,6 +2559,12 @@ func canonicalUUID(text string) bool {
 }
 
 // paddedBase64 reports whether text is base64 with padding, the standard alphabet only.
+//
+// Padding is a *suffix*: strip up to two trailing '=', then every remaining byte must be in the
+// alphabet. A scan that admitted '=' at either of the last two positions accepted "AA=A" — padding
+// followed by data — which ess_primitives::facts::is_padded_base64, ess-gen's BASE64_PATTERN and
+// the browser adapter's regular expression all refuse. One grammar means one answer, and the corpus
+// carries those vectors so all three lanes are asked.
 func paddedBase64(text string) bool {
 	if len(text)%4 != 0 {
 		return false
@@ -2566,22 +2572,29 @@ func paddedBase64(text string) bool {
 	alphabet := func(b byte) bool {
 		return (b >= 'A' && b <= 'Z') || (b >= 'a' && b <= 'z') || (b >= '0' && b <= '9') || b == '+' || b == '/'
 	}
-	for i := 0; i < len(text); i++ {
-		if alphabet(text[i]) {
-			continue
-		}
-		// Padding is admitted only as the last one or two characters of the final group.
-		if text[i] == '=' && i >= len(text)-2 {
-			continue
-		}
-		return false
+	padding := 0
+	for padding < 2 && padding < len(text) && text[len(text)-1-padding] == '=' {
+		padding++
 	}
-	return len(text) == 0 || text[len(text)-1] != '=' || text[len(text)-2] == '=' || alphabet(text[len(text)-3])
+	for i := 0; i < len(text)-padding; i++ {
+		if !alphabet(text[i]) {
+			return false
+		}
+	}
+	return true
 }
 
-// integral reports whether a number has no fractional part and fits an int64.
+// integral reports whether a number has no fractional part and is in the admitted Integer range.
+//
+// The range is [-2^63, 2^63], the binary64 image of [math.MinInt64, math.MaxInt64] and not that
+// interval: this runtime sees a float64, and math.MaxInt64 written as a binary64 and read back is
+// 2^63. Comparing against 2^63 exclusively refused every integer above 9223372036854775296,
+// including the math.MaxInt64 the Rust admitter accepts. See the round-trip law in
+// docs/design/review-primitive-semantics.md.
+const integerBound = 9223372036854775808.0
+
 func integral(value float64) bool {
-	return value == math.Trunc(value) && value >= -9223372036854775808.0 && value < 9223372036854775808.0
+	return value == math.Trunc(value) && value >= -integerBound && value <= integerBound
 }
 
 // primitive reports why a value is not of the declared kind, or "" when it is.

@@ -293,6 +293,11 @@ function expectation(value) {
 // and the Go runtime's canonicalUUID, checked from all four against one corpus
 // (crates/specify/ess-primitives/tests/vectors/primitive-semantics.json).
 const canonicalUUID = /^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/
+// The admitted Integer range: [-2^63, 2^63], the binary64 image of [i64::MIN, i64::MAX] and not
+// that interval. A JSON number is a binary64 here, and i64::MAX written and read back is 2^63; an
+// exclusive bound refused every integer above 9223372036854775296, which the Rust admitter accepts.
+// See the round-trip law in docs/design/review-primitive-semantics.md.
+const integerBound = 9223372036854775808
 // Base64 with padding, the standard alphabet only, as ess-gen's BASE64_PATTERN publishes it.
 const paddedBase64 = /^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/
 // Whether a value is one the declared primitive admits.
@@ -304,7 +309,7 @@ export const primitiveAdmits = (kind, value) => {
   switch (kind) {
     case 'string': case 'timestamp': case 'duration': return typeof value === 'string'
     case 'boolean': return typeof value === 'boolean'
-    case 'integer': return typeof value === 'number' && Number.isInteger(value) && value >= -9223372036854775808 && value < 9223372036854775808
+    case 'integer': return typeof value === 'number' && Number.isInteger(value) && value >= -integerBound && value <= integerBound
     case 'decimal': return typeof value === 'number' && Number.isFinite(value)
     case 'uuid': return typeof value === 'string' && canonicalUUID.test(value)
     case 'bytes': return typeof value === 'string' && paddedBase64.test(value)

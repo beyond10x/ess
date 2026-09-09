@@ -66,6 +66,20 @@ enum Repr {
     Binary64(f64),
 }
 
+/// The top of the admitted `Integer` range: `i64::MAX` written as a binary64 and read back.
+///
+/// Not `i64::MAX`. `docs/design/review-primitive-semantics.md`'s round-trip law makes the admitted
+/// wire range the binary64 image of `[i64::MIN, i64::MAX]`, and the image of the top is `2^63`.
+const INTEGER_BOUND: f64 = 9_223_372_036_854_775_808.0;
+
+/// The same bound as an exact integer.
+const INTEGER_BOUND_UNITS: i128 = 9_223_372_036_854_775_808;
+
+/// Whether an exact integer is inside the admitted `Integer` range.
+const fn in_integer_range(units: i128) -> bool {
+    units >= -INTEGER_BOUND_UNITS && units <= INTEGER_BOUND_UNITS
+}
+
 /// The largest scale an exact decimal is held at.
 ///
 /// A literal needing more places than this is a binary64 and says so, rather than being silently
@@ -119,26 +133,43 @@ impl Number {
         }
     }
 
-    /// `true` when the value has no fractional part and fits an [`i64`].
+    /// `true` when the value has no fractional part and lies in the admitted `Integer` range.
     ///
-    /// Exact: `true` for `i64::MAX`, which the binary64 bound this used to carry answered `false`
-    /// for, and `false` for `1.5`.
+    /// The range is `[-2^63, 2^63]`, which is the binary64 image of `[i64::MIN, i64::MAX]` and not
+    /// that interval itself. The extra point at the top is `i64::MAX` written as a binary64 and
+    /// read back: an admitter that stopped at `i64::MAX` would refuse, on re-read, a value it had
+    /// just admitted and written, and `docs/design/review-primitive-semantics.md`'s round-trip law
+    /// is what forbids that. [`as_i64`](Self::as_i64) stays strict, so a reader that needs the
+    /// integer still gets `None` there.
     pub fn is_integral(self) -> bool {
-        self.as_i64().is_some()
+        match self.0 {
+            Repr::Exact {
+                units, scale: 0, ..
+            } => in_integer_range(units),
+            Repr::Exact { .. } => false,
+            // Every integral binary64 inside the range takes the exact arm of
+            // `Repr::of_binary64`, so a `Binary64` is never one. Written as the same predicate
+            // rather than as `false` so a future constructor cannot make this branch wrong.
+            Repr::Binary64(value) => {
+                value.fract() == 0.0 && (-INTEGER_BOUND..=INTEGER_BOUND).contains(&value)
+            }
+        }
     }
 
     /// The exact integer, when this value is one that fits an [`i64`].
+    ///
+    /// `None` for `2^63` — which [`is_integral`](Self::is_integral) admits, because that is what
+    /// `i64::MAX` comes back as, and which is still not an `i64`.
     pub fn as_i64(self) -> Option<i64> {
+        // A `Binary64` is a magnitude with no short decimal spelling — at or beyond `10^38`, or
+        // below `10^-38` — because every integral value inside the admitted range takes the exact
+        // arm of `Repr::of_binary64`. None of those is an `i64`, and neither is a value with a
+        // fractional part.
         match self.0 {
             Repr::Exact {
                 units, scale: 0, ..
             } => i64::try_from(units).ok(),
-            Repr::Exact { .. } => None,
-            Repr::Binary64(value) => {
-                // Unreachable through `new`, which routes an integral binary64 to `Exact`; written
-                // out so a future constructor cannot make this branch quietly wrong.
-                (value.fract() == 0.0).then(|| exact_of_binary64(value)?.0.try_into().ok())?
-            }
+            _ => None,
         }
     }
 
@@ -177,12 +208,31 @@ impl Number {
 }
 
 impl Repr {
-    /// The exact decimal a binary64 spells, where it has one this type can hold.
+    /// The canonical decimal name of a binary64.
     ///
-    /// `f64`'s `Display` is the shortest round-tripping decimal, so parsing it back gives an
-    /// `Exact` that renders and compares as the `f64` always did, plus an exact tiebreak against
-    /// values a text or an `i64` supplied.
+    /// Two rules, because one is not enough to be truthful:
+    ///
+    /// * **Inside the admitted `Integer` range, an integral binary64 is carried as the integer it
+    ///   is.** The shortest round-tripping decimal for `2^63` is `9223372036854776000`, which is a
+    ///   different number; carrying that made [`Number::is_integral`] refuse the value `i64::MAX`
+    ///   comes back as, and made [`Display`](fmt::Display) print a number the value is not.
+    /// * **Otherwise, the shortest decimal that round-trips** — what `f64`'s own `Display` has
+    ///   always printed, and what a reader means by the value.
+    ///
+    /// Both are injective on `f64`, and an integral spelling can never collide with a fractional
+    /// one, so the composition is injective too. That is exactly what the round-trip law needs:
+    /// `Repr::of_binary64` is a pure function of the `f64`, so a value that has crossed a document
+    /// is unchanged by every later write and read.
     fn of_binary64(value: f64) -> Self {
+        if value.fract() == 0.0 && (-INTEGER_BOUND..=INTEGER_BOUND).contains(&value) {
+            // `|value| <= 2^63` and the value is integral, so the conversion is exact.
+            #[allow(clippy::cast_possible_truncation)]
+            return Self::Exact {
+                units: value as i128,
+                scale: 0,
+                binary: value,
+            };
+        }
         match exact_of_decimal_text(&format!("{value}")) {
             Some((units, scale)) => Self::Exact {
                 units,
@@ -202,11 +252,6 @@ impl Repr {
             binary: units as f64,
         }
     }
-}
-
-/// The exact `(units, scale)` an integral binary64 spells, when it fits.
-fn exact_of_binary64(value: f64) -> Option<(i128, u8)> {
-    exact_of_decimal_text(&format!("{value}"))
 }
 
 /// Reads a decimal literal — `[+-]?digits[.digits][eE[+-]?digits]` — as `units × 10^-scale`.
@@ -356,26 +401,24 @@ impl PartialOrd for Number {
 }
 
 impl Ord for Number {
-    /// The binary64 first, the exact value as the tiebreak.
+    /// The exact value, and the binary64 only where there is no exact value.
     ///
-    /// `total_cmp` first preserves the one ordering fact `Primitive::Binary64` promises and nothing
-    /// else does — `-0.0 < 0.0` — and every value constructed from an `f64` is decided there, so no
-    /// existing comparison moves. The tiebreak is what fixes F08: `2^53` and `2^53 + 1` round to
-    /// one binary64, `total_cmp` calls them equal, and the exact comparison then says which is
-    /// which.
+    /// The exact comparison is what fixes F08: `2^53` and `2^53 + 1` are one `f64`, and comparing
+    /// the scaled integers says which is which. The `total_cmp` arm is reached only when one side
+    /// has no exact decimal spelling in an `i128` — a magnitude at or beyond `10^38`, or below
+    /// `10^-38` — and no [`Repr::Exact`] can have a binary64 in that range, so the two arms never
+    /// straddle one comparison and the order is total.
     ///
-    /// This composes to a correct numeric order because binary64 rounding is monotone: `x <= y`
-    /// implies `round(x) <= round(y)`, so ordering by `(round(x), x)` is ordering by `x`, with
-    /// signed zero as the one deliberate refinement.
+    /// **`-0.0` and `0.0` are one value.** `units × 10^-scale` has one zero, which is what the
+    /// `Decimal` row of the design page's matrix says; it is what `PartialEq` answered before this
+    /// type was rewritten (`eq` was `f64 ==`); and it is what a guard `amount == 0` has to mean.
+    /// The signed zero `Primitive::Binary64` promises survives in the bytes, because
+    /// [`Serialize`](serde::Serialize) writes the carried binary64.
     fn cmp(&self, other: &Self) -> Ordering {
-        self.get().total_cmp(&other.get()).then_with(|| {
-            match (self.exact(), other.exact()) {
-                (Some(left), Some(right)) => exact_cmp(left, right),
-                // One side is a magnitude with no short decimal spelling, and the binary64s have
-                // already been found equal. There is nothing further to say about them.
-                _ => Ordering::Equal,
-            }
-        })
+        match (self.exact(), other.exact()) {
+            (Some(left), Some(right)) => exact_cmp(left, right),
+            _ => self.get().total_cmp(&other.get()),
+        }
     }
 }
 

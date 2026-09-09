@@ -23984,6 +23984,16 @@
     "macro_ast_sha256": null,
     "reason": "Concrete owned data/API declaration retained alongside the named behavioral callers. Its presence is not a behavior case and does not prove nonreachability."
   },
+  "ess_primitives::lib(ess_primitives)::facts::const::INTEGER_BOUND": {
+    "class": "OwnedHelper",
+    "macro_ast_sha256": null,
+    "reason": "Concrete owned data/API declaration retained alongside the named behavioral callers. Its presence is not a behavior case and does not prove nonreachability."
+  },
+  "ess_primitives::lib(ess_primitives)::facts::const::INTEGER_BOUND_UNITS": {
+    "class": "OwnedHelper",
+    "macro_ast_sha256": null,
+    "reason": "Concrete owned data/API declaration retained alongside the named behavioral callers. Its presence is not a behavior case and does not prove nonreachability."
+  },
   "ess_primitives::lib(ess_primitives)::facts::const::MAX_SCALE": {
     "class": "OwnedHelper",
     "macro_ast_sha256": null,
@@ -24029,17 +24039,17 @@
     "macro_ast_sha256": null,
     "reason": "Concrete owned implementation/helper entry within the bounded caller families. Complete body evidence remains visible and changes require ordinary behavioral review; this finite classification grants no independent support or nonreachability."
   },
-  "ess_primitives::lib(ess_primitives)::facts::fn::exact_of_binary64": {
-    "class": "OwnedHelper",
-    "macro_ast_sha256": null,
-    "reason": "Concrete owned implementation/helper entry within the bounded caller families. Complete body evidence remains visible and changes require ordinary behavioral review; this finite classification grants no independent support or nonreachability."
-  },
   "ess_primitives::lib(ess_primitives)::facts::fn::exact_of_decimal_text": {
     "class": "OwnedHelper",
     "macro_ast_sha256": null,
     "reason": "Concrete owned implementation/helper entry within the bounded caller families. Complete body evidence remains visible and changes require ordinary behavioral review; this finite classification grants no independent support or nonreachability."
   },
   "ess_primitives::lib(ess_primitives)::facts::fn::exact_text": {
+    "class": "OwnedHelper",
+    "macro_ast_sha256": null,
+    "reason": "Concrete owned implementation/helper entry within the bounded caller families. Complete body evidence remains visible and changes require ordinary behavioral review; this finite classification grants no independent support or nonreachability."
+  },
+  "ess_primitives::lib(ess_primitives)::facts::fn::in_integer_range": {
     "class": "OwnedHelper",
     "macro_ast_sha256": null,
     "reason": "Concrete owned implementation/helper entry within the bounded caller families. Complete body evidence remains visible and changes require ordinary behavioral review; this finite classification grants no independent support or nonreachability."

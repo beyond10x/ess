@@ -157,3 +157,98 @@ fn the_two_grammars_refuse_what_no_named_form_of_the_value_is() {
     assert!(!ess_primitives::facts::is_padded_base64("AA== "));
     assert!(!ess_primitives::facts::is_padded_base64("AA=\n="));
 }
+
+/// The round-trip law, for every number the corpus names.
+///
+/// `docs/design/review-primitive-semantics.md`, *The round-trip law*: in this byte-preserving
+/// stage a `Number` that came from a document is a fixed point of write∘read, and **admission is
+/// stable across one write for every `Number`, however it was built**. The second half is the one
+/// with teeth — a suite this repository writes has to be admitted the same way when it is read
+/// back, or the repository refuses its own artifact.
+#[test]
+fn a_number_read_from_a_document_is_unchanged_by_writing_and_reading_it() {
+    let read = |text: &str| {
+        serde_json::from_str::<Number>(text).unwrap_or_else(|e| panic!("{text} is a number: {e}"))
+    };
+    let write = |number: Number| serde_json::to_string(&number).expect("a number serialises");
+
+    // Every spelling the corpus pins, plus the extremes the adversary's file drives.
+    let mut tokens: Vec<String> = corpus()
+        .numbers
+        .iter()
+        .map(|vector| vector.json.clone())
+        .collect();
+    tokens.extend(
+        [
+            "9007199254740993",
+            "9223372036854775807",
+            "-9223372036854775808",
+            "9223372036854775808",
+            "9223372036854777856",
+            "0",
+            "-0.0",
+            "1.5",
+            "19.99",
+        ]
+        .map(ToOwned::to_owned),
+    );
+
+    for token in tokens {
+        let once = read(&token);
+        let written = write(once);
+        let twice = read(&written);
+        assert_eq!(
+            twice, once,
+            "{token} was written {written} and came back different"
+        );
+        assert_eq!(
+            write(twice),
+            written,
+            "{token} does not write the same bytes the second time"
+        );
+        assert_eq!(
+            twice.is_integral(),
+            once.is_integral(),
+            "{token} changed admission when it was written as {written}"
+        );
+    }
+}
+
+/// Admission survives one write even where the exact value does not.
+///
+/// A `Number` built in-process may be more exact than binary64 carries — that is the whole point of
+/// `From<i64>` — and the first write loses the excess. What may never be lost is whether the value
+/// is an `Integer`, because `primitive_value` and `payload_agrees_with_its_shape` read that on both
+/// sides of a persisted suite.
+#[test]
+fn every_in_process_number_keeps_its_admission_across_the_write_that_loses_its_exactness() {
+    for vector in corpus().numbers {
+        let built = build(&vector.from);
+        let written = serde_json::to_string(&built).expect("a number serialises");
+        let read: Number = serde_json::from_str(&written).expect("what was written is readable");
+        assert_eq!(
+            read.is_integral(),
+            built.is_integral(),
+            "{}: built integral={}, written {written}, read back integral={}",
+            vector.name,
+            built.is_integral(),
+            read.is_integral()
+        );
+    }
+    // And the boundary the range is drawn at, from both sides.
+    assert!(Number::from(i64::MAX).is_integral());
+    assert!(Number::new(9_223_372_036_854_775_808.0)
+        .unwrap()
+        .is_integral());
+    assert_eq!(
+        Number::new(9_223_372_036_854_775_808.0).unwrap().as_i64(),
+        None
+    );
+    assert!(!Number::new(9_223_372_036_854_777_856.0)
+        .unwrap()
+        .is_integral());
+    assert!(Number::from(i64::MIN).is_integral());
+    assert!(!Number::new(-9_223_372_036_854_777_856.0)
+        .unwrap()
+        .is_integral());
+}

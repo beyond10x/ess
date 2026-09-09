@@ -11,7 +11,7 @@ this wave, and where the shared vector corpus lives.
 
 | site | before this page | consequence |
 |---|---|---|
-| `facts.rs:33` `pub struct Number(f64)` | every number is a binary64 | `9007199254740993` and `9007199254740992` are one value |
+| `facts.rs:33` `pub struct Number(f64)` | every number is a binary64 | `9007199254740993` and `9007199254740992` are one value, *including when they are built from two different `i64`s* — which is the half this wave fixes; see *The round-trip law* for the half it does not |
 | `facts.rs:69-73` `From<i64>` via `as f64` | `i64::MAX` becomes `9223372036854775808` | a fact built from an `i64` is not the `i64` |
 | `facts.rs:64-66` `is_integral` | `false` for every `\|v\| >= 2^53` | `Primitive::Integer` refuses an integer it declares admissible |
 
@@ -31,7 +31,7 @@ wave.**
 |---|---|---|---|---|---|
 | `String` | Unicode text | `Text` | string | `{"type":"string"}` | `string` / `String` |
 | `Boolean` | true or false | `Bool` | boolean | `{"type":"boolean"}` | `bool` / `bool` |
-| `Integer` | an exact integer in `[i64::MIN, i64::MAX]` | `Number` (`Repr::Exact`) | number | `{"type":"integer"}` | `int64` / `i64` |
+| `Integer` | in-process, an exact integer in `[i64::MIN, i64::MAX]`; **on the wire, an integral binary64 in `[-2^63, 2^63]`** | `Number` (`Repr::Exact`) | number | `{"type":"integer"}` | `int64` / `i64` |
 | `Decimal` | an exact decimal, `units × 10⁻ˢᶜᵃˡᵉ` | `Number` (`Repr::Exact`) | number | `{"type":"string","format":"decimal","pattern":DECIMAL_PATTERN}` | `Decimal(string)` / `Decimal(String)` |
 | `Binary64` | a finite IEEE-754 binary64, signed zero preserved | `Number` (`Repr::Binary64`) | number | `{"type":"number"}` | — (ess/2 only) |
 | `Timestamp` | an instant | `Text` | string | `{"type":"string","format":"date-time"}` | `string` / `String` |
@@ -46,6 +46,64 @@ round it (`types.rs:496-501`), while a conformance candidate carries it as a JSO
 
 `Binary64` has no `primitive_value` row and no witness row; it is refused before either
 (`witness.rs:499-501`) and admitted only in `ess/2` (`primitive_admission.rs:14-19`).
+
+**Why the `Integer` row has two halves, and why the wire half reaches `2^63`.** The wire spelling of
+a number is a binary64 in this stage (below), and `i64::MAX` written as a binary64 and read back is
+`2^63`. An admitter that stopped at `i64::MAX` would therefore refuse, on re-read, a value it had
+just admitted and written — see *The round-trip law*. So the admitted wire range is the binary64
+image of `[i64::MIN, i64::MAX]`, which is the closed range `[-2^63, 2^63]`; the first float above it,
+`2^63 + 2048`, is refused, and a corpus vector says so in all three languages. `Number::as_i64`
+stays strict — `2^63` has no `i64` — so a reader that needs the integer still gets `None` and must
+refuse. The canonical-serialization stage removes the gap by writing the integer.
+
+## The round-trip law
+
+**In this byte-preserving stage a `Number` that came from a document is a fixed point of
+write∘read.** For every JSON number token `t`:
+
+```
+read(write(read(t))) == read(t)          and          is_integral(read(t)) == is_integral(read(write(read(t))))
+```
+
+The first half is value stability; the second is *admission* stability, and it is the one that has
+teeth — a suite this repository writes must be admitted the same way when it is read back
+(`admission.rs::payload_agrees_with_its_shape`), or the repository refuses its own artifact.
+
+The law is forced, not chosen. `Serialize` writes the binary64 and may not do otherwise until a
+format version says so (`docs/design/review-conformance-coverage.md:172-176`, and the `1.0` witness
+pin). A `read` that recovered more precision than `write` emits would make every written value a
+different value on the way back. **So `read` rounds: `Node::from_value` and `Number::deserialize`
+both go through `f64`, and every number that has crossed a document is exactly its binary64.**
+
+That is the one door. The consequence, stated so nobody has to discover it:
+
+| where a `Number` comes from | how exact it is |
+|---|---|
+| `From<i64>`, `From<usize>`, `From<u32>` | exact, the whole integer |
+| `FactValue::parse_literal` of an authored decimal | exact, up to 38 significant digits |
+| `Node::from_value` / `Number::deserialize` — anything read from a document | exactly its binary64, and nothing more |
+
+So **`9007199254740992` and `9007199254740993` are two facts when they are built from `i64`s, and
+one value once either has been through a document.** That is not the end state; it is what "the
+bytes do not move" costs, and removing it is the whole content of the canonical-serialization stage.
+In-process exactness is lost at the first write, deliberately and visibly — `Number::exact_text`
+is what a caller uses before that happens.
+
+`Number::new` is a fixed point for the same reason: `Repr::of_binary64` is a pure function of the
+`f64`, so a value built from an `f64` is unchanged by any number of writes and reads.
+
+**What a binary64 is carried as.** `Repr::of_binary64` records the *canonical decimal name* of the
+`f64`, by two rules, because one is not enough to be truthful:
+
+* inside the admitted `Integer` range, an integral binary64 is carried as **the integer it is** —
+  the shortest round-tripping decimal for `2^63` is `9223372036854776000`, a different number, and
+  carrying that made `is_integral` refuse the value `i64::MAX` comes back as and made `Display`
+  print a number the value is not;
+* otherwise, the **shortest decimal that round-trips**, which is what `f64`'s own `Display` has
+  always printed and what a reader means by the value.
+
+Both are injective on `f64`, and an integral spelling never collides with a fractional one, so the
+composition is injective — which is precisely what the law needs.
 
 ## The exact representation
 
@@ -74,39 +132,56 @@ bytes different from the ones it produced before, because it serializes the same
 did. An integral witness is still `1.0` (`witness.rs:47-52`); a report still quotes what
 `quote(&Node)` quoted (`report.rs:417-422`).
 
-**3. Ordering is the binary64 first, the exact value as the tiebreak.**
+**3. Ordering is the exact value, and the binary64 only where there is no exact value.**
 
 ```
-cmp(a, b) = a.binary.total_cmp(&b.binary).then(exact_cmp(a, b))
+cmp(a, b) = match (a.exact(), b.exact()) {
+    (Some(l), Some(r)) => exact_cmp(l, r),
+    _                  => a.get().total_cmp(&b.get()),
+}
 ```
 
-`total_cmp` first preserves the one ordering fact `Binary64` promises and nothing else does:
-`-0.0 < 0.0` (`model-binary64.md`). The tiebreak is what fixes F08 — `2^53` and `2^53+1` round to
-the same `f64`, `total_cmp` returns `Equal`, and the exact comparison then returns `Less`. The
-composition is a correct numeric order because binary64 rounding is monotone: if `x ≤ y` then
-`round(x) ≤ round(y)`, so sorting by `(round(x), x)` is sorting by `x`, with signed zero as the one
-deliberate refinement.
+The exact comparison is what fixes F08: `2^53` and `2^53 + 1` are one `f64`, and comparing the
+scaled integers says which is which. The `total_cmp` arm is reached only when one side has no exact
+decimal spelling in an `i128` — a magnitude at or beyond `10^38`, or below `10^-38` — and no `Exact`
+value can have a binary64 in that range, so the two arms never straddle one comparison and the order
+is total.
+
+**`-0.0` and `0.0` are one value**, because `units × 10⁻ˢᶜᵃˡᵉ` has one zero and the `Decimal` row of
+the matrix says so. It is also what `PartialEq` answered before this page (`eq` was `f64 ==`), what
+IEEE-754 says, and what a guard `amount == 0` has to mean. The signed zero `Primitive::Binary64`
+promises survives where the model actually promises it — in the **bytes**: `Serialize` writes the
+carried binary64, so a field spelt `-0.0` is still written `-0.0`
+(`ess-conformance/src/counts.rs:477-478` pins that spelling and is unaffected).
 
 `PartialEq` is `cmp(..) == Equal`, which repairs a pre-existing `Eq`/`Ord` disagreement: `eq` was
 `f64 ==` (so `-0.0 == 0.0`) while `cmp` was `total_cmp` (so `-0.0 < 0.0`), which is the state a
-`BTreeMap<Number, _>` and a `Vec<Number>::contains` gave different answers in.
+`BTreeMap<Number, _>` and a `Vec<Number>::contains` gave different answers in. The disagreement is
+resolved in the direction `eq` already had.
 
 ### What `Number` gains
 
 | method | answer |
 |---|---|
 | `get() -> f64` | unchanged: the binary64, for every existing caller |
-| `is_integral() -> bool` | exact: `true` for every `i64`, including `i64::MAX`; `false` for `1.5` |
-| `as_i64() -> Option<i64>` | the exact integer when there is one |
+| `is_integral() -> bool` | no fractional part **and** inside the admitted `Integer` range `[-2^63, 2^63]`: `true` for every `i64` including `i64::MAX`, `true` for the `2^63` that `i64::MAX` writes as, `false` for `1.5` and for `2^63 + 2048` |
+| `as_i64() -> Option<i64>` | the exact integer when there is one; `None` for `2^63`, which is admitted but is not an `i64` |
 | `exact_text() -> String` | the exact decimal spelling, no exponent |
 
-`Display` is the exact spelling. For every value expressible as an `f64` shortest-round-trip
-rendering below `2^53` that is the identical string it was; above `2^53` it stops printing a number
-the value is not (`9223372036854775807`, not `9223372036854775808`).
+`Display` is the carried decimal. Below `2^53` that is the identical string it always was, and so
+every fixture in this repository is unmoved; above it, `Number::from(i64::MAX)` prints
+`9223372036854775807` rather than the `9223372036854775808` its binary64 rounds to, and the `2^63`
+that comes back off the wire prints `9223372036854775808` rather than the `9223372036854776000` its
+shortest decimal would have claimed. `Display` reaches diagnostics only — a report quotes through
+`serde_json` (`report.rs:417-422`), so no persisted byte moves.
 
 ## Admission
 
-One grammar, three implementations, one corpus.
+One grammar, three implementations, one corpus. **One grammar means one answer per vector, in every
+language, including the vectors nobody thought to write** — `"AA=A"` is padding followed by data,
+which `BASE64_PATTERN`, the browser regular expression and `is_padded_base64` all refuse and a
+hand-written Go scan admitted. The corpus is where that is settled, so a grammar restated in a third
+language is checked rather than trusted; every vector below is answered by all three lanes.
 
 `ess_primitives::facts` gains the two predicates — `is_canonical_uuid` and `is_padded_base64` —
 because `ess-primitives` is the only crate `ess-domain`, `ess-conformance`, `ess-gen` and `infra-*`
@@ -159,10 +234,11 @@ So stage two, not this wave:
 
 1. `Serialize` writes `1` for an integral `Number` and the exact decimal string for a `Decimal`,
    behind `ess-conformance/6` and `ess-conformance-report/2`.
-2. `Node::from_value` reads through `serde_json`'s `arbitrary_precision`, so a decimal *arrives*
-   exact instead of being exact only when constructed in Rust. Until then the exactness this page
-   delivers is exactness of construction, comparison and admission — a `Number` that has been
-   through JSON is the binary64 it was written as.
+2. `Node::from_value` reads through `serde_json`'s `arbitrary_precision` **and** `Serialize` writes
+   the exact digits, together and behind one format version — neither alone, because either alone
+   breaks *The round-trip law*. Until then the exactness this page delivers is exactness of
+   construction, comparison and admission, and a `Number` that has been through a document is the
+   binary64 it was written as.
 3. The `Decimal` disagreement between the schema (a string) and the conformance node (a number) is
    resolved in one direction.
 
