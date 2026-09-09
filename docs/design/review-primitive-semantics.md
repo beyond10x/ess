@@ -137,19 +137,26 @@ where that matters most, because lineage admission asks whether a child scenario
 thing as its parent, and "the same thing" must not depend on which language asks.
 
 **The rule every lane now follows: an integer token is compared by its digits, not by the binary64
-it rounds to.**
+it rounds to.** All three lanes compare — the Rust admitter, the browser adapter, and the generated
+Go runtime, whose `admitRunInput` checks a child suite against its parent
+(`ess-cli/tests/coverage_lineage.rs`). An earlier draft of this table said comparison was not the Go
+runtime's job; the whole gate showed otherwise, and the row below is what it actually does.
 
 | lane | how |
 |---|---|
 | Rust | `Number` carries the exact integer and `Ord` compares it (*The exact representation*, decision 3) |
 | browser adapter | `coverage-admission.js::exactInteger` keeps an integer token JS `Number` cannot hold exactly as a `NumberToken`, and `equal` already compares a `NumberToken` by its exact digits |
-| Go conformance runtime | comparison of suite documents is not this runtime's job — it runs a suite it is handed — so the rule reaches it as admission only, and `json.Decoder.UseNumber` in the canonical-serialization stage is what extends it |
+| Go conformance runtime | `runtime.go::exactInteger` keeps an integer token `float64` cannot hold exactly as an `exactNumber{digits}`, and `reflect.DeepEqual` compares those digits. The document already arrives through `json.Decoder.UseNumber` (`strictJSON`), so the token was there all along; `nodeMeaning` used to throw it away with `json.Number.Float64()` |
 
-The browser adapter's exact path also lets it draw the `Integer` **admission** range exactly —
-`[i64::MIN, i64::MAX]`, from the digits — for any value that reached it as a token; the float image
-above is the range for a value that reached it as a JSON number instead.
+**Comparison changes; admission does not.** The kept digits live only inside each lane's *meaning*
+of a document — `scenarioMeaning` in Go, `meaning` in the browser adapter — and never reach a
+target: `primitive()` still answers about the `float64` an implementation returned, with the same
+answers and the same corpus vectors as before. The browser adapter's exact path does additionally
+let it draw the `Integer` **admission** range exactly — `[i64::MIN, i64::MAX]`, from the digits —
+for a value that reached it as a token; the float image above is the range for a value that reached
+it as a JSON number instead.
 
-`ess-cli/tests/support/coverage_cases.rs` is where the two lanes are asked the same question about
+`ess-cli/tests/support/coverage_cases.rs` is where the three lanes are asked the same question about
 the same document, case by case. It listed `{"x": 9007199254740992}` against
 `{"x": 9007199254740993}` as an *equivalence*, and that expectation was the F08 defect written down
 as a test: both literals were one `f64`, so a child that replaced one with the other had changed

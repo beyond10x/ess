@@ -699,6 +699,9 @@ func meaningScalar(value any) any {
 		return false
 	}
 	if meaningDecimal.MatchString(raw) {
+		if digits, ok := exactInteger(raw); ok {
+			return exactNumber{digits: digits}
+		}
 		if number, err := strconv.ParseFloat(raw, 64); err == nil {
 			return number
 		}
@@ -962,9 +965,65 @@ func valuesMeaning(values map[string]any) any {
 	}
 	return result
 }
+// exactNumber is an integer token float64 cannot hold exactly, kept as its canonical digits.
+//
+// A distinct type so reflect.DeepEqual tells it apart from both a float64 and a string node, and so
+// it can never be mistaken for a value an implementation returned: it exists only inside
+// scenarioMeaning, which compares two documents and never reaches a target.
+type exactNumber struct{ digits string }
+
+// exactInteger returns the canonical digits of an integer token float64 cannot hold exactly.
+//
+// float64 collapses every integer above 2^53, so 9007199254740992 and 9007199254740993 were one
+// value here and two in the Rust admitter and the browser adapter: a child scenario that swapped
+// one for the other compared equal in this runtime and unequal in the other two lanes, and the
+// generated Go suite admitted a lineage they refuse. See *One rule for comparing integers* in
+// docs/design/review-primitive-semantics.md. Admission is untouched: primitive() still answers on
+// the float64 an implementation returned.
+func exactInteger(raw string) (string, bool) {
+	body, negative := raw, false
+	if strings.HasPrefix(body, "+") {
+		body = body[1:]
+	} else if strings.HasPrefix(body, "-") {
+		body, negative = body[1:], true
+	}
+	// An integer written with a fractional part of zeroes is the same integer.
+	if dot := strings.IndexByte(body, '.'); dot >= 0 {
+		if strings.Trim(body[dot+1:], "0") != "" {
+			return "", false
+		}
+		body = body[:dot]
+	}
+	if body == "" {
+		return "", false
+	}
+	for index := 0; index < len(body); index++ {
+		if body[index] < '0' || body[index] > '9' {
+			return "", false
+		}
+	}
+	number, err := strconv.ParseFloat(raw, 64)
+	// A token no float64 holds keeps whatever answer this runtime already gave it, and a token
+	// float64 holds exactly needs no digits kept.
+	if err != nil || math.IsInf(number, 0) || (number == math.Trunc(number) && math.Abs(number) <= 9007199254740991) {
+		return "", false
+	}
+	body = strings.TrimLeft(body, "0")
+	if body == "" {
+		body = "0"
+	}
+	if negative && body != "0" {
+		return "-" + body, true
+	}
+	return body, true
+}
+
 func nodeMeaning(value any) any {
 	switch value := value.(type) {
 	case json.Number:
+		if digits, ok := exactInteger(value.String()); ok {
+			return exactNumber{digits: digits}
+		}
 		number, _ := value.Float64()
 		return number
 	case []any:
