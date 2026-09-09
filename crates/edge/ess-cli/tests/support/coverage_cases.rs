@@ -242,7 +242,42 @@ fn node_cases(result: &mut Vec<Case>) {
         append(
             result,
             &format!("changed-node-{owner}"),
-            &pair(&left, &json!([step])),
+            &pair(&left, &json!([step.clone()])),
+            false,
+        );
+
+        // The other direction of the same rule: the exact-integer path applies to a JSON *number*
+        // token, and a JSON string is never reinterpreted however numeric it looks. The keys are
+        // astral and BMP so the string arm carries the arbitrary-key check the number arm has.
+        let lookalike = |first: &str, second: Value| {
+            wrapped(json!({
+                "nested": [first, "2.0"],
+                "\u{1f600}": "9007199254740993",
+                "\u{e000}": second,
+            }))
+        };
+        step[owner] = lookalike("9007199254740992", json!("2.0"));
+        let strings = json!([step.clone()]);
+        append(
+            result,
+            &format!("string-lookalike-node-{owner}"),
+            &pair(&strings, &strings),
+            true,
+        );
+        // Two numeric-looking strings are two strings, exactly as two integers are two integers.
+        step[owner] = lookalike("9007199254740993", json!("2.0"));
+        append(
+            result,
+            &format!("changed-string-lookalike-node-{owner}"),
+            &pair(&strings, &json!([step.clone()])),
+            false,
+        );
+        // And a string is never the number it looks like: swapping `"2.0"` for `2.0` is a change.
+        step[owner] = lookalike("9007199254740992", json!(2.0));
+        append(
+            result,
+            &format!("string-is-not-the-number-it-looks-like-node-{owner}"),
+            &pair(&strings, &json!([step])),
             false,
         );
     }

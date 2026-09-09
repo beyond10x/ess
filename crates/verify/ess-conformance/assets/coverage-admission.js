@@ -3,9 +3,16 @@
 // Original suite strings and unsigned metadata never pass through JSON.parse's Number conversion.
 const fail = reason => { throw new Error(`Invalid coverage replay: ${reason}`) }
 const require = (condition, reason) => { if (!condition) fail(reason) }
-// A number kept as the digits it was written with. `toJSON`/`toString` so a token that reaches the
-// player or a stringifier renders as the number rather than as its wrapper.
-class NumberToken { constructor(raw) { this.raw = raw } toJSON() { return this.raw } toString() { return this.raw } }
+// A number kept as the digits it was written with.
+//
+// **No `toJSON` and no `toString`.** Round 3 of this unit added both, on the reasoning that a token
+// reaching the player should render as its number; that changed how *every* preserved token
+// projects, from `{"raw": "4294967295"}` to the JSON string `"4294967295"`, and this repository
+// pins the first spelling in three places — `replay_fidelity_browser.rs:1197` and `:666`, and
+// `coverage_writer_adversary_pass2.rs::assert_payload_projection`. A token is projected as the
+// token it is, and the exact-integer path below changes which values are kept, never how a kept
+// value is rendered.
+class NumberToken { constructor(raw) { this.raw = raw } }
 // An integer token JS `Number` cannot hold exactly, canonicalised to its digits — or `null`.
 //
 // `Number(raw)` collapses every integer above 2^53, so `9007199254740992` and `9007199254740993`
@@ -14,6 +21,10 @@ class NumberToken { constructor(raw) { this.raw = raw } toJSON() { return this.r
 // refuses (`ess-cli/tests/support/coverage_cases.rs`). `equal` already compares a NumberToken by
 // its exact digits; this is what keeps one rather than throwing it away. See *One rule for
 // comparing integers* in docs/design/review-primitive-semantics.md.
+// It is only ever called with a JSON *number* token's digits, or with a predicate expression's own
+// literal text, which the predicate grammar has always read as a number. A JSON string value is
+// never passed here and is never reinterpreted: `node()` returns a string unchanged, and
+// `primitiveAdmits` still refuses a string for `integer`/`decimal`.
 const exactInteger = raw => {
   const match = /^([+-]?)(0|[1-9][0-9]*)(?:\.0*)?$/.exec(String(raw))
   if (match === null) return null
