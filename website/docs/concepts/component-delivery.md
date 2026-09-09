@@ -73,9 +73,17 @@ chart stops its release and later work, while earlier completed releases remain 
 `ess generate build execute`, `ess generate release publish`, `ess generate release publish-conformance`, `ess generate release fetch`, and
 `ess generate deployment reconcile` are explicit executor commands. They are the only parts of
 this flow that invoke BuildKit, ORAS, Helm, or a cluster. The compiler APIs remain deterministic
-and offline. Reconciliation compares desired deployment IR with the last applied IR, follows the
-declared rollout DAG, and touches only added or changed releases. Removal is a separate reviewed
-operation; it is refused unless explicitly enabled.
+and offline. Reconciliation compares the desired deployment IR with an *admitted baseline desired
+deployment* — a document the caller supplies, which says what was requested and is not proof that
+it was ever applied — follows the declared rollout DAG, and touches only added or changed
+releases. Removal is a separate reviewed operation; it is refused unless explicitly enabled.
+
+`--authority` selects one entry from a protected recovery registry the caller provisions. Under it,
+reconciliation runs the finite recovery contract: it attempts at most one admitted mutation per
+release, records what it can establish before attempting the next one, and stops at the first thing
+it cannot. Stopping leaves the affected release's state **unknown** — not absent, not rolled back
+and not reconciled — and a later invocation observes and decides again rather than replaying a
+remembered list of commands. ESS issues no compensating calls for releases that already succeeded.
 
 Runtime models expose named endpoints and persistent volumes. ESS therefore generates the Service,
 stateful controller, claims, and mounts once for every adopter. When a required endpoint names a

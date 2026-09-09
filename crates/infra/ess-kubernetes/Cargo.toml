@@ -17,6 +17,16 @@ serde_json.workspace = true
 infra-domain.workspace = true
 # Secret values are hashed before anything is written to disk; this is the hasher.
 sha2 = "0.11"
+# The finite recovery adapter speaks TLS to one pinned API server with exactly one trusted CA.
+# `ring` rather than the default provider: it is the backend already resolvable offline here, and
+# this crate builds no C toolchain of its own.
+rustls = { version = "0.23", default-features = false, features = ["ring", "std", "tls12", "logging"] }
+rustls-pemfile = "2"
+
+[dev-dependencies]
+# The loopback TLS fixture's own certificate authority. Test-only: no production path mints a
+# certificate, and a locally successful handshake establishes no real cluster identity.
+rcgen = "0.13"
 
 [lints]
 workspace = true

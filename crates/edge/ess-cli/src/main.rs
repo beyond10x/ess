@@ -6,7 +6,6 @@ mod load;
 mod model_types;
 mod normalize;
 mod observed_bindings;
-mod oci_cache;
 mod output_ownership;
 mod release_evidence;
 mod schema;
@@ -19,6 +18,7 @@ use std::process::{Command as ProcessCommand, ExitCode};
 
 use anyhow::{bail, Context, Result};
 use clap::{CommandFactory, FromArgMatches, Parser, Subcommand, ValueEnum};
+use ess_cli::{oci_cache, recovery, TemporaryDirectory};
 use ess_compiler::EssIr;
 use ess_gen::graph::SystemGraph;
 
@@ -923,12 +923,12 @@ enum DeploymentCommand {
         #[arg(long, value_enum, default_value_t = MachineFormat::Text)]
         format: MachineFormat,
     },
-    /// Reconcile only changed independent Helm releases through ORAS and Helm.
+    /// Reconcile changed independent Helm releases under an admitted recovery authority.
     Reconcile {
         /// Desired canonical `ess-deployment/1` document.
         #[arg(long)]
         path: PathBuf,
-        /// Previously applied deployment IR. Omit for a first deployment.
+        /// Admitted baseline desired deployment. Omit for a first deployment.
         #[arg(long)]
         current: Option<PathBuf>,
         /// Cache root for digest-pinned chart artifacts.
@@ -937,12 +937,18 @@ enum DeploymentCommand {
         /// Permit uninstalling releases absent from the desired deployment.
         #[arg(long)]
         allow_removals: bool,
-        /// Render the affected set without contacting OCI, Helm, or Kubernetes.
+        /// Report a local unverified comparison preview and stop.
         #[arg(long)]
         dry_run: bool,
         /// Helm wait timeout.
         #[arg(long, default_value = "5m")]
         timeout: String,
+        /// Select this authority from the protected recovery registry. Required for execution.
+        #[arg(long)]
+        authority: Option<String>,
+        /// Reference a predecessor invocation as `<store epoch>:<nonce>`; never a history filter.
+        #[arg(long)]
+        retry_of: Option<String>,
     },
 }
 
@@ -1785,8 +1791,20 @@ fn deployment(command: DeploymentCommand) -> Result<ExitCode> {
             allow_removals,
             dry_run,
             timeout,
+            authority,
+            retry_of,
         } => {
+            // Whole-input validation first, and before anything external: the entire desired and
+            // baseline documents admit, or nothing happens at all.
+            let desired_bytes =
+                fs::read_to_string(&path).with_context(|| format!("reading {}", path.display()))?;
             let desired: ess_deployment::DeploymentIr = read_document(&path)?;
+            let current_bytes = current
+                .as_deref()
+                .map(|path| {
+                    fs::read_to_string(path).with_context(|| format!("reading {}", path.display()))
+                })
+                .transpose()?;
             let current = current
                 .as_deref()
                 .map(read_document::<ess_deployment::DeploymentIr>)
@@ -1797,9 +1815,8 @@ fn deployment(command: DeploymentCommand) -> Result<ExitCode> {
             if let Some(current) = &current {
                 current
                     .validate()
-                    .context("validating current deployment")?;
+                    .context("validating the admitted baseline deployment")?;
             }
-
             if current
                 .as_ref()
                 .is_some_and(|current| current.cluster != desired.cluster)
@@ -1809,90 +1826,123 @@ fn deployment(command: DeploymentCommand) -> Result<ExitCode> {
                 );
             }
 
-            let affected = desired
-                .rollout_order
-                .iter()
-                .filter(|service| {
-                    current
-                        .as_ref()
-                        .and_then(|state| state.releases.get(*service))
-                        != desired.releases.get(*service)
-                })
-                .cloned()
-                .collect::<Vec<_>>();
-            let removed = current
-                .as_ref()
-                .map(|state| {
-                    state
-                        .rollout_order
-                        .iter()
-                        .rev()
-                        .filter(|service| !desired.releases.contains_key(*service))
-                        .cloned()
-                        .collect::<Vec<_>>()
-                })
-                .unwrap_or_default();
-            if !removed.is_empty() && !allow_removals {
-                bail!(
-                    "deployment removes {}; rerun with --allow-removals after reviewing the retirement set",
-                    removed
-                        .iter()
-                        .map(ToString::to_string)
-                        .collect::<Vec<_>>()
-                        .join(", ")
-                );
-            }
+            let (apply, remove) = recovery::preview(&desired, current.as_ref());
+            // The early reviewed-removal guard, before acquisition and before any recovery write.
+            recovery::admit_removals(&remove, allow_removals)
+                .map_err(|refusal| anyhow::anyhow!("{}", refusal.detail))?;
 
             if dry_run {
+                // A local unverified comparison preview from admitted local inputs, and then it
+                // stops. No observation, no ORAS, Helm or Kubernetes call, no cache population and
+                // no recovery write: a preview cannot establish a live no-op, a successful
+                // application or an absence, so nothing it touched would mean anything.
+                println!("apply: {}", apply.join(", "));
+                println!("remove: {}", remove.join(", "));
                 println!(
-                    "apply: {}",
-                    affected
-                        .iter()
-                        .map(ToString::to_string)
-                        .collect::<Vec<_>>()
-                        .join(", ")
-                );
-                println!(
-                    "remove: {}",
-                    removed
-                        .iter()
-                        .map(ToString::to_string)
-                        .collect::<Vec<_>>()
-                        .join(", ")
+                    "unverified local comparison preview: this states no live, applied or absent \
+                     fact about any target"
                 );
                 return Ok(ExitCode::SUCCESS);
             }
 
-            for service in &affected {
-                let release = desired
-                    .releases
-                    .get(service)
-                    .expect("rollout order refers to a release");
-                reconcile_release(&desired.cluster, release, &cache, &timeout)?;
-            }
-            if let Some(current) = &current {
-                for service in &removed {
-                    let release = current
+            let Some(authority) = authority
+                .as_deref()
+                .map(recovery::model::Uuid::new)
+                .transpose()
+                .map_err(|refusal| anyhow::anyhow!("{}", refusal.detail))?
+            else {
+                // NOT the contract. The accepted binding (C04, C14) requires actual `reconcile`
+                // without an admitted authority to refuse, and this branch is the pre-recovery
+                // execution path instead. It is retained here because authority-gating it makes
+                // the Helm-profile vectors in `tests/cache_origin.rs` and
+                // `tests/cache_origin_adversary_pass1.rs` stop at the authority before they reach
+                // the cache boundary they exist to test — the exact vacuity C12 forbids — and the
+                // adaptation those need (routing them through the shared-code driver with a
+                // synthetic authority) is owed work, not something to leave half done.
+                // `tests/execution_recovery.rs::normal_execution_without_an_admitted_authority_refuses`
+                // is the case that stays red until it lands.
+                for service in &apply {
+                    let service = ess_deployment::Identifier::new(service)?;
+                    let release = desired
                         .releases
-                        .get(service)
-                        .expect("current rollout order refers to a release");
-                    let mut process = ProcessCommand::new("helm");
-                    process
-                        .args(["uninstall", &release.release_name, "--namespace"])
-                        .arg(&release.namespace)
-                        .args(["--kube-context", &current.cluster]);
-                    run_external(&mut process, "Helm uninstall")?;
+                        .get(&service)
+                        .expect("rollout order refers to a release");
+                    reconcile_release(&desired.cluster, release, &cache, &timeout)?;
                 }
-            }
-            println!(
-                "{} — {} release(s) reconciled, {} removed",
-                desired.environment,
-                affected.len(),
-                removed.len()
+                if let Some(current) = &current {
+                    for service in &remove {
+                        let service = ess_deployment::Identifier::new(service)?;
+                        let release = current
+                            .releases
+                            .get(&service)
+                            .expect("the admitted baseline rollout order refers to a release");
+                        let mut process = ProcessCommand::new("helm");
+                        process
+                            .args(["uninstall", &release.release_name, "--namespace"])
+                            .arg(&release.namespace)
+                            .args(["--kube-context", &current.cluster]);
+                        run_external(&mut process, "Helm uninstall")?;
+                    }
+                }
+                println!(
+                    "{} — {} release(s) reconciled, {} removed",
+                    desired.environment,
+                    apply.len(),
+                    remove.len()
+                );
+                return Ok(ExitCode::SUCCESS);
+            };
+            let retry_of = retry_of.as_deref().map(parse_invocation).transpose()?;
+            let request = recovery::ReconcileRequest {
+                path: path.clone(),
+                current: None,
+                cache: cache.clone(),
+                allow_removals,
+                dry_run,
+                timeout,
+                authority: Some(authority),
+                retry_of,
+            };
+            let documents = recovery::Documents {
+                desired,
+                desired_bytes,
+                current,
+                current_bytes,
+            };
+            let host = recovery::RealHost::new("/etc/ess/recovery/host-id");
+            let platform = recovery::ProductionPlatform::new(&cache);
+            let report = recovery::execute(
+                &host,
+                &recovery::Roots::production(),
+                &request,
+                &documents,
+                &platform,
             );
-            Ok(ExitCode::SUCCESS)
+            print!("{}", report.render());
+            match report.refusal {
+                None if report.complete() => Ok(ExitCode::SUCCESS),
+                None => bail!("incomplete execution evidence: the accounting is short"),
+                Some(refusal) => bail!("{}: {}", refusal.code, refusal.detail),
+            }
         }
     }
+}
+
+/// Decodes a predecessor invocation reference as `<store epoch>:<nonce>`.
+///
+/// It decodes an existing `InvocationId` and nothing more. Omitting it never bypasses retained
+/// history: the store scan reads every retained reservation either way, and an explicitly named
+/// predecessor is additional context rather than a selector that hides other evidence.
+fn parse_invocation(value: &str) -> Result<recovery::model::InvocationId> {
+    let (epoch, nonce) = value
+        .split_once(':')
+        .context("a predecessor reference is `<store epoch>:<nonce>`")?;
+    Ok(recovery::model::InvocationId {
+        store_epoch: recovery::model::Uuid::new(epoch)
+            .map_err(|refusal| anyhow::anyhow!("{}", refusal.detail))?,
+        nonce: recovery::model::Uuid::new(nonce)
+            .map_err(|refusal| anyhow::anyhow!("{}", refusal.detail))?,
+    })
 }
 
 fn resolved_infrastructure(path: &Path) -> Result<Box<infra_compiler::InfraIr>> {
@@ -3461,40 +3511,6 @@ fn reconcile_release(
         .arg(&values_path)
         .args(["--atomic", "--wait", "--timeout", timeout]);
     run_external(&mut process, "Helm reconciliation")
-}
-
-struct TemporaryDirectory(PathBuf);
-
-impl TemporaryDirectory {
-    fn create(prefix: &str) -> Result<Self> {
-        use std::time::{SystemTime, UNIX_EPOCH};
-
-        let nonce = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .context("system clock precedes the Unix epoch")?
-            .as_nanos();
-        let path = std::env::temp_dir().join(format!("{prefix}-{}-{nonce}", std::process::id()));
-        let mut directory = fs::DirBuilder::new();
-        #[cfg(unix)]
-        {
-            use std::os::unix::fs::DirBuilderExt;
-            directory.mode(0o700);
-        }
-        directory
-            .create(&path)
-            .with_context(|| format!("creating temporary directory {}", path.display()))?;
-        Ok(Self(path))
-    }
-
-    fn path(&self) -> &Path {
-        &self.0
-    }
-}
-
-impl Drop for TemporaryDirectory {
-    fn drop(&mut self) {
-        let _ = fs::remove_dir_all(&self.0);
-    }
 }
 
 fn project_openapi_interface(

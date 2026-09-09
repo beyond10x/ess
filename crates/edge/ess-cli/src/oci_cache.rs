@@ -29,9 +29,12 @@ const HELM: &str = "application/vnd.cncf.helm.config.v1+json";
 const CHART: &str = "application/vnd.cncf.helm.chart.content.v1.tar+gzip";
 const PROVENANCE: &str = "application/vnd.cncf.helm.chart.provenance.v1.prov";
 
+/// Which closed original-byte transport profile a cache entry belongs to.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(crate) enum Profile {
+pub enum Profile {
+    /// An `ess-release-bundle/1` payload.
     Bundle,
+    /// A Helm chart payload.
     Helm,
 }
 impl Profile {
@@ -223,7 +226,8 @@ fn check_payload(bytes: &[u8], profile: Profile) -> Result<()> {
     }
     Ok(())
 }
-pub(crate) fn bundle(bytes: &[u8]) -> Result<ess_deployment::ReleaseBundle> {
+/// Reads verified original bytes as a release bundle.
+pub fn bundle(bytes: &[u8]) -> Result<ess_deployment::ReleaseBundle> {
     let text = std::str::from_utf8(bytes).context("bundle payload is not UTF-8")?;
     let parsed = ess_deployment::ReleaseBundle::from_json(text)
         .context("parsing verified OCI bundle JSON")?;
@@ -540,7 +544,13 @@ fn acquire(
     Ok(proof)
 }
 
-pub(crate) fn payload(reference: &str, cache: &Path, profile: Profile) -> Result<Vec<u8>> {
+/// The verified original payload bytes for one pinned OCI reference.
+///
+/// This is the only cross-module entry point of the cache, and everything else in the module stays
+/// private. What it proves is the *transport*: the requested manifest's original bytes and each
+/// referenced descriptor's original bytes. It proves nothing about publisher authorization, and a
+/// chart being in the cache establishes neither that Helm ran nor which cluster it affected.
+pub fn payload(reference: &str, cache: &Path, profile: Profile) -> Result<Vec<u8>> {
     let (repository, requested) = reference
         .rsplit_once('@')
         .context("OCI source must be pinned as repository@sha256:digest")?;
