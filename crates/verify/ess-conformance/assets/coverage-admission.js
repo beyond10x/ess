@@ -287,6 +287,30 @@ function expectation(value) {
   }
   return result
 }
+// A UUID in the one hyphenated form the specification publishes: 8-4-4-4-12 hexadecimal digits, in
+// either case. urn:uuid: and brace-wrapped spellings are refused, because one value has one
+// spelling. The same grammar as ess-gen's UUID_PATTERN, ess_primitives::facts::is_canonical_uuid
+// and the Go runtime's canonicalUUID, checked from all four against one corpus
+// (crates/specify/ess-primitives/tests/vectors/primitive-semantics.json).
+const canonicalUUID = /^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/
+// Base64 with padding, the standard alphabet only, as ess-gen's BASE64_PATTERN publishes it.
+const paddedBase64 = /^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/
+// Whether a value is one the declared primitive admits.
+//
+// A grammar, not merely a kind name. Every kind was admitted by name alone, so this adapter showed
+// a replay a `uuid` field holding `x` that every schema the same specification publishes refuses —
+// review finding F08, docs/design/review-primitive-semantics.md.
+export const primitiveAdmits = (kind, value) => {
+  switch (kind) {
+    case 'string': case 'timestamp': case 'duration': return typeof value === 'string'
+    case 'boolean': return typeof value === 'boolean'
+    case 'integer': return typeof value === 'number' && Number.isInteger(value) && value >= -9223372036854775808 && value < 9223372036854775808
+    case 'decimal': return typeof value === 'number' && Number.isFinite(value)
+    case 'uuid': return typeof value === 'string' && canonicalUUID.test(value)
+    case 'bytes': return typeof value === 'string' && paddedBase64.test(value)
+    default: return false
+  }
+}
 function shape(value) {
   return Object.fromEntries(Object.entries(object(value)).map(([key, leaf]) => {
     oneOf(object(leaf).holds, 'primitive enum list map union')
@@ -296,6 +320,23 @@ function shape(value) {
     const optional = own(leaf, 'optional') ? boolean(leaf.optional) : false
     return [key, { ...leaf, optional }]
   }))
+}
+// A step declares both what a field holds and what its declared type permits there, and until this
+// ran nothing compared them. Only the fields the payload names: a shape is a claim about the
+// declaration and a payload is a partial claim about values, so requiring every declared leaf to be
+// present would refuse suites this repository already writes. `admission.rs`'s
+// `payload_agrees_with_its_shape` applies the identical rule, so the two admitters cannot disagree
+// about one document.
+const payloadAgreesWithShape = (payload, declared) => {
+  for (const [field, leaf] of Object.entries(declared)) {
+    if (!own(payload, field) || payload[field] === null) continue
+    const value = payload[field]
+    const admitted = leaf.holds === 'primitive' ? primitiveAdmits(leaf.kind, value)
+      : leaf.holds === 'enum' ? leaf.variants.includes(value)
+      : leaf.holds === 'list' ? Array.isArray(value)
+      : value !== null && typeof value === 'object' && !Array.isArray(value)
+    require(admitted, 'payload value the step\'s own shape does not admit')
+  }
 }
 const stepFields = {
   configure_external_outcome: ['force', ''], execute_command: ['command', 'actor input'], expect_outcome: ['outcome', ''],
@@ -330,6 +371,7 @@ function step(value) {
       default: qualified(field)
     }
   }
+  if (own(result, 'payload') && own(result, 'shape')) payloadAgreesWithShape(result.payload, result.shape)
   return result
 }
 const includes = (selection, origin) => selection.origins === 'generated_and_authored' || selection.origins === origin
@@ -408,7 +450,7 @@ function inventory(suite) {
   }
   for (const [identity, source] of Object.entries(c.authored_sources)) require(source.disposition !== 'refused' || refusedSources.has(identity), 'missing source refusal')
 }
-async function admitSuite(original) {
+export async function admitSuite(original) {
   const document = closed(parse(original), 'provenance scenarios coverage')
   const p = closed(document.provenance, 'suite_version system specification_version spec_digest contract_digest', 'component')
   require(p.suite_version === 'ess-conformance/5', 'replay requires suite/5')

@@ -36,6 +36,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"math"
 	"os"
 	"reflect"
 	"regexp"
@@ -2531,16 +2532,90 @@ func lookup(payload map[string]Node, path string) (Node, bool) {
 	return current, true
 }
 
-// primitive reports why a value is not of the declared kind, or "" when it is.
-func primitive(kind string, value Node) string {
-	switch kind {
-	case "string", "uuid", "timestamp", "duration":
-		if _, ok := value.(string); !ok {
-			return fmt.Sprintf("holds %s and the specification declares a %s", render(value), kind)
+// canonicalUUID reports whether text is a UUID in the one hyphenated form the specification
+// publishes: eight, four, four, four and twelve hexadecimal digits, in either case. The urn:uuid:
+// and brace-wrapped spellings are refused, because one value has one spelling.
+//
+// The same grammar as ess-gen's UUID_PATTERN and ess_primitives::facts::is_canonical_uuid, checked
+// against one corpus from all three (crates/specify/ess-primitives/tests/vectors).
+func canonicalUUID(text string) bool {
+	widths := []int{8, 4, 4, 4, 12}
+	groups := strings.Split(text, "-")
+	if len(groups) != len(widths) {
+		return false
+	}
+	for i, group := range groups {
+		if len(group) != widths[i] {
+			return false
 		}
-	case "integer", "decimal":
+		for _, r := range group {
+			isHex := (r >= '0' && r <= '9') || (r >= 'a' && r <= 'f') || (r >= 'A' && r <= 'F')
+			if !isHex {
+				return false
+			}
+		}
+	}
+	return true
+}
+
+// paddedBase64 reports whether text is base64 with padding, the standard alphabet only.
+func paddedBase64(text string) bool {
+	if len(text)%4 != 0 {
+		return false
+	}
+	alphabet := func(b byte) bool {
+		return (b >= 'A' && b <= 'Z') || (b >= 'a' && b <= 'z') || (b >= '0' && b <= '9') || b == '+' || b == '/'
+	}
+	for i := 0; i < len(text); i++ {
+		if alphabet(text[i]) {
+			continue
+		}
+		// Padding is admitted only as the last one or two characters of the final group.
+		if text[i] == '=' && i >= len(text)-2 {
+			continue
+		}
+		return false
+	}
+	return len(text) == 0 || text[len(text)-1] != '=' || text[len(text)-2] == '=' || alphabet(text[len(text)-3])
+}
+
+// integral reports whether a number has no fractional part and fits an int64.
+func integral(value float64) bool {
+	return value == math.Trunc(value) && value >= -9223372036854775808.0 && value < 9223372036854775808.0
+}
+
+// primitive reports why a value is not of the declared kind, or "" when it is.
+//
+// A grammar, not merely a shape. "uuid" admitted any string at all and "bytes" admitted anything
+// whatever, so this runtime accepted candidates that every schema the same specification publishes
+// refuses — review finding F08. See docs/design/review-primitive-semantics.md.
+func primitive(kind string, value Node) string {
+	mismatch := func() string {
+		return fmt.Sprintf("holds %s and the specification declares a %s", render(value), kind)
+	}
+	switch kind {
+	case "string", "timestamp", "duration":
+		if _, ok := value.(string); !ok {
+			return mismatch()
+		}
+	case "uuid":
+		text, ok := value.(string)
+		if !ok || !canonicalUUID(text) {
+			return mismatch()
+		}
+	case "bytes":
+		text, ok := value.(string)
+		if !ok || !paddedBase64(text) {
+			return mismatch()
+		}
+	case "integer":
+		number, ok := asNumber(value)
+		if !ok || !integral(number) {
+			return mismatch()
+		}
+	case "decimal":
 		if _, ok := asNumber(value); !ok {
-			return fmt.Sprintf("holds %s and the specification declares a %s", render(value), kind)
+			return mismatch()
 		}
 	case "boolean":
 		if _, ok := value.(bool); !ok {
