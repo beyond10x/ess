@@ -28,20 +28,133 @@ use crate::error::ParseError;
 /// either one as `null`. A guard reading `amount >= 1e400` would then be published as
 /// `any_of: [null]` — not a crash, and not a refusal, but a document that says something the author
 /// never wrote. Refusing at the door is the only place that difference is still visible.
-#[derive(Debug, Clone, Copy, serde::Serialize)]
-#[serde(transparent)]
-pub struct Number(f64);
+///
+/// # Exact, and still spelt the way it always was
+///
+/// This was `Number(f64)`, which made `9007199254740993` and `9007199254740992` one value, made
+/// `Number::from(i64::MAX)` a number that is not `i64::MAX`, and made
+/// [`is_integral`](Self::is_integral) answer `false` for most of the integers `Primitive::Integer`
+/// declares admissible. Review finding F08.
+///
+/// A number now carries an exact decimal — `units × 10⁻ˢᶜᵃˡᵉ` — **and** the binary64 it has always
+/// been written as, and [`Serialize`](serde::Serialize) writes the second one. That is what makes
+/// the exactness free of byte consequences: there is no value for which the serializer can produce
+/// bytes different from the ones it produced before, because it serializes the same `f64` it always
+/// did. `docs/design/review-primitive-semantics.md` states which spellings that freezes, and which
+/// stage changes them.
+#[derive(Debug, Clone, Copy)]
+pub struct Number(Repr);
+
+/// How one number is held.
+///
+/// `Exact` covers every `i64`, every `usize`, and every decimal literal whose digits fit an `i128`
+/// with a scale under 256 — which is every value `Primitive::Integer` and `Primitive::Decimal`
+/// name. `Binary64` is the remainder: a magnitude with no short decimal spelling, where the value
+/// has never been anything but its binary64 anyway.
+#[derive(Debug, Clone, Copy)]
+enum Repr {
+    /// `units × 10^-scale`, beside the binary64 this value serialises as.
+    Exact {
+        /// The scaled integer. Normalised: `scale` is the smallest one that spells this value.
+        units: i128,
+        /// The number of decimal places.
+        scale: u8,
+        /// What every writer of this value has always written.
+        binary: f64,
+    },
+    /// A value outside the exact range, held as it always was.
+    Binary64(f64),
+}
+
+/// The magnitude below which an integral binary64 is carried as the integer it is.
+///
+/// `2^63`. Above it the shortest round-tripping decimal is used, which is what `f64`'s own
+/// `Display` prints and is far outside anything `Primitive::Integer` admits.
+const INTEGER_CARRIER: f64 = 9_223_372_036_854_775_808.0;
+
+/// The largest scale an exact decimal is held at.
+///
+/// A literal needing more places than this is a binary64 and says so, rather than being silently
+/// truncated to a value the author did not write.
+const MAX_SCALE: u32 = 255;
 
 impl<'de> serde::Deserialize<'de> for Number {
-    /// Deserialises through [`Number::new`], so a document cannot conjure a value the constructor
-    /// refuses.
+    /// Reads an integer token as the integer, and everything else through [`Number::new`].
     ///
     /// Hand-written rather than derived: `#[serde(transparent)]` with a derived implementation
     /// reads straight into the field and never calls the constructor, which is how `.nan` in a
     /// document produced a `Number` this type's own documentation says cannot exist.
+    ///
+    /// An integer token is read exactly because [`Serialize`](serde::Serialize) writes one exactly
+    /// — the two doors are one decision, and moving only the reader is what made
+    /// `9223372036854775807` a value that was admitted, written, and then refused. See the
+    /// round-trip law in `docs/design/review-primitive-semantics.md`.
     fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
-        let value = f64::deserialize(deserializer)?;
-        Self::new(value).map_err(serde::de::Error::custom)
+        deserializer.deserialize_any(NumberVisitor)
+    }
+}
+
+/// Reads whichever token a self-describing format hands over.
+struct NumberVisitor;
+
+impl serde::de::Visitor<'_> for NumberVisitor {
+    type Value = Number;
+
+    fn expecting(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str("a finite number")
+    }
+
+    fn visit_i64<E: serde::de::Error>(self, value: i64) -> Result<Number, E> {
+        Ok(Number::from(value))
+    }
+
+    fn visit_u64<E: serde::de::Error>(self, value: u64) -> Result<Number, E> {
+        Ok(Number::from_integer(i128::from(value)))
+    }
+
+    fn visit_i128<E: serde::de::Error>(self, value: i128) -> Result<Number, E> {
+        Ok(Number::from_integer(value))
+    }
+
+    fn visit_u128<E: serde::de::Error>(self, value: u128) -> Result<Number, E> {
+        i128::try_from(value)
+            .map(Number::from_integer)
+            .map_err(|_| E::custom("number does not fit the domain number"))
+    }
+
+    fn visit_f64<E: serde::de::Error>(self, value: f64) -> Result<Number, E> {
+        Number::new(value).map_err(E::custom)
+    }
+}
+
+impl serde::Serialize for Number {
+    /// The binary64 for every value binary64 carries, and the exact integer for the ones it does
+    /// not.
+    ///
+    /// The first class is every number in every artifact this repository has published: an
+    /// artifact's numbers came from a document, and at the base commit a document's numbers were
+    /// read through binary64, so their carried value *is* the canonical decimal of their binary.
+    /// Those write exactly what they wrote before — an integral witness is still `1.0`
+    /// (`ess-conformance/src/witness.rs`), and a report still quotes what this writes.
+    ///
+    /// The second class is a value binary64 never carried: `i64::MAX`, `2^53 + 1`. At the base
+    /// those were rounded on the way in and written wrong on the way out, so writing the integer
+    /// is not a change to any spelling a reader has ever received — it is the first correct one,
+    /// and it is what makes the round-trip law hold for the constructors the design page names.
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        match self.0 {
+            // The invariant on `Repr::Exact` guarantees `scale == 0` here: a non-integer whose
+            // binary does not carry it is never admitted to `Exact`.
+            Repr::Exact {
+                units,
+                scale,
+                binary,
+            } if Some((units, scale)) != canonical_decimal(binary) => match i64::try_from(units) {
+                Ok(units) => serializer.serialize_i64(units),
+                Err(_) => serializer.serialize_i128(units),
+            },
+            _ => serializer.serialize_f64(self.get()),
+        }
     }
 }
 
@@ -52,43 +165,295 @@ impl Number {
             let found = if value.is_nan() { "NaN" } else { "an infinity" };
             return Err(ParseError::shape("number", "a finite number", found));
         }
-        Ok(Self(value))
+        Ok(Self(Repr::of_binary64(value)))
     }
 
-    /// The underlying value.
+    /// The underlying binary64 — what this value serialises and has always serialised as.
+    ///
+    /// Lossy above 2^53, and deliberately unchanged: every existing caller reads a count, a list
+    /// index or a sign from it. [`as_i64`](Self::as_i64) is the exact answer.
     pub const fn get(self) -> f64 {
-        self.0
+        match self.0 {
+            Repr::Exact { binary, .. } | Repr::Binary64(binary) => binary,
+        }
     }
 
-    /// `true` when the value has no fractional part and fits an [`i64`].
+    /// `true` when this value is an exact integer an [`i64`] holds.
+    ///
+    /// One range, and it is the one [`as_i64`](Self::as_i64) and the generated `int64`/`i64` codecs
+    /// answer on: `[i64::MIN, i64::MAX]`. `is_integral` and `as_i64` are the same question, so a
+    /// value admitted as a `Primitive::Integer` always carries the integer it was admitted as.
     pub fn is_integral(self) -> bool {
-        self.0.fract() == 0.0 && self.0.abs() < 9.007_199_254_740_992e15
+        self.as_i64().is_some()
+    }
+
+    /// The exact integer, when this value is one that fits an [`i64`].
+    ///
+    /// `None` for `2^63`, which is not an `i64` however it was spelt, and `None` for anything with
+    /// a fractional part.
+    pub fn as_i64(self) -> Option<i64> {
+        // A `Binary64` is a magnitude no `(i128, u8)` spells — at or beyond `10^38`, or below
+        // `10^-38` — so it is never an `i64` either.
+        match self.0 {
+            Repr::Exact {
+                units, scale: 0, ..
+            } => i64::try_from(units).ok(),
+            _ => None,
+        }
+    }
+
+    /// The exact decimal spelling: no exponent, no trailing zeroes, one spelling per value.
+    ///
+    /// This is the grammar `ess-gen`'s `DECIMAL_PATTERN` publishes for `Primitive::Decimal`.
+    pub fn exact_text(self) -> String {
+        match self.0 {
+            Repr::Exact { units, scale, .. } => exact_text(units, scale),
+            Repr::Binary64(value) => format!("{value}"),
+        }
+    }
+
+    /// The exact value as `(units, scale)`, when there is one.
+    const fn exact(self) -> Option<(i128, u8)> {
+        match self.0 {
+            Repr::Exact { units, scale, .. } => Some((units, scale)),
+            Repr::Binary64(_) => None,
+        }
+    }
+
+    /// An exact integer of any width this type can hold.
+    pub(crate) fn from_integer(units: i128) -> Self {
+        Self(Repr::of_integer(units))
+    }
+
+    /// Reads the exact decimal an author wrote, keeping it only where the write can give it back.
+    ///
+    /// **`Repr::Exact` may only carry a value that survives its own write** — the invariant the
+    /// round-trip law rests on. A value qualifies two ways, and only two:
+    ///
+    /// * it equals the canonical decimal of its binary64, so the write is that binary64; or
+    /// * it is an **integer**, so the write is the integer token and the read door reads it back.
+    ///
+    /// A non-integer with more places than binary64 carries is neither.
+    /// `parse_literal("1.0000000000000000001")` used to keep all twenty digits, write `1.0`, and
+    /// come back integral — admitted differently on the two sides of one write. It now collapses to
+    /// the canonical decimal of `1.0`, which is what the write was always going to say. Reading the
+    /// authored digits back is the canonical-serialization stage, and it moves both doors at once.
+    ///
+    /// `None` when `text` is not a decimal literal at all.
+    pub(crate) fn parse_decimal(text: &str) -> Option<Self> {
+        let binary = text.parse::<f64>().ok().filter(|value| value.is_finite())?;
+        let authored = exact_of_decimal_text(text);
+        let survives_the_write = |(units, scale): &(i128, u8)| {
+            *scale == 0 || Some((*units, *scale)) == canonical_decimal(binary)
+        };
+        Some(Self(match authored.filter(survives_the_write) {
+            Some((units, scale)) => Repr::exact(units, scale, binary),
+            None => Repr::of_binary64(binary),
+        }))
+    }
+}
+
+impl Repr {
+    /// **The only place an [`Exact`](Repr::Exact) is built**, and the two postconditions it holds.
+    ///
+    /// 1. The value survives its own write. `scale == 0` means the write is the integer token,
+    ///    which the read door reads back; otherwise the value must *be* the canonical decimal of
+    ///    its binary, so the write is that binary64. The caller establishes this; a value that
+    ///    holds neither must not reach here.
+    /// 2. **The variant is a function of the carried binary64**: an `Exact` exists only where
+    ///    [`canonical_decimal`] has an answer, so a [`Binary64`](Repr::Binary64) — which exists
+    ///    exactly where it has none — can never carry the same `f64` as an `Exact`.
+    ///
+    /// The second is checked here rather than argued about elsewhere, which is what makes
+    /// [`Number::cmp`]'s totality a one-function claim: its `total_cmp` arm runs only when the
+    /// variants differ, and two differing variants never carry one `f64`.
+    fn exact(units: i128, scale: u8, binary: f64) -> Self {
+        if canonical_decimal(binary).is_none() {
+            return Self::Binary64(binary);
+        }
+        Self::Exact {
+            units,
+            scale,
+            binary,
+        }
+    }
+
+    /// The canonical decimal of a binary64, which is by construction a value the write gives back.
+    fn of_binary64(value: f64) -> Self {
+        match canonical_decimal(value) {
+            Some((units, scale)) => Self::exact(units, scale, value),
+            None => Self::Binary64(value),
+        }
+    }
+
+    /// An exact integer of any width this type can hold.
+    ///
+    /// Always admissible under postcondition 1: an integer's write is the integer token when
+    /// binary64 does not carry it, and the binary64 when it does.
+    #[allow(clippy::cast_precision_loss)]
+    fn of_integer(units: i128) -> Self {
+        Self::exact(units, 0, units as f64)
+    }
+}
+
+/// The decimal a binary64 is carried as, or `None` where `(i128, u8)` cannot spell one.
+///
+/// Two rules, because one is not enough to be truthful:
+///
+/// * **Below `2^63` an integral binary64 is carried as the integer it is.** The shortest
+///   round-tripping decimal for `2^63` is `9223372036854776000`, a different number; carrying that
+///   made [`Number::as_i64`] answer about a value nobody wrote.
+/// * **Otherwise, the shortest decimal that round-trips** — what `f64`'s own `Display` has always
+///   printed, and what a reader means by the value.
+///
+/// This is a pure function of the `f64`, and it is what makes [`Repr`]'s variant a function of the
+/// carried binary64: `Repr::Binary64(v)` exactly when this returns `None` for `v`. Two `Number`s
+/// carrying one binary64 are therefore the same variant, which is the whole of the argument that
+/// [`Number::cmp`] is a total order.
+fn canonical_decimal(value: f64) -> Option<(i128, u8)> {
+    if value.fract() == 0.0 && (-INTEGER_CARRIER..=INTEGER_CARRIER).contains(&value) {
+        // `|value| <= 2^63` and the value is integral, so the conversion is exact.
+        #[allow(clippy::cast_possible_truncation)]
+        return Some((value as i128, 0));
+    }
+    exact_of_decimal_text(&format!("{value}"))
+}
+
+/// Reads a decimal literal — `[+-]?digits[.digits][eE[+-]?digits]` — as `units × 10^-scale`.
+///
+/// `None` where the text is not that grammar, where the digits do not fit an `i128`, or where the
+/// scale would exceed [`MAX_SCALE`]. Every rejection falls back to the binary64, which is what the
+/// value was before this function existed.
+fn exact_of_decimal_text(text: &str) -> Option<(i128, u8)> {
+    let (negative, rest) = match text.as_bytes().first() {
+        Some(b'-') => (true, &text[1..]),
+        Some(b'+') => (false, &text[1..]),
+        _ => (false, text),
+    };
+    let (mantissa, exponent) = match rest.find(['e', 'E']) {
+        Some(at) => (&rest[..at], rest[at + 1..].parse::<i32>().ok()?),
+        None => (rest, 0),
+    };
+    let (integer, fraction) = match mantissa.split_once('.') {
+        Some((integer, fraction)) => (integer, fraction),
+        None => (mantissa, ""),
+    };
+    if integer.is_empty() && fraction.is_empty() {
+        return None;
+    }
+    if !integer
+        .bytes()
+        .chain(fraction.bytes())
+        .all(|b| b.is_ascii_digit())
+    {
+        return None;
+    }
+    let digits: String = integer.chars().chain(fraction.chars()).collect();
+    let mut units: i128 = digits.parse().ok()?;
+    if negative {
+        units = -units;
+    }
+    // `scale` counts places right of the point; a positive exponent removes them and, once there
+    // are none left, multiplies.
+    let mut scale = i64::try_from(fraction.len()).ok()? - i64::from(exponent);
+    while scale < 0 {
+        units = units.checked_mul(10)?;
+        scale += 1;
+    }
+    let scale = u32::try_from(scale).ok()?;
+    if scale > MAX_SCALE {
+        return None;
+    }
+    Some(normalise(units, scale))
+}
+
+/// Strips the trailing zeroes a scale does not need, so one value has one `(units, scale)`.
+fn normalise(mut units: i128, mut scale: u32) -> (i128, u8) {
+    while scale > 0 && units % 10 == 0 {
+        units /= 10;
+        scale -= 1;
+    }
+    // `scale <= MAX_SCALE` holds for every caller and shrinks here; the clamp is written so this
+    // function has no panicking path at all.
+    (units, u8::try_from(scale).unwrap_or(u8::MAX))
+}
+
+/// `units × 10^-scale`, spelt without an exponent and without trailing zeroes.
+fn exact_text(units: i128, scale: u8) -> String {
+    let digits = units.unsigned_abs().to_string();
+    let sign = if units < 0 { "-" } else { "" };
+    let scale = usize::from(scale);
+    if scale == 0 {
+        return format!("{sign}{digits}");
+    }
+    let padded = if digits.len() <= scale {
+        format!("{}{digits}", "0".repeat(scale + 1 - digits.len()))
+    } else {
+        digits
+    };
+    let (whole, fraction) = padded.split_at(padded.len() - scale);
+    format!("{sign}{whole}.{fraction}")
+}
+
+/// Compares two exact decimals without widening either one.
+///
+/// Aligning the scales would need an `i256` for a scale-255 value against a scale-0 one, so the
+/// comparison is on the digits: sign, then magnitude, then place by place.
+fn exact_cmp(left: (i128, u8), right: (i128, u8)) -> Ordering {
+    let sign = |units: i128| units.signum();
+    match sign(left.0).cmp(&sign(right.0)) {
+        Ordering::Equal => {}
+        other => return other,
+    }
+    let negative = left.0 < 0;
+    let split = |(units, scale): (i128, u8)| {
+        let digits = units.unsigned_abs().to_string();
+        let scale = usize::from(scale);
+        let padded = if digits.len() <= scale {
+            format!("{}{digits}", "0".repeat(scale + 1 - digits.len()))
+        } else {
+            digits
+        };
+        let at = padded.len() - scale;
+        (padded[..at].to_owned(), padded[at..].to_owned())
+    };
+    let (left_whole, left_fraction) = split(left);
+    let (right_whole, right_fraction) = split(right);
+    let whole = left_whole
+        .len()
+        .cmp(&right_whole.len())
+        .then_with(|| left_whole.cmp(&right_whole));
+    let places = left_fraction.len().max(right_fraction.len());
+    let pad = |value: String| format!("{value}{}", "0".repeat(places - value.len()));
+    let magnitude = whole.then_with(|| pad(left_fraction).cmp(&pad(right_fraction)));
+    if negative {
+        magnitude.reverse()
+    } else {
+        magnitude
     }
 }
 
 impl From<i64> for Number {
     fn from(value: i64) -> Self {
-        #[allow(clippy::cast_precision_loss)]
-        Self(value as f64)
+        Self(Repr::of_integer(i128::from(value)))
     }
 }
 
 impl From<usize> for Number {
     fn from(value: usize) -> Self {
-        #[allow(clippy::cast_precision_loss)]
-        Self(value as f64)
+        Self(Repr::of_integer(value as i128))
     }
 }
 
 impl From<u32> for Number {
     fn from(value: u32) -> Self {
-        Self(f64::from(value))
+        Self(Repr::of_integer(i128::from(value)))
     }
 }
 
 impl PartialEq for Number {
     fn eq(&self, other: &Self) -> bool {
-        self.0 == other.0
+        self.cmp(other) == Ordering::Equal
     }
 }
 
@@ -101,22 +466,83 @@ impl PartialOrd for Number {
 }
 
 impl Ord for Number {
+    /// The exact value, and the binary64 only where there is no exact value.
+    ///
+    /// The exact comparison is what fixes F08: `2^53` and `2^53 + 1` are one `f64`, and comparing
+    /// the scaled integers says which is which.
+    ///
+    /// **The order is total, and the argument is one function away.** The `total_cmp` arm runs only
+    /// when the two variants differ, and [`Repr::exact`]'s second postcondition is that the variant
+    /// is a function of the carried binary64 — so differing variants never carry one `f64`, the
+    /// arm is never a tie, and the two arms never disagree about one pair. The earlier version of
+    /// this comment argued it from magnitude bands instead, and that argument was false:
+    /// `parse_decimal("1e-41")` and `of_binary64(1e20)` are both `Exact` inside the band it named.
+    ///
+    /// **`-0.0` and `0.0` are one value.** `units × 10^-scale` has one zero, which is what the
+    /// `Decimal` row of the design page's matrix says; it is what `PartialEq` answered before this
+    /// type was rewritten (`eq` was `f64 ==`); and it is what a guard `amount == 0` has to mean.
+    /// The signed zero `Primitive::Binary64` promises survives in the bytes, because
+    /// [`Serialize`](serde::Serialize) writes the carried binary64.
     fn cmp(&self, other: &Self) -> Ordering {
-        self.0.total_cmp(&other.0)
+        match (self.exact(), other.exact()) {
+            (Some(left), Some(right)) => exact_cmp(left, right),
+            _ => self.get().total_cmp(&other.get()),
+        }
     }
 }
 
 impl fmt::Display for Number {
+    /// The exact spelling.
+    ///
+    /// Identical to the binary64 rendering for every value that has one — which is every value
+    /// below 2^53, and so every value in every fixture this repository holds. Above it, this stops
+    /// printing a number the value is not.
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        if self.is_integral() {
-            // `is_integral` has already established that the value fits an i64 exactly.
-            #[allow(clippy::cast_possible_truncation)]
-            let integral = self.0 as i64;
-            write!(f, "{integral}")
-        } else {
-            write!(f, "{}", self.0)
+        f.write_str(&self.exact_text())
+    }
+}
+
+/// Whether `text` is a UUID in the canonical hyphenated form, and nothing else.
+///
+/// The one form `ess-gen`'s `UUID_PATTERN` publishes: eight, four, four, four and twelve
+/// hexadecimal digits in either case. The `urn:uuid:` and brace-wrapped spellings are refused, as
+/// is anything with surrounding whitespace — one value has one spelling, or two systems agree on
+/// the schema and disagree on equality.
+///
+/// It lives here because `ess-domain`, `ess-conformance`, `ess-gen` and `infra-*` all depend on
+/// this crate and none depends on another, so this is the only place the four can share one answer.
+pub fn is_canonical_uuid(text: &str) -> bool {
+    let groups = [8usize, 4, 4, 4, 12];
+    let mut parts = text.split('-');
+    for width in groups {
+        let Some(part) = parts.next() else {
+            return false;
+        };
+        if part.len() != width || !part.bytes().all(|byte| byte.is_ascii_hexdigit()) {
+            return false;
         }
     }
+    parts.next().is_none()
+}
+
+/// Whether `text` is base64 with padding, the grammar `ess-gen`'s `BASE64_PATTERN` publishes for
+/// `Primitive::Bytes`.
+///
+/// The standard alphabet, in complete four-character groups, with `=` only in the final group and
+/// only as one or two characters. The URL-safe alphabet and unpadded base64 are refused for the
+/// reason the UUID form is: the projection names one encoding.
+pub fn is_padded_base64(text: &str) -> bool {
+    let bytes = text.as_bytes();
+    if bytes.len() % 4 != 0 {
+        return false;
+    }
+    let padding = bytes.iter().rev().take_while(|byte| **byte == b'=').count();
+    if padding > 2 {
+        return false;
+    }
+    bytes[..bytes.len() - padding]
+        .iter()
+        .all(|byte| byte.is_ascii_alphanumeric() || *byte == b'+' || *byte == b'/')
 }
 
 impl schemars::JsonSchema for Number {
@@ -227,10 +653,8 @@ impl FactValue {
         // `1e400` parses as `f64::INFINITY` rather than failing, so the check is finiteness and
         // not merely NaN: an unrepresentable literal stays the text the author typed, which is
         // both truthful and comparable, instead of becoming an infinity that serialises as `null`.
-        if let Ok(number) = trimmed.parse::<f64>() {
-            if number.is_finite() {
-                return Self::Number(Number(number));
-            }
+        if let Some(number) = Number::parse_decimal(trimmed) {
+            return Self::Number(number);
         }
         Self::Text(trimmed.to_owned())
     }

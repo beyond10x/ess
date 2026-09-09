@@ -36,6 +36,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"math"
 	"os"
 	"reflect"
 	"regexp"
@@ -2531,16 +2532,103 @@ func lookup(payload map[string]Node, path string) (Node, bool) {
 	return current, true
 }
 
-// primitive reports why a value is not of the declared kind, or "" when it is.
-func primitive(kind string, value Node) string {
-	switch kind {
-	case "string", "uuid", "timestamp", "duration":
-		if _, ok := value.(string); !ok {
-			return fmt.Sprintf("holds %s and the specification declares a %s", render(value), kind)
+// canonicalUUID reports whether text is a UUID in the one hyphenated form the specification
+// publishes: eight, four, four, four and twelve hexadecimal digits, in either case. The urn:uuid:
+// and brace-wrapped spellings are refused, because one value has one spelling.
+//
+// The same grammar as ess-gen's UUID_PATTERN and ess_primitives::facts::is_canonical_uuid, checked
+// against one corpus from all three (crates/specify/ess-primitives/tests/vectors).
+func canonicalUUID(text string) bool {
+	widths := []int{8, 4, 4, 4, 12}
+	groups := strings.Split(text, "-")
+	if len(groups) != len(widths) {
+		return false
+	}
+	for i, group := range groups {
+		if len(group) != widths[i] {
+			return false
 		}
-	case "integer", "decimal":
+		for _, r := range group {
+			isHex := (r >= '0' && r <= '9') || (r >= 'a' && r <= 'f') || (r >= 'A' && r <= 'F')
+			if !isHex {
+				return false
+			}
+		}
+	}
+	return true
+}
+
+// paddedBase64 reports whether text is base64 with padding, the standard alphabet only.
+//
+// Padding is a *suffix*: strip up to two trailing '=', then every remaining byte must be in the
+// alphabet. A scan that admitted '=' at either of the last two positions accepted "AA=A" — padding
+// followed by data — which ess_primitives::facts::is_padded_base64, ess-gen's BASE64_PATTERN and
+// the browser adapter's regular expression all refuse. One grammar means one answer, and the corpus
+// carries those vectors so all three lanes are asked.
+func paddedBase64(text string) bool {
+	if len(text)%4 != 0 {
+		return false
+	}
+	alphabet := func(b byte) bool {
+		return (b >= 'A' && b <= 'Z') || (b >= 'a' && b <= 'z') || (b >= '0' && b <= '9') || b == '+' || b == '/'
+	}
+	padding := 0
+	for padding < 2 && padding < len(text) && text[len(text)-1-padding] == '=' {
+		padding++
+	}
+	for i := 0; i < len(text)-padding; i++ {
+		if !alphabet(text[i]) {
+			return false
+		}
+	}
+	return true
+}
+
+// integral reports whether a number has no fractional part and is in the admitted Integer range.
+//
+// The range is [-2^63, 2^63], the binary64 image of [math.MinInt64, math.MaxInt64] and not that
+// interval: this runtime sees a float64, and math.MaxInt64 written as a binary64 and read back is
+// 2^63. Comparing against 2^63 exclusively refused every integer above 9223372036854775296,
+// including the math.MaxInt64 the Rust admitter accepts. See the round-trip law in
+// docs/design/review-primitive-semantics.md.
+const integerBound = 9223372036854775808.0
+
+func integral(value float64) bool {
+	return value == math.Trunc(value) && value >= -integerBound && value <= integerBound
+}
+
+// primitive reports why a value is not of the declared kind, or "" when it is.
+//
+// A grammar, not merely a shape. "uuid" admitted any string at all and "bytes" admitted anything
+// whatever, so this runtime accepted candidates that every schema the same specification publishes
+// refuses — review finding F08. See docs/design/review-primitive-semantics.md.
+func primitive(kind string, value Node) string {
+	mismatch := func() string {
+		return fmt.Sprintf("holds %s and the specification declares a %s", render(value), kind)
+	}
+	switch kind {
+	case "string", "timestamp", "duration":
+		if _, ok := value.(string); !ok {
+			return mismatch()
+		}
+	case "uuid":
+		text, ok := value.(string)
+		if !ok || !canonicalUUID(text) {
+			return mismatch()
+		}
+	case "bytes":
+		text, ok := value.(string)
+		if !ok || !paddedBase64(text) {
+			return mismatch()
+		}
+	case "integer":
+		number, ok := asNumber(value)
+		if !ok || !integral(number) {
+			return mismatch()
+		}
+	case "decimal":
 		if _, ok := asNumber(value); !ok {
-			return fmt.Sprintf("holds %s and the specification declares a %s", render(value), kind)
+			return mismatch()
 		}
 	case "boolean":
 		if _, ok := value.(bool); !ok {

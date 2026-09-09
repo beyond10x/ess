@@ -933,3 +933,48 @@ fn a_long_recursive_read_validates_beyond_the_projection_limit() {
         ess_conformance::input::Target::TooDeep
     );
 }
+
+/// The bytes an old reader already has, pinned so the exact-number work cannot move them.
+///
+/// `Number` is exact now (`docs/design/review-primitive-semantics.md`), and the one thing that
+/// makes that free of consequences is that it still *writes* the binary64 it always wrote: an
+/// `Integer` witness is `1.0` in every suite artifact this repository has published, and
+/// `docs/design/review-conformance-coverage.md:172-176` froze that spelling. The canonical-
+/// serialization stage changes it behind a format version; nothing here may.
+#[test]
+fn an_integral_witness_is_still_written_with_the_fractional_part_it_does_not_have() {
+    let integral = Node::Number(Number::from(1_i64));
+    assert_eq!(serde_json::to_string(&integral).unwrap(), "1.0");
+    assert!(matches!(&integral, Node::Number(number) if number.is_integral()));
+
+    // The same value, reached the four other ways a witness or a candidate reaches one.
+    for reached in [
+        Node::Number(Number::new(1.0).expect("finite")),
+        Node::Number(Number::from(1_u32)),
+        Node::Number(Number::from(1_usize)),
+        serde_json::from_str::<Node>("1").expect("an integer token is a node"),
+    ] {
+        assert_eq!(serde_json::to_string(&reached).unwrap(), "1.0");
+        assert_eq!(reached, integral);
+    }
+
+    // A whole witness input, byte for byte, as `ess conform synthesize` writes one.
+    let ir = compiled();
+    let inputs = ess_conformance::witness::candidates(
+        &ir,
+        place_order(&ir),
+        &[],
+        ess_conformance::witness::Distinction::PLAIN,
+    )
+    .expect("the witness specification is witnessable");
+    let written = serde_json::to_string(&inputs[0]).expect("a witness serialises");
+    assert!(
+        written.contains(".0"),
+        "an integral leaf still carries a fractional part: {written}"
+    );
+    assert_eq!(
+        written,
+        r#"{"amount":{"amount":1.0,"currency":"amount.currency"},"channel":"Email","currency":"currency","express":true,"labels":{},"lines":[],"note":"note","payee":{"kind":"company","value":"payee"},"priced":{"amount":1.0,"currency":"priced.currency"},"quantity":1.0}"#,
+        "the witness bytes moved"
+    );
+}

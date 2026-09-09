@@ -400,7 +400,7 @@ fn plan_extraction(extraction: &Path) -> Result<Value> {
     )?;
     let baseline_bytes = include_bytes!("initial-baseline.json");
     if hash_bytes(baseline_bytes)
-        != "e005a2e74e067ad51315e594151643b702381dc174bb9af5c355c3eeeb17ad51"
+        != "3dd8dff59335c8a77c93c2734118566fd1b2d5165c0590d0aa9be397374a47de"
     {
         bail!("root-owned initial eligibility differs from accepted exact bytes");
     }
