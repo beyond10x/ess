@@ -2,6 +2,25 @@
 
 ## [Unreleased]
 
+## [0.22.1] — 2026-09-10
+
+### Fixed
+
+- **The release gate is green at the tag again.** 0.22.0 was tagged from a commit whose own
+  `task check` failed — eleven `ess-xtask` tests — so its `Release` run published no archives, and
+  0.21.0 had failed the same way. Two causes:
+  - The three reviewed `wire:RawSpecFile#/definitions` rows in
+    `crates/edge/ess-xtask/src/consumer_coverage/reviewed-schema-metadata.json` carried the
+    definitions-container digest from before `delivery: at_most_once`. The container changed with
+    that word and the rows were not re-reviewed. Re-reviewed here: the reason and the decision page
+    still hold, and only the shape digest moves.
+  - `website/docs/status/where-this-stands.md` states the workspace version inside the rendered
+    support block, so a version bump that does not re-run `cargo xtask support` leaves
+    `support-check` red at exactly the commit a tag points at. Re-rendered for this version; a
+    release commit carries the re-render beside the bump.
+  - `fuzz/Cargo.lock` still pinned the workspace crates at 0.21.0: the 0.22.0 bump did not touch
+    it, so `fuzz-check`'s `--locked` builds refuse at the tag. Updated beside the root lock.
+
 ## [0.22.0] — 2026-09-10
 
 ### Added
