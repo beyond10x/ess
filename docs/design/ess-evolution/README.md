@@ -13,9 +13,9 @@ transport, authority and external effects, and the application is built and star
 - [Dependency policy](dependency-policy.md)
 - [Feature preservation](feature-preservation.md)
 - [Migration sequence](migration.md)
+- [Service semantics and Entity Runtime crosswalk](semantic-crosswalk.md)
 - [Acceptance](acceptance.md)
 
 Private application specifications and source extractions remain in their owning repositories.
 ESS examples are synthetic. Local cross-repository evidence is kept outside public documentation.
 Nothing in this design declares a runtime migration complete.
-
