@@ -1,0 +1,45 @@
+domain: sample.work
+entities:
+  - name: sample.work.Row
+    identity: {name: id, type: Uuid}
+    fields: [{name: label, type: String}]
+    lifecycle: {initial: Active, states: [Active], terminal: [Active]}
+commands:
+  - name: sample.work.Put
+    input: [{name: id, type: Uuid}, {name: enabled, type: Boolean}]
+    outcomes:
+      - name: stored
+        when: enabled == true
+        creates: sample.work.Row
+        instance: id
+        emits: [sample.work.Stored, sample.work.Audited]
+        payload:
+          sample.work.Stored: {id: input.id}
+      - name: unchanged
+        error: sample.work.Disabled
+  - name: sample.work.Ping
+    input: [{name: id, type: Uuid}]
+    outcomes:
+      - name: available
+        emits: [sample.work.Audited]
+      - name: unavailable
+        external: the peer is unavailable
+        error: sample.work.Unavailable
+events:
+  - name: sample.work.Stored
+    fields: [{name: id, type: Uuid}]
+  - name: sample.work.Audited
+    fields: [{name: message, type: String}]
+errors:
+  - name: sample.work.Disabled
+    fields: [{name: reason, type: String}]
+  - name: sample.work.Unavailable
+    fields: [{name: reason, type: String}]
+views:
+  - name: sample.work.ById
+    source: sample.work.Row
+    fields: [{name: id, type: Uuid}]
+    params: [{name: id, type: Uuid}]
+    filter: id == param.id
+    order_by: [id]
+    consistency: read_your_writes

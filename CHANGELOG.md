@@ -2,6 +2,15 @@
 
 ## [Unreleased]
 
+### Added
+
+- `ess-service-contract` exposes selected component commands, complete outcomes, events, errors,
+  owned state and views from the original ESS compiler model. External decisions remain explicit
+  binding work. Optional synthesis integration provides reusable required-capability resolution
+  without runtime or SDK policy dependencies.
+- The extracted synthesis disposition preserves valid SDK wire values and rejects extra fields
+  in the generated disposition, which the former derived reader silently ignored.
+
 ### Fixed
 
 - Diagnostic source lookup distinguishes a declaration from longer names that share its

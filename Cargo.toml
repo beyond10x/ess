@@ -8,6 +8,7 @@ members = [
     "crates/specify/ess-composition",
     "crates/specify/ess-realization",
     "crates/specify/ess-cli-contract",
+    "crates/specify/ess-service-contract",
     # generate — that IR becomes artifacts; nothing here applies anything.
     "crates/generate/ess-gen",
     "crates/generate/ess-synth",
@@ -54,6 +55,7 @@ ess-compiler = { path = "crates/specify/ess-compiler", version = "0.22.0" }
 ess-composition = { path = "crates/specify/ess-composition", version = "0.22.0" }
 ess-realization = { path = "crates/specify/ess-realization", version = "0.22.0" }
 ess-cli-contract = { path = "crates/specify/ess-cli-contract", version = "0.22.0" }
+ess-service-contract = { path = "crates/specify/ess-service-contract", version = "0.22.0" }
 ess-cli-project = { path = "crates/generate/ess-cli-project", version = "0.22.0" }
 ess-deployment = { path = "crates/generate/ess-deployment", version = "0.22.0" }
 ess-gen = { path = "crates/generate/ess-gen", version = "0.22.0" }

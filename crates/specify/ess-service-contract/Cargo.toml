@@ -1,0 +1,26 @@
+[package]
+name = "ess-service-contract"
+description = "Selected ESS service semantics and explicit synthesis obligations."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+publish.workspace = true
+
+[features]
+default = []
+synthesis = ["dep:ess-synth", "dep:serde"]
+
+[dependencies]
+ess-compiler.workspace = true
+ess-domain.workspace = true
+ess-synth = { workspace = true, optional = true }
+serde = { workspace = true, optional = true }
+
+[dev-dependencies]
+serde_json.workspace = true
+
+[lints]
+workspace = true

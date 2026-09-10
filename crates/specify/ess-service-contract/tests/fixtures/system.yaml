@@ -1,0 +1,12 @@
+format: ess/1
+system: sample
+version: v1
+domains: [sample.work, sample.other]
+components:
+  - component: work-service
+    owns: {domains: [sample.work]}
+    accepts: {commands: [sample.work.Put, sample.work.Ping]}
+    publishes: {events: [sample.work.Stored, sample.work.Audited]}
+  - component: other-service
+    owns: {domains: [sample.other]}
+    accepts: {commands: [sample.other.Hidden]}

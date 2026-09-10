@@ -1,0 +1,13 @@
+domain: sample.other
+entities:
+  - name: sample.other.Shadow
+    identity: {name: id, type: Uuid}
+    fields: [{name: note, type: String}]
+    lifecycle: {initial: Active, states: [Active], terminal: [Active]}
+commands:
+  - name: sample.other.Hidden
+    input: [{name: id, type: Uuid}]
+    outcomes: [{name: accepted, emits: [sample.other.HiddenDone]}]
+events:
+  - name: sample.other.HiddenDone
+    fields: [{name: id, type: Uuid}]

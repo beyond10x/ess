@@ -554,6 +554,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "ess-service-contract"
+version = "0.22.0"
+dependencies = [
+ "ess-compiler",
+ "ess-domain",
+ "ess-synth",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
 name = "ess-synth"
 version = "0.22.0"
 dependencies = [
