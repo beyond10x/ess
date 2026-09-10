@@ -2,6 +2,11 @@
 
 ## [Unreleased]
 
+### Changed
+
+- Consumer checks refuse drift in the ESS evolution preservation mapping before running
+  expensive extraction and behavioral cases. Existing semantic eligibility remains unchanged.
+
 ## [0.21.0] — 2026-09-10
 
 ### Added

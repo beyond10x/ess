@@ -34927,6 +34927,21 @@
     "macro_ast_sha256": null,
     "reason": "Exact consumer gate infrastructure entry: parses finite accounting or runs and records reviewed Rust cases. This entry does not itself establish ESS model semantics; consumer behavior remains attributed only to the separately named owner cases."
   },
+  "ess_xtask::bin(ess-xtask)::consumer_coverage::preservation::fn::check": {
+    "class": "OwnedHelper",
+    "macro_ast_sha256": null,
+    "reason": "Reads the three reviewed inventory JSON files and invokes the preservation consistency validator described in docs/design/ess-evolution/feature-preservation.md. This gate helper interprets no ESS model and grants no semantic eligibility."
+  },
+  "ess_xtask::bin(ess-xtask)::consumer_coverage::preservation::fn::validate": {
+    "class": "OwnedHelper",
+    "macro_ast_sha256": null,
+    "reason": "Compares preservation rows with current profiles and reviewed requirement references under docs/design/ess-evolution/feature-preservation.md. It refuses inventory drift without changing Supported, Refused, BaselineUnknown or metadata qualification."
+  },
+  "ess_xtask::bin(ess-xtask)::consumer_coverage::preservation::module": {
+    "class": "OwnedHelper",
+    "macro_ast_sha256": null,
+    "reason": "Finite preservation gate namespace containing only inventory loading and consistency validation, reviewed in story:ess-evolution-preservation-gate. Its fixture mutations verify refusals and are not ESS semantic behavior evidence."
+  },
   "ess_xtask::bin(ess-xtask)::consumer_coverage::proposal::enum::CandidateStatus": {
     "class": "OwnedHelper",
     "macro_ast_sha256": null,

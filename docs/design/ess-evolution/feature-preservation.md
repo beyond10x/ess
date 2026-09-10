@@ -11,6 +11,14 @@ and macro-guards.json retain metadata and mutation obligations. This mapping sup
 inventories and does not reclassify a candidate as supported. Full extracted case identities and
 source hashes are retained in the baseline evidence, including all recently added CLI cases.
 
+`task consumer-check` checks this mapping before extraction or case execution. It requires
+exactly one row per current profile, retained semantic and destination entrypoints, execution
+profiles, classification and claim boundaries, and exact reviewed requirement ids, case lists
+and behavior. It also checks the baseline identity, authority list and unknown-eligibility
+qualification. Missing, duplicate, unknown or changed rows refuse the check early. This is a
+consistency constraint against the current reviewed authorities, not proof of a runtime migration
+or an independent historical inventory: coordinated authority changes still require review.
+
 | Existing capability / semantic source | Existing implementation and format authority | Retained evidence | Destination / compatibility acceptance |
 | --- | --- | --- | --- |
 | Domain types, entities, commands, outcomes, predicates, views and references | ess-domain, ess-compiler, ess-primitives; RawSpecFile, EssIr and published schemas | Specify package tests, compiler fixtures, consumer profiles authored-*, compiler-*, semantic-references and dependency-graph | Same packages and canonical bytes; add ServiceIr separately; task check and exact consumer cases |
