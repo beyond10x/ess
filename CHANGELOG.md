@@ -2,6 +2,12 @@
 
 ## [Unreleased]
 
+### Fixed
+
+- Generated output accepts SELinux and SMACK access labels imposed by the platform. Foreign
+  attributes, file capabilities, ACLs and overlay control attributes still refuse publication;
+  metadata outside the ownership ledger is never silently discarded.
+
 ## [0.22.1] — 2026-09-10
 
 ### Fixed

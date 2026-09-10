@@ -438,13 +438,11 @@ fn ordinary_metadata(fd: &impl AsFd, file: bool) -> Result<()> {
             "output destination has multiple hard links"
         );
     }
-    let mut names = [0u8; 1];
-    match fs::flistxattr(fd, &mut names[..]) {
-        Ok(0) | Err(Errno::NOTSUP) => {}
-        Ok(_) | Err(Errno::RANGE) => {
-            bail!("output has extended metadata outside the ordinary snapshot contract")
-        }
-        Err(e) => return Err(e).context("checking output extended metadata"),
+    if let Some(name) = foreign_xattrs(fd)?.into_iter().next() {
+        bail!(
+            "output has extended metadata outside the ordinary snapshot contract: {}",
+            name.to_string_lossy()
+        );
     }
     #[cfg(target_os = "macos")]
     ensure!(
@@ -452,6 +450,38 @@ fn ordinary_metadata(fd: &impl AsFd, file: bool) -> Result<()> {
         "output has Darwin flags outside the ordinary snapshot contract"
     );
     Ok(())
+}
+
+/// Access labels imposed by mandatory access-control platforms. Capabilities, ACLs, execution
+/// labels and overlay control attributes affect behavior outside the ownership ledger and remain
+/// foreign. Accept exact names only; an entire namespace is not evidence of platform ownership.
+fn platform_xattr(name: &[u8]) -> bool {
+    cfg!(target_os = "linux") && matches!(name, b"security.selinux" | b"security.SMACK64")
+}
+
+/// The extended-attribute names on `fd` that the platform did not impose — anything a person or
+/// another program attached (`user.*` and every other namespace), which the snapshot contract cannot
+/// represent and therefore refuses. Empty when the filesystem does not support attributes.
+fn foreign_xattrs(fd: &impl AsFd) -> Result<Vec<OsString>> {
+    let mut buf = vec![0u8; 256];
+    let len = loop {
+        match fs::flistxattr(fd, &mut buf[..]) {
+            Ok(len) => break len,
+            Err(Errno::NOTSUP) => return Ok(Vec::new()),
+            Err(Errno::RANGE) => {
+                let mut probe = [0u8; 0];
+                let needed: usize = fs::flistxattr(fd, &mut probe[..])
+                    .context("sizing output extended metadata")?;
+                buf.resize(needed.max(buf.len() * 2), 0);
+            }
+            Err(e) => return Err(e).context("checking output extended metadata"),
+        }
+    };
+    Ok(buf[..len]
+        .split(|byte| *byte == 0)
+        .filter(|name| !name.is_empty() && !platform_xattr(name))
+        .map(|name| OsStr::from_bytes(name).to_os_string())
+        .collect())
 }
 pub(super) fn sync(fd: &impl AsFd, observer: &mut Observer<'_>, label: &str) -> Result<()> {
     observer(&format!("before:sync:{label}"))?;
@@ -649,4 +679,69 @@ pub(super) fn aliases(root: &File, path: &Path, mount: &Mount) -> Result<()> {
         }
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod xattr_tests {
+    use super::*;
+
+    #[test]
+    fn only_exact_platform_access_labels_are_ordinary() {
+        for name in [&b"security.selinux"[..], b"security.SMACK64"] {
+            assert!(
+                platform_xattr(name) == cfg!(target_os = "linux"),
+                "{} is stamped by the platform and must not refuse a publication",
+                String::from_utf8_lossy(name)
+            );
+        }
+        for name in [
+            &b"user.ess"[..],
+            b"trusted.other",
+            b"btrfs.compression",
+            b"security.capability",
+            b"system.posix_acl_access",
+            b"trusted.overlay.opaque",
+            b"security.SMACK64EXEC",
+            b"security.selinux.extra",
+            b"security.SMACK64TRANSMUTE",
+        ] {
+            assert!(
+                !platform_xattr(name),
+                "{} was attached by somebody other than the platform and must be refused",
+                String::from_utf8_lossy(name)
+            );
+        }
+    }
+
+    #[test]
+    fn a_user_attribute_on_the_destination_is_refused_by_name() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let path = dir.path().join("out");
+        let file = File::create(&path).expect("create");
+        match fs::fsetxattr(&file, "user.ess_test", b"1", fs::XattrFlags::empty()) {
+            Ok(()) => {}
+            Err(Errno::NOTSUP) => return, // the filesystem carries no user attributes; nothing to refuse
+            Err(e) => panic!("setting a user attribute for the test: {e}"),
+        }
+        let names = foreign_xattrs(&file).expect("listing");
+        assert_eq!(
+            names,
+            vec![OsString::from("user.ess_test")],
+            "the foreign attribute is reported by name"
+        );
+        let err = ordinary_metadata(&file, true)
+            .expect_err("a foreign attribute refuses the destination");
+        assert!(
+            err.to_string().contains("user.ess_test"),
+            "the refusal names the attribute it saw: {err}"
+        );
+    }
+
+    #[test]
+    fn a_destination_without_attributes_is_ordinary() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let file = File::create(dir.path().join("out")).expect("create");
+        assert!(foreign_xattrs(&file).expect("listing").is_empty());
+        ordinary_metadata(&file, true).expect("no attribute, no refusal");
+    }
 }
