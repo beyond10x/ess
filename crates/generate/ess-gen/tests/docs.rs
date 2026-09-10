@@ -715,9 +715,103 @@ fn a_bindings_delivery_and_failure_semantics_are_stated_in_words() {
     );
     assert_says(
         &interactions,
-        "the compiler took it on trust rather than checking it",
-        "a literal is not typechecked, and a reader must be able to see which mappings were",
+        "The compiler accepts text for this String-backed input; it does not check the type's \
+         invariants or whether the value names an external resource.",
+        "text representation admission does not prove a newtype's invariants or external existence",
     );
+}
+
+fn literal_mapping_fixture(target: &str, literal: &str) -> String {
+    format!(
+        r"
+format: ess/1
+system: notifications
+version: v1
+domain: notifications.core
+types:
+  - name: notifications.core.Reason
+    kind: enum
+    variants: [declined, unavailable]
+  - name: notifications.core.WrappedReason
+    kind: newtype
+    of: Optional<notifications.core.Reason>
+  - name: notifications.core.Label
+    kind: newtype
+    of: String
+    invariants:
+      - value == required
+commands:
+  - name: notifications.core.Reject
+    input:
+      - name: reason
+        type: {target}
+    outcomes:
+      - name: rejected
+        emits: [notifications.core.Rejected]
+events:
+  - name: notifications.core.Refused
+  - name: notifications.core.Rejected
+bindings:
+  - id: reject-on-refusal
+    when:
+      event: notifications.core.Refused
+    invoke:
+      command: notifications.core.Reject
+    mapping:
+      reason: {literal}
+    delivery: at_most_once
+    on_failure: drop
+"
+    )
+}
+
+#[test]
+fn binding_literal_docs_report_enum_membership_through_wrappers() {
+    for target in [
+        "notifications.core.Reason",
+        "Optional<notifications.core.Reason>",
+        "Optional<notifications.core.WrappedReason>",
+    ] {
+        let text = literal_mapping_fixture(target, "declined");
+        let ir = compiled(&[("literal.yaml", &text)]);
+        let interactions = page(&pages(&ir), "docs/interactions.md");
+        assert_says(
+            &interactions,
+            "the literal `declined`. The compiler verified that this is a declared variant of \
+             `notifications.core.Reason`.",
+            "enum membership is checked, including through Optional and newtype wrappers",
+        );
+        assert!(!interactions.contains("took it on trust"));
+
+        let invalid = literal_mapping_fixture(target, "not_a_variant");
+        let raw = RawSpecFile::parse(&invalid).expect("the invalid variant is valid syntax");
+        let errors = Specification::assemble(vec![(Source::new("literal.yaml"), raw)])
+            .expect_err("a documentation correction must not admit an undeclared enum variant");
+        assert!(errors.to_string().contains("not a variant"), "{errors}");
+    }
+}
+
+#[test]
+fn binding_literal_docs_limit_string_guarantees_to_representation() {
+    for target in [
+        "String",
+        "Optional<String>",
+        "notifications.core.Label",
+        "Optional<notifications.core.Label>",
+    ] {
+        // This value violates Label's invariant, demonstrating the compiler's actual limit.
+        let text = literal_mapping_fixture(target, "declined");
+        let ir = compiled(&[("literal.yaml", &text)]);
+        let interactions = page(&pages(&ir), "docs/interactions.md");
+        assert_says(
+            &interactions,
+            "the literal `declined`. The compiler accepts text for this String-backed input; it \
+             does not check the type's invariants or whether the value names an external resource.",
+            "String-backed admission must not claim invariant or external-resource validation",
+        );
+        assert!(!interactions.contains("took it on trust"));
+        assert!(!interactions.contains("compiler verified that this is a declared variant"));
+    }
 }
 
 #[test]

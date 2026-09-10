@@ -739,8 +739,9 @@ pub enum ResolvedPayloadValue {
     },
     /// A value written in the outcome itself.
     ///
-    /// Taken on trust past `ess-domain`'s representation check, exactly as a binding's literal is —
-    /// and a separate variant for the same reason: a reader can see which fields were verified.
+    /// Checked by `ess-domain` against the target's representation, as a binding's literal is:
+    /// enum membership is verified through Optional/newtype wrappers, and String-backed targets
+    /// admit text. Type invariants and the existence of external resources are not verified.
     Literal {
         /// The value, as written.
         value: String,
@@ -979,9 +980,10 @@ pub enum ResolvedMappingValue {
     },
     /// A value written in the binding itself.
     ///
-    /// Its type is *not* checked against the target — nothing in the model says how to read
-    /// `invoice-created` as a `TemplateId` — and it is a separate variant so that a reader can see
-    /// exactly which mappings the compiler verified and which it took on trust.
+    /// Checked against the target's representation: enum membership is verified through
+    /// Optional/newtype wrappers, and String-backed targets admit text. Type invariants and the
+    /// existence of external resources are not verified; `invoice-created` being accepted for a
+    /// String-backed `TemplateId` does not establish that the template exists.
     Literal {
         /// The value, as written.
         value: String,

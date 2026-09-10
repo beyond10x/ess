@@ -46,14 +46,15 @@ use ess_compiler::ir::{
     Driver, EssIr, ResolvedActor, ResolvedBinding, ResolvedBody, ResolvedCommand,
     ResolvedComponent, ResolvedCondition, ResolvedConversion, ResolvedDomain, ResolvedEffect,
     ResolvedEntity, ResolvedError, ResolvedEvent, ResolvedFailure, ResolvedField, ResolvedMapping,
-    ResolvedMappingValue, ResolvedPayloadValue, ResolvedSubject, ResolvedType, ResolvedView,
-    ResolvedWorkload, TypeHandle,
+    ResolvedMappingValue, ResolvedPayloadValue, ResolvedSubject, ResolvedType, ResolvedTypeRef,
+    ResolvedView, ResolvedWorkload, TypeHandle,
 };
 use ess_domain::binding::Delivery;
 use ess_domain::command::TestStrategy;
 use ess_domain::entity::{Cardinality, Invariant, RelationKind, StateMachine, StateName};
 use ess_domain::name::{Naming, QualifiedName};
 use ess_domain::refs::ExternalRef;
+use ess_domain::types::Primitive;
 use ess_domain::view::{AssertionStyle, Consistency, Direction};
 
 use crate::artifact::{Artifact, Generator};
@@ -1276,7 +1277,11 @@ fn binding_section(ir: &EssIr, binding: &ResolvedBinding) -> Block {
     } else {
         under.sentence("It fills the command's input like this:");
         under.push(bullets(
-            binding.mapping.iter().map(mapping_bullet).collect(),
+            binding
+                .mapping
+                .iter()
+                .map(|mapping| mapping_bullet(ir, mapping))
+                .collect(),
         ));
     }
 
@@ -1677,7 +1682,7 @@ fn failure_sentence(ir: &EssIr, binding: &ResolvedBinding) -> Vec<Inline> {
 }
 
 /// One filled command input, and the reason its types were allowed to meet.
-fn mapping_bullet(mapping: &ResolvedMapping) -> Vec<Inline> {
+fn mapping_bullet(ir: &EssIr, mapping: &ResolvedMapping) -> Vec<Inline> {
     let mut out = vec![
         Inline::code(mapping.target.clone()),
         Inline::text(" ("),
@@ -1703,16 +1708,53 @@ fn mapping_bullet(mapping: &ResolvedMapping) -> Vec<Inline> {
         ResolvedMappingValue::Literal { value } => {
             out.push(Inline::text("the literal "));
             out.push(Inline::code(value.clone()));
-            out.push(Inline::text(
-                ". Nothing in the model says how to read that as a ",
-            ));
-            out.push(Inline::code(mapping.target_type.to_string()));
-            out.push(Inline::text(
-                ", so the compiler took it on trust rather than checking it.",
-            ));
+            out.extend(literal_guarantee(ir, &mapping.target_type));
         }
     }
     out
+}
+
+/// Describe the admitted representation without claiming that literal invariants were evaluated.
+fn literal_guarantee(ir: &EssIr, target: &ResolvedTypeRef) -> Vec<Inline> {
+    let mut current = target;
+    let mut seen = BTreeSet::new();
+    loop {
+        match current {
+            ResolvedTypeRef::Optional { of } => current = of,
+            ResolvedTypeRef::Declared { name } if seen.insert(name) => {
+                match &ir.named_type(name).body {
+                    ResolvedBody::Newtype { of, .. } => current = of,
+                    ResolvedBody::Enum { .. } => {
+                        return vec![
+                            Inline::text(
+                                ". The compiler verified that this is a declared variant of ",
+                            ),
+                            Inline::code(name.to_string()),
+                            Inline::text("."),
+                        ];
+                    }
+                    ResolvedBody::Struct { .. } | ResolvedBody::Union { .. } => break,
+                }
+            }
+            ResolvedTypeRef::Primitive {
+                name: Primitive::String,
+            } => {
+                return vec![Inline::text(
+                    ". The compiler accepts text for this String-backed input; it does not check \
+                     the type's invariants or whether the value names an external resource.",
+                )];
+            }
+            ResolvedTypeRef::Primitive { .. }
+            | ResolvedTypeRef::Declared { .. }
+            | ResolvedTypeRef::List { .. }
+            | ResolvedTypeRef::Map { .. } => break,
+        }
+    }
+    // A recursive representation has no enum or String guarantee to report. Do not infer one
+    // merely because this mapping reached the IR; admission remains the compiler's responsibility.
+    vec![Inline::text(
+        ". This documentation establishes no additional value constraints for this literal.",
+    )]
 }
 
 /// A component's ownership, which is the only claim it makes.
