@@ -2,7 +2,7 @@
 format: aep.planning-md/1
 id: story:service-contract-extraction
 kind: story
-status: draft
+status: active
 title: Extract reusable service contract resolution from the SDK into ESS
 relations:
 - informed_by: initiative:ess-evolution
@@ -18,7 +18,7 @@ scope:
   path: crates/specify/ess-service-contract
 - confidence: cited
   path: docs/design/service-contract.md
-revision: 3
+revision: 6
 ---
 ## Outcome
 
@@ -41,3 +41,9 @@ The synthetic fixture validates through ess specify validate (sample v1, three f
 Two focused integration tests pass, with multiple independent assertions for component isolation, per-outcome semantics, vocabulary, valid wire values and missing/duplicate/refused capabilities. Replacing accepted-command selection with all model commands caused the expected extra sample.other.Hidden command and failed the selection assertion; restoration passed. The extracted serde unit disposition initially swallowed extra fields despite deny_unknown_fields. A strict empty-struct wire helper now refuses them while preserving the original public variant and valid JSON bytes. The SDK before-extraction runtime fixture was captured independently against c70c954da43c063143b34601ef8af7a1c511e5aa for the consumer comparison.
 
 Strict all-feature/all-target Clippy, Rustdoc for both default and synthesis features, and Rust 1.85 all-feature/all-target compilation passed. The compiler retains two existing const-helper warnings under Rust 1.85. Evidence: local-evidence:ess-evolution-20260910/ess-service-contract-final.log; ess-service-contract-selection-mutation.log; ess-service-contract-clippy.log; ess-service-contract-rustdoc.log; ess-service-contract-default-rustdoc.log; ess-service-contract-msrv.log; ess-service-contract-fixture-ir.json. No full or remote persistence gate ran. Publish this provider before the SDK switches to its exact revision; SDK compatibility and main integration remain pending.
+
+## Consumer publication
+
+Service SDK 03026ec181b6d343672a3863dc1c9874398c6105 is published on refactor/ess-service-contract and consumes exact ESS provider d453c50769f08d1c348daad3c2e8b721be571078. It removes the local disposition type/resolver and field-summary implementations, preserves the SDK public type path and error mapping, and keeps all runtime policy in the SDK. Its six targeted runtime tests pass, including exact equality with 8,951 pre-extraction canonical bytes and both original standalone/factory runtime documents. Strict affected Clippy and all workspace target compilation passed, including generated host crates. The lockfile changes only the ESS packages and new dependency. Evidence: local-evidence:ess-evolution-20260910/sdk-service-contract-tests.log; sdk-service-contract-host-fixtures.log; sdk-service-contract-clippy.log; sdk-service-contract-workspace-build.log.
+
+The provider and consumer extraction is implemented and published on feature branches. Main integration, catalog observation of the added component edges, ER lowering/service-engine delegation and real consumer adoption remain unfinished. No release, deployment or full gate is claimed.
