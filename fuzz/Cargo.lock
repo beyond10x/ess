@@ -72,7 +72,7 @@ checksum = "877a4ace8713b0bcf2a4e7eec82529c029f1d0619886d18145fea96c3ffe5c0f"
 
 [[package]]
 name = "ess-compiler"
-version = "0.22.1"
+version = "0.22.2"
 dependencies = [
  "ess-domain",
  "ess-primitives",
@@ -83,7 +83,7 @@ dependencies = [
 
 [[package]]
 name = "ess-domain"
-version = "0.22.1"
+version = "0.22.2"
 dependencies = [
  "ess-primitives",
  "schemars",
@@ -95,7 +95,7 @@ dependencies = [
 
 [[package]]
 name = "ess-gen"
-version = "0.22.1"
+version = "0.22.2"
 dependencies = [
  "ess-compiler",
  "ess-domain",
@@ -109,7 +109,7 @@ dependencies = [
 
 [[package]]
 name = "ess-primitives"
-version = "0.22.1"
+version = "0.22.2"
 dependencies = [
  "schemars",
  "serde",
@@ -132,7 +132,7 @@ dependencies = [
 
 [[package]]
 name = "ess-synth"
-version = "0.22.1"
+version = "0.22.2"
 dependencies = [
  "ess-compiler",
  "ess-domain",

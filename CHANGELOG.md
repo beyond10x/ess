@@ -2,12 +2,19 @@
 
 ## [Unreleased]
 
+## [0.22.2] — 2026-09-10
+
 ### Documentation
 
 - Refresh the dated published-release observation to 0.22.1 while preserving the scope of
   earlier conformance evidence and the generated current-source support matrix.
 
 ### Fixed
+
+- Shared Gates 0.1.1 requires exact automation authors on every post-baseline commit before
+  scanning or receipt reuse. Local hooks also require exact bot author and committer.
+- Classify the two native xattr helpers explicitly in consumer discovery, without granting
+  model support or changing the frozen initial accounting baseline.
 
 - Generated output accepts SELinux and SMACK access labels imposed by the platform. Foreign
   attributes, file capabilities, ACLs and overlay control attributes still refuse publication;

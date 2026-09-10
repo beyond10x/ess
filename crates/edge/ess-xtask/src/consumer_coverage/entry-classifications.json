@@ -1948,6 +1948,11 @@
     "macro_ast_sha256": null,
     "reason": "Concrete descriptor, native path, mount, lock or ordinary file-metadata helper for the edge output publisher. Native ownership interruption, containment and lock witnesses exercise this boundary; native macOS validation is separately required. This exact declaration classification grants no ESS model support or nonreachability."
   },
+  "ess_cli::bin(ess)::output_ownership::filesystem::fn::foreign_xattrs": {
+    "class": "OwnedHelper",
+    "macro_ast_sha256": null,
+    "reason": "Concrete native descriptor helper enumerates output extended attributes with buffer growth and returns only metadata outside the exact platform-label allowance. Output ownership and foreign-user-attribute refusal tests exercise the publisher boundary; this classification grants no ESS model support or nonreachability."
+  },
   "ess_cli::bin(ess)::output_ownership::filesystem::fn::identity": {
     "class": "OwnedHelper",
     "macro_ast_sha256": null,
@@ -1987,6 +1992,11 @@
     "class": "OwnedHelper",
     "macro_ast_sha256": null,
     "reason": "Concrete descriptor, native path, mount, lock or ordinary file-metadata helper for the edge output publisher. Native ownership interruption, containment and lock witnesses exercise this boundary; native macOS validation is separately required. This exact declaration classification grants no ESS model support or nonreachability."
+  },
+  "ess_cli::bin(ess)::output_ownership::filesystem::fn::platform_xattr": {
+    "class": "OwnedHelper",
+    "macro_ast_sha256": null,
+    "reason": "Concrete output-publication predicate admits only exact Linux SELinux and SMACK access-label names. Its regression rejects capabilities, ACLs, execution labels, overlay metadata and prefix lookalikes; native macOS ownership witnesses preserve its refusal boundary. This helper grants no ESS model support or nonreachability."
   },
   "ess_cli::bin(ess)::output_ownership::filesystem::fn::remove": {
     "class": "OwnedHelper",
