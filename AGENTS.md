@@ -118,6 +118,21 @@ list, and neither says which line a commit is on. AEP hit the same shape one ver
 
 ## Commits
 
+Public Gates owns common security/privacy checks and generic bot delivery (Atlas ADR 0048).
+Install coordinated hooks with `b10x-gates --repository beyond10x/ess install`. They scan the index,
+messages, filenames, metadata, annotated tags and every outgoing commit. Private policy and local
+signing keys stay outside public source. Exact adoption baselines report historical findings
+separately; candidate ignore files cannot disable rules. Exceptions identify an exact rule,
+bounded location and content digest. Superseded brand-exemption categories authorize no new
+public association.
+
+Use `b10x-gates bot` for direct commits/tags/pushes and `check`, `verify` and `publish` for signed
+common evidence. Keep `b10x-bot[bot]`. Require the shared GitHub check before integration alongside
+ESS correctness. A valid signed receipt reuses only common checks; it does not replace `task check`,
+site validation or release artifacts. Commit/publish paths require no Atlas checkout, current Atlas
+main or organization-wide admission. Atlas documentation validation and Website publication remain
+separate from ordinary source publication.
+
 - Use conventional prefixes and a body explaining what changed and why.
 - Use organization bot tooling outside this public repository for commits and pushes.
 - Never commit credentials, tokens, kubeconfigs, or unsanitized observations.
