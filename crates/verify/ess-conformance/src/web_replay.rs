@@ -109,6 +109,7 @@ struct Binding {
 #[serde(rename_all = "snake_case")]
 enum Delivery {
     AtLeastOnce,
+    AtMostOnce,
 }
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]

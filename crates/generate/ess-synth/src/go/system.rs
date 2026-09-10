@@ -1,11 +1,13 @@
 //! The system-package emitter: the bindings, and the one transport the specification requires.
 //!
 //! Semantically identical to the Rust emitter's system crate, and it has to be: the transport is
-//! *derived* from the model — `at_least_once` is the only delivery guarantee the specification
-//! declares, and the component surfaces say who publishes what and who accepts what — so both
-//! targets are writing down the same conclusion. Published events land on an append-only log, a
-//! pump delivers each to every binding that reacts to it, the binding's `on_failure:` answers a
-//! **declared refusal** (`escalate` publishes the declared event through its obligation, `retry`
+//! *derived* from the model — a binding's delivery word says how many times the command may run,
+//! and the component surfaces say who publishes what and who accepts what — so both targets are
+//! writing down the same conclusion. One delivery per occurrence is what `at_most_once` requires
+//! and what `at_least_once` permits, so the two words select the same dispatch here.
+//! Published events land on an append-only log, a pump delivers each to every binding that
+//! reacts to it, the binding's `on_failure:` answers a **declared refusal** (`escalate`
+//! publishes the declared event through its obligation, `retry`
 //! holds the event for the next pump, `drop` gives up silently), and an unmet obligation
 //! propagates instead of being routed into the policy — a workspace being unfinished is not a
 //! delivery failing.
@@ -107,16 +109,27 @@ pub(super) fn system_package(
     let owed = obligations(&mut body, &emit, plan, refusals, stubbed);
     assembled(&mut body, &emit, &components, &deliveries, &owed);
 
+    // The same two spellings the Rust emitter chooses between, and for the same reason: a header
+    // that calls `at_least_once` the model's only delivery guarantee misdescribes a model that
+    // declares `at_most_once` too.
+    let transport = if crate::plan::declares_single_attempt(ir) {
+        "// The transport is derived from the specification, not chosen: this model declares more \
+         than\n// one delivery guarantee, and the pump delivers each published event to each \
+         reacting\n// binding exactly once — which is what `at_most_once` requires and what \
+         `at_least_once`\n// permits. Published events land on an append-only log, which is the \
+         system's observable\n// record, and so is the record of what each binding invoked."
+    } else {
+        "// The transport is derived from the specification, not chosen: `at_least_once` is the \
+         only\n// delivery guarantee the model declares, so published events land on an \
+         append-only log and\n// a pump delivers each to every binding that reacts to it. The log \
+         is the system's observable\n// record, and so is the record of what each binding invoked."
+    };
     let doc =
         format!(
         "// Package {} is the `{}` system, {}: its components assembled, its bindings wired, and \
-         its one\n// transport.\n//\n// The transport is derived from the specification, not \
-         chosen: `at_least_once` is the only\n// delivery guarantee the model declares, so \
-         published events land on an append-only log and\n// a pump delivers each to every binding \
-         that reacts to it. The log is the system's observable\n// record, and so is the record of \
-         what each binding invoked. What no specification\n// determines — how an escalation event \
-         is filled, behaviour behind the ports — stays an\n// obligation; see the PLAN.md beside \
-         this module.\n",
+         its one\n// transport.\n//\n{transport} What no specification\n// determines — how an \
+         escalation event is filled, behaviour behind the ports — stays an\n// obligation; see the \
+         PLAN.md beside this module.\n",
         package.name, ir.system(), ir.version()
     );
     Some(emit.file(&plan.provenance, &doc, &body))

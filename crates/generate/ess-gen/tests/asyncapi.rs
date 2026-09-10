@@ -74,10 +74,19 @@ fn files() -> Vec<String> {
 
 /// The billing example, compiled.
 fn billing() -> EssIr {
+    billing_delivering("at_least_once")
+}
+
+/// The billing example with its binding's delivery word replaced, compiled.
+///
+/// One word of the normative model and nothing else, so a document's difference is attributable to
+/// the guarantee rather than to a second fixture that also differs somewhere a reader has to find.
+fn billing_delivering(word: &str) -> EssIr {
     let mut parsed = Vec::new();
     for label in files() {
         let text = std::fs::read_to_string(example().join(&label))
-            .unwrap_or_else(|error| panic!("{label} is readable: {error}"));
+            .unwrap_or_else(|error| panic!("{label} is readable: {error}"))
+            .replace("delivery: at_least_once", &format!("delivery: {word}"));
         let raw = RawSpecFile::parse(&text)
             .unwrap_or_else(|error| panic!("{label} is well formed: {error}"));
         parsed.push((Source::new(label), raw));
@@ -427,6 +436,42 @@ fn a_bindings_delivery_and_failure_reach_the_receiving_operation() {
             .and_then(Value::as_str)
             .is_some_and(|it| it.contains("idempotent")),
         "at_least_once is only actionable if the document says the handler must be idempotent"
+    );
+}
+
+#[test]
+fn an_at_most_once_binding_renders_its_word_and_withdraws_the_idempotence_sentence() {
+    // The normative model with one word changed, so what differs between this document and the one
+    // above is the guarantee and nothing else.
+    let document = parsed(&billing_delivering("at_most_once"), "email-service.yaml");
+    let reactions = at(
+        &document,
+        &[
+            "operations",
+            "receive.billing.invoice.InvoiceCreated",
+            "x-ess-reactions",
+        ],
+    )
+    .as_sequence()
+    .expect("the reactions are a list");
+    let reaction = &reactions[0];
+
+    assert_eq!(
+        reaction.get("delivery").and_then(Value::as_str),
+        Some("at_most_once"),
+        "the word the author wrote, spelt the way they wrote it"
+    );
+    let means = reaction
+        .get("delivery_means")
+        .and_then(Value::as_str)
+        .expect("the sentence beside the word");
+    assert!(
+        means.contains("not at all") && means.contains("nothing redelivers it"),
+        "at_most_once is only actionable if the document says the attempt may be lost: {means}"
+    );
+    assert!(
+        !means.contains("idempotent"),
+        "this word puts no idempotence obligation on the handler: {means}"
     );
 }
 

@@ -1514,6 +1514,13 @@ fn compare_bindings(
         }
     }
 
+    if was.delivery != is.delivery {
+        push(BindingChange::DeliveryChanged {
+            before: ess_gen::graph::delivery_word(was.delivery).to_owned(),
+            after: ess_gen::graph::delivery_word(is.delivery).to_owned(),
+        });
+    }
+
     if was.failure != is.failure || was.escalation != is.escalation {
         push(BindingChange::FailureChanged {
             before: written_failure(was),

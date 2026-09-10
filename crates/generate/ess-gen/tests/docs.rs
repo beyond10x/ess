@@ -122,6 +122,14 @@ fn files(base: &Path) -> Vec<PathBuf> {
 
 /// The billing example, compiled.
 fn billing() -> EssIr {
+    billing_delivering("at_least_once")
+}
+
+/// The billing example with its binding's delivery word replaced, compiled.
+///
+/// One word of the normative model and nothing else, so a page's difference is attributable to the
+/// guarantee rather than to a second fixture that also differs somewhere a reader has to find.
+fn billing_delivering(word: &str) -> EssIr {
     let base = Path::new(env!("CARGO_MANIFEST_DIR"))
         .join("../../../examples/billing")
         .canonicalize()
@@ -135,7 +143,8 @@ fn billing() -> EssIr {
             .display()
             .to_string();
         let text = std::fs::read_to_string(&path)
-            .unwrap_or_else(|error| panic!("{label} is readable: {error}"));
+            .unwrap_or_else(|error| panic!("{label} is readable: {error}"))
+            .replace("delivery: at_least_once", &format!("delivery: {word}"));
         let raw = RawSpecFile::parse(&text)
             .unwrap_or_else(|error| panic!("{label} is well formed: {error}"));
         sources.insert(label.clone(), text);
@@ -655,6 +664,40 @@ fn a_bindings_delivery_and_failure_semantics_are_stated_in_words() {
         &interactions,
         "it is **escalated** — surfaced to a person",
         "on_failure is a required word because a binding that fails silently is a demo",
+    );
+
+    // The other word, on the same model. What changes is the sentence about delivery and nothing
+    // else, which is the point: `at_most_once` withdraws an obligation rather than adding a
+    // construct.
+    let single = page(
+        &pages(&billing_delivering("at_most_once")),
+        "docs/interactions.md",
+    );
+    assert_says(
+        &single,
+        "Delivered **at most once**",
+        "the word an author wrote, rendered as prose a reader can act on",
+    );
+    assert!(
+        !single.contains("must be idempotent"),
+        "`at_most_once` puts no idempotence obligation on the command: {single}"
+    );
+    assert_says(
+        &single,
+        "This is not \"exactly once\"",
+        "the word most likely to be misread is the one the page has to deny explicitly",
+    );
+
+    // `docs-ir` is the same builder serialised rather than rendered, and `ess generate --kind
+    // docs-ir` is what a third-party renderer reads — so the word has to be in the document, not
+    // only in this repository's Markdown.
+    let ir = billing_delivering("at_most_once");
+    let mint = ess_gen::provenance::ProvenanceMint::new(&ir);
+    let json = serde_json::to_string(&ess_gen::docs::document(&ir, &mint))
+        .expect("the document serialises");
+    assert!(
+        json.contains("at most once"),
+        "the docs-ir document carries the delivery sentence"
     );
     assert_says(
         &interactions,

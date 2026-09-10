@@ -250,17 +250,31 @@ fn a_system_still_has_no_naming_a_document_can_set() {
 }
 
 #[test]
-fn a_binding_still_has_one_delivery_a_document_can_write() {
-    // Why `BindingChange` has no `delivery-changed` kind. `Delivery` has one inhabitant —
-    // `at_least_once` is the only guarantee this build implements — so a change kind for it would
-    // be a refusal that cannot fire, the defect class
-    // `docs/reviews/2026-08-20-guard-efficacy-review.md` was written about. The match below is
-    // exhaustive without a wildcard: when the model gains a second delivery word, this stops
-    // compiling and points at the change kind that then has to exist and the comparison
-    // `compare_bindings` then has to make.
-    match ess_domain::binding::Delivery::AtLeastOnce {
-        ess_domain::binding::Delivery::AtLeastOnce => {}
+fn every_delivery_word_a_document_can_write_has_a_change_kind_behind_it() {
+    // This test used to assert the opposite — that `Delivery` had one inhabitant, so a
+    // `delivery-changed` kind would be a refusal that cannot fire, the defect class
+    // `docs/reviews/2026-08-20-guard-efficacy-review.md` was written about. `at_most_once` made it
+    // fire. The match stays exhaustive without a wildcard for the same reason it was written: a
+    // third word stops this compiling and points at the comparison `compare_bindings` then has to
+    // make.
+    for delivery in [
+        ess_domain::binding::Delivery::AtLeastOnce,
+        ess_domain::binding::Delivery::AtMostOnce,
+    ] {
+        match delivery {
+            ess_domain::binding::Delivery::AtLeastOnce
+            | ess_domain::binding::Delivery::AtMostOnce => {}
+        }
     }
+    // And the kind exists rather than being described in a comment.
+    assert_eq!(
+        BindingChange::DeliveryChanged {
+            before: "at_least_once".to_owned(),
+            after: "at_most_once".to_owned(),
+        }
+        .kind(),
+        "delivery-changed"
+    );
 }
 
 // ---- the word every change is written with ----------------------------------------------------
@@ -834,6 +848,10 @@ fn binding_changes() -> Vec<BindingChange> {
         },
         BindingChange::MappingValueChanged {
             target: "t".to_owned(),
+            before: was.clone(),
+            after: is.clone(),
+        },
+        BindingChange::DeliveryChanged {
             before: was.clone(),
             after: is.clone(),
         },

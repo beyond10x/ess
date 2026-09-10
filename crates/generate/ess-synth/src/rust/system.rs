@@ -2,13 +2,20 @@
 //!
 //! # The transport is derived, not chosen
 //!
-//! The model declares exactly one delivery guarantee — `at_least_once` — and the component
-//! surfaces declare who publishes what and who accepts what. What that determines, and all it
-//! determines, is an **in-process, at-least-once dispatch**: every event a component publishes
-//! lands on an append-only log, and a pump delivers each logged event to every binding that
-//! reacts to it, invoking the accepting component's port. The log doubles as the system's
-//! observable record. No broker, no wire format, no second transport, and no abstraction over
-//! transports that do not exist: a later delivery guarantee in the model is a later wave here.
+//! A binding declares how many times its command may run — `at_least_once` or `at_most_once` —
+//! and the component surfaces declare who publishes what and who accepts what. What that
+//! determines, and all it determines, is an **in-process dispatch, once per occurrence**: every
+//! event a component publishes lands on an append-only log, and a pump delivers each logged event
+//! to every binding that reacts to it, invoking the accepting component's port. The log doubles as
+//! the system's observable record. No broker, no wire format, no second transport, and no
+//! abstraction over transports that do not exist.
+//!
+//! One delivery per occurrence is what `at_most_once` requires and what `at_least_once` permits,
+//! so the two words select the same dispatch and the emitter needs no branch for them. The only
+//! two things here that deliver an occurrence again are `on_failure: retry`, which holds the event
+//! for the next pump, and `redeliver`, which a caller invokes — the pump itself never repeats one.
+//! [`crate::plan::declares_single_attempt`] exists for the package doc's sentence about the model,
+//! not for a second transport.
 //!
 //! # Failure, per the binding's own words
 //!
@@ -16,7 +23,8 @@
 //! declared outcome that carries an error, which for billing is `SendEmail` answering `failed`
 //! with `Undeliverable`. That is the failure the declared policy answers: `escalate` builds the
 //! declared event through the escalation obligation and publishes it, `retry` holds the event for
-//! the next pump (which is the at-least-once redelivery, on the schedule the caller provides),
+//! the next pump (which is the failure policy's own redelivery, on the schedule the caller
+//! provides, and not the delivery guarantee's),
 //! `drop` gives up silently because that is what the author wrote. The pump therefore matches on
 //! the outcome enum and takes the policy on exactly the error-carrying variants.
 //!
@@ -160,15 +168,32 @@ fn lib_module(
         ir.system(),
         ir.version()
     );
-    out.push_str(
-        "//!\n//! The transport is derived from the specification, not chosen: `at_least_once` \
-         is the only\n//! delivery guarantee the model declares, so published events land on an \
-         append-only log and a\n//! pump delivers each to every binding that reacts to it. The \
-         log is the system's observable\n//! record, and so is the record of what each binding \
-         invoked. What no specification determines\n//! — how an escalation event is filled, \
-         behaviour behind the ports — stays an obligation; see\n//! the `PLAN.md` beside this \
-         workspace.\n\n#![forbid(unsafe_code)]\n#![deny(missing_docs)]\n",
-    );
+    // Two spellings of one paragraph, chosen by what the model actually declares. A single
+    // sentence claiming `at_least_once` is "the only delivery guarantee the model declares" is
+    // false about a model that writes `at_most_once`, and a generated header that misdescribes its
+    // own specification is the failure this whole word exists to remove.
+    if crate::plan::declares_single_attempt(ir) {
+        out.push_str(
+            "//!\n//! The transport is derived from the specification, not chosen: this model \
+             declares more\n//! than one delivery guarantee, and the pump delivers each published \
+             event to each reacting\n//! binding exactly once — which is what `at_most_once` \
+             requires and what `at_least_once`\n//! permits. Published events land on an \
+             append-only log, which is the system's observable\n//! record, and so is the record \
+             of what each binding invoked. What no specification\n//! determines — how an \
+             escalation event is filled, behaviour behind the ports — stays an\n//! obligation; \
+             see the `PLAN.md` beside this workspace.\n\n#![forbid(unsafe_code)]\n#![deny(missing_docs)]\n",
+        );
+    } else {
+        out.push_str(
+            "//!\n//! The transport is derived from the specification, not chosen: `at_least_once` \
+             is the only\n//! delivery guarantee the model declares, so published events land on an \
+             append-only log and a\n//! pump delivers each to every binding that reacts to it. The \
+             log is the system's observable\n//! record, and so is the record of what each binding \
+             invoked. What no specification determines\n//! — how an escalation event is filled, \
+             behaviour behind the ports — stays an obligation; see\n//! the `PLAN.md` beside this \
+             workspace.\n\n#![forbid(unsafe_code)]\n#![deny(missing_docs)]\n",
+        );
+    }
 
     system_event_enum(&mut out, layout, &types, &variants);
     from_impls(&mut out, ir, layout, &variants);

@@ -2,6 +2,38 @@
 
 ## [Unreleased]
 
+### Added
+
+- **A second delivery word: `delivery: at_most_once`.** One attempt, no redelivery — and what a lost
+  attempt costs is `on_failure:`'s to say, which is where that decision already lives. The first
+  consumer that needed it arrived with two crossings that are single HTTP calls, one with no retry
+  and one whose response is never read; `at_least_once` was the only word the tool accepted, so the
+  model carried a header comment saying the word it had written was false. A specification forced to
+  claim a stronger guarantee than the system gives is the failure review F3 exists to prevent.
+
+  It is not "exactly once" and nothing here will ever spell that: duplicates are excluded, loss is
+  not. The difference from `at_least_once` is an obligation withdrawn — the handler is not required
+  to be idempotent by this word — so the projections that turned the guarantee into an obligation
+  now read it: the generated `OpenAPI` document requires `Idempotency-Key` on exactly the commands
+  some binding invokes `at_least_once` and no longer on an `at_most_once` one, and the `AsyncAPI`,
+  `docs`, `docs-ir`, graph and browser projections render the word with a sentence saying what it
+  does and does not promise. Conformance follows the same line: §17's scenario *is* the redelivery,
+  so an `at_most_once` binding synthesises no `RedeliverEvent` step and never reaches
+  `ConformanceTarget::redeliver_event`, with the clause accounted for as a named refusal
+  (`BindingGap::DeliverySingleAttempt`) rather than quietly dropped — the second refusal of that
+  kind, beside `on_failure: drop`. An `at_least_once` binding keeps every scenario it had.
+
+  `BindingChange::DeliveryChanged` exists for the same reason it did not before: a change kind over
+  a one-inhabitant enum could never fire, and the guard asserting that gap was still there is what
+  pointed at the kind once the enum grew.
+
+  **The format is still `ess/1`.** `at_least_once` means exactly what it meant, every existing
+  document compiles to the same IR and the same digest, and no key moved. A reader that predates the
+  word refuses a document using it, with serde naming the words it knows — a refusal, not a silent
+  reinterpretation, and the number moves for what an old reader does *wrong*, not for what it has
+  not seen. The published `schemas/generated/ess.schema.json` admits the second word.
+  `docs/design/binding-delivery-guarantees.md` states the decision and its precedents.
+
 ### Changed
 
 - Common source security and privacy checks use pinned public Gates tooling and

@@ -2,7 +2,7 @@
 //!
 //! # The transport is derived, not chosen
 //!
-//! A binding's `delivery: at_least_once` determines an in-process log — that is `system.rs`. A
+//! A binding's `delivery:` determines an in-process log — that is `system.rs`. A
 //! component's `reached_by: network` determines something else: that the surface exists on a wire,
 //! because the callers are not deployed with it. *Which* wire is not a preference either. This
 //! repository projects exactly one contract for a component's command surface, the `OpenAPI`

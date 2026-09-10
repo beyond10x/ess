@@ -2442,16 +2442,18 @@ impl ViewChange {
 /// What moved about a binding.
 ///
 /// Complete over [`ResolvedBinding`](ess_compiler::ir::ResolvedBinding): its `event`, its
-/// `command`, its `mapping`, its `failure` with its `escalation`, and its `naming`. Two absences
-/// are deliberate:
+/// `command`, its `mapping`, its `delivery`, its `failure` with its `escalation`, and its `naming`.
+/// One absence is deliberate:
 ///
-/// * `delivery` has one inhabitant ([`Delivery::AtLeastOnce`](ess_domain::binding::Delivery::AtLeastOnce)),
-///   so a `delivery-changed` kind could never fire — the defect class
-///   `docs/reviews/2026-08-20-guard-efficacy-review.md` exists about — and
-///   `a_binding_still_has_one_delivery_a_document_can_write` in `tests/canonical.rs` asserts the
-///   gap is still there rather than leaving it to be rediscovered.
 /// * the mapping's order is the invoked command's declaration order by construction, so a mapping
 ///   reordered without an entry changing is a command input reordered, reported there.
+///
+/// `delivery` used to be a second absence, because
+/// [`Delivery`](ess_domain::binding::Delivery) had one inhabitant and a kind that could never fire
+/// is the defect class `docs/reviews/2026-08-20-guard-efficacy-review.md` exists about.
+/// `a_binding_still_has_one_delivery_a_document_can_write` in `tests/canonical.rs` was the guard
+/// that said so; `at_most_once` made it fire, and [`DeliveryChanged`](Self::DeliveryChanged) is
+/// what it pointed at.
 ///
 /// The escalation travels inside [`FailureChanged`](Self::FailureChanged) rather than having a kind
 /// of its own, because `ess-domain` refuses either half without the other: an escalation that moved
@@ -2503,6 +2505,20 @@ pub enum BindingChange {
         /// How it is filled.
         after: String,
     },
+    /// How many times the command may run differs.
+    ///
+    /// Never cosmetic in either direction, and the two directions are not one scale.
+    /// `at_least_once` → `at_most_once` withdraws the promise that a lost invocation arrives again;
+    /// `at_most_once` → `at_least_once` obliges every handler of the invoked command to survive a
+    /// repeat it was not previously told about. Both are [`SemanticRelation::Changed`] for the
+    /// reason every binding change is: a binding is a wiring of work, and this crate reports what
+    /// moved rather than ruling on who has to act.
+    DeliveryChanged {
+        /// The word it used, as a document writes it.
+        before: String,
+        /// The word it uses.
+        after: String,
+    },
     /// What happens when the command does not run differs.
     FailureChanged {
         /// The policy it had, rendered — an escalation names the event it publishes.
@@ -2544,6 +2560,7 @@ impl BindingChange {
             Self::MappingAdded { .. } => "mapping-added",
             Self::MappingRemoved { .. } => "mapping-removed",
             Self::MappingValueChanged { .. } => "mapping-value-changed",
+            Self::DeliveryChanged { .. } => "delivery-changed",
             Self::FailureChanged { .. } => "failure-changed",
             Self::WireNameChanged { .. } => "wire-name-changed",
             Self::DisplayNameChanged { .. } => "display-name-changed",
@@ -2585,6 +2602,9 @@ impl BindingChange {
                 before,
                 after,
             } => format!("fills `{target}` from {after}, filled it from {before}"),
+            Self::DeliveryChanged { before, after } => {
+                format!("delivered `{after}`, was `{before}`")
+            }
             Self::FailureChanged { before, after } => {
                 format!("on failure {after}, was {before}")
             }

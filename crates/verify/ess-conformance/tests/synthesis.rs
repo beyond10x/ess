@@ -1979,6 +1979,88 @@ fn an_at_least_once_binding_delivers_the_event_twice_and_requires_no_count() {
 }
 
 #[test]
+fn an_at_most_once_binding_synthesises_no_redelivery_anywhere_in_its_suite() {
+    // §17 the other way round. `at_most_once` says one attempt and no redelivery, so the scenario
+    // that delivers the event again is asking a conformant implementation to do the thing its
+    // specification says it does not do. The clause is refused by declaration — the second gap of
+    // that kind, beside `drop` — and the consequence for a target is that `redeliver_event` is
+    // never reached for such a binding.
+    //
+    // Billing with one word changed, so the two halves of the claim are the same model: nothing but
+    // `delivery:` differs between this suite and the one the test above reads.
+    let ir = example_with("billing", |raw| {
+        for binding in &mut raw.bindings {
+            binding.delivery = Delivery::AtMostOnce;
+        }
+    });
+    let binding = ir.bindings().values().next().expect("one binding");
+    assert_eq!(binding.delivery, Delivery::AtMostOnce);
+
+    let synthesis = synthesize(&ir);
+    let id = "notify-on-invoice-created/binding/delivery";
+
+    // The clause is accounted for, and it is accounted for as a refusal.
+    assert!(
+        !ids(&synthesis).contains(&id.to_owned()),
+        "{:?}",
+        ids(&synthesis)
+    );
+    assert!(
+        refused(&synthesis).contains(&id.to_owned()),
+        "{:?}",
+        refused(&synthesis)
+    );
+    let gap = synthesis
+        .refusals
+        .iter()
+        .find(|refusal| refusal.scenario.as_ref().map(ToString::to_string) == Some(id.to_owned()))
+        .map(|refusal| refusal.cause.clone())
+        .expect("the delivery clause is refused");
+    let RefusalCause::BindingUnobservable { gap, .. } = gap else {
+        panic!("this is {gap:?}");
+    };
+    assert_eq!(gap, BindingGap::DeliverySingleAttempt);
+
+    // And no scenario anywhere in the suite delivers anything twice.
+    let redelivering: Vec<String> = synthesis
+        .suite
+        .scenarios
+        .iter()
+        .filter(|(_, scenario)| {
+            scenario
+                .steps
+                .iter()
+                .any(|step| matches!(step, ScenarioStep::RedeliverEvent { .. }))
+        })
+        .map(|(id, _)| id.to_string())
+        .collect();
+    assert!(
+        redelivering.is_empty(),
+        "an at-most-once model owes `redeliver_event` nothing: {redelivering:?}"
+    );
+
+    // The other three clauses are untouched: this word withdraws one scenario, not a binding.
+    for aspect in ["flow", "mapping", "on-failure"] {
+        let clause = format!("notify-on-invoice-created/binding/{aspect}");
+        assert!(
+            ids(&synthesis).contains(&clause),
+            "{clause}: {:?}",
+            ids(&synthesis)
+        );
+    }
+
+    // And the same model with the word left alone still redelivers, so the assertion above is
+    // about `at_most_once` and not about something else that changed.
+    let unchanged = synthesize(&example("billing"));
+    assert!(
+        steps(&unchanged, id)
+            .iter()
+            .any(|step| matches!(step, ScenarioStep::RedeliverEvent { .. })),
+        "an at-least-once binding keeps its redelivery"
+    );
+}
+
+#[test]
 fn a_binding_that_escalates_requires_the_event_the_escalation_declares() {
     // §18, and what gate G2 made possible: `escalate` names the event it emits, so "the failure was
     // escalated" is an assertion rather than a hope. Both examples escalate, and both are checked —

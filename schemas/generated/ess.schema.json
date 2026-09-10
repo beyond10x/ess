@@ -257,13 +257,20 @@
       "additionalProperties": false
     },
     "Delivery": {
-      "description": "How many times the command may run.",
+      "description": "How many times the command may run.\n\nTwo words, and they are not two points on one scale: they say which side of the invocation the risk sits on. Under [`AtLeastOnce`](Self::AtLeastOnce) the command may run again, so the handler carries the cost; under [`AtMostOnce`](Self::AtMostOnce) it may not run at all, so [`RawBindingSpec::on_failure`] carries it. Neither is \"exactly once\", and nothing here will ever spell that word — see [`AtMostOnce`](Self::AtMostOnce).",
       "oneOf": [
         {
-          "description": "At least once, so the command must be idempotent.\n\nThe only guarantee this build implements, and it is stated rather than assumed because \"exactly once\" is what everyone believes they have until a retry proves otherwise.",
+          "description": "At least once, so the command must be idempotent.\n\nStated rather than assumed because \"exactly once\" is what everyone believes they have until a retry proves otherwise.",
           "type": "string",
           "enum": [
             "at_least_once"
+          ]
+        },
+        {
+          "description": "At most once: one attempt, and no redelivery.\n\nWhat it promises is a bound, not an arrival. The transport makes the invocation once; if that attempt does not land, nothing here delivers it again, and what happens instead is [`RawBindingSpec::on_failure`]'s to say — `retry` puts the attempts back, `escalate` publishes the event that says the work was lost, `drop` records that losing it is acceptable. So a binding that says `at_most_once` and `drop` has written down that this event's effect can disappear, which is the decision review F3 exists to make an author type.\n\nWhat it does **not** promise is exactly-once. A single attempt whose result is never read — the shape that made this word necessary — cannot distinguish \"did not happen\" from \"happened, and the acknowledgement was lost\", so the handler is owed no delivery and the caller is owed no confirmation. Duplicates are excluded; loss is not.\n\nThe handler is therefore not obliged to be idempotent by *this* word. That is the whole difference from [`AtLeastOnce`](Self::AtLeastOnce), and every projection that turns the guarantee into an obligation — the `OpenAPI` `Idempotency-Key`, the conformance redelivery scenario — reads it here rather than assuming.",
+          "type": "string",
+          "enum": [
+            "at_most_once"
           ]
         }
       ]

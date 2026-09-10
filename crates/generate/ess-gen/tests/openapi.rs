@@ -917,6 +917,35 @@ fn a_command_a_binding_delivers_at_least_once_requires_an_idempotency_key() {
 }
 
 #[test]
+fn a_command_only_an_at_most_once_binding_invokes_carries_no_idempotency_header() {
+    // The obligation comes from the guarantee, not from the existence of a binding. `at_most_once`
+    // permits no second arrival, so a required header here would be this generator obliging a
+    // caller to name an invocation the model says happens once — the mirror of the case below,
+    // where the command has no binding at all.
+    let ir = compiled(
+        &billing_files()
+            .into_iter()
+            .map(|(label, text)| {
+                (
+                    label,
+                    text.replace("delivery: at_least_once", "delivery: at_most_once"),
+                )
+            })
+            .collect::<Vec<_>>(),
+    );
+    let document = document(&ir, "email-service");
+    let operations = operations(&document);
+
+    assert!(
+        operations["POST /email/commands/SendEmail"]
+            .get("parameters")
+            .is_none(),
+        "at_most_once imposes no key: {}",
+        operations["POST /email/commands/SendEmail"]
+    );
+}
+
+#[test]
 fn a_command_no_binding_invokes_carries_no_idempotency_header() {
     // Nothing in the specification says anyone may call `CreateInvoice` twice, so a key here would
     // be this generator inventing a delivery guarantee.

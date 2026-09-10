@@ -27,8 +27,9 @@
 //! as "needs the interaction layer". This scope holds that layer: a component's outer surface —
 //! command handlers and view queries — is generated, a binding's transformation is generated
 //! exactly where every mapped input is determined, and its delivery is generated as the one
-//! transport the specification's own words require (`at_least_once`, the only delivery guarantee
-//! the model declares). What the interaction layer still cannot determine — how an escalation
+//! transport the specification's own words require (one in-process delivery per occurrence, which
+//! is what `at_most_once` requires and what `at_least_once` permits). What the interaction layer
+//! still cannot determine — how an escalation
 //! event's fields are filled, how a value crosses a declared conversion that is not mechanical —
 //! becomes an obligation with its contract, never a hole.
 //!
@@ -865,12 +866,30 @@ fn transformation_disposition(ir: &EssIr, binding: &ResolvedBinding) -> Synthesi
     }
 }
 
+/// Whether any binding in this model declares `delivery: at_most_once`.
+///
+/// The one question the emitted transport's *description* turns on. The dispatch itself does not
+/// change: the generated pump delivers each logged occurrence to each reacting binding exactly once
+/// — which is what `at_most_once` requires and what `at_least_once` permits — and the only things
+/// in the emitted tree that deliver an occurrence a second time are `on_failure: retry`, which
+/// holds the event for the next pump, and the `redeliver` entry point a caller invokes. What does
+/// change is a package doc calling `at_least_once` "the only delivery guarantee the model
+/// declares", which is false about a model that declares the other word.
+pub fn declares_single_attempt(ir: &EssIr) -> bool {
+    ir.bindings()
+        .values()
+        .any(|binding| matches!(binding.delivery, ess_domain::binding::Delivery::AtMostOnce))
+}
+
 /// The delivery: the one transport this scope holds, generated onto the one declared acceptor.
 ///
-/// The transport is derived, not chosen: `at_least_once` is the only delivery guarantee the model
-/// declares, and the component surfaces say who invokes whom — so what is generated is an
-/// in-process, at-least-once dispatch from the publisher's events to the acceptor's port, and
-/// nothing else, because no other transport is declared anywhere to derive from.
+/// The transport is derived, not chosen: the model's delivery words say how many times the command
+/// may run and the component surfaces say who invokes whom — so what is generated is an in-process
+/// dispatch from the publisher's events to the acceptor's port, delivering each occurrence once,
+/// and nothing else, because no other transport is declared anywhere to derive from. One delivery
+/// per occurrence satisfies `at_most_once` and is permitted by `at_least_once`, so neither word
+/// selects a different transport here; [`declares_single_attempt`] exists only for the emitters'
+/// own description of what the model said.
 fn delivery_disposition(ir: &EssIr, binding: &ResolvedBinding) -> SynthesisDisposition {
     let acceptors = accepting_components(ir, binding);
     if acceptors.len() == 1 {
@@ -1082,7 +1101,7 @@ fn plan_components(ir: &EssIr, capabilities: &mut Vec<PlannedCapability>) {
             disposition: SynthesisDisposition::Generated,
         });
         // The second transport this scope holds, and the second one derived rather than chosen. A
-        // binding's `at_least_once` determines an in-process log; a component's `reached_by:
+        // binding's delivery word determines an in-process log; a component's `reached_by:
         // network` determines that the surface exists on a wire, and the only wire contract this
         // repository projects for a command surface is the `OpenAPI` document — so the transport is
         // HTTP, serving exactly the routes that document declares. A specification that says

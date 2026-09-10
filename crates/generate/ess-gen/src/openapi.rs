@@ -537,9 +537,12 @@ fn idempotency(ir: &EssIr, command: &ResolvedCommand) -> Option<Parameter> {
         .values()
         .filter(|binding| binding.command.name() == &command.name)
         .filter(|binding| match binding.delivery {
-            // Matched rather than defaulted: when the model grows a delivery guarantee that does not
-            // permit a repeat, this arm is where the compiler asks about it.
+            // Matched rather than defaulted: a delivery guarantee that does not permit a repeat is
+            // the arm the compiler asks about, and `at_most_once` is that arm. It permits no
+            // second arrival, so it imposes no key: a required header here would be this generator
+            // obliging a caller to name an invocation the model says happens once.
             Delivery::AtLeastOnce => true,
+            Delivery::AtMostOnce => false,
         })
         .map(|binding| format!("`{}`", binding.name))
         .collect();

@@ -572,7 +572,7 @@ function model(value) {
   for (const binding of array(value.bindings)) {
     closed(binding, 'name event command delivery failure')
     for (const key of ['name', 'event', 'command']) text(binding[key])
-    oneOf(binding.delivery, 'at_least_once'); oneOf(binding.failure, 'retry drop escalate')
+    oneOf(binding.delivery, 'at_least_once at_most_once'); oneOf(binding.failure, 'retry drop escalate')
   }
   return value
 }

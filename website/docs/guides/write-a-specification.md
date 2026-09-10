@@ -289,9 +289,20 @@ the difference between specifying a system and specifying a demo. `drop` is lega
 decision, and the decision has to be findable in the document that made it. `escalate` must name a
 declared event, because "surface it to a person" is not something a generated test can observe.
 
-`at_least_once` is the only value `delivery:` accepts today. It is spelled out rather than assumed
-because "exactly once" is what everyone believes they have until a retry proves otherwise; a second
-guarantee would take an implementation to derive from, not a keyword.
+`delivery:` accepts two values, and they are not two points on one scale — they say which side of
+the invocation carries the risk.
+
+| word | what it promises | what it costs |
+|---|---|---|
+| `at_least_once` | the command may run more than once for one event | the handler must be idempotent, and the generated OpenAPI document makes `Idempotency-Key` required on that command |
+| `at_most_once` | one attempt, and nothing redelivers it | the handler is owed no repeat, and a lost attempt is `on_failure:`'s to answer |
+
+Neither is "exactly once", and nothing here will ever spell that word: "exactly once" is what
+everyone believes they have until a retry proves otherwise. Write `at_most_once` where the
+invocation really is a single attempt — one HTTP call with no retry, or one whose response nobody
+reads — because a specification claiming the stronger guarantee is a claim the system does not
+keep. A conformance suite for an `at_most_once` binding contains no redelivery scenario, since
+redelivery is the thing that word says will not happen.
 
 ### Crossing contexts takes a declared conversion
 

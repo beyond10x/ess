@@ -508,6 +508,7 @@ fn edges(ir: &EssIr) -> Vec<GraphEdge<'_>> {
 pub fn delivery_word(delivery: Delivery) -> &'static str {
     match delivery {
         Delivery::AtLeastOnce => "at_least_once",
+        Delivery::AtMostOnce => "at_most_once",
     }
 }
 
@@ -565,6 +566,14 @@ mod tests {
             "\"SendEmail\\nbilling.email\"",
             "the local name and its context are two lines of one label, not two labels"
         );
+    }
+
+    #[test]
+    fn every_delivery_word_renders_as_the_author_typed_it() {
+        // Public for the reason the function is: a diagram's edge, `ess inspect` and a synthesised
+        // target all read this, and a word rendered two ways is one construct with two names.
+        assert_eq!(delivery_word(Delivery::AtLeastOnce), "at_least_once");
+        assert_eq!(delivery_word(Delivery::AtMostOnce), "at_most_once");
     }
 
     #[test]

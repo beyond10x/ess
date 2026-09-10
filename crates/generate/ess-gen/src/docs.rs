@@ -1608,6 +1608,20 @@ fn delivery_sentence(delivery: Delivery, command: &ResolvedCommand) -> Vec<Inlin
                  otherwise, which is why this is written down rather than assumed.",
             ),
         ],
+        Delivery::AtMostOnce => vec![
+            Inline::text("Delivered "),
+            Inline::Strong {
+                text: vec![Inline::text("at most once")],
+            },
+            Inline::text(", so "),
+            Inline::code(command.name.to_string()),
+            Inline::text(
+                " is attempted once for the event and never delivered again. Nothing here obliges \
+                 it to be idempotent, and nothing here promises it runs at all: what happens when \
+                 the one attempt does not land is what the failure policy below says. This is not \
+                 \"exactly once\" — duplicates are excluded, loss is not.",
+            ),
+        ],
     }
 }
 

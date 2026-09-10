@@ -14,7 +14,7 @@
 //! | [`query_view`](ConformanceTarget::query_view) | `views:` and their `consistency:` | [`QueryView`](crate::scenario::ScenarioStep::QueryView), [`EventuallyView`](crate::scenario::ScenarioStep::EventuallyView) |
 //! | [`observe_events`](ConformanceTarget::observe_events) | `events:` a component `publishes:`, observed away from the command that caused them | [`EventuallyEvent`](crate::scenario::ScenarioStep::EventuallyEvent) |
 //! | [`configure_external_outcome`](ConformanceTarget::configure_external_outcome) | an outcome declared `external:` (§12) | [`ConfigureExternalOutcome`](crate::scenario::ScenarioStep::ConfigureExternalOutcome) |
-//! | [`redeliver_event`](ConformanceTarget::redeliver_event) | a binding's `delivery: at_least_once` (§17) | [`RedeliverEvent`](crate::scenario::ScenarioStep::RedeliverEvent) |
+//! | [`redeliver_event`](ConformanceTarget::redeliver_event) | a binding's `delivery: at_least_once` (§17) — and *only* that word: an `at_most_once` binding synthesises no redelivery and reaches this method never | [`RedeliverEvent`](crate::scenario::ScenarioStep::RedeliverEvent) |
 //! | [`observe_invocations`](ConformanceTarget::observe_invocations) | a binding's `mapping:` (§16) | [`ExpectInvocation`](crate::scenario::ScenarioStep::ExpectInvocation) |
 //! | [`mark_instant`](ConformanceTarget::mark_instant) | none — it names the instant a duration claim is measured from, which the suite may not invent | [`MarkInstant`](crate::scenario::ScenarioStep::MarkInstant) |
 //! | [`observe_elapsed`](ConformanceTarget::observe_elapsed) | a timer, a wrap-up window, a TTL: a length of time the system's own behaviour turns on | [`ExpectNotBefore`](crate::scenario::ScenarioStep::ExpectNotBefore), [`ExpectWithin`](crate::scenario::ScenarioStep::ExpectWithin), [`ExpectQuiet`](crate::scenario::ScenarioStep::ExpectQuiet) |
@@ -132,6 +132,14 @@ pub trait ConformanceTarget {
     /// survives it; a suite that never delivers twice never tests the only thing that word says.
     /// Re-running the upstream command instead would test something else — two commands are two
     /// occurrences, which every implementation handles by handling each once.
+    ///
+    /// **`delivery: at_most_once` obliges nothing here.** That word says the opposite — one
+    /// attempt, and nothing delivers it again — so synthesis emits no
+    /// [`RedeliverEvent`](crate::scenario::ScenarioStep::RedeliverEvent) for such a binding
+    /// ([`BindingGap::DeliverySingleAttempt`](crate::synthesize::BindingGap::DeliverySingleAttempt))
+    /// and this method is never reached for it. A system all of whose bindings deliver at most once
+    /// therefore owes this method nothing at all, and it has no default body because a system with
+    /// one `at_least_once` binding owes it everything.
     fn redeliver_event(&self, request: RedeliveryRequest) -> Result<(), TargetError>;
 
     /// Reports the command invocations a binding made (§16).

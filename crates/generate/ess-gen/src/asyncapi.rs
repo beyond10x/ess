@@ -835,6 +835,10 @@ fn delivery_means(delivery: Delivery) -> &'static str {
             "the command may run more than once for a single event, so its handler must be \
              idempotent"
         }
+        Delivery::AtMostOnce => {
+            "the command runs once for a single event or not at all, and nothing redelivers it, so \
+             the handler is owed no repeat and a lost attempt is what `on_failure` decides"
+        }
     }
 }
 

@@ -21,7 +21,7 @@
 //! | typestate lifecycle | one **distinct type per state**, transitions as methods on exactly the states that declare them. An undeclared move is a method that does not exist — Go refuses it at compile time, as Rust does |
 //! | newtype | a struct with an **unexported field**, a constructor and an accessor. `type Email string` was refused: it lets an untyped constant become an `Email` by assignment, which is exactly the distinctness the newtype exists for |
 //! | obligation | an **interface** per owed capability and one `Unimplemented` stub returning the typed refusal, bijective with the plan's obligations |
-//! | transport | the same in-process at-least-once log, pump, redelivery and failure policy the Rust emitter derives from the same declarations |
+//! | transport | the same in-process log, pump, redelivery and failure policy the Rust emitter derives from the same declarations |
 //!
 //! # What Go cannot carry, said out loud
 //!

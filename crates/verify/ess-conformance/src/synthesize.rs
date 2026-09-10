@@ -83,13 +83,16 @@
 //! |---|---|---|
 //! | `flow` | the event happens, and the invoked command's branch publishes what it declares | §16: prove the flow through the resulting event, never by observing the internal command |
 //! | `mapping` | each input receives the value the binding names for it | the only clause a document can get *silently* wrong — see [`ScenarioStep::ExpectInvocation`] |
-//! | `delivery` | the same event delivered twice still leaves the consequence observable | §17: `at_least_once` permits duplicates, so a count is a test that fails a correct target |
+//! | `delivery` | under `at_least_once`, the same event delivered twice still leaves the consequence observable; under `at_most_once`, nothing | §17: `at_least_once` permits duplicates, so a count is a test that fails a correct target, and `at_most_once` permits no second arrival to test |
 //! | `on-failure` | the declared policy is observable, with the failure forced | §18: force it, and assert what the model says follows |
 //!
-//! `on_failure: drop` is the one that produces no scenario at all, and that is the model being
-//! honest rather than this crate being short: `drop` means the work is lost and nobody is told, so
-//! there is nothing to observe. §18 names the response — refuse the check rather than invent one —
-//! and [`BindingGap::PolicySilent`] is it.
+//! Two of them produce no scenario at all where the model says so, and that is the model being
+//! honest rather than this crate being short. `on_failure: drop` means the work is lost and nobody
+//! is told, so there is nothing to observe; §18 names the response — refuse the check rather than
+//! invent one — and [`BindingGap::PolicySilent`] is it. `delivery: at_most_once` says the event is
+//! delivered once and never again, so the redelivery §17 asks for is a thing the specification
+//! states will not happen; [`BindingGap::DeliverySingleAttempt`] refuses it for that reason, and
+//! [`ScenarioStep::RedeliverEvent`] never appears for such a binding.
 //!
 //! # An invariant is asserted where a view publishes what it reads
 //!
@@ -697,9 +700,10 @@ fn value_unwitnessed(
 
 /// Why one clause of a binding has no scenario.
 ///
-/// Six shapes, and the split that matters is between the first five — a specification an author can
-/// edit — and [`PolicySilent`](Self::PolicySilent), which is a decision the author already made and
-/// the model deliberately gives nothing to observe.
+/// Seven shapes, and the split that matters is between the first five — a specification an author
+/// can edit — and the last two, [`PolicySilent`](Self::PolicySilent) and
+/// [`DeliverySingleAttempt`](Self::DeliverySingleAttempt), which are decisions the author already
+/// made and for which the model deliberately gives nothing to observe.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum BindingGap {
     /// No command outcome emits the event the binding reacts to.
@@ -752,6 +756,20 @@ pub enum BindingGap {
     /// name. So the check is refused rather than invented, and what a reader learns is that this
     /// binding's failure path is *by declaration* unprovable.
     PolicySilent,
+    /// The declared guarantee is `at_most_once`, which has no second delivery to perform.
+    ///
+    /// §17's scenario is the redelivery: the same event arrives twice and the consequence is still
+    /// observable. `at_most_once` says the opposite — one attempt, nothing delivers it again — so
+    /// there is no second arrival to arrange, and arranging one anyway would ask a conformant
+    /// implementation to do the thing its specification says it does not do. The word's remaining
+    /// content, that a lost attempt is not retried here, is what `on_failure` declares and what the
+    /// `on-failure` scenario beside this one already checks.
+    ///
+    /// The consequence for a target: an `at_most_once` binding puts no
+    /// [`RedeliverEvent`](crate::scenario::ScenarioStep::RedeliverEvent) in the suite, so
+    /// [`redeliver_event`](crate::target::ConformanceTarget::redeliver_event) is never reached for
+    /// it. A system all of whose bindings deliver at most once owes that method nothing.
+    DeliverySingleAttempt,
 }
 
 impl BindingGap {
@@ -780,6 +798,10 @@ impl BindingGap {
             Self::PolicySilent => {
                 "`drop` is unobservable by design; write `escalate:` with an event if the failure \
                  has to be provable"
+            }
+            Self::DeliverySingleAttempt => {
+                "`at_most_once` has no redelivery by design; write `at_least_once` if the transport \
+                 really may deliver the event again"
             }
         }
     }
@@ -813,6 +835,9 @@ impl fmt::Display for BindingGap {
             ),
             Self::PolicySilent => {
                 f.write_str("gives up silently, which the model publishes nothing for")
+            }
+            Self::DeliverySingleAttempt => {
+                f.write_str("delivers at most once, which has no second delivery to observe")
             }
         }
     }
@@ -3627,6 +3652,11 @@ fn mapping(
 ///
 /// What is left is survivability, and it is worth a scenario of its own: an implementation that
 /// treats a redelivery as an error, or stops delivering after one, breaks here and nowhere else.
+///
+/// `at_most_once` has no such scenario and gets [`BindingGap::DeliverySingleAttempt`] instead. The
+/// refusal is taken **first**, before the branch and the published events are read: a single-attempt
+/// binding is refused for the guarantee it declares, not for a shape its redelivery scenario would
+/// have needed and never uses.
 fn delivery(
     ir: &EssIr,
     binding: &ResolvedBinding,
@@ -3634,6 +3664,10 @@ fn delivery(
     trigger: &Run,
     event: &EventRef,
 ) -> Built {
+    // Read before anything else, for the reason `on_failure` reads its policy first.
+    if matches!(binding.delivery, Delivery::AtMostOnce) {
+        return Err(BindingGap::DeliverySingleAttempt);
+    }
     let reached = reachable_branch(invoked)?;
     let published = publishes(invoked, reached)?;
 
@@ -3644,11 +3678,13 @@ fn delivery(
         shape: payload_shape(ir, event),
     });
     // The second delivery, which is the whole scenario. A total match rather than a wildcard: a
-    // second delivery guarantee would mean something different here and must not inherit this.
+    // delivery guarantee that means something different here must not inherit this, which is why
+    // `at_most_once` is refused above rather than falling through to a redelivery.
     match binding.delivery {
         Delivery::AtLeastOnce => steps.push(ScenarioStep::RedeliverEvent {
             event: event.clone(),
         }),
+        Delivery::AtMostOnce => return Err(BindingGap::DeliverySingleAttempt),
     }
     for event in &published {
         steps.push(ScenarioStep::EventuallyEvent {

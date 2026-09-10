@@ -213,6 +213,7 @@ fn set_source(set: &ess_compiler::ir::ResolvedPayloadField) -> Option<String> {
 fn delivery(delivery: ess_domain::binding::Delivery) -> &'static str {
     match delivery {
         ess_domain::binding::Delivery::AtLeastOnce => "at_least_once",
+        ess_domain::binding::Delivery::AtMostOnce => "at_most_once",
     }
 }
 

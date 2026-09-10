@@ -92,11 +92,17 @@ bindings:
   - id: notify-on-invoice-created
     when: {event: invoice.InvoiceCreated}
     invoke: {command: email.SendEmail}
-    delivery: at_least_once        # the only value v0.1 accepts
+    delivery: at_least_once        # at_least_once | at_most_once — see the binding design page
     on_failure: escalate           # retry | escalate | drop — `drop` must be written, never defaulted
 ```
 
 Requiring the word is the point: `drop` should be something an author typed, not something they got.
+
+v0.1 accepted one value. The second, `at_most_once`, arrived when a consumer's crossing really was
+one attempt with no redelivery, and a specification forced to claim the stronger guarantee is the
+same failure F3 exists to prevent. What each word promises, what it obliges of a conformance target,
+and why `ess/1` admits the second without a version bump is
+[The two words `delivery:` accepts](binding-delivery-guarantees.md).
 
 ### F4 — Invariants are prose, so invariant 6 is unenforceable
 

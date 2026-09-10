@@ -24,8 +24,8 @@ use ess_compiler::source::SourceMap;
 use ess_domain::spec::{RawSpecFile, Specification};
 use ess_domain::system::Source;
 use ess_synth::{
-    synthesize, CapabilityKind, ObligationReason, RefusalReason, RefusalStage,
-    SynthesisDisposition, SynthesisPlan,
+    synthesize, synthesize_for, CapabilityKind, ObligationReason, RefusalReason, RefusalStage,
+    SynthesisDisposition, SynthesisPlan, Target,
 };
 
 /// The example directory.
@@ -63,12 +63,21 @@ fn files() -> Vec<String> {
 
 /// The billing example, compiled where it lives.
 fn billing() -> EssIr {
+    billing_delivering("at_least_once")
+}
+
+/// The billing example with its binding's delivery word replaced, compiled.
+///
+/// One word of the normative model and nothing else, so a difference in an emitted tree is
+/// attributable to the guarantee rather than to a second fixture that also differs elsewhere.
+fn billing_delivering(word: &str) -> EssIr {
     let labels = files();
     let mut sources = SourceMap::new();
     let mut parsed = Vec::new();
     for label in &labels {
         let text = std::fs::read_to_string(example().join(label))
-            .unwrap_or_else(|error| panic!("{label} is readable: {error}"));
+            .unwrap_or_else(|error| panic!("{label} is readable: {error}"))
+            .replace("delivery: at_least_once", &format!("delivery: {word}"));
         let raw = RawSpecFile::parse(&text)
             .unwrap_or_else(|error| panic!("{label} is well formed: {error}"));
         sources.insert(label.clone(), text);
@@ -780,6 +789,50 @@ fn a_component_port_is_typed_against_the_generated_types() {
         port.contains("billing_types::invoice::obligations::CreateInvoiceBehavior")
             && port.contains("billing_types::invoice::obligations::OutstandingInvoicesQuery"),
         "the port is generic over the obligation traits: {port}"
+    );
+}
+
+#[test]
+fn an_at_most_once_binding_reaches_both_emitted_trees_as_the_word_the_author_wrote() {
+    // The projection half of the second delivery word. The dispatch does not fork — one delivery
+    // per occurrence is what `at_most_once` requires and what `at_least_once` permits — so what
+    // has to change is every place the emitted tree *says* what the model declared. A generated
+    // header claiming `at_least_once` is the only guarantee the model declares would be a tree
+    // misdescribing its own specification, which is the failure this word exists to remove.
+    let ir = billing_delivering("at_most_once");
+
+    let rust = synthesize(&ir).expect("the fixture has a realizable target");
+    let system = artifact(&rust, "crates/billing-system/src/lib.rs");
+    assert!(
+        system.contains("// `notify-on-invoice-created`: at_most_once, on failure escalate."),
+        "the arm carries the binding's own delivery facts: {system}"
+    );
+    assert!(
+        !system.contains("`at_least_once` is the only"),
+        "the package doc may not claim a guarantee the model does not declare: {system}"
+    );
+    assert!(
+        system.contains("what `at_most_once` requires and what `at_least_once`"),
+        "and it says what the pump actually does instead: {system}"
+    );
+
+    let go = synthesize_for(&ir, Target::Go).expect("the fixture has a realizable target");
+    let package = artifact(&go, "system/system.go");
+    assert!(
+        package.contains("at_most_once, on failure"),
+        "the Go delivery carries the same word: {package}"
+    );
+    assert!(
+        !package.contains("`at_least_once` is the only"),
+        "and the same header is corrected in both targets: {package}"
+    );
+
+    // Byte-determinism is not weakened by the branch: two syntheses of the same source agree.
+    let again = synthesize(&billing_delivering("at_most_once"))
+        .expect("the fixture has a realizable target");
+    assert_eq!(
+        rust.artifacts, again.artifacts,
+        "the emitted tree is a function of the model"
     );
 }
 

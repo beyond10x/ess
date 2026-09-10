@@ -187,6 +187,12 @@ pub struct RawInvocation {
 }
 
 /// How many times the command may run.
+///
+/// Two words, and they are not two points on one scale: they say which side of the invocation the
+/// risk sits on. Under [`AtLeastOnce`](Self::AtLeastOnce) the command may run again, so the handler
+/// carries the cost; under [`AtMostOnce`](Self::AtMostOnce) it may not run at all, so
+/// [`RawBindingSpec::on_failure`] carries it. Neither is "exactly once", and nothing here will ever
+/// spell that word — see [`AtMostOnce`](Self::AtMostOnce).
 #[derive(
     Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize, schemars::JsonSchema,
 )]
@@ -194,9 +200,28 @@ pub struct RawInvocation {
 pub enum Delivery {
     /// At least once, so the command must be idempotent.
     ///
-    /// The only guarantee this build implements, and it is stated rather than assumed because
-    /// "exactly once" is what everyone believes they have until a retry proves otherwise.
+    /// Stated rather than assumed because "exactly once" is what everyone believes they have until
+    /// a retry proves otherwise.
     AtLeastOnce,
+    /// At most once: one attempt, and no redelivery.
+    ///
+    /// What it promises is a bound, not an arrival. The transport makes the invocation once; if
+    /// that attempt does not land, nothing here delivers it again, and what happens instead is
+    /// [`RawBindingSpec::on_failure`]'s to say — `retry` puts the attempts back, `escalate` publishes
+    /// the event that says the work was lost, `drop` records that losing it is acceptable. So a
+    /// binding that says `at_most_once` and `drop` has written down that this event's effect can
+    /// disappear, which is the decision review F3 exists to make an author type.
+    ///
+    /// What it does **not** promise is exactly-once. A single attempt whose result is never read —
+    /// the shape that made this word necessary — cannot distinguish "did not happen" from
+    /// "happened, and the acknowledgement was lost", so the handler is owed no delivery and the
+    /// caller is owed no confirmation. Duplicates are excluded; loss is not.
+    ///
+    /// The handler is therefore not obliged to be idempotent by *this* word. That is the whole
+    /// difference from [`AtLeastOnce`](Self::AtLeastOnce), and every projection that turns the
+    /// guarantee into an obligation — the `OpenAPI` `Idempotency-Key`, the conformance redelivery
+    /// scenario — reads it here rather than assuming.
+    AtMostOnce,
 }
 
 /// What happens when the command does not run.
@@ -2150,7 +2175,76 @@ on_failure: {escalate: {emits: billing.email.DeliveryEscalated}}
             "id: b\nwhen:\n  event: a.B\ninvoke:\n  command: a.C\ndelivery: exactly_once\non_failure: escalate\n",
         )
         .expect_err("`exactly_once` is what everyone believes they have until a retry proves otherwise");
-        assert!(error.to_string().contains("at_least_once"), "{error}");
+        let message = error.to_string();
+        for word in ["at_least_once", "at_most_once"] {
+            assert!(message.contains(word), "{word}: {message}");
+        }
+    }
+
+    #[test]
+    fn a_binding_may_declare_that_it_delivers_at_most_once() {
+        // The word a consumer boundary needed: one HTTP attempt whose response is never read is not
+        // an at-least-once crossing, and a specification forced to claim the stronger guarantee is
+        // the F3 failure one variant along.
+        let raw: RawBindingSpec = serde_yaml::from_str(&format!(
+            "id: notify-on-invoice-created\nwhen:\n  event: {EVENT}\ninvoke:\n  command: \
+             {COMMAND}\nmapping:\n{MAPPING}delivery: at_most_once\non_failure: drop\n"
+        ))
+        .expect("a document may say this");
+        assert_eq!(raw.delivery, Delivery::AtMostOnce);
+
+        // And it survives validation, which is where a word with a consequence would have been
+        // caught: `at_most_once` has none of its own — what a lost attempt costs is `on_failure`'s.
+        let binding = BindingSpec::try_from(raw).expect("a valid binding");
+        assert_eq!(binding.delivery, Delivery::AtMostOnce);
+        assert_eq!(binding.failure, Failure::Drop);
+    }
+
+    #[test]
+    fn the_two_delivery_words_round_trip_as_a_document_writes_them() {
+        // Both directions, because a projection reads the serialisation and a document writes it,
+        // and a word that only parsed would render as something no author typed.
+        for (word, delivery) in [
+            ("at_least_once", Delivery::AtLeastOnce),
+            ("at_most_once", Delivery::AtMostOnce),
+        ] {
+            assert_eq!(
+                serde_yaml::from_str::<Delivery>(word).expect(word),
+                delivery
+            );
+            assert_eq!(
+                serde_yaml::to_string(&delivery).expect(word).trim(),
+                word,
+                "{delivery:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn the_published_schema_admits_both_delivery_words_and_no_third() {
+        // The schema is the interoperability contract: an editor or a CI job that checks a document
+        // against it has to accept exactly what `RawSpecFile` accepts, and a stale enum here is a
+        // valid specification refused by a tool nobody in this repository wrote.
+        let schema =
+            serde_json::to_value(schemars::schema_for!(RawBindingSpec)).expect("serialises");
+        let delivery = &schema["definitions"]["Delivery"];
+        let spellings = delivery["oneOf"].as_array().expect("one arm per variant");
+        let words: Vec<&str> = spellings
+            .iter()
+            .map(|arm| {
+                arm["enum"].as_array().expect("a single-word enum")[0]
+                    .as_str()
+                    .expect("a string")
+            })
+            .collect();
+        assert_eq!(words, vec!["at_least_once", "at_most_once"], "{delivery}");
+        assert!(
+            spellings[1]["description"]
+                .as_str()
+                .expect("the variant's doc comment")
+                .contains("no redelivery"),
+            "the schema carries what the word promises: {delivery}"
+        );
     }
 
     #[test]

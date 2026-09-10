@@ -23,8 +23,7 @@
 //! A standalone Cargo workspace with its own `[workspace]` root and zero third-party
 //! dependencies: one types crate with a module per bounded context, one crate per component
 //! holding its port, and one system crate holding the bindings and the transport — the transport
-//! itself standard-library only, because the one delivery guarantee the model declares
-//! (`at_least_once`, in process) does not need a crate. Zero dependencies is a property of the
+//! itself standard-library only, because an in-process delivery does not need a crate. Zero dependencies is a property of the
 //! *gate*, not a style preference: `cargo check` inside the generated tree is a step of
 //! `task check`, and a step that resolves crates is a step that reaches the network
 //! (AGENTS.md § Dependencies).
