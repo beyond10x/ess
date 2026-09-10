@@ -181,7 +181,7 @@ use ess_primitives::node::Node;
 use ess_primitives::predicate::{Operand, Predicate, Quantified, Truth};
 
 use crate::decision::{when, Decision, Unevaluable};
-use crate::input::{flatten, predicate_projectable, resolve_path, ShapeErrors};
+use crate::input::{flatten, predicate_projectable, resolve_row_path, ShapeErrors};
 use crate::scenario::{
     ActorRef, BindingAspect, BindingRef, CommandRef, ComponentRef, ConformanceScenario,
     ConformanceSuite, DeclaredTypeRef, EntityRef, ErrorRef, EssSemanticRef, EventRef, Holds,
@@ -3132,8 +3132,8 @@ fn value_object_invariants(
 /// What is deliberately *not* a position, and why each absence is a reading of the model rather
 /// than a shortcut:
 ///
-/// * inside a `List` or a `Map` — a fact path has no index or key selector, the rule
-///   [`resolve_path`] already applies to every other surface;
+/// * inside a `List` or a `Map` — the view-row projector does not publish collection facts,
+///   as [`resolve_row_path`] records;
 /// * inside a `Union` — which variant a row holds is the row's business, so no single path is one
 ///   every row must answer;
 /// * under an `Optional` — a row may hold nothing there, the predicate would evaluate `Unknown`,
@@ -3435,7 +3435,7 @@ fn unpublished(
         .filter(|path| {
             !views
                 .iter()
-                .any(|view| resolve_path(ir, &view.fields, path).is_scalar())
+                .any(|view| resolve_row_path(ir, &view.fields, path).is_scalar())
         })
         .collect::<BTreeSet<_>>()
         .into_iter()

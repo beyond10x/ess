@@ -302,7 +302,7 @@ fn expression_search_limits_do_not_define_type_correctness() {
 }
 
 #[test]
-fn legal_collection_cardinality_is_not_currently_projected() {
+fn legal_collection_cardinality_and_ordinals_are_projected() {
     let ir = compiled();
     for expression in [
         "lines.count > 0",
@@ -310,10 +310,7 @@ fn legal_collection_cardinality_is_not_currently_projected() {
         "labels.count > 0",
     ] {
         assert!(
-            facts(&ir, 1.0)
-                .decide(&guard(expression))
-                .unevaluable()
-                .is_some(),
+            facts(&ir, 1.0).decide(&guard(expression)).is_satisfied(),
             "{expression}"
         );
     }
@@ -387,7 +384,7 @@ fn a_newtype_is_transparent_when_a_path_is_resolved_as_well_as_when_it_is_projec
 }
 
 #[test]
-fn a_list_a_map_and_a_union_bind_no_fact_in_the_current_projection() {
+fn aggregate_roots_bind_no_scalar_fact() {
     let ir = compiled();
     let facts = facts(&ir, 1.0);
 
@@ -882,7 +879,7 @@ fn otherwise_and_external_are_not_guards_over_the_input() {
 }
 
 #[test]
-fn resolved_adapter_keeps_semantics_separate_from_collection_projection() {
+fn resolved_adapter_collection_requirements_are_met_by_input_projection() {
     let ir = compiled();
     let fields = &place_order(&ir).input;
     for expression in [
@@ -905,10 +902,7 @@ fn resolved_adapter_keeps_semantics_separate_from_collection_projection() {
             .reads
             .iter()
             .all(|read| read.resolution.scalar.is_some()));
-        assert!(facts(&ir, 1.0)
-            .decide(&guard(expression))
-            .unevaluable()
-            .is_some());
+        assert!(facts(&ir, 1.0).decide(&guard(expression)).is_satisfied());
     }
 }
 

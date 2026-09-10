@@ -27,13 +27,13 @@
 //! | a primitive | nothing to consume: the segment is undeclared | a scalar |
 //! | an enum | nothing to consume: the segment is undeclared | a scalar, as text |
 //! | a union | not a scalar: `a union` | not a scalar: `a union` |
-//! | `List<T>` | not a scalar: `a list` | not a scalar: `a list` |
-//! | `Map<K, V>` | not a scalar: `a map` | not a scalar: `a map` |
+//! | `List<T>` | `count` is scalar; an ordinal walks into `T` | not a scalar: `a list` |
+//! | `Map<K, V>` | `count` is scalar; values are accessed through quantifier binders | not a scalar: `a map` |
 //!
 //! **Its limits, named rather than discovered later.** A union is not projected *at all*, not even
 //! its tag — which is a `String` a fact could hold, and which a later wave may decide to bind as
-//! `payee.kind`. Lists and maps require collection facts this typed projector does not publish,
-//! including legal cardinality and List ordinal reads. The projection walk is bounded at
+//! `payee.kind`. Map values are projected in lexical key order; map-key codecs are not checked.
+//! The separate view-row projector does not publish these collection facts. The projection walk is bounded at
 //! [`MAX_TYPE_DEPTH`]; semantic path validation has no such depth limit.
 //!
 //! # A candidate that is not a value of the input's type is refused here
@@ -306,7 +306,7 @@ impl<'ir> InputFacts<'ir> {
             // binder exists. Reporting the collection would name the wrong path.
             Predicate::Forall(quantified) | Predicate::Exists(quantified) => {
                 if self.cardinality(&quantified.over).is_none() {
-                    push(self.explain_path(&quantified.over));
+                    push(self.explain_path(&quantified.over.child("count")));
                 } else {
                     push(Reason::Unclassified);
                 }
@@ -392,11 +392,25 @@ impl Target {
 
 /// Resolves a fact path against a set of declared fields, without any value in hand.
 ///
-/// The fields of a command's input, of a view's projection, or of anything else the model declares
-/// as a flat list of named, typed members.
+/// Describes the typed [`bind`] producer, including collection count and List scalar paths.
+/// A view runner's separate row projector has narrower capabilities.
 pub fn resolve_path(ir: &EssIr, fields: &[ResolvedField], path: &FactPath) -> Target {
+    resolve_projected_path(ir, fields, path, true)
+}
+
+/// The untyped view-row projector still omits collection facts.
+pub(crate) fn resolve_row_path(ir: &EssIr, fields: &[ResolvedField], path: &FactPath) -> Target {
+    resolve_projected_path(ir, fields, path, false)
+}
+
+fn resolve_projected_path(
+    ir: &EssIr,
+    fields: &[ResolvedField],
+    path: &FactPath,
+    collections: bool,
+) -> Target {
     match ess_compiler::expression::resolve_path(ir, fields, path, "conformance input") {
-        Ok(resolved) => projection_target(ir, &resolved),
+        Ok(resolved) => typed_projection_target(ir, &resolved, collections),
         Err(error) if error.code == ess_primitives::error::ValidationCode::SelfReference => {
             Target::TooDeep
         }
@@ -407,10 +421,18 @@ pub fn resolve_path(ir: &EssIr, fields: &[ResolvedField], path: &FactPath) -> Ta
     }
 }
 
-/// Classifies producer support after semantic resolution; terminal Number alone is insufficient.
+/// Classifies view-row producer support after semantic resolution.
 pub(crate) fn projection_target(
     ir: &EssIr,
     resolved: &ess_domain::expression::Resolution<ResolvedTypeRef>,
+) -> Target {
+    typed_projection_target(ir, resolved, false)
+}
+
+fn typed_projection_target(
+    ir: &EssIr,
+    resolved: &ess_domain::expression::Resolution<ResolvedTypeRef>,
+    collections: bool,
 ) -> Target {
     if matches!(
         resolved.terminal,
@@ -423,7 +445,7 @@ pub(crate) fn projection_target(
     if resolved.access.depth > MAX_TYPE_DEPTH {
         return Target::TooDeep;
     }
-    if resolved.access.collection {
+    if resolved.access.collection && !collections {
         return Target::Aggregate("a collection");
     }
     if resolved.scalar.is_some() {
@@ -441,7 +463,7 @@ pub(crate) fn projection_target(
     }
 }
 
-/// Whether every checked read is available from the current typed scalar projector.
+/// Whether every checked read is available from the view-row scalar projector.
 pub(crate) fn predicate_projectable(
     ir: &EssIr,
     fields: &[ResolvedField],
@@ -493,15 +515,19 @@ fn project(
             Some(fact) => facts.set(path.clone(), fact),
             None => wrong(errors, name.to_string()),
         },
-        // Checked for shape but not projected: legal count and List ordinal paths require
-        // collection facts this producer does not currently publish.
-        ResolvedTypeRef::List { .. } => {
-            if !matches!(value, Node::Seq(_)) {
+        ResolvedTypeRef::List { of } => {
+            if let Node::Seq(items) = value {
+                project_collection(ir, of, items.iter(), path, depth, facts, errors);
+            } else {
                 wrong(errors, format!("{type_ref}"));
             }
         }
-        ResolvedTypeRef::Map { .. } => {
-            if !matches!(value, Node::Map(_)) {
+        ResolvedTypeRef::Map { value: of, .. } => {
+            if let Node::Map(entries) = value {
+                // Quantifiers bind values, never keys or entry records. Ordered keys determine
+                // stable ordinals without interpreting arbitrary keys as fact-path segments.
+                project_collection(ir, of, entries.values(), path, depth, facts, errors);
+            } else {
                 wrong(errors, format!("{type_ref}"));
             }
         }
@@ -530,7 +556,7 @@ fn project(
                     }),
                     None => wrong(errors, format!("one of {}", variants.join(", "))),
                 },
-                // Shape only, as for a list: the tag is a text a fact could hold, and binding it is
+                // Shape only: the tag is a text a fact could hold, and binding it is
                 // a decision this gate does not take.
                 ResolvedBody::Union { .. } => {
                     if !matches!(value, Node::Map(_)) {
@@ -574,6 +600,30 @@ fn project(
                 }
             }
         }
+    }
+}
+
+/// Both collection shapes use the evaluator's count-plus-ordinal representation.
+fn project_collection<'a>(
+    ir: &EssIr,
+    element_type: &ResolvedTypeRef,
+    values: impl ExactSizeIterator<Item = &'a Node>,
+    path: &FactPath,
+    depth: usize,
+    facts: &mut FactStore,
+    errors: &mut Vec<ShapeError>,
+) {
+    facts.set(path.child("count"), FactValue::count(values.len()));
+    for (index, item) in values.enumerate() {
+        project(
+            ir,
+            element_type,
+            item,
+            &path.child(&index.to_string()),
+            depth + 1,
+            facts,
+            errors,
+        );
     }
 }
 
