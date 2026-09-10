@@ -15,16 +15,22 @@ scope:
   path: CHANGELOG.md
 - confidence: cited
   path: Taskfile.yml
-revision: 5
+revision: 6
 ---
 ## Intent
 
-The operator-approved Public shared gates, independent of Atlas plan adopts Eventlog, then ESS and AEP after verified producer publication. This story owns ESS adoption. Gates story:public-shared-gates owns producer implementation; Atlas task:eventlog-source-gate-reuse coordinates the authority migration.
+The operator-approved Public shared gates, independent of Atlas plan adopts Eventlog, then ESS and AEP after verified producer publication. This story owns ESS adoption. Gates story:public-shared-gates owns producer implementation. Atlas authority documentation records the migration; Atlas availability and documentation reconciliation are not source integration requirements.
 
 ## Acceptance and scope
 
-Install an immutable beyond10x/gates reusable workflow and coordinated local hooks against the explicit current-main baseline 988f219e90c9a7b105daec2345f77d6035075e92. Require the shared check before integration, enable supported GitHub secret scanning and push protection, and retain ESS correctness, site-build and release requirements. Use the same bot identity without an Atlas checkout or organization-wide admission in commit/publish paths. Keep private policy outside public source. Document historical findings separately; do not rewrite history. Scope: AGENTS.md, CHANGELOG.md, .github/workflows/shared-gates.yml and this planning record. No ESS modeling behavior or downstream release changes.
+Install the immutable beyond10x/gates 0.1.0 reusable workflow and coordinated local hooks against the explicit adoption baseline 24d2fe714958c8cde63ea78122c31e28bcc682bc. This incorporates the concurrent ESS changes published after the originally proposed baseline; exact historical exceptions remain in protected policy. Require the shared check before subsequent integration, enable supported GitHub secret scanning and push protection, and retain ESS correctness, site-build and release requirements. Use the same bot identity without an Atlas checkout or organization-wide admission in commit/publish paths. Keep private policy outside public source. Document historical findings separately; do not rewrite history.
+
+Scope: AGENTS.md, CHANGELOG.md, .github/workflows/shared-gates.yml, Taskfile.yml and this planning record. The test recipe runs the workspace normally and qualifies ess-xtask separately with the existing consumer-check native profile. Native linker flags must not reach nested WebAssembly builds. No guard or assertion is weakened. No ESS modeling behavior or downstream release changes.
 
 ## Evidence required
 
 Published immutable producer and verified assets; local shared gate and receipt reuse; task check and task site-build; trusted base-branch workflow observation; selected-repository policy secret and required status/security settings readback. Source publication is authorized; ESS release is outside scope.
+
+## Current verification
+
+The three WebAssembly regressions that failed CI 34466577376 pass with the normal workspace profile. All 123 ess-xtask tests pass with the separately declared native consumer-check profile. The corrected candidate still requires the full repository CI before integration. Atlas documentation work does not block it.

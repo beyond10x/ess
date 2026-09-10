@@ -39,9 +39,10 @@ tasks:
 
   test:
     cmds:
+      - cargo test --workspace --exclude ess-xtask --locked
       # The metadata authority regression executes the compiled provider. Its test
-      # build needs the same declared profile as consumer-check, including empty
-      # wrappers; inheriting a developer or runner profile is not admissible proof.
+      # build needs the consumer-check profile. Keep that native profile scoped to
+      # xtask: workspace tests also build Wasm, whose linker rejects native flags.
       - >-
         env -u CARGO_ENCODED_RUSTFLAGS RUSTUP_TOOLCHAIN=1.98.1
         RUSTFLAGS='-C link-arg=-fuse-ld=lld'
@@ -50,7 +51,7 @@ tasks:
         CARGO_BUILD_JOBS=2 CARGO_INCREMENTAL=0
         CARGO_PROFILE_DEV_DEBUG=0 CARGO_PROFILE_TEST_DEBUG=0
         CARGO_PROFILE_DEV_INCREMENTAL=false CARGO_PROFILE_TEST_INCREMENTAL=false
-        cargo test --workspace --locked
+        cargo test --package ess-xtask --locked
 
   doc-check:
     env:
