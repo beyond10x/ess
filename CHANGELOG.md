@@ -2,6 +2,11 @@
 
 ## [Unreleased]
 
+### Documentation
+
+- Refresh the dated published-release observation to 0.22.1 while preserving the scope of
+  earlier conformance evidence and the generated current-source support matrix.
+
 ### Fixed
 
 - Generated output accepts SELinux and SMACK access labels imposed by the platform. Foreign

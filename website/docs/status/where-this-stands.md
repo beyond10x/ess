@@ -7,10 +7,14 @@ description: Current-source ESS capabilities, a dated release observation, and t
 
 ESS is experimental and standalone.
 
-Latest published release observed on 7 September 2026: [0.20.0](https://github.com/beyond10x/ess/releases/tag/0.20.0),
-published on 6 September 2026. Its release record lists archives for Linux and macOS on x86-64 and
-ARM64, plus SHA256SUMS. This is a dated asset-list observation; it does not claim that the archives
-were downloaded, their checksums verified, or the binary installed or executed.
+Latest published release observed on 10 September 2026:
+[0.22.1](https://github.com/beyond10x/ess/releases/tag/0.22.1). Its release record lists archives
+for Linux and macOS on x86-64 and ARM64, plus SHA256SUMS. This is a dated asset-list observation;
+it does not claim that the archives were downloaded, their checksums verified, or the binary
+installed or executed. The release repairs the release gate and retains the `at_most_once`
+bindings introduced in 0.22.0.
+
+The dated conformance observations below remain scoped to their original release and execution.
 
 ## Current source capabilities
 
@@ -35,7 +39,8 @@ were downloaded, their checksums verified, or the binary installed or executed.
 
 ### Support boundaries
 
-These rows describe the source checkout, including changes later than the release observed above.
+These rows describe the source checkout. Dated conformance evidence remains scoped to its original
+release observation; publishing a newer source tag does not re-run that evidence.
 Output and CLI metadata checks establish kinds, versions and availability; the linked owners and
 tests establish the bounded support and refusals. The offline `cargo xtask support --check` compares
 this complete maintained block. It does not verify remote release records.
