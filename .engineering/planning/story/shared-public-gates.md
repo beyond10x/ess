@@ -13,7 +13,9 @@ scope:
   path: AGENTS.md
 - confidence: cited
   path: CHANGELOG.md
-revision: 4
+- confidence: cited
+  path: Taskfile.yml
+revision: 5
 ---
 ## Intent
 

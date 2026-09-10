@@ -6,6 +6,8 @@
 
 - Common source security and privacy checks use pinned public Gates tooling and
   signed local evidence. Bot delivery no longer requires an Atlas checkout.
+- The repository test runner declares the same compiler and wrapper profile as
+  consumer qualification, so the compiled-provider regression runs with admissible evidence.
 
 ## [0.21.0] — 2026-09-10
 
