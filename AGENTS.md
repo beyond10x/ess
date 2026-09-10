@@ -63,6 +63,9 @@ cluster.
 task check
 ```
 
+CI invokes `task check SKIP_CONSUMER_CHECKS=true`: consumer coverage is disabled there by
+explicit operator request. Local `task check` and `task consumer-check` retain that coverage.
+
 The gate is offline and runs formatting, strict Clippy, all workspace tests, rustdoc, command smoke
 tests, and the dependency boundary test. Land nothing until it exits zero.
 

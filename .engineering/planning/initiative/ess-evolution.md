@@ -7,7 +7,7 @@ title: Evolve ESS without losing capabilities
 relations:
 - informed_by: epic:review-boundary-remediation
 - informed_by: story:cli-presentation-binding
-revision: 6
+revision: 7
 ---
 ## Outcome
 Implement the operator's ESS evolution plan while retaining ESS names, packages, supported formats and implemented behavior. Deliver repository-local Eventlog file authority for AEP, recorded ER execution, explicit ESS service/protocol/UI bindings, and verified adoption in Connectors v2 and Babelconnect.
@@ -43,8 +43,12 @@ At the operator’s request, integration verification will restore TMPDIR=/tmp f
 
 ## Integration verification
 
-The complete local task check passed on 2026-09-10 against staged tree 66bd733886b558be00066658cb41fc83a734be25, including all 152 consumer cases and the final fuzz/release/action checks. Log: /home/timo/.cache/ess-evolution-20260910/ess-integration-gate-native-config.log. task site-build also passed; log: /home/timo/.cache/ess-evolution-20260910/ess-integration-site.log. Source, compiler and public-site inputs relevant to that site build are retained.
+The complete local task check passed on 2026-09-10 against staged tree 66bd733886b558be00066658cb41fc83a734be25, including all 152 consumer cases and the final fuzz/release/action checks. Log: local-evidence:ess-evolution-20260910/ess-integration-gate-native-config.log. task site-build also passed; log: local-evidence:ess-evolution-20260910/ess-integration-site.log. Source, compiler and public-site inputs relevant to that site build are retained.
 
 TMPDIR=/tmp is restored. The socket fixture binds through a short temporary directory symlink directly into the destination filesystem. Its targeted selected-socket test passed, and all 39 output-ownership tests passed in 47.31 seconds. The full workspace run passed those tests too. Native linker flags come from the existing machine Cargo configuration; all four compiler-wrapper variables are explicitly empty, build jobs are two, debug information and incremental compilation are disabled. Earlier interrupted or failed environment runs remain in the cache logs and are not passing evidence.
 
 The integration retains the reviewed 96-consumer mapping and original candidate parent, with the current main planning journal preserved as authority. The next bounded continuation is story:ess-evolution-preservation-gate; broad evolution remains active.
+
+## Integration publication
+
+Reviewed integration and socket-fixture portability fix are published on ESS main 24d2fe714958c8cde63ea78122c31e28bcc682bc, with original candidate cd80f202c4cd9ed1b25027e008ffbb2bc096c8cd retained as a parent. The preservation-gate story has completed local verification and is awaiting publication.

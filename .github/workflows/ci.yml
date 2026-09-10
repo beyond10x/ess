@@ -1,4 +1,4 @@
-# CI provisions the complete repository gate and the native macOS ownership witnesses.
+# CI provisions repository checks except consumer coverage, plus native macOS ownership witnesses.
 # The Taskfile remains the complete gate; macOS exercises the platform-specific protocol.
 name: CI
 
@@ -65,8 +65,8 @@ jobs:
 
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2
 
-      - name: Run the repository gate
-        run: task check
+      - name: Run the repository gate (consumer checks disabled)
+        run: task check SKIP_CONSUMER_CHECKS=true
 
   output-ownership-macos:
     name: Output ownership (${{ matrix.runner }})

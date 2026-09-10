@@ -8,6 +8,10 @@
   signed local evidence. Bot delivery no longer requires an Atlas checkout.
 - The repository test runner declares the same compiler and wrapper profile as
   consumer qualification, so the compiled-provider regression runs with admissible evidence.
+- Consumer checks refuse drift in the ESS evolution preservation mapping before running
+  expensive extraction and behavioral cases. Existing semantic eligibility remains unchanged.
+- CI disables the consumer-check lane by explicit operator request. Local `task check`
+  and `task consumer-check` retain the complete consumer coverage exercise.
 
 ## [0.21.0] — 2026-09-10
 

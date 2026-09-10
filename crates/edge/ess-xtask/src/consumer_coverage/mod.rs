@@ -5,6 +5,7 @@ mod enforce;
 mod executor;
 mod metadata;
 mod native;
+mod preservation;
 mod proposal;
 mod rust;
 #[cfg(test)]
@@ -423,6 +424,7 @@ fn plan_extraction(extraction: &Path) -> Result<Value> {
     enforce::plan_with_metadata(&models, &profiles, &baseline, &claims, Some(&metadata))
 }
 fn check_at(root: &Path, output: &Path) -> Result<String> {
+    preservation::check(root)?;
     let extraction = output.join("extraction");
     let extracted = run(root, &extraction);
     // Diagnostics use the same model, canonical fingerprint and accounting code even

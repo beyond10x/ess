@@ -15,7 +15,7 @@ scope:
   path: CHANGELOG.md
 - confidence: cited
   path: Taskfile.yml
-revision: 6
+revision: 7
 ---
 ## Intent
 
@@ -34,3 +34,7 @@ Published immutable producer and verified assets; local shared gate and receipt 
 ## Current verification
 
 The three WebAssembly regressions that failed CI 34466577376 pass with the normal workspace profile. All 123 ess-xtask tests pass with the separately declared native consumer-check profile. The corrected candidate still requires the full repository CI before integration. Atlas documentation work does not block it.
+
+## Operator-directed completion
+
+After CI run 34468911188 passed all workspace tests and both macOS lanes but exhausted its 45-minute budget during consumer-check, the operator explicitly requested disabling consumer checks in CI and committing and pushing directly to main without another CI wait. CI now sets SKIP_CONSUMER_CHECKS=true; the omitted lane is reported explicitly. Local task check and task consumer-check retain consumer coverage. This instruction supersedes the earlier pre-integration CI wait for this delivery. Common security and privacy checks remain enforced. Concurrent main commit 833231633278f62aaf7841f85eb7e84891a730ef and both branches' original planning journal events are preserved.

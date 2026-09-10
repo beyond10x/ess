@@ -202,7 +202,13 @@ tasks:
       - task: example-check
       - task: projection-check
       - task: support-check
-      - task: consumer-check
+      # CI explicitly disables this expensive lane. Local task check still runs it.
+      - |
+        if [ "{{.SKIP_CONSUMER_CHECKS | default "false"}}" = "true" ]; then
+          echo "consumer-check skipped: explicitly disabled for this run"
+        else
+          task consumer-check
+        fi
       - task: fuzz-check
       - task: release-check
       - task: action-check
