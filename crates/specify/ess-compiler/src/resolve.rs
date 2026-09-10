@@ -413,6 +413,7 @@ pub mod codes {
 ///
 /// Needles are supplied most-specific-first — the misspelt type reference, then the declaration that
 /// contains it. Falling back to the declaration's line is coarse; it is never wrong.
+/// Declaration needles exclude longer names sharing their prefix; other needles match substrings.
 pub struct Locator<'a> {
     sources: &'a SourceMap,
     labels: Vec<String>,
@@ -486,11 +487,24 @@ impl<'a> Locator<'a> {
     /// [`Self::unique`], actually reading the files.
     fn scan(&self, needle: &str) -> Option<(String, Location)> {
         let mut found: Option<(String, Location)> = None;
+        // A declaration of WorkView or Work.State is not a declaration of Work.
+        // Other needles retain their existing substring semantics.
+        let declaration = ["name: ", "id: ", "component: "]
+            .iter()
+            .any(|prefix| needle.starts_with(prefix));
         for label in &self.labels {
             let Some(text) = self.sources.get(label) else {
                 continue;
             };
-            let mut occurrences = text.match_indices(needle);
+            let mut occurrences = text.match_indices(needle).filter(|(index, _)| {
+                !declaration
+                    || text[index + needle.len()..]
+                        .chars()
+                        .next()
+                        .is_none_or(|next| {
+                            !next.is_alphanumeric() && !matches!(next, '_' | '-' | '.')
+                        })
+            });
             let Some((index, _)) = occurrences.next() else {
                 continue;
             };

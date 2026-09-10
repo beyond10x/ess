@@ -197,14 +197,15 @@ fn a_sited_refusal_whose_name_is_a_stop_list_word_cites_the_same_line_as_its_loc
     );
 }
 
-/// The design page, closing section: `repeated_names.yaml` exercises "a needle that is *not*
-/// unique" and asserts "the honest `located: None` … rather than a confidently wrong line".
-///
-/// No refusal from that fixture is unlocated: the shipped test pins all three to line 12.
+/// Exact declarations repeated across sources stay unresolved. Prefix names alone are
+/// no longer ambiguous; the ordinary fixture separately pins their correct owner locations.
 #[test]
-fn the_repeated_names_fixture_reports_an_unlocated_refusal_as_its_design_page_says() {
-    let files = [("repeated_names.yaml", REPEATED)];
-    let errors = refusals(&files);
+fn duplicated_source_declarations_report_unlocated_refusals() {
+    let errors = refusals(&[("repeated_names.yaml", REPEATED)]);
+    let files = [
+        ("repeated_names.yaml", REPEATED),
+        ("duplicate.yaml", REPEATED),
+    ];
     let (sources, labels) = sources_of(&files);
     let diagnostics = diagnose_locating(&errors, &sources, &labels);
     let unlocated: Vec<&str> = diagnostics
@@ -215,9 +216,8 @@ fn the_repeated_names_fixture_reports_an_unlocated_refusal_as_its_design_page_sa
         .map(|span| span.path.as_str())
         .collect();
     assert!(
-        !unlocated.is_empty(),
-        "the design page says this fixture asserts `located: None`; every refusal it produces is \
-         located: {:?}",
+        unlocated.len() == diagnostics.len(),
+        "every declaration occurs twice; no refusal may guess a source: {:?}",
         diagnostics
             .as_slice()
             .iter()

@@ -2,6 +2,12 @@
 
 ## [Unreleased]
 
+### Fixed
+
+- Diagnostic source lookup distinguishes a declaration from longer names that share its
+  prefix. Invalid enum literals in entity invariants and view filters retain their owner source,
+  enum vocabulary and existing refusal codes; genuinely duplicate declarations remain unlocated.
+
 ## [0.22.0] — 2026-09-10
 
 ### Added

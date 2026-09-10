@@ -132,14 +132,13 @@ fn a_nested_member_path_is_cited_by_construct_and_line() {
     assert_eq!(
         cited,
         vec![
-            // The entity family is still on the string heuristic — `docs/design/
-            // review-typed-diagnostics.md` inventories it — and the honest answer to a path it
-            // cannot find is no line at all.
+            // OrderId and OrderPlaced are distinct names, so the fallback can locate
+            // Order's declaration without pretending to locate its transition leaf.
             Cited {
                 code: "ESS-ENTITY-005".to_owned(),
-                source: "<document>".to_owned(),
+                source: "nested.yaml".to_owned(),
                 path: "entity shop.orders.Order.transitions[0]".to_owned(),
-                located: None,
+                located: Some(Location { line: 11, column: 5 }),
             },
             Cited {
                 code: "ESS-COMMAND-001".to_owned(),
@@ -176,39 +175,43 @@ fn a_nested_member_path_is_cited_by_construct_and_line() {
 fn a_name_used_more_than_once_falls_back_to_the_declaration_that_owns_it() {
     let (errors, cited) = cited(&[("repeated_names.yaml", REPEATED)]);
 
-    // Nothing here is located, and that is the point of the fixture. The outcome is written
-    // `- name: filed`, so the needle `filed:` occurs zero times in the document; the fallback
-    // needle `name: shop.repeat.File` occurs three times as a substring — the command itself, the
-    // sibling `shop.repeat.FileTwo`, and the event `shop.repeat.Filed`. A substring search that
-    // matches three lines knows nothing, and `Locator` says so instead of picking the first.
+    // The outcome is repeated, but its owning command has one exact declaration.
+    // FileTwo and Filed must not make the declaration of File appear ambiguous.
     assert_eq!(
         cited,
         vec![
             Cited {
                 code: "ESS-COMMAND-006".to_owned(),
-                source: "<document>".to_owned(),
+                source: "repeated_names.yaml".to_owned(),
                 path: "command.shop.repeat.File.input[1]".to_owned(),
-                located: None,
+                located: Some(Location {
+                    line: 12,
+                    column: 5
+                }),
             },
             Cited {
                 code: "ESS-COMMAND-006".to_owned(),
-                source: "<document>".to_owned(),
+                source: "repeated_names.yaml".to_owned(),
                 path: "command.shop.repeat.File.outcomes.filed".to_owned(),
-                located: None,
+                located: Some(Location {
+                    line: 12,
+                    column: 5
+                }),
             },
             Cited {
                 code: "ESS-COMMAND-004".to_owned(),
-                source: "<document>".to_owned(),
+                source: "repeated_names.yaml".to_owned(),
                 path: "command.shop.repeat.File.outcomes".to_owned(),
-                located: None,
+                located: Some(Location {
+                    line: 12,
+                    column: 5
+                }),
             },
             // …and the same hazard where the search *can* answer. `shop.repeat.Solo` repeats an
             // outcome name too, and no other declaration's name contains its own, so the fallback
             // needle is unique and both refusals are cited at the line the command is declared on.
-            // The story's Validation clause asks that repeated names "retain correct
-            // codes/locations"; the unlocated half above cannot check the second half of that, and
-            // answering the round-1 finding by making the whole fixture unlocated left nothing that
-            // did (adversary pass 2, F5). Both halves are pinned now.
+            // Both commands remain pinned to their own declaration, not to an outcome
+            // with the same name elsewhere in the fixture.
             Cited {
                 code: "ESS-COMMAND-006".to_owned(),
                 source: "repeated_names.yaml".to_owned(),

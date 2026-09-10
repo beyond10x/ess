@@ -2,20 +2,34 @@
 format: aep.planning-md/1
 id: story:enum-variant-in-an-entity-invariant
 kind: story
-status: draft
+status: active
 title: An entity invariant may name an enum variant that does not exist, and validate accepts it
 relations:
 - informed_by: story:review-expression-typechecking
+- informed_by: initiative:ess-evolution
+- serves: vision:O2
 scope:
+- confidence: cited
+  path: CHANGELOG.md
+- confidence: cited
+  path: crates/specify/ess-compiler/src/resolve.rs
+- confidence: cited
+  path: crates/specify/ess-compiler/tests/adversary_typed_diagnostics_pass1.rs
 - confidence: inferred
   path: crates/specify/ess-compiler/tests/billing.rs
+- confidence: cited
+  path: crates/specify/ess-compiler/tests/enum_invariants.rs
+- confidence: cited
+  path: crates/specify/ess-compiler/tests/typed_diagnostics.rs
 - confidence: cited
   path: crates/specify/ess-domain
 - confidence: cited
   path: crates/specify/ess-domain/src/entity.rs
 - confidence: inferred
   path: crates/specify/ess-domain/src/view.rs
-revision: 6
+- confidence: cited
+  path: docs/design/review-typed-diagnostics.md
+revision: 14
 ---
 ## What is wrong
 
@@ -81,3 +95,23 @@ Derived 2026-09-06 by `aep-drive:story-scoper` against clean ESS `dcb84be861d2f9
 - **Documents:** none independently required by this imported defect story — inferred; the related expression-typechecking design must govern any broader resolver extraction.
 - **Confidence:** high for the validation defect and existing reuse surface — cited; source-attribution completeness and the eventual shared helper placement remain unresolved.
 - **Would collide with:** entity/view predicate validation and their inline tests, compiler billing diagnostic tests, and broader expression-typechecking work in ess-domain — inferred; this story remains outside the immediate wave.
+
+## ESS evolution continuation
+
+This existing validation defect is selected under initiative:ess-evolution before the migration's semantic crosswalk and ER lowering. Verify the current shared expression checker first: the older story's view-specific helper names may have moved. Preserve existing predicate semantics and reuse the common resolver; do not add a second enum checker or change persisted formats. Verify entity and view diagnostics plus valid enums, optional fields and lifecycle state using focused domain/compiler tests. No full gate is authorized for this continuation.
+
+## Current reproduction and selected correction
+
+The original semantic admission defect is already fixed by the shared expression checker introduced in f03ecdaf. The new owner-level regression confirms that valid optional enums, membership predicates and lifecycle state compile, but the first negative case fails the source-file assertion: the diagnostic span is <document> instead of domains/work.yaml. The fixture declares sample.work.Work and sample.work.WorkView. Locator treats the former declaration needle as a substring of both names and loses its otherwise unique source.
+
+Correct only declaration-needle token boundaries in the existing Locator. Preserve its uniqueness requirement across all input files and its fallback for genuinely ambiguous locations. Keep the common predicate checker unchanged. Test entity and view diagnostics end to end, including vocabulary, source, membership and optional/lifecycle cases; separately prove prefix names do not count as exact declarations and duplicate exact declarations remain unresolved. No new persisted format or enum semantics is introduced.
+
+## Implementation and evidence
+
+Semantic enum admission already exists in the shared checker: it validates both sides of comparisons, membership lists, optional/nested types and bound paths. No duplicate enum walker was added. The remaining source-attribution defect is fixed in Locator: name/id/component declaration needles reject matches that continue with a name character. Other substring needles and the cross-file uniqueness requirement retain their behavior. No model, IR or refusal-code format changed.
+
+The initial owner-level regression failed because the entity diagnostic named <document> rather than domains/work.yaml. After the fix, three focused tests pass: ten negative owner/predicate combinations retain ESS-ENTITY-001 or ESS-VIEW-001, source and declared enum vocabulary; five valid combinations compile for both owners; prefix-only declarations never impersonate an absent exact name, and duplicate exact declarations remain unresolved. Existing diagnostic fixtures now pin File and Order to their actual declaration lines despite FileTwo/Filed and OrderId/OrderPlaced. The adversarial ambiguity test still requires every diagnostic to remain unresolved when exact declarations occur in two source files. No fixture source or semantic assertion was deleted.
+
+Verification against this candidate: 52 compiler library, billing, enum and diagnostic-adversary tests passed. The typed-diagnostics target initially exposed another old prefix-collision location assertion, which was corrected to the actual entity declaration; its final eight tests passed. Thus 60 focused tests passed across the affected targets, with no ignored cases. Strict ess-compiler all-target Clippy passed. Rust 1.85 compiled the compiler and new enum integration target; two existing const-helper dead-code warnings remain on that compiler. Formatting and git diff --check passed. No full workspace/consumer/persistence gate was run.
+
+Evidence: local-evidence:ess-evolution-20260910/ess-enum-owner-diagnostics.log (initial source-attribution failure); ess-enum-owner-diagnostics-fixed.log (three passing new cases); ess-enum-diagnostics-final.log (52 passes and the old nested-location expectation failure); ess-enum-typed-diagnostics-final.log (all eight corrected diagnostic cases pass); ess-enum-diagnostics-clippy-final.log; ess-enum-diagnostics-msrv.log. The feature remains a source candidate until integration. This closes the code gap described above, not ER lowering or application adoption.

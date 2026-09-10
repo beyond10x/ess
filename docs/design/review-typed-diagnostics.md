@@ -128,6 +128,14 @@ No parser position source exists yet — `serde_yaml` discards positions for sem
 `Locator` still finds the line. `SyntaxSpan` exists and is honoured by `bridge` so that the first
 producer able to supply a position needs no further change here; its consumption is tested directly.
 
+Declaration needles beginning with `name:`, `id:` or `component:` match the complete name:
+an immediately following letter, digit, underscore, hyphen or dot continues that name and excludes
+the prefix match. Other needles retain substring matching. This distinguishes `Work` from
+`WorkView` and `Work.State` without guessing among genuinely repeated declarations. The locator
+remains a textual heuristic, not a YAML parser or a precise predicate-position source. The
+owner-level enum regressions in `tests/enum_invariants.rs` cover source attribution, vocabulary,
+optional fields, lifecycle states and membership for entities and views.
+
 ## Migration order and what this wave migrated
 
 Order is by family, largest first, because the largest family is also the one the adopter-facing guide
@@ -314,22 +322,16 @@ entry (as `error::struct::ValidationError` has), the implementation wording for 
 `crates/specify/ess-compiler/tests/typed_diagnostics.rs` against
 `crates/specify/ess-compiler/tests/fixtures/typed_diagnostics/`:
 
-1. `repeated_names.yaml` — every refusal it produces is **unlocated**, and that is what it is for.
-   The outcome is written `- name: filed`, so the needle `filed:` occurs zero times; the fallback
-   needle `name: shop.repeat.File` occurs three times as a substring — the command itself, the
-   sibling command `shop.repeat.FileTwo`, and the event `shop.repeat.Filed`. A substring search
-   matching three lines knows nothing, and `Locator` reports `located: None` instead of picking the
-   first. The first version of this page claimed the fixture asserted `None` while the test pinned
-   all three refusals to line 12 (adversary pass 1, F3, F4); the fixture now does what the page says,
-   and `adversary_typed_diagnostics_pass1.rs` holds it to that.
-
-   It also carries the **located** half, added because answering pass 1's F3 by making every refusal
-   unlocated left the suite checking no location at all for the hazard the story's Validation clause
-   names (adversary pass 2, F5). `shop.repeat.Solo` repeats an outcome name too, and no other
-   declaration's name contains its own, so its fallback needle is unique and both of its refusals are
-   cited at `repeated_names.yaml:35:5` — pinned exactly, beside the three unlocated ones. Neither
-   half was removed to make the other pass; a fixture that answers a finding by deleting the evidence
-   is how F5 happened.
+1. `repeated_names.yaml` — repeated outcome names fall back to their exact owning declaration.
+   `shop.repeat.File` is distinct from the sibling command `shop.repeat.FileTwo` and event
+   `shop.repeat.Filed`; its three refusals point to `repeated_names.yaml:12:5`.
+   `shop.repeat.Solo` retains its two refusals at `repeated_names.yaml:35:5`.
+   Before declaration boundaries were checked, the prefix collision left the first three
+   refusals unlocated. `adversary_typed_diagnostics_pass1.rs` now supplies the same declaration
+   text under two source labels to verify genuine ambiguity: every refusal remains unlocated.
+   `tests/enum_invariants.rs` also independently checks absent declarations, longer prefix names,
+   a unique exact declaration and duplicate exact declarations. None of these tests assigns
+   an outcome's line by counting repeated YAML keys.
 2. `nested.yaml` — a `payload:` entry three member levels below the command, so the member path is
    more than one segment deep.
 3. `cross_file_a.yaml` + `cross_file_b.yaml` — a command in one file emitting an event declared in
