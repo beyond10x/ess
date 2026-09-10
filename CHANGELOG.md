@@ -2,7 +2,25 @@
 
 ## [Unreleased]
 
+## [0.21.0] — 2026-09-10
+
 ### Added
+
+- Typed CLI presentation bindings through `ess-cli/1`, `ess specify cli` and
+  `ess generate cli`. Local actions, service calls and schema-selected dynamic
+  calls produce deterministic Rust/Clap packages, help and Bash completion.
+  Generated adapters validate typed inputs, results and errors, keep process
+  context separate from payloads, and support protected credential entry.
+  Application behavior is supplied through explicit handlers; the default handler
+  reports unavailable.
+- Finite deployment recovery for the `SingleHostGeneratedHelm1` profile:
+  explicit authority admission, a durable invocation journal, authenticated
+  observations and bounded Helm execution. Each operation attempts at most one
+  mutation; uncertainty remains explicit instead of implying rollback or retry.
+- Generated-output ownership records, complete owner inventories and recovery of
+  interrupted publication. Native path admission protects authored and foreign
+  output, preserves supported filename spelling and checks filesystem conflicts
+  before publication.
 
 - Native `ess verify bindings` connects exact implementation selections to scoped Kubernetes
   workload templates, with deterministic JSON/Markdown and satisfied, violated or unknown exits.
@@ -30,6 +48,21 @@
   restricted TypeScript projection have distinct documented boundaries.
 
 ### Fixed
+
+- Exact numeric predicates preserve integer distinctions that binary64 cannot
+  represent across Rust, generated Go and browser execution. Shared primitive
+  admission aligns integer bounds, decimal and base64 grammar; strings are never
+  silently treated as numeric facts.
+- Migrated command diagnostics carry typed rule identity and source sites through
+  validation and compilation, so changing message wording does not change their
+  codes or locations. Existing rendered location fields remain available.
+- Concurrent cache-writer tests provision independent authority registries while
+  retaining the shared-cache race. Firefox tests use browser-assigned ports to
+  avoid port reservation races, and generated CLI packages are checked as
+  independent adopter workspaces.
+- Offline specification fuzzing exercises real source readers, generated ownership
+  checks and bounded retained conformance inputs, with deterministic regression
+  replay and explicit unsupported coverage.
 
 - Specification and scenario commands accept an optional `ess-inputs.yaml` manifest
   with exact file lists, allowing nested authored inputs alongside generated files.

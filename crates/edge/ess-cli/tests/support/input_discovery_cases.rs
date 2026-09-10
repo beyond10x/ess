@@ -1034,14 +1034,12 @@ fn composition_routes(t: &Tree) {
 
 #[cfg(unix)]
 fn socket(path: &Path) {
-    static NEXT: AtomicUsize = AtomicUsize::new(0);
-    let short = std::env::temp_dir().join(format!(
-        "discovery-socket-{}-{}",
-        std::process::id(),
-        NEXT.fetch_add(1, Ordering::Relaxed)
-    ));
-    drop(std::os::unix::net::UnixListener::bind(&short).unwrap());
-    fs::rename(short, path).unwrap();
+    // Keep the bind path below the Unix socket length limit, but create the socket
+    // directly in its destination filesystem even when the temporary root is tmpfs.
+    let short = tempfile::tempdir().unwrap();
+    let parent = short.path().join("parent");
+    std::os::unix::fs::symlink(path.parent().unwrap(), &parent).unwrap();
+    drop(std::os::unix::net::UnixListener::bind(parent.join(path.file_name().unwrap())).unwrap());
 }
 
 fn validate_manifest_instances(t: &Tree, schema: &Value) {
