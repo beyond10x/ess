@@ -1214,18 +1214,24 @@ pub(crate) enum Representation<'a> {
     Structured,
 }
 
-/// How many wrappers deep the walk below will go before giving up.
+/// Maximum type nodes visited while checking a binding or payload literal's representation.
 ///
 /// Bounded rather than unbounded as defence in depth. `check_inhabitation` in
 /// [`crate::system`] does refuse a newtype of itself, so this walk should never meet one — but the
 /// two checks run in the same pass over the same document, and a validation pass that hangs is worse
 /// than one that refuses a good document. A bound is cheaper than an ordering guarantee.
-const WRAPPER_LIMIT: usize = 32;
+///
+/// Each `Optional` or newtype wrapper consumes one visit, and recognizing the terminal enum or
+/// primitive consumes another. Exhaustion establishes no representation guarantee; callers that
+/// describe validation must use this same bound. This is distinct from the type parser's nesting
+/// bound: named newtypes can extend a chain without nesting its authored type references.
+pub const WRAPPER_LIMIT: usize = 32;
 
 /// The representation a literal would have to be spellable as, to fill `type_ref`.
 ///
-/// `None` when the answer needs a type nothing declares, or when the wrappers run deeper than any
-/// real specification: both are somebody else's error, already reported.
+/// `None` when the answer needs a type nothing declares, or when the traversal exhausts
+/// [`WRAPPER_LIMIT`]. The latter establishes no representation, even if other passes admit the
+/// specification; callers must not describe it as a completed literal check.
 pub(crate) fn representation<'a>(
     type_ref: &'a TypeRef,
     types: &'a TypeRegistry,

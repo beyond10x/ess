@@ -49,7 +49,7 @@ use ess_compiler::ir::{
     ResolvedMappingValue, ResolvedPayloadValue, ResolvedSubject, ResolvedType, ResolvedTypeRef,
     ResolvedView, ResolvedWorkload, TypeHandle,
 };
-use ess_domain::binding::Delivery;
+use ess_domain::binding::{Delivery, WRAPPER_LIMIT};
 use ess_domain::command::TestStrategy;
 use ess_domain::entity::{Cardinality, Invariant, RelationKind, StateMachine, StateName};
 use ess_domain::name::{Naming, QualifiedName};
@@ -1718,7 +1718,7 @@ fn mapping_bullet(ir: &EssIr, mapping: &ResolvedMapping) -> Vec<Inline> {
 fn literal_guarantee(ir: &EssIr, target: &ResolvedTypeRef) -> Vec<Inline> {
     let mut current = target;
     let mut seen = BTreeSet::new();
-    loop {
+    for _ in 0..WRAPPER_LIMIT {
         match current {
             ResolvedTypeRef::Optional { of } => current = of,
             ResolvedTypeRef::Declared { name } if seen.insert(name) => {
@@ -1750,8 +1750,8 @@ fn literal_guarantee(ir: &EssIr, target: &ResolvedTypeRef) -> Vec<Inline> {
             | ResolvedTypeRef::Map { .. } => break,
         }
     }
-    // A recursive representation has no enum or String guarantee to report. Do not infer one
-    // merely because this mapping reached the IR; admission remains the compiler's responsibility.
+    // A recursive or over-budget representation has no enum or String guarantee to report. Do not
+    // infer one merely because this mapping reached the IR; admission remains the compiler's job.
     vec![Inline::text(
         ". This documentation establishes no additional value constraints for this literal.",
     )]
