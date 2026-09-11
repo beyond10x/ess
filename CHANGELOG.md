@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [0.23.0] — 2026-09-11
+
 ### Added
 
 - Source `ess/4` declares error wire names without merging semantic error identities.
