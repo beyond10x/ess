@@ -2,7 +2,7 @@
 format: aep.planning-md/1
 id: story:binding-mapping-bounded-accessor
 kind: story
-status: proposed
+status: active
 title: A binding mapping may read one bounded path into the event, so an envelope-shaped event can drive a flat-input command
 summary: 'mapping: <input>: event.data.<field> — segments resolved against declared types, Optional/union segments refused unless the target is Optional, bounded depth, no list traversal. Measured need: 17 commands and 0 bindings in babelconnect because its push events are wire envelopes.'
 relations:
@@ -79,7 +79,7 @@ scope:
   path: crates/verify/ess-diff/src/diff.rs
 - confidence: inferred
   path: docs/design/binding-mapping-bounded-accessor.md
-revision: 6
+revision: 8
 ---
 ## Why
 
@@ -206,8 +206,15 @@ The first unpublished import was refused by the coordinated private-identifier c
 
 ## Design correction and observed adoption limits
 
-The design at docs/design/binding-mapping-bounded-accessor.md now states the complete source, resolved-plan, native generation, conformance and report contracts. First review review-result:priority-accessor-design-pass1-20260911 found unbounded finite branching, missing report compatibility paths, and ambiguous nested Optional construction. Correction digest d950020e8d3f778f221fb1ff83a13aeb9c933c1de444b2b69e778ab2db7875f0 answers those classes with a shared bounded DAG, explicit existing report/2 routing for suite/6-/7, and equality-first typed Optional lifting. Second design review is pending; no accessor source implementation is claimed.
+The design at docs/design/binding-mapping-bounded-accessor.md now states the complete source, resolved-plan, native generation, conformance and report contracts. First review review-result:priority-accessor-design-pass1-20260911 found unbounded finite branching, missing report compatibility paths, and ambiguous nested Optional construction. Correction digest d950020e8d3f778f221fb1ff83a13aeb9c933c1de444b2b69e778ab2db7875f0 answers those classes with a shared bounded DAG, explicit existing report/2 routing for suite/6-/7, and equality-first typed Optional lifting. Second review and the final bounded correction are complete; no accessor source implementation is claimed by this design evidence.
 
 Three segments after event are required by the measured notification body path. Source ess/3 and distinct resolved EventAccessor/ObservedAccessor variants preserve old flat bytes; ordinary suite/6 and coverage suite/7 carry new semantics. Existing report/2 retains its exact-suite meaning. Report/1 incompatibility must be refused before target execution. Resource limits govern the new capability without weakening existing scanner, gate or source policies.
 
 The four adopter rows remain acceptance obligations, not an accessor-only completion claim. Each requires authoritative session identity absent from the binding source vocabulary. The status payload has an id, but its equivalence to authenticated session identity is unproven; the other three payloads lack recipient identity. Existing exact host conversions can declare whole-Optional or whole-struct crossings, but declarations do not execute reducer algorithms. Actual context, conversion and released-pin adoption evidence remains required. No invented event fields or optionalized required inputs may manufacture the four-row count. Typed context is a separate follow-up contract, not accessor syntax admitted here.
+
+
+## Implementation admission
+
+Final design SHA256 b9e7e6f5ddf7d3775d7d79e5fd5df92c683feb6b851632f8a9d069445aaa9657 was reviewed directly by the coordinator after the second adversarial pass, as required by the two-attack budget. The exact correction retains all prior required cases, native whole-value assignment, resource bounds, report routing and adoption obligations. It distinguishes terminal Missing/PresentNull/PresentValue from traversal Unavailable; equal nested-Optional source/target mapping observations explicitly refuse ambiguity, while supported deeper-target observations follow a finite presence rule. Hidden composite ambiguity remains a truthful capability refusal. No assertion was deleted or relaxed and no runtime proof was claimed by this prose review.
+
+Both review outcomes are recorded fixed. The literal documentation dependency is implemented and published at wave head b3f2cb74. The accessor implementor may now implement the admitted design in its advanced managed tree using the assigned bounded /tmp target. Required source/generator/conformance/native execution/compatibility tests and the later implementation adversary remain obligations. The four-row consumer acceptance remains open; this admission does not equate a source capability with completed downstream adoption.
