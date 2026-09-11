@@ -17,6 +17,7 @@
 //! corner added to it to satisfy a test is a corner every future reader has to explain away.
 
 use std::collections::{BTreeMap, BTreeSet};
+use std::fmt::Write as _;
 use std::path::{Path, PathBuf};
 
 use ess_compiler::ir::EssIr;
@@ -715,9 +716,103 @@ fn a_bindings_delivery_and_failure_semantics_are_stated_in_words() {
     );
     assert_says(
         &interactions,
-        "the compiler took it on trust rather than checking it",
-        "a literal is not typechecked, and a reader must be able to see which mappings were",
+        "The compiler accepts text for this String-backed input; it does not check the type's \
+         invariants or whether the value names an external resource.",
+        "text representation admission does not prove a newtype's invariants or external existence",
     );
+}
+
+fn literal_mapping_fixture(target: &str, literal: &str) -> String {
+    format!(
+        r"
+format: ess/1
+system: notifications
+version: v1
+domain: notifications.core
+types:
+  - name: notifications.core.Reason
+    kind: enum
+    variants: [declined, unavailable]
+  - name: notifications.core.WrappedReason
+    kind: newtype
+    of: Optional<notifications.core.Reason>
+  - name: notifications.core.Label
+    kind: newtype
+    of: String
+    invariants:
+      - value == required
+commands:
+  - name: notifications.core.Reject
+    input:
+      - name: reason
+        type: {target}
+    outcomes:
+      - name: rejected
+        emits: [notifications.core.Rejected]
+events:
+  - name: notifications.core.Refused
+  - name: notifications.core.Rejected
+bindings:
+  - id: reject-on-refusal
+    when:
+      event: notifications.core.Refused
+    invoke:
+      command: notifications.core.Reject
+    mapping:
+      reason: {literal}
+    delivery: at_most_once
+    on_failure: drop
+"
+    )
+}
+
+#[test]
+fn binding_literal_docs_report_enum_membership_through_wrappers() {
+    for target in [
+        "notifications.core.Reason",
+        "Optional<notifications.core.Reason>",
+        "Optional<notifications.core.WrappedReason>",
+    ] {
+        let text = literal_mapping_fixture(target, "declined");
+        let ir = compiled(&[("literal.yaml", &text)]);
+        let interactions = page(&pages(&ir), "docs/interactions.md");
+        assert_says(
+            &interactions,
+            "the literal `declined`. The compiler verified that this is a declared variant of \
+             `notifications.core.Reason`.",
+            "enum membership is checked, including through Optional and newtype wrappers",
+        );
+        assert!(!interactions.contains("took it on trust"));
+
+        let invalid = literal_mapping_fixture(target, "not_a_variant");
+        let raw = RawSpecFile::parse(&invalid).expect("the invalid variant is valid syntax");
+        let errors = Specification::assemble(vec![(Source::new("literal.yaml"), raw)])
+            .expect_err("a documentation correction must not admit an undeclared enum variant");
+        assert!(errors.to_string().contains("not a variant"), "{errors}");
+    }
+}
+
+#[test]
+fn binding_literal_docs_limit_string_guarantees_to_representation() {
+    for target in [
+        "String",
+        "Optional<String>",
+        "notifications.core.Label",
+        "Optional<notifications.core.Label>",
+    ] {
+        // This value violates Label's invariant, demonstrating the compiler's actual limit.
+        let text = literal_mapping_fixture(target, "declined");
+        let ir = compiled(&[("literal.yaml", &text)]);
+        let interactions = page(&pages(&ir), "docs/interactions.md");
+        assert_says(
+            &interactions,
+            "the literal `declined`. The compiler accepts text for this String-backed input; it \
+             does not check the type's invariants or whether the value names an external resource.",
+            "String-backed admission must not claim invariant or external-resource validation",
+        );
+        assert!(!interactions.contains("took it on trust"));
+        assert!(!interactions.contains("compiler verified that this is a declared variant"));
+    }
 }
 
 #[test]
@@ -762,6 +857,189 @@ fn a_declared_conversion_carries_its_reason_everywhere_a_reader_might_start() {
         because,
         "the mapping that relies on the crossing has to carry its justification",
     );
+}
+
+#[test]
+fn adversary_literal_docs_do_not_claim_unchecked_deep_enum_membership() {
+    let target = format!(
+        "{}notifications.core.Reason{}",
+        "Optional<".repeat(32),
+        ">".repeat(32)
+    );
+    let text = literal_mapping_fixture(&target, "not_a_variant");
+    let raw =
+        RawSpecFile::parse(&text).expect("32 wrappers are within the parser's declared limit");
+    let specification = Specification::assemble(vec![(Source::new("literal.yaml"), raw)]);
+    if specification.is_err() {
+        return; // A refused source cannot publish a false guarantee.
+    }
+    let ir = compiled(&[("literal.yaml", &text)]);
+    let interactions = page(&pages(&ir), "docs/interactions.md");
+    assert!(
+        !interactions.contains("The compiler verified that this is a declared variant"),
+        "an admitted non-variant received a membership guarantee: {interactions}"
+    );
+}
+
+#[test]
+fn adversary_literal_docs_do_not_claim_unchecked_newtype_enum_membership() {
+    let mut declarations = String::new();
+    for index in 0..33 {
+        let inner = if index == 32 {
+            "notifications.core.Reason".to_owned()
+        } else {
+            format!("notifications.core.Layer{}", index + 1)
+        };
+        write!(
+            declarations,
+            "  - name: notifications.core.Layer{index}\n    kind: newtype\n    of: {inner}\n"
+        )
+        .expect("writing to String succeeds");
+    }
+    let text = literal_mapping_fixture("notifications.core.Layer0", "not_a_variant").replacen(
+        "commands:\n",
+        &format!("{declarations}commands:\n"),
+        1,
+    );
+    let raw = RawSpecFile::parse(&text).expect("a chain of named types has shallow references");
+    if Specification::assemble(vec![(Source::new("literal.yaml"), raw)]).is_err() {
+        return;
+    }
+    let ir = compiled(&[("literal.yaml", &text)]);
+    let interactions = page(&pages(&ir), "docs/interactions.md");
+    assert!(
+        !interactions.contains("The compiler verified that this is a declared variant"),
+        "a named-wrapper chain bypassed membership validation: {interactions}"
+    );
+}
+
+#[test]
+fn adversary_literal_docs_preserve_source_enum_names_and_mixed_wrappers() {
+    let text = literal_mapping_fixture("Optional<notifications.core.WrappedReason>", "declined")
+        .replacen(
+            "kind: enum\n",
+            "kind: enum\n    naming:\n      wire: wire_reason\n      display: Public reason\n",
+            1,
+        );
+    let ir = compiled(&[("literal.yaml", &text)]);
+    let interactions = page(&pages(&ir), "docs/interactions.md");
+    assert_says(
+        &interactions,
+        "The compiler verified that this is a declared variant of `notifications.core.Reason`.",
+        "wire and display aliases do not replace the enum's source identity",
+    );
+    let invalid = text.replace("reason: declined", "reason: wire_reason");
+    let raw = RawSpecFile::parse(&invalid).expect("wire spelling is valid literal syntax");
+    assert!(Specification::assemble(vec![(Source::new("literal.yaml"), raw)]).is_err());
+}
+
+#[test]
+fn adversary_literal_docs_do_not_invent_a_representation_for_optional_cycles() {
+    let text = literal_mapping_fixture("notifications.core.WrappedReason", "declined").replace(
+        "of: Optional<notifications.core.Reason>",
+        "of: Optional<notifications.core.WrappedReason>",
+    );
+    let raw = RawSpecFile::parse(&text).expect("optional recursion is valid type syntax");
+    if Specification::assemble(vec![(Source::new("literal.yaml"), raw)]).is_err() {
+        return;
+    }
+    let ir = compiled(&[("literal.yaml", &text)]);
+    let interactions = page(&pages(&ir), "docs/interactions.md");
+    assert!(!interactions.contains("The compiler verified that this is a declared variant"));
+    assert!(!interactions.contains("The compiler accepts text for this String-backed input"));
+    assert!(interactions.contains("This documentation establishes no additional value constraints"));
+}
+
+#[test]
+fn adversary_literal_docs_cannot_be_generated_from_nontext_literal_inputs() {
+    for target in [
+        "Integer",
+        "Boolean",
+        "Decimal",
+        "Uuid",
+        "List<String>",
+        "Map<String, String>",
+    ] {
+        let text = literal_mapping_fixture(target, "'1'");
+        let raw = RawSpecFile::parse(&text).expect("quoted literal is valid source syntax");
+        let error = Specification::assemble(vec![(Source::new("literal.yaml"), raw)])
+            .expect_err("a text literal does not acquire another primitive's representation");
+        assert!(error.to_string().contains("literal"), "{target}: {error}");
+    }
+}
+
+#[test]
+fn literal_docs_match_the_checked_representation_depth_boundary() {
+    for (newtypes, optionals) in [
+        (0, 31),
+        (0, 32),
+        (31, 0),
+        (32, 0),
+        (33, 0),
+        (15, 16),
+        (16, 16),
+        (17, 16),
+    ] {
+        for leaf in ["notifications.core.Reason", "String"] {
+            let mut declarations = String::new();
+            let mut target = leaf.to_owned();
+            for index in 0..newtypes {
+                let name = format!("notifications.core.Layer{index}");
+                write!(
+                    declarations,
+                    "  - name: {name}\n    kind: newtype\n    of: {target}\n"
+                )
+                .expect("writing to String succeeds");
+                target = name;
+            }
+            target = format!(
+                "{}{target}{}",
+                "Optional<".repeat(optionals),
+                ">".repeat(optionals)
+            );
+            let fixture = |literal| {
+                literal_mapping_fixture(&target, literal).replacen(
+                    "commands:\n",
+                    &format!("{declarations}commands:\n"),
+                    1,
+                )
+            };
+            // These are independently pinned boundaries: validation visits 32 type nodes,
+            // including the terminal representation, rather than allowing 32 wrappers plus it.
+            let checked = newtypes + optionals < 32;
+            let text = fixture("declined");
+            let ir = compiled(&[("literal.yaml", &text)]);
+            let interactions = page(&pages(&ir), "docs/interactions.md");
+            let claim = if leaf == "String" {
+                "The compiler accepts text for this String-backed input"
+            } else {
+                "The compiler verified that this is a declared variant"
+            };
+            assert_eq!(
+                interactions.contains(claim),
+                checked,
+                "{target}: {interactions}"
+            );
+            if !checked {
+                assert!(interactions
+                    .contains("This documentation establishes no additional value constraints"));
+            }
+            if leaf != "String" {
+                let invalid = fixture("not_a_variant");
+                let raw = RawSpecFile::parse(&invalid).expect("the boundary fixture parses");
+                let assembled = Specification::assemble(vec![(Source::new("literal.yaml"), raw)]);
+                assert_eq!(
+                    assembled.is_err(),
+                    checked,
+                    "admission changed for {target}"
+                );
+                if !checked {
+                    let ir = compiled(&[("literal.yaml", &invalid)]);
+                    assert!(!page(&pages(&ir), "docs/interactions.md").contains(claim));
+                }
+            }
+        }
+    }
 }
 
 #[test]
