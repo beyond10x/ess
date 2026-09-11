@@ -144,6 +144,8 @@ impl fmt::Display for ConformanceStatus {
 )]
 #[serde(into = "String", try_from = "String")]
 pub enum CheckCode {
+    /// Reading coordinates agree with a declared comparison under observed clock authority.
+    Reading,
     /// A command took the branch the specification says it takes.
     Outcome,
     /// A refusing branch carried the error it declares, with the fields it declares.
@@ -184,7 +186,8 @@ impl CheckCode {
     ///
     /// Public for the reason `BindingAspect::ALL` is: a list nobody iterates is a list that goes
     /// stale, and this is what makes "every rule the runner checks has a name" assertable.
-    pub const ALL: [Self; 16] = [
+    pub const ALL: [Self; 17] = [
+        Self::Reading,
         Self::Outcome,
         Self::Error,
         Self::Event,
@@ -206,6 +209,7 @@ impl CheckCode {
     /// How the code is written: `ESS-CF-OUTCOME`.
     pub fn as_str(self) -> &'static str {
         match self {
+            Self::Reading => "ESS-CF-READING",
             Self::Outcome => "ESS-CF-OUTCOME",
             Self::Error => "ESS-CF-ERROR",
             Self::Event => "ESS-CF-EVENT",
@@ -228,6 +232,9 @@ impl CheckCode {
     /// The semantic rule this code stands for, as §29's first question asks it.
     pub fn rule(self) -> &'static str {
         match self {
+            Self::Reading => {
+                "clock-reading coordinates compare only under matching observed source and epoch"
+            }
             Self::Outcome => "a command takes the declared branch its guards select",
             Self::Error => {
                 "a refusing branch carries the error it declares, with the fields it \

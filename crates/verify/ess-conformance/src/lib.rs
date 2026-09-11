@@ -123,6 +123,8 @@
 //! * **A constraint solver, still.** §11 names one as a later extension, and nothing in the fault
 //!   matrix needed it.
 
+pub mod accessor;
+mod accessor_types;
 pub mod admission;
 pub mod authored;
 mod count_json;
@@ -134,10 +136,15 @@ pub mod evidence;
 pub mod faulty;
 pub mod go;
 pub mod input;
+pub mod periodic;
+pub mod quoted_predicate_format;
+pub mod reading;
 pub mod reference;
 pub mod report;
+pub mod response;
 pub mod runner;
 pub mod scenario;
+pub mod selection;
 pub mod synthesize;
 pub mod target;
 pub mod web;

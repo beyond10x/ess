@@ -121,6 +121,14 @@ impl Generator for JsonSchema {
             out.push(entity_document(ir, entity, mint));
         }
         for command in ir.commands().values() {
+            if !command.response.is_empty() {
+                out.push(message_document(
+                    ir,
+                    &Message::of_response(command),
+                    CommandRef::new(command.name.clone()).into(),
+                    mint,
+                ));
+            }
             out.push(message_document(
                 ir,
                 &Message::of_command(command),

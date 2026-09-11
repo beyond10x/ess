@@ -54,7 +54,7 @@ pub fn emit(suite: &ConformanceSuite) -> Result<Vec<GoArtifact>, crate::admissio
     };
 
     Ok(vec![
-        file("runtime.go", include_str!("runtime.go").to_owned()),
+        file("runtime.go", runtime()),
         file("predicate.go", include_str!("predicate.go").to_owned()),
         file("suite.go", SUITE_GO.to_owned()),
         file("suite.json", json),
@@ -73,12 +73,18 @@ pub fn emit_input(
     };
     let embed = SUITE_GO.replace("go:embed suite.json", "go:embed input.json");
     Ok(vec![
-        file("runtime.go", include_str!("runtime.go").into()),
+        file("runtime.go", runtime()),
         file("predicate.go", include_str!("predicate.go").into()),
         file("suite.go", embed),
         file("suite.json", suite.original_json().into()),
         file("input.json", input.document().to_canonical_json()?),
-        file("README.md", format!("{}\nCoverage input requires explicit ESS_REPORT_FORMAT=2. The embedded input retains the selected original bytes and every parent.\n", readme(suite.suite()))),
+        file(
+            "README.md",
+            format!(
+                "{}\nCoverage input requires explicit ESS_REPORT_FORMAT=2. The embedded input retains the selected original bytes and every parent.\n",
+                readme(suite.suite())
+            ),
+        ),
     ])
 }
 
@@ -110,7 +116,7 @@ fn readme(suite: &ConformanceSuite) -> String {
              `outside:`, and belong in that component's suite.\n"
         ),
     };
-    format!(
+    let readme = format!(
         r#"# `{PACKAGE}`
 
 {count} scenario(s) synthesized from `{system} {version}`, spec digest `{digest}`.
@@ -173,6 +179,27 @@ ESS_REPORT_OUT=$PWD/report.json go test ./...
         system = provenance.system,
         version = provenance.specification_version,
         digest = provenance.spec_digest,
+    );
+    if provenance.suite_version.major() >= 5 {
+        readme.replace(
+            "Set `ESS_REPORT_OUT` to a file path and `Run` writes an `ess-conformance-report/1` there when the",
+            "Select `ESS_REPORT_FORMAT=2` explicitly before execution. Set `ESS_REPORT_OUT` to a file path\nand `Run` writes an `ess-conformance-report/2` there when the",
+        ).replace(
+            "ESS_REPORT_OUT=$PWD/report.json go test ./...",
+            "ESS_REPORT_FORMAT=2 ESS_REPORT_OUT=$PWD/report.json go test ./...",
+        )
+    } else {
+        readme
+    }
+}
+
+fn runtime() -> String {
+    format!(
+        "{}\n{}\n{}\n{}",
+        include_str!("runtime.go"),
+        include_str!("reading.go"),
+        include_str!("response.go"),
+        include_str!("../../../../specify/ess-domain/src/reading/coordinate.go")
     )
 }
 

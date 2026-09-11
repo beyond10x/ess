@@ -823,6 +823,7 @@ mod tests {
         ] {
             registry
                 .insert(NamedType {
+                    reading: None,
                     name: name(declared),
                     body,
                     naming: Naming::default(),
@@ -1199,6 +1200,7 @@ fields:
         let mut types = registry();
         types
             .insert(NamedType {
+                reading: None,
                 name: name("billing.invoice.ImpossibleRow"),
                 body: TypeBody::Struct {
                     fields: vec![Field::new(

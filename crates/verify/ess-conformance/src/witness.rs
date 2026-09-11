@@ -166,8 +166,10 @@ enum Leaf {
 
 /// Every candidate input for one command, in the order synthesis tries them.
 ///
-/// The first is always the base witness, so a guard that any well-typed input satisfies is decided
-/// on the first try and the committed suite carries the plainest values the specification allows.
+/// The base witness comes first when its declared types and invariants admit it. Candidates whose
+/// complete values fail that check are omitted without changing the order of the remaining ones.
+/// An empty result means none of this bounded strategy's candidates was admitted, not that no
+/// value could ever satisfy the type's invariants.
 ///
 /// `distinction` says which instance the input is for. [`Distinction::PLAIN`] is the witness every
 /// scenario's own subject is built from; a further one moves the base value of every leaf, and the
@@ -185,6 +187,33 @@ pub fn candidates(
 ) -> Result<Vec<BTreeMap<String, Node>>, WitnessGap> {
     let mut builder = Builder::new(ir, distinction);
     let base = builder.input(command, &BTreeMap::new())?;
+
+    // A newly admitted no-default partition uses exactly the domain that validation proved.
+    // Preserve the existing candidate order for commands with real defaults.
+    if command
+        .outcomes
+        .iter()
+        .all(|outcome| outcome.test_strategy != ess_domain::command::TestStrategy::DefaultBranch)
+    {
+        let all_guards: Vec<_> = command.outcomes.iter().filter_map(crate::when).collect();
+        if let Some(cases) = ess_domain::command::finite::analyze(
+            &ess_compiler::expression::Environment::new(ir, &command.input),
+            &all_guards,
+        ) {
+            let inputs = cases
+                .into_iter()
+                .map(|case| {
+                    let overrides = case
+                        .values
+                        .into_iter()
+                        .map(|(path, value)| (path, Node::Text(value)))
+                        .collect();
+                    builder.input(command, &overrides)
+                })
+                .collect::<Result<Vec<_>, _>>()?;
+            return Ok(admitted_inputs(ir, command, inputs));
+        }
+    }
 
     let mut ladders: Vec<(FactPath, Vec<Node>)> = Vec::new();
     for path in read_paths(guards) {
@@ -214,7 +243,24 @@ pub fn candidates(
         }
         inputs.push(builder.input(command, &overrides)?);
     }
-    Ok(inputs)
+    Ok(admitted_inputs(ir, command, inputs))
+}
+
+/// Filter only after building all bounded alternatives: an invalid base does not rule out later
+/// values. The caller counts exactly these admitted candidates when deciding outcome guards.
+fn admitted_inputs(
+    ir: &EssIr,
+    command: &ResolvedCommand,
+    mut inputs: Vec<BTreeMap<String, Node>>,
+) -> Vec<BTreeMap<String, Node>> {
+    inputs.retain(|input| {
+        command.input.iter().all(|field| {
+            input.get(&field.name).is_some_and(|value| {
+                crate::input::validate_typed_value(ir, &field.type_ref, value).is_ok()
+            })
+        })
+    });
+    inputs
 }
 
 /// How many candidates the ladders describe, capped at [`MAX_CANDIDATES`].

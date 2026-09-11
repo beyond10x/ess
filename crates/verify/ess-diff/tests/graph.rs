@@ -60,6 +60,21 @@ fn every_relation_in_the_vocabulary_is_minted_by_a_specification_this_repository
             .map(|edge| edge.relation),
     );
 
+    let text = include_str!("../../../specify/ess-domain/tests/fixtures/periodic.yaml");
+    let specification = ess_domain::Specification::assemble([(
+        ess_domain::system::Source::new("periodic.yaml"),
+        ess_domain::RawSpecFile::parse(text).unwrap(),
+    )])
+    .unwrap();
+    let mut sources = ess_compiler::source::SourceMap::new();
+    sources.insert("periodic.yaml", text);
+    let ir = ess_compiler::resolve::compile_locating(&specification, &sources, &["periodic.yaml"])
+        .unwrap();
+    minted.extend(
+        SemanticDependencyGraph::of(&ir)
+            .edges()
+            .map(|edge| edge.relation),
+    );
     let missing: Vec<DependencyRelation> = DependencyRelation::ALL
         .into_iter()
         .filter(|relation| !minted.contains(relation))

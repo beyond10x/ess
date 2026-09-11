@@ -55,6 +55,7 @@
 //! line is whether validating needs to look at anything else: if it does, the type gets a `Raw*`
 //! form, so that the errors accumulate and arrive together instead of one per run.
 
+pub mod accessor;
 pub mod actor;
 pub mod binding;
 pub mod command;
@@ -66,6 +67,7 @@ pub mod locate;
 pub mod name;
 mod primitive_admission;
 pub mod refs;
+pub mod selection;
 pub mod spec;
 pub mod system;
 pub mod topology;
@@ -84,3 +86,4 @@ pub use spec::{RawSpecFile, Specification};
 pub use system::{FormatVersion, SystemSpec};
 pub use types::{Field, NamedType, Primitive, TypeBody, TypeRef, TypeRegistry};
 pub use view::{AssertionStyle, Consistency, EntityFields, ViewSpec};
+pub mod reading;

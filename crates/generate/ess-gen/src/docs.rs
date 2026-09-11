@@ -46,14 +46,15 @@ use ess_compiler::ir::{
     Driver, EssIr, ResolvedActor, ResolvedBinding, ResolvedBody, ResolvedCommand,
     ResolvedComponent, ResolvedCondition, ResolvedConversion, ResolvedDomain, ResolvedEffect,
     ResolvedEntity, ResolvedError, ResolvedEvent, ResolvedFailure, ResolvedField, ResolvedMapping,
-    ResolvedMappingValue, ResolvedPayloadValue, ResolvedSubject, ResolvedType, ResolvedView,
-    ResolvedWorkload, TypeHandle,
+    ResolvedMappingValue, ResolvedPayloadValue, ResolvedSubject, ResolvedType, ResolvedTypeRef,
+    ResolvedView, ResolvedWorkload, TypeHandle,
 };
-use ess_domain::binding::Delivery;
+use ess_domain::binding::{Delivery, WRAPPER_LIMIT};
 use ess_domain::command::TestStrategy;
 use ess_domain::entity::{Cardinality, Invariant, RelationKind, StateMachine, StateName};
 use ess_domain::name::{Naming, QualifiedName};
 use ess_domain::refs::ExternalRef;
+use ess_domain::types::Primitive;
 use ess_domain::view::{AssertionStyle, Consistency, Direction};
 
 use crate::artifact::{Artifact, Generator};
@@ -1237,7 +1238,6 @@ fn crossings_section(ir: &EssIr, domain: &ResolvedDomain) -> Vec<Block> {
 
 /// One binding, its guarantees in prose, its mapping, and the flow a table cannot show.
 fn binding_section(ir: &EssIr, binding: &ResolvedBinding) -> Block {
-    let event = ir.event(&binding.event);
     let command = ir.command(&binding.command);
     let owner = ir.domain(&command.domain);
     let mut under = Blocks::new();
@@ -1248,7 +1248,7 @@ fn binding_section(ir: &EssIr, binding: &ResolvedBinding) -> Block {
         under.prose(recorded);
     }
     under.prose(vec![
-        Inline::code(event.name.to_string()),
+        Inline::code(binding.cause.to_string()),
         Inline::text(" causes "),
         Inline::code_link(
             Target::Anchor {
@@ -1276,7 +1276,11 @@ fn binding_section(ir: &EssIr, binding: &ResolvedBinding) -> Block {
     } else {
         under.sentence("It fills the command's input like this:");
         under.push(bullets(
-            binding.mapping.iter().map(mapping_bullet).collect(),
+            binding
+                .mapping
+                .iter()
+                .map(|mapping| mapping_bullet(ir, mapping))
+                .collect(),
         ));
     }
 
@@ -1438,6 +1442,10 @@ fn sets_sentence(outcome: &ess_compiler::ir::ResolvedOutcome) -> Vec<Inline> {
                     Inline::code(match &field.value {
                         ResolvedPayloadValue::InputField { field, .. } => format!("input.{field}"),
                         ResolvedPayloadValue::Literal { value } => format!("\"{value}\""),
+                        ResolvedPayloadValue::ResponseField { field, .. } => {
+                            format!("response field `{field}`")
+                        }
+                        ResolvedPayloadValue::Generated => "implementation-generated".to_owned(),
                     }),
                 ];
                 if let Some(because) = &field.conversion {
@@ -1536,6 +1544,12 @@ fn condition_sentence(
             Inline::code(predicate.to_string()),
             Inline::text(" holds of the input."),
         ],
+        ResolvedCondition::SubjectState { state, predicate } => vec![Inline::text(format!(
+            "Taken when the existing subject is in {state}{}.",
+            predicate.as_ref().map_or(String::new(), |guard| format!(
+                " and `{guard}` holds of the input"
+            )),
+        ))],
         ResolvedCondition::Otherwise => vec![Inline::text(
             "The default branch, taken when no other outcome's condition matched.",
         )],
@@ -1578,6 +1592,9 @@ fn strategy_sentence(strategy: TestStrategy) -> &'static str {
     match strategy {
         TestStrategy::ConstructInput => {
             "A test reaches it by constructing an input that satisfies that condition."
+        }
+        TestStrategy::ConstructInputInState => {
+            "A test establishes the declared subject state and constructs input selecting this branch in that state."
         }
         TestStrategy::DefaultBranch => {
             "A test reaches it by constructing an input that satisfies no other outcome's condition."
@@ -1677,7 +1694,7 @@ fn failure_sentence(ir: &EssIr, binding: &ResolvedBinding) -> Vec<Inline> {
 }
 
 /// One filled command input, and the reason its types were allowed to meet.
-fn mapping_bullet(mapping: &ResolvedMapping) -> Vec<Inline> {
+fn mapping_bullet(ir: &EssIr, mapping: &ResolvedMapping) -> Vec<Inline> {
     let mut out = vec![
         Inline::code(mapping.target.clone()),
         Inline::text(" ("),
@@ -1685,6 +1702,24 @@ fn mapping_bullet(mapping: &ResolvedMapping) -> Vec<Inline> {
         Inline::text(") ← "),
     ];
     match &mapping.value {
+        ResolvedMappingValue::HostContext { field, type_ref }
+        | ResolvedMappingValue::HostRead { field, type_ref } => {
+            let phase = if matches!(&mapping.value, ResolvedMappingValue::HostContext { .. }) {
+                "lifetime context"
+            } else {
+                "fresh occurrence read"
+            };
+            out.push(Inline::text(format!(
+                "required host {phase} field {field} ({type_ref})."
+            )));
+        }
+        ResolvedMappingValue::Selection {
+            selector,
+            projection,
+            type_ref,
+        } => {
+            out.push(Inline::text(format!("local selector {selector}, declared path [{}] ({type_ref}); absence preserves the Optional target", projection.0.segments[1..].join("."))));
+        }
         ResolvedMappingValue::EventField { field, type_ref } => {
             out.push(Inline::text("the event's "));
             out.push(Inline::code(field.clone()));
@@ -1700,19 +1735,70 @@ fn mapping_bullet(mapping: &ResolvedMapping) -> Vec<Inline> {
                 out.push(Inline::text("."));
             }
         }
+        ResolvedMappingValue::EventAccessor { plan, type_ref, .. } => {
+            out.push(Inline::code(plan.path()));
+            out.push(Inline::text(format!(
+                " ({type_ref}); declared members, with unavailable traversal {}.",
+                if plan.may_miss() {
+                    "represented by target absence"
+                } else {
+                    "excluded by the source type"
+                }
+            )));
+            if let Some(reason) = &mapping.conversion {
+                out.push(Inline::text(format!(" Declared conversion: {reason}")));
+            }
+        }
         ResolvedMappingValue::Literal { value } => {
             out.push(Inline::text("the literal "));
             out.push(Inline::code(value.clone()));
-            out.push(Inline::text(
-                ". Nothing in the model says how to read that as a ",
-            ));
-            out.push(Inline::code(mapping.target_type.to_string()));
-            out.push(Inline::text(
-                ", so the compiler took it on trust rather than checking it.",
-            ));
+            out.extend(literal_guarantee(ir, &mapping.target_type));
         }
     }
     out
+}
+
+/// Describe the admitted representation without claiming that literal invariants were evaluated.
+fn literal_guarantee(ir: &EssIr, target: &ResolvedTypeRef) -> Vec<Inline> {
+    let mut current = target;
+    let mut seen = BTreeSet::new();
+    for _ in 0..WRAPPER_LIMIT {
+        match current {
+            ResolvedTypeRef::Optional { of } => current = of,
+            ResolvedTypeRef::Declared { name } if seen.insert(name) => {
+                match &ir.named_type(name).body {
+                    ResolvedBody::Newtype { of, .. } => current = of,
+                    ResolvedBody::Enum { .. } => {
+                        return vec![
+                            Inline::text(
+                                ". The compiler verified that this is a declared variant of ",
+                            ),
+                            Inline::code(name.to_string()),
+                            Inline::text("."),
+                        ];
+                    }
+                    ResolvedBody::Struct { .. } | ResolvedBody::Union { .. } => break,
+                }
+            }
+            ResolvedTypeRef::Primitive {
+                name: Primitive::String,
+            } => {
+                return vec![Inline::text(
+                    ". The compiler accepts text for this String-backed input; it does not check \
+                     the type's invariants or whether the value names an external resource.",
+                )];
+            }
+            ResolvedTypeRef::Primitive { .. }
+            | ResolvedTypeRef::Declared { .. }
+            | ResolvedTypeRef::List { .. }
+            | ResolvedTypeRef::Map { .. } => break,
+        }
+    }
+    // A recursive or over-budget representation has no enum or String guarantee to report. Do not
+    // infer one merely because this mapping reached the IR; admission remains the compiler's job.
+    vec![Inline::text(
+        ". This documentation establishes no additional value constraints for this literal.",
+    )]
 }
 
 /// A component's ownership, which is the only claim it makes.
@@ -2426,14 +2512,22 @@ fn forbidden(lifecycle: &StateMachine) -> Vec<(&StateName, &StateName)> {
 /// means there is an edge out of this system to a person, and that edge is the whole reason the word
 /// is required.
 fn binding_flow(ir: &EssIr, binding: &ResolvedBinding) -> String {
-    let event = ir.event(&binding.event);
     let command = ir.command(&binding.command);
     let mut out = String::from("flowchart LR\n");
-    let _ = writeln!(out, "    event[\"{}\"]", label(&event.name.to_string()));
+    let cause_id = if binding.cause.event().is_some() {
+        "event"
+    } else {
+        "periodic"
+    };
+    let _ = writeln!(
+        out,
+        "    {cause_id}[\"{}\"]",
+        label(&binding.cause.to_string())
+    );
     let _ = writeln!(out, "    command[\"{}\"]", label(&command.name.to_string()));
     let _ = writeln!(
         out,
-        "    event -->|\"{}\"| command",
+        "    {cause_id} -->|\"{}\"| command",
         label(binding.name.as_str())
     );
     let mut reached_failure = false;
@@ -2619,7 +2713,11 @@ fn crossing_users(ir: &EssIr, conversion: &ResolvedConversion) -> Vec<Vec<Inline
         for mapping in &binding.mapping {
             let crossed = matches!(
                 &mapping.value,
-                ResolvedMappingValue::EventField { type_ref, .. }
+                ResolvedMappingValue::HostContext { type_ref, .. }
+                | ResolvedMappingValue::HostRead { type_ref, .. }
+                | ResolvedMappingValue::EventField { type_ref, .. }
+                | ResolvedMappingValue::EventAccessor { type_ref, .. }
+                | ResolvedMappingValue::Selection { type_ref, .. }
                     if type_ref == &conversion.from && mapping.target_type == conversion.to
             );
             if crossed {

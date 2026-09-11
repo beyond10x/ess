@@ -1099,6 +1099,7 @@ impl Predicate {
                     format!("nothing to compare against after `{op}`"),
                 ));
             }
+            validate_quoted_operand(right, expression)?;
             return Ok(Self::Compare {
                 left: Operand::Fact(left_path),
                 op,
@@ -1115,6 +1116,55 @@ impl Predicate {
             )
         })?;
         Ok(Self::Truthy(path))
+    }
+
+    /// Whether this predicate needs the lossless structured text-comparison writer.
+    ///
+    /// This detects only literals whose historical compact spelling fails to preserve the typed
+    /// comparison, including beneath Boolean composition and quantifiers. Ordinary structured
+    /// predicates do not require this writer. Reader version selection uses the narrower
+    /// [`Self::requires_lossless_text_reader`] capability.
+    pub fn requires_structured_text_comparison(&self) -> bool {
+        match self {
+            Self::Compare {
+                left: Operand::Fact(_),
+                right: Operand::Literal(FactValue::Text(_)),
+                ..
+            } => !compact_comparison_roundtrips(self, &self.to_string()),
+            Self::All(children) | Self::Any(children) => children
+                .iter()
+                .any(Self::requires_structured_text_comparison),
+            Self::Not(inner) => inner.requires_structured_text_comparison(),
+            Self::Forall(quantified) | Self::Exists(quantified) => {
+                quantified.body.requires_structured_text_comparison()
+            }
+            _ => false,
+        }
+    }
+
+    /// Whether canonical output requires a reader that normalizes structured text operands.
+    ///
+    /// A fallback scalar identical to the literal remains compatible with the historical Go
+    /// reader. Only a fallback needing protective quotes requires the corrected reader.
+    pub fn requires_lossless_text_reader(&self) -> bool {
+        match self {
+            Self::Compare {
+                left: Operand::Fact(_),
+                right: Operand::Literal(FactValue::Text(text)),
+                ..
+            } => {
+                self.requires_structured_text_comparison()
+                    && Operand::parse(text) != Operand::Literal(FactValue::Text(text.clone()))
+            }
+            Self::All(children) | Self::Any(children) => {
+                children.iter().any(Self::requires_lossless_text_reader)
+            }
+            Self::Not(inner) => inner.requires_lossless_text_reader(),
+            Self::Forall(quantified) | Self::Exists(quantified) => {
+                quantified.body.requires_lossless_text_reader()
+            }
+            _ => false,
+        }
     }
 
     /// Renders this predicate back into document form.
@@ -1173,9 +1223,40 @@ impl Predicate {
             ),
             Self::Forall(quantified) => quantifier_node("forall", quantified),
             Self::Exists(quantified) => quantifier_node("exists", quantified),
+            Self::Compare {
+                left: Operand::Fact(path),
+                op,
+                right: Operand::Literal(FactValue::Text(text)),
+            } => comparison_text_node(self, path, *op, text),
             leaf => Node::Text(leaf.to_string()),
         }
     }
+}
+
+/// Preserve legacy compact bytes when they preserve the typed literal. Otherwise use the existing
+/// structured operator form, whose scalar is not a compact expression. Wrapping that scalar in
+/// quotes protects values such as `true` and dotted text without decoding any escape bytes.
+fn comparison_text_node(predicate: &Predicate, path: &FactPath, op: CompareOp, text: &str) -> Node {
+    let compact = predicate.to_string();
+    if compact_comparison_roundtrips(predicate, &compact) {
+        return Node::Text(compact);
+    }
+    let scalar = if Operand::parse(text) == Operand::Literal(FactValue::Text(text.to_owned())) {
+        text.to_owned()
+    } else {
+        format!("\"{text}\"")
+    };
+    Node::Map(
+        [(
+            path.to_string(),
+            Node::Map([(op.as_str().to_owned(), Node::Text(scalar))].into()),
+        )]
+        .into(),
+    )
+}
+
+fn compact_comparison_roundtrips(predicate: &Predicate, compact: &str) -> bool {
+    Predicate::parse_expression(compact).is_ok_and(|reread| reread == *predicate)
 }
 
 /// Renders a quantifier back into the mapping it was written as.
@@ -1240,6 +1321,37 @@ fn call_argument<'a>(expression: &'a str, function: &str) -> Option<&'a str> {
     let rest = expression.strip_prefix(function)?;
     let rest = rest.trim_start().strip_prefix('(')?;
     rest.trim_end().strip_suffix(')').map(str::trim)
+}
+
+/// A compact quoted operand ends at its first unescaped matching quote. Its contents remain
+/// verbatim, as in `FactValue::parse_literal`; escapes only determine the closing boundary.
+/// Structured scalar operands are data and deliberately do not pass through this check.
+fn validate_quoted_operand(raw: &str, expression: &str) -> Result<(), ParseError> {
+    let trimmed = raw.trim();
+    let Some(quote @ (b'"' | b'\'')) = trimmed.as_bytes().first().copied() else {
+        return Ok(());
+    };
+    let mut escaped = false;
+    for (index, byte) in trimmed.bytes().enumerate().skip(1) {
+        if escaped {
+            escaped = false;
+        } else if byte == b'\\' {
+            escaped = true;
+        } else if byte == quote {
+            return if trimmed[index + 1..].trim().is_empty() {
+                Ok(())
+            } else {
+                Err(ParseError::predicate(
+                    expression,
+                    "tokens after a quoted operand are unsupported; use structured any/all/not",
+                ))
+            };
+        }
+    }
+    Err(ParseError::predicate(
+        expression,
+        "quoted operand is not closed; close the quote and use structured any/all/not to combine predicates",
+    ))
 }
 
 /// Splits an expression at its first top-level comparison operator.

@@ -139,6 +139,222 @@ pub fn bind(
     }
 }
 
+/// Validate fixture state against the declared model before establishing backend data.
+///
+/// Standalone suite admission cannot prove model constraints without an IR. Adapters may call this
+/// helper or perform equivalent validation against their own declared contract before writing.
+pub fn validate_entity_setup(
+    ir: &EssIr,
+    entity: &ess_compiler::refs::EntityRef,
+    identity: &Node,
+    values: &BTreeMap<String, Node>,
+    state: &ess_domain::entity::StateName,
+) -> Result<(), String> {
+    if matches!(identity, Node::Null) {
+        return Err("entity setup identity cannot be null".into());
+    }
+    let declared = ir
+        .entities()
+        .get(entity.name())
+        .ok_or_else(|| format!("undeclared entity `{entity}`"))?;
+    if !declared.lifecycle.states.contains(state) {
+        return Err(format!("undeclared state `{state}` of `{entity}`"));
+    }
+    if values.contains_key(&declared.identity.name) {
+        return Err("identity must appear only in the identity slot".into());
+    }
+    let mut fields = declared.fields.clone();
+    fields.push(declared.identity.clone());
+    let mut supplied = values.clone();
+    supplied.insert(declared.identity.name.clone(), identity.clone());
+    let mut facts = setup_fields(ir, &fields, &supplied, 0)?;
+    facts.set_path(
+        "state",
+        ess_primitives::facts::FactValue::Text(state.to_string()),
+    );
+    for invariant in &declared.invariants {
+        let truth = invariant.predicate.evaluate(&facts);
+        if truth != ess_primitives::predicate::Truth::True {
+            return Err(format!(
+                "invariant `{}` is {truth:?}; setup requires True",
+                invariant.statement
+            ));
+        }
+    }
+    Ok(())
+}
+
+fn setup_fields(
+    ir: &EssIr,
+    fields: &[ResolvedField],
+    values: &BTreeMap<String, Node>,
+    depth: usize,
+) -> Result<FactStore, String> {
+    let facts =
+        bind(ir, fields, values, Completeness::Total).map_err(|errors| errors.to_string())?;
+    for field in fields {
+        if let Some(value) = values.get(&field.name) {
+            setup_value(ir, &field.type_ref, value, depth + 1)
+                .map_err(|detail| format!("{}: {detail}", field.name))?;
+        }
+    }
+    Ok(facts)
+}
+
+fn setup_invariants(
+    invariants: &[ess_domain::entity::Invariant],
+    facts: &FactStore,
+) -> Result<(), String> {
+    for invariant in invariants {
+        let truth = invariant.predicate.evaluate(facts);
+        if truth != Truth::True {
+            return Err(format!(
+                "invariant `{}` is {truth:?}; setup requires True",
+                invariant.statement
+            ));
+        }
+    }
+    Ok(())
+}
+
+/// Check one concrete value against its declared type and nested invariants.
+///
+/// Setup and synthesized command inputs share this bounded validator; an invariant must be True.
+pub(crate) fn validate_typed_value(
+    ir: &EssIr,
+    kind: &ResolvedTypeRef,
+    value: &Node,
+) -> Result<(), String> {
+    setup_value(ir, kind, value, 0)
+}
+
+fn setup_value(
+    ir: &EssIr,
+    kind: &ResolvedTypeRef,
+    value: &Node,
+    depth: usize,
+) -> Result<(), String> {
+    if depth > MAX_TYPE_DEPTH {
+        return Err(format!("setup type expansion exceeds {MAX_TYPE_DEPTH}"));
+    }
+    match kind {
+        ResolvedTypeRef::Optional { of } => {
+            if matches!(value, Node::Null) {
+                Ok(())
+            } else {
+                setup_value(ir, of, value, depth + 1)
+            }
+        }
+        ResolvedTypeRef::Primitive { name } => primitive_value(*name, value)
+            .map(|_| ())
+            .ok_or_else(|| format!("value does not hold {name}")),
+        ResolvedTypeRef::List { of } => {
+            let Node::Seq(values) = value else {
+                return Err("expected a list".into());
+            };
+            for child in values {
+                setup_value(ir, of, child, depth + 1)?;
+            }
+            Ok(())
+        }
+        ResolvedTypeRef::Map { key, value: of } => {
+            let Node::Map(values) = value else {
+                return Err("expected a map".into());
+            };
+            for (spelling, child) in values {
+                setup_map_key(*key, spelling)?;
+                setup_value(ir, of, child, depth + 1)?;
+            }
+            Ok(())
+        }
+        ResolvedTypeRef::Declared { name } => {
+            setup_body(ir, &ir.named_type(name).body, value, depth + 1)
+        }
+    }
+}
+
+fn setup_body(ir: &EssIr, body: &ResolvedBody, value: &Node, depth: usize) -> Result<(), String> {
+    match body {
+        ResolvedBody::Newtype { of, invariants } => {
+            setup_value(ir, of, value, depth)?;
+            let mut facts = FactStore::new();
+            let mut errors = Vec::new();
+            project(
+                ir,
+                of,
+                value,
+                &FactPath::new("value").expect("static path"),
+                0,
+                &mut facts,
+                &mut errors,
+            );
+            if !errors.is_empty() {
+                return Err(format!("newtype facts unavailable: {errors:?}"));
+            }
+            setup_invariants(invariants, &facts)
+        }
+        ResolvedBody::Struct { fields, invariants } => {
+            let Node::Map(values) = value else {
+                return Err("expected a struct mapping".into());
+            };
+            let facts = setup_fields(ir, fields, values, depth)?;
+            setup_invariants(invariants, &facts)
+        }
+        ResolvedBody::Enum { variants } => {
+            if value
+                .as_text()
+                .is_some_and(|value| variants.iter().any(|variant| variant == value))
+            {
+                Ok(())
+            } else {
+                Err("undeclared enum variant".into())
+            }
+        }
+        ResolvedBody::Union { tag, variants } => {
+            let Node::Map(values) = value else {
+                return Err("expected a tagged union mapping".into());
+            };
+            let content = if tag == "value" { "content" } else { "value" };
+            let selected = values
+                .get(tag)
+                .and_then(Node::as_text)
+                .and_then(|label| variants.get(label))
+                .ok_or("unknown or missing union tag")?;
+            if values.len() != 2 {
+                return Err("a union holds exactly its tag and payload".into());
+            }
+            let payload = values.get(content).ok_or("missing union payload")?;
+            setup_value(ir, selected, payload, depth)
+        }
+    }
+}
+
+fn setup_map_key(kind: Primitive, spelling: &str) -> Result<(), String> {
+    let value = match kind {
+        Primitive::Boolean => match spelling {
+            "true" => Node::Bool(true),
+            "false" => Node::Bool(false),
+            _ => return Err("invalid Boolean map key".into()),
+        },
+        Primitive::Integer => {
+            let number = spelling
+                .parse::<i64>()
+                .map_err(|_| "invalid Integer map key")?;
+            if number.to_string() != spelling {
+                return Err("Integer map keys require canonical decimal spelling".into());
+            }
+            Node::Number(number.into())
+        }
+        Primitive::Decimal | Primitive::Binary64 => {
+            return Err("numeric decimal map keys have no admitted setup spelling".into())
+        }
+        _ => Node::Text(spelling.into()),
+    };
+    primitive_value(kind, &value)
+        .map(|_| ())
+        .ok_or_else(|| format!("invalid {kind} map key"))
+}
+
 /// Whether every declared field has to be supplied, or only the ones named.
 ///
 /// A command's input is [`Total`](Self::Total): a command is invoked with all of it, and a field

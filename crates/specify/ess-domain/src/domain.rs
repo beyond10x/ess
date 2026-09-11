@@ -437,6 +437,7 @@ mod tests {
 
     fn money() -> NamedType {
         NamedType {
+            reading: None,
             name: name("billing.invoice.Money"),
             body: TypeBody::Newtype {
                 of: TypeRef::Primitive(Primitive::Decimal),

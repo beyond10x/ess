@@ -221,6 +221,14 @@ pub mod codes {
         /// The bridge maps a `#[non_exhaustive]` enum, so this exists to keep that mapping total
         /// rather than to be used.
         pub const OTHER: u16 = 12;
+        /// A bounded accessor has too many authored segments.
+        pub const ACCESSOR_DEPTH: u16 = 13;
+        /// An accessor reaches a deliberately unsupported traversal.
+        pub const ACCESSOR_TRAVERSAL: u16 = 14;
+        /// A possibly unavailable projection fills a required input.
+        pub const PARTIAL_ACCESSOR: u16 = 15;
+        /// A plan exceeds its declared construction or output resource budget.
+        pub const ACCESSOR_RESOURCE: u16 = 16;
 
         /// Every class, in code order.
         pub const ALL: &[u16] = &[
@@ -236,6 +244,10 @@ pub mod codes {
             MISSPELLED,
             LIFECYCLE,
             OTHER,
+            ACCESSOR_DEPTH,
+            ACCESSOR_TRAVERSAL,
+            PARTIAL_ACCESSOR,
+            ACCESSOR_RESOURCE,
         ];
     }
 
@@ -341,6 +353,15 @@ pub mod codes {
 
         /// A mapping reads a field the triggering event does not carry.
         MAPPING_READS_UNDECLARED_FIELD = family::BINDING, class::UNREADABLE;
+
+        /// Too many authored path segments.
+        MAPPING_ACCESSOR_DEPTH = family::BINDING, class::ACCESSOR_DEPTH;
+        /// A list, map or cyclic transparent accessor traversal.
+        MAPPING_ACCESSOR_TRAVERSAL = family::BINDING, class::ACCESSOR_TRAVERSAL;
+        /// Unavailable traversal cannot fill a required command input.
+        MAPPING_PARTIAL_ACCESSOR = family::BINDING, class::PARTIAL_ACCESSOR;
+        /// Deterministic accessor construction resource refusal.
+        MAPPING_ACCESSOR_RESOURCE = family::BINDING, class::ACCESSOR_RESOURCE;
 
         /// An outcome's `payload:` fills a field the emitted event does not carry.
         ///
@@ -717,6 +738,10 @@ fn class_of(code: ValidationCode) -> u16 {
             codes::class::TYPE_MISMATCH
         }
         Refused::UnobservableFact => codes::class::UNREADABLE,
+        Refused::AccessorDepth => codes::class::ACCESSOR_DEPTH,
+        Refused::AccessorTraversal => codes::class::ACCESSOR_TRAVERSAL,
+        Refused::PartialAccessor => codes::class::PARTIAL_ACCESSOR,
+        Refused::AccessorResource => codes::class::ACCESSOR_RESOURCE,
         Refused::ConflictingDeclaration
         | Refused::CapabilityConflict
         | Refused::RefusalMutatedState => codes::class::CONFLICT,
@@ -1108,6 +1133,7 @@ impl<'a> Resolver<'a> {
                         name: declared.name,
                         body,
                         naming: declared.naming,
+                        reading: declared.reading,
                     },
                 );
             }
@@ -1448,6 +1474,7 @@ impl<'a> Resolver<'a> {
                     error.name.clone(),
                     ResolvedError {
                         name: error.name,
+                        naming: error.naming,
                         domain,
                         summary: error.summary,
                         fields,
@@ -1472,6 +1499,13 @@ impl<'a> Resolver<'a> {
             let needles = vec![format!("name: {}", command.name)];
             let code = codes::COMMAND_UNDECLARED_REFERENCE;
             let input = self.fields(code, &command.input, &command.name, &path, &needles);
+            let response = self.fields(
+                code,
+                &command.response,
+                &command.name,
+                &format!("{path}.response"),
+                &needles,
+            );
             let outcomes = self.outcomes(
                 &command,
                 input.as_deref(),
@@ -1482,13 +1516,16 @@ impl<'a> Resolver<'a> {
                 &needles,
             );
             let domain = self.owner(code, &command.name, "command");
-            if let (Some(input), Some(outcomes), Some(domain)) = (input, outcomes, domain) {
+            if let (Some(input), Some(response), Some(outcomes), Some(domain)) =
+                (input, response, outcomes, domain)
+            {
                 resolved.insert(
                     command.name.clone(),
                     ResolvedCommand {
                         name: command.name,
                         domain,
                         input,
+                        response,
                         outcomes,
                         naming: command.naming,
                         refs: command.refs,
@@ -1793,18 +1830,31 @@ impl<'a> Resolver<'a> {
     ) -> Option<ResolvedPayloadField> {
         let value = match source {
             PayloadSource::Literal { value } => {
-                // Taken on trust past `ess-domain`'s representation check, as a binding's literal
-                // is: nothing in the model says how to read text as anything but text.
-                return Some(ResolvedPayloadField {
-                    target: target.name.clone(),
-                    target_type: target.type_ref.clone(),
-                    value: ResolvedPayloadValue::Literal {
+                return Some(payload_constant(
+                    target,
+                    ResolvedPayloadValue::Literal {
                         value: value.clone(),
                     },
-                    conversion: None,
-                });
+                ));
             }
-            PayloadSource::InputField { field } => field,
+            PayloadSource::Generated => {
+                return Some(payload_constant(target, ResolvedPayloadValue::Generated))
+            }
+            PayloadSource::InputField { field } | PayloadSource::ResponseField { field } => field,
+        };
+        let response;
+        let response_source = matches!(source, PayloadSource::ResponseField { .. });
+        let input = if response_source {
+            response = self.fields(
+                codes::COMMAND_UNDECLARED_REFERENCE,
+                &command.response,
+                &command.name,
+                &format!("commands.{}.response", command.name),
+                &[format!("name: {}", command.name)],
+            );
+            response.as_deref()
+        } else {
+            input
         };
         let Some(read) = input.and_then(|fields| fields.iter().find(|it| &it.name == value)) else {
             // Either the input did not resolve — its own refusal stands — or a hand-built
@@ -1877,10 +1927,7 @@ impl<'a> Resolver<'a> {
         Some(ResolvedPayloadField {
             target: target.name.clone(),
             target_type: target.type_ref.clone(),
-            value: ResolvedPayloadValue::InputField {
-                field: read.name.clone(),
-                type_ref: read.type_ref.clone(),
-            },
+            value: payload_read(read, response_source),
             conversion,
         })
     }
@@ -2550,103 +2597,221 @@ impl<'a> Resolver<'a> {
                 format!("id: {}", binding.name),
                 format!("name: {}", binding.name),
             ];
-            let event = self.event_of(&binding.event, events);
-            if matches!(event, Found::Missing) {
-                let available = self.spec.events().keys().map(ToString::to_string).collect();
-                let span = self.locator.span(path.clone(), &needles);
-                self.refuse_undeclared(
-                    codes::BINDING_UNDECLARED_REFERENCE,
-                    format!("binding `{}` reacts to an undeclared event", binding.name),
-                    &binding.event,
-                    "event",
-                    available,
-                    span,
-                );
-            }
-            // Resolved beside the trigger and the target, because it is the same kind of reference:
-            // a binding that escalated into an event nobody declares would put a fact in the IR
-            // that nothing reading the IR could look up.
-            let mut escalation = None;
-            let mut escalation_resolved = true;
-            if let Some(emitted) = &binding.escalation {
-                match self.event_of(emitted, events) {
-                    Found::Handle(handle) => escalation = Some(handle),
-                    Found::Unresolved => escalation_resolved = false,
-                    Found::Missing => {
-                        escalation_resolved = false;
-                        let available =
-                            self.spec.events().keys().map(ToString::to_string).collect();
-                        let mut escalation_needles = vec![format!("emits: {emitted}")];
-                        escalation_needles.extend_from_slice(&needles);
-                        let span = self.locator.span(
-                            format!("{path}.on_failure.escalate.emits"),
-                            &escalation_needles,
-                        );
-                        self.refuse_undeclared(
-                            codes::BINDING_UNDECLARED_REFERENCE,
-                            format!(
-                                "binding `{}` escalates into an undeclared event",
-                                binding.name
-                            ),
-                            emitted,
-                            "event",
-                            available,
-                            span,
-                        );
-                    }
-                }
-            }
-            let command = self.command_of(&binding.command, commands);
-            if matches!(command, Found::Missing) {
-                let available = self
-                    .spec
-                    .commands()
-                    .keys()
-                    .map(ToString::to_string)
-                    .collect();
-                let span = self.locator.span(path.clone(), &needles);
-                self.refuse_undeclared(
-                    codes::BINDING_UNDECLARED_REFERENCE,
-                    format!("binding `{}` invokes an undeclared command", binding.name),
-                    &binding.command,
-                    "command",
-                    available,
-                    span,
-                );
-            }
-            let (Found::Handle(event_handle), Found::Handle(command_handle)) = (event, command)
-            else {
-                continue;
+            let name = binding.name.clone();
+            let value = if let Some(periodic) = binding.cause.periodic() {
+                self.periodic_binding(&binding, periodic, commands, &path, &needles)
+            } else {
+                self.event_binding(binding, events, commands, &path, &needles)
             };
-            // An escalation that did not resolve keeps the whole binding out, rather than putting
-            // one in that says it escalates and cannot say into what: that is the shape G2 exists
-            // to remove, and reintroducing it here would only move it.
-            if !escalation_resolved {
-                continue;
+            if let Some(value) = value {
+                resolved.insert(name, value);
             }
-            let Some(mapping) = self.mapping(
-                &binding,
-                &events[&binding.event],
-                &commands[&binding.command],
-            ) else {
-                continue;
-            };
-            resolved.insert(
-                binding.name.clone(),
-                ResolvedBinding {
-                    name: binding.name,
-                    event: event_handle,
-                    command: command_handle,
-                    mapping,
-                    delivery: binding.delivery,
-                    failure: binding.failure,
-                    escalation,
-                    naming: binding.naming,
-                    refs: binding.refs,
-                },
-            );
         }
         resolved
+    }
+    fn event_binding(
+        &mut self,
+        binding: BindingSpec,
+        events: &BTreeMap<QualifiedName, ResolvedEvent>,
+        commands: &BTreeMap<QualifiedName, ResolvedCommand>,
+        path: &str,
+        needles: &[String],
+    ) -> Option<ResolvedBinding> {
+        let event_name = binding.cause.event().expect("event branch");
+        let event = self.event_of(event_name, events);
+        if matches!(event, Found::Missing) {
+            let available = self.spec.events().keys().map(ToString::to_string).collect();
+            let span = self.locator.span(path.to_owned(), needles);
+            self.refuse_undeclared(
+                codes::BINDING_UNDECLARED_REFERENCE,
+                format!("binding `{}` reacts to an undeclared event", binding.name),
+                event_name,
+                "event",
+                available,
+                span,
+            );
+        }
+        // Resolved beside the trigger and the target, because it is the same kind of reference:
+        // a binding that escalated into an event nobody declares would put a fact in the IR
+        // that nothing reading the IR could look up.
+        let mut escalation = None;
+        let mut escalation_resolved = true;
+        if let Some(emitted) = &binding.escalation {
+            match self.event_of(emitted, events) {
+                Found::Handle(handle) => escalation = Some(handle),
+                Found::Unresolved => escalation_resolved = false,
+                Found::Missing => {
+                    escalation_resolved = false;
+                    let available = self.spec.events().keys().map(ToString::to_string).collect();
+                    let mut escalation_needles = vec![format!("emits: {emitted}")];
+                    escalation_needles.extend_from_slice(needles);
+                    let span = self.locator.span(
+                        format!("{path}.on_failure.escalate.emits"),
+                        &escalation_needles,
+                    );
+                    self.refuse_undeclared(
+                        codes::BINDING_UNDECLARED_REFERENCE,
+                        format!(
+                            "binding `{}` escalates into an undeclared event",
+                            binding.name
+                        ),
+                        emitted,
+                        "event",
+                        available,
+                        span,
+                    );
+                }
+            }
+        }
+        let command = self.command_of(&binding.command, commands);
+        if matches!(command, Found::Missing) {
+            let available = self
+                .spec
+                .commands()
+                .keys()
+                .map(ToString::to_string)
+                .collect();
+            let span = self.locator.span(path.to_owned(), needles);
+            self.refuse_undeclared(
+                codes::BINDING_UNDECLARED_REFERENCE,
+                format!("binding `{}` invokes an undeclared command", binding.name),
+                &binding.command,
+                "command",
+                available,
+                span,
+            );
+        }
+        let (Found::Handle(event_handle), Found::Handle(command_handle)) = (event, command) else {
+            return None;
+        };
+        // An escalation that did not resolve keeps the whole binding out, rather than putting
+        // one in that says it escalates and cannot say into what: that is the shape G2 exists
+        // to remove, and reintroducing it here would only move it.
+        if !escalation_resolved {
+            return None;
+        }
+        let (mapping, selection) =
+            self.selection_mapping(&binding, &events[event_name], &commands[&binding.command])?;
+        Some(ResolvedBinding {
+            name: binding.name,
+            cause: crate::ir::ResolvedBindingCause::Event(event_handle),
+            command: command_handle,
+            mapping,
+            selection,
+            delivery: binding.delivery,
+            failure: binding.failure,
+            escalation,
+            naming: binding.naming,
+            refs: binding.refs,
+        })
+    }
+
+    fn periodic_binding(
+        &mut self,
+        binding: &BindingSpec,
+        periodic: &ess_domain::binding::periodic::PeriodicCause,
+        commands: &BTreeMap<QualifiedName, ResolvedCommand>,
+        path: &str,
+        needles: &[String],
+    ) -> Option<ResolvedBinding> {
+        let Found::Handle(command_handle) = self.command_of(&binding.command, commands) else {
+            return None;
+        };
+        let command = commands.get(&binding.command)?;
+        let context = self.fields(
+            codes::BINDING_UNDECLARED_REFERENCE,
+            &periodic.host.context_fields,
+            &binding.command,
+            path,
+            needles,
+        )?;
+        let read = self.fields(
+            codes::BINDING_UNDECLARED_REFERENCE,
+            &periodic.host.read_fields,
+            &binding.command,
+            path,
+            needles,
+        )?;
+        let mut mapping = Vec::new();
+        for input in &command.input {
+            let Some(source) = binding.mapping.get(&input.name) else {
+                if input.type_ref.is_optional() {
+                    continue;
+                }
+                self.refuse_mapping(
+                    binding,
+                    codes::UNMAPPED_COMMAND_INPUT,
+                    "required periodic input has no host mapping".into(),
+                    Vec::new(),
+                    &input.name,
+                );
+                return None;
+            };
+            let (field, table, is_context) = match source {
+                MappingSource::HostContext { field } => (field, &context, true),
+                MappingSource::HostRead { field } => (field, &read, false),
+                MappingSource::Literal { value } => {
+                    mapping.push(ResolvedMapping {
+                        target: input.name.clone(),
+                        target_type: input.type_ref.clone(),
+                        value: ResolvedMappingValue::Literal {
+                            value: value.clone(),
+                        },
+                        conversion: None,
+                    });
+                    continue;
+                }
+                _ => return None,
+            };
+            let from = table.iter().find(|entry| entry.name == *field)?;
+            let from_type = spec_type_ref(&from.type_ref);
+            let to_type = spec_type_ref(&input.type_ref);
+            let conversion = if is_assignable(&from_type, &to_type) {
+                None
+            } else {
+                Some(
+                    self.spec
+                        .conversions()
+                        .iter()
+                        .find(|entry| entry.from == from_type && entry.to == to_type)?
+                        .because
+                        .clone(),
+                )
+            };
+            let value = if is_context {
+                ResolvedMappingValue::HostContext {
+                    field: field.clone(),
+                    type_ref: from.type_ref.clone(),
+                }
+            } else {
+                ResolvedMappingValue::HostRead {
+                    field: field.clone(),
+                    type_ref: from.type_ref.clone(),
+                }
+            };
+            mapping.push(ResolvedMapping {
+                target: input.name.clone(),
+                target_type: input.type_ref.clone(),
+                value,
+                conversion,
+            });
+        }
+        Some(ResolvedBinding {
+            name: binding.name.clone(),
+            cause: crate::ir::ResolvedBindingCause::Periodic(crate::ir::ResolvedPeriodic {
+                contract: periodic.clone(),
+                context,
+                read,
+            }),
+            command: command_handle,
+            mapping,
+            selection: None,
+            delivery: binding.delivery,
+            failure: binding.failure,
+            escalation: None,
+            naming: binding.naming.clone(),
+            refs: binding.refs.clone(),
+        })
     }
 
     /// One binding's mapping, in the command's input order.
@@ -2654,6 +2819,65 @@ impl<'a> Resolver<'a> {
     /// The check design §20 calls out as needing to be "strongly typed", and the one place two
     /// independently written declarations have to agree about a type: the event, the command and the
     /// conversion registry are all needed at once, so no single declaration can decide it.
+    fn selection_mapping(
+        &mut self,
+        binding: &BindingSpec,
+        event: &ResolvedEvent,
+        command: &ResolvedCommand,
+    ) -> Option<(
+        Vec<ResolvedMapping>,
+        Option<crate::ir::ResolvedSelectionPlan>,
+    )> {
+        let mut selection = if binding.selection_inputs.is_empty() && binding.selections.is_empty()
+        {
+            None
+        } else {
+            let plan = self.selection_plan(binding)?;
+            Some(crate::ir::ResolvedSelectionPlan {
+                plan,
+                types: BTreeMap::new(),
+            })
+        };
+        let mapping = self.mapping(binding, event, command)?;
+        if let Some(selection) = &mut selection {
+            let mut names = BTreeSet::new();
+            for input in &selection.plan.inputs {
+                names.extend(input.list_type.named_dependencies().into_iter().cloned());
+                names.extend(input.item_type.named_dependencies().into_iter().cloned());
+                names.extend(
+                    input
+                        .source
+                        .type_ref()
+                        .named_dependencies()
+                        .into_iter()
+                        .cloned(),
+                );
+                if let ess_domain::selection::InputSource::Accessor { plan } = &input.source {
+                    names.extend(plan.dependencies());
+                }
+            }
+            for selector in &selection.plan.selectors {
+                if let ess_domain::selection::SelectionOperation::First { reads, .. } =
+                    &selector.operation
+                {
+                    for projection in reads.values() {
+                        names.extend(projection.0.dependencies());
+                    }
+                }
+            }
+            for mapping in &mapping {
+                if let ResolvedMappingValue::Selection { projection, .. } = &mapping.value {
+                    names.extend(projection.0.dependencies());
+                }
+            }
+            selection.types = names
+                .into_iter()
+                .map(|name| (name.clone(), TypeHandle::new(name)))
+                .collect();
+        }
+        Some((mapping, selection))
+    }
+
     fn mapping(
         &mut self,
         binding: &BindingSpec,
@@ -2705,6 +2929,16 @@ impl<'a> Resolver<'a> {
                     );
                     complete = false;
                 }
+                Some(MappingSource::HostContext { .. } | MappingSource::HostRead { .. }) => {
+                    complete = false;
+                    self.refuse_mapping(
+                        binding,
+                        codes::BINDING_UNDECLARED_REFERENCE,
+                        "event bindings cannot use periodic host inputs".into(),
+                        Vec::new(),
+                        &input.name,
+                    );
+                }
                 Some(MappingSource::Literal { value }) => resolved.push(ResolvedMapping {
                     target: input.name.clone(),
                     target_type: input.type_ref.clone(),
@@ -2713,6 +2947,18 @@ impl<'a> Resolver<'a> {
                     },
                     conversion: None,
                 }),
+                Some(MappingSource::Selection { selection, path }) => {
+                    match self.mapped_selection(binding, input, selection, path) {
+                        Some(mapped) => resolved.push(mapped),
+                        None => complete = false,
+                    }
+                }
+                Some(MappingSource::EventAccessor { segments }) => {
+                    match self.mapped_accessor(binding, input, segments) {
+                        Some(mapped) => resolved.push(mapped),
+                        None => complete = false,
+                    }
+                }
                 Some(MappingSource::EventField { field }) => {
                     let field = field.clone();
                     match self.mapped_field(binding, event, command, input, &field) {
@@ -2723,6 +2969,174 @@ impl<'a> Resolver<'a> {
             }
         }
         complete.then_some(resolved)
+    }
+
+    fn selection_plan(
+        &mut self,
+        binding: &BindingSpec,
+    ) -> Option<ess_domain::selection::SelectionPlan> {
+        let event = self.spec.events().get(binding.cause.event()?)?;
+        match ess_domain::selection::SelectionPlan::resolve(
+            &binding.selection_inputs,
+            &binding.selections,
+            event,
+            &self.registry,
+            self.spec.conversions(),
+            &format!("binding.{}.selections", binding.name),
+        ) {
+            Ok(plan) => Some(plan),
+            Err(error) => {
+                self.refuse_mapping(
+                    binding,
+                    Code::new(codes::family::BINDING, class_of(error.code)),
+                    error.message,
+                    Vec::new(),
+                    "selections",
+                );
+                None
+            }
+        }
+    }
+
+    fn mapped_selection(
+        &mut self,
+        binding: &BindingSpec,
+        input: &ResolvedField,
+        selection: &str,
+        path: &[String],
+    ) -> Option<ResolvedMapping> {
+        let plan = self.selection_plan(binding)?;
+        let at = format!("binding.{}.mapping.{}", binding.name, input.name);
+        let (selector, projection, from) =
+            match plan.projection(selection, path, &self.registry, &at) {
+                Ok(value) => value,
+                Err(error) => {
+                    self.refuse_mapping(
+                        binding,
+                        Code::new(codes::family::BINDING, class_of(error.code)),
+                        error.message,
+                        Vec::new(),
+                        &input.name,
+                    );
+                    return None;
+                }
+            };
+        let to = spec_type_ref(&input.type_ref);
+        let conversion = if is_assignable(&from, &to) {
+            None
+        } else {
+            Some(
+                self.spec
+                    .conversions()
+                    .iter()
+                    .find(|c| c.from == from && c.to == to)?
+                    .because
+                    .clone(),
+            )
+        };
+        let type_ref = self.type_ref(
+            codes::BINDING_UNDECLARED_REFERENCE,
+            &from,
+            selection,
+            &at,
+            &[],
+        )?;
+        Some(ResolvedMapping {
+            target: input.name.clone(),
+            target_type: input.type_ref.clone(),
+            value: ResolvedMappingValue::Selection {
+                selector,
+                projection,
+                type_ref,
+            },
+            conversion,
+        })
+    }
+
+    /// Lower the same domain-resolved DAG used during validation.
+    fn mapped_accessor(
+        &mut self,
+        binding: &BindingSpec,
+        input: &ResolvedField,
+        segments: &[String],
+    ) -> Option<ResolvedMapping> {
+        let at = format!("binding.{}.mapping.{}", binding.name, input.name);
+        let event = self.spec.events().get(binding.cause.event()?)?;
+        let plan = match ess_domain::accessor::resolve(event, segments, &self.registry, &at) {
+            Ok(plan) => plan,
+            Err(error) => {
+                self.refuse_mapping(
+                    binding,
+                    Code::new(codes::family::BINDING, class_of(error.code)),
+                    error.message,
+                    Vec::new(),
+                    &input.name,
+                );
+                return None;
+            }
+        };
+        let from = plan.effective_type();
+        let to = spec_type_ref(&input.type_ref);
+        if plan.may_miss() && !matches!(to, TypeRef::Optional(_)) {
+            self.refuse_mapping(
+                binding,
+                codes::MAPPING_PARTIAL_ACCESSOR,
+                format!(
+                    "{} may be unavailable; {} requires {to}",
+                    plan.path(),
+                    input.name
+                ),
+                Vec::new(),
+                &input.name,
+            );
+            return None;
+        }
+        let conversion = if is_assignable(&from, &to) {
+            None
+        } else {
+            let Some(crossing) = self
+                .spec
+                .conversions()
+                .iter()
+                .find(|c| c.from == from && c.to == to)
+            else {
+                self.refuse_mapping(
+                    binding,
+                    codes::MAPPING_TYPE_MISMATCH,
+                    format!(
+                        "{} has type {from}, target {} requires {to}; no conversion is declared",
+                        plan.path(),
+                        input.name
+                    ),
+                    Vec::new(),
+                    &input.name,
+                );
+                return None;
+            };
+            Some(crossing.because.clone())
+        };
+        let type_ref = self.type_ref(
+            codes::BINDING_UNDECLARED_REFERENCE,
+            &from,
+            &plan.path(),
+            &at,
+            &[],
+        )?;
+        let types = plan
+            .dependencies()
+            .into_iter()
+            .map(|name| (name.clone(), TypeHandle::new(name)))
+            .collect();
+        Some(ResolvedMapping {
+            target: input.name.clone(),
+            target_type: input.type_ref.clone(),
+            value: ResolvedMappingValue::EventAccessor {
+                plan,
+                type_ref,
+                types,
+            },
+            conversion,
+        })
     }
 
     /// One mapping from an event field onto a command input.
@@ -2816,9 +3230,15 @@ impl<'a> Resolver<'a> {
         let mut needles = Vec::new();
         if let Some(source) = binding.mapping.get(target) {
             needles.push(match source {
+                MappingSource::HostContext { field } => format!("{target}: host_context.{field}"),
+                MappingSource::HostRead { field } => format!("{target}: host_read.{field}"),
                 MappingSource::EventField { field } => {
                     format!("{target}: {}{field}", MappingSource::EVENT_PREFIX)
                 }
+                MappingSource::EventAccessor { segments } => {
+                    format!("{target}: event.{}", segments.join("."))
+                }
+                MappingSource::Selection { .. } => format!("{target}:"),
                 MappingSource::Literal { value } => format!("{target}: {value}"),
             });
         }
@@ -2953,11 +3373,38 @@ fn condition_of(outcome: &Outcome) -> ResolvedCondition {
         OutcomeCondition::When(predicate) => ResolvedCondition::When {
             predicate: predicate.clone(),
         },
+        OutcomeCondition::SubjectState { state, predicate } => ResolvedCondition::SubjectState {
+            state: state.clone(),
+            predicate: predicate.clone(),
+        },
         OutcomeCondition::Otherwise => ResolvedCondition::Otherwise,
         OutcomeCondition::External { cause } => ResolvedCondition::External {
             cause: cause.clone(),
         },
         OutcomeCondition::WrongState => ResolvedCondition::WrongState,
+    }
+}
+
+fn payload_constant(target: &ResolvedField, value: ResolvedPayloadValue) -> ResolvedPayloadField {
+    ResolvedPayloadField {
+        target: target.name.clone(),
+        target_type: target.type_ref.clone(),
+        value,
+        conversion: None,
+    }
+}
+
+fn payload_read(read: &ResolvedField, response: bool) -> ResolvedPayloadValue {
+    if response {
+        ResolvedPayloadValue::ResponseField {
+            field: read.name.clone(),
+            type_ref: read.type_ref.clone(),
+        }
+    } else {
+        ResolvedPayloadValue::InputField {
+            field: read.name.clone(),
+            type_ref: read.type_ref.clone(),
+        }
     }
 }
 

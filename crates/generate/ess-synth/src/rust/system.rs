@@ -49,8 +49,7 @@ use ess_compiler::ir::{EssIr, EventHandle, ResolvedBinding, ResolvedComponent, R
 use ess_gen::{Artifact, Provenance};
 
 use crate::plan::{
-    accepting_components, determined_input, Capability, CapabilityKind, DeterminedInput,
-    SynthesisPlan, REGENERATE,
+    accepting_components, Capability, CapabilityKind, DeterminedInput, SynthesisPlan, REGENERATE,
 };
 
 use super::layout::Layout;
@@ -152,7 +151,13 @@ fn lib_module(
         .flat_map(|component| component.publishes.iter())
         .collect();
     for delivery in &deliveries {
-        events.insert(&delivery.binding.event);
+        events.insert(
+            delivery
+                .binding
+                .cause
+                .event()
+                .expect("generated event capability"),
+        );
         if let ResolvedFailure::Escalate { emits } = delivery.binding.on_failure() {
             events.insert(emits);
         }
@@ -195,6 +200,13 @@ fn lib_module(
         );
     }
 
+    if ir
+        .bindings()
+        .values()
+        .any(|binding| binding.selection.is_some())
+    {
+        out.push_str(&super::selection::support(&types));
+    }
     system_event_enum(&mut out, layout, &types, &variants);
     from_impls(&mut out, ir, layout, &variants);
     binding_invocation_enum(&mut out, layout, &types, &deliveries);
@@ -303,65 +315,133 @@ fn transformations(
 ) {
     for binding in ir.bindings().values() {
         let source = binding.name.to_string();
-        if !plan.is_generated(CapabilityKind::BindingTransformation, &source) {
+        let generated = plan.is_generated(CapabilityKind::BindingTransformation, &source);
+        if !generated && !crate::selection::prepared_helper(ir, binding) {
             continue;
         }
-        covered.insert(Capability {
-            kind: CapabilityKind::BindingTransformation,
-            source: source.clone(),
-        });
+        if generated {
+            covered.insert(Capability {
+                kind: CapabilityKind::BindingTransformation,
+                source: source.clone(),
+            });
+        }
 
-        let event = types_path(layout, types, binding.event.name());
+        let event = types_path(
+            layout,
+            types,
+            binding
+                .cause
+                .event()
+                .expect("generated event capability")
+                .name(),
+        );
         let input = types_path(layout, types, binding.command.name());
-        let function = name::value_ident(&source);
-        let _ = writeln!(
+        let mut function = name::value_ident(&source);
+        if !generated {
+            function.push_str("_from_prepared");
+        }
+        if let Some(selection) = &binding.selection {
+            let mut parameters = String::new();
+            for (index, input) in selection
+                .plan
+                .inputs
+                .iter()
+                .enumerate()
+                .filter(|(_, input)| input.conversion.is_some())
+            {
+                let ty = layout
+                    .absolute_type(&crate::plan::accessor_type(
+                        &input.list_type,
+                        &selection.types,
+                    ))
+                    .replace("crate::", &format!("{types}::"));
+                let _ = write!(parameters, ", prepared_{index}: &{ty}");
+            }
+            let _ = writeln!(out, "\n/// Select declared occurrences and project command input after complete bounded preflight.\npub fn {function}(event: &{event}{parameters}) -> Result<{input}, SelectionFailure> {{");
+            out.push_str("let _ = event;\n");
+            out.push_str(
+                &super::selection::prelude(ir, binding, selection, layout, types)
+                    .expect("selection emission preflight"),
+            );
+            let _ = writeln!(out, "Ok({input} {{");
+        } else {
+            let _ = writeln!(
             out,
             "\n/// The binding `{source}`: `{}`, read as `{}` input.\n///\n/// Fully determined \
              by the specification: every input is filled from an event field — through the\n/// \
              declared crossing where one is named — from a literal the target admits, or left \
              absent\n/// where the input is optional and the binding says nothing.\npub fn \
              {function}(event: &{event}) -> {input} {{\n    {input} {{",
-            binding.event, binding.command
+            binding.cause.event().expect("generated event capability"),
+            binding.command
         );
+        }
         for field in &ir.command(&binding.command).input {
-            let determined = determined_input(ir, binding, field).unwrap_or_else(|| {
-                panic!(
-                    "the plan generated the transformation of `{source}` with an undetermined \
+            let determined = crate::plan::determined_prepared_input(ir, binding, field)
+                .unwrap_or_else(|| {
+                    panic!(
+                        "the plan generated the transformation of `{source}` with an undetermined \
                      mapping for `{}`; that is a defect in ess-synth",
-                    field.name
-                )
-            });
-            let expression = match determined {
-                DeterminedInput::Copy { field } => {
-                    format!("event.{}.clone()", name::value_ident(field))
-                }
-                DeterminedInput::Convert { field, to } => format!(
-                    "{}::from(event.{}.clone())",
-                    types_path(layout, types, to.name()),
-                    name::value_ident(field)
-                ),
-                DeterminedInput::Literal { value, wraps } => {
-                    let mut expression = format!("{value:?}.to_owned()");
-                    for wrap in wraps.iter().rev() {
-                        expression =
-                            format!("{}({expression})", types_path(layout, types, wrap.name()));
-                    }
-                    expression
-                }
-                DeterminedInput::Variant { of, value } => format!(
-                    "{}::{}",
-                    types_path(layout, types, of.name()),
-                    name::pascal(value)
-                ),
-                DeterminedInput::Omitted => "None".to_owned(),
-            };
+                        field.name
+                    )
+                });
+            let expression = mapping_expression(determined, ir, layout, types);
             let _ = writeln!(
                 out,
                 "        {}: {expression},",
                 name::value_ident(&field.name)
             );
         }
-        out.push_str("    }\n}\n");
+        out.push_str(if binding.selection.is_some() {
+            "    })\n}\n"
+        } else {
+            "    }\n}\n"
+        });
+    }
+}
+
+fn mapping_expression(
+    determined: DeterminedInput<'_>,
+    ir: &EssIr,
+    layout: &Layout,
+    types: &str,
+) -> String {
+    match determined {
+        DeterminedInput::Selection {
+            selection,
+            selector,
+            projection,
+            target,
+        } => super::selection::mapping(ir, selection, selector, projection, target, layout, types)
+            .expect("selection projection preflight"),
+        DeterminedInput::Accessor {
+            plan,
+            types: handles,
+            target,
+            conversion,
+        } => super::accessor::expression(plan, handles, target, conversion, layout, types)
+            .expect("accessor emission preflight"),
+        DeterminedInput::Copy { field } => {
+            format!("event.{}.clone()", name::value_ident(field))
+        }
+        DeterminedInput::Convert { field, to } => format!(
+            "{}::from(event.{}.clone())",
+            types_path(layout, types, to.name()),
+            name::value_ident(field)
+        ),
+        DeterminedInput::Literal { value, wraps } => {
+            let mut expression = format!("{value:?}.to_owned()");
+            for wrap in wraps.iter().rev() {
+                expression = format!("{}({expression})", types_path(layout, types, wrap.name()));
+            }
+            expression
+        }
+        DeterminedInput::Variant { of, value } => format!(
+            "{}::{}",
+            types_path(layout, types, of.name()),
+            name::pascal(value)
+        ),
+        DeterminedInput::Omitted => "None".to_owned(),
     }
 }
 
@@ -410,11 +490,23 @@ fn system_obligations(
                 method: format!("{ident}_input"),
                 method_doc: format!(
                     "Reads a `{}` as `{}` input, where the specification does not say how.",
-                    binding.event, binding.command
+                    binding.cause.event().expect("generated event capability"),
+                    binding.command
                 ),
                 argument: (
                     "event".to_owned(),
-                    format!("&{}", types_path(layout, types, binding.event.name())),
+                    format!(
+                        "&{}",
+                        types_path(
+                            layout,
+                            types,
+                            binding
+                                .cause
+                                .event()
+                                .expect("generated event capability")
+                                .name()
+                        )
+                    ),
                 ),
                 answer: types_path(layout, types, binding.command.name()),
                 reason: obligation.reason.describes(),
@@ -474,13 +566,18 @@ fn obligations_module(
          refusing in the type system.\npub mod obligations {\n",
     );
     for spec in &owed {
+        let extra = if spec.kind == CapabilityKind::BindingEscalation {
+            ir.bindings().values().find(|binding| binding.name.to_string() == spec.source && binding.selection.is_some()).map(|binding| format!("        /// Builds the escalation from a selection refusal before an Input exists.\n        fn {}_selection_escalation(&self, _event: &{}, _failure: &super::SelectionFailure) -> Result<{}, {types}::obligation::UnmetObligation> {{ Err({types}::obligation::UnmetObligation {{ capability: \"binding-escalation\", source: {:?} }}) }}\n", name::value_ident(&spec.source), types_path(layout, types, binding.cause.event().expect("selection event").name()), spec.answer, spec.source)).unwrap_or_default()
+        } else {
+            String::new()
+        };
         let _ = writeln!(
             out,
             "    /// {}\n    ///\n    /// Why it is not generated: {}.\n    ///\n    /// \
              Contract: {}.\n    pub trait {} {{\n        /// {}\n        ///\n        /// `Err` \
              is the typed refusal of an obligation nothing has satisfied; a satisfying\n        \
              /// implementation never returns it.\n        fn {}(&self, {}: {}) -> Result<{}, \
-             {types}::obligation::UnmetObligation>;\n    }}\n",
+             {types}::obligation::UnmetObligation>;\n{extra}    }}\n",
             spec.heading,
             spec.reason,
             spec.contract,
@@ -756,7 +853,15 @@ fn pump_impl(
     }
     out.push_str("{\n");
 
-    let unmet = format!("{types}::obligation::UnmetObligation");
+    let unmet = if ir
+        .bindings()
+        .values()
+        .any(|binding| binding.selection.is_some())
+    {
+        "TransportFailure".to_owned()
+    } else {
+        format!("{types}::obligation::UnmetObligation")
+    };
     let _ = writeln!(
         out,
         "    /// Delivers until quiescent: collects every component's outbox onto the log, then \
@@ -841,7 +946,15 @@ fn deliver_fn(
     for (event, variant) in variants {
         let reacting: Vec<&Delivery<'_>> = deliveries
             .iter()
-            .filter(|delivery| delivery.binding.event.name() == event.name())
+            .filter(|delivery| {
+                delivery
+                    .binding
+                    .cause
+                    .event()
+                    .expect("generated event capability")
+                    .name()
+                    == event.name()
+            })
             .collect();
         if reacting.is_empty() {
             let _ = writeln!(out, "            SystemEvent::{variant}(_) => {{}}");
@@ -902,7 +1015,9 @@ fn delivery_arm(
         ess_gen::graph::delivery_word(binding.delivery),
         binding.failure.as_str()
     );
-    if delivery.transformation_generated {
+    if delivery.transformation_generated && binding.selection.is_some() {
+        selection_failure_policy(out, binding, &ident, variants);
+    } else if delivery.transformation_generated {
         let _ = writeln!(out, "                let input = {ident}(event);");
     } else {
         let _ = writeln!(
@@ -996,4 +1111,27 @@ fn refusal_match(
         out,
         "                    {refused} => {{\n{body}                    }}\n                }}"
     );
+}
+
+fn selection_failure_policy(
+    out: &mut String,
+    binding: &ResolvedBinding,
+    ident: &str,
+    variants: &std::collections::BTreeMap<&EventHandle, String>,
+) {
+    let _ = writeln!(out, "                let input = match {ident}(event) {{ Ok(input) => input, Err(failure) => {{");
+    match binding.on_failure() {
+        ResolvedFailure::Retry => {
+            let _ = writeln!(
+                out,
+                "self.retries.push(SystemEvent::{}(event.clone()));",
+                variants[binding.cause.event().expect("selection event")]
+            );
+        }
+        ResolvedFailure::Drop => {}
+        ResolvedFailure::Escalate { emits } => {
+            let _ = writeln!(out, "let escalation = self.obligations.{ident}_selection_escalation(event, &failure)?; self.published.push(SystemEvent::{}(escalation));", variants[emits]);
+        }
+    }
+    out.push_str("return Err(failure.into()); } };\n");
 }

@@ -1,0 +1,26 @@
+format: ess/1
+system: calls
+version: v1
+domain: calls.history
+entities:
+  - name: calls.history.CallRecord
+    identity: {name: call_id, type: Uuid}
+    fields:
+      - {name: started_at, type: Timestamp}
+      - {name: duration_seconds, type: Integer}
+      - {name: note, type: 'Optional<String>'}
+    lifecycle:
+      initial: Completed
+      states: [Completed]
+      terminal: [Completed]
+    invariants:
+      - duration_seconds >= 0
+views:
+  - name: calls.history.CallHistory
+    source: calls.history.CallRecord
+    consistency: read_your_writes
+    order_by: [started_at desc]
+    fields:
+      - {name: call_id, type: Uuid}
+      - {name: started_at, type: Timestamp}
+      - {name: duration_seconds, type: Integer}

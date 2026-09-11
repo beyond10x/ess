@@ -50,7 +50,7 @@ use crate::name::{Naming, QualifiedName, Version};
 use crate::types::{NamedType, TypeBody, TypeRef, TypeRegistry};
 
 /// Specification format major versions this build implements.
-pub const SUPPORTED_FORMATS: &[u32] = &[1, 2];
+pub const SUPPORTED_FORMATS: &[u32] = &[1, 2, 3, 4];
 
 /// `true` when this build implements `format`.
 pub fn is_supported_format(format: FormatVersion) -> bool {
@@ -71,6 +71,10 @@ impl FormatVersion {
     pub const V1: Self = Self(1);
     /// Finite Binary64 model primitives, retaining the first format's other semantics.
     pub const V2: Self = Self(2);
+    /// Bounded, typed event accessors in binding mappings.
+    pub const V3: Self = Self(3);
+    /// Declared error wire names, typed command responses and complete emitted payloads.
+    pub const V4: Self = Self(4);
 
     /// How a format version is written.
     pub const PREFIX: &'static str = "ess/";
@@ -1129,6 +1133,7 @@ mod tests {
 
     fn newtype(qualified: &str, of: Primitive) -> NamedType {
         NamedType {
+            reading: None,
             name: name(qualified),
             body: TypeBody::Newtype {
                 of: TypeRef::Primitive(of),
@@ -1179,7 +1184,9 @@ domains:
         );
         assert!(FormatVersion::V1.is_supported());
         assert!(FormatVersion::V2.is_supported());
-        assert!(!FormatVersion::parse("ess/3")
+        assert!(FormatVersion::V3.is_supported());
+        assert!(FormatVersion::V4.is_supported());
+        assert!(!FormatVersion::parse("ess/5")
             .expect("parses")
             .is_supported());
     }
@@ -1188,7 +1195,7 @@ domains:
     fn a_document_in_a_later_format_is_refused_rather_than_guessed_at() {
         let errors = system(
             r"
-format: ess/3
+format: ess/5
 system: billing
 ",
         )
@@ -1200,7 +1207,7 @@ system: billing
         );
         let error = &errors.as_slice()[0];
         assert_eq!(error.location, "system.format");
-        assert!(error.message.contains("ess/3"), "{error}");
+        assert!(error.message.contains("ess/5"), "{error}");
         assert!(
             error
                 .hint

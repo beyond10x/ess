@@ -165,6 +165,46 @@ outcomes:
 A command with a precondition has at least two results. A specification recording only the happy one
 generates a suite that never checks the branch where the money does not move.
 
+### Cover every declared enum value
+
+Current unreleased source accepts a command without a default when its input guards
+select exactly one outcome for every value of a required, closed enum. For example,
+if `status` has the declared variants `Ready` and `Stopped`, the two guards
+`status == Ready` and `status == Stopped` cover that input. Synthesis uses the same
+declared domain to construct a witness for each reachable branch. An omitted value
+or overlapping guards produce a concrete failing assignment.
+
+This proof is bounded to 64 joint assignments and 128 predicate nodes. Required
+enum fields, transparent wrappers, equality, membership and supported Boolean
+combinations participate. Every referenced input must fit that finite domain;
+Optional paths, open types, unsupported expressions and unknown results retain the
+requirement for a default. Existing defaults and external outcomes keep their behavior.
+
+### Select an outcome from the held subject state
+
+Unreleased `ess/3` allows `when_subject_state` beside an ordinary input predicate:
+
+```yaml
+- name: preserved
+  when: incoming == Ringing
+  when_subject_state: Bridged
+  updates: calls.core.Call
+  instance: call_id
+  emits: [calls.core.Observed]
+```
+
+The surrounding model declares that event, entity and input types. Both
+conditions must hold. Omitting `when` selects any admitted input in the
+named held state. The state comes from the existing subject row; it is not an
+extra caller field. All ordinary, state-guarded and default branches must name
+the same entity and input identity. A missing row does not become an initial row.
+
+The guard cannot accompany `creates`, `external` or `wrong_state`. Guarded moves
+must start in the declared guard state. Validation checks up to 64 joint
+state/input assignments for gaps and overlaps using the shared finite coverage
+proof; unsupported or open input domains require a genuine default. Runtime
+witnesses additionally validate their concrete inputs and invariants.
+
 ### An outcome the input cannot decide says that too
 
 Whether a mail provider accepts an address is not a function of the request. From
@@ -223,9 +263,18 @@ are derived. The `error:` is required — without it a generated scenario could 
       amount: input.amount
 ```
 
-Without this, an implementation announcing an amount nobody submitted contradicts nothing. The block
-is optional per field, and an absence means something: `invoice_id` has no line because the identity
-is the implementation's to assign.
+Without this, an implementation announcing an amount nobody submitted contradicts nothing. In source formats 1–3, the block
+is optional per field: `invoice_id` has no line because the identity is the implementation's to assign.
+
+Source `ess/4` requires every field of each emitted event to have a mapping. Use
+`invoice_id: {generated: true}` for an explicitly implementation-generated identity.
+Events with no emitting outcome remain valid; they may have an external producer.
+
+A command may declare a closed typed `response` record and map one of its fields with
+`item: {response: item}`. This reads the returned response; the string `response.item`
+retains its historical literal meaning. Input mappings keep their existing spelling.
+Missing fields, unknown response members and incompatible types are refused. Conformance
+checks compare mapped values with the actual response from the same command invocation.
 
 ### A view declares its consistency
 
@@ -304,6 +353,148 @@ reads — because a specification claiming the stronger guarantee is a claim the
 keep. A conformance suite for an `at_most_once` binding contains no redelivery scenario, since
 redelivery is the thing that word says will not happen.
 
+### Read a field inside an event envelope
+
+The unreleased `ess/3` format adds bounded binding accessors. Set `format: ess/3`
+in the specification header, then use two or three field segments after `event`:
+
+```yaml
+mapping:
+  status: event.data.status
+  text: event.data.body.text
+```
+
+Every segment names a declared field. For example, if `status` has
+`wire: upstream_status`, the mapping still spells `event.data.status`; the
+generated adapter uses the wire name when reading a serialized payload. Existing
+single-field mappings such as `event.customer_email` keep their meaning in every
+supported source format. Formats `ess/1` and `ess/2` refuse the new paths.
+
+A path can pass through structs and newtypes. Traversing an `Optional` or a union
+can leave the path unavailable: the Optional is absent, or the selected union
+variant does not declare that field. Such a mapping requires an Optional command
+input. A miss produces an absent input; a malformed union payload remains an
+error. At least one union branch must contain the complete path, and all branches
+that reach it must agree on its leaf type.
+
+The value at the end is copied whole, including a struct, collection or Optional.
+Reading `event.data.last_reason`, where `last_reason` is `Optional<String>`, differs
+from traversing that Optional to reach another field. Exact source/target type
+matches preserve the value; supported Optional lifting adds the required outer
+presence layer. Declared conversions still govern other type crossings.
+
+Accessors do not index or search lists or maps, compute values, or read session
+context. A recipient identifier absent from the event needs its own declared
+authority; adding it to an event that never carries it would misdescribe the wire.
+For execution and observation limits, see
+[Verify conformance](verify-conformance.md#observe-bounded-binding-accessors).
+
+### Select ordered records in a binding
+
+Unreleased `ess/3` adds binding-local `selection_inputs` and ordered `selections`.
+For an event whose `candidates` field already has type `List<example.calls.Leg>`:
+
+```yaml
+selection_inputs:
+  - name: candidates
+    from: event.candidates
+    as: List<example.calls.Leg>
+selections:
+  - name: first_agent
+    first:
+      in: candidates
+      where: item.role == Agent
+  - name: first_external
+    first:
+      in: candidates
+      excluding: [first_agent]
+      where: item.role == External
+  - name: preferred
+    first_present: [first_external, first_agent]
+mapping:
+  selected_id: {selection: preferred, path: [id]}
+```
+
+The record type must declare those fields and enum variants. Exclusion removes a
+selected list occurrence by its original index, so equal-valued records remain
+distinct. References point backward; `first_present` alternatives use the same
+list. The result is optional and must fit the command input's declared type.
+Whole records use `path: []`; field paths reuse bounded accessor rules.
+
+Malformed records are refused before selection, including records after an early
+match. Executable selection currently refuses inputs with unsupported declared
+invariants or clock-reading attachments, including nested members and list
+aliases, instead of dropping their constraints. Predicates use a bounded declared fragment: defined checks, typed literal
+equality/inequality and Boolean combinations. Selection does not sort or invent
+values. If the event carries a different representation, declare the exact
+conversion to the local list type. The host prepares that value once and can
+pass it to generated Rust/Go selection helpers; the local list is not a new
+field on the wire.
+
+### Declare a periodic host cause
+
+A periodic cause belongs to a named host instance with an explicit owner and
+authority. This `ess/3` binding fragment requires the declared command, component
+and mapped input types:
+
+```yaml
+when:
+  periodic:
+    every: PT2S
+    anchor: host_activation
+    first: after_period
+    cadence: fixed_rate
+    overlap: serial_per_instance
+    missed: one_pending_drop_excess
+    lifetime: host_instance
+    cancellation: stop_acknowledged
+    host:
+      owner: poll-service
+      authority: authenticated-session-status
+      eligibility: host_boolean
+      context_fields: [{name: agent_id, type: String}]
+      read_fields: [{name: status, type: String}]
+invoke: {command: example.poll.Refresh}
+mapping:
+  agent_id: host_context.agent_id
+  status: host_read.status
+delivery: at_most_once
+on_failure: drop
+```
+
+Context is constant for the host lifetime; reads are fresh for each eligible
+occurrence. The first tick follows one period, work is serial, and excess busy
+ticks coalesce to one pending tick. Stop acknowledgement means the loop and its
+work have quiesced. Native generation reports `PeriodicHostRequired` until that
+real host capability is supplied; it does not fabricate a scheduler or event.
+
+### Preserve clock-reading provenance
+
+An `ess/3` newtype can attach a reading contract while retaining its scalar wire
+representation:
+
+```yaml
+- name: example.clock.LocalReading
+  kind: newtype
+  of: String
+  reading:
+    encoding: local_date_time_millis_literal_z
+    origins: [{role: producer_process, offset: requires_observation}]
+```
+
+Supported encodings are offset date-time text, local millisecond text with a
+literal `Z`, and exact integer Unix seconds. A literal `Z` on local text does not
+establish UTC. The observation adapter supplies the process instance, clock
+epoch, origin and actual formatter offset for the particular occurrence.
+Comparison requires the same observed source and epoch. Unknown evidence and
+cross-source calibration remain unsupported; generic input predicates cannot
+silently discard the attachment.
+
+Normalization accepts years 1970–9999 and fixed offsets within ±14:00. Offset
+text allows no fraction or exactly three millisecond digits; local literal-Z
+text requires exactly three. Other precision, leap seconds and inferred host
+timezone settings are outside this bounded contract.
+
 ### Crossing contexts takes a declared conversion
 
 A binding's `mapping:` is the one place two independently-written contexts must agree about a type,
@@ -353,6 +544,11 @@ See [Logical, interface and delivery owners](../concepts/ess.md#logical-interfac
 for the separate contracts, identity consequences and bounded examples.
 
 ## Check what you just wrote resolved
+
+`ess specify compile --path <specification> --format json` emits complete top-level `views`,
+including each view's `source`, `fields`, `consistency` and `naming.wire`. A domain's `views`
+list contains references into that map. Adapters should consume those declarations directly;
+no second YAML reader is needed. `--out <file>` writes the same canonical JSON bytes.
 
 `ess specify validate` says the document holds together. `ess specify inspect` shows what one
 declaration *became*,

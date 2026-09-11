@@ -15,6 +15,43 @@ use std::{cell::Cell, collections::BTreeMap, fmt::Write, path::Path};
 const DIGEST: &str = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
 
 #[test]
+fn suite_six_keeps_unknown_coverage_and_binds_report_two_to_original_bytes() {
+    let mut value = document(&["passed"]);
+    value["provenance"]["suite_version"] = json!("ess-conformance/6");
+    let original = serde_json::to_string_pretty(&value).unwrap() + "\n";
+    let suite = AdmittedSuite::from_json(&original).unwrap();
+    let report = CountReport::from_run(&execute(&suite, 0), &suite).unwrap();
+    assert_eq!(report.execution_status(), CountStatus::Passed);
+    assert_eq!(report.conformance_status(), CountStatus::Inconclusive);
+    let encoded = report.to_canonical_json().unwrap();
+    let decoded: Value = serde_json::from_str(&encoded).unwrap();
+    assert_eq!(decoded["coverage"]["knowledge"], "unknown");
+    assert_eq!(CountReport::from_json(&encoded, &suite).unwrap(), report);
+    let compact = AdmittedSuite::from_json(&value.to_string()).unwrap();
+    assert!(CountReport::from_json(&encoded, &compact).is_err());
+}
+
+#[test]
+fn legacy_runner_refuses_new_majors_before_target_identity() {
+    for major in [5, 6, 7] {
+        let mut suite = admitted(&["passed"]).suite().clone();
+        suite.provenance.suite_version =
+            ess_conformance::scenario::SuiteFormat::parse(&format!("ess-conformance/{major}"))
+                .unwrap();
+        let target = Target::new();
+        let error = Runner::new(
+            RunnerConfig::default(),
+            FixedClock(0),
+            Ids::for_suite(&suite),
+        )
+        .try_run(&suite, &target)
+        .unwrap_err();
+        assert!(error.to_string().contains("report/2"));
+        assert_eq!(target.identity_calls.get(), 0);
+    }
+}
+
+#[test]
 fn known_complete_coverage_qualifies_actual_nonempty_passes() {
     let mut value = document(&["passed"]);
     value["provenance"]["suite_version"] = json!("ess-conformance/5");
@@ -416,7 +453,9 @@ fn exact_bytes_profiles_partition_and_identity_cannot_be_guessed() {
 fn suite_admission_closes_structural_variants_before_target_identity() {
     for version in [
         "ess-conformance/5",
-        "ess-conformance/6",
+        "ess-conformance/7",
+        "ess-conformance/9",
+        "ess-conformance/10",
         "ess-conformance/99",
     ] {
         let mut value = document(&["passed"]);

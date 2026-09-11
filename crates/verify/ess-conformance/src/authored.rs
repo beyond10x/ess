@@ -280,6 +280,27 @@ pub struct Arrangement {
     pub instance: InstanceName,
     /// The declared entity it is one of.
     pub entity: String,
+    /// Actual upstream-owned state to establish (`ess-scenario/2` only).
+    #[serde(default, deserialize_with = "deserialize_entity_setup")]
+    pub setup: Option<EntitySetup>,
+}
+
+fn deserialize_entity_setup<'de, D: serde::Deserializer<'de>>(
+    deserializer: D,
+) -> Result<Option<EntitySetup>, D::Error> {
+    <EntitySetup as serde::Deserialize>::deserialize(deserializer).map(Some)
+}
+
+/// Literal entity state, validated against the model before it becomes a target request.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct EntitySetup {
+    /// The identity value in the entity's declared identity type.
+    pub identity: Node,
+    /// All required entity fields; absence and present null remain distinct.
+    pub fields: BTreeMap<String, Node>,
+    /// A declared lifecycle state, without an invented transition history.
+    pub state: ess_domain::entity::StateName,
 }
 
 /// One command, at one instant, and everything required of it.
@@ -776,6 +797,8 @@ impl fmt::Display for Refusal {
 /// Which surface a value was written against, for a message that names it.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Surface {
+    /// An entity's explicitly arranged state.
+    Entity(EntityRef),
     /// A command's input.
     Input(CommandRef),
     /// An event's payload.
@@ -792,6 +815,7 @@ impl fmt::Display for Surface {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::Input(command) => write!(f, "the input of `{command}`"),
+            Self::Entity(entity) => write!(f, "the arranged state of `{entity}`"),
             Self::Payload(event) => write!(f, "the payload of `{event}`"),
             Self::Error(error) => write!(f, "the fields of `{error}`"),
             Self::Row(view) => write!(f, "a row of `{view}`"),
@@ -1115,7 +1139,7 @@ impl Cause {
                 "the document is YAML with the keys `type`, `domain`, `scenario` and `summary`; a \
                  key it does not know is refused rather than ignored"
             }
-            Self::UnsupportedFormat { .. } => "write `type: ess-scenario/1`",
+            Self::UnsupportedFormat { .. } => "write `type: ess-scenario/1`, or `ess-scenario/2` for entity setup",
             Self::Duplicate { .. } => {
                 "two files name one scenario in one domain; rename one of them"
             }
@@ -1497,9 +1521,14 @@ pub(crate) fn compile_one(
             detail: error.to_string(),
         })
     })?;
-    if document.format != FORMAT {
+    if document.format != FORMAT && document.format != "ess-scenario/2" {
         return Err(bare(Cause::UnsupportedFormat {
             found: document.format,
+        }));
+    }
+    if document.format == FORMAT && document.arrange.iter().any(|item| item.setup.is_some()) {
+        return Err(bare(Cause::Unreadable {
+            detail: "entity setup requires type: ess-scenario/2".into(),
         }));
     }
     let Ok(domain) = QualifiedName::new(&document.domain) else {
@@ -1616,8 +1645,9 @@ impl Compiler<'_> {
 
     /// Compiles the whole document.
     fn run(&mut self, document: &Document) {
+        let mut established: Vec<(EntityRef, Node)> = Vec::new();
         for arrangement in &document.arrange {
-            let Some((name, _)) =
+            let Some((name, declared)) =
                 self.declared(&arrangement.entity, self.ir.entities(), |entity| {
                     Cause::UndeclaredEntity { entity }
                 })
@@ -1626,7 +1656,49 @@ impl Compiler<'_> {
             };
             let entity = EntityRef::new(name);
             self.source.insert(entity.clone().into());
-            self.arranged.insert(arrangement.instance.clone(), entity);
+            if self.arranged.contains_key(&arrangement.instance) {
+                self.refuse(Cause::ValueRejected {
+                    surface: Surface::Entity(entity),
+                    detail: format!("duplicate instance `{}`", arrangement.instance),
+                });
+                continue;
+            }
+            self.arranged
+                .insert(arrangement.instance.clone(), entity.clone());
+            if let Some(setup) = &arrangement.setup {
+                if established.contains(&(entity.clone(), setup.identity.clone())) {
+                    self.refuse(Cause::ValueRejected {
+                        surface: Surface::Entity(entity),
+                        detail: "duplicate qualified entity identity".into(),
+                    });
+                    continue;
+                }
+                if let Err(detail) = crate::input::validate_entity_setup(
+                    self.ir,
+                    &entity,
+                    &setup.identity,
+                    &setup.fields,
+                    &setup.state,
+                ) {
+                    self.refuse(Cause::ValueRejected {
+                        surface: Surface::Entity(entity),
+                        detail,
+                    });
+                    continue;
+                }
+                let mut fields = declared.fields.clone();
+                fields.push(declared.identity.clone());
+                self.reach(&fields);
+                established.push((entity.clone(), setup.identity.clone()));
+                self.bound.insert(arrangement.instance.clone());
+                self.steps.push(ScenarioStep::EstablishEntity {
+                    instance: arrangement.instance.clone(),
+                    entity,
+                    identity: setup.identity.clone(),
+                    fields: setup.fields.clone(),
+                    state: setup.state.clone(),
+                });
+            }
         }
 
         let mut previous: Option<Moment> = None;
@@ -1642,7 +1714,7 @@ impl Compiler<'_> {
         for assertion in &document.assert {
             self.assertion(assertion);
         }
-        if document.timeline.is_empty() {
+        if document.timeline.is_empty() && (established.is_empty() || document.assert.is_empty()) {
             self.refuse(Cause::NothingHappens);
         }
     }

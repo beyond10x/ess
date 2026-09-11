@@ -44,6 +44,7 @@ pub(super) fn generate(
     component: Option<&str>,
     scenarios: Option<&Path>,
     authored: bool,
+    compact: bool,
 ) -> Result<ExitCode> {
     let Ok((ir, _)) = super::resolved(&input.path, input.format)? else {
         return Ok(ExitCode::from(1));
@@ -51,7 +52,13 @@ pub(super) fn generate(
     let admitted = fresh(&ir, scenarios, component, authored)?;
     let suite = admitted.selected();
     let inventory = suite.coverage().expect("coverage builder");
-    let json = suite.original_json();
+    let compact_json;
+    let json = if compact {
+        compact_json = ess_conformance::coverage::compact_suite_document(suite.suite(), inventory)?;
+        &compact_json
+    } else {
+        suite.original_json()
+    };
     match target {
         SuiteTarget::Ir => {
             if let Some(out) = out {
@@ -148,8 +155,11 @@ pub(super) fn execute<R>(
     report_format: &str,
     target_run: impl FnOnce() -> R,
 ) -> Result<R> {
-    if suite.coverage().is_some() && report_format != "2" {
-        bail!("suite/5 requires explicit --report-format 2 before execution");
+    if suite.suite().provenance.suite_version.major() >= 8 && report_format != "2" {
+        bail!("suite/8 and /9 require explicit --report-format 2 before execution");
+    }
+    if suite.suite().provenance.suite_version.major() >= 5 && report_format != "2" {
+        bail!("suite/5, /6 and /7 require explicit --report-format 2 before execution");
     }
     Ok(target_run())
 }
@@ -157,6 +167,34 @@ pub(super) fn execute<R>(
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn newer_suite_pair_refusal_precedes_target_construction() {
+        for major in [6, 7] {
+            let mut document = serde_json::json!({
+                "provenance":{"suite_version":format!("ess-conformance/{major}"),"system":"example","specification_version":"v1",
+                    "spec_digest":"a".repeat(64),"contract_digest":"b".repeat(64)},
+                "scenarios":{}
+            });
+            if major == 7 {
+                document["coverage"] = serde_json::json!({
+                    "selection":{"scope":{"kind":"system"},"origins":"generated","filter":{"kind":"all"}},
+                    "knowledge":"complete_inventory","generated":[],"authored":[],"outside":[],"refused":[],
+                    "authored_sources":{},"counts":{"generated":0,"authored":0,"outside":0,"refused":0}
+                });
+            }
+            let suite = AdmittedSuite::from_json(&document.to_string()).unwrap();
+            let constructed = std::cell::Cell::new(0);
+            assert!(execute(&suite, "1", || constructed.set(constructed.get() + 1)).is_err());
+            assert_eq!(
+                constructed.get(),
+                0,
+                "report choice must precede all target effects"
+            );
+            execute(&suite, "2", || constructed.set(constructed.get() + 1)).unwrap();
+            assert_eq!(constructed.get(), 1);
+        }
+    }
+
     #[test]
     fn suite5_pair_refusal_precedes_target_construction() {
         let original = serde_json::json!({

@@ -771,7 +771,7 @@ fn command_handler(
                 out,
                 "            json::member(&mut body, \"error\");\n            \
                  json::push_text(&mut body, {:?});",
-                declared.name.to_string()
+                declared.wire_code()
             );
             if !declared.fields.is_empty() {
                 let _ = writeln!(

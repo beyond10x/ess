@@ -97,7 +97,7 @@ the row says otherwise; it does not imply that those bytes are hashed.
 
 | Document and discriminator | Version/identity carried separately | Reader and byte contract |
 |---|---|---|
-| Authored specification: `format: ess/1` or `ess/2` | Specification `vN` | `RawSpecFile::parse`, assembly/validation and compilation. Format parsing checks syntax; semantic support is majors 1 and 2. Binary64 requires major 2 at every declared position; map keys refuse. No canonical raw-source hash. [Source][spec] |
+| Authored specification: `format: ess/1`, `ess/2`, `ess/3` or `ess/4` | Specification `vN` | `RawSpecFile::parse`, assembly/validation and compilation. Binary64 requires major 2 or later at every declared position; map keys refuse. Unreleased major 3 adds bounded binding accessors, ordered list selection, periodic host causes, subject-state guards and clock-reading attachments; earlier source formats refuse those declarations. Unreleased major 4 adds error naming, typed command responses and explicit emitted-payload ownership; majors 1–3 preserve sparse payload semantics. No canonical raw-source hash. [Source][spec] |
 | Compiled `EssIr`: **unversioned** | Numeric specification major | Compiler-minted, Serialize-only; no general persisted-IR reader. Pretty JSON output; **compiled-model** digest uses compact bytes instead. There is no current `ess-ir/1` marker. [Source][ir] |
 | Authored composition: `format: ess-composition/1` with a **services array** | Composition/service keys, system/version, selected component and exact compiled-model digest | Closed JSON/YAML DTO, then `compile` checks identity and selected-surface membership against supplied services. Pretty canonical JSON; no whole-composition digest. [Source][composition] |
 | Compiled composition: `format: ess-composition/1` with a **services map** | Resolved imported model identities, components and selected named references | Serialize-only compiler output; no complete payload or codec definitions. The authored reader does not read this shape. Pretty JSON; model digests remain references. [Source][composition] |
@@ -110,6 +110,7 @@ the row says otherwise; it does not imply that those bytes are hashed.
 | `target.json`: **unversioned** `TargetReport` | Target name and specification provenance | Successful Go/Web/Clap synthesis includes this refusal/weakening report; successful Rust has `target: None` and no target metadata. No persisted admission reader. Unchanged pretty JSON and `TARGET.md`; provenance references, no report-file hash. [Source][synthesis] |
 | Complete failure: `format: ess-target-failure/1` | Target `rust` or `web`; unchanged neutral plan and its provenance | Serialize-only `TargetFailure` has `format`, `target`, `plan`, nonempty `causes`; private construction, read-only accessors, no Deserialize/admission reader. Typed pretty JSON+LF or CLI YAML; no failure-file digest or artifacts. [Source][target-failure] |
 | Complete failure: `format: ess-target-failure/2` | Target `go` or `clap`; unchanged neutral plan and provenance | Located finite Binary64 codec refusal, or Go missing-type-owner refusal, with the same failure fields and no artifacts. Rust/Web keep target-failure/1. [Source][target-failure] |
+| Unreleased complete failure: `format: ess-target-failure/3` | Target and originating model provenance | Selected for accessor/selection plans, periodic causes or clock-reading attachments, including early failures. Includes bounded-output and required-periodic-host causes. Same envelope fields and no artifacts. Legacy models retain /1 or /2 output. [Source][target-failure] |
 
 Composition selects commands from the component's `accepts` and views from its owned domains.
 Its named-type traversal covers command inputs, event/error fields and query row shapes/fields,
@@ -134,7 +135,9 @@ whole requested workspace, even if some modules could be emitted. `Ok` retains t
 Each failure cause has a `code`, nonempty sorted unique `sources`, and nonempty `detail`; causes
 are also sorted and deduplicated. Current codes are `invalid-identifier`, `symbol-collision`,
 `path-collision`, `recursive-layout`, `binding-assignment`, `missing-type-owner`, `wire-collision`
-and `missing-representation`. A plan with zero capabilities can still fail. The typed error
+and `missing-representation`. Unreleased format /3 also admits `accessor-resource`
+when bounded accessor generation exceeds its output budget, and `selection-constraint`
+when list selection requires invariant or reading validation outside its supported capability. A plan with zero capabilities can still fail. The typed error
 implements `Display` and `std::error::Error`; it carries no independent digest.
 Go checks every named type against the actual domain type rosters before package allocation,
 including unreferenced types. A missing owner returns `missing-type-owner` with that qualified
@@ -242,15 +245,19 @@ format's canonical digest profile or provide remote attachment proof. See the
 | Document and discriminator | Separate identity | Reader and byte contract |
 |---|---|---|
 | `format: ess-diff/1` | Before/after compiled-model digests and specification majors | Legacy vocabulary/bytes retained; raw closed DTO → validated delta. Explicit legacy writing refuses new-only kinds. Pretty JSON; no delta-file hash. [Writer][delta], [reader][delta-reader] |
-| **Default** `format: ess-diff/2` | Same endpoint identities | Supported delta majors are 1 and 2. Admission checks ids, relations, order, uniqueness and same-system identity; serialization checks the selected vocabulary. Pretty JSON. [Source][delta] |
-| **Current** `format: ess-impact/3` | Embedded /2 delta, optional suite and artifact identities | `ess_diff::impact` returns `EssImpact` with 26 dependency relations; no persisted report reader. Pretty JSON; references input digests. [Source][impact] |
-| Authored **`type: ess-scenario/1`** | Domain/scenario identity and purpose | Closed authored DTO, then compilation against IR. No raw-source canonical digest. [Source][authored] |
+| **Default** `format: ess-diff/2` | Same endpoint identities | Supported delta majors are 1, 2 and 3; legacy changes retain /2. Admission checks ids, relations, order, uniqueness and same-system identity; serialization checks the selected vocabulary. Pretty JSON. [Source][delta] |
+| Unreleased `format: ess-diff/3` | Same endpoint identities | New periodic-cause, selection-plan and clock-reading-contract changes retain typed before/after values. Explicit /1 or /2 writing refuses these variants. [Source][delta] |
+| Unreleased `format: ess-diff/4` | Same endpoint identities | Error naming, command response declarations and response/generated payload source changes. Earlier delta writers refuse this vocabulary; legacy-only changes keep their existing formats. [Source][delta] |
+| **Current** `format: ess-impact/3` | Embedded versioned delta, optional suite and artifact identities | `ess_diff::impact` returns `EssImpact` with typed dependency relations; no persisted report reader. Pretty JSON; references input digests. [Source][impact] |
+| Authored **`type: ess-scenario/1`** or unreleased **`ess-scenario/2`** | Domain/scenario identity and purpose | Closed authored DTO, then compilation against IR. /2 adds typed backend entity setup; /1 refuses setup fields. No raw-source canonical digest. [Source][authored] |
 | Suite **`provenance.suite_version: ess-conformance/4`** | Specification `vN`, model and whole-contract digests | Historical Deserialize/from_json parses an unadmitted DTO. Original-byte admission checks the closed, major-specific vocabulary before execution; serialize-once admission of a DTO binds only its newly serialized bytes. Suite bytes/defaults stay frozen; report/2 separately carries exact identity. [Source][suite] |
 | Rust `format: ess-conformance-report/1` | Model digest, implementation and suite-version claim | Checked closed reader validates version/counts/list/status; it does not establish exact-suite coverage or unique opaque result ids. Pretty JSON; unsigned u64 `completed_at`. [Source][report] |
 | Go `format: ess-conformance-report/1` | Same claims, Go failed/skipped vocabulary | Generated Go writer; current Rust admission accommodates its non-pass vocabulary. Indented JSON+LF, signed int64 `completed_at`; no cross-producer byte/range equivalence is implied. [Source][go-report] |
 | Default detailed `ConformanceReport`: **unversioned** | Suite provenance, implementation, run/scenario identities | Detailed CLI JSON/YAML is distinct from standalone `--report-out` JSON. Serialize-only; pretty canonical JSON, no report-file or exact-suite hash. [Source][detailed-report] |
-| Opt-in `ess-conformance-report/2` and `ess-conformance-run/2` | Exact original suite/1–5 bytes, producer profile and five outcome categories | Separate standalone and detailed surfaces with paired readers. Sorted UTF-8 object keys, two-space JSON plus LF, exact unsigned u64 counts/timestamps. Legacy coverage remains unknown; complete nonempty suite/5 selection can qualify. [Count contracts][count-report] |
+| Opt-in `ess-conformance-report/2` and `ess-conformance-run/2` | Exact original suite/1–7 bytes, producer profile and five outcome categories | Separate standalone and detailed surfaces with paired readers. Sorted UTF-8 object keys, two-space JSON plus LF, exact unsigned u64 counts/timestamps. Ordinary coverage remains unknown; complete nonempty suite/5 or /7 selection can qualify. Suites /6 and /7 are unreleased. [Count contracts][count-report] |
 | Opt-in `provenance.suite_version: ess-conformance/5` | Model/contract provenance and complete declared selection inventory | Closed original-byte admission retains source ownership, known outside IDs and every refusal occurrence. Explicit selections require exact parent input. [Coverage contract][coverage] |
+| Unreleased `provenance.suite_version: ess-conformance/6` or `ess-conformance/7` | Existing provenance; /7 also carries declared coverage | Conditional accessor, entity setup, selection, periodic and clock-observation vocabulary: /6 is ordinary, /7 retains the /5 coverage and exact-parent contract. Execution requires existing report/2; report/1 refuses before target callbacks. Existing /4 and /5 bytes remain unchanged. [Accessor observation](../guides/verify-conformance.md#observe-bounded-binding-accessors) |
+| Unreleased `provenance.suite_version: ess-conformance/8` or `ess-conformance/9` | Existing provenance; /9 also carries declared coverage | Typed command-response observations compare an invocation's actual response with its emitted event payload. Structured text predicates requiring lossless literal decoding also select these versions. /8 is ordinary; /9 retains exact-parent coverage lineage. Rust and generated Go require report/2; older suite envelopes refuse the new vocabulary before execution. Browser execution retains explicit refusals for unsupported steps. |
 | `format: ess-conformance-input/1` | Selected inner original bytes and full original parent chain | Closed format/suite_json/parent_suites carrier; complete admission checks original references and typed lineage. Only selected inner bytes are hashed. [Coverage contract][coverage] |
 | `format: ess-conformance-replay/1` | Paired typed model, exact selected suite reference and input | Closed format/model/suite/input; browser admission precedes replay state. Reduced projection, no execution evidence or full model digest reconstruction. [Replay contract][coverage-replay] |
 
@@ -344,12 +351,13 @@ Generic String deserialization does not perform that check. Cargo synthesis stam
 not validate TOML, and a docs document has per-page stamps rather than one artifact stamp.
 [Stamp reader][stamp].
 
-Explicit report **/2** and detailed **ess-conformance-run/2** pair admitted original suite/1–5
-bytes under `sha256-json-bytes/1`. Legacy suite/1–4 coverage remains unknown, including all-pass runs.
+Explicit report **/2** and detailed **ess-conformance-run/2** pair admitted original suite/1–7
+bytes under `sha256-json-bytes/1`; support for /6 and /7 is unreleased. Ordinary suite/1–4 and /6 coverage remains unknown, including all-pass runs.
 Suite **/5** adds a closed declared inventory: exact selection, origin/source ownership, outside
 scenarios and every refusal occurrence. Only nonempty all-pass execution with complete inventory
-and no in-scope refusal qualifies for that exact selection. Defaults remain suite/4, report/1
-and diagnostic execution. Suite/5 with report/1 refuses before execution, including without an
+and no in-scope refusal qualifies for that exact selection. Suite/7 retains these rules with
+extended observation/setup vocabulary. Legacy defaults remain suite/4, report/1 and diagnostic execution;
+an extended suite requires explicit report/2. Suites /5, /6 and /7 with report/1 refuse before execution, including without an
 output destination or with allow-incomplete. Report/1 keeps its historical non-pass aggregate and
 does not establish exact suite-byte identity. [Coverage workflow](../guides/verify-conformance.md#opt-into-declared-coverage).
 

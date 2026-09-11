@@ -30,6 +30,683 @@ use ess_domain::system::Source as SpecSource;
 
 // ---- the models under test ---------------------------------------------------------------------
 
+const CALL_HISTORY_SETUP_MODEL: &str = r"
+format: ess/1
+system: calls
+version: v1
+domain: calls.history
+entities:
+  - name: calls.history.CallRecord
+    identity: {name: call_id, type: Uuid}
+    fields:
+      - {name: started_at, type: Timestamp}
+      - {name: duration_seconds, type: Integer}
+      - {name: note, type: 'Optional<String>'}
+    lifecycle:
+      initial: Completed
+      states: [Completed]
+      terminal: [Completed]
+    invariants:
+      - duration_seconds >= 0
+views:
+  - name: calls.history.CallHistory
+    source: calls.history.CallRecord
+    consistency: read_your_writes
+    order_by: [started_at desc]
+    fields:
+      - {name: call_id, type: Uuid}
+      - {name: started_at, type: Timestamp}
+      - {name: duration_seconds, type: Integer}
+";
+
+const CALL_HISTORY_SETUP: &str = r"
+type: ess-scenario/2
+domain: calls.history
+scenario: backend-history
+summary: Two backend records retain their values and descending-time order.
+arrange:
+  - instance: earlier
+    entity: calls.history.CallRecord
+    setup:
+      identity: 00000000-0000-4000-8000-000000000001
+      fields: {started_at: '2026-01-05T09:00:00Z', duration_seconds: 12}
+      state: Completed
+  - instance: later
+    entity: calls.history.CallRecord
+    setup:
+      identity: 00000000-0000-4000-8000-000000000002
+      fields: {started_at: '2026-01-05T09:01:00Z', duration_seconds: 24, note: null}
+      state: Completed
+assert:
+  - view: calls.history.CallHistory
+    contains: {call_id: {$instance: earlier}, duration_seconds: 12}
+  - view: calls.history.CallHistory
+    contains: {call_id: {$instance: later}, duration_seconds: 24}
+  - view: calls.history.CallHistory
+    counts: {at_least: 2, at_most: 2}
+  - view: calls.history.CallHistory
+    at: {row: first, fields: {call_id: {$instance: later}}}
+";
+
+#[test]
+fn entity_setup_compiles_real_rows_without_a_creator_or_dummy_command() {
+    let ir = fixture(CALL_HISTORY_SETUP_MODEL);
+    assert!(ir.commands().is_empty());
+    let result = authoring(&ir, CALL_HISTORY_SETUP);
+    assert!(result.is_complete(), "{:?}", result.refusals);
+    let steps = &result.scenarios.values().next().unwrap().steps;
+    let json = serde_json::to_value(steps).unwrap();
+    assert_eq!(json[0]["step"], "establish_entity");
+    assert_eq!(json[1]["step"], "establish_entity");
+    assert!(json[0]["fields"].get("note").is_none());
+    assert_eq!(json[1]["fields"]["note"], serde_json::Value::Null);
+    assert!(!steps
+        .iter()
+        .any(|step| matches!(step, ScenarioStep::ExecuteCommand { .. })));
+}
+
+#[test]
+fn entity_setup_requires_valid_complete_nonduplicate_declared_state() {
+    let ir = fixture(CALL_HISTORY_SETUP_MODEL);
+    assert!(authoring(&ir, CALL_HISTORY_SETUP).is_complete());
+    for invalid in [
+        CALL_HISTORY_SETUP.replace("duration_seconds: 12", "duration_seconds: -1"),
+        CALL_HISTORY_SETUP.replace("duration_seconds: 12", "duration_seconds: wrong"),
+        CALL_HISTORY_SETUP.replace(", duration_seconds: 12", ""),
+        CALL_HISTORY_SETUP.replace("duration_seconds: 12", "duration_seconds: 12, unknown: 3"),
+        CALL_HISTORY_SETUP.replace("state: Completed", "state: Missing"),
+        CALL_HISTORY_SETUP.replace("instance: later", "instance: earlier"),
+        CALL_HISTORY_SETUP.replace("000000000002", "000000000001"),
+        CALL_HISTORY_SETUP.replace("type: ess-scenario/2", "type: ess-scenario/1"),
+        CALL_HISTORY_SETUP
+            .split("assert:")
+            .next()
+            .unwrap()
+            .to_owned(),
+    ] {
+        assert!(
+            !authoring(&ir, &invalid).is_complete(),
+            "accepted invalid setup: {invalid}"
+        );
+    }
+}
+
+#[test]
+fn entity_setup_invariant_unknown_refuses_and_identity_namespace_is_qualified() {
+    let unknown_model =
+        CALL_HISTORY_SETUP_MODEL.replace("duration_seconds >= 0", "note == recorded");
+    let unknown = authoring(&fixture(&unknown_model), CALL_HISTORY_SETUP);
+    assert!(!unknown.is_complete());
+    assert!(unknown
+        .refusals
+        .iter()
+        .any(|refusal| refusal.to_string().contains("Unknown")));
+    let two_entities = CALL_HISTORY_SETUP_MODEL.replace(
+        "views:",
+        r"  - name: calls.history.OtherRecord
+    identity: {name: call_id, type: Uuid}
+    fields:
+      - {name: started_at, type: Timestamp}
+      - {name: duration_seconds, type: Integer}
+      - {name: note, type: 'Optional<String>'}
+    lifecycle: {initial: Completed, states: [Completed], terminal: [Completed]}
+views:",
+    );
+    let source = CALL_HISTORY_SETUP
+        .replace(
+            "instance: later\n    entity: calls.history.CallRecord",
+            "instance: later\n    entity: calls.history.OtherRecord",
+        )
+        .replace("000000000002", "000000000001");
+    let result = authoring(&fixture(&two_entities), &source);
+    assert!(result.is_complete(), "{:?}", result.refusals);
+}
+
+#[test]
+fn entity_setup_checks_collection_members_and_value_object_invariants() {
+    for (kind, valid, invalid) in [
+        ("List<Integer>", "[1]", "[wrong]"),
+        ("Map<String, Integer>", "{key: 1}", "{key: wrong}"),
+    ] {
+        let model = CALL_HISTORY_SETUP_MODEL.replace(
+            "    lifecycle:",
+            &format!("      - {{name: extra, type: '{kind}'}}\n    lifecycle:"),
+        );
+        let ir = fixture(&model);
+        let source = CALL_HISTORY_SETUP.replace(
+            "fields: {started_at:",
+            &format!("fields: {{extra: {valid}, started_at:"),
+        );
+        assert!(authoring(&ir, &source).is_complete());
+        assert!(
+            !authoring(&ir, &source.replace(valid, invalid)).is_complete(),
+            "accepted invalid member of {kind}"
+        );
+    }
+    let model = CALL_HISTORY_SETUP_MODEL.replace("entities:", "types:\n  - name: calls.history.Duration\n    kind: newtype\n    of: Integer\n    invariants: ['value >= 0']\nentities:")
+        .replace("duration_seconds, type: Integer", "duration_seconds, type: calls.history.Duration")
+        .replace("duration_seconds >= 0", "duration_seconds >= -100");
+    let ir = fixture(&model);
+    assert!(authoring(&ir, CALL_HISTORY_SETUP).is_complete());
+    assert!(!authoring(
+        &ir,
+        &CALL_HISTORY_SETUP.replace("duration_seconds: 12", "duration_seconds: -1")
+    )
+    .is_complete());
+}
+
+#[test]
+fn entity_setup_checks_union_tags_payloads_and_nested_struct_invariants() {
+    for tag in ["kind", "value"] {
+        let content = if tag == "value" { "content" } else { "value" };
+        let model = CALL_HISTORY_SETUP_MODEL.replace("entities:", &format!("types:\n  - name: calls.history.Extra\n    kind: union\n    tag: {tag}\n    variants: {{number: calls.history.Positive}}\n  - name: calls.history.Positive\n    kind: struct\n    fields: [{{name: amount, type: Integer}}]\n    invariants: ['amount >= 0']\nentities:"))
+            .replace("    lifecycle:", "      - {name: extra, type: calls.history.Extra}\n    lifecycle:");
+        let ir = fixture(&model);
+        let payload = format!("{{{tag}: number, {content}: {{amount: 1}}}}");
+        let source = CALL_HISTORY_SETUP.replace(
+            "fields: {started_at:",
+            &format!("fields: {{extra: {payload}, started_at:"),
+        );
+        let valid = authoring(&ir, &source);
+        assert!(valid.is_complete(), "{:?}", valid.refusals);
+        for invalid in [
+            source.replace("amount: 1", "amount: -1"),
+            source.replace("amount: 1", "other: 1"),
+            source.replace(&format!("{tag}: number"), &format!("{tag}: missing")),
+            source.replace("amount: 1", "amount: wrong"),
+        ] {
+            assert!(!authoring(&ir, &invalid).is_complete());
+        }
+    }
+}
+
+#[test]
+fn adversary_entity_setup_null_identity_is_refused_at_source_validation() {
+    let model = CALL_HISTORY_SETUP_MODEL.replace("type: Uuid", "type: 'Optional<Uuid>'");
+    let ir = fixture(&model);
+    assert!(authoring(&ir, CALL_HISTORY_SETUP).is_complete());
+    let source = CALL_HISTORY_SETUP.replace(
+        "identity: 00000000-0000-4000-8000-000000000001",
+        "identity: null",
+    );
+    let result = authoring(&ir, &source);
+    if result.is_complete() {
+        let mut suite = ess_conformance::synthesize::synthesize(&ir).suite;
+        suite.provenance.suite_version =
+            ess_conformance::scenario::SuiteFormat::parse("ess-conformance/6").unwrap();
+        suite.scenarios = result.scenarios.clone();
+        let error = ess_conformance::AdmittedSuite::from_suite(&suite).unwrap_err();
+        assert!(
+            error.to_string().contains("identity cannot be null"),
+            "{error}"
+        );
+    }
+    assert!(
+        !result.is_complete(),
+        "source compiler accepted null identity even though its produced suite cannot be admitted"
+    );
+}
+
+mod entity_setup_execution {
+    use super::*;
+    use ess_conformance::runner::Runner;
+    use ess_conformance::target::*;
+    use ess_primitives::node::Node;
+    use std::cell::RefCell;
+
+    #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+    enum Behavior {
+        Good,
+        Empty,
+        Wrong,
+        Reversed,
+        Unsupported,
+        Borrowed,
+    }
+
+    struct Backend<'a> {
+        ir: &'a EssIr,
+        behavior: Behavior,
+        rows: RefCell<Vec<ViewRow>>,
+    }
+
+    impl ConformanceTarget for Backend<'_> {
+        fn identity(&self) -> Result<ImplementationIdentity, TargetError> {
+            Ok(ImplementationIdentity::new("call-history-fixture", "1"))
+        }
+        fn begin_scenario(&self, _: &ScenarioContext) -> Result<(), TargetError> {
+            if self.behavior != Behavior::Borrowed {
+                self.rows.borrow_mut().clear();
+            }
+            Ok(())
+        }
+        fn end_scenario(&self, _: &ScenarioContext) -> Result<(), TargetError> {
+            if self.behavior != Behavior::Borrowed {
+                self.rows.borrow_mut().clear();
+            }
+            Ok(())
+        }
+        fn establish_entity(&self, request: EntitySetupRequest) -> Result<(), TargetError> {
+            if self.behavior == Behavior::Unsupported {
+                return Err(TargetError::unsupported(
+                    "entity setup",
+                    "backend cannot establish rows",
+                ));
+            }
+            ess_conformance::input::validate_entity_setup(
+                self.ir,
+                &request.entity,
+                &request.identity,
+                &request.fields,
+                &request.state,
+            )
+            .map_err(|detail| TargetError::unavailable("invalid entity setup", detail))?;
+            if self.behavior == Behavior::Empty {
+                return Ok(());
+            }
+            let mut row = request.fields;
+            row.insert("call_id".into(), request.identity);
+            if self.behavior == Behavior::Wrong {
+                row.insert("duration_seconds".into(), Node::Number(0_u32.into()));
+            }
+            self.rows.borrow_mut().push(row);
+            Ok(())
+        }
+        fn query_view(
+            &self,
+            request: SemanticViewRequest,
+        ) -> Result<SemanticViewResult, TargetError> {
+            assert_eq!(request.view.to_string(), "calls.history.CallHistory");
+            let mut rows = self.rows.borrow().clone();
+            rows.sort_by_key(|row| match &row["started_at"] {
+                Node::Text(text) => text.clone(),
+                _ => panic!("validated timestamp"),
+            });
+            if self.behavior != Behavior::Reversed {
+                rows.reverse();
+            }
+            Ok(SemanticViewResult::of(rows))
+        }
+        fn execute_command(
+            &self,
+            _: SemanticCommandRequest,
+        ) -> Result<SemanticCommandResult, TargetError> {
+            panic!("CallRecord has no creator command")
+        }
+        fn observe_events(
+            &self,
+            _: EventObservationRequest,
+        ) -> Result<Vec<ObservedEvent>, TargetError> {
+            panic!("setup must not manufacture events")
+        }
+        fn configure_external_outcome(&self, _: ExternalOutcomeControl) -> Result<(), TargetError> {
+            panic!("setup is not an external outcome")
+        }
+        fn redeliver_event(&self, _: RedeliveryRequest) -> Result<(), TargetError> {
+            panic!("setup has no event history")
+        }
+    }
+
+    fn suite(ir: &EssIr) -> ConformanceSuite {
+        let mut result = ess_conformance::synthesize::synthesize(ir).suite;
+        result.provenance.suite_version =
+            ess_conformance::scenario::SuiteFormat::parse("ess-conformance/6").unwrap();
+        let first = authoring(ir, CALL_HISTORY_SETUP);
+        assert!(first.is_complete(), "{:?}", first.refusals);
+        result.scenarios = first.scenarios;
+        let second = CALL_HISTORY_SETUP
+            .replace("backend-history", "second-history")
+            .replace("000000000001", "000000000003")
+            .replace("000000000002", "000000000004");
+        let second = authoring(ir, &second);
+        assert!(second.is_complete(), "{:?}", second.refusals);
+        result.scenarios.extend(second.scenarios);
+        result
+    }
+
+    #[test]
+    fn entity_setup_target_storage_decides_values_membership_order_and_isolation() {
+        let ir = fixture(CALL_HISTORY_SETUP_MODEL);
+        let suite = suite(&ir);
+        for behavior in [
+            Behavior::Good,
+            Behavior::Empty,
+            Behavior::Wrong,
+            Behavior::Reversed,
+            Behavior::Unsupported,
+            Behavior::Borrowed,
+        ] {
+            let target = Backend {
+                ir: &ir,
+                behavior,
+                rows: RefCell::default(),
+            };
+            let admitted = ess_conformance::AdmittedSuite::from_suite(&suite).unwrap();
+            let report = Runner::for_suite(&suite)
+                .run_admitted(&admitted, &target)
+                .into_report();
+            assert_eq!(
+                report.status == ess_conformance::report::ConformanceStatus::Passed,
+                behavior == Behavior::Good,
+                "{behavior:?}: {report:?}"
+            );
+            if behavior != Behavior::Borrowed {
+                assert!(target.rows.borrow().is_empty());
+            }
+        }
+        let admitted = ess_conformance::AdmittedSuite::from_suite(&suite).unwrap();
+        let run = Runner::for_suite(&suite)
+            .run_admitted(&admitted, &ess_conformance::reference::Billing::new());
+        let report = ess_conformance::CountReport::from_run(&run, &admitted).unwrap();
+        assert_eq!(report.counts().unsupported, 2);
+        assert_eq!(report.counts().passed, 0);
+    }
+
+    #[test]
+    fn entity_setup_manual_suite_refuses_duplicates_and_setup_only_before_target() {
+        let ir = fixture(CALL_HISTORY_SETUP_MODEL);
+        let suite = suite(&ir);
+        let mut duplicate = suite.clone();
+        let steps = &mut duplicate.scenarios.values_mut().next().unwrap().steps;
+        steps.insert(1, steps[0].clone());
+        assert!(ess_conformance::AdmittedSuite::from_suite(&duplicate).is_err());
+        let mut duplicate_identity = suite.clone();
+        let steps = &mut duplicate_identity
+            .scenarios
+            .values_mut()
+            .next()
+            .unwrap()
+            .steps;
+        let identity = match &steps[0] {
+            ScenarioStep::EstablishEntity { identity, .. } => identity.clone(),
+            _ => unreachable!(),
+        };
+        if let ScenarioStep::EstablishEntity {
+            identity: second, ..
+        } = &mut steps[1]
+        {
+            *second = identity;
+        }
+        assert!(ess_conformance::AdmittedSuite::from_suite(&duplicate_identity).is_err());
+        let mut no_assertion = suite.clone();
+        no_assertion
+            .scenarios
+            .values_mut()
+            .next()
+            .unwrap()
+            .steps
+            .truncate(2);
+        assert!(ess_conformance::AdmittedSuite::from_suite(&no_assertion).is_err());
+        let mut old = suite;
+        old.provenance.suite_version =
+            ess_conformance::scenario::SuiteFormat::parse("ess-conformance/4").unwrap();
+        assert!(ess_conformance::AdmittedSuite::from_suite(&old).is_err());
+        assert!(old.to_canonical_json().is_err());
+        assert!(ess_conformance::go::emit(&old).is_err());
+    }
+
+    #[test]
+    fn entity_setup_direct_writers_refuse_unbounded_literals_and_assertions_before_setup() {
+        let ir = fixture(CALL_HISTORY_SETUP_MODEL);
+        let mut nested = suite(&ir);
+        let mut value = Node::Null;
+        for _ in 0..121 {
+            value = Node::Seq(vec![value]);
+        }
+        if let ScenarioStep::EstablishEntity { fields, .. } =
+            &mut nested.scenarios.values_mut().next().unwrap().steps[0]
+        {
+            fields.insert("note".into(), value);
+        }
+        assert!(nested.to_canonical_json().is_err());
+        assert!(ess_conformance::go::emit(&nested).is_err());
+        let mut late = suite(&ir);
+        late.scenarios
+            .values_mut()
+            .next()
+            .unwrap()
+            .steps
+            .rotate_left(2);
+        assert!(late.to_canonical_json().is_err());
+    }
+
+    #[test]
+    fn entity_setup_generated_go_reads_established_backend_rows_and_rejects_faults() {
+        let ir = fixture(CALL_HISTORY_SETUP_MODEL);
+        let suite = suite(&ir);
+        let directory =
+            std::env::temp_dir().join(format!("ess-arrangement-go-{}", std::process::id()));
+        std::fs::create_dir_all(&directory).unwrap();
+        for artifact in ess_conformance::go::emit(&suite).unwrap() {
+            let filename = Path::new(&artifact.path).file_name().unwrap();
+            std::fs::write(directory.join(filename), artifact.contents).unwrap();
+        }
+        std::fs::write(
+            directory.join("go.mod"),
+            "module example.test/entitysetup\n\ngo 1.23\n",
+        )
+        .unwrap();
+        std::fs::write(directory.join("arrangement_test.go"), GO_BACKEND).unwrap();
+        eprintln!("entity setup Go fixture: {}", directory.display());
+        for behavior in [
+            "good",
+            "empty",
+            "wrong",
+            "reversed",
+            "unsupported",
+            "absent-capability",
+            "borrowed",
+        ] {
+            let output = std::process::Command::new("go")
+                .args(["test", "-count=1", "-v", "."])
+                .current_dir(&directory)
+                .env("GOTOOLCHAIN", "local")
+                .env("GOPROXY", "off")
+                .env_remove("ESS_CONFORMANCE_STRICT")
+                .env_remove("ESS_CONFORMANCE_ALLOW_INCOMPLETE")
+                .env("ESS_REPORT_FORMAT", "2")
+                .env(
+                    "ESS_REPORT_OUT",
+                    directory.join(format!("{behavior}-report.json")),
+                )
+                .env("ESS_SETUP_FAULT", behavior)
+                .output()
+                .expect("Go is required for native conformance parity");
+            eprintln!(
+                "Go {behavior}, exit {:?}:\n{}\n{}",
+                output.status.code(),
+                String::from_utf8_lossy(&output.stdout),
+                String::from_utf8_lossy(&output.stderr)
+            );
+            assert_eq!(
+                output.status.success(),
+                matches!(behavior, "good" | "unsupported" | "absent-capability"),
+                "{behavior}: {}",
+                String::from_utf8_lossy(&output.stderr)
+            );
+            let report: serde_json::Value = serde_json::from_str(
+                &std::fs::read_to_string(directory.join(format!("{behavior}-report.json")))
+                    .unwrap(),
+            )
+            .unwrap();
+            let expected = match behavior {
+                "good" => "passed",
+                "unsupported" | "absent-capability" => "inconclusive",
+                _ => "failed",
+            };
+            assert_eq!(report["execution_status"], expected, "{behavior}: {report}");
+            let admitted = ess_conformance::AdmittedSuite::from_suite(&suite).unwrap();
+            let checked =
+                ess_conformance::CountReport::from_json(&report.to_string(), &admitted).unwrap();
+            let checked_status = match behavior {
+                "good" => ess_conformance::CountStatus::Passed,
+                "unsupported" | "absent-capability" => ess_conformance::CountStatus::Inconclusive,
+                _ => ess_conformance::CountStatus::Failed,
+            };
+            assert_eq!(checked.execution_status(), checked_status);
+            if matches!(behavior, "unsupported" | "absent-capability") {
+                assert_eq!(report["counts"]["skipped"], 2);
+                assert_eq!(report["counts"]["passed"], 0);
+                assert_ne!(report["conformance_status"], "passed");
+            }
+            assert!(
+                String::from_utf8_lossy(&output.stdout).contains("TestEntitySetup"),
+                "Go must execute the deciding test"
+            );
+        }
+    }
+
+    fn stale_setup_observation_suite(ir: &EssIr, fresh: bool) -> ConformanceSuite {
+        let mut suite = suite(ir);
+        let id = suite.scenarios.keys().next().unwrap().clone();
+        suite.scenarios.retain(|key, _| key == &id);
+        let scenario = suite.scenarios.values_mut().next().unwrap();
+        let setup = scenario.steps[0].clone();
+        let query = scenario
+            .steps
+            .iter()
+            .find(|step| matches!(step, ScenarioStep::QueryView { .. }))
+            .unwrap()
+            .clone();
+        let view = match &query {
+            ScenarioStep::QueryView { view, .. } => view.clone(),
+            _ => unreachable!(),
+        };
+        let count = usize::from(fresh);
+        let assertion = ScenarioStep::ExpectView {
+            view,
+            expectation: ViewExpectation::Counts {
+                at_least: Some(count),
+                at_most: Some(count),
+            },
+        };
+        scenario.steps = if fresh {
+            vec![setup, query, assertion]
+        } else {
+            vec![query, setup, assertion]
+        };
+        suite
+    }
+
+    #[test]
+    fn adversary_entity_setup_cannot_pass_by_asserting_a_pre_setup_snapshot() {
+        let ir = fixture(CALL_HISTORY_SETUP_MODEL);
+        let target = Backend {
+            ir: &ir,
+            behavior: Behavior::Good,
+            rows: RefCell::default(),
+        };
+        // The adapter establishes real queried storage; a fresh query observes exactly one row.
+        let fresh = stale_setup_observation_suite(&ir, true);
+        let admitted = ess_conformance::AdmittedSuite::from_suite(&fresh).unwrap();
+        let report = Runner::for_suite(&fresh).run_admitted(&admitted, &target);
+        assert_eq!(
+            report.status,
+            ess_conformance::report::ConformanceStatus::Passed
+        );
+
+        // An assertion after setup must not discharge the setup obligation using an older query.
+        let stale = stale_setup_observation_suite(&ir, false);
+        if let Ok(admitted) = ess_conformance::AdmittedSuite::from_suite(&stale) {
+            let report = Runner::for_suite(&stale).run_admitted(&admitted, &target);
+            assert_ne!(report.status, ess_conformance::report::ConformanceStatus::Passed,
+                "zero-row assertion passed from a snapshot taken before the acknowledged setup: {report:?}");
+        }
+    }
+
+    #[test]
+    fn adversary_entity_setup_go_cannot_pass_by_asserting_a_pre_setup_snapshot() {
+        let ir = fixture(CALL_HISTORY_SETUP_MODEL);
+        let suite = stale_setup_observation_suite(&ir, false);
+        let Ok(artifacts) = ess_conformance::go::emit(&suite) else {
+            return;
+        };
+        let directory = std::env::temp_dir().join(format!(
+            "ess-arrangement-adversary-stale-{}",
+            std::process::id()
+        ));
+        std::fs::create_dir_all(&directory).unwrap();
+        for artifact in artifacts {
+            let filename = Path::new(&artifact.path).file_name().unwrap();
+            std::fs::write(directory.join(filename), artifact.contents).unwrap();
+        }
+        std::fs::write(
+            directory.join("go.mod"),
+            "module example.test/entitysetup\n\ngo 1.23\n",
+        )
+        .unwrap();
+        std::fs::write(directory.join("arrangement_test.go"), GO_BACKEND).unwrap();
+        let output = std::process::Command::new("go")
+            .args(["test", "-count=1", "-v", "-run", "^TestEntitySetup$", "."])
+            .current_dir(&directory)
+            .env("GOTOOLCHAIN", "local")
+            .env("GOPROXY", "off")
+            .env_remove("ESS_CONFORMANCE_STRICT")
+            .env_remove("ESS_CONFORMANCE_ALLOW_INCOMPLETE")
+            .env("ESS_REPORT_FORMAT", "2")
+            .env("ESS_REPORT_OUT", directory.join("report.json"))
+            .env("ESS_SETUP_FAULT", "good")
+            .output()
+            .expect("required Go toolchain");
+        let log = format!(
+            "exit: {:?}\n{}\n{}",
+            output.status.code(),
+            String::from_utf8_lossy(&output.stdout),
+            String::from_utf8_lossy(&output.stderr)
+        );
+        std::fs::write(directory.join("go.log"), &log).unwrap();
+        assert!(
+            !output.status.success(),
+            "Go accepted a stale pre-setup snapshot as the final setup assertion:\n{log}"
+        );
+    }
+
+    const GO_BACKEND: &str = r#"package essconform
+import ("encoding/json"; "fmt"; "os"; "sort"; "testing")
+type callBackend struct { rows []map[string]Node; mode string }
+var borrowed []map[string]Node
+func (b *callBackend) Identity() (Identity,error) { return Identity{Name:"call-history-fixture",Version:"1"},nil }
+func (b *callBackend) BeginScenario(ScenarioContext) error { b.rows=nil; if b.mode=="borrowed" { b.rows=borrowed }; return nil }
+func (b *callBackend) EndScenario(ScenarioContext) error { if b.mode=="borrowed" { borrowed=b.rows }; b.rows=nil; return nil }
+func (b *callBackend) EstablishEntity(r EntitySetupRequest) error {
+ if b.mode=="unsupported" { return ErrUnsupported }
+ if r.Entity!="calls.history.CallRecord" || r.State!="Completed" { return fmt.Errorf("undeclared entity/state") }
+ if why:=primitive("uuid",r.Identity); why!="" { return fmt.Errorf("identity: %s",why) }
+ if why:=primitive("timestamp",r.Fields["started_at"]); why!="" { return fmt.Errorf("time: %s",why) }
+ n,ok:=asNumber(r.Fields["duration_seconds"]); if !ok || n<0 || n!=float64(int64(n)) { return fmt.Errorf("invalid duration/invariant") }
+ for key,value:=range r.Fields { switch key { case "started_at","duration_seconds": case "note": if value!=nil { if _,ok:=value.(string); !ok { return fmt.Errorf("invalid Optional String") } }; default: return fmt.Errorf("undeclared field") } }
+ if b.mode=="empty" { return nil }
+ row:=map[string]Node{}; for k,v:=range r.Fields { row[k]=v }; row["call_id"]=r.Identity
+ if b.mode=="wrong" { row["duration_seconds"]=float64(0) }
+ b.rows=append(b.rows,row); return nil
+}
+func (b *callBackend) QueryView(r ViewRequest) (ViewResult,error) {
+ rows:=append([]map[string]Node(nil),b.rows...)
+ sort.Slice(rows,func(i,j int)bool { if b.mode=="reversed" { return rows[i]["started_at"].(string)<rows[j]["started_at"].(string) }; return rows[i]["started_at"].(string)>rows[j]["started_at"].(string) })
+ return ViewResult{Rows:rows},nil
+}
+func (*callBackend) ExecuteCommand(CommandRequest)(CommandResult,error){ panic("no creator command") }
+func (*callBackend) ObserveEvents(EventObservationRequest)([]ObservedEvent,error){ panic("no fabricated events") }
+func (*callBackend) ConfigureExternalOutcome(ExternalOutcomeControl)error{ panic("no fake outcome") }
+func (*callBackend) RedeliverEvent(RedeliveryRequest)error{ panic("no fabricated history") }
+func (*callBackend) ObserveInvocations(InvocationObservationRequest)([]Invocation,error){ panic("no fabricated invocation") }
+func TestEntitySetup(t *testing.T){ Run(t,func()Target{ b:=&callBackend{mode:os.Getenv("ESS_SETUP_FAULT")}; if b.mode=="absent-capability" { return struct{Target}{b} }; return b }) }
+func TestEntitySetupAdmission(t *testing.T) {
+ for _, mutation:=range []func(map[string]any){
+  func(s map[string]any){s["identity"]=nil},
+  func(s map[string]any){s["state"]="bad_state"},
+  func(s map[string]any){s["extra"]="unknown"},
+  func(s map[string]any){s["fields"].(map[string]any)["bad-field"]=1},
+ } {
+  raw,err:=strictJSON(suiteJSON); if err!=nil{t.Fatal(err)}
+  root:=raw.(map[string]any); for _,scenario:=range root["scenarios"].(map[string]any){ mutation(scenario.(map[string]any)["steps"].([]any)[0].(map[string]any)); break }
+  encoded,err:=json.Marshal(raw); if err!=nil{t.Fatal(err)}
+  if _,err:=admitSuite(string(encoded)); err==nil{t.Fatal("malformed setup admitted")}
+ }
+}
+"#;
+}
+
 #[test]
 fn rejected_authored_candidate_needs_are_proved_independently_of_an_outside_survivor() {
     use ess_conformance::{

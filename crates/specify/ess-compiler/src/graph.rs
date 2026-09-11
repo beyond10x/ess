@@ -102,6 +102,8 @@ pub enum DependencyRelation {
     MayInvoke,
     /// A binding reacts to an event.
     ReactsTo,
+    /// A periodic binding requires its declared runtime host component.
+    HostedBy,
     /// A binding invokes a command.
     Invokes,
     /// A binding escalates into an event when its command does not run.
@@ -131,7 +133,7 @@ impl DependencyRelation {
     ///
     /// Written from the same lines as the variants above, so a relation added without a walk that
     /// mints it fails `tests/graph.rs` rather than sitting in the vocabulary unproduced.
-    pub const ALL: [Self; 26] = [
+    pub const ALL: [Self; 27] = [
         Self::DeclaredIn,
         Self::Wraps,
         Self::FieldType,
@@ -147,6 +149,7 @@ impl DependencyRelation {
         Self::Observes,
         Self::MayInvoke,
         Self::ReactsTo,
+        Self::HostedBy,
         Self::Invokes,
         Self::EscalatesTo,
         Self::Maps,
@@ -182,6 +185,7 @@ impl DependencyRelation {
             Self::Observes => "reads the new identity from",
             Self::MayInvoke => "may invoke",
             Self::ReactsTo => "reacts to",
+            Self::HostedBy => "is hosted by",
             Self::Invokes => "invokes",
             Self::EscalatesTo => "escalates into",
             Self::Maps => "maps a value of type",
@@ -615,6 +619,7 @@ impl SemanticDependencyGraph {
             let subject: EssSemanticRef = command.clone().into();
             self.node(subject.clone());
             self.field_edges(&subject, &resolved.input);
+            self.field_edges(&subject, &resolved.response);
 
             for outcome in &resolved.outcomes {
                 let branch: EssSemanticRef =
@@ -732,11 +737,23 @@ impl SemanticDependencyGraph {
         for (name, resolved) in ir.bindings() {
             let subject: EssSemanticRef = BindingRef::new(name.clone()).into();
             self.node(subject.clone());
-            self.edge(
-                subject.clone(),
-                DependencyRelation::ReactsTo,
-                EventRef::from(&resolved.event),
-            );
+            if let Some(event) = resolved.cause.event() {
+                self.edge(
+                    subject.clone(),
+                    DependencyRelation::ReactsTo,
+                    EventRef::from(event),
+                );
+            }
+            if let Some(periodic) = resolved.cause.periodic() {
+                self.edge(
+                    subject.clone(),
+                    DependencyRelation::HostedBy,
+                    ComponentRef::new(periodic.contract.host.owner.clone()),
+                );
+                for field in periodic.context.iter().chain(&periodic.read) {
+                    self.type_edges(&subject, DependencyRelation::Maps, &field.type_ref);
+                }
+            }
             self.edge(
                 subject.clone(),
                 DependencyRelation::Invokes,
@@ -744,6 +761,16 @@ impl SemanticDependencyGraph {
             );
             for mapping in &resolved.mapping {
                 self.type_edges(&subject, DependencyRelation::Maps, &mapping.target_type);
+                if let crate::ir::ResolvedMappingValue::EventAccessor { types, .. } = &mapping.value
+                {
+                    for handle in types.values() {
+                        self.edge(
+                            subject.clone(),
+                            DependencyRelation::Maps,
+                            DeclaredTypeRef::from(handle),
+                        );
+                    }
+                }
             }
             if let Some(handle) = &resolved.escalation {
                 self.edge(

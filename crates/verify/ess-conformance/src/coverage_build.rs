@@ -173,9 +173,6 @@ fn finish_inventory(
         }
     }
     let mut suite = synthesis.suite;
-    suite.provenance.suite_version =
-        crate::scenario::SuiteFormat::parse(coverage::COVERAGE_SUITE_FORMAT)
-            .expect("constant suite version");
     suite.provenance.component = component.map(|c| c.name.to_string());
     let mut owners: BTreeMap<ScenarioId, Retained> = suite
         .scenarios
@@ -240,6 +237,7 @@ fn finish_inventory(
     );
     classify(&mut inventory, &owners, &rejected_needs);
     inventory.sort_and_count()?;
+    suite.provenance.suite_version = coverage_version(&suite, &inventory);
     let original = coverage::suite_document(&suite, &inventory)?;
     AdmittedInput::from_suite(AdmittedSuite::from_json(&original)?)
 }
@@ -470,6 +468,24 @@ fn authored_refusal(
         scope: RefusalScope::InScope,
         needs: Vec::new(),
     })
+}
+
+fn coverage_version(
+    suite: &crate::ConformanceSuite,
+    inventory: &Inventory,
+) -> crate::scenario::SuiteFormat {
+    crate::scenario::SuiteFormat::parse(
+        if crate::response::used_by(suite) || crate::quoted_predicate_format::used_by(suite) {
+            "ess-conformance/9"
+        } else if suite.requires_extended_format()
+            || inventory.refused.iter().any(|r| r.code == "ESS-SYNTH-015")
+        {
+            "ess-conformance/7"
+        } else {
+            coverage::COVERAGE_SUITE_FORMAT
+        },
+    )
+    .expect("constant suite version")
 }
 
 #[cfg(test)]

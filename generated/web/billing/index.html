@@ -470,7 +470,7 @@ function renderModel() {
     element("summary", { text: `${catalog.bindings.length} binding(s)` }),
     table(["binding", "on", "invokes", "delivery", "on failure"], catalog.bindings.map((binding) => [
       element("code", { text: binding.name }),
-      element("code", { text: binding.event }),
+      element("code", { text: binding.event ?? `periodic ${binding.periodic.every}` }),
       element("code", { text: binding.command }),
       binding.delivery,
       binding.on_failure + (binding.escalation ? ` into ${binding.escalation}` : ""),

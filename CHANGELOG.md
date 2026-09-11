@@ -2,6 +2,63 @@
 
 ## [Unreleased]
 
+### Added
+
+- Source `ess/4` declares error wire names without merging semantic error identities.
+  Native HTTP responses honor explicit codes and preserve the qualified-name fallback.
+- Typed command response fields can fill emitted event payloads through explicit
+  response mappings. Source/4 requires complete payload ownership, including explicit
+  generated fields; ordinary suite/8 and coverage suite/9 compare actual returned values.
+  New error and response deltas use `ess-diff/4`.
+
+- Authored `ess-scenario/2` setup establishes typed, isolated backend entity rows
+  for subsequent real view assertions. The optional Rust/Go adapter capability
+  uses suite/6 or coverage suite/7 with explicit report/2.
+- `when_subject_state` in `ess/3` combines a declared held lifecycle state with
+  input guards. Shared bounded coverage and actual identity/state view assertions
+  distinguish equal input applied to different existing states.
+- Fresh conformance synthesis accepts `--compact`; ordered compact JSON plus one
+  newline preserves decoded meaning and retains its own exact suite-byte identity.
+- Opt-in `ess/3` binding accessors read two or three declared field segments from
+  event envelopes. Struct/newtype traversal, Optional and union availability, and
+  whole terminal values have bounded typed plans shared by native Rust and Go.
+  Computed mappings and implicit session context remain unsupported.
+- Accessor observations use ordinary conformance suite/6 or declared-coverage suite/7
+  with explicit report/2 execution. Ambiguous nested-Optional observations and
+  conversions without a mechanical observation rule retain capability refusals.
+  Existing source/1-/2 and conformance/4-/5 behavior stays unchanged.
+- Complete target failures for accessor models use `ess-target-failure/3`, including
+  the new `accessor-resource` cause. Legacy models retain their existing failure
+  formats and bytes.
+- Binding-local ordered selection adds first-match, occurrence-based exclusion and
+  fallback over declared record lists, with whole-input admission and Rust/Go
+  helpers for explicitly prepared host conversion results.
+- Periodic bindings declare host ownership, typed context/read inputs, fixed-rate
+  timing, serial work and acknowledged stop. Controlled Rust/Go observations verify
+  actual scoped occurrences; native generation retains the explicit host obligation.
+- Clock-reading newtypes retain encoding and origin requirements. Native and
+  conformance Rust/Go normalize observed readings only with matching source/epoch
+  authority. New cause, selection-plan and reading-contract deltas use `ess-diff/3`.
+
+### Fixed
+
+- Compact predicates refuse trailing Boolean syntax after a quoted literal and point
+  to structured `any`, `all` or `not`. Rust, Go and browser admission agree.
+- Structured text comparisons preserve literal values across canonical round trips.
+  Comparisons requiring the corrected text reader select suite/8 or coverage suite/9;
+  earlier suite envelopes refuse those forms before execution.
+- Go list selection validates canonical primitive types and rejects incorrectly typed
+  list members, including values after an otherwise valid first match.
+- CLI regression coverage verifies complete compiled view declarations reach both
+  stdout and disk. Report adoption guidance distinguishes report/2 failure and skip counts.
+
+- Closed-enum outcome partitions can validate and synthesize witnesses without a
+  fictional default. Missing and overlapping values are reported from the declared
+  finite domain; unsupported or unknown domains retain conservative requirements.
+- Binding documentation describes enum membership only when the compiler reached the
+  representation within its existing traversal bound. String-backed literals explicitly
+  state that type invariants and external resources are not checked.
+
 ## [0.22.2] — 2026-09-10
 
 ### Documentation

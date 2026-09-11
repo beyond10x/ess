@@ -10,6 +10,10 @@ use crate::{SynthesisPlan, Target};
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize)]
 #[serde(rename_all = "kebab-case")]
 pub enum TargetFailureCode {
+    /// New bounded-accessor source exceeds its per-mapping or aggregate output budget.
+    AccessorResource,
+    /// A selected input requires invariant or reading validation the native selector cannot implement.
+    SelectionConstraint,
     /// An allocated token cannot name the emitted Rust item.
     InvalidIdentifier,
     /// Two meanings occupy the same emitted namespace.
@@ -77,6 +81,7 @@ pub struct TargetFailure {
 
 impl TargetFailure {
     pub(crate) fn new(
+        ir: &ess_compiler::EssIr,
         target: Target,
         plan: &SynthesisPlan,
         mut causes: Vec<TargetFailureCause>,
@@ -85,7 +90,27 @@ impl TargetFailure {
         causes.dedup();
         assert!(!causes.is_empty());
         Self {
-            format: if matches!(target, Target::Rust | Target::Web) {
+            format: if causes.iter().any(|cause| {
+                matches!(
+                    cause.code,
+                    TargetFailureCode::AccessorResource | TargetFailureCode::SelectionConstraint
+                )
+            }) || ir
+                .types()
+                .values()
+                .any(|declared| declared.reading.is_some())
+                || ir.bindings().values().any(|binding| {
+                    binding.selection.is_some()
+                        || binding.cause.periodic().is_some()
+                        || binding.mapping.iter().any(|mapping| {
+                            matches!(
+                                mapping.value,
+                                ess_compiler::ir::ResolvedMappingValue::EventAccessor { .. }
+                            )
+                        })
+                }) {
+                "ess-target-failure/3"
+            } else if matches!(target, Target::Rust | Target::Web) {
                 "ess-target-failure/1"
             } else {
                 "ess-target-failure/2"
@@ -146,6 +171,6 @@ pub(crate) fn binary64(
     if causes.is_empty() {
         Ok(())
     } else {
-        Err(TargetFailure::new(target, plan, causes))
+        Err(TargetFailure::new(ir, target, plan, causes))
     }
 }

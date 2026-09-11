@@ -22,15 +22,15 @@
 //! | family | fields covered |
 //! |---|---|
 //! | [`SystemChange`] | `EssIr::{version, summary}` — `system` is the refusal, and `naming` is a field no document can set |
-//! | [`TypeChange`] | `ResolvedType::{body, naming}`, and `body` down to every arm of `ResolvedBody` |
+//! | [`TypeChange`] | `ResolvedType::{body, naming, reading}`, and `body` down to every arm of `ResolvedBody` |
 //! | [`EntityChange`] | `ResolvedEntity::{domain, identity, fields, lifecycle, invariants, naming}` — `state_type` is derived from the name, and the lifecycle's *state set* is the synthesised `<Entity>.State` enum, which the type family already reports variant by variant |
 //! | [`CommandChange`] | `ResolvedCommand::{domain, input, outcomes, naming}`, and each outcome down to `ResolvedOutcome::{condition, subject, emits, payload, error, summary}` — `test_strategy` is a pure function of the condition (`OutcomeCondition::test_strategy`), so comparing it would report one edit twice |
 //! | [`EventChange`] | `ResolvedEvent::{domain, fields, naming}` |
-//! | [`ErrorChange`] | `ResolvedError::{domain, summary, fields}` — it carries no `Naming` |
+//! | [`ErrorChange`] | `ResolvedError::{domain, summary, fields, naming}` |
 //! | [`ViewChange`] | `ResolvedView::{domain, source, fields, filter, consistency, naming}` — `assertion_style` is a pure function of the consistency (`Consistency::assertion_style`) |
 //! | [`ActorChange`] | `ResolvedActor::{domain, may, naming}` |
 //! | [`ComponentChange`] | `ResolvedComponent::{owns, accepts, publishes, naming}` |
-//! | [`BindingChange`] | `ResolvedBinding::{event, command, mapping, failure, escalation, naming}` — `delivery` has one inhabitant, so a change kind for it could never fire (see `a_binding_still_has_one_delivery_a_document_can_write` in `tests/canonical.rs`) |
+//! | [`BindingChange`] | `ResolvedBinding::{cause, command, mapping, failure, escalation, naming}` — `delivery` has one inhabitant, so a change kind for it could never fire (see `a_binding_still_has_one_delivery_a_document_can_write` in `tests/canonical.rs`) |
 //!
 //! `name` is the map key in every case, so it is identity rather than a comparable field: a change
 //! of name is an [`Added`](TypeChange::Added) and a [`Removed`](TypeChange::Removed), never a
@@ -342,6 +342,28 @@ impl SemanticChange {
     /// The first document version that can represent this change without losing meaning.
     pub const fn minimum_format(&self) -> u32 {
         match self {
+            Self::Error {
+                changed:
+                    ErrorChange::WireNameChanged { .. }
+                    | ErrorChange::DisplayNameChanged { .. }
+                    | ErrorChange::NamingSummaryChanged { .. },
+                ..
+            }
+            | Self::Command {
+                changed:
+                    CommandChange::ResponseChanged { .. }
+                    | CommandChange::OutcomeResponsePayloadChanged { .. },
+                ..
+            } => 4,
+            Self::Binding {
+                changed:
+                    BindingChange::CauseChanged { .. } | BindingChange::SelectionPlanChanged { .. },
+                ..
+            }
+            | Self::Type {
+                changed: TypeChange::ReadingContractChanged { .. },
+                ..
+            } => 3,
             Self::System {
                 changed: SystemChange::UnclassifiedChanged,
                 ..
@@ -599,6 +621,13 @@ impl SystemChange {
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 #[serde(tag = "kind", rename_all = "kebab-case")]
 pub enum TypeChange {
+    /// A nominal reading's encoding/origin requirements changed, independently of scalar shape.
+    ReadingContractChanged {
+        /// Earlier attachment, absent for an ordinary scalar wrapper.
+        before: Option<ess_domain::reading::ReadingContract>,
+        /// Later attachment; observed runtime facts are never authored here.
+        after: Option<ess_domain::reading::ReadingContract>,
+    },
     /// The type is declared in the later revision and not in the earlier one.
     Added,
     /// The type was declared in the earlier revision and is not in the later one.
@@ -749,6 +778,7 @@ impl TypeChange {
     /// The subtype word, which is also the document's `kind`.
     pub const fn kind(&self) -> &'static str {
         match self {
+            Self::ReadingContractChanged { .. } => "reading-contract-changed",
             Self::Added => "added",
             Self::Removed => "removed",
             Self::KindChanged { .. } => "kind-changed",
@@ -806,6 +836,9 @@ impl TypeChange {
     /// One clause saying what moved.
     pub fn describe(&self) -> String {
         match self {
+            Self::ReadingContractChanged { before, after } => {
+                format!("clock reading contract {before:?} → {after:?}")
+            }
             Self::Added => "declared".to_owned(),
             Self::Removed => "no longer declared".to_owned(),
             Self::KindChanged { before, after } => format!("a {before} became a {after}"),
@@ -1057,9 +1090,7 @@ impl EventChange {
 /// What moved about a declared error.
 ///
 /// Complete over [`ResolvedError`](ess_compiler::ir::ResolvedError): its `domain`, its `summary` and
-/// its `fields`. It carries no [`Naming`](ess_domain::name::Naming) — an error is reported by its
-/// declared name — so there is no wire or display name to move, and this family has one fewer
-/// variant than the others rather than three that could never fire.
+/// its `fields` and explicit naming metadata. Wire spelling never replaces semantic identity.
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 #[serde(tag = "kind", rename_all = "kebab-case")]
 pub enum ErrorChange {
@@ -1073,6 +1104,27 @@ pub enum ErrorChange {
         before: DomainRef,
         /// The context that owns it.
         after: DomainRef,
+    },
+    /// The emitted error code changed.
+    WireNameChanged {
+        /// Previous value.
+        before: String,
+        /// Current value.
+        after: String,
+    },
+    /// The display spelling changed.
+    DisplayNameChanged {
+        /// Previous value.
+        before: String,
+        /// Current value.
+        after: String,
+    },
+    /// The naming summary changed independently of the legacy summary.
+    NamingSummaryChanged {
+        /// Previous value.
+        before: Option<String>,
+        /// Current value.
+        after: Option<String>,
     },
     /// The payload gained a field.
     FieldAdded {
@@ -1142,6 +1194,9 @@ impl ErrorChange {
     /// The subtype word, which is also the document's `kind`.
     pub const fn kind(&self) -> &'static str {
         match self {
+            Self::WireNameChanged { .. } => "wire-name-changed",
+            Self::DisplayNameChanged { .. } => "display-name-changed",
+            Self::NamingSummaryChanged { .. } => "naming-summary-changed",
             Self::Added => "added",
             Self::Removed => "removed",
             Self::DomainChanged { .. } => "domain-changed",
@@ -1177,6 +1232,9 @@ impl ErrorChange {
     /// One clause saying what moved.
     pub fn describe(&self) -> String {
         match self {
+            Self::WireNameChanged { before, after } => format!("wire code `{before}` → `{after}`"),
+            Self::DisplayNameChanged { before, after } => format!("display `{before}` → `{after}`"),
+            Self::NamingSummaryChanged { .. } => "naming summary changed".to_owned(),
             Self::Added => "declared".to_owned(),
             Self::Removed => "no longer declared".to_owned(),
             Self::DomainChanged { before, after } => format!("owned by {after}, was {before}"),
@@ -1838,6 +1896,22 @@ impl EntityChange {
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 #[serde(tag = "kind", rename_all = "kebab-case")]
 pub enum CommandChange {
+    /// Response or explicitly generated payload ownership changed on an outcome.
+    OutcomeResponsePayloadChanged {
+        /// The declaring branch.
+        outcome: String,
+        /// Previous canonical mappings.
+        before: Vec<String>,
+        /// New canonical mappings.
+        after: Vec<String>,
+    },
+    /// The command's ordered typed response contract changed.
+    ResponseChanged {
+        /// Previous closed fields.
+        before: Vec<ParameterContract>,
+        /// New closed fields.
+        after: Vec<ParameterContract>,
+    },
     /// The command is declared in the later revision and not in the earlier one.
     Added,
     /// The command was declared in the earlier revision and is not in the later one.
@@ -2030,6 +2104,8 @@ impl CommandChange {
     /// The subtype word, which is also the document's `kind`.
     pub const fn kind(&self) -> &'static str {
         match self {
+            Self::ResponseChanged { .. } => "response-changed",
+            Self::OutcomeResponsePayloadChanged { .. } => "outcome-response-payload-changed",
             Self::OutcomeSetsChanged { .. } => "outcome-sets-changed",
             Self::OutcomeRefusesChanged { .. } => "outcome-refuses-changed",
             Self::Added => "added",
@@ -2074,6 +2150,7 @@ impl CommandChange {
             | Self::OutcomeSubjectChanged { outcome, .. }
             | Self::OutcomeEmitsChanged { outcome, .. }
             | Self::OutcomePayloadChanged { outcome, .. }
+            | Self::OutcomeResponsePayloadChanged { outcome, .. }
             | Self::OutcomeErrorChanged { outcome, .. }
             | Self::OutcomeSummaryChanged { outcome, .. } => Some(outcome.clone()),
             _ => None,
@@ -2098,6 +2175,7 @@ impl CommandChange {
                 before,
                 after,
             } => format!("outcome `{outcome}` refusal {before} → {after}"),
+            Self::ResponseChanged { .. } => "typed command response changed".to_owned(),
             Self::Added => "declared".to_owned(),
             Self::Removed => "no longer declared".to_owned(),
             Self::DomainChanged { before, after } => format!("owned by {after}, was {before}"),
@@ -2151,7 +2229,8 @@ impl CommandChange {
                 after.join(", "),
                 before.join(", ")
             ),
-            Self::OutcomePayloadChanged { outcome, .. } => {
+            Self::OutcomePayloadChanged { outcome, .. }
+            | Self::OutcomeResponsePayloadChanged { outcome, .. } => {
                 format!("outcome `{outcome}` determines different payload fields")
             }
             Self::OutcomeErrorChanged {
@@ -2441,7 +2520,7 @@ impl ViewChange {
 
 /// What moved about a binding.
 ///
-/// Complete over [`ResolvedBinding`](ess_compiler::ir::ResolvedBinding): its `event`, its
+/// Complete over [`ResolvedBinding`](ess_compiler::ir::ResolvedBinding): its `cause`, its
 /// `command`, its `mapping`, its `delivery`, its `failure` with its `escalation`, and its `naming`.
 /// One absence is deliberate:
 ///
@@ -2461,6 +2540,13 @@ impl ViewChange {
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 #[serde(tag = "kind", rename_all = "kebab-case")]
 pub enum BindingChange {
+    /// Selection input, predicate, occurrence order, exclusion or fallback semantics moved.
+    SelectionPlanChanged {
+        /// Previous complete typed selection plan, when present.
+        before: Option<ess_domain::selection::SelectionPlan>,
+        /// New complete typed selection plan, when present.
+        after: Option<ess_domain::selection::SelectionPlan>,
+    },
     /// The binding is declared in the later revision and not in the earlier one.
     Added,
     /// The binding was declared in the earlier revision and is not in the later one.
@@ -2471,6 +2557,13 @@ pub enum BindingChange {
         before: EventRef,
         /// The event it reacts to.
         after: EventRef,
+    },
+    /// Its cause or complete required periodic host contract changed.
+    CauseChanged {
+        /// The previous typed event or periodic source contract.
+        before: Box<ess_domain::binding::BindingCause>,
+        /// The current typed event or periodic source contract.
+        after: Box<ess_domain::binding::BindingCause>,
     },
     /// It invokes a different command.
     CommandChanged {
@@ -2553,9 +2646,11 @@ impl BindingChange {
     /// The subtype word, which is also the document's `kind`.
     pub const fn kind(&self) -> &'static str {
         match self {
+            Self::SelectionPlanChanged { .. } => "selection-plan-changed",
             Self::Added => "added",
             Self::Removed => "removed",
             Self::EventChanged { .. } => "event-changed",
+            Self::CauseChanged { .. } => "cause-changed",
             Self::CommandChanged { .. } => "command-changed",
             Self::MappingAdded { .. } => "mapping-added",
             Self::MappingRemoved { .. } => "mapping-removed",
@@ -2587,10 +2682,14 @@ impl BindingChange {
     /// One clause saying what moved.
     pub fn describe(&self) -> String {
         match self {
+            Self::SelectionPlanChanged { .. } => "ordered typed selection plan changed".to_owned(),
             Self::Added => "declared".to_owned(),
             Self::Removed => "no longer declared".to_owned(),
             Self::EventChanged { before, after } => {
                 format!("reacts to `{after}`, reacted to `{before}`")
+            }
+            Self::CauseChanged { before, after } => {
+                format!("cause or required host contract changed: `{before}` → `{after}`")
             }
             Self::CommandChanged { before, after } => {
                 format!("invokes `{after}`, invoked `{before}`")

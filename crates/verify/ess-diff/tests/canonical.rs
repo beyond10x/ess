@@ -1071,7 +1071,7 @@ fn a_delta_whose_relation_was_edited_is_refused() {
 #[test]
 fn a_delta_written_in_a_format_this_build_does_not_read_is_refused() {
     let mut document = document();
-    document["format"] = serde_json::json!("ess-diff/3");
+    document["format"] = serde_json::json!("ess-diff/5");
 
     let errors = refused(&document);
 

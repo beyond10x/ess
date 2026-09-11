@@ -441,10 +441,38 @@ fn operation(ir: &EssIr, handle: &CommandHandle, grants: &Grants<'_>) -> Operati
     let domain = ir.domain(&command.domain);
     Operation {
         id: command.name.to_string(),
+        periodic: ir
+            .bindings()
+            .values()
+            .filter(|binding| binding.command == *handle && binding.cause.periodic().is_some())
+            .cloned()
+            .collect(),
         summary: Some(command.naming.display_or(&command.name).to_owned()),
         description: command.naming.summary.clone(),
         tags: vec![domain.naming.wire_or(&domain.name).to_owned()],
         may_invoke: may_invoke(handle, grants),
+        accessors: ir
+            .bindings()
+            .values()
+            .filter(|b| b.command == *handle)
+            .flat_map(|b| {
+                b.mapping.iter().filter_map(|m| {
+                    if let ess_compiler::ir::ResolvedMappingValue::EventAccessor { plan, .. } =
+                        &m.value
+                    {
+                        Some(BindingAccessor {
+                            binding: b.name.to_string(),
+                            event: b.cause.event()?.to_string(),
+                            target: m.target.clone(),
+                            path: plan.path(),
+                            may_miss: plan.may_miss(),
+                        })
+                    } else {
+                        None
+                    }
+                })
+            })
+            .collect(),
         consistency: None,
         parameters: idempotency(ir, command).into_iter().collect(),
         request_body: request_body(command),
@@ -464,10 +492,12 @@ fn query(ir: &EssIr, handle: &ViewHandle) -> Operation {
     let domain = ir.domain(&view.domain);
     Operation {
         id: view.name.to_string(),
+        periodic: Vec::new(),
         summary: Some(view.naming.display_or(&view.name).to_owned()),
         description: view.naming.summary.clone(),
         tags: vec![domain.naming.wire_or(&domain.name).to_owned()],
         may_invoke: Vec::new(),
+        accessors: Vec::new(),
         consistency: Some(view.consistency.as_str()),
         parameters: Vec::new(),
         request_body: None,
@@ -861,6 +891,12 @@ fn outcome_description(ir: &EssIr, outcome: &ResolvedOutcome) -> String {
         ResolvedCondition::When { predicate } => {
             format!("Taken when `{predicate}` holds of the input.")
         }
+        ResolvedCondition::SubjectState { state, predicate } => format!(
+            "Taken when the existing subject is in {state}{}.",
+            predicate.as_ref().map_or(String::new(), |guard| format!(
+                " and `{guard}` holds of the input"
+            )),
+        ),
         ResolvedCondition::Otherwise => {
             "Taken when no other outcome's condition matched.".to_owned()
         }
@@ -1176,8 +1212,18 @@ struct PathItem {
 /// One command, exposed.
 #[derive(Debug, serde::Serialize)]
 struct Operation {
+    #[serde(
+        rename = "x-ess-periodic-bindings",
+        skip_serializing_if = "Vec::is_empty"
+    )]
+    periodic: Vec<ess_compiler::ir::ResolvedBinding>,
     #[serde(rename = "operationId")]
     id: String,
+    #[serde(
+        rename = "x-ess-binding-accessors",
+        skip_serializing_if = "Vec::is_empty"
+    )]
+    accessors: Vec<BindingAccessor>,
     #[serde(skip_serializing_if = "Option::is_none")]
     summary: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -1245,4 +1291,14 @@ struct MediaType {
 #[derive(Debug, serde::Serialize)]
 struct Components {
     schemas: BTreeMap<String, Fragment>,
+}
+
+/// Declared bounded mappings on operations reached by accessor bindings.
+#[derive(Debug, serde::Serialize)]
+struct BindingAccessor {
+    binding: String,
+    event: String,
+    target: String,
+    path: String,
+    may_miss: bool,
 }

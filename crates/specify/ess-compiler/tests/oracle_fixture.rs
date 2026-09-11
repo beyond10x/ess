@@ -267,7 +267,7 @@ fn dropping_one_binding_leaves_others_with_scenarios_of_their_own() {
         let elsewhere = ir
             .bindings()
             .values()
-            .filter(|other| other.event != binding.event)
+            .filter(|other| other.cause != binding.cause)
             .count();
         assert!(
             elsewhere > 0,
@@ -446,7 +446,7 @@ fn a_binding_maps_an_event_field_that_has_a_same_typed_sibling() {
 
     let mut swappable = Vec::new();
     for binding in ir.bindings().values() {
-        let event = ir.event(&binding.event);
+        let event = ir.event(binding.cause.event().expect("event fixture"));
         for mapping in &binding.mapping {
             if let ResolvedMappingValue::EventField { field, type_ref } = &mapping.value {
                 let siblings = event
@@ -524,13 +524,18 @@ const REQUIREMENTS: &[Requirement] = &[
         "a mapped event field has a same-typed sibling to be swapped with",
         |ir| {
             ir.bindings().values().any(|binding| {
-                let event = ir.event(&binding.event);
+                let event = ir.event(binding.cause.event().expect("event fixture"));
                 binding.mapping.iter().any(|mapping| match &mapping.value {
                     ResolvedMappingValue::EventField { field, type_ref } => event
                         .fields
                         .iter()
                         .any(|other| &other.name != field && &other.type_ref == type_ref),
-                    ResolvedMappingValue::Literal { .. } => false,
+                    // This historical flat-field mutation does not claim to swap accessor leaves.
+                    ResolvedMappingValue::Literal { .. }
+                    | ResolvedMappingValue::EventAccessor { .. }
+                    | ResolvedMappingValue::Selection { .. }
+                    | ResolvedMappingValue::HostContext { .. }
+                    | ResolvedMappingValue::HostRead { .. } => false,
                 })
             })
         },

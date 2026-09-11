@@ -531,7 +531,10 @@ fn the_example_binds_one_context_to_the_other_and_says_what_happens_when_it_fail
         .find(|binding| binding.name.as_str() == "notify-on-invoice-created")
         .expect("the example binds the two contexts");
 
-    assert_eq!(binding.event.to_string(), "billing.invoice.InvoiceCreated");
+    assert_eq!(
+        binding.cause.event().expect("event fixture").to_string(),
+        "billing.invoice.InvoiceCreated"
+    );
     assert_eq!(binding.command.to_string(), "billing.email.SendEmail");
     assert_eq!(binding.delivery, Delivery::AtLeastOnce);
     assert_eq!(binding.failure, Failure::Escalate);

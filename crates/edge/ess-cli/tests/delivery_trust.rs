@@ -76,6 +76,51 @@ fn direct(document: &Value) -> AdmittedInput {
     )
     .unwrap()
 }
+
+#[test]
+fn suite_seven_release_qualification_retains_exact_parent_lineage() {
+    // Synthetic policy evidence tests qualification only, never target execution or adoption.
+    let f = Fixture::new();
+    let mut document = suite_document();
+    document["provenance"]["suite_version"] = json!("ess-conformance/7");
+    let original = direct(&document);
+    let selected = original
+        .select(&["oracle.order/authored/first".parse().unwrap()])
+        .unwrap();
+    assert_eq!(
+        selected.selected().suite().provenance.suite_version.major(),
+        7
+    );
+    assert_eq!(
+        selected.parents()[0].original_json(),
+        original.selected().original_json()
+    );
+    f.set_input(&selected, true);
+    f.write("report.json", report(&selected));
+    success(&f.qualify("check-conformance", true).output().unwrap());
+    assert!(f.calls().is_empty());
+    for missing in [true, false] {
+        let mut carrier = selected.document();
+        if missing {
+            carrier.parent_suites.clear();
+        } else {
+            carrier.parent_suites[0].push(' ');
+        }
+        f.write("expected.json", serde_json::to_string(&carrier).unwrap());
+        let output = f.qualify("check-conformance", true).output().unwrap();
+        assert!(!output.status.success(), "{output:?}");
+        assert!(
+            f.calls().is_empty(),
+            "local qualification must not invoke external tools"
+        );
+    }
+    f.set_input(&selected, true);
+    f.write("report.json", report(&original));
+    let stale = f.qualify("check-conformance", true).output().unwrap();
+    assert!(!stale.status.success(), "{stale:?}");
+    assert!(f.calls().is_empty());
+}
+
 fn report_value(input: &AdmittedInput, category: &str, profile: &str) -> Value {
     let s = input.selected();
     let p = &s.suite().provenance;

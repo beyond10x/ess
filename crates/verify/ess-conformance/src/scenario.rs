@@ -149,6 +149,34 @@ impl ConformanceSuite {
         self.scenarios.is_empty()
     }
 
+    /// Select the ordinary format after assembling a fresh suite from source.
+    ///
+    /// Call only for newly generated suites, never to rewrite admitted bytes or a caller-pinned
+    /// legacy document. Coverage builders select their inventory-bearing counterpart separately.
+    pub fn select_fresh_format(&mut self) {
+        self.provenance.suite_version =
+            if crate::response::used_by(self) || crate::quoted_predicate_format::used_by(self) {
+                SuiteFormat::parse("ess-conformance/8").expect("constant suite version")
+            } else if self.requires_extended_format() {
+                SuiteFormat::parse("ess-conformance/6").expect("constant suite version")
+            } else {
+                SuiteFormat::CURRENT
+            };
+    }
+
+    pub(crate) fn requires_extended_format(&self) -> bool {
+        crate::accessor::used_by(self)
+            || crate::periodic::used_by(self)
+            || crate::reading::used_by(self)
+            || crate::selection::used_by(self)
+            || self.scenarios.values().any(|scenario| {
+                scenario
+                    .steps
+                    .iter()
+                    .any(|step| matches!(step, ScenarioStep::EstablishEntity { .. }))
+            })
+    }
+
     /// Every construct any scenario in this suite depends on.
     ///
     /// The union of every [`ConformanceScenario::source`]. What a later wave's semantic diff asks
@@ -188,6 +216,19 @@ impl ConformanceSuite {
     pub fn to_canonical_json(&self) -> Result<String, crate::admission::AdmissionError> {
         crate::admission::suite(self)?;
         let mut json = serde_json::to_string_pretty(self)
+            .unwrap_or_else(|error| panic!("a conformance suite serialises: {error}"));
+        json.push('\n');
+        Ok(json)
+    }
+
+    /// A fresh suite as compact JSON with exactly one trailing newline.
+    ///
+    /// Uses the same admitted values and field ordering as [`Self::to_canonical_json`].
+    /// These bytes have their own exact suite digest; reports for a pretty artifact
+    /// do not qualify this presentation. Existing admitted inputs retain their original bytes.
+    pub fn to_compact_json(&self) -> Result<String, crate::admission::AdmissionError> {
+        crate::admission::suite(self)?;
+        let mut json = serde_json::to_string(self)
             .unwrap_or_else(|error| panic!("a conformance suite serialises: {error}"));
         json.push('\n');
         Ok(json)
@@ -308,7 +349,7 @@ impl SuiteProvenance {
 /// All four, because a `1` suite means in `4` exactly what it meant in `1` — the vocabulary grew
 /// three times and nothing in it changed meaning. A reader that refused an older number would
 /// refuse a suite it understands perfectly.
-pub const SUPPORTED_SUITE_FORMATS: &[u32] = &[1, 2, 3, 4, 5];
+pub const SUPPORTED_SUITE_FORMATS: &[u32] = &[1, 2, 3, 4, 5, 6, 7, 8, 9];
 
 /// The version of the *document shape* a suite is written in — `ess-conformance/1`.
 ///
@@ -1212,28 +1253,7 @@ impl Elapsed {
     /// would be two documents that disagree textually and agree semantically, and there is no
     /// reading of a suite that wants both.
     pub fn parse(value: &str) -> Result<Self, ParseError> {
-        let reject = |reason: &str| {
-            ParseError::reference(
-                "elapsed time",
-                value,
-                format!("{reason}; a length of time is written `PT<seconds>S`, in whole seconds"),
-            )
-        };
-        let digits = value
-            .strip_prefix("PT")
-            .and_then(|rest| rest.strip_suffix('S'))
-            .ok_or_else(|| reject("is not written `PT…S`"))?;
-        if digits.is_empty() {
-            return Err(reject("names no number of seconds"));
-        }
-        if digits.len() > 1 && digits.starts_with('0') {
-            return Err(reject(
-                "has a leading zero, which is a second spelling of one value",
-            ));
-        }
-        let seconds = digits
-            .parse::<u32>()
-            .map_err(|_| reject("has a number of seconds that is not a whole number"))?;
+        let seconds = ess_primitives::time::parse_elapsed_seconds(value)?;
         Ok(Self { seconds })
     }
 }
@@ -1338,6 +1358,20 @@ impl<'de> serde::Deserialize<'de> for AuthoredName {
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum ScenarioValue {
+    /// Bounded selection from the exact previously observed event occurrence.
+    ObservedSelection {
+        /// The event observed by an earlier step.
+        event: EventRef,
+        /// Independently admitted typed occurrence and projection contract.
+        selection: crate::selection::Observation,
+    },
+    /// A separately admitted bounded projection, including exact target presence.
+    ObservedAccessor {
+        /// The previously observed event.
+        event: EventRef,
+        /// Typed projection and wire-observable assignment.
+        accessor: crate::accessor::Observation,
+    },
     /// A value the suite chose.
     Literal {
         /// The value.
@@ -1390,7 +1424,10 @@ impl ScenarioValue {
     pub fn as_literal(&self) -> Option<&Node> {
         match self {
             Self::Literal { value } => Some(value),
-            Self::Instance { .. } | Self::Observed { .. } => None,
+            Self::Instance { .. }
+            | Self::Observed { .. }
+            | Self::ObservedAccessor { .. }
+            | Self::ObservedSelection { .. } => None,
         }
     }
 }
@@ -1655,6 +1692,38 @@ impl fmt::Display for Holds {
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 #[serde(tag = "step", rename_all = "snake_case")]
 pub enum ScenarioStep {
+    /// Compare a mapped payload against the actual response of the same invocation.
+    ExpectResponsePayload {
+        /// Closed typed observation authority.
+        response: crate::response::Observation,
+    },
+    /// Exercise a periodic host lifetime with complete controlled-time causal observation.
+    CheckPeriodic {
+        /// Standalone required typed host contract and fixture.
+        check: crate::periodic::Check,
+    },
+    /// Compare observed event coordinates using matching adapter-observed clock source epochs.
+    ExpectReadingOrder {
+        /// First existing event/member occurrence.
+        left: crate::reading::ReadingReference,
+        /// Second existing event/member occurrence.
+        right: crate::reading::ReadingReference,
+        /// Expected coordinate relation, not a physical elapsed-time claim.
+        order: crate::reading::ReadingOrder,
+    },
+    /// Establish real upstream state through the target's validated fixture capability (suite 6).
+    EstablishEntity {
+        /// Name bound only after successful setup.
+        instance: InstanceName,
+        /// The declared entity contract the target must validate against.
+        entity: EntityRef,
+        /// Literal identity value in that entity's identity type.
+        identity: Node,
+        /// Complete entity fields, preserving Optional absence and present null.
+        fields: BTreeMap<String, Node>,
+        /// Declared lifecycle state, without manufactured history.
+        state: ess_domain::entity::StateName,
+    },
     /// Force an outcome the input cannot decide (§12).
     ///
     /// For `external` outcomes only: no predicate over a recipient and a template says whether a
@@ -2534,12 +2603,18 @@ mod tests {
             "ess-conformance/1",
             "ess-conformance/2",
             "ess-conformance/3",
+            "ess-conformance/4",
+            "ess-conformance/5",
+            "ess-conformance/6",
+            "ess-conformance/7",
+            "ess-conformance/8",
+            "ess-conformance/9",
         ] {
             let earlier = SuiteFormat::parse(earlier).expect("well formed");
             assert!(earlier.is_supported());
         }
 
-        let later = SuiteFormat::parse("ess-conformance/6").expect("well formed");
+        let later = SuiteFormat::parse("ess-conformance/10").expect("well formed");
         assert!(
             !later.is_supported(),
             "a later format may mean something different by the same words"

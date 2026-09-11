@@ -137,6 +137,7 @@ dependencies = [
  "ess-compiler",
  "ess-domain",
  "ess-gen",
+ "ess-primitives",
  "serde",
  "serde_json",
 ]

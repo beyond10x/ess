@@ -37,6 +37,7 @@ import (
 	"fmt"
 	"io"
 	"math"
+	"math/big"
 	"os"
 	"reflect"
 	"regexp"
@@ -76,7 +77,7 @@ func suiteReference(value any) error {
 		return err
 	}
 	d, ok := r["digest"].(string)
-	if r["version"] != "ess-conformance/5" || r["digest_profile"] != "sha256-json-bytes/1" ||
+	if (r["version"] != "ess-conformance/5" && r["version"] != "ess-conformance/7" && r["version"] != "ess-conformance/9") || r["digest_profile"] != "sha256-json-bytes/1" ||
 		!ok || !strings.HasPrefix(d, "sha256:") || !modelDigest.MatchString(strings.TrimPrefix(d, "sha256:")) {
 		return coverageError()
 	}
@@ -300,7 +301,7 @@ func checkedRefusal(value any, selection map[string]any, sources map[string]any,
 			return nil, coverageError()
 		}
 		number := 0
-		for n := 1; n <= 14; n++ {
+		for n := 1; n <= 15; n++ {
 			if code == fmt.Sprintf("ESS-SYNTH-%03d", n) {
 				number = n
 			}
@@ -681,8 +682,6 @@ func meaningKeys(value map[string]any) []string {
 	return keys
 }
 
-var meaningDecimal = regexp.MustCompile(`^[+-]?([0-9]+(\.[0-9]*)?|\.[0-9]+)([eE][+-]?[0-9]+)?$`)
-
 func meaningScalar(value any) any {
 	raw, ok := value.(string)
 	if !ok {
@@ -965,6 +964,7 @@ func valuesMeaning(values map[string]any) any {
 	}
 	return result
 }
+
 // exactNumber is an integer token float64 cannot hold exactly, kept as its canonical digits.
 //
 // A distinct type so reflect.DeepEqual tells it apart from both a float64 and a string node, and so
@@ -1099,6 +1099,23 @@ type Target interface {
 	ObserveInvocations(request InvocationObservationRequest) ([]Invocation, error)
 }
 
+// EntitySetupTarget validates fixture values against the actual entity contract and establishes
+// them in the backend read by QueryView. Success guarantees durable, read-visible state in this
+// isolated scenario. Return ErrUnsupported if either validation or establishment is unavailable.
+// Setup does not manufacture a command, lifecycle transition, event, or history.
+type EntitySetupTarget interface {
+	EstablishEntity(request EntitySetupRequest) error
+}
+
+// EntitySetupRequest is literal fixture state, not a trusted model-validation certificate.
+type EntitySetupRequest struct {
+	Entity      string
+	Identity    Node
+	Fields      map[string]Node
+	State       string
+	Correlation string
+}
+
 // ErrUnsupported is what a target returns for a semantic it cannot expose.
 //
 // Distinct from a failure: a suite that counted "the implementation cannot show me this" as "the
@@ -1129,6 +1146,8 @@ type CommandRequest struct {
 
 // CommandResult is what one command did.
 type CommandResult struct {
+	// Response is the actual returned, declared command response.
+	Response map[string]Node
 	// Outcome is the branch it took, empty when it refused.
 	Outcome string
 	// Error is the declared error it refused with, empty when it did not.
@@ -1410,13 +1429,21 @@ type Scenario struct {
 
 // Step is one step of a scenario. Which fields are set depends on Step.
 type Step struct {
-	Step    string           `json:"step"`
-	Command string           `json:"command,omitempty"`
-	Actor   string           `json:"actor,omitempty"`
-	Input   map[string]Value `json:"input,omitempty"`
-	Outcome *OutcomeRef      `json:"outcome,omitempty"`
-	Force   *OutcomeRef      `json:"force,omitempty"`
-	Event   string           `json:"event,omitempty"`
+	Response     *responseObservation `json:"response,omitempty"`
+	Check        *PeriodicCheck       `json:"check,omitempty"`
+	ReadingLeft  *ReadingReference    `json:"left,omitempty"`
+	ReadingRight *ReadingReference    `json:"right,omitempty"`
+	ReadingOrder string               `json:"order,omitempty"`
+	Identity     Node                 `json:"identity,omitempty"`
+	Fields       map[string]Node      `json:"fields,omitempty"`
+	State        string               `json:"state,omitempty"`
+	Step         string               `json:"step"`
+	Command      string               `json:"command,omitempty"`
+	Actor        string               `json:"actor,omitempty"`
+	Input        map[string]Value     `json:"input,omitempty"`
+	Outcome      *OutcomeRef          `json:"outcome,omitempty"`
+	Force        *OutcomeRef          `json:"force,omitempty"`
+	Event        string               `json:"event,omitempty"`
 	// Payload is plain values, not Value: an event's fields are compared against what the
 	// specification declared them to be, and there is nothing earlier in the scenario for them to
 	// refer to. `input` and a view expectation's `fields` are the ones that can refer back.
@@ -1464,11 +1491,13 @@ type OutcomeRef struct {
 
 // Value is one value a step carries: written down, captured earlier, or read from an event.
 type Value struct {
-	Kind     string `json:"kind"`
-	Value    Node   `json:"value,omitempty"`
-	Instance string `json:"instance,omitempty"`
-	Event    string `json:"event,omitempty"`
-	Field    string `json:"field,omitempty"`
+	Selection *selectionObservation `json:"selection,omitempty"`
+	Accessor  *accessorObservation  `json:"accessor,omitempty"`
+	Kind      string                `json:"kind"`
+	Value     Node                  `json:"value,omitempty"`
+	Instance  string                `json:"instance,omitempty"`
+	Event     string                `json:"event,omitempty"`
+	Field     string                `json:"field,omitempty"`
 }
 
 // Expectation is what must hold of a view.
@@ -1512,8 +1541,11 @@ func Run(t *testing.T, newTarget func() Target) {
 	if err != nil {
 		t.Fatalf("suite admission: %v", err)
 	}
-	if suite.coverage != nil && config.version != "2" {
-		t.Fatalf("suite/5 requires explicit ESS_REPORT_FORMAT=2 before execution")
+	if (suite.Provenance.SuiteVersion == "ess-conformance/8" || suite.Provenance.SuiteVersion == "ess-conformance/9") && config.version != "2" {
+		t.Fatalf("suite/8 and /9 require explicit ESS_REPORT_FORMAT=2 before execution")
+	}
+	if (suite.Provenance.SuiteVersion == "ess-conformance/5" || suite.Provenance.SuiteVersion == "ess-conformance/6" || suite.Provenance.SuiteVersion == "ess-conformance/7") && config.version != "2" {
+		t.Fatalf("suite/5, /6 and /7 require explicit ESS_REPORT_FORMAT=2 before execution")
 	}
 	suite, err = executionSuite(suite)
 	if err != nil {
@@ -1687,7 +1719,8 @@ type run struct {
 	correlation string
 
 	// instances are what `capture_instance` bound, by name.
-	instances map[string]Node
+	instances   map[string]Node
+	established []EntitySetupRequest
 	// marked are the instants `mark_instant` named, so a window measured from one nothing marked
 	// is a suite defect rather than a measurement from whatever was in hand.
 	marked map[string]bool
@@ -1703,7 +1736,8 @@ type run struct {
 	// own occurrence the moment the next command ran.
 	seen []ObservedEvent
 	// last is what the most recent command did, for the assertions that read it.
-	last CommandResult
+	last        CommandResult
+	lastCommand string
 	// consistency is the token the last command returned, for a read_your_writes query.
 	consistency string
 	// lastView is what the last query_view returned, for the expect_view after it.
@@ -1752,6 +1786,14 @@ func (r *run) execute(id string, scenario Scenario) {
 // and running them produces a second failure about the first one's cause.
 func (r *run) step(index int, step Step) bool {
 	switch step.Step {
+	case "expect_response_payload":
+		return r.expectResponsePayload(index, step)
+	case "check_periodic":
+		return r.checkPeriodic(index, step)
+	case "expect_reading_order":
+		return r.expectReadingOrder(index, step)
+	case "establish_entity":
+		return r.establishEntity(index, step)
 	case "execute_command":
 		return r.executeCommand(index, step)
 	case "expect_outcome":
@@ -1816,8 +1858,15 @@ func (r *run) executeCommand(index int, step Step) bool {
 	if err != nil {
 		return r.fail(index, "executing `%s`: %v", step.Command, err)
 	}
+	if result.Response != nil {
+		result, err = snapshotResponseResult(result)
+		if err != nil {
+			return r.fail(index, "response observation: %v", err)
+		}
+	}
 	r.consistency = result.Consistency
 	r.last = result
+	r.lastCommand = step.Command
 	// Cleared, not accumulated. Every `expect_no_event` in a scenario is a claim about *this*
 	// command — a scenario that creates an invoice and then pays it asserts that paying emitted no
 	// `InvoiceCreated`, which would be false against everything seen so far.
@@ -1920,6 +1969,37 @@ func (r *run) eventuallyEvent(index int, step Step) bool {
 		}
 	}
 	return r.fail(index, "`%s` was not observed within the run's budget", step.Event)
+}
+
+func (r *run) establishEntity(index int, step Step) bool {
+	if _, exists := r.instances[step.Instance]; exists {
+		return r.fail(index, "duplicate setup instance `%s`", step.Instance)
+	}
+	for _, previous := range r.established {
+		if previous.Entity == step.Entity && equal(previous.Identity, step.Identity) {
+			return r.fail(index, "duplicate qualified entity identity for `%s`", step.Entity)
+		}
+	}
+	target, ok := r.target.(EntitySetupTarget)
+	if !ok {
+		r.skip("target cannot validate and establish entity state")
+		return false
+	}
+	request := EntitySetupRequest{Entity: step.Entity, Identity: step.Identity, Fields: step.Fields, State: step.State, Correlation: r.correlation}
+	err := target.EstablishEntity(request)
+	if errors.Is(err, ErrUnsupported) {
+		r.skip("entity setup unsupported: %v", err)
+		return false
+	}
+	if err != nil {
+		return r.fail(index, "entity setup failed: %v", err)
+	}
+	r.established = append(r.established, request)
+	r.instances[step.Instance] = step.Identity
+	// A pre-setup query cannot establish facts about the newly acknowledged state.
+	r.queried = ""
+	r.lastView = ViewResult{}
+	return true
 }
 
 func (r *run) captureInstance(index int, step Step) bool {
@@ -2136,12 +2216,27 @@ func (r *run) expectInvocation(index int, step Step) bool {
 	if err != nil {
 		return r.fail(index, "observing `%s`: %v", step.Binding, err)
 	}
-	want, ok := r.resolveAll(index, step.Input)
-	if !ok {
-		return false
+	want := map[string]Node{}
+	absent := []string{}
+	for field, value := range step.Input {
+		node, present, err := r.resolveAccessorExpected(value)
+		if err != nil {
+			return r.fail(index, "`%s`: %v", field, err)
+		}
+		if present {
+			want[field] = node
+		} else {
+			absent = append(absent, field)
+		}
 	}
 	for _, invocation := range invocations {
-		if invocation.Command == step.Command && matches(invocation.Input, want) {
+		absenceOK := true
+		for _, field := range absent {
+			if _, exists := invocation.Input[field]; exists {
+				absenceOK = false
+			}
+		}
+		if invocation.Command == step.Command && matches(invocation.Input, want) && absenceOK {
 			return true
 		}
 	}
@@ -2991,7 +3086,6 @@ func unsigned(value any) (uint64, error) {
 }
 
 var qualifiedName = regexp.MustCompile(`^[A-Za-z][A-Za-z0-9_-]*(\.[A-Za-z][A-Za-z0-9_-]*)*$`)
-var factPath = regexp.MustCompile(`^[A-Za-z][A-Za-z0-9_-]*(\.[A-Za-z0-9_-]+)*$`)
 var kebabName = regexp.MustCompile(`^[a-z][a-z0-9]*(-[a-z0-9]+)*$`)
 var stateName = regexp.MustCompile(`^[A-Z][A-Za-z0-9]*$`)
 var modelDigest = regexp.MustCompile(`^[a-f0-9]{64}$`)
@@ -3041,6 +3135,9 @@ func admitSuite(raw string) (Suite, error) {
 }
 func admitSuiteDocument(raw string, explicit bool) (Suite, error) {
 	var suite Suite
+	if err := accessorPreflight(raw); err != nil {
+		return suite, err
+	}
 	value, err := strictJSON(raw)
 	if err != nil {
 		return suite, err
@@ -3069,11 +3166,19 @@ func admitSuiteDocument(raw string, explicit bool) (Suite, error) {
 		major = 4
 	case "ess-conformance/5":
 		major = 5
+	case "ess-conformance/6":
+		major = 6
+	case "ess-conformance/7":
+		major = 7
+	case "ess-conformance/8":
+		major = 8
+	case "ess-conformance/9":
+		major = 9
 	default:
 		return suite, fmt.Errorf("unsupported suite version %q", version)
 	}
-	if _, present := root["coverage"]; present != (major == 5) {
-		return suite, fmt.Errorf("coverage is required exactly for suite/5")
+	if _, present := root["coverage"]; present != (major == 5 || major == 7 || major == 9) {
+		return suite, fmt.Errorf("coverage is required exactly for suite/5, suite/7 and suite/9")
 	}
 	for _, key := range []string{"system", "specification_version", "spec_digest", "contract_digest"} {
 		s, err := text(p[key])
@@ -3122,6 +3227,9 @@ func admitSuiteDocument(raw string, explicit bool) (Suite, error) {
 				return suite, fmt.Errorf("%s: %w", id, err)
 			}
 		}
+		if err := admitEntitySetups(steps); err != nil {
+			return suite, fmt.Errorf("%s: %w", id, err)
+		}
 		sources, err := array(s["source"])
 		if err != nil {
 			return suite, err
@@ -3132,7 +3240,22 @@ func admitSuiteDocument(raw string, explicit bool) (Suite, error) {
 			}
 		}
 	}
-	if major == 5 {
+	if major == 5 || major == 7 || major == 9 {
+		coverage, _ := root["coverage"].(map[string]any)
+		if refused, ok := coverage["refused"].([]any); ok {
+			for _, item := range refused {
+				if row, ok := item.(map[string]any); ok && row["code"] == "ESS-SYNTH-015" && major < 7 {
+					return suite, fmt.Errorf("accessor refusal requires suite/7")
+				}
+			}
+		}
+		if selection, ok := coverage["selection"].(map[string]any); ok {
+			if filter, ok := selection["filter"].(map[string]any); ok && filter["kind"] == "explicit" {
+				if parent, ok := filter["parent"].(map[string]any); ok && parent["version"] != version {
+					return suite, fmt.Errorf("filtered coverage must preserve parent vocabulary version")
+				}
+			}
+		}
 		if err := admitCoverage(root); err != nil {
 			return suite, err
 		}
@@ -3143,7 +3266,7 @@ func admitSuiteDocument(raw string, explicit bool) (Suite, error) {
 		}
 	}
 	suite.original, suite.document = raw, root
-	if major == 5 {
+	if major == 5 || major == 7 || major == 9 {
 		suite.coverage = root["coverage"].(map[string]any)
 		// Original admission includes parents which will never execute. Retain their exact
 		// unsigned metadata independently of the inherited target API's narrower int fields.
@@ -3249,7 +3372,7 @@ func admitOutcome(value any) error {
 	}
 	return name(f["outcome"], true)
 }
-func admitValues(value any) error {
+func admitValues(value any, major int, accessors bool) error {
 	values, ok := value.(map[string]any)
 	if !ok {
 		return fmt.Errorf("values must be an object")
@@ -3276,6 +3399,40 @@ func admitValues(value any) error {
 				return err
 			}
 			if err := name(f["instance"], true); err != nil {
+				return err
+			}
+		case "observed_selection":
+			if major < 6 || !accessors {
+				return fmt.Errorf("observed_selection requires suite/6 or /7 invocation input")
+			}
+			if _, err := closed(v, "kind event selection", ""); err != nil {
+				return err
+			}
+			if err := name(f["event"], false); err != nil {
+				return err
+			}
+			selection, err := admitSelection(f["selection"])
+			if err != nil {
+				return err
+			}
+			for _, selector := range selection.Plan.Selectors {
+				if selector.Operation.Kind == "first" {
+					if err := admitPredicateVersion(selector.Operation.Predicate, major); err != nil {
+						return err
+					}
+				}
+			}
+		case "observed_accessor":
+			if major < 6 || !accessors {
+				return fmt.Errorf("observed_accessor requires suite/6 or /7 invocation input")
+			}
+			if _, err := closed(v, "kind event accessor", ""); err != nil {
+				return err
+			}
+			if err := name(f["event"], false); err != nil {
+				return err
+			}
+			if _, err := admitAccessor(f["accessor"]); err != nil {
 				return err
 			}
 		case "observed":
@@ -3400,7 +3557,7 @@ func admitExpectation(value any, major int) error {
 		return err
 	}
 	if fields, ok := f["fields"]; ok {
-		if err := admitValues(fields); err != nil {
+		if err := admitValues(fields, major, false); err != nil {
 			return err
 		}
 	}
@@ -3458,7 +3615,7 @@ func admitExpectation(value any, major int) error {
 		if err := admitPayload(predicate); err != nil {
 			return err
 		}
-		return admitPredicateEnvelope(predicate, 0)
+		return admitPredicateVersion(predicate, major)
 	}
 	return nil
 }
@@ -3535,13 +3692,6 @@ func admitPredicateEnvelope(value any, depth int) error {
 	return nil
 }
 
-func admitPredicatePath(path string) error {
-	if !factPath.MatchString(path) {
-		return fmt.Errorf("invalid predicate fact path %q", path)
-	}
-	return nil
-}
-
 func admitPredicateScalar(value any) error {
 	switch value.(type) {
 	case bool, string, json.Number:
@@ -3598,59 +3748,6 @@ func admitPredicateConstraint(value any) error {
 	return nil
 }
 
-func admitPredicateLeaf(expression string) error {
-	trimmed := strings.TrimSpace(expression)
-	switch trimmed {
-	case "always", "true", "never", "false":
-		return nil
-	}
-	for _, function := range []string{"defined", "exists", "missing"} {
-		if rest, ok := strings.CutPrefix(trimmed, function); ok {
-			if rest, ok := strings.CutPrefix(strings.TrimSpace(rest), "("); ok {
-				if path, ok := strings.CutSuffix(strings.TrimSpace(rest), ")"); ok {
-					return admitPredicatePath(strings.TrimSpace(path))
-				}
-			}
-		}
-	}
-	// Rust split_comparison chooses the first operator outside quotes, examining two-byte
-	// operators before one-byte operators at that position. Its RHS is nonempty operand text.
-	var quote byte
-	for index := 0; index < len(trimmed); index++ {
-		ch := trimmed[index]
-		if quote != 0 {
-			if ch == quote {
-				quote = 0
-			}
-			continue
-		}
-		if ch == '\'' || ch == '"' {
-			quote = ch
-			continue
-		}
-		width := 0
-		if index+1 < len(trimmed) {
-			switch trimmed[index : index+2] {
-			case "==", "!=", "<=", ">=":
-				width = 2
-			}
-		}
-		if width == 0 && (ch == '<' || ch == '>') {
-			width = 1
-		}
-		if width != 0 {
-			if err := admitPredicatePath(strings.TrimSpace(trimmed[:index])); err != nil {
-				return err
-			}
-			if strings.TrimSpace(trimmed[index+width:]) == "" {
-				return fmt.Errorf("predicate comparison requires a right operand")
-			}
-			return nil
-		}
-	}
-	return admitPredicatePath(trimmed)
-}
-
 func admitStep(value any, major int) error {
 	f, ok := value.(map[string]any)
 	if !ok {
@@ -3662,6 +3759,26 @@ func admitStep(value any, major int) error {
 	}
 	required, optional := "step", ""
 	switch tag {
+	case "expect_response_payload":
+		if major < 8 {
+			return fmt.Errorf("response payload requires suite/8 or /9")
+		}
+		required += " response"
+	case "check_periodic":
+		if major < 6 {
+			return fmt.Errorf("periodic checks require suite/6")
+		}
+		required += " check"
+	case "establish_entity":
+		if major < 6 {
+			return fmt.Errorf("entity setup requires suite/6")
+		}
+		required += " instance entity identity fields state"
+	case "expect_reading_order":
+		if major < 6 {
+			return fmt.Errorf("clock reading requires suite/6 or /7")
+		}
+		required += " left right order"
 	case "configure_external_outcome":
 		required += " force"
 	case "execute_command":
@@ -3719,6 +3836,18 @@ func admitStep(value any, major int) error {
 	}
 	for key, v := range f {
 		switch key {
+		case "response":
+			err = admitResponse(v)
+		case "check":
+			err = admitPeriodic(v)
+		case "left", "right":
+			err = admitReading(v)
+		case "order":
+			var order string
+			order, err = text(v)
+			if err == nil && order != "before" && order != "equal" && order != "after" {
+				err = fmt.Errorf("invalid reading order")
+			}
 		case "force", "outcome":
 			err = admitOutcome(v)
 		case "command", "entity", "event", "view", "error":
@@ -3729,10 +3858,18 @@ func admitStep(value any, major int) error {
 			}
 		case "binding", "instance", "instant":
 			err = name(v, true)
+		case "state":
+			var state string
+			state, err = text(v)
+			if err == nil && !stateName.MatchString(state) {
+				err = fmt.Errorf("invalid state name")
+			}
+		case "identity":
+			err = admitPayload(v)
 		case "field":
 			_, err = text(v)
 		case "input", "params":
-			err = admitValues(v)
+			err = admitValues(v, major, tag == "expect_invocation")
 		case "payload", "fields":
 			if _, ok := v.(map[string]any); !ok {
 				return fmt.Errorf("payload must be object")
@@ -3751,6 +3888,91 @@ func admitStep(value any, major int) error {
 		}
 		if err != nil {
 			return err
+		}
+	}
+	return nil
+}
+
+// Validate setup structure before any target callback. The adapter separately validates its model.
+func admitEntitySetups(steps []any) error {
+	hasSetup := false
+	for _, raw := range steps {
+		step := raw.(map[string]any)
+		if step["step"] == "establish_entity" {
+			hasSetup = true
+		}
+	}
+	if !hasSetup {
+		return nil
+	}
+	instances := map[string]bool{}
+	identities := []map[string]any{}
+	asserted := false
+	for _, raw := range steps {
+		step := raw.(map[string]any)
+		tag := step["step"].(string)
+		switch tag {
+		case "establish_entity":
+			asserted = false
+			if err := admitSetupLiteral(step["identity"], 0); err != nil {
+				return err
+			}
+			for _, value := range step["fields"].(map[string]any) {
+				if err := admitSetupLiteral(value, 0); err != nil {
+					return err
+				}
+			}
+			instance := step["instance"].(string)
+			if instances[instance] {
+				return fmt.Errorf("duplicate setup instance")
+			}
+			instances[instance] = true
+			if step["identity"] == nil {
+				return fmt.Errorf("setup identity cannot be null")
+			}
+			for _, previous := range identities {
+				if previous["entity"] == step["entity"] && equal(previous["identity"], step["identity"]) {
+					return fmt.Errorf("duplicate qualified entity identity")
+				}
+			}
+			for key := range step["fields"].(map[string]any) {
+				if !qualifiedName.MatchString(key) || strings.ContainsAny(key, ".-") {
+					return fmt.Errorf("invalid entity field name")
+				}
+			}
+			identities = append(identities, step)
+		case "capture_instance":
+			instance := step["instance"].(string)
+			if instances[instance] {
+				return fmt.Errorf("duplicate setup instance binding")
+			}
+			instances[instance] = true
+		case "check_periodic", "expect_view", "eventually_view", "expect_outcome", "expect_error", "expect_event", "expect_no_event", "eventually_event", "expect_invocation", "expect_not_before", "expect_within", "expect_quiet", "expect_halt", "eventually_halt":
+			asserted = true
+		}
+	}
+	if !asserted {
+		return fmt.Errorf("setup requires an assertion")
+	}
+	return nil
+}
+
+func admitSetupLiteral(value any, depth int) error {
+	if depth > 120 {
+		return fmt.Errorf("setup literal nesting exceeds 120")
+	}
+	switch value := value.(type) {
+	case []any:
+		for _, child := range value {
+			if err := admitSetupLiteral(child, depth+1); err != nil {
+				return err
+			}
+		}
+	case map[string]any:
+		for _, child := range value {
+			if err := admitSetupLiteral(child, depth+1); err != nil {
+				return err
+			}
 		}
 	}
 	return nil
@@ -3951,4 +4173,2412 @@ func countCanonical(document any) ([]byte, error) {
 	}
 	out.WriteByte('\n')
 	return out.Bytes(), nil
+}
+
+// accessorObservation is an exact invocation-member assertion, not a generic JSON path.
+type accessorRawSize int
+
+func (size *accessorRawSize) UnmarshalJSON(raw []byte) error {
+	if len(raw) > 2*1048576 {
+		return fmt.Errorf("AccessorResource: raw observation bytes")
+	}
+	*size = accessorRawSize(len(raw))
+	return nil
+}
+
+// Count borrowed observation documents before strictJSON constructs their maps and node tables.
+func accessorPreflight(raw string) error {
+	var document struct {
+		Scenarios map[string]struct {
+			Steps []struct {
+				Input map[string]struct {
+					Kind      string          `json:"kind"`
+					Accessor  accessorRawSize `json:"accessor"`
+					Selection accessorRawSize `json:"selection"`
+				} `json:"input"`
+			} `json:"steps"`
+		} `json:"scenarios"`
+	}
+	if err := json.Unmarshal([]byte(raw), &document); err != nil {
+		if strings.Contains(err.Error(), "AccessorResource") {
+			return err
+		}
+		return nil // The ordinary closed admitter diagnoses malformed legacy documents.
+	}
+	total := 0
+	for _, scenario := range document.Scenarios {
+		for _, step := range scenario.Steps {
+			for _, value := range step.Input {
+				if value.Kind == "observed_accessor" || value.Kind == "observed_selection" {
+					total += int(value.Accessor) + int(value.Selection)
+					if total > 16*1048576 {
+						return fmt.Errorf("AccessorResource: suite observation bytes")
+					}
+				}
+			}
+		}
+	}
+	return nil
+}
+
+func admitAccessorField(value any) error {
+	f, err := closed(value, "name type", "wire display summary")
+	if err != nil {
+		return err
+	}
+	n, err := text(f["name"])
+	if err != nil || !regexp.MustCompile(`^[A-Za-z][A-Za-z0-9_]*$`).MatchString(n) {
+		return fmt.Errorf("invalid accessor field name")
+	}
+	for _, key := range []string{"wire", "display", "summary"} {
+		if v, ok := f[key]; ok && v != nil {
+			if _, err := text(v); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
+}
+
+// The key follows TypeRef's closed Rust ordering, including segmented QualifiedName ordering.
+func accessorType(source string, depth int) (string, string, error) {
+	if depth > 32 {
+		return "", "", fmt.Errorf("accessor type nesting bound")
+	}
+	source = strings.TrimSpace(source)
+	for i, primitive := range []string{"String", "Boolean", "Integer", "Decimal", "Binary64", "Timestamp", "Duration", "Uuid", "Bytes"} {
+		if source == primitive {
+			return source, "0" + strconv.Itoa(i), nil
+		}
+	}
+	for i, wrapper := range []string{"Optional", "List", "Map"} {
+		if strings.HasPrefix(source, wrapper+"<") && strings.HasSuffix(source, ">") {
+			inner := source[len(wrapper)+1 : len(source)-1]
+			prefix, keyPrefix := wrapper+"<", strconv.Itoa(i+2)
+			if wrapper == "Map" {
+				key, rest, ok := strings.Cut(inner, ",")
+				key = strings.TrimSpace(key)
+				if !ok || !accessorPrimitive(key) || key == "Binary64" {
+					return "", "", fmt.Errorf("invalid accessor map key")
+				}
+				_, order, _ := accessorType(key, depth+1)
+				prefix += key + ", "
+				keyPrefix += order
+				inner = rest
+			}
+			canonical, order, err := accessorType(inner, depth+1)
+			return prefix + canonical + ">", keyPrefix + order, err
+		}
+	}
+	if err := name(source, false); err != nil {
+		return "", "", err
+	}
+	return source, "1" + strings.ReplaceAll(source, ".", "\x00") + "\x00", nil
+}
+
+func normalizeAccessorTypes(a *accessorObservation) error {
+	fields := []*string{&a.Target, &a.Plan.Root.Type}
+	for i := range a.Plan.Nodes {
+		n := &a.Plan.Nodes[i]
+		fields = append(fields, &n.Source)
+		if n.Leaf != nil {
+			fields = append(fields, n.Leaf)
+		}
+		if n.Operation.Kind == "field" {
+			fields = append(fields, &n.Operation.Field.Type)
+		}
+	}
+	for name, body := range a.Types.Nodes {
+		if body.Kind == "newtype" {
+			canonical, _, err := accessorType(body.Of, 0)
+			if err != nil {
+				return err
+			}
+			body.Of = canonical
+		}
+		for i := range body.Members {
+			fields = append(fields, &body.Members[i])
+		}
+		a.Types.Nodes[name] = body
+	}
+	for _, field := range fields {
+		canonical, _, err := accessorType(*field, 0)
+		if err != nil {
+			return err
+		}
+		*field = canonical
+	}
+	return nil
+}
+
+func checkAccessorShape(n accessorNode, nodes []accessorNode) error {
+	invalid := fmt.Errorf("accessor wire shape disagrees with typed operation")
+	source, shape := n.Source, n.Shape
+	_, optional := accessorOptional(source)
+	if optional && shape.Kind != "optional" {
+		return invalid
+	}
+	if shape.Kind == "optional" {
+		if shape.Of == nil {
+			return invalid
+		}
+		shape = *shape.Of
+		if !optional && (accessorPrimitive(source) || strings.HasPrefix(source, "List<") || strings.HasPrefix(source, "Map<")) {
+			return invalid
+		}
+	}
+	for {
+		inner, ok := accessorOptional(source)
+		if !ok {
+			break
+		}
+		source = inner
+	}
+	if accessorPrimitive(source) && (shape.Kind != "primitive" || shape.Name != strings.ToLower(source)) {
+		return invalid
+	}
+	if strings.HasPrefix(source, "List<") && shape.Kind != "sequence" {
+		return invalid
+	}
+	if strings.HasPrefix(source, "Map<") && shape.Kind != "object" {
+		return invalid
+	}
+	switch n.Operation.Kind {
+	case "field", "union":
+		if n.Shape.Kind != "object" {
+			return invalid
+		}
+	case "newtype", "optional":
+		next := nodes[n.Operation.Next].Shape
+		if n.Operation.Kind == "optional" && next.Kind == "optional" {
+			next = *next.Of
+		}
+		left, _ := json.Marshal(shape)
+		if n.Operation.Kind == "newtype" {
+			left, _ = json.Marshal(n.Shape)
+		}
+		right, _ := json.Marshal(next)
+		if !bytes.Equal(left, right) {
+			return invalid
+		}
+	}
+	return nil
+}
+
+type accessorObservation struct {
+	Types  accessorTypeFacts `json:"types"`
+	Plan   accessorPlan      `json:"plan"`
+	Target string            `json:"target"`
+}
+type accessorPlan struct {
+	Segments []string       `json:"segments"`
+	Root     accessorField  `json:"root"`
+	Start    int            `json:"start"`
+	Nodes    []accessorNode `json:"nodes"`
+}
+type accessorField struct {
+	Name string `json:"name"`
+	Type string `json:"type"`
+}
+type accessorNode struct {
+	Source    string            `json:"source"`
+	Shape     accessorShape     `json:"shape"`
+	Position  int               `json:"position"`
+	Operation accessorOperation `json:"operation"`
+	Leaf      *string           `json:"leaf"`
+	MayMiss   bool              `json:"may_miss"`
+	Depth     int               `json:"depth"`
+}
+type accessorShape struct {
+	Variants []string       `json:"variants"`
+	Kind     string         `json:"kind"`
+	Name     string         `json:"name"`
+	Of       *accessorShape `json:"of"`
+}
+type accessorOperation struct {
+	Kind     string         `json:"kind"`
+	Field    accessorField  `json:"field"`
+	Next     int            `json:"next"`
+	Tag      string         `json:"tag"`
+	Variants map[string]int `json:"variants"`
+}
+
+func accessorOptional(source string) (string, bool) {
+	if strings.HasPrefix(source, "Optional<") && strings.HasSuffix(source, ">") {
+		return source[9 : len(source)-1], true
+	}
+	return source, false
+}
+func (a accessorObservation) assignment() (int, int, error) {
+	p := a.Plan
+	if p.Start < 0 || p.Start >= len(p.Nodes) || p.Nodes[p.Start].Leaf == nil {
+		return 0, 0, fmt.Errorf("invalid accessor root")
+	}
+	leaf := *p.Nodes[p.Start].Leaf
+	if p.Nodes[p.Start].MayMiss {
+		if _, ok := accessorOptional(a.Target); !ok {
+			return 0, 0, fmt.Errorf("partial accessor requires Optional target")
+		}
+	}
+	target, added := a.Target, 0
+	for target != leaf {
+		inner, ok := accessorOptional(target)
+		if !ok || added >= 128 {
+			return 0, 0, fmt.Errorf("accessor has no identity-first assignment")
+		}
+		target = inner
+		added++
+	}
+	depth := 0
+	for {
+		inner, ok := accessorOptional(leaf)
+		if !ok {
+			break
+		}
+		leaf = inner
+		depth++
+		if depth > 128 {
+			return 0, 0, fmt.Errorf("accessor Optional bound")
+		}
+	}
+	if depth >= 2 && added == 0 {
+		return 0, 0, fmt.Errorf("AmbiguousOptionalObservation")
+	}
+	return depth, added, nil
+}
+func accessorChildren(op accessorOperation) []int {
+	switch op.Kind {
+	case "leaf", "missing":
+		return nil
+	case "field", "optional", "newtype":
+		return []int{op.Next}
+	case "union":
+		keys := make([]string, 0, len(op.Variants))
+		for k := range op.Variants {
+			keys = append(keys, k)
+		}
+		sort.Strings(keys)
+		out := make([]int, 0, len(keys))
+		for _, k := range keys {
+			out = append(out, op.Variants[k])
+		}
+		return out
+	default:
+		return nil
+	}
+}
+
+// Go escapes U+2028/U+2029 even with HTML escaping disabled; Rust's compact
+// JSON writes their UTF-8 bytes. Count the same representation for the shared
+// limit, without mistaking an escaped backslash followed by "u2028" for a rune.
+func accessorCompactBytes(raw []byte) int {
+	size := len(raw)
+	for i := 0; i < len(raw); i++ {
+		if raw[i] != '\\' {
+			continue
+		}
+		if i+5 < len(raw) && raw[i+1] == 'u' && string(raw[i+2:i+5]) == "202" && (raw[i+5] == '8' || raw[i+5] == '9') {
+			size -= 3
+			i += 5
+		} else {
+			i++ // Skip the escaped character, especially a second backslash.
+		}
+	}
+	return size
+}
+
+func admitAccessor(value any) (*accessorObservation, error) { return admitAccessorMode(value, false) }
+func admitAccessorMode(value any, item bool) (*accessorObservation, error) {
+	f, err := closed(value, "plan target types", "")
+	if err != nil {
+		return nil, err
+	}
+	p, err := closed(f["plan"], "segments root start nodes", "")
+	if err != nil {
+		return nil, err
+	}
+	if err := admitAccessorField(p["root"]); err != nil {
+		return nil, err
+	}
+	var compact bytes.Buffer
+	encoder := json.NewEncoder(&compact)
+	encoder.SetEscapeHTML(false)
+	if err := encoder.Encode(value); err != nil {
+		return nil, err
+	}
+	raw := compact.Bytes()[:compact.Len()-1] // Encode appends one newline.
+	if accessorCompactBytes(raw) > 1048576 {
+		return nil, fmt.Errorf("AccessorResource: observation bytes")
+	}
+	nodes, err := array(p["nodes"])
+	if err != nil || len(nodes) > 4096 {
+		return nil, fmt.Errorf("AccessorResource: nodes")
+	}
+	for _, rawNode := range nodes {
+		n, err := closed(rawNode, "source shape position operation leaf may_miss depth", "")
+		if err != nil {
+			return nil, err
+		}
+		op, ok := n["operation"].(map[string]any)
+		if !ok {
+			return nil, fmt.Errorf("invalid accessor operation")
+		}
+		required := "kind"
+		switch op["kind"] {
+		case "leaf", "missing":
+		case "field":
+			required += " field next"
+			if err := admitAccessorField(op["field"]); err != nil {
+				return nil, err
+			}
+		case "optional", "newtype":
+			required += " next"
+		case "union":
+			required += " tag variants"
+		default:
+			return nil, fmt.Errorf("unsupported accessor operation")
+		}
+		if _, err := closed(op, required, ""); err != nil {
+			return nil, err
+		}
+		if err := admitAccessorShape(n["shape"], 0); err != nil {
+			return nil, err
+		}
+	}
+	var a accessorObservation
+	if err := json.Unmarshal(raw, &a); err != nil {
+		return nil, err
+	}
+	if err := normalizeAccessorTypes(&a); err != nil {
+		return nil, err
+	}
+	plan := a.Plan
+	minimum, maximum := 2, 3
+	if item {
+		minimum, maximum = 1, 4
+		if plan.Root.Name != "item" {
+			return nil, fmt.Errorf("invalid selection item root")
+		}
+	}
+	if len(plan.Segments) < minimum || len(plan.Segments) > maximum || plan.Start < 0 || plan.Start >= len(plan.Nodes) || plan.Root.Name != plan.Segments[0] {
+		return nil, fmt.Errorf("invalid accessor root")
+	}
+	for _, s := range plan.Segments {
+		if !regexp.MustCompile(`^[A-Za-z][A-Za-z0-9_]*$`).MatchString(s) {
+			return nil, fmt.Errorf("invalid accessor segment")
+		}
+	}
+	root := plan.Nodes[plan.Start]
+	if root.Source != plan.Root.Type || root.Position != 1 {
+		return nil, fmt.Errorf("accessor root type differs")
+	}
+	edges := 0
+	previousKey, previousPosition := "", -1
+	for _, n := range plan.Nodes {
+		_, key, err := accessorType(n.Source, 0)
+		if err != nil || n.Position < 0 || key < previousKey || (key == previousKey && n.Position <= previousPosition) {
+			return nil, fmt.Errorf("invalid or unsorted accessor node type")
+		}
+		previousKey, previousPosition = key, n.Position
+		children := accessorChildren(n.Operation)
+		edges += len(children)
+		if edges > 16384 {
+			return nil, fmt.Errorf("AccessorResource: edges")
+		}
+		for _, id := range children {
+			if id < 0 || id >= len(plan.Nodes) {
+				return nil, fmt.Errorf("dangling accessor edge")
+			}
+		}
+		if err := checkAccessorShape(n, plan.Nodes); err != nil {
+			return nil, err
+		}
+		if n.Operation.Kind == "field" || n.Operation.Kind == "newtype" || n.Operation.Kind == "union" {
+			if err := name(n.Source, false); err != nil || accessorPrimitive(n.Source) {
+				return nil, fmt.Errorf("accessor traversal requires a nominal source")
+			}
+		}
+		switch op := n.Operation; op.Kind {
+		case "leaf":
+			if n.Position != len(plan.Segments) {
+				return nil, fmt.Errorf("early accessor leaf")
+			}
+		case "missing":
+			if n.Position >= len(plan.Segments) {
+				return nil, fmt.Errorf("missing accessor terminal")
+			}
+		case "field":
+			if n.Position >= len(plan.Segments) || op.Field.Name != plan.Segments[n.Position] || plan.Nodes[op.Next].Source != op.Field.Type || plan.Nodes[op.Next].Position != n.Position+1 {
+				return nil, fmt.Errorf("accessor field type differs")
+			}
+		case "optional":
+			inner, ok := accessorOptional(n.Source)
+			if !ok || n.Position >= len(plan.Segments) || plan.Nodes[op.Next].Source != inner || plan.Nodes[op.Next].Position != n.Position {
+				return nil, fmt.Errorf("accessor Optional type differs")
+			}
+		case "newtype":
+			if plan.Nodes[op.Next].Position != n.Position || n.Position >= len(plan.Segments) {
+				return nil, fmt.Errorf("invalid accessor wrapper")
+			}
+		case "union":
+			if op.Tag == "" || len(op.Variants) == 0 || n.Position >= len(plan.Segments) {
+				return nil, fmt.Errorf("invalid accessor union")
+			}
+			for _, id := range children {
+				if plan.Nodes[id].Position != n.Position {
+					return nil, fmt.Errorf("accessor union position differs")
+				}
+			}
+		}
+	}
+	type visit struct {
+		id   int
+		done bool
+	}
+	pending := []visit{{plan.Start, false}}
+	marks := make([]int, len(plan.Nodes))
+	for len(pending) > 0 {
+		item := pending[len(pending)-1]
+		pending = pending[:len(pending)-1]
+		n := plan.Nodes[item.id]
+		if item.done {
+			depth := 1
+			var leaf *string
+			missing := n.Operation.Kind == "missing" || n.Operation.Kind == "optional" || n.Operation.Kind == "union"
+			if n.Operation.Kind == "leaf" {
+				leaf = &n.Source
+			}
+			for _, id := range accessorChildren(n.Operation) {
+				child := plan.Nodes[id]
+				if child.Depth+1 > depth {
+					depth = child.Depth + 1
+				}
+				missing = missing || child.MayMiss
+				if child.Leaf != nil {
+					if leaf != nil && *leaf != *child.Leaf {
+						return nil, fmt.Errorf("accessor leaf types differ")
+					}
+					leaf = child.Leaf
+				}
+			}
+			if depth > 128 || n.Depth != depth || n.MayMiss != missing || (leaf == nil) != (n.Leaf == nil) || (leaf != nil && *leaf != *n.Leaf) {
+				return nil, fmt.Errorf("accessor derived metadata differs")
+			}
+			marks[item.id] = 2
+			continue
+		}
+		if marks[item.id] == 2 {
+			continue
+		}
+		if marks[item.id] == 1 {
+			return nil, fmt.Errorf("cyclic accessor")
+		}
+		marks[item.id] = 1
+		pending = append(pending, visit{item.id, true})
+		children := accessorChildren(n.Operation)
+		for i := len(children) - 1; i >= 0; i-- {
+			pending = append(pending, visit{children[i], false})
+		}
+	}
+	for _, mark := range marks {
+		if mark != 2 {
+			return nil, fmt.Errorf("unreachable accessor node")
+		}
+	}
+	if err := admitAccessorTypeFacts(f["types"]); err != nil {
+		return nil, err
+	}
+	if _, _, err := a.assignment(); err != nil {
+		return nil, err
+	}
+	if err := a.Types.validate(*a.Plan.Nodes[a.Plan.Start].Leaf); err != nil {
+		return nil, err
+	}
+	return &a, nil
+}
+func admitAccessorShape(value any, depth int) error {
+	if depth > 128 {
+		return fmt.Errorf("accessor shape bound")
+	}
+	f, ok := value.(map[string]any)
+	if !ok {
+		return fmt.Errorf("invalid accessor shape")
+	}
+	required := "kind"
+	switch f["kind"] {
+	case "primitive":
+		required += " name"
+	case "optional":
+		required += " of"
+	case "object", "sequence":
+	case "enum":
+		required += " variants"
+	default:
+		return fmt.Errorf("invalid accessor shape")
+	}
+	if _, err := closed(value, required, ""); err != nil {
+		return err
+	}
+	if f["kind"] == "optional" {
+		return admitAccessorShape(f["of"], depth+1)
+	}
+	if f["kind"] == "primitive" {
+		switch f["name"] {
+		case "string", "boolean", "integer", "decimal", "timestamp", "duration", "uuid", "bytes":
+		default:
+			return fmt.Errorf("unsupported accessor primitive shape")
+		}
+	}
+	return nil
+}
+func accessorShapeAdmits(shape accessorShape, value Node) bool {
+	switch shape.Kind {
+	case "optional":
+		return value == nil || (shape.Of != nil && accessorShapeAdmits(*shape.Of, value))
+	case "object":
+		_, ok := value.(map[string]Node)
+		return ok
+	case "sequence":
+		_, ok := value.([]Node)
+		return ok
+	case "enum":
+		text, ok := value.(string)
+		if !ok {
+			return false
+		}
+		for _, variant := range shape.Variants {
+			if variant == text {
+				return true
+			}
+		}
+		return false
+	case "primitive":
+		return primitive(shape.Name, value) == ""
+	default:
+		return false
+	}
+}
+func (a accessorObservation) evaluate(payload map[string]Node) (Node, bool, error) {
+	depth, added, err := a.assignment()
+	if err != nil {
+		return nil, false, err
+	}
+	value, present := payload[a.Plan.Root.Name]
+	id := a.Plan.Start
+	for count := 0; count < 128; count++ {
+		node := a.Plan.Nodes[id]
+		op := node.Operation
+		if present {
+			if !accessorShapeAdmits(node.Shape, value) {
+				return nil, false, fmt.Errorf("accessor has wrong declared payload kind")
+			}
+		} else if node.Shape.Kind != "optional" {
+			return nil, false, fmt.Errorf("required accessor member missing")
+		}
+		switch op.Kind {
+		case "missing":
+			return nil, false, nil
+		case "leaf":
+			if !present || value == nil {
+				if depth == 0 {
+					return nil, false, fmt.Errorf("required accessor terminal missing/null")
+				}
+				return nil, added > 0, nil
+			}
+			return value, true, nil
+		case "optional":
+			if !present || value == nil {
+				return nil, false, nil
+			}
+			id = op.Next
+		case "newtype":
+			id = op.Next
+		case "field":
+			fields, ok := value.(map[string]Node)
+			if !ok {
+				return nil, false, fmt.Errorf("accessor requires struct object")
+			}
+			value, present = fields[op.Field.Name]
+			id = op.Next
+		case "union":
+			fields, ok := value.(map[string]Node)
+			if !ok {
+				return nil, false, fmt.Errorf("accessor requires tagged union")
+			}
+			tag, ok := fields[op.Tag].(string)
+			if !ok {
+				return nil, false, fmt.Errorf("accessor discriminator missing or not text")
+			}
+			next, ok := op.Variants[tag]
+			if !ok {
+				return nil, false, fmt.Errorf("unknown accessor discriminator")
+			}
+			content := "value"
+			if op.Tag == "value" {
+				content = "content"
+			}
+			value, present = fields[content]
+			if !present {
+				return nil, false, fmt.Errorf("accessor union payload missing")
+			}
+			id = next
+		}
+	}
+	return nil, false, fmt.Errorf("accessor operation budget exceeded")
+}
+func (r *run) resolveAccessorExpected(value Value) (Node, bool, error) {
+	if value.Kind == "observed_selection" {
+		if value.Selection == nil {
+			return nil, false, fmt.Errorf("missing selection observation")
+		}
+		for _, event := range r.seen {
+			if event.Event == value.Event {
+				return value.Selection.evaluate(event.Payload)
+			}
+		}
+		return nil, false, fmt.Errorf("selection event was not observed")
+	}
+	if value.Kind != "observed_accessor" {
+		node, err := r.resolve(value)
+		return node, true, err
+	}
+	if value.Accessor == nil {
+		return nil, false, fmt.Errorf("missing accessor plan")
+	}
+	for _, event := range r.seen {
+		if event.Event == value.Event {
+			return value.Accessor.evaluate(event.Payload)
+		}
+	}
+	return nil, false, fmt.Errorf("accessor event was not observed")
+}
+
+// accessorTypeFacts is a closed certificate of the nominal structure an observer must inspect.
+type accessorTypeFacts struct {
+	Nodes map[string]accessorTypeBody `json:"nodes"`
+}
+type accessorTypeBody struct {
+	Kind    string   `json:"kind"`
+	Of      string   `json:"of"`
+	Members []string `json:"members"`
+}
+
+func admitAccessorTypeFacts(value any) error {
+	f, err := closed(value, "nodes", "")
+	if err != nil {
+		return err
+	}
+	nodes, ok := f["nodes"].(map[string]any)
+	if !ok || len(nodes) > 4096 {
+		return fmt.Errorf("AccessorResource: observation type nodes")
+	}
+	edges := 0
+	names := make([]string, 0, len(nodes))
+	for key := range nodes {
+		names = append(names, key)
+	}
+	sort.Strings(names)
+	for _, key := range names {
+		if err := name(key, false); err != nil {
+			return err
+		}
+		body, ok := nodes[key].(map[string]any)
+		if !ok {
+			return fmt.Errorf("invalid nominal observation fact")
+		}
+		required := "kind"
+		switch body["kind"] {
+		case "enum":
+		case "newtype":
+			required += " of"
+		case "struct", "union":
+			required += " members"
+		default:
+			return fmt.Errorf("unknown nominal observation fact")
+		}
+		if _, err := closed(body, required, ""); err != nil {
+			return err
+		}
+		if body["kind"] == "newtype" {
+			if _, err := text(body["of"]); err != nil {
+				return err
+			}
+			edges++
+		}
+		if body["kind"] == "struct" || body["kind"] == "union" {
+			members, err := array(body["members"])
+			if err != nil {
+				return err
+			}
+			edges += len(members)
+			if edges > 16384 {
+				return fmt.Errorf("AccessorResource: observation type edges")
+			}
+			for _, member := range members {
+				if _, err := text(member); err != nil {
+					return err
+				}
+			}
+		}
+	}
+	return nil
+}
+
+type accessorTypeVisit struct {
+	source string
+	nested bool
+	done   bool
+}
+
+func accessorPrimitive(source string) bool {
+	switch source {
+	case "String", "Boolean", "Integer", "Decimal", "Timestamp", "Duration", "Uuid", "Bytes", "Binary64":
+		return true
+	}
+	return false
+}
+func accessorCollection(source string) (string, bool, error) {
+	if strings.HasPrefix(source, "List<") && strings.HasSuffix(source, ">") {
+		return source[5 : len(source)-1], true, nil
+	}
+	if strings.HasPrefix(source, "Map<") && strings.HasSuffix(source, ">") {
+		parts := strings.SplitN(source[4:len(source)-1], ", ", 2)
+		if len(parts) != 2 || !accessorPrimitive(parts[0]) {
+			return "", false, fmt.Errorf("invalid accessor map type")
+		}
+		return parts[1], true, nil
+	}
+	return "", false, nil
+}
+func (facts accessorTypeFacts) children(source string, nested bool) ([]accessorTypeVisit, error) {
+	if source == "Binary64" {
+		return nil, fmt.Errorf("unsupported Binary64 accessor observation")
+	}
+	if accessorPrimitive(source) {
+		return nil, nil
+	}
+	if inner, ok := accessorOptional(source); ok {
+		if nested {
+			return nil, fmt.Errorf("AmbiguousOptionalObservation")
+		}
+		return []accessorTypeVisit{{inner, true, false}}, nil
+	}
+	if inner, ok, err := accessorCollection(source); ok || err != nil {
+		return []accessorTypeVisit{{inner, false, false}}, err
+	}
+	if err := name(source, false); err != nil {
+		return nil, err
+	}
+	body, ok := facts.Nodes[source]
+	if !ok {
+		return nil, fmt.Errorf("missing nominal observation type facts")
+	}
+	switch body.Kind {
+	case "enum":
+		return nil, nil
+	case "newtype":
+		if _, ok := accessorOptional(body.Of); ok {
+			return nil, fmt.Errorf("AmbiguousOptionalObservation")
+		}
+		return []accessorTypeVisit{{body.Of, nested, false}}, nil
+	case "struct", "union":
+		if len(body.Members) > 16384 {
+			return nil, fmt.Errorf("AccessorResource: observation type edges")
+		}
+		out := make([]accessorTypeVisit, 0, len(body.Members))
+		for _, member := range body.Members {
+			out = append(out, accessorTypeVisit{member, false, false})
+		}
+		return out, nil
+	default:
+		return nil, fmt.Errorf("unknown nominal observation kind")
+	}
+}
+func (facts accessorTypeFacts) validate(source string) error {
+	for {
+		inner, ok := accessorOptional(source)
+		if !ok {
+			break
+		}
+		source = inner
+	}
+	type key struct {
+		source string
+		nested bool
+	}
+	states := map[key]int{}
+	used := map[string]bool{}
+	pending := []accessorTypeVisit{{source, false, false}}
+	edges := 0
+	for len(pending) > 0 {
+		item := pending[len(pending)-1]
+		pending = pending[:len(pending)-1]
+		k := key{item.source, item.nested}
+		if item.done {
+			children, err := facts.children(item.source, item.nested)
+			if err != nil {
+				return err
+			}
+			depth := 1
+			for _, child := range children {
+				next := states[key{child.source, child.nested}] + 1
+				if next > depth {
+					depth = next
+				}
+			}
+			if depth > 128 {
+				return fmt.Errorf("AccessorResource: observation type operations")
+			}
+			states[k] = depth
+			continue
+		}
+		if state, ok := states[k]; ok {
+			if state == 0 {
+				return fmt.Errorf("AmbiguousOptionalObservation: recursive terminal")
+			}
+			continue
+		}
+		if len(states) >= 4096 {
+			return fmt.Errorf("AccessorResource: observation type nodes")
+		}
+		states[k] = 0
+		if _, ok := facts.Nodes[item.source]; ok {
+			used[item.source] = true
+		}
+		children, err := facts.children(item.source, item.nested)
+		if err != nil {
+			return err
+		}
+		edges += len(children)
+		if edges > 16384 {
+			return fmt.Errorf("AccessorResource: observation type edges")
+		}
+		pending = append(pending, accessorTypeVisit{item.source, item.nested, true})
+		for i := len(children) - 1; i >= 0; i-- {
+			pending = append(pending, children[i])
+		}
+	}
+	if len(used) != len(facts.Nodes) {
+		return fmt.Errorf("unreachable nominal observation facts")
+	}
+	return nil
+}
+
+// PeriodicField retains the source type. The authority must re-admit named types and invariants.
+type PeriodicField struct {
+	Name     string `json:"name"`
+	Type     string `json:"type"`
+	WireName string `json:"wire,omitempty"`
+	Display  string `json:"display,omitempty"`
+	Summary  string `json:"summary,omitempty"`
+}
+
+// PeriodicHost names required authenticated input authority; it carries no credentials.
+type PeriodicHost struct {
+	Owner         string          `json:"owner"`
+	Authority     string          `json:"authority"`
+	Eligibility   string          `json:"eligibility"`
+	ContextFields []PeriodicField `json:"context_fields"`
+	ReadFields    []PeriodicField `json:"read_fields"`
+}
+
+// PeriodicProfile is the one admitted fixed-rate host-lifetime profile.
+type PeriodicProfile struct {
+	Every        string       `json:"every"`
+	Anchor       string       `json:"anchor"`
+	First        string       `json:"first"`
+	Cadence      string       `json:"cadence"`
+	Overlap      string       `json:"overlap"`
+	Missed       string       `json:"missed"`
+	Lifetime     string       `json:"lifetime"`
+	Cancellation string       `json:"cancellation"`
+	Host         PeriodicHost `json:"host"`
+}
+
+// PeriodicSource identifies one required host input phase.
+type PeriodicSource struct {
+	Kind  string `json:"kind"`
+	Field string `json:"field"`
+}
+
+// PeriodicCheck requests a controlled fixture of the actual declared host authority.
+type PeriodicCheck struct {
+	Binding  string                    `json:"binding"`
+	Command  string                    `json:"command"`
+	Periodic PeriodicProfile           `json:"periodic"`
+	Mapping  map[string]PeriodicSource `json:"mapping"`
+	Fixture  string                    `json:"fixture"`
+}
+
+// PeriodicScope is an actual causal origin, including its opaque host lifetime.
+type PeriodicScope struct {
+	Correlation string `json:"correlation"`
+	Binding     string `json:"binding"`
+	Lifetime    string `json:"lifetime"`
+}
+
+// PeriodicOpen binds the typed authority to a previously marked target clock.
+type PeriodicOpen struct {
+	Check PeriodicCheck
+	Mark  InstantMark
+}
+
+// PeriodicOpened acknowledges activation and immutable context.
+type PeriodicOpened struct {
+	Scope        PeriodicScope
+	AnchorMillis uint64
+	Context      map[string]Node
+}
+
+// PeriodicObserve holds target time and requests complete new causal records.
+type PeriodicObserve struct {
+	Scope   PeriodicScope
+	Elapsed ElapsedRequest
+	After   uint64
+}
+
+// PeriodicFact is an observed fact, never a target verdict. Kind selects its populated fields.
+type PeriodicFact struct {
+	Kind       string
+	Ordinal    uint64
+	DueMillis  uint64
+	AtMillis   uint64
+	Eligible   bool
+	Invocation string
+	Command    string
+	Read       map[string]Node
+	Input      map[string]Node
+	First      uint64
+	Last       uint64
+}
+
+// PeriodicRecord retains the actual origin even when it differs from the requested scope.
+type PeriodicRecord struct {
+	Scope PeriodicScope
+	Fact  PeriodicFact
+}
+
+// PeriodicObservation combines elapsed time with complete append-only causal capture.
+type PeriodicObservation struct {
+	ElapsedMillis         uint64
+	CompleteThroughMillis uint64
+	Cursor                uint64
+	Records               []PeriodicRecord
+}
+
+// PeriodicClosed acknowledges actual quiescence, including in-flight read/apply work.
+type PeriodicClosed struct {
+	Scope    PeriodicScope
+	AtMillis uint64
+}
+
+// PeriodicTarget opens the actual host, re-admitting the typed authority against its model.
+// Named representations, nested values, and invariants require host validation before effects.
+// Unsupported authority or controlled observation returns ErrUnsupported, never a passing trace.
+type PeriodicTarget interface {
+	OpenPeriodic(PeriodicOpen) (PeriodicOpened, error)
+	ObservePeriodic(PeriodicObserve) (PeriodicObservation, error)
+	ClosePeriodic(PeriodicScope) (PeriodicClosed, error)
+}
+
+func periodicSeconds(value string) (uint64, error) {
+	if !strings.HasPrefix(value, "PT") || !strings.HasSuffix(value, "S") {
+		return 0, fmt.Errorf("PeriodicContract: expected PT<seconds>S")
+	}
+	digits := value[2 : len(value)-1]
+	if digits == "" || (len(digits) > 1 && digits[0] == '0') {
+		return 0, fmt.Errorf("PeriodicContract: empty period")
+	}
+	for _, c := range digits {
+		if c < '0' || c > '9' {
+			return 0, fmt.Errorf("PeriodicContract: noninteger period")
+		}
+	}
+	n, err := strconv.ParseUint(digits, 10, 32)
+	if err != nil || n == 0 || n > 4294967295/5 {
+		return 0, fmt.Errorf("PeriodicResource: positive five-period witness must fit elapsed")
+	}
+	return n, nil
+}
+func periodicFieldName(value string) bool {
+	return qualifiedName.MatchString(value) && !strings.ContainsAny(value, ".-")
+}
+func admitPeriodic(value any) error {
+	f, err := closed(value, "binding command periodic mapping fixture", "")
+	if err != nil {
+		return err
+	}
+	if err = name(f["binding"], true); err != nil {
+		return err
+	}
+	if err = name(f["command"], false); err != nil {
+		return err
+	}
+	fixture, _ := f["fixture"].(string)
+	switch fixture {
+	case "ready", "initially_inactive", "first_read_fails", "slow_first_read":
+	default:
+		return fmt.Errorf("PeriodicContract: unknown fixture")
+	}
+	p, err := closed(f["periodic"], "every anchor first cadence overlap missed lifetime cancellation host", "")
+	if err != nil {
+		return err
+	}
+	every, err := text(p["every"])
+	if err != nil {
+		return err
+	}
+	if _, err = periodicSeconds(every); err != nil {
+		return err
+	}
+	for key, want := range map[string]string{"anchor": "host_activation", "first": "after_period", "cadence": "fixed_rate", "overlap": "serial_per_instance", "missed": "one_pending_drop_excess", "lifetime": "host_instance", "cancellation": "stop_acknowledged"} {
+		if p[key] != want {
+			return fmt.Errorf("PeriodicContract: unsupported %s", key)
+		}
+	}
+	h, err := closed(p["host"], "owner authority eligibility context_fields read_fields", "")
+	if err != nil {
+		return err
+	}
+	if err = name(h["owner"], true); err != nil {
+		return err
+	}
+	if err = name(h["authority"], true); err != nil {
+		return err
+	}
+	if h["eligibility"] != "host_boolean" {
+		return fmt.Errorf("PeriodicContract: eligibility authority")
+	}
+	tables := map[string]map[string]bool{}
+	for _, phase := range []string{"context", "read"} {
+		fields, ok := h[phase+"_fields"].([]any)
+		if !ok || len(fields) > 64 {
+			return fmt.Errorf("PeriodicResource: host fields bound")
+		}
+		seen := map[string]bool{}
+		for _, raw := range fields {
+			field, e := closed(raw, "name type", "wire display summary")
+			if e != nil {
+				return e
+			}
+			n, e := text(field["name"])
+			if e != nil || !periodicFieldName(n) || seen[n] {
+				return fmt.Errorf("PeriodicContract: duplicate or malformed field")
+			}
+			seen[n] = true
+			ty, e := text(field["type"])
+			if e != nil {
+				return e
+			}
+			if _, _, e = accessorType(ty, 0); e != nil {
+				return e
+			}
+			for _, key := range []string{"wire", "display", "summary"} {
+				if v, present := field[key]; present {
+					if _, e = text(v); e != nil {
+						return e
+					}
+				}
+			}
+		}
+		tables[phase] = seen
+	}
+	mapping, ok := f["mapping"].(map[string]any)
+	if !ok || len(mapping) == 0 || len(mapping) > 64 {
+		return fmt.Errorf("PeriodicResource: mapping bound")
+	}
+	for target, raw := range mapping {
+		if !periodicFieldName(target) {
+			return fmt.Errorf("PeriodicContract: input name")
+		}
+		source, e := closed(raw, "kind field", "")
+		if e != nil {
+			return e
+		}
+		kind, _ := source["kind"].(string)
+		field, _ := source["field"].(string)
+		if !tables[kind][field] {
+			return fmt.Errorf("PeriodicContract: undeclared host source")
+		}
+	}
+	return nil
+}
+func validatePeriodic(check PeriodicCheck) error {
+	data, err := json.Marshal(check)
+	if err != nil {
+		return err
+	}
+	var raw any
+	decoder := json.NewDecoder(bytes.NewReader(data))
+	decoder.UseNumber()
+	if err = decoder.Decode(&raw); err != nil {
+		return err
+	}
+	return admitPeriodic(raw)
+}
+func periodicFields(fields []PeriodicField, values map[string]Node) error {
+	if len(fields) != len(values) {
+		return fmt.Errorf("PeriodicHost: exact fields required")
+	}
+	var accepts func(string, Node, int) bool
+	accepts = func(ty string, value Node, depth int) bool {
+		if depth > 32 {
+			return false
+		}
+		ty = strings.TrimSpace(ty)
+		if strings.HasPrefix(ty, "Optional<") {
+			return value == nil || accepts(ty[9:len(ty)-1], value, depth+1)
+		}
+		if strings.HasPrefix(ty, "List<") {
+			_, ok := value.([]any)
+			return ok
+		}
+		if strings.HasPrefix(ty, "Map<") {
+			_, ok := value.(map[string]any)
+			return ok
+		}
+		if accessorPrimitive(ty) {
+			return primitive(strings.ToLower(ty), value) == ""
+		}
+		return true
+	}
+	for _, field := range fields {
+		value, ok := values[field.Name]
+		if !ok || !accepts(field.Type, value, 0) {
+			return fmt.Errorf("PeriodicHost: representation of %s", field.Name)
+		}
+	}
+	return nil
+}
+
+// Selection retains actual declaration facts and original list indices; no target-supplied path interpreter.
+type selectionDeclaration struct {
+	Kind     string          `json:"kind"`
+	Of       string          `json:"of"`
+	Fields   []accessorField `json:"fields"`
+	Variants json.RawMessage `json:"variants"`
+	Tag      string          `json:"tag"`
+}
+type selectionInput struct {
+	Name   string `json:"name"`
+	Source struct {
+		Kind  string        `json:"kind"`
+		Field accessorField `json:"field"`
+		Plan  accessorPlan  `json:"plan"`
+	} `json:"source"`
+	ListType      string  `json:"list_type"`
+	ItemType      string  `json:"item_type"`
+	OptionalItems bool    `json:"optional_items"`
+	Conversion    *string `json:"conversion"`
+}
+type selectionSelector struct {
+	Name      string `json:"name"`
+	Input     int    `json:"input"`
+	Operation struct {
+		Kind       string                  `json:"kind"`
+		Excluding  []int                   `json:"excluding"`
+		Predicate  any                     `json:"predicate"`
+		Reads      map[string]accessorPlan `json:"reads"`
+		Selections []int                   `json:"selections"`
+	} `json:"operation"`
+}
+type selectionObservation struct {
+	responseMode bool
+	Raw          json.RawMessage `json:"-"`
+	EventType    string          `json:"event_type"`
+	Plan         struct {
+		Inputs    []selectionInput    `json:"inputs"`
+		Selectors []selectionSelector `json:"selectors"`
+	} `json:"plan"`
+	Declarations map[string]selectionDeclaration `json:"declarations"`
+	Selector     int                             `json:"selector"`
+	Projection   struct {
+		Projection accessorPlan      `json:"projection"`
+		Target     string            `json:"target"`
+		Types      accessorTypeFacts `json:"types"`
+	} `json:"projection"`
+}
+
+func (s *selectionObservation) UnmarshalJSON(raw []byte) error {
+	type document selectionObservation
+	var decoded document
+	if err := json.Unmarshal(raw, &decoded); err != nil {
+		return err
+	}
+	*s = selectionObservation(decoded)
+	s.Raw = append([]byte(nil), raw...)
+	return nil
+}
+func selectionShapeJSON(shape accessorShape) any {
+	value := map[string]any{"kind": shape.Kind}
+	switch shape.Kind {
+	case "primitive":
+		value["name"] = shape.Name
+	case "enum":
+		value["variants"] = shape.Variants
+	case "optional":
+		if shape.Of != nil {
+			value["of"] = selectionShapeJSON(*shape.Of)
+		}
+	}
+	return value
+}
+func selectionPlanJSON(plan accessorPlan) any {
+	field := func(field accessorField) any { return map[string]any{"name": field.Name, "type": field.Type} }
+	nodes := make([]any, 0, len(plan.Nodes))
+	for _, node := range plan.Nodes {
+		op := node.Operation
+		operation := map[string]any{"kind": op.Kind}
+		switch op.Kind {
+		case "field":
+			operation["field"] = field(op.Field)
+			operation["next"] = op.Next
+		case "optional", "newtype":
+			operation["next"] = op.Next
+		case "union":
+			operation["tag"] = op.Tag
+			operation["variants"] = op.Variants
+		}
+		nodes = append(nodes, map[string]any{"source": node.Source, "shape": selectionShapeJSON(node.Shape), "position": node.Position, "operation": operation, "leaf": node.Leaf, "may_miss": node.MayMiss, "depth": node.Depth})
+	}
+	return map[string]any{"segments": plan.Segments, "root": field(plan.Root), "start": plan.Start, "nodes": nodes}
+}
+func selectionFactsJSON(facts accessorTypeFacts) any {
+	nodes := map[string]any{}
+	for name, body := range facts.Nodes {
+		value := map[string]any{"kind": body.Kind}
+		switch body.Kind {
+		case "newtype":
+			value["of"] = body.Of
+		case "struct", "union":
+			value["members"] = body.Members
+		}
+		nodes[name] = value
+	}
+	return map[string]any{"nodes": nodes}
+}
+func selectionJSON(value any) any {
+	raw, _ := json.Marshal(value)
+	var answer any
+	decoder := json.NewDecoder(bytes.NewReader(raw))
+	decoder.UseNumber()
+	_ = decoder.Decode(&answer)
+	return answer
+}
+func (s selectionObservation) transparent(source string) (string, error) {
+	seen := map[string]bool{}
+	for depth := 0; depth < 128; depth++ {
+		body, ok := s.Declarations[source]
+		if !ok || body.Kind != "newtype" {
+			return source, nil
+		}
+		if seen[source] {
+			return "", fmt.Errorf("recursive selection alias")
+		}
+		seen[source] = true
+		source = body.Of
+	}
+	return "", fmt.Errorf("selection alias bound")
+}
+func (s selectionObservation) shape(source string, depth int) (accessorShape, error) {
+	if depth > 128 {
+		return accessorShape{}, fmt.Errorf("selection shape bound")
+	}
+	source, err := s.transparent(source)
+	if err != nil {
+		return accessorShape{}, err
+	}
+	if inner, ok := accessorOptional(source); ok {
+		shape, err := s.shape(inner, depth+1)
+		if shape.Kind == "optional" {
+			return shape, err
+		}
+		return accessorShape{Kind: "optional", Of: &shape}, err
+	}
+	if accessorPrimitive(source) {
+		return accessorShape{Kind: "primitive", Name: strings.ToLower(source)}, nil
+	}
+	if strings.HasPrefix(source, "List<") {
+		return accessorShape{Kind: "sequence"}, nil
+	}
+	if strings.HasPrefix(source, "Map<") {
+		return accessorShape{Kind: "object"}, nil
+	}
+	body, ok := s.Declarations[source]
+	if !ok {
+		return accessorShape{}, fmt.Errorf("missing selection shape")
+	}
+	if body.Kind == "enum" {
+		var variants []string
+		if err := json.Unmarshal(body.Variants, &variants); err != nil {
+			return accessorShape{}, err
+		}
+		return accessorShape{Kind: "enum", Variants: variants}, nil
+	}
+	return accessorShape{Kind: "object"}, nil
+}
+func (s selectionObservation) typeFacts(source string) (accessorTypeFacts, error) {
+	facts := accessorTypeFacts{Nodes: map[string]accessorTypeBody{}}
+	pending := []string{source}
+	for len(pending) > 0 {
+		ty := pending[len(pending)-1]
+		pending = pending[:len(pending)-1]
+		if inner, ok := accessorOptional(ty); ok {
+			pending = append(pending, inner)
+			continue
+		}
+		if inner, ok, err := accessorCollection(ty); err != nil {
+			return facts, err
+		} else if ok {
+			pending = append(pending, inner)
+			continue
+		}
+		if accessorPrimitive(ty) {
+			continue
+		}
+		if _, ok := facts.Nodes[ty]; ok {
+			continue
+		}
+		body, ok := s.Declarations[ty]
+		if !ok {
+			return facts, fmt.Errorf("missing selection type fact")
+		}
+		node := accessorTypeBody{Kind: body.Kind, Of: body.Of}
+		switch body.Kind {
+		case "newtype":
+			pending = append(pending, body.Of)
+		case "struct":
+			for _, field := range body.Fields {
+				node.Members = append(node.Members, field.Type)
+				pending = append(pending, field.Type)
+			}
+		case "union":
+			var variants map[string]string
+			if err := json.Unmarshal(body.Variants, &variants); err != nil {
+				return facts, err
+			}
+			for _, name := range meaningKeys(selectionJSON(variants).(map[string]any)) {
+				node.Members = append(node.Members, variants[name])
+				pending = append(pending, variants[name])
+			}
+		case "enum":
+		default:
+			return facts, fmt.Errorf("invalid selection declaration")
+		}
+		facts.Nodes[ty] = node
+		if len(facts.Nodes) > 4096 {
+			return facts, fmt.Errorf("selection fact bound")
+		}
+	}
+	return facts, nil
+}
+func (s selectionObservation) checkPlan(plan accessorPlan, item bool) error {
+	if plan.Start < 0 || plan.Start >= len(plan.Nodes) || plan.Nodes[plan.Start].Leaf == nil {
+		return fmt.Errorf("selection invalid plan root")
+	}
+	target := *plan.Nodes[plan.Start].Leaf
+	if plan.Nodes[plan.Start].MayMiss {
+		if _, ok := accessorOptional(target); !ok {
+			target = "Optional<" + target + ">"
+		}
+	}
+	facts, err := s.typeFacts(target)
+	if err != nil {
+		return err
+	}
+	if _, err = admitAccessorMode(selectionJSON(map[string]any{"plan": selectionPlanJSON(plan), "target": target, "types": selectionFactsJSON(facts)}), item); err != nil {
+		return err
+	}
+	for _, node := range plan.Nodes {
+		shape, err := s.shape(node.Source, 0)
+		if err != nil {
+			return err
+		}
+		if !reflect.DeepEqual(shape, node.Shape) {
+			return fmt.Errorf("selection declared shape disagrees")
+		}
+		body := s.Declarations[node.Source]
+		switch op := node.Operation; op.Kind {
+		case "field":
+			if body.Kind != "struct" {
+				return fmt.Errorf("selection field owner differs")
+			}
+			found := false
+			for _, field := range body.Fields {
+				if field.Name == op.Field.Name && field.Type == op.Field.Type {
+					found = true
+				}
+			}
+			if !found {
+				return fmt.Errorf("selection undeclared field")
+			}
+		case "newtype":
+			if body.Kind != "newtype" || body.Of != plan.Nodes[op.Next].Source {
+				return fmt.Errorf("selection alias differs")
+			}
+		case "union":
+			var variants map[string]string
+			if body.Kind != "union" || body.Tag != op.Tag || json.Unmarshal(body.Variants, &variants) != nil || len(variants) != len(op.Variants) {
+				return fmt.Errorf("selection union differs")
+			}
+			for label, index := range op.Variants {
+				if variants[label] != plan.Nodes[index].Source {
+					return fmt.Errorf("selection variant differs")
+				}
+			}
+		case "missing":
+			if body.Kind != "struct" {
+				return fmt.Errorf("selection missing member owner differs")
+			}
+			for _, field := range body.Fields {
+				if field.Name == plan.Segments[node.Position] {
+					return fmt.Errorf("selection omitted an existing field")
+				}
+			}
+		}
+	}
+	return nil
+}
+
+type periodicOperation struct {
+	eligible                   bool
+	received                   uint64
+	invoked, failed, completed bool
+}
+type periodicLedger struct {
+	check                   PeriodicCheck
+	opened                  PeriodicOpened
+	period                  uint64
+	operations              map[uint64]*periodicOperation
+	invocations             map[string]bool
+	dropped                 map[uint64]bool
+	cursor, through, lastAt uint64
+}
+
+func (l *periodicLedger) deadline(ordinal uint64) (uint64, bool) {
+	if ordinal == 0 || ordinal > (^uint64(0)-l.opened.AnchorMillis)/l.period {
+		return 0, false
+	}
+	return l.opened.AnchorMillis + ordinal*l.period, true
+}
+func (l *periodicLedger) observe(o PeriodicObservation, hold uint64, closed *uint64) error {
+	if len(o.Records) > 4096 || o.Cursor > 4096 || o.Cursor != l.cursor+uint64(len(o.Records)) {
+		return fmt.Errorf("PeriodicResource: capture cursor")
+	}
+	if o.ElapsedMillis < hold || o.CompleteThroughMillis < hold || o.CompleteThroughMillis > o.ElapsedMillis || o.CompleteThroughMillis < l.through {
+		return fmt.Errorf("PeriodicObservation: incomplete held window")
+	}
+	for _, record := range o.Records {
+		if record.Scope != l.opened.Scope {
+			return fmt.Errorf("PeriodicOrigin: wrong binding, scenario or lifetime")
+		}
+		f := record.Fact
+		if f.AtMillis < l.lastAt || f.AtMillis <= l.through || f.AtMillis > o.CompleteThroughMillis {
+			return fmt.Errorf("PeriodicObservation: invalid fact time/order")
+		}
+		if closed != nil && f.AtMillis >= *closed && f.Kind != "independent" {
+			return fmt.Errorf("PeriodicLifetime: occurrence after stop")
+		}
+		l.lastAt = f.AtMillis
+		busy := false
+		for _, op := range l.operations {
+			if !op.completed {
+				busy = true
+			}
+		}
+		switch f.Kind {
+		case "received":
+			due, ok := l.deadline(f.Ordinal)
+			if !ok || due != f.DueMillis || f.AtMillis < due || l.operations[f.Ordinal] != nil || l.dropped[f.Ordinal] {
+				return fmt.Errorf("PeriodicOccurrence: early, duplicate or incorrect tick")
+			}
+			if busy {
+				return fmt.Errorf("PeriodicOverlap: concurrent poll")
+			}
+			eligible := !(l.check.Fixture == "initially_inactive" && f.Ordinal == 1)
+			if f.Eligible != eligible {
+				return fmt.Errorf("PeriodicHost: eligibility fixture")
+			}
+			l.operations[f.Ordinal] = &periodicOperation{eligible: eligible, received: f.AtMillis}
+		case "read_failed":
+			op := l.operations[f.Ordinal]
+			if op == nil || !op.eligible || op.invoked || op.failed || op.completed || l.check.Fixture != "first_read_fails" || f.Ordinal != 1 {
+				return fmt.Errorf("PeriodicHost: unexpected read failure")
+			}
+			op.failed = true
+		case "invoked":
+			op := l.operations[f.Ordinal]
+			if op == nil || !op.eligible || op.failed || op.invoked || op.completed || f.Command != l.check.Command || f.Invocation == "" || l.invocations[f.Invocation] || f.AtMillis < op.received {
+				return fmt.Errorf("PeriodicInvocation: duplicated, misattributed or forbidden invocation")
+			}
+			if err := periodicFields(l.check.Periodic.Host.ReadFields, f.Read); err != nil {
+				return err
+			}
+			expected := map[string]Node{}
+			for target, source := range l.check.Mapping {
+				table := f.Read
+				if source.Kind == "context" {
+					table = l.opened.Context
+				}
+				value, ok := table[source.Field]
+				if !ok {
+					return fmt.Errorf("PeriodicHost: missing value")
+				}
+				expected[target] = value
+			}
+			if !equal(f.Input, expected) {
+				return fmt.Errorf("PeriodicMapping: invocation differs from current host inputs")
+			}
+			op.invoked = true
+			l.invocations[f.Invocation] = true
+		case "completed":
+			third, valid := l.deadline(3)
+			if l.check.Fixture == "slow_first_read" && f.Ordinal == 1 && (!valid || f.AtMillis <= third) {
+				return fmt.Errorf("PeriodicHost: first read did not remain busy through both missed deadlines")
+			}
+			op := l.operations[f.Ordinal]
+			if op == nil || op.completed || (op.eligible && !op.invoked && !op.failed) || (l.check.Fixture == "first_read_fails" && f.Ordinal == 1 && !op.failed) {
+				return fmt.Errorf("PeriodicOccurrence: missing attempt")
+			}
+			op.completed = true
+		case "dropped":
+			if f.First == 0 || f.First > f.Last || f.Last > 5 || l.check.Fixture != "slow_first_read" || !busy {
+				return fmt.Errorf("PeriodicMissed: loss outside busy window")
+			}
+			for n := f.First; n <= f.Last; n++ {
+				due, ok := l.deadline(n)
+				if !ok || due > f.AtMillis || l.operations[n] != nil || l.dropped[n] {
+					return fmt.Errorf("PeriodicMissed: invalid dropped ordinal")
+				}
+				l.dropped[n] = true
+			}
+		case "independent":
+			if f.Invocation == "" || f.Command != l.check.Command || l.invocations[f.Invocation] {
+				return fmt.Errorf("PeriodicOrigin: invalid independent invocation")
+			}
+			l.invocations[f.Invocation] = true
+		default:
+			return fmt.Errorf("PeriodicObservation: unknown fact")
+		}
+	}
+	l.cursor = o.Cursor
+	l.through = o.CompleteThroughMillis
+	{
+		liveThrough := l.through
+		if closed != nil {
+			liveThrough = *closed
+			if liveThrough > 0 {
+				liveThrough--
+			}
+		}
+		var due uint64
+		if liveThrough > l.opened.AnchorMillis {
+			due = (liveThrough - l.opened.AnchorMillis) / l.period
+		}
+		if due > 5 {
+			return fmt.Errorf("PeriodicResource: live observation exceeds five-period witness")
+		}
+		if l.check.Fixture == "slow_first_read" && due >= 4 {
+			pending, dropped := 0, 0
+			for _, n := range []uint64{2, 3} {
+				if op := l.operations[n]; op != nil && op.completed {
+					pending++
+				}
+				if l.dropped[n] {
+					dropped++
+				}
+			}
+			if pending != 1 || dropped != 1 {
+				return fmt.Errorf("PeriodicMissed: exactly one pending and one discarded tick required")
+			}
+		}
+		for n := uint64(1); n <= due; n++ {
+			if l.check.Fixture == "slow_first_read" && (n == 2 || n == 3) {
+				continue
+			}
+			op := l.operations[n]
+			if op == nil {
+				return fmt.Errorf("PeriodicLiveness: missing idle occurrence")
+			}
+			deadline, _ := l.deadline(n)
+			if op.received != deadline {
+				return fmt.Errorf("PeriodicLateness: idle receipt delayed")
+			}
+			if !(l.check.Fixture == "slow_first_read" && n == 1 && due < 4) && !op.completed {
+				return fmt.Errorf("PeriodicLiveness: missing completion")
+			}
+		}
+	}
+	return nil
+}
+
+func periodicSnapshot[T any](value T) (T, error) {
+	var copied T
+	encoded, err := json.Marshal(value)
+	if err != nil {
+		return copied, err
+	}
+	decoder := json.NewDecoder(bytes.NewReader(encoded))
+	decoder.UseNumber()
+	err = decoder.Decode(&copied)
+	return copied, err
+}
+
+// CheckPeriodic exercises real authority and a controlled target clock without wall sleeps.
+func CheckPeriodic(check PeriodicCheck, correlation string, target PeriodicTarget, clock Clock) (result error) {
+	if err := validatePeriodic(check); err != nil {
+		return err
+	}
+	mark := InstantMark{Instant: "periodic-anchor", Correlation: correlation}
+	if err := clock.MarkInstant(mark); err != nil {
+		return err
+	}
+	requestCheck, err := periodicSnapshot(check)
+	if err != nil {
+		return err
+	}
+	opened, err := target.OpenPeriodic(PeriodicOpen{Check: requestCheck, Mark: mark})
+	if err != nil {
+		return err
+	}
+	stopped := false
+	defer func() {
+		if !stopped {
+			_, closeErr := target.ClosePeriodic(opened.Scope)
+			if result == nil {
+				result = closeErr
+			}
+		}
+	}()
+	if opened.Scope.Correlation != correlation || opened.Scope.Binding != check.Binding || opened.Scope.Lifetime == "" || len(opened.Scope.Lifetime) > 128 {
+		return fmt.Errorf("PeriodicOrigin: invalid opened scope")
+	}
+	if err = periodicFields(check.Periodic.Host.ContextFields, opened.Context); err != nil {
+		return err
+	}
+	opened.Context, err = periodicSnapshot(opened.Context)
+	if err != nil {
+		return err
+	}
+	if opened.AnchorMillis%1000 != 0 {
+		return fmt.Errorf("%w: whole-second controlled anchor required", ErrUnsupported)
+	}
+	p, _ := periodicSeconds(check.Periodic.Every)
+	anchor := opened.AnchorMillis / 1000
+	if anchor > 4294967295-4*p {
+		return fmt.Errorf("PeriodicResource: anchor overflow")
+	}
+	ledger := periodicLedger{check: check, opened: opened, period: p * 1000, operations: map[uint64]*periodicOperation{}, invocations: map[string]bool{}, dropped: map[uint64]bool{}, through: opened.AnchorMillis, lastAt: opened.AnchorMillis}
+	for _, offset := range []uint64{p - 1, p, 2 * p, 4 * p} {
+		seconds := anchor + offset
+		o, e := target.ObservePeriodic(PeriodicObserve{Scope: opened.Scope, Elapsed: ElapsedRequest{Instant: mark.Instant, Hold: int(seconds), Correlation: correlation}, After: ledger.cursor})
+		if e != nil {
+			return e
+		}
+		if e = ledger.observe(o, seconds*1000, nil); e != nil {
+			return e
+		}
+	}
+	closed, err := target.ClosePeriodic(opened.Scope)
+	stopped = true
+	if err != nil {
+		return err
+	}
+	if closed.Scope != opened.Scope || closed.AtMillis < ledger.through {
+		return fmt.Errorf("PeriodicLifetime: invalid stop acknowledgement")
+	}
+	if closed.AtMillis > 4294967295*1000-p*1000 {
+		return fmt.Errorf("PeriodicResource: closure overflow")
+	}
+	hold := (closed.AtMillis + p*1000 + 999) / 1000
+	o, err := target.ObservePeriodic(PeriodicObserve{Scope: opened.Scope, Elapsed: ElapsedRequest{Instant: mark.Instant, Hold: int(hold), Correlation: correlation}, After: ledger.cursor})
+	if err != nil {
+		return err
+	}
+	return ledger.observe(o, hold*1000, &closed.AtMillis)
+}
+func (r *run) checkPeriodic(index int, step Step) bool {
+	target, ok := r.target.(PeriodicTarget)
+	if !ok {
+		r.skip("step %d: target has no periodic authority", index)
+		return false
+	}
+	clock, ok := r.clock(index)
+	if !ok {
+		return false
+	}
+	if step.Check == nil {
+		return r.fail(index, "missing periodic check")
+	}
+	if err := CheckPeriodic(*step.Check, r.correlation, target, clock); err != nil {
+		if errors.Is(err, ErrUnsupported) {
+			r.skip("step %d: periodic authority/observation unsupported: %v", index, err)
+			return false
+		}
+		return r.fail(index, "periodic contract: %v", err)
+	}
+	return true
+}
+
+func (s selectionObservation) checkPredicate(condition predicate, reads map[string]accessorPlan, count *int, used map[string]bool) error {
+	*count++
+	if *count > 64 {
+		return fmt.Errorf("selection predicate bound")
+	}
+	switch condition.kind {
+	case "always", "never":
+		return nil
+	case "all", "any":
+		for _, child := range condition.children {
+			if err := s.checkPredicate(child, reads, count, used); err != nil {
+				return err
+			}
+		}
+		return nil
+	case "not":
+		if condition.body == nil {
+			return fmt.Errorf("selection predicate child missing")
+		}
+		return s.checkPredicate(*condition.body, reads, count, used)
+	case "defined", "compare":
+		path := condition.path
+		if condition.kind == "compare" {
+			if !condition.left.isFact || condition.right.isFact || (condition.op != "==" && condition.op != "!=") {
+				return fmt.Errorf("selection requires fact/literal Eq/Ne")
+			}
+			path = condition.left.path
+			literal, ok := condition.right.literal.(string)
+			if !ok {
+				return fmt.Errorf("selection literal must be text")
+			}
+			plan, ok := reads[path]
+			if !ok || plan.Start < 0 || plan.Start >= len(plan.Nodes) || plan.Nodes[plan.Start].Leaf == nil {
+				return fmt.Errorf("selection read is undeclared")
+			}
+			ty := *plan.Nodes[plan.Start].Leaf
+			for depth := 0; depth < 128; depth++ {
+				var err error
+				ty, err = s.transparent(ty)
+				if err != nil {
+					return err
+				}
+				if inner, ok := accessorOptional(ty); ok {
+					ty = inner
+					continue
+				}
+				break
+			}
+			if body, ok := s.Declarations[ty]; ok && body.Kind == "enum" {
+				var variants []string
+				if err := json.Unmarshal(body.Variants, &variants); err != nil {
+					return err
+				}
+				valid := false
+				for _, variant := range variants {
+					if literal == variant {
+						valid = true
+					}
+				}
+				if !valid {
+					return fmt.Errorf("selection enum literal is undeclared")
+				}
+			}
+		}
+		if _, ok := reads[path]; !ok || !strings.HasPrefix(path, "item.") {
+			return fmt.Errorf("selection predicate read undeclared")
+		}
+		used[path] = true
+		return nil
+	}
+	return fmt.Errorf("unsupported selection predicate")
+}
+func admitSelection(value any) (*selectionObservation, error) {
+	f, err := closed(value, "event_type plan declarations selector projection", "")
+	if err != nil {
+		return nil, err
+	}
+	if err = name(f["event_type"], false); err != nil {
+		return nil, err
+	}
+	p, err := closed(f["plan"], "inputs selectors", "")
+	if err != nil {
+		return nil, err
+	}
+	inputs, err := array(p["inputs"])
+	if err != nil || len(inputs) > 4 {
+		return nil, fmt.Errorf("selection input bound")
+	}
+	selectors, err := array(p["selectors"])
+	if err != nil || len(selectors) > 8 {
+		return nil, fmt.Errorf("selection selector bound")
+	}
+	raw, err := json.Marshal(value)
+	if err != nil || accessorCompactBytes(raw) > 1048576 {
+		return nil, fmt.Errorf("selection byte bound")
+	}
+	var s selectionObservation
+	if err = json.Unmarshal(raw, &s); err != nil {
+		return nil, err
+	}
+	if s.Selector < 0 || s.Selector >= len(selectors) {
+		return nil, fmt.Errorf("selection output index invalid")
+	}
+	declarations, ok := f["declarations"].(map[string]any)
+	if !ok || len(declarations) > 4096 {
+		return nil, fmt.Errorf("selection declaration bound")
+	}
+	for name_, rawBody := range declarations {
+		if err = name(name_, false); err != nil {
+			return nil, err
+		}
+		body := s.Declarations[name_]
+		required := "kind"
+		switch body.Kind {
+		case "newtype":
+			required += " of"
+		case "struct":
+			required += " fields"
+		case "enum":
+			required += " variants"
+		case "union":
+			required += " tag variants"
+		default:
+			return nil, fmt.Errorf("unsupported selection declaration")
+		}
+		fields, err := closed(rawBody, required, "")
+		if err != nil {
+			return nil, err
+		}
+		if body.Kind == "struct" {
+			members, err := array(fields["fields"])
+			if err != nil || len(members) > 4096 {
+				return nil, fmt.Errorf("selection field bound")
+			}
+			seen := map[string]bool{}
+			for _, field := range members {
+				if err = admitAccessorField(field); err != nil {
+					return nil, err
+				}
+				name_ := field.(map[string]any)["name"].(string)
+				if seen[name_] {
+					return nil, fmt.Errorf("duplicate selection field")
+				}
+				seen[name_] = true
+			}
+		}
+	}
+	names := map[string]bool{}
+	for index, rawInput := range inputs {
+		fields, err := closed(rawInput, "name source list_type item_type optional_items conversion", "")
+		if err != nil {
+			return nil, err
+		}
+		input := s.Plan.Inputs[index]
+		if !regexp.MustCompile(`^[A-Za-z][A-Za-z0-9_]*$`).MatchString(input.Name) || names[input.Name] {
+			return nil, fmt.Errorf("invalid selection input name")
+		}
+		names[input.Name] = true
+		if input.Conversion != nil {
+			return nil, fmt.Errorf("selection-input-conversion requires host implementation")
+		}
+		list, err := s.transparent(input.ListType)
+		if err != nil || !strings.HasPrefix(list, "List<") || !strings.HasSuffix(list, ">") {
+			return nil, fmt.Errorf("selection requires required List")
+		}
+		originalItem := list[5 : len(list)-1]
+		item, err := s.transparent(originalItem)
+		if err != nil {
+			return nil, err
+		}
+		optional := false
+		if inner, ok := accessorOptional(item); ok {
+			optional = true
+			item = inner
+		} else {
+			item = originalItem
+		}
+		if item != input.ItemType || optional != input.OptionalItems {
+			return nil, fmt.Errorf("selection item type differs")
+		}
+		present, err := s.transparent(item)
+		if err != nil {
+			return nil, err
+		}
+		if kind := s.Declarations[present].Kind; kind != "struct" && kind != "union" {
+			return nil, fmt.Errorf("selection item requires record")
+		}
+		source, ok := fields["source"].(map[string]any)
+		if !ok {
+			return nil, fmt.Errorf("selection source shape")
+		}
+		sourceType := ""
+		switch input.Source.Kind {
+		case "field":
+			if _, err = closed(source, "kind field", ""); err != nil {
+				return nil, err
+			}
+			if err = admitAccessorField(source["field"]); err != nil {
+				return nil, err
+			}
+			sourceType = input.Source.Field.Type
+		case "accessor":
+			if _, err = closed(source, "kind plan", ""); err != nil {
+				return nil, err
+			}
+			if err = s.checkPlan(input.Source.Plan, false); err != nil {
+				return nil, err
+			}
+			sourceType = *input.Source.Plan.Nodes[input.Source.Plan.Start].Leaf
+			if input.Source.Plan.Nodes[input.Source.Plan.Start].MayMiss {
+				if _, ok := accessorOptional(sourceType); !ok {
+					sourceType = "Optional<" + sourceType + ">"
+				}
+			}
+		default:
+			return nil, fmt.Errorf("invalid selection source kind")
+		}
+		if sourceType != input.ListType {
+			return nil, fmt.Errorf("selection source/list type mismatch")
+		}
+	}
+	names = map[string]bool{}
+	total := 0
+	for index, rawSelector := range selectors {
+		fields, err := closed(rawSelector, "name input operation", "")
+		if err != nil {
+			return nil, err
+		}
+		selector := s.Plan.Selectors[index]
+		if !regexp.MustCompile(`^[A-Za-z][A-Za-z0-9_]*$`).MatchString(selector.Name) || names[selector.Name] || selector.Input < 0 || selector.Input >= len(inputs) {
+			return nil, fmt.Errorf("selection identity invalid")
+		}
+		names[selector.Name] = true
+		operation := selector.Operation
+		required := "kind"
+		var prior []int
+		switch operation.Kind {
+		case "first":
+			required += " excluding predicate reads"
+			prior = operation.Excluding
+		case "first_present":
+			required += " selections"
+			prior = operation.Selections
+			if len(prior) == 0 {
+				return nil, fmt.Errorf("empty first_present")
+			}
+		default:
+			return nil, fmt.Errorf("unsupported selector")
+		}
+		op, err := closed(fields["operation"], required, "")
+		if err != nil {
+			return nil, err
+		}
+		if len(prior) > 4 {
+			return nil, fmt.Errorf("selection reference bound")
+		}
+		seen := map[int]bool{}
+		for _, previous := range prior {
+			if previous < 0 || previous >= index || seen[previous] || s.Plan.Selectors[previous].Input != selector.Input {
+				return nil, fmt.Errorf("selection reference is not earlier same input")
+			}
+			seen[previous] = true
+		}
+		if operation.Kind == "first" {
+			if err = admitPredicateEnvelope(op["predicate"], 0); err != nil {
+				return nil, err
+			}
+			if len(operation.Reads) > 64 {
+				return nil, fmt.Errorf("selection read bound")
+			}
+			for path, plan := range operation.Reads {
+				if strings.Join(plan.Segments, ".") != path || plan.Root.Type != s.Plan.Inputs[selector.Input].ItemType {
+					return nil, fmt.Errorf("selection read identity differs")
+				}
+				if err = s.checkPlan(plan, true); err != nil {
+					return nil, err
+				}
+				leaf, err := s.transparent(*plan.Nodes[plan.Start].Leaf)
+				if err != nil {
+					return nil, err
+				}
+				for {
+					inner, ok := accessorOptional(leaf)
+					if !ok {
+						break
+					}
+					leaf, err = s.transparent(inner)
+					if err != nil {
+						return nil, err
+					}
+				}
+				if leaf != "String" && s.Declarations[leaf].Kind != "enum" {
+					return nil, fmt.Errorf("selection predicate requires String or enum")
+				}
+			}
+			condition, err := fromNode(op["predicate"])
+			if err != nil {
+				return nil, err
+			}
+			count := 0
+			used := map[string]bool{}
+			if err = s.checkPredicate(condition, operation.Reads, &count, used); err != nil {
+				return nil, err
+			}
+			if len(used) != len(operation.Reads) {
+				return nil, fmt.Errorf("selection contains unused predicate reads")
+			}
+			total += count
+			if total > 256 {
+				return nil, fmt.Errorf("selection total predicate bound")
+			}
+		}
+	}
+	projection, err := closed(f["projection"], "projection target types", "")
+	if err != nil {
+		return nil, err
+	}
+	if err = s.checkPlan(s.Projection.Projection, true); err != nil {
+		return nil, err
+	}
+	if s.Projection.Projection.Root.Type != s.Plan.Inputs[s.Plan.Selectors[s.Selector].Input].ItemType {
+		return nil, fmt.Errorf("selection projection item differs")
+	}
+	if _, ok := accessorOptional(s.Projection.Target); !ok {
+		return nil, fmt.Errorf("selection target requires Optional")
+	}
+	if _, err = admitAccessorMode(map[string]any{"plan": projection["projection"], "target": projection["target"], "types": projection["types"]}, true); err != nil {
+		return nil, err
+	}
+	return &s, nil
+}
+func selectionFailure(cause string, input, index, selector int) error {
+	return fmt.Errorf("SelectionFailure:%s:input=%d:index=%d:selector=%d", cause, input, index, selector)
+}
+func (s selectionObservation) validateValue(source string, value Node, present bool, bytes *int, depth int) error {
+	if depth > 128 || *bytes > 1048576 {
+		return fmt.Errorf("resource")
+	}
+	if inner, ok := accessorOptional(source); ok {
+		if !present || value == nil {
+			return nil
+		}
+		return s.validateValue(inner, value, true, bytes, depth+1)
+	}
+	if !present || value == nil {
+		return fmt.Errorf("invalid_input")
+	}
+	if body, ok := s.Declarations[source]; ok {
+		switch body.Kind {
+		case "newtype":
+			return s.validateValue(body.Of, value, true, bytes, depth+1)
+		case "enum":
+			var variants []string
+			if json.Unmarshal(body.Variants, &variants) != nil {
+				return fmt.Errorf("invalid_input")
+			}
+			text, ok := value.(string)
+			if !ok {
+				return fmt.Errorf("invalid_input")
+			}
+			for _, variant := range variants {
+				if variant == text {
+					*bytes += len(text)
+					return nil
+				}
+			}
+			return fmt.Errorf("invalid_input")
+		case "struct":
+			fields, ok := value.(map[string]any)
+			if !ok {
+				return fmt.Errorf("invalid_input")
+			}
+			if s.responseMode {
+				names := map[string]bool{}
+				for _, field := range body.Fields {
+					names[field.Name] = true
+				}
+				for key := range fields {
+					if !names[key] {
+						return fmt.Errorf("invalid_input")
+					}
+				}
+			}
+			for _, field := range body.Fields {
+				*bytes += len(field.Name)
+				item, present := fields[field.Name]
+				if err := s.validateValue(field.Type, item, present, bytes, depth+1); err != nil {
+					return err
+				}
+			}
+			return nil
+		case "union":
+			fields, ok := value.(map[string]any)
+			if !ok {
+				return fmt.Errorf("invalid_input")
+			}
+			label, ok := fields[body.Tag].(string)
+			if !ok {
+				return fmt.Errorf("invalid_input")
+			}
+			var variants map[string]string
+			if json.Unmarshal(body.Variants, &variants) != nil {
+				return fmt.Errorf("invalid_input")
+			}
+			target, ok := variants[label]
+			if !ok {
+				return fmt.Errorf("invalid_input")
+			}
+			key := "value"
+			if body.Tag == "value" {
+				key = "content"
+			}
+			if s.responseMode {
+				for member := range fields {
+					if member != body.Tag && member != key {
+						return fmt.Errorf("invalid_input")
+					}
+				}
+			}
+			item, present := fields[key]
+			return s.validateValue(target, item, present, bytes, depth+1)
+		}
+	}
+	if strings.HasPrefix(source, "List<") && strings.HasSuffix(source, ">") {
+		values, ok := value.([]any)
+		if !ok {
+			return fmt.Errorf("invalid_input")
+		}
+		if len(values) > 64 {
+			return fmt.Errorf("resource")
+		}
+		for _, item := range values {
+			if err := s.validateValue(source[5:len(source)-1], item, true, bytes, depth+1); err != nil {
+				return err
+			}
+		}
+		return nil
+	}
+	if s.responseMode && strings.HasPrefix(source, "Map<String, ") && strings.HasSuffix(source, ">") {
+		values, ok := value.(map[string]any)
+		if !ok {
+			return fmt.Errorf("invalid_input")
+		}
+		if len(values) > 64 {
+			return fmt.Errorf("resource")
+		}
+		for key, child := range values {
+			*bytes += len(key)
+			if err := s.validateValue(source[12:len(source)-1], child, true, bytes, depth+1); err != nil {
+				return err
+			}
+		}
+		return nil
+	}
+	if accessorPrimitive(source) {
+		if s.responseMode {
+			if !responsePrimitiveAdmits(source, value) {
+				return fmt.Errorf("invalid_input")
+			}
+		} else if source == "Binary64" || source == "Decimal" {
+			number, ok := asNumber(value)
+			if !ok || math.IsNaN(number) || math.IsInf(number, 0) {
+				return fmt.Errorf("invalid_input")
+			}
+		} else if !accessorShapeAdmits(accessorShape{Kind: "primitive", Name: strings.ToLower(source)}, value) {
+			return fmt.Errorf("invalid_input")
+		}
+		if text, ok := value.(string); ok {
+			*bytes += len(text)
+			if len(text) > 4096 {
+				return fmt.Errorf("resource")
+			}
+		}
+		return nil
+	}
+	return fmt.Errorf("unsupported")
+}
+func (s selectionObservation) evaluate(payload map[string]Node) (Node, bool, error) {
+	// Admission precedes target execution; direct constructions are checked again here.
+	var original any
+	decoder := json.NewDecoder(bytes.NewReader(s.Raw))
+	decoder.UseNumber()
+	if err := decoder.Decode(&original); err != nil {
+		return nil, false, fmt.Errorf("selection requires admitted original contract: %w", err)
+	}
+	admitted, err := admitSelection(original)
+	if err != nil {
+		return nil, false, err
+	}
+	// Re-decoding preserves admitted meaning without silently repairing a mutated typed contract.
+	retained := *admitted
+	retained.Raw = s.Raw
+	if !reflect.DeepEqual(s, retained) {
+		return nil, false, fmt.Errorf("selection typed contract differs from original")
+	}
+	s = *admitted
+	inputs := make([][]Node, len(s.Plan.Inputs))
+	bytes := 0
+	for index, input := range s.Plan.Inputs {
+		var value Node
+		present := false
+		if input.Source.Kind == "field" {
+			value, present = payload[input.Source.Field.Name]
+		} else {
+			plan := input.Source.Plan
+			target := *plan.Nodes[plan.Start].Leaf
+			if plan.Nodes[plan.Start].MayMiss {
+				if _, ok := accessorOptional(target); !ok {
+					target = "Optional<" + target + ">"
+				}
+			}
+			value, present, err = (accessorObservation{Plan: plan, Target: target}).evaluate(payload)
+			if err != nil {
+				return nil, false, selectionFailure("invalid_input", index, -1, -1)
+			}
+		}
+		values, ok := value.([]any)
+		if !ok || !present {
+			return nil, false, selectionFailure("invalid_input", index, -1, -1)
+		}
+		if len(values) > 64 {
+			return nil, false, selectionFailure("resource", index, -1, -1)
+		}
+		inputs[index] = values
+	}
+	truth := make([][]bool, len(s.Plan.Selectors))
+	for input, values := range inputs {
+		for index, item := range values {
+			if item == nil && s.Plan.Inputs[input].OptionalItems {
+				for selector, plan := range s.Plan.Selectors {
+					if plan.Input == input && plan.Operation.Kind == "first" {
+						truth[selector] = append(truth[selector], false)
+					}
+				}
+				continue
+			}
+			if err = s.validateValue(s.Plan.Inputs[input].ItemType, item, true, &bytes, 0); err != nil {
+				return nil, false, selectionFailure(err.Error(), input, index, -1)
+			}
+			for selector, plan := range s.Plan.Selectors {
+				if plan.Input != input || plan.Operation.Kind != "first" {
+					continue
+				}
+				observations := factSource{}
+				for _, path := range meaningKeys(selectionJSON(plan.Operation.Reads).(map[string]any)) {
+					projection := plan.Operation.Reads[path]
+					target := *projection.Nodes[projection.Start].Leaf
+					if projection.Nodes[projection.Start].MayMiss {
+						if _, ok := accessorOptional(target); !ok {
+							target = "Optional<" + target + ">"
+						}
+					}
+					value, present, err := (accessorObservation{Plan: projection, Target: target}).evaluate(map[string]Node{"item": item})
+					if err != nil {
+						return nil, false, selectionFailure("invalid_input", input, index, selector)
+					}
+					if text, ok := value.(string); ok && present {
+						bytes += len(path) + len(text)
+						if len(text) > 4096 || bytes > 1048576 {
+							return nil, false, selectionFailure("resource", input, index, selector)
+						}
+						observations[path] = text
+					}
+				}
+				condition, err := fromNode(plan.Operation.Predicate)
+				if err != nil {
+					return nil, false, err
+				}
+				answer := condition.evaluate(observations)
+				if answer == truthUnknown {
+					return nil, false, selectionFailure("unknown", input, index, selector)
+				}
+				truth[selector] = append(truth[selector], answer == truthTrue)
+			}
+		}
+	}
+	selected := make([]int, len(s.Plan.Selectors))
+	for index := range selected {
+		selected[index] = -1
+	}
+	for index, selector := range s.Plan.Selectors {
+		if selector.Operation.Kind == "first" {
+			for occurrence, eligible := range truth[index] {
+				if !eligible {
+					continue
+				}
+				excluded := false
+				for _, prior := range selector.Operation.Excluding {
+					if selected[prior] == occurrence {
+						excluded = true
+					}
+				}
+				if !excluded {
+					selected[index] = occurrence
+					break
+				}
+			}
+		} else {
+			for _, prior := range selector.Operation.Selections {
+				if selected[prior] >= 0 {
+					selected[index] = selected[prior]
+					break
+				}
+			}
+		}
+	}
+	occurrence := selected[s.Selector]
+	if occurrence < 0 {
+		return nil, false, nil
+	}
+	projection := s.Projection
+	return (accessorObservation{Plan: projection.Projection, Target: projection.Target, Types: projection.Types}).evaluate(map[string]Node{"item": inputs[s.Plan.Selectors[s.Selector].Input][occurrence]})
+}
+
+// Only admitted predicate grammar is visited; payload maps are never interpreted as expressions.
+func admitPredicateVersion(value any, major int) error {
+	if err := admitPredicateEnvelope(value, 0); err != nil {
+		return err
+	}
+	if major < 8 && predicateNeedsLosslessReader(value) {
+		return fmt.Errorf("normalized structured comparison operands require suite/8 or /9")
+	}
+	return nil
+}
+func predicateNeedsLosslessReader(value any) bool {
+	switch node := value.(type) {
+	case []any:
+		for _, child := range node {
+			if predicateNeedsLosslessReader(child) {
+				return true
+			}
+		}
+	case map[string]any:
+		for key, child := range node {
+			switch key {
+			case "all", "and", "all_of", "any", "or", "none", "none_of_these", "not":
+				if predicateNeedsLosslessReader(child) {
+					return true
+				}
+			case "forall", "exists":
+				if fields, ok := child.(map[string]any); ok && predicateNeedsLosslessReader(fields["that"]) {
+					return true
+				}
+			default:
+				if operators, ok := child.(map[string]any); ok {
+					for operator, value := range operators {
+						switch operator {
+						case "eq", "equals", "==", "ne", "not_equals", "!=", "lt", "<", "le", "lte", "<=", "gt", ">", "ge", "gte", ">=":
+							if raw, ok := value.(string); ok {
+								parsed := parseOperand(raw)
+								if parsed.isFact || parsed.literal != raw {
+									return true
+								}
+							}
+						}
+					}
+				}
+			}
+		}
+	}
+	return false
 }

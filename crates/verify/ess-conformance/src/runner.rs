@@ -338,6 +338,13 @@ impl<C: Clock> Runner<C> {
         suite: &ConformanceSuite,
         target: &T,
     ) -> Result<ConformanceReport, crate::AdmissionError> {
+        if suite.provenance.suite_version.major() >= 5 {
+            return Err(crate::AdmissionError::new(
+                "UnsupportedReportFormat",
+                "$suite.provenance.suite_version",
+                "suite/5, /6 and /7 require run_admitted and explicit report/2 production",
+            ));
+        }
         let admitted = crate::AdmittedSuite::from_suite(suite)?;
         Ok(self.run_admitted(&admitted, target).into_report())
     }
@@ -434,9 +441,7 @@ impl<C: Clock> Runner<C> {
 
     /// Executes one step.
     ///
-    /// A dispatcher and nothing more. Each of the thirteen steps is its own function, so the rule a
-    /// step enforces and the diagnostic it produces sit together and can be read without the other
-    /// twelve — and so that adding a step to the vocabulary is a decision that has somewhere to go.
+    /// Each step delegates to its own function, keeping its rule and diagnostics together.
     fn step<T: ConformanceTarget>(
         &mut self,
         step: &ScenarioStep,
@@ -444,6 +449,20 @@ impl<C: Clock> Runner<C> {
         target: &T,
     ) -> Flow {
         match step {
+            ScenarioStep::ExpectResponsePayload { response } => {
+                expect_response_payload(response, run)
+            }
+            ScenarioStep::CheckPeriodic { check } => check_periodic(check, run, target),
+            ScenarioStep::ExpectReadingOrder { left, right, order } => {
+                expect_reading_order(left, right, *order, run, target)
+            }
+            ScenarioStep::EstablishEntity {
+                instance,
+                entity,
+                identity,
+                fields,
+                state,
+            } => establish_entity(instance, entity, identity, fields, state, run, target),
             ScenarioStep::ConfigureExternalOutcome { force } => {
                 configure_external(force, run, target)
             }
@@ -637,10 +656,14 @@ impl<C: Clock> Runner<C> {
         target: &T,
     ) -> Flow {
         let mut wanted = BTreeMap::new();
+        let mut absent = BTreeSet::new();
         for (field, value) in input {
-            match run.resolve(value) {
-                Ok(node) => {
+            match run.resolve_expected(value) {
+                Ok(crate::accessor::Expected::Present(node)) => {
                     wanted.insert(field.clone(), node);
+                }
+                Ok(crate::accessor::Expected::Absent) => {
+                    absent.insert(field.clone());
                 }
                 Err(reason) => {
                     run.record(CheckResult::errored(
@@ -667,7 +690,11 @@ impl<C: Clock> Runner<C> {
         match target.observe_invocations(request) {
             Ok(invocations) => {
                 let found = invocations.iter().any(|invocation| {
-                    &invocation.command == command && matches(&invocation.input, &wanted)
+                    &invocation.command == command
+                        && matches(&invocation.input, &wanted)
+                        && absent
+                            .iter()
+                            .all(|field| !invocation.input.contains_key(field))
                 });
                 if found {
                     run.record(CheckResult::passed(CheckCode::Invocation, about));
@@ -675,6 +702,9 @@ impl<C: Clock> Runner<C> {
                     let mut diagnostic = Diagnostic::new(CheckCode::Invocation, run.id.clone())
                         .declared_by(binding.clone())
                         .declared_by(command.clone());
+                    for field in &absent {
+                        diagnostic = diagnostic.expected(format!("{command}.{field} is absent"));
+                    }
                     for (field, value) in &wanted {
                         diagnostic =
                             diagnostic.expected(format!("{command}.{field} = {}", quote(value)));
@@ -970,6 +1000,68 @@ fn resolve_params(
     Ok(bound)
 }
 
+/// Checks the periodic host's scoped occurrences and lifetime, stopping on any refusal.
+fn check_periodic<T: ConformanceTarget>(
+    check: &crate::periodic::Check,
+    run: &mut Run,
+    target: &T,
+) -> Flow {
+    match crate::periodic::execute(check, run.context.correlation.clone(), target) {
+        Ok(()) => run.record(CheckResult::passed(
+            CheckCode::Invocation,
+            "periodic cause, inputs and lifetime",
+        )),
+        Err(crate::periodic::Error::Target(error)) => {
+            run.record(target_failure(&run.id, "periodic observation", &error));
+            return Flow::Stop;
+        }
+        Err(crate::periodic::Error::Violation(message)) => {
+            run.record(CheckResult::failed(
+                "periodic cause, inputs and lifetime",
+                Diagnostic::new(CheckCode::Invocation, run.id.clone())
+                    .expected(
+                        "complete correctly attributed periodic occurrences in controlled time",
+                    )
+                    .observed(message),
+            ));
+            return Flow::Stop;
+        }
+    }
+    Flow::Continue
+}
+
+/// Compares observed clock coordinates; only target errors stop the remaining steps.
+fn expect_reading_order<T: ConformanceTarget>(
+    left: &crate::reading::ReadingReference,
+    right: &crate::reading::ReadingReference,
+    order: crate::reading::ReadingOrder,
+    run: &mut Run,
+    target: &T,
+) -> Flow {
+    let about = "comparing observed clock-reading coordinates";
+    match crate::reading::compare(
+        left,
+        right,
+        order,
+        &run.seen,
+        &run.context.correlation,
+        target,
+    ) {
+        Ok(true) => run.record(CheckResult::passed(CheckCode::Reading, about)),
+        Ok(false) => run.record(CheckResult::failed(
+            about,
+            Diagnostic::new(CheckCode::Reading, run.id.clone())
+                .expected(format!("{order:?}"))
+                .observed("different coordinate ordering"),
+        )),
+        Err(error) => {
+            run.record(target_failure(&run.id, about, &error));
+            return Flow::Stop;
+        }
+    }
+    Flow::Continue
+}
+
 /// Invokes a command, with every reference the suite carries resolved first (§9).
 fn execute_command<T: ConformanceTarget>(
     command: &CommandRef,
@@ -1075,6 +1167,40 @@ fn expect_error(error: &ErrorRef, fields: &BTreeMap<String, Node>, run: &mut Run
     match carried {
         None => run.record(CheckResult::passed(CheckCode::Error, about)),
         Some(seen) => run.record(CheckResult::failed(about, diagnostic.observed(seen))),
+    }
+    Flow::Continue
+}
+
+/// Only the immediately preceding exact invocation supplies response authority.
+fn expect_response_payload(response: &crate::response::Observation, run: &mut Run) -> Flow {
+    let result = (|| {
+        let executed = run
+            .last_command
+            .as_ref()
+            .ok_or("no preceding command".to_owned())?;
+        if executed.command != response.command.to_string()
+            || executed.result.outcome.as_ref() != Some(&response.outcome)
+        {
+            return Err("response observation names a different command or outcome".to_owned());
+        }
+        let event = executed
+            .result
+            .direct_events
+            .iter()
+            .find(|event| event.event == response.event)
+            .ok_or("same invocation did not emit the response-mapped event".to_owned())?;
+        response.compare(executed.result.response.as_ref(), &event.payload)
+    })();
+    let about = format!("response payload {}", response.event);
+    match result {
+        Ok(()) => run.record(CheckResult::passed(CheckCode::Payload, about)),
+        Err(reason) => run.record(CheckResult::failed(
+            about,
+            Diagnostic::new(CheckCode::Payload, run.id.clone())
+                .declared_by(response.event.clone())
+                .expected("event payload matches the actual typed command response")
+                .observed(reason),
+        )),
     }
     Flow::Continue
 }
@@ -1224,7 +1350,7 @@ fn reach_into<'a>(payload: &'a BTreeMap<String, Node>, path: &str) -> Reached<'a
                 return Reached::Blocked {
                     at: walked,
                     found: value.type_name(),
-                }
+                };
             }
         };
         if !walked.is_empty() {
@@ -1269,11 +1395,61 @@ fn expect_no_event(event: &EventRef, run: &mut Run) -> Flow {
     Flow::Continue
 }
 
+/// Establishes actual target state and binds its identity only after the adapter acknowledges it.
+fn establish_entity<T: ConformanceTarget>(
+    instance: &InstanceName,
+    entity: &EntityRef,
+    identity: &Node,
+    fields: &BTreeMap<String, Node>,
+    state: &ess_domain::entity::StateName,
+    run: &mut Run,
+    target: &T,
+) -> Flow {
+    if run.instances.contains_key(instance)
+        || run
+            .established
+            .contains(&(entity.clone(), identity.clone()))
+    {
+        run.record(target_failure(
+            &run.id,
+            "establishing entity state",
+            &TargetError::unavailable(
+                "entity setup",
+                "duplicate instance or qualified entity identity",
+            ),
+        ));
+        return Flow::Stop;
+    }
+    let request = crate::target::EntitySetupRequest {
+        entity: entity.clone(),
+        identity: identity.clone(),
+        fields: fields.clone(),
+        state: state.clone(),
+        correlation: run.context.correlation.clone(),
+    };
+    match target.establish_entity(request) {
+        Ok(()) => {
+            run.established.push((entity.clone(), identity.clone()));
+            run.instances.insert(instance.clone(), identity.clone());
+            // Assertions after setup must use an observation of the established state.
+            run.last_view = None;
+            run.unreadable = None;
+            Flow::Continue
+        }
+        Err(error) => {
+            run.record(target_failure(
+                &run.id,
+                &format!("establishing `{entity}` as `{instance}`"),
+                &error,
+            ));
+            Flow::Stop
+        }
+    }
+}
+
 /// Binds the identity the creating branch published, so later steps can name it (§19).
 ///
-/// Failing to bind is an `error` rather than a `failed`: the scenario could not be *arranged*, which
-/// is a different verdict from an expectation that did not hold, and every step after it would be
-/// asking about an instance that does not exist.
+/// Failing to bind is an error: later steps would name an instance that was never established.
 fn capture_instance(
     instance: &InstanceName,
     entity: &EntityRef,
@@ -1644,6 +1820,7 @@ struct Run {
     /// The view a read-your-writes read could not be made of, and the command that owes the token.
     unreadable: Option<(ViewRef, String)>,
     instances: BTreeMap<InstanceName, Node>,
+    established: Vec<(EntityRef, Node)>,
     /// The instants an earlier step named, so a window measured from an unmarked one is a suite
     /// defect rather than a measurement from whatever was in hand.
     marked: BTreeSet<InstantName>,
@@ -1660,6 +1837,7 @@ impl Run {
             last_view: None,
             unreadable: None,
             instances: BTreeMap::new(),
+            established: Vec::new(),
             marked: BTreeSet::new(),
             seen: Vec::new(),
             checks: Vec::new(),
@@ -1682,6 +1860,14 @@ impl Run {
     /// Turns a suite's reference into the value this run bound for it.
     fn resolve(&self, value: &ScenarioValue) -> Result<Node, String> {
         match value {
+            ScenarioValue::ObservedAccessor { .. } | ScenarioValue::ObservedSelection { .. } => {
+                match self.resolve_expected(value)? {
+                    crate::accessor::Expected::Present(node) => Ok(node),
+                    crate::accessor::Expected::Absent => {
+                        Err("an absent accessor can only assert invocation member absence".into())
+                    }
+                }
+            }
             ScenarioValue::Literal { value } => Ok(value.clone()),
             ScenarioValue::Instance { instance } => self
                 .instances
@@ -1699,6 +1885,26 @@ impl Run {
                         .cloned()
                         .ok_or_else(|| format!("`{event}` carried no field `{field}`"))
                 }),
+        }
+    }
+
+    fn resolve_expected(&self, value: &ScenarioValue) -> Result<crate::accessor::Expected, String> {
+        if let ScenarioValue::ObservedSelection { event, selection } = value {
+            let observed = self
+                .seen
+                .iter()
+                .find(|seen| &seen.event == event)
+                .ok_or_else(|| format!("`{event}` had not been observed"))?;
+            selection.evaluate(&observed.payload)
+        } else if let ScenarioValue::ObservedAccessor { event, accessor } = value {
+            let observed = self
+                .seen
+                .iter()
+                .find(|seen| &seen.event == event)
+                .ok_or_else(|| format!("`{event}` had not been observed"))?;
+            accessor.evaluate(&observed.payload)
+        } else {
+            self.resolve(value).map(crate::accessor::Expected::Present)
         }
     }
 
@@ -2026,7 +2232,7 @@ fn satisfies(predicate: &Predicate, result: &SemanticViewResult) -> Verdict {
                     "{} in {}",
                     outcome.expression,
                     quote_row(row)
-                ))
+                ));
             }
             Truth::Unknown => {
                 let missing = outcome

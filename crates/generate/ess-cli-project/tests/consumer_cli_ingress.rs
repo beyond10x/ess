@@ -402,7 +402,6 @@ fn binding_and_reference_required_keys_have_named_reader_refusals() {
         ("    invoke: {command: pilot.app.Work}\n", "", "invoke"),
         ("    delivery: at_least_once\n", "", "delivery"),
         ("    on_failure: retry\n", "", "on_failure"),
-        ("{event: pilot.app.Done}", "{}", "event"),
         ("{command: pilot.app.Work}", "{}", "command"),
     ] {
         let malformed = INTERACTION.replace(old, replacement);
@@ -418,6 +417,14 @@ fn binding_and_reference_required_keys_have_named_reader_refusals() {
         &INTERACTION.replace("on_failure: retry", "on_failure: {}"),
         "read:extra",
         "`on_failure` says nothing",
+    );
+    // `when:` carries one of two causes since a binding may be triggered by a period, so a `when:`
+    // that names neither is refused once by validation rather than as a missing reader key.
+    refused(
+        APP,
+        &INTERACTION.replace("{event: pilot.app.Done}", "{}"),
+        "assemble",
+        "says nothing; write `event: <event>` or `periodic:`",
     );
     same_selected_cli(&control, &admitted(APP, INTERACTION));
 }

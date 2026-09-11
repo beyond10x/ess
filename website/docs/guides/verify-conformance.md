@@ -20,6 +20,12 @@ $ ess verify conform synthesize \
 The suite is deterministic. Its provenance names the model and contract digests from which it was
 derived.
 
+Add `--compact` to fresh `synthesize` output to write deterministic JSON without
+indentation, followed by one newline. The decoded suite is unchanged; its exact
+byte digest changes, so retain that original compact file when producing reports
+or selecting child suites. Pretty output remains the default. This option does
+not rewrite an already committed suite.
+
 ## Select authored scenarios explicitly
 
 The manifest capability described here is available in current source and is unreleased.
@@ -53,6 +59,80 @@ Committed `run --suite` and `run --suite-input` retain their acquisition bypass 
 conflicts. Impact still loads both model revisions, and release qualification still loads its
 explicit model. Discovery refusals precede output or runner activity; existing document-level
 semantic refusals can still retain incomplete diagnostic evidence.
+
+## Establish backend state in an authored scenario
+
+Unreleased `ess-scenario/2` supports typed setup for entities whose rows arrive
+from an upstream system. A scenario can establish those rows and query their
+view without inventing a creator command:
+
+```yaml
+type: ess-scenario/2
+domain: calls.history
+scenario: recent-call
+summary: A stored call appears in history.
+arrange:
+  - instance: recent
+    entity: calls.history.CallRecord
+    setup:
+      identity: 00000000-0000-4000-8000-000000000001
+      fields: {started_at: '2026-01-05T09:00:00Z', duration_seconds: 12}
+      state: Completed
+assert:
+  - view: calls.history.CallHistory
+    contains: {call_id: {$instance: recent}, duration_seconds: 12}
+```
+
+The model must declare that entity, its field types, lifecycle state and view.
+Setup validates identity, required fields, nested values and invariants. Duplicate
+qualified identities, null identities and inconclusive invariants refuse.
+
+The adapter must establish actual isolated backend state and make it visible
+before acknowledging setup. Setup emits no command or event and claims no
+lifecycle path. Rust and generated Go expose an optional setup capability;
+unsupported adapters produce a non-passing result. These steps use suite/6 or
+coverage suite/7 and require explicit report/2. Source scenario/1 refuses setup.
+
+## Observe outcomes selected by held state
+
+For a command declaring `when_subject_state`, synthesis establishes a real
+reachable state, queries a declared immediate view exposing identity and state,
+invokes the command, and checks the resulting row. The same input can therefore
+prove different outcomes from different held states. An implementation that
+returns the expected outcome while incorrectly changing the row fails.
+
+The initial adapter requires an unfiltered immediate view without parameters.
+Missing observation authority or an unreachable required state produces an
+explicit synthesis refusal. This uses existing command and view assertions;
+the state guard alone does not require a newer suite vocabulary. The source
+declaration requires `ess/3`.
+
+## Observe selection, periodic activity and clock evidence
+
+Unreleased selection observations compare actual source occurrences and selected
+indices, preserving optional absence and occurrence-based exclusion. A host
+conversion remains an explicit obligation; declaring the conversion does not
+execute or prove it.
+
+Periodic checks exercise the named host under controlled target time: ready,
+initially inactive, failed first read and slow first read. The runner examines
+actual scoped timer, read and invocation facts, including the complete live
+interval and a window after stop acknowledgement. Missing ticks, overlapping
+work, stale mapped inputs and post-stop activity fail. Unsupported authority
+produces a non-passing result. The bounded check observes at most five live
+periods; it does not sleep in the runner.
+
+Clock comparisons use the typed `ExpectReadingOrder` operation with references
+to already observed event members. The adapter supplies occurrence-scoped
+process, epoch, origin and formatter facts; the runner normalizes and compares.
+Declared alternative origins are requirements, not evidence. Wrong occurrence,
+unknown offset, differing process/epoch or mutated request requirements cannot
+establish success. Authored YAML convenience syntax for this comparison is not
+provided; construct and persist the typed operation through the admitted writer.
+
+These operations use suite/6 or declared-coverage suite/7 and explicit report/2.
+Previous readers refuse their vocabulary. Controlled adapter tests do not prove
+that an unrelated production adapter implements these capabilities.
 
 ## Run a supported target
 
@@ -122,7 +202,10 @@ only unset or `1`; conflicting settings refuse before target construction. Omitt
 terminated selected subtests, a negative report/2 clock or a failed report write cannot publish a
 complete report. These checks also apply when no report destination is requested. Retained generated
 packages keep their own runtime behavior until regenerated; upgrading the standalone binary does
-not update them.
+not update them. Set `ESS_REPORT_OUT` as well as `ESS_REPORT_FORMAT=2` to retain the count report.
+An absolute output path avoids package working-directory differences in `go test ./...`.
+A failed conformance run still writes its separate counts; report delivery does not turn failures
+or skipped scenarios into passing evidence.
 
 ## Opt into declared coverage
 
@@ -194,6 +277,36 @@ checks when handed new metadata; regenerate and distribute the paired bundle tog
 `ess impact --suite-input` accepts complete admitted coverage and reports its selection separately.
 Unknown or incomplete inventory and missing parents refuse. Persisted output remains `ess-impact/3`
 with its existing fields; invalidation within a selection is not whole-system execution evidence.
+
+## Observe bounded binding accessors
+
+The unreleased `ess/3` binding paths described in
+[Write a specification](write-a-specification.md#read-a-field-inside-an-event-envelope)
+require new suite vocabulary. An ordinary suite retaining an accessor uses
+`ess-conformance/6`; a declared-coverage suite retaining the new accessor
+vocabulary uses `ess-conformance/7`. Models that do not retain that vocabulary
+keep their existing suite formats. Both new versions require explicit
+`--report-format 2` for execution. Report format 1 is refused before the target
+runs, even without `--report-out` or when incomplete execution is allowed.
+
+The observation checks the declared path against the triggering event and the
+resulting command input. It distinguishes an unavailable path from a terminal
+value and rejects missing required members, invalid union discriminators and wrong
+payload kinds along the traversal. Whole-value collection copies do not validate
+their elements. A conversion declaration supplies a reason
+for a type crossing, not an executable conversion algorithm: a mapping whose
+expected input cannot be determined receives a capability refusal.
+
+Native Rust and Go values can distinguish nested Optional states that serialize
+to the same JSON `null`. When that distinction is necessary to decide whether a
+mapping is correct, conformance refuses the ambiguous observation instead of
+guessing. Copying the typed native value remains distinct from proving that copy
+through a JSON observation.
+
+Ordinary suite/6 retains unknown coverage. Suite/7 uses the same exact-input and
+parent-lineage rules as suite/5; selecting a child preserves its version and
+requires the original parent chain. A passing run proves only the admitted
+selection and does not resolve any recorded refusal.
 
 ## What the report proves
 

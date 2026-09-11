@@ -56,7 +56,7 @@
 <p>It fills the command&#39;s input like this:</p>
 <ul>
 <li><code>recipient</code> (<code>billing.email.EmailAddress</code>) ← the event&#39;s <code>customer_email</code> (<code>billing.invoice.Email</code>). The two types differ, and the crossing is declared: &quot;An invoice&#39;s customer email is a deliverable address; the email context validates it again on the way out, so the invoice context does not have to know how.&quot;</li>
-<li><code>template</code> (<code>billing.email.TemplateId</code>) ← the literal <code>invoice-created</code>. Nothing in the model says how to read that as a <code>billing.email.TemplateId</code>, so the compiler took it on trust rather than checking it.</li>
+<li><code>template</code> (<code>billing.email.TemplateId</code>) ← the literal <code>invoice-created</code>. The compiler accepts text for this String-backed input; it does not check the type&#39;s invariants or whether the value names an external resource.</li>
 </ul>
 <h2 id="events-nothing-reacts-to">Events nothing reacts to</h2>
 <p>Legal, and worth seeing. An event with no reader inside the system is either a deliberate boundary — something outside consumes it — or a binding somebody forgot, and only a person can tell which.</p>

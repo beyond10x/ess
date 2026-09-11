@@ -1,0 +1,33 @@
+format: ess/4
+system: demo
+version: v1
+domain: demo.api
+types:
+  - name: demo.api.State
+    kind: enum
+    variants: [Ready, Busy]
+  - name: demo.api.Item
+    kind: struct
+    fields:
+      - {name: remaining, type: Integer}
+      - {name: created, type: Timestamp}
+      - {name: ended, type: Timestamp}
+      - {name: state, type: Optional<demo.api.State>}
+      - {name: call_type, type: String}
+      - {name: features, type: 'Map<String, Boolean>'}
+events:
+  - name: demo.api.Returned
+    fields:
+      - {name: item, type: demo.api.Item}
+      - {name: receipt, type: String}
+commands:
+  - name: demo.api.Cancel
+    response:
+      - {name: item, type: demo.api.Item}
+    outcomes:
+      - name: cancelled
+        emits: [demo.api.Returned]
+        payload:
+          demo.api.Returned:
+            item: {response: item}
+            receipt: {generated: true}

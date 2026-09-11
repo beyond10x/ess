@@ -106,6 +106,7 @@ mod key {
     pub const ANY: &str = "any";
     /// A command's outcome interface.
     pub const OUTCOME: &str = "outcome";
+    pub const RESPONSE: &str = "response";
     /// One variant type of a command's outcome.
     pub const OUTCOME_VARIANT: &str = "outcomevariant";
     /// A command's behaviour obligation.
@@ -134,6 +135,7 @@ mod key {
     pub const INVOCATION: &str = "invocation";
     /// A binding's generated transformation function.
     pub const TRANSFORM: &str = "transform";
+    pub const PREPARED: &str = "prepared-selection";
     /// A binding's owed transformation interface.
     pub const TRANSFORMATION: &str = "transformation";
     /// A binding's owed escalation interface.
@@ -336,6 +338,11 @@ impl Layout {
         self.name(&[key::OUTCOME, &command.to_string()])
     }
 
+    /// A command's closed typed response.
+    pub fn response(&self, command: &QualifiedName) -> &str {
+        self.name(&[key::RESPONSE, &command.to_string()])
+    }
+
     /// One variant type of a command's outcome.
     pub fn outcome_variant(&self, command: &QualifiedName, outcome: &str) -> &str {
         self.name(&[key::OUTCOME_VARIANT, &command.to_string(), outcome])
@@ -408,6 +415,11 @@ impl Layout {
     /// A binding's generated transformation function.
     pub fn transform(&self, binding: &str) -> &str {
         self.name(&[key::TRANSFORM, binding])
+    }
+
+    /// The generated selector helper for explicitly prepared host input.
+    pub fn prepared_selection(&self, binding: &str) -> &str {
+        self.name(&[key::PREPARED, binding])
     }
 
     /// A binding's owed transformation interface.
@@ -581,6 +593,14 @@ impl Layout {
                 &[key::OUTCOME, &subject],
                 format!("{type_name}Outcome"),
             );
+            if !command.response.is_empty() {
+                self.put(
+                    taken,
+                    &package,
+                    &[key::RESPONSE, &subject],
+                    format!("{type_name}Response"),
+                );
+            }
             for outcome in &command.outcomes {
                 let candidate = format!(
                     "{type_name}Outcome{}",
@@ -724,6 +744,26 @@ impl Layout {
         ] {
             self.put(taken, &system, &[key::SYSTEM, what], what.to_owned());
         }
+        if ir
+            .bindings()
+            .values()
+            .any(|binding| binding.selection.is_some())
+        {
+            for what in [
+                "SelectionFailure",
+                "SelectionFailureCause",
+                "SelectionInvalidInput",
+                "SelectionUnknown",
+                "SelectionResource",
+                "SelectionUnsupported",
+                "TransportFailure",
+                "selectionIndex",
+                "selectionAll",
+                "selectionAny",
+            ] {
+                self.put(taken, &system, &[key::SYSTEM, what], what.to_owned());
+            }
+        }
         let events: BTreeSet<&EventHandle> = self.system_events.iter().collect();
         let logged: Vec<(String, String)> = event_variants(ir, self, &events)
             .into_iter()
@@ -759,6 +799,15 @@ impl Layout {
                 &[key::ESCALATION, &subject],
                 format!("{pascal}Escalation"),
             );
+        }
+        for binding in ir
+            .bindings()
+            .values()
+            .filter(|binding| crate::selection::prepared_helper(ir, binding))
+        {
+            let subject = binding.name.to_string();
+            let candidate = format!("{}FromPrepared", self.transform(&subject));
+            self.put(taken, &system, &[key::PREPARED, &subject], candidate);
         }
     }
 
@@ -982,7 +1031,13 @@ fn system_events(
         {
             continue;
         }
-        events.insert(binding.event.clone());
+        events.insert(
+            binding
+                .cause
+                .event()
+                .expect("generated event capability")
+                .clone(),
+        );
         if let Some(escalation) = &binding.escalation {
             events.insert(escalation.clone());
         }

@@ -51,6 +51,12 @@ pub fn uses(ir: &EssIr) -> BTreeMap<String, EssSemanticRef> {
     }
     for command in ir.commands().values() {
         fields(
+            &command.response,
+            &format!("command.{}.response", command.name),
+            &CommandRef::new(command.name.clone()).into(),
+            &mut found,
+        );
+        fields(
             &command.input,
             &format!("command.{}.input", command.name),
             &CommandRef::new(command.name.clone()).into(),

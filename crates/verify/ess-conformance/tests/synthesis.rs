@@ -320,6 +320,8 @@ fn shape(synthesis: &Synthesis, id: &str) -> Vec<&'static str> {
     steps(synthesis, id)
         .iter()
         .map(|step| match step {
+            ScenarioStep::ExpectResponsePayload { .. } => "response payload",
+            ScenarioStep::EstablishEntity { .. } => "establish entity",
             ScenarioStep::ConfigureExternalOutcome { .. } => "inject",
             ScenarioStep::ExecuteCommand { .. } => "execute",
             ScenarioStep::ExpectOutcome { .. } => "outcome",
@@ -343,6 +345,8 @@ fn shape(synthesis: &Synthesis, id: &str) -> Vec<&'static str> {
             ScenarioStep::ExpectQuiet { .. } => "quiet",
             ScenarioStep::ExpectHalt { .. } => "halt",
             ScenarioStep::EventuallyHalt { .. } => "halt, eventually",
+            ScenarioStep::ExpectReadingOrder { .. } => "clock reading order",
+            ScenarioStep::CheckPeriodic { .. } => "periodic host",
         })
         .collect()
 }

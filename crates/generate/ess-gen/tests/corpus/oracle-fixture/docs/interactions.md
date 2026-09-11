@@ -42,7 +42,7 @@ When it fails it is **escalated** — surfaced to a person, who decides what hap
 It fills the command's input like this:
 
 - `recipient` (`oracle.dispatch.Recipient`) ← the event's `contact` (`oracle.order.Email`). The two types differ, and the crossing is declared: "An order's contact address is where the carrier's notice goes; the dispatch context validates it again on the way out, so the order context does not have to know how."
-- `label` (`oracle.dispatch.Label`) ← the literal `held`. Nothing in the model says how to read that as a `oracle.dispatch.Label`, so the compiler took it on trust rather than checking it.
+- `label` (`oracle.dispatch.Label`) ← the literal `held`. The compiler accepts text for this String-backed input; it does not check the type's invariants or whether the value names an external resource.
 
 ## `handoff-on-placed`
 
@@ -73,7 +73,7 @@ When it fails it is **retried**, on whatever schedule the transport provides. No
 It fills the command's input like this:
 
 - `recipient` (`oracle.dispatch.Recipient`) ← the event's `contact` (`oracle.order.Email`). The two types differ, and the crossing is declared: "An order's contact address is where the carrier's notice goes; the dispatch context validates it again on the way out, so the order context does not have to know how."
-- `label` (`oracle.dispatch.Label`) ← the literal `placed`. Nothing in the model says how to read that as a `oracle.dispatch.Label`, so the compiler took it on trust rather than checking it.
+- `label` (`oracle.dispatch.Label`) ← the literal `placed`. The compiler accepts text for this String-backed input; it does not check the type's invariants or whether the value names an external resource.
 
 ## `handoff-on-shipped`
 
@@ -104,7 +104,7 @@ When it fails the work is **dropped**. The system loses it, silently, and that i
 It fills the command's input like this:
 
 - `recipient` (`oracle.dispatch.Recipient`) ← the event's `contact` (`oracle.order.Email`). The two types differ, and the crossing is declared: "An order's contact address is where the carrier's notice goes; the dispatch context validates it again on the way out, so the order context does not have to know how."
-- `label` (`oracle.dispatch.Label`) ← the literal `shipped`. Nothing in the model says how to read that as a `oracle.dispatch.Label`, so the compiler took it on trust rather than checking it.
+- `label` (`oracle.dispatch.Label`) ← the literal `shipped`. The compiler accepts text for this String-backed input; it does not check the type's invariants or whether the value names an external resource.
 
 ## Events nothing reacts to
 

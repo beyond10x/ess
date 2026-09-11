@@ -184,10 +184,10 @@ const ordered = (values, check, key = value => value) => {
 }
 const suiteReference = value => {
   closed(value, 'version digest_profile digest')
-  require(value.version === 'ess-conformance/5' && value.digest_profile === 'sha256-json-bytes/1', 'unsupported suite reference')
+  require(['ess-conformance/5', 'ess-conformance/9'].includes(value.version) && value.digest_profile === 'sha256-json-bytes/1', 'unsupported suite reference')
   sha(value.digest); return value
 }
-const referenceFor = suite => ({ version: 'ess-conformance/5', digest_profile: 'sha256-json-bytes/1', digest: suite.digest })
+const referenceFor = suite => ({ version: suite.document.provenance.suite_version, digest_profile: 'sha256-json-bytes/1', digest: suite.digest })
 function node(value) {
   if (value instanceof NumberToken) {
     const exact = exactInteger(value.raw)
@@ -231,6 +231,22 @@ const operand = value => {
 }
 const operatorNames = { eq: '==', equals: '==', '==': '==', ne: '!=', not_equals: '!=', '!=': '!=', lt: '<', '<': '<', le: '<=', lte: '<=', '<=': '<=', gt: '>', '>': '>', ge: '>=', gte: '>=', '>=': '>=' }
 const sequence = value => value === null ? [] : Array.isArray(value) ? value : [value]
+// Compact quoting delimits one operand; structured scalar data never uses this check.
+// Preserve escape bytes as literal data, matching Rust and Go, while finding the closing quote.
+function quotedOperand(value) {
+  if (!['"', "'"].includes(value[0])) return
+  let escaped = false
+  for (let index = 1; index < value.length; index += 1) {
+    const char = value[index]
+    if (escaped) escaped = false
+    else if (char === '\\') escaped = true
+    else if (char === value[0]) {
+      require(trim(value.slice(index + 1)) === '', 'tokens after a quoted operand are unsupported; use structured any/all/not')
+      return
+    }
+  }
+  fail('quoted operand is not closed; close the quote and use structured any/all/not to combine predicates')
+}
 function predicate(value, depth = 0) {
   require(depth <= 32, 'predicate nesting exceeds 32')
   const nested = item => predicate(item, depth + 1)
@@ -258,6 +274,7 @@ function predicate(value, depth = 0) {
       if (op !== null) {
         const left = fact(trim(expression.slice(0, i))), right = trim(expression.slice(i + op.length))
         require(right !== '', 'missing comparison operand')
+        quotedOperand(right)
         return ['compare', left, op, operand(right)]
       }
     }
@@ -391,7 +408,7 @@ const stepFields = {
   eventually_view: ['view expectation', 'params'], mark_instant: ['instant', ''], expect_not_before: ['instant elapsed', ''],
   expect_within: ['instant elapsed', ''], expect_quiet: ['event instant elapsed', ''], expect_halt: ['view after', 'params'], eventually_halt: ['view after', 'params'],
 }
-function step(value) {
+function step(value, major) {
   const fields = stepFields[object(value).step]
   require(fields !== undefined && own(stepFields, value.step), 'unsupported suite step')
   closed(value, `step ${fields[0]}`, fields[1])
@@ -407,7 +424,10 @@ function step(value) {
       case 'input': case 'params': result[key] = values(field); break
       case 'fields': case 'payload': object(field); result[key] = node(field); break
       case 'shape': result[key] = shape(field); break
-      case 'expectation': result[key] = expectation(field); break
+      case 'expectation':
+        result[key] = expectation(field)
+        if (field.expect === 'satisfies' && major < 8) require(!predicateNeedsLosslessReader(field.predicate), 'normalized structured comparison operands require suite/9')
+        break
       case 'force': case 'outcome': outcome(field); break
       case 'elapsed': unsigned(field, 4294967295n); break
       case 'after': unsigned(field); break
@@ -498,7 +518,7 @@ function inventory(suite) {
 export async function admitSuite(original) {
   const document = closed(parse(original), 'provenance scenarios coverage')
   const p = closed(document.provenance, 'suite_version system specification_version spec_digest contract_digest', 'component')
-  require(p.suite_version === 'ess-conformance/5', 'replay requires suite/5')
+  require(['ess-conformance/5', 'ess-conformance/9'].includes(p.suite_version), 'replay requires suite/5 or /9')
   text(p.system); text(p.specification_version)
   modelDigest(p.spec_digest); modelDigest(p.contract_digest); if (own(p, 'component')) nullable(p.component, text)
   const meaning = Object.create(null)
@@ -507,7 +527,7 @@ export async function admitSuite(original) {
     const purpose = text(scenario.purpose)
     require(trim(purpose) !== '' && [...purpose].length <= 200 && !/[\x00-\x1f\x7f-\x9f]/.test(purpose), 'invalid scenario purpose')
     array(scenario.source).forEach(reference)
-    meaning[id] = { purpose, steps: array(scenario.steps).map(step), source: [...new Set(scenario.source.map(referenceKey))].sort(compare) }
+    meaning[id] = { purpose, steps: array(scenario.steps).map(value => step(value, p.suite_version === 'ess-conformance/9' ? 9 : 5)), source: [...new Set(scenario.source.map(referenceKey))].sort(compare) }
   }
   inventory(document)
   return { original, document, meaning, digest: await digest(original) }
@@ -597,4 +617,21 @@ export async function admitReplay(original) {
     return result
   }) }]))
   return { model: projection, suite: { provenance: p, scenarios }, description }
+}
+
+// Visit only admitted structured predicate operands, never arbitrary payload objects.
+function predicateNeedsLosslessReader(value) {
+  if (Array.isArray(value)) return value.some(predicateNeedsLosslessReader)
+  if (value === null || typeof value !== 'object') return false
+  return keys(value).some(key => {
+    const child = value[key]
+    if (['all', 'and', 'all_of', 'any', 'or', 'none', 'none_of_these', 'not'].includes(key)) return predicateNeedsLosslessReader(child)
+    if (key === 'forall' || key === 'exists') return predicateNeedsLosslessReader(child.that)
+    if (child === null || typeof child !== 'object' || Array.isArray(child)) return false
+    return keys(child).some(operator => {
+      if (!own(operatorNames, operator) || typeof child[operator] !== 'string') return false
+      const parsed = operand(child[operator])
+      return parsed[0] !== 'literal' || parsed[1] !== child[operator]
+    })
+  })
 }

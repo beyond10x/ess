@@ -49,6 +49,13 @@ pub(crate) fn system(system: &SystemSpec) -> ValidationErrors {
     let mut errors = ValidationErrors::new();
     for declared in system.types.iter() {
         let at = format!("types.{}", declared.name);
+        if declared.reading.is_some() && system.format.major() < 3 {
+            errors.push(ValidationError::new(
+                ValidationCode::UnsupportedFormatVersion,
+                format!("{at}.reading"),
+                "clock reading contracts require specification format ess/3",
+            ));
+        }
         match &declared.body {
             TypeBody::Newtype { of, .. } => {
                 reference(of, Some(system.format), &format!("{at}.of"), &mut errors);
@@ -74,7 +81,34 @@ pub(crate) fn system(system: &SystemSpec) -> ValidationErrors {
 
 pub(crate) fn specification(spec: &Specification) -> ValidationErrors {
     let mut errors = system(spec.system());
+    errors.extend(crate::command::validate_response_contracts(spec));
     let format = spec.system().format;
+    for binding in spec.bindings().values() {
+        if format.major() < 3
+            && (!binding.selection_inputs.is_empty()
+                || !binding.selections.is_empty()
+                || binding.mapping.values().any(|source| {
+                    matches!(source, crate::binding::MappingSource::Selection { .. })
+                }))
+        {
+            errors.push(ValidationError::new(
+                ValidationCode::UnsupportedFormatVersion,
+                format!("binding.{}.selections", binding.name),
+                "bounded list selection requires specification format ess/3",
+            ));
+        }
+        for (target, source) in &binding.mapping {
+            if matches!(source, crate::binding::MappingSource::EventAccessor { .. })
+                && format.major() < 3
+            {
+                errors.push(ValidationError::new(
+                    ValidationCode::UnsupportedFormatVersion,
+                    format!("binding.{}.mapping.{target}", binding.name),
+                    "bounded event accessors require specification format ess/3",
+                ));
+            }
+        }
+    }
     for entity in spec.entities().values() {
         reference(
             &entity.identity.type_ref,
@@ -90,6 +124,13 @@ pub(crate) fn specification(spec: &Specification) -> ValidationErrors {
         );
     }
     for command in spec.commands().values() {
+        if format.major() < 3 && crate::command::subject_state::uses(command) {
+            errors.push(ValidationError::at(
+                command.site().key("outcomes"),
+                ValidationCode::UnsupportedFormatVersion,
+                "subject-state outcome guards require specification format ess/3",
+            ));
+        }
         fields(
             &command.input,
             format,
@@ -106,6 +147,13 @@ pub(crate) fn specification(spec: &Specification) -> ValidationErrors {
         );
     }
     for error in spec.errors().values() {
+        if format.major() < 4 && !error.naming.is_empty() {
+            errors.push(ValidationError::new(
+                ValidationCode::UnsupportedFormatVersion,
+                format!("error.{}.naming", error.name),
+                "declared error naming requires specification format ess/4",
+            ));
+        }
         fields(
             &error.fields,
             format,

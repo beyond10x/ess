@@ -1,0 +1,91 @@
+format: ess/3
+system: projection
+version: v1
+domain: projection.core
+types:
+  - name: projection.core.Body
+    kind: struct
+    fields:
+      - name: status
+        type: String
+        wire: upstream_status
+      - name: nested
+        type: Optional<Optional<String>>
+  - name: projection.core.Wrapper
+    kind: struct
+    fields:
+      - name: body
+        type: projection.core.Body
+  - name: projection.core.Wrapped
+    kind: newtype
+    of: projection.core.Wrapper
+  - name: projection.core.Choice
+    kind: union
+    tag: kind
+    variants:
+      ready: projection.core.Body
+      gone: String
+events:
+  - name: projection.core.Arrived
+    fields:
+      - name: data
+        type: projection.core.Body
+      - name: partial
+        type: Optional<projection.core.Body>
+      - name: choice
+        type: projection.core.Choice
+      - name: wrapped
+        type: projection.core.Wrapped
+  - name: projection.core.Done
+    fields:
+      - name: result
+        type: String
+commands:
+  - name: projection.core.Publish
+    input: []
+    outcomes:
+      - name: accepted
+        emits: [projection.core.Arrived]
+  - name: projection.core.Receive
+    input:
+      - name: text
+        type: String
+      - name: partial
+        type: Optional<String>
+      - name: choice
+        type: Optional<String>
+      - name: nested
+        type: Optional<Optional<String>>
+      - name: deeper
+        type: Optional<Optional<Optional<String>>>
+      - name: through_wrapper
+        type: String
+      - name: whole
+        type: projection.core.Body
+    outcomes:
+      - name: accepted
+        emits: [projection.core.Done]
+components:
+  - component: projection-service
+    owns:
+      domains: [projection.core]
+    accepts:
+      commands: [projection.core.Publish, projection.core.Receive]
+    publishes:
+      events: [projection.core.Arrived, projection.core.Done]
+bindings:
+  - id: project
+    when:
+      event: projection.core.Arrived
+    invoke:
+      command: projection.core.Receive
+    mapping:
+      text: event.data.status
+      partial: event.partial.status
+      choice: event.choice.status
+      nested: event.data.nested
+      deeper: event.data.nested
+      through_wrapper: event.wrapped.body.status
+      whole: event.wrapped.body
+    delivery: at_most_once
+    on_failure: drop

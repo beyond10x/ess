@@ -257,6 +257,18 @@ validation_codes! {
     /// the two apart is the difference between "upgrade the tool" and "write it another way".
     UnsupportedConstruct => "unsupported_construct",
 
+    /// An accessor exceeds its finite authored path bound.
+    AccessorDepth => "accessor_depth",
+
+    /// A declared collection or recursive shape cannot be traversed by an accessor.
+    AccessorTraversal => "accessor_traversal",
+
+    /// A possibly unavailable projection cannot fill a required input.
+    PartialAccessor => "partial_accessor",
+
+    /// Accessor construction or representation exceeds its deterministic resource account.
+    AccessorResource => "accessor_resource",
+
     /// A profile or task references a capability the protocol does not declare.
     UndeclaredCapability => "undeclared_capability",
 

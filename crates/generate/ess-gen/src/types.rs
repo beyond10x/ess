@@ -207,6 +207,9 @@ pub(crate) fn pointer(name: &QualifiedName) -> String {
 /// One JSON Schema node: every keyword this repository has decided to publish, and no other.
 #[derive(Debug, Clone, Default, PartialEq, Eq, serde::Serialize)]
 pub(crate) struct Node {
+    /// The declared clock-reading contract; an annotation does not supply observed authority.
+    #[serde(rename = "x-ess-reading", skip_serializing_if = "Option::is_none")]
+    pub(crate) reading: Option<ess_domain::reading::ReadingContract>,
     /// The dialect, at a document root only.
     #[serde(rename = "$schema", skip_serializing_if = "Option::is_none")]
     pub(crate) dialect: Option<&'static str>,
@@ -681,6 +684,7 @@ pub(crate) fn body(declared: &ResolvedType) -> Node {
     node.description.clone_from(&declared.naming.summary);
     node.ess_name = Some(declared.name.to_string());
     node.ess_kind = Some(body_kind(&declared.body));
+    node.reading.clone_from(&declared.reading);
     node
 }
 
@@ -748,6 +752,7 @@ fn body_kind(declared: &ResolvedBody) -> &'static str {
 
 /// A command's input, as a message.
 pub(crate) const COMMAND_INPUT: &str = "command-input";
+pub(crate) const COMMAND_RESPONSE: &str = "command-response";
 
 /// An event's payload, as a message.
 pub(crate) const EVENT_PAYLOAD: &str = "event-payload";
@@ -801,6 +806,18 @@ impl<'a> Message<'a> {
         }
     }
 
+    /// A command's closed actual response.
+    pub(crate) fn of_response(command: &'a ResolvedCommand) -> Self {
+        Self {
+            kind: COMMAND_RESPONSE,
+            name: &command.name,
+            title: format!("{} response", command.naming.display_or(&command.name)),
+            description: command.naming.summary.clone(),
+            fields: &command.response,
+            relations: BTreeMap::new(),
+        }
+    }
+
     /// An event's payload.
     pub(crate) fn of_event(event: &'a ResolvedEvent) -> Self {
         Self {
@@ -815,8 +832,8 @@ impl<'a> Message<'a> {
 
     /// An error's payload.
     ///
-    /// An error carries no [`Naming`](ess_domain::name::Naming) in the IR, so its title is its own
-    /// name and its description is the summary the author wrote for whoever receives it.
+    /// Its schema identity and title retain the semantic name, independently of its transport
+    /// wire code. The payload description remains the error's top-level summary.
     pub(crate) fn of_error(error: &'a ResolvedError) -> Self {
         Self {
             kind: ERROR_PAYLOAD,
@@ -870,6 +887,7 @@ impl<'a> Message<'a> {
     pub(crate) fn directory(&self) -> &'static str {
         match self.kind {
             COMMAND_INPUT => "commands",
+            COMMAND_RESPONSE => "responses",
             ENTITY => "entities",
             EVENT_PAYLOAD => "events",
             VIEW_ROW => "views",

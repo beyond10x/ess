@@ -350,6 +350,25 @@ impl Graph {
             "semantic_ref_from" => {
                 syn::parse2::<Conversions>(m.mac.tokens.clone())?;
             }
+            // One periodic profile word: a single-variant enum the document writes as one word.
+            // Accounted like `handles` — the invocation is the declaration, so the expansion is
+            // rebuilt here rather than pinned per call, of which this macro has several.
+            "profile_word" => {
+                let word = syn::parse2::<ProfileWord>(m.mac.tokens.clone())?;
+                let name = &word.name;
+                let variant = &word.variant;
+                let doc = &word.doc;
+                self.insert(
+                    module,
+                    &name.to_string(),
+                    syn::parse2(quote!(
+                        #[doc = #doc]
+                        #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize, schemars::JsonSchema)]
+                        #[serde(rename_all = "snake_case")]
+                        pub enum #name { #[doc = #doc] #variant }
+                    ))?,
+                )?;
+            }
             "codes" | "validation_codes" => {
                 guard(&key, "invocation", &m.mac.tokens)?;
                 let generated = if name == "validation_codes" {
@@ -594,7 +613,13 @@ impl Graph {
 fn external_namespace(path: &str) -> bool {
     matches!(
         path,
-        "std" | "std::option" | "std::boxed" | "std::vec" | "std::collections" | "std::string"
+        "std"
+            | "std::option"
+            | "std::boxed"
+            | "std::vec"
+            | "std::collections"
+            | "std::string"
+            | "std::num"
     )
 }
 fn external(path: &str) -> Option<usize> {
@@ -624,7 +649,11 @@ fn external(path: &str) -> Option<usize> {
         | "i128"
         | "isize"
         | "f32"
-        | "f64" => Some(0),
+        | "f64"
+        // A periodic interval is a positive count of units: the same leaf as `u32`, with the
+        // zero excluded at the type rather than by a refusal a reader has to find.
+        | "NonZeroU32"
+        | "std::num::NonZeroU32" => Some(0),
         _ => None,
     }
 }
@@ -676,6 +705,29 @@ impl Parse for Wrappers {
         Ok(Self(result))
     }
 }
+/// `profile_word!(Name, Variant, "doc")` — the grammar the periodic profile words are written in.
+struct ProfileWord {
+    name: syn::Ident,
+    variant: syn::Ident,
+    doc: syn::LitStr,
+}
+impl Parse for ProfileWord {
+    fn parse(input: ParseStream<'_>) -> syn::Result<Self> {
+        let name = input.parse::<syn::Ident>()?;
+        input.parse::<Token![,]>()?;
+        let variant = input.parse::<syn::Ident>()?;
+        input.parse::<Token![,]>()?;
+        let doc = input.parse::<syn::LitStr>()?;
+        if input.peek(Token![,]) {
+            input.parse::<Token![,]>()?;
+        }
+        if !input.is_empty() {
+            return Err(input.error("a profile word is exactly a name, a variant and its doc"));
+        }
+        Ok(Self { name, variant, doc })
+    }
+}
+
 struct Conversions;
 impl Parse for Conversions {
     fn parse(input: ParseStream<'_>) -> syn::Result<Self> {

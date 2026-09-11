@@ -52,17 +52,32 @@ pub fn emit_input(
     ir: &EssIr,
     input: &crate::coverage::AdmittedInput,
 ) -> Result<BTreeMap<String, Artifact>, crate::admission::AdmissionError> {
+    response_replay_supported(input.selected().suite())?;
     let replay = crate::web_replay::AdmittedReplay::new(ir, input)?;
     let mut out = BTreeMap::new();
     for (path, contents) in [
         ("index.html", INDEX.to_owned()),
-        ("player.js", include_str!("../assets/coverage-player.js").to_owned()),
-        ("admission.js", include_str!("../assets/coverage-admission.js").to_owned()),
+        (
+            "player.js",
+            include_str!("../assets/coverage-player.js").to_owned(),
+        ),
+        (
+            "admission.js",
+            include_str!("../assets/coverage-admission.js").to_owned(),
+        ),
         ("assets/vue.esm-browser.prod.js", VUE.to_owned()),
         ("assets/vue.LICENSE", VUE_LICENCE.to_owned()),
         ("replay.json", replay.to_canonical_json()?),
-        ("README.md", format!("{}\nCoverage replay uses the closed replay/1 model and complete input/1 parent chain. It displays selection and omissions, emits no execution report, and cannot reconstruct or authenticate the full model digest from this reduced projection. Literal assignment values and full view evaluation remain outside this player.\n", readme(ir, input.selected().suite()))),
-    ] { out.insert(path.into(), Artifact::new(path, contents)); }
+        (
+            "README.md",
+            format!(
+                "{}\nCoverage replay uses the closed replay/1 model and complete input/1 parent chain. It displays selection and omissions, emits no execution report, and cannot reconstruct or authenticate the full model digest from this reduced projection. Literal assignment values and full view evaluation remain outside this player.\n",
+                readme(ir, input.selected().suite())
+            ),
+        ),
+    ] {
+        out.insert(path.into(), Artifact::new(path, contents));
+    }
     Ok(out)
 }
 
@@ -74,6 +89,7 @@ pub fn emit(
     suite: &ConformanceSuite,
 ) -> Result<BTreeMap<String, Artifact>, crate::admission::AdmissionError> {
     crate::admission::model(ir)?;
+    response_replay_supported(suite)?;
     let json = suite.to_canonical_json()?;
     let mut out = BTreeMap::new();
     let mut add = |path: &str, contents: String| {
@@ -184,9 +200,12 @@ fn actor(actor: &ess_compiler::ir::ResolvedActor) -> serde_json::Value {
 }
 
 fn binding(binding: &ess_compiler::ir::ResolvedBinding) -> serde_json::Value {
+    if let Some(periodic) = binding.cause.periodic() {
+        return serde_json::json!({ "name": binding.name.as_str(), "periodic": periodic, "command": binding.command.to_string(), "delivery": delivery(binding.delivery), "failure": binding.failure.to_string() });
+    }
     serde_json::json!({
         "name": binding.name.as_str(),
-        "event": binding.event.to_string(),
+        "event": binding.cause.event().expect("event branch").to_string(),
         "command": binding.command.to_string(),
         "delivery": delivery(binding.delivery),
         "failure": binding.failure.to_string(),
@@ -204,7 +223,9 @@ fn names<T: ToString>(items: impl Iterator<Item = T>) -> Vec<String> {
 fn set_source(set: &ess_compiler::ir::ResolvedPayloadField) -> Option<String> {
     match &set.value {
         ess_compiler::ir::ResolvedPayloadValue::InputField { field, .. } => Some(field.clone()),
-        ess_compiler::ir::ResolvedPayloadValue::Literal { .. } => None,
+        ess_compiler::ir::ResolvedPayloadValue::Literal { .. }
+        | ess_compiler::ir::ResolvedPayloadValue::ResponseField { .. }
+        | ess_compiler::ir::ResolvedPayloadValue::Generated => None,
     }
 }
 
@@ -246,6 +267,19 @@ fn readme(ir: &EssIr, suite: &ConformanceSuite) -> String {
         version = ir.version(),
         count = suite.scenarios.len(),
     )
+}
+
+fn response_replay_supported(
+    suite: &ConformanceSuite,
+) -> Result<(), crate::admission::AdmissionError> {
+    if crate::response::used_by(suite) {
+        return Err(crate::admission::AdmissionError::new(
+            "UnsupportedVocabulary",
+            "$suite.scenarios",
+            "browser replay does not support observed command response payloads",
+        ));
+    }
+    Ok(())
 }
 
 #[cfg(test)]
