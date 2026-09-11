@@ -1,0 +1,259 @@
+---
+format: aep.planning-md/1
+id: story:binding-mapping-bounded-accessor
+kind: story
+status: active
+title: A binding mapping may read one bounded path into the event, so an envelope-shaped event can drive a flat-input command
+summary: 'mapping: <input>: event.data.<field> — segments resolved against declared types, Optional/union segments refused unless the target is Optional, bounded depth, no list traversal. Measured need: 17 commands and 0 bindings in consumer because its push events are wire envelopes.'
+relations:
+- serves: vision:O2
+- depends_on: story:docs-literal-mapping-claims-unchecked
+- decomposes: task:ess-gaps-measured-in-a-consumer-specification
+scope:
+- confidence: cited
+  path: CHANGELOG.md
+- confidence: cited
+  path: consumer-specification
+- confidence: cited
+  path: crates/edge/ess-cli/src/coverage.rs
+- confidence: cited
+  path: crates/edge/ess-cli/src/main.rs
+- confidence: cited
+  path: crates/edge/ess-cli/src/release_evidence.rs
+- confidence: cited
+  path: crates/edge/ess-cli/tests/accessor_cli.rs
+- confidence: cited
+  path: crates/edge/ess-cli/tests/delivery_trust.rs
+- confidence: cited
+  path: crates/edge/ess-cli/tests/fixtures/bounded-accessor.yaml
+- confidence: cited
+  path: crates/edge/ess-cli/tests/target_failure.rs
+- confidence: cited
+  path: crates/edge/ess-xtask/src/support.rs
+- confidence: cited
+  path: crates/generate/ess-gen/src/asyncapi.rs
+- confidence: cited
+  path: crates/generate/ess-gen/src/docs.rs
+- confidence: cited
+  path: crates/generate/ess-gen/src/graph.rs
+- confidence: cited
+  path: crates/generate/ess-gen/src/openapi.rs
+- confidence: cited
+  path: crates/generate/ess-synth/src/failure.rs
+- confidence: cited
+  path: crates/generate/ess-synth/src/go/system.rs
+- confidence: cited
+  path: crates/generate/ess-synth/src/plan.rs
+- confidence: cited
+  path: crates/generate/ess-synth/src/rust/feasibility.rs
+- confidence: cited
+  path: crates/generate/ess-synth/src/rust/system.rs
+- confidence: cited
+  path: crates/specify/ess-compiler/src/ir.rs
+- confidence: cited
+  path: crates/specify/ess-compiler/src/resolve.rs
+- confidence: cited
+  path: crates/specify/ess-domain/src/binding.rs
+- confidence: cited
+  path: crates/specify/ess-domain/src/primitive_admission.rs
+- confidence: cited
+  path: crates/specify/ess-domain/src/system.rs
+- confidence: cited
+  path: crates/specify/ess-domain/src/types.rs
+- confidence: cited
+  path: crates/specify/ess-primitives/src/error.rs
+- confidence: cited
+  path: crates/verify/ess-conformance/src/counts.rs
+- confidence: cited
+  path: crates/verify/ess-conformance/src/coverage.rs
+- confidence: cited
+  path: crates/verify/ess-conformance/src/coverage_build.rs
+- confidence: cited
+  path: crates/verify/ess-conformance/src/evidence.rs
+- confidence: cited
+  path: crates/verify/ess-conformance/src/go/mod.rs
+- confidence: cited
+  path: crates/verify/ess-conformance/src/go/runtime.go
+- confidence: cited
+  path: crates/verify/ess-conformance/src/input.rs
+- confidence: cited
+  path: crates/verify/ess-conformance/src/report.rs
+- confidence: cited
+  path: crates/verify/ess-conformance/src/runner.rs
+- confidence: cited
+  path: crates/verify/ess-conformance/src/scenario.rs
+- confidence: cited
+  path: crates/verify/ess-conformance/src/synthesize.rs
+- confidence: cited
+  path: crates/verify/ess-conformance/src/web.rs
+- confidence: cited
+  path: crates/verify/ess-conformance/src/web_replay.rs
+- confidence: cited
+  path: crates/verify/ess-diff/src/diff.rs
+- confidence: inferred
+  path: docs/design/binding-mapping-bounded-accessor.md
+- confidence: cited
+  path: website/docs/guides/verify-conformance.md
+- confidence: cited
+  path: website/docs/guides/write-a-specification.md
+- confidence: cited
+  path: website/docs/reference/formats.md
+revision: 5
+---
+## Why
+
+A binding's `mapping:` reads one flat field of the triggering event; a path is refused as
+`unsupported_construct` — the rule at `crates/specify/ess-domain/src/binding.rs:32`, the reasoning under the
+module-doc heading *One field, not a path* at `:120`, the refusal emitted at `:718-723`
+("`event.<field>` reads a path, and this build maps one field of an event onto one input of a command").
+The refusal's own hint calls the construct "unsupported here rather than wrong", and the module doc offers
+two repairs: map the whole value, or add a field to the event that carries it.
+
+In a system whose events are wire messages, neither repair is available. consumer-context's backend push events
+are `{event: String, data: <payload struct>}` — the Bayeux envelope, byte for byte what the pusher sends.
+Every server-internal command they drive takes flat scalar inputs. So:
+
+- **map the whole value** works only when the command input's type *is* the payload struct. None of the 17 is.
+- **add a field to the event** makes the declaration stop describing the wire.
+
+The second repair was tried and reverted (`downstream-adopter/consumer-application`, wave 3, 2026-09-11: 77 fields across
+11 events), and the two reasons it failed are the argument for this story.
+
+**It was invisible to the gate.** That repository compares every push payload field against the
+specification that owns it (`check_push_types.py`). A field `invented_not_on_the_wire: String` added to a push
+event passed it with `11 event(s), 307 field(s) checked`, exit 0 — the check walks the `data` subtree, so it
+is silent about every field beside it. 77 projection fields sat under a line that reads as agreement.
+
+**It bought a false statement, which is the stronger half.** With the fields in place a row *was* written:
+`CallUpdated → BackendCallEvent`, nine inputs, all read off the envelope leg. The reducer does not work that
+way. `/agent/{id}/calls` pushes a call with both legs (`child`/`parent` in the `'current'` map), and
+`pickLegs` (`consumer-context/internal/grpcsvc/backendstate.go:1074-1090`) walks the `legs` slice and
+selects **two different elements by predicate** — `Domain == "internal" || Source == "webrtc"` for the agent
+leg, `Domain == "external"` for the other. `mergeCall` then keys the call on `agent.ID` (`:1035`) while
+`From`, `To` and `Anonymous` come off `external` (`:1046-1055`), and `recording` is
+`len(agent.Recordings) > 0 || len(external.Recordings) > 0` (`:1033`) — a derivation over both. Every inbound
+queue call takes that path. The projection did not produce a specification that was merely unchecked; it
+produced one that was **wrong**, and no gate could tell, because a flat field is exactly as checkable as a
+correct one.
+
+The measured cost of having neither repair: **17 server-internal commands, 0 bindings.** The causation the
+system does have — "this push invokes that command, at most once, dropping on a parse failure" — cannot be
+stated at all, so `ess verify conform synthesize` emits no flow scenario for any of them, and
+`interactions.md` reads "This system declares no bindings".
+
+## What would settle it
+
+A **bounded accessor** in `mapping:`, not a general path expression:
+
+```yaml
+mapping:
+  status: event.data.status              # one dotted path into the event's declared structure
+  last_reason: event.data.last_reason
+```
+
+Bounded by the same argument the current refusal makes — a projection must not silently turn a value that is
+present into one that may be absent:
+
+- each segment resolves against a **declared** type of this model, so a typo is `UnobservableFact` exactly as
+  a flat field is today;
+- traversal through `Optional<T>` or a union is **refused** unless the target input is `Optional` too; a terminal Optional is copied whole and may use an existing exact host conversion,
+  which is the whole content of "nothing in the model says a projection is total";
+- depth is bounded (three segments after `event` covers the measured `data.body.text` path) so the accessor stays a projection and does
+  not become an expression language;
+- `List<T>` is not traversable — selecting an element is a different construct (see *Out of scope*).
+
+That is the checkable half of what a reader means by "JSON path", and it keeps every property the refusal
+protects.
+
+## Acceptance
+
+This story is complete when the previously refused bounded paths validate and execute consistently across the supported projections and conformance targets, and the four promised consumer rows are verified against the released version without fabricated wire fields; the checks below and the recorded context/conversion obligations remain required.
+
+Required verification:
+
+- [ ] `mapping: <input>: event.<field>.<field>` validates when every segment is declared and non-`Optional`,
+      or the target is `Optional`.
+- [ ] Traversal through `Optional`/a union into a required input is refused, with a distinct code and the two repairs. A terminal Optional retains its declared whole-value conversion contract.
+- [ ] A segment naming nothing is `UnobservableFact`, as a flat field is.
+- [ ] The projections (docs, OpenAPI, AsyncAPI, graph, synth) print the path; the conformance scenario reads
+      the same value the mapping does.
+- [ ] `consumer-specification` writes **4 of its 5 measured rows** against the released version with no field
+      added to any push event, and `check_push_types.py` still reports every push event as exactly
+      `{event, data}`. The fifth, `/agent/{id}/calls → BackendCallEvent`, stays blocked: it additionally
+      needs the list selection this story excludes — `pickLegs` walks a slice and picks two elements by
+      predicate (`backendstate.go:1074-1090`), and the row's inputs are read from both. **This story does not
+      promise that row.** The honest four is the number to weigh the construct by.
+
+## Out of scope
+
+Selecting an element of a `List<T>` (consumer-context needs it for a conference member fan-out and for the
+per-leg selection in `/agent/{id}/calls` — `pickLegs`, `backendstate.go:1074-1095`), and any guard on a
+binding. Both are separate constructs; this story is the accessor only.
+
+## Provenance
+
+Filed 2026-09-11 by the consumer-application wave-3 coordinator, from measurements in that repository (adversary
+passes 1 and 2 on `story:backend-bindings`, `review-result:adversary-backend-bindings-pass-{1,2}`). Its
+counterpart there is `dependency-blocker:ess-binding-path-mapping-absent` (filed by the
+specs-authority session). Operator: Timo, who asked that the gap be fixed upstream rather than worked around.
+
+## Wave source provenance
+
+Imported through the AEP CLI from the operator-selected primary-checkout draft, revision 3. Original bytes retained as local-evidence:ess-evolution-20260910/priority-source-binding-mapping-bounded-accessor.md (SHA256 27a06004bd43ee6fc6ea3978308b8b5f2de3c8dfe8857690f0a0d43ef5f161c3). This branch starts a truthful import record; it does not invent the source draft's earlier command history. The primary draft and journal remain untouched.
+
+## Scope
+
+Derived 2026-09-11 by aep-drive:story-scoper at main 6b666e58.
+
+- Primary surface: crates/specify/ess-domain/src/binding.rs (MappingSource, shape validation and check_entry) — cited.
+- Compiler: crates/specify/ess-compiler/src/{resolve,ir}.rs (mapped_field, ResolvedMappingValue) — cited.
+- Generated descriptions: crates/generate/ess-gen/src/{docs,asyncapi,openapi,graph}.rs — cited.
+- Executable synthesis: crates/generate/ess-synth/src/plan.rs, src/rust/{system,feasibility}.rs and src/go/system.rs — cited.
+- Conformance: crates/verify/ess-conformance/src/{scenario,synthesize,runner}.rs — cited; Observed currently reads a single flat field.
+- Semantic diff: crates/verify/ess-diff/src/diff.rs — cited.
+- Design: docs/design/binding-mapping-bounded-accessor.md — inferred; settle optional/union/depth/wire-name/conversion and format compatibility before code.
+- Consumer: consumer-specification, four bindings with original envelopes — cited by story; exact local checkout and rows still require discovery.
+- Confidence: high for ESS paths inspected in the tree — cited.
+- Collisions: literal-doc changes in docs.rs and ir.rs require sequential integration — cited.
+
+## Wave implementation contract
+
+The operator selected this story with the literal-doc correction and xattr reconciliation, excluded crosswalk, and authorized sub-agents plus a new release after main integration. Complete the existing literal-doc correction first so the expanded binding renderer and resolved mapping documentation build on truthful literal guarantees. This is an explicit integration dependency over their shared files, not an excuse to omit accessor semantics.
+
+Write and review the design before code. Settle depth after event, Optional absence versus null, union traversal and terminal union values, source and wire names, newtype wrappers, conversion behavior, malformed events, old reader refusal and preservation of old flat-mapping bytes. Keep the four-consumer-binding acceptance; discover the real declarations rather than inventing them. List selection and guards remain excluded. Do not invent ess-ir/2 or weaken unsupported-target refusals. The operator excludes full local workspace/ownership gates; use focused source, generator, conformance, compatibility and actual consumer checks with explicit scope. Required remote merge/release checks are authorized for the requested release and separately tracked.
+
+## Public import correction
+
+The first unpublished import was refused by the coordinated private-identifier check. Its exact rejected patch is retained privately in the local wave evidence. This replacement was created through AEP from the same source snapshot with the private organization identifier generalized before any journal event was written. Source acceptance and source snapshot hashes are preserved; no scanner policy or exception changed.
+
+
+## Design correction and observed adoption limits
+
+The design at docs/design/binding-mapping-bounded-accessor.md now states the complete source, resolved-plan, native generation, conformance and report contracts. First review review-result:priority-accessor-design-pass1-20260911 found unbounded finite branching, missing report compatibility paths, and ambiguous nested Optional construction. Correction digest d950020e8d3f778f221fb1ff83a13aeb9c933c1de444b2b69e778ab2db7875f0 answers those classes with a shared bounded DAG, explicit existing report/2 routing for suite/6-/7, and equality-first typed Optional lifting. Second review and the final bounded correction are complete; no accessor source implementation is claimed by this design evidence.
+
+Three segments after event are required by the measured notification body path. Source ess/3 and distinct resolved EventAccessor/ObservedAccessor variants preserve old flat bytes; ordinary suite/6 and coverage suite/7 carry new semantics. Existing report/2 retains its exact-suite meaning. Report/1 incompatibility must be refused before target execution. Resource limits govern the new capability without weakening existing scanner, gate or source policies.
+
+The four adopter rows remain acceptance obligations, not an accessor-only completion claim. Each requires authoritative session identity absent from the binding source vocabulary. The status payload has an id, but its equivalence to authenticated session identity is unproven; the other three payloads lack recipient identity. Existing exact host conversions can declare whole-Optional or whole-struct crossings, but declarations do not execute reducer algorithms. Actual context, conversion and released-pin adoption evidence remains required. No invented event fields or optionalized required inputs may manufacture the four-row count. Typed context is a separate follow-up contract, not accessor syntax admitted here.
+
+
+## Implementation admission
+
+Final design SHA256 b9e7e6f5ddf7d3775d7d79e5fd5df92c683feb6b851632f8a9d069445aaa9657 was reviewed directly by the coordinator after the second adversarial pass, as required by the two-attack budget. The exact correction retains all prior required cases, native whole-value assignment, resource bounds, report routing and adoption obligations. It distinguishes terminal Missing/PresentNull/PresentValue from traversal Unavailable; equal nested-Optional source/target mapping observations explicitly refuse ambiguity, while supported deeper-target observations follow a finite presence rule. Hidden composite ambiguity remains a truthful capability refusal. No assertion was deleted or relaxed and no runtime proof was claimed by this prose review.
+
+Both review outcomes are recorded fixed. The literal documentation dependency is implemented and published at wave head b3f2cb74. The accessor implementor may now implement the admitted design in its advanced managed tree using the assigned bounded /tmp target. Required source/generator/conformance/native execution/compatibility tests and the later implementation adversary remain obligations. The four-row consumer acceptance remains open; this admission does not equate a source capability with completed downstream adoption.
+
+
+## Native failure format consequence
+
+During implementation, coordinator inspection found the new closed accessor-resource target failure cause still used the old /1-/2 envelope. The implementor agreed the source-feature boundary also needs to survive old-cause early returns. The concrete correction is conditional ess-target-failure/3 when the originating IR contains EventAccessor or the causes contain accessor-resource, with exact legacy /1 Rust/Web and /2 Go/Clap bytes otherwise. Neutral SynthesisPlan does not itself serialize the accessor DAG; no such field is claimed. Existing cause precedence and no-artifact failure behavior remain required.
+
+The coordinator admitted this bounded compatibility consequence directly and updated docs/design/binding-mapping-bounded-accessor.md (SHA256 ba9b2770b35e2ef61dfcf20e5f90fcbc555349cdc15aa1ef83e0dc392a11d223) plus the public format catalog; it does not reopen the completed two-pass accessor design attack. Source implementation and targeted serializer/CLI evidence are still pending. New-code and old-cause early accessor failures, plus unchanged legacy bytes, are required witnesses before integration. The exact failure module and CLI witness paths are now in machine-readable scope.
+
+
+## Public guide review
+
+A separate bounded read-only review by scope_literal compared the three public-guide additions against the reviewed contract and current unit source. It found one overclaim: the phrase rejects malformed payloads could imply element validation inside whole copied lists/maps, whereas existing Holds::List/Map and accessor terminal-kind checking do not establish that. The coordinator replaced it with the specific required-member, union-discriminator and traversal-kind checks, and explicitly states that whole collection copies do not validate their elements. This changes the guide to describe the observation boundary, not the source capability or any required malformed-traversal refusal. No other concrete misleading claims were found. This was documentation review only, with no tests/builds and no full implementation verdict; target-failure wording is covered by the separately admitted format correction.
+
+<!-- public-import-provenance:begin -->
+Final-state public import from the privately retained integration store, not an event-equivalent historical replay. New CLI creation/status changes occur at import time; original evidence retains its observed timestamp. Superseded bodies/scopes and original transitions remain in private journal SHA256 3bb1ff4f0a4bd3b7e283ec98fd02ad4afdeaa90ca72d490eaa280eca899e99c1. Source artifact SHA256 a88c8040f9b8e3c63146f6c34152217f51b6b74d52951a3ba0976b89894a9119, retained as local-evidence:runtime-gaps/publication-replay/snapshots/a88c8040f9b8e3c63146f6c34152217f51b6b74d52951a3ba0976b89894a9119.md. Source creation recorded at 2026-09-10T23:37:04Z. Private labels and local paths are projected to descriptive aliases.
+<!-- public-import-provenance:end -->
