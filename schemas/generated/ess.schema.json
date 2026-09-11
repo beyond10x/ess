@@ -166,6 +166,28 @@
   },
   "additionalProperties": false,
   "definitions": {
+    "Anchor": {
+      "description": "The actual host poll activation anchors the grid.",
+      "oneOf": [
+        {
+          "description": "The actual host poll activation anchors the grid.",
+          "type": "string",
+          "enum": [
+            "host_activation"
+          ]
+        }
+      ]
+    },
+    "AuthoredMappingSchema": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "$ref": "#/definitions/SelectionMapping"
+        }
+      ]
+    },
     "BindingFailure": {
       "description": "What happens when the invoked command does not run: `retry`, `drop`, or an `escalate:` block naming the event the escalation emits.",
       "oneOf": [
@@ -183,6 +205,35 @@
             }
           },
           "additionalProperties": false
+        }
+      ]
+    },
+    "BindingName": {
+      "description": "A binding's identifier, such as `notify-on-invoice-created`.",
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9]*(-[a-z0-9]+)*$"
+    },
+    "Cadence": {
+      "description": "Completion does not reset the deadline phase.",
+      "oneOf": [
+        {
+          "description": "Completion does not reset the deadline phase.",
+          "type": "string",
+          "enum": [
+            "fixed_rate"
+          ]
+        }
+      ]
+    },
+    "Cancellation": {
+      "description": "Only acknowledged quiescence ends the poll lifetime.",
+      "oneOf": [
+        {
+          "description": "Only acknowledged quiescence ends the poll lifetime.",
+          "type": "string",
+          "enum": [
+            "stop_acknowledged"
+          ]
         }
       ]
     },
@@ -204,6 +255,11 @@
           ]
         }
       ]
+    },
+    "ComponentName": {
+      "description": "A component's name, such as `invoice-service`.",
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9]*(-[a-z0-9]+)*$"
     },
     "Consistency": {
       "description": "How soon a view reflects a command that has already returned.\n\nThis decides whether a generated scenario asserts the view with `expect` or with `eventually` — which is the entire reason the field exists. Getting it wrong in the model is how a generated suite acquires a sleep.",
@@ -294,6 +350,36 @@
         }
       ]
     },
+    "Eligibility": {
+      "description": "The host samples eligibility at received-tick dispatch.",
+      "oneOf": [
+        {
+          "description": "The host samples eligibility at received-tick dispatch.",
+          "type": "string",
+          "enum": [
+            "host_boolean"
+          ]
+        }
+      ]
+    },
+    "ExplicitPayloadSource": {
+      "type": "object",
+      "properties": {
+        "generated": {
+          "type": [
+            "boolean",
+            "null"
+          ]
+        },
+        "response": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "additionalProperties": false
+    },
     "ExternalRef": {
       "description": "One record outside this model, named as `provider:key`.",
       "type": "object",
@@ -383,10 +469,104 @@
       },
       "additionalProperties": false
     },
+    "First": {
+      "description": "There is no immediate periodic call.",
+      "oneOf": [
+        {
+          "description": "There is no immediate periodic call.",
+          "type": "string",
+          "enum": [
+            "after_period"
+          ]
+        }
+      ]
+    },
+    "First2": {
+      "description": "A bounded predicate and earlier occurrence exclusions.",
+      "type": "object",
+      "required": [
+        "in",
+        "where"
+      ],
+      "properties": {
+        "excluding": {
+          "description": "Earlier selected occurrences excluded by original index.",
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "in": {
+          "description": "Local input identity.",
+          "type": "string"
+        },
+        "where": {
+          "description": "Existing finite predicate syntax, checked against the item declaration.",
+          "allOf": [
+            {
+              "$ref": "#/definitions/Predicate"
+            }
+          ]
+        }
+      },
+      "additionalProperties": false
+    },
     "FormatVersion": {
       "description": "The specification language version, such as `ess/1`.",
       "type": "string",
       "pattern": "^ess/[1-9][0-9]*$"
+    },
+    "HostInputContract": {
+      "description": "A binding-local required interface; a declaration is not proof of authentication.",
+      "type": "object",
+      "required": [
+        "authority",
+        "context_fields",
+        "eligibility",
+        "owner",
+        "read_fields"
+      ],
+      "properties": {
+        "authority": {
+          "description": "Binding-local authority name; no credentials are serialized here.",
+          "allOf": [
+            {
+              "$ref": "#/definitions/BindingName"
+            }
+          ]
+        },
+        "context_fields": {
+          "description": "Lifetime-constant fields, supplied by the authenticated session.",
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/Field"
+          }
+        },
+        "eligibility": {
+          "description": "Required host decision before starting a read.",
+          "allOf": [
+            {
+              "$ref": "#/definitions/Eligibility"
+            }
+          ]
+        },
+        "owner": {
+          "description": "Existing component responsible for the adapter boundary.",
+          "allOf": [
+            {
+              "$ref": "#/definitions/ComponentName"
+            }
+          ]
+        },
+        "read_fields": {
+          "description": "Fresh required read results for each eligible occurrence.",
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/Field"
+          }
+        }
+      },
+      "additionalProperties": false
     },
     "Invariant": {
       "description": "A condition every instance must satisfy, as a predicate over its fields — an entity's may also read the pseudo-field `state`, a newtype's reads `value`. Transition legality is not written here: a move that is not declared is already impossible.",
@@ -408,6 +588,30 @@
           "additionalProperties": {
             "$ref": "#/definitions/Node"
           }
+        }
+      ]
+    },
+    "Lifetime": {
+      "description": "The poll belongs to one authenticated host instance.",
+      "oneOf": [
+        {
+          "description": "The poll belongs to one authenticated host instance.",
+          "type": "string",
+          "enum": [
+            "host_instance"
+          ]
+        }
+      ]
+    },
+    "Missed": {
+      "description": "Retain at most one pending tick; drop excess deadlines.",
+      "oneOf": [
+        {
+          "description": "Retain at most one pending tick; drop excess deadlines.",
+          "type": "string",
+          "enum": [
+            "one_pending_drop_excess"
+          ]
         }
       ]
     },
@@ -459,6 +663,9 @@
                   "$ref": "#/definitions/TypeRef"
                 }
               ]
+            },
+            "reading": {
+              "$ref": "#/definitions/ReadingContract"
             }
           },
           "additionalProperties": false
@@ -507,6 +714,9 @@
                   "$ref": "#/definitions/Naming"
                 }
               ]
+            },
+            "reading": {
+              "$ref": "#/definitions/ReadingContract"
             }
           },
           "additionalProperties": false
@@ -541,6 +751,9 @@
                   "$ref": "#/definitions/Naming"
                 }
               ]
+            },
+            "reading": {
+              "$ref": "#/definitions/ReadingContract"
             },
             "variants": {
               "description": "The variants, in declaration order.",
@@ -584,6 +797,9 @@
                 }
               ]
             },
+            "reading": {
+              "$ref": "#/definitions/ReadingContract"
+            },
             "tag": {
               "description": "The field carrying the variant's name.",
               "type": "string"
@@ -618,6 +834,9 @@
               "$ref": "#/definitions/Naming"
             }
           ]
+        },
+        "reading": {
+          "$ref": "#/definitions/ReadingContract"
         }
       }
     },
@@ -652,10 +871,151 @@
     "Node": {
       "description": "Any JSON/YAML value: null, boolean, number, string, array or object."
     },
+    "OffsetAuthority": {
+      "description": "Where the offset interpretation can come from.",
+      "oneOf": [
+        {
+          "description": "The declared encoding actually encodes the offset.",
+          "type": "string",
+          "enum": [
+            "encoded_offset"
+          ]
+        },
+        {
+          "description": "Integer Unix seconds define the coordinate, not the source clock identity.",
+          "type": "string",
+          "enum": [
+            "encoding_defined_epoch"
+          ]
+        },
+        {
+          "description": "A fixed formatter offset must be observed for this occurrence.",
+          "type": "string",
+          "enum": [
+            "requires_observation"
+          ]
+        },
+        {
+          "description": "Offset authority is unavailable.",
+          "type": "string",
+          "enum": [
+            "unknown"
+          ]
+        }
+      ]
+    },
     "OutcomeName": {
       "description": "The lower-kebab name of one outcome, such as `accepted`.",
       "type": "string",
       "pattern": "^[a-z][a-z0-9]*(-[a-z0-9]+)*$"
+    },
+    "Overlap": {
+      "description": "One complete read/apply operation per host lifetime.",
+      "oneOf": [
+        {
+          "description": "One complete read/apply operation per host lifetime.",
+          "type": "string",
+          "enum": [
+            "serial_per_instance"
+          ]
+        }
+      ]
+    },
+    "Period": {
+      "description": "Positive, whole seconds; unlike elapsed observations, a period cannot be zero.",
+      "type": "integer",
+      "format": "uint32",
+      "minimum": 1.0
+    },
+    "PeriodicCause": {
+      "description": "The only initially admitted periodic profile, with every choice explicit.",
+      "type": "object",
+      "required": [
+        "anchor",
+        "cadence",
+        "cancellation",
+        "every",
+        "first",
+        "host",
+        "lifetime",
+        "missed",
+        "overlap"
+      ],
+      "properties": {
+        "anchor": {
+          "description": "Deadline anchor.",
+          "allOf": [
+            {
+              "$ref": "#/definitions/Anchor"
+            }
+          ]
+        },
+        "cadence": {
+          "description": "Cadence rule.",
+          "allOf": [
+            {
+              "$ref": "#/definitions/Cadence"
+            }
+          ]
+        },
+        "cancellation": {
+          "description": "End-of-lifetime observation.",
+          "allOf": [
+            {
+              "$ref": "#/definitions/Cancellation"
+            }
+          ]
+        },
+        "every": {
+          "description": "A strictly positive whole-second interval.",
+          "allOf": [
+            {
+              "$ref": "#/definitions/Period"
+            }
+          ]
+        },
+        "first": {
+          "description": "Initial-fire rule.",
+          "allOf": [
+            {
+              "$ref": "#/definitions/First"
+            }
+          ]
+        },
+        "host": {
+          "description": "Required typed host input authority.",
+          "allOf": [
+            {
+              "$ref": "#/definitions/HostInputContract"
+            }
+          ]
+        },
+        "lifetime": {
+          "description": "Lifetime owner.",
+          "allOf": [
+            {
+              "$ref": "#/definitions/Lifetime"
+            }
+          ]
+        },
+        "missed": {
+          "description": "Missed-period policy.",
+          "allOf": [
+            {
+              "$ref": "#/definitions/Missed"
+            }
+          ]
+        },
+        "overlap": {
+          "description": "Concurrency bound.",
+          "allOf": [
+            {
+              "$ref": "#/definitions/Overlap"
+            }
+          ]
+        }
+      },
+      "additionalProperties": false
     },
     "Predicate": {
       "description": "A condition over facts: the compact expression form (`tests.unit.failed == 0`), a list (implicit `all`), or a mapping using `all`, `any`, `not`, `none`, `forall`, `exists` or a fact path with an operator constraint.",
@@ -775,7 +1135,7 @@
           "default": {},
           "type": "object",
           "additionalProperties": {
-            "type": "string"
+            "$ref": "#/definitions/AuthoredMappingSchema"
           }
         },
         "name": {
@@ -804,6 +1164,22 @@
           "type": "array",
           "items": {
             "$ref": "#/definitions/ExternalRef"
+          }
+        },
+        "selection_inputs": {
+          "description": "Typed lists prepared once for this binding occurrence.",
+          "default": [],
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/SelectionInput"
+          }
+        },
+        "selections": {
+          "description": "Finite selectors in authored evaluation order.",
+          "default": [],
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/Selection"
           }
         },
         "summary": {
@@ -942,6 +1318,13 @@
           "type": "array",
           "items": {
             "$ref": "#/definitions/ExternalRef"
+          }
+        },
+        "response": {
+          "description": "Closed fields of the response returned by this command.",
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/Field"
           }
         }
       },
@@ -1157,6 +1540,14 @@
             }
           ]
         },
+        "naming": {
+          "description": "Explicit transport spelling and presentation metadata.",
+          "allOf": [
+            {
+              "$ref": "#/definitions/Naming"
+            }
+          ]
+        },
         "summary": {
           "description": "One line saying what went wrong.",
           "type": [
@@ -1312,7 +1703,7 @@
           "additionalProperties": {
             "type": "object",
             "additionalProperties": {
-              "type": "string"
+              "$ref": "#/definitions/RawPayloadSource"
             }
           }
         },
@@ -1334,7 +1725,7 @@
           "description": "Which fields of the subject this outcome sets, and from where.\n\nKeyed by the entity's own field, and sparse for the reason [`PayloadSource`] gives about a payload: a field with no declared source is the implementation's to choose, and saying so by omission is a statement rather than a gap.\n\nA [`PayloadTable`] and not a map, for the reason that type exists: `serde_yaml` keeps the last of two identical keys, so a document that set one field two contradictory ways would parse clean and lose a line.",
           "type": "object",
           "additionalProperties": {
-            "type": "string"
+            "$ref": "#/definitions/RawPayloadSource"
           }
         },
         "summary": {
@@ -1366,12 +1757,34 @@
             }
           ]
         },
+        "when_subject_state": {
+          "description": "Equality against the existing subject's declared lifecycle state, composed with `when`.",
+          "anyOf": [
+            {
+              "$ref": "#/definitions/StateName"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
         "wrong_state": {
           "description": "`true` when this is the branch taken because the subject is in a state no move starts from.\n\nA flag and not a list of states: the states are already declared, once, as the `from` sets of this command's transitions. `wrong_state: false` is the same document as leaving the key out, because that is what the word means; what makes the branch a declaration is the `error:` beside it, which is required.",
           "type": "boolean"
         }
       },
       "additionalProperties": false
+    },
+    "RawPayloadSource": {
+      "description": "Closed authored payload source; strings retain their original interpretation.",
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "$ref": "#/definitions/ExplicitPayloadSource"
+        }
+      ]
     },
     "RawReplicas": {
       "description": "A replica range.",
@@ -1460,15 +1873,26 @@
     "RawTrigger": {
       "description": "What a binding reacts to.",
       "type": "object",
-      "required": [
-        "event"
-      ],
       "properties": {
         "event": {
           "description": "The event.",
-          "allOf": [
+          "anyOf": [
             {
               "$ref": "#/definitions/QualifiedName"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "periodic": {
+          "description": "A periodic cause, exclusive with event.",
+          "anyOf": [
+            {
+              "$ref": "#/definitions/PeriodicCause"
+            },
+            {
+              "type": "null"
             }
           ]
         }
@@ -1624,6 +2048,111 @@
         }
       ]
     },
+    "ReadingContract": {
+      "description": "Closed attachment to a directly String/Integer-backed named newtype.",
+      "type": "object",
+      "required": [
+        "encoding",
+        "origins"
+      ],
+      "properties": {
+        "encoding": {
+          "description": "Scalar representation.",
+          "allOf": [
+            {
+              "$ref": "#/definitions/ReadingEncoding"
+            }
+          ]
+        },
+        "origins": {
+          "description": "At most three distinct origin alternatives; this is not runtime evidence.",
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/ReadingOrigin"
+          }
+        }
+      },
+      "additionalProperties": false
+    },
+    "ReadingEncoding": {
+      "description": "Wire representation of a clock reading, separate from its observed source.",
+      "oneOf": [
+        {
+          "description": "Text carries its effective numeric offset or UTC marker.",
+          "type": "string",
+          "enum": [
+            "offset_date_time_text"
+          ]
+        },
+        {
+          "description": "Millisecond local text has a literal, non-authoritative Z suffix.",
+          "type": "string",
+          "enum": [
+            "local_date_time_millis_literal_z"
+          ]
+        },
+        {
+          "description": "Exact integer seconds since the Unix coordinate origin.",
+          "type": "string",
+          "enum": [
+            "unix_seconds"
+          ]
+        }
+      ]
+    },
+    "ReadingOrigin": {
+      "description": "One declared origin alternative.",
+      "type": "object",
+      "required": [
+        "offset",
+        "role"
+      ],
+      "properties": {
+        "offset": {
+          "description": "What offset evidence is required.",
+          "allOf": [
+            {
+              "$ref": "#/definitions/OffsetAuthority"
+            }
+          ]
+        },
+        "role": {
+          "description": "Which process role could have produced the value.",
+          "allOf": [
+            {
+              "$ref": "#/definitions/ReadingRole"
+            }
+          ]
+        }
+      },
+      "additionalProperties": false
+    },
+    "ReadingRole": {
+      "description": "Possible production role; a declaration does not observe which alternative occurred.",
+      "oneOf": [
+        {
+          "description": "The producing process supplied the reading.",
+          "type": "string",
+          "enum": [
+            "producer_process"
+          ]
+        },
+        {
+          "description": "The consuming process supplied a fallback reading.",
+          "type": "string",
+          "enum": [
+            "consumer_process"
+          ]
+        },
+        {
+          "description": "The original source branch is unavailable.",
+          "type": "string",
+          "enum": [
+            "unknown"
+          ]
+        }
+      ]
+    },
     "RelationKind": {
       "description": "Which claim a relation makes about the entity at its other end.\n\nTwo kinds and no `ownership: true` flag on one kind, because the two are checked by different rules — an `owns` target has at most one owner across the whole specification and a `references` target has none — and a boolean would hide that difference behind a default.",
       "oneOf": [
@@ -1687,6 +2216,88 @@
           "description": "The field that carries the relation.\n\nFor `owns`, a field **on the target**, typed as the source's identity. For `references`, a field **on the source**, typed as the target's identity — wrapped in `Optional<…>` for an optional `one`, in `List<…>` for `many`.",
           "type": "string",
           "pattern": "^[A-Za-z][A-Za-z0-9_]*$"
+        }
+      },
+      "additionalProperties": false
+    },
+    "Selection": {
+      "description": "One ordered selection declaration.",
+      "type": "object",
+      "required": [
+        "name"
+      ],
+      "properties": {
+        "first": {
+          "description": "Lowest eligible occurrence in the declared input.",
+          "anyOf": [
+            {
+              "$ref": "#/definitions/First2"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "first_present": {
+          "description": "First present result among earlier selectors of the same input.",
+          "type": [
+            "array",
+            "null"
+          ],
+          "items": {
+            "type": "string"
+          }
+        },
+        "name": {
+          "description": "Unique local selector identity.",
+          "type": "string"
+        }
+      },
+      "additionalProperties": false
+    },
+    "SelectionInput": {
+      "description": "An explicitly declared binding-local input; conversions use the existing exact registry.",
+      "type": "object",
+      "required": [
+        "as",
+        "from",
+        "name"
+      ],
+      "properties": {
+        "as": {
+          "description": "Required list type after any explicitly declared preparation conversion.",
+          "allOf": [
+            {
+              "$ref": "#/definitions/TypeRef"
+            }
+          ]
+        },
+        "from": {
+          "description": "An event field or bounded accessor; never an invented producer field.",
+          "type": "string"
+        },
+        "name": {
+          "description": "Binding-local identity.",
+          "type": "string"
+        }
+      },
+      "additionalProperties": false
+    },
+    "SelectionMapping": {
+      "type": "object",
+      "required": [
+        "path",
+        "selection"
+      ],
+      "properties": {
+        "path": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "selection": {
+          "type": "string"
         }
       },
       "additionalProperties": false

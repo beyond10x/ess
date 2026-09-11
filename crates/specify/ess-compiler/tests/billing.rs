@@ -153,7 +153,7 @@ fn every_handle_in_the_ir_names_something_the_ir_holds() {
         let _ = ir.domain(&error.domain);
     }
     for binding in ir.bindings().values() {
-        let _ = ir.event(&binding.event);
+        let _ = ir.event(binding.cause.event().expect("event fixture"));
         let _ = ir.command(&binding.command);
         if let Some(escalation) = &binding.escalation {
             let _ = ir.event(escalation);

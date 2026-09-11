@@ -689,6 +689,33 @@ impl fmt::Display for ObservedAt {
     }
 }
 
+/// Parse the canonical whole-second elapsed spelling shared by claims and positive periods.
+pub fn parse_elapsed_seconds(value: &str) -> Result<u32, ParseError> {
+    let reject = |reason: &str| {
+        ParseError::reference(
+            "elapsed time",
+            value,
+            format!("{reason}; a length of time is written `PT<seconds>S`, in whole seconds"),
+        )
+    };
+    let digits = value
+        .strip_prefix("PT")
+        .and_then(|rest| rest.strip_suffix('S'))
+        .ok_or_else(|| reject("is not written `PT…S`"))?;
+    if digits.is_empty() {
+        return Err(reject("names no number of seconds"));
+    }
+    if digits.len() > 1 && digits.starts_with('0') {
+        return Err(reject(
+            "has a leading zero, which is a second spelling of one value",
+        ));
+    }
+    let seconds = digits
+        .parse::<u32>()
+        .map_err(|_| reject("has a number of seconds that is not a whole number"))?;
+    Ok(seconds)
+}
+
 #[cfg(test)]
 mod tests {
     #[test]

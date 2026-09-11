@@ -84,7 +84,7 @@ pub const CONFLICT: &str = "409";
 pub fn status(outcome: &ResolvedOutcome) -> &'static str {
     match (&outcome.condition, outcome.error.is_some()) {
         (ResolvedCondition::External { .. }, true) => UPSTREAM,
-        (ResolvedCondition::WrongState, true) => CONFLICT,
+        (ResolvedCondition::WrongState | ResolvedCondition::SubjectState { .. }, true) => CONFLICT,
         (ResolvedCondition::When { .. } | ResolvedCondition::Otherwise, true) => REFUSED,
         // An external branch that emits rather than errors is still a branch that was taken; what
         // decided it does not change what happened.

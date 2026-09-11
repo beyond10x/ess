@@ -20,7 +20,7 @@ pub(super) struct Options {
     /// Original standalone ess-conformance-report/2 JSON; never a generic check log.
     #[arg(long, requires_all = ["spec", "expected_selection"])]
     report: Option<PathBuf>,
-    /// Independently supplied original unfiltered suite/5 JSON.
+    /// Independently supplied original unfiltered coverage suite/5 or /7 JSON.
     #[arg(long, group = "expected_selection", conflicts_with = "expected_suite_input", requires_all = ["spec", "report"])]
     expected_suite: Option<PathBuf>,
     /// Independently supplied original input/1 carrier, including every parent suite.
@@ -94,7 +94,7 @@ impl Options {
         let coverage = input
             .selected()
             .coverage()
-            .context("expected selection requires suite/5")?;
+            .context("expected selection requires declared coverage (suite/5 or /7)")?;
         match (&coverage.selection.scope, &actual.component) {
             (Scope::System, None) => {}
             (Scope::Component { component }, Some(name)) if component.as_str() == name => {
@@ -199,7 +199,12 @@ impl Qualified {
         eprintln!("selected suite: {}", selected.digest());
         eprintln!(
             "selection: {}",
-            serde_json::to_string(&selected.coverage().expect("admitted suite/5").selection)?
+            serde_json::to_string(
+                &selected
+                    .coverage()
+                    .expect("admitted declared coverage")
+                    .selection
+            )?
         );
         eprintln!(
             "model: {}/{}; spec_digest: {}; contract_digest: {}",

@@ -187,7 +187,7 @@ pub(crate) fn checked(
     // All subsequent naming helpers require an owner. No source-driven owner lookup may run
     // until this prerequisite is established, including on a domainless, unused type.
     if !inventory.causes.is_empty() {
-        return Err(TargetFailure::new(target, plan, inventory.finish()));
+        return Err(TargetFailure::new(ir, target, plan, inventory.finish()));
     }
     paths_and_packages(&mut inventory, ir, plan, &layout);
     declarations(&mut inventory, ir, plan, &layout);
@@ -205,7 +205,7 @@ pub(crate) fn checked(
     if causes.is_empty() {
         Ok(layout)
     } else {
-        Err(TargetFailure::new(target, plan, causes))
+        Err(TargetFailure::new(ir, target, plan, causes))
     }
 }
 
@@ -425,6 +425,19 @@ fn records_and_commands(inventory: &mut Inventory, ir: &EssIr, layout: &Layout) 
         inventory.symbol(&scope, &ty, &source, "command input");
         inventory.symbol(&scope, &format!("{ty}Outcome"), &source, "command outcome");
         inventory.fields(&scope, &command.name, &command.input);
+        if !command.response.is_empty() {
+            inventory.symbol(
+                &scope,
+                &format!("{ty}Response"),
+                &source,
+                "command response",
+            );
+            inventory.fields(
+                &format!("response:{source}"),
+                &command.name,
+                &command.response,
+            );
+        }
         let emit = Emit {
             ir,
             layout,
@@ -526,12 +539,33 @@ fn delivery_initializers(
                 &source,
                 "transformation function reference",
             );
-            inventory.helper(&scope, "event", &binding.event.to_string());
-            if let Some(prior) = prior_inputs.get(binding.event.name()) {
+            inventory.helper(
+                &scope,
+                "event",
+                &binding
+                    .cause
+                    .event()
+                    .expect("generated event capability")
+                    .to_string(),
+            );
+            if let Some(prior) = prior_inputs.get(
+                binding
+                    .cause
+                    .event()
+                    .expect("generated event capability")
+                    .name(),
+            ) {
                 inventory.helper(&scope, "input", prior);
             }
         }
-        prior_inputs.insert(binding.event.name(), source);
+        prior_inputs.insert(
+            binding
+                .cause
+                .event()
+                .expect("generated event capability")
+                .name(),
+            source,
+        );
     }
 }
 
@@ -542,6 +576,7 @@ fn components_and_system(
     layout: &Layout,
 ) {
     let owner = ir.system().to_string();
+    selection_symbols(inventory, ir, &owner);
     let delivered = ir
         .bindings()
         .values()
@@ -593,7 +628,7 @@ fn components_and_system(
         .flat_map(|component| component.publishes.iter())
         .collect();
     for binding in &delivered {
-        events.insert(&binding.event);
+        events.insert(binding.cause.event().expect("generated event capability"));
         if let Some(event) = &binding.escalation {
             events.insert(event);
         }
@@ -746,7 +781,7 @@ fn bindings(inventory: &mut Inventory, ir: &EssIr, plan: &SynthesisPlan) {
         for mapping in &binding.mapping {
             if let ResolvedMappingValue::EventField { field, type_ref } = &mapping.value {
                 if mapping.conversion.is_none() && type_ref != &mapping.target_type {
-                    inventory.cause(Code::BindingAssignment, vec![binding.name.to_string(), format!("{}.{}", binding.event, field), format!("{}.{}", binding.command, mapping.target)], format!("binding `{}` emits a plain clone of `{type_ref}` for `{}` of type `{}`; this assignment needs an explicit target representation", binding.name, mapping.target, mapping.target_type));
+                    inventory.cause(Code::BindingAssignment, vec![binding.name.to_string(), format!("{}.{}", binding.cause.event().expect("generated event capability"), field), format!("{}.{}", binding.command, mapping.target)], format!("binding `{}` emits a plain clone of `{type_ref}` for `{}` of type `{}`; this assignment needs an explicit target representation", binding.name, mapping.target, mapping.target_type));
                 }
             }
         }
@@ -969,6 +1004,33 @@ pub(crate) fn web_codecs(
     if causes.is_empty() {
         Ok(())
     } else {
-        Err(TargetFailure::new(Target::Web, plan, causes))
+        Err(TargetFailure::new(ir, Target::Web, plan, causes))
+    }
+}
+
+fn selection_symbols(inventory: &mut Inventory, ir: &EssIr, owner: &str) {
+    if ir
+        .bindings()
+        .values()
+        .any(|binding| binding.selection.is_some())
+    {
+        for symbol in ["selection_all", "selection_any"] {
+            inventory.helper("system values", symbol, owner);
+        }
+        for binding in ir
+            .bindings()
+            .values()
+            .filter(|binding| crate::selection::prepared_helper(ir, binding))
+        {
+            inventory.symbol(
+                "system values",
+                &format!(
+                    "{}_from_prepared",
+                    name::value_ident(&binding.name.to_string())
+                ),
+                &binding.name.to_string(),
+                "prepared selection helper",
+            );
+        }
     }
 }

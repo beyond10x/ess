@@ -455,9 +455,12 @@ enum ConformCommand {
         /// An empty selection is refused. When omitted, no authored scenarios are selected.
         #[arg(long)]
         scenarios: Option<PathBuf>,
-        /// Suite contract, with coverage inventory only when explicitly set to 5.
+        /// Ordinary (4) or declared coverage (5); admitted features select newer required versions.
         #[arg(long, default_value = "4", value_parser = ["4", "5"])]
         suite_format: String,
+        /// Write fresh IR as compact JSON with one trailing newline; requires --target ir.
+        #[arg(long)]
+        compact: bool,
     },
     /// Compile the scenarios an author wrote, and nothing the specification obliges.
     ///
@@ -470,10 +473,10 @@ enum ConformCommand {
         /// One scenario file, or a directory using `ess-inputs.yaml` or shallow `.yaml`/`.yml` selection.
         #[arg(long)]
         scenarios: Option<PathBuf>,
-        /// Where to write the compiled `ess-conformance/4` suite.
+        /// Where to write the compiled ordinary suite.
         #[arg(long)]
         out: Option<PathBuf>,
-        /// Suite contract; the legacy default remains 4.
+        /// Ordinary (4) or declared coverage (5); retained features select newer required versions.
         #[arg(long, default_value = "4", value_parser = ["4", "5"])]
         suite_format: String,
     },
@@ -496,11 +499,11 @@ enum ConformCommand {
         /// Where to write the player.
         #[arg(long)]
         out: Option<PathBuf>,
-        /// Suite contract; suite/5 emits the paired coverage replay document.
+        /// Ordinary (4) or declared coverage (5); coverage emits the paired replay document.
         #[arg(long, default_value = "4", value_parser = ["4", "5"])]
         suite_format: String,
     },
-    /// Narrow a suite/5 by explicit IDs, retaining every exact original parent.
+    /// Narrow a coverage suite/5, /7 or /9 by explicit IDs, retaining every exact original parent.
     Select {
         #[arg(
             long,
@@ -523,10 +526,10 @@ enum ConformCommand {
         path: PathBuf,
         #[arg(long)]
         suite: Option<PathBuf>,
-        /// Original suite/5 and its complete original parent chain.
+        /// Original coverage suite/5, /7 or /9 and its complete original parent chain.
         #[arg(long, conflicts_with_all = ["suite", "scenarios", "suite_format"])]
         suite_input: Option<PathBuf>,
-        /// Fresh suite contract; omitted means 4. Loaded versions are preserved.
+        /// Fresh ordinary (4) or declared coverage (5); accessors select 6 or 7. Loaded versions stay unchanged.
         #[arg(long, value_parser = ["4", "5"], conflicts_with_all = ["suite", "suite_input"])]
         suite_format: Option<String>,
         /// The `ess-scenario/1` documents to run beside the generated scenarios.
@@ -537,7 +540,7 @@ enum ConformCommand {
         scenarios: Option<PathBuf>,
         #[arg(long, value_enum)]
         target: ReferenceTarget,
-        /// Standalone JSON destination (report/1 by default, report/2 with explicit selection).
+        /// Standalone JSON destination; suites/5-/7 require explicit report/2, even without this option.
         #[arg(long)]
         report_out: Option<PathBuf>,
         /// Report contract version; JSON/YAML detailed v2 is ess-conformance-run/2.
@@ -2735,6 +2738,7 @@ fn conform(command: ConformCommand) -> Result<ExitCode> {
             component,
             scenarios,
             suite_format,
+            compact,
         } => synthesize_suite(
             &input,
             target,
@@ -2742,6 +2746,7 @@ fn conform(command: ConformCommand) -> Result<ExitCode> {
             component.as_deref(),
             scenarios.as_deref(),
             &suite_format,
+            compact,
         ),
         ConformCommand::Author {
             input,
@@ -2835,6 +2840,7 @@ fn fresh_legacy_run_suite(
             bail!("`{id}` is already in the suite");
         }
     }
+    suite.select_fresh_format();
     Ok(Some(ess_conformance::AdmittedSuite::from_suite(&suite)?))
 }
 
@@ -2891,9 +2897,13 @@ fn synthesize_suite(
     component: Option<&str>,
     scenarios: Option<&Path>,
     suite_format: &str,
+    compact: bool,
 ) -> Result<ExitCode> {
+    if compact && target != SuiteTarget::Ir {
+        bail!("--compact requires --target ir");
+    }
     if suite_format == "5" {
-        return coverage::generate(input, target, out, component, scenarios, false);
+        return coverage::generate(input, target, out, component, scenarios, false, compact);
     }
     let Ok((ir, _)) = resolved(&input.path, input.format)? else {
         return Ok(ExitCode::from(1));
@@ -2926,7 +2936,12 @@ fn synthesize_suite(
         }
         return Ok(ExitCode::from(1));
     }
-    let json = synthesis.suite.to_canonical_json()?;
+    synthesis.suite.select_fresh_format();
+    let json = if compact {
+        synthesis.suite.to_compact_json()?
+    } else {
+        synthesis.suite.to_canonical_json()?
+    };
 
     let written = match (target, &out) {
         (SuiteTarget::Ir, Some(out)) => {
@@ -3032,6 +3047,7 @@ fn conform_web(
         println!("{refusal}");
     }
 
+    suite.select_fresh_format();
     let artifacts = ess_conformance::web::emit(&ir, &suite)?;
     write_owned_artifacts(out, "conformance-browser", &artifacts)?;
     println!(
@@ -3057,7 +3073,7 @@ fn author_suite(
     suite_format: &str,
 ) -> Result<ExitCode> {
     if suite_format == "5" {
-        return coverage::generate(input, SuiteTarget::Ir, out, None, scenarios, true);
+        return coverage::generate(input, SuiteTarget::Ir, out, None, scenarios, true, false);
     }
     let Ok((ir, _)) = resolved(&input.path, input.format)? else {
         return Ok(ExitCode::from(1));
@@ -3073,6 +3089,7 @@ fn author_suite(
             bail!("`{id}` is already in the suite");
         }
     }
+    suite.select_fresh_format();
     let json = suite.to_canonical_json()?;
     let written = match out {
         Some(out) => {

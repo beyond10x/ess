@@ -378,6 +378,11 @@ impl Inventory {
         Ok(())
     }
     pub(crate) fn validate(&self, suite: &ConformanceSuite) -> Result<(), AdmissionError> {
+        require(
+            suite.provenance.suite_version.major() >= 7
+                || self.refused.iter().all(|r| r.code != "ESS-SYNTH-015"),
+            "accessor observation refusals require suite/7",
+        )?;
         let component = match &self.selection.scope {
             Scope::System => None,
             Scope::Component { component } => Some(component.as_str()),
@@ -460,7 +465,10 @@ impl Inventory {
                 "explicit IDs differ from selected IDs",
             )?;
             require(
-                parent.version == COVERAGE_SUITE_FORMAT
+                matches!(
+                    parent.version.as_str(),
+                    COVERAGE_SUITE_FORMAT | "ess-conformance/7" | "ess-conformance/9"
+                ) && parent.version == suite.provenance.suite_version.to_string()
                     && parent.digest_profile == "sha256-json-bytes/1"
                     && valid_digest(&parent.digest),
                 "invalid parent reference",
@@ -530,7 +538,7 @@ impl Inventory {
                     r.subject.is_some() && r.source.is_none(),
                     "generated refusal requires subject and null source",
                 )?;
-                let expected = (1..=14)
+                let expected = (1..=15)
                     .find(|n| r.code == format!("ESS-SYNTH-{n:03}"))
                     .ok_or_else(|| error("unknown generated refusal code"))?;
                 let effect = if matches!(expected, 5 | 11 | 12 | 14) {
@@ -761,7 +769,10 @@ impl AdmittedInput {
     pub fn from_json(original: &str) -> Result<Self, AdmissionError> {
         let document = SuiteInputDocument::from_json(original)?;
         let selected = AdmittedSuite::parse(&document.suite_json)?;
-        require(selected.coverage().is_some(), "input/1 requires suite/5")?;
+        require(
+            selected.coverage().is_some(),
+            "input/1 requires coverage suite/5, suite/7 or suite/9",
+        )?;
         let parents = document
             .parent_suites
             .iter()
@@ -788,7 +799,10 @@ impl AdmittedInput {
     }
     /// Wrap a directly admitted unfiltered suite/5 without inventing source bytes.
     pub fn from_suite(suite: AdmittedSuite) -> Result<Self, AdmissionError> {
-        require(suite.coverage().is_some(), "input/1 requires suite/5")?;
+        require(
+            suite.coverage().is_some(),
+            "input/1 requires coverage suite/5, suite/7 or suite/9",
+        )?;
         require(
             matches!(
                 suite.coverage().map(|c| &c.selection.filter),
@@ -836,22 +850,46 @@ impl AdmittedInput {
     }
 }
 
+#[derive(Serialize)]
+struct Document<'a> {
+    provenance: &'a crate::SuiteProvenance,
+    scenarios: &'a BTreeMap<ScenarioId, crate::ConformanceScenario>,
+    coverage: &'a Inventory,
+}
+
 pub(crate) fn suite_document(
     suite: &ConformanceSuite,
     coverage: &Inventory,
 ) -> Result<String, AdmissionError> {
-    #[derive(Serialize)]
-    struct Document<'a> {
-        provenance: &'a crate::SuiteProvenance,
-        scenarios: &'a BTreeMap<ScenarioId, crate::ConformanceScenario>,
-        coverage: &'a Inventory,
-    }
     crate::admission::suite(suite)?;
     canonical(&Document {
         provenance: &suite.provenance,
         scenarios: &suite.scenarios,
         coverage,
     })
+}
+
+/// Write a freshly produced coverage suite compactly, retaining its entire inventory.
+///
+/// Object order matches the existing sorted canonical coverage document. One newline
+/// terminates the artifact. Its exact byte digest differs from the pretty artifact;
+/// this function does not rewrite an admitted input or its retained parent documents.
+pub fn compact_suite_document(
+    suite: &ConformanceSuite,
+    coverage: &Inventory,
+) -> Result<String, AdmissionError> {
+    crate::admission::suite(suite)?;
+    coverage.validate(suite)?;
+    let mut value = serde_json::to_value(Document {
+        provenance: &suite.provenance,
+        scenarios: &suite.scenarios,
+        coverage,
+    })
+    .map_err(|e| error(e.to_string()))?;
+    value.sort_all_objects();
+    let mut text = serde_json::to_string(&value).map_err(|e| error(e.to_string()))?;
+    text.push('\n');
+    Ok(text)
 }
 fn narrowed_inventory(
     parent: &AdmittedSuite,

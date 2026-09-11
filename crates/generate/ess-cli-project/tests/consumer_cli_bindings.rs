@@ -202,27 +202,49 @@ fn binding_trigger_and_invocation_change_resolved_handles_only_outside_local_cli
     );
     let after = model(&trigger, ORDER, DISPATCH);
     assert_eq!(
-        before.raw_binding(FIRST).when.event.to_string(),
+        before
+            .raw_binding(FIRST)
+            .when
+            .event
+            .as_ref()
+            .expect("event fixture")
+            .to_string(),
         "oracle.order.OrderPlaced"
     );
     assert_eq!(
-        after.raw_binding(FIRST).when.event.to_string(),
+        after
+            .raw_binding(FIRST)
+            .when
+            .event
+            .as_ref()
+            .expect("event fixture")
+            .to_string(),
         "oracle.order.OrderHeld"
     );
     assert_eq!(
-        after.binding(FIRST).event,
-        after.raw_binding(FIRST).when.event
+        after.binding(FIRST).cause.event(),
+        after.raw_binding(FIRST).when.event.as_ref()
     );
     assert_eq!(
-        before.binding(FIRST).event,
-        before.raw_binding(FIRST).when.event
+        before.binding(FIRST).cause.event(),
+        before.raw_binding(FIRST).when.event.as_ref()
     );
     assert_eq!(
-        before.resolved(FIRST).event.to_string(),
+        before
+            .resolved(FIRST)
+            .cause
+            .event()
+            .expect("event fixture")
+            .to_string(),
         "oracle.order.OrderPlaced"
     );
     assert_eq!(
-        after.resolved(FIRST).event.to_string(),
+        after
+            .resolved(FIRST)
+            .cause
+            .event()
+            .expect("event fixture")
+            .to_string(),
         "oracle.order.OrderHeld"
     );
     changed_model_same_cli(&before, &after);
@@ -552,9 +574,11 @@ fn binding_failure_and_escalation_policies_change_without_cli_execution() {
 #[test]
 fn binding_identity_naming_summary_and_refs_change_without_cli_effect() {
     let before = model(INTERACTIONS, ORDER, DISPATCH);
-    let text = replace_one(INTERACTIONS,
+    let text = replace_one(
+        INTERACTIONS,
         "  - id: handoff-on-placed\n    summary: Ask the carrier to collect a new order.\n",
-        "  - name: revised-handoff\n    naming: {wire: revised-notice, display: Revised notice}\n    summary: A revised interaction description.\n    refs: ['aep:binding-review']\n");
+        "  - name: revised-handoff\n    naming: {wire: revised-notice, display: Revised notice}\n    summary: A revised interaction description.\n    refs: ['aep:binding-review']\n",
+    );
     let after = model(&text, ORDER, DISPATCH);
     let a = before.raw_binding(FIRST);
     let b = after.raw_binding("revised-handoff");
@@ -663,8 +687,12 @@ fn actor_grants_change_raw_assembled_and_resolved_authority_without_cli_effect()
 
 #[test]
 fn actor_owner_identity_and_naming_change_without_cli_effect() {
-    let order = format!("{ORDER}\nactors:\n  - name: oracle.order.Clerk\n    naming: {{wire: clerk, display: Clerk}}\n    may: [oracle.dispatch.Handoff]\n");
-    let dispatch = format!("{DISPATCH}\nactors:\n  - name: oracle.dispatch.Carrier\n    naming: {{wire: carrier, display: Carrier}}\n    may: [oracle.dispatch.Handoff]\n");
+    let order = format!(
+        "{ORDER}\nactors:\n  - name: oracle.order.Clerk\n    naming: {{wire: clerk, display: Clerk}}\n    may: [oracle.dispatch.Handoff]\n"
+    );
+    let dispatch = format!(
+        "{DISPATCH}\nactors:\n  - name: oracle.dispatch.Carrier\n    naming: {{wire: carrier, display: Carrier}}\n    may: [oracle.dispatch.Handoff]\n"
+    );
     let before = model(INTERACTIONS, &order, DISPATCH);
     let after = model(INTERACTIONS, ORDER, &dispatch);
     assert!(before.raw_dispatch.actors.is_empty());
@@ -739,9 +767,11 @@ fn instance<'a>(model: &'a Model, command: &str) -> &'a ResolvedInstance {
 
 #[test]
 fn observed_and_supplied_instance_sources_change_without_cli_effect() {
-    let observed_fields = replace_one(ORDER,
+    let observed_fields = replace_one(
+        ORDER,
         "  - name: oracle.order.OrderPlaced\n    fields:\n",
-        "  - name: oracle.order.OrderPlaced\n    fields:\n      - {name: alternate_order_id, type: oracle.order.OrderId}\n");
+        "  - name: oracle.order.OrderPlaced\n    fields:\n      - {name: alternate_order_id, type: oracle.order.OrderId}\n",
+    );
     let observed_other = replace_one(
         &observed_fields,
         "creates: oracle.order.Order\n        instance: order_id",
@@ -793,9 +823,11 @@ fn observed_and_supplied_instance_sources_change_without_cli_effect() {
     );
     changed_model_same_cli(&before, &after);
 
-    let supplied_fields = replace_one(ORDER,
+    let supplied_fields = replace_one(
+        ORDER,
         "    input:\n      - name: order_id\n        type: oracle.order.OrderId\n      - name: weight_grams",
-        "    input:\n      - {name: alternate_order_id, type: oracle.order.OrderId}\n      - name: order_id\n        type: oracle.order.OrderId\n      - name: weight_grams");
+        "    input:\n      - {name: alternate_order_id, type: oracle.order.OrderId}\n      - name: order_id\n        type: oracle.order.OrderId\n      - name: weight_grams",
+    );
     let supplied_other = replace_one(
         &supplied_fields,
         "updates: oracle.order.Order\n        instance: order_id",

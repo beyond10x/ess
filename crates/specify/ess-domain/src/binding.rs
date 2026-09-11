@@ -117,17 +117,12 @@
 //! cannot be written as a literal when the event has a field of that name; the alternative is a
 //! specification that silently sends a field's name instead of its value.
 //!
-//! # One field, not a path
+//! # Explicit bounded projections
 //!
-//! `event.amount.currency` is refused as **unsupported**, not as a missing field. `Money` really does
-//! have a `currency`, and a diagnostic saying otherwise sends an author hunting for a typo.
-//!
-//! A mapping's promise to a generator is that one field of the event fills one input of the command.
-//! A path makes the generator emit a projection as well, and nothing in the model says a projection
-//! is total: an `Optional` or a union part-way along one turns a value that must be present into one
-//! that may be absent, and a mapping says nothing about that case. The repair is to map the whole
-//! value, or to add a field to the event that carries it — both of which are statements someone
-//! made, which a silently partial projection is not.
+//! Flat `event.field` mappings retain their historical meaning. Source format `ess/3` additionally
+//! admits two or three declared members after `event`, resolved to a shared typed DAG. Traversing
+//! Optional containers or union alternatives requires an Optional command input. A terminal Optional
+//! is copied whole, preserving its type and its explicit conversion obligations.
 
 use std::collections::btree_map::Entry;
 use std::collections::BTreeMap;
@@ -138,6 +133,49 @@ use crate::command::{CommandSpec, EventSpec};
 use crate::name::{Naming, QualifiedName};
 use crate::refs::Refs;
 use crate::types::{ConversionRegistry, Field, Primitive, TypeBody, TypeRef, TypeRegistry};
+
+pub mod periodic;
+use periodic::PeriodicCause;
+
+/// The real cause of a binding; periodic work carries no fabricated event.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "snake_case", deny_unknown_fields)]
+pub enum BindingCause {
+    /// A declared event.
+    Event(QualifiedName),
+    /// A session-local host poll.
+    Periodic(PeriodicCause),
+}
+
+impl BindingCause {
+    /// The event, only for an event cause.
+    pub fn event(&self) -> Option<&QualifiedName> {
+        match self {
+            Self::Event(event) => Some(event),
+            Self::Periodic(_) => None,
+        }
+    }
+    /// The periodic contract, only for a periodic cause.
+    pub fn periodic(&self) -> Option<&PeriodicCause> {
+        match self {
+            Self::Periodic(periodic) => Some(periodic),
+            Self::Event(_) => None,
+        }
+    }
+}
+
+impl std::fmt::Display for BindingCause {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Event(event) => event.fmt(f),
+            Self::Periodic(periodic) => write!(
+                f,
+                "periodic {} ({})",
+                periodic.every, periodic.host.authority
+            ),
+        }
+    }
+}
 
 /// A binding, as a document says it.
 #[derive(Debug, Clone, serde::Deserialize, schemars::JsonSchema)]
@@ -153,6 +191,12 @@ pub struct RawBindingSpec {
     /// How the event's fields become the command's input.
     #[serde(default)]
     pub mapping: MappingTable,
+    /// Typed lists prepared once for this binding occurrence.
+    #[serde(default)]
+    pub selection_inputs: Vec<crate::selection::SelectionInput>,
+    /// Finite selectors in authored evaluation order.
+    #[serde(default)]
+    pub selections: Vec<crate::selection::Selection>,
     /// How many times the command may run. Required.
     pub delivery: Delivery,
     /// What happens when it does not run. Required.
@@ -175,7 +219,9 @@ pub struct RawBindingSpec {
 #[serde(deny_unknown_fields)]
 pub struct RawTrigger {
     /// The event.
-    pub event: QualifiedName,
+    pub event: Option<QualifiedName>,
+    /// A periodic cause, exclusive with event.
+    pub periodic: Option<PeriodicCause>,
 }
 
 /// What a binding does.
@@ -487,10 +533,12 @@ impl<'de> serde::Deserialize<'de> for MappingTable {
                 mut map: A,
             ) -> Result<Self::Value, A::Error> {
                 let mut entries = Vec::new();
-                while let Some((target, source)) = map.next_entry::<String, String>()? {
+                while let Some((target, source)) =
+                    map.next_entry::<String, AuthoredMappingSource>()?
+                {
                     entries.push(Mapping {
                         target,
-                        source: MappingSource::parse(&source),
+                        source: source.0,
                     });
                 }
                 Ok(MappingTable(entries))
@@ -507,7 +555,16 @@ impl serde::Serialize for MappingTable {
 
         let mut map = serializer.serialize_map(Some(self.0.len()))?;
         for entry in &self.0 {
-            map.serialize_entry(&entry.target, &entry.source.to_string())?;
+            match &entry.source {
+                MappingSource::Selection { selection, path } => map.serialize_entry(
+                    &entry.target,
+                    &SelectionMapping {
+                        selection: selection.clone(),
+                        path: path.clone(),
+                    },
+                )?,
+                source => map.serialize_entry(&entry.target, &source.to_string())?,
+            }
         }
         map.end()
     }
@@ -530,8 +587,53 @@ impl schemars::JsonSchema for MappingTable {
             instance_type: Some(schemars::schema::InstanceType::Object.into()),
             ..Default::default()
         };
-        schema.object().additional_properties = Some(Box::new(generator.subschema_for::<String>()));
+        schema.object().additional_properties =
+            Some(Box::new(generator.subschema_for::<AuthoredMappingSchema>()));
         schema.into()
+    }
+}
+
+#[derive(serde::Serialize, serde::Deserialize, schemars::JsonSchema)]
+#[serde(deny_unknown_fields)]
+struct SelectionMapping {
+    selection: String,
+    path: Vec<String>,
+}
+
+#[derive(schemars::JsonSchema)]
+#[serde(untagged)]
+#[allow(dead_code)]
+enum AuthoredMappingSchema {
+    String(String),
+    Selection(SelectionMapping),
+}
+
+struct AuthoredMappingSource(MappingSource);
+impl<'de> serde::Deserialize<'de> for AuthoredMappingSource {
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        struct Source;
+        impl<'de> serde::de::Visitor<'de> for Source {
+            type Value = AuthoredMappingSource;
+            fn expecting(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+                f.write_str("an existing mapping string or closed {selection, path} object")
+            }
+            fn visit_str<E: serde::de::Error>(self, value: &str) -> Result<Self::Value, E> {
+                Ok(AuthoredMappingSource(MappingSource::parse(value)))
+            }
+            fn visit_map<A: serde::de::MapAccess<'de>>(
+                self,
+                map: A,
+            ) -> Result<Self::Value, A::Error> {
+                let value = <SelectionMapping as serde::Deserialize>::deserialize(
+                    serde::de::value::MapAccessDeserializer::new(map),
+                )?;
+                Ok(AuthoredMappingSource(MappingSource::Selection {
+                    selection: value.selection,
+                    path: value.path,
+                }))
+            }
+        }
+        deserializer.deserialize_any(Source)
     }
 }
 
@@ -539,10 +641,32 @@ impl schemars::JsonSchema for MappingTable {
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
 #[serde(rename_all = "snake_case", tag = "kind")]
 pub enum MappingSource {
+    /// A lifetime-constant field supplied by the required host.
+    HostContext {
+        /// One declared context field.
+        field: String,
+    },
+    /// A fresh per-occurrence field supplied by the required host read.
+    HostRead {
+        /// One declared read field.
+        field: String,
+    },
+    /// Projection from a declared local selector, distinguished from every legacy string.
+    Selection {
+        /// Selector identity.
+        selection: String,
+        /// Zero to three declared member names.
+        path: Vec<String>,
+    },
     /// A field of the triggering event: `event.customer_email`.
     EventField {
         /// The field's name.
         field: String,
+    },
+    /// A bounded path through declared event structure, admitted under ess/3.
+    EventAccessor {
+        /// Two or three declared fields after the event prefix.
+        segments: Vec<String>,
     },
     /// A value written in the binding: `template: invoice-created`.
     ///
@@ -560,7 +684,20 @@ impl MappingSource {
 
     /// Reads `event.customer_email` as a field, anything else as a literal.
     pub fn parse(value: &str) -> Self {
+        if let Some(field) = value.strip_prefix("host_context.") {
+            return Self::HostContext {
+                field: field.to_owned(),
+            };
+        }
+        if let Some(field) = value.strip_prefix("host_read.") {
+            return Self::HostRead {
+                field: field.to_owned(),
+            };
+        }
         match value.strip_prefix(Self::EVENT_PREFIX) {
+            Some(field) if field.contains('.') => Self::EventAccessor {
+                segments: field.split('.').map(str::to_owned).collect(),
+            },
             Some(field) => Self::EventField {
                 field: field.to_owned(),
             },
@@ -575,7 +712,15 @@ impl std::fmt::Display for MappingSource {
     /// As the document wrote it, so a diagnostic quotes the author rather than the model.
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
+            Self::HostContext { field } => write!(f, "host_context.{field}"),
+            Self::HostRead { field } => write!(f, "host_read.{field}"),
             Self::EventField { field } => write!(f, "{}{field}", Self::EVENT_PREFIX),
+            Self::EventAccessor { segments } => {
+                write!(f, "{}{}", Self::EVENT_PREFIX, segments.join("."))
+            }
+            Self::Selection { selection, path } => {
+                write!(f, "selection {selection} [{}]", path.join("."))
+            }
             Self::Literal { value } => f.write_str(value),
         }
     }
@@ -618,6 +763,13 @@ impl BindingName {
     }
 }
 
+impl<'de> serde::Deserialize<'de> for BindingName {
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        let raw = String::deserialize(deserializer)?;
+        Self::new(raw).map_err(serde::de::Error::custom)
+    }
+}
+
 impl std::fmt::Display for BindingName {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.write_str(&self.0)
@@ -646,12 +798,19 @@ impl schemars::JsonSchema for BindingName {
 pub struct BindingSpec {
     /// Its identifier.
     pub name: BindingName,
-    /// The event it reacts to.
-    pub event: QualifiedName,
+    /// The event or periodic cause. Flattening preserves legacy event bytes.
+    #[serde(flatten)]
+    pub cause: BindingCause,
     /// The command it invokes.
     pub command: QualifiedName,
     /// How the event's fields become the command's input, keyed by target field.
     pub mapping: BTreeMap<String, MappingSource>,
+    /// Explicit local list preparation declarations.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub selection_inputs: Vec<crate::selection::SelectionInput>,
+    /// Ordered first-occurrence selectors.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub selections: Vec<crate::selection::Selection>,
     /// How many times the command may run.
     pub delivery: Delivery,
     /// What happens when it does not.
@@ -692,16 +851,18 @@ impl BindingSpec {
         let prefix = MappingSource::EVENT_PREFIX;
 
         errors.extend(self.check_escalation());
+        errors.extend(self.check_periodic_cause());
 
         for (target, source) in &self.mapping {
             let at = format!("binding.{}.mapping.{target}", self.name);
+            errors.extend(self.check_mapping_cause(source, &at));
             match source {
                 MappingSource::EventField { field } if field.is_empty() => {
                     errors.push(
                         ValidationError::new(
                             ValidationCode::UnobservableFact,
                             at,
-                            format!("`{prefix}` names no field of `{}`", self.event),
+                            format!("`{prefix}` names no field of `{}`", self.cause),
                         )
                         .with_hint("write the field after the dot, as in `event.customer_email`"),
                     );
@@ -727,11 +888,28 @@ impl BindingSpec {
                              a field to `{}` that carries the value. An `Optional` or a union \
                              part-way along a path turns a value that must be present into one that \
                              may be absent, and a mapping says nothing about that case",
-                            self.event
+                            self.cause
                         )),
                     );
                 }
-                MappingSource::EventField { .. } => {}
+                MappingSource::Selection { selection, path } => {
+                    if crate::types::field_name(selection).is_err()
+                        || path.len() > crate::accessor::MAX_SEGMENTS
+                        || path
+                            .iter()
+                            .any(|part| crate::types::field_name(part).is_err())
+                    {
+                        errors.push(ValidationError::new(ValidationCode::UnsupportedConstruct, at, "selection mapping requires a local selector and zero to three declared fields"));
+                    }
+                }
+                MappingSource::HostContext { .. }
+                | MappingSource::HostRead { .. }
+                | MappingSource::EventField { .. } => {}
+                MappingSource::EventAccessor { segments } => {
+                    if let Err(error) = crate::accessor::validate_segments(segments, &at) {
+                        errors.push(error);
+                    }
+                }
                 MappingSource::Literal { value } => {
                     if let Some((written, rest)) = misspelt_event_prefix(value) {
                         errors.push(
@@ -757,6 +935,56 @@ impl BindingSpec {
             }
         }
 
+        errors
+    }
+
+    fn check_periodic_cause(&self) -> ValidationErrors {
+        let mut errors = ValidationErrors::new();
+        if let Some(periodic) = self.cause.periodic() {
+            errors.extend(periodic.validate(&format!("binding.{}.when.periodic", self.name)));
+            if !self.selection_inputs.is_empty() || !self.selections.is_empty() {
+                errors.push(ValidationError::new(
+                    ValidationCode::UnsupportedConstruct,
+                    format!("binding.{}", self.name),
+                    "periodic causes do not supply event inputs for list selection",
+                ));
+            }
+            if self.delivery != Delivery::AtMostOnce || self.failure != Failure::Drop {
+                errors.push(ValidationError::new(
+                    ValidationCode::UnsupportedConstruct,
+                    format!("binding.{}", self.name),
+                    "periodic session polls require at_most_once delivery and drop failure",
+                ));
+            }
+        }
+        errors
+    }
+
+    fn check_mapping_cause(&self, source: &MappingSource, at: &str) -> ValidationErrors {
+        let mut errors = ValidationErrors::new();
+        if self.cause.periodic().is_some()
+            && matches!(
+                source,
+                MappingSource::EventField { .. }
+                    | MappingSource::EventAccessor { .. }
+                    | MappingSource::Selection { .. }
+            )
+        {
+            errors.push(ValidationError::new(
+                ValidationCode::UnobservableFact,
+                at,
+                "periodic causes do not supply event fields",
+            ));
+        }
+        if let MappingSource::HostContext { field } | MappingSource::HostRead { field } = source {
+            if self.cause.periodic().is_none() || crate::types::field_name(field).is_err() {
+                errors.push(ValidationError::new(
+                    ValidationCode::UnobservableFact,
+                    at,
+                    "host mappings require a periodic cause and one declared field",
+                ));
+            }
+        }
         errors
     }
 
@@ -855,11 +1083,33 @@ impl TryFrom<RawBindingSpec> for BindingSpec {
             }
         }
 
+        let cause =
+            match (raw.when.event, raw.when.periodic) {
+                (Some(event), None) => BindingCause::Event(event),
+                (None, Some(periodic)) => BindingCause::Periodic(periodic),
+                // A `when:` that names no cause is one author mistake in several spellings — an empty
+                // block, a null `event:`, a null `periodic:` — so it gets one refusal here rather than
+                // a parse error per spelling, exactly as `escalate` with no event does.
+                (None, None) => return Err(errors.with(ValidationError::new(
+                    ValidationCode::MissingDeclaration,
+                    format!("binding.{name}.when"),
+                    "says nothing; write `event: <event>` or `periodic:` with its cause under it",
+                ))),
+                (Some(_), Some(_)) => {
+                    return Err(errors.with(ValidationError::new(
+                        ValidationCode::ConflictingDeclaration,
+                        format!("binding.{name}.when"),
+                        "exactly one of event and periodic is required",
+                    )))
+                }
+            };
         let binding = Self {
             name,
-            event: raw.when.event,
+            cause,
             command: raw.invoke.command,
             mapping,
+            selection_inputs: raw.selection_inputs,
+            selections: raw.selections,
             delivery: raw.delivery,
             failure: raw.on_failure.failure,
             escalation: raw.on_failure.emits,
@@ -890,8 +1140,74 @@ pub fn validate_bindings(
     conversions: &ConversionRegistry,
 ) -> ValidationErrors {
     let mut errors = ValidationErrors::new();
+    let mut account = crate::accessor::Account::default();
     for binding in bindings.values() {
+        if let Some(event) = binding.cause.event().and_then(|name| events.get(name)) {
+            if let Ok(plan) = crate::selection::SelectionPlan::resolve(
+                &binding.selection_inputs,
+                &binding.selections,
+                event,
+                types,
+                conversions,
+                &format!("binding.{}.selections", binding.name),
+            ) {
+                for input in &plan.inputs {
+                    if let crate::selection::InputSource::Accessor { plan } = &input.source {
+                        if let Err(error) = account.add(plan) {
+                            errors.push(error);
+                        }
+                    }
+                }
+                for selector in &plan.selectors {
+                    if let crate::selection::SelectionOperation::First { reads, .. } =
+                        &selector.operation
+                    {
+                        for projection in reads.values() {
+                            if let Err(error) = account.add(&projection.0) {
+                                errors.push(error);
+                            }
+                        }
+                    }
+                }
+                for source in binding.mapping.values() {
+                    if let MappingSource::Selection { selection, path } = source {
+                        if let Ok((_, projection, _)) = plan.projection(
+                            selection,
+                            path,
+                            types,
+                            &format!("binding.{}.mapping", binding.name),
+                        ) {
+                            if let Err(error) = account.add(&projection.0) {
+                                errors.push(error);
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        for (target, source) in &binding.mapping {
+            if let (MappingSource::EventAccessor { segments }, Some(event)) = (
+                source,
+                binding.cause.event().and_then(|name| events.get(name)),
+            ) {
+                if let Ok(plan) = crate::accessor::resolve(
+                    event,
+                    segments,
+                    types,
+                    &format!("binding.{}.mapping.{target}", binding.name),
+                ) {
+                    if let Err(error) = account.add(&plan) {
+                        errors.push(error);
+                    }
+                }
+            }
+        }
         errors.extend(binding.validate());
+        if let Some(periodic) = binding.cause.periodic() {
+            errors.extend(
+                periodic.validate_types(types, &format!("binding.{}.when.periodic", binding.name)),
+            );
+        }
         errors.extend(
             Ends {
                 binding,
@@ -921,7 +1237,10 @@ struct Ends<'a> {
 impl Ends<'_> {
     /// The event this binding reacts to, when something declares it.
     fn event(&self) -> Option<&EventSpec> {
-        self.events.get(&self.binding.event)
+        self.binding
+            .cause
+            .event()
+            .and_then(|name| self.events.get(name))
     }
 
     /// The command this binding invokes, when something declares it.
@@ -938,12 +1257,12 @@ impl Ends<'_> {
     fn check(&self) -> ValidationErrors {
         let mut errors = ValidationErrors::new();
 
-        if self.event().is_none() {
+        if self.binding.cause.event().is_some() && self.event().is_none() {
             errors.push(
                 ValidationError::new(
                     ValidationCode::UndeclaredReference,
                     self.at("when.event"),
-                    format!("`{}` is not a declared event", self.binding.event),
+                    format!("`{}` is not a declared event", self.binding.cause),
                 )
                 .with_hint(available("event", self.events.keys())),
             );
@@ -971,6 +1290,18 @@ impl Ends<'_> {
             }
         }
 
+        if let Some(event) = self.event() {
+            if let Err(error) = crate::selection::SelectionPlan::resolve(
+                &self.binding.selection_inputs,
+                &self.binding.selections,
+                event,
+                self.types,
+                self.conversions,
+                &self.at("selections"),
+            ) {
+                errors.push(error);
+            }
+        }
         for (target, source) in &self.binding.mapping {
             errors.extend(self.check_entry(target, source));
         }
@@ -1003,6 +1334,14 @@ impl Ends<'_> {
         }
 
         match source {
+            MappingSource::HostContext { field } | MappingSource::HostRead { field } => {
+                errors.extend(self.check_host_entry(
+                    &at,
+                    field,
+                    matches!(source, MappingSource::HostContext { .. }),
+                    filled.map(|(_, input)| input),
+                ));
+            }
             MappingSource::EventField { field } => {
                 // A shape `BindingSpec::validate` already refused is not resolved again: `event.`
                 // and `event.amount.currency` each have one error, and it is not this one.
@@ -1031,11 +1370,115 @@ impl Ends<'_> {
                     errors.extend(self.check_types(&at, event, read, command, input));
                 }
             }
+            MappingSource::EventAccessor { segments } => {
+                let Some(event) = self.event() else {
+                    return errors;
+                };
+                match crate::accessor::resolve(event, segments, self.types, &at) {
+                    Ok(plan) => {
+                        if let Some((command, input)) = filled {
+                            if plan.may_miss() && !matches!(input.type_ref, TypeRef::Optional(_)) {
+                                errors.push(ValidationError::new(
+                                    ValidationCode::PartialAccessor, &at,
+                                    format!("{} has effective result {} and may be unavailable; {}.{} requires {}", plan.path(), plan.effective_type(), command.name, input.name, input.type_ref),
+                                ).with_hint("accept an Optional input, or map a total whole value through an explicitly owned conversion"));
+                            } else {
+                                let field = Field::new(segments.join("."), plan.effective_type());
+                                errors.extend(self.check_types(&at, event, &field, command, input));
+                            }
+                        }
+                    }
+                    Err(error) => errors.push(error),
+                }
+            }
+            MappingSource::Selection { selection, path } => {
+                errors.extend(self.check_selection(&at, selection, path, filled));
+            }
             MappingSource::Literal { value } => {
                 errors.extend(self.check_literal(&at, value, filled));
             }
         }
 
+        errors
+    }
+
+    fn check_host_entry(
+        &self,
+        at: &str,
+        field: &str,
+        from_context: bool,
+        filled: Option<&Field>,
+    ) -> ValidationErrors {
+        let mut errors = ValidationErrors::new();
+        let Some(periodic) = self.binding.cause.periodic() else {
+            return errors;
+        };
+        let fields = if from_context {
+            &periodic.host.context_fields
+        } else {
+            &periodic.host.read_fields
+        };
+        let Some(read) = fields.iter().find(|entry| entry.name == field) else {
+            errors.push(ValidationError::new(
+                ValidationCode::UndeclaredReference,
+                at,
+                format!("host does not declare field {field}"),
+            ));
+            return errors;
+        };
+        if let Some(input) = filled {
+            if !self.conversions.permits(&read.type_ref, &input.type_ref) {
+                errors.push(ValidationError::new(
+                    ValidationCode::TypeMismatch,
+                    at,
+                    format!(
+                        "host field {} has type {}; input requires {}",
+                        field, read.type_ref, input.type_ref
+                    ),
+                ));
+            }
+        }
+        errors
+    }
+
+    fn check_selection(
+        &self,
+        at: &str,
+        selection: &str,
+        path: &[String],
+        filled: Option<(&CommandSpec, &Field)>,
+    ) -> ValidationErrors {
+        let mut errors = ValidationErrors::new();
+        let Some(event) = self.event() else {
+            return errors;
+        };
+        if let Ok(plan) = crate::selection::SelectionPlan::resolve(
+            &self.binding.selection_inputs,
+            &self.binding.selections,
+            event,
+            self.types,
+            self.conversions,
+            at,
+        ) {
+            match plan.projection(selection, path, self.types, at) {
+                Ok((_, _, ty)) => {
+                    if let Some((command, input)) = filled {
+                        if matches!(input.type_ref, TypeRef::Optional(_)) {
+                            errors.extend(self.check_types(
+                                at,
+                                event,
+                                &Field::new(selection, ty),
+                                command,
+                                input,
+                            ));
+                        } else {
+                            errors.push(ValidationError::new(ValidationCode::PartialAccessor, at, format!("selector {selection} returns {ty}; absent selection requires an Optional target")));
+                        }
+                    }
+                }
+                Err(error) => errors.push(error),
+            }
+        }
         errors
     }
 
@@ -1123,7 +1566,7 @@ impl Ends<'_> {
                 format!(
                     "only text and the variants of an enum can be written as a literal; take the \
                      value from a field of `{}` instead",
-                    self.binding.event
+                    self.binding.cause
                 ),
             )
         };
@@ -1190,7 +1633,7 @@ impl Ends<'_> {
                 .with_hint(format!(
                     "map it from a field of `{}`, give it a literal, or declare the input \
                      `Optional<{}>` if it may be absent",
-                    self.binding.event, input.type_ref
+                    self.binding.cause, input.type_ref
                 )),
             );
         }
@@ -1214,18 +1657,24 @@ pub(crate) enum Representation<'a> {
     Structured,
 }
 
-/// How many wrappers deep the walk below will go before giving up.
+/// Maximum type nodes visited while checking a binding or payload literal's representation.
 ///
 /// Bounded rather than unbounded as defence in depth. `check_inhabitation` in
 /// [`crate::system`] does refuse a newtype of itself, so this walk should never meet one — but the
 /// two checks run in the same pass over the same document, and a validation pass that hangs is worse
 /// than one that refuses a good document. A bound is cheaper than an ordering guarantee.
-const WRAPPER_LIMIT: usize = 32;
+///
+/// Each `Optional` or newtype wrapper consumes one visit, and recognizing the terminal enum or
+/// primitive consumes another. Exhaustion establishes no representation guarantee; callers that
+/// describe validation must use this same bound. This is distinct from the type parser's nesting
+/// bound: named newtypes can extend a chain without nesting its authored type references.
+pub const WRAPPER_LIMIT: usize = 32;
 
 /// The representation a literal would have to be spellable as, to fill `type_ref`.
 ///
-/// `None` when the answer needs a type nothing declares, or when the wrappers run deeper than any
-/// real specification: both are somebody else's error, already reported.
+/// `None` when the answer needs a type nothing declares, or when the traversal exhausts
+/// [`WRAPPER_LIMIT`]. The latter establishes no representation, even if other passes admit the
+/// specification; callers must not describe it as a completed literal check.
 pub(crate) fn representation<'a>(
     type_ref: &'a TypeRef,
     types: &'a TypeRegistry,
@@ -1457,6 +1906,7 @@ on_failure: {escalate: {emits: billing.email.DeliveryEscalated}}
         ] {
             registry
                 .insert(NamedType {
+                    reading: None,
                     name: name(declared),
                     body,
                     naming: Naming::default(),
@@ -1496,6 +1946,7 @@ on_failure: {escalate: {emits: billing.email.DeliveryEscalated}}
                 .iter()
                 .map(|(field, kind)| Field::new(*field, type_ref(kind)))
                 .collect(),
+            response: Vec::new(),
             outcomes: Vec::new(),
             naming: Naming::default(),
             refs: Refs::new(),
@@ -1865,8 +2316,11 @@ on_failure: {escalate: {emits: billing.email.DeliveryEscalated}}
                 ("amount", "billing.invoice.Money"),
             ],
         );
+        // Quoted, because a mapping value is a string or a `{selection, path}` object since a
+        // mapping may read through an accessor: a bare `12.00` is a float the reader stops before
+        // this refusal can be reached, and the refusal under test is the one about structure.
         let errors = check_against(
-            binding(&format!("{MAPPING}  amount: 12.00\n")),
+            binding(&format!("{MAPPING}  amount: '12.00'\n")),
             &declared_events(),
             &commands,
             &conversions(),
@@ -1938,24 +2392,15 @@ on_failure: {escalate: {emits: billing.email.DeliveryEscalated}}
     }
 
     #[test]
-    fn a_nested_path_is_refused_as_unsupported_rather_than_as_a_missing_field() {
-        let errors = parse(
+    fn nested_paths_parse_as_a_distinct_source_before_format_admission() {
+        let binding = parse(
             EVENT,
             COMMAND,
             "  recipient: event.amount.currency\n  template: invoice-created\n",
         )
-        .expect_err("a path through a struct");
-
-        let error = only(&errors);
-        assert_eq!(error.code, ValidationCode::UnsupportedConstruct);
-        assert!(error.message.contains("reads a path"), "{error}");
+        .expect("syntactically bounded path");
         assert!(
-            !error.message.contains("is not a field"),
-            "`amount.currency` exists; saying otherwise sends an author hunting a typo: {error}"
-        );
-        assert!(
-            hint(error).contains("event.amount"),
-            "the hint says what to map instead: {error}"
+            matches!(&binding.mapping["recipient"], MappingSource::EventAccessor { segments } if segments == &["amount", "currency"])
         );
     }
 
@@ -2279,7 +2724,7 @@ on_failure: {escalate: {emits: billing.email.DeliveryEscalated}}
     }
 
     #[test]
-    fn the_published_schema_still_describes_a_mapping_as_an_object_of_strings() {
+    fn the_published_schema_describes_a_mapping_as_an_object_of_authored_sources() {
         // The raw mapping is a list so that a repeated key can be reported. That is an internal
         // choice, and a document must not be able to see it.
         let schema =
@@ -2288,9 +2733,18 @@ on_failure: {escalate: {emits: billing.email.DeliveryEscalated}}
         assert_eq!(mapping["type"], serde_json::json!("object"), "{mapping}");
         assert_eq!(
             mapping["additionalProperties"],
-            serde_json::json!({"type": "string"}),
+            serde_json::json!({"$ref": "#/definitions/AuthoredMappingSchema"}),
             "{mapping}"
         );
         assert_eq!(mapping["default"], serde_json::json!({}), "{mapping}");
+        // A value is still a string; the accessor added the second spelling beside it, and a
+        // document sees exactly those two.
+        let source = &schema["definitions"]["AuthoredMappingSchema"]["anyOf"];
+        assert_eq!(source[0], serde_json::json!({"type": "string"}), "{source}");
+        assert_eq!(
+            source[1]["$ref"],
+            serde_json::json!("#/definitions/SelectionMapping"),
+            "{source}"
+        );
     }
 }

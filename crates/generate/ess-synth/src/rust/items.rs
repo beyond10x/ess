@@ -54,6 +54,7 @@ fn newtype(
         emit.layout.type_name(&declared.name),
         emit.rust_type(of)
     );
+    super::reading::wrapper(out, emit, declared);
 }
 
 /// A struct with named fields.
@@ -176,6 +177,13 @@ pub(super) fn command_contract(out: &mut String, emit: &Emit<'_>, command: &Reso
     }
     out.push_str("}\n");
 
+    if !command.response.is_empty() {
+        let _ = writeln!(out, "\n/// Actual typed response of `{}`.\n#[derive(Debug, Clone, PartialEq, Eq)]\npub struct {type_name}Response {{", command.name);
+        for field in &command.response {
+            field_line(out, emit, field);
+        }
+        out.push_str("}\n");
+    }
     let _ = writeln!(
         out,
         "\n/// Everything `{}` can result in — one variant per declared outcome.\n///\n/// An \
@@ -186,9 +194,10 @@ pub(super) fn command_contract(out: &mut String, emit: &Emit<'_>, command: &Reso
         command.name
     );
     for outcome in &command.outcomes {
-        outcome_variant(out, emit, outcome);
+        outcome_variant(out, emit, command, outcome);
     }
     out.push_str("}\n");
+    response_checks(out, emit, command);
 }
 
 /// One emitted event's field on an outcome's enum variant: the field identifier and the event it
@@ -210,6 +219,9 @@ pub(crate) fn outcome_event_fields<'a>(
     outcome: &'a ResolvedOutcome,
 ) -> Vec<OutcomeEventField<'a>> {
     let mut used: BTreeMap<String, usize> = BTreeMap::new();
+    if response_bearing(outcome) {
+        used.insert("response".into(), 1);
+    }
     let mut fields = Vec::new();
     for event in &outcome.emits {
         let mut field = name::value_ident(&emit.layout.type_name(event.name()));
@@ -226,7 +238,12 @@ pub(crate) fn outcome_event_fields<'a>(
 }
 
 /// One variant of a command's outcome enum: what it publishes and what it reports.
-fn outcome_variant(out: &mut String, emit: &Emit<'_>, outcome: &ResolvedOutcome) {
+fn outcome_variant(
+    out: &mut String,
+    emit: &Emit<'_>,
+    command: &ResolvedCommand,
+    outcome: &ResolvedOutcome,
+) {
     let _ = writeln!(
         out,
         "    /// `{}` — {}.",
@@ -242,6 +259,13 @@ fn outcome_variant(out: &mut String, emit: &Emit<'_>, outcome: &ResolvedOutcome)
         return;
     }
     let _ = writeln!(out, "    {variant} {{");
+    if response_bearing(outcome) {
+        let response = format!("{}Response", emit.layout.type_name(&command.name));
+        let _ = writeln!(
+            out,
+            "        /// Actual response returned by this branch.\n        response: {response},"
+        );
+    }
     for carried in outcome_event_fields(emit, outcome) {
         let _ = writeln!(
             out,
@@ -385,4 +409,71 @@ pub(super) fn invariant_doc(out: &mut String, invariants: &[Invariant]) {
             invariant.statement
         );
     }
+}
+
+/// Whether this branch reads the returned response into an event.
+pub(crate) fn response_bearing(outcome: &ResolvedOutcome) -> bool {
+    outcome.payload.iter().flat_map(|p| &p.fields).any(|f| {
+        matches!(
+            f.value,
+            ess_compiler::ir::ResolvedPayloadValue::ResponseField { .. }
+        )
+    })
+}
+
+fn response_checks(out: &mut String, emit: &Emit<'_>, command: &ResolvedCommand) {
+    if !command.outcomes.iter().any(response_bearing) {
+        return;
+    }
+    let ty = emit.layout.type_name(&command.name);
+    let _=writeln!(out,"\nimpl {ty}Outcome {{\n    /// Compare the actual returned response with response-mapped emitted fields.\n    pub fn response_payload_matches(&self) -> bool {{\n        match self {{");
+    for outcome in &command.outcomes {
+        let variant = name::pascal(outcome.name.as_str());
+        if !response_bearing(outcome) {
+            let _ = writeln!(out, "            Self::{variant} {{ .. }} => true,");
+            continue;
+        }
+        let carried = outcome_event_fields(emit, outcome);
+        let mut names = vec!["response".to_owned()];
+        let mut checks = Vec::new();
+        for event in &carried {
+            let Some(payload) = outcome.payload.iter().find(|p| p.event == *event.event) else {
+                continue;
+            };
+            for field in &payload.fields {
+                if let ess_compiler::ir::ResolvedPayloadValue::ResponseField {
+                    field: source,
+                    type_ref,
+                } = &field.value
+                {
+                    if !names.contains(&event.field) {
+                        names.push(event.field.clone());
+                    }
+                    let actual = format!("{}.{}", event.field, name::value_ident(&field.target));
+                    let mut expected = format!("response.{}.clone()", name::value_ident(source));
+                    let mut target = &field.target_type;
+                    while target != type_ref {
+                        if let ResolvedTypeRef::Optional { of } = target {
+                            expected = format!("Some({expected})");
+                            target = of;
+                        } else {
+                            break;
+                        }
+                    }
+                    checks.push(if target == type_ref && field.conversion.is_none() {
+                        format!("{actual} == {expected}")
+                    } else {
+                        "false".into()
+                    });
+                }
+            }
+        }
+        let _ = writeln!(
+            out,
+            "            Self::{variant} {{ {}, .. }} => {},",
+            names.join(", "),
+            checks.join(" && ")
+        );
+    }
+    out.push_str("        }\n    }\n}\n");
 }

@@ -365,7 +365,13 @@ fn logged<'a>(bridge: &'a Bridge<'a>) -> BTreeMap<&'a EventHandle, String> {
         .flat_map(|component| component.publishes.iter())
         .collect();
     for delivery in deliveries(bridge) {
-        events.insert(&delivery.binding.event);
+        events.insert(
+            delivery
+                .binding
+                .cause
+                .event()
+                .expect("generated event capability"),
+        );
         if let ResolvedFailure::Escalate { emits } = delivery.binding.on_failure() {
             events.insert(emits);
         }
@@ -458,7 +464,13 @@ fn invoked_method(out: &mut String, bridge: &Bridge<'_>, deliveries: &[Delivery<
              \"input\");\n                    wire::encode_command_{}(input, &mut \
              out);\n                }}\n",
             delivery.binding.name.to_string(),
-            delivery.binding.event.name().to_string(),
+            delivery
+                .binding
+                .cause
+                .event()
+                .expect("generated event capability")
+                .name()
+                .to_string(),
             ident(delivery.binding.command.name()),
         );
         let _ = delivery.acceptor;

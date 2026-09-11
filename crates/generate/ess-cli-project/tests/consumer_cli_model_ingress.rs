@@ -634,13 +634,13 @@ fn malformed_format_spelling_and_unsupported_major_are_different_admission_stage
     let supported = admitted(&input);
     assert_eq!(supported.spec.system().format.major(), 2);
     unchanged(&admitted(&fixture()), &supported, true);
-    replace(&mut input, 0, "/format", json!("ess/3"));
+    replace(&mut input, 0, "/format", json!("ess/5"));
     let raw = RawSpecFile::parse(&serde_json::to_string(&input[0]).unwrap()).unwrap();
-    assert_eq!(raw.format.unwrap().to_string(), "ess/3");
+    assert_eq!(raw.format.unwrap().to_string(), "ess/5");
     refused(
         &input,
         Stage::Assembly,
-        &["unsupported_format_version", "ess/3"],
+        &["unsupported_format_version", "ess/5"],
     );
 }
 
@@ -972,7 +972,24 @@ fn renamed_source_graph_has_every_concrete_relation_and_changed_semantic_referen
     let before = SemanticDependencyGraph::of(&control.ir);
     let after = SemanticDependencyGraph::of(&changed.ir);
     assert_ne!(before, after);
-    let relations: BTreeSet<_> = before.edges().map(|edge| edge.relation).collect();
+    let mut relations: BTreeSet<_> = before.edges().map(|edge| edge.relation).collect();
+    // The separate periodic source exercises its additional host relation; the legacy rename
+    // assertions below retain their original complete event-model witness.
+    let text = include_str!("../../../specify/ess-domain/tests/fixtures/periodic.yaml");
+    let specification = Specification::assemble([(
+        Source::new("periodic.yaml"),
+        RawSpecFile::parse(text).unwrap(),
+    )])
+    .unwrap();
+    let mut sources = ess_compiler::source::SourceMap::new();
+    sources.insert("periodic.yaml", text);
+    let ir = ess_compiler::resolve::compile_locating(&specification, &sources, &["periodic.yaml"])
+        .unwrap();
+    relations.extend(
+        SemanticDependencyGraph::of(&ir)
+            .edges()
+            .map(|edge| edge.relation),
+    );
     assert_eq!(relations, DependencyRelation::ALL.into_iter().collect());
     assert_eq!(
         before

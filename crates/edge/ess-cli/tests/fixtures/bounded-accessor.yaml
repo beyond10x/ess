@@ -1,0 +1,42 @@
+format: ess/3
+system: accessor
+version: v1
+domain: accessor.core
+types:
+  - name: accessor.core.Body
+    kind: struct
+    fields:
+      - {name: status, type: String, wire: upstream_status}
+events:
+  - name: accessor.core.Arrived
+    fields:
+      - {name: data, type: accessor.core.Body}
+  - name: accessor.core.Done
+    fields:
+      - {name: result, type: String}
+commands:
+  - name: accessor.core.Publish
+    input: []
+    outcomes:
+      - {name: accepted, emits: [accessor.core.Arrived]}
+  - name: accessor.core.Receive
+    input:
+      - {name: text, type: String}
+    outcomes:
+      - {name: accepted, emits: [accessor.core.Done]}
+components:
+  - component: accessor-service
+    owns:
+      domains: [accessor.core]
+    accepts:
+      commands: [accessor.core.Publish, accessor.core.Receive]
+    publishes:
+      events: [accessor.core.Arrived, accessor.core.Done]
+bindings:
+  - id: project
+    when: {event: accessor.core.Arrived}
+    invoke: {command: accessor.core.Receive}
+    mapping:
+      text: event.data.status
+    delivery: at_least_once
+    on_failure: retry

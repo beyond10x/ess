@@ -333,9 +333,8 @@ fn bindings(bridge: &Bridge<'_>) -> Value {
             ResolvedFailure::Drop => ("drop", None),
             ResolvedFailure::Escalate { emits } => ("escalate", Some(emits.to_string())),
         };
-        out.push(json!({
+        let mut value = json!({
             "name": source,
-            "event": binding.event.to_string(),
             "command": binding.command.to_string(),
             "delivery": serde_json::to_value(binding.delivery)
                 .unwrap_or_else(|error| panic!("a delivery guarantee serialises: {error}")),
@@ -343,7 +342,14 @@ fn bindings(bridge: &Bridge<'_>) -> Value {
             "escalation": escalation,
             "transformation": disposition(bridge, CapabilityKind::BindingTransformation, &source),
             "delivered": disposition(bridge, CapabilityKind::BindingDelivery, &source),
-        }));
+        });
+        if let Some(event) = binding.cause.event() {
+            value["event"] = json!(event.to_string());
+        }
+        if let Some(periodic) = binding.cause.periodic() {
+            value["periodic"] = json!(periodic);
+        }
+        out.push(value);
     }
     Value::Array(out)
 }

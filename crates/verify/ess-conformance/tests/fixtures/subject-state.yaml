@@ -1,0 +1,87 @@
+format: ess/3
+system: calls
+version: v1
+domain: calls.core
+types:
+  - name: calls.core.Incoming
+    kind: enum
+    variants: [Ringing, Unspecified]
+entities:
+  - name: calls.core.Call
+    identity: {name: call_id, type: Uuid}
+    fields:
+      - {name: note, type: String}
+    lifecycle:
+      initial: Init
+      states: [Init, Ringing, Bridged]
+      terminal: [Bridged]
+      transitions:
+        - {name: ring, from: [Init], to: Ringing}
+        - {name: bridge, from: [Init, Ringing], to: Bridged}
+events:
+  - name: calls.core.Opened
+    fields:
+      - {name: call_id, type: Uuid}
+  - name: calls.core.Observed
+    fields: []
+commands:
+  - name: calls.core.Open
+    input:
+      - {name: note, type: String}
+    outcomes:
+      - name: opened
+        creates: calls.core.Call
+        instance: call_id
+        emits: [calls.core.Opened]
+        sets: {note: input.note}
+  - name: calls.core.Bridge
+    input:
+      - {name: call_id, type: Uuid}
+    outcomes:
+      - name: bridged
+        moves: calls.core.Call.bridge
+        instance: call_id
+        emits: [calls.core.Observed]
+      - name: already-bridged
+        wrong_state: true
+        refuses: false
+  - name: calls.core.Report
+    input:
+      - {name: call_id, type: Uuid}
+      - {name: incoming, type: calls.core.Incoming}
+      - {name: note, type: String}
+    outcomes:
+      - name: ringing
+        when_subject_state: Init
+        when: incoming == Ringing
+        moves: calls.core.Call.ring
+        instance: call_id
+        emits: [calls.core.Observed]
+        sets: {note: input.note}
+      - name: refreshed
+        when_subject_state: Ringing
+        when: incoming == Ringing
+        updates: calls.core.Call
+        instance: call_id
+        emits: [calls.core.Observed]
+        sets: {note: input.note}
+      - name: preserved
+        when_subject_state: Bridged
+        when: incoming == Ringing
+        updates: calls.core.Call
+        instance: call_id
+        emits: [calls.core.Observed]
+        sets: {note: input.note}
+      - name: enriched
+        updates: calls.core.Call
+        instance: call_id
+        emits: [calls.core.Observed]
+        sets: {note: input.note}
+views:
+  - name: calls.core.Calls
+    source: calls.core.Call
+    consistency: read_your_writes
+    fields:
+      - {name: call_id, type: Uuid}
+      - {name: state, type: calls.core.Call.State}
+      - {name: note, type: String}

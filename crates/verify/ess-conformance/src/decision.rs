@@ -22,6 +22,7 @@ use ess_primitives::predicate::{Predicate, PredicateOutcome};
 pub fn when(outcome: &ResolvedOutcome) -> Option<&Predicate> {
     match &outcome.condition {
         ResolvedCondition::When { predicate } => Some(predicate),
+        ResolvedCondition::SubjectState { predicate, .. } => predicate.as_ref(),
         ResolvedCondition::Otherwise
         | ResolvedCondition::External { .. }
         | ResolvedCondition::WrongState => None,

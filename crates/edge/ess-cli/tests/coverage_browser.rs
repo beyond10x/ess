@@ -358,7 +358,7 @@ fn actual_browser_checks_full_lineage_and_integer_metadata() {
         try {
           const input = JSON.parse(test.input);
           const digest = 'sha256:' + [...new Uint8Array(await crypto.subtle.digest('SHA-256',new TextEncoder().encode(input.suite_json)))].map(n => n.toString(16).padStart(2,'0')).join('');
-          const suite = {version:'ess-conformance/5',digest_profile:'sha256-json-bytes/1',digest};
+          const suite = {version:JSON.parse(input.suite_json).provenance.suite_version,digest_profile:'sha256-json-bytes/1',digest};
           const original = '{' + ['\"format\":\"ess-conformance-replay/1\"','\"model\":'+JSON.stringify(model),'\"suite\":'+JSON.stringify(suite),'\"input\":'+test.input].join(',') + '}';
           const admitted = await admitReplay(original);
           results.push({name:test.name,admitted:true,description:admitted.description});

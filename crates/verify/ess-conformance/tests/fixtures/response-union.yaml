@@ -1,0 +1,25 @@
+format: ess/4
+system: example
+version: v1
+domain: example.api
+types:
+  - name: example.api.Result
+    kind: union
+    tag: kind
+    variants:
+      text: String
+      count: Integer
+events:
+  - name: example.api.Returned
+    fields:
+      - {name: item, type: example.api.Result}
+commands:
+  - name: example.api.Fetch
+    response:
+      - {name: item, type: example.api.Result}
+    outcomes:
+      - name: returned
+        emits: [example.api.Returned]
+        payload:
+          example.api.Returned:
+            item: {response: item}

@@ -85,6 +85,61 @@ use crate::scenario::{
 /// See the [module documentation](self) for why it has exactly these methods and no assertion among
 /// them.
 pub trait ConformanceTarget {
+    /// Bind and re-admit the declared host authority, then activate the actual periodic loop.
+    /// Named types, nested values and invariants must match this host's authoritative contract.
+    fn open_periodic(
+        &self,
+        _request: crate::periodic::Open,
+    ) -> Result<crate::periodic::Opened, TargetError> {
+        Err(TargetError::unsupported(
+            "PeriodicHostAuthority",
+            "target has no bound typed periodic host fixture",
+        ))
+    }
+    /// Hold and settle target time while capturing every actual cause-scoped invocation.
+    fn observe_periodic(
+        &self,
+        _request: crate::periodic::Observe,
+    ) -> Result<crate::periodic::Observation, TargetError> {
+        Err(TargetError::unsupported(
+            "PeriodicObservation",
+            "target cannot establish complete timer causation in a held window",
+        ))
+    }
+    /// Acknowledge actual poll-loop and in-flight-work quiescence before returning.
+    fn close_periodic(
+        &self,
+        _scope: crate::periodic::Scope,
+    ) -> Result<crate::periodic::Closed, TargetError> {
+        Err(TargetError::unsupported(
+            "PeriodicStopAcknowledgement",
+            "target cannot acknowledge actual periodic quiescence",
+        ))
+    }
+
+    /// Observe source/epoch/formatter facts for an existing occurrence after checking its actual
+    /// declared reading contract. Return facts, never normalized values or the expected verdict.
+    fn observe_clock_reading(
+        &self,
+        _request: crate::reading::ReadingObservationRequest,
+    ) -> Result<ess_domain::reading::ReadingEvidence, TargetError> {
+        Err(TargetError::unsupported(
+            "clock reading",
+            "occurrence-scoped clock evidence unavailable",
+        ))
+    }
+    /// Validate and establish actual upstream-owned state in the current isolated scenario.
+    ///
+    /// Validate identity, fields, state and invariants against the declared model; standalone suite
+    /// JSON is not a certificate. Success guarantees durable, read-visible state for subsequent
+    /// queries. Do not invent commands, events or history. Inability to validate or establish the
+    /// state is Unsupported, never an acknowledgement.
+    fn establish_entity(&self, _request: EntitySetupRequest) -> Result<(), TargetError> {
+        Err(TargetError::unsupported(
+            "entity setup",
+            "target cannot validate and establish fixture state",
+        ))
+    }
     /// Which implementation this is, for the report that becomes evidence (§30).
     fn identity(&self) -> Result<ImplementationIdentity, TargetError>;
 
@@ -308,6 +363,21 @@ impl fmt::Display for ImplementationIdentity {
     }
 }
 
+/// Actual entity fixture state to validate and establish in the isolated target.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct EntitySetupRequest {
+    /// Declared entity contract the adapter must enforce.
+    pub entity: crate::scenario::EntityRef,
+    /// Literal identity value.
+    pub identity: Node,
+    /// Complete typed fields, preserving absent Optional fields and present nulls.
+    pub fields: std::collections::BTreeMap<String, Node>,
+    /// Declared lifecycle state, without invented history.
+    pub state: ess_domain::entity::StateName,
+    /// Current isolated scenario correlation.
+    pub correlation: CorrelationId,
+}
+
 /// The isolated execution context one scenario runs in (§8).
 ///
 /// Both fields come from the runner. The correlation id is minted by the runner's id source rather
@@ -415,6 +485,8 @@ pub struct SemanticCommandResult {
     /// [`observe_events`](ConformanceTarget::observe_events), because they are the other
     /// component's, and requiring them of the caller's result would be a transport assumption (§41).
     pub direct_events: Vec<ObservedEvent>,
+    /// Actual returned response, admitted against the command's closed declared fields before use.
+    pub response: Option<BTreeMap<String, Node>>,
 }
 
 impl SemanticCommandResult {
@@ -425,6 +497,7 @@ impl SemanticCommandResult {
             error: None,
             consistency: None,
             direct_events: Vec::new(),
+            response: None,
         }
     }
 
@@ -435,6 +508,7 @@ impl SemanticCommandResult {
             error: None,
             consistency: None,
             direct_events: Vec::new(),
+            response: None,
         }
     }
 

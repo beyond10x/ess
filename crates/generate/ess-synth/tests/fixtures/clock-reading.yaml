@@ -1,0 +1,36 @@
+format: ess/3
+system: chronology
+version: v1
+domain: chronology.reading
+types:
+  - name: chronology.reading.OffsetText
+    kind: newtype
+    of: String
+    reading:
+      encoding: offset_date_time_text
+      origins: [{role: producer_process, offset: encoded_offset}]
+  - name: chronology.reading.LocalText
+    kind: newtype
+    of: String
+    reading:
+      encoding: local_date_time_millis_literal_z
+      origins: [{role: producer_process, offset: requires_observation}, {role: consumer_process, offset: requires_observation}]
+  - name: chronology.reading.EpochSeconds
+    kind: newtype
+    of: Integer
+    reading:
+      encoding: unix_seconds
+      origins: [{role: producer_process, offset: encoding_defined_epoch}]
+  - name: chronology.reading.Wrapped
+    kind: newtype
+    of: chronology.reading.OffsetText
+events:
+  - name: chronology.reading.Sampled
+    fields:
+      - {name: offset, type: chronology.reading.OffsetText}
+      - {name: local, type: chronology.reading.LocalText}
+      - {name: seconds, type: chronology.reading.EpochSeconds}
+components:
+  - component: clock-service
+    owns: {domains: [chronology.reading]}
+    publishes: {events: [chronology.reading.Sampled]}

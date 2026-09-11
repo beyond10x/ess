@@ -162,7 +162,7 @@ fn refuse_declarations(
 /// A command, and everything its outcomes name.
 fn refuse_commands(ir: &EssIr, plan: &SynthesisPlan, refused: &mut BTreeMap<Capability, String>) {
     for command in ir.commands().values() {
-        let mut refusal = fields_refusal(ir, command.input.iter());
+        let mut refusal = fields_refusal(ir, command.input.iter().chain(&command.response));
         for outcome in &command.outcomes {
             for event in &outcome.emits {
                 refusal = refusal.or_else(|| {
@@ -292,27 +292,26 @@ fn cascade(ir: &EssIr, plan: &SynthesisPlan, refused: &mut BTreeMap<Capability, 
 
     let mut bindings: BTreeMap<Capability, String> = BTreeMap::new();
     for binding in ir.bindings().values() {
-        let mut because = reason(
-            refused,
-            CapabilityKind::EventType,
-            binding.event.name().to_string(),
-        )
-        .or_else(|| {
-            reason(
-                refused,
-                CapabilityKind::CommandContract,
-                binding.command.name().to_string(),
-            )
-        })
-        .or_else(|| {
-            binding.escalation.as_ref().and_then(|escalation| {
+        let mut because = binding
+            .cause
+            .event()
+            .and_then(|event| reason(refused, CapabilityKind::EventType, event.name().to_string()))
+            .or_else(|| {
                 reason(
                     refused,
-                    CapabilityKind::EventType,
-                    escalation.name().to_string(),
+                    CapabilityKind::CommandContract,
+                    binding.command.name().to_string(),
                 )
             })
-        });
+            .or_else(|| {
+                binding.escalation.as_ref().and_then(|escalation| {
+                    reason(
+                        refused,
+                        CapabilityKind::EventType,
+                        escalation.name().to_string(),
+                    )
+                })
+            });
         for acceptor in accepting_components(ir, binding) {
             because = because.or_else(|| {
                 ports

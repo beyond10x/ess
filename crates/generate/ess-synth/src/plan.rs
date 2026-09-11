@@ -56,7 +56,8 @@
 //! a clock, and `tests/synthesis.rs` plans twice and compares — beside a scan that keeps unordered
 //! maps and clocks out of this crate's sources at all.
 
-use std::collections::BTreeSet;
+use ess_domain::QualifiedName;
+use std::collections::{BTreeMap, BTreeSet};
 use std::fmt::Write as _;
 
 use ess_compiler::ir::{
@@ -301,6 +302,8 @@ pub enum RefusalReason {
     AcceptorUndetermined,
     /// Topology synthesis is deferred with its design (§35).
     TopologyDeferred,
+    /// Periodic execution requires the declared authenticated host and controlled-time seam.
+    PeriodicHostRequired,
 }
 
 impl RefusalReason {
@@ -313,6 +316,9 @@ impl RefusalReason {
             Self::AcceptorUndetermined => {
                 "delivery lands on the component that accepts the command, and the specification \
                  does not declare exactly one"
+            }
+            Self::PeriodicHostRequired => {
+                "periodic execution requires the declared host authority and lifetime integration"
             }
             Self::TopologyDeferred => "topology synthesis is deferred with its design",
         }
@@ -641,6 +647,12 @@ fn behavior_contract(command: &ResolvedCommand) -> String {
 pub(crate) fn condition_phrase(condition: &ResolvedCondition) -> String {
     match condition {
         ResolvedCondition::When { predicate } => format!("when `{predicate}`"),
+        ResolvedCondition::SubjectState { state, predicate } => format!(
+            "when the existing subject is in {state}{}",
+            predicate
+                .as_ref()
+                .map_or(String::new(), |guard| format!(" and `{guard}`")),
+        ),
         ResolvedCondition::Otherwise => "otherwise".to_owned(),
         ResolvedCondition::External { cause } => format!("externally decided ({cause})"),
         ResolvedCondition::WrongState => "from a state no declared move starts in".to_owned(),
@@ -849,7 +861,17 @@ fn plan_bindings(ir: &EssIr, capabilities: &mut Vec<PlannedCapability>) {
 /// The transformation: generated when every input of the invoked command is filled by a
 /// determined mapping, owed otherwise — with the undetermined entries named, because "write the
 /// transformation" without them sends the implementor back to diff the plan against the source.
+fn periodic_host_refusal(binding: &ResolvedBinding) -> Option<SynthesisDisposition> {
+    binding.cause.periodic().map(|periodic| SynthesisDisposition::Refused(SynthesisRefusal {
+        reason: RefusalReason::PeriodicHostRequired,
+        stage: RefusalStage::Planning,
+        detail: format!("periodic binding `{}` requires host authority `{}` on `{}` for lifetime context, fresh reads, fixed-rate {} dispatch and acknowledged stop; native event transport does not implement this host seam", binding.name, periodic.contract.host.authority, periodic.contract.host.owner, periodic.contract.every),
+    }))
+}
 fn transformation_disposition(ir: &EssIr, binding: &ResolvedBinding) -> SynthesisDisposition {
+    if let Some(refusal) = periodic_host_refusal(binding) {
+        return refusal;
+    }
     let undetermined = undetermined_mappings(ir, binding);
     if undetermined.is_empty() {
         SynthesisDisposition::Generated
@@ -858,7 +880,7 @@ fn transformation_disposition(ir: &EssIr, binding: &ResolvedBinding) -> Synthesi
             reason: ObligationReason::UnspecifiedAlgorithm,
             contract: format!(
                 "a transformation from `{}` to `{}` input — {}",
-                binding.event,
+                binding.cause,
                 binding.command,
                 undetermined.join("; ")
             ),
@@ -891,6 +913,9 @@ pub fn declares_single_attempt(ir: &EssIr) -> bool {
 /// selects a different transport here; [`declares_single_attempt`] exists only for the emitters'
 /// own description of what the model said.
 fn delivery_disposition(ir: &EssIr, binding: &ResolvedBinding) -> SynthesisDisposition {
+    if let Some(refusal) = periodic_host_refusal(binding) {
+        return refusal;
+    }
     let acceptors = accepting_components(ir, binding);
     if acceptors.len() == 1 {
         return SynthesisDisposition::Generated;
@@ -899,7 +924,7 @@ fn delivery_disposition(ir: &EssIr, binding: &ResolvedBinding) -> SynthesisDispo
         format!(
             "reacts to `{}` by invoking `{}` ({}, on failure {}); no declared component accepts \
              `{}`, so there is no surface to deliver to",
-            binding.event,
+            binding.cause,
             binding.command,
             ess_gen::graph::delivery_word(binding.delivery),
             binding.failure.as_str(),
@@ -909,7 +934,7 @@ fn delivery_disposition(ir: &EssIr, binding: &ResolvedBinding) -> SynthesisDispo
         format!(
             "reacts to `{}` by invoking `{}` ({}, on failure {}); {} components accept `{}` ({}), \
              and choosing among them is not this synthesis's decision",
-            binding.event,
+            binding.cause,
             binding.command,
             ess_gen::graph::delivery_word(binding.delivery),
             binding.failure.as_str(),
@@ -948,6 +973,28 @@ pub(crate) fn accepting_components<'a>(
 /// Model-level, like [`mechanical_conversion`]: the plan uses it to judge a transformation and an
 /// emitter uses it to write one, and a decision made twice is a decision made two ways.
 pub(crate) enum DeterminedInput<'a> {
+    /// Projection from a preflighted binding-local occurrence.
+    Selection {
+        /// Shared selection table and nominal handles.
+        selection: &'a ess_compiler::ir::ResolvedSelectionPlan,
+        /// Selector table entry.
+        selector: usize,
+        /// Item projection.
+        projection: &'a ess_domain::accessor::ProjectionPlan,
+        /// Target assignment type.
+        target: &'a ResolvedTypeRef,
+    },
+    /// A typed bounded DAG with identity-first target assignment.
+    Accessor {
+        /// Resolved source traversal.
+        plan: &'a ess_domain::accessor::AccessorPlan,
+        /// Compiler-minted nominal references.
+        types: &'a BTreeMap<QualifiedName, TypeHandle>,
+        /// Admitted command member type.
+        target: &'a ResolvedTypeRef,
+        /// Existing mechanically declared nominal crossing, when present.
+        conversion: Option<&'a TypeHandle>,
+    },
     /// The event field's value already has the target type.
     Copy {
         /// The event field.
@@ -992,6 +1039,24 @@ pub(crate) fn determined_input<'a>(
     binding: &'a ResolvedBinding,
     input: &'a ResolvedField,
 ) -> Option<DeterminedInput<'a>> {
+    if binding.selection.as_ref().is_some_and(|selection| {
+        selection
+            .plan
+            .inputs
+            .iter()
+            .any(|input| input.conversion.is_some())
+    }) {
+        return None;
+    }
+    determined_prepared_input(ir, binding, input)
+}
+
+/// Determines mapping after the host has supplied every declared prepared selection input.
+pub(crate) fn determined_prepared_input<'a>(
+    ir: &'a EssIr,
+    binding: &'a ResolvedBinding,
+    input: &'a ResolvedField,
+) -> Option<DeterminedInput<'a>> {
     let Some(mapping) = binding
         .mapping
         .iter()
@@ -1001,6 +1066,23 @@ pub(crate) fn determined_input<'a>(
             .then_some(DeterminedInput::Omitted);
     };
     match &mapping.value {
+        ResolvedMappingValue::HostContext { .. } | ResolvedMappingValue::HostRead { .. } => None,
+        ResolvedMappingValue::Selection {
+            selector,
+            projection,
+            ..
+        } => {
+            let selection = binding.selection.as_ref()?;
+            if mapping.conversion.is_some() {
+                return None;
+            }
+            Some(DeterminedInput::Selection {
+                selection,
+                selector: *selector,
+                projection,
+                target: &mapping.target_type,
+            })
+        }
         ResolvedMappingValue::EventField { field, type_ref } => {
             if mapping.conversion.is_none() {
                 return Some(DeterminedInput::Copy { field });
@@ -1018,6 +1100,40 @@ pub(crate) fn determined_input<'a>(
                 return None;
             };
             (from_inner == to_inner).then_some(DeterminedInput::Convert { field, to })
+        }
+        ResolvedMappingValue::EventAccessor {
+            plan,
+            types,
+            type_ref,
+        } => {
+            let conversion = if mapping.conversion.is_none() {
+                None
+            } else {
+                let (
+                    ResolvedTypeRef::Declared { name: from },
+                    ResolvedTypeRef::Declared { name: to },
+                ) = (type_ref, &mapping.target_type)
+                else {
+                    return None;
+                };
+                let (
+                    ResolvedBody::Newtype { of: left, .. },
+                    ResolvedBody::Newtype { of: right, .. },
+                ) = (&ir.named_type(from).body, &ir.named_type(to).body)
+                else {
+                    return None;
+                };
+                if left != right {
+                    return None;
+                }
+                Some(to)
+            };
+            Some(DeterminedInput::Accessor {
+                plan,
+                types,
+                target: &mapping.target_type,
+                conversion,
+            })
         }
         ResolvedMappingValue::Literal { value } => {
             if let ResolvedTypeRef::Declared { name } = &mapping.target_type {
@@ -1073,11 +1189,22 @@ fn undetermined_mappings(ir: &EssIr, binding: &ResolvedBinding) -> Vec<String> {
             continue;
         };
         undetermined.push(match &mapping.value {
+            ResolvedMappingValue::HostContext { field, .. }
+            | ResolvedMappingValue::HostRead { field, .. } => {
+                format!("`{}` requires host field `{field}`", mapping.target)
+            }
             ResolvedMappingValue::EventField { field, .. } => format!(
                 "`{}` is filled from event field `{field}` through the declared crossing to `{}`, \
                  whose computation is owed",
                 mapping.target, mapping.target_type
             ),
+            ResolvedMappingValue::EventAccessor { plan, .. } => format!(
+                "`{}` from `{}` requires the declared host conversion to `{}`",
+                mapping.target,
+                plan.path(),
+                mapping.target_type
+            ),
+            ResolvedMappingValue::Selection { selector, .. } => format!("selection-input-conversion: `{}` uses selector {selector}; its exact input preparation or result conversion remains host owned", mapping.target),
             ResolvedMappingValue::Literal { value } => format!(
                 "`{}` is filled from the literal `{value}`, and no reading of it as `{}` is \
                  declared",
@@ -1138,5 +1265,29 @@ fn plan_workloads(ir: &EssIr, capabilities: &mut Vec<PlannedCapability>) {
                 ),
             }),
         });
+    }
+}
+
+/// Recover typed compiler references from the admitted accessor's handle table.
+pub(crate) fn accessor_type(
+    source: &ess_domain::TypeRef,
+    types: &BTreeMap<QualifiedName, TypeHandle>,
+) -> ResolvedTypeRef {
+    use ess_domain::TypeRef;
+    match source {
+        TypeRef::Primitive(name) => ResolvedTypeRef::Primitive { name: *name },
+        TypeRef::Named(name) => ResolvedTypeRef::Declared {
+            name: types[name].clone(),
+        },
+        TypeRef::Optional(of) => ResolvedTypeRef::Optional {
+            of: Box::new(accessor_type(of, types)),
+        },
+        TypeRef::List(of) => ResolvedTypeRef::List {
+            of: Box::new(accessor_type(of, types)),
+        },
+        TypeRef::Map(key, value) => ResolvedTypeRef::Map {
+            key: *key,
+            value: Box::new(accessor_type(value, types)),
+        },
     }
 }

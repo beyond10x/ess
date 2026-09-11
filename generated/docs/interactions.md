@@ -42,7 +42,7 @@ When it fails it is **escalated** — surfaced to a person, who decides what hap
 It fills the command's input like this:
 
 - `recipient` (`billing.email.EmailAddress`) ← the event's `customer_email` (`billing.invoice.Email`). The two types differ, and the crossing is declared: "An invoice's customer email is a deliverable address; the email context validates it again on the way out, so the invoice context does not have to know how."
-- `template` (`billing.email.TemplateId`) ← the literal `invoice-created`. Nothing in the model says how to read that as a `billing.email.TemplateId`, so the compiler took it on trust rather than checking it.
+- `template` (`billing.email.TemplateId`) ← the literal `invoice-created`. The compiler accepts text for this String-backed input; it does not check the type's invariants or whether the value names an external resource.
 
 ## Events nothing reacts to
 

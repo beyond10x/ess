@@ -13,6 +13,8 @@ package essconform
 import (
 	"encoding/json"
 	"fmt"
+	"math"
+	"regexp"
 	"sort"
 	"strconv"
 	"strings"
@@ -307,20 +309,34 @@ func parseConstraint(path string, value any) (predicate, error) {
 		"ge": ">=", "gte": ">=", ">=": ">=",
 	} {
 		if compared, ok := mapping[spelling]; ok {
+			right := operand{literal: compared}
+			if text, ok := compared.(string); ok {
+				right = parseOperand(text)
+			}
 			return predicate{
 				kind:  "compare",
 				left:  operand{path: path, isFact: true},
 				op:    op,
-				right: operand{literal: compared},
+				right: right,
 			}, nil
 		}
 	}
 	return predicate{}, fmt.Errorf("`%s` carries no operator this runner knows", path)
 }
 
-// parseLeaf reads the compact string form: the only form the suite writes a leaf in.
+// parseLeaf reads compact expressions. Unrepresentable literal data uses structured comparisons.
 func parseLeaf(expression string) (predicate, error) {
+	if err := admitPredicateExpression(expression, 0); err != nil {
+		return predicate{}, err
+	}
 	trimmed := strings.TrimSpace(expression)
+	if rest, ok := strings.CutPrefix(trimmed, "not "); ok {
+		inner, err := parseLeaf(rest)
+		if err != nil {
+			return predicate{}, err
+		}
+		return predicate{kind: "not", body: &inner}, nil
+	}
 	if trimmed == "always" {
 		return predicate{kind: "always"}, nil
 	}
@@ -334,22 +350,19 @@ func parseLeaf(expression string) (predicate, error) {
 		}
 		return predicate{kind: "defined", path: strings.TrimSpace(path)}, nil
 	}
-	// Longest first, so `>=` is not read as `>` followed by a literal starting `=`.
-	for _, op := range []string{"==", "!=", "<=", ">=", "<", ">"} {
-		if left, right, ok := strings.Cut(trimmed, op); ok {
-			return predicate{
-				kind: "compare",
-				// The left-hand side of a comparison is always a fact path, never a literal —
-				// which is what `Predicate::parse_expression` does on the Rust side, and the two
-				// have to agree or the same specification says different things to two runners.
-				// Read as a literal instead, `reschedule_count >= 0` compares the *word* to zero
-				// and `state == Bridged` compares two words, which is false and silently vacuous
-				// under the `not` an implication is written with.
-				left:  operand{path: strings.TrimSpace(left), isFact: true},
-				op:    op,
-				right: parseOperand(right),
-			}, nil
-		}
+	if left, op, right, ok := splitPredicateComparison(trimmed); ok {
+		return predicate{
+			kind: "compare",
+			// The left-hand side of a comparison is always a fact path, never a literal —
+			// which is what `Predicate::parse_expression` does on the Rust side, and the two
+			// have to agree or the same specification says different things to two runners.
+			// Read as a literal instead, `reschedule_count >= 0` compares the *word* to zero
+			// and `state == Bridged` compares two words, which is false and silently vacuous
+			// under the `not` an implication is written with.
+			left:  operand{path: strings.TrimSpace(left), isFact: true},
+			op:    op,
+			right: parseOperand(right),
+		}, nil
 	}
 	if strings.ContainsAny(trimmed, " ()[]") {
 		return predicate{}, fmt.Errorf("`%s` is an expression this generated runner does not implement", trimmed)
@@ -365,7 +378,7 @@ func parseOperand(raw string) operand {
 	trimmed := strings.TrimSpace(raw)
 	quoted := strings.HasPrefix(trimmed, "\"") || strings.HasPrefix(trimmed, "'")
 	if !quoted && strings.Contains(trimmed, ".") {
-		if _, err := strconv.ParseFloat(trimmed, 64); err != nil {
+		if _, numeric := parseDecimalLiteral(trimmed); !numeric && factPath.MatchString(trimmed) {
 			return operand{path: trimmed, isFact: true}
 		}
 	}
@@ -386,11 +399,131 @@ func parseLiteral(raw string) Node {
 	case "false":
 		return false
 	}
-	if number, err := strconv.ParseFloat(raw, 64); err == nil {
+	if number, ok := parseDecimalLiteral(raw); ok {
 		return number
 	}
 	return raw
 }
+
+// Rust Number::parse_decimal admits finite decimal f64 literals. strconv also accepts NaN,
+// infinities, hexadecimal floats and underscores; those spellings remain text in predicates.
+func parseDecimalLiteral(raw string) (float64, bool) {
+	if !meaningDecimal.MatchString(raw) {
+		return 0, false
+	}
+	number, err := strconv.ParseFloat(raw, 64)
+	return number, err == nil && !math.IsNaN(number) && !math.IsInf(number, 0)
+}
+
+// ---- admission --------------------------------------------------------------------------------
+
+// Compact string leaves are the only envelope shape this file reads; the runtime admits the
+// structured shapes, which need its reader. Both spend the same Rust depth budget, and the
+// definitions below stay here so this file depends on nothing the runtime declares.
+func admitPredicateExpression(expression string, depth int) error {
+	if depth > 32 {
+		return fmt.Errorf("predicate exceeds maximum depth 32")
+	}
+	if rest, ok := strings.CutPrefix(strings.TrimSpace(expression), "not "); ok {
+		return admitPredicateExpression(rest, depth+1)
+	}
+	return admitPredicateLeaf(expression)
+}
+
+func admitPredicatePath(path string) error {
+	if !factPath.MatchString(path) {
+		return fmt.Errorf("invalid predicate fact path %q", path)
+	}
+	return nil
+}
+
+func admitPredicateLeaf(expression string) error {
+	trimmed := strings.TrimSpace(expression)
+	switch trimmed {
+	case "always", "true", "never", "false":
+		return nil
+	}
+	for _, function := range []string{"defined", "exists", "missing"} {
+		if rest, ok := strings.CutPrefix(trimmed, function); ok {
+			if rest, ok := strings.CutPrefix(strings.TrimSpace(rest), "("); ok {
+				if path, ok := strings.CutSuffix(strings.TrimSpace(rest), ")"); ok {
+					return admitPredicatePath(strings.TrimSpace(path))
+				}
+			}
+		}
+	}
+	if left, _, right, ok := splitPredicateComparison(trimmed); ok {
+		if err := admitPredicatePath(strings.TrimSpace(left)); err != nil {
+			return err
+		}
+		if strings.TrimSpace(right) == "" {
+			return fmt.Errorf("predicate comparison requires a right operand")
+		}
+		return admitQuotedOperand(right)
+	}
+	return admitPredicatePath(trimmed)
+}
+
+// Quoting delimits one compact operand. Escape bytes retain their historical literal value;
+// they only prevent an escaped quote from ending the operand. Structured scalar data is separate.
+func admitQuotedOperand(raw string) error {
+	trimmed := strings.TrimSpace(raw)
+	if trimmed == "" || (trimmed[0] != '"' && trimmed[0] != '\'') {
+		return nil
+	}
+	quote, escaped := trimmed[0], false
+	for index := 1; index < len(trimmed); index++ {
+		ch := trimmed[index]
+		if escaped {
+			escaped = false
+		} else if ch == '\\' {
+			escaped = true
+		} else if ch == quote {
+			if strings.TrimSpace(trimmed[index+1:]) != "" {
+				return fmt.Errorf("tokens after a quoted operand are unsupported; use structured any/all/not")
+			}
+			return nil
+		}
+	}
+	return fmt.Errorf("quoted operand is not closed; close the quote and use structured any/all/not to combine predicates")
+}
+
+// Rust split_comparison chooses the first operator outside quotes, examining two-byte
+// operators before one-byte operators at that position. Admission and evaluation share the split.
+func splitPredicateComparison(trimmed string) (string, string, string, bool) {
+	var quote byte
+	for index := 0; index < len(trimmed); index++ {
+		ch := trimmed[index]
+		if quote != 0 {
+			if ch == quote {
+				quote = 0
+			}
+			continue
+		}
+		if ch == '\'' || ch == '"' {
+			quote = ch
+			continue
+		}
+		width := 0
+		if index+1 < len(trimmed) {
+			switch trimmed[index : index+2] {
+			case "==", "!=", "<=", ">=":
+				width = 2
+			}
+		}
+		if width == 0 && (ch == '<' || ch == '>') {
+			width = 1
+		}
+		if width != 0 {
+			return trimmed[:index], trimmed[index : index+width], trimmed[index+width:], true
+		}
+	}
+	return "", "", "", false
+}
+
+var meaningDecimal = regexp.MustCompile(`^[+-]?([0-9]+(\.[0-9]*)?|\.[0-9]+)([eE][+-]?[0-9]+)?$`)
+
+var factPath = regexp.MustCompile(`^[A-Za-z][A-Za-z0-9_-]*(\.[A-Za-z0-9_-]+)*$`)
 
 // ---- evaluation -------------------------------------------------------------------------------
 

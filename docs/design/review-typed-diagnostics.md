@@ -235,18 +235,20 @@ this block, a count that does not match, and a listed file that has none, are ea
 
 <!-- inventory:begin -->
 ```text
+accessor.rs 1 0
 actor.rs 1 0
-binding.rs 17 0
-command.rs 11 28
+binding.rs 28 0
+command.rs 11 35
 component.rs 15 0
 domain.rs 5 0
 entity.rs 16 4
 expression.rs 1 0
-primitive_admission.rs 2 0
+primitive_admission.rs 6 1
+selection.rs 2 0
 spec.rs 7 0
 system.rs 10 0
 topology.rs 10 0
-types.rs 6 1
+types.rs 8 1
 view.rs 11 0
 wire.rs 1 0
 ```
@@ -266,7 +268,8 @@ reason in the table above.** There are two, both pinned at 1.
 ```text
 actor actor.rs 1
 actors actor.rs 1
-binding binding.rs 9
+binding binding.rs 18
+binding primitive_admission.rs 2
 command primitive_admission.rs 1
 command wire.rs 1
 commands command.rs 1
@@ -282,8 +285,9 @@ entity entity.rs 4
 entity primitive_admission.rs 2
 entity wire.rs 1
 error command.rs 3
-error primitive_admission.rs 1
+error primitive_admission.rs 2
 error wire.rs 1
+event accessor.rs 2
 event binding.rs 1
 event command.rs 3
 event component.rs 1

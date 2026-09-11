@@ -28,6 +28,7 @@
 //! `task check`, and a step that resolves crates is a step that reaches the network
 //! (AGENTS.md § Dependencies).
 
+mod accessor;
 mod entity;
 pub(crate) mod feasibility;
 pub(crate) mod http;
@@ -37,6 +38,8 @@ pub(crate) mod layout;
 pub(crate) mod name;
 mod obligation;
 pub(crate) mod port;
+mod reading;
+mod selection;
 pub(crate) mod system;
 pub(crate) mod wire;
 
@@ -100,6 +103,7 @@ impl Emit<'_> {
 pub fn workspace(ir: &EssIr, plan: &SynthesisPlan) -> Result<Vec<Artifact>, crate::TargetFailure> {
     crate::failure::binary64(ir, plan, crate::Target::Rust)?;
     let layout = feasibility::checked(ir, plan, crate::Target::Rust)?;
+    accessor::preflight(ir, plan, &layout)?;
     let provenance = &plan.provenance;
 
     let mut covered: BTreeSet<Capability> = BTreeSet::new();
@@ -110,7 +114,7 @@ pub fn workspace(ir: &EssIr, plan: &SynthesisPlan) -> Result<Vec<Artifact>, crat
         workspace_manifest(ir, &layout, provenance),
         crate_manifest(ir, &layout, provenance),
         lib_module(ir, &layout, provenance, obligation_module.is_some()),
-        primitives_module(&layout, provenance),
+        primitives_module(ir, &layout, provenance),
     ];
     artifacts.extend(obligation_module);
     let domains: Vec<QualifiedName> = layout.modules().map(|(domain, _)| domain.clone()).collect();
@@ -297,9 +301,10 @@ fn lib_module(
 /// the JSON Schema projection writes `Decimal` as a decimal string, `Timestamp` as `date-time`,
 /// `Duration` as an ISO 8601 duration and `Uuid` as a UUID string — so two projections of one
 /// model cannot disagree about what a value looks like.
-fn primitives_module(layout: &Layout, provenance: &Provenance) -> Artifact {
+fn primitives_module(ir: &EssIr, layout: &Layout, provenance: &Provenance) -> Artifact {
     let mut out = provenance.commented_for("//", REGENERATE);
     out.push_str(PRIMITIVES);
+    out.push_str(&reading::helpers(ir));
     Artifact::new(
         format!("crates/{}/src/primitives.rs", layout.package()),
         out,

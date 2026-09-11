@@ -21,6 +21,9 @@ impl<'a> Environment<'a> {
 }
 
 impl TypeEnvironment for Environment<'_> {
+    fn is_clock_reading(&self, reference: &ResolvedTypeRef) -> bool {
+        matches!(reference, ResolvedTypeRef::Declared { name } if self.ir.types().get(name.name()).is_some_and(|declared| declared.reading.is_some()))
+    }
     type Type = ResolvedTypeRef;
 
     fn root(&self, name: &str) -> Option<Self::Type> {

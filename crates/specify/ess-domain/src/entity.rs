@@ -792,6 +792,7 @@ impl EntitySpec {
     /// The enum type this entity's states form, for a registry to hold.
     pub fn state_type(&self) -> crate::types::NamedType {
         crate::types::NamedType {
+            reading: None,
             name: self.name.child(Self::STATE_TYPE),
             body: crate::types::TypeBody::Enum {
                 variants: self.states.states.iter().map(ToString::to_string).collect(),
@@ -1622,6 +1623,7 @@ invariants:
         for newtype in ["billing.invoice.InvoiceId", "billing.CustomerId"] {
             registry
                 .insert(NamedType {
+                    reading: None,
                     name: name(newtype),
                     body: TypeBody::Newtype {
                         of: TypeRef::Primitive(Primitive::Uuid),
@@ -1633,6 +1635,7 @@ invariants:
         }
         registry
             .insert(NamedType {
+                reading: None,
                 name: name("billing.Money"),
                 body: TypeBody::Struct {
                     fields: vec![
@@ -2138,6 +2141,7 @@ lifecycle:
         let mut empty = TypeRegistry::new();
         empty
             .insert(NamedType {
+                reading: None,
                 name: name("billing.CustomerId"),
                 body: TypeBody::Newtype {
                     of: TypeRef::Primitive(Primitive::Uuid),
@@ -2260,6 +2264,7 @@ lifecycle:
                 "invoice_id",
                 TypeRef::Named(name("billing.invoice.InvoiceId")),
             )],
+            response: Vec::new(),
             outcomes: vec![crate::command::Outcome {
                 name: crate::command::OutcomeName::new(outcome).expect("a valid outcome name"),
                 condition: crate::command::OutcomeCondition::Otherwise,

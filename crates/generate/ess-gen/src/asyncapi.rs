@@ -236,6 +236,11 @@ impl<T: serde::Serialize> serde::Serialize for Table<T> {
 /// One component's `AsyncAPI` document.
 #[derive(serde::Serialize)]
 struct Document {
+    #[serde(
+        rename = "x-ess-periodic-bindings",
+        skip_serializing_if = "Vec::is_empty"
+    )]
+    periodic: Vec<ResolvedBinding>,
     asyncapi: &'static str,
     info: Info,
     #[serde(rename = "defaultContentType")]
@@ -330,6 +335,8 @@ struct Reaction {
     /// What that word costs, in a sentence.
     on_failure_means: String,
     mapping: Vec<MappedInput>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    selection: Option<ess_domain::selection::SelectionPlan>,
 }
 
 /// A binding, from the side that published the event.
@@ -365,14 +372,37 @@ struct MappedInput {
 #[derive(serde::Serialize)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 enum MappedSource {
+    HostContext {
+        field: String,
+        type_ref: String,
+    },
+    HostRead {
+        field: String,
+        type_ref: String,
+    },
+    /// A local occurrence projection; indices refer to the binding selection table.
+    Selection {
+        selector: usize,
+        projection: ess_domain::accessor::ProjectionPlan,
+        #[serde(rename = "type")]
+        type_ref: String,
+    },
     /// A field of the event that arrived.
     EventField {
         field: String,
         #[serde(rename = "type")]
         type_ref: String,
     },
+    /// A bounded projection through declared event members.
+    EventAccessor {
+        plan: ess_domain::accessor::AccessorPlan,
+        #[serde(rename = "type")]
+        type_ref: String,
+    },
     /// A value written into the binding, whose type the compiler took on trust.
-    Literal { value: String },
+    Literal {
+        value: String,
+    },
 }
 
 /// The document's reusable halves.
@@ -480,6 +510,17 @@ fn document(ir: &EssIr, component: &ResolvedComponent, provenance: &Provenance) 
     }
 
     Document {
+        periodic: ir
+            .bindings()
+            .values()
+            .filter(|binding| {
+                binding
+                    .cause
+                    .periodic()
+                    .is_some_and(|p| p.contract.host.owner == component.name)
+            })
+            .cloned()
+            .collect(),
         asyncapi: ASYNCAPI_VERSION,
         info: Info {
             title: component_title(component).to_owned(),
@@ -530,7 +571,7 @@ fn plans<'a>(
         };
         // Through the binding's own handle rather than by name: the lookup stays total, which is
         // what `ess-compiler` minted the handle for.
-        let event = ir.event(&first.event);
+        let event = ir.event(first.cause.event().expect("event reactions only"));
         by_event
             .entry(&event.name)
             .or_insert(Plan {
@@ -778,6 +819,10 @@ fn reaction(ir: &EssIr, binding: &ResolvedBinding) -> Reaction {
         escalates_with: escalates_with(ir, binding),
         on_failure_means: failure_means(ir, binding),
         mapping: binding.mapping.iter().map(mapped_input).collect(),
+        selection: binding
+            .selection
+            .as_ref()
+            .map(|selection| selection.plan.clone()),
     }
 }
 
@@ -816,10 +861,33 @@ fn mapped_input(mapping: &ResolvedMapping) -> MappedInput {
         target: mapping.target.clone(),
         target_type: mapping.target_type.to_string(),
         source: match &mapping.value {
+            ResolvedMappingValue::HostContext { field, type_ref } => MappedSource::HostContext {
+                field: field.clone(),
+                type_ref: type_ref.to_string(),
+            },
+            ResolvedMappingValue::HostRead { field, type_ref } => MappedSource::HostRead {
+                field: field.clone(),
+                type_ref: type_ref.to_string(),
+            },
+            ResolvedMappingValue::Selection {
+                selector,
+                projection,
+                type_ref,
+            } => MappedSource::Selection {
+                selector: *selector,
+                projection: projection.clone(),
+                type_ref: type_ref.to_string(),
+            },
             ResolvedMappingValue::EventField { field, type_ref } => MappedSource::EventField {
                 field: field.clone(),
                 type_ref: type_ref.to_string(),
             },
+            ResolvedMappingValue::EventAccessor { plan, type_ref, .. } => {
+                MappedSource::EventAccessor {
+                    plan: plan.clone(),
+                    type_ref: type_ref.to_string(),
+                }
+            }
             ResolvedMappingValue::Literal { value } => MappedSource::Literal {
                 value: value.clone(),
             },

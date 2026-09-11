@@ -476,8 +476,13 @@ pub fn export_controls() {
             );
             assert!(!output.status.success(), "{output:?}");
             assert!(output.stdout.is_empty());
-            assert!(String::from_utf8_lossy(&output.stderr)
-                .contains("suite/5 requires explicit --report-format 2 before execution"));
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            assert!(
+                stderr.contains(
+                    "suite/5, /6 and /7 require explicit --report-format 2 before execution"
+                ),
+                "{stderr}"
+            );
             assert!(!out.join("report.json").exists());
             write_json(
                 &out.join("fixture.json"),

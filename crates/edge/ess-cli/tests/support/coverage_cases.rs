@@ -11,8 +11,13 @@ pub struct Case {
     pub accepted: bool,
 }
 pub fn document() -> Value {
+    document_at("ess-conformance/5")
+}
+/// The same original candidate under an exact suite version, so cases that need the corrected
+/// structured operand reader (coverage/9) carry a document that admits them.
+pub fn document_at(suite_version: &str) -> Value {
     json!({
-        "provenance":{"suite_version":"ess-conformance/5","system":"example","specification_version":"v1",
+        "provenance":{"suite_version":suite_version,"system":"example","specification_version":"v1",
             "spec_digest":"a".repeat(64),"contract_digest":"b".repeat(64)},
         "scenarios":{ID:{"purpose":"Original candidate","steps":[],"source":[]}},
         "coverage":{
@@ -27,7 +32,10 @@ pub fn carrier(suite: &Value) -> Value {
     json!({"format":"ess-conformance-input/1","suite_json":suite.to_string(),"parent_suites":[]})
 }
 fn pair(left: &Value, right: &Value) -> Value {
-    let mut document = document();
+    pair_at("ess-conformance/5", left, right)
+}
+fn pair_at(suite_version: &str, left: &Value, right: &Value) -> Value {
+    let mut document = document_at(suite_version);
     document["scenarios"][ID]["steps"] = left.clone();
     let parent =
         AdmittedInput::from_suite(AdmittedSuite::from_json(&document.to_string()).unwrap())
@@ -140,7 +148,6 @@ fn predicate_pairs() -> Vec<(Value, Value)> {
         (json!({"not":{"not":"ready"}}), json!("ready")),
         (json!({"ready":{"defined":false}}), json!("missing(ready)")),
         (json!({"x":{"equals":1}}), json!("x == 1")),
-        (json!({"x":{"gte":"other.0"}}), json!("x >= other.0")),
         (json!({"x":{"not_in":null}}), json!({"x":{"none_of":[]}})),
         (json!({"x":{"truthy":{"not":"an expression"}}}), json!("x")),
         // `1` and `1.0` are one predicate: binary64 carries both, so the two spellings name one
@@ -152,6 +159,12 @@ fn predicate_pairs() -> Vec<(Value, Value)> {
         (json!({"x":1}), json!("x ==\u{85}1")),
         (json!(true), json!("\u{85}true")),
     ]
+}
+/// Equivalences whose structured spelling carries an operand an original reader would have read
+/// as literal text. They are one predicate only under the corrected reader, so they are authored
+/// at coverage/9 and refused by `quoted_predicate_format` below it.
+fn lossless_predicate_pairs() -> Vec<(Value, Value)> {
+    vec![(json!({"x":{"gte":"other.0"}}), json!("x >= other.0"))]
 }
 pub fn cases() -> Vec<Case> {
     let mut result = Vec::new();
@@ -188,12 +201,20 @@ fn default_cases(result: &mut Vec<Case>) {
     for (name, left, right) in equivalences() {
         append(result, name, &pair(&left, &right), true);
     }
+    let step = |predicate| json!([{"step":"expect_view","view":"example.All","expectation":{"expect":"satisfies","predicate":predicate}}]);
     for (index, (left, right)) in predicate_pairs().into_iter().enumerate() {
-        let step = |predicate| json!([{"step":"expect_view","view":"example.All","expectation":{"expect":"satisfies","predicate":predicate}}]);
         append(
             result,
             &format!("predicate-equivalent-{index}"),
             &pair(&step(left), &step(right)),
+            true,
+        );
+    }
+    for (index, (left, right)) in lossless_predicate_pairs().into_iter().enumerate() {
+        append(
+            result,
+            &format!("predicate-lossless-{index}"),
+            &pair_at("ess-conformance/9", &step(left), &step(right)),
             true,
         );
     }

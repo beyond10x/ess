@@ -266,15 +266,11 @@ impl Specification {
     pub fn validate(&self) -> ValidationErrors {
         let mut errors = crate::primitive_admission::specification(self);
         errors.extend(crate::wire::validate(self));
+        errors.extend(crate::binding::periodic::validate_specification(self));
 
         // Entities contribute the enum their lifecycle forms, so a view projecting `state` and a
         // filter comparing it are checked against the same set of names.
-        let mut registry = self.system.types.clone();
-        for entity in self.entities.values() {
-            if let Err(error) = registry.insert(entity.state_type()) {
-                errors.push(error);
-            }
-        }
+        let registry = self.types_with_lifecycles(&mut errors);
 
         errors.extend(registry.validate_invariants());
 
@@ -289,6 +285,7 @@ impl Specification {
                 errors.extend(command_errors);
             }
         }
+        errors.extend(crate::command::subject_state::validate(self, &registry));
         for event in self.events.values() {
             if let Err(event_errors) = event.validate(&registry) {
                 errors.extend(event_errors);
@@ -430,6 +427,17 @@ impl Specification {
             }
         }
         errors
+    }
+
+    /// Build the registry shared by every member validation, retaining duplicate-type errors.
+    fn types_with_lifecycles(&self, errors: &mut ValidationErrors) -> crate::types::TypeRegistry {
+        let mut registry = self.system.types.clone();
+        for entity in self.entities.values() {
+            if let Err(error) = registry.insert(entity.state_type()) {
+                errors.push(error);
+            }
+        }
+        registry
     }
 
     /// Checks the header's domain roster against the domains the sources contribute.
@@ -1143,7 +1151,7 @@ events:
             file(
                 "system.yaml",
                 r"
-format: ess/3
+format: ess/5
 system: shop
 version: v1
 ",

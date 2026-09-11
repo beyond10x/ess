@@ -1,0 +1,56 @@
+format: ess/3
+system: example
+version: v1
+domain: example.poll
+events:
+  - name: example.poll.Updated
+    fields:
+      - name: status
+        type: String
+commands:
+  - name: example.poll.Refresh
+    input:
+      - name: agent_id
+        type: String
+      - name: status
+        type: String
+    outcomes:
+      - name: refreshed
+        emits: [example.poll.Updated]
+components:
+  - component: poll-service
+    owns:
+      domains: [example.poll]
+    accepts:
+      commands: [example.poll.Refresh]
+    publishes:
+      events: [example.poll.Updated]
+bindings:
+  - id: poll-status
+    when:
+      periodic:
+        every: PT2S
+        anchor: host_activation
+        first: after_period
+        cadence: fixed_rate
+        overlap: serial_per_instance
+        missed: one_pending_drop_excess
+        lifetime: host_instance
+        cancellation: stop_acknowledged
+        host:
+          owner: poll-service
+          authority: authenticated-session-status
+          eligibility: host_boolean
+          context_fields:
+            - name: agent_id
+              type: String
+          read_fields:
+            - name: status
+              type: String
+    invoke:
+      command: example.poll.Refresh
+    mapping:
+      agent_id: host_context.agent_id
+      status: host_read.status
+    delivery: at_most_once
+    on_failure: drop

@@ -529,6 +529,12 @@ fn compare_types(
     name: &QualifiedName,
     push: &mut impl FnMut(TypeChange),
 ) {
+    if before.reading != after.reading {
+        push(TypeChange::ReadingContractChanged {
+            before: before.reading.clone(),
+            after: after.reading.clone(),
+        });
+    }
     body_changes(&before.body, &after.body, &mut *push);
     for delta in naming_deltas(&before.naming, &after.naming, name.local()) {
         match delta {
@@ -642,6 +648,28 @@ fn error_changes(before: &EssIr, after: &EssIr, changes: &mut Vec<SemanticChange
                     push(ErrorChange::DomainChanged {
                         before: owned,
                         after: owns,
+                    });
+                }
+                let old_code = was.wire_code();
+                let new_code = is.wire_code();
+                if old_code != new_code {
+                    push(ErrorChange::WireNameChanged {
+                        before: old_code,
+                        after: new_code,
+                    });
+                }
+                let old_display = was.naming.display_or(&was.name);
+                let new_display = is.naming.display_or(&is.name);
+                if old_display != new_display {
+                    push(ErrorChange::DisplayNameChanged {
+                        before: old_display.to_owned(),
+                        after: new_display.to_owned(),
+                    });
+                }
+                if was.naming.summary != is.naming.summary {
+                    push(ErrorChange::NamingSummaryChanged {
+                        before: was.naming.summary.clone(),
+                        after: is.naming.summary.clone(),
                     });
                 }
                 if was.summary != is.summary {
@@ -849,6 +877,12 @@ fn component_changes(before: &EssIr, after: &EssIr, changes: &mut Vec<SemanticCh
 fn written_condition(condition: &ResolvedCondition) -> String {
     match condition {
         ResolvedCondition::When { predicate } => format!("when {predicate}"),
+        ResolvedCondition::SubjectState { state, predicate } => format!(
+            "when subject state is {state}{}",
+            predicate
+                .as_ref()
+                .map_or(String::new(), |guard| format!(" and {guard}")),
+        ),
         ResolvedCondition::Otherwise => "otherwise".to_owned(),
         ResolvedCondition::External { cause } => format!("external: {cause}"),
         ResolvedCondition::WrongState => "wrong-state".to_owned(),
@@ -891,6 +925,12 @@ fn written_payload(payload: &[ResolvedPayload]) -> Vec<String> {
         let event = EventRef::from(&entry.event);
         for field in &entry.fields {
             let source = match &field.value {
+                ess_compiler::ir::ResolvedPayloadValue::ResponseField { field, .. } => {
+                    format!("response field `{field}`")
+                }
+                ess_compiler::ir::ResolvedPayloadValue::Generated => {
+                    "implementation-generated".to_owned()
+                }
                 ess_compiler::ir::ResolvedPayloadValue::InputField { field: name, .. } => {
                     format!("input.{name}")
                 }
@@ -909,11 +949,46 @@ fn written_payload(payload: &[ResolvedPayload]) -> Vec<String> {
     lines
 }
 
+fn written_cause(binding: &ResolvedBinding) -> ess_domain::binding::BindingCause {
+    match &binding.cause {
+        ess_compiler::ir::ResolvedBindingCause::Event(event) => {
+            ess_domain::binding::BindingCause::Event(event.name().clone())
+        }
+        ess_compiler::ir::ResolvedBindingCause::Periodic(periodic) => {
+            ess_domain::binding::BindingCause::Periodic(periodic.contract.clone())
+        }
+    }
+}
+
 /// Where a binding fills one command input from, rendered with the conversion when one is crossed.
 fn written_mapping(mapping: &ess_compiler::ir::ResolvedMapping) -> String {
     let source = match &mapping.value {
+        ess_compiler::ir::ResolvedMappingValue::Selection {
+            selector,
+            projection,
+            ..
+        } => format!(
+            "selector {selector} [{}]",
+            projection.0.segments[1..].join(".")
+        ),
         ess_compiler::ir::ResolvedMappingValue::EventField { field, .. } => {
             format!("event.{field}")
+        }
+        ess_compiler::ir::ResolvedMappingValue::EventAccessor { plan, .. } => format!(
+            "{} : {} ({})",
+            plan.path(),
+            plan.leaf(),
+            if plan.may_miss() {
+                "possibly unavailable"
+            } else {
+                "total"
+            }
+        ),
+        ess_compiler::ir::ResolvedMappingValue::HostContext { field, type_ref } => {
+            format!("host_context.{field} : {type_ref}")
+        }
+        ess_compiler::ir::ResolvedMappingValue::HostRead { field, type_ref } => {
+            format!("host_read.{field} : {type_ref}")
         }
         ess_compiler::ir::ResolvedMappingValue::Literal { value } => format!("literal `{value}`"),
     };
@@ -1136,6 +1211,12 @@ fn compare_commands(
     name: &QualifiedName,
     push: &mut impl FnMut(CommandChange),
 ) {
+    if was.response != is.response {
+        push(CommandChange::ResponseChanged {
+            before: parameter_contracts(&was.response),
+            after: parameter_contracts(&is.response),
+        });
+    }
     let (owned, owns) = (DomainRef::from(&was.domain), DomainRef::from(&is.domain));
     if owned != owns {
         push(CommandChange::DomainChanged {
@@ -1254,11 +1335,7 @@ fn outcome_changes(
                     });
                 }
                 if old.payload != new.payload {
-                    push(CommandChange::OutcomePayloadChanged {
-                        outcome: (*name).to_owned(),
-                        before: written_payload(&old.payload),
-                        after: written_payload(&new.payload),
-                    });
+                    push(outcome_payload_change(old, new, name));
                 }
                 if old.error != new.error {
                     let written = |handle: &Option<ess_compiler::ir::ErrorHandle>| {
@@ -1461,12 +1538,20 @@ fn compare_bindings(
     is: &ResolvedBinding,
     push: &mut impl FnMut(BindingChange),
 ) {
-    let (reacted, reacts) = (EventRef::from(&was.event), EventRef::from(&is.event));
-    if reacted != reacts {
-        push(BindingChange::EventChanged {
-            before: reacted,
-            after: reacts,
-        });
+    if was.cause != is.cause {
+        match (&was.cause, &is.cause) {
+            (
+                ess_compiler::ir::ResolvedBindingCause::Event(before),
+                ess_compiler::ir::ResolvedBindingCause::Event(after),
+            ) => push(BindingChange::EventChanged {
+                before: EventRef::from(before),
+                after: EventRef::from(after),
+            }),
+            _ => push(BindingChange::CauseChanged {
+                before: Box::new(written_cause(was)),
+                after: Box::new(written_cause(is)),
+            }),
+        }
     }
     let (was_invoked, is_invoked) = (
         CommandRef::from(&was.command),
@@ -1476,6 +1561,15 @@ fn compare_bindings(
         push(BindingChange::CommandChanged {
             before: was_invoked,
             after: is_invoked,
+        });
+    }
+
+    let previous_selection = was.selection.as_ref().map(|selection| &selection.plan);
+    let next_selection = is.selection.as_ref().map(|selection| &selection.plan);
+    if previous_selection != next_selection {
+        push(BindingChange::SelectionPlanChanged {
+            before: previous_selection.cloned(),
+            after: next_selection.cloned(),
         });
     }
 
@@ -1610,6 +1704,12 @@ fn written_sets(fields: &[ess_compiler::ir::ResolvedPayloadField]) -> Vec<String
         .iter()
         .map(|field| {
             let source = match &field.value {
+                ess_compiler::ir::ResolvedPayloadValue::ResponseField { field, .. } => {
+                    format!("response field `{field}`")
+                }
+                ess_compiler::ir::ResolvedPayloadValue::Generated => {
+                    "implementation-generated".to_owned()
+                }
                 ess_compiler::ir::ResolvedPayloadValue::InputField { field, .. } => {
                     format!("input.{field}")
                 }
@@ -1934,6 +2034,41 @@ fn residual_command(declaration: &mut serde_json::Value) {
                     ],
                 );
             });
+        }
+    }
+}
+
+fn outcome_payload_change(
+    old: &ResolvedOutcome,
+    new: &ResolvedOutcome,
+    name: &str,
+) -> CommandChange {
+    let response = old
+        .payload
+        .iter()
+        .chain(&new.payload)
+        .flat_map(|p| &p.fields)
+        .any(|f| {
+            matches!(
+                f.value,
+                ess_compiler::ir::ResolvedPayloadValue::ResponseField { .. }
+                    | ess_compiler::ir::ResolvedPayloadValue::Generated
+            )
+        });
+    let outcome = name.to_owned();
+    let before = written_payload(&old.payload);
+    let after = written_payload(&new.payload);
+    if response {
+        CommandChange::OutcomeResponsePayloadChanged {
+            outcome,
+            before,
+            after,
+        }
+    } else {
+        CommandChange::OutcomePayloadChanged {
+            outcome,
+            before,
+            after,
         }
     }
 }

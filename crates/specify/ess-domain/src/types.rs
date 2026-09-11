@@ -344,7 +344,7 @@ impl Field {
 /// things nobody can spell, in files where the specification that wrote them is no longer in view.
 /// [`StateName`](crate::entity::StateName), [`OutcomeName`](crate::command::OutcomeName) and
 /// [`QualifiedName`] check theirs for the same reason.
-fn field_name(value: &str) -> Result<String, ParseError> {
+pub(crate) fn field_name(value: &str) -> Result<String, ParseError> {
     let reject = |reason: String| Err(ParseError::identifier("field name", value, reason));
 
     let Some(first) = value.chars().next() else {
@@ -430,6 +430,9 @@ pub struct NamedType {
     /// What it is called on the wire and shown as.
     #[serde(skip_serializing_if = "Naming::is_empty")]
     pub naming: Naming,
+    /// Optional clock-reading contract; absence retains the legacy type meaning and bytes.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub reading: Option<crate::reading::ReadingContract>,
 }
 
 impl NamedType {
@@ -449,6 +452,20 @@ impl NamedType {
     fn check_shape(&self) -> ValidationErrors {
         let mut errors = ValidationErrors::new();
         let at = |part: &str| format!("types.{}.{part}", self.name);
+
+        if let Some(reading) = &self.reading {
+            let valid_representation = matches!(&self.body, TypeBody::Newtype { of: TypeRef::Primitive(primitive), .. } if *primitive == reading.representation());
+            if !valid_representation {
+                errors.push(ValidationError::new(ValidationCode::TypeMismatch, at("reading"), "reading requires a directly String/Integer-backed newtype matching its encoding"));
+            }
+            if let Err(reason) = reading.validate() {
+                errors.push(ValidationError::new(
+                    ValidationCode::TypeMismatch,
+                    at("reading"),
+                    reason,
+                ));
+            }
+        }
 
         let (part, empty) = match &self.body {
             TypeBody::Enum { variants } => ("variants", variants.is_empty()),
@@ -672,6 +689,15 @@ pub struct RawNamedType {
     /// What it is called on the wire and shown as.
     #[serde(default)]
     pub naming: Naming,
+    /// Optional closed clock-reading attachment.
+    #[serde(default, deserialize_with = "deserialize_reading")]
+    pub reading: Option<crate::reading::ReadingContract>,
+}
+
+fn deserialize_reading<'de, D: serde::Deserializer<'de>>(
+    deserializer: D,
+) -> Result<Option<crate::reading::ReadingContract>, D::Error> {
+    <crate::reading::ReadingContract as serde::Deserialize>::deserialize(deserializer).map(Some)
 }
 
 impl schemars::JsonSchema for RawNamedType {
@@ -699,6 +725,7 @@ impl schemars::JsonSchema for RawNamedType {
             generator.subschema_for::<Naming>(),
             "What it is called on the wire and shown as.",
         );
+        let reading = generator.subschema_for::<crate::reading::ReadingContract>();
 
         let object = schema.object();
         object.properties.insert("name".to_owned(), name.clone());
@@ -706,6 +733,9 @@ impl schemars::JsonSchema for RawNamedType {
             .properties
             .insert("naming".to_owned(), naming.clone());
         object.required.insert("name".to_owned());
+        object
+            .properties
+            .insert("reading".to_owned(), reading.clone());
         for branch in schema.subschemas().one_of.iter_mut().flatten() {
             let schemars::schema::Schema::Object(branch) = branch else {
                 continue;
@@ -716,6 +746,9 @@ impl schemars::JsonSchema for RawNamedType {
                 .properties
                 .insert("naming".to_owned(), naming.clone());
             object.required.insert("name".to_owned());
+            object
+                .properties
+                .insert("reading".to_owned(), reading.clone());
         }
 
         schema.into()
@@ -738,6 +771,7 @@ impl TryFrom<RawNamedType> for NamedType {
             name: raw.name,
             body: raw.body.into(),
             naming: raw.naming,
+            reading: raw.reading,
         };
         let mut errors = declared.check_shape();
         errors.extend(declared.check_invariants());
@@ -993,6 +1027,7 @@ mod tests {
         let mut registry = TypeRegistry::new();
         registry
             .insert(NamedType {
+                reading: None,
                 name: name("billing.Email"),
                 body: TypeBody::Newtype {
                     of: TypeRef::Primitive(Primitive::String),
@@ -1003,6 +1038,7 @@ mod tests {
             .expect("new");
         registry
             .insert(NamedType {
+                reading: None,
                 name: name("billing.Money"),
                 body: TypeBody::Struct {
                     fields: vec![
@@ -1153,6 +1189,7 @@ mod tests {
         let mut registry = registry();
         let error = registry
             .insert(NamedType {
+                reading: None,
                 name: name("billing.Email"),
                 body: TypeBody::Enum {
                     variants: vec!["Work".to_owned(), "Personal".to_owned()],
@@ -1166,6 +1203,7 @@ mod tests {
     #[test]
     fn dependencies_are_reported_through_composites() {
         let declared = NamedType {
+            reading: None,
             name: name("billing.Basket"),
             body: TypeBody::Struct {
                 fields: vec![
@@ -1414,6 +1452,7 @@ mod tests {
     #[test]
     fn a_union_carries_its_tag() {
         let declared = NamedType {
+            reading: None,
             name: name("billing.PaymentMethod"),
             body: TypeBody::Union {
                 tag: "method".to_owned(),

@@ -505,6 +505,10 @@ impl RefusalCause {
                 Self::DuplicateScenario => 7,
                 Self::StrategyWithoutGuard { .. } => 8,
                 Self::WitnessRejected(_) => 9,
+                Self::BindingUnobservable {
+                    gap: BindingGap::AccessorObservation { .. },
+                    ..
+                } => 15,
                 Self::BindingUnobservable { .. } => 10,
                 Self::InvariantUnobservable { .. } => 11,
                 Self::RefusalUndeclared { .. } => 12,
@@ -706,6 +710,11 @@ fn value_unwitnessed(
 /// made and for which the model deliberately gives nothing to observe.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum BindingGap {
+    /// A native accessor whose expectation is not reconstructible from observations.
+    AccessorObservation {
+        /// Exact unsupported observation or conversion contract.
+        reason: String,
+    },
     /// No command outcome emits the event the binding reacts to.
     ///
     /// Legal: an event may arrive from outside the specification, which is why `ess-domain` does not
@@ -776,6 +785,9 @@ impl BindingGap {
     /// What would have to change.
     fn hint(&self) -> &'static str {
         match self {
+            Self::AccessorObservation { .. } => {
+                "provide a separately executable host conversion or an unambiguous observable assignment"
+            }
             Self::NothingPublishes { .. } => {
                 "give some command outcome `emits:` for this event; a binding on an event nothing \
                  publishes can never fire"
@@ -811,6 +823,9 @@ impl fmt::Display for BindingGap {
     /// Reads as the tail of "`<binding>` …".
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
+            Self::AccessorObservation { reason } => {
+                write!(f, "has no accessor observation: {reason}")
+            }
             Self::NothingPublishes { event } => {
                 write!(f, "reacts to `{event}`, which no outcome emits")
             }
@@ -986,6 +1001,7 @@ pub fn synthesize(ir: &EssIr) -> Synthesis {
     lifecycle(ir, &actors, &mut suite, &mut refusals);
     invariants(ir, &actors, &mut suite, &mut refusals);
     bindings(ir, &actors, &mut suite, &mut refusals);
+    suite.select_fresh_format();
 
     Synthesis {
         suite,
@@ -1049,6 +1065,7 @@ pub fn synthesize_for(ir: &EssIr, component: &str) -> Result<Synthesis, UnknownC
             });
         }
     }
+    suite.select_fresh_format();
     Ok(Synthesis {
         suite,
         refusals: whole.refusals,
@@ -1111,6 +1128,21 @@ pub(crate) fn needs_of(
     let mut needs: BTreeSet<EssSemanticRef> = BTreeSet::new();
     for step in &scenario.steps {
         match step {
+            ScenarioStep::ExpectResponsePayload { response } => {
+                if !handles(ir, component, response.command.name()) { needs.insert(response.command.clone().into()); }
+                if !emits(ir, component, response.event.name()) { needs.insert(response.event.clone().into()); }
+            }
+            ScenarioStep::CheckPeriodic { check } => {
+                if !handles(ir, component, check.command.name()) { needs.insert(check.command.clone().into()); }
+                if check.periodic.host.owner != component.name { needs.insert(ComponentRef::new(check.periodic.host.owner.clone()).into()); }
+            }
+            ScenarioStep::ExpectReadingOrder { left, right, .. } => {
+                for reference in [left, right] {
+                    if !emits(ir, component, reference.event.name()) {
+                        needs.insert(reference.event.clone().into());
+                    }
+                }
+            }
             ScenarioStep::ExecuteCommand { command, .. }
             | ScenarioStep::ExpectInvocation { command, .. } => {
                 if !handles(ir, component, command.name()) {
@@ -1147,7 +1179,10 @@ pub(crate) fn needs_of(
             // same reason it is here: a component that never emits it satisfies the claim, so
             // requiring it to realise the event would scope the scenario out of the one component
             // it is most obviously about.
-            ScenarioStep::ExpectOutcome { .. }
+            // Fixture setup is an adapter capability, not a declared command/event realization.
+            // Keep upstream-backed view witnesses in the component that owns the view.
+            ScenarioStep::EstablishEntity { .. }
+            | ScenarioStep::ExpectOutcome { .. }
             | ScenarioStep::ExpectError { .. }
             | ScenarioStep::ExpectNoEvent { .. }
             | ScenarioStep::MarkInstant { .. }
@@ -1246,8 +1281,26 @@ fn exercise(
         steps.push(ScenarioStep::ExpectEvent {
             event: event.clone(),
             payload: determined_payload(outcome, event, &run.input),
-            shape: payload_shape(ir, event),
+            shape: crate::response::event_shape(ir, event, outcome),
         });
+    }
+    match crate::response::Observation::of(ir, command, outcome) {
+        Ok(observations) => steps.extend(
+            observations
+                .into_iter()
+                .map(|response| ScenarioStep::ExpectResponsePayload { response }),
+        ),
+        Err(reason) => {
+            refusals.push(Refusal::about(
+                id,
+                RefusalCause::NoWitness(WitnessGap {
+                    path: format!("{}.response: {reason}", command.name),
+                    type_ref: "command response".into(),
+                    reason: "typed response observation cannot execute this contract",
+                }),
+            ));
+            return None;
+        }
     }
     // §10's first-class negative assertion: without it the refusal case passes against an
     // implementation that refuses the command and emits the success event anyway.
@@ -1327,8 +1380,14 @@ fn run(
     outcome: &ResolvedOutcome,
     actors: &BTreeMap<QualifiedName, ActorRef>,
 ) -> Result<Run, RefusalCause> {
-    let setup = prepare(ir, outcome, actors)?;
-    let input = reach(ir, command, outcome, Distinction::PLAIN)?;
+    let (setup, input) = if has_subject_guards(command) {
+        prepare_state_input(ir, command, outcome, actors)?
+    } else {
+        (
+            prepare(ir, outcome, actors, None)?,
+            reach(ir, command, outcome, Distinction::PLAIN)?,
+        )
+    };
 
     let command_ref = CommandRef::new(command.name.clone());
     let outcome_ref = OutcomeRef::new(command_ref.clone(), outcome.name.clone());
@@ -1352,6 +1411,15 @@ fn run(
         outcome: outcome_ref,
     });
 
+    let mut source = setup.source;
+    if has_subject_guards(command) {
+        if let (Some(instance), Some(state)) = (&setup.instance, &setup.after) {
+            let (observed, view) = observe_subject_state(ir, outcome, instance, state)?;
+            invoke.extend(observed);
+            source.insert(view.into());
+        }
+    }
+
     let mut settled = setup.settled;
     settled.extend(super::synthesize::settled(outcome, &supplied));
     Ok(Run {
@@ -1361,7 +1429,7 @@ fn run(
         instance: setup.instance,
         actor,
         input: supplied,
-        source: setup.source,
+        source,
         settled,
     })
 }
@@ -1407,17 +1475,18 @@ fn prepare(
     ir: &EssIr,
     outcome: &ResolvedOutcome,
     actors: &BTreeMap<QualifiedName, ActorRef>,
+    held: Option<&StateName>,
 ) -> Result<Setup, RefusalCause> {
     let Some(subject) = &outcome.subject else {
         return Ok(Setup::none());
     };
     let lifecycle = &ir.entity(&subject.entity).lifecycle;
-    let (targets, need): (Vec<StateName>, InstanceNeed) = match &subject.effect {
+    let (mut targets, need): (Vec<StateName>, InstanceNeed) = match &subject.effect {
         ResolvedEffect::Creates => {
             return Ok(Setup {
                 after: Some(lifecycle.initial.clone()),
                 ..Setup::none()
-            })
+            });
         }
         ResolvedEffect::Moves { transition } => (
             transition.from.iter().cloned().collect(),
@@ -1427,9 +1496,14 @@ fn prepare(
         ),
         ResolvedEffect::Updates => (vec![lifecycle.initial.clone()], InstanceNeed::Updates),
     };
+    if let Some(state) = held {
+        targets = vec![state.clone()];
+    }
     let after = match &subject.effect {
         ResolvedEffect::Moves { transition } => transition.to.clone(),
-        ResolvedEffect::Creates | ResolvedEffect::Updates => lifecycle.initial.clone(),
+        ResolvedEffect::Creates | ResolvedEffect::Updates => {
+            held.unwrap_or(&lifecycle.initial).clone()
+        }
     };
 
     let arrangement = arrange_first(ir, &subject.entity, &targets, actors, Distinction::PLAIN)
@@ -1538,7 +1612,7 @@ fn arrange(
     let mut source = BTreeSet::new();
 
     let mut settled = BTreeMap::new();
-    let created = invoke(ir, creator, None, actors, distinction)?;
+    let created = invoke(ir, creator, None, None, actors, distinction)?;
     steps.extend(created.steps);
     source.extend(created.source);
     settled.extend(created.settled);
@@ -1558,11 +1632,22 @@ fn arrange(
     });
     source.insert(EventRef::from(event).into());
 
+    let mut held = ir.entity(entity).lifecycle.initial.clone();
     for driver in route {
-        let moved = invoke(ir, &driver, Some(&instance), actors, distinction)?;
+        let moved = invoke(
+            ir,
+            &driver,
+            Some(&instance),
+            Some(&held),
+            actors,
+            distinction,
+        )?;
         steps.extend(moved.steps);
         source.extend(moved.source);
         settled.extend(moved.settled);
+        if let Some(transition) = driver.effect.transition() {
+            held = transition.to.clone();
+        }
     }
     Ok(Arrangement {
         instance,
@@ -1582,6 +1667,7 @@ fn invoke(
     ir: &EssIr,
     driver: &Driver<'_>,
     instance: Option<&InstanceName>,
+    held: Option<&StateName>,
     actors: &BTreeMap<QualifiedName, ActorRef>,
     distinction: Distinction,
 ) -> Result<Invocation, Unreachable> {
@@ -1590,10 +1676,16 @@ fn invoke(
     // The cause is not carried up. That branch has a refusal of its own, under its own id, saying
     // exactly why no input reaches it; repeating it here would be one defect reported twice with two
     // repairs to weigh.
-    let input = reach(ir, driver.command, driver.outcome, distinction).map_err(|_| {
-        Unreachable::Unwitnessable {
-            outcome: outcome_ref.clone(),
-        }
+    let input = if has_subject_guards(driver.command) {
+        held.ok_or(RefusalCause::StrategyWithoutGuard {
+            strategy: driver.outcome.test_strategy,
+        })
+        .and_then(|state| reach_in_state(ir, driver.command, driver.outcome, state, distinction))
+    } else {
+        reach(ir, driver.command, driver.outcome, distinction)
+    }
+    .map_err(|_| Unreachable::Unwitnessable {
+        outcome: outcome_ref.clone(),
     })?;
 
     let mut steps = Vec::new();
@@ -1655,6 +1747,10 @@ fn route<'a>(
             continue;
         };
         for from in &transition.from {
+            if matches!(&driver.outcome.condition, ResolvedCondition::SubjectState { state, .. } if state != from)
+            {
+                continue;
+            }
             edges
                 .entry(from.clone())
                 .or_default()
@@ -1777,6 +1873,187 @@ fn supply(
         .collect()
 }
 
+fn has_subject_guards(command: &ResolvedCommand) -> bool {
+    command
+        .outcomes
+        .iter()
+        .any(|outcome| matches!(outcome.condition, ResolvedCondition::SubjectState { .. }))
+}
+
+fn state_default(outcome: &ResolvedOutcome) -> bool {
+    matches!(&outcome.condition, ResolvedCondition::Otherwise)
+        || matches!(&outcome.condition, ResolvedCondition::When { predicate } if predicate.is_trivially_true())
+}
+
+/// Select an input only after every competing branch sees the same held state.
+fn reach_in_state(
+    ir: &EssIr,
+    command: &ResolvedCommand,
+    outcome: &ResolvedOutcome,
+    held: &StateName,
+    distinction: Distinction,
+) -> Result<BTreeMap<String, Node>, RefusalCause> {
+    let guards: Vec<_> = command.outcomes.iter().filter_map(when).collect();
+    let inputs = candidates(ir, command, &guards, distinction).map_err(RefusalCause::NoWitness)?;
+    for input in &inputs {
+        let facts = flatten(ir, command, input).map_err(RefusalCause::WitnessRejected)?;
+        let mut selected = Vec::new();
+        for branch in command
+            .outcomes
+            .iter()
+            .filter(|branch| !state_default(branch))
+        {
+            let predicate = match &branch.condition {
+                ResolvedCondition::When { predicate } => Some(predicate),
+                ResolvedCondition::SubjectState { state, predicate } if state == held => {
+                    predicate.as_ref()
+                }
+                _ => continue,
+            };
+            if let Some(predicate) = predicate {
+                if !decides(&facts, &[predicate], true)? {
+                    continue;
+                }
+            }
+            selected.push(branch);
+        }
+        if selected.is_empty() {
+            selected.extend(
+                command
+                    .outcomes
+                    .iter()
+                    .filter(|branch| state_default(branch)),
+            );
+        }
+        if selected.len() == 1 && selected[0].name == outcome.name {
+            return Ok(input.clone());
+        }
+    }
+    Err(RefusalCause::GuardUnsatisfiable {
+        predicate: format!("{} selected in held state {held}", outcome.name),
+        tried: inputs.len().min(MAX_CANDIDATES),
+    })
+}
+
+/// Choose and establish the state together with the input; neither half proves the other.
+fn prepare_state_input(
+    ir: &EssIr,
+    command: &ResolvedCommand,
+    outcome: &ResolvedOutcome,
+    actors: &BTreeMap<QualifiedName, ActorRef>,
+) -> Result<(Setup, BTreeMap<String, Node>), RefusalCause> {
+    if outcome.test_strategy == TestStrategy::InjectFault {
+        return Ok((
+            prepare(ir, outcome, actors, None)?,
+            reach_external(ir, command)?,
+        ));
+    }
+    let subject = outcome
+        .subject
+        .as_ref()
+        .ok_or(RefusalCause::StrategyWithoutGuard {
+            strategy: outcome.test_strategy,
+        })?;
+    let lifecycle = &ir.entity(&subject.entity).lifecycle;
+    let states: Vec<_> = match &outcome.condition {
+        ResolvedCondition::SubjectState { state, .. } => vec![state.clone()],
+        _ => lifecycle.states.iter().cloned().collect(),
+    };
+    let mut first = None;
+    for state in states {
+        if subject
+            .effect
+            .transition()
+            .is_some_and(|transition| !transition.from.contains(&state))
+        {
+            continue;
+        }
+        match reach_in_state(ir, command, outcome, &state, Distinction::PLAIN).and_then(|input| {
+            let mut setup = prepare(ir, outcome, actors, Some(&state))?;
+            let instance = setup
+                .instance
+                .as_ref()
+                .ok_or(RefusalCause::StrategyWithoutGuard {
+                    strategy: outcome.test_strategy,
+                })?;
+            let (observed, view) = observe_subject_state(ir, outcome, instance, &state)?;
+            setup.steps.extend(observed);
+            setup.source.insert(view.into());
+            Ok((setup, input))
+        }) {
+            Ok(pair) => return Ok(pair),
+            Err(reason) => {
+                first.get_or_insert(reason);
+            }
+        }
+    }
+    Err(first.unwrap_or(RefusalCause::StrategyWithoutGuard {
+        strategy: outcome.test_strategy,
+    }))
+}
+
+/// Observe the actual identity/state pair through a declared immediate projection.
+fn observe_subject_state(
+    ir: &EssIr,
+    outcome: &ResolvedOutcome,
+    instance: &InstanceName,
+    state: &StateName,
+) -> Result<(Vec<ScenarioStep>, ViewRef), RefusalCause> {
+    let subject = outcome
+        .subject
+        .as_ref()
+        .ok_or(RefusalCause::StrategyWithoutGuard {
+            strategy: outcome.test_strategy,
+        })?;
+    let entity = ir.entity(&subject.entity);
+    let view = ir.views().values().find(|view| {
+        view.source == subject.entity && view.params.is_empty() && view.filter.is_none()
+            && view.assertion_style == AssertionStyle::Expect
+            && view.field(&entity.identity.name).is_some_and(|field| field.type_ref == entity.identity.type_ref)
+            && view.field(EntitySpec::STATE).is_some_and(|field| field.type_ref == entity.state_field().type_ref)
+    }).ok_or_else(|| RefusalCause::NoWitness(WitnessGap {
+        path: format!("{}.subject_state", outcome.name),
+        type_ref: entity.name.to_string(),
+        reason: "subject-state selection requires a declared unfiltered immediate view projecting identity and lifecycle state",
+    }))?;
+    let name = ViewRef::new(view.name.clone());
+    let fields = [
+        (
+            entity.identity.name.clone(),
+            ScenarioValue::instance(instance.clone()),
+        ),
+        (
+            EntitySpec::STATE.to_owned(),
+            ScenarioValue::literal(Node::Text(state.to_string())),
+        ),
+    ]
+    .into_iter()
+    .collect();
+    let mut steps = Vec::new();
+    require(
+        view,
+        &name,
+        BTreeMap::new(),
+        ViewExpectation::Contains { fields },
+        &mut steps,
+    );
+    Ok((steps, name))
+}
+
+fn reach_external(
+    ir: &EssIr,
+    command: &ResolvedCommand,
+) -> Result<BTreeMap<String, Node>, RefusalCause> {
+    candidates(ir, command, &[], Distinction::PLAIN)
+        .map_err(RefusalCause::NoWitness)?
+        .into_iter()
+        .next()
+        .ok_or(RefusalCause::GuardUnsatisfiable {
+            predicate: "an admitted external-branch input".into(),
+            tried: 0,
+        })
+}
+
 /// The input that reaches this branch, decided rather than assumed.
 ///
 /// Branches on [`ResolvedOutcome::test_strategy`] and never on the predicate: the compiler decided
@@ -1793,6 +2070,14 @@ fn reach(
     outcome: &ResolvedOutcome,
     distinction: Distinction,
 ) -> Result<BTreeMap<String, Node>, RefusalCause> {
+    if let ResolvedCondition::SubjectState { state, .. } = &outcome.condition {
+        return reach_in_state(ir, command, outcome, state, distinction);
+    }
+    if has_subject_guards(command) {
+        return Err(RefusalCause::StrategyWithoutGuard {
+            strategy: outcome.test_strategy,
+        });
+    }
     let strategy = outcome.test_strategy;
     let guards: Vec<&Predicate> = match strategy {
         TestStrategy::ConstructInput => match when(outcome) {
@@ -1813,7 +2098,9 @@ fn reach(
         // *moving* branch and arranges the subject instead. Answering with "no guards" would hand
         // back an arbitrary candidate presented as the one that reaches the branch, which is the
         // invention this crate refuses everywhere else — so it is a drift alarm.
-        TestStrategy::ArrangeState => return Err(RefusalCause::StrategyWithoutGuard { strategy }),
+        TestStrategy::ArrangeState | TestStrategy::ConstructInputInState => {
+            return Err(RefusalCause::StrategyWithoutGuard { strategy })
+        }
     };
     let satisfy = strategy == TestStrategy::ConstructInput;
 
@@ -1821,6 +2108,22 @@ fn reach(
     for input in &inputs {
         let facts = flatten(ir, command, input).map_err(RefusalCause::WitnessRejected)?;
         if decides(&facts, &guards, satisfy)? {
+            if satisfy
+                && command
+                    .outcomes
+                    .iter()
+                    .all(|other| other.test_strategy != TestStrategy::DefaultBranch)
+            {
+                let others: Vec<_> = command
+                    .outcomes
+                    .iter()
+                    .filter(|other| other.name != outcome.name)
+                    .filter_map(when)
+                    .collect();
+                if !decides(&facts, &others, false)? {
+                    continue;
+                }
+            }
             return Ok(input.clone());
         }
     }
@@ -1934,6 +2237,7 @@ fn determined_payload(
     };
     for field in &determined.fields {
         match &field.value {
+            ResolvedPayloadValue::ResponseField { .. } | ResolvedPayloadValue::Generated => {}
             ResolvedPayloadValue::Literal { value } => {
                 values.insert(field.target.clone(), Node::Text(value.clone()));
             }
@@ -2612,6 +2916,9 @@ pub(crate) fn reachable_types(
 fn purpose(command: &ResolvedCommand, outcome: &ResolvedOutcome) -> ScenarioPurpose {
     let reached = match outcome.test_strategy {
         TestStrategy::ConstructInput => "an input that satisfies that branch's guard",
+        TestStrategy::ConstructInputInState => {
+            "an input selecting the branch in its established subject state"
+        }
         TestStrategy::DefaultBranch => "an input no other branch's guard claims",
         TestStrategy::InjectFault => "the cause it declares as external, injected",
         TestStrategy::ArrangeState => "a subject in a state its moves do not start from",
@@ -2676,6 +2983,10 @@ fn lifecycle(
         let movers: BTreeMap<&QualifiedName, BTreeSet<&StateName>> = drivers
             .iter()
             .filter(|driver| driver.effect.transition().is_some())
+            // Explicit held-state partitions already declare selection in every covered state;
+            // complementing only their moving branch would invent a wrong-state refusal where
+            // an updates branch intentionally preserves the state.
+            .filter(|driver| !has_subject_guards(driver.command))
             .map(|driver| (&driver.command.name, driver.command))
             .collect::<BTreeMap<_, _>>()
             .into_iter()
@@ -3445,7 +3756,7 @@ fn unpublished(
 /// Every declared type a command's input reaches.
 fn input_types(ir: &EssIr, command: &ResolvedCommand) -> BTreeSet<DeclaredTypeRef> {
     let mut types = BTreeSet::new();
-    for field in &command.input {
+    for field in command.input.iter().chain(&command.response) {
         reachable_types(ir, &field.type_ref, &mut types);
     }
     types
@@ -3467,9 +3778,14 @@ fn bindings(
     refusals: &mut Vec<Refusal>,
 ) {
     for binding in ir.bindings().values() {
+        if binding.cause.periodic().is_some() {
+            crate::periodic::synthesize(ir, binding, suite, refusals);
+            continue;
+        }
         let subject = BindingRef::new(binding.name.clone());
-        let event = EventRef::from(&binding.event);
-        let Some((publisher, published_by)) = publisher(ir, &binding.event) else {
+        let event_handle = binding.cause.event().expect("event cause");
+        let event = EventRef::from(event_handle);
+        let Some((publisher, published_by)) = publisher(ir, event_handle) else {
             refusals.push(Refusal {
                 subject: subject.clone().into(),
                 scenario: None,
@@ -3602,8 +3918,19 @@ fn mapping(
         .iter()
         .map(|mapped| {
             let value = match &mapped.value {
+                ResolvedMappingValue::HostContext { .. } | ResolvedMappingValue::HostRead { .. } => return Err(BindingGap::AccessorObservation { reason: "PeriodicHostMapping: no event supplies this input".into() }),
+                ResolvedMappingValue::Selection { selector, projection, .. } => {
+                    if mapped.conversion.is_some() { return Err(BindingGap::AccessorObservation { reason: "selection result requires an explicit host conversion".into() }); }
+                    let selection = crate::selection::Observation::of(ir, binding, *selector, projection, &mapped.target_type).map_err(|reason| BindingGap::AccessorObservation { reason })?;
+                    ScenarioValue::ObservedSelection { event: event.clone(), selection }
+                }
                 ResolvedMappingValue::EventField { field, .. } => {
                     ScenarioValue::observed(event.clone(), field.clone())
+                }
+                ResolvedMappingValue::EventAccessor { plan, types, .. } => {
+                    if mapped.conversion.is_some() { return Err(BindingGap::AccessorObservation { reason: format!("OpaqueAccessorConversion: {} to {} requires the declared host implementation", plan.path(), mapped.target_type) }); }
+                    let accessor = crate::accessor::Observation::of(ir, plan, types, &mapped.target_type).map_err(|reason| BindingGap::AccessorObservation { reason })?;
+                    ScenarioValue::ObservedAccessor { event: event.clone(), accessor }
                 }
                 // A literal reaches the model as text and fills a target that is a `String` or an
                 // enum underneath — `ess-domain` refuses any other target — so the text is the value
@@ -3612,9 +3939,9 @@ fn mapping(
                     ScenarioValue::literal(Node::Text(value.clone()))
                 }
             };
-            (mapped.target.clone(), value)
+            Ok((mapped.target.clone(), value))
         })
-        .collect();
+        .collect::<Result<_, BindingGap>>()?;
 
     let mut steps = trigger.steps();
     steps.push(ScenarioStep::ExpectEvent {
@@ -3874,7 +4201,7 @@ fn binding_source(
 ) -> BTreeSet<EssSemanticRef> {
     let mut source = trigger.source.clone();
     source.insert(BindingRef::new(binding.name.clone()).into());
-    source.insert(EventRef::from(&binding.event).into());
+    source.insert(EventRef::from(binding.cause.event().expect("event branch")).into());
     let command_ref = CommandRef::new(publisher.name.clone());
     source.insert(command_ref.clone().into());
     source.insert(OutcomeRef::new(command_ref, published_by.name.clone()).into());

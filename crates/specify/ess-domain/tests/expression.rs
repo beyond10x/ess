@@ -83,6 +83,7 @@ fn registry() -> TypeRegistry {
     ] {
         registry
             .insert(NamedType {
+                reading: None,
                 name: name.parse().unwrap(),
                 body,
                 naming: Naming::default(),
@@ -394,4 +395,50 @@ fn failed_operands_suppress_cascades_and_keep_stable_independent_errors() {
     let missing = resolve_path(&env, &path("broken"), "owner").unwrap_err();
     assert_eq!(missing.code, ValidationCode::UndeclaredReference);
     assert!(missing.message.contains("sample.Missing"));
+}
+
+#[test]
+fn clock_reading_provenance_cannot_be_erased_by_generic_comparison_or_wrappers() {
+    let mut types = registry();
+    types
+        .insert(NamedType {
+            name: "sample.Clock".parse().unwrap(),
+            naming: Naming::default(),
+            body: TypeBody::Newtype {
+                of: TypeRef::parse("String").unwrap(),
+                invariants: vec![],
+            },
+            reading: Some(ess_domain::reading::ReadingContract {
+                encoding: ess_domain::reading::ReadingEncoding::OffsetDateTimeText,
+                origins: vec![ess_domain::reading::ReadingOrigin {
+                    role: ess_domain::reading::ReadingRole::ProducerProcess,
+                    offset: ess_domain::reading::OffsetAuthority::EncodedOffset,
+                }],
+            }),
+        })
+        .unwrap();
+    types
+        .insert(NamedType {
+            name: "sample.ClockWrapper".parse().unwrap(),
+            naming: Naming::default(),
+            body: TypeBody::Newtype {
+                of: TypeRef::parse("sample.Clock").unwrap(),
+                invariants: vec![],
+            },
+            reading: None,
+        })
+        .unwrap();
+    let fields = [
+        field("direct", "sample.Clock"),
+        field("wrapped", "sample.ClockWrapper"),
+        field("legacy", "Timestamp"),
+    ];
+    let environment = DomainEnvironment::new(&types, &fields);
+    for name in ["direct", "wrapped"] {
+        assert!(
+            resolve_path(&environment, &path(name), "clock witness").is_err(),
+            "{name}"
+        );
+    }
+    assert!(resolve_path(&environment, &path("legacy"), "clock witness").is_ok());
 }

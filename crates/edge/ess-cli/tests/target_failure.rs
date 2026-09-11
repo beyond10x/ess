@@ -6,6 +6,92 @@ use std::process::Command;
 const OWNER_SYSTEM: &str = "format: ess/1\nsystem: demo\nversion: v1\ndomains: [demo.core]\ntypes:\n  - {name: demo.Code, kind: newtype, of: String}\n";
 const OWNER_CORE: &str = "domain: demo.core\n";
 
+#[test]
+fn accessor_models_version_early_target_failures_before_output_writes() {
+    let source = include_str!("fixtures/bounded-accessor.yaml");
+    for (target, model, cause) in [
+        (
+            "rust",
+            source.replace("accessor.core", "accessor.lib"),
+            "path-collision",
+        ),
+        (
+            "web",
+            source.replace("accessor.core", "accessor.lib"),
+            "path-collision",
+        ),
+        (
+            "go",
+            source.replacen(
+                "types:\n",
+                "types:\n  - {name: accessor.Unowned, kind: newtype, of: String}\n",
+                1,
+            ),
+            "missing-type-owner",
+        ),
+        (
+            "clap",
+            source.replacen(
+                "types:\n",
+                "types:\n  - {name: accessor.core.Ratio, kind: newtype, of: Binary64}\n",
+                1,
+            ),
+            "missing-representation",
+        ),
+    ] {
+        let dir = tempfile::tempdir().unwrap();
+        let spec = dir.path().join("system.yaml");
+        std::fs::write(&spec, model).unwrap();
+        for existing in [false, true] {
+            let destination = dir
+                .path()
+                .join(if existing { "existing" } else { "absent" });
+            if existing {
+                std::fs::create_dir(&destination).unwrap();
+                std::fs::write(destination.join("plan.json"), "untouched\n").unwrap();
+            }
+            for format in ["json", "yaml"] {
+                let output = Command::new(env!("CARGO_BIN_EXE_ess"))
+                    .args(["synthesize", "--path"])
+                    .arg(&spec)
+                    .args(["--target", target, "--format", format, "--out"])
+                    .arg(&destination)
+                    .output()
+                    .unwrap();
+                assert_eq!(output.status.code(), Some(1), "{target}: {output:?}");
+                assert!(output.stderr.is_empty(), "{target}: {output:?}");
+                let failure: serde_json::Value = if format == "json" {
+                    serde_json::from_slice(&output.stdout).unwrap()
+                } else {
+                    serde_yaml::from_slice(&output.stdout).unwrap()
+                };
+                assert_eq!(
+                    failure["format"], "ess-target-failure/3",
+                    "{target}: {failure}"
+                );
+                assert_eq!(failure["target"], target);
+                assert!(
+                    failure["causes"]
+                        .as_array()
+                        .unwrap()
+                        .iter()
+                        .any(|row| row["code"] == cause),
+                    "{target}: {failure}"
+                );
+                if existing {
+                    assert_eq!(
+                        std::fs::read_to_string(destination.join("plan.json")).unwrap(),
+                        "untouched\n"
+                    );
+                    assert_eq!(std::fs::read_dir(&destination).unwrap().count(), 1);
+                } else {
+                    assert!(!destination.exists());
+                }
+            }
+        }
+    }
+}
+
 fn owner_plan() -> serde_json::Value {
     let mut sources = ess_compiler::source::SourceMap::new();
     let files = [("system.yaml", OWNER_SYSTEM), ("core.yaml", OWNER_CORE)]

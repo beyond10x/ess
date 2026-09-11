@@ -1157,8 +1157,15 @@ fn no_source_file_in_this_crate_reads_a_clock_or_an_unordered_map() {
             scanned += 1;
             let text = std::fs::read_to_string(&path).expect("a source file is readable");
             for token in banned {
+                // At a token boundary: `Operand::` ends in `rand::` and is a type this crate
+                // names, so a bare substring scan reports a generator that reads no clock.
+                let mentioned = text.match_indices(token).any(|(index, _)| {
+                    index == 0
+                        || !text.as_bytes()[index - 1].is_ascii_alphanumeric()
+                            && text.as_bytes()[index - 1] != b'_'
+                });
                 assert!(
-                    !text.contains(token),
+                    !mentioned,
                     "{} mentions `{token}`, which invariant 9 bans from a generator",
                     path.display()
                 );

@@ -1095,7 +1095,11 @@ fn command_handler(
         let _ = writeln!(out, "\t\tbody[\"outcome\"] = {:?}", outcome.name.as_str());
         if let Some(handle) = &outcome.error {
             let declared = emit.ir.error(handle);
-            let _ = writeln!(out, "\t\tbody[\"error\"] = {:?}", declared.name.to_string());
+            let _ = writeln!(
+                out,
+                "\t\tbody[\"error\"] = {}",
+                serde_json::to_string(&declared.wire_code()).expect("a string always serializes")
+            );
             if declared.fields.is_empty() {
                 out.push_str("\t\t_ = taken\n");
             } else {

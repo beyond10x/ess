@@ -150,6 +150,9 @@
 //! for [`UnknownState`](ValidationCode::UnknownState), which an AEP workflow and an ESS lifecycle
 //! have shared since wave 1.
 
+pub mod finite;
+pub mod subject_state;
+
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt;
 use std::fmt::Write as _;
@@ -321,8 +324,15 @@ impl schemars::JsonSchema for OutcomeName {
 pub enum OutcomeCondition {
     /// Taken when this predicate over the command's input holds.
     When(Predicate),
-    /// The default branch: taken when no conditional outcome matched. At most one per command, and
-    /// at least one, so that no input falls through every branch unspecified.
+    /// Taken when the named existing subject is in this state and the optional input guard holds.
+    SubjectState {
+        /// The held lifecycle state, read from the subject rather than the input.
+        state: crate::entity::StateName,
+        /// An additional predicate over the unchanged command-input namespace.
+        predicate: Option<Predicate>,
+    },
+    /// The default branch: taken when no conditional outcome matched. At most one per command;
+    /// it may be omitted when a closed-enum proof establishes unique complete input coverage.
     Otherwise,
     /// Determined by something outside the input: a provider refuses, a network fails, a downstream
     /// service is down.
@@ -351,6 +361,7 @@ impl OutcomeCondition {
     pub fn predicate(&self) -> Option<&Predicate> {
         match self {
             Self::When(predicate) => Some(predicate),
+            Self::SubjectState { predicate, .. } => predicate.as_ref(),
             Self::Otherwise | Self::External { .. } | Self::WrongState => None,
         }
     }
@@ -359,7 +370,7 @@ impl OutcomeCondition {
     pub fn cause(&self) -> Option<&str> {
         match self {
             Self::External { cause } => Some(cause),
-            Self::When(_) | Self::Otherwise | Self::WrongState => None,
+            Self::When(_) | Self::SubjectState { .. } | Self::Otherwise | Self::WrongState => None,
         }
     }
 
@@ -367,6 +378,7 @@ impl OutcomeCondition {
     pub fn test_strategy(&self) -> TestStrategy {
         match self {
             Self::When(_) => TestStrategy::ConstructInput,
+            Self::SubjectState { .. } => TestStrategy::ConstructInputInState,
             Self::Otherwise => TestStrategy::DefaultBranch,
             Self::External { .. } => TestStrategy::InjectFault,
             Self::WrongState => TestStrategy::ArrangeState,
@@ -387,6 +399,8 @@ impl OutcomeCondition {
 pub enum TestStrategy {
     /// Build an input satisfying the outcome's `when`.
     ConstructInput,
+    /// Establish the declared held state, then construct an input satisfying the branch guard.
+    ConstructInputInState,
     /// Build an input that matches no other outcome's `when`.
     DefaultBranch,
     /// Fault-inject the declared cause; no input reaches this branch.
@@ -405,6 +419,7 @@ impl TestStrategy {
     pub fn as_str(self) -> &'static str {
         match self {
             Self::ConstructInput => "construct_input",
+            Self::ConstructInputInState => "construct_input_in_state",
             Self::DefaultBranch => "default_branch",
             Self::InjectFault => "inject_fault",
             Self::ArrangeState => "arrange_state",
@@ -603,10 +618,19 @@ impl fmt::Display for InstanceSurface {
 /// value is the implementation's to choose — `InvoiceCreated.invoice_id` is exactly that, an
 /// identity the caller cannot know — so it stays **undetermined**, a fact a synthesized suite shows
 /// by asserting the field's presence and type and never its value. There is no
-/// `unmapped_payload_field` refusal, and that is a decision rather than an omission.
+/// `unmapped_payload_field` refusal for legacy ess/1–3 specifications. In ess/4 every emitted
+/// field has an explicit source: `{generated: true}` retains this implementation ownership,
+/// while `{response: field}` reads a declared field of the actual command response.
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
 #[serde(rename_all = "snake_case", tag = "kind")]
 pub enum PayloadSource {
+    /// A field of the actual returned command response.
+    ResponseField {
+        /// The declared response field.
+        field: String,
+    },
+    /// The implementation chooses this field, subject to its declared type.
+    Generated,
     /// A field of the command's declared input: `input.amount`.
     InputField {
         /// The field's name.
@@ -647,6 +671,8 @@ impl fmt::Display for PayloadSource {
         match self {
             Self::InputField { field } => write!(f, "{}{field}", Self::INPUT_PREFIX),
             Self::Literal { value } => f.write_str(value),
+            Self::ResponseField { field } => write!(f, "response field `{field}`"),
+            Self::Generated => f.write_str("implementation-generated"),
         }
     }
 }
@@ -658,6 +684,88 @@ pub struct PayloadField {
     pub target: String,
     /// Where the value comes from.
     pub source: PayloadSource,
+}
+
+/// Closed authored payload source; strings retain their original interpretation.
+#[derive(serde::Serialize, schemars::JsonSchema)]
+#[serde(untagged)]
+enum RawPayloadSource {
+    Text(String),
+    Explicit(ExplicitPayloadSource),
+}
+
+/// Read by shape rather than by `#[serde(untagged)]`, which reports only that no variant matched
+/// and loses the reader boundary a wrong scalar crosses — the one thing a document author needs.
+impl<'de> serde::Deserialize<'de> for RawPayloadSource {
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        struct Source;
+
+        impl<'de> serde::de::Visitor<'de> for Source {
+            type Value = RawPayloadSource;
+
+            fn expecting(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+                f.write_str("a string, `{response: <field>}`, or `{generated: true}`")
+            }
+
+            fn visit_str<E: serde::de::Error>(self, value: &str) -> Result<Self::Value, E> {
+                Ok(RawPayloadSource::Text(value.to_owned()))
+            }
+
+            fn visit_map<A: serde::de::MapAccess<'de>>(
+                self,
+                map: A,
+            ) -> Result<Self::Value, A::Error> {
+                <ExplicitPayloadSource as serde::Deserialize>::deserialize(
+                    serde::de::value::MapAccessDeserializer::new(map),
+                )
+                .map(RawPayloadSource::Explicit)
+            }
+        }
+
+        deserializer.deserialize_any(Source)
+    }
+}
+#[derive(serde::Serialize, serde::Deserialize, schemars::JsonSchema)]
+#[serde(deny_unknown_fields)]
+struct ExplicitPayloadSource {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    response: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    generated: Option<bool>,
+}
+impl TryFrom<RawPayloadSource> for PayloadSource {
+    type Error = &'static str;
+    fn try_from(raw: RawPayloadSource) -> Result<Self, Self::Error> {
+        match raw {
+            RawPayloadSource::Text(value) => Ok(Self::parse(&value)),
+            RawPayloadSource::Explicit(ExplicitPayloadSource {
+                response: Some(field),
+                generated: None,
+            }) if !field.is_empty() && !field.contains('.') => Ok(Self::ResponseField { field }),
+            RawPayloadSource::Explicit(ExplicitPayloadSource {
+                response: None,
+                generated: Some(true),
+            }) => Ok(Self::Generated),
+            RawPayloadSource::Explicit(_) => {
+                Err("payload source requires exactly {response: field} or {generated: true}")
+            }
+        }
+    }
+}
+impl From<&PayloadSource> for RawPayloadSource {
+    fn from(source: &PayloadSource) -> Self {
+        match source {
+            PayloadSource::ResponseField { field } => Self::Explicit(ExplicitPayloadSource {
+                response: Some(field.clone()),
+                generated: None,
+            }),
+            PayloadSource::Generated => Self::Explicit(ExplicitPayloadSource {
+                response: None,
+                generated: Some(true),
+            }),
+            _ => Self::Text(source.to_string()),
+        }
+    }
 }
 
 /// One event's payload sources, as a document says them: one entry per line, in the order written.
@@ -693,10 +801,10 @@ impl<'de> serde::Deserialize<'de> for PayloadTable {
                 mut map: A,
             ) -> Result<Self::Value, A::Error> {
                 let mut entries = Vec::new();
-                while let Some((target, source)) = map.next_entry::<String, String>()? {
+                while let Some((target, source)) = map.next_entry::<String, RawPayloadSource>()? {
                     entries.push(PayloadField {
                         target,
-                        source: PayloadSource::parse(&source),
+                        source: source.try_into().map_err(serde::de::Error::custom)?,
                     });
                 }
                 Ok(PayloadTable(entries))
@@ -713,7 +821,7 @@ impl serde::Serialize for PayloadTable {
 
         let mut map = serializer.serialize_map(Some(self.0.len()))?;
         for entry in &self.0 {
-            map.serialize_entry(&entry.target, &entry.source.to_string())?;
+            map.serialize_entry(&entry.target, &RawPayloadSource::from(&entry.source))?;
         }
         map.end()
     }
@@ -735,7 +843,8 @@ impl schemars::JsonSchema for PayloadTable {
             instance_type: Some(schemars::schema::InstanceType::Object.into()),
             ..Default::default()
         };
-        schema.object().additional_properties = Some(Box::new(generator.subschema_for::<String>()));
+        schema.object().additional_properties =
+            Some(Box::new(generator.subschema_for::<RawPayloadSource>()));
         schema.into()
     }
 }
@@ -949,7 +1058,9 @@ impl Outcome {
         match &self.condition {
             OutcomeCondition::Otherwise => true,
             OutcomeCondition::When(predicate) => predicate.is_trivially_true(),
-            OutcomeCondition::External { .. } | OutcomeCondition::WrongState => false,
+            OutcomeCondition::SubjectState { .. }
+            | OutcomeCondition::External { .. }
+            | OutcomeCondition::WrongState => false,
         }
     }
 
@@ -990,7 +1101,10 @@ pub struct CommandSpec {
     pub name: QualifiedName,
     /// What the caller supplies, in declaration order.
     pub input: Vec<Field>,
-    /// Everything this command can result in. At least one, exactly one of them unconditional.
+    /// Closed fields of the response returned by this command.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub response: Vec<Field>,
+    /// Everything this command can result in. At least one, with a default or proven finite coverage.
     pub outcomes: Vec<Outcome>,
     /// What it is called on the wire and shown as.
     pub naming: Naming,
@@ -1069,6 +1183,15 @@ impl CommandSpec {
 
         let (inputs, input_errors) = self.declared_input();
         errors.extend(input_errors);
+        errors.extend(field_shape_at(&self.response, &self.site().key("response")));
+        if let Some(types) = types {
+            for field in &self.response {
+                errors.extend(types.resolve_at(
+                    &field.type_ref,
+                    &self.site().key("response").named(field.name.as_str()),
+                ));
+            }
+        }
 
         let mut seen: BTreeSet<&str> = BTreeSet::new();
         for outcome in &self.outcomes {
@@ -1094,7 +1217,7 @@ impl CommandSpec {
             });
         }
 
-        errors.extend(self.validate_branch_coverage());
+        errors.extend(self.validate_branch_coverage(types));
         errors
     }
 
@@ -1452,14 +1575,23 @@ impl CommandSpec {
         errors
     }
 
-    /// Checks that exactly one branch catches the input no other branch claims, and that at least
-    /// one branch is reachable by choosing an input at all.
-    fn validate_branch_coverage(&self) -> ValidationErrors {
+    /// Checks for one default or a complete finite partition, and at least one input-testable branch.
+    fn validate_branch_coverage(&self, types: Option<&TypeRegistry>) -> ValidationErrors {
         let mut errors = ValidationErrors::new();
 
         if self.outcomes.is_empty() {
             // Already reported as a command with no outcomes; saying it three more ways is noise.
             return errors;
+        }
+
+        // A subject-state command needs the complete entity declarations. Its joint coverage
+        // and subject authority are checked by subject_state::validate at specification assembly.
+        if self
+            .outcomes
+            .iter()
+            .any(|outcome| matches!(outcome.condition, OutcomeCondition::SubjectState { .. }))
+        {
+            return subject_state::validate_shape(self);
         }
 
         let unconditional: Vec<&OutcomeName> = self
@@ -1474,40 +1606,103 @@ impl CommandSpec {
             .filter(|outcome| outcome.is_testable_from_input())
             .count();
 
-        match unconditional.len() {
-            0 => errors.push(
+        let finite = if unconditional.is_empty() {
+            self.finite_coverage(types)
+        } else {
+            None
+        };
+
+        match (unconditional.len(), finite) {
+            (0, Some(finite)) => errors.extend(finite),
+            (0, None) => errors.push(
                 ValidationError::at(
                     self.site().key("outcomes"),
-                    // Not `DeadEndState`: that is what an entity whose lifecycle wedges emits, and
-                    // one code for two subjects is a consumer that cannot tell which to repair.
                     ValidationCode::NonExhaustiveBranches,
-                    format!(
-                        "every outcome of `{}` is conditional, so there is input the \
-                             specification says nothing about",
-                        self.name
-                    ),
-                )
-                .with_hint(
-                    "drop the `when` from the branch that catches everything else — usually \
-                         the rejection",
-                ),
+                    format!("every outcome of `{}` is conditional, so there is input the specification says nothing about", self.name),
+                ).with_hint("drop the `when` from the branch that catches everything else — usually the rejection"),
             ),
-            1 => {}
+            (1, _) => {}
             _ => errors.push(
                 ValidationError::at(
                     self.site().key("outcomes"),
                     ValidationCode::ConflictingDeclaration,
-                    format!(
-                        "outcomes {} are all unconditional, so the result of `{}` is not \
-                             determined by its input",
-                        join(unconditional.iter()),
-                        self.name
-                    ),
-                )
-                .with_hint("give all but one of them a `when`"),
+                    format!("outcomes {} are all unconditional, so the result of `{}` is not determined by its input", join(unconditional.iter()), self.name),
+                ).with_hint("give all but one of them a `when`"),
             ),
         }
 
+        errors.extend(self.validate_reachable_and_wrong_state(decidable_from_input));
+        errors
+    }
+
+    /// None means this command still needs a default; Some contains the finite proof's diagnostics.
+    fn finite_coverage(&self, types: Option<&TypeRegistry>) -> Option<ValidationErrors> {
+        let guarded: Vec<_> = self
+            .outcomes
+            .iter()
+            .filter_map(|outcome| {
+                outcome
+                    .condition
+                    .predicate()
+                    .map(|predicate| (outcome, predicate))
+            })
+            .collect();
+        let guards: Vec<_> = guarded.iter().map(|(_, predicate)| *predicate).collect();
+        let finite = types.and_then(|types| {
+            finite::analyze(
+                &crate::expression::DomainEnvironment::new(types, &self.input),
+                &guards,
+            )
+        });
+        let deferred = types.is_none()
+            && finite::paths(&guards).is_some_and(|paths| {
+                paths.iter().all(|path| {
+                    self.input.iter().any(|field| {
+                        field.name == path.namespace()
+                            && matches!(field.type_ref, crate::TypeRef::Named(_))
+                    })
+                })
+            });
+
+        if deferred {
+            return Some(ValidationErrors::new());
+        }
+        let mut errors = ValidationErrors::new();
+        for case in finite?.into_iter().filter(|case| case.selected.len() != 1) {
+            let assignment = case
+                .values
+                .iter()
+                .map(|(path, value)| format!("{path} = {value}"))
+                .collect::<Vec<_>>()
+                .join(", ");
+            let (code, message) = if case.selected.is_empty() {
+                (
+                    ValidationCode::NonExhaustiveBranches,
+                    format!("uncovered declared input for `{}`: {assignment}", self.name),
+                )
+            } else {
+                let branches = case
+                    .selected
+                    .iter()
+                    .map(|index| guarded[*index].0.name.to_string())
+                    .collect::<Vec<_>>()
+                    .join(", ");
+                (
+                    ValidationCode::ConflictingDeclaration,
+                    format!("outcomes {branches} overlap for declared input {assignment}"),
+                )
+            };
+            errors.push(ValidationError::at(
+                self.site().key("outcomes"),
+                code,
+                message,
+            ));
+        }
+        Some(errors)
+    }
+
+    fn validate_reachable_and_wrong_state(&self, decidable_from_input: usize) -> ValidationErrors {
+        let mut errors = ValidationErrors::new();
         if decidable_from_input == 0 {
             errors.push(
                 ValidationError::at(
@@ -1617,8 +1812,8 @@ impl CommandSpec {
 /// in both the target field must exist, the two types must agree or a conversion must be declared,
 /// and a literal is text checked as far as text can be.
 ///
-/// What is deliberately *not* here is an `unmapped_payload_field`: an event field with no source is
-/// undetermined, not incomplete — see [`PayloadSource`].
+/// Source-version-specific completeness is checked by `validate_response_contracts`: legacy
+/// omitted sources remain undetermined; ess/4 requires explicit mapping or generated ownership.
 pub fn validate_payloads(
     commands: &BTreeMap<QualifiedName, CommandSpec>,
     events: &BTreeMap<QualifiedName, EventSpec>,
@@ -1684,10 +1879,24 @@ fn check_payload_entry(
     };
 
     match source {
-        PayloadSource::InputField { field } => {
+        PayloadSource::Generated => {}
+        PayloadSource::InputField { field } | PayloadSource::ResponseField { field } => {
             // An input nothing declares was already reported by the outcome's own shape check,
             // and the type of a field that does not exist is not a second finding.
-            let Some(read) = command.input_field(field) else {
+            let read = if matches!(source, PayloadSource::ResponseField { .. }) {
+                command.response.iter().find(|read| &read.name == field)
+            } else {
+                command.input_field(field)
+            };
+            let Some(read) = read else {
+                errors.push(ValidationError::at(
+                    at.clone(),
+                    ValidationCode::UndeclaredReference,
+                    format!(
+                        "`{source}` has no declared source field on `{}`",
+                        command.name
+                    ),
+                ));
                 return errors;
             };
             if conversions.permits(&read.type_ref, &filled.type_ref) {
@@ -1715,6 +1924,65 @@ fn check_payload_entry(
             errors.extend(check_payload_literal(
                 at, command, event, target, filled, value, types,
             ));
+        }
+    }
+    errors
+}
+
+/// Admit response vocabulary and the source-version-specific emitted payload completeness rule.
+pub(crate) fn validate_response_contracts(spec: &crate::Specification) -> ValidationErrors {
+    let mut errors = ValidationErrors::new();
+    let modern = spec.system().format.major() >= 4;
+    for command in spec.commands().values() {
+        if !modern && !command.response.is_empty() {
+            errors.push(ValidationError::at(
+                command.site().key("response"),
+                ValidationCode::UnsupportedFormatVersion,
+                "typed response declarations require specification format ess/4",
+            ));
+        }
+        for outcome in &command.outcomes {
+            let at = command.site().key("outcomes").named(outcome.name.as_str());
+            for (field, source) in &outcome.sets {
+                if matches!(
+                    source,
+                    PayloadSource::ResponseField { .. } | PayloadSource::Generated
+                ) {
+                    errors.push(ValidationError::at(
+                        at.clone().key("sets").named(field),
+                        ValidationCode::ConflictingDeclaration,
+                        "response and generated sources are admitted only in event payloads",
+                    ));
+                }
+            }
+            for (event, fields) in &outcome.payload {
+                for (field, source) in fields {
+                    if !modern
+                        && matches!(
+                            source,
+                            PayloadSource::ResponseField { .. } | PayloadSource::Generated
+                        )
+                    {
+                        errors.push(ValidationError::at(at.clone().key("payload").named(event.to_string()).named(field), ValidationCode::UnsupportedFormatVersion, "explicit response/generated payload sources require specification format ess/4"));
+                    }
+                }
+            }
+            if modern {
+                for name in &outcome.emits {
+                    let Some(event) = spec.events().get(name) else {
+                        continue;
+                    };
+                    for field in &event.fields {
+                        if !outcome
+                            .payload
+                            .get(name)
+                            .is_some_and(|fields| fields.contains_key(&field.name))
+                        {
+                            errors.push(ValidationError::at(at.clone().key("payload").named(name.to_string()).named(&field.name), ValidationCode::MissingDeclaration, "emitted payload field has no source; declare a mapping or {generated: true} ownership"));
+                        }
+                    }
+                }
+            }
         }
     }
     errors
@@ -1955,6 +2223,8 @@ impl EventSpec {
 pub struct ErrorSpec {
     /// Its stable identity.
     pub name: QualifiedName,
+    /// Explicit transport spelling and presentation metadata, separate from identity.
+    pub naming: Naming,
     /// One line saying what went wrong, for the person who receives it.
     pub summary: Option<String>,
     /// What the error carries, when it carries anything beyond its name.
@@ -1966,6 +2236,7 @@ impl ErrorSpec {
     pub fn new(name: QualifiedName, summary: impl Into<String>) -> Self {
         Self {
             name,
+            naming: Naming::default(),
             summary: Some(summary.into()),
             fields: Vec::new(),
         }
@@ -1985,6 +2256,24 @@ impl ErrorSpec {
 }
 
 /// Reports a field name used twice in one place.
+/// The same check against a typed site, so a refusal carries the construct it is about and keeps
+/// its family. A `command.…` location written as a literal loses both — see
+/// `docs/design/review-typed-diagnostics.md`.
+fn field_shape_at(fields: &[Field], at: &ConstructRef) -> ValidationErrors {
+    let mut errors = ValidationErrors::new();
+    let mut seen: BTreeSet<&str> = BTreeSet::new();
+    for (index, field) in fields.iter().enumerate() {
+        if !seen.insert(field.name.as_str()) {
+            errors.push(ValidationError::at(
+                at.clone().key("fields").index(index),
+                ValidationCode::DuplicateDeclaration,
+                format!("field `{}` is declared more than once", field.name),
+            ));
+        }
+    }
+    errors
+}
+
 fn field_shape(fields: &[Field], location: &str) -> ValidationErrors {
     let mut errors = ValidationErrors::new();
     let mut seen: BTreeSet<&str> = BTreeSet::new();
@@ -2019,6 +2308,9 @@ pub struct RawCommandSpec {
     /// What the caller supplies.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub input: Vec<Field>,
+    /// Closed fields of the response returned by this command.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub response: Vec<Field>,
     /// Everything it can result in.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub outcomes: Vec<RawOutcome>,
@@ -2049,6 +2341,9 @@ pub struct RawOutcome {
     /// A predicate over the command's input.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub when: Option<Predicate>,
+    /// Equality against the existing subject's declared lifecycle state, composed with `when`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub when_subject_state: Option<crate::entity::StateName>,
     /// What outside the input decides this branch.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub external: Option<String>,
@@ -2150,6 +2445,9 @@ pub struct RawEventSpec {
 pub struct RawErrorSpec {
     /// Its stable identity.
     pub name: QualifiedName,
+    /// Explicit transport spelling and presentation metadata.
+    #[serde(default, skip_serializing_if = "Naming::is_empty")]
+    pub naming: Naming,
     /// One line saying what went wrong.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub summary: Option<String>,
@@ -2174,44 +2472,58 @@ impl TryFrom<RawOutcome> for Outcome {
                 .with_hint(hint.to_owned()),
             )
         };
-        let condition = match (raw.when, raw.external, raw.wrong_state) {
-            (Some(_), Some(_), _) => {
-                return Err(conflict(
-                    "when",
-                    format!(
+        if raw.when_subject_state.is_some() && (raw.external.is_some() || raw.wrong_state) {
+            return Err(conflict(
+                "when_subject_state",
+                "an explicit subject-state guard cannot also be external or wrong_state".to_owned(),
+                "declare one condition authority",
+            ));
+        }
+        let condition = if let Some(state) = raw.when_subject_state {
+            OutcomeCondition::SubjectState {
+                state,
+                predicate: raw.when,
+            }
+        } else {
+            match (raw.when, raw.external, raw.wrong_state) {
+                (Some(_), Some(_), _) => {
+                    return Err(conflict(
+                        "when",
+                        format!(
                         "outcome `{}` declares both a `when` predicate and an `external` cause; a \
                          branch is either decided by the input or it is not",
                         raw.name
                     ),
-                    "keep `external` and drop the predicate, or the other way round",
-                ));
-            }
-            (Some(_), None, true) => {
-                return Err(conflict(
-                    "when",
-                    format!(
+                        "keep `external` and drop the predicate, or the other way round",
+                    ));
+                }
+                (Some(_), None, true) => {
+                    return Err(conflict(
+                        "when",
+                        format!(
                         "outcome `{}` declares both a `when` predicate and `wrong_state`; a branch \
                          the subject's state decides is not one the input decides",
                         raw.name
                     ),
-                    "keep `wrong_state` and drop the predicate, or the other way round",
-                ));
-            }
-            (None, Some(_), true) => {
-                return Err(conflict(
-                    "external",
-                    format!(
+                        "keep `wrong_state` and drop the predicate, or the other way round",
+                    ));
+                }
+                (None, Some(_), true) => {
+                    return Err(conflict(
+                        "external",
+                        format!(
                         "outcome `{}` declares both an `external` cause and `wrong_state`; the \
                          subject's own state is not something outside the system",
                         raw.name
                     ),
-                    "keep `wrong_state` and drop `external`, or the other way round",
-                ));
+                        "keep `wrong_state` and drop `external`, or the other way round",
+                    ));
+                }
+                (Some(predicate), None, false) => OutcomeCondition::When(predicate),
+                (None, Some(cause), false) => OutcomeCondition::External { cause },
+                (None, None, true) => OutcomeCondition::WrongState,
+                (None, None, false) => OutcomeCondition::Otherwise,
             }
-            (Some(predicate), None, false) => OutcomeCondition::When(predicate),
-            (None, Some(cause), false) => OutcomeCondition::External { cause },
-            (None, None, true) => OutcomeCondition::WrongState,
-            (None, None, false) => OutcomeCondition::Otherwise,
         };
         // `refuses:` answers a question only a wrong-state branch is asked. On any other branch it
         // reads like a claim about the outcome and decides nothing, so it is refused where the
@@ -2229,15 +2541,24 @@ impl TryFrom<RawOutcome> for Outcome {
         }
         let refuses = raw.refuses.unwrap_or(true);
         let subject = subject_of(&raw.name, raw.creates, raw.moves, raw.updates, raw.instance)?;
-        let payload = keyed_payload(&raw.name, raw.payload)?;
-        let sets = keyed_sets(&raw.name, raw.sets)?;
+        if matches!(condition, OutcomeCondition::SubjectState { .. })
+            && !subject
+                .as_ref()
+                .is_some_and(|subject| subject.surface() == InstanceSurface::CommandInput)
+        {
+            return Err(conflict(
+                "when_subject_state",
+                "a subject-state guard requires an existing moves or updates subject and input identity".to_owned(),
+                "name the existing subject with moves or updates and instance",
+            ));
+        }
         Ok(Self {
+            payload: keyed_payload(&raw.name, raw.payload)?,
+            sets: keyed_sets(&raw.name, raw.sets)?,
             name: raw.name,
             condition,
             subject,
             emits: raw.emits,
-            payload,
-            sets,
             error: raw.error,
             refuses,
             summary: raw.summary,
@@ -2458,6 +2779,7 @@ impl TryFrom<RawCommandSpec> for CommandSpec {
         let spec = Self {
             name: raw.name,
             input: raw.input,
+            response: raw.response,
             outcomes,
             naming: raw.naming,
             refs: raw.refs,
@@ -2486,6 +2808,7 @@ impl TryFrom<RawErrorSpec> for ErrorSpec {
     fn try_from(raw: RawErrorSpec) -> Result<Self, Self::Error> {
         let spec = Self {
             name: raw.name,
+            naming: raw.naming,
             summary: raw.summary,
             fields: raw.fields,
         };
@@ -2495,11 +2818,14 @@ impl TryFrom<RawErrorSpec> for ErrorSpec {
 
 impl From<Outcome> for RawOutcome {
     fn from(outcome: Outcome) -> Self {
-        let (when, external, wrong_state) = match outcome.condition {
-            OutcomeCondition::When(predicate) => (Some(predicate), None, false),
-            OutcomeCondition::Otherwise => (None, None, false),
-            OutcomeCondition::External { cause } => (None, Some(cause), false),
-            OutcomeCondition::WrongState => (None, None, true),
+        let (when, when_subject_state, external, wrong_state) = match outcome.condition {
+            OutcomeCondition::When(predicate) => (Some(predicate), None, None, false),
+            OutcomeCondition::SubjectState { state, predicate } => {
+                (predicate, Some(state), None, false)
+            }
+            OutcomeCondition::Otherwise => (None, None, None, false),
+            OutcomeCondition::External { cause } => (None, None, Some(cause), false),
+            OutcomeCondition::WrongState => (None, None, None, true),
         };
         let (creates, moves, updates, instance) = match outcome.subject {
             None => (None, None, None, None),
@@ -2539,6 +2865,7 @@ impl From<Outcome> for RawOutcome {
         Self {
             name: outcome.name,
             when,
+            when_subject_state,
             external,
             wrong_state,
             // Written back only where it says something. On any branch but a refusing wrong-state
@@ -2570,6 +2897,7 @@ impl From<CommandSpec> for RawCommandSpec {
         Self {
             name: command.name,
             input: command.input,
+            response: command.response,
             outcomes: command.outcomes.into_iter().map(RawOutcome::from).collect(),
             naming: command.naming,
             refs: command.refs,
@@ -2591,6 +2919,7 @@ impl From<ErrorSpec> for RawErrorSpec {
     fn from(error: ErrorSpec) -> Self {
         Self {
             name: error.name,
+            naming: error.naming,
             summary: error.summary,
             fields: error.fields,
         }
@@ -2616,6 +2945,7 @@ mod tests {
         let mut registry = TypeRegistry::new();
         registry
             .insert(NamedType {
+                reading: None,
                 name: name("billing.invoice.Email"),
                 body: TypeBody::Newtype {
                     of: TypeRef::Primitive(Primitive::String),
@@ -2626,6 +2956,7 @@ mod tests {
             .expect("new");
         registry
             .insert(NamedType {
+                reading: None,
                 name: name("billing.invoice.Money"),
                 body: TypeBody::Struct {
                     fields: vec![
@@ -2680,6 +3011,7 @@ outcomes:
                 "amount",
                 TypeRef::Named(name("billing.invoice.Money")),
             )],
+            response: Vec::new(),
             outcomes,
             naming: Naming::default(),
             refs: Refs::new(),
@@ -3649,6 +3981,7 @@ sets:
     fn an_error_payload_field_must_name_a_declared_type() {
         let declared = ErrorSpec {
             name: name("billing.invoice.InvalidAmount"),
+            naming: Naming::default(),
             summary: Some("The requested amount is not positive.".to_owned()),
             fields: vec![Field::new(
                 "limit",
@@ -3845,6 +4178,7 @@ outcomes:
                 Field::new("invoice_id", TypeRef::Named(name("billing.invoice.Email"))),
                 Field::new("amount", TypeRef::Named(name("billing.invoice.Money"))),
             ],
+            response: Vec::new(),
             outcomes: vec![
                 Outcome::when(
                     outcome_name("settled"),

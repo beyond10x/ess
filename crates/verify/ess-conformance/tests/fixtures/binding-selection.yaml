@@ -1,0 +1,84 @@
+format: ess/3
+system: selection
+version: v1
+domain: selection.core
+types:
+  - name: selection.core.Domain
+    kind: enum
+    variants: [Internal, External]
+  - name: selection.core.Source
+    kind: enum
+    variants: [Queue, Webrtc, Api]
+  - name: selection.core.Leg
+    kind: struct
+    fields:
+      - name: id
+        type: String
+      - name: domain
+        type: Optional<selection.core.Domain>
+      - name: source
+        type: Optional<selection.core.Source>
+      - name: from
+        type: String
+events:
+  - name: selection.core.Arrived
+    fields:
+      - name: data
+        type: List<Optional<selection.core.Leg>>
+  - name: selection.core.Seen
+    fields:
+      - name: agent_id
+        type: Optional<String>
+      - name: external_id
+        type: Optional<String>
+commands:
+  - name: selection.core.Receive
+    input:
+      - name: agent_id
+        type: Optional<String>
+      - name: external_id
+        type: Optional<String>
+    outcomes:
+      - name: received
+        emits: [selection.core.Seen]
+        payload:
+          selection.core.Seen:
+            agent_id: input.agent_id
+            external_id: input.external_id
+bindings:
+  - id: choose
+    when:
+      event: selection.core.Arrived
+    invoke:
+      command: selection.core.Receive
+    selection_inputs:
+      - name: legs
+        from: event.data
+        as: List<Optional<selection.core.Leg>>
+    selections:
+      - name: first_agent
+        first:
+          in: legs
+          where:
+            any:
+              - all: [defined(item.domain), item.domain == Internal]
+              - all: [defined(item.source), item.source == Webrtc]
+      - name: first_external
+        first:
+          in: legs
+          excluding: [first_agent]
+          where:
+            all: [defined(item.domain), item.domain == External]
+      - name: first_identified
+        first:
+          in: legs
+          where: 'item.id != ""'
+      - name: agent
+        first_present: [first_agent, first_identified]
+      - name: external
+        first_present: [first_external, agent]
+    mapping:
+      agent_id: {selection: agent, path: [id]}
+      external_id: {selection: external, path: [id]}
+    delivery: at_most_once
+    on_failure: drop

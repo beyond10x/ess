@@ -200,6 +200,9 @@ pub struct SystemGraph<'a> {
     pub nodes: Vec<GraphNode<'a>>,
     /// Every edge: grants, then emissions, then bindings.
     pub edges: Vec<GraphEdge<'a>>,
+    /// Periodic causes are explicit host edges, never event nodes.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub periodic: Vec<&'a ess_compiler::ir::ResolvedBinding>,
 }
 
 impl<'a> SystemGraph<'a> {
@@ -214,6 +217,11 @@ impl<'a> SystemGraph<'a> {
             groups: groups(ir),
             nodes: nodes(ir),
             edges: edges(ir),
+            periodic: ir
+                .bindings()
+                .values()
+                .filter(|binding| binding.cause.periodic().is_some())
+                .collect(),
         }
     }
 
@@ -267,6 +275,14 @@ impl<'a> SystemGraph<'a> {
                 ids[edge.to]
             );
         }
+        for (index, binding) in self.periodic.iter().enumerate() {
+            let _ = writeln!(
+                out,
+                "    periodic{index}[\"{}\"] --> {}",
+                label(&binding.cause.to_string()),
+                ids[binding.command.name()]
+            );
+        }
         out
     }
 
@@ -279,8 +295,8 @@ impl<'a> SystemGraph<'a> {
             "// {} {} — {} node(s), {} edge(s)",
             self.system,
             self.version,
-            self.nodes.len(),
-            self.edges.len()
+            self.nodes.len() + self.periodic.len(),
+            self.edges.len() + self.periodic.len()
         );
         let _ = writeln!(out, "digraph {} {{", dot_string(&self.system.to_string()));
         out.push_str("  rankdir=LR;\n");
@@ -326,6 +342,18 @@ impl<'a> SystemGraph<'a> {
             );
         }
 
+        for (index, binding) in self.periodic.iter().enumerate() {
+            let _ = writeln!(
+                out,
+                "  periodic{index} [label={}];",
+                dot_string(&binding.cause.to_string())
+            );
+            let _ = writeln!(
+                out,
+                "  periodic{index} -> {};",
+                dot_string(&binding.command.to_string())
+            );
+        }
         out.push_str("}\n");
         out
     }
@@ -489,11 +517,30 @@ fn edges(ir: &EssIr) -> Vec<GraphEdge<'_>> {
         }
     }
     for binding in ir.bindings().values() {
+        let Some(event) = binding.cause.event() else {
+            continue;
+        };
         out.push(GraphEdge {
             kind: EdgeKind::Binding,
-            from: binding.event.name(),
+            from: event.name(),
             to: binding.command.name(),
-            label: binding.name.as_str().to_owned(),
+            label: {
+                let mappings: Vec<_> = binding
+                    .mapping
+                    .iter()
+                    .filter_map(|m| match &m.value {
+                        ess_compiler::ir::ResolvedMappingValue::EventAccessor { plan, .. } => {
+                            Some(format!("{} <- {}", m.target, plan.path()))
+                        }
+                        _ => None,
+                    })
+                    .collect();
+                if mappings.is_empty() {
+                    binding.name.as_str().to_owned()
+                } else {
+                    format!("{}: {}", binding.name, mappings.join(", "))
+                }
+            },
             delivery: Some(binding.delivery),
             on_failure: Some(binding.failure),
         });

@@ -84,6 +84,10 @@ pub trait TypeEnvironment {
     fn cardinality_type(&self) -> Self::Type;
     /// One shallow shape, or the name of an unresolved declaration.
     fn shape(&self, reference: &Self::Type) -> Result<Shape<Self::Type>, String>;
+    /// Whether this nominal type requires occurrence-scoped clock evidence rather than scalar comparison.
+    fn is_clock_reading(&self, _reference: &Self::Type) -> bool {
+        false
+    }
     /// One declared struct member, without using wire aliases.
     fn member(&self, reference: &Self::Type, name: &str) -> Option<Self::Type>;
     /// Whether the reserved filter parameter namespace exists in this environment.
@@ -206,6 +210,9 @@ impl<'a> DomainEnvironment<'a> {
 }
 
 impl TypeEnvironment for DomainEnvironment<'_> {
+    fn is_clock_reading(&self, reference: &TypeRef) -> bool {
+        matches!(reference, TypeRef::Named(name) if self.registry.get(name).is_some_and(|declared| declared.reading.is_some()))
+    }
     type Type = TypeRef;
 
     fn root(&self, name: &str) -> Option<TypeRef> {
@@ -359,6 +366,26 @@ fn root_cursor<E: TypeEnvironment>(
     })
 }
 
+fn refuse_clock_reading<E: TypeEnvironment>(
+    environment: &E,
+    current: &E::Type,
+    path: &FactPath,
+    owner: &str,
+) -> Result<(), ExpressionError> {
+    if environment.is_clock_reading(current) {
+        return Err(error(
+                owner,
+                ValidationCode::TypeMismatch,
+                Some(path),
+                None,
+                format!(
+                    "`{path}` is a clock reading; comparison requires observed source, epoch and formatter evidence"
+                ),
+            ));
+    }
+    Ok(())
+}
+
 fn resolve<E: TypeEnvironment>(
     environment: &E,
     path: &FactPath,
@@ -373,9 +400,9 @@ fn resolve<E: TypeEnvironment>(
         mut access,
         context,
     } = root_cursor(environment, path, owner, bindings)?;
-    let mut declared = current.to_string();
-    let mut seen = BTreeSet::new();
+    let (mut declared, mut seen) = (current.to_string(), BTreeSet::new());
     loop {
+        refuse_clock_reading(environment, &current, path, owner)?;
         let identity = current.to_string();
         if !seen.insert((identity.clone(), position)) {
             return Err(error(owner, ValidationCode::SelfReference, Some(path), segments.get(position).map(String::as_str),

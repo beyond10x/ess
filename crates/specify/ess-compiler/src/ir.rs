@@ -339,6 +339,9 @@ pub struct ResolvedType {
     pub body: ResolvedBody,
     /// What it is called on the wire, and shown as.
     pub naming: Naming,
+    /// Declared clock-reading authority retained through resolution.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub reading: Option<ess_domain::reading::ReadingContract>,
 }
 
 /// An entity: something with stable identity, with its fields and its lifecycle resolved.
@@ -518,6 +521,13 @@ pub enum ResolvedCondition {
     When {
         /// The predicate.
         predicate: Predicate,
+    },
+    /// The existing subject must have this held state and satisfy the optional input guard.
+    SubjectState {
+        /// The declared lifecycle state immediately before command selection.
+        state: StateName,
+        /// The additional ordinary input predicate, when declared.
+        predicate: Option<Predicate>,
     },
     /// The default branch, taken when no conditional outcome matched.
     Otherwise,
@@ -730,6 +740,15 @@ pub struct ResolvedOutcome {
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum ResolvedPayloadValue {
+    /// One declared field of the actual returned command response.
+    ResponseField {
+        /// The source field.
+        field: String,
+        /// Its resolved type.
+        type_ref: ResolvedTypeRef,
+    },
+    /// Explicit implementation ownership, retaining ordinary type assertions.
+    Generated,
     /// A field of the command's input.
     InputField {
         /// The field's name.
@@ -739,8 +758,10 @@ pub enum ResolvedPayloadValue {
     },
     /// A value written in the outcome itself.
     ///
-    /// Taken on trust past `ess-domain`'s representation check, exactly as a binding's literal is —
-    /// and a separate variant for the same reason: a reader can see which fields were verified.
+    /// When the target's representation is reached within [`ess_domain::binding::WRAPPER_LIMIT`],
+    /// `ess-domain` verifies enum membership or admits text for String-backed targets, following
+    /// Optional/newtype wrappers as for bindings. Exhausting the bound establishes neither
+    /// guarantee. Type invariants and the existence of external resources are not verified.
     Literal {
         /// The value, as written.
         value: String,
@@ -766,9 +787,8 @@ pub struct ResolvedPayloadField {
 
 /// One emitted event's determined payload fields.
 ///
-/// Only the fields some declaration determines are here; an event field absent from `fields` is
-/// **undetermined**, which is a fact about the specification a consumer may report and must not
-/// treat as a defect — `ess_domain::command::PayloadSource` carries the argument.
+/// Legacy specifications may omit undetermined fields. Source ess/4 retains every emitted field's
+/// explicit input, literal, response or generated ownership; `Generated` promises shape only.
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
 pub struct ResolvedPayload {
     /// The event whose payload is being described.
@@ -786,6 +806,9 @@ pub struct ResolvedCommand {
     pub domain: DomainHandle,
     /// Its input, in declaration order.
     pub input: Vec<ResolvedField>,
+    /// Closed declared response fields, omitted for legacy commands.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub response: Vec<ResolvedField>,
     /// Everything it can result in.
     pub outcomes: Vec<ResolvedOutcome>,
     /// What it is called on the wire, and shown as.
@@ -850,6 +873,9 @@ impl ResolvedEvent {
 pub struct ResolvedError {
     /// Its identity.
     pub name: QualifiedName,
+    /// Explicit transport spelling and presentation metadata; absent for legacy errors.
+    #[serde(skip_serializing_if = "Naming::is_empty")]
+    pub naming: Naming,
     /// The bounded context that owns it.
     pub domain: DomainHandle,
     /// One line saying what went wrong, for the person who receives it.
@@ -857,6 +883,16 @@ pub struct ResolvedError {
     pub summary: Option<String>,
     /// What it carries beyond its name.
     pub fields: Vec<ResolvedField>,
+}
+
+impl ResolvedError {
+    /// The declared transport code, retaining the qualified-name fallback of legacy responses.
+    pub fn wire_code(&self) -> String {
+        self.naming
+            .wire
+            .clone()
+            .unwrap_or_else(|| self.name.to_string())
+    }
 }
 
 /// A view: what the outside world is promised it can observe, and how soon.
@@ -970,6 +1006,29 @@ impl ResolvedActor {
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum ResolvedMappingValue {
+    /// A typed lifetime-constant field from the authenticated host.
+    HostContext {
+        /// Declared host field.
+        field: String,
+        /// Resolved source type.
+        type_ref: ResolvedTypeRef,
+    },
+    /// A typed fresh field acquired for this periodic occurrence.
+    HostRead {
+        /// Declared host read field.
+        field: String,
+        /// Resolved source type.
+        type_ref: ResolvedTypeRef,
+    },
+    /// Projection from an ordered binding-local occurrence selector.
+    Selection {
+        /// Selector table index.
+        selector: usize,
+        /// Typed member projection from the present selected item.
+        projection: ess_domain::accessor::ProjectionPlan,
+        /// Effective Optional result type.
+        type_ref: ResolvedTypeRef,
+    },
     /// A field of the triggering event.
     EventField {
         /// The field's name.
@@ -977,11 +1036,22 @@ pub enum ResolvedMappingValue {
         /// Its type, which had to be assignable to the target's or declared convertible to it.
         type_ref: ResolvedTypeRef,
     },
+    /// A typed, bounded projection; never a dotted legacy field name.
+    EventAccessor {
+        /// Shared source operations and exact declared member names.
+        plan: ess_domain::accessor::AccessorPlan,
+        /// Effective source type for assignment and conversion.
+        type_ref: ResolvedTypeRef,
+        /// Compiler-minted handles for every nominal type used by the plan.
+        types: BTreeMap<QualifiedName, TypeHandle>,
+    },
     /// A value written in the binding itself.
     ///
-    /// Its type is *not* checked against the target — nothing in the model says how to read
-    /// `invoice-created` as a `TemplateId` — and it is a separate variant so that a reader can see
-    /// exactly which mappings the compiler verified and which it took on trust.
+    /// When the target's representation is reached within [`ess_domain::binding::WRAPPER_LIMIT`],
+    /// enum membership is verified through Optional/newtype wrappers, and String-backed targets
+    /// admit text. Exhausting the bound establishes neither guarantee. Type invariants and the
+    /// existence of external resources are not verified; `invoice-created` being accepted for a
+    /// String-backed `TemplateId` does not establish that the template exists.
     Literal {
         /// The value, as written.
         value: String,
@@ -1007,13 +1077,74 @@ pub struct ResolvedMapping {
     pub conversion: Option<String>,
 }
 
+/// A periodic cause with its required host fields resolved against this model.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
+pub struct ResolvedPeriodic {
+    /// The admitted profile and nominal host types.
+    #[serde(flatten)]
+    pub contract: ess_domain::binding::periodic::PeriodicCause,
+    /// Lifetime-constant fields with compiler-minted type handles.
+    pub context: Vec<ResolvedField>,
+    /// Fresh per-occurrence fields with compiler-minted type handles.
+    pub read: Vec<ResolvedField>,
+}
+
+/// The real cause; serialization retains the old event member exactly.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ResolvedBindingCause {
+    /// A resolved event.
+    Event(EventHandle),
+    /// A periodic host contract.
+    Periodic(ResolvedPeriodic),
+}
+impl ResolvedBindingCause {
+    /// Event-only callers must explicitly handle absence.
+    pub fn event(&self) -> Option<&EventHandle> {
+        match self {
+            Self::Event(event) => Some(event),
+            Self::Periodic(_) => None,
+        }
+    }
+    /// Periodic contract, when this is a host poll.
+    pub fn periodic(&self) -> Option<&ResolvedPeriodic> {
+        match self {
+            Self::Periodic(periodic) => Some(periodic),
+            Self::Event(_) => None,
+        }
+    }
+}
+
+impl std::fmt::Display for ResolvedBindingCause {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Event(event) => event.fmt(f),
+            Self::Periodic(periodic) => write!(
+                f,
+                "periodic {} via required host {}",
+                periodic.contract.every, periodic.contract.host.authority
+            ),
+        }
+    }
+}
+
+/// Compiler-minted references for the finite domain selection plan.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
+pub struct ResolvedSelectionPlan {
+    /// Declared operation and read plan.
+    pub plan: ess_domain::selection::SelectionPlan,
+    /// Total nominal references used by selection inputs and projections.
+    pub types: BTreeMap<QualifiedName, TypeHandle>,
+}
+
 /// A binding whose mapping is known to typecheck.
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
 pub struct ResolvedBinding {
     /// Its identifier.
     pub name: BindingName,
-    /// The event it reacts to.
-    pub event: EventHandle,
+    /// The resolved cause, preserving legacy event representation.
+    #[serde(flatten)]
+    pub cause: ResolvedBindingCause,
     /// The command it invokes.
     pub command: CommandHandle,
     /// One entry per mapped command input, in the command's declaration order.
@@ -1021,6 +1152,9 @@ pub struct ResolvedBinding {
     /// The command's order, not the document's: a generator emitting a call needs the argument
     /// order the command declares, and a mapping written in a different order is the same mapping.
     pub mapping: Vec<ResolvedMapping>,
+    /// Shared typed inputs and occurrence selections; absent for legacy bindings.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub selection: Option<ResolvedSelectionPlan>,
     /// How many times the command may run.
     pub delivery: Delivery,
     /// What happens when it does not.
@@ -1438,7 +1572,9 @@ impl EssIr {
     pub fn reactions(&self) -> BTreeMap<&EventHandle, Vec<&ResolvedBinding>> {
         let mut out: BTreeMap<&EventHandle, Vec<&ResolvedBinding>> = BTreeMap::new();
         for binding in self.bindings.values() {
-            out.entry(&binding.event).or_default().push(binding);
+            if let Some(event) = binding.cause.event() {
+                out.entry(event).or_default().push(binding);
+            }
         }
         out
     }

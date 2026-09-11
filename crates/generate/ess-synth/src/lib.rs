@@ -40,11 +40,13 @@
 //! construction — and reuses `ess-gen`'s [`Artifact`] and provenance conventions rather than
 //! growing parallel ones.
 
+mod accessor_output;
 pub mod clap;
 mod failure;
 pub mod go;
 pub mod plan;
 pub mod rust;
+mod selection;
 pub mod web;
 
 pub use failure::{TargetFailure, TargetFailureCause, TargetFailureCode};

@@ -37,6 +37,7 @@
 //! Both travel in the [`TargetReport`] this module returns, and neither touches the plan: the
 //! plan's two renderings are byte-identical in both trees, which is the seam proving itself.
 
+mod accessor;
 mod entity;
 mod http;
 mod items;
@@ -44,7 +45,9 @@ mod layout;
 mod name;
 mod obligation;
 mod port;
+mod reading;
 mod refusal;
+mod selection;
 mod system;
 
 use std::cell::RefCell;
@@ -278,6 +281,7 @@ pub fn workspace(ir: &EssIr, plan: &SynthesisPlan) -> Result<Emission, crate::Ta
     type_owners(ir, plan)?;
     let refusals = TargetRefusals::of(ir, plan);
     let layout = Layout::of(ir, plan, &refusals);
+    accessor::preflight(ir, plan, &layout)?;
     let provenance = &plan.provenance;
 
     let mut covered: BTreeSet<Capability> = BTreeSet::new();
@@ -287,6 +291,9 @@ pub fn workspace(ir: &EssIr, plan: &SynthesisPlan) -> Result<Emission, crate::Ta
         module_file(&layout, provenance),
         primitives_package(&layout, provenance),
     ];
+    if let Some(helper) = reading::helper(ir, &layout, provenance) {
+        artifacts.push(helper);
+    }
     if wants_obligations(ir, plan) {
         artifacts.push(obligation::refusal_package(&layout, provenance));
     }
@@ -382,7 +389,12 @@ fn type_owners(ir: &EssIr, plan: &SynthesisPlan) -> Result<(), crate::TargetFail
     if causes.is_empty() {
         Ok(())
     } else {
-        Err(crate::TargetFailure::new(crate::Target::Go, plan, causes))
+        Err(crate::TargetFailure::new(
+            ir,
+            crate::Target::Go,
+            plan,
+            causes,
+        ))
     }
 }
 

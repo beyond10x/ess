@@ -10,7 +10,7 @@ use ess_primitives::evidence::SpecDigest;
 use crate::change::{ChangeId, SemanticChange, SemanticRelation};
 
 /// Delta format major versions this build implements.
-pub const SUPPORTED_DELTA_FORMATS: &[u32] = &[1, 2];
+pub const SUPPORTED_DELTA_FORMATS: &[u32] = &[1, 2, 3, 4];
 
 /// The version of a delta's document shape and admitted change vocabulary.
 ///
@@ -192,8 +192,16 @@ impl EssDelta {
         mut changes: Vec<SemanticChange>,
     ) -> Self {
         changes.sort_by_key(SemanticChange::id);
+        let minimum = changes
+            .iter()
+            .map(SemanticChange::minimum_format)
+            .max()
+            .unwrap_or(2)
+            .max(2);
+        let format =
+            DeltaFormat::parse(&format!("ess-diff/{minimum}")).expect("declared delta version");
         Self {
-            format: DeltaFormat::CURRENT,
+            format,
             before,
             after,
             changes,

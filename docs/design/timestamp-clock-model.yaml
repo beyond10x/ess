@@ -1,0 +1,28 @@
+format: ess/1
+system: chronology
+version: v1
+domain: chronology.reading
+types:
+  - name: chronology.reading.Encoding
+    kind: enum
+    variants: [OffsetDateTimeText, LocalMillisLiteralZ, UnixSeconds]
+  - name: chronology.reading.Origin
+    kind: enum
+    variants: [ProducerProcess, ConsumerProcess, Unknown]
+  - name: chronology.reading.SourceEpoch
+    kind: struct
+    fields:
+      - {name: process_instance, type: String}
+      - {name: epoch, type: String}
+  - name: chronology.reading.RawValue
+    kind: union
+    tag: kind
+    variants: {text: String, seconds: Integer}
+  - name: chronology.reading.Observation
+    kind: struct
+    fields:
+      - {name: correlation, type: String}
+      - {name: occurrence, type: String}
+      - {name: source, type: 'Optional<chronology.reading.SourceEpoch>'}
+      - {name: origin, type: chronology.reading.Origin}
+      - {name: effective_offset_minutes, type: 'Optional<Integer>'}
