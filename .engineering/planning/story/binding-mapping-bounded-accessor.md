@@ -12,6 +12,14 @@ scope:
 - confidence: cited
   path: babelconnect-specs
 - confidence: cited
+  path: crates/edge/ess-cli/src/coverage.rs
+- confidence: cited
+  path: crates/edge/ess-cli/src/main.rs
+- confidence: cited
+  path: crates/edge/ess-cli/src/release_evidence.rs
+- confidence: cited
+  path: crates/edge/ess-xtask/src/support.rs
+- confidence: cited
   path: crates/generate/ess-gen/src/asyncapi.rs
 - confidence: cited
   path: crates/generate/ess-gen/src/docs.rs
@@ -34,16 +42,44 @@ scope:
 - confidence: cited
   path: crates/specify/ess-domain/src/binding.rs
 - confidence: cited
+  path: crates/specify/ess-domain/src/primitive_admission.rs
+- confidence: cited
+  path: crates/specify/ess-domain/src/system.rs
+- confidence: cited
+  path: crates/specify/ess-domain/src/types.rs
+- confidence: cited
+  path: crates/specify/ess-primitives/src/error.rs
+- confidence: cited
+  path: crates/verify/ess-conformance/src/counts.rs
+- confidence: cited
+  path: crates/verify/ess-conformance/src/coverage.rs
+- confidence: cited
+  path: crates/verify/ess-conformance/src/coverage_build.rs
+- confidence: cited
+  path: crates/verify/ess-conformance/src/evidence.rs
+- confidence: cited
+  path: crates/verify/ess-conformance/src/go/mod.rs
+- confidence: cited
+  path: crates/verify/ess-conformance/src/go/runtime.go
+- confidence: cited
+  path: crates/verify/ess-conformance/src/input.rs
+- confidence: cited
+  path: crates/verify/ess-conformance/src/report.rs
+- confidence: cited
   path: crates/verify/ess-conformance/src/runner.rs
 - confidence: cited
   path: crates/verify/ess-conformance/src/scenario.rs
 - confidence: cited
   path: crates/verify/ess-conformance/src/synthesize.rs
 - confidence: cited
+  path: crates/verify/ess-conformance/src/web.rs
+- confidence: cited
+  path: crates/verify/ess-conformance/src/web_replay.rs
+- confidence: cited
   path: crates/verify/ess-diff/src/diff.rs
 - confidence: inferred
   path: docs/design/binding-mapping-bounded-accessor.md
-revision: 4
+revision: 6
 ---
 ## Why
 
@@ -101,9 +137,9 @@ present into one that may be absent:
 
 - each segment resolves against a **declared** type of this model, so a typo is `UnobservableFact` exactly as
   a flat field is today;
-- a segment whose type is `Optional<T>` or a union is **refused** unless the target input is `Optional` too,
+- traversal through `Optional<T>` or a union is **refused** unless the target input is `Optional` too; a terminal Optional is copied whole and may use an existing exact host conversion,
   which is the whole content of "nothing in the model says a projection is total";
-- depth is bounded (two segments covers every case measured here) so the accessor stays a projection and does
+- depth is bounded (three segments after `event` covers the measured `data.body.text` path) so the accessor stays a projection and does
   not become an expression language;
 - `List<T>` is not traversable — selecting an element is a different construct (see *Out of scope*).
 
@@ -114,8 +150,7 @@ protects.
 
 - [ ] `mapping: <input>: event.<field>.<field>` validates when every segment is declared and non-`Optional`,
       or the target is `Optional`.
-- [ ] A segment that is `Optional`/a union filling a non-`Optional` input is refused, with its own code and a
-      hint naming the two repairs.
+- [ ] Traversal through `Optional`/a union into a required input is refused, with a distinct code and the two repairs. A terminal Optional retains its declared whole-value conversion contract.
 - [ ] A segment naming nothing is `UnobservableFact`, as a flat field is.
 - [ ] The projections (docs, OpenAPI, AsyncAPI, graph, synth) print the path; the conformance scenario reads
       the same value the mapping does.
@@ -162,8 +197,17 @@ Derived 2026-09-11 by aep-drive:story-scoper at main 6b666e58.
 
 The operator selected this story with the literal-doc correction and xattr reconciliation, excluded crosswalk, and authorized sub-agents plus a new release after main integration. Complete the existing literal-doc correction first so the expanded binding renderer and resolved mapping documentation build on truthful literal guarantees. This is an explicit integration dependency over their shared files, not an excuse to omit accessor semantics.
 
-Write and review the design before code. Settle depth after event, Optional absence versus null, union traversal and terminal union values, source and wire names, newtype wrappers, conversion behavior, malformed events, old reader refusal and preservation of old flat-mapping bytes. Keep the four-consumer-binding acceptance; discover the real declarations rather than inventing them. List selection and guards remain excluded. Do not invent ess-ir/2 or weaken unsupported-target refusals. The operator excludes full/ownership gates; use focused source, generator, conformance, compatibility and actual consumer checks with explicit scope. Release and required remote checks are separately tracked.
+Write and review the design before code. Settle depth after event, Optional absence versus null, union traversal and terminal union values, source and wire names, newtype wrappers, conversion behavior, malformed events, old reader refusal and preservation of old flat-mapping bytes. Keep the four-consumer-binding acceptance; discover the real declarations rather than inventing them. List selection and guards remain excluded. Do not invent ess-ir/2 or weaken unsupported-target refusals. The operator excludes full local workspace/ownership gates; use focused source, generator, conformance, compatibility and actual consumer checks with explicit scope. Required remote merge/release checks are authorized for the requested release and separately tracked.
 
 ## Public import correction
 
 The first unpublished import was refused by the coordinated private-identifier check. Its exact rejected patch is retained privately in the local wave evidence. This replacement was created through AEP from the same source snapshot with the private organization identifier generalized before any journal event was written. Source acceptance and source snapshot hashes are preserved; no scanner policy or exception changed.
+
+
+## Design correction and observed adoption limits
+
+The design at docs/design/binding-mapping-bounded-accessor.md now states the complete source, resolved-plan, native generation, conformance and report contracts. First review review-result:priority-accessor-design-pass1-20260911 found unbounded finite branching, missing report compatibility paths, and ambiguous nested Optional construction. Correction digest d950020e8d3f778f221fb1ff83a13aeb9c933c1de444b2b69e778ab2db7875f0 answers those classes with a shared bounded DAG, explicit existing report/2 routing for suite/6-/7, and equality-first typed Optional lifting. Second design review is pending; no accessor source implementation is claimed.
+
+Three segments after event are required by the measured notification body path. Source ess/3 and distinct resolved EventAccessor/ObservedAccessor variants preserve old flat bytes; ordinary suite/6 and coverage suite/7 carry new semantics. Existing report/2 retains its exact-suite meaning. Report/1 incompatibility must be refused before target execution. Resource limits govern the new capability without weakening existing scanner, gate or source policies.
+
+The four adopter rows remain acceptance obligations, not an accessor-only completion claim. Each requires authoritative session identity absent from the binding source vocabulary. The status payload has an id, but its equivalence to authenticated session identity is unproven; the other three payloads lack recipient identity. Existing exact host conversions can declare whole-Optional or whole-struct crossings, but declarations do not execute reducer algorithms. Actual context, conversion and released-pin adoption evidence remains required. No invented event fields or optionalized required inputs may manufacture the four-row count. Typed context is a separate follow-up contract, not accessor syntax admitted here.

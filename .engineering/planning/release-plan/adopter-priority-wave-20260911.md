@@ -6,7 +6,7 @@ status: active
 title: Integrate adopter priority fixes and release ESS
 relations:
 - serves: vision:O2
-revision: 2
+revision: 6
 ---
 ## Authorization and scope
 
@@ -189,11 +189,15 @@ The operator's no-full/ownership-gate instruction supersedes the skill's full-ga
 
 ## Unit ledger
 
-- Literal docs: scoped; tree/branch/build/scratch pending creation after opening plan commit.
-- Xattrs: scoped; targeted verification only; tree/branch/build/scratch pending creation.
-- Bounded accessor: scoped; design must precede implementation and docs unit must be integrated before overlapping source edits; tree/branch/build/scratch pending creation.
+Opening commit: 59afcf8caec5230a88aadfd7c590a703e0b5500b, signed common evidence passed and feature branch published. Coordinator integration: wt-05b595184ac8 on feat/adopter-priority-wave, lease ess-priority-wave-01a089ee; planning updates remain coordinator-owned.
 
-All scratch and logs belong beneath local-evidence:ess-evolution-20260910/priority-wave/<unit>. Retain reports and original draft snapshots; never create HANDOFF files. Record actual triple and head before every implementation dispatch. Publish wanted commits before worktree finish and exact reviewed gc. Keep any tree whose recovery remains unproven.
+- Literal docs: impl/priority-literal-docs, corrected candidate eb71c85d634c8e252a7ac380843a87c26aefcba3 merged in 55c2b107, wt-99a063fb0aaf, worktree-state:trees/b10x/ess/wt-99a063fb0aaf. Base 59afcf8c. Build /tmp/ess-priority-wave/literal-target; scratch local-evidence:ess-evolution-20260910/priority-wave/literal. Implementor scope_literal ended lease after corrected 222 generator tests (40 docs), eight literal-validation tests and Clippy/format checks. Second adversary pass by scope_xattrs found nothing after eight deciding cases; both review records and outcomes are in AEP. Stage: source merged into wave, story implemented, publication and cleanup pending. Adversary lease ended. No full local or ownership gate ran.
+- Xattrs: impl/priority-xattr-verification, base/head 59afcf8c; wt-6f0fa901447d removed by exact reviewed worktree GC after target cleanup reclaimed638.1MiB. Report and original logs retained in local-evidence:ess-evolution-20260910/priority-wave/xattrs. Story implemented on its revised exact-label verification contract; no new source change. Branch may be removed after final wave integration/recovery audit.
+- Bounded accessor: impl/priority-bounded-accessor, base59afcf8c, wt-30254233b1b4, worktree-state:trees/b10x/ess/wt-30254233b1b4. Build /tmp/ess-priority-wave/accessor-target (not yet used); scratch local-evidence:ess-evolution-20260910/priority-wave/accessor. Implementor scope_accessor owns final design correction only, lease ess-priority-accessor-01a089ee. Docs source is integrated. Two design attacks found three then one issues; root verifies the final correction directly before implementation, with no third full design attack. Consumer feasibility review by scope_xattrs confirmed additional identity/conversion obligations; preserve those requirements and exact evidence, not invented wire fields.
+
+The unit trees were created before observing the first import commit refusal; no agent edited them until they were advanced to the admitted opening commit. The rejected transaction remains a private recovery patch. User subsequently instructed the coordinator to unblock itself and requested another origin/main pull: fresh fetch still resolves main to6b666e58, already included here. Primary journal changes overlap incoming commits, so the primary draft state remains preserved. Current development uses exact incoming main; no stale source is used merely because primary is older.
+
+Release authorization covers required remote merge/release checks. Continue targeted local checks; no full local or ownership gate, no scanner/protection bypass, no crosswalk.
 
 ## Release boundary
 
@@ -202,3 +206,22 @@ Choose the next unoccupied version after refreshing main and tags; bounded acces
 ## Public import correction
 
 The first unpublished import was refused by the coordinated private-identifier check. Its exact rejected patch is retained privately in the local wave evidence. This replacement was created through AEP from the same source snapshot with the private organization identifier generalized before any journal event was written. Source acceptance and source snapshot hashes are preserved; no scanner policy or exception changed.
+
+## Publication and current evidence
+
+Opening commit 59afcf8caec5230a88aadfd7c590a703e0b5500b passed the coordinated hook and signed common scan. Signed publish succeeded to refs/heads/feat/adopter-priority-wave; fresh Git remote advertisement matches. Remote common check: https://github.com/beyond10x/ess/runs/103090084123. The existing App branch-creation exemption authorized this feature branch; no repository rule was edited. This is planning publication, not main integration or a release.
+
+Xattr reconciliation: three existing tests passed once, 42.36-second build and 0.00-second test execution. Story moved active to implemented on the revised exact-label verification contract, retaining the missing real-labelled-filesystem witness limit. Its build was cleaned (638.1 MiB); managed tree wt-6f0fa901447d finished and reviewed eligible for exact GC. Retained unit report and logs are beneath local-evidence:ess-evolution-20260910/priority-wave/xattrs.
+
+Latest observed published GitHub Release is 0.22.2, published 2026-09-10T20:11:55Z, with four native archives and SHA256SUMS. No new version/tag has been chosen or pushed for this wave. Main remains 6b666e58 at this observation.
+
+
+## Final review routing and source progress
+
+Literal review trend: pass one found one introduced documentation overclaim; pass two found zero. AEP findings reports carried [], new [], and resolved [docs.rs:1730 contract-drift blocker CONFIRMED introduced]. The final attack added no redundant tests and ran eight existing deciding cases once; full raw output and its digest are retained. The separate pre-existing admission exhaustion gap is tracked by story:literal-representation-walk-exhaustion and remains outside this wave's source scope. Merge 55c2b107 contains only reviewed source; this progress record adds the changelog and planning evidence.
+
+Accessor design trend: pass one found three, pass two one. The signature ledger reports carried [], new [design:297 contract-drift blocker NEEDS-CHANGE introduced], resolved [design:61 boundary blocker, design:214 contract-drift blocker, design:123 boundary warning]. Resource bounds and suite/report routing are settled; native nested Optional assignment is specified, but observation cannot reconstruct every hidden source state. Root authorized an explicit conformance capability refusal where observation cannot determine the expected value, preserving typed native assignment. Same implementor is making that bounded correction; root reviews it directly under the two-attack rule before source work starts. Both immutable review reports remain verbatim in the store. No design test/build was represented as executed.
+
+Required remote checks are authorized for the final candidate. Fresh GitHub reads found no open ESS PR and observed published release 0.22.2 with four uploaded archives and SHA256SUMS. These metadata reads do not independently requalify the historical release checks or downloaded artifact bytes. No new release tag or PR has been created.
+
+Validation evidence: local-evidence:ess-evolution-20260910/priority-wave/progress-validation.log, exit 0. It reports the existing unassessed delivery scope and prose-only review warnings; the literal final report contains an explicit empty findings block, which this CLI still labels as no findings block. Do not invent findings to suppress that diagnostic. Agent aggregate token/tool/wall costs are unavailable from this harness; runner counts and observed command durations are retained instead.

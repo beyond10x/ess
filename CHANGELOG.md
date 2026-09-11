@@ -2,6 +2,12 @@
 
 ## [Unreleased]
 
+### Fixed
+
+- Binding documentation describes enum membership only when the compiler reached the
+  representation within its existing traversal bound. String-backed literals explicitly
+  state that type invariants and external resources are not checked.
+
 ## [0.22.2] — 2026-09-10
 
 ### Documentation

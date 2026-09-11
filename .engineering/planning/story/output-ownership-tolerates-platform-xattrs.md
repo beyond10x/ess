@@ -2,7 +2,7 @@
 format: aep.planning-md/1
 id: story:output-ownership-tolerates-platform-xattrs
 kind: story
-status: active
+status: implemented
 title: Publication must not refuse platform-imposed extended attributes (SELinux, overlayfs)
 summary: flistxattr non-empty refuses every ess generate on CI runners that label files; distinguish platform attributes from foreign ones.
 tags:
@@ -12,7 +12,7 @@ relations:
 scope:
 - confidence: cited
   path: .engineering/planning/story/output-ownership-tolerates-platform-xattrs.md
-revision: 4
+revision: 6
 ---
 ## Context
 
@@ -62,3 +62,11 @@ Derived 2026-09-11 by aep-drive:story-scoper. Tracking reconciliation is the onl
 ## Public import correction
 
 The first unpublished import was refused by the coordinated private-identifier check. Its exact rejected patch is retained privately in the local wave evidence. This replacement was created through AEP from the same source snapshot with the private organization identifier generalized before any journal event was written. Source acceptance and source snapshot hashes are preserved; no scanner policy or exception changed.
+
+## Verification and reconciliation evidence
+
+The verifier ran cargo test --offline --locked -p ess-cli --bin ess output_ownership::filesystem::xattr_tests -- --nocapture once at 59afcf8caec5230a88aadfd7c590a703e0b5500b. Exactly three tests passed, none failed or ignored, 13 filtered out; exit 0. Build 42.36 seconds, tests 0.00 seconds. Full output and report: local-evidence:ess-evolution-20260910/priority-wave/xattrs/{tests.log,report.md}.
+
+Git ancestry confirms both 391b2651c0f45bbf39db08b47c84f220579b3d0f and remote main 6b666e58f2e87dd8798d27f935e9a012203296a3 are ancestors. The filesystem implementation is byte-identical to the landed fix. No source or test file changed; the assigned worktree is clean and the verifier ended its lease. Only tracking reconciliation was necessary.
+
+Evidence is bounded: accepted SELinux/SMACK names are tested through the policy predicate; no actual platform-labelled destination publication was exercised. The existing real user-attribute test may return early on a filesystem reporting NOTSUP; the harness's passing count alone cannot exclude that branch. No real labelled-filesystem witness is claimed. The original broad namespace acceptance remains intentionally superseded by the landed exact-label contract. No full or ownership suite ran.

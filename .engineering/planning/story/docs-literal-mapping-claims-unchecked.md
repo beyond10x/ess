@@ -2,7 +2,7 @@
 format: aep.planning-md/1
 id: story:docs-literal-mapping-claims-unchecked
 kind: story
-status: active
+status: implemented
 title: Generated interaction docs say a binding literal was taken on trust while the compiler checks it
 summary: ess generate --kind docs renders "the compiler took it on trust rather than checking it" for a literal mapping value that ESS-BINDING-002 validates against the enum
 owner: timo
@@ -22,7 +22,9 @@ scope:
   path: crates/generate/ess-gen/tests/docs.rs
 - confidence: cited
   path: crates/specify/ess-compiler/src/ir.rs
-revision: 4
+- confidence: cited
+  path: crates/specify/ess-domain/src/binding.rs
+revision: 9
 ---
 ## Context
 `specs/services/pusher` (downstream-adopter, 2026-09-10) maps a literal enum value in a binding: `reject-on-refused` supplies `reason: backend_refused` for `pusher.subscription.RejectAuthorization.reason` (`v1/model/components.yaml`). The generated `docs/interactions.md` for that binding says: "Nothing in the model says how to read that as a `pusher.subscription.DenialReason`, so the compiler took it on trust rather than checking it." An adversarial review substituted `reason: not_a_variant_at_all` and ran `ess specify validate`: exit 1, `error[ESS-BINDING-002] … is not a variant of pusher.subscription.DenialReason … variants: rule, backend_refused, backend_unreachable`. The compiler checks the literal; the docs generator says it does not. A committed generated artifact states something false about the model it was generated from.
@@ -58,3 +60,18 @@ Imported through the AEP CLI from the operator-selected primary-checkout draft, 
 ## Public import correction
 
 The first unpublished import was refused by the coordinated private-identifier check. Its exact rejected patch is retained privately in the local wave evidence. This replacement was created through AEP from the same source snapshot with the private organization identifier generalized before any journal event was written. Source acceptance and source snapshot hashes are preserved; no scanner policy or exception changed.
+
+## First adversary pass
+
+Candidate75845afb passed216 generator tests and eight existing literal checks, but independent review added five docs cases and found two real failures:32 Optional wrappers and33 named newtypes can reach an enum after domain validation stopped, so the renderer's unbounded walk overclaims compiler verification. The affected docs lane executed39 cases:37 passed,2 failed. Full public-safe review recorded as review-result:priority-literal-pass1-20260911 before routing to the same implementor. Keep all new cases; match actual bounded validation and correct related IR prose without changing admission. The underlying unchanged admission gap is tracked separately as story:literal-representation-walk-exhaustion.
+
+## Scope confirmation
+
+Implementation confirmed the original five source/test/corpus paths. First adversary correction additionally changes crates/specify/ess-domain/src/binding.rs only to expose the existing WRAPPER_LIMIT=32 read-only and correct its documentation; the walk and admission behavior are unchanged. The renderer consumes that actual validation bound instead of duplicating a constant or conflating it with the distinct public parser-depth bound. All five adversary cases remain and an additional16-case boundary matrix covers enum/String leaves across Optional/newtype/mixed chains. This scope correction is recorded before the second review.
+
+
+## Integrated source and final review
+
+Source candidate eb71c85d634c8e252a7ac380843a87c26aefcba3 merged into the wave in 55c2b107. Both source commits and the merge use the required bot author and committer. Corrected generator package evidence is 222 tests (including 40 documentation tests and three corpus cases); eight domain literal cases, strict Clippy and formatting also passed. Final review review-result:priority-literal-pass2-20260911 found nothing after eight deciding cases passed once in 0.24 seconds. No full local gate or ownership suite was run. The corrected admission-bound guarantee and original assertions remain intact.
+
+The two-review finding ledger reports carried [], new [], and one resolved introduced documentation overclaim at docs.rs:1730. The independent underlying source-admission exhaustion gap remains in story:literal-representation-walk-exhaustion; this documentation change preserves source admission. Source implementation is complete under the operator-authorized focused verification contract. Main integration, signed final publication and release remain wave obligations.
