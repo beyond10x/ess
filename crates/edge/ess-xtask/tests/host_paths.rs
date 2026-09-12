@@ -13,6 +13,38 @@
 //! `~/…` names none of those and is what this repository's records were rewritten *to*, so it is
 //! deliberately not refused — refusing it would delete the remedy along with the defect.
 //!
+//! What it does not cover, each measured rather than supposed:
+//!
+//! * a home directory outside [`HOME_MARKERS`] — an account at `/var/lib/…`, a container's
+//!   `/github/home`. The markers are the two platforms CI runs on plus the superuser's, and a host
+//!   that puts a home somewhere else is a fact about that host;
+//!   [`the_detector_finds_the_home_directory_this_process_runs_under`] skips rather than fails for
+//!   exactly that reason.
+//! * an account name written with a decomposed combining mark. [`continues_a_path`] accepts a
+//!   character a name is made of, and a combining mark is not alphanumeric, so such a name is
+//!   collected truncated at the mark — a finding, but one naming a shorter path than the leak.
+//! * a Windows home written with the native separator — a drive letter, a colon, and then
+//!   backslashes — which contains no marker at all. Written with forward slashes, which is what
+//!   `git` and `cargo` print, the part after the drive letter *is* exactly the macOS marker and an
+//!   account name, so it is collected — but with the drive chopped off, because the drive letter's
+//!   `:` is where the path is taken to begin. The finding still names the file and line,
+//!   so the leak is refused and a reader can look; the path in the message is two characters
+//!   short. Collecting it whole means reading *backwards* from a marker into a drive prefix, and
+//!   the honest form of that is a Windows home root in [`HOME_MARKERS`] and a native-separator
+//!   detector. No workflow here runs Windows, [`RUNNER_HOME_ROOTS`] deliberately has no row for
+//!   one, and a table that reports a platform as covered when it is not is worse than one that
+//!   does not mention it — so this waits for the workflow that needs it.
+//! * a `runs-on:` value [`runner_labels`] cannot resolve — an expression that is not a matrix
+//!   reference, a matrix key the job defines nowhere, or a runner group named without `labels:`.
+//!   Such a line contributes no label, because answering with the unresolved text turns the gate
+//!   red on a clean workflow by naming a platform that does not exist. It is silent only for a
+//!   workflow this repository does not hold:
+//!   [`the_workflow_parse_reads_every_runner_the_workflow_names`] measures
+//!   `.github/workflows/ci.yml` **per `runs-on:` line** and names any line that contributes
+//!   nothing, so a job here whose platform this gate cannot see is reported rather than skipped.
+//!   A count of labels is not that measurement in either direction — two jobs sharing a runner is
+//!   two lines and one label, and a line resolving to nothing hides behind a line naming three.
+//!
 //! A scan has two ways of being worthless, and `layout.rs` beside this file learned both: it can
 //! read the wrong files, and it can be looking for a shape nothing has. Each has a case of its own
 //! below rather than being assumed, because either failure exits zero.
@@ -106,9 +138,56 @@ fn scanned_files(root: &Path) -> Vec<String> {
     files
 }
 
-/// Whether a byte can continue a path literal.
-fn continues_a_path(byte: u8) -> bool {
-    byte.is_ascii_alphanumeric() || matches!(byte, b'-' | b'_' | b'.' | b'/' | b'+' | b'@')
+/// Whether a character can continue a path literal.
+///
+/// A character rather than a byte, and alphanumeric rather than ASCII-alphanumeric, because an
+/// account name is not ASCII on either platform CI runs on and the acceptance statement refuses a
+/// path under *a user's* home directory without qualifying whose. Asked of bytes, a name beginning
+/// outside ASCII ended the candidate immediately and the path left the scan entirely; a name
+/// merely containing one was collected truncated, which is a finding naming a file that exists on
+/// no host.
+///
+/// `is_alphanumeric` rather than "not ASCII", so the replacement character
+/// [`String::from_utf8_lossy`] leaves behind still ends a path — the property [`home_paths_in`]
+/// relies on to read a tracked binary without joining two of its paths into one finding that is
+/// neither. A combining mark is not alphanumeric either, so an account name written decomposed is
+/// still collected truncated; the module documentation states that bound.
+fn continues_a_path(character: char) -> bool {
+    character.is_alphanumeric() || matches!(character, '-' | '_' | '.' | '/' | '+' | '@')
+}
+
+/// Whether the marker at `start` in `text` begins an absolute path rather than continuing one.
+///
+/// The detector looks for its markers anywhere in a line, and what precedes one decides whether it
+/// is a path at all: `pages/` then a marker's own name is a component of a *relative* reference,
+/// and so is a URL's path and a JSON Pointer. Collecting one reports an absolute path with its
+/// prefix cut away — a file on no host — which is the failure mode that gets a gate switched off.
+/// So the character before the marker must be one no path is made of.
+///
+/// Three absolute paths are preceded by exactly such a character and must survive this. A run of
+/// separators before a marker leaves what follows absolute, which is how a `file:` URL spells a
+/// local path, so the run is stepped over rather than read. And a serialized line break ends in a
+/// letter, which is a byte a directory name is made of, so `\n` and its siblings are a boundary.
+///
+/// A unified diff's `-` or `+` column is the third. It is not part of the path that follows it, it
+/// is the mark that says whether the line was removed or added, and both characters are ones a path
+/// is made of — so without this the one record that spells out a leak *being taken out of a file*
+/// is the one record this lane cannot read. `docs/reviews/` carries tracked `.patch` files inside
+/// the scanned trees. It is a column only when it is the whole of the line before the marker;
+/// `my-dir/` and a marker's own name is still a relative reference.
+///
+/// `~` is refused as a predecessor although no path is made of it: the portable spelling this
+/// repository's records were rewritten *to* starts with one, and a marker's own name is an
+/// ordinary directory to have inside a home directory.
+fn begins_an_absolute_path(text: &str, start: usize) -> bool {
+    let before = text[..start].trim_end_matches('/');
+    let Some(previous) = before.chars().next_back() else {
+        return true;
+    };
+    let escaped = matches!(previous, 'n' | 'r' | 't' | '0')
+        && before[..before.len() - previous.len_utf8()].ends_with('\\');
+    let diff_column = matches!(before.trim_start(), "-" | "+");
+    escaped || diff_column || (!continues_a_path(previous) && previous != '~')
 }
 
 /// The spellings of `/` a serializer in this repository emits, other than `/` itself.
@@ -146,9 +225,12 @@ fn normalise_separators(text: &str) -> String {
 ///
 /// A trailing `.` or `/` is sentence punctuation rather than part of the path and is dropped,
 /// which keeps the same path spelled two ways in two files from being reported as two findings.
+///
+/// What precedes the marker decides whether there is a path here at all, and
+/// [`begins_an_absolute_path`] is where that is asked. A marker in the middle of a relative
+/// reference is a directory component and names nobody's home.
 fn home_paths(text: &str) -> BTreeSet<String> {
     let normalised = normalise_separators(text);
-    let bytes = normalised.as_bytes();
     let mut found = BTreeSet::new();
     for marker in HOME_MARKERS {
         // The marker without its trailing separator is the directory itself. A candidate no longer
@@ -158,10 +240,13 @@ fn home_paths(text: &str) -> BTreeSet<String> {
         while let Some(offset) = normalised[from..].find(marker) {
             let start = from + offset;
             from = start + marker.len();
-            let mut end = from;
-            while end < bytes.len() && continues_a_path(bytes[end]) {
-                end += 1;
+            if !begins_an_absolute_path(&normalised, start) {
+                continue;
             }
+            let end = normalised[from..]
+                .char_indices()
+                .find(|(_, character)| !continues_a_path(*character))
+                .map_or(normalised.len(), |(offset, _)| from + offset);
             let candidate = normalised[start..end].trim_end_matches(['.', '/']);
             if candidate.len() > directory.len() {
                 found.insert(candidate.to_owned());
@@ -178,8 +263,9 @@ fn home_paths(text: &str) -> BTreeSet<String> {
 /// — `website/static/img/favicon.ico` and `website/static/img/social-card.png`. A `read_to_string`
 /// that fails leaves a caller with nothing to do but skip the file, and a skipped file is
 /// indistinguishable from a cleared one in an exit status. A marker is ASCII, so
-/// [`String::from_utf8_lossy`] cannot hide one: the replacement character is not a byte
-/// [`continues_a_path`] accepts, so an undecodable run ends a path rather than joining two.
+/// [`String::from_utf8_lossy`] cannot hide one: the replacement character is not a character
+/// [`continues_a_path`] accepts — it is not alphanumeric — so an undecodable run ends a path
+/// rather than joining two.
 /// Nothing, when the working tree does not hold the file at all.
 ///
 /// `git ls-files --cached` lists what the *index* holds, and an unstaged deletion leaves a path
@@ -339,29 +425,263 @@ fn synthetic_home_path(marker: &str, tail: &str) -> String {
 /// native spelling before this table gets a row.
 const RUNNER_HOME_ROOTS: &[(&str, &str)] = &[("ubuntu", "/home/"), ("macos", "/Users/")];
 
+/// A YAML value with any trailing comment removed.
+///
+/// ` #` after a value opens a comment; a line that is nothing but a comment leaves the value empty.
+/// The parse below had no notion of one, so a `runs-on:` line carrying an ordinary trailing comment
+/// — a shape `.github/workflows/ci.yml` already uses on other value lines — read as a runner whose
+/// name included the comment, and the case that consumes these labels panicked naming a platform
+/// that does not exist. A gate that refuses a clean workflow is the failure mode this whole file is
+/// most careful about.
+fn without_comment(value: &str) -> &str {
+    match value.find(" #") {
+        Some(offset) => value[..offset].trim(),
+        None => value.trim(),
+    }
+}
+
+/// The items one YAML scalar or inline sequence names, unquoted.
+///
+/// `[a, b]` is a sequence and anything else is one item. Nothing here is a YAML parser: what a
+/// workflow writes for a runner is a label, a short inline list of them, a block sequence, or a
+/// matrix expression, and each of those has a caller below that knows it by shape.
+fn list_items(value: &str) -> Vec<String> {
+    let unquote = |item: &str| item.trim().trim_matches(['"', '\'']).to_owned();
+    match value
+        .strip_prefix('[')
+        .and_then(|rest| rest.strip_suffix(']'))
+    {
+        Some(sequence) => sequence
+            .split(',')
+            .map(unquote)
+            .filter(|item| !item.is_empty())
+            .collect(),
+        None if value.is_empty() => Vec::new(),
+        None => vec![unquote(value)],
+    }
+}
+
+/// Whether `label` names a runner rather than a piece of the document it was read out of.
+///
+/// Load-bearing, and *inside* the parse rather than beside it. Whatever leaves [`runner_labels`]
+/// is handed to [`RUNNER_HOME_ROOTS`] as the name of a platform CI runs on, and a value no row
+/// matches is not checked against anything — it is panicked on by name, which is a red gate on a
+/// workflow that is not wrong. The same rule written as an assertion in a test case would be
+/// applied to that case's own table and to no label read out of a file, so it could not fail for
+/// any workflow this repository holds; that is what it was, and it is why it is here now.
+///
+/// What it refuses is YAML that leaked into a value: an unresolved `${{ … }}` wherever it is
+/// written — a `runs-on:` value, a matrix entry, a sequence item — a comment, a bracket, a comma,
+/// a quote, a colon out of a mapping, and anything carrying whitespace. A runner label carries
+/// none of those.
+fn names_a_runner(label: &str) -> bool {
+    !label.is_empty()
+        && !label.contains(char::is_whitespace)
+        && !label.contains(['$', '{', '}', '#', '[', ']', ',', '"', '\'', ':'])
+}
+
+/// The indentation of `line`, in bytes, which is what YAML nests with.
+fn indentation(line: &str) -> usize {
+    line.len() - line.trim_start().len()
+}
+
+/// The items of the block sequence written under `lines[from]`, if there is one.
+///
+/// The second of the two spellings GitHub Actions gives a list, and the ordinary one for a runner
+/// named by several labels — `- self-hosted` and then the platform, which is exactly how a
+/// platform with no row in [`RUNNER_HOME_ROOTS`] arrives. Read it or the job contributes no label
+/// at all, which is this gate narrowing itself in silence on the one platform it has never heard
+/// of.
+///
+/// All three ways YAML allows one to be written, because reading one of them is the same silence
+/// wearing a smaller coat: an entry may sit at its key's **own** indentation as well as deeper,
+/// and a comment or a blank line between two entries interrupts neither. This repository's own
+/// workflow carries a comment above a value line in five places.
+fn block_sequence(lines: &[&str], from: usize) -> Vec<String> {
+    let key = indentation(lines[from]);
+    let mut items = Vec::new();
+    for line in &lines[from + 1..] {
+        let trimmed = line.trim_start();
+        if trimmed.is_empty() || trimmed.starts_with('#') {
+            continue;
+        }
+        if indentation(line) < key {
+            break;
+        }
+        let Some(element) = trimmed.strip_prefix("- ") else {
+            break;
+        };
+        items.extend(list_items(without_comment(element)));
+    }
+    items
+}
+
+/// The value `key` takes in the mapping written under `lines[from]`, if it takes one.
+///
+/// `runs-on:` accepts a mapping of `group:` and `labels:` as well as a scalar and a sequence; it
+/// is how a workflow addresses a self-hosted runner group, and the platform is the `labels:` half.
+/// A group name is not a platform and is deliberately not read as one: inventing a label out of it
+/// hands [`RUNNER_HOME_ROOTS`] something to panic about, which is the failure this parse is most
+/// careful to avoid. A mapping naming only a group is stated in the module documentation as a
+/// `runs-on:` whose platform this gate cannot check.
+fn mapping_value(lines: &[&str], from: usize, key: &str) -> Vec<String> {
+    let outer = indentation(lines[from]);
+    for (number, line) in lines.iter().enumerate().skip(from + 1) {
+        let trimmed = line.trim_start();
+        if trimmed.is_empty() || trimmed.starts_with('#') {
+            continue;
+        }
+        if indentation(line) <= outer {
+            break;
+        }
+        let Some(rest) = trimmed
+            .strip_prefix(key)
+            .and_then(|rest| rest.strip_prefix(':'))
+        else {
+            continue;
+        };
+        let value = without_comment(rest);
+        return if value.is_empty() {
+            block_sequence(lines, number)
+        } else {
+            list_items(value)
+        };
+    }
+    Vec::new()
+}
+
+/// The lines of the block `lines[number]` belongs to: its parent key's own indented body.
+///
+/// A matrix belongs to the job that defines it. Looking a key up across the whole file reads
+/// *another* job's matrix, and `os` is both GitHub's own name for a runner matrix and an ordinary
+/// name for a matrix of container images or target platforms — so every value of every `os:` in
+/// the file became a runner label for this job. That over-collection was documented here as the
+/// safe direction, on the grounds that "an extra label is a platform the lane checks a home root
+/// for". It is not checked: it is looked up in [`RUNNER_HOME_ROOTS`] and panicked on when no row
+/// matches, so over-collecting is the direction that turns the gate red on a clean workflow.
+fn enclosing_block(lines: &[&str], number: usize) -> (usize, usize) {
+    let indent = indentation(lines[number]);
+    let mut start = 0;
+    let mut parent = 0;
+    for (earlier, line) in lines[..number].iter().enumerate() {
+        if !line.trim().is_empty() && indentation(line) < indent {
+            parent = indentation(line);
+            start = earlier + 1;
+        }
+    }
+    let end = lines
+        .iter()
+        .enumerate()
+        .skip(number + 1)
+        .find(|(_, line)| !line.trim().is_empty() && indentation(line) <= parent)
+        .map_or(lines.len(), |(later, _)| later);
+    (start, end)
+}
+
+/// Every value `key` takes in a matrix within `lines`.
+///
+/// Three spellings, because a workflow may use any of them: `key: [a, b]`, a block sequence under
+/// `key:`, and an `include:` entry, which writes the key on the same line as its own sequence
+/// dash. `lines` is the job's own block — see [`enclosing_block`] — and not the whole file.
+fn matrix_values(lines: &[&str], key: &str) -> Vec<String> {
+    let mut values = Vec::new();
+    for (number, line) in lines.iter().enumerate() {
+        let trimmed = line.trim_start();
+        // An `include:` entry spells its keys on the same line as the sequence dash.
+        let named = trimmed.strip_prefix("- ").unwrap_or(trimmed);
+        let Some(rest) = named
+            .strip_prefix(key)
+            .and_then(|rest| rest.strip_prefix(':'))
+        else {
+            continue;
+        };
+        let value = without_comment(rest);
+        if value.is_empty() {
+            values.extend(block_sequence(lines, number));
+        } else {
+            values.extend(list_items(value));
+        }
+    }
+    values
+}
+
+/// Every `runs-on:` line in `workflow`, as its line number and the labels that line names.
+///
+/// Per line, because that is the only thing a reader can act on. The sentence this gate holds a
+/// workflow to is "every `runs-on:` line contributes at least one label", and a *count* of
+/// distinct labels is neither half of it: two jobs sharing a runner is two lines and one label, so
+/// a count refuses a clean workflow, and a line resolving to nothing is hidden by a line naming
+/// three, so a count accepts a job whose platform is invisible. Both directions are the failure
+/// this function exists to remove.
+///
+/// Every `runs-on:` value, rather than the families [`RUNNER_HOME_ROOTS`] already names: searching
+/// for the known families is what made [`ci_runner_labels`]'s own doc false, because a platform
+/// with no row produced no label at all, the panic on an unrecorded label was unreachable, and the
+/// case stayed green on the runners that were already known.
+///
+/// A runner named through a matrix expression is resolved to the values that matrix holds, within
+/// the job that names it. **A value this parse cannot resolve contributes no label**, wherever it
+/// is written — the `runs-on:` value, a matrix entry, a sequence item — because the alternative is
+/// to hand the case that consumes these labels a string that is not a runner, which panics naming
+/// a platform nobody runs. [`names_a_runner`] is that rule, and every value passes through it.
+fn runners_per_line(workflow: &str) -> Vec<(usize, BTreeSet<String>)> {
+    let lines: Vec<&str> = workflow.lines().collect();
+    let mut runners = Vec::new();
+    for (number, line) in lines.iter().enumerate() {
+        let Some(value) = line.trim_start().strip_prefix("runs-on:") else {
+            continue;
+        };
+        let value = without_comment(value);
+        let named = if let Some(reference) = value
+            .strip_prefix("${{")
+            .and_then(|rest| rest.strip_suffix("}}"))
+        {
+            let (from, until) = enclosing_block(&lines, number);
+            reference
+                .trim()
+                .strip_prefix("matrix.")
+                .map(|key| matrix_values(&lines[from..until], key.trim()))
+                .unwrap_or_default()
+        } else if value.is_empty() {
+            // A block sequence, or the `group:`/`labels:` mapping, whose platform is `labels:`.
+            let sequence = block_sequence(&lines, number);
+            if sequence.is_empty() {
+                mapping_value(&lines, number, "labels")
+            } else {
+                sequence
+            }
+        } else {
+            list_items(value)
+        };
+        runners.push((
+            number + 1,
+            named
+                .into_iter()
+                .filter(|label| names_a_runner(label))
+                .collect(),
+        ));
+    }
+    runners
+}
+
+/// Every runner label a workflow's text names.
+fn runner_labels(workflow: &str) -> BTreeSet<String> {
+    runners_per_line(workflow)
+        .into_iter()
+        .flat_map(|(_, labels)| labels)
+        .collect()
+}
+
 /// Every runner label named in `.github/workflows/ci.yml`.
 ///
 /// Read from the workflow rather than listed here, so that adding a platform to CI without adding
-/// its home root to [`HOME_MARKERS`] fails this lane instead of quietly narrowing it.
+/// its home root to [`HOME_MARKERS`] fails this lane instead of quietly narrowing it. The reading
+/// is [`runner_labels`], which takes the text: a parse that needs no directory is a parse the cases
+/// below can drive without the gate writing a fixture outside the repository.
 fn ci_runner_labels(root: &Path) -> BTreeSet<String> {
     let workflow = fs::read_to_string(root.join(".github/workflows/ci.yml"))
         .expect("the CI workflow is readable");
-    let mut labels = BTreeSet::new();
-    for (family, _) in RUNNER_HOME_ROOTS {
-        let mut from = 0;
-        while let Some(offset) = workflow[from..].find(family) {
-            let start = from + offset;
-            from = start + family.len();
-            let end = workflow[start..]
-                .find(|byte: char| !byte.is_ascii_alphanumeric() && byte != '-')
-                .map_or(workflow.len(), |length| start + length);
-            // A label is `<family>-<something>`; the bare family name in prose is not one.
-            if end > start + family.len() {
-                labels.insert(workflow[start..end].to_owned());
-            }
-        }
-    }
-    labels
+    runner_labels(&workflow)
 }
 
 /// The markers cover the home root of every platform this repository actually builds on.
@@ -581,4 +901,281 @@ fn the_detector_finds_each_home_directory_spelling_and_no_portable_one() {
              the detector collected {found:?}"
         );
     }
+}
+
+/// A marker preceded by a path component is a relative reference, not an absolute path.
+///
+/// The detector looks for its markers anywhere in a line and, until this case asked, never asked
+/// what came *before* one — so any relative path or URL with a directory component of that name
+/// satisfied it. `website/` is a Docusaurus tree where a route so named is an ordinary page, and a
+/// JSON Pointer into a document's root is an ordinary pointer. What the lane then printed was an
+/// absolute path with the relative prefix cut away: a file that exists on no host, reported as this
+/// workstation's layout. It is the same defect as the sentence-ending marker above — a match
+/// accepted without looking at the other side of it — and it is the one that gets a gate switched
+/// off, because a reader who goes to look finds nothing there.
+///
+/// The second half is what a narrowing like this gets wrong. A leading run of separators leaves
+/// what follows absolute, which is how a `file://` URL spells a local path, and a serialized line
+/// break ends in a letter, which is a byte a directory name is made of. Both are absolute paths
+/// preceded by a byte the new rule would otherwise refuse, and both must still be collected.
+#[test]
+fn a_marker_preceded_by_a_path_component_is_not_an_absolute_home_path() {
+    for marker in HOME_MARKERS {
+        let component = marker.trim_start_matches('/');
+        for text in [
+            format!("the page is website/src/pages/{component}index.md"),
+            format!("see https://example.com/documentation/{component}getting-started"),
+            format!("the pointer /document{marker}children/0 addresses it"),
+            format!("the portable spelling is ~{marker}projects/ess/report.json"),
+            format!("relative to the tree, {component}someone/report.json"),
+        ] {
+            let found = home_paths(&text);
+            assert!(
+                found.is_empty(),
+                "`{text}` names no absolute path under a user's home directory — the marker is a \
+                 component of a relative reference — and the detector collected {found:?}, which \
+                 is a path that exists on no host"
+            );
+        }
+        let leaked = synthetic_home_path(marker, "someone/.cache/ess/report.json");
+        for text in [
+            format!("the run wrote {leaked} before exiting"),
+            format!("it is reachable as file://{leaked}"),
+            format!("the record reads \"the run exited\\n{leaked}\""),
+            format!("-{leaked}"),
+            format!("+{leaked}"),
+            format!("    +{leaked}"),
+        ] {
+            let found = home_paths(&text);
+            assert!(
+                found.contains(&leaked),
+                "`{text}` carries `{leaked}`, an absolute path under a user's home directory, \
+                 however the bytes before it are written; the detector collected {found:?}"
+            );
+        }
+    }
+}
+
+/// An account name outside ASCII is an account name, and the path under it is still a leak.
+///
+/// [`continues_a_path`] accepted ASCII alone, so for an account whose name starts outside it
+/// nothing followed the marker as far as the detector could tell: the candidate trimmed back to the
+/// directory the marker names and the whole path left the scan. Only the *first* character decided
+/// it — a name whose second character is non-ASCII was collected truncated, which is a finding
+/// naming a path nobody can go and look at. Neither platform CI runs on requires an ASCII account
+/// name, and the acceptance statement refuses a path under *a user's* home directory without
+/// qualifying whose.
+///
+/// The second half is the property [`home_paths_in`] depends on to read a binary file: the
+/// replacement character [`String::from_utf8_lossy`] leaves behind is not part of a name, so an
+/// undecodable run still *ends* a path rather than joining two into one finding that is neither.
+#[test]
+fn a_home_directory_whose_account_name_is_not_ascii_is_still_collected() {
+    for marker in HOME_MARKERS {
+        for account in ["ärni", "jösé", "北京"] {
+            let leaked = synthetic_home_path(marker, &format!("{account}/.cache/ess/report.json"));
+            let found = home_paths(&format!("the run wrote {leaked} before exiting"));
+            assert!(
+                found.contains(&leaked),
+                "`{leaked}` is an absolute path under a user's home directory whose account name \
+                 is not ASCII; the detector collected {found:?}"
+            );
+        }
+        let first = synthetic_home_path(marker, "someone/.cache/ess/report.json");
+        let second = synthetic_home_path(marker, "another/.cache/ess/report.json");
+        let found = home_paths(&format!("{first}\u{FFFD}{second}"));
+        assert_eq!(
+            found,
+            BTreeSet::from([first.clone(), second.clone()]),
+            "an undecodable run between `{first}` and `{second}` ends a path rather than joining \
+             two; the detector collected {found:?}"
+        );
+    }
+}
+
+/// Each spelling a `runs-on:` could be written in here tomorrow, and the labels it names.
+///
+/// A table rather than a case body, because the body that held it outgrew the line limit the
+/// moment the shapes the second adversary pass named were added to it — and the answer to that is
+/// never to drop shapes. Every one of these was read by a YAML parser before it was written down.
+const RUNNER_SPELLINGS: &[(&str, &str, &[&str])] = &[
+        (
+            "a platform with no row in the home-root table",
+            "jobs:\n  gate:\n    runs-on: ubuntu-latest\n  native:\n    runs-on: freebsd-14\n",
+            &["ubuntu-latest", "freebsd-14"],
+        ),
+        (
+            "a matrix expression",
+            "jobs:\n  matrixed:\n    runs-on: ${{ matrix.runner }}\n    strategy:\n      \
+             matrix:\n        runner: [openbsd-7, netbsd-10]\n",
+            &["openbsd-7", "netbsd-10"],
+        ),
+        (
+            "a matrix expression carrying a trailing comment",
+            "jobs:\n  matrixed:\n    runs-on: ${{ matrix.runner }} # both architectures\n    \
+             strategy:\n      matrix:\n        runner: [openbsd-7] # the one that ships\n",
+            &["openbsd-7"],
+        ),
+        (
+            "a matrix written as `include:` entries",
+            "jobs:\n  matrixed:\n    runs-on: ${{ matrix.os }}\n    strategy:\n      matrix:\n        include:\n          - os: openbsd-7\n            toolchain: stable\n",
+            &["openbsd-7"],
+        ),
+        (
+            "a block sequence, which is how a self-hosted runner is named",
+            "jobs:\n  native:\n    runs-on:\n      - self-hosted\n      - freebsd-14\n",
+            &["self-hosted", "freebsd-14"],
+        ),
+        (
+            "an inline sequence",
+            "jobs:\n  native:\n    runs-on: [self-hosted, freebsd-14]\n",
+            &["self-hosted", "freebsd-14"],
+        ),
+        (
+            "a quoted scalar",
+            "jobs:\n  native:\n    runs-on: \"freebsd-14\"\n",
+            &["freebsd-14"],
+        ),
+        (
+            "a block sequence whose items sit at the key's own indentation",
+            "jobs:\n  native:\n    runs-on:\n    - self-hosted\n    - freebsd-14\n",
+            &["self-hosted", "freebsd-14"],
+        ),
+        (
+            "a block sequence interrupted by a comment and a blank line",
+            "jobs:\n  native:\n    runs-on:\n      - self-hosted\n      # the ARM fleet\n\n      - freebsd-14\n",
+            &["self-hosted", "freebsd-14"],
+        ),
+        (
+            "a runner group mapping, which names its platform under `labels:`",
+            "jobs:\n  fleet:\n    runs-on:\n      group: ubuntu-runners\n      labels: ubuntu-22.04-16core\n",
+            &["ubuntu-22.04-16core"],
+        ),
+        (
+            "a matrix entry that is itself an expression",
+            "jobs:\n  matrixed:\n    runs-on: ${{ matrix.runner }}\n    strategy:\n      matrix:\n        runner: [openbsd-7, \"${{ vars.FLEET }}\"]\n",
+            &["openbsd-7"],
+        ),
+        (
+            "a matrix key another job of the same file also defines",
+            "jobs:\n  gate:\n    runs-on: ${{ matrix.os }}\n    strategy:\n      matrix:\n        os: [openbsd-7]\n  images:\n    runs-on: ubuntu-latest\n    strategy:\n      matrix:\n        os: [alpine, debian]\n    container: ${{ matrix.os }}\n",
+            &["openbsd-7", "ubuntu-latest"],
+        ),
+        (
+            "an expression naming a matrix key this workflow never defines",
+            "jobs:\n  matrixed:\n    runs-on: ${{ matrix.absent }}\n",
+            &[],
+        ),
+        (
+            "an expression that is not a matrix reference at all",
+            "jobs:\n  matrixed:\n    runs-on: ${{ inputs.runner }}\n",
+            &[],
+        ),
+];
+
+/// A workflow, and the `runs-on:` lines in it this parse can attribute no label to.
+///
+/// The two shapes a *count* of labels cannot tell apart: two jobs on one runner is two lines and
+/// one label, and a line resolving to nothing hides behind a line naming three.
+const BLIND_RUNNER_LINES: &[(&str, &str, &[usize])] = &[
+    (
+        "two jobs on one runner, every line resolved",
+        "jobs:\n  gate:\n    runs-on: ubuntu-latest\n  docs:\n    runs-on: ubuntu-latest\n",
+        &[],
+    ),
+    (
+        "one line the parse cannot resolve, beside one naming three labels",
+        "jobs:\n  called:\n    runs-on: ${{ inputs.runner }}\n  fleet:\n    runs-on: [self-hosted, linux, x64]\n",
+        &[3],
+    ),
+];
+
+/// Every runner the workflow names is read, including a platform this file has never heard of.
+///
+/// [`ci_runner_labels`] is documented as reading the workflow "so that adding a platform to CI
+/// without adding its home root to [`HOME_MARKERS`] fails this lane instead of quietly narrowing
+/// it", and it could not do that: it searched for the families [`RUNNER_HOME_ROOTS`] already names,
+/// so a platform with no row produced no label, the `unwrap_or_else` that panics on an unrecorded
+/// one was unreachable, and the case stayed green on the strength of the runners that were already
+/// known. The one shape that failed — a workflow naming no known family at all — is the one shape
+/// adding a platform never produces.
+///
+/// Driven against [`runner_labels`] rather than [`ci_runner_labels`] so that the gate writes
+/// nothing outside the repository. The helper this case used to have created a directory under
+/// `TMPDIR` on every run of the gate, printed its path on a green one and left it behind on a red
+/// one; the answer to a test fixture the gate has to clean up is a function that needs no fixture.
+///
+/// Every spelling below is one a workflow in this repository could be written in tomorrow, and the
+/// second half is why that matters: three of them arrive at a *clean* workflow, and a parse that
+/// answers one of those with the expression it could not read hands
+/// [`the_markers_cover_the_home_root_of_every_platform_ci_runs_on`] a platform that does not exist
+/// to panic about. A gate that refuses a clean repository is the one that gets switched off.
+#[test]
+fn the_workflow_parse_reads_every_runner_the_workflow_names() {
+    for (spelling, workflow, expected) in RUNNER_SPELLINGS {
+        let labels = runner_labels(workflow);
+        assert_eq!(
+            labels,
+            expected.iter().map(|label| (*label).to_owned()).collect(),
+            "`{spelling}` is a runner this parse has to read: a platform it cannot see narrows \
+             this gate in silence, and a label it invents for a value it could not resolve turns \
+             the gate red on a workflow that is not wrong. It read {labels:?}"
+        );
+        // The class, rather than the instances above: whatever this parse emits is handed to
+        // `RUNNER_HOME_ROOTS` as the name of a platform CI runs on, so it has to *be* a runner
+        // label and not a fragment of the YAML it was read out of. [`names_a_runner`] is that
+        // rule, and it lives inside the parse — a guard written here would be an assertion over
+        // this table alone and would never see a label read out of a file, which is precisely the
+        // shape of check that cannot fail for any workflow this repository holds. What is left
+        // here is the observation that the parse *drops* such a value rather than the claim that
+        // this table happens not to contain one.
+        for label in &labels {
+            assert!(
+                names_a_runner(label),
+                "reading `{spelling}` produced `{label}`, which is a piece of the workflow's text \
+                 rather than a runner label; the case that consumes these panics naming it as a \
+                 platform CI runs on"
+            );
+        }
+    }
+
+    // The two shapes the repository control has to tell apart, which a count cannot. Two jobs on
+    // one runner is one label and two lines; a line the parse cannot read is hidden by a line that
+    // names three. Both are measured per line, which is the sentence the control is written to.
+    for (shape, workflow, blind_lines) in BLIND_RUNNER_LINES {
+        let blind: Vec<usize> = runners_per_line(workflow)
+            .into_iter()
+            .filter(|(_, labels)| labels.is_empty())
+            .map(|(line, _)| line)
+            .collect();
+        assert_eq!(
+            blind, *blind_lines,
+            "`{shape}`: a `runs-on:` line contributing no label is a job whose platform this gate \
+             cannot check, and it is the line that has to be named — not a total compared against \
+             a total"
+        );
+    }
+
+    // The repository's own workflow, which is the only one whose verdict this gate carries. Every
+    // `runs-on:` line in it has to contribute at least one label: an expression this parse cannot
+    // resolve contributes nothing, deliberately, so this is what says so instead of a panic naming
+    // a platform nobody runs.
+    let workflow = fs::read_to_string(workspace_root().join(".github/workflows/ci.yml"))
+        .expect("the CI workflow is readable");
+    let per_line = runners_per_line(&workflow);
+    assert!(
+        !per_line.is_empty(),
+        "`.github/workflows/ci.yml` names no runner, so this half measures nothing"
+    );
+    let blind: Vec<usize> = per_line
+        .iter()
+        .filter(|(_, labels)| labels.is_empty())
+        .map(|(line, _)| *line)
+        .collect();
+    assert!(
+        blind.is_empty(),
+        "these `runs-on:` lines of `.github/workflows/ci.yml` contribute no label, so this gate \
+         checks nothing about the platform those jobs run on — either the spelling they use \
+         belongs in `runner_labels` or their home root belongs in `RUNNER_HOME_ROOTS`: {blind:?}"
+    );
 }
