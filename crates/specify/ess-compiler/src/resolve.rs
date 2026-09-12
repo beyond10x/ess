@@ -511,7 +511,10 @@ impl<'a> Locator<'a> {
             let Some(text) = self.sources.get(label) else {
                 continue;
             };
-            let mut occurrences = text.match_indices(needle);
+            let narrowed = whole_name_matters(needle);
+            let mut occurrences = text
+                .match_indices(needle)
+                .filter(|(index, matched)| !narrowed || whole_name(text, *index, matched.len()));
             let Some((index, _)) = occurrences.next() else {
                 continue;
             };
@@ -522,6 +525,70 @@ impl<'a> Locator<'a> {
         }
         found
     }
+}
+
+/// Whether [`whole_name`] may be applied to this needle at all.
+///
+/// **It applies to the declaration needles — `name: <declared>`, `id: <declared>`,
+/// `component: <declared>` — and must not be applied to the trailing-key guess `<last>:`.**
+/// [`needles_from_tokens`] builds exactly those two kinds, and the difference between them is not
+/// cosmetic:
+///
+/// * A declaration needle ends in the name being sought, and the document writes that name on the
+///   line that declares it. A longer name beginning with it is a *different* declaration, so
+///   discarding the longer one can only narrow correctly.
+/// * The key needle is a *guess* that the path's last segment is a key the author wrote, and it is
+///   allowed to be wrong. It is exempt because it has **no name boundary to require**: what it
+///   seeks is a mapping key, and the characters that delimit a key in YAML are not the characters
+///   [`whole_name`] tests for. Requiring one would discard correct matches.
+///
+/// What the exemption does *not* buy is safety, and an earlier version of this comment said it did.
+/// A guess that happens to occur exactly once **is** reported as a line, and the line may belong to
+/// something that was never refused. That is true here and on the base commit alike — `filed:` has
+/// never been narrowed, so both take the identical path for it — and it is carried by
+/// `story:a-wrong-trailing-key-guess-is-reported-as-a-line` and measured by
+/// `tests/trailing_key_guess_citations.rs`, not by this exemption. What the exemption *does* buy is
+/// that the filter cannot make it worse: [`whole_name`] only ever removes matches, and removing a
+/// match can only move a needle towards being unique, which is towards being reported.
+///
+/// Adversary pass 1, F1, is what that costs. An outcome is written `- name: filed` and never
+/// `filed:`, so the needle `filed:` for `command.shop.probe.Doit.outcomes.filed` cannot match its
+/// own target; it matched a second command's payload key in a second file, and what kept that quiet
+/// was `filed:` also occurring inside `refiled:`. Narrowed, the guess became unique and the refusal
+/// was cited at a line belonging to a command that was not refused at all. Adversary pass 2, A3,
+/// then deleted that second field and got the same wrong citation *without* the filter — which is
+/// why the sentence above no longer calls the unnarrowed state safe. Not being unique is a property
+/// of the document in front of the reader, not of the needle.
+///
+/// The kind is read off the needle because the two shapes are distinguishable and exhaustive: a
+/// needle either ends in a name or ends in the `:` of a key.
+/// `the_whole_name_filter_applies_to_declaration_needles_and_not_to_the_trailing_key_guess`
+/// derives both kinds from `needle_shapes` and fails on a third shape rather than guessing at
+/// one. Read that corpus before trusting the word *every*: it is machine-enumerated over
+/// `ConstructKind`s and **hand-written over segment shapes**, so a shape nobody wrote down is a
+/// shape the check never sees.
+fn whole_name_matters(needle: &str) -> bool {
+    !needle.ends_with(':')
+}
+
+/// Whether a match is the whole name, rather than the front of a longer one.
+///
+/// `name: billing.invoice.Invoice` occurs inside `name: billing.invoice.InvoiceId`, and an entity's
+/// identity type is conventionally named exactly that way — so counting raw substrings made every
+/// such declaration ambiguous, and every refusal about one lost its file as well as its line. That
+/// is not a near-miss the reader can work with: `<document>` is the whole specification.
+///
+/// A match counts when the characters on either side of it are not ones a name is spelt with. The
+/// honesty rule above is untouched: two *delimited* occurrences are still no line at all.
+///
+/// Only ever reached for a needle [`whole_name_matters`] admits; see there for which needles those
+/// are and why the other kind must be counted raw.
+fn whole_name(text: &str, index: usize, length: usize) -> bool {
+    let spelt_with =
+        |character: char| character.is_ascii_alphanumeric() || matches!(character, '_' | '-' | '.');
+    let before = text[..index].chars().next_back();
+    let after = text[index + length..].chars().next();
+    !before.is_some_and(spelt_with) && !after.is_some_and(spelt_with)
 }
 
 /// The line and column a byte offset falls on, counted as an editor counts them.
@@ -830,8 +897,18 @@ const STRUCTURAL: &[&str] = &[
 
 /// Needles for a document path, most specific first.
 ///
-/// Guessing wrongly is safe: [`Locator`] only reports a line for a needle that occurs exactly once,
-/// so a bad guess produces no line rather than the wrong one.
+/// The first needle is a *guess* — that the path's last segment is a key the author wrote — and
+/// **guessing wrongly is not safe**. An earlier version of this comment said it was, on the grounds
+/// that [`Locator`] reports a line only for a needle occurring exactly once and a wrong guess would
+/// not be unique. Uniqueness is a property of the documents being searched, not of the needle: a
+/// wrong guess that happens to occur once is reported, and the line it reports can belong to a
+/// declaration that was never refused.
+///
+/// It bites for every `command.*.outcomes.<name>` refusal, because an outcome is written
+/// `- name: <x>` and never `<x>:`, so the first needle tried can never match its own target and any
+/// match it does find is wrong by construction.
+/// `story:a-wrong-trailing-key-guess-is-reported-as-a-line` carries it;
+/// `tests/trailing_key_guess_citations.rs` measures it, on this commit and on the base alike.
 fn needles_for(location: &str) -> Vec<String> {
     let tokens: Vec<&str> = location
         .split(['.', ' ', '[', ']'])
@@ -3629,6 +3706,33 @@ mod tests {
     }
 
     #[test]
+    fn a_needle_that_is_only_the_front_of_a_longer_name_is_not_an_occurrence() {
+        // An entity and its identity type: `shop.Order` is spelt inside `shop.OrderId`, so counting
+        // raw substrings found two occurrences of the entity and refused to locate either — which
+        // cost the refusal its file as well as its line.
+        //
+        // Nothing makes an entity collide with its own identity type: `identity.type` is a free
+        // type reference and `ess-domain/src/entity.rs` imposes no naming relation, so `<Entity>Id`
+        // is a convention an author may or may not follow. How often it is followed is measured
+        // rather than asserted — `tests/billing.rs` derives the colliding set from
+        // `examples/billing`'s own text, where it is 2 of 31 declared names.
+        let mut sources = SourceMap::new();
+        sources.insert(
+            "a.yaml",
+            "types:\n  - name: shop.OrderId\n    of: Uuid\nentities:\n  - name: shop.Order\n",
+        );
+        let locator = Locator::new(&sources, &["a.yaml"]);
+
+        let span = locator.span("entity shop.Order", &["name: shop.Order".to_owned()]);
+        assert_eq!(span.source, "a.yaml");
+        assert_eq!(
+            span.located.expect("the entity is declared once").line,
+            5,
+            "the entity's own line, not its identity type's: {span}"
+        );
+    }
+
+    #[test]
     fn a_needle_in_two_files_is_not_located_because_one_of_them_is_wrong() {
         let mut sources = SourceMap::new();
         sources.insert("a.yaml", "name: shop.Thing\n");
@@ -3753,15 +3857,21 @@ mod tests {
         );
     }
 
-    /// The typed needles and the string needles are one derivation, over every segment shape.
+    /// The segment shapes this module derives needles from — a hand-written list, crossed with
+    /// every [`ConstructKind`].
     ///
-    /// The class adversary pass 1 found (F1, F2): a second implementation of "which line does this
-    /// path name" disagreed with the first on a trailing qualified name and on an author-chosen
-    /// name that is a `STRUCTURAL` word. Both are in the table; so is every shape the migrated
-    /// producers emit, including an index, a bare construct, and a `Name` carrying a space.
-    #[test]
-    fn typed_needles_are_the_string_needles_for_every_segment_shape() {
-        let shapes = [
+    /// One corpus rather than three copies: the tests below each ask a different question of it,
+    /// and a shape that only one of them sees is a shape whose answer to the others is unknown.
+    ///
+    /// **Half of it is enumerated and half of it is a table, and the half that is a table is the
+    /// half that matters.** `ConstructKind::ALL` is the machine-enumerated half, so no head token
+    /// is special-cased by accident. The array below is *not* derived from anything: it is written
+    /// by hand, each entry recording a shape some adversary or producer turned out to reach, and
+    /// nothing in this crate fails when a new member-path shape appears without a line here. Every
+    /// test that says "every needle" means every needle these shapes produce. Adding an arm to
+    /// `ess_primitives::error::Segment` does not add an entry here.
+    fn needle_shapes() -> impl Iterator<Item = ConstructRef> {
+        [
             // The bare construct: no member path at all.
             ConstructRef::new(ConstructKind::Command, "shop.orders.PlaceOrder"),
             // A structural key, which names no declaration.
@@ -3800,9 +3910,21 @@ mod tests {
             ConstructKind::ALL
                 .iter()
                 .map(|kind| ConstructRef::new(*kind, "shop.any.Thing").key("outcomes")),
-        );
+        )
+    }
 
-        for construct in shapes {
+    /// The typed needles and the string needles are one derivation, over the shapes in
+    /// [`needle_shapes`].
+    ///
+    /// The class adversary pass 1 found (F1, F2): a second implementation of "which line does this
+    /// path name" disagreed with the first on a trailing qualified name and on an author-chosen
+    /// name that is a `STRUCTURAL` word. Both are in [`needle_shapes`], along with an index, a bare
+    /// construct and a `Name` carrying a space — every shape a migrated producer was *observed* to
+    /// emit when each was written down. Read [`needle_shapes`]' own doc before reading that as a
+    /// guarantee: the shapes are a hand-written list and nothing adds to it.
+    #[test]
+    fn typed_needles_are_the_string_needles_for_every_segment_shape() {
+        for construct in needle_shapes() {
             assert_eq!(
                 needles_of_site(&construct),
                 needles_for(&construct.render()),
@@ -3812,12 +3934,118 @@ mod tests {
         }
     }
 
+    /// Which needles the whole-name filter applies to, decided for every needle
+    /// [`needle_shapes`] produces.
+    ///
+    /// **Not every needle this module builds.** [`needle_shapes`] is machine-enumerated over
+    /// [`ConstructKind`] and hand-written over segment shapes; see its own doc. What this decides
+    /// is every needle those shapes yield, which is the corpus the module's other two needle checks
+    /// also use.
+    ///
+    /// The class, not the instance. [`whole_name`] can only *remove* matches, and removing a match
+    /// can turn a needle that occurred twice into one that occurs once — which [`Locator`] reports
+    /// as a line. That is sound only for a needle whose every match *is* the declaration the path
+    /// names, and [`needles_from_tokens`] builds one kind like that and one kind that is not:
+    ///
+    /// * `name: <declared>` / `id: <declared>` / `component: <declared>` — the needle ends in the
+    ///   name being sought, and a longer name beginning with it is a different declaration.
+    /// * `<last>:` — a *guess* that the path's last segment is a key the author wrote. It is exempt
+    ///   because a key has no name boundary to require, not because a wrong guess is harmless; see
+    ///   [`whole_name_matters`].
+    ///
+    /// Two probe documents, because one of them decides nothing:
+    ///
+    /// * **Two matches** — the same text twice, the second extended at the front by one character a
+    ///   name is spelt with. A narrowed needle discards the second and reports line 1; an
+    ///   unnarrowed one counts both and reports nothing. This is the state that distinguishes the
+    ///   two kinds, and it is all this check used to build.
+    /// * **One match** — the needle written once, on line 2, under an unrelated line. Narrowing
+    ///   changes nothing here, so both kinds report line 2. It is built because it is the *only*
+    ///   state in which the key-needle exemption is unsafe, and a check that certifies the
+    ///   exemption while never constructing it certifies nothing. What it records is the defect,
+    ///   not a guarantee: a trailing-key guess that occurs exactly once is reported as a line
+    ///   whether or not the author ever wrote that key, and the assertion below says so.
+    ///   `story:a-wrong-trailing-key-guess-is-reported-as-a-line` carries it, and
+    ///   `tests/trailing_key_guess_citations.rs` measures the consequence on real documents. When
+    ///   that story lands this assertion goes red, which is the point of writing it down.
+    ///
+    /// Asserting the *kind* as well as the effect is what makes this a class check: a third needle
+    /// shape fails the first assertion rather than silently inheriting whichever side the code
+    /// happens to put it on.
+    ///
+    /// Adversary pass 1, F1: `command.shop.probe.Doit.outcomes.filed` was cited at the payload
+    /// target line of a different command, in a different file, that was not refused at all,
+    /// because `filed:` inside `refiled:` stopped being a second occurrence. Adversary pass 2, A5:
+    /// this check exempted the needle that caused it and never built the document that makes the
+    /// exemption bite.
+    #[test]
+    fn the_whole_name_filter_applies_to_declaration_needles_and_not_to_the_trailing_key_guess() {
+        for construct in needle_shapes() {
+            for needle in needles_of_site(&construct) {
+                let names_a_declaration = ["name: ", "id: ", "component: "]
+                    .iter()
+                    .any(|prefix| needle.starts_with(prefix));
+                let guesses_a_key = needle.ends_with(':');
+                assert!(
+                    names_a_declaration != guesses_a_key,
+                    "`{needle}` is neither of the two kinds `needles_from_tokens` builds, so which \
+                     side of the whole-name filter it falls on has not been decided"
+                );
+
+                let line_of = |text: String| {
+                    let mut sources = SourceMap::new();
+                    sources.insert("a.yaml", text);
+                    let locator = Locator::new(&sources, &["a.yaml"]);
+                    locator.span("probe", std::slice::from_ref(&needle))
+                };
+
+                let two = line_of(format!("{needle} value\nq{needle} value\n"));
+                if names_a_declaration {
+                    assert_eq!(
+                        two.located.map(|located| located.line),
+                        Some(1),
+                        "`q{needle}` is a different declaration, not a second occurrence of \
+                         `{needle}`: {two}"
+                    );
+                } else {
+                    assert!(
+                        two.located.is_none(),
+                        "`{needle}` is not narrowed, so `q{needle}` is still a second occurrence \
+                         of it and two matches is no line: {two}"
+                    );
+                }
+
+                // The one-match state. For a declaration needle this is the ordinary case. For the
+                // key guess it is the unsafe one: `unrelated:` is not what the path names, and the
+                // needle is reported anyway because it is the only match in the document.
+                let one = line_of(format!("unrelated: value\n{needle} value\n"));
+                assert_eq!(
+                    one.located.map(|located| located.line),
+                    Some(2),
+                    "a single match is reported as a line regardless of kind; for `{needle}` that \
+                     is {}: {one}",
+                    if names_a_declaration {
+                        "the declaration the path names"
+                    } else {
+                        "a guess at a key the author may never have written — \
+                         `story:a-wrong-trailing-key-guess-is-reported-as-a-line`"
+                    }
+                );
+            }
+        }
+    }
+
     /// The stronger half of the same contract: the *tokens* agree, not only the needles.
     ///
     /// Needle equality alone let a segment arm be deleted without any test noticing, because no
     /// needle currently turns on an index (adversary pass 2, F7). Token equality is what
     /// `needles_of_site` actually owes — that the two paths are looking at the same path — and it
     /// fails the moment a segment stops contributing.
+    ///
+    /// "Every segment shape" in the name means the shapes written below, which are a *second*
+    /// hand-written list — index-bearing, where [`needle_shapes`] is not — crossed with
+    /// `ConstructKind::ALL`. The kinds are enumerated; the shapes are a table, and the same caveat
+    /// [`needle_shapes`]' doc states applies here.
     #[test]
     fn typed_tokens_are_the_string_tokens_for_every_segment_shape() {
         let shapes = [

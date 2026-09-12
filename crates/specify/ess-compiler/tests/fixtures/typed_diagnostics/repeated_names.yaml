@@ -46,3 +46,21 @@ commands:
       - name: noted
         emits:
           - shop.repeat.Filed
+  # The same command declared a second time, under the same qualified name, and the one thing in
+  # this file that makes a needle genuinely ambiguous: two declarations answer to it, so the
+  # locator cannot tell which one a refusal belongs to and reports no line rather than a wrong one.
+  #
+  # The unlocated half of this fixture used to come from `File` being spelt inside `FileTwo`
+  # instead — a collision between two *different* declarations, which is a defect in the search
+  # and not an ambiguity anybody wrote.
+  - name: shop.repeat.Solo
+    input:
+      - name: note
+        type: String
+    outcomes:
+      - name: noted
+        emits:
+          - shop.repeat.Filed
+        payload:
+          shop.repeat.Filed:
+            note: input.note
