@@ -338,8 +338,17 @@ entry (as `error::struct::ValidationError` has), the implementation wording for 
    refusals are cited at `repeated_names.yaml:12:5`.
 
    The **unlocated** half is `shop.repeat.Solo`, declared twice, at lines 35 and 56. Two real
-   occurrences of a whole name is a genuine ambiguity that no filter can resolve, so both of its
-   refusals report `located: None` and `source: <document>` rather than picking the first.
+   occurrences of a whole name is a genuine ambiguity that no filter can resolve, so all three of
+   its refusals report `located: None` and `source: <document>` rather than picking the first.
+
+   Three, and it was two: the third is the name-level duplicate the second declaration earns, and
+   the fixture was accepted as a one-command document until
+   `story:a-masked-first-declaration-hides-a-duplicate-name` closed the gap it went through —
+   `Solo`'s *first* declaration fails its own conversion, so it never reached the command registry
+   and the second took the name in silence. The fixture keeps both declarations. Answering that
+   refusal by deleting the second `Solo` would destroy the only thing in the tree that makes a
+   needle genuinely ambiguous, which is the same mistake, in the same fixture, that the paragraph
+   below records twice.
 
    This page has been wrong about this fixture twice, in opposite directions, and both corrections
    came from an adversary rather than from a gate. The first version claimed the fixture asserted
