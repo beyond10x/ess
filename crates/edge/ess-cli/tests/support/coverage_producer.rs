@@ -96,7 +96,7 @@ fn setup(profile: &str) -> (PathBuf, Value, BTreeMap<String, AdmittedInput>) {
     let mut plan = read_json(&fixture.join("semantic-plan.json"));
     assert_eq!(
         hash(&fixture.join("semantic-plan.json")),
-        "5a378b14f7747ce7b3f1eac9b6d6e8c5962c02f81e4e116f7e74d478bcae6ef1"
+        "d1cc575f6237367f205098cd2df990ec30956c745ef50907521c6b6fc37e5721"
     );
     for entry in list(&read_json(&fixture.join("input-catalog.json"))["files"]) {
         assert_eq!(

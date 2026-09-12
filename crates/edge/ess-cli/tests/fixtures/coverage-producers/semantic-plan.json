@@ -14,7 +14,7 @@
   },
   "input_catalog": {
     "path": "input-catalog.json",
-    "sha256": "6c245ae7baf8e73cefa1780c388b6e9564b3cd8854adf47ff4aca930fb77a56a"
+    "sha256": "66a5eabe5e154f68fb47a0106fbff6ab2f06a88c105dfc81248f72c63444ec67"
   },
   "legacy_observations": {
     "path": "legacy-observations/semantic-observations.json",
@@ -5715,7 +5715,7 @@
     }
   },
   "policy_accounting": {
-    "document_root": "/home/timo/.local/state/worktree/trees/b10x/aep/ess-conformance-v2-reader",
+    "document_root": "managed worktree ess-conformance-v2-reader",
     "profile": "development.ess-conformance-coverage",
     "protocol": "adp-ess-conformance-coverage/1",
     "task_kind": "feature",
@@ -5809,7 +5809,7 @@
     }
   ],
   "count_control": {
-    "root": "/home/timo/.local/state/worktree/trees/b10x/aep/ess-conformance-v2-reader/target/ess-conformance-coverage/producer-compat/preparation/count-control",
+    "root": "target/ess-conformance-coverage/producer-compat/preparation/count-control",
     "report_sha256": "a7b1f29ecb3ddfac32b96dee6f531b039b99f2fdb92ad6cbcf83853c535e88e8",
     "suite_sha256": "d90054a039bf854c56036cd464d07a0344bf24e5175c667a0c94ebed70054acf",
     "evaluated_at": 1788680000000,
