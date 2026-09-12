@@ -26,7 +26,7 @@ Free capacity measured 141,610,594,304 bytes; the hard reserve is 8,589,934,592 
 
 Each tree keeps its own target and uses /usr/bin/sccache, CARGO_INCREMENTAL=0 and dev/test debug=0; CARGO_TARGET_DIR is forbidden. Logs/reports use target/review-boundaries-3, while the additionally assigned temporary-fixture root is target itself to keep compiler socket paths short. CARGO_CACHE_RUSTC_INFO=0 prevents replay of a cached failed compiler metadata query observed in wave 2. No shared target or new external scratch is planned. Recheck disk at dispatch and return.
 
-At dispatch, the long delivery-unit temporary path prevented sccache from creating its startup notification socket. The coordinator started a dedicated foreground server using the documented SCCACHE_START_SERVER=1 and SCCACHE_NO_DAEMON=1 mode. Its explicit socket is /home/timo/.local/state/worktree/trees/b10x/ess/wt-752828a285ba/target/w3-cache.sock. Rust clients add SCCACHE_SERVER_UDS pointing there; each retains its own target and TMPDIR. The server was queried successfully before routing this supplement. Its log is target/review-boundaries-3/cache-server.log in the coordinator, which owns shutdown after all wave gates. This shares only compiler-cache access and bypasses no gate. The initial startup failure executed no delivery tests.
+At dispatch, the long delivery-unit temporary path prevented sccache from creating its startup notification socket. The coordinator started a dedicated foreground server using the documented SCCACHE_START_SERVER=1 and SCCACHE_NO_DAEMON=1 mode. Its explicit socket is ~/.local/state/worktree/trees/b10x/ess/wt-752828a285ba/target/w3-cache.sock. Rust clients add SCCACHE_SERVER_UDS pointing there; each retains its own target and TMPDIR. The server was queried successfully before routing this supplement. Its log is target/review-boundaries-3/cache-server.log in the coordinator, which owns shutdown after all wave gates. This shares only compiler-cache access and bypasses no gate. The initial startup failure executed no delivery tests.
 
 Current Atlas authority is managed wt-90ec680c6073 at clean exact remote 7b00adf3b1004e0cdd8dd12aa4fa8cc8435a0432. Its last organization fence is red on separately recorded sibling issues; this wave changes no Atlas source or public documentation allowlist. Bot commits and publishing use the current verified authority.
 
@@ -37,7 +37,7 @@ The original foreground cache session63151 was observed complete with exit0 afte
 
 ## Unit records
 
-Worktree root: /home/timo/.local/state/worktree/trees/b10x/ess. Every unit branches from the same opening commit and owns its recorded triple.
+Worktree root: ~/.local/state/worktree/trees/b10x/ess. Every unit branches from the same opening commit and owns its recorded triple.
 
 | Story | Branch | Managed worktree under root | Build/temp | Logs/reports | Stage |
 | --- | --- | --- | --- | --- | --- |

@@ -52,13 +52,13 @@ retain direct exit/output and report; do not clean unrelated work to make room.
 
 Planned managed ID: `ess-browser-replay-fidelity`.
 Planned branch: `impl/review-browser-replay-fidelity`.
-Planned worktree: `/home/timo/.local/state/worktree/trees/b10x/ess/ess-browser-replay-fidelity`.
+Planned worktree: `~/.local/state/worktree/trees/b10x/ess/ess-browser-replay-fidelity`.
 Build directory: that tree's default `target`.
 Implementor scratch: `target/review-boundaries-15/browser-replay` in that tree.
 Adversary scratch: `target/review-boundaries-15/adversary-pass-1` in that tree.
 Private Cargo home: `target/review-boundaries-15/cargo-home` in that tree, with explicitly assigned
 read-only registry/git cache sources. No shared target environment variable is permitted.
-Owned short temporary root: `/home/timo/.cache/ess-w15-browser-tmp`; browser profiles use that
+Owned short temporary root: `~/.cache/ess-w15-browser-tmp`; browser profiles use that
 same root. XDG auxiliary directories are explicitly assigned inside unit scratch.
 Lease: `ess-review-browser-replay-implementation`. Root creates these only after opening checks.
 
@@ -191,7 +191,7 @@ complete raw receipts. This is an implementation handoff; the story remains acti
 The separate adversary takes exclusive sequential unit ownership for source pass 1, with test-only
 write reservations in the two existing browser integration targets. Its scratch is the planned
 `target/review-boundaries-15/adversary-pass-1`; the newly assigned owned temporary root is
-`/home/timo/.cache/ess-w15-browser-adversary-1-tmp`, and its five XDG paths are under scratch.
+`~/.cache/ess-w15-browser-adversary-1-tmp`, and its five XDG paths are under scratch.
 The combined target and both temporary roots now have a 12 GiB ceiling, preserving the 8 GiB
 free-space floor. Fresh free space was 26726100992 bytes. No retained output is removed.
 Exact dispatch pins, handed source bytes, environment and resource measurement are retained in
@@ -225,7 +225,7 @@ Only the two explicit-null cases failed. Full raw output and producer/tool/resou
 remain in adversary-pass-1/implementation/root-combined-red; coordinator supplemental attribution
 is separate from the interrupted agent record. The same original implementor receives correction1.
 Its scratch is target/review-boundaries-15/browser-replay/fix1, with owned external temporary
-root /home/timo/.cache/ess-w15-browser-fix1-tmp and five XDG directories under scratch.
+root ~/.cache/ess-w15-browser-fix1-tmp and five XDG directories under scratch.
 The combined target and all three owned temporary roots now have a16GiB ceiling and unchanged
 8GiB free floor; fresh free space was 35618033664 bytes. No evidence is removed.
 
@@ -244,7 +244,7 @@ A fresh separate adversary receives the remaining source pass, pass 2, against a
 reservations and the complete accepted B01–B15 binding. It may only append independent browser
 tests. The unit branch and base remain unchanged. Its assigned scratch is
 `target/review-boundaries-15/adversary-pass-2` in the unit, its external temporary root is
-`/home/timo/.cache/ess-w15-browser-adversary-2-tmp`, and its five XDG directories are under scratch.
+`~/.cache/ess-w15-browser-adversary-2-tmp`, and its five XDG directories are under scratch.
 The 16 GiB ceiling now counts the unit target and all four temporary roots, with the same 8 GiB
 free-space floor. At 10:11:49Z allocated bytes were 11,105,861,632 and free bytes were
 33,426,784,256. No retained output was removed. Root preparation/browser-source-pass-2 contains
@@ -295,7 +295,7 @@ committer. The coordinator records its review before merging. The full gate uses
 default target and the prepared eleven-lane runner, SHA256
 `4d7c0c67d3ee8a2fa10d3db11599e3d14c294afb310194ee22d07fbc6bf5ed68`, against the exact clean
 integrated commit and final source review. Its newly assigned temporary root is
-`/home/timo/.cache/ess-w15-gate-attempt1-tmp`; gate scratch is
+`~/.cache/ess-w15-gate-attempt1-tmp`; gate scratch is
 `target/review-boundaries-15/gate-<integrated-head-prefix>-attempt1` with five private XDG paths.
 The retained frozen Rust/Firefox payloads, private coordinator Cargo/Go caches and 8 GiB free-space
 floor apply. All eleven lanes run fresh. No public Website allowlist file changes in this unit;
@@ -371,7 +371,7 @@ attempt 02 passed. No source evidence was missing and no failed attempt was over
 
 Archives, complete native manifests, six required report/seal pins, separate verification exits
 and retirement receipts live under
-`/home/timo/.cache/ess-review/2026-09-06-resume/browser-replay-unit-retirement`.
+`~/.cache/ess-review/2026-09-06-resume/browser-replay-unit-retirement`.
 Root rechecked the published unit ancestry, clean unit and finite final producer PID list, then
 removed only the five assigned generated roots. The coordinator gate TMP and all unrelated trees
 remain outside that cleanup. Lease end and managed finish returned zero. Root read all 21 fresh

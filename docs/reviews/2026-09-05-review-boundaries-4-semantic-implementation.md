@@ -179,7 +179,7 @@ Preparation mistakes are retained rather than counted as defect reproductions: P
 Command (working directory: assigned tree):
 
 ```sh
-env TMPDIR="$PWD/target" RUSTC_WRAPPER=/usr/bin/sccache SCCACHE_SERVER_UDS=/home/timo/.local/state/worktree/trees/b10x/ess/wt-752828a285ba/target/w4-cache.sock CARGO_INCREMENTAL=0 CARGO_PROFILE_DEV_DEBUG=0 CARGO_PROFILE_TEST_DEBUG=0 CARGO_CACHE_RUSTC_INFO=0 CARGO_NET_OFFLINE=true cargo test --offline --locked -p ess-diff --test families review_
+env TMPDIR="$PWD/target" RUSTC_WRAPPER=/usr/bin/sccache SCCACHE_SERVER_UDS=~/.local/state/worktree/trees/b10x/ess/wt-752828a285ba/target/w4-cache.sock CARGO_INCREMENTAL=0 CARGO_PROFILE_DEV_DEBUG=0 CARGO_PROFILE_TEST_DEBUG=0 CARGO_CACHE_RUSTC_INFO=0 CARGO_NET_OFFLINE=true cargo test --offline --locked -p ess-diff --test families review_
 ```
 
 Exit: 101. Full preserved output:
@@ -192,12 +192,12 @@ Exit: 101. Full preserved output:
    Compiling indexmap v2.14.1
    Compiling serde_yaml v0.9.34+deprecated
    Compiling schemars v0.8.22
-   Compiling ess-primitives v0.18.0 (/home/timo/.local/state/worktree/trees/b10x/ess/review-semantic-diff-coverage/crates/specify/ess-primitives)
-   Compiling ess-domain v0.18.0 (/home/timo/.local/state/worktree/trees/b10x/ess/review-semantic-diff-coverage/crates/specify/ess-domain)
-   Compiling ess-compiler v0.18.0 (/home/timo/.local/state/worktree/trees/b10x/ess/review-semantic-diff-coverage/crates/specify/ess-compiler)
-   Compiling ess-gen v0.18.0 (/home/timo/.local/state/worktree/trees/b10x/ess/review-semantic-diff-coverage/crates/generate/ess-gen)
-   Compiling ess-conformance v0.18.0 (/home/timo/.local/state/worktree/trees/b10x/ess/review-semantic-diff-coverage/crates/verify/ess-conformance)
-   Compiling ess-diff v0.18.0 (/home/timo/.local/state/worktree/trees/b10x/ess/review-semantic-diff-coverage/crates/verify/ess-diff)
+   Compiling ess-primitives v0.18.0 (~/.local/state/worktree/trees/b10x/ess/review-semantic-diff-coverage/crates/specify/ess-primitives)
+   Compiling ess-domain v0.18.0 (~/.local/state/worktree/trees/b10x/ess/review-semantic-diff-coverage/crates/specify/ess-domain)
+   Compiling ess-compiler v0.18.0 (~/.local/state/worktree/trees/b10x/ess/review-semantic-diff-coverage/crates/specify/ess-compiler)
+   Compiling ess-gen v0.18.0 (~/.local/state/worktree/trees/b10x/ess/review-semantic-diff-coverage/crates/generate/ess-gen)
+   Compiling ess-conformance v0.18.0 (~/.local/state/worktree/trees/b10x/ess/review-semantic-diff-coverage/crates/verify/ess-conformance)
+   Compiling ess-diff v0.18.0 (~/.local/state/worktree/trees/b10x/ess/review-semantic-diff-coverage/crates/verify/ess-diff)
 error[E0599]: no method named `clear` found for struct `PayloadTable` in the current scope
     --> crates/verify/ess-diff/tests/families.rs:1839:22
      |
@@ -219,13 +219,13 @@ error: could not compile `ess-diff` (test "families") due to 1 previous error
 Command (working directory: assigned tree):
 
 ```sh
-env TMPDIR="$PWD/target" RUSTC_WRAPPER=/usr/bin/sccache SCCACHE_SERVER_UDS=/home/timo/.local/state/worktree/trees/b10x/ess/wt-752828a285ba/target/w4-cache.sock CARGO_INCREMENTAL=0 CARGO_PROFILE_DEV_DEBUG=0 CARGO_PROFILE_TEST_DEBUG=0 CARGO_CACHE_RUSTC_INFO=0 CARGO_NET_OFFLINE=true cargo test --offline --locked -p ess-diff --test families review_
+env TMPDIR="$PWD/target" RUSTC_WRAPPER=/usr/bin/sccache SCCACHE_SERVER_UDS=~/.local/state/worktree/trees/b10x/ess/wt-752828a285ba/target/w4-cache.sock CARGO_INCREMENTAL=0 CARGO_PROFILE_DEV_DEBUG=0 CARGO_PROFILE_TEST_DEBUG=0 CARGO_CACHE_RUSTC_INFO=0 CARGO_NET_OFFLINE=true cargo test --offline --locked -p ess-diff --test families review_
 ```
 
 Exit: 101. Full preserved output:
 
 ```text
-   Compiling ess-diff v0.18.0 (/home/timo/.local/state/worktree/trees/b10x/ess/review-semantic-diff-coverage/crates/verify/ess-diff)
+   Compiling ess-diff v0.18.0 (~/.local/state/worktree/trees/b10x/ess/review-semantic-diff-coverage/crates/verify/ess-diff)
     Finished `test` profile [unoptimized] target(s) in 0.43s
      Running tests/families.rs (target/debug/deps/families-18b80718065c44da)
 
@@ -431,13 +431,13 @@ error: test failed, to rerun pass `-p ess-diff --test families`
 Command (working directory: assigned tree):
 
 ```sh
-env TMPDIR="$PWD/target" RUSTC_WRAPPER=/usr/bin/sccache SCCACHE_SERVER_UDS=/home/timo/.local/state/worktree/trees/b10x/ess/wt-752828a285ba/target/w4-cache.sock CARGO_INCREMENTAL=0 CARGO_PROFILE_DEV_DEBUG=0 CARGO_PROFILE_TEST_DEBUG=0 CARGO_CACHE_RUSTC_INFO=0 CARGO_NET_OFFLINE=true cargo test --offline --locked -p ess-diff --test graph --test canonical review_ -- --nocapture
+env TMPDIR="$PWD/target" RUSTC_WRAPPER=/usr/bin/sccache SCCACHE_SERVER_UDS=~/.local/state/worktree/trees/b10x/ess/wt-752828a285ba/target/w4-cache.sock CARGO_INCREMENTAL=0 CARGO_PROFILE_DEV_DEBUG=0 CARGO_PROFILE_TEST_DEBUG=0 CARGO_CACHE_RUSTC_INFO=0 CARGO_NET_OFFLINE=true cargo test --offline --locked -p ess-diff --test graph --test canonical review_ -- --nocapture
 ```
 
 Exit: 101. Full preserved output:
 
 ```text
-   Compiling ess-diff v0.18.0 (/home/timo/.local/state/worktree/trees/b10x/ess/review-semantic-diff-coverage/crates/verify/ess-diff)
+   Compiling ess-diff v0.18.0 (~/.local/state/worktree/trees/b10x/ess/review-semantic-diff-coverage/crates/verify/ess-diff)
 error[E0599]: no method named `contains` found for struct `BTreeMap<K, V, A>` in the current scope
    --> crates/verify/ess-diff/tests/graph.rs:205:67
     |
@@ -466,13 +466,13 @@ warning: build failed, waiting for other jobs to finish...
 Command (working directory: assigned tree):
 
 ```sh
-env TMPDIR="$PWD/target" RUSTC_WRAPPER=/usr/bin/sccache SCCACHE_SERVER_UDS=/home/timo/.local/state/worktree/trees/b10x/ess/wt-752828a285ba/target/w4-cache.sock CARGO_INCREMENTAL=0 CARGO_PROFILE_DEV_DEBUG=0 CARGO_PROFILE_TEST_DEBUG=0 CARGO_CACHE_RUSTC_INFO=0 CARGO_NET_OFFLINE=true cargo test --offline --locked -p ess-diff --test graph --test canonical review_ --no-fail-fast -- --nocapture
+env TMPDIR="$PWD/target" RUSTC_WRAPPER=/usr/bin/sccache SCCACHE_SERVER_UDS=~/.local/state/worktree/trees/b10x/ess/wt-752828a285ba/target/w4-cache.sock CARGO_INCREMENTAL=0 CARGO_PROFILE_DEV_DEBUG=0 CARGO_PROFILE_TEST_DEBUG=0 CARGO_CACHE_RUSTC_INFO=0 CARGO_NET_OFFLINE=true cargo test --offline --locked -p ess-diff --test graph --test canonical review_ --no-fail-fast -- --nocapture
 ```
 
 Exit: 101. Full preserved output:
 
 ```text
-   Compiling ess-diff v0.18.0 (/home/timo/.local/state/worktree/trees/b10x/ess/review-semantic-diff-coverage/crates/verify/ess-diff)
+   Compiling ess-diff v0.18.0 (~/.local/state/worktree/trees/b10x/ess/review-semantic-diff-coverage/crates/verify/ess-diff)
     Finished `test` profile [unoptimized] target(s) in 0.29s
      Running tests/canonical.rs (target/debug/deps/canonical-62cb9a27f38bef2f)
 
@@ -619,7 +619,7 @@ error: 2 targets failed:
 Command (working directory: assigned tree):
 
 ```sh
-env TMPDIR="$PWD/target" RUSTC_WRAPPER=/usr/bin/sccache SCCACHE_SERVER_UDS=/home/timo/.local/state/worktree/trees/b10x/ess/wt-752828a285ba/target/w4-cache.sock CARGO_INCREMENTAL=0 CARGO_PROFILE_DEV_DEBUG=0 CARGO_PROFILE_TEST_DEBUG=0 CARGO_CACHE_RUSTC_INFO=0 CARGO_NET_OFFLINE=true cargo test --offline --locked -p ess-gen --test provenance review_
+env TMPDIR="$PWD/target" RUSTC_WRAPPER=/usr/bin/sccache SCCACHE_SERVER_UDS=~/.local/state/worktree/trees/b10x/ess/wt-752828a285ba/target/w4-cache.sock CARGO_INCREMENTAL=0 CARGO_PROFILE_DEV_DEBUG=0 CARGO_PROFILE_TEST_DEBUG=0 CARGO_CACHE_RUSTC_INFO=0 CARGO_NET_OFFLINE=true cargo test --offline --locked -p ess-gen --test provenance review_
 ```
 
 Exit: 101. Full preserved output:
@@ -630,7 +630,7 @@ Exit: 101. Full preserved output:
    Compiling jsonschema-value v0.52.1
    Compiling referencing v0.52.1
    Compiling jsonschema v0.52.1
-   Compiling ess-gen v0.18.0 (/home/timo/.local/state/worktree/trees/b10x/ess/review-semantic-diff-coverage/crates/generate/ess-gen)
+   Compiling ess-gen v0.18.0 (~/.local/state/worktree/trees/b10x/ess/review-semantic-diff-coverage/crates/generate/ess-gen)
     Finished `test` profile [unoptimized] target(s) in 4.70s
      Running tests/provenance.rs (target/debug/deps/provenance-9ec9789f25e84015)
 
@@ -681,16 +681,16 @@ error: test failed, to rerun pass `-p ess-gen --test provenance`
 Command (working directory: assigned tree):
 
 ```sh
-env TMPDIR="$PWD/target" RUSTC_WRAPPER=/usr/bin/sccache SCCACHE_SERVER_UDS=/home/timo/.local/state/worktree/trees/b10x/ess/wt-752828a285ba/target/w4-cache.sock CARGO_INCREMENTAL=0 CARGO_PROFILE_DEV_DEBUG=0 CARGO_PROFILE_TEST_DEBUG=0 CARGO_CACHE_RUSTC_INFO=0 CARGO_NET_OFFLINE=true cargo test --offline --locked -p ess-diff --test families review_unclassified_transition_order
+env TMPDIR="$PWD/target" RUSTC_WRAPPER=/usr/bin/sccache SCCACHE_SERVER_UDS=~/.local/state/worktree/trees/b10x/ess/wt-752828a285ba/target/w4-cache.sock CARGO_INCREMENTAL=0 CARGO_PROFILE_DEV_DEBUG=0 CARGO_PROFILE_TEST_DEBUG=0 CARGO_CACHE_RUSTC_INFO=0 CARGO_NET_OFFLINE=true cargo test --offline --locked -p ess-diff --test families review_unclassified_transition_order
 ```
 
 Exit: 101. Full preserved output:
 
 ```text
-   Compiling ess-compiler v0.18.0 (/home/timo/.local/state/worktree/trees/b10x/ess/review-semantic-diff-coverage/crates/specify/ess-compiler)
-   Compiling ess-gen v0.18.0 (/home/timo/.local/state/worktree/trees/b10x/ess/review-semantic-diff-coverage/crates/generate/ess-gen)
-   Compiling ess-conformance v0.18.0 (/home/timo/.local/state/worktree/trees/b10x/ess/review-semantic-diff-coverage/crates/verify/ess-conformance)
-   Compiling ess-diff v0.18.0 (/home/timo/.local/state/worktree/trees/b10x/ess/review-semantic-diff-coverage/crates/verify/ess-diff)
+   Compiling ess-compiler v0.18.0 (~/.local/state/worktree/trees/b10x/ess/review-semantic-diff-coverage/crates/specify/ess-compiler)
+   Compiling ess-gen v0.18.0 (~/.local/state/worktree/trees/b10x/ess/review-semantic-diff-coverage/crates/generate/ess-gen)
+   Compiling ess-conformance v0.18.0 (~/.local/state/worktree/trees/b10x/ess/review-semantic-diff-coverage/crates/verify/ess-conformance)
+   Compiling ess-diff v0.18.0 (~/.local/state/worktree/trees/b10x/ess/review-semantic-diff-coverage/crates/verify/ess-diff)
 error[E0609]: no field `lifecycle` on type `&&mut RawEntitySpec`
     --> crates/verify/ess-diff/tests/families.rs:1961:39
      |
@@ -717,13 +717,13 @@ error: could not compile `ess-diff` (test "families") due to 2 previous errors
 Command (working directory: assigned tree):
 
 ```sh
-env TMPDIR="$PWD/target" RUSTC_WRAPPER=/usr/bin/sccache SCCACHE_SERVER_UDS=/home/timo/.local/state/worktree/trees/b10x/ess/wt-752828a285ba/target/w4-cache.sock CARGO_INCREMENTAL=0 CARGO_PROFILE_DEV_DEBUG=0 CARGO_PROFILE_TEST_DEBUG=0 CARGO_CACHE_RUSTC_INFO=0 CARGO_NET_OFFLINE=true cargo test --offline --locked -p ess-diff --test families review_unclassified_transition_order
+env TMPDIR="$PWD/target" RUSTC_WRAPPER=/usr/bin/sccache SCCACHE_SERVER_UDS=~/.local/state/worktree/trees/b10x/ess/wt-752828a285ba/target/w4-cache.sock CARGO_INCREMENTAL=0 CARGO_PROFILE_DEV_DEBUG=0 CARGO_PROFILE_TEST_DEBUG=0 CARGO_CACHE_RUSTC_INFO=0 CARGO_NET_OFFLINE=true cargo test --offline --locked -p ess-diff --test families review_unclassified_transition_order
 ```
 
 Exit: 101. Full preserved output:
 
 ```text
-   Compiling ess-diff v0.18.0 (/home/timo/.local/state/worktree/trees/b10x/ess/review-semantic-diff-coverage/crates/verify/ess-diff)
+   Compiling ess-diff v0.18.0 (~/.local/state/worktree/trees/b10x/ess/review-semantic-diff-coverage/crates/verify/ess-diff)
     Finished `test` profile [unoptimized] target(s) in 1.48s
      Running tests/families.rs (target/debug/deps/families-18b80718065c44da)
 
@@ -796,7 +796,7 @@ Doc-tests ess_synth: executed 0 → 0, exit 0
 Command (working directory: assigned tree):
 
 ```sh
-env TMPDIR="$PWD/target" RUSTC_WRAPPER=/usr/bin/sccache SCCACHE_SERVER_UDS=/home/timo/.local/state/worktree/trees/b10x/ess/wt-752828a285ba/target/w4-cache.sock CARGO_INCREMENTAL=0 CARGO_PROFILE_DEV_DEBUG=0 CARGO_PROFILE_TEST_DEBUG=0 CARGO_CACHE_RUSTC_INFO=0 CARGO_NET_OFFLINE=true cargo test --offline --locked -p ess-compiler -p ess-diff -p ess-gen -p ess-synth
+env TMPDIR="$PWD/target" RUSTC_WRAPPER=/usr/bin/sccache SCCACHE_SERVER_UDS=~/.local/state/worktree/trees/b10x/ess/wt-752828a285ba/target/w4-cache.sock CARGO_INCREMENTAL=0 CARGO_PROFILE_DEV_DEBUG=0 CARGO_PROFILE_TEST_DEBUG=0 CARGO_CACHE_RUSTC_INFO=0 CARGO_NET_OFFLINE=true cargo test --offline --locked -p ess-compiler -p ess-diff -p ess-gen -p ess-synth
 ```
 
 Exit: 0. Full preserved output:
@@ -895,14 +895,14 @@ Exit: 0. Full preserved output:
    Compiling email_address v0.2.9
    Compiling jsonschema-value v0.52.1
    Compiling referencing v0.52.1
-   Compiling ess-primitives v0.18.0 (/home/timo/.local/state/worktree/trees/b10x/ess/review-semantic-diff-coverage/crates/specify/ess-primitives)
+   Compiling ess-primitives v0.18.0 (~/.local/state/worktree/trees/b10x/ess/review-semantic-diff-coverage/crates/specify/ess-primitives)
    Compiling jsonschema v0.52.1
-   Compiling ess-domain v0.18.0 (/home/timo/.local/state/worktree/trees/b10x/ess/review-semantic-diff-coverage/crates/specify/ess-domain)
-   Compiling ess-compiler v0.18.0 (/home/timo/.local/state/worktree/trees/b10x/ess/review-semantic-diff-coverage/crates/specify/ess-compiler)
-   Compiling ess-gen v0.18.0 (/home/timo/.local/state/worktree/trees/b10x/ess/review-semantic-diff-coverage/crates/generate/ess-gen)
-   Compiling ess-conformance v0.18.0 (/home/timo/.local/state/worktree/trees/b10x/ess/review-semantic-diff-coverage/crates/verify/ess-conformance)
-   Compiling ess-synth v0.18.0 (/home/timo/.local/state/worktree/trees/b10x/ess/review-semantic-diff-coverage/crates/generate/ess-synth)
-   Compiling ess-diff v0.18.0 (/home/timo/.local/state/worktree/trees/b10x/ess/review-semantic-diff-coverage/crates/verify/ess-diff)
+   Compiling ess-domain v0.18.0 (~/.local/state/worktree/trees/b10x/ess/review-semantic-diff-coverage/crates/specify/ess-domain)
+   Compiling ess-compiler v0.18.0 (~/.local/state/worktree/trees/b10x/ess/review-semantic-diff-coverage/crates/specify/ess-compiler)
+   Compiling ess-gen v0.18.0 (~/.local/state/worktree/trees/b10x/ess/review-semantic-diff-coverage/crates/generate/ess-gen)
+   Compiling ess-conformance v0.18.0 (~/.local/state/worktree/trees/b10x/ess/review-semantic-diff-coverage/crates/verify/ess-conformance)
+   Compiling ess-synth v0.18.0 (~/.local/state/worktree/trees/b10x/ess/review-semantic-diff-coverage/crates/generate/ess-synth)
+   Compiling ess-diff v0.18.0 (~/.local/state/worktree/trees/b10x/ess/review-semantic-diff-coverage/crates/verify/ess-diff)
     Finished `test` profile [unoptimized] target(s) in 16.32s
      Running unittests src/lib.rs (target/debug/deps/ess_compiler-b4c0bc8f0757838a)
 
@@ -1575,16 +1575,16 @@ test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; fini
 Command (working directory: assigned tree):
 
 ```sh
-env TMPDIR="$PWD/target" RUSTC_WRAPPER=/usr/bin/sccache SCCACHE_SERVER_UDS=/home/timo/.local/state/worktree/trees/b10x/ess/wt-752828a285ba/target/w4-cache.sock CARGO_INCREMENTAL=0 CARGO_PROFILE_DEV_DEBUG=0 CARGO_PROFILE_TEST_DEBUG=0 CARGO_CACHE_RUSTC_INFO=0 CARGO_NET_OFFLINE=true cargo test --offline --locked -p ess-compiler -p ess-diff -p ess-gen -p ess-synth
+env TMPDIR="$PWD/target" RUSTC_WRAPPER=/usr/bin/sccache SCCACHE_SERVER_UDS=~/.local/state/worktree/trees/b10x/ess/wt-752828a285ba/target/w4-cache.sock CARGO_INCREMENTAL=0 CARGO_PROFILE_DEV_DEBUG=0 CARGO_PROFILE_TEST_DEBUG=0 CARGO_CACHE_RUSTC_INFO=0 CARGO_NET_OFFLINE=true cargo test --offline --locked -p ess-compiler -p ess-diff -p ess-gen -p ess-synth
 ```
 
 Exit: 0. Full preserved output:
 
 ```text
-   Compiling ess-gen v0.18.0 (/home/timo/.local/state/worktree/trees/b10x/ess/review-semantic-diff-coverage/crates/generate/ess-gen)
-   Compiling ess-conformance v0.18.0 (/home/timo/.local/state/worktree/trees/b10x/ess/review-semantic-diff-coverage/crates/verify/ess-conformance)
-   Compiling ess-synth v0.18.0 (/home/timo/.local/state/worktree/trees/b10x/ess/review-semantic-diff-coverage/crates/generate/ess-synth)
-   Compiling ess-diff v0.18.0 (/home/timo/.local/state/worktree/trees/b10x/ess/review-semantic-diff-coverage/crates/verify/ess-diff)
+   Compiling ess-gen v0.18.0 (~/.local/state/worktree/trees/b10x/ess/review-semantic-diff-coverage/crates/generate/ess-gen)
+   Compiling ess-conformance v0.18.0 (~/.local/state/worktree/trees/b10x/ess/review-semantic-diff-coverage/crates/verify/ess-conformance)
+   Compiling ess-synth v0.18.0 (~/.local/state/worktree/trees/b10x/ess/review-semantic-diff-coverage/crates/generate/ess-synth)
+   Compiling ess-diff v0.18.0 (~/.local/state/worktree/trees/b10x/ess/review-semantic-diff-coverage/crates/verify/ess-diff)
     Finished `test` profile [unoptimized] target(s) in 8.54s
      Running unittests src/lib.rs (target/debug/deps/ess_compiler-b4c0bc8f0757838a)
 
@@ -2281,7 +2281,7 @@ test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; fini
 Command (working directory: assigned tree):
 
 ```sh
-env TMPDIR="$PWD/target" RUSTC_WRAPPER=/usr/bin/sccache SCCACHE_SERVER_UDS=/home/timo/.local/state/worktree/trees/b10x/ess/wt-752828a285ba/target/w4-cache.sock CARGO_INCREMENTAL=0 CARGO_PROFILE_DEV_DEBUG=0 CARGO_PROFILE_TEST_DEBUG=0 CARGO_CACHE_RUSTC_INFO=0 CARGO_NET_OFFLINE=true cargo fmt -p ess-compiler -p ess-diff -p ess-gen -p ess-synth -- --check
+env TMPDIR="$PWD/target" RUSTC_WRAPPER=/usr/bin/sccache SCCACHE_SERVER_UDS=~/.local/state/worktree/trees/b10x/ess/wt-752828a285ba/target/w4-cache.sock CARGO_INCREMENTAL=0 CARGO_PROFILE_DEV_DEBUG=0 CARGO_PROFILE_TEST_DEBUG=0 CARGO_CACHE_RUSTC_INFO=0 CARGO_NET_OFFLINE=true cargo fmt -p ess-compiler -p ess-diff -p ess-gen -p ess-synth -- --check
 ```
 
 Exit: 0. Full preserved output:
@@ -2295,13 +2295,13 @@ Exit: 0. Full preserved output:
 Command (working directory: assigned tree):
 
 ```sh
-env TMPDIR="$PWD/target" RUSTC_WRAPPER=/usr/bin/sccache SCCACHE_SERVER_UDS=/home/timo/.local/state/worktree/trees/b10x/ess/wt-752828a285ba/target/w4-cache.sock CARGO_INCREMENTAL=0 CARGO_PROFILE_DEV_DEBUG=0 CARGO_PROFILE_TEST_DEBUG=0 CARGO_CACHE_RUSTC_INFO=0 CARGO_NET_OFFLINE=true cargo clippy --offline --locked -p ess-compiler -p ess-diff -p ess-gen -p ess-synth --all-targets -- -D warnings
+env TMPDIR="$PWD/target" RUSTC_WRAPPER=/usr/bin/sccache SCCACHE_SERVER_UDS=~/.local/state/worktree/trees/b10x/ess/wt-752828a285ba/target/w4-cache.sock CARGO_INCREMENTAL=0 CARGO_PROFILE_DEV_DEBUG=0 CARGO_PROFILE_TEST_DEBUG=0 CARGO_CACHE_RUSTC_INFO=0 CARGO_NET_OFFLINE=true cargo clippy --offline --locked -p ess-compiler -p ess-diff -p ess-gen -p ess-synth --all-targets -- -D warnings
 ```
 
 Exit: 0. Full preserved output:
 
 ```text
-    Checking ess-diff v0.18.0 (/home/timo/.local/state/worktree/trees/b10x/ess/review-semantic-diff-coverage/crates/verify/ess-diff)
+    Checking ess-diff v0.18.0 (~/.local/state/worktree/trees/b10x/ess/review-semantic-diff-coverage/crates/verify/ess-diff)
     Finished `dev` profile [unoptimized] target(s) in 1.94s
 
 ```
@@ -2397,16 +2397,16 @@ These records are retained to expose preparation failures and iterative correcti
 Command (working directory: assigned tree):
 
 ```sh
-env TMPDIR="$PWD/target" RUSTC_WRAPPER=/usr/bin/sccache SCCACHE_SERVER_UDS=/home/timo/.local/state/worktree/trees/b10x/ess/wt-752828a285ba/target/w4-cache.sock CARGO_INCREMENTAL=0 CARGO_PROFILE_DEV_DEBUG=0 CARGO_PROFILE_TEST_DEBUG=0 CARGO_CACHE_RUSTC_INFO=0 CARGO_NET_OFFLINE=true cargo test --offline --locked -p ess-diff --test families --test graph --test canonical review_ --no-fail-fast
+env TMPDIR="$PWD/target" RUSTC_WRAPPER=/usr/bin/sccache SCCACHE_SERVER_UDS=~/.local/state/worktree/trees/b10x/ess/wt-752828a285ba/target/w4-cache.sock CARGO_INCREMENTAL=0 CARGO_PROFILE_DEV_DEBUG=0 CARGO_PROFILE_TEST_DEBUG=0 CARGO_CACHE_RUSTC_INFO=0 CARGO_NET_OFFLINE=true cargo test --offline --locked -p ess-diff --test families --test graph --test canonical review_ --no-fail-fast
 ```
 
 Exit: 101. Full preserved output:
 
 ```text
-   Compiling ess-compiler v0.18.0 (/home/timo/.local/state/worktree/trees/b10x/ess/review-semantic-diff-coverage/crates/specify/ess-compiler)
-   Compiling ess-gen v0.18.0 (/home/timo/.local/state/worktree/trees/b10x/ess/review-semantic-diff-coverage/crates/generate/ess-gen)
-   Compiling ess-conformance v0.18.0 (/home/timo/.local/state/worktree/trees/b10x/ess/review-semantic-diff-coverage/crates/verify/ess-conformance)
-   Compiling ess-diff v0.18.0 (/home/timo/.local/state/worktree/trees/b10x/ess/review-semantic-diff-coverage/crates/verify/ess-diff)
+   Compiling ess-compiler v0.18.0 (~/.local/state/worktree/trees/b10x/ess/review-semantic-diff-coverage/crates/specify/ess-compiler)
+   Compiling ess-gen v0.18.0 (~/.local/state/worktree/trees/b10x/ess/review-semantic-diff-coverage/crates/generate/ess-gen)
+   Compiling ess-conformance v0.18.0 (~/.local/state/worktree/trees/b10x/ess/review-semantic-diff-coverage/crates/verify/ess-conformance)
+   Compiling ess-diff v0.18.0 (~/.local/state/worktree/trees/b10x/ess/review-semantic-diff-coverage/crates/verify/ess-diff)
     Finished `test` profile [unoptimized] target(s) in 8.98s
      Running tests/canonical.rs (target/debug/deps/canonical-62cb9a27f38bef2f)
 
@@ -2502,15 +2502,15 @@ error: 1 target failed:
 Command (working directory: assigned tree):
 
 ```sh
-env TMPDIR="$PWD/target" RUSTC_WRAPPER=/usr/bin/sccache SCCACHE_SERVER_UDS=/home/timo/.local/state/worktree/trees/b10x/ess/wt-752828a285ba/target/w4-cache.sock CARGO_INCREMENTAL=0 CARGO_PROFILE_DEV_DEBUG=0 CARGO_PROFILE_TEST_DEBUG=0 CARGO_CACHE_RUSTC_INFO=0 CARGO_NET_OFFLINE=true cargo test --offline --locked -p ess-diff --test families --test graph --test canonical review_ --no-fail-fast
+env TMPDIR="$PWD/target" RUSTC_WRAPPER=/usr/bin/sccache SCCACHE_SERVER_UDS=~/.local/state/worktree/trees/b10x/ess/wt-752828a285ba/target/w4-cache.sock CARGO_INCREMENTAL=0 CARGO_PROFILE_DEV_DEBUG=0 CARGO_PROFILE_TEST_DEBUG=0 CARGO_CACHE_RUSTC_INFO=0 CARGO_NET_OFFLINE=true cargo test --offline --locked -p ess-diff --test families --test graph --test canonical review_ --no-fail-fast
 ```
 
 Exit: 0. Full preserved output:
 
 ```text
-   Compiling ess-gen v0.18.0 (/home/timo/.local/state/worktree/trees/b10x/ess/review-semantic-diff-coverage/crates/generate/ess-gen)
-   Compiling ess-conformance v0.18.0 (/home/timo/.local/state/worktree/trees/b10x/ess/review-semantic-diff-coverage/crates/verify/ess-conformance)
-   Compiling ess-diff v0.18.0 (/home/timo/.local/state/worktree/trees/b10x/ess/review-semantic-diff-coverage/crates/verify/ess-diff)
+   Compiling ess-gen v0.18.0 (~/.local/state/worktree/trees/b10x/ess/review-semantic-diff-coverage/crates/generate/ess-gen)
+   Compiling ess-conformance v0.18.0 (~/.local/state/worktree/trees/b10x/ess/review-semantic-diff-coverage/crates/verify/ess-conformance)
+   Compiling ess-diff v0.18.0 (~/.local/state/worktree/trees/b10x/ess/review-semantic-diff-coverage/crates/verify/ess-diff)
     Finished `test` profile [unoptimized] target(s) in 8.31s
      Running tests/canonical.rs (target/debug/deps/canonical-62cb9a27f38bef2f)
 
@@ -2549,17 +2549,17 @@ test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 6 filtered out; fini
 Command (working directory: assigned tree):
 
 ```sh
-env TMPDIR="$PWD/target" RUSTC_WRAPPER=/usr/bin/sccache SCCACHE_SERVER_UDS=/home/timo/.local/state/worktree/trees/b10x/ess/wt-752828a285ba/target/w4-cache.sock CARGO_INCREMENTAL=0 CARGO_PROFILE_DEV_DEBUG=0 CARGO_PROFILE_TEST_DEBUG=0 CARGO_CACHE_RUSTC_INFO=0 CARGO_NET_OFFLINE=true cargo test --offline --locked -p ess-diff -p ess-gen -p ess-synth review_ --no-fail-fast
+env TMPDIR="$PWD/target" RUSTC_WRAPPER=/usr/bin/sccache SCCACHE_SERVER_UDS=~/.local/state/worktree/trees/b10x/ess/wt-752828a285ba/target/w4-cache.sock CARGO_INCREMENTAL=0 CARGO_PROFILE_DEV_DEBUG=0 CARGO_PROFILE_TEST_DEBUG=0 CARGO_CACHE_RUSTC_INFO=0 CARGO_NET_OFFLINE=true cargo test --offline --locked -p ess-diff -p ess-gen -p ess-synth review_ --no-fail-fast
 ```
 
 Exit: 101. Full preserved output:
 
 ```text
-   Compiling ess-compiler v0.18.0 (/home/timo/.local/state/worktree/trees/b10x/ess/review-semantic-diff-coverage/crates/specify/ess-compiler)
-   Compiling ess-gen v0.18.0 (/home/timo/.local/state/worktree/trees/b10x/ess/review-semantic-diff-coverage/crates/generate/ess-gen)
-   Compiling ess-conformance v0.18.0 (/home/timo/.local/state/worktree/trees/b10x/ess/review-semantic-diff-coverage/crates/verify/ess-conformance)
-   Compiling ess-synth v0.18.0 (/home/timo/.local/state/worktree/trees/b10x/ess/review-semantic-diff-coverage/crates/generate/ess-synth)
-   Compiling ess-diff v0.18.0 (/home/timo/.local/state/worktree/trees/b10x/ess/review-semantic-diff-coverage/crates/verify/ess-diff)
+   Compiling ess-compiler v0.18.0 (~/.local/state/worktree/trees/b10x/ess/review-semantic-diff-coverage/crates/specify/ess-compiler)
+   Compiling ess-gen v0.18.0 (~/.local/state/worktree/trees/b10x/ess/review-semantic-diff-coverage/crates/generate/ess-gen)
+   Compiling ess-conformance v0.18.0 (~/.local/state/worktree/trees/b10x/ess/review-semantic-diff-coverage/crates/verify/ess-conformance)
+   Compiling ess-synth v0.18.0 (~/.local/state/worktree/trees/b10x/ess/review-semantic-diff-coverage/crates/generate/ess-synth)
+   Compiling ess-diff v0.18.0 (~/.local/state/worktree/trees/b10x/ess/review-semantic-diff-coverage/crates/verify/ess-diff)
 error[E0599]: no method named `as_str` found for struct `QualifiedName` in the current scope
    --> crates/verify/ess-diff/tests/graph.rs:218:30
     |
@@ -2577,16 +2577,16 @@ warning: build failed, waiting for other jobs to finish...
 Command (working directory: assigned tree):
 
 ```sh
-env TMPDIR="$PWD/target" RUSTC_WRAPPER=/usr/bin/sccache SCCACHE_SERVER_UDS=/home/timo/.local/state/worktree/trees/b10x/ess/wt-752828a285ba/target/w4-cache.sock CARGO_INCREMENTAL=0 CARGO_PROFILE_DEV_DEBUG=0 CARGO_PROFILE_TEST_DEBUG=0 CARGO_CACHE_RUSTC_INFO=0 CARGO_NET_OFFLINE=true cargo test --offline --locked -p ess-diff -p ess-gen -p ess-synth review_ --no-fail-fast
+env TMPDIR="$PWD/target" RUSTC_WRAPPER=/usr/bin/sccache SCCACHE_SERVER_UDS=~/.local/state/worktree/trees/b10x/ess/wt-752828a285ba/target/w4-cache.sock CARGO_INCREMENTAL=0 CARGO_PROFILE_DEV_DEBUG=0 CARGO_PROFILE_TEST_DEBUG=0 CARGO_CACHE_RUSTC_INFO=0 CARGO_NET_OFFLINE=true cargo test --offline --locked -p ess-diff -p ess-gen -p ess-synth review_ --no-fail-fast
 ```
 
 Exit: 0. Full preserved output:
 
 ```text
-   Compiling ess-gen v0.18.0 (/home/timo/.local/state/worktree/trees/b10x/ess/review-semantic-diff-coverage/crates/generate/ess-gen)
-   Compiling ess-conformance v0.18.0 (/home/timo/.local/state/worktree/trees/b10x/ess/review-semantic-diff-coverage/crates/verify/ess-conformance)
-   Compiling ess-synth v0.18.0 (/home/timo/.local/state/worktree/trees/b10x/ess/review-semantic-diff-coverage/crates/generate/ess-synth)
-   Compiling ess-diff v0.18.0 (/home/timo/.local/state/worktree/trees/b10x/ess/review-semantic-diff-coverage/crates/verify/ess-diff)
+   Compiling ess-gen v0.18.0 (~/.local/state/worktree/trees/b10x/ess/review-semantic-diff-coverage/crates/generate/ess-gen)
+   Compiling ess-conformance v0.18.0 (~/.local/state/worktree/trees/b10x/ess/review-semantic-diff-coverage/crates/verify/ess-conformance)
+   Compiling ess-synth v0.18.0 (~/.local/state/worktree/trees/b10x/ess/review-semantic-diff-coverage/crates/generate/ess-synth)
+   Compiling ess-diff v0.18.0 (~/.local/state/worktree/trees/b10x/ess/review-semantic-diff-coverage/crates/verify/ess-diff)
     Finished `test` profile [unoptimized] target(s) in 8.78s
      Running unittests src/lib.rs (target/debug/deps/ess_diff-6c940e1b4fa9bdeb)
 
@@ -2763,17 +2763,17 @@ test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 17 filtered out; fin
 Command (working directory: assigned tree):
 
 ```sh
-env TMPDIR="$PWD/target" RUSTC_WRAPPER=/usr/bin/sccache SCCACHE_SERVER_UDS=/home/timo/.local/state/worktree/trees/b10x/ess/wt-752828a285ba/target/w4-cache.sock CARGO_INCREMENTAL=0 CARGO_PROFILE_DEV_DEBUG=0 CARGO_PROFILE_TEST_DEBUG=0 CARGO_CACHE_RUSTC_INFO=0 CARGO_NET_OFFLINE=true cargo test --offline --locked -p ess-compiler -p ess-diff -p ess-gen -p ess-synth --no-fail-fast
+env TMPDIR="$PWD/target" RUSTC_WRAPPER=/usr/bin/sccache SCCACHE_SERVER_UDS=~/.local/state/worktree/trees/b10x/ess/wt-752828a285ba/target/w4-cache.sock CARGO_INCREMENTAL=0 CARGO_PROFILE_DEV_DEBUG=0 CARGO_PROFILE_TEST_DEBUG=0 CARGO_CACHE_RUSTC_INFO=0 CARGO_NET_OFFLINE=true cargo test --offline --locked -p ess-compiler -p ess-diff -p ess-gen -p ess-synth --no-fail-fast
 ```
 
 Exit: 101. Full preserved output:
 
 ```text
-   Compiling ess-compiler v0.18.0 (/home/timo/.local/state/worktree/trees/b10x/ess/review-semantic-diff-coverage/crates/specify/ess-compiler)
-   Compiling ess-gen v0.18.0 (/home/timo/.local/state/worktree/trees/b10x/ess/review-semantic-diff-coverage/crates/generate/ess-gen)
-   Compiling ess-conformance v0.18.0 (/home/timo/.local/state/worktree/trees/b10x/ess/review-semantic-diff-coverage/crates/verify/ess-conformance)
-   Compiling ess-synth v0.18.0 (/home/timo/.local/state/worktree/trees/b10x/ess/review-semantic-diff-coverage/crates/generate/ess-synth)
-   Compiling ess-diff v0.18.0 (/home/timo/.local/state/worktree/trees/b10x/ess/review-semantic-diff-coverage/crates/verify/ess-diff)
+   Compiling ess-compiler v0.18.0 (~/.local/state/worktree/trees/b10x/ess/review-semantic-diff-coverage/crates/specify/ess-compiler)
+   Compiling ess-gen v0.18.0 (~/.local/state/worktree/trees/b10x/ess/review-semantic-diff-coverage/crates/generate/ess-gen)
+   Compiling ess-conformance v0.18.0 (~/.local/state/worktree/trees/b10x/ess/review-semantic-diff-coverage/crates/verify/ess-conformance)
+   Compiling ess-synth v0.18.0 (~/.local/state/worktree/trees/b10x/ess/review-semantic-diff-coverage/crates/generate/ess-synth)
+   Compiling ess-diff v0.18.0 (~/.local/state/worktree/trees/b10x/ess/review-semantic-diff-coverage/crates/verify/ess-diff)
     Finished `test` profile [unoptimized] target(s) in 9.85s
      Running unittests src/lib.rs (target/debug/deps/ess_compiler-b4c0bc8f0757838a)
 
@@ -3580,13 +3580,13 @@ error: 5 targets failed:
 Command (working directory: assigned tree):
 
 ```sh
-env TMPDIR="$PWD/target" RUSTC_WRAPPER=/usr/bin/sccache SCCACHE_SERVER_UDS=/home/timo/.local/state/worktree/trees/b10x/ess/wt-752828a285ba/target/w4-cache.sock CARGO_INCREMENTAL=0 CARGO_PROFILE_DEV_DEBUG=0 CARGO_PROFILE_TEST_DEBUG=0 CARGO_CACHE_RUSTC_INFO=0 CARGO_NET_OFFLINE=true cargo test --offline --locked -p ess-diff --test families review_unclassified_transition_order
+env TMPDIR="$PWD/target" RUSTC_WRAPPER=/usr/bin/sccache SCCACHE_SERVER_UDS=~/.local/state/worktree/trees/b10x/ess/wt-752828a285ba/target/w4-cache.sock CARGO_INCREMENTAL=0 CARGO_PROFILE_DEV_DEBUG=0 CARGO_PROFILE_TEST_DEBUG=0 CARGO_CACHE_RUSTC_INFO=0 CARGO_NET_OFFLINE=true cargo test --offline --locked -p ess-diff --test families review_unclassified_transition_order
 ```
 
 Exit: 0. Full preserved output:
 
 ```text
-   Compiling ess-diff v0.18.0 (/home/timo/.local/state/worktree/trees/b10x/ess/review-semantic-diff-coverage/crates/verify/ess-diff)
+   Compiling ess-diff v0.18.0 (~/.local/state/worktree/trees/b10x/ess/review-semantic-diff-coverage/crates/verify/ess-diff)
     Finished `test` profile [unoptimized] target(s) in 3.80s
      Running tests/families.rs (target/debug/deps/families-18b80718065c44da)
 
@@ -3603,7 +3603,7 @@ test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 68 filtered out; fin
 Command (working directory: assigned tree):
 
 ```sh
-env TMPDIR="$PWD/target" RUSTC_WRAPPER=/usr/bin/sccache SCCACHE_SERVER_UDS=/home/timo/.local/state/worktree/trees/b10x/ess/wt-752828a285ba/target/w4-cache.sock CARGO_INCREMENTAL=0 CARGO_PROFILE_DEV_DEBUG=0 CARGO_PROFILE_TEST_DEBUG=0 CARGO_CACHE_RUSTC_INFO=0 CARGO_NET_OFFLINE=true cargo fmt -p ess-compiler -p ess-diff -p ess-gen -p ess-synth
+env TMPDIR="$PWD/target" RUSTC_WRAPPER=/usr/bin/sccache SCCACHE_SERVER_UDS=~/.local/state/worktree/trees/b10x/ess/wt-752828a285ba/target/w4-cache.sock CARGO_INCREMENTAL=0 CARGO_PROFILE_DEV_DEBUG=0 CARGO_PROFILE_TEST_DEBUG=0 CARGO_CACHE_RUSTC_INFO=0 CARGO_NET_OFFLINE=true cargo fmt -p ess-compiler -p ess-diff -p ess-gen -p ess-synth
 ```
 
 Exit: 0. Full preserved output:
@@ -3617,7 +3617,7 @@ Exit: 0. Full preserved output:
 Command (working directory: assigned tree):
 
 ```sh
-env TMPDIR="$PWD/target" RUSTC_WRAPPER=/usr/bin/sccache SCCACHE_SERVER_UDS=/home/timo/.local/state/worktree/trees/b10x/ess/wt-752828a285ba/target/w4-cache.sock CARGO_INCREMENTAL=0 CARGO_PROFILE_DEV_DEBUG=0 CARGO_PROFILE_TEST_DEBUG=0 CARGO_CACHE_RUSTC_INFO=0 CARGO_NET_OFFLINE=true cargo fmt -p ess-compiler -p ess-diff -p ess-gen -p ess-synth
+env TMPDIR="$PWD/target" RUSTC_WRAPPER=/usr/bin/sccache SCCACHE_SERVER_UDS=~/.local/state/worktree/trees/b10x/ess/wt-752828a285ba/target/w4-cache.sock CARGO_INCREMENTAL=0 CARGO_PROFILE_DEV_DEBUG=0 CARGO_PROFILE_TEST_DEBUG=0 CARGO_CACHE_RUSTC_INFO=0 CARGO_NET_OFFLINE=true cargo fmt -p ess-compiler -p ess-diff -p ess-gen -p ess-synth
 ```
 
 Exit: 0. Full preserved output:
@@ -3631,7 +3631,7 @@ Exit: 0. Full preserved output:
 Command (working directory: assigned tree):
 
 ```sh
-env TMPDIR="$PWD/target" RUSTC_WRAPPER=/usr/bin/sccache SCCACHE_SERVER_UDS=/home/timo/.local/state/worktree/trees/b10x/ess/wt-752828a285ba/target/w4-cache.sock CARGO_INCREMENTAL=0 CARGO_PROFILE_DEV_DEBUG=0 CARGO_PROFILE_TEST_DEBUG=0 CARGO_CACHE_RUSTC_INFO=0 CARGO_NET_OFFLINE=true cargo fmt -p ess-compiler -p ess-diff -p ess-gen -p ess-synth
+env TMPDIR="$PWD/target" RUSTC_WRAPPER=/usr/bin/sccache SCCACHE_SERVER_UDS=~/.local/state/worktree/trees/b10x/ess/wt-752828a285ba/target/w4-cache.sock CARGO_INCREMENTAL=0 CARGO_PROFILE_DEV_DEBUG=0 CARGO_PROFILE_TEST_DEBUG=0 CARGO_CACHE_RUSTC_INFO=0 CARGO_NET_OFFLINE=true cargo fmt -p ess-compiler -p ess-diff -p ess-gen -p ess-synth
 ```
 
 Exit: 0. Full preserved output:
@@ -3645,7 +3645,7 @@ Exit: 0. Full preserved output:
 Command (working directory: assigned tree):
 
 ```sh
-env TMPDIR="$PWD/target" RUSTC_WRAPPER=/usr/bin/sccache SCCACHE_SERVER_UDS=/home/timo/.local/state/worktree/trees/b10x/ess/wt-752828a285ba/target/w4-cache.sock CARGO_INCREMENTAL=0 CARGO_PROFILE_DEV_DEBUG=0 CARGO_PROFILE_TEST_DEBUG=0 CARGO_CACHE_RUSTC_INFO=0 CARGO_NET_OFFLINE=true cargo clippy --offline --locked -p ess-compiler -p ess-diff -p ess-gen -p ess-synth --all-targets -- -D warnings
+env TMPDIR="$PWD/target" RUSTC_WRAPPER=/usr/bin/sccache SCCACHE_SERVER_UDS=~/.local/state/worktree/trees/b10x/ess/wt-752828a285ba/target/w4-cache.sock CARGO_INCREMENTAL=0 CARGO_PROFILE_DEV_DEBUG=0 CARGO_PROFILE_TEST_DEBUG=0 CARGO_CACHE_RUSTC_INFO=0 CARGO_NET_OFFLINE=true cargo clippy --offline --locked -p ess-compiler -p ess-diff -p ess-gen -p ess-synth --all-targets -- -D warnings
 ```
 
 Exit: 101. Full preserved output:
@@ -3731,10 +3731,10 @@ Exit: 101. Full preserved output:
     Checking jsonschema-value v0.52.1
     Checking referencing v0.52.1
     Checking jsonschema v0.52.1
-    Checking ess-primitives v0.18.0 (/home/timo/.local/state/worktree/trees/b10x/ess/review-semantic-diff-coverage/crates/specify/ess-primitives)
-    Checking ess-domain v0.18.0 (/home/timo/.local/state/worktree/trees/b10x/ess/review-semantic-diff-coverage/crates/specify/ess-domain)
-    Checking ess-compiler v0.18.0 (/home/timo/.local/state/worktree/trees/b10x/ess/review-semantic-diff-coverage/crates/specify/ess-compiler)
-    Checking ess-gen v0.18.0 (/home/timo/.local/state/worktree/trees/b10x/ess/review-semantic-diff-coverage/crates/generate/ess-gen)
+    Checking ess-primitives v0.18.0 (~/.local/state/worktree/trees/b10x/ess/review-semantic-diff-coverage/crates/specify/ess-primitives)
+    Checking ess-domain v0.18.0 (~/.local/state/worktree/trees/b10x/ess/review-semantic-diff-coverage/crates/specify/ess-domain)
+    Checking ess-compiler v0.18.0 (~/.local/state/worktree/trees/b10x/ess/review-semantic-diff-coverage/crates/specify/ess-compiler)
+    Checking ess-gen v0.18.0 (~/.local/state/worktree/trees/b10x/ess/review-semantic-diff-coverage/crates/generate/ess-gen)
 error: this `if` statement can be collapsed
   --> crates/generate/ess-gen/src/stamp.rs:17:9
    |
@@ -3782,15 +3782,15 @@ error: could not compile `ess-gen` (lib test) due to 2 previous errors
 Command (working directory: assigned tree):
 
 ```sh
-env TMPDIR="$PWD/target" RUSTC_WRAPPER=/usr/bin/sccache SCCACHE_SERVER_UDS=/home/timo/.local/state/worktree/trees/b10x/ess/wt-752828a285ba/target/w4-cache.sock CARGO_INCREMENTAL=0 CARGO_PROFILE_DEV_DEBUG=0 CARGO_PROFILE_TEST_DEBUG=0 CARGO_CACHE_RUSTC_INFO=0 CARGO_NET_OFFLINE=true cargo clippy --offline --locked -p ess-compiler -p ess-diff -p ess-gen -p ess-synth --all-targets -- -D warnings
+env TMPDIR="$PWD/target" RUSTC_WRAPPER=/usr/bin/sccache SCCACHE_SERVER_UDS=~/.local/state/worktree/trees/b10x/ess/wt-752828a285ba/target/w4-cache.sock CARGO_INCREMENTAL=0 CARGO_PROFILE_DEV_DEBUG=0 CARGO_PROFILE_TEST_DEBUG=0 CARGO_CACHE_RUSTC_INFO=0 CARGO_NET_OFFLINE=true cargo clippy --offline --locked -p ess-compiler -p ess-diff -p ess-gen -p ess-synth --all-targets -- -D warnings
 ```
 
 Exit: 101. Full preserved output:
 
 ```text
-    Checking ess-gen v0.18.0 (/home/timo/.local/state/worktree/trees/b10x/ess/review-semantic-diff-coverage/crates/generate/ess-gen)
-    Checking ess-conformance v0.18.0 (/home/timo/.local/state/worktree/trees/b10x/ess/review-semantic-diff-coverage/crates/verify/ess-conformance)
-    Checking ess-synth v0.18.0 (/home/timo/.local/state/worktree/trees/b10x/ess/review-semantic-diff-coverage/crates/generate/ess-synth)
+    Checking ess-gen v0.18.0 (~/.local/state/worktree/trees/b10x/ess/review-semantic-diff-coverage/crates/generate/ess-gen)
+    Checking ess-conformance v0.18.0 (~/.local/state/worktree/trees/b10x/ess/review-semantic-diff-coverage/crates/verify/ess-conformance)
+    Checking ess-synth v0.18.0 (~/.local/state/worktree/trees/b10x/ess/review-semantic-diff-coverage/crates/generate/ess-synth)
 error: unnecessary hashes around raw string literal
    --> crates/generate/ess-gen/tests/provenance.rs:385:9
     |
@@ -3825,15 +3825,15 @@ warning: build failed, waiting for other jobs to finish...
 Command (working directory: assigned tree):
 
 ```sh
-env TMPDIR="$PWD/target" RUSTC_WRAPPER=/usr/bin/sccache SCCACHE_SERVER_UDS=/home/timo/.local/state/worktree/trees/b10x/ess/wt-752828a285ba/target/w4-cache.sock CARGO_INCREMENTAL=0 CARGO_PROFILE_DEV_DEBUG=0 CARGO_PROFILE_TEST_DEBUG=0 CARGO_CACHE_RUSTC_INFO=0 CARGO_NET_OFFLINE=true cargo clippy --offline --locked -p ess-compiler -p ess-diff -p ess-gen -p ess-synth --all-targets -- -D warnings
+env TMPDIR="$PWD/target" RUSTC_WRAPPER=/usr/bin/sccache SCCACHE_SERVER_UDS=~/.local/state/worktree/trees/b10x/ess/wt-752828a285ba/target/w4-cache.sock CARGO_INCREMENTAL=0 CARGO_PROFILE_DEV_DEBUG=0 CARGO_PROFILE_TEST_DEBUG=0 CARGO_CACHE_RUSTC_INFO=0 CARGO_NET_OFFLINE=true cargo clippy --offline --locked -p ess-compiler -p ess-diff -p ess-gen -p ess-synth --all-targets -- -D warnings
 ```
 
 Exit: 101. Full preserved output:
 
 ```text
-    Checking ess-diff v0.18.0 (/home/timo/.local/state/worktree/trees/b10x/ess/review-semantic-diff-coverage/crates/verify/ess-diff)
-    Checking ess-synth v0.18.0 (/home/timo/.local/state/worktree/trees/b10x/ess/review-semantic-diff-coverage/crates/generate/ess-synth)
-    Checking ess-gen v0.18.0 (/home/timo/.local/state/worktree/trees/b10x/ess/review-semantic-diff-coverage/crates/generate/ess-gen)
+    Checking ess-diff v0.18.0 (~/.local/state/worktree/trees/b10x/ess/review-semantic-diff-coverage/crates/verify/ess-diff)
+    Checking ess-synth v0.18.0 (~/.local/state/worktree/trees/b10x/ess/review-semantic-diff-coverage/crates/generate/ess-synth)
+    Checking ess-gen v0.18.0 (~/.local/state/worktree/trees/b10x/ess/review-semantic-diff-coverage/crates/generate/ess-gen)
 error: these match arms have identical bodies
     --> crates/verify/ess-diff/src/change.rs:2063:13
      |
@@ -3920,7 +3920,7 @@ error: could not compile `ess-diff` (lib) due to 5 previous errors
 Command (working directory: assigned tree):
 
 ```sh
-env TMPDIR="$PWD/target" RUSTC_WRAPPER=/usr/bin/sccache SCCACHE_SERVER_UDS=/home/timo/.local/state/worktree/trees/b10x/ess/wt-752828a285ba/target/w4-cache.sock CARGO_INCREMENTAL=0 CARGO_PROFILE_DEV_DEBUG=0 CARGO_PROFILE_TEST_DEBUG=0 CARGO_CACHE_RUSTC_INFO=0 CARGO_NET_OFFLINE=true cargo run --offline --quiet --locked -p ess-cli --bin ess -- generate --format json --path examples/billing
+env TMPDIR="$PWD/target" RUSTC_WRAPPER=/usr/bin/sccache SCCACHE_SERVER_UDS=~/.local/state/worktree/trees/b10x/ess/wt-752828a285ba/target/w4-cache.sock CARGO_INCREMENTAL=0 CARGO_PROFILE_DEV_DEBUG=0 CARGO_PROFILE_TEST_DEBUG=0 CARGO_CACHE_RUSTC_INFO=0 CARGO_NET_OFFLINE=true cargo run --offline --quiet --locked -p ess-cli --bin ess -- generate --format json --path examples/billing
 ```
 
 Exit: 0. Full preserved output:
@@ -3934,7 +3934,7 @@ Exit: 0. Full preserved output:
 Command (working directory: assigned tree):
 
 ```sh
-env TMPDIR="$PWD/target" RUSTC_WRAPPER=/usr/bin/sccache SCCACHE_SERVER_UDS=/home/timo/.local/state/worktree/trees/b10x/ess/wt-752828a285ba/target/w4-cache.sock CARGO_INCREMENTAL=0 CARGO_PROFILE_DEV_DEBUG=0 CARGO_PROFILE_TEST_DEBUG=0 CARGO_CACHE_RUSTC_INFO=0 CARGO_NET_OFFLINE=true target/debug/ess generate --kind docs --format json --path examples/gatepass
+env TMPDIR="$PWD/target" RUSTC_WRAPPER=/usr/bin/sccache SCCACHE_SERVER_UDS=~/.local/state/worktree/trees/b10x/ess/wt-752828a285ba/target/w4-cache.sock CARGO_INCREMENTAL=0 CARGO_PROFILE_DEV_DEBUG=0 CARGO_PROFILE_TEST_DEBUG=0 CARGO_CACHE_RUSTC_INFO=0 CARGO_NET_OFFLINE=true target/debug/ess generate --kind docs --format json --path examples/gatepass
 ```
 
 Exit: 0. Full preserved output:
@@ -3948,7 +3948,7 @@ Exit: 0. Full preserved output:
 Command (working directory: assigned tree):
 
 ```sh
-env TMPDIR="$PWD/target" RUSTC_WRAPPER=/usr/bin/sccache SCCACHE_SERVER_UDS=/home/timo/.local/state/worktree/trees/b10x/ess/wt-752828a285ba/target/w4-cache.sock CARGO_INCREMENTAL=0 CARGO_PROFILE_DEV_DEBUG=0 CARGO_PROFILE_TEST_DEBUG=0 CARGO_CACHE_RUSTC_INFO=0 CARGO_NET_OFFLINE=true target/debug/ess generate --kind docs --format json --path examples/oracle-fixture
+env TMPDIR="$PWD/target" RUSTC_WRAPPER=/usr/bin/sccache SCCACHE_SERVER_UDS=~/.local/state/worktree/trees/b10x/ess/wt-752828a285ba/target/w4-cache.sock CARGO_INCREMENTAL=0 CARGO_PROFILE_DEV_DEBUG=0 CARGO_PROFILE_TEST_DEBUG=0 CARGO_CACHE_RUSTC_INFO=0 CARGO_NET_OFFLINE=true target/debug/ess generate --kind docs --format json --path examples/oracle-fixture
 ```
 
 Exit: 0. Full preserved output:
@@ -3962,7 +3962,7 @@ Exit: 0. Full preserved output:
 Command (working directory: assigned tree):
 
 ```sh
-env TMPDIR="$PWD/target" RUSTC_WRAPPER=/usr/bin/sccache SCCACHE_SERVER_UDS=/home/timo/.local/state/worktree/trees/b10x/ess/wt-752828a285ba/target/w4-cache.sock CARGO_INCREMENTAL=0 CARGO_PROFILE_DEV_DEBUG=0 CARGO_PROFILE_TEST_DEBUG=0 CARGO_CACHE_RUSTC_INFO=0 CARGO_NET_OFFLINE=true target/debug/ess synthesize --target rust --format json --path examples/gatepass
+env TMPDIR="$PWD/target" RUSTC_WRAPPER=/usr/bin/sccache SCCACHE_SERVER_UDS=~/.local/state/worktree/trees/b10x/ess/wt-752828a285ba/target/w4-cache.sock CARGO_INCREMENTAL=0 CARGO_PROFILE_DEV_DEBUG=0 CARGO_PROFILE_TEST_DEBUG=0 CARGO_CACHE_RUSTC_INFO=0 CARGO_NET_OFFLINE=true target/debug/ess synthesize --target rust --format json --path examples/gatepass
 ```
 
 Exit: 0. Full preserved output:
@@ -3976,7 +3976,7 @@ Exit: 0. Full preserved output:
 Command (working directory: assigned tree):
 
 ```sh
-env TMPDIR="$PWD/target" RUSTC_WRAPPER=/usr/bin/sccache SCCACHE_SERVER_UDS=/home/timo/.local/state/worktree/trees/b10x/ess/wt-752828a285ba/target/w4-cache.sock CARGO_INCREMENTAL=0 CARGO_PROFILE_DEV_DEBUG=0 CARGO_PROFILE_TEST_DEBUG=0 CARGO_CACHE_RUSTC_INFO=0 CARGO_NET_OFFLINE=true target/debug/ess synthesize --target go --format json --path examples/gatepass
+env TMPDIR="$PWD/target" RUSTC_WRAPPER=/usr/bin/sccache SCCACHE_SERVER_UDS=~/.local/state/worktree/trees/b10x/ess/wt-752828a285ba/target/w4-cache.sock CARGO_INCREMENTAL=0 CARGO_PROFILE_DEV_DEBUG=0 CARGO_PROFILE_TEST_DEBUG=0 CARGO_CACHE_RUSTC_INFO=0 CARGO_NET_OFFLINE=true target/debug/ess synthesize --target go --format json --path examples/gatepass
 ```
 
 Exit: 0. Full preserved output:

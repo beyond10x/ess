@@ -92,7 +92,7 @@ The story is active revision11; opening formatting, action,157-artifact planning
 checks each exited0. Planning retains the known24 empty-findings advisories unchanged.
 Provisioning sampled15344922624free bytes and created the unit at that exact opening head.
 
-Worktree: /home/timo/.local/state/worktree/trees/b10x/ess/ess-schema-resource-identity.
+Worktree: ~/.local/state/worktree/trees/b10x/ess/ess-schema-resource-identity.
 Branch: impl/review-schema-resource-identity. Build: that worktree's target directory.
 Scratch: target/review-boundaries-10/schema-resource-identity beneath the unit; TMPDIR is its
 tmp directory. Its assigned Cargo home is scratch/cargo-home, with existing registry/git
@@ -197,10 +197,10 @@ revision17. Validation returned0 for165artifacts with28retained empty-review adv
 
 AEP coverage reader source658cf76e6371b1628f6de69548e724b52803f5c2 is published after its
 green16-step gate. Reuse its already provisioned, root-owned Website support checkout
-/home/timo/.local/state/worktree/trees/b10x/website/aep-coverage-website-verification,
+~/.local/state/worktree/trees/b10x/website/aep-coverage-website-verification,
 lease ess-review-aep-website, exact runtimefc4571534765c098ed861bc326da4d3da0d1df63,
 scratch target/ess-conformance-coverage. Its npm setup passed; no dependency source changed.
-The short assigned external TMPDIR is /home/timo/.cache/aep-cov-website-tmp.
+The short assigned external TMPDIR is ~/.cache/aep-cov-website-tmp.
 
 The joint verifier retains the original AEP-only preparation and adds an independently supplied
 ESS commit requirement. It accepts one complete immutable publication artifact and both exact
@@ -267,7 +267,7 @@ unrelated work was changed to suppress those observations.
 Root independently verified the schema archive, all7369retained entries including5454files and
 52literal symlinks, and every13361original target entry before removal. Archive24810260bytes,
 SHA256f748755540c85c7d7500fc616cf9e177926e20f14bcccd9b06e957d2f9c70c4c, lives in
-/home/timo/.cache/ess-review/2026-09-06-resume/schema-resource-unit-retirement. Both reports,
+~/.cache/ess-review/2026-09-06-resume/schema-resource-unit-retirement. Both reports,
 initial failures, original source and CLI receipts are retained; every excluded cache entry is
 inventoried. Shared Cargo link targets were never traversed or removed.
 
@@ -280,7 +280,7 @@ the remaining wave-closing operation at that observation; its completion follows
 ## Joint Website retirement and wave closure
 
 The joint Website archive is sealed at
-`/home/timo/.cache/ess-review/2026-09-06-resume/joint-coverage-schema-website-retirement`.
+`~/.cache/ess-review/2026-09-06-resume/joint-coverage-schema-website-retirement`.
 Its 25,170,415 compressed bytes have SHA256
 `8c571049f5c4b05cdee14db820b81dbc144f630a631aacecba061b54ee72daf3`.
 Root independently verified all 2,455 regular payloads (73,566,441 bytes), 621 directories,

@@ -66,13 +66,13 @@ actual exposed command durations and runner counts.
 
 Planned managed ID: ess-delivery-trust-contract.
 Planned branch: impl/review-delivery-trust-contract.
-Planned worktree: /home/timo/.local/state/worktree/trees/b10x/ess/ess-delivery-trust-contract.
+Planned worktree: ~/.local/state/worktree/trees/b10x/ess/ess-delivery-trust-contract.
 Default target: that worktree's target, with no target environment override.
 Implementor scratch: target/review-boundaries-16/delivery-trust inside the unit.
 Adversary scratch: target/review-boundaries-16/adversary-pass-1 inside the unit.
 Private Cargo home: target/review-boundaries-16/cargo-home, with explicitly assigned read-only
 registry/git inputs and private mutable bookkeeping.
-Owned short TMP: /home/timo/.cache/ess-w16-delivery-tmp.
+Owned short TMP: ~/.cache/ess-w16-delivery-tmp.
 Lease: ess-review-delivery-trust-implementation. Root creates these after opening checks.
 
 Frozen Rust1.98.1 authority remains the complete bin/lib/WASM snapshot with manifest SHA256
@@ -143,9 +143,9 @@ actual Rust/WASM path with 21 claims and 28 steps. The frozen Rust inventory rem
 
 Managed worktree ess-delivery-trust-contract was created at that opening commit on
 impl/review-delivery-trust-contract, with active lease ess-review-delivery-trust-implementation.
-Its path is /home/timo/.local/state/worktree/trees/b10x/ess/ess-delivery-trust-contract; its private
+Its path is ~/.local/state/worktree/trees/b10x/ess/ess-delivery-trust-contract; its private
 build directory is target and its evidence scratch is target/review-boundaries-16/delivery-trust.
-The external scratch root is /home/timo/.cache/ess-w16-delivery-tmp. Provisioning, branch creation
+The external scratch root is ~/.cache/ess-w16-delivery-tmp. Provisioning, branch creation
 and lease start each returned zero; the complete 50-entry Firefox inventory was verified first.
 Cargo bookkeeping, Go caches and XDG directories are private to this unit; HOME is preserved.
 
@@ -166,14 +166,14 @@ prepare other candidates independently; no second implementation is selected.
 
 The three public pages require the workspace's source-lock, Atlas snapshot and delivery gates.
 Prepare a managed Website tree at observed remote main 02271aa02022818a75a99ca3702c8cc00d135b1f,
-ID ess-wave16-website-delivery, path /home/timo/.local/state/worktree/trees/b10x/website/ess-wave16-website-delivery.
+ID ess-wave16-website-delivery, path ~/.local/state/worktree/trees/b10x/website/ess-wave16-website-delivery.
 Read its own AGENTS.md and keep source-lock refresh after ESS source publication. The Website
 work includes bot-authored commits for the deterministic lock and generated snapshot, followed
 by its gate and publication checks. No Website runtime or organization delivery-control promotion
 is selected. Atlas remains clean at exact remote d10b7484d64c28830774c9dae0ec531fcc47acb2.
 
 Website preparation/evidence belongs under .cache/ess-review-boundaries-16/preparation in that tree,
-with external TMP /home/timo/.cache/ess-w16-website-tmp and private npm cache under preparation.
+with external TMP ~/.cache/ess-w16-website-tmp and private npm cache under preparation.
 Retain all owned node_modules, .cache, build and generated outputs for the same evidence-first
 managed cleanup procedure. The assigned combined Website checkout/TMP allowance is 8 GiB and
 the free-space floor is 8 GiB; provisioning records actual free bytes. The owned lease is
@@ -202,8 +202,8 @@ scan found no unit producer; the agent reports every session completed.
 
 Source attack1 uses the complete aep-drive:adversary0.8.0 charter through the collaboration adapter,
 with the inherited dirty implementation distinguished from the reviewer’s test-only delta. Its
-scratch is /home/timo/.local/state/worktree/trees/b10x/ess/ess-delivery-trust-contract/target/review-boundaries-16/adversary-pass-1,
-assigned TMP /home/timo/.cache/ess-w16-delivery-adversary-1-tmp.
+scratch is ~/.local/state/worktree/trees/b10x/ess/ess-delivery-trust-contract/target/review-boundaries-16/adversary-pass-1,
+assigned TMP ~/.cache/ess-w16-delivery-adversary-1-tmp.
 Counted roots are unit target, implementation TMP and review TMP; combined allowance12GiB,
 free floor8GiB, one producer/two Rust jobs, exact frozen tools and private launch environment.
 At 2026-09-07T12:26:58.185046+00:00, 6773899264 bytes allocated; 54931144704 bytes free.
@@ -242,7 +242,7 @@ the unchanged Markdown table row relocation. Both independent red cases and the 
 control are preserved. No new story or broader contract is introduced.
 
 Assigned scratch is unit target/review-boundaries-16/delivery-fix1; external TMP is
-/home/timo/.cache/ess-w16-delivery-fix1-tmp. The 12 GiB allowance includes unit target and
+~/.cache/ess-w16-delivery-fix1-tmp. The 12 GiB allowance includes unit target and
 all three implementation/review/correction TMP roots; the free floor is 8 GiB. Root measured
 7,227,965,440 allocated and 72,546,304,000 free bytes at 12:59Z and completed the full frozen
 tool precheck before dispatch. The final package run must count actual execution; the new
@@ -292,7 +292,7 @@ e11073803123ea463cef54ee72074b9e294fa08aa1cfd7ead20e01e72c207d18.
 
 A fresh aep-drive:adversary0.8.0 runs the second and final source attack through the
 collaboration adapter. Unit target/review-boundaries-16/adversary-pass-2 is its scratch;
-/home/timo/.cache/ess-w16-delivery-adversary-2-tmp is its owned TMP. All five target/TMP
+~/.cache/ess-w16-delivery-adversary-2-tmp is its owned TMP. All five target/TMP
 roots count toward12 GiB; free floor8 GiB. At13:26:32Z root measured9,975,328,768 allocated
 and39,141,732,352 free bytes. Full frozen-tool pre-bootstrap verification completed
 before dispatch. Current executed baseline is35 delivery and21 deployment,323 full

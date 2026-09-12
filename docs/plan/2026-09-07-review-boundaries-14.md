@@ -61,11 +61,11 @@ compilation disabled. No unit browser build is needed for the private Rust check
 
 Planned managed ID: `ess-public-support-claims`.
 Planned branch: `impl/review-public-support-claims`.
-Planned worktree: `/home/timo/.local/state/worktree/trees/b10x/ess/ess-public-support-claims`.
+Planned worktree: `~/.local/state/worktree/trees/b10x/ess/ess-public-support-claims`.
 Build directory: that tree's `target`.
 Implementor scratch: `target/review-boundaries-14/public-support` in that tree.
 Adversary scratch: `target/review-boundaries-14/adversary-pass-1` in that tree.
-Owned short temporary root: `/home/timo/.cache/ess-w14-support-tmp`.
+Owned short temporary root: `~/.cache/ess-w14-support-tmp`.
 Every later Website support worktree and temporary root is recorded before creation.
 
 ## Execution and validation
@@ -111,7 +111,7 @@ binding is `79840752b56b0a0995866240040411a7467ea7087b4caa83ba08714cd74defa7`. F
 at provisioning was 14,065,893,376 bytes. Raw provisioning/input receipts are under coordinator
 `target/review-boundaries-14/preparation/provision`. The unit remains in implementation.
 
-The prepared full gate assigns `/home/timo/.cache/ess-w14-gate-attempt1-tmp`, to be created
+The prepared full gate assigns `~/.cache/ess-w14-gate-attempt1-tmp`, to be created
 only for the reviewed integration attempt. Its records belong under coordinator
 `target/review-boundaries-14/gate-<commit-prefix>-attempt1`. The runner preserves the earlier
 eight declared lanes in order and additionally requires exactly one support-check lane. It
@@ -120,11 +120,11 @@ planning follow all nine offline lanes. Only runner syntax and its preparation d
 checked; no wave-14 integrated gate has run.
 
 Public-delivery support is planned as managed `ess-wave14-website-verification`, at
-`/home/timo/.local/state/worktree/trees/b10x/website/ess-wave14-website-verification`, detached
+`~/.local/state/worktree/trees/b10x/website/ess-wave14-website-verification`, detached
 at the Atlas-controlled Website runtime `fc4571534765c098ed861bc326da4d3da0d1df63`. Scratch,
 artifact and build evidence remain under its `target/review-boundaries-14`; ordinary Website
 dependencies and generated outputs are owned within that tree. Its short browser temporary
-root is `/home/timo/.cache/ess-w14-website-tmp`. These roots do not yet exist. Recheck Atlas
+root is `~/.cache/ess-w14-website-tmp`. These roots do not yet exist. Recheck Atlas
 authority/runtime and disk headroom before provisioning; no Website source change is selected.
 The prepared artifact verifier requires independently supplied full ESS/AEP source commits,
 the pinned runtime and immutable artifact bytes before and after its gates.
@@ -150,7 +150,7 @@ The sealed implementation report SHA256 is `20f61ec77772038624a76beb43ebaa8289d9
 
 The independent source attack is assigned the existing unit target sequentially. Its scratch is
 `target/review-boundaries-14/adversary-pass-1`, with its own CARGO_HOME beneath that root.
-Its assigned external TMP root is `/home/timo/.cache/ess-w14-support-adversary1-tmp`.
+Its assigned external TMP root is `~/.cache/ess-w14-support-adversary1-tmp`.
 These roots are recorded before setup; no implementation producer remains. Source attack and
 integration verdicts remain pending. The full 27-statement/21-entry binding remains required.
 
@@ -244,7 +244,7 @@ The store's complete comparison follows (carried 0, new 0, resolved 3):
 ## Launch configuration correction
 
 The second public-support source attack's initial focused Cargo launch exited 101 before any
-case ran: ancestor `/home/timo/.cargo/config.toml` enabled sccache, whose socket refused the long
+case ran: ancestor `~/.cargo/config.toml` enabled sccache, whose socket refused the long
 in-tree TMP path. Cargo's ancestor configuration search is independent of isolated CARGO_HOME.
 Unsetting wrapper variables therefore did not establish the earlier claimed wrapper-free runs.
 Their measured test results remain recorded, but wrapper absence and complete outside-write
@@ -257,7 +257,7 @@ will retain fresh verbose execution evidence under that configuration. The integ
 fence scratch runners carry the same explicit policy. The isolated build directories, frozen
 Rust sysroot, offline gate, source identity checks and eight-GiB floor remain required.
 
-Owned retention preparation is `/home/timo/.cache/ess-review/2026-09-06-resume/public-support-unit-retirement`.
+Owned retention preparation is `~/.cache/ess-review/2026-09-06-resume/public-support-unit-retirement`.
 It declares the whole unit target plus the original implementor and first-adversary temporary
 roots. Its final unit/gate/pass2 pins intentionally remain unset so it cannot execute yet. No
 archive, deletion or managed retirement has occurred for this unit.
@@ -265,7 +265,7 @@ archive, deletion or managed retirement has occurred for this unit.
 
 The idle coordinator `target/debug` cache was fully archived before its exact removal to make
 room for fresh wrapper-disabled Cargo fingerprints. The retained archive is
-`/home/timo/.cache/ess-review/2026-09-06-resume/public-support-coordinator-build-retention/coordinator-debug-01/retained-records.tar.gz`,
+`~/.cache/ess-review/2026-09-06-resume/public-support-coordinator-build-retention/coordinator-debug-01/retained-records.tar.gz`,
 1,454,595,792 bytes, SHA256
 `6ab191c6c3ca113a81292aaad1ea9fec0abad410f92f7daf7b26aff990d6c1c8`.
 Independent complete tar readback verified all 11,223 native entries, 9,551 file payloads,

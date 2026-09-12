@@ -141,7 +141,7 @@ raw output is in composition/preparation/review-record-validate.log under this w
 Opening commit e176858010e45bada104ebb10e9b69e2232e0ac0 has verified bot author and committer.
 The manager created ess-composition-contract at that exact commit. Its branch is
 impl/review-composition-contract; worktree is
-/home/timo/.local/state/worktree/trees/b10x/ess/ess-composition-contract, build is that path's
+~/.local/state/worktree/trees/b10x/ess/ess-composition-contract, build is that path's
 target directory, scratch is target/review-boundaries-9, and TMPDIR is that scratch's tmp
 directory. No external scratch is assigned. The live lease is ess-review-wave9-composition.
 Root wrote the complete unit-brief.md and copied actual9-case baseline/source-scope evidence
@@ -199,7 +199,7 @@ retained against its original source and is not extended to the incoming normali
 
 The manager-created support id ess-wave9-website-verification is detached at the effective
 Atlas-pinned Website runtime fc4571534765c098ed861bc326da4d3da0d1df63. Its worktree is
-/home/timo/.local/state/worktree/trees/b10x/website/ess-wave9-website-verification, its build and
+~/.local/state/worktree/trees/b10x/website/ess-wave9-website-verification, its build and
 scratch root is target/review-boundaries-9, and TMPDIR/npm cache are beneath that scratch.
 Lease ess-review-wave9-website covers this task-owned path. Root read this exact AGENTS.md.
 Node24 `npm ci --ignore-scripts` exited0 in17.742seconds, preserving package and lock hashes;
@@ -255,7 +255,7 @@ files; these are site inventories, distinct from1709 complete publication files 
 pages. The first full Website gate ran99 cases with98passes and1failure: its assigned long
 TMPDIR caused EINVAL in an existing Unix-socket fixture. No source or assertion changed, and
 every artifact byte remained unchanged. Root retained that run and assigned the short, owned
-temporary directory /home/timo/.cache/ess-w9-website-tmp. A fresh execution passed all99 cases,
+temporary directory ~/.cache/ess-w9-website-tmp. A fresh execution passed all99 cases,
 0failed/skipped/cancelled and the complete production gate in150.369seconds. Its source/build,
 audit, navigation, search, crawl and provenance checks all ran; the downloaded artifact remained
 byte-exact before and after. No immutable-rebuild byte-equality claim follows from the local gate.

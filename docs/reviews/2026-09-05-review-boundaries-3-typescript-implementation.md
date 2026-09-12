@@ -85,7 +85,7 @@ env TMPDIR="$PWD/target" RUSTC_WRAPPER=/usr/bin/sccache CARGO_INCREMENTAL=0 CARG
 Output (verbatim):
 
 ```text
-   Compiling schema-contract v0.18.0 (/home/timo/.local/state/worktree/trees/b10x/ess/review-typescript-root-collision/crates/generate/schema-contract)
+   Compiling schema-contract v0.18.0 (~/.local/state/worktree/trees/b10x/ess/review-typescript-root-collision/crates/generate/schema-contract)
     Finished `test` profile [unoptimized] target(s) in 0.40s
      Running unittests src/lib.rs (target/debug/deps/schema_contract-e827a73da4bfb459)
 
@@ -148,7 +148,7 @@ env TMPDIR="$PWD/target" RUSTC_WRAPPER=/usr/bin/sccache CARGO_INCREMENTAL=0 CARG
 Output (verbatim):
 
 ```text
-   Compiling schema-contract v0.18.0 (/home/timo/.local/state/worktree/trees/b10x/ess/review-typescript-root-collision/crates/generate/schema-contract)
+   Compiling schema-contract v0.18.0 (~/.local/state/worktree/trees/b10x/ess/review-typescript-root-collision/crates/generate/schema-contract)
     Finished `test` profile [unoptimized] target(s) in 0.46s
      Running tests/typescript_typecheck.rs (target/debug/deps/typescript_typecheck-1436018e6e437030)
 
@@ -297,13 +297,13 @@ No additional correction was made between applying the initial scoped mechanism 
 Command:
 
 ```console
-env TMPDIR="$PWD/target" RUSTC_WRAPPER=/usr/bin/sccache SCCACHE_SERVER_UDS=/home/timo/.local/state/worktree/trees/b10x/ess/wt-752828a285ba/target/w3-cache.sock CARGO_INCREMENTAL=0 CARGO_PROFILE_DEV_DEBUG=0 CARGO_PROFILE_TEST_DEBUG=0 CARGO_CACHE_RUSTC_INFO=0 cargo test --locked -p schema-contract
+env TMPDIR="$PWD/target" RUSTC_WRAPPER=/usr/bin/sccache SCCACHE_SERVER_UDS=~/.local/state/worktree/trees/b10x/ess/wt-752828a285ba/target/w3-cache.sock CARGO_INCREMENTAL=0 CARGO_PROFILE_DEV_DEBUG=0 CARGO_PROFILE_TEST_DEBUG=0 CARGO_CACHE_RUSTC_INFO=0 cargo test --locked -p schema-contract
 ```
 
 Output (verbatim):
 
 ```text
-   Compiling schema-contract v0.18.0 (/home/timo/.local/state/worktree/trees/b10x/ess/review-typescript-root-collision/crates/generate/schema-contract)
+   Compiling schema-contract v0.18.0 (~/.local/state/worktree/trees/b10x/ess/review-typescript-root-collision/crates/generate/schema-contract)
     Finished `test` profile [unoptimized] target(s) in 0.38s
      Running unittests src/lib.rs (target/debug/deps/schema_contract-e827a73da4bfb459)
 
@@ -339,13 +339,13 @@ Exit: `0`. Log: `target/review-boundaries-3/mechanism-default.log`.
 Command:
 
 ```console
-env TMPDIR="$PWD/target" RUSTC_WRAPPER=/usr/bin/sccache SCCACHE_SERVER_UDS=/home/timo/.local/state/worktree/trees/b10x/ess/wt-752828a285ba/target/w3-cache.sock CARGO_INCREMENTAL=0 CARGO_PROFILE_DEV_DEBUG=0 CARGO_PROFILE_TEST_DEBUG=0 CARGO_CACHE_RUSTC_INFO=0 ESS_TYPESCRIPT_COMPILER=/usr/lib/node_modules/typescript/lib/tsc.js cargo test --locked -p schema-contract --features typescript-typecheck --test typescript_typecheck
+env TMPDIR="$PWD/target" RUSTC_WRAPPER=/usr/bin/sccache SCCACHE_SERVER_UDS=~/.local/state/worktree/trees/b10x/ess/wt-752828a285ba/target/w3-cache.sock CARGO_INCREMENTAL=0 CARGO_PROFILE_DEV_DEBUG=0 CARGO_PROFILE_TEST_DEBUG=0 CARGO_CACHE_RUSTC_INFO=0 ESS_TYPESCRIPT_COMPILER=/usr/lib/node_modules/typescript/lib/tsc.js cargo test --locked -p schema-contract --features typescript-typecheck --test typescript_typecheck
 ```
 
 Output (verbatim):
 
 ```text
-   Compiling schema-contract v0.18.0 (/home/timo/.local/state/worktree/trees/b10x/ess/review-typescript-root-collision/crates/generate/schema-contract)
+   Compiling schema-contract v0.18.0 (~/.local/state/worktree/trees/b10x/ess/review-typescript-root-collision/crates/generate/schema-contract)
     Finished `test` profile [unoptimized] target(s) in 0.46s
      Running tests/typescript_typecheck.rs (target/debug/deps/typescript_typecheck-1436018e6e437030)
 
@@ -388,13 +388,13 @@ Exit: `101`. Log: `target/review-boundaries-3/mechanism-compiler.log`.
 Command:
 
 ```console
-env TMPDIR="$PWD/target" RUSTC_WRAPPER=/usr/bin/sccache SCCACHE_SERVER_UDS=/home/timo/.local/state/worktree/trees/b10x/ess/wt-752828a285ba/target/w3-cache.sock CARGO_INCREMENTAL=0 CARGO_PROFILE_DEV_DEBUG=0 CARGO_PROFILE_TEST_DEBUG=0 CARGO_CACHE_RUSTC_INFO=0 cargo test --locked -p schema-contract
+env TMPDIR="$PWD/target" RUSTC_WRAPPER=/usr/bin/sccache SCCACHE_SERVER_UDS=~/.local/state/worktree/trees/b10x/ess/wt-752828a285ba/target/w3-cache.sock CARGO_INCREMENTAL=0 CARGO_PROFILE_DEV_DEBUG=0 CARGO_PROFILE_TEST_DEBUG=0 CARGO_CACHE_RUSTC_INFO=0 cargo test --locked -p schema-contract
 ```
 
 Output (verbatim):
 
 ```text
-   Compiling schema-contract v0.18.0 (/home/timo/.local/state/worktree/trees/b10x/ess/review-typescript-root-collision/crates/generate/schema-contract)
+   Compiling schema-contract v0.18.0 (~/.local/state/worktree/trees/b10x/ess/review-typescript-root-collision/crates/generate/schema-contract)
     Finished `test` profile [unoptimized] target(s) in 0.41s
      Running unittests src/lib.rs (target/debug/deps/schema_contract-e827a73da4bfb459)
 
@@ -538,7 +538,7 @@ Output (verbatim):
    Compiling jsonschema-value v0.52.1
    Compiling referencing v0.52.1
    Compiling jsonschema v0.52.1
-   Compiling schema-contract v0.18.0 (/home/timo/.local/state/worktree/trees/b10x/ess/review-typescript-root-collision/crates/generate/schema-contract)
+   Compiling schema-contract v0.18.0 (~/.local/state/worktree/trees/b10x/ess/review-typescript-root-collision/crates/generate/schema-contract)
     Finished `test` profile [unoptimized] target(s) in 9.04s
      Running unittests src/lib.rs (target/debug/deps/schema_contract-e827a73da4bfb459)
 
@@ -574,7 +574,7 @@ env TMPDIR="$PWD/target" RUSTC_WRAPPER=/usr/bin/sccache CARGO_INCREMENTAL=0 CARG
 Output (verbatim):
 
 ```text
-   Compiling schema-contract v0.18.0 (/home/timo/.local/state/worktree/trees/b10x/ess/review-typescript-root-collision/crates/generate/schema-contract)
+   Compiling schema-contract v0.18.0 (~/.local/state/worktree/trees/b10x/ess/review-typescript-root-collision/crates/generate/schema-contract)
     Finished `test` profile [unoptimized] target(s) in 0.33s
      Running tests/typescript_typecheck.rs (target/debug/deps/typescript_typecheck-1436018e6e437030)
 
@@ -589,13 +589,13 @@ Exit: `0`. Log: `target/review-boundaries-3/baseline-compiler.log`.
 Command:
 
 ```console
-env TMPDIR="$PWD/target" RUSTC_WRAPPER=/usr/bin/sccache SCCACHE_SERVER_UDS=/home/timo/.local/state/worktree/trees/b10x/ess/wt-752828a285ba/target/w3-cache.sock CARGO_INCREMENTAL=0 CARGO_PROFILE_DEV_DEBUG=0 CARGO_PROFILE_TEST_DEBUG=0 CARGO_CACHE_RUSTC_INFO=0 cargo test --locked -p schema-contract
+env TMPDIR="$PWD/target" RUSTC_WRAPPER=/usr/bin/sccache SCCACHE_SERVER_UDS=~/.local/state/worktree/trees/b10x/ess/wt-752828a285ba/target/w3-cache.sock CARGO_INCREMENTAL=0 CARGO_PROFILE_DEV_DEBUG=0 CARGO_PROFILE_TEST_DEBUG=0 CARGO_CACHE_RUSTC_INFO=0 cargo test --locked -p schema-contract
 ```
 
 Output (verbatim):
 
 ```text
-   Compiling schema-contract v0.18.0 (/home/timo/.local/state/worktree/trees/b10x/ess/review-typescript-root-collision/crates/generate/schema-contract)
+   Compiling schema-contract v0.18.0 (~/.local/state/worktree/trees/b10x/ess/review-typescript-root-collision/crates/generate/schema-contract)
     Finished `test` profile [unoptimized] target(s) in 0.39s
      Running unittests src/lib.rs (target/debug/deps/schema_contract-e827a73da4bfb459)
 
@@ -632,7 +632,7 @@ Exit: `0`. Log: `target/review-boundaries-3/final-default.log`.
 Command:
 
 ```console
-env TMPDIR="$PWD/target" RUSTC_WRAPPER=/usr/bin/sccache SCCACHE_SERVER_UDS=/home/timo/.local/state/worktree/trees/b10x/ess/wt-752828a285ba/target/w3-cache.sock CARGO_INCREMENTAL=0 CARGO_PROFILE_DEV_DEBUG=0 CARGO_PROFILE_TEST_DEBUG=0 CARGO_CACHE_RUSTC_INFO=0 cargo fmt -p schema-contract --check
+env TMPDIR="$PWD/target" RUSTC_WRAPPER=/usr/bin/sccache SCCACHE_SERVER_UDS=~/.local/state/worktree/trees/b10x/ess/wt-752828a285ba/target/w3-cache.sock CARGO_INCREMENTAL=0 CARGO_PROFILE_DEV_DEBUG=0 CARGO_PROFILE_TEST_DEBUG=0 CARGO_CACHE_RUSTC_INFO=0 cargo fmt -p schema-contract --check
 ```
 
 Output (verbatim):
@@ -645,7 +645,7 @@ Exit: `0`. Log: `target/review-boundaries-3/final-format.log`.
 Command:
 
 ```console
-env TMPDIR="$PWD/target" RUSTC_WRAPPER=/usr/bin/sccache SCCACHE_SERVER_UDS=/home/timo/.local/state/worktree/trees/b10x/ess/wt-752828a285ba/target/w3-cache.sock CARGO_INCREMENTAL=0 CARGO_PROFILE_DEV_DEBUG=0 CARGO_PROFILE_TEST_DEBUG=0 CARGO_CACHE_RUSTC_INFO=0 cargo clippy --locked -p schema-contract --all-targets -- -D warnings
+env TMPDIR="$PWD/target" RUSTC_WRAPPER=/usr/bin/sccache SCCACHE_SERVER_UDS=~/.local/state/worktree/trees/b10x/ess/wt-752828a285ba/target/w3-cache.sock CARGO_INCREMENTAL=0 CARGO_PROFILE_DEV_DEBUG=0 CARGO_PROFILE_TEST_DEBUG=0 CARGO_CACHE_RUSTC_INFO=0 cargo clippy --locked -p schema-contract --all-targets -- -D warnings
 ```
 
 Output (verbatim):
@@ -706,7 +706,7 @@ Output (verbatim):
     Checking referencing v0.52.1
     Checking jsonschema-value v0.52.1
     Checking jsonschema v0.52.1
-    Checking schema-contract v0.18.0 (/home/timo/.local/state/worktree/trees/b10x/ess/review-typescript-root-collision/crates/generate/schema-contract)
+    Checking schema-contract v0.18.0 (~/.local/state/worktree/trees/b10x/ess/review-typescript-root-collision/crates/generate/schema-contract)
     Finished `dev` profile [unoptimized] target(s) in 5.34s
 ```
 
@@ -715,13 +715,13 @@ Exit: `0`. Log: `target/review-boundaries-3/final-clippy.log`.
 Command:
 
 ```console
-env TMPDIR="$PWD/target" RUSTC_WRAPPER=/usr/bin/sccache SCCACHE_SERVER_UDS=/home/timo/.local/state/worktree/trees/b10x/ess/wt-752828a285ba/target/w3-cache.sock CARGO_INCREMENTAL=0 CARGO_PROFILE_DEV_DEBUG=0 CARGO_PROFILE_TEST_DEBUG=0 CARGO_CACHE_RUSTC_INFO=0 cargo clippy --locked -p schema-contract --all-targets --features typescript-typecheck -- -D warnings
+env TMPDIR="$PWD/target" RUSTC_WRAPPER=/usr/bin/sccache SCCACHE_SERVER_UDS=~/.local/state/worktree/trees/b10x/ess/wt-752828a285ba/target/w3-cache.sock CARGO_INCREMENTAL=0 CARGO_PROFILE_DEV_DEBUG=0 CARGO_PROFILE_TEST_DEBUG=0 CARGO_CACHE_RUSTC_INFO=0 cargo clippy --locked -p schema-contract --all-targets --features typescript-typecheck -- -D warnings
 ```
 
 Output (verbatim):
 
 ```text
-    Checking schema-contract v0.18.0 (/home/timo/.local/state/worktree/trees/b10x/ess/review-typescript-root-collision/crates/generate/schema-contract)
+    Checking schema-contract v0.18.0 (~/.local/state/worktree/trees/b10x/ess/review-typescript-root-collision/crates/generate/schema-contract)
     Finished `dev` profile [unoptimized] target(s) in 0.12s
 ```
 
@@ -730,13 +730,13 @@ Exit: `0`. Log: `target/review-boundaries-3/final-clippy-compiler.log`.
 Command:
 
 ```console
-env TMPDIR="$PWD/target" RUSTC_WRAPPER=/usr/bin/sccache SCCACHE_SERVER_UDS=/home/timo/.local/state/worktree/trees/b10x/ess/wt-752828a285ba/target/w3-cache.sock CARGO_INCREMENTAL=0 CARGO_PROFILE_DEV_DEBUG=0 CARGO_PROFILE_TEST_DEBUG=0 CARGO_CACHE_RUSTC_INFO=0 ESS_TYPESCRIPT_COMPILER=/usr/lib/node_modules/typescript/lib/tsc.js cargo test --locked -p schema-contract --features typescript-typecheck --test typescript_typecheck
+env TMPDIR="$PWD/target" RUSTC_WRAPPER=/usr/bin/sccache SCCACHE_SERVER_UDS=~/.local/state/worktree/trees/b10x/ess/wt-752828a285ba/target/w3-cache.sock CARGO_INCREMENTAL=0 CARGO_PROFILE_DEV_DEBUG=0 CARGO_PROFILE_TEST_DEBUG=0 CARGO_CACHE_RUSTC_INFO=0 ESS_TYPESCRIPT_COMPILER=/usr/lib/node_modules/typescript/lib/tsc.js cargo test --locked -p schema-contract --features typescript-typecheck --test typescript_typecheck
 ```
 
 Output (verbatim):
 
 ```text
-   Compiling schema-contract v0.18.0 (/home/timo/.local/state/worktree/trees/b10x/ess/review-typescript-root-collision/crates/generate/schema-contract)
+   Compiling schema-contract v0.18.0 (~/.local/state/worktree/trees/b10x/ess/review-typescript-root-collision/crates/generate/schema-contract)
     Finished `test` profile [unoptimized] target(s) in 0.47s
      Running tests/typescript_typecheck.rs (target/debug/deps/typescript_typecheck-1436018e6e437030)
 
@@ -758,7 +758,7 @@ The explicit nonexistent configured path below was never created. The lane faile
 Command:
 
 ```console
-env TMPDIR="$PWD/target" RUSTC_WRAPPER=/usr/bin/sccache SCCACHE_SERVER_UDS=/home/timo/.local/state/worktree/trees/b10x/ess/wt-752828a285ba/target/w3-cache.sock CARGO_INCREMENTAL=0 CARGO_PROFILE_DEV_DEBUG=0 CARGO_PROFILE_TEST_DEBUG=0 CARGO_CACHE_RUSTC_INFO=0 ESS_TYPESCRIPT_COMPILER="$PWD/target/missing-tsc.js" cargo test --locked -p schema-contract --features typescript-typecheck --test typescript_typecheck
+env TMPDIR="$PWD/target" RUSTC_WRAPPER=/usr/bin/sccache SCCACHE_SERVER_UDS=~/.local/state/worktree/trees/b10x/ess/wt-752828a285ba/target/w3-cache.sock CARGO_INCREMENTAL=0 CARGO_PROFILE_DEV_DEBUG=0 CARGO_PROFILE_TEST_DEBUG=0 CARGO_CACHE_RUSTC_INFO=0 ESS_TYPESCRIPT_COMPILER="$PWD/target/missing-tsc.js" cargo test --locked -p schema-contract --features typescript-typecheck --test typescript_typecheck
 ```
 
 Output (verbatim):
@@ -777,18 +777,18 @@ failures:
 ---- compiler_rejects_a_known_duplicate_binding stdout ----
 
 thread 'compiler_rejects_a_known_duplicate_binding' (629078) panicked at crates/generate/schema-contract/tests/typescript_typecheck.rs:16:9:
-ESS_TYPESCRIPT_COMPILER must name an installed tsc.js: /home/timo/.local/state/worktree/trees/b10x/ess/review-typescript-root-collision/target/missing-tsc.js
+ESS_TYPESCRIPT_COMPILER must name an installed tsc.js: ~/.local/state/worktree/trees/b10x/ess/review-typescript-root-collision/target/missing-tsc.js
 note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
 
 ---- keyword_properties_and_valid_contextual_aliases_typecheck_without_rewriting stdout ----
 
 thread 'keyword_properties_and_valid_contextual_aliases_typecheck_without_rewriting' (629079) panicked at crates/generate/schema-contract/tests/typescript_typecheck.rs:16:9:
-ESS_TYPESCRIPT_COMPILER must name an installed tsc.js: /home/timo/.local/state/worktree/trees/b10x/ess/review-typescript-root-collision/target/missing-tsc.js
+ESS_TYPESCRIPT_COMPILER must name an installed tsc.js: ~/.local/state/worktree/trees/b10x/ess/review-typescript-root-collision/target/missing-tsc.js
 
 ---- accepted_binding_collision_and_keyword_corpus_typechecks stdout ----
 
 thread 'accepted_binding_collision_and_keyword_corpus_typechecks' (629077) panicked at crates/generate/schema-contract/tests/typescript_typecheck.rs:16:9:
-ESS_TYPESCRIPT_COMPILER must name an installed tsc.js: /home/timo/.local/state/worktree/trees/b10x/ess/review-typescript-root-collision/target/missing-tsc.js
+ESS_TYPESCRIPT_COMPILER must name an installed tsc.js: ~/.local/state/worktree/trees/b10x/ess/review-typescript-root-collision/target/missing-tsc.js
 
 
 failures:
@@ -810,13 +810,13 @@ Feature-enabled Clippy initially found the compiler corpus function exceeded the
 Command:
 
 ```console
-env TMPDIR="$PWD/target" RUSTC_WRAPPER=/usr/bin/sccache SCCACHE_SERVER_UDS=/home/timo/.local/state/worktree/trees/b10x/ess/wt-752828a285ba/target/w3-cache.sock CARGO_INCREMENTAL=0 CARGO_PROFILE_DEV_DEBUG=0 CARGO_PROFILE_TEST_DEBUG=0 CARGO_CACHE_RUSTC_INFO=0 cargo clippy --locked -p schema-contract --all-targets --features typescript-typecheck -- -D warnings
+env TMPDIR="$PWD/target" RUSTC_WRAPPER=/usr/bin/sccache SCCACHE_SERVER_UDS=~/.local/state/worktree/trees/b10x/ess/wt-752828a285ba/target/w3-cache.sock CARGO_INCREMENTAL=0 CARGO_PROFILE_DEV_DEBUG=0 CARGO_PROFILE_TEST_DEBUG=0 CARGO_CACHE_RUSTC_INFO=0 cargo clippy --locked -p schema-contract --all-targets --features typescript-typecheck -- -D warnings
 ```
 
 Output (verbatim):
 
 ```text
-    Checking schema-contract v0.18.0 (/home/timo/.local/state/worktree/trees/b10x/ess/review-typescript-root-collision/crates/generate/schema-contract)
+    Checking schema-contract v0.18.0 (~/.local/state/worktree/trees/b10x/ess/review-typescript-root-collision/crates/generate/schema-contract)
 error: this function has too many lines (120/100)
   --> crates/generate/schema-contract/tests/typescript_typecheck.rs:76:1
    |

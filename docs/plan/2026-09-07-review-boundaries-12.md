@@ -55,12 +55,12 @@ continuing coordinators retain their evidence; none is swept by age or broad GC 
 
 Planned managed ID: `ess-cache-origin`.
 Planned branch: `impl/review-cache-origin`.
-Planned path: `/home/timo/.local/state/worktree/trees/b10x/ess/ess-cache-origin`.
+Planned path: `~/.local/state/worktree/trees/b10x/ess/ess-cache-origin`.
 Build: that tree's `target`. Scratch: `target/review-boundaries-12/cache-origin` within the unit.
 Cargo home stays within assigned scratch, with literal links to the existing offline registry
 and Git dependency caches as in the previous unit. The current ess-cli package includes the
 actual Firefox suite. The prior unit established the long TMP Unix-socket path failure, so root
-assigns `/home/timo/.cache/ess-w12-cache-tmp` before this package baseline. It is the only
+assigns `~/.cache/ess-w12-cache-tmp` before this package baseline. It is the only
 external temporary root for this unit and belongs to its evidence inventory and later cleanup.
 
 The implementor owns only `crates/edge/ess-cli` and
@@ -150,7 +150,7 @@ are retained under wave preparation.
 
 The prepared integration runner retains the preceding gate's direct exits, source snapshots,
 tool identities and actual producer process observations. Its only changes are the wave 12
-evidence directory and assigned `/home/timo/.cache/ess-w12-gate-tmp`. It has passed syntax
+evidence directory and assigned `~/.cache/ess-w12-gate-tmp`. It has passed syntax
 inspection only and has not executed. Heavy integration waits for the unit's reviewed handoff
 and a fresh resource check; the new temporary root has not been created.
 
@@ -172,7 +172,7 @@ all 1,130 tested repository inputs remained byte-identical after the commit.
 
 The first independent source attack is assigned this exact unit head and its existing target.
 Its separate scratch is `target/review-boundaries-12/adversary-pass-1` inside the unit and its
-only external temporary root is `/home/timo/.cache/ess-w12-review1-tmp`. Original compiled
+only external temporary root is `~/.cache/ess-w12-review1-tmp`. Original compiled
 handoff outputs are independently retained before a review build can replace them. No source
 attack result, integration result or public delivery is established by the package handoff.
 

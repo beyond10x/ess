@@ -237,9 +237,9 @@ index 3f5da46..3a0f9f8 100644
 
 ## 3. Red evidence
 
-All commands ran from /home/timo/.local/state/worktree/trees/b10x/ess/review-output-containment, with this environment:
+All commands ran from ~/.local/state/worktree/trees/b10x/ess/review-output-containment, with this environment:
 ```text
-TMPDIR=/home/timo/.local/state/worktree/trees/b10x/ess/review-output-containment/target/review-boundaries-2
+TMPDIR=~/.local/state/worktree/trees/b10x/ess/review-output-containment/target/review-boundaries-2
 RUSTC_WRAPPER=/usr/bin/sccache
 CARGO_INCREMENTAL=0
 CARGO_PROFILE_DEV_DEBUG=0
@@ -251,7 +251,7 @@ Before edits, the exact whole-package baseline was rerun: ess-cli executed 36 ca
 The initial new class test fixture accidentally pre-created both src and SRC for every generated-collision case, which caused those cases to refuse for an unrelated existing alias. That first output is retained in correction-class-red.log (2 passed, 3 failed). Before any production change, the fixture was corrected to create the selected parent only; no assertion was weakened. The following decisive run then exercised the intended alias/normalization collisions as failures:
 ```text
 $ cargo test --locked -p ess-cli --test output_containment composition_
-   Compiling ess-cli v0.18.0 (/home/timo/.local/state/worktree/trees/b10x/ess/review-output-containment/crates/edge/ess-cli)
+   Compiling ess-cli v0.18.0 (~/.local/state/worktree/trees/b10x/ess/review-output-containment/crates/edge/ess-cli)
     Finished `test` profile [unoptimized] target(s) in 0.20s
      Running tests/output_containment.rs (target/debug/deps/output_containment-6c42862c3bb02e7c)
 
@@ -275,9 +275,9 @@ note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
 thread 'composition_companion_outputs_cannot_collide_with_the_generated_client_tree' (392413) panicked at crates/edge/ess-cli/tests/output_containment.rs:361:5:
 companion/generated destination collisions must refuse before writes:
 --out out/Cargo.toml: exit Some(0), client manifest preserved false, source parent absent false; stderr: 
---out out/src: exit Some(1), client manifest preserved true, source parent absent false; stderr: error: output path has an incompatible file type or symlink: /home/timo/.local/state/worktree/trees/b10x/ess/review-output-containment/target/review-boundaries-2/ess-output-392412-9/out/src
+--out out/src: exit Some(1), client manifest preserved true, source parent absent false; stderr: error: output path has an incompatible file type or symlink: ~/.local/state/worktree/trees/b10x/ess/review-output-containment/target/review-boundaries-2/ess-output-392412-9/out/src
 --client-plan-out out/Cargo.toml: exit Some(0), client manifest preserved false, source parent absent false; stderr: 
---client-plan-out out/src: exit Some(1), client manifest preserved true, source parent absent false; stderr: error: output path has an incompatible file type or symlink: /home/timo/.local/state/worktree/trees/b10x/ess/review-output-containment/target/review-boundaries-2/ess-output-392412-16/out/src
+--client-plan-out out/src: exit Some(1), client manifest preserved true, source parent absent false; stderr: error: output path has an incompatible file type or symlink: ~/.local/state/worktree/trees/b10x/ess/review-output-containment/target/review-boundaries-2/ess-output-392412-16/out/src
 
 ---- composition_companions_form_one_output_set_even_without_a_generated_tree stdout ----
 
@@ -321,7 +321,7 @@ exit: 101
 The coordinator independently identified a possible native-file spelling regression in the first correction. A new test was added and run before changing that code; the trailing-separator cases confirmed it. The final-component spelling is now checked before Path::file_name can discard its separator:
 ```text
 $ cargo test --locked -p ess-cli --test output_containment composition_does_not_reinterpret_directory_spelling_as_a_named_output_file -- --exact
-   Compiling ess-cli v0.18.0 (/home/timo/.local/state/worktree/trees/b10x/ess/review-output-containment/crates/edge/ess-cli)
+   Compiling ess-cli v0.18.0 (~/.local/state/worktree/trees/b10x/ess/review-output-containment/crates/edge/ess-cli)
     Finished `test` profile [unoptimized] target(s) in 1.70s
      Running tests/output_containment.rs (target/debug/deps/output_containment-6c42862c3bb02e7c)
 
@@ -408,7 +408,7 @@ test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; fini
 
 ```text
 $ cargo test --locked -p ess-cli --test output_containment composition_
-   Compiling ess-cli v0.18.0 (/home/timo/.local/state/worktree/trees/b10x/ess/review-output-containment/crates/edge/ess-cli)
+   Compiling ess-cli v0.18.0 (~/.local/state/worktree/trees/b10x/ess/review-output-containment/crates/edge/ess-cli)
     Finished `test` profile [unoptimized] target(s) in 1.62s
      Running tests/output_containment.rs (target/debug/deps/output_containment-6c42862c3bb02e7c)
 
@@ -427,7 +427,7 @@ exit: 0
 
 ```text
 $ cargo test --locked -p ess-cli
-   Compiling ess-cli v0.18.0 (/home/timo/.local/state/worktree/trees/b10x/ess/review-output-containment/crates/edge/ess-cli)
+   Compiling ess-cli v0.18.0 (~/.local/state/worktree/trees/b10x/ess/review-output-containment/crates/edge/ess-cli)
     Finished `test` profile [unoptimized] target(s) in 1.23s
      Running unittests src/main.rs (target/debug/deps/ess-2a340c79ed142cb3)
 
@@ -776,14 +776,14 @@ exit: 0
 
 ```text
 $ cargo clippy --locked -p ess-cli --all-targets -- -D warnings
-    Checking ess-cli v0.18.0 (/home/timo/.local/state/worktree/trees/b10x/ess/review-output-containment/crates/edge/ess-cli)
+    Checking ess-cli v0.18.0 (~/.local/state/worktree/trees/b10x/ess/review-output-containment/crates/edge/ess-cli)
     Finished `dev` profile [unoptimized] target(s) in 0.91s
 exit: 0
 ```
 
 ```text
 $ cargo clippy --locked -p ess-gen --all-targets -- -D warnings
-    Checking ess-gen v0.18.0 (/home/timo/.local/state/worktree/trees/b10x/ess/review-output-containment/crates/generate/ess-gen)
+    Checking ess-gen v0.18.0 (~/.local/state/worktree/trees/b10x/ess/review-output-containment/crates/generate/ess-gen)
     Finished `dev` profile [unoptimized] target(s) in 0.15s
 exit: 0
 ```
@@ -801,7 +801,7 @@ exit: 0
 
 ## 6. Writes and retained resource evidence
 
-Authored paths outside the worktree: none. All new logs and this separate report are under /home/timo/.local/state/worktree/trees/b10x/ess/review-output-containment/target/review-boundaries-2. Temporary fixtures used the assigned TMPDIR and were removed only by their fixture Drop implementation. Existing raw reports and logs were retained, including the first fixture-error run. Cargo used this worktree's target directory and the prescribed shared sccache service; no cache or build directory was removed.
+Authored paths outside the worktree: none. All new logs and this separate report are under ~/.local/state/worktree/trees/b10x/ess/review-output-containment/target/review-boundaries-2. Temporary fixtures used the assigned TMPDIR and were removed only by their fixture Drop implementation. Existing raw reports and logs were retained, including the first fixture-error run. Cargo used this worktree's target directory and the prescribed shared sccache service; no cache or build directory was removed.
 
 Final observed check and resource output:
 ```text

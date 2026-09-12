@@ -240,11 +240,11 @@ root observed outer session 83566 exit zero. The archive retains 19,248 native e
 Its 389,392,618 compressed bytes have SHA256
 469e86b9d115c7458eb85c51c49ac095d16103c6ff8bafac91dcddb17efe6c60.
 Every regular payload and full PAX native record was independently checked without extraction.
-The exact root is /home/timo/.cache/ess-w17-gate-f82fbc67a4c1-attempt1-tmp.
+The exact root is ~/.cache/ess-w17-gate-f82fbc67a4c1-attempt1-tmp.
 Only that TMP was retired after a final complete census, direct exit zero in 9.875220 seconds;
 root observed outer session 54539 exit zero and verified its absence. No managed tree was
 removed. Full scripts, manifests, original outputs and receipts are retained under
-/home/timo/.cache/ess-review/2026-09-06-resume/wave17-gate-tmp-retirement.
+~/.cache/ess-review/2026-09-06-resume/wave17-gate-tmp-retirement.
 Free space after retirement was 13,848,047,616 bytes. The unit may resume its assigned checks.
 
 ## Stage 1 source checkpoint preparation
@@ -842,7 +842,7 @@ those original attempts green. Full command receipts are under the outside reten
   SHA256 `d36275dc6292d6743f42b6b20e93646318c41c268dd0e517525a1c51164f94d0`.
 
 Every archive, independent verifier and exact retirement command returned0. Full receipts:
-`/home/timo/.cache/ess-review/2026-09-06-resume/wave12-preparation-records-retirement/complete.json`
+`~/.cache/ess-review/2026-09-06-resume/wave12-preparation-records-retirement/complete.json`
 SHA256 `b910f966eda5522bacfa5793876f73afebc13fd9ec205fdcade2bfd27e1fd94b`, and
 `wave12-earlier-gate-records-retirement/complete.json` under the same outside base,
 SHA256 `79c3cd9d181db3590912b37f78d9f614c90984b1019dd2cd373cc23032e1f75d`.
@@ -946,7 +946,7 @@ Ordinary bodies and unselected associated declarations stay outside callable eli
 After all assigned producers held, root archived, independently verified and retired only the four
 historical coordinator target/review-boundaries-{7,8,9,10} record roots. All12 actual commands returned0.
 Original successes, failures, raw streams, source snapshots and native metadata/payloads remain in
-/home/timo/.cache/ess-review/2026-09-06-resume/waves7-10-historical-records-retirement.
+~/.cache/ess-review/2026-09-06-resume/waves7-10-historical-records-retirement.
 Complete receipt SHA256 d71c6c53f60a0c5d5a1241da577eddf610aabae18339b1ccdd4ddf92d8c443ad.
 No managed source checkout, current unit target/TMP, frozen tool or Git branch was removed.
 
@@ -1014,7 +1014,7 @@ and remains unpublished; these operations relocated evidence, with no managed ch
 branch removal. Existing original result statuses were preserved.
 
 The complete receipts, raw commands/streams, native source manifests and archives are under
-`/home/timo/.cache/ess-review/2026-09-06-resume/consumer-historical-records-retirement/`.
+`~/.cache/ess-review/2026-09-06-resume/consumer-historical-records-retirement/`.
 Complete receipt SHA256: `d159843ef3be2ae4ca28b96556c2bca1e6930ba6714706ed79a0a8b79fdd08d5`. Original paths inside these retired roots now identify
 archive members; do not recreate or rerun their historical producers.
 

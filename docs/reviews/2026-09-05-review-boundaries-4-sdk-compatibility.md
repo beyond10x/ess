@@ -8,20 +8,20 @@ This is a complete SDK ESS **0.13.1-to-0.18.0** source/generation compatibility 
 
 ## Exact subjects and setup boundaries
 
-- OLD SDK tree: `/home/timo/.local/state/worktree/trees/b10x/service-sdk/ess-sdk-compat-old`.
-- NEW SDK tree: `/home/timo/.local/state/worktree/trees/b10x/service-sdk/ess-sdk-compat-new`.
+- OLD SDK tree: `~/.local/state/worktree/trees/b10x/service-sdk/ess-sdk-compat-old`.
+- NEW SDK tree: `~/.local/state/worktree/trees/b10x/service-sdk/ess-sdk-compat-new`.
 - Both SDK trees retain published HEAD `48833c6d14ec37cb3b614fca05cf7dd78f63b743`, SDK version 0.5.11.
 - OLD ESS source: seven Git packages 0.13.1 at `d1a66772a91b5411d942d7a45bbf08dfc5de4651`.
-- Candidate ESS source: seven local packages 0.18.0 at frozen HEAD `acb7859e3202ffdc1ca840dde67f7ca4da33c746`, checkout `/home/timo/.local/state/worktree/trees/b10x/ess/wt-752828a285ba`.
+- Candidate ESS source: seven local packages 0.18.0 at frozen HEAD `acb7859e3202ffdc1ca840dde67f7ca4da33c746`, checkout `~/.local/state/worktree/trees/b10x/ess/wt-752828a285ba`.
 - The same retained synthetic `service/1` package and four input files were used throughout. Its declared SDK Git revision is the real published SDK revision above. All inputs and the original 63-file output are checked against the old retained maps before each command. Original OLD binary SHA256 is `56e9c3b761ab65fb6bf7a43ee2d11808b7e65bbf331b562153e01f20fadb8e14`; retained candidate binary SHA256 is `0e543ed67f6971b75a62e74dc5f42f91cd43946bc71cac899517084d35d91196` (40,620,464 bytes).
 - Exact HEAD, clean ESS tracked/untracked status, all seven crate identities and both SDK HEADs were checked before every candidate command and after successful stages. Final ESS status is clean at the frozen subject. OLD status is clean; NEW status is only `M Cargo.lock`. The coordinator maintained the source freeze throughout; no further ESS reads or builds are needed after the final evidence snapshot.
 
 All candidate subprocesses used the byte-identical retained runner with this environment:
 
 ```text
-TMPDIR=/home/timo/.local/state/worktree/trees/b10x/service-sdk/ess-sdk-compat-new/target/ess-review-compat
+TMPDIR=~/.local/state/worktree/trees/b10x/service-sdk/ess-sdk-compat-new/target/ess-review-compat
 RUSTC_WRAPPER=/usr/bin/sccache
-SCCACHE_SERVER_UDS=/home/timo/.local/state/worktree/trees/b10x/ess/wt-752828a285ba/target/w4-cache.sock
+SCCACHE_SERVER_UDS=~/.local/state/worktree/trees/b10x/ess/wt-752828a285ba/target/w4-cache.sock
 CARGO_INCREMENTAL=0
 CARGO_PROFILE_DEV_DEBUG=0
 CARGO_PROFILE_TEST_DEBUG=0
@@ -138,7 +138,7 @@ After checking, every copied generated hash still matched the pre-copy map, the 
 
 Every lane ran from NEW with the recorded offline environment. Each `<lane>.json` stores exact argv/cwd/environment/exit/duration and points to its complete `<lane>.log`. `candidate-final-facts.json` also collects every exact command and hashes both its command record and raw log; `candidate-evidence-hashes.json` covers all retained evidence files. The compact table below reports every attempted Cargo/binary lane without duplicating the full commands or logs.
 
-Outer orchestration used the prepared `candidate.py` stages `init`, initial `resolve`, `tests`, `matrix`, `generated-check`, and initial `gates`, each with explicit `--subject-commit acb7859e3202ffdc1ca840dde67f7ca4da33c746 --source-checkout /home/timo/.local/state/worktree/trees/b10x/ess/wt-752828a285ba`. The two authorized adjustments used `resume-resolution.py` and `finish-clippy.py` with the same arguments. The unmodified prepared script, both adjustment scripts, configs and all refusal records are retained. `collect-final-evidence.py` performed final read/hash checks without invoking Cargo or changing source.
+Outer orchestration used the prepared `candidate.py` stages `init`, initial `resolve`, `tests`, `matrix`, `generated-check`, and initial `gates`, each with explicit `--subject-commit acb7859e3202ffdc1ca840dde67f7ca4da33c746 --source-checkout ~/.local/state/worktree/trees/b10x/ess/wt-752828a285ba`. The two authorized adjustments used `resume-resolution.py` and `finish-clippy.py` with the same arguments. The unmodified prepared script, both adjustment scripts, configs and all refusal records are retained. `collect-final-evidence.py` performed final read/hash checks without invoking Cargo or changing source.
 
 | Lane / matching command record and raw log prefix | Exit | Seconds | Raw log SHA256 |
 | --- | ---: | ---: | --- |

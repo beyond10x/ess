@@ -968,7 +968,7 @@ Exit status: 0. All lists below are the command output verbatim.
 ## Planning validation after scope refresh
 
 ```text
-167 file(s) in /home/timo/.local/state/worktree/trees/b10x/ess/wt-752828a285ba/.engineering/planning: 167 artifact(s)
+167 file(s) in ~/.local/state/worktree/trees/b10x/ess/wt-752828a285ba/.engineering/planning: 167 artifact(s)
 28 review(s) recorded no findings block:
   - review-result:binary64-structural-codecs-adversary-pass1 states its findings as prose only — nothing can enumerate what it found, so                  the next review starts from nowhere
   - review-result:composition-contract-adversary-pass-1 states its findings as prose only — nothing can enumerate what it found, so                  the next review starts from nowhere

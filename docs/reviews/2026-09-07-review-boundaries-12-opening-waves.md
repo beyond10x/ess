@@ -5672,7 +5672,7 @@ story starts at draft
 ## validate stdout
 
 ```text
-185 file(s) in /home/timo/.local/state/worktree/trees/b10x/ess/wt-752828a285ba/.engineering/planning: 185 artifact(s)
+185 file(s) in ~/.local/state/worktree/trees/b10x/ess/wt-752828a285ba/.engineering/planning: 185 artifact(s)
 31 review(s) recorded no findings block:
   - review-result:binary64-structural-codecs-adversary-pass1 states its findings as prose only — nothing can enumerate what it found, so                  the next review starts from nowhere
   - review-result:cache-origin-binding-pass1 states its findings as prose only — nothing can enumerate what it found, so                  the next review starts from nowhere
@@ -5718,7 +5718,7 @@ valid
 The exact wave computation is unchanged: six waves, 55 collisions, no unassessed artifacts or cycles. The original output above is byte-identical to the fresh result after applying the cache and fuzz Scope sections. Scope mutations used AEP; machine reservations remain unchanged.
 
 ```text
-185 file(s) in /home/timo/.local/state/worktree/trees/b10x/ess/wt-752828a285ba/.engineering/planning: 185 artifact(s)
+185 file(s) in ~/.local/state/worktree/trees/b10x/ess/wt-752828a285ba/.engineering/planning: 185 artifact(s)
 31 review(s) recorded no findings block:
   - review-result:binary64-structural-codecs-adversary-pass1 states its findings as prose only — nothing can enumerate what it found, so                  the next review starts from nowhere
   - review-result:cache-origin-binding-pass1 states its findings as prose only — nothing can enumerate what it found, so                  the next review starts from nowhere

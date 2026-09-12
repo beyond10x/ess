@@ -1477,24 +1477,24 @@ Opening21eac63d347d5d1328712cd59dd9ae5edf41aace has verified bot author and comm
 [
   {
     "id": "review-expression-typechecking",
-    "path": "/home/timo/.local/state/worktree/trees/b10x/ess/review-expression-typechecking",
+    "path": "~/.local/state/worktree/trees/b10x/ess/review-expression-typechecking",
     "branch": "impl/review-expression-typechecking",
     "base": "21eac63d347d5d1328712cd59dd9ae5edf41aace",
     "lease": "ess-review-expression-implementation",
-    "build": "/home/timo/.local/state/worktree/trees/b10x/ess/review-expression-typechecking/target",
-    "scratch": "/home/timo/.local/state/worktree/trees/b10x/ess/review-expression-typechecking/target/review-boundaries-7",
-    "brief": "/home/timo/.local/state/worktree/trees/b10x/ess/review-expression-typechecking/target/review-boundaries-7/unit-brief.md",
+    "build": "~/.local/state/worktree/trees/b10x/ess/review-expression-typechecking/target",
+    "scratch": "~/.local/state/worktree/trees/b10x/ess/review-expression-typechecking/target/review-boundaries-7",
+    "brief": "~/.local/state/worktree/trees/b10x/ess/review-expression-typechecking/target/review-boundaries-7/unit-brief.md",
     "stage": "provisioned; brief written; ready for dispatch"
   },
   {
     "id": "review-openapi-semantic-accounting",
-    "path": "/home/timo/.local/state/worktree/trees/b10x/ess/review-openapi-semantic-accounting",
+    "path": "~/.local/state/worktree/trees/b10x/ess/review-openapi-semantic-accounting",
     "branch": "impl/review-openapi-semantic-accounting",
     "base": "21eac63d347d5d1328712cd59dd9ae5edf41aace",
     "lease": "ess-review-openapi-implementation",
-    "build": "/home/timo/.local/state/worktree/trees/b10x/ess/review-openapi-semantic-accounting/target",
-    "scratch": "/home/timo/.local/state/worktree/trees/b10x/ess/review-openapi-semantic-accounting/target/review-boundaries-7",
-    "brief": "/home/timo/.local/state/worktree/trees/b10x/ess/review-openapi-semantic-accounting/target/review-boundaries-7/unit-brief.md",
+    "build": "~/.local/state/worktree/trees/b10x/ess/review-openapi-semantic-accounting/target",
+    "scratch": "~/.local/state/worktree/trees/b10x/ess/review-openapi-semantic-accounting/target/review-boundaries-7",
+    "brief": "~/.local/state/worktree/trees/b10x/ess/review-openapi-semantic-accounting/target/review-boundaries-7/unit-brief.md",
     "stage": "provisioned; brief written; ready for dispatch"
   }
 ]
@@ -1546,7 +1546,7 @@ Combined source `8271c3ec92adfe9e39d8fe877933e2a4199b2f46` passed all eight orde
 
 The coordinator corrected one remaining documentation claim about the intentionally retained legacy reader. Commit `5d5e87fc70e021ce38477ab71c842a2063a845a3` changes only the internal catalog, public format reference and CLI-written scope/journal. Root verified those exact four paths and repeated site-build on that clean commit; it exited zero at 08:01:52Z. No runtime or fixture bytes changed. Both stories then recorded dated `test_result` evidence and moved from active to implemented through AEP. The valid 128-artifact store retains 16 empty/absent findings-list advisories; complete output is `target/review-boundaries-7/final-gate/completion-planning-validation.txt`.
 
-The OpenAPI unit archive contains 3,131 hash-verified evidence files at `/home/timo/.cache/ess-review/2026-09-06-resume/openapi-wave7-evidence.tar.gz`, SHA-256 `89635d7bf76da8e6bd751db40539d815aac52614b829c7580bdecec835052eda`. Its adjacent JSON manifest enumerates every included file and the excluded disposable compiler/dependency caches. Both unit archives now exist before managed retirement. Publication, remote CI, public source delivery and exact-id cleanup remain separately observed outcomes. The AEP prerequisite and sixteen draft remediation stories remain unfinished; no release tag or version bump was made.
+The OpenAPI unit archive contains 3,131 hash-verified evidence files at `~/.cache/ess-review/2026-09-06-resume/openapi-wave7-evidence.tar.gz`, SHA-256 `89635d7bf76da8e6bd751db40539d815aac52614b829c7580bdecec835052eda`. Its adjacent JSON manifest enumerates every included file and the excluded disposable compiler/dependency caches. Both unit archives now exist before managed retirement. Publication, remote CI, public source delivery and exact-id cleanup remain separately observed outcomes. The AEP prerequisite and sixteen draft remediation stories remain unfinished; no release tag or version bump was made.
 
 ## Concurrent base64 normalization integration
 
@@ -1562,7 +1562,7 @@ OpenAPI's final review completed with no findings: seven new cases passed their 
 
 The OpenAPI correction is frozen at `42513466e27248c008d39efe5a676d64c3283d7a`, with all four final source hashes and both bot identities verified. Its raw-interface preflight adds 36 production lines and retains the legacy reader. The original four failures now pass, and the complete suite ran 163→165 cases, all passed with none ignored. Two nesting/legacy controls are new; the first review files changed only through formatting and one borrowed helper parameter. Original copies and diffs remain beside the correction report. The first immutable review now has a separate fixed outcome. Agent `openapi_review_pass2` holds the second and final bounded review under the installed 0.8.0 charter; its brief is `target/review-boundaries-7/adversary-pass-2/brief.md` in the same unit.
 
-The complete expression scratch was archived before eventual cleanup: 182 files were hash-verified inside `/home/timo/.cache/ess-review/2026-09-06-resume/expression-wave7-evidence.tar.gz`, SHA-256 `8d0117c81655f6c0d976923e4e56e4bd2de8e3055b91c7e4d86e60eebef61bd3`. The adjacent JSON manifest binds each original path and file digest to unit commit `1b018bf38c49a644754f2f91be9fde2dc4c9f9df`. The worktree remains leased pending publication and managed retirement.
+The complete expression scratch was archived before eventual cleanup: 182 files were hash-verified inside `~/.cache/ess-review/2026-09-06-resume/expression-wave7-evidence.tar.gz`, SHA-256 `8d0117c81655f6c0d976923e4e56e4bd2de8e3055b91c7e4d86e60eebef61bd3`. The adjacent JSON manifest binds each original path and file digest to unit commit `1b018bf38c49a644754f2f91be9fde2dc4c9f9df`. The worktree remains leased pending publication and managed retirement.
 
 The latest planning validator exits zero with 126 artifacts. It reports 15 findings-block advisories, including the new expression report despite its literal terminal `findings` block containing `[]`. The validator's `found.is_empty()` branch produces the same advisory for an empty list and an absent block. The immutable report is preserved unchanged. Complete output remains at `target/review-boundaries-7/resume-planning-validation.txt`. This parser advisory changes no test or completion result.
 

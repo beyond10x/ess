@@ -248,7 +248,7 @@ Exit: 0.
 
 ## 4. Final document checks
 
-The following commands ran from /home/timo/.local/state/worktree/trees/b10x/ess/review-conformance-format-design. No test lane ran, so there is no runner-derived before/after case count. The 75 compatibility rows and 10 pairing rows are specified future implementation obligations, not passing runtime cases.
+The following commands ran from ~/.local/state/worktree/trees/b10x/ess/review-conformance-format-design. No test lane ran, so there is no runner-derived before/after case count. The 75 compatibility rows and 10 pairing rows are specified future implementation obligations, not passing runtime cases.
 
 Command (worktree root):
 ```text

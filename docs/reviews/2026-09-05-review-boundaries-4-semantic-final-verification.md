@@ -102,9 +102,9 @@ Completed at: 2026-09-05T17:45:02.284902+00:00
     "review_adversary_f01_pass2"
   ],
   "env": {
-    "TMPDIR": "/home/timo/.local/state/worktree/trees/b10x/ess/review-semantic-diff-coverage/target",
+    "TMPDIR": "~/.local/state/worktree/trees/b10x/ess/review-semantic-diff-coverage/target",
     "RUSTC_WRAPPER": "/usr/bin/sccache",
-    "SCCACHE_SERVER_UDS": "/home/timo/.local/state/worktree/trees/b10x/ess/wt-752828a285ba/target/w4-cache.sock",
+    "SCCACHE_SERVER_UDS": "~/.local/state/worktree/trees/b10x/ess/wt-752828a285ba/target/w4-cache.sock",
     "CARGO_INCREMENTAL": "0",
     "CARGO_PROFILE_DEV_DEBUG": "0",
     "CARGO_PROFILE_TEST_DEBUG": "0",
@@ -115,10 +115,10 @@ Completed at: 2026-09-05T17:45:02.284902+00:00
 ```
 
 ```text
-   Compiling ess-compiler v0.18.0 (/home/timo/.local/state/worktree/trees/b10x/ess/review-semantic-diff-coverage/crates/specify/ess-compiler)
-   Compiling ess-gen v0.18.0 (/home/timo/.local/state/worktree/trees/b10x/ess/review-semantic-diff-coverage/crates/generate/ess-gen)
-   Compiling ess-conformance v0.18.0 (/home/timo/.local/state/worktree/trees/b10x/ess/review-semantic-diff-coverage/crates/verify/ess-conformance)
-   Compiling ess-diff v0.18.0 (/home/timo/.local/state/worktree/trees/b10x/ess/review-semantic-diff-coverage/crates/verify/ess-diff)
+   Compiling ess-compiler v0.18.0 (~/.local/state/worktree/trees/b10x/ess/review-semantic-diff-coverage/crates/specify/ess-compiler)
+   Compiling ess-gen v0.18.0 (~/.local/state/worktree/trees/b10x/ess/review-semantic-diff-coverage/crates/generate/ess-gen)
+   Compiling ess-conformance v0.18.0 (~/.local/state/worktree/trees/b10x/ess/review-semantic-diff-coverage/crates/verify/ess-conformance)
+   Compiling ess-diff v0.18.0 (~/.local/state/worktree/trees/b10x/ess/review-semantic-diff-coverage/crates/verify/ess-diff)
     Finished `test` profile [unoptimized] target(s) in 9.28s
      Running tests/review_adversary_f01_pass2.rs (target/debug/deps/review_adversary_f01_pass2-c2309f25ac1af007)
 
@@ -150,9 +150,9 @@ test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; fini
     "correction2_"
   ],
   "env": {
-    "TMPDIR": "/home/timo/.local/state/worktree/trees/b10x/ess/review-semantic-diff-coverage/target",
+    "TMPDIR": "~/.local/state/worktree/trees/b10x/ess/review-semantic-diff-coverage/target",
     "RUSTC_WRAPPER": "/usr/bin/sccache",
-    "SCCACHE_SERVER_UDS": "/home/timo/.local/state/worktree/trees/b10x/ess/wt-752828a285ba/target/w4-cache.sock",
+    "SCCACHE_SERVER_UDS": "~/.local/state/worktree/trees/b10x/ess/wt-752828a285ba/target/w4-cache.sock",
     "CARGO_INCREMENTAL": "0",
     "CARGO_PROFILE_DEV_DEBUG": "0",
     "CARGO_PROFILE_TEST_DEBUG": "0",
@@ -163,7 +163,7 @@ test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; fini
 ```
 
 ```text
-   Compiling ess-diff v0.18.0 (/home/timo/.local/state/worktree/trees/b10x/ess/review-semantic-diff-coverage/crates/verify/ess-diff)
+   Compiling ess-diff v0.18.0 (~/.local/state/worktree/trees/b10x/ess/review-semantic-diff-coverage/crates/verify/ess-diff)
     Finished `test` profile [unoptimized] target(s) in 0.36s
      Running tests/graph.rs (target/debug/deps/graph-428d50882447a7e7)
 
@@ -193,9 +193,9 @@ test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 8 filtered out; fini
     "review_adversary_f01"
   ],
   "env": {
-    "TMPDIR": "/home/timo/.local/state/worktree/trees/b10x/ess/review-semantic-diff-coverage/target",
+    "TMPDIR": "~/.local/state/worktree/trees/b10x/ess/review-semantic-diff-coverage/target",
     "RUSTC_WRAPPER": "/usr/bin/sccache",
-    "SCCACHE_SERVER_UDS": "/home/timo/.local/state/worktree/trees/b10x/ess/wt-752828a285ba/target/w4-cache.sock",
+    "SCCACHE_SERVER_UDS": "~/.local/state/worktree/trees/b10x/ess/wt-752828a285ba/target/w4-cache.sock",
     "CARGO_INCREMENTAL": "0",
     "CARGO_PROFILE_DEV_DEBUG": "0",
     "CARGO_PROFILE_TEST_DEBUG": "0",

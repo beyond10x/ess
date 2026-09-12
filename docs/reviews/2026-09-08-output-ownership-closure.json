@@ -48,7 +48,7 @@
         },
         "discovered_models": 1806,
         "executed_cases": 22,
-        "output": "/home/timo/.local/state/worktree/trees/b10x/ess/ess-output-ownership-wave19/target/consumer-coverage/run-1788874650051110967-838523",
+        "output": "~/.local/state/worktree/trees/b10x/ess/ess-output-ownership-wave19/target/consumer-coverage/run-1788874650051110967-838523",
         "provider_sha256": "fdee56edf401306efed7dbe51e5714fb086ca1a5339c41b558a513e0a0e37067",
         "source_sha256": "bc67910a754bd394993cbee4faf27f4242df95b24a28bd56d080ce9efaa21868",
         "unknown_limit": "Accepted initial gaps remain unproven; this is not complete consumer support."
@@ -130,7 +130,7 @@
     "new": 0,
     "resolved": 2,
     "treeRetired": true,
-    "retention": "/home/timo/.cache/ess-review/2026-09-06-resume/wave19-adversary-final-retention"
+    "retention": "~/.cache/ess-review/2026-09-06-resume/wave19-adversary-final-retention"
   },
   "resources": {
     "consumerFinalCapSample": [
@@ -144,16 +144,16 @@
     "allConsumerCommandsExit": 0,
     "consumerCommands": 72,
     "disposableRustdocRemoved": {
-      "path": "/home/timo/.local/state/worktree/trees/b10x/ess/ess-output-ownership-wave19/target/doc",
+      "path": "~/.local/state/worktree/trees/b10x/ess/ess-output-ownership-wave19/target/doc",
       "allocatedBytes": 81571840,
       "exit": 0,
       "purpose": "Restore unchanged 10GiB target+ordinary TMP cap before last two lanes; native producers quiescent, rustdoc logs retained."
     }
   },
   "retention": {
-    "preparation": "/home/timo/.local/state/worktree/trees/b10x/ess/ess-review-boundaries-19/target/review-boundaries-19/preparation",
-    "unitScratch": "/home/timo/.local/state/worktree/trees/b10x/ess/ess-output-ownership-wave19/target/review-output-ownership-wave19",
-    "selectedFinalLocation": "/home/timo/.cache/ess-review/2026-09-06-resume/wave19-final-retention",
+    "preparation": "~/.local/state/worktree/trees/b10x/ess/ess-review-boundaries-19/target/review-boundaries-19/preparation",
+    "unitScratch": "~/.local/state/worktree/trees/b10x/ess/ess-output-ownership-wave19/target/review-output-ownership-wave19",
+    "selectedFinalLocation": "~/.cache/ess-review/2026-09-06-resume/wave19-final-retention",
     "state": "Unit/coordinator retirement follows publication and archive readback."
   },
   "agentCost": {
