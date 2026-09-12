@@ -1821,6 +1821,10 @@ pub fn validate_payloads(
     conversions: &crate::types::ConversionRegistry,
 ) -> ValidationErrors {
     let mut errors = ValidationErrors::new();
+    // Once for the document, for the reason `binding::validate_bindings` states: it is a fixpoint
+    // over the whole registry, and asking it per literal makes one document quadratic in its own
+    // size.
+    let inhabitation = crate::system::Inhabitation::of(types);
     for command in commands.values() {
         for outcome in &command.outcomes {
             for (event_name, fields) in &outcome.payload {
@@ -1844,8 +1848,11 @@ pub fn validate_payloads(
                         event,
                         target,
                         source,
-                        types,
-                        conversions,
+                        Resolved {
+                            types,
+                            conversions,
+                            inhabitation: &inhabitation,
+                        },
                     ));
                 }
             }
@@ -1855,15 +1862,29 @@ pub fn validate_payloads(
 }
 
 /// One payload entry: the event field it fills, the value it takes, and whether the two agree.
+/// What a payload entry is resolved against, and none of it changes from entry to entry.
+///
+/// The move `binding::Ends` already makes, for the reason its own documentation gives: the
+/// registry, the declared conversions and the set of types the type pass refuses are properties of
+/// the document, and threading them one at a time is how this argument list reached eight.
+#[derive(Clone, Copy)]
+struct Resolved<'a> {
+    types: &'a TypeRegistry,
+    conversions: &'a crate::types::ConversionRegistry,
+    /// Which declarations `check_inhabitation` refuses, so a rule staying silent can check that
+    /// somebody else really speaks — about the type in hand, and not merely about a name under it.
+    inhabitation: &'a crate::system::Inhabitation,
+}
+
 fn check_payload_entry(
     at: &ConstructRef,
     command: &CommandSpec,
     event: &EventSpec,
     target: &str,
     source: &PayloadSource,
-    types: &TypeRegistry,
-    conversions: &crate::types::ConversionRegistry,
+    resolved: Resolved<'_>,
 ) -> ValidationErrors {
+    let conversions = resolved.conversions;
     let mut errors = ValidationErrors::new();
 
     let Some(filled) = event.field(target) else {
@@ -1922,7 +1943,7 @@ fn check_payload_entry(
         }
         PayloadSource::Literal { value } => {
             errors.extend(check_payload_literal(
-                at, command, event, target, filled, value, types,
+                at, command, event, target, filled, value, resolved,
             ));
         }
     }
@@ -2092,7 +2113,7 @@ fn check_payload_literal(
     target: &str,
     filled: &Field,
     value: &str,
-    types: &TypeRegistry,
+    resolved: Resolved<'_>,
 ) -> ValidationErrors {
     use crate::binding::{is_field_name, near_miss, representation, Representation, Resolution};
 
@@ -2148,10 +2169,14 @@ fn check_payload_literal(
             command.name
         ))
     };
-    match representation(&filled.type_ref, types) {
-        // Text is checked as far as text can be. The other two silences belong to other passes:
-        // a name nothing declares is reported where unresolved references are, and a ring of names
-        // no value inhabits is refused as `self_reference` where types are checked.
+    match representation(&filled.type_ref, resolved.types, resolved.inhabitation) {
+        // Text is checked as far as text can be. The other two silences belong to other passes,
+        // and each is a deferral to a refusal that is actually made about the type in hand: a name
+        // nothing declares is reported where unresolved references are, and `Uninhabited` is
+        // answered only when `check_inhabitation` emits `self_reference` for the very type the
+        // literal fills. It is not every type with no values of its own — one whose field names
+        // nothing, and one sitting behind an `Optional`, are both `Structured` and both refused
+        // here, because here is where they are refused at all.
         Resolution::Established(Representation::Text)
         | Resolution::Undeclared
         | Resolution::Uninhabited => {}

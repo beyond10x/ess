@@ -141,6 +141,7 @@ use ess_primitives::error::{ParseError, ValidationCode, ValidationError, Validat
 use crate::command::{CommandSpec, EventSpec};
 use crate::name::{Naming, QualifiedName};
 use crate::refs::Refs;
+use crate::system::Inhabitation;
 use crate::types::{ConversionRegistry, Field, Primitive, TypeBody, TypeRef, TypeRegistry};
 
 pub mod periodic;
@@ -1150,6 +1151,10 @@ pub fn validate_bindings(
 ) -> ValidationErrors {
     let mut errors = ValidationErrors::new();
     let mut account = crate::accessor::Account::default();
+    // Once for the document. It is a fixpoint over the whole registry, and asking it per literal
+    // made the cost of one document quadratic in the number of declarations — 33 ms to 515 ms at
+    // 400 names, measured in `review-result:adversary-wave23-unit1-pass-1`.
+    let inhabitation = Inhabitation::of(types);
     for binding in bindings.values() {
         if let Some(event) = binding.cause.event().and_then(|name| events.get(name)) {
             if let Ok(plan) = crate::selection::SelectionPlan::resolve(
@@ -1224,6 +1229,7 @@ pub fn validate_bindings(
                 commands,
                 types,
                 conversions,
+                inhabitation: &inhabitation,
             }
             .check(),
         );
@@ -1241,6 +1247,9 @@ struct Ends<'a> {
     commands: &'a BTreeMap<QualifiedName, CommandSpec>,
     types: &'a TypeRegistry,
     conversions: &'a ConversionRegistry,
+    /// Which declarations the type pass refuses, so that a rule staying silent can check that
+    /// somebody else really speaks — about the type in hand, and not merely about a name under it.
+    inhabitation: &'a Inhabitation,
 }
 
 impl Ends<'_> {
@@ -1580,12 +1589,13 @@ impl Ends<'_> {
             )
         };
 
-        match representation(&input.type_ref, self.types) {
+        match representation(&input.type_ref, self.types, self.inhabitation) {
             // Text is as far as a literal can be checked — the module documentation says what that
             // leaves unsaid about the value. The other two silences are the same rule, not a
-            // weaker check: a name nothing declares and a ring of names no value inhabits are each
-            // refused by the pass that owns them, and saying it again here would report one
-            // mistake twice and repair it neither time.
+            // weaker check: a name nothing declares, and a type `check_inhabitation` refuses by
+            // name, are each reported by the pass that owns them, and saying it again here would
+            // report one mistake twice and repair it neither time. Every other way of having no
+            // values reaches one of the arms below, because for those nothing else speaks.
             Resolution::Established(Representation::Text)
             | Resolution::Undeclared
             | Resolution::Uninhabited => {}
@@ -1674,6 +1684,13 @@ pub(crate) enum Representation<'a> {
     /// A primitive that is not text.
     Primitive(Primitive),
     /// Something with structure: a struct, a union, a list or a map.
+    ///
+    /// A struct or a union stays here unless `check_inhabitation` refuses the type the literal
+    /// fills, in which case it is [`Resolution::Uninhabited`] and that pass reports it. Two shapes
+    /// with no values of their own stay here: one whose field or variant names an undeclared type,
+    /// which draws an unresolved-reference error and no `self_reference`; and one reached through
+    /// an `Optional`, where the filled type does have a value and only the inner name is refused.
+    /// Both are refused here, because here is the only place they are refused at all.
     Structured,
 }
 
@@ -1701,13 +1718,26 @@ pub(crate) enum Resolution<'a> {
     /// that text could be written as. Nobody else reports it, so this pass does. The name carried
     /// is the one the chain returned to, which is what the refusal quotes.
     Cyclic(&'a QualifiedName),
-    /// The walk returned to a named type it had already resolved through, and nothing in the loop
-    /// gives it a base case.
+    /// `check_inhabitation` refuses the type the literal fills, with `self_reference`.
     ///
-    /// `Ring = newtype of Ring`, or any longer ring of bare names. No value of it can exist, and
-    /// `check_inhabitation` refuses the declaration itself with `self_reference` — the same
-    /// document at the base of this work produced exactly one error for it, and a second one from
-    /// here would be the mistake [`Undeclared`](Self::Undeclared) exists to avoid.
+    /// **The type the literal fills**, not merely the one the walk stopped on: the two are the same
+    /// declaration only while the walk crosses nothing that has a base case, and a refusal of an
+    /// inner name says nothing about an outer type that a value — absence — still inhabits. The
+    /// walk tests both halves before answering this.
+    ///
+    /// Stated as *that pass speaks* rather than as *no value exists*, because those are not the
+    /// same set either and this answer is a deferral: a second message from here would be the
+    /// mistake [`Undeclared`](Self::Undeclared) exists to avoid, and a deferral to a pass that
+    /// declines is worse than either.
+    /// [`Inhabitation::refuses_declaration`](crate::system::Inhabitation::refuses_declaration)
+    /// decides the set; the walk decides which declaration to ask about.
+    ///
+    /// Two ways of arriving. The walk returns to a named type it had already resolved through with
+    /// no base case crossed inside the loop — `Ring = newtype of Ring`, or any longer ring of bare
+    /// names. Or it stops on a struct or a union that closes the ring itself — `Alpha = newtype of
+    /// Pick` with `Pick = struct {only: Alpha}` — which it meets before the second `Alpha`, so
+    /// there is no second arrival to count against. The second way drew a third diagnostic for one
+    /// mistake until `story:structured-ring-is-refused-by-two-passes`.
     Uninhabited,
 }
 
@@ -1736,13 +1766,26 @@ pub const WRAPPER_LIMIT: usize = 32;
 /// registry holds finitely many names, so the walk stops on every input, including the recursive
 /// ones other passes admit.
 ///
+/// A struct or a union stops the walk without a second arrival at any name, so the same rule is
+/// applied to it directly instead of to a second arrival: `base_cases` must still be zero — no
+/// `Optional` crossed anywhere on the way, since one crossed *before* the struct gives the filled
+/// type a base case just as surely as one crossed inside a ring — and `check_inhabitation` must
+/// refuse the declaration, which is a smaller set than "no value of it exists".
+///
+/// `inhabitation` is computed once for the document by the caller: it is a fixpoint over the whole
+/// registry, so running it per literal made a document quadratic in its own size.
+///
 /// Which of the two cyclic answers that second arrival is turns on whether an `Optional` was
 /// crossed *inside* the loop, which is the same base-case rule `check_inhabitation` applies: a ring
 /// of bare names has no values and is refused there, while a ring holding an `Optional` has values
 /// and is admitted there. Counting base cases and comparing against the count recorded when the
 /// name was first seen answers that exactly — an `Optional` crossed on the way *to* the ring does
 /// not give the ring one.
-pub(crate) fn representation<'a>(type_ref: &'a TypeRef, types: &'a TypeRegistry) -> Resolution<'a> {
+pub(crate) fn representation<'a>(
+    type_ref: &'a TypeRef,
+    types: &'a TypeRegistry,
+    inhabitation: &Inhabitation,
+) -> Resolution<'a> {
     let mut current = type_ref;
     let mut visited: BTreeMap<&'a QualifiedName, usize> = BTreeMap::new();
     let mut base_cases = 0_usize;
@@ -1777,7 +1820,30 @@ pub(crate) fn representation<'a>(type_ref: &'a TypeRef, types: &'a TypeRegistry)
                             return Resolution::Established(Representation::Variants(variants));
                         }
                         Some(TypeBody::Struct { .. } | TypeBody::Union { .. }) => {
-                            return Resolution::Established(Representation::Structured);
+                            // The same ownership test the ring answers take, at the other way of
+                            // meeting a ring: a struct or a union closes one *before* the walk
+                            // returns to a name it has seen, so counting base cases against a
+                            // second arrival cannot answer it. Both halves are load-bearing.
+                            //
+                            // `refuses_declaration` rather than "has no values", because a struct
+                            // whose field names nothing has no values and still draws no
+                            // `self_reference` — the missing name is reported instead.
+                            //
+                            // `base_cases == 0` because the answer has to be about the type the
+                            // literal *fills*, and that is only the same question when nothing
+                            // inhabiting was crossed getting here: with no `Optional` the path is
+                            // bare newtypes, so every name on it is uninhabited exactly when
+                            // `named` is and names only declared types, and the whole path is
+                            // refused too. One `Optional` and the filled type has a value —
+                            // absence — that `check_inhabitation` is silent about and no literal
+                            // can spell, so the refusal is this pass's after all.
+                            let deferred =
+                                base_cases == 0 && inhabitation.refuses_declaration(named);
+                            return if deferred {
+                                Resolution::Uninhabited
+                            } else {
+                                Resolution::Established(Representation::Structured)
+                            };
                         }
                         None => return Resolution::Undeclared,
                     }

@@ -564,44 +564,100 @@ fn body_inhabited(declared: &NamedType, inhabited: &BTreeSet<QualifiedName>) -> 
     }
 }
 
-/// Reports every type no value can inhabit.
+/// What the inhabitation fixpoint concluded about one registry, computed once.
 ///
-/// A least-fixpoint rather than a cycle search: start with nothing known to be inhabited, then keep
-/// marking declarations whose requirements are met until nothing new can be marked. Whatever is left
-/// unmarked cannot be built — which is design §20's forbidden dependency cycle, stated as the
-/// property that actually matters instead of as the shape that usually causes it.
+/// Two answers, and the reason they travel together is that they are **not** the same set and one
+/// of them is a trap. `inhabited` is which names a value can be built for; `refused` is which names
+/// [`check_inhabitation`] actually says something about, which is the first set's complement
+/// *minus* the declarations another pass already explains.
+/// `story:structured-ring-is-refused-by-two-passes` asked the first question where it needed the
+/// second, and `review-result:adversary-wave23-unit1-pass-1` measured what that costs: a literal
+/// written into `Pick = struct {only: Missing}` was deferred to a refusal that never came and was
+/// checked by no pass at all.
 ///
-/// Stating it the other way round was a real defect, not a stylistic difference: treating every
-/// union variant as required refused the expression tree above.
-fn check_inhabitation(registry: &TypeRegistry, errors: &mut ValidationErrors) {
-    let mut inhabited: BTreeSet<QualifiedName> = BTreeSet::new();
-    loop {
-        let mut grew = false;
-        for declared in registry.iter() {
-            if !inhabited.contains(&declared.name) && body_inhabited(declared, &inhabited) {
-                inhabited.insert(declared.name.clone());
-                grew = true;
+/// So `inhabited` stays private and [`refuses_declaration`](Self::refuses_declaration) is the whole
+/// of what leaves this module. Asking the wrong one of these two is not a mistake a caller can
+/// make.
+pub(crate) struct Inhabitation {
+    /// Every name a value can be built for.
+    inhabited: BTreeSet<QualifiedName>,
+    /// Every name [`check_inhabitation`] emits `self_reference` for.
+    refused: BTreeSet<QualifiedName>,
+}
+
+impl Inhabitation {
+    /// Run the fixpoint over `registry` and record both answers.
+    ///
+    /// A least-fixpoint rather than a cycle search: start with nothing known to be inhabited, then
+    /// keep marking declarations whose requirements are met until nothing new can be marked.
+    /// Whatever is left unmarked cannot be built — which is design §20's forbidden dependency
+    /// cycle, stated as the property that actually matters instead of as the shape that usually
+    /// causes it.
+    ///
+    /// Stating it the other way round was a real defect, not a stylistic difference: treating every
+    /// union variant as required refused the expression tree above.
+    pub(crate) fn of(registry: &TypeRegistry) -> Self {
+        let mut inhabited: BTreeSet<QualifiedName> = BTreeSet::new();
+        loop {
+            let mut grew = false;
+            for declared in registry.iter() {
+                if !inhabited.contains(&declared.name) && body_inhabited(declared, &inhabited) {
+                    inhabited.insert(declared.name.clone());
+                    grew = true;
+                }
+            }
+            if !grew {
+                break;
             }
         }
-        if !grew {
-            break;
-        }
+        let refused = registry
+            .iter()
+            .filter(|declared| !inhabited.contains(&declared.name))
+            // An undeclared dependency is already reported as an unresolved reference, and a type
+            // that is uninhabited only because one of its fields names nothing would be a second
+            // message about the same mistake. The one skip, in the one place, so that every reader
+            // of `refused` inherits it.
+            .filter(|declared| !names_something_undeclared(declared, registry))
+            .map(|declared| declared.name.clone())
+            .collect();
+        Self { inhabited, refused }
     }
 
+    /// Whether [`check_inhabitation`] refuses the declaration `name`.
+    ///
+    /// Not "can a value of it exist": the two differ exactly on the declarations whose blocker is
+    /// an undeclared name, and those get no `self_reference` here.
+    ///
+    /// **Also not "is a type reference holding `name` somebody else's to refuse".** Named for the
+    /// declaration on purpose, because that is the whole of what this answers: a caller reasoning
+    /// about a *type reference* — a literal's target, say — has to establish separately that the
+    /// reference and the declaration stand or fall together, which they do only while nothing with
+    /// a base case sits between them. `Optional<Pick>` is inhabited whatever `Pick` is, and a
+    /// caller that read a refusal of `Pick` as a refusal of `Optional<Pick>` fell silent about a
+    /// literal nobody else checked — `review-result:adversary-wave23-unit1-pass-2`. The walk in
+    /// [`crate::binding`] pairs this with its own `base_cases == 0`; the name is the reminder that
+    /// the pairing is the caller's to make.
+    pub(crate) fn refuses_declaration(&self, name: &QualifiedName) -> bool {
+        self.refused.contains(name)
+    }
+}
+
+/// Reports every type no value can inhabit.
+///
+/// The set is [`Inhabitation::refused`], and every other pass that stays silent because this one
+/// speaks reads the same set rather than re-deriving it — having first established that what it is
+/// staying silent about is one of *these* declarations.
+fn check_inhabitation(registry: &TypeRegistry, errors: &mut ValidationErrors) {
+    let found = Inhabitation::of(registry);
+
     for declared in registry.iter() {
-        if inhabited.contains(&declared.name) {
-            continue;
-        }
-        // An undeclared dependency is already reported as an unresolved reference, and a type that
-        // is uninhabited only because one of its fields names nothing would be a second message
-        // about the same mistake.
-        if names_something_undeclared(declared, registry) {
+        if !found.refuses_declaration(&declared.name) {
             continue;
         }
         // Naming what it is waiting for, not just that it is stuck: a fixpoint knows which
         // requirements were never met, and "requires X, which also cannot be built" is the sentence
         // an author can act on. Bare "this cannot exist" leaves them to find the other end.
-        let blockers = unmet_requirements(declared, &inhabited);
+        let blockers = unmet_requirements(declared, &found.inhabited);
         errors.push(
             ValidationError::new(
                 ValidationCode::SelfReference,
