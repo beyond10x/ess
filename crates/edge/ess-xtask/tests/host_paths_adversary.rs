@@ -48,9 +48,6 @@ fn throwaway(label: &str) -> PathBuf {
             .as_nanos()
     ));
     fs::create_dir_all(&path).expect("a throwaway directory can be created");
-    // Named so a case that fails before its own cleanup leaves something findable rather than
-    // something anonymous; `support.rs` in this package retains its fixtures the same way.
-    println!("retained fixture: {}", path.display());
     path
 }
 
@@ -150,13 +147,15 @@ fn every_tracked_file_the_lane_selects_is_examined_rather_than_silently_dropped(
         "this case is about a file that does not decode as UTF-8, and this one does"
     );
     let found = home_paths_in(&file);
+    // Removed before the assertion, not after it: a case that cleans up only when it passes
+    // leaves a fixture tree under `TMPDIR` on exactly the runs somebody is already debugging.
+    fs::remove_dir_all(&directory).expect("the throwaway directory can be removed");
     assert!(
         found.iter().any(|(_, path)| path == &leaked),
         "a home-directory path inside a file that does not decode as UTF-8 is still a home \
          directory path in a tracked file, and the acceptance statement refuses it; the lane's \
          reader returned {found:?}"
     );
-    fs::remove_dir_all(&directory).expect("the throwaway directory can be removed");
 }
 
 /// A marker that ends a sentence names a directory, not a path inside anybody's home.
@@ -299,6 +298,7 @@ fn the_selection_keeps_a_tracked_path_that_git_quotes() {
     }
 
     let selected = scanned_files(&repository);
+    fs::remove_dir_all(&repository).expect("the throwaway repository can be removed");
     assert!(
         selected.contains(&plain),
         "the throwaway repository tracks `{plain}` under a scanned tree and the lane's selection \
@@ -310,7 +310,6 @@ fn the_selection_keeps_a_tracked_path_that_git_quotes() {
          the scanned prefixes, so the file leaves the scan before it is read and before anything \
          counts it; the lane's selection produced {selected:?}"
     );
-    fs::remove_dir_all(&repository).expect("the throwaway repository can be removed");
 }
 
 /// The markers cover the superuser's home directory, as this host itself records it.
