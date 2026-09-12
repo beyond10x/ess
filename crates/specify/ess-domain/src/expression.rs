@@ -530,6 +530,13 @@ struct Checker<'a, E: TypeEnvironment> {
 
 struct ValueType {
     declared: String,
+    /// The type that declares `variants`, which is not always `declared`.
+    ///
+    /// `declared` is the fact's *declared* type; through a newtype that is the wrapper, and the
+    /// variants belong to the enum the wrapper transparently aliases. Naming only the wrapper
+    /// leaves the reader to open it, read its `of:`, and open the enum — and the enum is the
+    /// declaration they have to edit to make the literal legal.
+    declaring_variants: Option<String>,
     scalar: Option<ScalarKind>,
     variants: Option<Vec<String>>,
 }
@@ -570,6 +577,10 @@ impl<E: TypeEnvironment> Checker<'_, E> {
     fn operand(&mut self, operand: &Operand) -> Option<ValueType> {
         match operand {
             Operand::Fact(path) => self.read(path, false).map(|resolved| ValueType {
+                declaring_variants: resolved
+                    .variants
+                    .is_some()
+                    .then(|| resolved.terminal.to_string()),
                 declared: resolved.declared,
                 scalar: resolved.scalar,
                 variants: resolved.variants,
@@ -578,6 +589,7 @@ impl<E: TypeEnvironment> Checker<'_, E> {
                 let scalar = ScalarKind::literal(value);
                 Some(ValueType {
                     declared: format!("{scalar} literal `{value}`"),
+                    declaring_variants: None,
                     scalar: Some(scalar),
                     variants: None,
                 })
@@ -654,8 +666,21 @@ impl<E: TypeEnvironment> Checker<'_, E> {
                 .map(|name| format!("`{name}`"))
                 .collect::<Vec<_>>()
                 .join(", ");
+            // The enum, not the field's declared type: `story:enum-variant-in-an-entity-invariant`
+            // asks that the refusal name the declaration the author has to edit, so the fix is one
+            // lookup away. Through a newtype those differ, and the wrapper is kept beside the enum
+            // rather than in place of it — the reader still needs to know how the field reached it.
+            let declaring = typed
+                .declaring_variants
+                .as_deref()
+                .unwrap_or(&typed.declared);
+            let reached = if declaring == typed.declared {
+                String::new()
+            } else {
+                format!(", reached through `{}`", typed.declared)
+            };
             self.checked.errors.push(error(self.owner, ValidationCode::UndeclaredReference, None, None,
-                format!("`{expression}` compares `{path}` to `{text}`, which `{}` (Text) does not declare as an enum variant; values: {names}", typed.declared)));
+                format!("`{expression}` compares `{path}` to `{text}`, which `{declaring}` (Text{reached}) does not declare as an enum variant; values: {names}")));
         }
     }
 
@@ -675,14 +700,16 @@ impl<E: TypeEnvironment> Checker<'_, E> {
                     reference = Some(element);
                 }
                 _ => {
-                    let typed = ValueType {
-                        declared: target.declared,
-                        scalar: target.scalar,
-                        variants: target.variants,
-                    };
+                    // No `ValueType` is built here. This message names the type the author *wrote*
+                    // and its scalar kind, and nothing on this path reads `variants` or
+                    // `declaring_variants`: `enum_literal` is reached only from
+                    // `Predicate::Compare`, never from a quantifier target. Computing the enum's
+                    // own name for a field no consumer reads is what adversary pass 2, A6, found —
+                    // a value written and never read reads as a promise this message keeps, and it
+                    // does not keep it.
                     self.checked.errors.push(error(self.owner, ValidationCode::TypeMismatch, None, None,
                                 format!("`{predicate}`: quantifier target `{}` is `{}` ({}) and not a collection; Forall/Exists require List or Map",
-                                    quantified.over, typed.declared, typed.scalar.map_or_else(|| "aggregate".to_owned(), |kind| kind.to_string()))));
+                                    quantified.over, target.declared, target.scalar.map_or_else(|| "aggregate".to_owned(), |kind| kind.to_string()))));
                 }
             }
         }
@@ -758,6 +785,7 @@ impl<E: TypeEnvironment> Checker<'_, E> {
                     if typed.scalar != Some(kind) {
                         let literal = ValueType {
                             declared: format!("{kind} literal `{value}`"),
+                            declaring_variants: None,
                             scalar: Some(kind),
                             variants: None,
                         };
