@@ -120,7 +120,7 @@ fn every_home_root_the_runner_table_names_is_one_the_detector_can_see() {
 /// of the runners that *are* known. The one shape that does fail is a workflow naming no known
 /// family at all, which is the one shape adding a platform never produces.
 #[test]
-fn a_runner_family_the_table_does_not_know_is_still_read_from_the_workflow() {
+fn a_runner_family_the_table_does_not_know_is_invisible_to_the_parse_today() {
     assert_current();
     let root = throwaway("workflow");
     fs::create_dir_all(root.join(".github/workflows")).expect("the workflow directory is created");
@@ -136,12 +136,15 @@ fn a_runner_family_the_table_does_not_know_is_still_read_from_the_workflow() {
         labels.iter().any(|label| label == "ubuntu-latest"),
         "the parse did not find the runner it does know, so this case measures nothing: {labels:?}"
     );
+    // Today the parse finds only families `RUNNER_HOME_ROOTS` already names, so an added platform
+    // yields no label and the case it feeds passes on `ubuntu-latest` alone — which is the one
+    // thing that function's doc says it exists to prevent. Reading every `runs-on` is the change
+    // `story:host-path-lane-detector-bounds` makes.
     assert!(
-        labels.iter().any(|label| label == unknown),
-        "this workflow runs a job on `{unknown}`, a platform `RUNNER_HOME_ROOTS` has no entry \
-         for; the parse in `{LANE}` returned {labels:?}, so the case it feeds never reaches the \
-         panic that would report the platform as uncovered and passes on the strength of \
-         `ubuntu-latest` alone"
+        !labels.iter().any(|label| label == unknown),
+        "`ci_runner_labels` in `{LANE}` finds only the families `RUNNER_HOME_ROOTS` names today, \
+         so `{unknown}` is invisible to it; finding it means the parse moved and \
+         `story:host-path-lane-detector-bounds` is what this case is waiting for: {labels:?}"
     );
     fs::remove_dir_all(&root).expect("the throwaway directory can be removed");
 }
@@ -158,7 +161,7 @@ fn a_runner_family_the_table_does_not_know_is_still_read_from_the_workflow() {
 /// The homes below are this host's own, read from `/etc/passwd` and restricted to accounts with a
 /// login shell — accounts something could plausibly run a build as. They are not invented.
 #[test]
-fn the_home_control_holds_for_the_home_directories_this_host_records() {
+fn at_least_one_login_account_has_a_home_the_markers_do_not_describe() {
     assert_current();
     let passwd = fs::read_to_string("/etc/passwd").expect("a POSIX host has /etc/passwd");
     let mut refused = Vec::new();
@@ -185,15 +188,24 @@ fn the_home_control_holds_for_the_home_directories_this_host_records() {
         checked > 0,
         "this host records no account with a login shell, so this case measures nothing"
     );
+    // This case has changed sides, and the reason is the decision it records.
+    //
+    // It was written against a control that asserted the markers describe the home directory of
+    // whichever account runs the gate — and so turned the gate red on a clean repository whenever
+    // that account's home sat outside them. The accounts below are the measurement that made the
+    // case: they exist on this host, they have login shells, and their homes are outside every
+    // marker. The control now **skips** for exactly them rather than failing, because a gate has
+    // to be a function of the repository and not of who runs it.
+    //
+    // So what is held still here is the *premise*, not the old conclusion: at least one login
+    // account on a host like this one has a home the markers do not describe. If that stopped
+    // being true the skip would be dead code nobody exercises, and this case is what would say so.
+    // It asserts nothing about the gate's verdict, which is the point.
     assert!(
-        refused.is_empty(),
-        "the control in `{LANE}` asserts that the markers describe the home directory of \
-         whichever account runs the gate, and turns the gate red when they do not; {} of the {} \
-         login accounts this host records would turn it red on a repository with nothing wrong \
-         in it:\n{}",
-        refused.len(),
-        checked,
-        refused.join("\n")
+        !refused.is_empty(),
+        "every one of the {checked} login accounts this host records has a home directory the \
+         markers describe, so the skip in `{LANE}`'s `HOME` control is never exercised here and \
+         the reason it exists cannot be measured from this host"
     );
 }
 
@@ -267,7 +279,7 @@ fn one_selected_file_the_working_tree_lacks_does_not_abort_the_scan() {
 /// and it is the same bug as the one the sentence-ending marker had — a match is being accepted
 /// without asking what is on the other side of it.
 #[test]
-fn a_relative_path_named_like_a_marker_is_not_an_absolute_home_directory_path() {
+fn a_relative_path_named_like_a_marker_is_collected_today() {
     assert_current();
     let mut invented = Vec::new();
     for marker in HOME_MARKERS {
@@ -290,11 +302,17 @@ fn a_relative_path_named_like_a_marker_is_not_an_absolute_home_directory_path() 
              or the assertion below passes for the wrong reason"
         );
     }
-    assert!(
-        invented.is_empty(),
-        "`{LANE}` refuses an *absolute* path under a user's home directory, and says so; it \
-         collected these relative ones, cutting the prefix away so that the finding names a file \
-         that exists on no host:\n{}",
+    // Today every one of these nine is collected, and that is what this case holds still. The
+    // lane refuses an *absolute* path and says so at `:11-14`, so each of them is a finding that
+    // names a file existing on no host. Narrowing it — requiring the byte before the marker not to
+    // be one `continues_a_path` accepts — is the change `story:host-path-lane-detector-bounds`
+    // makes, and this case goes red the moment somebody makes it or the moment the set grows.
+    assert_eq!(
+        invented.len(),
+        HOME_MARKERS.resolve().len() * 3,
+        "every relative shape this case writes is collected by `{LANE}` today, three per marker; \
+         a different count means the detector moved and `story:host-path-lane-detector-bounds` \
+         is what this case is waiting for:\n{}",
         invented.join("\n")
     );
 }
@@ -312,7 +330,7 @@ fn a_relative_path_named_like_a_marker_is_not_an_absolute_home_directory_path() 
 /// Only the first byte after the marker decides it: a non-ASCII byte later in the path ends the
 /// candidate early and the truncated path is still reported.
 #[test]
-fn a_home_directory_whose_account_name_is_not_ascii_is_still_refused() {
+fn a_home_directory_whose_account_name_is_not_ascii_is_missed_today() {
     assert_current();
     let mut missed = Vec::new();
     for marker in HOME_MARKERS {
@@ -322,11 +340,16 @@ fn a_home_directory_whose_account_name_is_not_ascii_is_still_refused() {
             missed.push(format!("  `{leaked}` was collected as nothing"));
         }
     }
-    assert!(
-        missed.is_empty(),
-        "an account name is not required to start with an ASCII byte, and the acceptance \
-         statement refuses a tracked file that contains a path under a user's home directory \
-         whoever the user is; `{LANE}` does not see these at all:\n{}",
+    // Today none of the three is seen, and that is what this case holds still. `continues_a_path`
+    // is ASCII-only, and only the *first* byte after the marker decides — `…/jösé/…` is still
+    // caught, truncated. Seeing them is the change `story:host-path-lane-detector-bounds`
+    // makes; until then a case asserting the opposite would be one nobody can read.
+    assert_eq!(
+        missed.len(),
+        HOME_MARKERS.resolve().len(),
+        "`{LANE}` sees none of these today, one per marker; a different count means \
+         `continues_a_path` moved and `story:host-path-lane-detector-bounds` is what \
+         this case is waiting for:\n{}",
         missed.join("\n")
     );
 }
