@@ -1,0 +1,369 @@
+# `crates/specify/` — an authored system becomes a validated, resolved IR.
+#
+# The entity is knowledge, not a file. `ess specify validate` stores nothing; what moves is what
+# the toolchain has established about one source selection, and that is what the lifecycle below
+# says. Nothing here writes to the tree it reads.
+domain: toolchain.specify
+
+summary: An authored source selection, and what the compiler has established about it.
+
+naming:
+  wire: specify
+  display: Specify
+
+types:
+  # The path argument every model-reading verb shares — `SpecPath`/`SpecLocation`,
+  # `crates/edge/ess-cli/src/main.rs:318`. One file, or a directory read through its immediate
+  # `ess-inputs.yaml` or a legacy `system.yaml`.
+  - name: toolchain.specify.SourceRoot
+    kind: newtype
+    of: String
+    invariants: ['value != ""']
+
+  # `billing.invoice.InvoiceCreated` — the shape `ess specify inspect` takes as its argument.
+  - name: toolchain.specify.QualifiedName
+    kind: newtype
+    of: String
+    invariants: ['value != ""']
+
+  # `EssIr::source_digest()`: a bare lowercase SHA-256 of the compact typed IR, not of the authored
+  # bytes (`docs/design/review-format-catalog.md`, "Specification, composition and realization").
+  # No invariant, because no view here publishes a bare one and a type invariant a view cannot
+  # answer is refused by synthesis as `ESS-SYNTH-013`.
+  - name: toolchain.specify.ModelDigest
+    kind: newtype
+    of: String
+
+  # `SUPPORTED_FORMATS` is `[1, 2, 3, 4]` (`crates/specify/ess-domain/src/system.rs:53`).
+  # `FormatVersion` parses `ess/N` for any positive major, and parsing a well-shaped version is not
+  # support for it — so the closed set here is what validation admits, not what the syntax accepts.
+  - name: toolchain.specify.SpecificationFormat
+    kind: enum
+    variants: ["ess/1", "ess/2", "ess/3", "ess/4"]
+
+  # The twelve families of `ESS-<FAMILY>-<NNN>`, in the order a specification is read —
+  # `crates/specify/ess-compiler/src/resolve.rs:186`.
+  - name: toolchain.specify.DiagnosticFamily
+    kind: enum
+    variants:
+      [SPEC, DOMAIN, TYPE, ENTITY, COMMAND, EVENT, ERROR, VIEW, ACTOR, BINDING, COMPONENT, TOPOLOGY]
+
+  # The classes — the `002` in `ESS-BINDING-002`, one number per kind across every family
+  # (`crates/specify/ess-compiler/src/resolve.rs:196`). Sixteen, not the twelve that module's own
+  # doc-comment still says: the four accessor classes arrived with `ess/3` bounded accessors and the
+  # sentence above them did not move. Counted from the constants, which is the only count that is a
+  # fact. Family and class are independent, so they are two fields here rather than one string.
+  - name: toolchain.specify.DiagnosticClass
+    kind: enum
+    variants:
+      - Undeclared
+      - TypeMismatch
+      - Unreadable
+      - Conflict
+      - Missing
+      - Duplicate
+      - Empty
+      - SelfReference
+      - Unsupported
+      - Misspelled
+      - Lifecycle
+      - Other
+      - AccessorDepth
+      - AccessorTraversal
+      - PartialAccessor
+      - AccessorResource
+
+  - name: toolchain.specify.Severity
+    kind: enum
+    variants: [Error, Warning]
+
+  # `crates/specify/ess-compiler/src/diagnostic.rs` — the structured form is the diagnostic and the
+  # text is a projection of it. `subject` stands for the `Detail` list, which carries a different
+  # field set per kind; a faithful model of it is a union this retrofit did not read closely enough
+  # to type. See the UNMAPPED entry in README.md.
+  - name: toolchain.specify.Diagnostic
+    kind: struct
+    fields:
+      - {name: family, type: toolchain.specify.DiagnosticFamily}
+      - {name: class, type: toolchain.specify.DiagnosticClass}
+      - {name: severity, type: toolchain.specify.Severity}
+      - {name: subject, type: String}
+
+  # Every kind of thing a specification declares. `Domain` and `Topology` are here because
+  # `DiagnosticFamily` above says a diagnostic can be raised against one, and a view that cannot
+  # hold a row for a kind the same domain says exists cannot answer what a model declared.
+  - name: toolchain.specify.DeclarationKind
+    kind: enum
+    variants:
+      [Type, Entity, Command, Event, Error, View, Actor, Binding, Component, Domain, Topology]
+
+entities:
+  # One source selection and what is known about it. `Selected` is what input discovery establishes,
+  # `Resolved` what `validate` establishes, `Compiled` what `compile` establishes — and nothing
+  # moves backwards, because a later run starts from `Selected` again rather than undoing one.
+  #
+  # There is no `Refused` state on purpose. A refusal changes nothing: `ess specify validate` exits 1
+  # and the tree it read is exactly as it was, so the refusal is the command's error outcome and
+  # not a state. The model would refuse the alternative anyway — an outcome that reports an error
+  # cannot also move an entity (`refusal_mutated_state`).
+  - name: toolchain.specify.Model
+
+    identity:
+      name: root
+      type: toolchain.specify.SourceRoot
+
+    fields:
+      # What `validate` prints: `probe v1 — 2 file(s), valid`.
+      - name: file_count
+        type: Integer
+      # Optional because it exists only once the model is compiled: the digest is of the IR, and
+      # before compilation there is no IR to hash.
+      - name: source_digest
+        type: Optional<toolchain.specify.ModelDigest>
+      - name: format
+        type: toolchain.specify.SpecificationFormat
+
+    invariants:
+      # A selection of no files is not an empty model, it is a refusal — `input_discovery` rejects
+      # an empty selection rather than proceeding with nothing.
+      - file_count >= 1
+
+    relations:
+      # What `ess specify inspect --path P NAME` resolves against. Declared as a relation rather
+      # than left as a shared spelling, because the ownership is what makes "this name belongs to
+      # this model" a fact a program can read — and because `via:` is then checked: `Declaration.root`
+      # must be typed as `Model`'s identity, which is the rename that would otherwise break silently.
+      - name: declarations
+        kind: owns
+        target: toolchain.specify.Declaration
+        cardinality: many
+        via: root
+
+    lifecycle:
+      initial: Selected
+      states: [Selected, Resolved, Compiled]
+      terminal: [Compiled]
+      transitions:
+        - name: resolve
+          from: [Selected]
+          to: Resolved
+        # `compile` runs from `Selected` too: `ess specify compile` validates on the way through, so
+        # a separate `validate` is not a precondition of it.
+        - name: compile
+          from: [Selected, Resolved]
+          to: Compiled
+
+  # A declaration inside a model. Reference data with one state: nothing in this specification
+  # creates one, because a declaration comes into existence by being written, and the toolchain
+  # reads it rather than causing it. That absence is measured — see README.md, `ESS-SYNTH-013`.
+  - name: toolchain.specify.Declaration
+
+    identity:
+      name: declaration_name
+      type: toolchain.specify.QualifiedName
+
+    fields:
+      - name: root
+        type: toolchain.specify.SourceRoot
+      - name: kind
+        type: toolchain.specify.DeclarationKind
+
+    lifecycle:
+      initial: Declared
+      states: [Declared]
+      terminal: [Declared]
+
+actors:
+  # Who runs the verbs. `may:` is the only place a permission is data rather than a convention, and
+  # the two differ: the gate runs the compiler over this repository's own models and never authors
+  # one, which is a fact about `Taskfile.yml` rather than about the CLI's argument parser.
+  - name: toolchain.specify.Author
+    may:
+      - toolchain.specify.SelectSources
+      - toolchain.specify.ResolveModel
+      - toolchain.specify.CompileModel
+    naming:
+      display: Specification author
+
+  - name: toolchain.specify.Gate
+    may:
+      # Including `SelectSources`: `ess specify validate --path .` begins by deciding which files
+      # are the specification, so a grant for the second act without the first describes a caller
+      # that cannot reach a model it is allowed to resolve.
+      - toolchain.specify.SelectSources
+      - toolchain.specify.ResolveModel
+      - toolchain.specify.CompileModel
+    naming:
+      display: Repository gate
+
+errors:
+  - name: toolchain.specify.SelectionRefused
+    summary: >-
+      The immediate `ess-inputs.yaml` is malformed, or the active list selects no readable file.
+      Malformed configuration refuses without falling back to directory discovery.
+
+  # What `validate` and `compile` both answer with. The diagnostics are the payload, not the
+  # sentence: a harness matches on the code, and `ess-compiler` accumulates rather than stopping at
+  # the first, which is why this carries a list.
+  - name: toolchain.specify.Refused
+    summary: The sources carry at least one error diagnostic, so nothing was established.
+    fields:
+      - name: diagnostics
+        type: List<toolchain.specify.Diagnostic>
+
+  - name: toolchain.specify.AlreadyEstablished
+    summary: This model is already at or past the state the command would move it to.
+    fields:
+      - name: state
+        type: toolchain.specify.Model.State
+
+commands:
+  # `ess specify validate --path .` begins by deciding which files are the specification —
+  # `crates/edge/ess-cli/src/input_discovery.rs`, format `ess-inputs/1`. Separated from `validate`
+  # because it fails for its own reasons and because it is the act that brings the model into
+  # existence for everything downstream.
+  - name: toolchain.specify.SelectSources
+
+    naming:
+      wire: select-sources
+      display: Select sources
+
+    input:
+      - name: root
+        type: toolchain.specify.SourceRoot
+
+    outcomes:
+      - name: selected
+        creates: toolchain.specify.Model
+        instance: root
+        emits: [toolchain.specify.SourcesSelected]
+        payload:
+          toolchain.specify.SourcesSelected:
+            root: input.root
+        summary: The active list is structurally checked and its files are opened in sorted order.
+
+      # Decided by the bytes of a file the command was given the path to, which no predicate over
+      # that path can decide — so the branch is declared external and a generated scenario injects
+      # it, rather than `when: false` claiming it cannot happen.
+      - name: refused
+        external: the manifest is malformed, or its active list selects no readable file
+        error: toolchain.specify.SelectionRefused
+
+  - name: toolchain.specify.ResolveModel
+
+    naming:
+      wire: validate
+      display: Validate
+
+    input:
+      - name: root
+        type: toolchain.specify.SourceRoot
+
+    outcomes:
+      - name: resolved
+        moves: toolchain.specify.Model.resolve
+        instance: root
+        emits: [toolchain.specify.ModelResolved]
+        payload:
+          toolchain.specify.ModelResolved:
+            root: input.root
+        summary: Every reference resolves and every rule holds.
+
+      - name: refused
+        external: the sources carry at least one error diagnostic
+        error: toolchain.specify.Refused
+
+      # `resolve` runs from `Selected` only, so this branch answers in `Resolved` and `Compiled`.
+      - name: wrong-state
+        wrong_state: true
+        error: toolchain.specify.AlreadyEstablished
+
+  - name: toolchain.specify.CompileModel
+
+    naming:
+      wire: compile
+      display: Compile
+
+    input:
+      - name: root
+        type: toolchain.specify.SourceRoot
+
+    outcomes:
+      # `source_digest` has no line in the payload and none in `sets:`. The compiler mints it from
+      # the resolved IR, so it is not derivable from this command's input, and a declaration that
+      # claimed otherwise would be a line no implementation could satisfy.
+      - name: compiled
+        moves: toolchain.specify.Model.compile
+        instance: root
+        emits: [toolchain.specify.ModelCompiled]
+        payload:
+          toolchain.specify.ModelCompiled:
+            root: input.root
+        summary: The model resolves and canonical typed IR is minted for it.
+
+      - name: refused
+        external: the sources carry at least one error diagnostic
+        error: toolchain.specify.Refused
+
+      # `compile` runs from `Selected` and `Resolved`, so this branch answers in `Compiled` alone.
+      - name: wrong-state
+        wrong_state: true
+        error: toolchain.specify.AlreadyEstablished
+
+events:
+  - name: toolchain.specify.SourcesSelected
+    fields:
+      - name: root
+        type: toolchain.specify.SourceRoot
+
+  - name: toolchain.specify.ModelResolved
+    fields:
+      - name: root
+        type: toolchain.specify.SourceRoot
+
+  - name: toolchain.specify.ModelCompiled
+    naming:
+      display: Model compiled
+      summary: Canonical typed IR exists for this source selection.
+    fields:
+      - name: root
+        type: toolchain.specify.SourceRoot
+
+views:
+  - name: toolchain.specify.SelectedModels
+    source: toolchain.specify.Model
+    consistency: read_your_writes
+    fields:
+      - name: root
+        type: toolchain.specify.SourceRoot
+      # Published so the entity's `file_count >= 1` has rows it can be decided against.
+      - name: file_count
+        type: Integer
+
+  # What a caller asks when it wants to know whether an artifact it holds is still current: the
+  # digest is the answer, and it is only here once the model is compiled.
+  - name: toolchain.specify.CompiledModels
+    source: toolchain.specify.Model
+    consistency: read_your_writes
+    filter: state == Compiled
+    order_by:
+      - file_count desc
+    fields:
+      - name: root
+        type: toolchain.specify.SourceRoot
+      - name: file_count
+        type: Integer
+      - name: source_digest
+        type: Optional<toolchain.specify.ModelDigest>
+    naming:
+      wire: compiled
+      display: Compiled models
+
+  - name: toolchain.specify.Declarations
+    source: toolchain.specify.Declaration
+    consistency: eventual
+    fields:
+      - name: declaration_name
+        type: toolchain.specify.QualifiedName
+      - name: kind
+        type: toolchain.specify.DeclarationKind

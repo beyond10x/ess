@@ -1,0 +1,356 @@
+# `crates/generate/` — the IR becomes artifacts, and nothing here applies one to a running system.
+#
+# That sentence is the boundary this domain exists to write down. Every command below produces
+# bytes; none of them contacts a cluster, a registry or a daemon. The verbs that do — `execute`,
+# `publish`, `fetch`, `reconcile` — are named as credential edges in
+# `website/docs/reference/cli.md` and are not modelled here; see README.md.
+domain: toolchain.generate
+
+summary: A compiled model becomes artifacts, under an ownership root, and nothing is applied.
+
+naming:
+  wire: generate
+  display: Generate
+
+types:
+  - name: toolchain.generate.OutputRoot
+    kind: newtype
+    of: String
+    invariants: ['value != ""']
+
+  # A distinct type from `toolchain.specify.ModelDigest` on purpose: one is what the compiler minted,
+  # the other is what an artifact carries a copy of. They are the same bytes and not the same fact.
+  # No `conversions:` entry admits the crossing, because no binding carries one into the other —
+  # `components.yaml` says so where the block would go.
+  - name: toolchain.generate.ModelDigest
+    kind: newtype
+    of: String
+
+  # `crates/edge/ess-cli/src/main.rs` `enum Projection`. Omitting `--kind` combines the five default
+  # generators and excludes `docs-ir`.
+  - name: toolchain.generate.ProjectionKind
+    kind: enum
+    variants: [docs, site, "docs-ir", schema, openapi, asyncapi]
+
+  # `crates/generate/ess-synth/src/lib.rs:88`. Four, and the enum is not an abstraction over targets
+  # in general: each variant names a sibling module, and a fifth means writing a fifth emitter.
+  - name: toolchain.generate.SynthesisTarget
+    kind: enum
+    variants: [rust, go, web, clap]
+
+  # `crates/generate/ess-synth/src/failure.rs:12` — the closed set of rules under which a target
+  # cannot represent valid ESS, ten of them. A failure carries no artifacts at all, which is why
+  # refusal here is an error outcome and not a weaker state. `AccessorResource` and
+  # `SelectionConstraint` came with `ess/3` accessors and list selection.
+  - name: toolchain.generate.TargetFailureCode
+    kind: enum
+    variants:
+      - AccessorResource
+      - SelectionConstraint
+      - InvalidIdentifier
+      - SymbolCollision
+      - PathCollision
+      - RecursiveLayout
+      - BindingAssignment
+      - MissingTypeOwner
+      - WireCollision
+      - MissingRepresentation
+
+  - name: toolchain.generate.TargetFailureCause
+    kind: struct
+    fields:
+      - {name: code, type: toolchain.generate.TargetFailureCode}
+      - {name: detail, type: String}
+
+  # `crates/generate/ess-gen/src/provenance.rs:23`, field for field. `source_digest` answers which
+  # resolution of the specification produced this; `contract_digest` answers whether the part of the
+  # model this artifact derives from moved. An artifact that cannot say which specification produced
+  # it is an artifact nobody can audit, so this travels as data rather than as a comment.
+  - name: toolchain.generate.Provenance
+    kind: struct
+    fields:
+      - {name: system, type: String}
+      - {name: specification_version, type: String}
+      - {name: source_digest, type: toolchain.generate.ModelDigest}
+      - {name: contract_digest, type: toolchain.generate.ModelDigest}
+
+entities:
+  # One projection of one model into one output root. `Planned` is real rather than a placeholder:
+  # omitting `--out` lists or serializes the artifacts without writing them, and that is the whole
+  # difference between the two states.
+  - name: toolchain.generate.Projection
+
+    identity:
+      name: out
+      type: toolchain.generate.OutputRoot
+
+    fields:
+      - name: kind
+        type: toolchain.generate.ProjectionKind
+      - name: provenance
+        type: toolchain.generate.Provenance
+      - name: file_count
+        type: Integer
+
+    lifecycle:
+      initial: Planned
+      states: [Planned, Published]
+      # `publish` runs from `Published` as well, because regeneration over an owned tree is the
+      # ordinary case rather than a conflict — so no command here declares a `wrong_state` branch,
+      # which would name a state that does not exist. What refuses is ownership, not state.
+      terminal: [Published]
+      transitions:
+        - name: publish
+          from: [Planned, Published]
+          to: Published
+
+  - name: toolchain.generate.Synthesis
+
+    identity:
+      name: target_root
+      type: toolchain.generate.OutputRoot
+
+    fields:
+      - name: target
+        type: toolchain.generate.SynthesisTarget
+      - name: provenance
+        type: toolchain.generate.Provenance
+
+    lifecycle:
+      initial: Planned
+      states: [Planned, Emitted]
+      terminal: [Emitted]
+      transitions:
+        - name: emit
+          from: [Planned, Emitted]
+          to: Emitted
+
+actors:
+  - name: toolchain.generate.Adopter
+    may:
+      - toolchain.generate.PlanProjection
+      - toolchain.generate.PublishProjection
+      - toolchain.generate.CheckProjection
+      - toolchain.generate.PlanSynthesis
+      - toolchain.generate.EmitSynthesis
+    naming:
+      display: Adopter
+
+  # `cargo xtask generate --check` compares the committed tree without writing, and that is the only
+  # generation verb the offline gate runs.
+  - name: toolchain.generate.Gate
+    may:
+      - toolchain.generate.CheckProjection
+    naming:
+      display: Repository gate
+
+errors:
+  - name: toolchain.generate.UnsupportedProjection
+    summary: This projection kind cannot carry a construct the model declares.
+
+  # `website/docs/reference/cli.md`: existing unowned destinations refuse. The ownership ledger is
+  # modelled in `models/output-ownership/`, which owns the transaction decisions this refusal
+  # protects; here it is one refusal and not a second copy of them.
+  - name: toolchain.generate.UnownedDestination
+    summary: The destination holds files no ownership ledger claims, so nothing was written.
+
+  - name: toolchain.generate.Drift
+    summary: The committed bytes and the regenerated bytes differ.
+
+  - name: toolchain.generate.TargetFailure
+    summary: The target cannot represent the plan, so it emitted nothing.
+    fields:
+      - name: causes
+        type: List<toolchain.generate.TargetFailureCause>
+
+commands:
+  - name: toolchain.generate.PlanProjection
+
+    naming:
+      wire: plan-projection
+      display: Plan a projection
+
+    input:
+      - name: out
+        type: toolchain.generate.OutputRoot
+      - name: kind
+        type: toolchain.generate.ProjectionKind
+
+    outcomes:
+      - name: planned
+        creates: toolchain.generate.Projection
+        instance: out
+        emits: [toolchain.generate.ProjectionPlanned]
+        payload:
+          toolchain.generate.ProjectionPlanned:
+            out: input.out
+            kind: input.kind
+        sets:
+          kind: input.kind
+        summary: The artifact set is computed and listed; nothing is written.
+
+      # Which kinds refuse depends on what the model declares, not on the kind alone, so no
+      # predicate over this input decides it.
+      - name: unsupported
+        external: the model declares a construct this projection kind cannot carry
+        error: toolchain.generate.UnsupportedProjection
+
+  - name: toolchain.generate.PublishProjection
+
+    naming:
+      wire: publish-projection
+      display: Publish a projection
+
+    input:
+      - name: out
+        type: toolchain.generate.OutputRoot
+
+    outcomes:
+      - name: published
+        moves: toolchain.generate.Projection.publish
+        instance: out
+        emits: [toolchain.generate.ProjectionPublished]
+        payload:
+          toolchain.generate.ProjectionPublished:
+            out: input.out
+        summary: The artifacts are written under the ownership root.
+
+      - name: unowned
+        external: the destination already holds files no ownership ledger claims
+        error: toolchain.generate.UnownedDestination
+
+  # `--check` compares without writing and without recovering. It moves nothing, which is why the
+  # drifted branch reports an error rather than a state: a check that changed the tree would be a
+  # different command.
+  - name: toolchain.generate.CheckProjection
+
+    naming:
+      wire: check-projection
+      display: Check a projection
+
+    input:
+      - name: out
+        type: toolchain.generate.OutputRoot
+
+    outcomes:
+      - name: current
+        emits: [toolchain.generate.ProjectionChecked]
+        payload:
+          toolchain.generate.ProjectionChecked:
+            out: input.out
+        summary: The committed bytes are the bytes this model projects.
+
+      - name: drifted
+        external: the committed bytes differ from the regenerated bytes
+        error: toolchain.generate.Drift
+
+  - name: toolchain.generate.PlanSynthesis
+
+    naming:
+      wire: plan-synthesis
+      display: Plan a synthesis
+
+    input:
+      - name: target_root
+        type: toolchain.generate.OutputRoot
+      - name: target
+        type: toolchain.generate.SynthesisTarget
+
+    outcomes:
+      - name: planned
+        creates: toolchain.generate.Synthesis
+        instance: target_root
+        emits: [toolchain.generate.SynthesisPlanned]
+        payload:
+          toolchain.generate.SynthesisPlanned:
+            target_root: input.target_root
+            target: input.target
+        sets:
+          target: input.target
+        summary: The plan is built from the model and the target is asked whether it can carry it.
+
+      - name: refused
+        external: the target cannot represent a construct the plan holds
+        error: toolchain.generate.TargetFailure
+
+  - name: toolchain.generate.EmitSynthesis
+
+    naming:
+      wire: emit-synthesis
+      display: Emit a synthesis
+
+    input:
+      - name: target_root
+        type: toolchain.generate.OutputRoot
+
+    outcomes:
+      - name: emitted
+        moves: toolchain.generate.Synthesis.emit
+        instance: target_root
+        emits: [toolchain.generate.SynthesisEmitted]
+        payload:
+          toolchain.generate.SynthesisEmitted:
+            target_root: input.target_root
+        summary: The target's files are written, with the obligations it could not close beside them.
+
+      - name: refused
+        external: the target cannot represent a construct the plan holds
+        error: toolchain.generate.TargetFailure
+
+events:
+  - name: toolchain.generate.ProjectionPlanned
+    fields:
+      - name: out
+        type: toolchain.generate.OutputRoot
+      - name: kind
+        type: toolchain.generate.ProjectionKind
+
+  - name: toolchain.generate.ProjectionPublished
+    fields:
+      - name: out
+        type: toolchain.generate.OutputRoot
+
+  - name: toolchain.generate.ProjectionChecked
+    fields:
+      - name: out
+        type: toolchain.generate.OutputRoot
+
+  - name: toolchain.generate.SynthesisPlanned
+    fields:
+      - name: target_root
+        type: toolchain.generate.OutputRoot
+      - name: target
+        type: toolchain.generate.SynthesisTarget
+
+  - name: toolchain.generate.SynthesisEmitted
+    fields:
+      - name: target_root
+        type: toolchain.generate.OutputRoot
+
+views:
+  - name: toolchain.generate.PublishedProjections
+    source: toolchain.generate.Projection
+    consistency: read_your_writes
+    filter: state == Published
+    order_by:
+      - file_count desc
+    fields:
+      - name: out
+        type: toolchain.generate.OutputRoot
+      - name: kind
+        type: toolchain.generate.ProjectionKind
+      - name: file_count
+        type: Integer
+    naming:
+      wire: published
+      display: Published projections
+
+  - name: toolchain.generate.EmittedSyntheses
+    source: toolchain.generate.Synthesis
+    consistency: read_your_writes
+    filter: state == Emitted
+    fields:
+      - name: target_root
+        type: toolchain.generate.OutputRoot
+      - name: target
+        type: toolchain.generate.SynthesisTarget

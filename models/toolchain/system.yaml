@@ -1,0 +1,33 @@
+# ESS described in its own model, retrofitted from this repository.
+#
+# The subject is the toolchain: what `ess` accepts, what it establishes about it, what it writes,
+# what it refuses, and who may ask. Five bounded contexts, one per command area the CLI is built
+# out of plus the release protocol this repository runs on itself.
+#
+# `crates/edge/ess-cli/src/main.rs:37` states the areas, and `AGENTS.md` § Crate tree states the
+# directories they are named after. The fifth domain is `.github/workflows/release.yml` and
+# `.github/workflows/release-record.yml`.
+#
+# Read `README.md` beside this file before using it: it records what was read from code, what was
+# left `UNMAPPED:`, and the refusals this model measures against the tool that reads it.
+# Pinned at `ess/3`, which is what lets this document say three things `ess/1` cannot: an outcome
+# selected by the state its subject is already in, a binding caused by a period rather than an
+# event, and a clock-reading contract on a newtype. Two of the three are used below; the third is
+# not, and README.md says why. `ess/4` — error wire names, and a payload filled from a command's
+# response — is available in the same build and is left unused here.
+format: ess/3
+system: toolchain
+version: v1
+
+summary: >-
+  The ESS toolchain as a system: an authored source selection becomes a resolved model, that model
+  becomes artifacts nothing applies, an implementation is held to it and reports a verdict, a
+  cluster is observed without being changed, and a version tag either gets a release behind it or
+  is left stranded for a person to settle.
+
+domains:
+  - toolchain.specify
+  - toolchain.generate
+  - toolchain.verify
+  - toolchain.infra
+  - toolchain.release

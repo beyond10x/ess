@@ -1,0 +1,412 @@
+# The release protocol this repository runs on itself — `.github/workflows/release.yml` and
+# `.github/workflows/release-record.yml`, and `AGENTS.md` § Release completion.
+#
+# The state worth modelling is `Stranded`. 0.5.0 was tagged, `task site-build` failed in the run
+# that followed, publication was skipped, and the repository carried a tag with nothing published
+# for it — a version tag is what an install instruction names, so the tag promised a download nobody
+# could make. Nothing in the workflow could retract it: the `b10x-bot-tag-authority` ruleset refuses
+# tag creation, update and deletion to every actor except one App, and a workflow holds the Actions
+# token rather than that App's. So the automation reports, and a person settles it.
+domain: toolchain.release
+
+summary: A pushed version tag either gets a release behind it, or is left for a person to settle.
+
+naming:
+  wire: release
+  display: Release
+
+types:
+  # The bare version, `0.22.2`. `release.yml` refuses anything else before any other job runs:
+  # `release tag must be a bare semantic version`.
+  - name: toolchain.release.TagName
+    kind: newtype
+    of: String
+    invariants: ['value != ""']
+
+  - name: toolchain.release.CommitSha
+    kind: newtype
+    of: String
+    invariants: ['value != ""']
+
+  # The jobs of `release.yml`. `gate`, `wasm` and `package` run concurrently at one resolved commit
+  # and publication requires all three, so which one blocked a release is a fact worth carrying
+  # rather than a line in a log.
+  - name: toolchain.release.ReleaseJob
+    kind: enum
+    variants: [resolve, gate, wasm, package, release]
+
+entities:
+  - name: toolchain.release.Release
+
+    identity:
+      name: tag
+      type: toolchain.release.TagName
+
+    fields:
+      - name: commit
+        type: toolchain.release.CommitSha
+      # Which job stopped it, where one did. Nothing in this specification fills it: the concluding
+      # step reads it from the jobs it depends on, and no input of any command here carries it.
+      - name: blocked_by
+        type: Optional<toolchain.release.ReleaseJob>
+      - name: asset_count
+        type: Integer
+
+    invariants:
+      - asset_count >= 0
+
+    lifecycle:
+      initial: Tagged
+      states: [Tagged, Queued, Published, Stranded, Retracted]
+      terminal: [Published, Retracted]
+      transitions:
+        - name: queue
+          from: [Tagged]
+          to: Queued
+        - name: publish
+          from: [Queued]
+          to: Published
+        - name: strand
+          from: [Queued]
+          to: Stranded
+        # The maintainer's route out of `Stranded`, and a separate transition from `publish` because
+        # a different actor takes it: the automation cannot reach a stranded tag, which is the whole
+        # reason `Stranded` is a state and not a failed run.
+        - name: settle
+          from: [Stranded]
+          to: Published
+        - name: retract
+          from: [Tagged, Stranded]
+          to: Retracted
+
+actors:
+  # `may:` is the permission boundary this domain exists to write down. The automation holds
+  # `contents: read` and cannot retract a tag; the ruleset admits exactly one App for that; and a
+  # stranded release is settled by a person. Three actors, three disjoint grants, none of them a
+  # convention.
+  - name: toolchain.release.Maintainer
+    may:
+      - toolchain.release.PushTag
+      - toolchain.release.SettleStrandedRelease
+    naming:
+      display: Maintainer
+
+  - name: toolchain.release.ReleaseAutomation
+    may:
+      - toolchain.release.RunReleaseChecks
+      - toolchain.release.ConcludeReleaseRun
+      - toolchain.release.RecordReleaseStatus
+    naming:
+      display: Release automation
+
+  - name: toolchain.release.TagAuthorityApp
+    may:
+      - toolchain.release.RetractTag
+    naming:
+      display: Tag authority App
+
+errors:
+  - name: toolchain.release.ReleaseStateConflict
+    summary: The release is not in a state this command acts from, so nothing moved.
+    fields:
+      - name: state
+        type: toolchain.release.Release.State
+
+  - name: toolchain.release.ReleaseRunNotStarted
+    summary: The run was cancelled or never scheduled, so no check was made.
+
+  - name: toolchain.release.RetractionNotPermitted
+    summary: The tag ruleset refuses creation, update and deletion to this actor.
+
+  - name: toolchain.release.TagWithoutRelease
+    summary: A pushed version tag has no GitHub Release behind it.
+    fields:
+      - name: tag
+        type: toolchain.release.TagName
+
+commands:
+  - name: toolchain.release.PushTag
+
+    naming:
+      wire: push-tag
+      display: Push a version tag
+
+    input:
+      - name: tag
+        type: toolchain.release.TagName
+      - name: commit
+        type: toolchain.release.CommitSha
+
+    outcomes:
+      - name: pushed
+        creates: toolchain.release.Release
+        instance: tag
+        emits: [toolchain.release.TagPushed]
+        payload:
+          toolchain.release.TagPushed:
+            tag: input.tag
+            commit: input.commit
+        sets:
+          commit: input.commit
+        summary: >-
+          An annotated bare-version tag is pinned to one commit. Merge the branch, then tag: 0.10.0
+          was tagged on a feature branch and `main` did not have a line of it.
+
+  - name: toolchain.release.RunReleaseChecks
+
+    naming:
+      wire: run-checks
+      display: Run the release checks
+
+    input:
+      - name: tag
+        type: toolchain.release.TagName
+
+    outcomes:
+      - name: started
+        moves: toolchain.release.Release.queue
+        instance: tag
+        emits: [toolchain.release.ReleaseChecksStarted]
+        payload:
+          toolchain.release.ReleaseChecksStarted:
+            tag: input.tag
+        summary: The reusable gate, the browser-lab checks and native packaging run at one commit.
+
+      # Declared `external:` so a scenario can force it, which is what makes `check-on-tag`'s
+      # escalation provable rather than decorative: a binding whose invoked command cannot be made
+      # to fail has a failure policy nothing checks.
+      - name: unavailable
+        external: the workflow run never started — a cancelled queue entry, or no runner
+        error: toolchain.release.ReleaseRunNotStarted
+
+      # `ess/3`'s `when_subject_state: Tagged` was tried here and does not fit, which README.md
+      # records with the two refusals that stopped it. `wrong_state:` says what this command needs:
+      # a run started for a tag that already has a release behind it changes nothing, so its
+      # refusing branch names no subject.
+      - name: wrong-state
+        wrong_state: true
+        error: toolchain.release.ReleaseStateConflict
+
+  - name: toolchain.release.ConcludeReleaseRun
+
+    naming:
+      wire: conclude
+      display: Conclude the release run
+
+    input:
+      - name: tag
+        type: toolchain.release.TagName
+
+    outcomes:
+      # Both branches emit `ReleaseRunCompleted`, because `release-record.yml` triggers on
+      # `workflow_run: types: [completed]`, which fires for either conclusion. A binding that
+      # reacted only to success would leave the stranded case with nothing watching it, which is the
+      # exact hole 0.5.0 fell into.
+      - name: published
+        moves: toolchain.release.Release.publish
+        instance: tag
+        emits:
+          - toolchain.release.ReleaseRunCompleted
+          - toolchain.release.ReleasePublished
+        payload:
+          toolchain.release.ReleaseRunCompleted:
+            tag: input.tag
+          toolchain.release.ReleasePublished:
+            tag: input.tag
+        summary: Every required check passed and the release is published with its archives.
+
+      - name: stranded
+        external: a required check or upload did not succeed
+        moves: toolchain.release.Release.strand
+        instance: tag
+        emits:
+          - toolchain.release.ReleaseRunCompleted
+          - toolchain.release.ReleaseStranded
+        payload:
+          toolchain.release.ReleaseRunCompleted:
+            tag: input.tag
+          toolchain.release.ReleaseStranded:
+            tag: input.tag
+        summary: The tag exists and nothing was published for it.
+
+      - name: wrong-state
+        wrong_state: true
+        error: toolchain.release.ReleaseStateConflict
+
+  # `cargo xtask release status`: it asks the remote and GitHub whether every pushed version tag is
+  # on `origin/main` and has a release behind it. It reads and reports; it moves nothing, which is
+  # why neither branch here carries a subject.
+  - name: toolchain.release.RecordReleaseStatus
+
+    naming:
+      wire: record-status
+      display: Record the release status
+
+    input:
+      - name: tag
+        type: toolchain.release.TagName
+
+    outcomes:
+      - name: recorded
+        emits: [toolchain.release.ReleaseStatusRecorded]
+        payload:
+          toolchain.release.ReleaseStatusRecorded:
+            tag: input.tag
+        summary: Every pushed version tag has a release behind it.
+
+      - name: incomplete
+        external: a pushed tag is not on the default branch, or has no release behind it
+        error: toolchain.release.TagWithoutRelease
+
+  - name: toolchain.release.SettleStrandedRelease
+
+    naming:
+      wire: settle
+      display: Settle a stranded release
+
+    input:
+      - name: tag
+        type: toolchain.release.TagName
+
+    outcomes:
+      - name: settled
+        moves: toolchain.release.Release.settle
+        instance: tag
+        emits: [toolchain.release.ReleasePublished]
+        payload:
+          toolchain.release.ReleasePublished:
+            tag: input.tag
+        summary: A person publishes what the run left behind.
+
+      - name: wrong-state
+        wrong_state: true
+        error: toolchain.release.ReleaseStateConflict
+
+  - name: toolchain.release.RetractTag
+
+    naming:
+      wire: retract
+      display: Retract a tag
+
+    input:
+      - name: tag
+        type: toolchain.release.TagName
+
+    outcomes:
+      - name: retracted
+        moves: toolchain.release.Release.retract
+        instance: tag
+        emits: [toolchain.release.TagRetracted]
+        payload:
+          toolchain.release.TagRetracted:
+            tag: input.tag
+        summary: The tag is deleted by the one actor the ruleset admits.
+
+      - name: refused
+        external: the ruleset refuses tag deletion to this actor
+        error: toolchain.release.RetractionNotPermitted
+
+      - name: wrong-state
+        wrong_state: true
+        error: toolchain.release.ReleaseStateConflict
+
+events:
+  - name: toolchain.release.TagPushed
+    fields:
+      - name: tag
+        type: toolchain.release.TagName
+      - name: commit
+        type: toolchain.release.CommitSha
+
+  - name: toolchain.release.ReleaseChecksStarted
+    fields:
+      - name: tag
+        type: toolchain.release.TagName
+
+  - name: toolchain.release.ReleaseRunCompleted
+    naming:
+      display: Release run completed
+      summary: A release run finished, whichever way it went.
+    fields:
+      - name: tag
+        type: toolchain.release.TagName
+
+  - name: toolchain.release.ReleasePublished
+    fields:
+      - name: tag
+        type: toolchain.release.TagName
+
+  - name: toolchain.release.ReleaseStranded
+    naming:
+      display: Release stranded
+      summary: The tag exists and nothing was published for it.
+    fields:
+      - name: tag
+        type: toolchain.release.TagName
+
+  - name: toolchain.release.ReleaseStatusRecorded
+    fields:
+      - name: tag
+        type: toolchain.release.TagName
+
+  - name: toolchain.release.TagRetracted
+    fields:
+      - name: tag
+        type: toolchain.release.TagName
+
+  # What `on_failure: escalate` publishes, and the reason the binding can say it. Escalation hands
+  # the failure to a person, which happens outside this system — in 0.5.0's case it notified the bot
+  # that pushed the tag and no other reader, which is the failure the event exists to make visible.
+  - name: toolchain.release.ReleaseEscalated
+    naming:
+      display: Release escalated
+      summary: The release run could not be started or driven, and a person was told.
+    fields:
+      - name: tag
+        type: toolchain.release.TagName
+
+views:
+  # What `cargo xtask release status` answers, and the reason it runs daily as well as after a run:
+  # a tag pushed while no run was watching is exactly a row here.
+  - name: toolchain.release.StrandedReleases
+    source: toolchain.release.Release
+    consistency: read_your_writes
+    filter: state == Stranded
+    fields:
+      - name: tag
+        type: toolchain.release.TagName
+      - name: commit
+        type: toolchain.release.CommitSha
+      - name: blocked_by
+        type: Optional<toolchain.release.ReleaseJob>
+    naming:
+      wire: stranded
+      display: Stranded releases
+
+  # Unfiltered on purpose: `asset_count >= 0` is an invariant of every release in every state, and
+  # a filtered view alone leaves the states it excludes with no row to decide it against
+  # (`ESS-SYNTH-011`).
+  - name: toolchain.release.Releases
+    source: toolchain.release.Release
+    consistency: eventual
+    fields:
+      - name: tag
+        type: toolchain.release.TagName
+      - name: commit
+        type: toolchain.release.CommitSha
+      - name: asset_count
+        type: Integer
+
+  - name: toolchain.release.PublishedReleases
+    source: toolchain.release.Release
+    consistency: eventual
+    filter: state == Published
+    order_by:
+      - asset_count desc
+    fields:
+      - name: tag
+        type: toolchain.release.TagName
+      - name: commit
+        type: toolchain.release.CommitSha
+      - name: asset_count
+        type: Integer

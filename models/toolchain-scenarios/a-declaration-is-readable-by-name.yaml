@@ -1,0 +1,31 @@
+# What the specification cannot oblige, written down by a person.
+#
+# `toolchain.specify.Declaration` is created by no command, because a declaration comes into
+# existence by being written and the toolchain reads it. Under `ess/1` that made every assertion
+# over `Declarations` vacuous — an implementation returning nothing passed — and the model carried
+# the refusal (`ESS-SYNTH-013`) as a measured gap.
+#
+# `ess-scenario/2` closes it: `setup:` establishes the row the upstream would have put there, so the
+# view can be asked a question with an answer. The adapter has to establish real isolated backend
+# state and make it visible before acknowledging setup; an adapter without that capability produces
+# a non-passing result rather than a quiet pass.
+type: ess-scenario/2
+domain: toolchain.specify
+scenario: a-declaration-is-readable-by-name
+summary: A declaration the compiler resolved is readable by its qualified name.
+
+arrange:
+  - instance: release-entity
+    entity: toolchain.specify.Declaration
+    setup:
+      identity: toolchain.release.Release
+      fields:
+        root: models/toolchain
+        kind: Entity
+      state: Declared
+
+assert:
+  - view: toolchain.specify.Declarations
+    contains:
+      declaration_name: {$instance: release-entity}
+      kind: Entity

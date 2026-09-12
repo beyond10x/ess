@@ -1,0 +1,434 @@
+# `crates/verify/` — an implementation held to the specification, and one revision held against
+# another.
+#
+# Two things are separated here that a report would otherwise merge. A run's verdict says whether
+# the implementation contradicted the specification; a scenario's status additionally distinguishes
+# "nobody found out" from "the target cannot expose what the check needs"
+# (`crates/verify/ess-conformance/src/report.rs:46`). Collapsing them turns "your system is wrong"
+# into "something went wrong".
+domain: toolchain.verify
+
+summary: A suite the specification obliges, a run of it against a target, and a verdict.
+
+naming:
+  wire: verify
+  display: Verify
+
+types:
+  - name: toolchain.verify.SuiteRef
+    kind: newtype
+    of: String
+    invariants: ['value != ""']
+
+  - name: toolchain.verify.ModelRef
+    kind: newtype
+    of: String
+    invariants: ['value != ""']
+
+  # Carried by the suite, and the half of a verdict's identity that says which specification was
+  # being held to. The other half is the implementation, and each moves independently.
+  - name: toolchain.verify.SpecDigest
+    kind: newtype
+    of: String
+
+  # `crates/edge/ess-cli/src/main.rs` `enum ReferenceTarget`: what this binary carries a reference
+  # implementation for. Not a list of systems that can be verified — it is the list `--target`
+  # admits.
+  - name: toolchain.verify.ReferenceTarget
+    kind: enum
+    variants: [billing, "oracle-fixture"]
+
+  # The four words one vocabulary uses for a check and for a scenario, because a scenario's status
+  # is the strongest of its checks'. `unsupported` is not a skip: a required scenario in that state
+  # makes conformance fail.
+  - name: toolchain.verify.ScenarioStatus
+    kind: enum
+    variants: [passed, failed, error, unsupported]
+
+  # The seventeen rules the runner checks, `CheckCode::ALL`
+  # (`crates/verify/ess-conformance/src/report.rs:146`). The serial is dropped deliberately: what
+  # survives is the name, which is stable under every change that does not touch the rule.
+  # `Reading` is the `ess/3` clock check — reading coordinates agree with a declared comparison
+  # under observed clock authority — and it is first in the declaration.
+  - name: toolchain.verify.CheckCode
+    kind: enum
+    variants:
+      - Reading
+      - Outcome
+      - Error
+      - Event
+      - Payload
+      - NoEvent
+      - EventualEvent
+      - View
+      - EventualView
+      - Invocation
+      - Instance
+      - Predicate
+      - Elapsed
+      - Quiet
+      - Halt
+      - Target
+      - Suite
+
+  - name: toolchain.verify.CheckResult
+    kind: struct
+    fields:
+      - {name: code, type: toolchain.verify.CheckCode}
+      - {name: status, type: toolchain.verify.ScenarioStatus}
+
+  - name: toolchain.verify.ScenarioResult
+    kind: struct
+    fields:
+      - {name: scenario, type: String}
+      - {name: purpose, type: String}
+      - {name: status, type: toolchain.verify.ScenarioStatus}
+      - {name: checks, type: List<toolchain.verify.CheckResult>}
+
+entities:
+  # What `ess verify conform synthesize` writes. One state: a suite is not edited into a later one,
+  # a later specification synthesizes a new suite, and the committed file is compared byte for byte
+  # against that.
+  - name: toolchain.verify.Suite
+
+    identity:
+      name: suite
+      type: toolchain.verify.SuiteRef
+
+    fields:
+      - name: spec_digest
+        type: toolchain.verify.SpecDigest
+      - name: scenario_count
+        type: Integer
+      # What the synthesizer could not build a scenario for, reported beside the suite rather than
+      # withheld. A suite with refusals is still written and still exits 0.
+      - name: refusal_count
+        type: Integer
+
+    invariants:
+      - scenario_count >= 0
+      - refusal_count >= 0
+
+    relations:
+      - name: runs
+        kind: owns
+        target: toolchain.verify.Run
+        cardinality: many
+        via: suite
+
+    lifecycle:
+      initial: Synthesized
+      states: [Synthesized]
+      terminal: [Synthesized]
+
+  - name: toolchain.verify.Run
+
+    identity:
+      name: run_id
+      type: Uuid
+
+    fields:
+      - name: suite
+        type: toolchain.verify.SuiteRef
+      - name: target
+        type: toolchain.verify.ReferenceTarget
+      # In the runner's clock. Which clock that is has no spelling in this model — see the UNMAPPED
+      # entry in README.md.
+      - name: started_at
+        type: Timestamp
+      - name: completed_at
+        type: Optional<Timestamp>
+      - name: scenarios
+        type: List<toolchain.verify.ScenarioResult>
+
+    lifecycle:
+      initial: Started
+      states: [Started, Passed, Failed, Errored]
+      terminal: [Passed, Failed, Errored]
+      transitions:
+        - name: pass
+          from: [Started]
+          to: Passed
+        - name: fail
+          from: [Started]
+          to: Failed
+        - name: err
+          from: [Started]
+          to: Errored
+
+  # `ess verify diff` and `ess verify impact` over two revisions of one specification.
+  - name: toolchain.verify.Comparison
+
+    identity:
+      name: comparison_id
+      type: Uuid
+
+    fields:
+      - name: from_model
+        type: toolchain.verify.ModelRef
+      - name: to_model
+        type: toolchain.verify.ModelRef
+      - name: breaking_count
+        type: Integer
+
+    invariants:
+      - breaking_count >= 0
+
+    lifecycle:
+      initial: Compared
+      states: [Compared]
+      terminal: [Compared]
+
+actors:
+  - name: toolchain.verify.Implementer
+    may:
+      - toolchain.verify.SynthesizeSuite
+      - toolchain.verify.StartRun
+      - toolchain.verify.ConcludeRun
+      - toolchain.verify.CompareRevisions
+    naming:
+      display: Implementer
+
+  - name: toolchain.verify.Gate
+    may:
+      - toolchain.verify.SynthesizeSuite
+      - toolchain.verify.StartRun
+      - toolchain.verify.ConcludeRun
+    naming:
+      display: Repository gate
+
+errors:
+  - name: toolchain.verify.ModelRefused
+    summary: The specification does not resolve, so no suite was synthesized.
+
+  - name: toolchain.verify.RunAlreadyConcluded
+    summary: This run already has a verdict, so it was not concluded again.
+    fields:
+      - name: state
+        type: toolchain.verify.Run.State
+
+commands:
+  - name: toolchain.verify.SynthesizeSuite
+
+    naming:
+      wire: synthesize
+      display: Synthesize a suite
+
+    input:
+      - name: suite
+        type: toolchain.verify.SuiteRef
+      - name: model
+        type: toolchain.verify.ModelRef
+
+    outcomes:
+      # `scenario_count`, `refusal_count` and `spec_digest` have no line here: each is computed from
+      # the resolved model, and none is derivable from this command's input.
+      - name: synthesized
+        creates: toolchain.verify.Suite
+        instance: suite
+        emits: [toolchain.verify.SuiteSynthesized]
+        payload:
+          toolchain.verify.SuiteSynthesized:
+            suite: input.suite
+            model: input.model
+        summary: The suite the specification obliges is written, with its refusals beside it.
+
+      - name: refused
+        external: the named specification does not resolve
+        error: toolchain.verify.ModelRefused
+
+  - name: toolchain.verify.StartRun
+
+    naming:
+      wire: start-run
+      display: Start a run
+
+    input:
+      - name: run_id
+        type: Uuid
+      - name: suite
+        type: toolchain.verify.SuiteRef
+      - name: target
+        type: toolchain.verify.ReferenceTarget
+
+    outcomes:
+      - name: started
+        creates: toolchain.verify.Run
+        instance: run_id
+        emits: [toolchain.verify.RunStarted]
+        payload:
+          toolchain.verify.RunStarted:
+            run_id: input.run_id
+            suite: input.suite
+            target: input.target
+        sets:
+          suite: input.suite
+          target: input.target
+        summary: The suite is held to the named reference implementation.
+
+  # The verdict. `passed` is the unconditional branch — what the command does when nothing goes
+  # wrong — and the other two are decided by the target's answers, which no predicate over a run id
+  # can decide. A specification in which every branch is external is refused as
+  # `ESS-COMMAND-012`, and rightly: it would describe a command no test can construct an input for.
+  - name: toolchain.verify.ConcludeRun
+
+    naming:
+      wire: conclude-run
+      display: Conclude a run
+
+    input:
+      - name: run_id
+        type: Uuid
+
+    outcomes:
+      - name: passed
+        moves: toolchain.verify.Run.pass
+        instance: run_id
+        emits: [toolchain.verify.RunPassed]
+        payload:
+          toolchain.verify.RunPassed:
+            run_id: input.run_id
+        summary: Every scenario passed.
+
+      - name: failed
+        external: a scenario contradicted the specification, or a required one was unsupported
+        moves: toolchain.verify.Run.fail
+        instance: run_id
+        emits: [toolchain.verify.RunFailed]
+        payload:
+          toolchain.verify.RunFailed:
+            run_id: input.run_id
+        summary: The implementation contradicted the specification.
+
+      - name: errored
+        external: a scenario could not be executed by the runner or the adapter
+        moves: toolchain.verify.Run.err
+        instance: run_id
+        emits: [toolchain.verify.RunErrored]
+        payload:
+          toolchain.verify.RunErrored:
+            run_id: input.run_id
+        summary: Nothing contradicted the specification and something could not be executed.
+
+      - name: wrong-state
+        wrong_state: true
+        error: toolchain.verify.RunAlreadyConcluded
+
+  - name: toolchain.verify.CompareRevisions
+
+    naming:
+      wire: diff
+      display: Compare revisions
+
+    input:
+      - name: comparison_id
+        type: Uuid
+      - name: from_model
+        type: toolchain.verify.ModelRef
+      - name: to_model
+        type: toolchain.verify.ModelRef
+
+    outcomes:
+      - name: compared
+        creates: toolchain.verify.Comparison
+        instance: comparison_id
+        emits: [toolchain.verify.RevisionsCompared]
+        payload:
+          toolchain.verify.RevisionsCompared:
+            comparison_id: input.comparison_id
+            from_model: input.from_model
+            to_model: input.to_model
+        sets:
+          from_model: input.from_model
+          to_model: input.to_model
+        summary: Two revisions are compared semantically and the invalidated set is named.
+
+events:
+  - name: toolchain.verify.SuiteSynthesized
+    fields:
+      - name: suite
+        type: toolchain.verify.SuiteRef
+      - name: model
+        type: toolchain.verify.ModelRef
+
+  - name: toolchain.verify.RunStarted
+    fields:
+      - name: run_id
+        type: Uuid
+      - name: suite
+        type: toolchain.verify.SuiteRef
+      - name: target
+        type: toolchain.verify.ReferenceTarget
+
+  - name: toolchain.verify.RunPassed
+    fields:
+      - name: run_id
+        type: Uuid
+
+  - name: toolchain.verify.RunFailed
+    naming:
+      display: Run failed
+      summary: An implementation contradicted the specification it was held to.
+    fields:
+      - name: run_id
+        type: Uuid
+
+  - name: toolchain.verify.RunErrored
+    fields:
+      - name: run_id
+        type: Uuid
+
+  - name: toolchain.verify.RevisionsCompared
+    fields:
+      - name: comparison_id
+        type: Uuid
+      - name: from_model
+        type: toolchain.verify.ModelRef
+      - name: to_model
+        type: toolchain.verify.ModelRef
+
+views:
+  - name: toolchain.verify.SuiteInventory
+    source: toolchain.verify.Suite
+    consistency: read_your_writes
+    order_by:
+      - scenario_count desc
+    fields:
+      - name: suite
+        type: toolchain.verify.SuiteRef
+      - name: scenario_count
+        type: Integer
+      - name: refusal_count
+        type: Integer
+
+  # The rows an implementer works down. Read-your-writes, because a caller that has just concluded a
+  # run and cannot see it here has been told a lie about what it did.
+  - name: toolchain.verify.FailedRuns
+    source: toolchain.verify.Run
+    consistency: read_your_writes
+    filter: state == Failed
+    fields:
+      - name: run_id
+        type: Uuid
+      - name: suite
+        type: toolchain.verify.SuiteRef
+      - name: target
+        type: toolchain.verify.ReferenceTarget
+    naming:
+      wire: failed-runs
+      display: Failed runs
+
+  - name: toolchain.verify.Comparisons
+    source: toolchain.verify.Comparison
+    consistency: eventual
+    order_by:
+      - breaking_count desc
+    fields:
+      - name: comparison_id
+        type: Uuid
+      - name: from_model
+        type: toolchain.verify.ModelRef
+      - name: to_model
+        type: toolchain.verify.ModelRef
+      - name: breaking_count
+        type: Integer

@@ -64,6 +64,16 @@ tasks:
       - cargo run --quiet --locked --bin ess -- validate --path examples/billing
       - cargo run --quiet --locked --bin ess -- validate --path examples/gatepass
       - cargo run --quiet --locked --bin ess -- validate --path examples/oracle-fixture
+      # The repository's own models. A retrofit nobody validates drifts away from the code it was
+      # read from, and the drift is invisible until somebody quotes it. All three, not just the
+      # newest: a model left out of this list is the one that goes stale. `models/toolchain` is
+      # pinned at `ess/3`, so these lines require a build that implements it.
+      - cargo run --quiet --locked --bin ess -- validate --path models/execution-recovery
+      - cargo run --quiet --locked --bin ess -- validate --path models/output-ownership
+      - cargo run --quiet --locked --bin ess -- validate --path models/toolchain
+      - >-
+        cargo run --quiet --locked --bin ess -- verify conform author
+        --path models/toolchain --scenarios models/toolchain-scenarios
       - >-
         cargo run --quiet --locked --bin ess -- compose
         --path crates/specify/ess-composition/tests/fixtures/compositions/workbench.yaml
