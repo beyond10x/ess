@@ -39,9 +39,12 @@ const NAMES: [&str; 3] = ["Alpha", "Beta", "Gamma"];
 
 /// What one of the three names is declared as.
 ///
-/// Every body a `representation` walk can *continue* through, plus the two it stops on with an
-/// answer. `List`, `Map`, struct and union stop the walk with `Structured`, so they cannot take
-/// part in a ring the walk sees; they are covered by their own cases below.
+/// Every body a `representation` walk can *continue* through, and every body it stops on with an
+/// answer. The struct and the union are here rather than in a case of their own because they are
+/// the shapes that close a ring *before* the walk returns to a name it has seen — the walk has no
+/// second arrival to count base cases against, so whether that ring has values is a question only
+/// the inhabitation fixpoint answers. Two hand-written shapes checked that; every position of
+/// every three-name registry checks it now.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 enum Body {
     /// `kind: newtype, of: <another name>` — no base case of its own.
@@ -52,10 +55,15 @@ enum Body {
     Text,
     /// `kind: newtype, of: <the enum>`.
     Variants,
+    /// `kind: struct` with one field naming another name — the walk stops with structure, and the
+    /// struct is buildable exactly when that name is.
+    Fields(usize),
+    /// `kind: union` with one variant naming another name — the same stop, reached the other way.
+    Choice(usize),
 }
 
 /// Every body the matrix puts each of the three names through.
-const BODIES: [Body; 8] = [
+const BODIES: [Body; 14] = [
     Body::Bare(0),
     Body::Bare(1),
     Body::Bare(2),
@@ -64,23 +72,42 @@ const BODIES: [Body; 8] = [
     Body::Absent(2),
     Body::Text,
     Body::Variants,
+    Body::Fields(0),
+    Body::Fields(1),
+    Body::Fields(2),
+    Body::Choice(0),
+    Body::Choice(1),
+    Body::Choice(2),
 ];
 
 /// The `types:` block for one assignment of bodies.
 fn declarations(bodies: &[Body; 3]) -> String {
     let mut out = String::new();
     for (index, body) in bodies.iter().enumerate() {
-        let of = match body {
-            Body::Bare(to) => format!("notifications.core.{}", NAMES[*to]),
-            Body::Absent(to) => format!("Optional<notifications.core.{}>", NAMES[*to]),
-            Body::Text => "String".to_owned(),
-            Body::Variants => "notifications.core.Reason".to_owned(),
+        let name = NAMES[index];
+        let body = match body {
+            Body::Bare(to) => format!(
+                "    kind: newtype\n    of: notifications.core.{}\n",
+                NAMES[*to]
+            ),
+            Body::Absent(to) => format!(
+                "    kind: newtype\n    of: Optional<notifications.core.{}>\n",
+                NAMES[*to]
+            ),
+            Body::Text => "    kind: newtype\n    of: String\n".to_owned(),
+            Body::Variants => "    kind: newtype\n    of: notifications.core.Reason\n".to_owned(),
+            Body::Fields(to) => format!(
+                "    kind: struct\n    fields:\n      - name: only\n        type: \
+                 notifications.core.{}\n",
+                NAMES[*to]
+            ),
+            Body::Choice(to) => format!(
+                "    kind: union\n    tag: kind\n    variants:\n      only: \
+                 notifications.core.{}\n",
+                NAMES[*to]
+            ),
         };
-        let _ = write!(
-            out,
-            "  - name: notifications.core.{}\n    kind: newtype\n    of: {of}\n",
-            NAMES[index]
-        );
+        let _ = write!(out, "  - name: notifications.core.{name}\n{body}");
     }
     out
 }
@@ -94,6 +121,8 @@ fn render(bodies: &[Body; 3]) -> String {
             Body::Absent(to) => format!("Optional<{}>", NAMES[*to]),
             Body::Text => "String".to_owned(),
             Body::Variants => "Reason".to_owned(),
+            Body::Fields(to) => format!("struct{{{}}}", NAMES[*to]),
+            Body::Choice(to) => format!("union{{{}}}", NAMES[*to]),
         };
         let _ = write!(out, "{} = {of}; ", NAMES[index]);
     }
@@ -199,7 +228,9 @@ fn inhabited(bodies: &[Body; 3]) -> [bool; 3] {
                 continue;
             }
             let now = match bodies[index] {
-                Body::Bare(to) => known[to],
+                // A struct needs its one field, and a union with one variant needs that variant:
+                // both are only as buildable as the name they hold, exactly as a bare newtype is.
+                Body::Bare(to) | Body::Fields(to) | Body::Choice(to) => known[to],
                 Body::Absent(_) | Body::Text | Body::Variants => true,
             };
             if now {
@@ -214,15 +245,35 @@ fn inhabited(bodies: &[Body; 3]) -> [bool; 3] {
 }
 
 /// Where a literal filling `Alpha` ends up.
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum Landing {
     /// `String` underneath: admitted, and nothing is said about the value.
     Text,
     /// An enum underneath: the literal must name a variant.
     Variants,
-    /// The chain returned to a name. `inhabited` is whether values of that name exist, which is
-    /// what decides who owns the refusal.
+    /// The chain returned to a name. `inhabited` is whether values of *that name* exist, which is
+    /// what `story:literal-representation-walk-exhaustion` decided the ring answers turn on.
+    ///
+    /// Deliberately **not** the question the `Structured` arm below asks, and the difference is a
+    /// recorded open finding rather than an oversight. Measured on this tree:
+    /// `Alpha = Optional<Beta>` with `Beta = Gamma`, `Gamma = Beta` draws two `self_reference`
+    /// lines about `Beta` and `Gamma` and nothing at all about the mapping — yet `Alpha` itself is
+    /// inhabited, its one value being absence, which no literal can spell. Read the way the
+    /// `Structured` arm now reads, that is `OwnedByNobody`, and 36 of these shapes are in this
+    /// matrix.
+    ///
+    /// It is left standing because deciding it belongs to the story that owns this arm, not to
+    /// `story:structured-ring-is-refused-by-two-passes`: answering it would make the walk's rule
+    /// identical to the mutant
+    /// [`counting_optionals_outside_the_ring_would_move_shapes_the_matrix_asserts_on`] exists to
+    /// rule out, and that case would then be unsatisfiable. Two stories disagree here and a person
+    /// should say which is right.
     Ring { inhabited: bool },
+    /// The walk stopped on a struct or a union.
+    Structured {
+        /// Whether values of **`Alpha`** exist, for the reason [`Landing::owner`] gives.
+        filled_exists: bool,
+    },
 }
 
 /// Where a literal filling `Alpha` ends up, by the model above.
@@ -240,29 +291,184 @@ fn landing(bodies: &[Body; 3]) -> Landing {
         match bodies[current] {
             Body::Text => return Landing::Text,
             Body::Variants => return Landing::Variants,
+            Body::Fields(_) | Body::Choice(_) => {
+                return Landing::Structured {
+                    filled_exists: known[0],
+                }
+            }
             Body::Bare(to) | Body::Absent(to) => current = to,
         }
     }
 }
 
+/// Where a refusal of the binding's literal is reported, which is the site every ownership arm
+/// asks about: a diagnostic elsewhere in the document repairs a different mistake.
+const MAPPING: &str = "binding.reject-on-refusal.mapping.reason";
+
+/// How `check_inhabitation` names one type it refuses.
+///
+/// Asserted against the *name*, because "somebody said `no value of` about something in this
+/// document" is true of a document whose literal nobody checked at all.
+fn refusal_of(name: &str) -> String {
+    format!("no value of `notifications.core.{name}`")
+}
+
+/// The three ways one shape can be wrong, which the matrix reports in separate lists.
+enum Fault {
+    /// A literal nobody checked was let through.
+    AdmittedUnchecked,
+    /// Something is wrong with the document and no pass said so.
+    OwnedByNobody,
+    /// One mistake, reported by two passes — or a good document refused at all.
+    RefusedTwice,
+}
+
+/// What one shape's refusals say about who owns it, or `None` when exactly one pass spoke.
+///
+/// The whole property of this file, per shape: `landed` is where the model says a literal filling
+/// `Alpha` ends up, `found` is what the whole compiler said about that document, and every arm
+/// names the single pass entitled to speak.
+///
+/// Every ownership arm turns on whether values of **`Alpha`** exist, and that is the correction
+/// `review-result:adversary-wave23-unit1-pass-2` forced. `check_inhabitation` refuses
+/// *declarations*; the literal fills `Alpha`; so the only way that pass repairs this literal is by
+/// refusing `Alpha` itself. A model that asked instead about the name the walk stopped on agreed
+/// with the code by construction — `Alpha = Optional<Beta>` with `Beta` a refused ring or struct
+/// leaves `Alpha` perfectly inhabited, its one value being absence, which no literal spells — and
+/// 2744 shapes of agreement said nothing about either.
+fn audit(
+    shape: &str,
+    landed: Landing,
+    found: Option<&str>,
+    buildable: [bool; 3],
+) -> Option<(Fault, String)> {
+    match landed {
+        Landing::Variants => match found {
+            None => Some((
+                Fault::AdmittedUnchecked,
+                format!("{shape}: `nope` admitted into an enum-backed input"),
+            )),
+            Some(errors) if !errors.contains("not a variant") => Some((
+                Fault::AdmittedUnchecked,
+                format!("{shape}: refused, but not as a variant: {errors}"),
+            )),
+            Some(_) => None,
+        },
+        Landing::Ring { inhabited: true } => match found {
+            None => Some((
+                Fault::AdmittedUnchecked,
+                format!("{shape}: a literal filling a ring with nothing underneath it, admitted"),
+            )),
+            Some(errors) if !errors.contains("resolves through") => Some((
+                Fault::OwnedByNobody,
+                format!(
+                    "{shape}: the ring has values, so only the literal check can refuse it, and \
+                     it did not: {errors}"
+                ),
+            )),
+            Some(_) => None,
+        },
+        Landing::Ring { inhabited: false } => match found {
+            None => Some((
+                Fault::OwnedByNobody,
+                format!("{shape}: a ring no value inhabits, admitted by every pass"),
+            )),
+            Some(errors) if errors.contains("resolves through") => Some((
+                Fault::RefusedTwice,
+                format!(
+                    "{shape}: the literal check refused a ring it says the type pass owns: {errors}"
+                ),
+            )),
+            Some(errors) if !errors.contains("no value of") => Some((
+                Fault::OwnedByNobody,
+                format!(
+                    "{shape}: the literal check is silent because `check_inhabitation` owns this, \
+                     and `check_inhabitation` did not refuse it: {errors}"
+                ),
+            )),
+            Some(_) => None,
+        },
+        // `Alpha` can be built, so `check_inhabitation` says nothing about it whatever it says
+        // about the struct underneath, and an unrefused literal here was checked by no pass.
+        Landing::Structured {
+            filled_exists: true,
+        } => match found {
+            None => Some((
+                Fault::AdmittedUnchecked,
+                format!("{shape}: a literal filling a shape with structure, admitted"),
+            )),
+            Some(errors) if !errors.contains(MAPPING) => Some((
+                Fault::OwnedByNobody,
+                format!(
+                    "{shape}: `Alpha` can be built, so only the literal check can refuse it, and \
+                     nothing was said about the mapping: {errors}"
+                ),
+            )),
+            Some(_) => None,
+        },
+        // `Alpha` cannot be built, so `check_inhabitation` refuses `Alpha` itself. Saying it again
+        // over the literal reports one mistake twice and repairs it neither time.
+        Landing::Structured {
+            filled_exists: false,
+        } => match found {
+            None => Some((
+                Fault::OwnedByNobody,
+                format!("{shape}: a shape no value inhabits, admitted by every pass"),
+            )),
+            Some(errors) if errors.contains(MAPPING) => Some((
+                Fault::RefusedTwice,
+                format!("{shape}: the literal check refused a shape the type pass owns: {errors}"),
+            )),
+            Some(errors) if !errors.contains(&refusal_of("Alpha")) => Some((
+                Fault::OwnedByNobody,
+                format!(
+                    "{shape}: the literal check is silent because `check_inhabitation` owns \
+                     `Alpha`, and `check_inhabitation` did not refuse `Alpha`: {errors}"
+                ),
+            )),
+            Some(_) => None,
+        },
+        Landing::Text => match found {
+            Some(errors) if errors.contains("resolves through") => Some((
+                Fault::RefusedTwice,
+                format!("{shape}: `String` underneath, and still refused as cyclic: {errors}"),
+            )),
+            Some(errors) if buildable == [true; 3] => Some((
+                Fault::RefusedTwice,
+                format!(
+                    "{shape}: every name can be built and the literal is text, so this is a good \
+                     document: {errors}"
+                ),
+            )),
+            Some(_) | None => None,
+        },
+    }
+}
+
 /// Every three-name registry of `Optional`/newtype wrappers lands where the two passes say it does.
 ///
-/// 512 shapes — every assignment of eight bodies to three names — driven through the whole
-/// compiler. Four properties, and the third is the one this pass exists for:
+/// 2744 shapes — every assignment of fourteen bodies to three names — driven through the whole
+/// compiler. The properties, and the third is the one this pass exists for:
 ///
 /// 1. a literal filling an enum-backed input is checked against the variants, however long or
 ///    twisted the chain (the acceptance statement);
 /// 2. a ring that has values is refused by the literal check, because nothing else refuses it;
 /// 3. a ring that has no values is refused by *somebody* — if the literal check is silent because
 ///    `check_inhabitation` owns it, `check_inhabitation` has to actually say so;
-/// 4. a chain that reaches `String` through names that can all be built is a good document.
+/// 4. a chain that reaches `String` through names that can all be built is a good document;
+/// 5. and the same ownership question for the shapes that stop the walk on a name: a struct or a
+///    union that can be built is the literal check's alone, and one that cannot is
+///    `check_inhabitation`'s alone. That half is what
+///    `story:structured-ring-is-refused-by-two-passes` was filed for, and stating it over the whole
+///    matrix rather than over two hand-written registries is what keeps it stated.
 #[test]
 fn every_three_name_wrapper_registry_is_owned_by_exactly_one_pass() {
     let mut admitted_unchecked: Vec<String> = Vec::new();
     let mut owned_by_nobody: Vec<String> = Vec::new();
     let mut refused_twice: Vec<String> = Vec::new();
-    // Non-vacuity: `text`, `variants`, `inhabited ring`, `uninhabited ring`, `good document`.
-    let mut reached = [0_usize; 5];
+    // Non-vacuity: `text`, `variants`, `inhabited ring`, `uninhabited ring`, `good document`,
+    // `inhabited structure`, `uninhabited structure`.
+    let mut reached = [0_usize; 7];
 
     for alpha in BODIES {
         for beta in BODIES {
@@ -283,60 +489,21 @@ fn every_three_name_wrapper_registry_is_owned_by_exactly_one_pass() {
                     Landing::Variants => 1,
                     Landing::Ring { inhabited: true } => 2,
                     Landing::Ring { inhabited: false } => 3,
+                    Landing::Structured {
+                        filled_exists: true,
+                    } => 5,
+                    Landing::Structured {
+                        filled_exists: false,
+                    } => 6,
                 }] += 1;
 
-                match where_it_landed {
-                    Landing::Variants => match found.as_deref() {
-                        None => admitted_unchecked.push(format!(
-                            "{shape}: `nope` admitted into an enum-backed input"
-                        )),
-                        Some(errors) if !errors.contains("not a variant") => admitted_unchecked
-                            .push(format!("{shape}: refused, but not as a variant: {errors}")),
-                        Some(_) => {}
-                    },
-                    Landing::Ring { inhabited: true } => match found.as_deref() {
-                        None => admitted_unchecked.push(format!(
-                            "{shape}: a literal filling a ring with nothing underneath it, admitted"
-                        )),
-                        Some(errors) if !errors.contains("resolves through") => owned_by_nobody
-                            .push(format!(
-                            "{shape}: the ring has values, so only the literal check can refuse \
-                                 it, and it did not: {errors}"
-                        )),
-                        Some(_) => {}
-                    },
-                    Landing::Ring { inhabited: false } => match found.as_deref() {
-                        None => owned_by_nobody.push(format!(
-                            "{shape}: a ring no value inhabits, admitted by every pass"
-                        )),
-                        Some(errors) if errors.contains("resolves through") => {
-                            refused_twice.push(format!(
-                                "{shape}: the literal check refused a ring it says the type pass \
-                                 owns: {errors}"
-                            ));
-                        }
-                        Some(errors) if !errors.contains("no value of") => {
-                            owned_by_nobody.push(format!(
-                                "{shape}: the literal check is silent because `check_inhabitation` \
-                                 owns this, and `check_inhabitation` did not refuse it: {errors}"
-                            ));
-                        }
-                        Some(_) => {}
-                    },
-                    Landing::Text => {
-                        if let Some(errors) = found.as_deref() {
-                            if errors.contains("resolves through") {
-                                refused_twice.push(format!(
-                                    "{shape}: `String` underneath, and still refused as cyclic: \
-                                     {errors}"
-                                ));
-                            } else if buildable == [true; 3] {
-                                refused_twice.push(format!(
-                                    "{shape}: every name can be built and the literal is text, so \
-                                     this is a good document: {errors}"
-                                ));
-                            }
-                        }
+                if let Some((fault, note)) =
+                    audit(&shape, where_it_landed, found.as_deref(), buildable)
+                {
+                    match fault {
+                        Fault::AdmittedUnchecked => admitted_unchecked.push(note),
+                        Fault::OwnedByNobody => owned_by_nobody.push(note),
+                        Fault::RefusedTwice => refused_twice.push(note),
                     }
                 }
             }
@@ -347,8 +514,8 @@ fn every_three_name_wrapper_registry_is_owned_by_exactly_one_pass() {
     // taken. Every class this case claims to cover has to have been populated by a real document.
     assert!(
         reached.iter().all(|count| *count > 0),
-        "vacuous matrix — text / variants / inhabited ring / uninhabited ring / good document \
-         reached {reached:?} times"
+        "vacuous matrix — text / variants / inhabited ring / uninhabited ring / good document / \
+         inhabited structure / uninhabited structure reached {reached:?} times"
     );
     assert!(
         admitted_unchecked.is_empty() && owned_by_nobody.is_empty() && refused_twice.is_empty(),
@@ -396,6 +563,7 @@ fn the_payload_consumer_lands_every_shape_exactly_where_the_binding_consumer_doe
                             errors.contains("not a variant"),
                             errors.contains("resolves through"),
                             errors.contains("no value of"),
+                            errors.contains("has structure"),
                         )
                     })
                 };
@@ -551,6 +719,13 @@ fn counting_optionals_outside_the_ring_would_move_shapes_the_matrix_asserts_on()
             match bodies[current] {
                 Body::Text => return Landing::Text,
                 Body::Variants => return Landing::Variants,
+                // Not the rule under mutation: the mutant differs only in what it counts as the
+                // ring's base case, so the shapes that stop the walk on a name answer as stated.
+                Body::Fields(_) | Body::Choice(_) => {
+                    return Landing::Structured {
+                        filled_exists: inhabited(bodies)[0],
+                    }
+                }
                 Body::Bare(to) => current = to,
                 Body::Absent(to) => {
                     crossed = true;
@@ -582,23 +757,26 @@ fn counting_optionals_outside_the_ring_would_move_shapes_the_matrix_asserts_on()
     );
 }
 
-/// A ring that closes through a struct or a union, stated as it stands today.
+/// A ring that closes through a struct or a union is one mistake, and draws one diagnostic a name.
 ///
-/// The unit's answer to pass 1's third finding was a rule about *who owns a ring*: a ring nothing
-/// can be built for belongs to `check_inhabitation`, and saying it again over the literal "would
-/// report one mistake twice and repair it neither time". `Alpha = newtype of Pick` with
-/// `Pick = struct {only: Alpha}` is such a ring — nothing can be built for either name — but the
-/// walk meets the struct before it meets the second `Alpha`, so it answers `Structured`, and the
-/// `Structured` arm never took that ownership rule. Same document, same mistake, three messages.
+/// The rule `story:literal-representation-walk-exhaustion` adopted for the walk is that a mistake
+/// another pass already owns gets silence here: a ring nothing can be built for belongs to
+/// `check_inhabitation`, and saying it again over the literal "would report one mistake twice and
+/// repair it neither time". `Alpha = newtype of Pick` with `Pick = struct {only: Alpha}` is such a
+/// ring — nothing can be built for either name — and the walk meets the struct before it meets the
+/// second `Alpha`, so for as long as the `Structured` answer did not share that rule the same
+/// document drew three messages for it.
 ///
-/// That gap is real and predates this unit, so it is tracked as
-/// `story:structured-ring-is-refused-by-two-passes` rather than fixed here, and this case pins the
-/// three diagnostics the shape draws now. It is deliberately an equality: a deliberate red would
-/// take the whole target with it — `cargo test` stops at the first failing one — while an exact
-/// statement of today stays green and goes red the moment the count moves in either direction.
+/// Two, now: one `self_reference` a name, from the pass that owns the shape, and nothing from the
+/// literal check. Asserted for the struct shape and the union shape, against both consumers of the
+/// one representation authority — a binding's `mapping:` and an outcome's `payload:` — because a
+/// rule applied in the walk has to arrive at both or it is not the walk's rule.
+///
+/// Deliberately an equality on the count rather than an absence of one string: it goes red if the
+/// literal check speaks again, and equally red if a third pass starts to.
 #[test]
-fn a_ring_closing_through_a_struct_or_union_is_reported_by_both_passes_today() {
-    for (label, types) in [
+fn a_ring_closing_through_a_struct_or_union_is_reported_only_by_the_pass_that_owns_it() {
+    for (shape, types) in [
         (
             "struct",
             "  - name: notifications.core.Alpha\n    kind: newtype\n    of: \
@@ -612,36 +790,41 @@ fn a_ring_closing_through_a_struct_or_union_is_reported_by_both_passes_today() {
              tag: kind\n    variants:\n      only: notifications.core.Alpha\n",
         ),
     ] {
-        let errors = refusals(&binding_document(types, "notifications.core.Alpha", "nope"))
-            .unwrap_or_else(|| panic!("{label}: admitted"));
-        let diagnostics: Vec<&str> = errors
-            .lines()
-            .filter(|line| line.trim_start().starts_with("- ["))
-            .collect();
-        let owed = "narrowing this to the type pass alone is the change \
-                    `story:structured-ring-is-refused-by-two-passes` makes";
+        for (consumer, document) in [
+            (
+                "binding",
+                binding_document(types, "notifications.core.Alpha", "nope"),
+            ),
+            (
+                "payload",
+                payload_document(types, "notifications.core.Alpha", "nope"),
+            ),
+        ] {
+            let errors = refusals(&document).unwrap_or_else(|| {
+                panic!("{shape}/{consumer}: a ring no value inhabits, admitted by every pass")
+            });
+            let diagnostics: Vec<&str> = errors
+                .lines()
+                .filter(|line| line.trim_start().starts_with("- ["))
+                .collect();
 
-        assert_eq!(
-            diagnostics.len(),
-            3,
-            "{label}: today this shape draws three diagnostics; {owed}:\n{errors}"
-        );
-        assert_eq!(
-            diagnostics
-                .iter()
-                .filter(|line| line.contains("[self_reference]"))
-                .count(),
-            2,
-            "{label}: `check_inhabitation` refuses both names of the ring, and that half is \
-             correct; {owed}:\n{errors}"
-        );
-        assert!(
-            diagnostics
-                .iter()
-                .any(|line| line.contains("[type_mismatch]") && line.contains("has structure")),
-            "{label}: the third is the literal check refusing a shape the type pass already \
-             refused, which is the state this case exists to hold still; {owed}:\n{errors}"
-        );
+            assert_eq!(
+                diagnostics
+                    .iter()
+                    .filter(|line| line.contains("[self_reference]"))
+                    .count(),
+                2,
+                "{shape}/{consumer}: `check_inhabitation` owns this shape and refuses both names \
+                 of the ring:\n{errors}"
+            );
+            assert_eq!(
+                diagnostics.len(),
+                2,
+                "{shape}/{consumer}: one mistake, and only the pass that owns it speaks — a \
+                 literal check that refuses a shape the type pass already refused reports the \
+                 same mistake twice and repairs it neither time:\n{errors}"
+            );
+        }
     }
 }
 
