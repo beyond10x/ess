@@ -237,7 +237,7 @@ fn source_and_projection_agree_under_the_explicitly_selected_dialect() {
     let mut interpreted_source = value;
     interpreted_source["$schema"] = json!(SCHEMA_DIALECT);
     interpreted_source["$ref"] = json!("#/components/schemas/Root");
-    let validator = jsonschema::options()
+    let validator = schema_contract::uniqueness::options()
         .with_draft(jsonschema::Draft::Draft202012)
         .should_validate_formats(false)
         .build(&interpreted_source)

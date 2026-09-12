@@ -9,6 +9,7 @@ mod retained;
 mod numeric;
 mod recipe;
 mod schemas;
+mod unique_items;
 
 use std::collections::BTreeMap;
 use serde_json::Value;
@@ -36,7 +37,8 @@ impl Normalizer {
                 .map_err(|_| Refused(vec![finding("/roots", "target_root", "embedded root identity is invalid")]))?;
             let schema: Value = serde_json::from_str(schema)
                 .map_err(|_| Refused(vec![finding("/roots", "target_schema", "embedded schema is invalid")]))?;
-            let validator = jsonschema::options()
+            let validator = jsonschema::ValidationOptions::default()
+                .with_keyword("uniqueItems", unique_items::compile)
                 .with_draft(jsonschema::Draft::Draft202012)
                 .should_validate_formats(false)
                 .build(&schema)

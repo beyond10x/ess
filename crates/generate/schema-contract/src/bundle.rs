@@ -425,7 +425,7 @@ fn compile(
             error.to_string(),
         )
     })?;
-    jsonschema::options()
+    crate::uniqueness::options()
         .with_draft(jsonschema::Draft::Draft202012)
         .should_validate_formats(false)
         .build(schema)

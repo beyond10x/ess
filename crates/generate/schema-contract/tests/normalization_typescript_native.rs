@@ -111,7 +111,7 @@ fn native_private_validator_conjunctions_match_the_pinned_schema_engine() {
         ),
     ] {
         let input_value: Value = serde_json::from_str(input).unwrap();
-        let validator = jsonschema::options()
+        let validator = schema_contract::uniqueness::options()
             .with_draft(jsonschema::Draft::Draft202012)
             .should_validate_formats(false)
             .build(&schema)

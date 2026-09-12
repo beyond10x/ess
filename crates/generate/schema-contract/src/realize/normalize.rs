@@ -12,6 +12,7 @@ mod source;
 mod target;
 mod typescript_schema;
 mod typescript_target;
+pub(crate) mod unique_items;
 
 use serde_json::Value;
 use std::collections::BTreeMap;

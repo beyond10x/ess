@@ -290,7 +290,7 @@ fn validator<'a>(
     schema: &'a Value,
     registry: &'a jsonschema::Registry<'a>,
 ) -> Result<jsonschema::Validator, jsonschema::ValidationError<'static>> {
-    jsonschema::options()
+    crate::uniqueness::options()
         .with_registry(registry)
         .should_validate_formats(true)
         .build(schema)
