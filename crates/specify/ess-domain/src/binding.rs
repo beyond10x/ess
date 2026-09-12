@@ -96,6 +96,15 @@
 //! | an enum, directly or under wrappers | exactly: it must name a declared variant |
 //! | anything that is `String` underneath | that the input exists, and nothing about the value |
 //! | anything else | refused: text cannot be a `Money`, a `List` or an `Integer` |
+//! | wrappers resolving through themselves, with a base case | refused: it has values, and none is text |
+//! | wrappers resolving through themselves, with none | left to the type pass: no value of it exists |
+//!
+//! The wrappers are followed however many of them a document writes — a chain of named newtypes is
+//! as long as its author made it — because a literal that outran an internal budget used to be
+//! admitted with no check at all. The crate-internal `representation` walk says what stops it
+//! instead. Two cases this rule stays quiet about, because another pass owns each: a wrapper
+//! naming a type nothing declares is an unresolved reference, and a chain of wrappers that
+//! resolves through itself with no base case is a type no value can inhabit.
 //!
 //! **Not checked**, for anything that is text underneath: whether the value satisfies the
 //! invariants of the type it fills, and whether it names anything that exists outside the
@@ -1573,10 +1582,21 @@ impl Ends<'_> {
 
         match representation(&input.type_ref, self.types) {
             // Text is as far as a literal can be checked — the module documentation says what that
-            // leaves unsaid about the value — and a type that resolves to nothing is the type pass's
-            // error, which reporting here would report twice and repair neither time.
-            Some(Representation::Text) | None => {}
-            Some(Representation::Variants(variants)) => {
+            // leaves unsaid about the value. The other two silences are the same rule, not a
+            // weaker check: a name nothing declares and a ring of names no value inhabits are each
+            // refused by the pass that owns them, and saying it again here would report one
+            // mistake twice and repair it neither time.
+            Resolution::Established(Representation::Text)
+            | Resolution::Undeclared
+            | Resolution::Uninhabited => {}
+            // Not the same silence: this one has values, so no other pass refuses it, and
+            // admitting it would be admitting a literal nothing ever checked.
+            Resolution::Cyclic(through) => errors.push(refuse(format!(
+                "`{}.{}` is `{}`, whose representation resolves through `{through}` again, so no \
+                 representation a literal could be written as is ever reached",
+                command.name, input.name, input.type_ref
+            ))),
+            Resolution::Established(Representation::Variants(variants)) => {
                 if !variants.iter().any(|variant| variant == value) {
                     errors.push(
                         ValidationError::new(
@@ -1591,14 +1611,14 @@ impl Ends<'_> {
                     );
                 }
             }
-            Some(Representation::Primitive(primitive)) => {
+            Resolution::Established(Representation::Primitive(primitive)) => {
                 errors.push(refuse(format!(
                     "`{}.{}` is `{}`, which is `{primitive}` underneath, and a literal in a binding \
                      is text",
                     command.name, input.name, input.type_ref
                 )));
             }
-            Some(Representation::Structured) => {
+            Resolution::Established(Representation::Structured) => {
                 errors.push(refuse(format!(
                     "`{}.{}` is `{}`, which has structure, and a literal in a binding is one piece \
                      of text",
@@ -1657,48 +1677,114 @@ pub(crate) enum Representation<'a> {
     Structured,
 }
 
-/// Maximum type nodes visited while checking a binding or payload literal's representation.
+/// What the `representation` walk found: four answers, and only two of them are this pass's to
+/// report.
 ///
-/// Bounded rather than unbounded as defence in depth. `check_inhabitation` in
-/// [`crate::system`] does refuse a newtype of itself, so this walk should never meet one — but the
-/// two checks run in the same pass over the same document, and a validation pass that hangs is worse
-/// than one that refuses a good document. A bound is cheaper than an ordering guarantee.
+/// One `None` for every way of not arriving is what admitted a literal through a long chain of
+/// declared wrappers with no check of any kind — the caller read the absent answer as another
+/// pass's error, and no other pass had anything to say. The repair is not "report them all": two
+/// of these *are* another pass's, and repeating one of those prints the same repair twice and
+/// completes neither. So each way of not arriving is a separate answer, and each names the pass
+/// that owns it.
+pub(crate) enum Resolution<'a> {
+    /// A representation was established, and the literal is checked against it.
+    Established(Representation<'a>),
+    /// The walk reached a named type nothing declares.
+    ///
+    /// Owned by the pass that resolves references, which reports it as an unresolved one.
+    Undeclared,
+    /// The walk returned to a named type it had already resolved through, and something in the
+    /// loop gives that type values.
+    ///
+    /// `Cycle = newtype of Optional<Cycle>` is declared and inhabited — absence is a value, so
+    /// `check_inhabitation` in [`crate::system`] admits it — and still has nothing underneath it
+    /// that text could be written as. Nobody else reports it, so this pass does. The name carried
+    /// is the one the chain returned to, which is what the refusal quotes.
+    Cyclic(&'a QualifiedName),
+    /// The walk returned to a named type it had already resolved through, and nothing in the loop
+    /// gives it a base case.
+    ///
+    /// `Ring = newtype of Ring`, or any longer ring of bare names. No value of it can exist, and
+    /// `check_inhabitation` refuses the declaration itself with `self_reference` — the same
+    /// document at the base of this work produced exactly one error for it, and a second one from
+    /// here would be the mistake [`Undeclared`](Self::Undeclared) exists to avoid.
+    Uninhabited,
+}
+
+/// Maximum type nodes a *documentation* renderer traverses describing a literal's representation.
 ///
-/// Each `Optional` or newtype wrapper consumes one visit, and recognizing the terminal enum or
-/// primitive consumes another. Exhaustion establishes no representation guarantee; callers that
-/// describe validation must use this same bound. This is distinct from the type parser's nesting
-/// bound: named newtypes can extend a chain without nesting its authored type references.
+/// Retained, public and 32 because `ess-gen` consumes it: a renderer that stops early states no
+/// guarantee for that literal, which is an under-claim and safe. It is no longer a bound on
+/// validation. It was one, and a chain of 33 declared newtypes therefore ran the walk out and
+/// returned no answer at all, which the crate-internal literal check read as another pass's error
+/// — so `not_a_variant` was admitted into an enum-backed input with no error emitted anywhere. A
+/// budget that silently stops checking is worse than no budget; the `representation` walk in this
+/// module documents what bounds it instead.
+///
+/// Distinct from the type parser's [`MAX_TYPE_DEPTH`](crate::types::MAX_TYPE_DEPTH): named newtypes
+/// extend a chain without nesting any authored type reference.
 pub const WRAPPER_LIMIT: usize = 32;
 
 /// The representation a literal would have to be spellable as, to fill `type_ref`.
 ///
-/// `None` when the answer needs a type nothing declares, or when the traversal exhausts
-/// [`WRAPPER_LIMIT`]. The latter establishes no representation, even if other passes admit the
-/// specification; callers must not describe it as a completed literal check.
-pub(crate) fn representation<'a>(
-    type_ref: &'a TypeRef,
-    types: &'a TypeRegistry,
-) -> Option<Representation<'a>> {
+/// The one authority for that question: a binding's `mapping:` and an outcome's `payload:` both ask
+/// it here, so neither can drift into checking something the other does not.
+///
+/// Terminates without a step budget, and the argument is the reason the budget is gone. Each step
+/// either descends into a strictly smaller subtree of one finite [`TypeRef`], or follows a named
+/// type — and a name is followed at most once, because the second arrival at it ends the walk. The
+/// registry holds finitely many names, so the walk stops on every input, including the recursive
+/// ones other passes admit.
+///
+/// Which of the two cyclic answers that second arrival is turns on whether an `Optional` was
+/// crossed *inside* the loop, which is the same base-case rule `check_inhabitation` applies: a ring
+/// of bare names has no values and is refused there, while a ring holding an `Optional` has values
+/// and is admitted there. Counting base cases and comparing against the count recorded when the
+/// name was first seen answers that exactly — an `Optional` crossed on the way *to* the ring does
+/// not give the ring one.
+pub(crate) fn representation<'a>(type_ref: &'a TypeRef, types: &'a TypeRegistry) -> Resolution<'a> {
     let mut current = type_ref;
-    for _ in 0..WRAPPER_LIMIT {
+    let mut visited: BTreeMap<&'a QualifiedName, usize> = BTreeMap::new();
+    let mut base_cases = 0_usize;
+    loop {
         match current {
-            TypeRef::Optional(inner) => current = inner,
-            TypeRef::Primitive(Primitive::String) => return Some(Representation::Text),
-            TypeRef::Primitive(primitive) => return Some(Representation::Primitive(*primitive)),
-            TypeRef::List(_) | TypeRef::Map(_, _) => return Some(Representation::Structured),
-            TypeRef::Named(name) => match types.get(name).map(|declared| &declared.body) {
-                Some(TypeBody::Newtype { of, .. }) => current = of,
-                Some(TypeBody::Enum { variants }) => {
-                    return Some(Representation::Variants(variants));
+            TypeRef::Optional(inner) => {
+                base_cases += 1;
+                current = inner;
+            }
+            TypeRef::Primitive(Primitive::String) => {
+                return Resolution::Established(Representation::Text)
+            }
+            TypeRef::Primitive(primitive) => {
+                return Resolution::Established(Representation::Primitive(*primitive))
+            }
+            TypeRef::List(_) | TypeRef::Map(_, _) => {
+                return Resolution::Established(Representation::Structured)
+            }
+            TypeRef::Named(named) => match visited.entry(named) {
+                Entry::Occupied(first) => {
+                    return if base_cases > *first.get() {
+                        Resolution::Cyclic(named)
+                    } else {
+                        Resolution::Uninhabited
+                    };
                 }
-                Some(TypeBody::Struct { .. } | TypeBody::Union { .. }) => {
-                    return Some(Representation::Structured);
+                Entry::Vacant(slot) => {
+                    slot.insert(base_cases);
+                    match types.get(named).map(|declared| &declared.body) {
+                        Some(TypeBody::Newtype { of, .. }) => current = of,
+                        Some(TypeBody::Enum { variants }) => {
+                            return Resolution::Established(Representation::Variants(variants));
+                        }
+                        Some(TypeBody::Struct { .. } | TypeBody::Union { .. }) => {
+                            return Resolution::Established(Representation::Structured);
+                        }
+                        None => return Resolution::Undeclared,
+                    }
                 }
-                None => return None,
             },
         }
     }
-    None
 }
 
 /// The field a literal was probably meant to read, when its first segment is a near-miss of `event`.
@@ -1861,7 +1947,7 @@ on_failure: {escalate: {emits: billing.email.DeliveryEscalated}}
     }
 
     use super::*;
-    use crate::types::{Conversion, NamedType};
+    use crate::types::{Conversion, NamedType, MAX_TYPE_DEPTH};
 
     const EVENT: &str = "billing.invoice.InvoiceCreated";
     const COMMAND: &str = "billing.email.SendEmail";
@@ -2329,6 +2415,231 @@ on_failure: {escalate: {emits: billing.email.DeliveryEscalated}}
         let error = only(&errors);
         assert_eq!(error.code, ValidationCode::TypeMismatch);
         assert!(error.message.contains("has structure"), "{error}");
+    }
+
+    /// `billing.chain.Link0` … `Link{length - 1}`, each a newtype of the next and the last a
+    /// newtype of `end`, on top of the example's own types.
+    ///
+    /// A chain of named newtypes is how a document extends a representation without nesting a type
+    /// reference, so it is how the internal walk's own bound is reached from the public input
+    /// domain: every link is finite and every name is declared.
+    fn chain(length: usize, end: &str) -> TypeRegistry {
+        let mut registry = types();
+        for index in 0..length {
+            let of = if index + 1 == length {
+                end.to_owned()
+            } else {
+                format!("billing.chain.Link{}", index + 1)
+            };
+            registry
+                .insert(NamedType {
+                    reading: None,
+                    name: name(&format!("billing.chain.Link{index}")),
+                    body: newtype(&of),
+                    naming: Naming::default(),
+                })
+                .expect("new");
+        }
+        registry
+    }
+
+    /// The example's types, plus a newtype of `Optional` of itself.
+    ///
+    /// Inhabited — absence is a value — so `check_inhabitation` admits it and no other pass says
+    /// anything about a mapping that fills it.
+    fn cyclic_types() -> TypeRegistry {
+        let mut registry = types();
+        registry
+            .insert(NamedType {
+                reading: None,
+                name: name("billing.chain.Cycle"),
+                body: newtype("Optional<billing.chain.Cycle>"),
+                naming: Naming::default(),
+            })
+            .expect("new");
+        registry
+    }
+
+    /// The cross-cutting pass with a registry the case chose.
+    fn check_with(
+        binding: BindingSpec,
+        commands: &BTreeMap<QualifiedName, CommandSpec>,
+        types: &TypeRegistry,
+    ) -> ValidationErrors {
+        let bindings = [(binding.name.clone(), binding)].into();
+        validate_bindings(
+            &bindings,
+            &declared_events(),
+            commands,
+            types,
+            &conversions(),
+        )
+    }
+
+    /// The example's command, taking one more input of the type under test.
+    fn taking_channel(type_ref: &str) -> BTreeMap<QualifiedName, CommandSpec> {
+        command(
+            COMMAND,
+            &[
+                ("recipient", "billing.email.EmailAddress"),
+                ("template", "billing.email.TemplateId"),
+                ("channel", type_ref),
+            ],
+        )
+    }
+
+    #[test]
+    fn a_literal_is_checked_at_and_past_the_internal_walk_bound() {
+        // `WRAPPER_LIMIT - 1` links plus the enum is exactly the bound; one and two more are past
+        // it. A chain being longer than an internal budget is a fact about this compiler, not a
+        // reason to admit a literal nobody checked.
+        for length in [WRAPPER_LIMIT - 1, WRAPPER_LIMIT, WRAPPER_LIMIT + 1] {
+            let types = chain(length, "billing.invoice.Channel");
+            let commands = taking_channel("billing.chain.Link0");
+
+            let refused = check_with(
+                binding(&format!("{MAPPING}  channel: Postal\n")),
+                &commands,
+                &types,
+            );
+            assert_eq!(refused.len(), 1, "{length}: {refused}");
+            let error = &refused.as_slice()[0];
+            assert_eq!(
+                error.code,
+                ValidationCode::TypeMismatch,
+                "{length}: {error}"
+            );
+            assert!(error.message.contains("not a variant"), "{length}: {error}");
+
+            // The other side: the chain is long, the variant is real, and the document is good.
+            let admitted = check_with(
+                binding(&format!("{MAPPING}  channel: Post\n")),
+                &commands,
+                &types,
+            );
+            assert!(admitted.is_empty(), "{length}: {admitted}");
+        }
+    }
+
+    #[test]
+    fn a_literal_under_the_deepest_optional_a_document_can_write_is_still_checked() {
+        // The adversary's fixture: `Optional` nested to the type parser's own limit, then a chain
+        // of named newtypes ending in an enum. Both halves are finite and both are writable in an
+        // ordinary document.
+        let deep = format!(
+            "{}billing.chain.Link0{}",
+            "Optional<".repeat(MAX_TYPE_DEPTH),
+            ">".repeat(MAX_TYPE_DEPTH)
+        );
+        let types = chain(WRAPPER_LIMIT + 1, "billing.invoice.Channel");
+        let commands = taking_channel(&deep);
+
+        let errors = check_with(
+            binding(&format!("{MAPPING}  channel: not_a_variant\n")),
+            &commands,
+            &types,
+        );
+        let error = only(&errors);
+        assert_eq!(error.code, ValidationCode::TypeMismatch, "{error}");
+        assert!(error.message.contains("not a variant"), "{error}");
+    }
+
+    #[test]
+    fn a_literal_whose_representation_resolves_through_itself_is_refused() {
+        // Nothing text can be written as is underneath `Cycle`, and no other pass reports this
+        // mapping: exhausting a walk establishes no representation, so silence here is admission.
+        let errors = check_with(
+            binding(&format!("{MAPPING}  channel: anything\n")),
+            &taking_channel("billing.chain.Cycle"),
+            &cyclic_types(),
+        );
+        let error = only(&errors);
+        assert_eq!(error.code, ValidationCode::TypeMismatch, "{error}");
+        assert!(error.message.contains("billing.chain.Cycle"), "{error}");
+        assert!(
+            error.location.contains("channel"),
+            "the refusal addresses the mapping entry that carries the literal: {error}"
+        );
+    }
+
+    /// The example's types, plus the named newtypes a case names, as `name = newtype of of`.
+    fn types_with(declarations: &[(&str, &str)]) -> TypeRegistry {
+        let mut registry = types();
+        for (declared, of) in declarations {
+            registry
+                .insert(NamedType {
+                    reading: None,
+                    name: name(declared),
+                    body: newtype(of),
+                    naming: Naming::default(),
+                })
+                .expect("new");
+        }
+        registry
+    }
+
+    #[test]
+    fn a_ring_of_names_no_value_inhabits_is_left_to_the_pass_that_refuses_the_type() {
+        // `check_inhabitation` refuses each of these declarations itself, with `self_reference`.
+        // A second refusal over the literal would be one mistake reported twice — the rule the
+        // undeclared case follows, applied to the other fact this walk stops on.
+        //
+        // The `Optional` in the third case is crossed on the way *to* the ring, not inside it, so
+        // it gives the ring no base case and the type pass still owns it.
+        for (declarations, filled) in [
+            (
+                vec![("billing.chain.Ring", "billing.chain.Ring")],
+                "billing.chain.Ring",
+            ),
+            (
+                vec![
+                    ("billing.chain.Left", "billing.chain.Right"),
+                    ("billing.chain.Right", "billing.chain.Left"),
+                ],
+                "billing.chain.Left",
+            ),
+            (
+                vec![("billing.chain.Ring", "billing.chain.Ring")],
+                "Optional<billing.chain.Ring>",
+            ),
+        ] {
+            let errors = check_with(
+                binding(&format!("{MAPPING}  channel: anything\n")),
+                &taking_channel(filled),
+                &types_with(&declarations),
+            );
+            assert!(errors.is_empty(), "{filled}: {errors}");
+        }
+    }
+
+    #[test]
+    fn a_ring_holding_a_base_case_has_values_and_so_is_refused_here() {
+        // The other side of the same rule: an `Optional` *inside* the ring makes every member
+        // inhabited, so `check_inhabitation` admits all of them and nothing but the literal check
+        // stands between `anything` and an input no text can fill.
+        let errors = check_with(
+            binding(&format!("{MAPPING}  channel: anything\n")),
+            &taking_channel("billing.chain.Left"),
+            &types_with(&[
+                ("billing.chain.Left", "billing.chain.Right"),
+                ("billing.chain.Right", "Optional<billing.chain.Left>"),
+            ]),
+        );
+        let error = only(&errors);
+        assert_eq!(error.code, ValidationCode::TypeMismatch, "{error}");
+        assert!(error.message.contains("resolves through"), "{error}");
+    }
+
+    #[test]
+    fn a_literal_filling_an_input_of_an_undeclared_type_is_left_to_the_type_pass() {
+        // The discriminator for the case above: a name nothing declares is reported once, where
+        // unresolved references are reported, and repeating it here would repair neither copy.
+        let errors = check_with(
+            binding(&format!("{MAPPING}  channel: anything\n")),
+            &taking_channel("billing.chain.Missing"),
+            &types(),
+        );
+        assert!(errors.is_empty(), "{errors}");
     }
 
     #[test]

@@ -145,12 +145,13 @@ pub enum TypeRef {
 /// with no diagnostic, which is the one failure mode this compiler does not otherwise have.
 ///
 /// 32 because the deepest type a real specification writes is
-/// `Optional<List<Map<String, Optional<Money>>>>`, which is five, and because
-/// `WRAPPER_LIMIT` in [`crate::binding`] already chose 32 for the same reason in the same crate: one
-/// number is easier to defend than two. That leaves a factor of twenty-five below the smallest
-/// measured floor, and a factor of six above anything anybody has written. `serde_yaml`'s own
-/// structural recursion cap is 128, so this refusal is reached first and carries our message rather
-/// than the deserializer's.
+/// `Optional<List<Map<String, Optional<Money>>>>`, which is five. That leaves a factor of
+/// twenty-five below the smallest measured floor, and a factor of six above anything anybody has
+/// written. The number is this bound's own: `WRAPPER_LIMIT` in [`crate::binding`] is also 32 and no
+/// longer bounds anything this one does — it is what a documentation renderer traverses, while this
+/// is what keeps a parser off the stack's end — so neither number is a reason for the other.
+/// `serde_yaml`'s own structural recursion cap is 128, so this refusal is reached first and carries
+/// our message rather than the deserializer's.
 pub const MAX_TYPE_DEPTH: usize = 32;
 
 impl TypeRef {

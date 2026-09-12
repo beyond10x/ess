@@ -20305,6 +20305,31 @@
     "macro_ast_sha256": null,
     "reason": "Concrete owned data/API declaration retained alongside the named behavioral callers. Its presence is not a behavior case and does not prove nonreachability."
   },
+  "ess_domain::lib(ess_domain)::binding::enum::Resolution": {
+    "class": "OwnedHelper",
+    "macro_ast_sha256": null,
+    "reason": "Concrete owned data/API declaration retained alongside the named behavioral callers. Its presence is not a behavior case and does not prove nonreachability."
+  },
+  "ess_domain::lib(ess_domain)::binding::enum::Resolution/variant/Cyclic": {
+    "class": "OwnedHelper",
+    "macro_ast_sha256": null,
+    "reason": "Concrete owned data/API declaration retained alongside the named behavioral callers. Its presence is not a behavior case and does not prove nonreachability."
+  },
+  "ess_domain::lib(ess_domain)::binding::enum::Resolution/variant/Established": {
+    "class": "OwnedHelper",
+    "macro_ast_sha256": null,
+    "reason": "Concrete owned data/API declaration retained alongside the named behavioral callers. Its presence is not a behavior case and does not prove nonreachability."
+  },
+  "ess_domain::lib(ess_domain)::binding::enum::Resolution/variant/Undeclared": {
+    "class": "OwnedHelper",
+    "macro_ast_sha256": null,
+    "reason": "Concrete owned data/API declaration retained alongside the named behavioral callers. Its presence is not a behavior case and does not prove nonreachability."
+  },
+  "ess_domain::lib(ess_domain)::binding::enum::Resolution/variant/Uninhabited": {
+    "class": "OwnedHelper",
+    "macro_ast_sha256": null,
+    "reason": "Concrete owned data/API declaration retained alongside the named behavioral callers. Its presence is not a behavior case and does not prove nonreachability."
+  },
   "ess_domain::lib(ess_domain)::binding::fn::available": {
     "class": "OwnedHelper",
     "macro_ast_sha256": null,
