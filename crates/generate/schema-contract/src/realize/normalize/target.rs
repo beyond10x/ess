@@ -284,5 +284,11 @@ fn runtime_sources(
             "src/diagnostic.rs".to_owned(),
             include_str!("../diagnostic.rs").to_owned(),
         ),
+        // The same source this crate compiles, so the emitted runtime cannot decide `uniqueItems`
+        // differently from the reference it was generated from.
+        (
+            "src/unique_items.rs".to_owned(),
+            include_str!("unique_items.rs").to_owned(),
+        ),
     ])
 }

@@ -142,7 +142,7 @@ pub(super) fn validate_model(
     value: &Value,
     at: &str,
 ) -> Result<(), Refused> {
-    let validator = jsonschema::options()
+    let validator = crate::uniqueness::options()
         .with_draft(jsonschema::Draft::Draft202012)
         .should_validate_formats(false)
         .build(&model_schema(plan, root))
