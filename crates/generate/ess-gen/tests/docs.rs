@@ -1004,9 +1004,11 @@ fn literal_docs_match_the_checked_representation_depth_boundary() {
                     1,
                 )
             };
-            // These are independently pinned boundaries: validation visits 32 type nodes,
-            // including the terminal representation, rather than allowing 32 wrappers plus it.
-            let checked = newtypes + optionals < 32;
+            // Two boundaries, and only one of them is about admission any more. Validation
+            // follows every wrapper a document writes, so a literal that is not a variant is
+            // refused however deep the target is; the renderer stops after `WRAPPER_LIMIT` type
+            // nodes and then states no guarantee, which under-claims and never over-claims.
+            let claimed = newtypes + optionals < 32;
             let text = fixture("declined");
             let ir = compiled(&[("literal.yaml", &text)]);
             let interactions = page(&pages(&ir), "docs/interactions.md");
@@ -1017,10 +1019,10 @@ fn literal_docs_match_the_checked_representation_depth_boundary() {
             };
             assert_eq!(
                 interactions.contains(claim),
-                checked,
+                claimed,
                 "{target}: {interactions}"
             );
-            if !checked {
+            if !claimed {
                 assert!(interactions
                     .contains("This documentation establishes no additional value constraints"));
             }
@@ -1028,15 +1030,11 @@ fn literal_docs_match_the_checked_representation_depth_boundary() {
                 let invalid = fixture("not_a_variant");
                 let raw = RawSpecFile::parse(&invalid).expect("the boundary fixture parses");
                 let assembled = Specification::assemble(vec![(Source::new("literal.yaml"), raw)]);
-                assert_eq!(
+                assert!(
                     assembled.is_err(),
-                    checked,
-                    "admission changed for {target}"
+                    "a literal that is not a variant is refused at every finite depth, so there \
+                     is no document left for the renderer to describe: {target}"
                 );
-                if !checked {
-                    let ir = compiled(&[("literal.yaml", &invalid)]);
-                    assert!(!page(&pages(&ir), "docs/interactions.md").contains(claim));
-                }
             }
         }
     }
