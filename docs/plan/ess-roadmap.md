@@ -304,7 +304,10 @@ runs the suite.
 ## ESS wave 6.5 — hardening, the register emptied
 
 > **Scheduled, 2026-08-20.** Starts when wave 6 tags. Contents and evidence, one row per gap:
-> [`gap-register.md`](gap-register.md) § "Open, owned by the post-wave-6 hardening batch". This is
+> `gap-register.md` § "Open, owned by the post-wave-6 hardening batch" — **that file no longer
+> exists**, and the section it carried was not recovered; the row-by-row contents below are what
+> survives of it. D-2, the one entry with a reader outside this batch, has a home at
+> [`the linker never chooses`](../design/linker-never-chooses.md). This is
 > the reconciliation shape wave 3.5 had: no new capability, the existing claims made mechanical.
 
 In order: the three invariants enforced by nothing become enforced (7 by a source scan over the

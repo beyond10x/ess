@@ -70,10 +70,9 @@ against the generated workspace linked with hand-written obligation implementati
 Then the falsifiability half: one obligation implementation deliberately corrupted, and the same
 suite fails the scenario that exists to catch it. Both results land in CI via `synth-check`.
 
-One constraint on the linker, decided in [`gap-register.md`](gap-register.md) D-2: it never
-chooses. Zero implementations for an obligation is an unsatisfied obligation; two is an ambiguity
-error naming both. Selection among alternatives is `Realization` material and stays proposed with
-it.
+One constraint on the linker, gap register D-2: it never chooses. The rule is stated in
+[`the linker never chooses`](../design/linker-never-chooses.md), which is its home; this wave is
+governed by it and does not restate it.
 
 ## What is deliberately not in this wave
 

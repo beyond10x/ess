@@ -18,8 +18,9 @@ The other half of the bargain is hand-written, and lives outside this tree becau
 ownership boundary is absolute: [`examples/billing-realization`](../../examples/billing-realization)
 implements each obligation against its contract, and its linker assembles components and
 implementations into a runnable system without ever choosing — zero implementations for an
-obligation is an unsatisfied obligation, two is an ambiguity error naming both (gap register
-D-2). `cargo xtask synth` then executes the committed conformance suite, unchanged, against
+obligation is an unsatisfied obligation, two is an ambiguity error naming both (gap register D-2,
+whose home is [`the linker never chooses`](../../docs/design/linker-never-chooses.md)).
+`cargo xtask synth` then executes the committed conformance suite, unchanged, against
 that linked system: 29 of 29 scenarios must pass, and the deliberately corrupted variant
 beside the honest one must fail exactly the scenario that exists to catch it.
 

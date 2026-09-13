@@ -1,0 +1,25 @@
+schema: b10x-change/v1
+id: ess/component-settings-0.24.0
+repository: ess
+publishedAt: 2026-09-12T00:00:00Z
+title: A component declares its settings, and the runtime slots are derived from them
+summary: >-
+  `settings:` on a component states each configuration input once, with a type drawn from the
+  specification's own `types:`. `ess specify runtime compile` derives the `ess-runtime/1` config and
+  secret slots from that declaration — the environment variable upper-snake-cased from the setting
+  name, the kind from the setting's type and any literal — and refuses a runtime document that
+  hand-authors a slot for a component that declares settings, or two declarations that would bind
+  one environment variable twice in one container, naming the settings and the components. A
+  setting states absence with `Optional<…>` and with nothing else: a secret typed `Optional<…>`, and
+  a setting typed by a name whose representation is `Optional<…>`, are refused where they are
+  written, because a secret slot has no field for absence and a type reference cannot be read
+  through a name. The key is optional and serialises out when unset,
+  so every document that does not use it compiles to the bytes it always did; a build older than
+  0.24.0 refuses one that does, because a component's fields are `deny_unknown_fields`.
+kind: capability
+impact: significant
+source:
+  url: https://github.com/beyond10x/ess/releases/tag/0.24.0
+  version: 0.24.0
+journeys: [specify, operate-services]
+affectedSurfaces: [ess/docs]

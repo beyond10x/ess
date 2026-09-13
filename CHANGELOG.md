@@ -2,6 +2,44 @@
 
 ## [Unreleased]
 
+## [0.24.0] — 2026-09-13
+
+### Added
+
+- `settings:` on a component states each configuration input once, with a type drawn
+  from the specification's own `types:`. `ess specify runtime compile` derives the
+  `ess-runtime/1` config and secret slots from that declaration — the environment
+  variable upper-snake-cased from the setting name, the kind from the setting's type
+  and any literal — and refuses a runtime document that hand-authors a slot for a
+  component that declares settings, or two declarations that would bind one
+  environment variable twice in one container, naming the settings and the components.
+  A setting states absence with `Optional<…>` and with nothing else: a secret typed
+  `Optional<…>`, and a setting typed by a name whose representation is `Optional<…>`,
+  are refused where they are written. The key is optional and serialises out when
+  unset, so every document that does not use it compiles to the bytes it always did;
+  the source format stays `ess/4`, and a build older than 0.24.0 refuses a document
+  that uses the key, because a component's fields are `deny_unknown_fields`.
+- `ess conform run --target interpreted` is selectable beside `billing` and
+  `oracle-fixture`. The target decides nothing yet: every method refuses with
+  `TargetError::unsupported`, so every scenario returns one unsatisfied obligation and
+  the run fails rather than errors. It is the seam the model-driven interpretation
+  epic fills.
+- The ESS toolchain is specified in ESS, under `models/toolchain`, and its enums are
+  gated against the source they describe.
+
+### Fixed
+
+- A command name declared twice is refused even when the first of the two declarations
+  has an error of its own. Before, a first declaration that failed its own `try_from`
+  never reached the name check, so the second silently took the name and the author
+  was told about one error instead of two.
+- Every literal a document writes is checked, however deep. A literal inside an
+  `Optional<…>` of a type whose ring is broken is owned by one pass rather than
+  falling between two.
+- `uniqueItems` is decided the same way wherever `schema-contract` validates.
+- A refusal about a closed enum names the enum it is about and cites the file that
+  holds it.
+
 ## [0.23.0] — 2026-09-11
 
 ### Added

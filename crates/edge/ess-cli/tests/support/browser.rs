@@ -1,14 +1,15 @@
 //! Small actual Firefox `BiDi` harness; profiles, sockets and every receipt remain caller-owned.
 use serde_json::{json, Value};
 use std::{
+    ffi::OsStr,
     fs::{self, File},
     io::{Read, Write},
     net::{TcpListener, TcpStream},
     path::{Path, PathBuf},
     process::{Child, Command, Stdio},
     sync::{
-        atomic::{AtomicBool, AtomicU64, Ordering},
-        Arc,
+        atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering},
+        Arc, Mutex, MutexGuard, PoisonError,
     },
     thread::{self, JoinHandle},
     time::{Duration, Instant},
@@ -102,34 +103,182 @@ pub struct Browser {
     next: u64,
     receipt: File,
 }
-fn assigned_bidi_port(child: &mut OwnedChild, evidence: &Path, deadline: Instant) -> u16 {
-    // Firefox documents the assigned BiDi endpoint on stderr. Read only a
-    // complete line from this child's private log, under the startup deadline.
-    loop {
-        assert!(
-            child.0.try_wait().unwrap().is_none(),
-            "Firefox exited; read firefox.stderr"
-        );
-        assert!(
-            Instant::now() < deadline,
-            "Firefox did not announce BiDi; read firefox.stderr"
-        );
-        let log = fs::read_to_string(evidence.join("firefox.stderr")).unwrap();
-        if let Some(port) = log.split_inclusive('\n').find_map(|line| {
-            line.strip_suffix('\n')?
-                .trim_end()
-                .strip_prefix("WebDriver BiDi listening on ws://127.0.0.1:")?
-                .parse::<u16>()
-                .ok()
-                .filter(|port| *port != 0)
-        }) {
-            return port;
+/// The startup deadline every fixture in this process is judged against.
+pub const STARTUP_DEADLINE: Duration = Duration::from_secs(30);
+
+/// RFC 6455 section 1.3's worked example `Sec-WebSocket-Key`, base64 of the ASCII text
+/// `the sample nonce`. A WebSocket key is a handshake nonce and not a credential — the protocol
+/// requires the client to send one and the server to hash it back, and the RFC prints this exact
+/// pair so implementations can check their hashing. Named rather than inlined because a secret
+/// scanner reads a base64 literal as a generic API key, and a name plus this sentence is the
+/// answer to that, where an allow-list entry would only silence it.
+const RFC6455_EXAMPLE_KEY: &str = "dGhlIHNhbXBsZSBub25jZQ=="; // gitleaks:allow
+
+/// The `Sec-WebSocket-Accept` the RFC prints for [`RFC6455_EXAMPLE_KEY`]: the key concatenated with
+/// the protocol's fixed GUID, SHA-1'd, base64'd. A server that returns this proved it read the key.
+const RFC6455_EXAMPLE_ACCEPT: &str = "s3pPLMBiTxaQ9kYGzzhZRbK+xOo="; // gitleaks:allow
+
+/// Startup is the phase that competes for CPU and the only phase the deadline
+/// judges: fixtures in one test binary otherwise launch Firefox at the same
+/// instant, and a runner slow enough to lose that race fails every one of them
+/// at once. Hold this from spawn to `BiDi` readiness; everything after it runs in
+/// parallel as before.
+static STARTUP: Mutex<()> = Mutex::new(());
+/// How many startups sit between a spawned child and `BiDi` readiness right now,
+/// and the most there have ever been. These count the startup itself rather than
+/// the lock that serializes it: a fixture that released `STARTUP` early would
+/// leave real startups overlapping while every acquisition still looked orderly,
+/// and only a counter with the startup's own extent can say so.
+static IN_STARTUP: AtomicUsize = AtomicUsize::new(0);
+static PEAK_IN_STARTUP: AtomicUsize = AtomicUsize::new(0);
+
+/// The largest number of Firefox startups this process ever had in flight.
+/// Read by the fixture's own cases; the other browser suites only start browsers.
+#[allow(dead_code)]
+pub fn peak_concurrent_startups() -> usize {
+    PEAK_IN_STARTUP.load(Ordering::SeqCst)
+}
+
+struct Starting {
+    // A fixture that panicked inside startup poisons nothing a later fixture cares about.
+    _guard: MutexGuard<'static, ()>,
+}
+impl Starting {
+    fn begin() -> Self {
+        Self {
+            _guard: STARTUP.lock().unwrap_or_else(PoisonError::into_inner),
         }
-        thread::sleep(Duration::from_millis(50));
     }
 }
+
+/// One startup, counted for exactly as long as it is actually running.
+struct InStartup;
+impl InStartup {
+    fn begin() -> Self {
+        let live = IN_STARTUP.fetch_add(1, Ordering::SeqCst) + 1;
+        PEAK_IN_STARTUP.fetch_max(live, Ordering::SeqCst);
+        Self
+    }
+}
+impl Drop for InStartup {
+    fn drop(&mut self) {
+        IN_STARTUP.fetch_sub(1, Ordering::SeqCst);
+    }
+}
+
+/// Where a start was lost. Every give-up site on the startup path names one of
+/// these and `ALL` names every one of them: the fixture's own case derives the
+/// list from this enum's own source text, so a variant that is added and not
+/// listed fails a case rather than shipping as a stage nothing reports.
+#[derive(Clone, Copy, Debug)]
+pub enum Stage<'a> {
+    /// The process was never created, so no startup was ever timed.
+    Spawn(&'a str),
+    /// The child was gone before it reached `BiDi` readiness.
+    Exited,
+    /// The deadline expired before Firefox announced a `BiDi` endpoint.
+    Announce,
+    /// The deadline expired before the announced endpoint completed an upgrade.
+    Connect,
+    /// The upgrade was lost before the deadline: a read, write or socket failure.
+    Upgrade(&'a str),
+}
+impl Stage<'_> {
+    /// Every stage the fixture can give up a start at.
+    #[allow(dead_code)]
+    pub const ALL: &'static [Stage<'static>] = &[
+        Stage::Spawn("<os error>"),
+        Stage::Exited,
+        Stage::Announce,
+        Stage::Connect,
+        Stage::Upgrade("<io error>"),
+    ];
+    /// The name a refusal reports this stage under.
+    pub fn label(self) -> String {
+        match self {
+            Stage::Spawn(error) => format!("spawn ({error})"),
+            Stage::Exited => "exited".to_owned(),
+            Stage::Announce => "announce".to_owned(),
+            Stage::Connect => "connect".to_owned(),
+            Stage::Upgrade(error) => format!("upgrade ({error})"),
+        }
+    }
+    /// Whether a startup was timed at all before this stage gave up.
+    fn timed_a_startup(self) -> bool {
+        !matches!(self, Stage::Spawn(_))
+    }
+}
+
+/// How a startup this runner never delivered is reported. A start that missed
+/// the deadline is a statement about the machine, not about `BiDi`: say so, and
+/// carry the measurement and Firefox's own stderr into the runner output so the
+/// reader never has to go looking for a log the next job deletes. A stage that
+/// timed no startup says so, rather than printing a sub-millisecond number
+/// beside a deadline that number was never compared against.
+pub fn startup_refusal(
+    stage: Stage<'_>,
+    elapsed: Duration,
+    deadline: Duration,
+    evidence: &Path,
+) -> String {
+    let log = fs::read_to_string(evidence.join("firefox.stderr")).unwrap_or_default();
+    let measurement = if stage.timed_a_startup() {
+        format!(
+            "\x20 measured startup: {:.3}s (spawn to give-up)\n\
+\x20 deadline:         {:.3}s ({})\n",
+            elapsed.as_secs_f64(),
+            deadline.as_secs_f64(),
+            if elapsed >= deadline {
+                "expired"
+            } else {
+                "not reached; this start ended for the reason above"
+            },
+        )
+    } else {
+        "\x20 measured startup: not timed; the browser was never spawned\n".to_owned()
+    };
+    format!(
+        "fixture environment refusal: this runner did not start Firefox for BiDi. \
+The browser fixture is refusing its environment, not a BiDi protocol defect.\n\
+\x20 stage:            {}\n\
+{measurement}\
+\x20 evidence:         {}\n\
+\x20 firefox.stderr ({} bytes):\n{log}",
+        stage.label(),
+        evidence.display(),
+        log.len(),
+    )
+}
+
 impl Browser {
     pub fn new(evidence: &Path) -> Self {
+        Self::launch(evidence, STARTUP_DEADLINE).unwrap_or_else(|refusal| panic!("{refusal}"))
+    }
+    /// Start Firefox and reach `BiDi` readiness, or refuse with the reason.
+    pub fn launch(evidence: &Path, deadline: Duration) -> Result<Self, String> {
+        let firefox = std::env::var_os("ESS_FIREFOX").unwrap_or_else(|| "firefox".into());
+        Self::launch_program(evidence, &firefox, deadline)
+    }
+    // startup-path: begin
+    // Every line between here and `startup-path: end` is on the path from a
+    // caller asking for a browser to a browser that answers BiDi, and a start
+    // lost on it is reported through `startup_refusal` and nothing else. A line
+    // here that can end the process another way has to say which of the two
+    // exceptions it is:
+    //   `startup-path: harness` — this runner's own filesystem or process table,
+    //      which is a broken machine and not a start that was lost; and
+    //   `startup-path: defect`  — a deliberate BiDi defect signal, kept because a
+    //      browser that answered is a browser that started.
+    // `no_unaccounted_panic_site_can_end_a_start` in coverage_browser.rs reads
+    // this region and holds that class, so a further give-up site cannot arrive
+    // unnamed the way the WebSocket upgrade read did.
+    /// The same startup against a named program, so the fixture's own refusal
+    /// path can be exercised without a Firefox that misbehaves on demand.
+    pub fn launch_program(
+        evidence: &Path,
+        program: &OsStr,
+        deadline: Duration,
+    ) -> Result<Self, String> {
         static NEXT_PROFILE: AtomicU64 = AtomicU64::new(0);
         let profile_root =
             std::env::var_os("ESS_BROWSER_TMPDIR").map_or_else(std::env::temp_dir, PathBuf::from);
@@ -138,9 +287,9 @@ impl Browser {
             std::process::id(),
             NEXT_PROFILE.fetch_add(1, Ordering::Relaxed)
         ));
+        // startup-path: harness
         fs::create_dir_all(&profile).unwrap();
-        let firefox = std::env::var_os("ESS_FIREFOX").unwrap_or_else(|| "firefox".into());
-        let mut command = Command::new(firefox);
+        let mut command = Command::new(program);
         command
             .args(["--headless", "--no-remote", "--remote-debugging-port"])
             // Firefox binds its own ephemeral port. Releasing a temporary Rust
@@ -152,73 +301,234 @@ impl Browser {
             .env("TMPDIR", &profile_root)
             .env("MOZ_HEADLESS", "1")
             .stdout(Stdio::from(
+                // startup-path: harness
                 File::create(evidence.join("firefox.stdout")).unwrap(),
             ))
             .stderr(Stdio::from(
+                // startup-path: harness
                 File::create(evidence.join("firefox.stderr")).unwrap(),
             ));
+        // startup-path: harness
         fs::write(evidence.join("firefox.command"), format!("{command:?}\n")).unwrap();
         fs::write(
             evidence.join("browser-profile.txt"),
             format!("{}\n", profile.display()),
         )
+        // startup-path: harness
         .unwrap();
-        let mut child = OwnedChild(command.spawn().expect("required actual Firefox starts"));
-        fs::write(evidence.join("firefox.pid"), format!("{}\n", child.0.id())).unwrap();
-        let deadline = Instant::now() + Duration::from_secs(30);
-        let port = assigned_bidi_port(&mut child, evidence, deadline);
-        let (stream, response) = loop {
-            assert!(
-                child.0.try_wait().unwrap().is_none(),
-                "Firefox exited; read firefox.stderr"
-            );
-            assert!(
-                Instant::now() < deadline,
-                "Firefox did not expose BiDi; read firefox.stderr"
-            );
-            let Ok(mut stream) = TcpStream::connect(("127.0.0.1", port)) else {
-                thread::sleep(Duration::from_millis(50));
-                continue;
-            };
-            stream
-                .set_read_timeout(Some(Duration::from_secs(20)))
-                .unwrap();
-            stream
-                .set_write_timeout(Some(Duration::from_secs(20)))
-                .unwrap();
-            let handshake = format!("GET /session HTTP/1.1\r\nHost: 127.0.0.1:{port}\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==\r\nSec-WebSocket-Version: 13\r\n\r\n");
-            stream.write_all(handshake.as_bytes()).unwrap();
-            let mut response = Vec::new();
-            while !response.ends_with(b"\r\n\r\n") {
-                let mut byte = [0];
-                stream.read_exact(&mut byte).unwrap();
-                response.push(byte[0]);
+        let starting = Starting::begin();
+        let started = Instant::now();
+        let mut child = match command.spawn() {
+            Ok(child) => OwnedChild(child),
+            Err(error) => {
+                return Err(startup_refusal(
+                    Stage::Spawn(&error.to_string()),
+                    started.elapsed(),
+                    deadline,
+                    evidence,
+                ))
             }
-            let response = String::from_utf8(response).unwrap();
-            // Firefox can listen before registering /session. TCP readiness alone is not
-            // BiDi readiness. Keep the startup response as evidence; retain the same deadline.
-            if response.starts_with("HTTP/1.1 404 ") {
-                fs::write(evidence.join("websocket-startup-response.txt"), &response).unwrap();
-                thread::sleep(Duration::from_millis(50));
-                continue;
-            }
-            break (stream, response);
         };
+        // startup-path: harness
+        fs::write(evidence.join("firefox.pid"), format!("{}\n", child.0.id())).unwrap();
+        let (stream, response) = {
+            // Counted for the whole startup rather than for the lock. A fixture
+            // that released `starting` any earlier would leave these overlapping,
+            // and the peak this counter records is what says so.
+            let _in_startup = InStartup::begin();
+            Self::reach_bidi(&mut child, evidence, started, deadline)
+        }?;
+        // startup-path: harness
         fs::write(evidence.join("websocket-handshake.txt"), &response).unwrap();
+        // startup-path: defect
         assert!(response.starts_with("HTTP/1.1 101"), "{response}");
-        assert!(
-            response.contains("s3pPLMBiTxaQ9kYGzzhZRbK+xOo="),
-            "{response}"
-        );
+        // startup-path: defect
+        assert!(response.contains(RFC6455_EXAMPLE_ACCEPT), "{response}");
+        drop(starting);
         let mut browser = Self {
             _child: child,
             stream,
             next: 0,
+            // startup-path: harness
             receipt: File::create(evidence.join("bidi.jsonl")).unwrap(),
         };
         browser.call("session.new", &json!({"capabilities":{"alwaysMatch":{}}}));
-        browser
+        Ok(browser)
     }
+
+    /// Reach a `BiDi`-ready socket on the endpoint Firefox announced, or report
+    /// the start this runner did not deliver.
+    fn reach_bidi(
+        child: &mut OwnedChild,
+        evidence: &Path,
+        started: Instant,
+        deadline: Duration,
+    ) -> Result<(TcpStream, String), String> {
+        let port = Self::assigned_bidi_port(child, evidence, started, deadline)?;
+        // The last thing the announced endpoint said, if it said anything at all.
+        let mut answered: Option<String> = None;
+        loop {
+            // startup-path: harness
+            if child.0.try_wait().unwrap().is_some() {
+                return Err(startup_refusal(
+                    Stage::Exited,
+                    started.elapsed(),
+                    deadline,
+                    evidence,
+                ));
+            }
+            let elapsed = started.elapsed();
+            if elapsed >= deadline {
+                return Err(Self::connect_give_up(
+                    elapsed,
+                    deadline,
+                    evidence,
+                    port,
+                    answered.as_deref(),
+                ));
+            }
+            let Ok(mut stream) = TcpStream::connect(("127.0.0.1", port)) else {
+                thread::sleep(Duration::from_millis(50));
+                continue;
+            };
+            // The socket inherits what is left of the deadline. A fixed timeout
+            // here is not a bound on startup at all: it lets a single iteration
+            // overrun the deadline by its own length, and it did, by 20s.
+            let remaining = deadline
+                .saturating_sub(elapsed)
+                .max(Duration::from_millis(1));
+            let response = match Self::upgrade(&mut stream, port, remaining) {
+                Ok(response) => response,
+                Err(error) => {
+                    // startup-path: harness
+                    if child.0.try_wait().unwrap().is_some() {
+                        return Err(startup_refusal(
+                            Stage::Exited,
+                            started.elapsed(),
+                            deadline,
+                            evidence,
+                        ));
+                    }
+                    let elapsed = started.elapsed();
+                    if elapsed >= deadline {
+                        return Err(Self::connect_give_up(
+                            elapsed,
+                            deadline,
+                            evidence,
+                            port,
+                            answered.as_deref(),
+                        ));
+                    }
+                    return Err(startup_refusal(
+                        Stage::Upgrade(&error.to_string()),
+                        elapsed,
+                        deadline,
+                        evidence,
+                    ));
+                }
+            };
+            // Firefox can listen before registering /session. TCP readiness alone is not
+            // BiDi readiness. Keep the startup response as evidence; retain the same deadline.
+            if response.starts_with("HTTP/1.1 404 ") {
+                // startup-path: harness
+                fs::write(evidence.join("websocket-startup-response.txt"), &response).unwrap();
+                answered = Some(response);
+                thread::sleep(Duration::from_millis(50));
+                continue;
+            }
+            return Ok((stream, response));
+        }
+    }
+
+    /// One upgrade attempt, bounded by what is left of the startup deadline.
+    fn upgrade(stream: &mut TcpStream, port: u16, remaining: Duration) -> std::io::Result<String> {
+        stream.set_read_timeout(Some(remaining))?;
+        stream.set_write_timeout(Some(remaining))?;
+        let handshake = format!("GET /session HTTP/1.1\r\nHost: 127.0.0.1:{port}\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Key: {RFC6455_EXAMPLE_KEY}\r\nSec-WebSocket-Version: 13\r\n\r\n");
+        stream.write_all(handshake.as_bytes())?;
+        let mut response = Vec::new();
+        while !response.ends_with(b"\r\n\r\n") {
+            let mut byte = [0];
+            stream.read_exact(&mut byte)?;
+            response.push(byte[0]);
+        }
+        // A browser answering bytes that are not text has still answered: leave
+        // that to the handshake assertions rather than a panic with no stage.
+        Ok(String::from_utf8_lossy(&response).into_owned())
+    }
+
+    /// How the connect phase gives up once the deadline has expired. A browser
+    /// that answered the upgrade with HTTP is running and listening on the port
+    /// it announced, so this runner did start it: the refusal's claim would be
+    /// false, and this says what was seen instead of picking a side it cannot
+    /// see. A port that never answered anything is a start this runner lost, and
+    /// that is the refusal.
+    fn connect_give_up(
+        elapsed: Duration,
+        deadline: Duration,
+        evidence: &Path,
+        port: u16,
+        answered: Option<&str>,
+    ) -> String {
+        let Some(response) = answered else {
+            return startup_refusal(Stage::Connect, elapsed, deadline, evidence);
+        };
+        // startup-path: defect
+        panic!(
+            "Firefox did not expose BiDi: it announced 127.0.0.1:{port}, stayed alive, and \
+             answered the upgrade with a response that is not 101 for {:.3}s. This runner did \
+             start a browser, so it is not a fixture environment refusal; whether /session is \
+             defective or this runner never gave the browser the CPU to register it is decided \
+             by the response and the log below.\n\
+             \x20 evidence:         {}\n\x20 last startup response:\n{response}",
+            elapsed.as_secs_f64(),
+            evidence.display(),
+        );
+    }
+
+    fn assigned_bidi_port(
+        child: &mut OwnedChild,
+        evidence: &Path,
+        started: Instant,
+        deadline: Duration,
+    ) -> Result<u16, String> {
+        // Firefox documents the assigned BiDi endpoint on stderr. Read only a
+        // complete line from this child's private log, under the startup deadline.
+        loop {
+            // startup-path: harness
+            if child.0.try_wait().unwrap().is_some() {
+                return Err(startup_refusal(
+                    Stage::Exited,
+                    started.elapsed(),
+                    deadline,
+                    evidence,
+                ));
+            }
+            let elapsed = started.elapsed();
+            if elapsed >= deadline {
+                return Err(startup_refusal(
+                    Stage::Announce,
+                    elapsed,
+                    deadline,
+                    evidence,
+                ));
+            }
+            let log = fs::read_to_string(evidence.join("firefox.stderr")).unwrap_or_default();
+            if let Some(port) = log.split_inclusive('\n').find_map(|line| {
+                line.strip_suffix('\n')?
+                    .trim_end()
+                    .strip_prefix("WebDriver BiDi listening on ws://127.0.0.1:")?
+                    .parse::<u16>()
+                    .ok()
+                    .filter(|port| *port != 0)
+            }) {
+                return Ok(port);
+            }
+            thread::sleep(Duration::from_millis(50));
+        }
+    }
+    // startup-path: end
+
     fn call(&mut self, method: &str, params: &Value) -> Value {
         self.next += 1;
         let request = json!({"id":self.next,"method":method,"params":params});

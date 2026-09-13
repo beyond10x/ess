@@ -343,8 +343,9 @@ comparison pass would be a member that visibly stopped being compared.
 `cargo xtask synth` builds both applications from the committed trees plus their hand-written
 realizations — [`examples/gatepass-realization/`](../../examples/gatepass-realization) for Rust,
 [`examples/gatepass-go-realization/`](../../examples/gatepass-go-realization) for Go, each with a
-linker that resolves exactly one implementation per obligation and never chooses between two (gap
-register D-2) — starts each on an **ephemeral** port, and:
+linker that resolves exactly one implementation per obligation and never chooses between two
+([gap register D-2](../design/linker-never-chooses.md)) — starts each on an **ephemeral** port,
+and:
 
 * reads three startup lines from each, strips `runtime`, and compares;
 * drives seven exchanges through both — a registration, a domain refusal, both projections, a body

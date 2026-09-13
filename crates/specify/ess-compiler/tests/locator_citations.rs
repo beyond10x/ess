@@ -16,7 +16,8 @@
 //! `resolve.rs`, `story:a-wrong-trailing-key-guess-is-reported-as-a-line` carries the behaviour,
 //! and `tests/trailing_key_guess_citations.rs` measures it.
 //!
-//! Two cases here are `#[ignore]`d against filed stories; each names its story at the attribute.
+//! One case here is `#[ignore]`d against a filed story and names it at the attribute. A second was,
+//! until `story:a-masked-first-declaration-hides-a-duplicate-name` landed and it began to pass.
 
 use ess_compiler::resolve::{diagnose_locating, Locator};
 use ess_compiler::source::{Location, SourceMap};
@@ -322,7 +323,7 @@ commands:
 /// The fixture the unit edited, read back as the document it now is.
 const REPEATED: &str = include_str!("fixtures/typed_diagnostics/repeated_names.yaml");
 
-/// `true` when some refusal is the whole-declaration duplicate `Specification`'s `insert` reports.
+/// `true` when some refusal is the whole-declaration duplicate `Specification`'s `declare` reports.
 ///
 /// Matched on `location`, not on the code alone: `DuplicateDeclaration` is also the code for a
 /// repeated *outcome* name, which every fixture below carries on purpose, so a test that asked
@@ -333,32 +334,28 @@ fn declared_twice(errors: &ValidationErrors, location: &str) -> bool {
     })
 }
 
-/// A command name declared twice is refused — unless the first declaration is refused for
-/// something else, in which case the second silently takes the name.
+/// A command name declared twice is refused, including when the first declaration is refused for
+/// something else as well.
 ///
-/// `Specification::absorb` converts each raw member and inserts it; `insert` is what reports the
-/// name-level `DuplicateDeclaration`, and a member whose own conversion failed is never handed to
-/// it. So the first declaration's outcome-name duplicate consumes the first declaration, and the
-/// second declaration finds the name free. The author is told about the outcome names and never
-/// about the two commands; fixing the first error makes a second one appear that was true all
-/// along.
+/// This was `#[ignore]`d when it was written, and the story it named —
+/// `story:a-masked-first-declaration-hides-a-duplicate-name` — has landed.
+/// `Specification::absorb` used to convert each raw member and then insert it, and `insert` was
+/// what reported the name-level `DuplicateDeclaration`, so a member whose own conversion failed
+/// was never handed to it: the first declaration's outcome-name duplicate consumed the first
+/// declaration and the second found the name free. `spec.rs` now asks `declare` — *has this name
+/// been written* — before the conversion is attempted, and `record` keeps what the first
+/// declaration meant, so all three assertions hold.
 ///
-/// The third assertion is the one that touches this unit. Its edit to
-/// `tests/fixtures/typed_diagnostics/repeated_names.yaml` adds a second `shop.repeat.Solo` command
-/// declaration, and the fixture's own new comment calls it "the same command declared a second
-/// time … two declarations answer to it". Two declarations are written; one member is assembled,
-/// silently, by this path — and
+/// The third is the fixture one. `tests/fixtures/typed_diagnostics/repeated_names.yaml` declares
+/// `shop.repeat.Solo` a second time and its comment calls it "the same command declared a second
+/// time … two declarations answer to it"; the refusal that says so is now in the list
 /// `typed_diagnostics.rs::a_name_used_more_than_once_falls_back_to_the_declaration_that_owns_it`
-/// pins the refusal list with `assert_eq!` on an exact five-element vector, so reporting the
-/// duplicate would turn a shipped test red.
+/// pins by equality.
 ///
-/// The control — the first assertion — passes today, and narrows the claim this file could
-/// otherwise be read as making: a duplicate of two *valid* declarations **is** refused. Only the
-/// masked case is open.
+/// The control — the first assertion — was always green: a duplicate of two *valid* declarations
+/// has always been refused. It stays, because it is what separates "the refusal exists" from "the
+/// refusal exists even when a copy is broken", and the second is the only one that moved.
 #[test]
-#[ignore = "story:a-masked-first-declaration-hides-a-duplicate-name — a name whose first \
-            declaration failed its own `try_from` never reaches `insert`, so the second takes the \
-            name silently"]
 fn a_command_name_declared_twice_is_refused_even_when_the_first_declaration_is_also_refused() {
     let (control, _) = refused(&[("control.yaml", VALID_TWICE)]);
     assert!(

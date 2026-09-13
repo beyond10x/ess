@@ -1,4 +1,5 @@
-//! No file this repository tracks names a path inside somebody's home directory.
+//! No file this repository tracks under `crates/`, `docs/`, `website/` or `models/` names a
+//! path inside somebody's home directory.
 //!
 //! This is the check `story:fixtures-carry-workstation-paths` is accepted against: no tracked file
 //! under `crates/`, `docs/`, `website/` or `models/` contains a path under a user's home
@@ -45,11 +46,55 @@
 //!   A count of labels is not that measurement in either direction — two jobs sharing a runner is
 //!   two lines and one label, and a line resolving to nothing hides behind a line naming three.
 //!
+//! Those four trees are the whole of that sentence, and they are named in it rather than
+//! qualified below it: the first paragraph is all rustdoc renders beside this module in an index,
+//! in a search result or in a re-export listing, and a scope stated seventy lines further down
+//! does not travel with it.
+//!
+//! What it does not read at all, tree by tree:
+//!
+//! * `.engineering/` — unread, 61 files, 32806 lines: the planning store. Those counts are
+//!   measured on every run by
+//!   [`every_unread_tree_that_carries_the_class_is_named_in_the_module_documentation`], which is
+//!   the only reason to believe them. **Why it is unread today is a smaller claim than it looks,
+//!   and the honest form of it is that the question is open**:
+//!   `story:scrub-the-planning-store-or-say-why-not` holds it.
+//!
+//!   What is settled: `.engineering/planning/journal.jsonl` is append-only and committed, and 87
+//!   of those lines are in it. `aep-backend-markdown`'s journal states the contract of itself —
+//!   rewriting a line to claim something else *"is exactly what append-only forbids"* — and `aep
+//!   plan artifact validate` reads such a rewrite as forgery. Those 87 lines therefore have no
+//!   remedy at all, and the store cannot be made clean by scrubbing.
+//!
+//!   What is **not** settled is everything else, and an earlier revision of this bullet decided it
+//!   with a sentence that was false. It argued that carving the journal out of a widened scan
+//!   would exempt *the file holding the largest single share of the defect*. In the unit this
+//!   bullet counts in — lines — the journal holds 87 of 32806, which is 0.27%, and one document,
+//!   `.engineering/planning/review-result/authored-discovery-source-pass1.md`, holds 28730. A
+//!   carve-out would cover 59 of the 60 files and 99.7% of the carrying lines. By findings rather
+//!   than lines the journal is first, 32163 of 65838 — so the two units answer the question
+//!   oppositely and neither of them settles it. The comparison is recorded here because it was
+//!   made, not because it decides anything.
+//!
+//!   The other 59 files are store bodies, and `AGENTS.md` holds the store to being *"mutated only
+//!   through `aep artifact` — never by editing a store file"*, so scrubbing them is not a change
+//!   this lane or its tests may make; it is the store owner's, and that is what the story above is
+//!   for. Until it answers, this tree is unread, and this bullet says so rather than implying the
+//!   question was settled.
+//!
+//!   `layout.rs` also excludes this tree, and an earlier revision cited that as *the same reason*.
+//!   It is not authority to borrow: [`SCANNED_PREFIXES`] below says in its own words that the two
+//!   scans refuse different things — a stale repository-relative citation is not a defect and a
+//!   workstation path is — and that doc is right, so the appeal was the thing to fix. What the two
+//!   share is a fact, not a verdict: nothing under the store can be corrected after the fact.
+//!
+//! That is the whole of that list.
+//!
 //! A scan has two ways of being worthless, and `layout.rs` beside this file learned both: it can
 //! read the wrong files, and it can be looking for a shape nothing has. Each has a case of its own
 //! below rather than being assumed, because either failure exits zero.
 
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::{fs, io, str};
@@ -1178,4 +1223,299 @@ fn the_workflow_parse_reads_every_runner_the_workflow_names() {
          checks nothing about the platform those jobs run on — either the spelling they use \
          belongs in `runner_labels` or their home root belongs in `RUNNER_HOME_ROOTS`: {blind:?}"
     );
+}
+
+/// The two documentation lines that open and close the unread-tree list, in that order.
+///
+/// A bound this lane states about *how* it looks — a home root it has no marker for, an account
+/// name it truncates — is prose a reader checks by reading. A tree it never opens is different: it
+/// is a claim about the repository that stops being true when the repository changes, and prose
+/// about it goes stale silently. So the list is delimited here and
+/// [`every_unread_tree_that_carries_the_class_is_named_in_the_module_documentation`] holds every
+/// claim in it to what `git` and the detector actually find.
+///
+/// **Two anchors rather than one, because the end of the list is where a parse loses a bullet.**
+/// A section that runs until "the first line that is not a bullet" has to decide what a wrapped
+/// continuation looks like, and nothing holds a continuation to any particular indent: `rustfmt`
+/// does not reflow documentation comments and `clippy` has no lint for it, so a tab is an ordinary
+/// thing for the next editor to write. Ended at an explicit line instead, every bullet between the
+/// anchors is read whatever its continuations are indented with, and a missing closing anchor is a
+/// panic rather than a short list.
+const UNREAD_TREE_SECTION: &[&str] = &[
+    "What it does not read at all, tree by tree:",
+    "That is the whole of that list.",
+];
+
+/// Every claim the unread-tree list makes, as `(tree, unread, files, lines)` per bullet.
+///
+/// Each bullet is `` * `tree` — unread, N files, M lines: `` and then its reasons, so what the
+/// lane reads is not only *which* tree but **what is being said about it**: whether the tree is
+/// claimed unread or read, and the two counts the claim rests on. The first version of this parse
+/// took the bullet's first backtick token and stopped, which meant a bullet asserting a tree was
+/// read in full and clean parsed to exactly the same answer as one asserting it was unread and
+/// carrying sixty files — and it meant every number in the bullet was unread prose. One of those
+/// numbers was wrong.
+///
+/// Taking the source as text rather than reading a path, so the parse can be handed a document
+/// that is not on disk. A parse that can only ever be given one input cannot be asked what it
+/// accepts.
+fn documented_unread_trees(source: &str) -> Vec<(String, bool, usize, usize)> {
+    let mut anchors = UNREAD_TREE_SECTION.iter();
+    // Held as the iterator's own item and compared through one dereference, rather than converted.
+    // This text has to be valid and clippy-clean in two places at once: here, where
+    // `UNREAD_TREE_SECTION` is a slice of `&str`, and in `host_paths_lane/mod.rs`, where the copy
+    // of this function reads the same constant parsed out of this source into a slice of `String`.
+    // The transcription warranty is a byte comparison, so one spelling has to serve both.
+    let opening = anchors
+        .next()
+        .expect("the unread-tree section has an opening anchor");
+    let closing = anchors
+        .next()
+        .expect("the unread-tree section has a closing anchor");
+    let doc: Vec<String> = source
+        .lines()
+        .map_while(|line| line.strip_prefix("//!"))
+        .map(str::to_owned)
+        .collect();
+    let open = doc
+        .iter()
+        .position(|line| line.trim() == *opening)
+        .unwrap_or_else(|| {
+            panic!(
+                "the module documentation has no line reading `{opening}`, so it names no tree as \
+                 unread and nothing can be compared against it"
+            )
+        });
+    let Some(offset) = doc
+        .iter()
+        .skip(open + 1)
+        .position(|line| line.trim() == *closing)
+    else {
+        panic!(
+            "the unread-tree list is opened by `{opening}` and never closed by `{closing}`, so \
+             where it ends is a guess and a bullet can fall outside it unnoticed"
+        )
+    };
+    let close = open + 1 + offset;
+    let mut claimed = Vec::new();
+    for line in &doc[open + 1..close] {
+        let Some(bullet) = line.trim().strip_prefix("* ") else {
+            continue;
+        };
+        let mut quoted = bullet.split('`');
+        quoted.next();
+        let tree = quoted
+            .next()
+            .unwrap_or_else(|| panic!("the bullet `{bullet}` names no tree in backticks"))
+            .to_owned();
+        let claim = quoted
+            .next()
+            .unwrap_or_else(|| panic!("the bullet for `{tree}` states nothing after the tree name"))
+            .trim()
+            .strip_prefix('—')
+            .unwrap_or_else(|| {
+                panic!("the bullet for `{tree}` does not state its claim after an em dash")
+            })
+            .trim();
+        // Up to the first colon, so a bullet's reasons can hold anything at all without the
+        // counts in front of them becoming unparseable — and so the counts are a fixed, short
+        // head a reader and this parse read the same way.
+        let head = claim.split_once(':').map_or(claim, |(head, _)| head);
+        let mut fields = head.splitn(3, ", ");
+        let verdict = fields
+            .next()
+            .unwrap_or_else(|| panic!("the bullet for `{tree}` states no verdict"));
+        let unread = match verdict {
+            "unread" => true,
+            "read" => false,
+            other => panic!(
+                "the bullet for `{tree}` opens with `{other}`, and the only two claims this parse \
+                 can check are `unread` and `read` — a bullet whose verdict it cannot read is a \
+                 decision nothing measures"
+            ),
+        };
+        let count = |field: Option<&str>, unit: &str| -> usize {
+            field
+                .and_then(|text| text.strip_suffix(unit))
+                .unwrap_or_else(|| {
+                    panic!("the bullet for `{tree}` states no `<n>{unit}` count for its claim")
+                })
+                .trim()
+                .parse()
+                .unwrap_or_else(|_| {
+                    panic!("the bullet for `{tree}` states a `{unit}` count that is not a number")
+                })
+        };
+        let files = count(fields.next(), " files");
+        let lines = count(fields.next(), " lines");
+        claimed.push((tree, unread, files, lines));
+    }
+    assert!(
+        !claimed.is_empty(),
+        "the unread-tree list between `{opening}` and `{closing}` holds no bullet at all, so every \
+         comparison against it is a comparison with nothing"
+    );
+    claimed
+}
+
+/// Every tracked file this repository holds, root-relative, whatever tree it is under.
+///
+/// [`scanned_files`] is the selection the acceptance statement names and is transcribed byte for
+/// byte by `host_paths_lane/mod.rs`, so it is not widened to serve this; this asks `git` the same
+/// question without the filter. `-z` for the same reason it is there: a path holding a non-ASCII
+/// byte is quoted and escaped otherwise, and an unread tree is exactly where such a path would go
+/// unnoticed.
+fn tracked_files(root: &Path) -> Vec<String> {
+    let listed = Command::new("git")
+        .arg("-C")
+        .arg(root)
+        .args(["ls-files", "--cached", "-z"])
+        .output()
+        .expect("git lists the repository's files");
+    assert!(listed.status.success(), "`git ls-files` failed");
+    let mut files: Vec<String> = String::from_utf8_lossy(&listed.stdout)
+        .split('\0')
+        .filter(|file| !file.is_empty())
+        .map(str::to_owned)
+        .collect();
+    files.sort();
+    files.dedup();
+    files
+}
+
+/// The tree `file` belongs to: its first path component with the separator, or the file itself.
+///
+/// A file at the repository root is its own tree, so a leak in one is reported under a name a
+/// reader can find rather than being folded into a prefix that does not exist.
+fn tree_of(file: &str) -> String {
+    match file.split_once('/') {
+        Some((first, _)) => format!("{first}/"),
+        None => file.to_owned(),
+    }
+}
+
+/// A tree the scan never opens, and which carries the class the scan refuses, is documented — and
+/// what the documentation says about it is measured, down to its counts.
+///
+/// This is the half of the acceptance statement a reader cannot check by reading. The four trees
+/// in [`SCANNED_PREFIXES`] are clean because this lane refuses to let them be otherwise, and the
+/// summary line at the top of this file is true of those four and says so; sixty tracked files
+/// under `.engineering/` carry the class, and the bullet that accounts for them is held here to
+/// the repository rather than to its author.
+///
+/// Measured rather than listed, so the case closes the class instead of the instance: every tree
+/// outside [`SCANNED_PREFIXES`] is read with the lane's own detector, and any tree found carrying
+/// the class has to be named. A tree added later, or one that starts carrying it later, turns this
+/// red by itself, and the bullet that answers it has to state counts that are true on the day it
+/// is read.
+///
+/// Four directions, because the first version had one and a false sentence survived it:
+///
+/// * a carrying tree the list does not name — the leak the story is about;
+/// * a tree the list names that no longer carries, or has been taken into the scan — documentation
+///   outliving its reason, which is the same defect pointing the other way;
+/// * a bullet claiming a tree is **read** when [`SCANNED_PREFIXES`] does not name it, which is the
+///   edit that changes the decision and leaves the tree name where it was;
+/// * the counts in each bullet, against the counts the detector finds.
+#[test]
+fn every_unread_tree_that_carries_the_class_is_named_in_the_module_documentation() {
+    let root = workspace_root();
+    let read = scanned_files(&root);
+    let unread: Vec<String> = tracked_files(&root)
+        .into_iter()
+        .filter(|file| !read.contains(file))
+        .collect();
+    assert!(
+        !unread.is_empty(),
+        "every tracked file is under a scanned tree, so this case measures nothing; if that is \
+         genuinely true the module documentation should name no unread tree at all"
+    );
+
+    let mut examined = 0usize;
+    let mut carried: BTreeMap<String, (usize, usize)> = BTreeMap::new();
+    let mut findings: Vec<String> = Vec::new();
+    for file in &unread {
+        let full = root.join(file);
+        if !full.exists() {
+            continue;
+        }
+        examined += 1;
+        let found = home_paths_in(&full);
+        if found.is_empty() {
+            continue;
+        }
+        let lines: BTreeSet<usize> = found.iter().map(|(line, _)| *line).collect();
+        let entry = carried.entry(tree_of(file)).or_insert((0, 0));
+        entry.0 += 1;
+        entry.1 += lines.len();
+        for (line, path) in found {
+            findings.push(format!("{file}:{line}: {path}"));
+        }
+    }
+    assert!(
+        examined > 0,
+        "the unread selection named {} files and none of them could be opened, so a tree that \
+         carries the class and a tree that does not are the same observation here",
+        unread.len()
+    );
+
+    let source = fs::read_to_string(root.join(this_file())).expect("this file is readable");
+    let claims = documented_unread_trees(&source);
+    let documented: BTreeSet<String> = claims
+        .iter()
+        .filter(|(_, unread, _, _)| *unread)
+        .map(|(tree, _, _, _)| tree.clone())
+        .collect();
+    let carrying: BTreeSet<String> = carried.keys().cloned().collect();
+
+    let undocumented: Vec<&String> = carrying.difference(&documented).collect();
+    assert!(
+        undocumented.is_empty(),
+        "this scan never opens {undocumented:?}, tracked files under them name absolute paths \
+         inside a user's home directory, and this file's module documentation does not say so — \
+         so its summary line would read as a claim about the repository when it is a claim about \
+         {SCANNED_PREFIXES:?} ({} findings over {examined} unread files examined):\n{}",
+        findings.len(),
+        findings
+            .iter()
+            .take(20)
+            .cloned()
+            .collect::<Vec<String>>()
+            .join("\n")
+    );
+
+    let stale: Vec<&String> = documented.difference(&carrying).collect();
+    assert!(
+        stale.is_empty(),
+        "this file's module documentation names {stale:?} as a tree it does not read and which \
+         carries the class, and the repository no longer agrees: either the tree is clean now and \
+         belongs in `SCANNED_PREFIXES`, or it is gone — either way the sentence has outlived its \
+         reason and must go with it"
+    );
+
+    for (tree, unread_claim, files, lines) in &claims {
+        let scanned = SCANNED_PREFIXES.contains(&tree.as_str());
+        assert_eq!(
+            !*unread_claim,
+            scanned,
+            "the bullet for `{tree}` claims this scan {} it, and `SCANNED_PREFIXES` says {} — the \
+             verdict a bullet states is the decision itself, and it is the one word an editor \
+             changes when the decision changes",
+            if *unread_claim {
+                "never opens"
+            } else {
+                "reads"
+            },
+            if scanned { "it is read" } else { "it is not" }
+        );
+        let (measured_files, measured_lines) = carried.get(tree).copied().unwrap_or((0, 0));
+        assert_eq!(
+            (*files, *lines),
+            (measured_files, measured_lines),
+            "the bullet for `{tree}` rests on {files} files and {lines} lines carrying the class, \
+             and the detector finds {measured_files} files and {measured_lines} lines. A count in \
+             that bullet is not decoration: the decision this lane records was argued from one, \
+             and it was argued from the wrong one because nothing read it"
+        );
+    }
 }

@@ -61,12 +61,12 @@ use crate::diagnostic::{Code, Detail, Diagnostic, Diagnostics, Severity};
 use crate::ir::{
     ActorHandle, CommandHandle, ComponentHandle, DomainHandle, EntityHandle, ErrorHandle, EssIr,
     EventHandle, ResolvedActor, ResolvedBinding, ResolvedBody, ResolvedCommand,
-    ResolvedCommandGroup, ResolvedCommandLineSurface, ResolvedComponent, ResolvedCondition,
-    ResolvedConversion, ResolvedDomain, ResolvedEffect, ResolvedEntity, ResolvedError,
-    ResolvedEvent, ResolvedField, ResolvedInstance, ResolvedMapping, ResolvedMappingValue,
-    ResolvedOutcome, ResolvedPayload, ResolvedPayloadField, ResolvedPayloadValue, ResolvedRelation,
-    ResolvedSubject, ResolvedType, ResolvedTypeRef, ResolvedView, ResolvedWorkload, TypeHandle,
-    ViewHandle,
+    ResolvedCommandGroup, ResolvedCommandLineSurface, ResolvedComponent, ResolvedComponentSetting,
+    ResolvedCondition, ResolvedConversion, ResolvedDomain, ResolvedEffect, ResolvedEntity,
+    ResolvedError, ResolvedEvent, ResolvedField, ResolvedInstance, ResolvedMapping,
+    ResolvedMappingValue, ResolvedOutcome, ResolvedPayload, ResolvedPayloadField,
+    ResolvedPayloadValue, ResolvedRelation, ResolvedSubject, ResolvedType, ResolvedTypeRef,
+    ResolvedView, ResolvedWorkload, TypeHandle, ViewHandle,
 };
 use crate::source::{Location, SourceMap, Span};
 
@@ -970,7 +970,13 @@ pub fn compile_locating(
     sources: &SourceMap,
     files: &[impl AsRef<str>],
 ) -> Result<EssIr, Diagnostics> {
-    let validation = specification.validate();
+    let mut validation = specification.validate();
+    // The two settings rules that need the whole specification. They live in `ess-domain` and carry
+    // `ess-domain` codes; they run here rather than inside `Specification::validate` because
+    // `validate_components` is reached from there with the domain, command and event names only.
+    // Before `Resolver::new`, so a setting typed by something undeclared is refused rather than
+    // resolved — which is the ordering `sealed_state.rs` asserts for the revalidation above.
+    validation.extend(ess_domain::component::validate_setting_types(specification));
     if !validation.is_empty() {
         return Err(bridge(&validation, &Locator::new(sources, files)));
     }
@@ -2608,6 +2614,36 @@ impl<'a> Resolver<'a> {
                         })
                         .collect(),
                 });
+            // Every setting's type is one `validate_setting_types` already resolved against the
+            // same registry, so this walk mints handles for names it has been told exist; a miss
+            // here is a `Specification` that did not come through `compile_locating`, and is
+            // treated exactly as any other unresolved reference is.
+            let mut settings = Vec::with_capacity(component.settings.len());
+            for setting in &component.settings {
+                let subject = format!("{}.settings.{}", component.name, setting.name);
+                let Some(type_ref) = self.type_ref(
+                    Code::new(codes::family::COMPONENT, codes::class::UNDECLARED),
+                    &setting.type_ref,
+                    &subject,
+                    &format!("component {}", component.name),
+                    &[setting.name.to_string()],
+                ) else {
+                    complete = false;
+                    continue;
+                };
+                settings.push(ResolvedComponentSetting {
+                    name: setting.name.clone(),
+                    type_ref,
+                    // The answer, resolved here and once: a written `required:` is a restatement
+                    // the declaration already refused when it disagreed, so carrying the raw
+                    // `Option<bool>` into the IR made two documents that state one specification
+                    // digest differently — and that digest is what every downstream document pins.
+                    required: setting.is_required(),
+                    secret: setting.secret,
+                    value: setting.value.clone(),
+                    summary: setting.summary.clone(),
+                });
+            }
             if complete {
                 resolved.insert(
                     component.name.clone(),
@@ -2619,6 +2655,7 @@ impl<'a> Resolver<'a> {
                         accepts,
                         publishes,
                         naming: component.naming,
+                        settings,
                         refs: component.refs,
                     },
                 );

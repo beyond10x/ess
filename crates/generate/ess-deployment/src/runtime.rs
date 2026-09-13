@@ -556,12 +556,26 @@ pub fn compile_runtime(
         }
     }
 
-    let containers = unique_map(
+    let mut containers = unique_map(
         &specification.containers,
         |container| &container.name,
         "container role",
         &mut diagnostics,
     );
+
+    // Hoisted above the container checks because the derivation below needs it: a container is
+    // linked to a component only through the workload that runs both.
+    let workloads = unique_map(
+        &specification.workloads,
+        |workload| &workload.name,
+        "workload",
+        &mut diagnostics,
+    );
+    // Before `validate_container`, so that a derived slot is held to the same uniqueness rule a
+    // hand-authored one is — a derived `CARRIER_URL` colliding with a hand-authored endpoint is
+    // exactly the collision that check exists for.
+    derive_component_settings(semantic, &workloads, &mut containers, &mut diagnostics);
+
     for container in containers.values() {
         if !processes.contains_key(&container.process) {
             diagnostics.push(Diagnostic::new(
@@ -573,13 +587,6 @@ pub fn compile_runtime(
         }
         validate_container(container, &mut diagnostics);
     }
-
-    let workloads = unique_map(
-        &specification.workloads,
-        |workload| &workload.name,
-        "workload",
-        &mut diagnostics,
-    );
     let semantic_components: BTreeMap<Identifier, _> = semantic
         .components()
         .keys()
@@ -746,6 +753,226 @@ pub fn compile_runtime(
         })
     } else {
         Err(Diagnostics::from(diagnostics))
+    }
+}
+
+/// Derives the configuration and secret slots a component's declared settings state.
+///
+/// # The defect this closes
+///
+/// [`ConfigSlot`] and [`SecretSlot`] each carry an `environment`, so a slot *is* an environment
+/// variable bound into a container — and until a component could declare its settings, nothing in
+/// `ess/1` said what any of those values were. Two facts about one setting lived in two documents
+/// and agreed by inspection. A component that declares `settings:` states them once, and the slots
+/// follow from that statement.
+///
+/// # What is derived, and from what
+///
+/// | slot field | derived from |
+/// |---|---|
+/// | `name` | the setting's own name, which is already a valid [`Identifier`] |
+/// | `environment` | the same name, upper-snake-cased and injectively |
+/// | `kind` | the literal if the setting fixes one, otherwise what the setting's *type* says |
+/// | `SecretSlot::key` | the setting's name |
+///
+/// [`EndpointSlot`] is not derived. It binds to a stack service rather than to a value, and
+/// deciding which service is a question the composition layer has an opinion about and this
+/// projection does not.
+///
+/// # Which containers
+///
+/// Every container in the workload that realizes the component. The runtime model links a container
+/// to a workload and a workload to its components, and has no container-to-component edge, so
+/// "every container of the workload" is the only total answer — and a sidecar that ignores the
+/// variable is not harmed by it, while a sidecar that needed it and did not get it would be.
+///
+/// The edge is resolved for every workload first and each container role is then visited once, so
+/// a role two workloads select derives the union of their components' settings and derives it
+/// once. Walking workloads and deriving in place instead let the refusal below read this
+/// function's own output back as a second author.
+///
+/// # And the refusals
+///
+/// A container that hand-authors *any* config or secret slot while its workload realizes a
+/// component that declares settings is refused, naming the slot and the component. Any, not just a
+/// colliding one: the point is that the container's configuration interface has acquired two
+/// authors, and the hand-authored slot that happens not to collide today is the one that collides
+/// after the next setting is declared. A component that declares no settings keeps its
+/// hand-authored slots untouched, which is what makes this additive rather than a migration.
+///
+/// A derived slot that collides with another derived slot, or with a hand-authored
+/// [`EndpointSlot`], is refused **here**, naming the setting, the component that declared it and
+/// what it collided with. It has to be refused here because only here are those names in hand:
+/// [`validate_container`] sees a list of slots and says "container `server` has a duplicate
+/// configuration slot or environment variable", which names neither the setting nor either
+/// component and sends the author to look for a duplicate in a runtime document that may declare
+/// no slot at all. Two components of one workload declaring one setting name is exactly that
+/// shape, and it is the ordinary shape of a workload: the runtime model has no
+/// container-to-component edge, so every component of the workload reaches every one of its
+/// containers.
+///
+/// An endpoint slot is in the collision set and not in the two-authors refusal above, because
+/// [`EndpointSlot`] is never derived — there is no second author for it — but it does occupy a
+/// name and an environment variable in the same container, and [`validate_container`] checks all
+/// three lists against one set.
+///
+/// Names and environment variables are one question here rather than two:
+/// [`ComponentSetting::environment`](ess_domain::component::ComponentSetting::environment) is
+/// injective on a [`CliName`], so two derived slots collide on a variable exactly when they
+/// collide on a name. A hand-authored endpoint slot is not under that guarantee, so both are
+/// compared against it.
+fn derive_component_settings(
+    semantic: &EssIr,
+    workloads: &BTreeMap<Identifier, Workload>,
+    containers: &mut BTreeMap<Identifier, ContainerRole>,
+    diagnostics: &mut Vec<Diagnostic>,
+) {
+    // Which components reach which container role, resolved across *every* workload before one
+    // slot is derived. The gathering is the point: a container role is visited once, so the
+    // hand-authored check below reads the runtime document and never this function's own output. A
+    // role selected by two workloads used to read the first workload's derivation back as a second
+    // author and refuse the document for hand-authoring a slot it never wrote.
+    let mut realized: BTreeMap<&Identifier, BTreeSet<&str>> = BTreeMap::new();
+    for workload in workloads.values() {
+        for container_name in &workload.containers {
+            let entry = realized.entry(container_name).or_default();
+            entry.extend(workload.components.iter().map(Identifier::as_str));
+        }
+    }
+
+    for (container_name, components) in realized {
+        // In component-name order, because `EssIr::components` is a `BTreeMap`: two runs over one
+        // document derive one list, in one order. Filtering the map once per container is also
+        // what keeps a component selected by two workloads from deriving its settings twice.
+        let declaring: Vec<_> = semantic
+            .components()
+            .iter()
+            .filter(|(name, component)| {
+                !component.settings.is_empty() && components.contains(name.as_str())
+            })
+            .map(|(_, component)| component)
+            .collect();
+        if declaring.is_empty() {
+            continue;
+        }
+        let named = declaring
+            .iter()
+            .map(|component| format!("{}", component.name))
+            .collect::<Vec<_>>()
+            .join(", ");
+
+        let Some(container) = containers.get_mut(container_name) else {
+            continue;
+        };
+        let hand_authored: Vec<Identifier> = container
+            .config
+            .iter()
+            .map(|slot| slot.name.clone())
+            .chain(container.secrets.iter().map(|slot| slot.name.clone()))
+            .collect();
+        if !hand_authored.is_empty() {
+            for slot in hand_authored {
+                diagnostics.push(Diagnostic::new(
+                    Stage::Runtime,
+                    DiagnosticCode::DuplicateIdentifier,
+                    Some(container.name.clone()),
+                    format!(
+                        "container {} hand-authors the slot {slot}, and component {named} \
+                         declares its settings; the slots are derived from that declaration, so \
+                         delete this one or stop declaring settings",
+                        container.name
+                    ),
+                ));
+            }
+            // Deriving on top of a document that is already refused would report the same
+            // collision twice and say nothing the refusal above did not.
+            continue;
+        }
+        derive_into_container(container, &declaring, diagnostics);
+    }
+}
+
+/// Derives one container's slots from the components that declare settings into it.
+///
+/// Split from [`derive_component_settings`] because the collision bookkeeping made one function of
+/// both halves too long to read, not because the two halves are independent: this one assumes its
+/// caller has already resolved which components reach this container and refused a container that
+/// hand-authors a config or secret slot.
+fn derive_into_container(
+    container: &mut ContainerRole,
+    declaring: &[&ess_compiler::ir::ResolvedComponent],
+    diagnostics: &mut Vec<Diagnostic>,
+) {
+    // What each derived name and variable is owed to, so a collision names its two authors
+    // rather than leaving `validate_container` to report an anonymous duplicate. Seeded with
+    // the hand-authored endpoint slots, which this function never derives and which occupy the
+    // same two namespaces.
+    let mut claimed: BTreeMap<String, String> = BTreeMap::new();
+    for slot in &container.endpoints {
+        let owed = format!("the hand-authored endpoint slot {}", slot.name);
+        claimed.insert(format!("slot {}", slot.name), owed.clone());
+        claimed.insert(format!("environment variable {}", slot.environment), owed);
+    }
+    for component in declaring {
+        for setting in &component.settings {
+            let name = Identifier::new(setting.name.as_str()).expect(
+                "a `CliName` starts lower-case and joins lower-case words with single \
+                 hyphens, which is a subset of what an `Identifier` accepts",
+            );
+            let owed = format!(
+                "the setting `{}` of component {}",
+                setting.name, component.name
+            );
+            let claims = [
+                format!("slot {name}"),
+                format!("environment variable {}", setting.environment()),
+            ];
+            // One diagnostic per colliding setting, not one per namespace: a derived name and
+            // a derived variable collide together, because `environment()` is injective, and
+            // saying it twice would say nothing the first said not.
+            let collision = claims
+                .iter()
+                .find_map(|claim| claimed.get(claim).map(|first| (claim, first.clone())));
+            if let Some((claim, first)) = collision {
+                diagnostics.push(Diagnostic::new(
+                    Stage::Runtime,
+                    DiagnosticCode::DuplicateIdentifier,
+                    Some(container.name.clone()),
+                    format!(
+                        "container {} would bind the {claim} twice: it is derived from \
+                         {owed}, and already owed to {first}; one container binds one \
+                         environment variable once, so rename one of them",
+                        container.name
+                    ),
+                ));
+                // Deriving it anyway would hand `validate_container` the duplicate this
+                // refusal exists to name, and it would report it a second time saying less.
+                continue;
+            }
+            for claim in claims {
+                claimed.insert(claim, owed.clone());
+            }
+            if setting.secret {
+                container.secrets.push(SecretSlot {
+                    name,
+                    environment: setting.environment(),
+                    key: setting.name.to_string(),
+                });
+            } else {
+                container.config.push(ConfigSlot {
+                    kind: if setting.value.is_some() {
+                        ConfigKind::Literal
+                    } else if setting.is_required() {
+                        ConfigKind::Required
+                    } else {
+                        ConfigKind::Optional
+                    },
+                    value: setting.value.clone(),
+                    name,
+                    environment: setting.environment(),
+                });
+            }
+        }
     }
 }
 
