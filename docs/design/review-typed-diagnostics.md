@@ -10,14 +10,23 @@ A machine reading a diagnostic must be able to name the rule that produced it an
 is about, without reading the prose. Today it cannot, because both are derived from
 `ValidationError::location` — a *human-facing dotted path* that a producer writes with `format!`:
 
-- `resolve.rs:565` `family_of(&str)` splits `location` on `. [` and matches the first token against
+- `resolve.rs:754` `family_of(&str)` splits `location` on `. [` and matches the first token against
   eleven literals; anything else becomes `codes::family::SPEC`. Rewriting the path prefix in a
   producer's `format!` changes the emitted `ESS-<FAMILY>-<class>` code.
-- `resolve.rs:696` `needles_for(&str)` re-tokenises the same string, consults the 50-entry
-  `STRUCTURAL` stop-list at `resolve.rs:637` to decide where the path stops naming a declaration,
-  and hands the guesses to `Locator::span` (`resolve.rs:452`), a substring scan. The cited source
-  line is therefore also a function of how the path was spelled.
-- `resolve.rs:591` `class_of(ValidationCode)` is already typed, but it collapses `UndeclaredReference`,
+- `resolve.rs:889` `needles_for(&str)` re-tokenises the same string, consults the 50-entry
+  `STRUCTURAL` stop-list at `resolve.rs:830` to decide where the path stops naming a declaration,
+  and hands the guesses to `Locator::span` (`resolve.rs:475`), a whole-name scan over the raw
+  document text — a needle is an occurrence only where neither neighbouring character can
+  continue a name, and a needle matching more than one line reports no line at all. The cited
+  source line is therefore also a function of how the path was spelled.
+
+  One needle is exempt from the whole-name rule and is still a raw substring scan: the
+  speculative trailing-key guess `<last>:`, which is not a declaration's name and so has no
+  name boundary to require. `resolve.rs:557` `whole_name_matters` draws that line. The
+  exemption is not safe in the way its neighbours claim — a wrong guess that happens to occur
+  exactly once **is** reported, at a line in a file that holds no refusal, and the base commit
+  behaves identically. `story:a-wrong-trailing-key-guess-is-reported-as-a-line` carries it.
+- `resolve.rs:780` `class_of(ValidationCode)` is already typed, but it collapses `UndeclaredReference`,
   `UnknownWorkflow`, `UnknownProtocol` and four more into `codes::class::UNDECLARED`, so the emitted
   `Code` does not identify the rule either.
 
@@ -318,22 +327,30 @@ entry (as `error::struct::ValidationError` has), the implementation wording for 
 `crates/specify/ess-compiler/tests/typed_diagnostics.rs` against
 `crates/specify/ess-compiler/tests/fixtures/typed_diagnostics/`:
 
-1. `repeated_names.yaml` — every refusal it produces is **unlocated**, and that is what it is for.
-   The outcome is written `- name: filed`, so the needle `filed:` occurs zero times; the fallback
-   needle `name: shop.repeat.File` occurs three times as a substring — the command itself, the
-   sibling command `shop.repeat.FileTwo`, and the event `shop.repeat.Filed`. A substring search
-   matching three lines knows nothing, and `Locator` reports `located: None` instead of picking the
-   first. The first version of this page claimed the fixture asserted `None` while the test pinned
-   all three refusals to line 12 (adversary pass 1, F3, F4); the fixture now does what the page says,
-   and `adversary_typed_diagnostics_pass1.rs` holds it to that.
+1. `repeated_names.yaml` — both halves, **located** and **unlocated**, and which half is which
+   turns on what "used more than once" means. The outcome is written `- name: filed`, so the needle
+   `filed:` occurs zero times in the document and the fallback needle is the declaration's own name.
 
-   It also carries the **located** half, added because answering pass 1's F3 by making every refusal
-   unlocated left the suite checking no location at all for the hazard the story's Validation clause
-   names (adversary pass 2, F5). `shop.repeat.Solo` repeats an outcome name too, and no other
-   declaration's name contains its own, so its fallback needle is unique and both of its refusals are
-   cited at `repeated_names.yaml:35:5` — pinned exactly, beside the three unlocated ones. Neither
-   half was removed to make the other pass; a fixture that answers a finding by deleting the evidence
-   is how F5 happened.
+   The **located** half is `shop.repeat.File`, declared once at line 12. Its name is *spelt inside*
+   `shop.repeat.FileTwo` and `shop.repeat.Filed`, which are two other declarations. A raw substring
+   search counted those as occurrences of it and answered neither a line nor a file for a name
+   written exactly once; `Locator::scan` now requires a whole name, so all three of `File`'s
+   refusals are cited at `repeated_names.yaml:12:5`.
+
+   The **unlocated** half is `shop.repeat.Solo`, declared twice, at lines 35 and 56. Two real
+   occurrences of a whole name is a genuine ambiguity that no filter can resolve, so both of its
+   refusals report `located: None` and `source: <document>` rather than picking the first.
+
+   This page has been wrong about this fixture twice, in opposite directions, and both corrections
+   came from an adversary rather than from a gate. The first version claimed the fixture asserted
+   `None` while the test pinned all three `File` refusals to line 12 (pass 1, F3/F4). The second —
+   this one's predecessor — described the state before wave 24's whole-name filter and its
+   second `Solo` declaration, and so named `File` unlocated and `Solo` cited at `35:5`, which is
+   each half's opposite (pass 2, A1/A2).
+
+   **Nothing compares this page to the code.** `grep -rn review-typed-diagnostics
+   crates/edge/ess-xtask/src Taskfile.yml` returns nothing, so a third inversion would also reach
+   `main`. `story:the-design-page-is-held-to-the-fixture-it-describes` carries that.
 2. `nested.yaml` — a `payload:` entry three member levels below the command, so the member path is
    more than one segment deep.
 3. `cross_file_a.yaml` + `cross_file_b.yaml` — a command in one file emitting an event declared in

@@ -1,0 +1,375 @@
+# `crates/infra/` — the observed cluster, a separate bounded context whose only dependency on the
+# rest is `ess-primitives` (`AGENTS.md` § Crate tree).
+#
+# Nothing here changes a cluster. Reading one is a credential edge and is explicit; the libraries
+# downstream of `ess-kubernetes` never select kubeconfig authority or reach a cluster, and
+# `ess generate project kubernetes` writes manifests without calling `kubectl`.
+domain: toolchain.infra
+
+summary: A sanitized observation of one namespace, and what a declared binding is held to in it.
+
+naming:
+  wire: infra
+  display: Infra
+
+types:
+  - name: toolchain.infra.BundleRef
+    kind: newtype
+    of: String
+    invariants: ['value != ""']
+
+  - name: toolchain.infra.Namespace
+    kind: newtype
+    of: String
+    invariants: ['value != ""']
+
+  # `--path` an existing `infra-observation/1` bundle, or `--context` a live kubeconfig context.
+  # The two conflict on the command line, which is why this is a closed choice rather than two
+  # optional fields.
+  - name: toolchain.infra.ObservationSource
+    kind: enum
+    variants: [bundle, "live-context"]
+
+  # `CollectionCoverage` has exactly one variant today —
+  # `crates/infra/infra-domain/src/coverage.rs:12`, `NamespaceTopology { namespace }`. Modelled as a
+  # one-variant enum with the namespace beside it on the entity, because the namespace is the
+  # observation's own identity-bearing fact and not a payload of the profile.
+  - name: toolchain.infra.CoverageProfile
+    kind: enum
+    variants: [namespace_topology]
+
+  # `crates/infra/infra-analyze/src/code.rs:18`, ordered so a `--min-severity` threshold is one
+  # comparison. `Info` is worth knowing and not wrong; `Error` is broken now.
+  - name: toolchain.infra.FindingSeverity
+    kind: enum
+    variants: [info, warning, error]
+
+  - name: toolchain.infra.Finding
+    kind: struct
+    fields:
+      - {name: code, type: String}
+      - {name: severity, type: toolchain.infra.FindingSeverity}
+      - {name: subject, type: String}
+
+entities:
+  - name: toolchain.infra.Observation
+
+    identity:
+      name: bundle
+      type: toolchain.infra.BundleRef
+
+    fields:
+      - name: source
+        type: toolchain.infra.ObservationSource
+      - name: namespace
+        type: toolchain.infra.Namespace
+      - name: coverage
+        type: toolchain.infra.CoverageProfile
+      - name: findings
+        type: List<toolchain.infra.Finding>
+
+    relations:
+      # A check has no meaning away from the observation it was made against — a verdict about a
+      # workload is a verdict about the bytes that were read at one moment — so the far side does
+      # not stand on its own and the relation is `owns` rather than `references`.
+      - name: checks
+        kind: owns
+        target: toolchain.infra.BindingCheck
+        cardinality: many
+        via: bundle
+
+    lifecycle:
+      initial: Collected
+      states: [Collected, Imported]
+      terminal: [Imported]
+      transitions:
+        - name: import
+          from: [Collected]
+          to: Imported
+
+  # `ess verify bindings` compares an exact implementation selection with scoped workload templates
+  # and exits 0 satisfied, 1 violated, 2 unknown. The third state is the one worth having: an
+  # observation whose context and declared namespace coverage do not both match cannot be read as
+  # absence, so the check abstains rather than reporting a violation it did not see
+  # (`OBS-BIND-002`, `crates/edge/ess-cli/src/observed_bindings.rs:439`).
+  - name: toolchain.infra.BindingCheck
+
+    identity:
+      name: check_id
+      type: Uuid
+
+    fields:
+      - name: bundle
+        type: toolchain.infra.BundleRef
+      - name: checked_count
+        type: Integer
+
+    invariants:
+      - checked_count >= 0
+
+    lifecycle:
+      initial: Pending
+      states: [Pending, Satisfied, Violated, Unknown]
+      terminal: [Satisfied, Violated, Unknown]
+      transitions:
+        - name: satisfy
+          from: [Pending]
+          to: Satisfied
+        - name: violate
+          from: [Pending]
+          to: Violated
+        - name: abstain
+          from: [Pending]
+          to: Unknown
+
+actors:
+  - name: toolchain.infra.Operator
+    may:
+      - toolchain.infra.CollectObservation
+      - toolchain.infra.ImportObservation
+      - toolchain.infra.CheckBindings
+      - toolchain.infra.ConcludeBindingCheck
+    naming:
+      display: Cluster operator
+
+  # In the picture and holding no grant: live-cluster reads require explicit credentials and stay
+  # outside the offline gate, so the gate cannot collect an observation and this model says so by
+  # giving it nothing.
+  - name: toolchain.infra.Gate
+    naming:
+      display: Repository gate
+
+errors:
+  - name: toolchain.infra.ObservationRefused
+    summary: The credential edge has no kubeconfig authority for the named context.
+
+  - name: toolchain.infra.ImportRefused
+    summary: The bundle is not an admitted `infra-observation/1` document.
+
+  - name: toolchain.infra.AlreadyImported
+    summary: This observation is already imported, so it was not imported again.
+    fields:
+      - name: state
+        type: toolchain.infra.Observation.State
+
+  - name: toolchain.infra.CheckAlreadyConcluded
+    summary: This check already has a verdict.
+    fields:
+      - name: state
+        type: toolchain.infra.BindingCheck.State
+
+commands:
+  - name: toolchain.infra.CollectObservation
+
+    naming:
+      wire: collect
+      display: Collect an observation
+
+    input:
+      - name: bundle
+        type: toolchain.infra.BundleRef
+      - name: source
+        type: toolchain.infra.ObservationSource
+      - name: namespace
+        type: toolchain.infra.Namespace
+
+    outcomes:
+      - name: collected
+        creates: toolchain.infra.Observation
+        instance: bundle
+        emits: [toolchain.infra.ObservationCollected]
+        payload:
+          toolchain.infra.ObservationCollected:
+            bundle: input.bundle
+            source: input.source
+            namespace: input.namespace
+        sets:
+          source: input.source
+          namespace: input.namespace
+        summary: >-
+          A sanitized bundle is written. Secret data, stringData and last-applied configuration
+          never reach it.
+
+      - name: refused
+        external: the named context has no credentials this edge may use
+        error: toolchain.infra.ObservationRefused
+
+  - name: toolchain.infra.ImportObservation
+
+    naming:
+      wire: import
+      display: Import an observation
+
+    input:
+      - name: bundle
+        type: toolchain.infra.BundleRef
+
+    outcomes:
+      - name: imported
+        moves: toolchain.infra.Observation.import
+        instance: bundle
+        emits: [toolchain.infra.ObservationImported]
+        payload:
+          toolchain.infra.ObservationImported:
+            bundle: input.bundle
+        summary: The bundle becomes typed `infra-ir/1`, with unknown fields refused rather than kept.
+
+      - name: refused
+        external: the bundle is malformed, or carries a field this reader does not admit
+        error: toolchain.infra.ImportRefused
+
+      - name: wrong-state
+        wrong_state: true
+        error: toolchain.infra.AlreadyImported
+
+  - name: toolchain.infra.CheckBindings
+
+    naming:
+      wire: check-bindings
+      display: Check declared bindings
+
+    input:
+      - name: check_id
+        type: Uuid
+      - name: bundle
+        type: toolchain.infra.BundleRef
+
+    outcomes:
+      - name: started
+        creates: toolchain.infra.BindingCheck
+        instance: check_id
+        emits: [toolchain.infra.BindingCheckStarted]
+        payload:
+          toolchain.infra.BindingCheckStarted:
+            check_id: input.check_id
+            bundle: input.bundle
+        sets:
+          bundle: input.bundle
+        summary: The declared selection is compared with the observed workload templates.
+
+  - name: toolchain.infra.ConcludeBindingCheck
+
+    naming:
+      wire: conclude-check
+      display: Conclude a binding check
+
+    input:
+      - name: check_id
+        type: Uuid
+
+    outcomes:
+      - name: satisfied
+        moves: toolchain.infra.BindingCheck.satisfy
+        instance: check_id
+        emits: [toolchain.infra.BindingCheckSatisfied]
+        payload:
+          toolchain.infra.BindingCheckSatisfied:
+            check_id: input.check_id
+        summary: Every declared selection matched what was observed.
+
+      - name: violated
+        external: an observed workload template contradicts the declared selection
+        moves: toolchain.infra.BindingCheck.violate
+        instance: check_id
+        emits: [toolchain.infra.BindingCheckViolated]
+        payload:
+          toolchain.infra.BindingCheckViolated:
+            check_id: input.check_id
+        summary: What was observed contradicts what was declared.
+
+      - name: unknown
+        external: the observation's coverage does not reach what the declaration names
+        moves: toolchain.infra.BindingCheck.abstain
+        instance: check_id
+        emits: [toolchain.infra.BindingCheckUnknown]
+        payload:
+          toolchain.infra.BindingCheckUnknown:
+            check_id: input.check_id
+        summary: The observation cannot answer, and absence is not inferred from it.
+
+      - name: wrong-state
+        wrong_state: true
+        error: toolchain.infra.CheckAlreadyConcluded
+
+events:
+  - name: toolchain.infra.ObservationCollected
+    fields:
+      - name: bundle
+        type: toolchain.infra.BundleRef
+      - name: source
+        type: toolchain.infra.ObservationSource
+      - name: namespace
+        type: toolchain.infra.Namespace
+
+  - name: toolchain.infra.ObservationImported
+    fields:
+      - name: bundle
+        type: toolchain.infra.BundleRef
+
+  - name: toolchain.infra.BindingCheckStarted
+    fields:
+      - name: check_id
+        type: Uuid
+      - name: bundle
+        type: toolchain.infra.BundleRef
+
+  - name: toolchain.infra.BindingCheckSatisfied
+    fields:
+      - name: check_id
+        type: Uuid
+
+  - name: toolchain.infra.BindingCheckViolated
+    fields:
+      - name: check_id
+        type: Uuid
+
+  - name: toolchain.infra.BindingCheckUnknown
+    naming:
+      display: Binding check unknown
+      summary: The observation could not answer, so nothing was concluded from its silence.
+    fields:
+      - name: check_id
+        type: Uuid
+
+views:
+  - name: toolchain.infra.ImportedObservations
+    source: toolchain.infra.Observation
+    consistency: read_your_writes
+    filter: state == Imported
+    fields:
+      - name: bundle
+        type: toolchain.infra.BundleRef
+      - name: namespace
+        type: toolchain.infra.Namespace
+
+  # Unfiltered, for `ESS-SYNTH-011`'s reason: `checked_count >= 0` holds of a check in every state,
+  # including `Pending`, and only an unfiltered view leaves a row there to read it off.
+  - name: toolchain.infra.BindingChecks
+    source: toolchain.infra.BindingCheck
+    consistency: read_your_writes
+    fields:
+      - name: check_id
+        type: Uuid
+      - name: bundle
+        type: toolchain.infra.BundleRef
+      - name: checked_count
+        type: Integer
+
+  # The rows that decide whether a run means anything: a check nobody could answer is not a pass,
+  # and a list that shows only violations would read as though it were.
+  - name: toolchain.infra.UnansweredChecks
+    source: toolchain.infra.BindingCheck
+    consistency: read_your_writes
+    filter: state == Unknown
+    order_by:
+      - checked_count desc
+    fields:
+      - name: check_id
+        type: Uuid
+      - name: bundle
+        type: toolchain.infra.BundleRef
+      - name: checked_count
+        type: Integer
+    naming:
+      wire: unanswered
+      display: Unanswered checks

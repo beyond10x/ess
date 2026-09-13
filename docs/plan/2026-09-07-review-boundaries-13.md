@@ -59,7 +59,7 @@ implementation unit, and creates no build or source reservation in this wave.
 
 Planned managed ID: `ess-glossary-boundaries`.
 Planned branch: `impl/review-glossary-boundaries`.
-Planned worktree: `/home/timo/.local/state/worktree/trees/b10x/ess/ess-glossary-boundaries`.
+Planned worktree: `~/.local/state/worktree/trees/b10x/ess/ess-glossary-boundaries`.
 Build directory: that tree's `target`, with no unit compiler build selected.
 Implementor scratch: `target/review-boundaries-13/glossary` within that tree.
 Adversary scratch: `target/review-boundaries-13/adversary-pass-1` within that tree.
@@ -104,21 +104,21 @@ opening is local; its parent `3464ea6` is published. Provisioning receipts and e
 hashes remain under coordinator `target/review-boundaries-13/preparation/provision`.
 
 The prepared full gate assigns the short external temporary root
-`/home/timo/.cache/ess-w13-gate-attempt1-tmp`, to be created only when the reviewed integrated
+`~/.cache/ess-w13-gate-attempt1-tmp`, to be created only when the reviewed integrated
 source is ready. Its output will be `target/review-boundaries-13/gate-<commit-prefix>-attempt1`
 within the coordinator. It reuses the complete frozen toolchain read-only, validates its entire
 manifest around each lane and retains the direct exit status before later checks. Preparation
 measured 16,990,343,168 free bytes; the 8,589,934,592-byte floor applies before every lane.
 
 Public delivery support is assigned managed ID `ess-wave13-website-verification`, at
-`/home/timo/.local/state/worktree/trees/b10x/website/ess-wave13-website-verification`, detached
+`~/.local/state/worktree/trees/b10x/website/ess-wave13-website-verification`, detached
 at the current Atlas-controlled Website runtime `fc4571534765c098ed861bc326da4d3da0d1df63`.
 Build and scratch remain under that tree's `target/review-boundaries-13`; npm dependencies
 and ordinary Website build outputs are owned within the same tree. The delivery runner assigns
-`/home/timo/.cache/ess-w13-website-tmp` for its browser processes. No Website source edit is
+`~/.cache/ess-w13-website-tmp` for its browser processes. No Website source edit is
 selected. Source-set and artifact verification start only after green ESS source publication.
 The corresponding Atlas fence records belong under
-`/home/timo/.local/state/worktree/trees/b10x/atlas/wt-53892beacf0d/target/ess-review-wave13-delivery-fence`.
+`~/.local/state/worktree/trees/b10x/atlas/wt-53892beacf0d/target/ess-review-wave13-delivery-fence`.
 They must report any unrelated organization-wide baseline failures separately from the exact
 source-set, Website gate and live Pages results.
 

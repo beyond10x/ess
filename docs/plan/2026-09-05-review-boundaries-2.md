@@ -26,7 +26,7 @@ Atlas authority is clean at remote main `6035d6e1209686ca474a3f43975fde7d8621ba4
 
 ## Unit records
 
-Absolute root: `/home/timo/.local/state/worktree/trees/b10x/ess`. Worktrees below are created from the opening commit; build and scratch paths are relative to each unit tree. No shared target directory.
+Absolute root: `~/.local/state/worktree/trees/b10x/ess`. Worktrees below are created from the opening commit; build and scratch paths are relative to each unit tree. No shared target directory.
 
 | Story | Branch | Worktree under root | Build | Scratch | Head/stage |
 | --- | --- | --- | --- | --- | --- |
@@ -1552,7 +1552,7 @@ This is a failed dispatch, not a completed attack or a green result. The coordin
 
 The restricted delegated retry also ended with the same automatic content rejection. It left five added integration cases and startup-failure logs; no test had executed because sccache failed before rustc. The coordinator completed the same second review locally, preserving all additions and initial logs. The report is preserved verbatim as review-result:review-boundaries-2-containment-adversary-pass-2. This is a documented delegation adaptation, not a third attack or an independent/human approval claim. No production file was edited during this review.
 
-Cargo had cached the failed rustc metadata query. The failed metadata and socket trace were preserved before removing only target/.rustc_info.json. A task-specific sccache socket remained inside the unit target and used the existing shared cache; its stop command returned0 and its socket no longer accepted a connection. A temporary external scratch root /home/timo/.cache/ess-w2-ctmp held only the first actual case's synthetic files; fixture cleanup and rmdir removed it. The briefly assigned target/t root was also removed. No compiler target was shared and no unrelated cache server or worktree was changed.
+Cargo had cached the failed rustc metadata query. The failed metadata and socket trace were preserved before removing only target/.rustc_info.json. A task-specific sccache socket remained inside the unit target and used the existing shared cache; its stop command returned0 and its socket no longer accepted a connection. A temporary external scratch root ~/.cache/ess-w2-ctmp held only the first actual case's synthetic files; fixture cleanup and rmdir removed it. The briefly assigned target/t root was also removed. No compiler target was shared and no unrelated cache server or worktree was changed.
 
 Four new isolated cases passed immediately after tool recovery; a fifth lacked a required platform in its synthetic BuildSpec. Adding that fixture field preserved every assertion and its isolated execution passed. Complete package suites then executed235 cases (CLI46, gen189), all passing, no ignored cases; package fmt and strict Clippy exited0. The new cases cover native caller filenames, nested disjoint companions, normalized parent links, four generation sinks and two projection sinks with valid/repeat controls and late conflicts. The preserved patch is docs/reviews/2026-09-05-review-boundaries-2-containment-adversary-pass-2-tests.patch.
 

@@ -39,7 +39,7 @@ exited 0 before implementation; these are static model evidence, not runtime or 
 
 The fresh scoper report SHA256 is 6a8a354085aa204cfc2f716c97cb6a8fd7cc0436811d5e870b23f3991b6c9974.
 Root independently verified all 28 pinned inputs. Its external report and readback are retained
-under /home/timo/.cache/ess-review/2026-09-06-resume/wave19-preflight.
+under ~/.cache/ess-review/2026-09-06-resume/wave19-preflight.
 Earlier route/witness reports and exact Rust toolchain binaries are retained under the sibling
 wave19-retained-inputs directory. Their inventory receipts preserve old-source provenance.
 
@@ -47,9 +47,9 @@ wave19-retained-inputs directory. Their inventory receipts preserve old-source p
 
 | Role | Managed worktree | Branch | Build and scratch | Stage |
 |---|---|---|---|---|
-| Coordinator | /home/timo/.local/state/worktree/trees/b10x/ess/ess-review-boundaries-19 | wave/review-boundaries-19 | target/review-boundaries-19/preparation; no Cargo build | Final f6ebe903 gate and review complete; story implemented revision15; closing record ready for main publication and cleanup |
-| Implementation and integration | /home/timo/.local/state/worktree/trees/b10x/ess/ess-output-ownership-wave19 | wave/review-boundaries-19-final (implementation branch impl/review-output-ownership-wave19 retained) | Its own target/; target/review-output-ownership-wave19/; target/review-boundaries-19-integration/; target/review-boundaries-19-root-native/ | Final integration accounts for2372 unique passing cases; every required lane verified; CI/Linux/native Macs and documentation build pass; all local producers quiescent |
-| Adversary pass2 | /home/timo/.local/state/worktree/trees/b10x/ess/ess-output-ownership-adversary-wave19 | probe/output-ownership-wave19 | Its own target/; preserved target/review-output-ownership-adversary-wave19/; new target/review-output-ownership-adversary-wave19-pass2/ | Pass2 complete:0 carried,0 new,2 resolved; report preserved unchanged; full target/TMP archives compared and exact managed tree/branch retired |
+| Coordinator | ~/.local/state/worktree/trees/b10x/ess/ess-review-boundaries-19 | wave/review-boundaries-19 | target/review-boundaries-19/preparation; no Cargo build | Final f6ebe903 gate and review complete; story implemented revision15; closing record ready for main publication and cleanup |
+| Implementation and integration | ~/.local/state/worktree/trees/b10x/ess/ess-output-ownership-wave19 | wave/review-boundaries-19-final (implementation branch impl/review-output-ownership-wave19 retained) | Its own target/; target/review-output-ownership-wave19/; target/review-boundaries-19-integration/; target/review-boundaries-19-root-native/ | Final integration accounts for2372 unique passing cases; every required lane verified; CI/Linux/native Macs and documentation build pass; all local producers quiescent |
+| Adversary pass2 | ~/.local/state/worktree/trees/b10x/ess/ess-output-ownership-adversary-wave19 | probe/output-ownership-wave19 | Its own target/; preserved target/review-output-ownership-adversary-wave19/; new target/review-output-ownership-adversary-wave19-pass2/ | Pass2 complete:0 carried,0 new,2 resolved; report preserved unchanged; full target/TMP archives compared and exact managed tree/branch retired |
 
 Root lease: ess-review-boundaries-coordinator-wave19. The unit's actual path, opening SHA and
 lease are recorded immediately after provisioning. Root will reuse the unit checkout for the
@@ -117,7 +117,7 @@ The first CLI package baseline exited101 (287.908s, agent report; original strea
 Root read five panics across four targets: three Unix socket SUN_LEN setup failures and two
 intentional observation-output refusals inside Git. Root's original TMPDIR was too long and
 inside the checkout. No source change caused these failures. The exact replacement ordinary
-TMPDIR is /home/timo/.cache/e19-tmp, verified on the checkout device and outside Git; it is an
+TMPDIR is ~/.cache/e19-tmp, verified on the checkout device and outside Git; it is an
 additional owned scratch root for eventual cleanup. The original records remain. Only affected
 targets are rerun to establish the corrected baseline, with assertions unchanged. The unit's
 brief-correction-tmp.md records this correction. Browser/Go tmpfs roots remain separate.
@@ -202,7 +202,7 @@ package CLI, SHA256e29737a2ad9f2281c058dd265b8f9922d4d48812610347d0ccabd94e777b2
 An isolated unprivileged user/mount namespace admitted the setup. Ordinary generation exited0;
 the same-device/different-mount-ID case exited1 before any output, mode or ownership change.
 Device66306, native mount IDs3532/4077, one witness passed; its bind mount was unmounted before
-the namespace exited. The actual ordinary fixture is /home/timo/.cache/e19-tmp/wave19-bind-mount-01.
+the namespace exited. The actual ordinary fixture is ~/.cache/e19-tmp/wave19-bind-mount-01.
 Source is coordinator preparation/bind-mount-witness.rs; compile/run direct logs are the unit's
 root-bind-mount-compile and root-bind-mount-run lanes. This is Linux evidence only.
 
@@ -214,7 +214,7 @@ or e005 baseline was changed. The classification-only update is not full consume
 
 Fresh SSD free at09:10:28Z was108810231808 bytes, so the adversary has an ordinary isolated target
 instead of the earlier undispatched source-only workaround. Its exact target plus assigned
-/home/timo/.cache/e19-adversary-tmp remains capped at5GiB; SSD floor2GiB and memory floor8GiB.
+~/.cache/e19-adversary-tmp remains capped at5GiB; SSD floor2GiB and memory floor8GiB.
 One ESS compiler producer remains the rule. Root's extraction producer1983765 finished and was
 absent before the slot passed to consumer_coverage_source_pass1. Its exact brief SHA256 is
 2a282b834bab69e697a0cb1b3de5a851c4dbd2fc3bcd67f94eebb461fe93ec48. The agent uses the installed
@@ -608,9 +608,9 @@ This is source validation, with no documentation deployment claim.
 The immutable final adversary report remains SHA256
 eb51852d6dcbca41e6eb3b83f5017dc29bf6c8d116fac62947e7b7b0e4beace3.
 Its completed managed tree, assigned TMP and exact branch are retired after complete archives
-and readbacks at /home/timo/.cache/ess-review/2026-09-06-resume/wave19-adversary-final-retention.
+and readbacks at ~/.cache/ess-review/2026-09-06-resume/wave19-adversary-final-retention.
 Unit/coordinator records and exact owned scratch are selected for final retention at
-/home/timo/.cache/ess-review/2026-09-06-resume/wave19-final-retention before their retirement.
+~/.cache/ess-review/2026-09-06-resume/wave19-final-retention before their retirement.
 The harness exposes no aggregate token/tool/wall counters for the three agents; none are invented.
 Command-level durations and all actual runner counts are retained. Final AEP validation returns0:
 210 artifacts,44 pre-existing advisories at f6ebe903,valid. Its empty-findings advisory also flags

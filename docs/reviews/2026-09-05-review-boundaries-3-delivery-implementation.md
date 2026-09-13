@@ -57,12 +57,12 @@ Public mutation policy: BuildIr, RuntimeIr and ComponentIr already have private 
 
 Production stayed unchanged until the following reader and CLI cases failed. The first reader compile attempt had a JSON macro syntax error and ran no cases; it is retained separately. The next run executed 8 reader cases (1 passed, 7 failed). The expanded matrix run retained every assertion and measured all table mutations. The late-chart CLI run recorded ORAS then Helm before rejecting the second release. Its valid fake-process control passed. Additional post-correction coverage checks convenience routes, catalog/mutable entrypoints and recursive duplicate-map enumeration.
 
-Command: `env TMPDIR="/home/timo/.local/state/worktree/trees/b10x/ess/review-persisted-delivery-validation/target" SCCACHE_SERVER_UDS=/home/timo/.local/state/worktree/trees/b10x/ess/wt-752828a285ba/target/w3-cache.sock RUSTC_WRAPPER=/usr/bin/sccache CARGO_INCREMENTAL=0 CARGO_PROFILE_DEV_DEBUG=0 CARGO_PROFILE_TEST_DEBUG=0 CARGO_CACHE_RUSTC_INFO=0 cargo test --locked -p ess-deployment persisted_`
+Command: `env TMPDIR="~/.local/state/worktree/trees/b10x/ess/review-persisted-delivery-validation/target" SCCACHE_SERVER_UDS=~/.local/state/worktree/trees/b10x/ess/wt-752828a285ba/target/w3-cache.sock RUSTC_WRAPPER=/usr/bin/sccache CARGO_INCREMENTAL=0 CARGO_PROFILE_DEV_DEBUG=0 CARGO_PROFILE_TEST_DEBUG=0 CARGO_CACHE_RUSTC_INFO=0 cargo test --locked -p ess-deployment persisted_`
 
 Exit: 101
 
 ```text
-   Compiling ess-deployment v0.18.0 (/home/timo/.local/state/worktree/trees/b10x/ess/review-persisted-delivery-validation/crates/generate/ess-deployment)
+   Compiling ess-deployment v0.18.0 (~/.local/state/worktree/trees/b10x/ess/review-persisted-delivery-validation/crates/generate/ess-deployment)
 error: no rules expected `.`
    --> crates/generate/ess-deployment/tests/deployment.rs:542:42
     |
@@ -82,12 +82,12 @@ error: no rules expected `.`
 error: could not compile `ess-deployment` (test "deployment") due to 2 previous errors
 ```
 
-Command: `env TMPDIR="/home/timo/.local/state/worktree/trees/b10x/ess/review-persisted-delivery-validation/target" SCCACHE_SERVER_UDS=/home/timo/.local/state/worktree/trees/b10x/ess/wt-752828a285ba/target/w3-cache.sock RUSTC_WRAPPER=/usr/bin/sccache CARGO_INCREMENTAL=0 CARGO_PROFILE_DEV_DEBUG=0 CARGO_PROFILE_TEST_DEBUG=0 CARGO_CACHE_RUSTC_INFO=0 cargo test --locked -p ess-deployment persisted_`
+Command: `env TMPDIR="~/.local/state/worktree/trees/b10x/ess/review-persisted-delivery-validation/target" SCCACHE_SERVER_UDS=~/.local/state/worktree/trees/b10x/ess/wt-752828a285ba/target/w3-cache.sock RUSTC_WRAPPER=/usr/bin/sccache CARGO_INCREMENTAL=0 CARGO_PROFILE_DEV_DEBUG=0 CARGO_PROFILE_TEST_DEBUG=0 CARGO_CACHE_RUSTC_INFO=0 cargo test --locked -p ess-deployment persisted_`
 
 Exit: 101
 
 ```text
-   Compiling ess-deployment v0.18.0 (/home/timo/.local/state/worktree/trees/b10x/ess/review-persisted-delivery-validation/crates/generate/ess-deployment)
+   Compiling ess-deployment v0.18.0 (~/.local/state/worktree/trees/b10x/ess/review-persisted-delivery-validation/crates/generate/ess-deployment)
     Finished `test` profile [unoptimized] target(s) in 0.70s
      Running unittests src/lib.rs (target/debug/deps/ess_deployment-e5782514a987b31e)
 
@@ -160,12 +160,12 @@ test result: FAILED. 1 passed; 7 failed; 0 ignored; 0 measured; 7 filtered out; 
 error: test failed, to rerun pass `-p ess-deployment --test deployment`
 ```
 
-Command: `env TMPDIR="/home/timo/.local/state/worktree/trees/b10x/ess/review-persisted-delivery-validation/target" SCCACHE_SERVER_UDS=/home/timo/.local/state/worktree/trees/b10x/ess/wt-752828a285ba/target/w3-cache.sock RUSTC_WRAPPER=/usr/bin/sccache CARGO_INCREMENTAL=0 CARGO_PROFILE_DEV_DEBUG=0 CARGO_PROFILE_TEST_DEBUG=0 CARGO_CACHE_RUSTC_INFO=0 cargo test --locked -p ess-deployment persisted_`
+Command: `env TMPDIR="~/.local/state/worktree/trees/b10x/ess/review-persisted-delivery-validation/target" SCCACHE_SERVER_UDS=~/.local/state/worktree/trees/b10x/ess/wt-752828a285ba/target/w3-cache.sock RUSTC_WRAPPER=/usr/bin/sccache CARGO_INCREMENTAL=0 CARGO_PROFILE_DEV_DEBUG=0 CARGO_PROFILE_TEST_DEBUG=0 CARGO_CACHE_RUSTC_INFO=0 cargo test --locked -p ess-deployment persisted_`
 
 Exit: 101
 
 ```text
-   Compiling ess-deployment v0.18.0 (/home/timo/.local/state/worktree/trees/b10x/ess/review-persisted-delivery-validation/crates/generate/ess-deployment)
+   Compiling ess-deployment v0.18.0 (~/.local/state/worktree/trees/b10x/ess/review-persisted-delivery-validation/crates/generate/ess-deployment)
     Finished `test` profile [unoptimized] target(s) in 0.65s
      Running unittests src/lib.rs (target/debug/deps/ess_deployment-e5782514a987b31e)
 
@@ -238,12 +238,12 @@ test result: FAILED. 1 passed; 7 failed; 0 ignored; 0 measured; 7 filtered out; 
 error: test failed, to rerun pass `-p ess-deployment --test deployment`
 ```
 
-Command: `env TMPDIR="/home/timo/.local/state/worktree/trees/b10x/ess/review-persisted-delivery-validation/target" SCCACHE_SERVER_UDS=/home/timo/.local/state/worktree/trees/b10x/ess/wt-752828a285ba/target/w3-cache.sock RUSTC_WRAPPER=/usr/bin/sccache CARGO_INCREMENTAL=0 CARGO_PROFILE_DEV_DEBUG=0 CARGO_PROFILE_TEST_DEBUG=0 CARGO_CACHE_RUSTC_INFO=0 cargo test --locked -p ess-cli --test persisted_delivery`
+Command: `env TMPDIR="~/.local/state/worktree/trees/b10x/ess/review-persisted-delivery-validation/target" SCCACHE_SERVER_UDS=~/.local/state/worktree/trees/b10x/ess/wt-752828a285ba/target/w3-cache.sock RUSTC_WRAPPER=/usr/bin/sccache CARGO_INCREMENTAL=0 CARGO_PROFILE_DEV_DEBUG=0 CARGO_PROFILE_TEST_DEBUG=0 CARGO_CACHE_RUSTC_INFO=0 cargo test --locked -p ess-cli --test persisted_delivery`
 
 Exit: 101
 
 ```text
-   Compiling ess-cli v0.18.0 (/home/timo/.local/state/worktree/trees/b10x/ess/review-persisted-delivery-validation/crates/edge/ess-cli)
+   Compiling ess-cli v0.18.0 (~/.local/state/worktree/trees/b10x/ess/review-persisted-delivery-validation/crates/edge/ess-cli)
     Finished `test` profile [unoptimized] target(s) in 0.21s
      Running tests/persisted_delivery.rs (target/debug/deps/persisted_delivery-15fb048ddae516a0)
 
@@ -276,12 +276,12 @@ test result: FAILED. 1 passed; 2 failed; 0 ignored; 0 measured; 0 filtered out; 
 error: test failed, to rerun pass `-p ess-cli --test persisted_delivery`
 ```
 
-Command: `env TMPDIR="/home/timo/.local/state/worktree/trees/b10x/ess/review-persisted-delivery-validation/target" SCCACHE_SERVER_UDS=/home/timo/.local/state/worktree/trees/b10x/ess/wt-752828a285ba/target/w3-cache.sock RUSTC_WRAPPER=/usr/bin/sccache CARGO_INCREMENTAL=0 CARGO_PROFILE_DEV_DEBUG=0 CARGO_PROFILE_TEST_DEBUG=0 CARGO_CACHE_RUSTC_INFO=0 cargo test --locked -p ess-cli --test persisted_delivery`
+Command: `env TMPDIR="~/.local/state/worktree/trees/b10x/ess/review-persisted-delivery-validation/target" SCCACHE_SERVER_UDS=~/.local/state/worktree/trees/b10x/ess/wt-752828a285ba/target/w3-cache.sock RUSTC_WRAPPER=/usr/bin/sccache CARGO_INCREMENTAL=0 CARGO_PROFILE_DEV_DEBUG=0 CARGO_PROFILE_TEST_DEBUG=0 CARGO_CACHE_RUSTC_INFO=0 cargo test --locked -p ess-cli --test persisted_delivery`
 
 Exit: 101
 
 ```text
-   Compiling ess-cli v0.18.0 (/home/timo/.local/state/worktree/trees/b10x/ess/review-persisted-delivery-validation/crates/edge/ess-cli)
+   Compiling ess-cli v0.18.0 (~/.local/state/worktree/trees/b10x/ess/review-persisted-delivery-validation/crates/edge/ess-cli)
     Finished `test` profile [unoptimized] target(s) in 0.21s
      Running tests/persisted_delivery.rs (target/debug/deps/persisted_delivery-15fb048ddae516a0)
 
@@ -321,18 +321,18 @@ The first baseline failed before compilation because the required long TMPDIR ma
 
 The initial baseline command had the same environment except SCCACHE_SERVER_UDS was not yet set:
 
-Command: `env TMPDIR="/home/timo/.local/state/worktree/trees/b10x/ess/review-persisted-delivery-validation/target" RUSTC_WRAPPER=/usr/bin/sccache CARGO_INCREMENTAL=0 CARGO_PROFILE_DEV_DEBUG=0 CARGO_PROFILE_TEST_DEBUG=0 CARGO_CACHE_RUSTC_INFO=0 cargo test --locked -p ess-deployment`
+Command: `env TMPDIR="~/.local/state/worktree/trees/b10x/ess/review-persisted-delivery-validation/target" RUSTC_WRAPPER=/usr/bin/sccache CARGO_INCREMENTAL=0 CARGO_PROFILE_DEV_DEBUG=0 CARGO_PROFILE_TEST_DEBUG=0 CARGO_CACHE_RUSTC_INFO=0 cargo test --locked -p ess-deployment`
 
 Exit: 101
 
 ```text
-error: process didn't exit successfully: `/usr/bin/sccache /home/timo/.rustup/toolchains/stable-x86_64-unknown-linux-gnu/bin/rustc -vV` (exit status: 2)
+error: process didn't exit successfully: `/usr/bin/sccache ~/.rustup/toolchains/stable-x86_64-unknown-linux-gnu/bin/rustc -vV` (exit status: 2)
 --- stderr
 sccache: error: path must be shorter than SUN_LEN
 
 ```
 
-Command: `env TMPDIR="/home/timo/.local/state/worktree/trees/b10x/ess/review-persisted-delivery-validation/target" SCCACHE_SERVER_UDS=/home/timo/.local/state/worktree/trees/b10x/ess/wt-752828a285ba/target/w3-cache.sock RUSTC_WRAPPER=/usr/bin/sccache CARGO_INCREMENTAL=0 CARGO_PROFILE_DEV_DEBUG=0 CARGO_PROFILE_TEST_DEBUG=0 CARGO_CACHE_RUSTC_INFO=0 cargo test --locked -p ess-deployment`
+Command: `env TMPDIR="~/.local/state/worktree/trees/b10x/ess/review-persisted-delivery-validation/target" SCCACHE_SERVER_UDS=~/.local/state/worktree/trees/b10x/ess/wt-752828a285ba/target/w3-cache.sock RUSTC_WRAPPER=/usr/bin/sccache CARGO_INCREMENTAL=0 CARGO_PROFILE_DEV_DEBUG=0 CARGO_PROFILE_TEST_DEBUG=0 CARGO_CACHE_RUSTC_INFO=0 cargo test --locked -p ess-deployment`
 
 Exit: 0
 
@@ -371,11 +371,11 @@ Exit: 0
    Compiling serde_derive_internals v0.29.1
    Compiling serde_yaml v0.9.34+deprecated
    Compiling schemars_derive v0.8.22
-   Compiling ess-primitives v0.18.0 (/home/timo/.local/state/worktree/trees/b10x/ess/review-persisted-delivery-validation/crates/specify/ess-primitives)
-   Compiling ess-domain v0.18.0 (/home/timo/.local/state/worktree/trees/b10x/ess/review-persisted-delivery-validation/crates/specify/ess-domain)
-   Compiling ess-compiler v0.18.0 (/home/timo/.local/state/worktree/trees/b10x/ess/review-persisted-delivery-validation/crates/specify/ess-compiler)
-   Compiling ess-realization v0.18.0 (/home/timo/.local/state/worktree/trees/b10x/ess/review-persisted-delivery-validation/crates/specify/ess-realization)
-   Compiling ess-deployment v0.18.0 (/home/timo/.local/state/worktree/trees/b10x/ess/review-persisted-delivery-validation/crates/generate/ess-deployment)
+   Compiling ess-primitives v0.18.0 (~/.local/state/worktree/trees/b10x/ess/review-persisted-delivery-validation/crates/specify/ess-primitives)
+   Compiling ess-domain v0.18.0 (~/.local/state/worktree/trees/b10x/ess/review-persisted-delivery-validation/crates/specify/ess-domain)
+   Compiling ess-compiler v0.18.0 (~/.local/state/worktree/trees/b10x/ess/review-persisted-delivery-validation/crates/specify/ess-compiler)
+   Compiling ess-realization v0.18.0 (~/.local/state/worktree/trees/b10x/ess/review-persisted-delivery-validation/crates/specify/ess-realization)
+   Compiling ess-deployment v0.18.0 (~/.local/state/worktree/trees/b10x/ess/review-persisted-delivery-validation/crates/generate/ess-deployment)
     Finished `test` profile [unoptimized] target(s) in 9.87s
      Running unittests src/lib.rs (target/debug/deps/ess_deployment-e5782514a987b31e)
 
@@ -404,7 +404,7 @@ test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; fini
 
 ```
 
-Command: `env TMPDIR="/home/timo/.local/state/worktree/trees/b10x/ess/review-persisted-delivery-validation/target" SCCACHE_SERVER_UDS=/home/timo/.local/state/worktree/trees/b10x/ess/wt-752828a285ba/target/w3-cache.sock RUSTC_WRAPPER=/usr/bin/sccache CARGO_INCREMENTAL=0 CARGO_PROFILE_DEV_DEBUG=0 CARGO_PROFILE_TEST_DEBUG=0 CARGO_CACHE_RUSTC_INFO=0 cargo test --locked -p ess-cli`
+Command: `env TMPDIR="~/.local/state/worktree/trees/b10x/ess/review-persisted-delivery-validation/target" SCCACHE_SERVER_UDS=~/.local/state/worktree/trees/b10x/ess/wt-752828a285ba/target/w3-cache.sock RUSTC_WRAPPER=/usr/bin/sccache CARGO_INCREMENTAL=0 CARGO_PROFILE_DEV_DEBUG=0 CARGO_PROFILE_TEST_DEBUG=0 CARGO_CACHE_RUSTC_INFO=0 cargo test --locked -p ess-cli`
 
 Exit: 0
 
@@ -482,32 +482,32 @@ Exit: 0
    Compiling clap v4.6.6
    Compiling schemars v0.8.22
    Compiling serde_yaml v0.9.34+deprecated
-   Compiling infra-domain v0.18.0 (/home/timo/.local/state/worktree/trees/b10x/ess/review-persisted-delivery-validation/crates/infra/infra-domain)
+   Compiling infra-domain v0.18.0 (~/.local/state/worktree/trees/b10x/ess/review-persisted-delivery-validation/crates/infra/infra-domain)
    Compiling fluent-uri v0.4.1
    Compiling email_address v0.2.9
-   Compiling ess-kubernetes v0.18.0 (/home/timo/.local/state/worktree/trees/b10x/ess/review-persisted-delivery-validation/crates/infra/ess-kubernetes)
+   Compiling ess-kubernetes v0.18.0 (~/.local/state/worktree/trees/b10x/ess/review-persisted-delivery-validation/crates/infra/ess-kubernetes)
    Compiling jsonschema-value v0.52.1
    Compiling fancy-regex v0.19.0
    Compiling regex v1.13.1
    Compiling referencing v0.52.1
-   Compiling ess-primitives v0.18.0 (/home/timo/.local/state/worktree/trees/b10x/ess/review-persisted-delivery-validation/crates/specify/ess-primitives)
-   Compiling ess-openapi v0.18.0 (/home/timo/.local/state/worktree/trees/b10x/ess/review-persisted-delivery-validation/crates/generate/ess-openapi)
+   Compiling ess-primitives v0.18.0 (~/.local/state/worktree/trees/b10x/ess/review-persisted-delivery-validation/crates/specify/ess-primitives)
+   Compiling ess-openapi v0.18.0 (~/.local/state/worktree/trees/b10x/ess/review-persisted-delivery-validation/crates/generate/ess-openapi)
    Compiling jsonschema v0.52.1
-   Compiling ess-domain v0.18.0 (/home/timo/.local/state/worktree/trees/b10x/ess/review-persisted-delivery-validation/crates/specify/ess-domain)
-   Compiling infra-compiler v0.18.0 (/home/timo/.local/state/worktree/trees/b10x/ess/review-persisted-delivery-validation/crates/infra/infra-compiler)
-   Compiling infra-analyze v0.18.0 (/home/timo/.local/state/worktree/trees/b10x/ess/review-persisted-delivery-validation/crates/infra/infra-analyze)
-   Compiling infra-spec v0.18.0 (/home/timo/.local/state/worktree/trees/b10x/ess/review-persisted-delivery-validation/crates/infra/infra-spec)
-   Compiling ess-compiler v0.18.0 (/home/timo/.local/state/worktree/trees/b10x/ess/review-persisted-delivery-validation/crates/specify/ess-compiler)
-   Compiling infra-project v0.18.0 (/home/timo/.local/state/worktree/trees/b10x/ess/review-persisted-delivery-validation/crates/infra/infra-project)
-   Compiling schema-contract v0.18.0 (/home/timo/.local/state/worktree/trees/b10x/ess/review-persisted-delivery-validation/crates/generate/schema-contract)
-   Compiling ess-gen v0.18.0 (/home/timo/.local/state/worktree/trees/b10x/ess/review-persisted-delivery-validation/crates/generate/ess-gen)
-   Compiling ess-realization v0.18.0 (/home/timo/.local/state/worktree/trees/b10x/ess/review-persisted-delivery-validation/crates/specify/ess-realization)
-   Compiling ess-composition v0.18.0 (/home/timo/.local/state/worktree/trees/b10x/ess/review-persisted-delivery-validation/crates/specify/ess-composition)
-   Compiling ess-deployment v0.18.0 (/home/timo/.local/state/worktree/trees/b10x/ess/review-persisted-delivery-validation/crates/generate/ess-deployment)
-   Compiling ess-conformance v0.18.0 (/home/timo/.local/state/worktree/trees/b10x/ess/review-persisted-delivery-validation/crates/verify/ess-conformance)
-   Compiling ess-synth v0.18.0 (/home/timo/.local/state/worktree/trees/b10x/ess/review-persisted-delivery-validation/crates/generate/ess-synth)
-   Compiling ess-diff v0.18.0 (/home/timo/.local/state/worktree/trees/b10x/ess/review-persisted-delivery-validation/crates/verify/ess-diff)
-   Compiling ess-cli v0.18.0 (/home/timo/.local/state/worktree/trees/b10x/ess/review-persisted-delivery-validation/crates/edge/ess-cli)
+   Compiling ess-domain v0.18.0 (~/.local/state/worktree/trees/b10x/ess/review-persisted-delivery-validation/crates/specify/ess-domain)
+   Compiling infra-compiler v0.18.0 (~/.local/state/worktree/trees/b10x/ess/review-persisted-delivery-validation/crates/infra/infra-compiler)
+   Compiling infra-analyze v0.18.0 (~/.local/state/worktree/trees/b10x/ess/review-persisted-delivery-validation/crates/infra/infra-analyze)
+   Compiling infra-spec v0.18.0 (~/.local/state/worktree/trees/b10x/ess/review-persisted-delivery-validation/crates/infra/infra-spec)
+   Compiling ess-compiler v0.18.0 (~/.local/state/worktree/trees/b10x/ess/review-persisted-delivery-validation/crates/specify/ess-compiler)
+   Compiling infra-project v0.18.0 (~/.local/state/worktree/trees/b10x/ess/review-persisted-delivery-validation/crates/infra/infra-project)
+   Compiling schema-contract v0.18.0 (~/.local/state/worktree/trees/b10x/ess/review-persisted-delivery-validation/crates/generate/schema-contract)
+   Compiling ess-gen v0.18.0 (~/.local/state/worktree/trees/b10x/ess/review-persisted-delivery-validation/crates/generate/ess-gen)
+   Compiling ess-realization v0.18.0 (~/.local/state/worktree/trees/b10x/ess/review-persisted-delivery-validation/crates/specify/ess-realization)
+   Compiling ess-composition v0.18.0 (~/.local/state/worktree/trees/b10x/ess/review-persisted-delivery-validation/crates/specify/ess-composition)
+   Compiling ess-deployment v0.18.0 (~/.local/state/worktree/trees/b10x/ess/review-persisted-delivery-validation/crates/generate/ess-deployment)
+   Compiling ess-conformance v0.18.0 (~/.local/state/worktree/trees/b10x/ess/review-persisted-delivery-validation/crates/verify/ess-conformance)
+   Compiling ess-synth v0.18.0 (~/.local/state/worktree/trees/b10x/ess/review-persisted-delivery-validation/crates/generate/ess-synth)
+   Compiling ess-diff v0.18.0 (~/.local/state/worktree/trees/b10x/ess/review-persisted-delivery-validation/crates/verify/ess-diff)
+   Compiling ess-cli v0.18.0 (~/.local/state/worktree/trees/b10x/ess/review-persisted-delivery-validation/crates/edge/ess-cli)
     Finished `test` profile [unoptimized] target(s) in 16.06s
      Running unittests src/main.rs (target/debug/deps/ess-2a340c79ed142cb3)
 
@@ -602,12 +602,12 @@ Runner-count lanes (counts from the summary lines below and above):
 
 The isolated mechanism runs precede the final unfiltered package gates:
 
-Command: `env TMPDIR="/home/timo/.local/state/worktree/trees/b10x/ess/review-persisted-delivery-validation/target" SCCACHE_SERVER_UDS=/home/timo/.local/state/worktree/trees/b10x/ess/wt-752828a285ba/target/w3-cache.sock RUSTC_WRAPPER=/usr/bin/sccache CARGO_INCREMENTAL=0 CARGO_PROFILE_DEV_DEBUG=0 CARGO_PROFILE_TEST_DEBUG=0 CARGO_CACHE_RUSTC_INFO=0 cargo test --locked -p ess-deployment persisted_`
+Command: `env TMPDIR="~/.local/state/worktree/trees/b10x/ess/review-persisted-delivery-validation/target" SCCACHE_SERVER_UDS=~/.local/state/worktree/trees/b10x/ess/wt-752828a285ba/target/w3-cache.sock RUSTC_WRAPPER=/usr/bin/sccache CARGO_INCREMENTAL=0 CARGO_PROFILE_DEV_DEBUG=0 CARGO_PROFILE_TEST_DEBUG=0 CARGO_CACHE_RUSTC_INFO=0 cargo test --locked -p ess-deployment persisted_`
 
 Exit: 0
 
 ```text
-   Compiling ess-deployment v0.18.0 (/home/timo/.local/state/worktree/trees/b10x/ess/review-persisted-delivery-validation/crates/generate/ess-deployment)
+   Compiling ess-deployment v0.18.0 (~/.local/state/worktree/trees/b10x/ess/review-persisted-delivery-validation/crates/generate/ess-deployment)
     Finished `test` profile [unoptimized] target(s) in 2.63s
      Running unittests src/lib.rs (target/debug/deps/ess_deployment-e5782514a987b31e)
 
@@ -631,13 +631,13 @@ test result: ok. 8 passed; 0 failed; 0 ignored; 0 measured; 7 filtered out; fini
 
 ```
 
-Command: `env TMPDIR="/home/timo/.local/state/worktree/trees/b10x/ess/review-persisted-delivery-validation/target" SCCACHE_SERVER_UDS=/home/timo/.local/state/worktree/trees/b10x/ess/wt-752828a285ba/target/w3-cache.sock RUSTC_WRAPPER=/usr/bin/sccache CARGO_INCREMENTAL=0 CARGO_PROFILE_DEV_DEBUG=0 CARGO_PROFILE_TEST_DEBUG=0 CARGO_CACHE_RUSTC_INFO=0 cargo test --locked -p ess-cli --test persisted_delivery`
+Command: `env TMPDIR="~/.local/state/worktree/trees/b10x/ess/review-persisted-delivery-validation/target" SCCACHE_SERVER_UDS=~/.local/state/worktree/trees/b10x/ess/wt-752828a285ba/target/w3-cache.sock RUSTC_WRAPPER=/usr/bin/sccache CARGO_INCREMENTAL=0 CARGO_PROFILE_DEV_DEBUG=0 CARGO_PROFILE_TEST_DEBUG=0 CARGO_CACHE_RUSTC_INFO=0 cargo test --locked -p ess-cli --test persisted_delivery`
 
 Exit: 0
 
 ```text
-   Compiling ess-deployment v0.18.0 (/home/timo/.local/state/worktree/trees/b10x/ess/review-persisted-delivery-validation/crates/generate/ess-deployment)
-   Compiling ess-cli v0.18.0 (/home/timo/.local/state/worktree/trees/b10x/ess/review-persisted-delivery-validation/crates/edge/ess-cli)
+   Compiling ess-deployment v0.18.0 (~/.local/state/worktree/trees/b10x/ess/review-persisted-delivery-validation/crates/generate/ess-deployment)
+   Compiling ess-cli v0.18.0 (~/.local/state/worktree/trees/b10x/ess/review-persisted-delivery-validation/crates/edge/ess-cli)
     Finished `test` profile [unoptimized] target(s) in 3.59s
      Running tests/persisted_delivery.rs (target/debug/deps/persisted_delivery-15fb048ddae516a0)
 
@@ -650,12 +650,12 @@ test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; fini
 
 ```
 
-Command: `env TMPDIR="/home/timo/.local/state/worktree/trees/b10x/ess/review-persisted-delivery-validation/target" SCCACHE_SERVER_UDS=/home/timo/.local/state/worktree/trees/b10x/ess/wt-752828a285ba/target/w3-cache.sock RUSTC_WRAPPER=/usr/bin/sccache CARGO_INCREMENTAL=0 CARGO_PROFILE_DEV_DEBUG=0 CARGO_PROFILE_TEST_DEBUG=0 CARGO_CACHE_RUSTC_INFO=0 cargo test --locked -p ess-deployment`
+Command: `env TMPDIR="~/.local/state/worktree/trees/b10x/ess/review-persisted-delivery-validation/target" SCCACHE_SERVER_UDS=~/.local/state/worktree/trees/b10x/ess/wt-752828a285ba/target/w3-cache.sock RUSTC_WRAPPER=/usr/bin/sccache CARGO_INCREMENTAL=0 CARGO_PROFILE_DEV_DEBUG=0 CARGO_PROFILE_TEST_DEBUG=0 CARGO_CACHE_RUSTC_INFO=0 cargo test --locked -p ess-deployment`
 
 Exit: 0
 
 ```text
-   Compiling ess-deployment v0.18.0 (/home/timo/.local/state/worktree/trees/b10x/ess/review-persisted-delivery-validation/crates/generate/ess-deployment)
+   Compiling ess-deployment v0.18.0 (~/.local/state/worktree/trees/b10x/ess/review-persisted-delivery-validation/crates/generate/ess-deployment)
     Finished `test` profile [unoptimized] target(s) in 2.63s
      Running unittests src/lib.rs (target/debug/deps/ess_deployment-e5782514a987b31e)
 
@@ -695,13 +695,13 @@ test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; fini
 
 ```
 
-Command: `env TMPDIR="/home/timo/.local/state/worktree/trees/b10x/ess/review-persisted-delivery-validation/target" SCCACHE_SERVER_UDS=/home/timo/.local/state/worktree/trees/b10x/ess/wt-752828a285ba/target/w3-cache.sock RUSTC_WRAPPER=/usr/bin/sccache CARGO_INCREMENTAL=0 CARGO_PROFILE_DEV_DEBUG=0 CARGO_PROFILE_TEST_DEBUG=0 CARGO_CACHE_RUSTC_INFO=0 cargo test --locked -p ess-cli`
+Command: `env TMPDIR="~/.local/state/worktree/trees/b10x/ess/review-persisted-delivery-validation/target" SCCACHE_SERVER_UDS=~/.local/state/worktree/trees/b10x/ess/wt-752828a285ba/target/w3-cache.sock RUSTC_WRAPPER=/usr/bin/sccache CARGO_INCREMENTAL=0 CARGO_PROFILE_DEV_DEBUG=0 CARGO_PROFILE_TEST_DEBUG=0 CARGO_CACHE_RUSTC_INFO=0 cargo test --locked -p ess-cli`
 
 Exit: 0
 
 ```text
-   Compiling ess-deployment v0.18.0 (/home/timo/.local/state/worktree/trees/b10x/ess/review-persisted-delivery-validation/crates/generate/ess-deployment)
-   Compiling ess-cli v0.18.0 (/home/timo/.local/state/worktree/trees/b10x/ess/review-persisted-delivery-validation/crates/edge/ess-cli)
+   Compiling ess-deployment v0.18.0 (~/.local/state/worktree/trees/b10x/ess/review-persisted-delivery-validation/crates/generate/ess-deployment)
+   Compiling ess-cli v0.18.0 (~/.local/state/worktree/trees/b10x/ess/review-persisted-delivery-validation/crates/edge/ess-cli)
     Finished `test` profile [unoptimized] target(s) in 3.73s
      Running unittests src/main.rs (target/debug/deps/ess-2a340c79ed142cb3)
 
@@ -790,30 +790,30 @@ test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; fini
 
 ```
 
-Command: `env TMPDIR="/home/timo/.local/state/worktree/trees/b10x/ess/review-persisted-delivery-validation/target" SCCACHE_SERVER_UDS=/home/timo/.local/state/worktree/trees/b10x/ess/wt-752828a285ba/target/w3-cache.sock RUSTC_WRAPPER=/usr/bin/sccache CARGO_INCREMENTAL=0 CARGO_PROFILE_DEV_DEBUG=0 CARGO_PROFILE_TEST_DEBUG=0 CARGO_CACHE_RUSTC_INFO=0 cargo fmt -p ess-deployment --check`
+Command: `env TMPDIR="~/.local/state/worktree/trees/b10x/ess/review-persisted-delivery-validation/target" SCCACHE_SERVER_UDS=~/.local/state/worktree/trees/b10x/ess/wt-752828a285ba/target/w3-cache.sock RUSTC_WRAPPER=/usr/bin/sccache CARGO_INCREMENTAL=0 CARGO_PROFILE_DEV_DEBUG=0 CARGO_PROFILE_TEST_DEBUG=0 CARGO_CACHE_RUSTC_INFO=0 cargo fmt -p ess-deployment --check`
 
 Exit: 0
 
 ```text
 ```
 
-Command: `env TMPDIR="/home/timo/.local/state/worktree/trees/b10x/ess/review-persisted-delivery-validation/target" SCCACHE_SERVER_UDS=/home/timo/.local/state/worktree/trees/b10x/ess/wt-752828a285ba/target/w3-cache.sock RUSTC_WRAPPER=/usr/bin/sccache CARGO_INCREMENTAL=0 CARGO_PROFILE_DEV_DEBUG=0 CARGO_PROFILE_TEST_DEBUG=0 CARGO_CACHE_RUSTC_INFO=0 cargo fmt -p ess-cli --check`
+Command: `env TMPDIR="~/.local/state/worktree/trees/b10x/ess/review-persisted-delivery-validation/target" SCCACHE_SERVER_UDS=~/.local/state/worktree/trees/b10x/ess/wt-752828a285ba/target/w3-cache.sock RUSTC_WRAPPER=/usr/bin/sccache CARGO_INCREMENTAL=0 CARGO_PROFILE_DEV_DEBUG=0 CARGO_PROFILE_TEST_DEBUG=0 CARGO_CACHE_RUSTC_INFO=0 cargo fmt -p ess-cli --check`
 
 Exit: 0
 
 ```text
 ```
 
-Command: `env TMPDIR="/home/timo/.local/state/worktree/trees/b10x/ess/review-persisted-delivery-validation/target" SCCACHE_SERVER_UDS=/home/timo/.local/state/worktree/trees/b10x/ess/wt-752828a285ba/target/w3-cache.sock RUSTC_WRAPPER=/usr/bin/sccache CARGO_INCREMENTAL=0 CARGO_PROFILE_DEV_DEBUG=0 CARGO_PROFILE_TEST_DEBUG=0 CARGO_CACHE_RUSTC_INFO=0 cargo clippy --locked -p ess-deployment --all-targets -- -D warnings`
+Command: `env TMPDIR="~/.local/state/worktree/trees/b10x/ess/review-persisted-delivery-validation/target" SCCACHE_SERVER_UDS=~/.local/state/worktree/trees/b10x/ess/wt-752828a285ba/target/w3-cache.sock RUSTC_WRAPPER=/usr/bin/sccache CARGO_INCREMENTAL=0 CARGO_PROFILE_DEV_DEBUG=0 CARGO_PROFILE_TEST_DEBUG=0 CARGO_CACHE_RUSTC_INFO=0 cargo clippy --locked -p ess-deployment --all-targets -- -D warnings`
 
 Exit: 0
 
 ```text
-    Checking ess-deployment v0.18.0 (/home/timo/.local/state/worktree/trees/b10x/ess/review-persisted-delivery-validation/crates/generate/ess-deployment)
+    Checking ess-deployment v0.18.0 (~/.local/state/worktree/trees/b10x/ess/review-persisted-delivery-validation/crates/generate/ess-deployment)
     Finished `dev` profile [unoptimized] target(s) in 1.20s
 ```
 
-Command: `env TMPDIR="/home/timo/.local/state/worktree/trees/b10x/ess/review-persisted-delivery-validation/target" SCCACHE_SERVER_UDS=/home/timo/.local/state/worktree/trees/b10x/ess/wt-752828a285ba/target/w3-cache.sock RUSTC_WRAPPER=/usr/bin/sccache CARGO_INCREMENTAL=0 CARGO_PROFILE_DEV_DEBUG=0 CARGO_PROFILE_TEST_DEBUG=0 CARGO_CACHE_RUSTC_INFO=0 cargo clippy --locked -p ess-cli --all-targets -- -D warnings`
+Command: `env TMPDIR="~/.local/state/worktree/trees/b10x/ess/review-persisted-delivery-validation/target" SCCACHE_SERVER_UDS=~/.local/state/worktree/trees/b10x/ess/wt-752828a285ba/target/w3-cache.sock RUSTC_WRAPPER=/usr/bin/sccache CARGO_INCREMENTAL=0 CARGO_PROFILE_DEV_DEBUG=0 CARGO_PROFILE_TEST_DEBUG=0 CARGO_CACHE_RUSTC_INFO=0 cargo clippy --locked -p ess-cli --all-targets -- -D warnings`
 
 Exit: 0
 
@@ -884,30 +884,30 @@ Exit: 0
     Checking fluent-uri v0.4.1
     Checking email_address v0.2.9
     Checking schemars v0.8.22
-    Checking infra-domain v0.18.0 (/home/timo/.local/state/worktree/trees/b10x/ess/review-persisted-delivery-validation/crates/infra/infra-domain)
+    Checking infra-domain v0.18.0 (~/.local/state/worktree/trees/b10x/ess/review-persisted-delivery-validation/crates/infra/infra-domain)
     Checking jsonschema-value v0.52.1
-    Checking ess-kubernetes v0.18.0 (/home/timo/.local/state/worktree/trees/b10x/ess/review-persisted-delivery-validation/crates/infra/ess-kubernetes)
+    Checking ess-kubernetes v0.18.0 (~/.local/state/worktree/trees/b10x/ess/review-persisted-delivery-validation/crates/infra/ess-kubernetes)
     Checking referencing v0.52.1
-    Checking ess-openapi v0.18.0 (/home/timo/.local/state/worktree/trees/b10x/ess/review-persisted-delivery-validation/crates/generate/ess-openapi)
-    Checking ess-primitives v0.18.0 (/home/timo/.local/state/worktree/trees/b10x/ess/review-persisted-delivery-validation/crates/specify/ess-primitives)
+    Checking ess-openapi v0.18.0 (~/.local/state/worktree/trees/b10x/ess/review-persisted-delivery-validation/crates/generate/ess-openapi)
+    Checking ess-primitives v0.18.0 (~/.local/state/worktree/trees/b10x/ess/review-persisted-delivery-validation/crates/specify/ess-primitives)
     Checking fancy-regex v0.19.0
     Checking regex v1.13.1
-    Checking infra-compiler v0.18.0 (/home/timo/.local/state/worktree/trees/b10x/ess/review-persisted-delivery-validation/crates/infra/infra-compiler)
-    Checking ess-domain v0.18.0 (/home/timo/.local/state/worktree/trees/b10x/ess/review-persisted-delivery-validation/crates/specify/ess-domain)
+    Checking infra-compiler v0.18.0 (~/.local/state/worktree/trees/b10x/ess/review-persisted-delivery-validation/crates/infra/infra-compiler)
+    Checking ess-domain v0.18.0 (~/.local/state/worktree/trees/b10x/ess/review-persisted-delivery-validation/crates/specify/ess-domain)
     Checking jsonschema v0.52.1
-    Checking infra-analyze v0.18.0 (/home/timo/.local/state/worktree/trees/b10x/ess/review-persisted-delivery-validation/crates/infra/infra-analyze)
-    Checking infra-spec v0.18.0 (/home/timo/.local/state/worktree/trees/b10x/ess/review-persisted-delivery-validation/crates/infra/infra-spec)
-    Checking ess-compiler v0.18.0 (/home/timo/.local/state/worktree/trees/b10x/ess/review-persisted-delivery-validation/crates/specify/ess-compiler)
-    Checking infra-project v0.18.0 (/home/timo/.local/state/worktree/trees/b10x/ess/review-persisted-delivery-validation/crates/infra/infra-project)
-    Checking ess-gen v0.18.0 (/home/timo/.local/state/worktree/trees/b10x/ess/review-persisted-delivery-validation/crates/generate/ess-gen)
-    Checking ess-realization v0.18.0 (/home/timo/.local/state/worktree/trees/b10x/ess/review-persisted-delivery-validation/crates/specify/ess-realization)
-    Checking ess-composition v0.18.0 (/home/timo/.local/state/worktree/trees/b10x/ess/review-persisted-delivery-validation/crates/specify/ess-composition)
-    Checking schema-contract v0.18.0 (/home/timo/.local/state/worktree/trees/b10x/ess/review-persisted-delivery-validation/crates/generate/schema-contract)
-    Checking ess-deployment v0.18.0 (/home/timo/.local/state/worktree/trees/b10x/ess/review-persisted-delivery-validation/crates/generate/ess-deployment)
-    Checking ess-conformance v0.18.0 (/home/timo/.local/state/worktree/trees/b10x/ess/review-persisted-delivery-validation/crates/verify/ess-conformance)
-    Checking ess-synth v0.18.0 (/home/timo/.local/state/worktree/trees/b10x/ess/review-persisted-delivery-validation/crates/generate/ess-synth)
-    Checking ess-diff v0.18.0 (/home/timo/.local/state/worktree/trees/b10x/ess/review-persisted-delivery-validation/crates/verify/ess-diff)
-    Checking ess-cli v0.18.0 (/home/timo/.local/state/worktree/trees/b10x/ess/review-persisted-delivery-validation/crates/edge/ess-cli)
+    Checking infra-analyze v0.18.0 (~/.local/state/worktree/trees/b10x/ess/review-persisted-delivery-validation/crates/infra/infra-analyze)
+    Checking infra-spec v0.18.0 (~/.local/state/worktree/trees/b10x/ess/review-persisted-delivery-validation/crates/infra/infra-spec)
+    Checking ess-compiler v0.18.0 (~/.local/state/worktree/trees/b10x/ess/review-persisted-delivery-validation/crates/specify/ess-compiler)
+    Checking infra-project v0.18.0 (~/.local/state/worktree/trees/b10x/ess/review-persisted-delivery-validation/crates/infra/infra-project)
+    Checking ess-gen v0.18.0 (~/.local/state/worktree/trees/b10x/ess/review-persisted-delivery-validation/crates/generate/ess-gen)
+    Checking ess-realization v0.18.0 (~/.local/state/worktree/trees/b10x/ess/review-persisted-delivery-validation/crates/specify/ess-realization)
+    Checking ess-composition v0.18.0 (~/.local/state/worktree/trees/b10x/ess/review-persisted-delivery-validation/crates/specify/ess-composition)
+    Checking schema-contract v0.18.0 (~/.local/state/worktree/trees/b10x/ess/review-persisted-delivery-validation/crates/generate/schema-contract)
+    Checking ess-deployment v0.18.0 (~/.local/state/worktree/trees/b10x/ess/review-persisted-delivery-validation/crates/generate/ess-deployment)
+    Checking ess-conformance v0.18.0 (~/.local/state/worktree/trees/b10x/ess/review-persisted-delivery-validation/crates/verify/ess-conformance)
+    Checking ess-synth v0.18.0 (~/.local/state/worktree/trees/b10x/ess/review-persisted-delivery-validation/crates/generate/ess-synth)
+    Checking ess-diff v0.18.0 (~/.local/state/worktree/trees/b10x/ess/review-persisted-delivery-validation/crates/verify/ess-diff)
+    Checking ess-cli v0.18.0 (~/.local/state/worktree/trees/b10x/ess/review-persisted-delivery-validation/crates/edge/ess-cli)
     Finished `dev` profile [unoptimized] target(s) in 9.17s
 ```
 
@@ -934,6 +934,6 @@ Token usage and full agent duration are unavailable and are not estimated.
 
 6. Outside paths and handoff
 
-Authored outside-worktree paths: none. The coordinator-owned shared compiler-cache socket is `/home/timo/.local/state/worktree/trees/b10x/ess/wt-752828a285ba/target/w3-cache.sock`; it was used only as authorized by resource-supplement.md. Build outputs, Rust fake executors, temporary fixtures, logs, proposed patch and this report remain within the assigned managed tree.
+Authored outside-worktree paths: none. The coordinator-owned shared compiler-cache socket is `~/.local/state/worktree/trees/b10x/ess/wt-752828a285ba/target/w3-cache.sock`; it was used only as authorized by resource-supplement.md. Build outputs, Rust fake executors, temporary fixtures, logs, proposed patch and this report remain within the assigned managed tree.
 
 No Git staging/commit/publication, AEP mutation, cache purge, worktree finish/gc or deletion was performed. Source writes are relinquished for independent review. Coordinator owns review, integration, publication and managed cleanup.

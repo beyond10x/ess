@@ -77,7 +77,7 @@ Command: env TMPDIR="$PWD/target/review-boundaries-2" RUSTC_WRAPPER=/usr/bin/scc
    Compiling serde_derive v1.0.229
    Compiling clap_derive v4.6.4
    Compiling clap v4.6.6
-   Compiling ess-kubernetes v0.18.0 (/home/timo/.local/state/worktree/trees/b10x/ess/review-kubectl-diagnostic-sanitization/crates/infra/ess-kubernetes)
+   Compiling ess-kubernetes v0.18.0 (~/.local/state/worktree/trees/b10x/ess/review-kubectl-diagnostic-sanitization/crates/infra/ess-kubernetes)
     Finished `test` profile [unoptimized] target(s) in 6.84s
      Running unittests src/lib.rs (target/debug/deps/ess_kubernetes-5f388cf73a35bac9)
 
@@ -115,7 +115,7 @@ test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; fini
 After writing tests and extending only the fake process fixture, before changing src/lib.rs, the same command exited 101:
 
 ```text
-   Compiling ess-kubernetes v0.18.0 (/home/timo/.local/state/worktree/trees/b10x/ess/review-kubectl-diagnostic-sanitization/crates/infra/ess-kubernetes)
+   Compiling ess-kubernetes v0.18.0 (~/.local/state/worktree/trees/b10x/ess/review-kubectl-diagnostic-sanitization/crates/infra/ess-kubernetes)
     Finished `test` profile [unoptimized] target(s) in 0.21s
      Running unittests src/lib.rs (target/debug/deps/ess_kubernetes-5f388cf73a35bac9)
 
@@ -172,7 +172,7 @@ The preserved Secret assertion and the new shared-helper matrix failed specifica
 Then the proposed mechanism alone (static operation label + process status, no stderr or arguments) was applied. The same complete package command exited 0:
 
 ```text
-   Compiling ess-kubernetes v0.18.0 (/home/timo/.local/state/worktree/trees/b10x/ess/review-kubectl-diagnostic-sanitization/crates/infra/ess-kubernetes)
+   Compiling ess-kubernetes v0.18.0 (~/.local/state/worktree/trees/b10x/ess/review-kubectl-diagnostic-sanitization/crates/infra/ess-kubernetes)
     Finished `test` profile [unoptimized] target(s) in 0.46s
      Running unittests src/lib.rs (target/debug/deps/ess_kubernetes-5f388cf73a35bac9)
 
@@ -217,7 +217,7 @@ Final command: env TMPDIR="$PWD/target/review-boundaries-2" RUSTC_WRAPPER=/usr/b
 Exit status: 0.
 
 ```text
-   Compiling ess-kubernetes v0.18.0 (/home/timo/.local/state/worktree/trees/b10x/ess/review-kubectl-diagnostic-sanitization/crates/infra/ess-kubernetes)
+   Compiling ess-kubernetes v0.18.0 (~/.local/state/worktree/trees/b10x/ess/review-kubectl-diagnostic-sanitization/crates/infra/ess-kubernetes)
     Finished `test` profile [unoptimized] target(s) in 0.22s
      Running unittests src/lib.rs (target/debug/deps/ess_kubernetes-5f388cf73a35bac9)
 
@@ -272,7 +272,7 @@ Strict lint command: env TMPDIR="$PWD/target/review-boundaries-2" RUSTC_WRAPPER=
 Exit status: 0.
 
 ```text
-    Checking ess-kubernetes v0.18.0 (/home/timo/.local/state/worktree/trees/b10x/ess/review-kubectl-diagnostic-sanitization/crates/infra/ess-kubernetes)
+    Checking ess-kubernetes v0.18.0 (~/.local/state/worktree/trees/b10x/ess/review-kubectl-diagnostic-sanitization/crates/infra/ess-kubernetes)
     Finished `dev` profile [unoptimized] target(s) in 0.11s
 ```
 
@@ -285,7 +285,7 @@ env TMPDIR="$PWD/target/review-boundaries-2" RUSTC_WRAPPER=/usr/bin/sccache CARG
 Exit status: 101; executed 1 test, 1 failed.
 
 ```text
-   Compiling ess-kubernetes v0.18.0 (/home/timo/.local/state/worktree/trees/b10x/ess/review-kubectl-diagnostic-sanitization/crates/infra/ess-kubernetes)
+   Compiling ess-kubernetes v0.18.0 (~/.local/state/worktree/trees/b10x/ess/review-kubectl-diagnostic-sanitization/crates/infra/ess-kubernetes)
     Finished `test` profile [unoptimized] target(s) in 0.15s
      Running unittests src/lib.rs (target/debug/deps/ess_kubernetes-5f388cf73a35bac9)
 
@@ -327,7 +327,7 @@ No coordinator patch is needed.
 
 None. All deliberately written source, fixtures, generated fake executables, temporary outputs, logs and this report are inside the assigned worktree. Cargo used the brief's required sccache wrapper and worktree-local target, without CARGO_TARGET_DIR.
 
-Evidence directory: /home/timo/.local/state/worktree/trees/b10x/ess/review-kubectl-diagnostic-sanitization/target/review-boundaries-2/
+Evidence directory: ~/.local/state/worktree/trees/b10x/ess/review-kubectl-diagnostic-sanitization/target/review-boundaries-2/
 
 Retained files: baseline-test.log/.exit, red-test.log/.exit, mechanism-test.log/.exit, mutation-test.log/.exit, final-test.log/.exit, fmt-check.log/.exit, clippy.log/.exit, clippy-initial.log/.exit, format.exit, fixture-format.exit and implementation-report.md. Synthetic invocation/output fixtures remain under the worktree's Cargo target temporary directory for coordinator inspection.
 

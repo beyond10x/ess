@@ -9,6 +9,7 @@ mod numeric;
 mod recipe;
 mod retained;
 mod schemas;
+mod unique_items;
 
 use diagnostic::{finding, path};
 pub use diagnostic::{Finding, Refused};
@@ -69,7 +70,8 @@ impl Normalizer {
                     "embedded schema is invalid",
                 )])
             })?;
-            let validator = jsonschema::options()
+            let validator = jsonschema::ValidationOptions::default()
+                .with_keyword("uniqueItems", unique_items::compile)
                 .with_draft(jsonschema::Draft::Draft202012)
                 .should_validate_formats(false)
                 .build(&schema)

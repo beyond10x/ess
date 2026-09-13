@@ -40,7 +40,7 @@ All 157,122 final cell records equal the accepted correction2 result. Seven chec
 images and seven separate root copies were completely hashed and read back, alongside the actual
 coverage producer images and source snapshots. No imported green receipt substitutes for execution.
 
-Root readback: `/home/timo/.local/state/worktree/trees/b10x/ess/ess-consumer-coverage-wave18/target/review-boundaries-18/integration-preparation/final-integration-readback/readback.json`, SHA256 `6c62998a3c951d26d6df63efdb6837d803bde1cad2240ce3f239c47a543fbfa5`.
+Root readback: `~/.local/state/worktree/trees/b10x/ess/ess-consumer-coverage-wave18/target/review-boundaries-18/integration-preparation/final-integration-readback/readback.json`, SHA256 `6c62998a3c951d26d6df63efdb6837d803bde1cad2240ce3f239c47a543fbfa5`.
 It verifies all 1,215 tracked source files, every lane's own direct status and full log hash,
 the actual consumer command streams and case counts, source/provider equality and retained native
 bytes. The readback took 4.863672 seconds (5.410664 seconds for the direct command). Original full gate records live at
@@ -114,7 +114,7 @@ Every complete receipt below records successful archive, separate full payload/n
 and exact retirement, or an explicitly documented reproducible dependency/cache cleanup. Source,
 Git history and managed checkouts remain live pending publication and managed closure. Original
 failure streams and counts remain in the archives; archives do not promote their results.
-All paths are below `/home/timo/.cache/ess-review/2026-09-06-resume/`.
+All paths are below `~/.cache/ess-review/2026-09-06-resume/`.
 
 | Complete receipt directory | SHA256 of complete.json |
 |---|---|
@@ -148,7 +148,7 @@ scanned for visible process references and removed. All source, evidence and fin
 remain; cleanup-complete records the exact list and native identities.
 
 Continuation7 instead uses the existing ancestor target configuration, pinned as
-/home/timo/.cargo/config.toml SHA256
+~/.cargo/config.toml SHA256
 e41aa5953bfbdb6337fe0a2642bd87723b6bd581504797160af2f2aaef444e29.
 It removes both global and redundant target flag environment settings for mixed-target lanes;
 the actual consumer lane retains its exact declared global native profile. The warm test build

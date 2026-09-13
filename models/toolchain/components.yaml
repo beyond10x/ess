@@ -1,0 +1,194 @@
+# Software decomposition. One component per `crates/<area>/` directory, plus the automation that
+# runs outside the binary altogether.
+#
+# `crates/edge/ess-cli/src/main.rs:37` states the four areas and says why they are four: the command
+# surface says what the crate tree says. The fifth component is not a crate — it is
+# `.github/workflows/`, which invokes the binary and holds the only reactions in this system.
+#
+# No `conversions:` block. A conversion exists where two contexts have to agree about a type, and
+# the only crossings here are inside one domain: `toolchain.specify.ModelDigest` and
+# `toolchain.generate.ModelDigest` are the same bytes in two contexts, and no binding carries one
+# into the other, so there is nothing for a conversion to admit. Declaring one anyway would claim a
+# crossing that does not happen.
+
+components:
+  - component: specify
+    summary: An authored source selection becomes a validated, resolved IR.
+    owns:
+      domains:
+        - toolchain.specify
+    accepts:
+      commands:
+        - toolchain.specify.SelectSources
+        - toolchain.specify.ResolveModel
+        - toolchain.specify.CompileModel
+    publishes:
+      events:
+        - toolchain.specify.SourcesSelected
+        - toolchain.specify.ModelResolved
+        - toolchain.specify.ModelCompiled
+
+  - component: generate
+    summary: That IR becomes artifacts, and nothing here applies one to a running system.
+    owns:
+      domains:
+        - toolchain.generate
+    accepts:
+      commands:
+        - toolchain.generate.PlanProjection
+        - toolchain.generate.PublishProjection
+        - toolchain.generate.CheckProjection
+        - toolchain.generate.PlanSynthesis
+        - toolchain.generate.EmitSynthesis
+    publishes:
+      events:
+        - toolchain.generate.ProjectionPlanned
+        - toolchain.generate.ProjectionPublished
+        - toolchain.generate.ProjectionChecked
+        - toolchain.generate.SynthesisPlanned
+        - toolchain.generate.SynthesisEmitted
+
+  - component: verify
+    summary: An implementation held to the specification, and one revision against another.
+    owns:
+      domains:
+        - toolchain.verify
+    accepts:
+      commands:
+        - toolchain.verify.SynthesizeSuite
+        - toolchain.verify.StartRun
+        - toolchain.verify.ConcludeRun
+        - toolchain.verify.CompareRevisions
+    publishes:
+      events:
+        - toolchain.verify.SuiteSynthesized
+        - toolchain.verify.RunStarted
+        - toolchain.verify.RunPassed
+        - toolchain.verify.RunFailed
+        - toolchain.verify.RunErrored
+        - toolchain.verify.RevisionsCompared
+
+  - component: infra
+    summary: The observed cluster, and the adapters that read one without changing it.
+    owns:
+      domains:
+        - toolchain.infra
+    accepts:
+      commands:
+        - toolchain.infra.CollectObservation
+        - toolchain.infra.ImportObservation
+        - toolchain.infra.CheckBindings
+        - toolchain.infra.ConcludeBindingCheck
+    publishes:
+      events:
+        - toolchain.infra.ObservationCollected
+        - toolchain.infra.ObservationImported
+        - toolchain.infra.BindingCheckStarted
+        - toolchain.infra.BindingCheckSatisfied
+        - toolchain.infra.BindingCheckViolated
+        - toolchain.infra.BindingCheckUnknown
+
+  - component: release-automation
+    summary: The workflows that answer whether every pushed version tag has a release behind it.
+    owns:
+      domains:
+        - toolchain.release
+    accepts:
+      commands:
+        - toolchain.release.PushTag
+        - toolchain.release.RunReleaseChecks
+        - toolchain.release.ConcludeReleaseRun
+        - toolchain.release.RecordReleaseStatus
+        - toolchain.release.SettleStrandedRelease
+        - toolchain.release.RetractTag
+    publishes:
+      events:
+        - toolchain.release.TagPushed
+        - toolchain.release.ReleaseChecksStarted
+        - toolchain.release.ReleaseRunCompleted
+        - toolchain.release.ReleasePublished
+        - toolchain.release.ReleaseStranded
+        - toolchain.release.ReleaseStatusRecorded
+        - toolchain.release.TagRetracted
+        - toolchain.release.ReleaseEscalated
+
+bindings:
+  # `.github/workflows/release.yml`: `on: push: tags: ["[0-9]*.[0-9]*.[0-9]*"]`.
+  #
+  # `at_least_once`, because `concurrency: cancel-in-progress: false` queues a second run for the
+  # same tag rather than cancelling it, so the reaction is not dropped under contention. `escalate`
+  # rather than `drop`, because a tag whose run never started is the stranded case with nobody
+  # watching: the run that failed for 0.5.0 notified the bot that had pushed the tag and no other
+  # reader, and that is what this event exists to record.
+  - id: check-on-tag
+    summary: A pushed version tag starts the release checks.
+    when:
+      event: toolchain.release.TagPushed
+    invoke:
+      command: toolchain.release.RunReleaseChecks
+    mapping:
+      tag: event.tag
+    delivery: at_least_once
+    on_failure:
+      escalate:
+        emits: toolchain.release.ReleaseEscalated
+
+  # `.github/workflows/release-record.yml`: `on: workflow_run: workflows: [Release], types:
+  # [completed]`.
+  #
+  # `at_most_once`, because `concurrency: release-record` with `cancel-in-progress: true` cancels a
+  # queued record run when a newer one arrives — so a reaction can be dropped, and the word says so.
+  # `drop` for the same reason: the daily run below is what covers the dropped one, and an escalation
+  # per cancelled record run would be noise about a case that is already answered.
+  #
+  - id: record-on-completion
+    summary: A finished release run is when the answer can change, so the record is re-read.
+    when:
+      event: toolchain.release.ReleaseRunCompleted
+    invoke:
+      command: toolchain.release.RecordReleaseStatus
+    mapping:
+      tag: event.tag
+    delivery: at_most_once
+    on_failure: drop
+
+  # The other half of the same workflow: `schedule: cron "17 6 * * *"`. Under `ess/1` this had no
+  # spelling at all and was carried as an `UNMAPPED:` marker; `ess/3` gives a periodic cause, so the
+  # reaction that catches a tag pushed while no run was watching is now declared rather than
+  # described.
+  #
+  # UNMAPPED, and wider than the period. Each of the seven profile words below has exactly one
+  # variant and no serde default (`crates/specify/ess-domain/src/binding/periodic.rs:203`), so
+  # declaring a periodic cause at all asserts every one of them — a host instance that owns the
+  # loop, an eligibility sample at dispatch, acknowledged quiescence on stop, one pending tick with
+  # excess dropped, and a phase that does not reset on completion. A GitHub Actions `schedule:`
+  # trigger has none of those: no host instance, no eligibility flag, no stop acknowledgement, and
+  # missed runs are skipped rather than kept pending. `every: PT86400S` is the one word that maps,
+  # and the workflow runs at 06:17 UTC, which `anchor: host_activation` does not say either. The
+  # binding is here because the reaction is real and had no spelling at all under `ess/1`; what it
+  # asserts about the scheduler is not read from `.github/workflows/release-record.yml`.
+  - id: record-daily
+    summary: A tag pushed while no release run was watching is found by the daily sweep.
+    when:
+      periodic:
+        every: PT86400S
+        anchor: host_activation
+        first: after_period
+        cadence: fixed_rate
+        overlap: serial_per_instance
+        missed: one_pending_drop_excess
+        lifetime: host_instance
+        cancellation: stop_acknowledged
+        host:
+          owner: release-automation
+          authority: github-actions-schedule
+          eligibility: host_boolean
+          context_fields: []
+          read_fields:
+            - {name: tag, type: toolchain.release.TagName}
+    invoke:
+      command: toolchain.release.RecordReleaseStatus
+    mapping:
+      tag: host_read.tag
+    delivery: at_most_once
+    on_failure: drop

@@ -1659,7 +1659,7 @@ Opening28e97095d9e06c8b4585876a681a5eda5278c1ab has exact bot identities and pas
 
 ## Coordinator migration workspace
 
-F01 governance is owned by the coordinator in a separately managed Atlas tree, planned ID ess-semantic-migration-governance, branch docs/ess-semantic-migration-governance, base7b00adf3b1004e0cdd8dd12aa4fa8cc8435a0432. Its planned triple is /home/timo/.local/state/worktree/trees/b10x/atlas/ess-semantic-migration-governance, own target, target/ess-review-semantic-migration scratch. Only its planning story, ADR and dated shipping log are initially reserved; no catalogue, dependency or public-delivery source change is implied. The clean readonly Atlas authority remains separate for bot tooling. Any downstream Service SDK compatibility tree will be recorded before creation.
+F01 governance is owned by the coordinator in a separately managed Atlas tree, planned ID ess-semantic-migration-governance, branch docs/ess-semantic-migration-governance, base7b00adf3b1004e0cdd8dd12aa4fa8cc8435a0432. Its planned triple is ~/.local/state/worktree/trees/b10x/atlas/ess-semantic-migration-governance, own target, target/ess-review-semantic-migration scratch. Only its planning story, ADR and dated shipping log are initially reserved; no catalogue, dependency or public-delivery source change is implied. The clean readonly Atlas authority remains separate for bot tooling. Any downstream Service SDK compatibility tree will be recorded before creation.
 
 The Atlas tree was created, branched and leased as recorded. Its governed story is
 `story:ess-semantic-diff-provenance-migration` (active, revision 5), serving O2 and deriving
@@ -1680,8 +1680,8 @@ Two test-only managed trees are reserved before creation, both at that exact SDK
 
 | ID | Checkout | Build root | Scratch |
 | --- | --- | --- | --- |
-| ess-sdk-compat-old | `/home/timo/.local/state/worktree/trees/b10x/service-sdk/ess-sdk-compat-old` | own `target` | `target/ess-review-compat` |
-| ess-sdk-compat-new | `/home/timo/.local/state/worktree/trees/b10x/service-sdk/ess-sdk-compat-new` | own `target` | `target/ess-review-compat` |
+| ess-sdk-compat-old | `~/.local/state/worktree/trees/b10x/service-sdk/ess-sdk-compat-old` | own `target` | `target/ess-review-compat` |
+| ess-sdk-compat-new | `~/.local/state/worktree/trees/b10x/service-sdk/ess-sdk-compat-new` | own `target` | `target/ess-review-compat` |
 
 The existing third agent runs this bounded experiment under the Atlas coordination story.
 It may write only its assigned scratch and Cargo-produced local lock resolution; candidate
@@ -1711,7 +1711,7 @@ own catalog command. ESS primary is clean at published
 advertised source and retains its actual pin. AgentIDE primary is clean but stale, so a
 read-only source tree is reserved before creation: ID `ess-agentide-pin-observation`,
 detached base `176a57f58457a7c16f105584c66964263b3c2e41`, checkout
-`/home/timo/.local/state/worktree/trees/b10x/agentide/ess-agentide-pin-observation`, own
+`~/.local/state/worktree/trees/b10x/agentide/ess-agentide-pin-observation`, own
 `target` build root (no build planned), scratch `target/ess-review-observation`. It is used
 only as an exact catalog input and receives no AgentIDE source or dependency change.
 

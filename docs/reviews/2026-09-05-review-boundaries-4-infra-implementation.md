@@ -109,10 +109,10 @@ The two new-API compilation failures executed no runtime tests: they establish a
 
 ### red-public-owner
 
-Command (cwd `/home/timo/.local/state/worktree/trees/b10x/ess/review-infra-ir-invariants`):
+Command (cwd `~/.local/state/worktree/trees/b10x/ess/review-infra-ir-invariants`):
 
 ```console
-env TMPDIR="$PWD/target" RUSTC_WRAPPER=/usr/bin/sccache SCCACHE_SERVER_UDS=/home/timo/.local/state/worktree/trees/b10x/ess/wt-752828a285ba/target/w4-cache.sock CARGO_INCREMENTAL=0 CARGO_PROFILE_DEV_DEBUG=0 CARGO_PROFILE_TEST_DEBUG=0 CARGO_CACHE_RUSTC_INFO=0 CARGO_NET_OFFLINE=true cargo test --locked --offline -p infra-compiler --test ownership public_owner_rejects_collection_replacement_and_nested_mutation -- --exact --nocapture
+env TMPDIR="$PWD/target" RUSTC_WRAPPER=/usr/bin/sccache SCCACHE_SERVER_UDS=~/.local/state/worktree/trees/b10x/ess/wt-752828a285ba/target/w4-cache.sock CARGO_INCREMENTAL=0 CARGO_PROFILE_DEV_DEBUG=0 CARGO_PROFILE_TEST_DEBUG=0 CARGO_CACHE_RUSTC_INFO=0 CARGO_NET_OFFLINE=true cargo test --locked --offline -p infra-compiler --test ownership public_owner_rejects_collection_replacement_and_nested_mutation -- --exact --nocapture
 ```
 
 Exit: 101. Raw combined output (`target/review-boundaries-4/red-public-owner.log`):
@@ -126,15 +126,15 @@ Exit: 101. Raw combined output (`target/review-boundaries-4/red-public-owner.log
    Compiling memchr v2.8.3
    Compiling syn v3.0.4
    Compiling serde_derive v1.0.229
-   Compiling infra-domain v0.18.0 (/home/timo/.local/state/worktree/trees/b10x/ess/review-infra-ir-invariants/crates/infra/infra-domain)
-   Compiling infra-compiler v0.18.0 (/home/timo/.local/state/worktree/trees/b10x/ess/review-infra-ir-invariants/crates/infra/infra-compiler)
+   Compiling infra-domain v0.18.0 (~/.local/state/worktree/trees/b10x/ess/review-infra-ir-invariants/crates/infra/infra-domain)
+   Compiling infra-compiler v0.18.0 (~/.local/state/worktree/trees/b10x/ess/review-infra-ir-invariants/crates/infra/infra-compiler)
     Finished `test` profile [unoptimized] target(s) in 7.85s
      Running tests/ownership.rs (target/debug/deps/ownership-f8b12e714c3b88d0)
 
 running 1 test
 
 thread 'public_owner_rejects_collection_replacement_and_nested_mutation' (947833) panicked at crates/infra/infra-compiler/tests/ownership.rs:18:5:
-assertion `left == right` failed: ambiguous infra_compiler dependency: ["/home/timo/.local/state/worktree/trees/b10x/ess/review-infra-ir-invariants/target/debug/deps/libinfra_compiler-d57328d556ea533c.rlib", "/home/timo/.local/state/worktree/trees/b10x/ess/review-infra-ir-invariants/target/debug/deps/libinfra_compiler-f1a3518dfd146321.rlib"]
+assertion `left == right` failed: ambiguous infra_compiler dependency: ["~/.local/state/worktree/trees/b10x/ess/review-infra-ir-invariants/target/debug/deps/libinfra_compiler-d57328d556ea533c.rlib", "~/.local/state/worktree/trees/b10x/ess/review-infra-ir-invariants/target/debug/deps/libinfra_compiler-f1a3518dfd146321.rlib"]
   left: 2
  right: 1
 note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
@@ -152,16 +152,16 @@ error: test failed, to rerun pass `-p infra-compiler --test ownership`
 
 ### red-owner-doctests
 
-Command (cwd `/home/timo/.local/state/worktree/trees/b10x/ess/review-infra-ir-invariants`):
+Command (cwd `~/.local/state/worktree/trees/b10x/ess/review-infra-ir-invariants`):
 
 ```console
-env TMPDIR="$PWD/target" RUSTC_WRAPPER=/usr/bin/sccache SCCACHE_SERVER_UDS=/home/timo/.local/state/worktree/trees/b10x/ess/wt-752828a285ba/target/w4-cache.sock CARGO_INCREMENTAL=0 CARGO_PROFILE_DEV_DEBUG=0 CARGO_PROFILE_TEST_DEBUG=0 CARGO_CACHE_RUSTC_INFO=0 CARGO_NET_OFFLINE=true cargo test --locked --offline -p infra-compiler --doc
+env TMPDIR="$PWD/target" RUSTC_WRAPPER=/usr/bin/sccache SCCACHE_SERVER_UDS=~/.local/state/worktree/trees/b10x/ess/wt-752828a285ba/target/w4-cache.sock CARGO_INCREMENTAL=0 CARGO_PROFILE_DEV_DEBUG=0 CARGO_PROFILE_TEST_DEBUG=0 CARGO_CACHE_RUSTC_INFO=0 CARGO_NET_OFFLINE=true cargo test --locked --offline -p infra-compiler --doc
 ```
 
 Exit: 101. Raw combined output (`target/review-boundaries-4/red-owner-doctests.log`):
 
 ```text
-   Compiling infra-compiler v0.18.0 (/home/timo/.local/state/worktree/trees/b10x/ess/review-infra-ir-invariants/crates/infra/infra-compiler)
+   Compiling infra-compiler v0.18.0 (~/.local/state/worktree/trees/b10x/ess/review-infra-ir-invariants/crates/infra/infra-compiler)
     Finished `test` profile [unoptimized] target(s) in 1.68s
    Doc-tests infra_compiler
 
@@ -220,16 +220,16 @@ error: doctest failed, to rerun pass `-p infra-compiler --doc`
 
 ### red-transform-api
 
-Command (cwd `/home/timo/.local/state/worktree/trees/b10x/ess/review-infra-ir-invariants`):
+Command (cwd `~/.local/state/worktree/trees/b10x/ess/review-infra-ir-invariants`):
 
 ```console
-env TMPDIR="$PWD/target" RUSTC_WRAPPER=/usr/bin/sccache SCCACHE_SERVER_UDS=/home/timo/.local/state/worktree/trees/b10x/ess/wt-752828a285ba/target/w4-cache.sock CARGO_INCREMENTAL=0 CARGO_PROFILE_DEV_DEBUG=0 CARGO_PROFILE_TEST_DEBUG=0 CARGO_CACHE_RUSTC_INFO=0 CARGO_NET_OFFLINE=true cargo test --locked --offline -p infra-compiler --test read deleting_any_referenced_target_is_refused_without_changing_the_source_owner -- --exact
+env TMPDIR="$PWD/target" RUSTC_WRAPPER=/usr/bin/sccache SCCACHE_SERVER_UDS=~/.local/state/worktree/trees/b10x/ess/wt-752828a285ba/target/w4-cache.sock CARGO_INCREMENTAL=0 CARGO_PROFILE_DEV_DEBUG=0 CARGO_PROFILE_TEST_DEBUG=0 CARGO_CACHE_RUSTC_INFO=0 CARGO_NET_OFFLINE=true cargo test --locked --offline -p infra-compiler --test read deleting_any_referenced_target_is_refused_without_changing_the_source_owner -- --exact
 ```
 
 Exit: 101. Raw combined output (`target/review-boundaries-4/red-transform-api.log`):
 
 ```text
-   Compiling infra-compiler v0.18.0 (/home/timo/.local/state/worktree/trees/b10x/ess/review-infra-ir-invariants/crates/infra/infra-compiler)
+   Compiling infra-compiler v0.18.0 (~/.local/state/worktree/trees/b10x/ess/review-infra-ir-invariants/crates/infra/infra-compiler)
 error[E0599]: no method named `try_transform` found for struct `InfraIr` in the current scope
    --> crates/infra/infra-compiler/tests/read.rs:283:32
     |
@@ -254,10 +254,10 @@ error: could not compile `infra-compiler` (test "read") due to 3 previous errors
 
 ### red-project-transaction-api
 
-Command (cwd `/home/timo/.local/state/worktree/trees/b10x/ess/review-infra-ir-invariants`):
+Command (cwd `~/.local/state/worktree/trees/b10x/ess/review-infra-ir-invariants`):
 
 ```console
-env TMPDIR="$PWD/target" RUSTC_WRAPPER=/usr/bin/sccache SCCACHE_SERVER_UDS=/home/timo/.local/state/worktree/trees/b10x/ess/wt-752828a285ba/target/w4-cache.sock CARGO_INCREMENTAL=0 CARGO_PROFILE_DEV_DEBUG=0 CARGO_PROFILE_TEST_DEBUG=0 CARGO_CACHE_RUSTC_INFO=0 CARGO_NET_OFFLINE=true cargo test --locked --offline -p infra-project --lib failed_candidate_admission_records_nothing_and_preserves_the_working_owner
+env TMPDIR="$PWD/target" RUSTC_WRAPPER=/usr/bin/sccache SCCACHE_SERVER_UDS=~/.local/state/worktree/trees/b10x/ess/wt-752828a285ba/target/w4-cache.sock CARGO_INCREMENTAL=0 CARGO_PROFILE_DEV_DEBUG=0 CARGO_PROFILE_TEST_DEBUG=0 CARGO_CACHE_RUSTC_INFO=0 CARGO_NET_OFFLINE=true cargo test --locked --offline -p infra-project --lib failed_candidate_admission_records_nothing_and_preserves_the_working_owner
 ```
 
 Exit: 101. Raw combined output (`target/review-boundaries-4/red-project-transaction-api.log`):
@@ -270,14 +270,14 @@ Exit: 101. Raw combined output (`target/review-boundaries-4/red-project-transact
    Compiling thiserror-impl v2.0.20
    Compiling thiserror v2.0.20
    Compiling serde v1.0.229
-   Compiling infra-domain v0.18.0 (/home/timo/.local/state/worktree/trees/b10x/ess/review-infra-ir-invariants/crates/infra/infra-domain)
+   Compiling infra-domain v0.18.0 (~/.local/state/worktree/trees/b10x/ess/review-infra-ir-invariants/crates/infra/infra-domain)
    Compiling schemars v0.8.22
    Compiling serde_yaml v0.9.34+deprecated
-   Compiling ess-primitives v0.18.0 (/home/timo/.local/state/worktree/trees/b10x/ess/review-infra-ir-invariants/crates/specify/ess-primitives)
-   Compiling infra-compiler v0.18.0 (/home/timo/.local/state/worktree/trees/b10x/ess/review-infra-ir-invariants/crates/infra/infra-compiler)
-   Compiling infra-analyze v0.18.0 (/home/timo/.local/state/worktree/trees/b10x/ess/review-infra-ir-invariants/crates/infra/infra-analyze)
-   Compiling infra-spec v0.18.0 (/home/timo/.local/state/worktree/trees/b10x/ess/review-infra-ir-invariants/crates/infra/infra-spec)
-   Compiling infra-project v0.18.0 (/home/timo/.local/state/worktree/trees/b10x/ess/review-infra-ir-invariants/crates/infra/infra-project)
+   Compiling ess-primitives v0.18.0 (~/.local/state/worktree/trees/b10x/ess/review-infra-ir-invariants/crates/specify/ess-primitives)
+   Compiling infra-compiler v0.18.0 (~/.local/state/worktree/trees/b10x/ess/review-infra-ir-invariants/crates/infra/infra-compiler)
+   Compiling infra-analyze v0.18.0 (~/.local/state/worktree/trees/b10x/ess/review-infra-ir-invariants/crates/infra/infra-analyze)
+   Compiling infra-spec v0.18.0 (~/.local/state/worktree/trees/b10x/ess/review-infra-ir-invariants/crates/infra/infra-spec)
+   Compiling infra-project v0.18.0 (~/.local/state/worktree/trees/b10x/ess/review-infra-ir-invariants/crates/infra/infra-project)
 error[E0599]: no method named `record_admitted` found for struct `project::Workbench` in the current scope
     --> crates/infra/infra-project/src/project.rs:1582:15
      |
@@ -317,16 +317,16 @@ These are two additional executed failing mutation cases, separate from the nine
 
 ### mutation-admission
 
-Command (cwd `/home/timo/.local/state/worktree/trees/b10x/ess/review-infra-ir-invariants`):
+Command (cwd `~/.local/state/worktree/trees/b10x/ess/review-infra-ir-invariants`):
 
 ```console
-env TMPDIR="$PWD/target" RUSTC_WRAPPER=/usr/bin/sccache SCCACHE_SERVER_UDS=/home/timo/.local/state/worktree/trees/b10x/ess/wt-752828a285ba/target/w4-cache.sock CARGO_INCREMENTAL=0 CARGO_PROFILE_DEV_DEBUG=0 CARGO_PROFILE_TEST_DEBUG=0 CARGO_CACHE_RUSTC_INFO=0 CARGO_NET_OFFLINE=true cargo test --locked --offline -p infra-compiler --test read deleting_any_referenced_target_is_refused_without_changing_the_source_owner -- --exact
+env TMPDIR="$PWD/target" RUSTC_WRAPPER=/usr/bin/sccache SCCACHE_SERVER_UDS=~/.local/state/worktree/trees/b10x/ess/wt-752828a285ba/target/w4-cache.sock CARGO_INCREMENTAL=0 CARGO_PROFILE_DEV_DEBUG=0 CARGO_PROFILE_TEST_DEBUG=0 CARGO_CACHE_RUSTC_INFO=0 CARGO_NET_OFFLINE=true cargo test --locked --offline -p infra-compiler --test read deleting_any_referenced_target_is_refused_without_changing_the_source_owner -- --exact
 ```
 
 Exit: 101. Raw combined output (`target/review-boundaries-4/mutation-admission.log`):
 
 ```text
-   Compiling infra-compiler v0.18.0 (/home/timo/.local/state/worktree/trees/b10x/ess/review-infra-ir-invariants/crates/infra/infra-compiler)
+   Compiling infra-compiler v0.18.0 (~/.local/state/worktree/trees/b10x/ess/review-infra-ir-invariants/crates/infra/infra-compiler)
     Finished `test` profile [unoptimized] target(s) in 1.96s
      Running tests/read.rs (target/debug/deps/read-a2a89aa47a12a0b4)
 
@@ -352,19 +352,19 @@ error: test failed, to rerun pass `-p infra-compiler --test read`
 
 ### mutation-record-order
 
-Command (cwd `/home/timo/.local/state/worktree/trees/b10x/ess/review-infra-ir-invariants`):
+Command (cwd `~/.local/state/worktree/trees/b10x/ess/review-infra-ir-invariants`):
 
 ```console
-env TMPDIR="$PWD/target" RUSTC_WRAPPER=/usr/bin/sccache SCCACHE_SERVER_UDS=/home/timo/.local/state/worktree/trees/b10x/ess/wt-752828a285ba/target/w4-cache.sock CARGO_INCREMENTAL=0 CARGO_PROFILE_DEV_DEBUG=0 CARGO_PROFILE_TEST_DEBUG=0 CARGO_CACHE_RUSTC_INFO=0 CARGO_NET_OFFLINE=true cargo test --locked --offline -p infra-project --lib failed_candidate_admission_records_nothing_and_preserves_the_working_owner
+env TMPDIR="$PWD/target" RUSTC_WRAPPER=/usr/bin/sccache SCCACHE_SERVER_UDS=~/.local/state/worktree/trees/b10x/ess/wt-752828a285ba/target/w4-cache.sock CARGO_INCREMENTAL=0 CARGO_PROFILE_DEV_DEBUG=0 CARGO_PROFILE_TEST_DEBUG=0 CARGO_CACHE_RUSTC_INFO=0 CARGO_NET_OFFLINE=true cargo test --locked --offline -p infra-project --lib failed_candidate_admission_records_nothing_and_preserves_the_working_owner
 ```
 
 Exit: 101. Raw combined output (`target/review-boundaries-4/mutation-record-order.log`):
 
 ```text
-   Compiling infra-compiler v0.18.0 (/home/timo/.local/state/worktree/trees/b10x/ess/review-infra-ir-invariants/crates/infra/infra-compiler)
-   Compiling infra-analyze v0.18.0 (/home/timo/.local/state/worktree/trees/b10x/ess/review-infra-ir-invariants/crates/infra/infra-analyze)
-   Compiling infra-spec v0.18.0 (/home/timo/.local/state/worktree/trees/b10x/ess/review-infra-ir-invariants/crates/infra/infra-spec)
-   Compiling infra-project v0.18.0 (/home/timo/.local/state/worktree/trees/b10x/ess/review-infra-ir-invariants/crates/infra/infra-project)
+   Compiling infra-compiler v0.18.0 (~/.local/state/worktree/trees/b10x/ess/review-infra-ir-invariants/crates/infra/infra-compiler)
+   Compiling infra-analyze v0.18.0 (~/.local/state/worktree/trees/b10x/ess/review-infra-ir-invariants/crates/infra/infra-analyze)
+   Compiling infra-spec v0.18.0 (~/.local/state/worktree/trees/b10x/ess/review-infra-ir-invariants/crates/infra/infra-spec)
+   Compiling infra-project v0.18.0 (~/.local/state/worktree/trees/b10x/ess/review-infra-ir-invariants/crates/infra/infra-project)
     Finished `test` profile [unoptimized] target(s) in 0.80s
      Running unittests src/lib.rs (target/debug/deps/infra_project-41d61ffb90a92fc1)
 
@@ -428,10 +428,10 @@ The isolated reader lane executed 10 cases; transaction and four-change round-tr
 
 ### baseline
 
-Command (cwd `/home/timo/.local/state/worktree/trees/b10x/ess/review-infra-ir-invariants`):
+Command (cwd `~/.local/state/worktree/trees/b10x/ess/review-infra-ir-invariants`):
 
 ```console
-env TMPDIR="$PWD/target" RUSTC_WRAPPER=/usr/bin/sccache SCCACHE_SERVER_UDS=/home/timo/.local/state/worktree/trees/b10x/ess/wt-752828a285ba/target/w4-cache.sock CARGO_INCREMENTAL=0 CARGO_PROFILE_DEV_DEBUG=0 CARGO_PROFILE_TEST_DEBUG=0 CARGO_CACHE_RUSTC_INFO=0 CARGO_NET_OFFLINE=true cargo test --locked --offline -p infra-compiler -p infra-analyze -p infra-spec -p infra-project -p ess-cli
+env TMPDIR="$PWD/target" RUSTC_WRAPPER=/usr/bin/sccache SCCACHE_SERVER_UDS=~/.local/state/worktree/trees/b10x/ess/wt-752828a285ba/target/w4-cache.sock CARGO_INCREMENTAL=0 CARGO_PROFILE_DEV_DEBUG=0 CARGO_PROFILE_TEST_DEBUG=0 CARGO_CACHE_RUSTC_INFO=0 CARGO_NET_OFFLINE=true cargo test --locked --offline -p infra-compiler -p infra-analyze -p infra-spec -p infra-project -p ess-cli
 ```
 
 Exit: 0. Raw combined output (`target/review-boundaries-4/baseline.log`):
@@ -532,31 +532,31 @@ Exit: 0. Raw combined output (`target/review-boundaries-4/baseline.log`):
    Compiling clap v4.6.6
    Compiling fancy-regex v0.19.0
    Compiling regex v1.13.1
-   Compiling infra-domain v0.18.0 (/home/timo/.local/state/worktree/trees/b10x/ess/review-infra-ir-invariants/crates/infra/infra-domain)
+   Compiling infra-domain v0.18.0 (~/.local/state/worktree/trees/b10x/ess/review-infra-ir-invariants/crates/infra/infra-domain)
    Compiling serde_yaml v0.9.34+deprecated
    Compiling fluent-uri v0.4.1
    Compiling email_address v0.2.9
-   Compiling ess-kubernetes v0.18.0 (/home/timo/.local/state/worktree/trees/b10x/ess/review-infra-ir-invariants/crates/infra/ess-kubernetes)
+   Compiling ess-kubernetes v0.18.0 (~/.local/state/worktree/trees/b10x/ess/review-infra-ir-invariants/crates/infra/ess-kubernetes)
    Compiling jsonschema-value v0.52.1
    Compiling referencing v0.52.1
-   Compiling ess-primitives v0.18.0 (/home/timo/.local/state/worktree/trees/b10x/ess/review-infra-ir-invariants/crates/specify/ess-primitives)
-   Compiling ess-openapi v0.18.0 (/home/timo/.local/state/worktree/trees/b10x/ess/review-infra-ir-invariants/crates/generate/ess-openapi)
+   Compiling ess-primitives v0.18.0 (~/.local/state/worktree/trees/b10x/ess/review-infra-ir-invariants/crates/specify/ess-primitives)
+   Compiling ess-openapi v0.18.0 (~/.local/state/worktree/trees/b10x/ess/review-infra-ir-invariants/crates/generate/ess-openapi)
    Compiling jsonschema v0.52.1
-   Compiling infra-compiler v0.18.0 (/home/timo/.local/state/worktree/trees/b10x/ess/review-infra-ir-invariants/crates/infra/infra-compiler)
-   Compiling ess-domain v0.18.0 (/home/timo/.local/state/worktree/trees/b10x/ess/review-infra-ir-invariants/crates/specify/ess-domain)
-   Compiling infra-analyze v0.18.0 (/home/timo/.local/state/worktree/trees/b10x/ess/review-infra-ir-invariants/crates/infra/infra-analyze)
-   Compiling infra-spec v0.18.0 (/home/timo/.local/state/worktree/trees/b10x/ess/review-infra-ir-invariants/crates/infra/infra-spec)
-   Compiling ess-compiler v0.18.0 (/home/timo/.local/state/worktree/trees/b10x/ess/review-infra-ir-invariants/crates/specify/ess-compiler)
-   Compiling infra-project v0.18.0 (/home/timo/.local/state/worktree/trees/b10x/ess/review-infra-ir-invariants/crates/infra/infra-project)
-   Compiling schema-contract v0.18.0 (/home/timo/.local/state/worktree/trees/b10x/ess/review-infra-ir-invariants/crates/generate/schema-contract)
-   Compiling ess-gen v0.18.0 (/home/timo/.local/state/worktree/trees/b10x/ess/review-infra-ir-invariants/crates/generate/ess-gen)
-   Compiling ess-realization v0.18.0 (/home/timo/.local/state/worktree/trees/b10x/ess/review-infra-ir-invariants/crates/specify/ess-realization)
-   Compiling ess-composition v0.18.0 (/home/timo/.local/state/worktree/trees/b10x/ess/review-infra-ir-invariants/crates/specify/ess-composition)
-   Compiling ess-deployment v0.18.0 (/home/timo/.local/state/worktree/trees/b10x/ess/review-infra-ir-invariants/crates/generate/ess-deployment)
-   Compiling ess-conformance v0.18.0 (/home/timo/.local/state/worktree/trees/b10x/ess/review-infra-ir-invariants/crates/verify/ess-conformance)
-   Compiling ess-synth v0.18.0 (/home/timo/.local/state/worktree/trees/b10x/ess/review-infra-ir-invariants/crates/generate/ess-synth)
-   Compiling ess-diff v0.18.0 (/home/timo/.local/state/worktree/trees/b10x/ess/review-infra-ir-invariants/crates/verify/ess-diff)
-   Compiling ess-cli v0.18.0 (/home/timo/.local/state/worktree/trees/b10x/ess/review-infra-ir-invariants/crates/edge/ess-cli)
+   Compiling infra-compiler v0.18.0 (~/.local/state/worktree/trees/b10x/ess/review-infra-ir-invariants/crates/infra/infra-compiler)
+   Compiling ess-domain v0.18.0 (~/.local/state/worktree/trees/b10x/ess/review-infra-ir-invariants/crates/specify/ess-domain)
+   Compiling infra-analyze v0.18.0 (~/.local/state/worktree/trees/b10x/ess/review-infra-ir-invariants/crates/infra/infra-analyze)
+   Compiling infra-spec v0.18.0 (~/.local/state/worktree/trees/b10x/ess/review-infra-ir-invariants/crates/infra/infra-spec)
+   Compiling ess-compiler v0.18.0 (~/.local/state/worktree/trees/b10x/ess/review-infra-ir-invariants/crates/specify/ess-compiler)
+   Compiling infra-project v0.18.0 (~/.local/state/worktree/trees/b10x/ess/review-infra-ir-invariants/crates/infra/infra-project)
+   Compiling schema-contract v0.18.0 (~/.local/state/worktree/trees/b10x/ess/review-infra-ir-invariants/crates/generate/schema-contract)
+   Compiling ess-gen v0.18.0 (~/.local/state/worktree/trees/b10x/ess/review-infra-ir-invariants/crates/generate/ess-gen)
+   Compiling ess-realization v0.18.0 (~/.local/state/worktree/trees/b10x/ess/review-infra-ir-invariants/crates/specify/ess-realization)
+   Compiling ess-composition v0.18.0 (~/.local/state/worktree/trees/b10x/ess/review-infra-ir-invariants/crates/specify/ess-composition)
+   Compiling ess-deployment v0.18.0 (~/.local/state/worktree/trees/b10x/ess/review-infra-ir-invariants/crates/generate/ess-deployment)
+   Compiling ess-conformance v0.18.0 (~/.local/state/worktree/trees/b10x/ess/review-infra-ir-invariants/crates/verify/ess-conformance)
+   Compiling ess-synth v0.18.0 (~/.local/state/worktree/trees/b10x/ess/review-infra-ir-invariants/crates/generate/ess-synth)
+   Compiling ess-diff v0.18.0 (~/.local/state/worktree/trees/b10x/ess/review-infra-ir-invariants/crates/verify/ess-diff)
+   Compiling ess-cli v0.18.0 (~/.local/state/worktree/trees/b10x/ess/review-infra-ir-invariants/crates/edge/ess-cli)
     Finished `test` profile [unoptimized] target(s) in 19.34s
      Running unittests src/main.rs (target/debug/deps/ess-2a340c79ed142cb3)
 
@@ -980,16 +980,16 @@ test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; fini
 
 ### green-reader
 
-Command (cwd `/home/timo/.local/state/worktree/trees/b10x/ess/review-infra-ir-invariants`):
+Command (cwd `~/.local/state/worktree/trees/b10x/ess/review-infra-ir-invariants`):
 
 ```console
-env TMPDIR="$PWD/target" RUSTC_WRAPPER=/usr/bin/sccache SCCACHE_SERVER_UDS=/home/timo/.local/state/worktree/trees/b10x/ess/wt-752828a285ba/target/w4-cache.sock CARGO_INCREMENTAL=0 CARGO_PROFILE_DEV_DEBUG=0 CARGO_PROFILE_TEST_DEBUG=0 CARGO_CACHE_RUSTC_INFO=0 CARGO_NET_OFFLINE=true cargo test --locked --offline -p infra-compiler --test read
+env TMPDIR="$PWD/target" RUSTC_WRAPPER=/usr/bin/sccache SCCACHE_SERVER_UDS=~/.local/state/worktree/trees/b10x/ess/wt-752828a285ba/target/w4-cache.sock CARGO_INCREMENTAL=0 CARGO_PROFILE_DEV_DEBUG=0 CARGO_PROFILE_TEST_DEBUG=0 CARGO_CACHE_RUSTC_INFO=0 CARGO_NET_OFFLINE=true cargo test --locked --offline -p infra-compiler --test read
 ```
 
 Exit: 0. Raw combined output (`target/review-boundaries-4/green-reader.log`):
 
 ```text
-   Compiling infra-compiler v0.18.0 (/home/timo/.local/state/worktree/trees/b10x/ess/review-infra-ir-invariants/crates/infra/infra-compiler)
+   Compiling infra-compiler v0.18.0 (~/.local/state/worktree/trees/b10x/ess/review-infra-ir-invariants/crates/infra/infra-compiler)
     Finished `test` profile [unoptimized] target(s) in 1.99s
      Running tests/read.rs (target/debug/deps/read-a2a89aa47a12a0b4)
 
@@ -1011,16 +1011,16 @@ test result: ok. 10 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; fin
 
 ### green-project-transaction
 
-Command (cwd `/home/timo/.local/state/worktree/trees/b10x/ess/review-infra-ir-invariants`):
+Command (cwd `~/.local/state/worktree/trees/b10x/ess/review-infra-ir-invariants`):
 
 ```console
-env TMPDIR="$PWD/target" RUSTC_WRAPPER=/usr/bin/sccache SCCACHE_SERVER_UDS=/home/timo/.local/state/worktree/trees/b10x/ess/wt-752828a285ba/target/w4-cache.sock CARGO_INCREMENTAL=0 CARGO_PROFILE_DEV_DEBUG=0 CARGO_PROFILE_TEST_DEBUG=0 CARGO_CACHE_RUSTC_INFO=0 CARGO_NET_OFFLINE=true cargo test --locked --offline -p infra-project --lib failed_candidate_admission_records_nothing_and_preserves_the_working_owner
+env TMPDIR="$PWD/target" RUSTC_WRAPPER=/usr/bin/sccache SCCACHE_SERVER_UDS=~/.local/state/worktree/trees/b10x/ess/wt-752828a285ba/target/w4-cache.sock CARGO_INCREMENTAL=0 CARGO_PROFILE_DEV_DEBUG=0 CARGO_PROFILE_TEST_DEBUG=0 CARGO_CACHE_RUSTC_INFO=0 CARGO_NET_OFFLINE=true cargo test --locked --offline -p infra-project --lib failed_candidate_admission_records_nothing_and_preserves_the_working_owner
 ```
 
 Exit: 0. Raw combined output (`target/review-boundaries-4/green-project-transaction.log`):
 
 ```text
-   Compiling infra-project v0.18.0 (/home/timo/.local/state/worktree/trees/b10x/ess/review-infra-ir-invariants/crates/infra/infra-project)
+   Compiling infra-project v0.18.0 (~/.local/state/worktree/trees/b10x/ess/review-infra-ir-invariants/crates/infra/infra-project)
     Finished `test` profile [unoptimized] target(s) in 0.45s
      Running unittests src/lib.rs (target/debug/deps/infra_project-41d61ffb90a92fc1)
 
@@ -1033,16 +1033,16 @@ test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 8 filtered out; fini
 
 ### green-four-changes
 
-Command (cwd `/home/timo/.local/state/worktree/trees/b10x/ess/review-infra-ir-invariants`):
+Command (cwd `~/.local/state/worktree/trees/b10x/ess/review-infra-ir-invariants`):
 
 ```console
-env TMPDIR="$PWD/target" RUSTC_WRAPPER=/usr/bin/sccache SCCACHE_SERVER_UDS=/home/timo/.local/state/worktree/trees/b10x/ess/wt-752828a285ba/target/w4-cache.sock CARGO_INCREMENTAL=0 CARGO_PROFILE_DEV_DEBUG=0 CARGO_PROFILE_TEST_DEBUG=0 CARGO_CACHE_RUSTC_INFO=0 CARGO_NET_OFFLINE=true cargo test --locked --offline -p infra-project --test round_trip checked_projection_round_trips_all_four_changes_including_probes_and_induced_budget -- --exact
+env TMPDIR="$PWD/target" RUSTC_WRAPPER=/usr/bin/sccache SCCACHE_SERVER_UDS=~/.local/state/worktree/trees/b10x/ess/wt-752828a285ba/target/w4-cache.sock CARGO_INCREMENTAL=0 CARGO_PROFILE_DEV_DEBUG=0 CARGO_PROFILE_TEST_DEBUG=0 CARGO_CACHE_RUSTC_INFO=0 CARGO_NET_OFFLINE=true cargo test --locked --offline -p infra-project --test round_trip checked_projection_round_trips_all_four_changes_including_probes_and_induced_budget -- --exact
 ```
 
 Exit: 0. Raw combined output (`target/review-boundaries-4/green-four-changes.log`):
 
 ```text
-   Compiling infra-project v0.18.0 (/home/timo/.local/state/worktree/trees/b10x/ess/review-infra-ir-invariants/crates/infra/infra-project)
+   Compiling infra-project v0.18.0 (~/.local/state/worktree/trees/b10x/ess/review-infra-ir-invariants/crates/infra/infra-project)
     Finished `test` profile [unoptimized] target(s) in 0.75s
      Running tests/round_trip.rs (target/debug/deps/round_trip-2ed84414750d9f23)
 
@@ -1055,20 +1055,20 @@ test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 6 filtered out; fini
 
 ### final-tests
 
-Command (cwd `/home/timo/.local/state/worktree/trees/b10x/ess/review-infra-ir-invariants`):
+Command (cwd `~/.local/state/worktree/trees/b10x/ess/review-infra-ir-invariants`):
 
 ```console
-env TMPDIR="$PWD/target" RUSTC_WRAPPER=/usr/bin/sccache SCCACHE_SERVER_UDS=/home/timo/.local/state/worktree/trees/b10x/ess/wt-752828a285ba/target/w4-cache.sock CARGO_INCREMENTAL=0 CARGO_PROFILE_DEV_DEBUG=0 CARGO_PROFILE_TEST_DEBUG=0 CARGO_CACHE_RUSTC_INFO=0 CARGO_NET_OFFLINE=true cargo test --locked --offline -p infra-compiler -p infra-analyze -p infra-spec -p infra-project -p ess-cli
+env TMPDIR="$PWD/target" RUSTC_WRAPPER=/usr/bin/sccache SCCACHE_SERVER_UDS=~/.local/state/worktree/trees/b10x/ess/wt-752828a285ba/target/w4-cache.sock CARGO_INCREMENTAL=0 CARGO_PROFILE_DEV_DEBUG=0 CARGO_PROFILE_TEST_DEBUG=0 CARGO_CACHE_RUSTC_INFO=0 CARGO_NET_OFFLINE=true cargo test --locked --offline -p infra-compiler -p infra-analyze -p infra-spec -p infra-project -p ess-cli
 ```
 
 Exit: 0. Raw combined output (`target/review-boundaries-4/final-tests.log`):
 
 ```text
-   Compiling infra-compiler v0.18.0 (/home/timo/.local/state/worktree/trees/b10x/ess/review-infra-ir-invariants/crates/infra/infra-compiler)
-   Compiling infra-analyze v0.18.0 (/home/timo/.local/state/worktree/trees/b10x/ess/review-infra-ir-invariants/crates/infra/infra-analyze)
-   Compiling infra-spec v0.18.0 (/home/timo/.local/state/worktree/trees/b10x/ess/review-infra-ir-invariants/crates/infra/infra-spec)
-   Compiling infra-project v0.18.0 (/home/timo/.local/state/worktree/trees/b10x/ess/review-infra-ir-invariants/crates/infra/infra-project)
-   Compiling ess-cli v0.18.0 (/home/timo/.local/state/worktree/trees/b10x/ess/review-infra-ir-invariants/crates/edge/ess-cli)
+   Compiling infra-compiler v0.18.0 (~/.local/state/worktree/trees/b10x/ess/review-infra-ir-invariants/crates/infra/infra-compiler)
+   Compiling infra-analyze v0.18.0 (~/.local/state/worktree/trees/b10x/ess/review-infra-ir-invariants/crates/infra/infra-analyze)
+   Compiling infra-spec v0.18.0 (~/.local/state/worktree/trees/b10x/ess/review-infra-ir-invariants/crates/infra/infra-spec)
+   Compiling infra-project v0.18.0 (~/.local/state/worktree/trees/b10x/ess/review-infra-ir-invariants/crates/infra/infra-project)
+   Compiling ess-cli v0.18.0 (~/.local/state/worktree/trees/b10x/ess/review-infra-ir-invariants/crates/edge/ess-cli)
     Finished `test` profile [unoptimized] target(s) in 5.48s
      Running unittests src/main.rs (target/debug/deps/ess-2a340c79ed142cb3)
 
@@ -1513,10 +1513,10 @@ test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; fini
 
 ### final-fmt
 
-Command (cwd `/home/timo/.local/state/worktree/trees/b10x/ess/review-infra-ir-invariants`):
+Command (cwd `~/.local/state/worktree/trees/b10x/ess/review-infra-ir-invariants`):
 
 ```console
-env TMPDIR="$PWD/target" RUSTC_WRAPPER=/usr/bin/sccache SCCACHE_SERVER_UDS=/home/timo/.local/state/worktree/trees/b10x/ess/wt-752828a285ba/target/w4-cache.sock CARGO_INCREMENTAL=0 CARGO_PROFILE_DEV_DEBUG=0 CARGO_PROFILE_TEST_DEBUG=0 CARGO_CACHE_RUSTC_INFO=0 CARGO_NET_OFFLINE=true cargo fmt --package infra-compiler --package infra-analyze --package infra-spec --package infra-project --package ess-cli --check
+env TMPDIR="$PWD/target" RUSTC_WRAPPER=/usr/bin/sccache SCCACHE_SERVER_UDS=~/.local/state/worktree/trees/b10x/ess/wt-752828a285ba/target/w4-cache.sock CARGO_INCREMENTAL=0 CARGO_PROFILE_DEV_DEBUG=0 CARGO_PROFILE_TEST_DEBUG=0 CARGO_CACHE_RUSTC_INFO=0 CARGO_NET_OFFLINE=true cargo fmt --package infra-compiler --package infra-analyze --package infra-spec --package infra-project --package ess-cli --check
 ```
 
 Exit: 0. Raw combined output (`target/review-boundaries-4/final-fmt.log`):
@@ -1526,10 +1526,10 @@ Exit: 0. Raw combined output (`target/review-boundaries-4/final-fmt.log`):
 
 ### final-clippy
 
-Command (cwd `/home/timo/.local/state/worktree/trees/b10x/ess/review-infra-ir-invariants`):
+Command (cwd `~/.local/state/worktree/trees/b10x/ess/review-infra-ir-invariants`):
 
 ```console
-env TMPDIR="$PWD/target" RUSTC_WRAPPER=/usr/bin/sccache SCCACHE_SERVER_UDS=/home/timo/.local/state/worktree/trees/b10x/ess/wt-752828a285ba/target/w4-cache.sock CARGO_INCREMENTAL=0 CARGO_PROFILE_DEV_DEBUG=0 CARGO_PROFILE_TEST_DEBUG=0 CARGO_CACHE_RUSTC_INFO=0 CARGO_NET_OFFLINE=true cargo clippy --locked --offline -p infra-compiler -p infra-analyze -p infra-spec -p infra-project -p ess-cli --all-targets -- -D warnings
+env TMPDIR="$PWD/target" RUSTC_WRAPPER=/usr/bin/sccache SCCACHE_SERVER_UDS=~/.local/state/worktree/trees/b10x/ess/wt-752828a285ba/target/w4-cache.sock CARGO_INCREMENTAL=0 CARGO_PROFILE_DEV_DEBUG=0 CARGO_PROFILE_TEST_DEBUG=0 CARGO_CACHE_RUSTC_INFO=0 CARGO_NET_OFFLINE=true cargo clippy --locked --offline -p infra-compiler -p infra-analyze -p infra-spec -p infra-project -p ess-cli --all-targets -- -D warnings
 ```
 
 Exit: 0. Raw combined output (`target/review-boundaries-4/final-clippy.log`):
@@ -1615,37 +1615,37 @@ Exit: 0. Raw combined output (`target/review-boundaries-4/final-clippy.log`):
     Checking fraction v0.17.0
     Checking schemars v0.8.22
     Checking clap v4.6.6
-    Checking infra-domain v0.18.0 (/home/timo/.local/state/worktree/trees/b10x/ess/review-infra-ir-invariants/crates/infra/infra-domain)
-    Checking ess-kubernetes v0.18.0 (/home/timo/.local/state/worktree/trees/b10x/ess/review-infra-ir-invariants/crates/infra/ess-kubernetes)
-    Checking ess-openapi v0.18.0 (/home/timo/.local/state/worktree/trees/b10x/ess/review-infra-ir-invariants/crates/generate/ess-openapi)
+    Checking infra-domain v0.18.0 (~/.local/state/worktree/trees/b10x/ess/review-infra-ir-invariants/crates/infra/infra-domain)
+    Checking ess-kubernetes v0.18.0 (~/.local/state/worktree/trees/b10x/ess/review-infra-ir-invariants/crates/infra/ess-kubernetes)
+    Checking ess-openapi v0.18.0 (~/.local/state/worktree/trees/b10x/ess/review-infra-ir-invariants/crates/generate/ess-openapi)
     Checking ahash v0.8.12
-    Checking ess-primitives v0.18.0 (/home/timo/.local/state/worktree/trees/b10x/ess/review-infra-ir-invariants/crates/specify/ess-primitives)
+    Checking ess-primitives v0.18.0 (~/.local/state/worktree/trees/b10x/ess/review-infra-ir-invariants/crates/specify/ess-primitives)
     Checking jsonschema-value v0.52.1
     Checking referencing v0.52.1
     Checking regex v1.13.1
     Checking fancy-regex v0.19.0
-    Checking ess-domain v0.18.0 (/home/timo/.local/state/worktree/trees/b10x/ess/review-infra-ir-invariants/crates/specify/ess-domain)
-    Checking infra-compiler v0.18.0 (/home/timo/.local/state/worktree/trees/b10x/ess/review-infra-ir-invariants/crates/infra/infra-compiler)
+    Checking ess-domain v0.18.0 (~/.local/state/worktree/trees/b10x/ess/review-infra-ir-invariants/crates/specify/ess-domain)
+    Checking infra-compiler v0.18.0 (~/.local/state/worktree/trees/b10x/ess/review-infra-ir-invariants/crates/infra/infra-compiler)
     Checking jsonschema v0.52.1
-    Checking infra-analyze v0.18.0 (/home/timo/.local/state/worktree/trees/b10x/ess/review-infra-ir-invariants/crates/infra/infra-analyze)
-    Checking infra-spec v0.18.0 (/home/timo/.local/state/worktree/trees/b10x/ess/review-infra-ir-invariants/crates/infra/infra-spec)
-    Checking ess-compiler v0.18.0 (/home/timo/.local/state/worktree/trees/b10x/ess/review-infra-ir-invariants/crates/specify/ess-compiler)
-    Checking infra-project v0.18.0 (/home/timo/.local/state/worktree/trees/b10x/ess/review-infra-ir-invariants/crates/infra/infra-project)
-    Checking ess-gen v0.18.0 (/home/timo/.local/state/worktree/trees/b10x/ess/review-infra-ir-invariants/crates/generate/ess-gen)
-    Checking ess-realization v0.18.0 (/home/timo/.local/state/worktree/trees/b10x/ess/review-infra-ir-invariants/crates/specify/ess-realization)
-    Checking ess-composition v0.18.0 (/home/timo/.local/state/worktree/trees/b10x/ess/review-infra-ir-invariants/crates/specify/ess-composition)
-    Checking ess-deployment v0.18.0 (/home/timo/.local/state/worktree/trees/b10x/ess/review-infra-ir-invariants/crates/generate/ess-deployment)
-    Checking schema-contract v0.18.0 (/home/timo/.local/state/worktree/trees/b10x/ess/review-infra-ir-invariants/crates/generate/schema-contract)
-    Checking ess-conformance v0.18.0 (/home/timo/.local/state/worktree/trees/b10x/ess/review-infra-ir-invariants/crates/verify/ess-conformance)
-    Checking ess-synth v0.18.0 (/home/timo/.local/state/worktree/trees/b10x/ess/review-infra-ir-invariants/crates/generate/ess-synth)
-    Checking ess-diff v0.18.0 (/home/timo/.local/state/worktree/trees/b10x/ess/review-infra-ir-invariants/crates/verify/ess-diff)
-    Checking ess-cli v0.18.0 (/home/timo/.local/state/worktree/trees/b10x/ess/review-infra-ir-invariants/crates/edge/ess-cli)
+    Checking infra-analyze v0.18.0 (~/.local/state/worktree/trees/b10x/ess/review-infra-ir-invariants/crates/infra/infra-analyze)
+    Checking infra-spec v0.18.0 (~/.local/state/worktree/trees/b10x/ess/review-infra-ir-invariants/crates/infra/infra-spec)
+    Checking ess-compiler v0.18.0 (~/.local/state/worktree/trees/b10x/ess/review-infra-ir-invariants/crates/specify/ess-compiler)
+    Checking infra-project v0.18.0 (~/.local/state/worktree/trees/b10x/ess/review-infra-ir-invariants/crates/infra/infra-project)
+    Checking ess-gen v0.18.0 (~/.local/state/worktree/trees/b10x/ess/review-infra-ir-invariants/crates/generate/ess-gen)
+    Checking ess-realization v0.18.0 (~/.local/state/worktree/trees/b10x/ess/review-infra-ir-invariants/crates/specify/ess-realization)
+    Checking ess-composition v0.18.0 (~/.local/state/worktree/trees/b10x/ess/review-infra-ir-invariants/crates/specify/ess-composition)
+    Checking ess-deployment v0.18.0 (~/.local/state/worktree/trees/b10x/ess/review-infra-ir-invariants/crates/generate/ess-deployment)
+    Checking schema-contract v0.18.0 (~/.local/state/worktree/trees/b10x/ess/review-infra-ir-invariants/crates/generate/schema-contract)
+    Checking ess-conformance v0.18.0 (~/.local/state/worktree/trees/b10x/ess/review-infra-ir-invariants/crates/verify/ess-conformance)
+    Checking ess-synth v0.18.0 (~/.local/state/worktree/trees/b10x/ess/review-infra-ir-invariants/crates/generate/ess-synth)
+    Checking ess-diff v0.18.0 (~/.local/state/worktree/trees/b10x/ess/review-infra-ir-invariants/crates/verify/ess-diff)
+    Checking ess-cli v0.18.0 (~/.local/state/worktree/trees/b10x/ess/review-infra-ir-invariants/crates/edge/ess-cli)
     Finished `dev` profile [unoptimized] target(s) in 10.25s
 ```
 
 ### diff-check
 
-Command (cwd `/home/timo/.local/state/worktree/trees/b10x/ess/review-infra-ir-invariants`):
+Command (cwd `~/.local/state/worktree/trees/b10x/ess/review-infra-ir-invariants`):
 
 ```console
 git diff --check
@@ -1666,7 +1666,7 @@ All six handle lookups are called after compile, read, clone and valid transform
 
 ### base-writer
 
-Command (cwd `/home/timo/.local/state/worktree/trees/b10x/ess/review-infra-ir-invariants`):
+Command (cwd `~/.local/state/worktree/trees/b10x/ess/review-infra-ir-invariants`):
 
 ```console
 target/debug/ess import kubernetes --path examples/k3d-dev-cluster/observation.json --out target/review-boundaries-4/base-k3d.ir.json --format json
@@ -1698,7 +1698,7 @@ Exit: 0. Raw combined output (`target/review-boundaries-4/base-writer.log`):
 
 ### final-writer
 
-Command (cwd `/home/timo/.local/state/worktree/trees/b10x/ess/review-infra-ir-invariants`):
+Command (cwd `~/.local/state/worktree/trees/b10x/ess/review-infra-ir-invariants`):
 
 ```console
 target/debug/ess import kubernetes --path examples/k3d-dev-cluster/observation.json --out target/review-boundaries-4/final-k3d.ir.json --format json
@@ -1730,7 +1730,7 @@ Exit: 0. Raw combined output (`target/review-boundaries-4/final-writer.log`):
 
 ### canonical-comparison
 
-Command (cwd `/home/timo/.local/state/worktree/trees/b10x/ess/review-infra-ir-invariants`):
+Command (cwd `~/.local/state/worktree/trees/b10x/ess/review-infra-ir-invariants`):
 
 ```console
 cmp target/review-boundaries-4/base-k3d.ir.json target/review-boundaries-4/final-k3d.ir.json
@@ -1759,7 +1759,7 @@ Exit: 0. Raw combined output (`target/review-boundaries-4/canonical-comparison.l
 
 ## 6. Paths, resources and handoff
 
-Wrote outside the assigned worktree: none. All logs, exit files, base/final writer captures, this report and temporary probe/compiler artifacts are beneath /home/timo/.local/state/worktree/trees/b10x/ess/review-infra-ir-invariants/target. Authored source/tests/design are only the assigned paths listed above. The retired ad hoc probe's temporary sources/artifacts remain under target/review-boundaries-4/public-api; no managed tree or build directory was removed.
+Wrote outside the assigned worktree: none. All logs, exit files, base/final writer captures, this report and temporary probe/compiler artifacts are beneath ~/.local/state/worktree/trees/b10x/ess/review-infra-ir-invariants/target. Authored source/tests/design are only the assigned paths listed above. The retired ad hoc probe's temporary sources/artifacts remain under target/review-boundaries-4/public-api; no managed tree or build directory was removed.
 
 All Cargo commands used the brief's exact environment, including the coordinator-owned idle-disabled w4 socket, worktree-local TMPDIR, offline mode and no CARGO_TARGET_DIR. No cache lifecycle/override was performed.
 

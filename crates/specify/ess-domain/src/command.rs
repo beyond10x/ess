@@ -1821,6 +1821,10 @@ pub fn validate_payloads(
     conversions: &crate::types::ConversionRegistry,
 ) -> ValidationErrors {
     let mut errors = ValidationErrors::new();
+    // Once for the document, for the reason `binding::validate_bindings` states: it is a fixpoint
+    // over the whole registry, and asking it per literal makes one document quadratic in its own
+    // size.
+    let inhabitation = crate::system::Inhabitation::of(types);
     for command in commands.values() {
         for outcome in &command.outcomes {
             for (event_name, fields) in &outcome.payload {
@@ -1844,8 +1848,11 @@ pub fn validate_payloads(
                         event,
                         target,
                         source,
-                        types,
-                        conversions,
+                        Resolved {
+                            types,
+                            conversions,
+                            inhabitation: &inhabitation,
+                        },
                     ));
                 }
             }
@@ -1855,15 +1862,29 @@ pub fn validate_payloads(
 }
 
 /// One payload entry: the event field it fills, the value it takes, and whether the two agree.
+/// What a payload entry is resolved against, and none of it changes from entry to entry.
+///
+/// The move `binding::Ends` already makes, for the reason its own documentation gives: the
+/// registry, the declared conversions and the set of types the type pass refuses are properties of
+/// the document, and threading them one at a time is how this argument list reached eight.
+#[derive(Clone, Copy)]
+struct Resolved<'a> {
+    types: &'a TypeRegistry,
+    conversions: &'a crate::types::ConversionRegistry,
+    /// Which declarations `check_inhabitation` refuses, so a rule staying silent can check that
+    /// somebody else really speaks — about the type in hand, and not merely about a name under it.
+    inhabitation: &'a crate::system::Inhabitation,
+}
+
 fn check_payload_entry(
     at: &ConstructRef,
     command: &CommandSpec,
     event: &EventSpec,
     target: &str,
     source: &PayloadSource,
-    types: &TypeRegistry,
-    conversions: &crate::types::ConversionRegistry,
+    resolved: Resolved<'_>,
 ) -> ValidationErrors {
+    let conversions = resolved.conversions;
     let mut errors = ValidationErrors::new();
 
     let Some(filled) = event.field(target) else {
@@ -1922,7 +1943,7 @@ fn check_payload_entry(
         }
         PayloadSource::Literal { value } => {
             errors.extend(check_payload_literal(
-                at, command, event, target, filled, value, types,
+                at, command, event, target, filled, value, resolved,
             ));
         }
     }
@@ -2092,9 +2113,9 @@ fn check_payload_literal(
     target: &str,
     filled: &Field,
     value: &str,
-    types: &TypeRegistry,
+    resolved: Resolved<'_>,
 ) -> ValidationErrors {
-    use crate::binding::{is_field_name, near_miss, representation, Representation};
+    use crate::binding::{is_field_name, near_miss, representation, Representation, Resolution};
 
     let mut errors = ValidationErrors::new();
     let prefix = PayloadSource::INPUT_PREFIX;
@@ -2148,9 +2169,25 @@ fn check_payload_literal(
             command.name
         ))
     };
-    match representation(&filled.type_ref, types) {
-        Some(Representation::Text) | None => {}
-        Some(Representation::Variants(variants)) => {
+    match representation(&filled.type_ref, resolved.types, resolved.inhabitation) {
+        // Text is checked as far as text can be. The other two silences belong to other passes,
+        // and each is a deferral to a refusal that is actually made about the type in hand: a name
+        // nothing declares is reported where unresolved references are, and `Uninhabited` is
+        // answered only when `check_inhabitation` emits `self_reference` for the very type the
+        // literal fills. It is not every type with no values of its own — one whose field names
+        // nothing, and one sitting behind an `Optional`, are both `Structured` and both refused
+        // here, because here is where they are refused at all.
+        Resolution::Established(Representation::Text)
+        | Resolution::Undeclared
+        | Resolution::Uninhabited => {}
+        // A type that has values and still resolves through itself is nobody else's error: no pass
+        // reports it, so admitting the literal would be admitting one that was never checked.
+        Resolution::Cyclic(through) => errors.push(refuse(format!(
+            "`{}.{target}` is `{}`, whose representation resolves through `{through}` again, so \
+             no representation a literal could be written as is ever reached",
+            event.name, filled.type_ref
+        ))),
+        Resolution::Established(Representation::Variants(variants)) => {
             if !variants.iter().any(|variant| variant == value) {
                 errors.push(
                     ValidationError::at(
@@ -2165,13 +2202,13 @@ fn check_payload_literal(
                 );
             }
         }
-        Some(Representation::Primitive(primitive)) => {
+        Resolution::Established(Representation::Primitive(primitive)) => {
             errors.push(refuse(format!(
                 "`{}.{target}` is `{primitive}` underneath, and a literal in a payload is text",
                 event.name
             )));
         }
-        Some(Representation::Structured) => {
+        Resolution::Established(Representation::Structured) => {
             errors.push(refuse(format!(
                 "`{}.{target}` has structure, and a literal in a payload is one piece of text",
                 event.name
@@ -4574,6 +4611,189 @@ payload:
         assert_eq!(found.len(), 1, "{found}");
         assert!(found.contains(ValidationCode::TypeMismatch));
         assert!(found.to_string().contains("has structure"), "{found}");
+    }
+
+    /// [`registry`] plus `billing.chain.Link0` … `Link{length - 1}`, each a newtype of the next,
+    /// the last a newtype of an enum.
+    ///
+    /// The payload surface shares the binding surface's representation authority, so it inherits
+    /// whatever that authority does at the end of a long chain — which is why it is measured here
+    /// as well as there.
+    fn chained_registry(length: usize) -> TypeRegistry {
+        let mut registry = registry();
+        registry
+            .insert(NamedType {
+                reading: None,
+                name: name("billing.invoice.Channel"),
+                body: TypeBody::Enum {
+                    variants: vec!["Email".to_owned(), "Post".to_owned(), "Portal".to_owned()],
+                },
+                naming: Naming::default(),
+            })
+            .expect("new");
+        for index in 0..length {
+            let of = if index + 1 == length {
+                "billing.invoice.Channel".to_owned()
+            } else {
+                format!("billing.chain.Link{}", index + 1)
+            };
+            registry
+                .insert(NamedType {
+                    reading: None,
+                    name: name(&format!("billing.chain.Link{index}")),
+                    body: TypeBody::Newtype {
+                        of: TypeRef::Named(name(&of)),
+                        invariants: Vec::new(),
+                    },
+                    naming: Naming::default(),
+                })
+                .expect("new");
+        }
+        registry
+    }
+
+    /// [`registry`] plus a newtype of `Optional` of itself, which is inhabited and declared.
+    fn cyclic_registry() -> TypeRegistry {
+        let mut registry = registry();
+        registry
+            .insert(NamedType {
+                reading: None,
+                name: name("billing.chain.Cycle"),
+                body: TypeBody::Newtype {
+                    of: TypeRef::Optional(Box::new(TypeRef::Named(name("billing.chain.Cycle")))),
+                    invariants: Vec::new(),
+                },
+                naming: Naming::default(),
+            })
+            .expect("new");
+        registry
+    }
+
+    /// The fixture event, carrying one more field of the type under test.
+    fn invoice_created_carrying(type_ref: &str) -> EventSpec {
+        let mut event = invoice_created();
+        event
+            .fields
+            .push(Field::new("channel", TypeRef::Named(name(type_ref))));
+        event
+    }
+
+    /// The two maps [`validate_payloads`] walks, for an event the case chose.
+    fn payload_context_with(
+        command: CommandSpec,
+        event: EventSpec,
+    ) -> (
+        BTreeMap<QualifiedName, CommandSpec>,
+        BTreeMap<QualifiedName, EventSpec>,
+    ) {
+        (
+            [(command.name.clone(), command)].into(),
+            [(event.name.clone(), event)].into(),
+        )
+    }
+
+    #[test]
+    fn a_payload_literal_is_checked_at_and_past_the_internal_walk_bound() {
+        for length in [
+            crate::binding::WRAPPER_LIMIT - 1,
+            crate::binding::WRAPPER_LIMIT,
+            crate::binding::WRAPPER_LIMIT + 1,
+        ] {
+            let (commands, declared_events) = payload_context_with(
+                create_invoice_determining("channel", "Postal"),
+                invoice_created_carrying("billing.chain.Link0"),
+            );
+            let found = validate_payloads(
+                &commands,
+                &declared_events,
+                &chained_registry(length),
+                &crate::types::ConversionRegistry::default(),
+            );
+            assert_eq!(found.len(), 1, "{length}: {found}");
+            assert!(
+                found.contains(ValidationCode::TypeMismatch),
+                "{length}: {found}"
+            );
+            assert!(
+                found.to_string().contains("not a variant"),
+                "{length}: {found}"
+            );
+
+            let (commands, declared_events) = payload_context_with(
+                create_invoice_determining("channel", "Post"),
+                invoice_created_carrying("billing.chain.Link0"),
+            );
+            let admitted = validate_payloads(
+                &commands,
+                &declared_events,
+                &chained_registry(length),
+                &crate::types::ConversionRegistry::default(),
+            );
+            assert!(admitted.is_empty(), "{length}: {admitted}");
+        }
+    }
+
+    #[test]
+    fn a_payload_literal_whose_representation_resolves_through_itself_is_refused() {
+        let (commands, declared_events) = payload_context_with(
+            create_invoice_determining("channel", "anything"),
+            invoice_created_carrying("billing.chain.Cycle"),
+        );
+        let found = validate_payloads(
+            &commands,
+            &declared_events,
+            &cyclic_registry(),
+            &crate::types::ConversionRegistry::default(),
+        );
+        assert_eq!(found.len(), 1, "{found}");
+        assert!(found.contains(ValidationCode::TypeMismatch), "{found}");
+        assert!(found.to_string().contains("billing.chain.Cycle"), "{found}");
+    }
+
+    #[test]
+    fn a_payload_literal_filling_a_ring_no_value_inhabits_is_left_to_the_type_pass() {
+        // The shared authority answers both surfaces, so the payload consumer has to make the same
+        // distinction the mapping consumer does: `check_inhabitation` refuses `Ring` itself, and a
+        // second refusal from here would report one mistake twice.
+        let mut registry = registry();
+        registry
+            .insert(NamedType {
+                reading: None,
+                name: name("billing.chain.Ring"),
+                body: TypeBody::Newtype {
+                    of: TypeRef::Named(name("billing.chain.Ring")),
+                    invariants: Vec::new(),
+                },
+                naming: Naming::default(),
+            })
+            .expect("new");
+        let (commands, declared_events) = payload_context_with(
+            create_invoice_determining("channel", "anything"),
+            invoice_created_carrying("billing.chain.Ring"),
+        );
+        let found = validate_payloads(
+            &commands,
+            &declared_events,
+            &registry,
+            &crate::types::ConversionRegistry::default(),
+        );
+        assert!(found.is_empty(), "{found}");
+    }
+
+    #[test]
+    fn a_payload_literal_filling_a_field_of_an_undeclared_type_is_left_to_the_type_pass() {
+        // The discriminator: a name nothing declares is reported where unresolved references are.
+        let (commands, declared_events) = payload_context_with(
+            create_invoice_determining("channel", "anything"),
+            invoice_created_carrying("billing.chain.Missing"),
+        );
+        let found = validate_payloads(
+            &commands,
+            &declared_events,
+            &registry(),
+            &crate::types::ConversionRegistry::default(),
+        );
+        assert!(found.is_empty(), "{found}");
     }
 
     /// The valid fixture command with one payload entry swapped in, for each cross-check to break.

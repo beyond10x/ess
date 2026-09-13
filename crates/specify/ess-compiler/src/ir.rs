@@ -758,10 +758,11 @@ pub enum ResolvedPayloadValue {
     },
     /// A value written in the outcome itself.
     ///
-    /// When the target's representation is reached within [`ess_domain::binding::WRAPPER_LIMIT`],
     /// `ess-domain` verifies enum membership or admits text for String-backed targets, following
-    /// Optional/newtype wrappers as for bindings. Exhausting the bound establishes neither
-    /// guarantee. Type invariants and the existence of external resources are not verified.
+    /// every Optional/newtype wrapper the document writes, as for bindings. A representation that
+    /// resolves through itself is refused there rather than admitted, so a literal that reaches
+    /// this IR was checked. Type invariants and the existence of external resources are not
+    /// verified.
     Literal {
         /// The value, as written.
         value: String,
@@ -1047,11 +1048,12 @@ pub enum ResolvedMappingValue {
     },
     /// A value written in the binding itself.
     ///
-    /// When the target's representation is reached within [`ess_domain::binding::WRAPPER_LIMIT`],
-    /// enum membership is verified through Optional/newtype wrappers, and String-backed targets
-    /// admit text. Exhausting the bound establishes neither guarantee. Type invariants and the
-    /// existence of external resources are not verified; `invoice-created` being accepted for a
-    /// String-backed `TemplateId` does not establish that the template exists.
+    /// Enum membership is verified through every Optional/newtype wrapper the document writes, and
+    /// String-backed targets admit text. A representation that resolves through itself is refused
+    /// in `ess-domain` rather than admitted, so a literal that reaches this IR was checked. Type
+    /// invariants and the existence of external resources are not verified; `invoice-created`
+    /// being accepted for a String-backed `TemplateId` does not establish that the template
+    /// exists.
     Literal {
         /// The value, as written.
         value: String,

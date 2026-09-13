@@ -8,3 +8,5 @@ pub mod bundle;
 pub mod realize;
 pub mod typescript;
 pub mod validate;
+
+pub mod uniqueness;

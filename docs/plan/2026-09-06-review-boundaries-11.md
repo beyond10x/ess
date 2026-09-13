@@ -60,7 +60,7 @@ No old task unit or its assigned build directory is carried into this wave.
 
 Planned unit ID: `ess-conformance-coverage-writer`.
 Planned branch: `impl/review-conformance-coverage`.
-Planned worktree: `/home/timo/.local/state/worktree/trees/b10x/ess/ess-conformance-coverage-writer`.
+Planned worktree: `~/.local/state/worktree/trees/b10x/ess/ess-conformance-coverage-writer`.
 Build: the unit's `target` directory. Scratch: `target/review-boundaries-11/coverage-writer`
 inside that unit; TMP and Cargo home remain beneath scratch. The manager's creation result must
 match this triple before dispatch. A separate coordinator-owned producer preparation directory
@@ -110,7 +110,7 @@ coordinator's assigned producer-verification directory, without inspecting new p
 Neither preparation nor a compiled helper is counted as producer correspondence.
 
 The implementor identified the assigned long TMP pathname as unsuitable for browser Unix sockets
-before launching that browser. Root assigned `/home/timo/.cache/ess-w11-browser-tmp` for this
+before launching that browser. Root assigned `~/.cache/ess-w11-browser-tmp` for this
 unit's actual browser profiles/sockets only. All other caches and TMP stay inside unit scratch.
 This exact external root joins the unit's retention/cleanup record; literal link and socket
 metadata must be preserved before its eventual removal.
@@ -162,7 +162,7 @@ permanent regression/gate boundaries. Neither candidate changes this wave's sele
 
 The coordinator's prepared integration runner retains the prior exact per-lane exit, source
 identity and resource checks. Its only adaptations are the wave 11 output path and a separately
-assigned short gate TMP root, `/home/timo/.cache/ess-w11-gate-tmp`, to accommodate actual browser
+assigned short gate TMP root, `~/.cache/ess-w11-gate-tmp`, to accommodate actual browser
 Unix sockets. That root has not been created or used at preparation. Other gate caches remain
 inside the gate output directory; the exact external root joins coordinator retention and cleanup
 with literal link/socket metadata. Preparation has only been syntax checked, not executed.
@@ -254,7 +254,7 @@ the handoff seal is `7e1e360bb0081066cbbf06914b266e7df5add3f02bfed03aebdc1abe4d8
 `expression_review_resume` now receives actual source attack1 using the complete installed
 adversary0.8.0 charter and file brief under wave11 preparation. Its assigned scratch is the unit's
 `target/review-boundaries-11/adversary-pass-1`; short browser TMP is
-`/home/timo/.cache/ess-w11-review1-tmp`. The implementation handoff is relinquished.
+`~/.cache/ess-w11-review1-tmp`. The implementation handoff is relinquished.
 No actual mapper/AEP correspondence or wave11 full integration gate is claimed here.
 The observation candidate scope is separately sealed and root102input hashes verified;
 it remains unselected and its replacement scope commands remain unapplied.
@@ -294,7 +294,7 @@ are frozen by bot commit `06791eddd47f09735bb160c8bcdfacbf460218b7`, with both i
 
 The same implementor, `count_writer_impl8`, now owns correction 1 under the activated file brief
 in wave preparation. Its new scratch is `target/review-boundaries-11/coverage-writer-correction-1`
-in the unit; external browser scratch is `/home/timo/.cache/ess-w11-writerfix1-tmp`. At dispatch,
+in the unit; external browser scratch is `~/.cache/ess-w11-writerfix1-tmp`. At dispatch,
 18,236,919,808 bytes were free; the 8 GiB floor remains. Original reports, tests and preparation
 pins are retained. No fixed review outcome is recorded before the correction actually lands.
 Final source attack 2, integration and actual AEP correspondence remain pending.
@@ -323,7 +323,7 @@ the three producer profiles has 554 source inputs matching that snapshot. Its 39
 four refusal-control index paths were checked as opaque bytes. Both commit identities are the bot.
 The first source review's fixed outcome was recorded after that commit, and source attack 2 is
 active under `expression_review_resume`. Fresh review scratch is `adversary-pass-2` in the unit's
-wave directory; browser scratch is `/home/timo/.cache/ess-w11-review2-tmp`.
+wave directory; browser scratch is `~/.cache/ess-w11-review2-tmp`.
 
 `verification-report:coverage-writer-correction-and-gate-preparation` retains the full separate
 orchestration audit and root's corrections. Use integration runner v6, receipt wrapper v3,

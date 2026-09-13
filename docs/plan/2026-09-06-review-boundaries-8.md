@@ -33,7 +33,7 @@ The implementor establishes package baseline counts, writes/runs behavioral red 
   "git_head": "1667d022ed2041342c8928250ab8bddfe9c988b9",
   "branch": "wave/review-boundaries-7",
   "status": "",
-  "worktrees": "worktree /home/timo/beyond10x/ess\nHEAD 1667d022ed2041342c8928250ab8bddfe9c988b9\nbranch refs/heads/main\n\nworktree /home/timo/.local/state/worktree/trees/b10x/ess/wt-1f0716ada0f4\nHEAD 6ef4af76b99a8d2cd861a3cc76140c88c1361129\nbranch refs/heads/feat/build-graph-projection\n\nworktree /home/timo/.local/state/worktree/trees/b10x/ess/wt-3726210974f1\nHEAD 4ee2653d2c5e1b5a754d7b3b0ed5d35c792882b3\nbranch refs/heads/feat/accepting-wrong-state-and-view-params\n\nworktree /home/timo/.local/state/worktree/trees/b10x/ess/wt-752828a285ba\nHEAD 1667d022ed2041342c8928250ab8bddfe9c988b9\nbranch refs/heads/wave/review-boundaries-7\n\nworktree /home/timo/.local/state/worktree/trees/b10x/ess/wt-8850a8418f1f\nHEAD e6caac9492b8d5ada56dfabed23639a583ad8ac8\nbranch refs/heads/plan/java-conformance-target\n\nworktree /home/timo/.local/state/worktree/trees/b10x/ess/wt-bf45625a6a50\nHEAD 60ffcb2238ffef3a48d0db9555b6f2ca709ca2f7\nbranch refs/heads/impl/normalization-base64-resume\n\nworktree /home/timo/.local/state/worktree/trees/b10x/ess/wt-c12a5474a249\nHEAD 60ffcb2238ffef3a48d0db9555b6f2ca709ca2f7\nbranch refs/heads/impl/normalization-raw-json\n\n",
+  "worktrees": "worktree ~/beyond10x/ess\nHEAD 1667d022ed2041342c8928250ab8bddfe9c988b9\nbranch refs/heads/main\n\nworktree ~/.local/state/worktree/trees/b10x/ess/wt-1f0716ada0f4\nHEAD 6ef4af76b99a8d2cd861a3cc76140c88c1361129\nbranch refs/heads/feat/build-graph-projection\n\nworktree ~/.local/state/worktree/trees/b10x/ess/wt-3726210974f1\nHEAD 4ee2653d2c5e1b5a754d7b3b0ed5d35c792882b3\nbranch refs/heads/feat/accepting-wrong-state-and-view-params\n\nworktree ~/.local/state/worktree/trees/b10x/ess/wt-752828a285ba\nHEAD 1667d022ed2041342c8928250ab8bddfe9c988b9\nbranch refs/heads/wave/review-boundaries-7\n\nworktree ~/.local/state/worktree/trees/b10x/ess/wt-8850a8418f1f\nHEAD e6caac9492b8d5ada56dfabed23639a583ad8ac8\nbranch refs/heads/plan/java-conformance-target\n\nworktree ~/.local/state/worktree/trees/b10x/ess/wt-bf45625a6a50\nHEAD 60ffcb2238ffef3a48d0db9555b6f2ca709ca2f7\nbranch refs/heads/impl/normalization-base64-resume\n\nworktree ~/.local/state/worktree/trees/b10x/ess/wt-c12a5474a249\nHEAD 60ffcb2238ffef3a48d0db9555b6f2ca709ca2f7\nbranch refs/heads/impl/normalization-raw-json\n\n",
   "build_usage": "5668868595\ttarget\n",
   "primary_head": "1667d022ed2041342c8928250ab8bddfe9c988b9",
   "primary_status": "",
@@ -57,12 +57,12 @@ Openingbd6d82f0d551fcf1cc2ec2eab65aab2fe7539947 has verified bot author/committe
 ```json
 {
   "id": "ess-conformance-count-writer",
-  "worktree": "/home/timo/.local/state/worktree/trees/b10x/ess/ess-conformance-count-writer",
+  "worktree": "~/.local/state/worktree/trees/b10x/ess/ess-conformance-count-writer",
   "branch": "impl/ess-conformance-count-writer",
   "base": "bd6d82f0d551fcf1cc2ec2eab65aab2fe7539947",
-  "build": "/home/timo/.local/state/worktree/trees/b10x/ess/ess-conformance-count-writer/target",
-  "scratch": "/home/timo/.local/state/worktree/trees/b10x/ess/ess-conformance-count-writer/target/review-boundaries-8",
-  "brief": "/home/timo/.local/state/worktree/trees/b10x/ess/ess-conformance-count-writer/target/review-boundaries-8/unit-brief.md",
+  "build": "~/.local/state/worktree/trees/b10x/ess/ess-conformance-count-writer/target",
+  "scratch": "~/.local/state/worktree/trees/b10x/ess/ess-conformance-count-writer/target/review-boundaries-8",
+  "brief": "~/.local/state/worktree/trees/b10x/ess/ess-conformance-count-writer/target/review-boundaries-8/unit-brief.md",
   "lease": "ess-review-wave8-count-writer",
   "stage": "provisioned; brief written; ready for dispatch"
 }

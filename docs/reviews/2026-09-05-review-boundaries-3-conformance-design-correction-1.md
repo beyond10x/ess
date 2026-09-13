@@ -544,5 +544,5 @@ The corrected document SHA256 is 84e5519a4aabc80c3f65da00d2f58456d90171837b44aa4
 
 6. Outside paths
 
-None. The only authored scratch file for this correction is /home/timo/.local/state/worktree/trees/b10x/ess/review-conformance-format-design/target/review-boundaries-3/correction-report.md. No unassigned scratch, cache purge, staging, commit, cleanup or worktree operation occurred. Writes are relinquished for coordinator handoff and the second review.
+None. The only authored scratch file for this correction is ~/.local/state/worktree/trees/b10x/ess/review-conformance-format-design/target/review-boundaries-3/correction-report.md. No unassigned scratch, cache purge, staging, commit, cleanup or worktree operation occurred. Writes are relinquished for coordinator handoff and the second review.
 

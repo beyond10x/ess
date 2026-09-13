@@ -11,6 +11,7 @@
 
 use std::path::{Path, PathBuf};
 
+use ess_compiler::diagnostic::{Diagnostic, Diagnostics};
 use ess_compiler::ir::{EssIr, ResolvedFailure, ResolvedMappingValue};
 use ess_compiler::refs::CommandRef;
 use ess_compiler::resolve::{codes, compile, compile_locating, diagnose_locating};
@@ -19,6 +20,7 @@ use ess_domain::binding::BindingName;
 use ess_domain::name::QualifiedName;
 use ess_domain::spec::{RawSpecFile, Specification};
 use ess_domain::system::Source;
+use ess_primitives::error::{ValidationCode, ValidationError, ValidationErrors};
 
 /// The example directory.
 fn example() -> PathBuf {
@@ -461,4 +463,200 @@ fn compiling_without_the_file_list_still_reports_the_document_path() {
         located.to_canonical_json(),
         "line numbers are a property of diagnostics, not of the IR"
     );
+}
+
+// ---- an enum variant nothing declares ------------------------------------------------------
+
+/// The example with one substitution, assembled and bridged the way `ess specify validate` does it.
+///
+/// `ess-cli`'s `load.rs` reads the files, calls [`Specification::assemble`] and hands the refusals
+/// to [`diagnose_locating`]. A test that skipped either half would be asserting about a path no
+/// caller takes — and the half that is skipped is the one that says *which file* the reader has to
+/// open.
+fn refused_with(from: &str, to: &str) -> Diagnostics {
+    let labels = files();
+    let mut sources = SourceMap::new();
+    let mut parsed = Vec::new();
+    let mut edited = false;
+    for label in &labels {
+        let text = std::fs::read_to_string(example().join(label))
+            .unwrap_or_else(|error| panic!("{label} is readable: {error}"));
+        let text = if text.contains(from) {
+            edited = true;
+            text.replace(from, to)
+        } else {
+            text
+        };
+        let raw = RawSpecFile::parse(&text)
+            .unwrap_or_else(|error| panic!("{label} is well formed: {error}"));
+        sources.insert(label.clone(), text);
+        parsed.push((Source::new(label.clone()), raw));
+    }
+    assert!(edited, "the example no longer contains `{from}`");
+    let errors = Specification::assemble(parsed)
+        .err()
+        .unwrap_or_else(|| panic!("`{to}` was accepted"));
+    diagnose_locating(&errors, &sources, &labels)
+}
+
+/// The one diagnostic with this code, or a panic naming everything that was reported instead.
+fn only(diagnostics: &Diagnostics, code: ess_compiler::diagnostic::Code) -> &Diagnostic {
+    let mut found = diagnostics
+        .as_slice()
+        .iter()
+        .filter(|diagnostic| diagnostic.code == code);
+    let first = found
+        .next()
+        .unwrap_or_else(|| panic!("no {code} among: {diagnostics}"));
+    assert!(
+        found.next().is_none(),
+        "more than one {code}: {diagnostics}"
+    );
+    first
+}
+
+/// The 1-based line `needle` ends in the example's invoice domain.
+///
+/// `ends_with` and not `contains`, for the reason this whole section exists: `contains` finds
+/// `name: billing.invoice.Invoice` on the line declaring `billing.invoice.InvoiceId`.
+fn invoice_line(needle: &str) -> usize {
+    let text = std::fs::read_to_string(example().join("domains/invoice.yaml"))
+        .expect("the invoice domain is readable");
+    let Some(index) = text
+        .lines()
+        .position(|line| line.trim_end().ends_with(needle))
+    else {
+        panic!("`{needle}` is in the invoice domain")
+    };
+    index + 1
+}
+
+/// Every declared name, with the file and line it is declared on.
+fn declared_names() -> Vec<(String, String, usize)> {
+    let mut declared = Vec::new();
+    for label in files() {
+        let text = std::fs::read_to_string(example().join(&label))
+            .unwrap_or_else(|error| panic!("{label} is readable: {error}"));
+        for (index, line) in text.lines().enumerate() {
+            let Some((prefix, value)) = line.split_once("name: ") else {
+                continue;
+            };
+            // A declaration's own key, not `display_name:` or a field called `name`.
+            if prefix.trim_start_matches([' ', '-']).is_empty() && value.contains('.') {
+                declared.push((value.trim().to_owned(), label.clone(), index + 1));
+            }
+        }
+    }
+    assert!(!declared.is_empty(), "the example declares nothing");
+    declared
+}
+
+#[test]
+fn an_entity_invariant_comparing_an_enum_field_to_an_undeclared_variant_is_refused_with_its_file() {
+    // The defect story's own reproduction, on the example rather than on a copy of ACD: `channel`
+    // is `billing.invoice.Channel`, whose variants are `Email`, `Post` and `Portal`. An invariant
+    // comparing it to a name the enum does not declare constrains nothing, so it is refused — and a
+    // refusal a reader cannot open the file of is a refusal they have to grep for.
+    let diagnostics = refused_with("      - reminder_count >= 0", "      - channel == Fax");
+    let refused = only(&diagnostics, codes::ENTITY_UNDECLARED_REFERENCE);
+    let span = refused.span.as_ref().expect("a span");
+
+    assert_eq!(
+        span.source, "domains/invoice.yaml",
+        "the file the invariant was read from: {refused}"
+    );
+    assert_eq!(
+        span.located.expect("the declaration was found").line,
+        invoice_line("name: billing.invoice.Invoice"),
+        "the entity the invariant belongs to: {refused}"
+    );
+    for named in [
+        "billing.invoice.Channel",
+        "Fax",
+        "`Email`",
+        "`Post`",
+        "`Portal`",
+    ] {
+        assert!(
+            refused.message.contains(named),
+            "the refusal names the enum and what it does declare, not only the field: {refused}"
+        );
+    }
+}
+
+#[test]
+fn a_view_filter_comparing_an_enum_field_to_an_undeclared_variant_is_refused_the_same_way() {
+    // The half that already worked when the story was written. It is here beside the entity case so
+    // that a refactor of the shared checker cannot keep one and lose the other.
+    let diagnostics = refused_with("filter: state == Issued", "filter: channel == Fax");
+    let refused = only(&diagnostics, codes::VIEW_UNDECLARED_REFERENCE);
+    let span = refused.span.as_ref().expect("a span");
+
+    assert_eq!(
+        span.source, "domains/invoice.yaml",
+        "the file the filter was read from: {refused}"
+    );
+    assert_eq!(
+        span.located.expect("the view was found").line,
+        // The view's own declaration, not the `filter:` line: `filter` is a structural key, so the
+        // locator never builds a needle from it. Coarse, and never wrong — the module's own rule.
+        invoice_line("name: billing.invoice.OutstandingInvoices"),
+        "the view the filter belongs to: {refused}"
+    );
+    for named in [
+        "billing.invoice.Channel",
+        "Fax",
+        "`Email`",
+        "`Post`",
+        "`Portal`",
+    ] {
+        assert!(
+            refused.message.contains(named),
+            "the refusal names the enum and what it does declare, not only the field: {refused}"
+        );
+    }
+}
+
+#[test]
+fn a_declaration_whose_name_prefixes_another_is_still_located_in_its_own_file() {
+    // The class the entity invariant's missing file is one instance of. The locator counts
+    // occurrences of `name: <declaration>` in the source text, and an entity's name is a prefix of
+    // its own identity type's — `billing.invoice.Invoice` occurs inside `billing.invoice.InvoiceId`
+    // — so the count was never one and the span fell back to `<document>` with no line.
+    //
+    // The set is derived from the example's own text rather than listed here: a declaration added
+    // to it that collides this way is covered without anyone remembering to extend a list.
+    let declared = declared_names();
+    let colliding: Vec<&(String, String, usize)> = declared
+        .iter()
+        .filter(|(name, _, _)| {
+            declared
+                .iter()
+                .any(|(other, _, _)| other != name && other.starts_with(name.as_str()))
+        })
+        .collect();
+    assert!(
+        !colliding.is_empty(),
+        "no declaration in the example prefixes another, so this proves nothing"
+    );
+
+    for (name, label, line) in colliding {
+        // The layer a refusal's path starts with decides its family, not its span; every one of
+        // these is located by the needle built from the declaration's own name.
+        let errors = ValidationErrors::new().with(ValidationError::new(
+            ValidationCode::UndeclaredReference,
+            format!("entity {name}.invariants[0]"),
+            "a refusal about this declaration",
+        ));
+        let (_, sources, labels) = read_example();
+        let diagnostics = diagnose_locating(&errors, &sources, &labels);
+        let span = diagnostics.as_slice()[0].span.as_ref().expect("a span");
+
+        assert_eq!(span.source, *label, "{name} is declared in {label}: {span}");
+        assert_eq!(
+            span.located.expect("the declaration was found").line,
+            *line,
+            "{name} is declared on line {line} of {label}: {span}"
+        );
+    }
 }

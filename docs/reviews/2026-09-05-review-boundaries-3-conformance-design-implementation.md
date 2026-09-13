@@ -9,7 +9,7 @@ needs-coordinator:      no source patch outside assignment; later Atlas/AEP/adop
 
 Acceptance: a binding migration design specifies unambiguous old/current suite and report semantics for every current producer state and coverage category before a new writer is implemented.
 
-The new document is docs/design/review-conformance-coverage.md in /home/timo/.local/state/worktree/trees/b10x/ess/review-conformance-format-design, based on ESS 45832cc885377b2d61845ee33af14f0293d99e67. Its decisions reserve report/2, suite/5 and detailed run/2, freeze existing meanings/valid bytes, define producer-specific outcome partitions, define exact issued-JSON byte binding, persist selection/coverage, specify strict qualification, and sequence readers before new default writers.
+The new document is docs/design/review-conformance-coverage.md in ~/.local/state/worktree/trees/b10x/ess/review-conformance-format-design, based on ESS 45832cc885377b2d61845ee33af14f0293d99e67. Its decisions reserve report/2, suite/5 and detailed run/2, freeze existing meanings/valid bytes, define producer-specific outcome partitions, define exact issued-JSON byte binding, persist selection/coverage, specify strict qualification, and sequence readers before new default writers.
 
 The document distinguishes source observations from specified future behavior. It does not claim an Atlas ADR, downstream adaptation, compatibility test, or implementation release has shipped.
 
@@ -89,7 +89,7 @@ exit: 0
 ```
 
 ```text
-$ git -C /home/timo/beyond10x/aep --no-pager diff cc321f31fa0120b32a5b9f5e7b8c8fdfa55f69f9 00c742e4179593738a2e8aa69e2ecc07d3c89402 -- crates/observe/aep-ess-evidence/src/lib.rs crates/edge/aep-cli/src/planning.rs
+$ git -C ~/beyond10x/aep --no-pager diff cc321f31fa0120b32a5b9f5e7b8c8fdfa55f69f9 00c742e4179593738a2e8aa69e2ecc07d3c89402 -- crates/observe/aep-ess-evidence/src/lib.rs crates/edge/aep-cli/src/planning.rs
 exit: 0
 ```
 
@@ -124,8 +124,8 @@ git diff --check exits 0. The new-file no-index check emits no whitespace diagno
 Authored outside-worktree paths: none.
 
 Authored paths:
-- /home/timo/.local/state/worktree/trees/b10x/ess/review-conformance-format-design/docs/design/review-conformance-coverage.md
-- /home/timo/.local/state/worktree/trees/b10x/ess/review-conformance-format-design/target/review-boundaries-3/implementation-report.md
+- ~/.local/state/worktree/trees/b10x/ess/review-conformance-format-design/docs/design/review-conformance-coverage.md
+- ~/.local/state/worktree/trees/b10x/ess/review-conformance-format-design/target/review-boundaries-3/implementation-report.md
 
 No compiler target or new cache location was created, and no build ran. Free space at final observation was 140,469,350,400 bytes, above the 8,589,934,592-byte reserve. No worktree/cache/build directory was removed.
 

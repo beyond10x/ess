@@ -195,7 +195,7 @@ I/N entries below are Git blobs at 3408bbf049d10215487c50f6f7b5597486b14127. Rea
 | N02 | crates/specify/ess-compiler/src/ir.rs |
 | N03 | crates/verify/ess-conformance/src/scenario.rs |
 | N04 | crates/edge/ess-cli/src/coverage.rs |
-| L05 | /home/timo/.local/state/worktree/trees/b10x/ess/wt-752828a285ba/target/review-boundaries-15/preparation/delivery-trust-scoper/root-local-consumer-inventory.json |
-| L06 | /home/timo/.local/state/worktree/trees/b10x/ess/wt-752828a285ba/target/review-boundaries-15/preparation/delivery-trust-scoper/remote-consumer-discovery/command.json |
-| L07 | /home/timo/.local/state/worktree/trees/b10x/ess/wt-752828a285ba/target/review-boundaries-15/preparation/delivery-trust-scoper/remote-consumer-discovery/search.stdout |
-| L08 | /home/timo/.local/state/worktree/trees/b10x/ess/wt-752828a285ba/target/review-boundaries-15/preparation/delivery-trust-scoper/remote-consumer-discovery/search.stderr |
+| L05 | ~/.local/state/worktree/trees/b10x/ess/wt-752828a285ba/target/review-boundaries-15/preparation/delivery-trust-scoper/root-local-consumer-inventory.json |
+| L06 | ~/.local/state/worktree/trees/b10x/ess/wt-752828a285ba/target/review-boundaries-15/preparation/delivery-trust-scoper/remote-consumer-discovery/command.json |
+| L07 | ~/.local/state/worktree/trees/b10x/ess/wt-752828a285ba/target/review-boundaries-15/preparation/delivery-trust-scoper/remote-consumer-discovery/search.stdout |
+| L08 | ~/.local/state/worktree/trees/b10x/ess/wt-752828a285ba/target/review-boundaries-15/preparation/delivery-trust-scoper/remote-consumer-discovery/search.stderr |

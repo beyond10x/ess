@@ -133,13 +133,26 @@ fn a_nested_member_path_is_cited_by_construct_and_line() {
         cited,
         vec![
             // The entity family is still on the string heuristic — `docs/design/
-            // review-typed-diagnostics.md` inventories it — and the honest answer to a path it
-            // cannot find is no line at all.
+            // review-typed-diagnostics.md` inventories it — and it finds the entity's own
+            // declaration. It did not before: `shop.orders.Order` is spelt inside
+            // `shop.orders.OrderId`, its own identity type, so the search counted two occurrences
+            // of one name and gave up on both the line *and* the file.
+            //
+            // How common that is, measured rather than assumed. `identity.type` is a free type
+            // reference and `ess-domain/src/entity.rs` imposes no naming relation, so nothing makes
+            // an entity collide with its own identity type; `<Entity>Id` is a convention authors
+            // follow, not a rule. In this fixture `shop.orders.Order` is the one declaration in the
+            // shape. In `examples/billing`, 2 of 31 declared names are: `billing.invoice.Invoice`
+            // (prefix of `billing.invoice.InvoiceId` and of `billing.invoice.InvoiceStateConflict`)
+            // and `billing.invoice.Account` (prefix of `billing.invoice.AccountId`).
+            // The guard is `a_declaration_whose_name_prefixes_another_is_still_located_in_its_own_file`
+            // in `tests/billing.rs`, which derives that set from the example's own text and asserts
+            // it is not empty; this comment is only what that guard currently finds.
             Cited {
                 code: "ESS-ENTITY-005".to_owned(),
-                source: "<document>".to_owned(),
+                source: "nested.yaml".to_owned(),
                 path: "entity shop.orders.Order.transitions[0]".to_owned(),
-                located: None,
+                located: Some(Location { line: 11, column: 5 }),
             },
             Cited {
                 code: "ESS-COMMAND-001".to_owned(),
@@ -176,56 +189,65 @@ fn a_nested_member_path_is_cited_by_construct_and_line() {
 fn a_name_used_more_than_once_falls_back_to_the_declaration_that_owns_it() {
     let (errors, cited) = cited(&[("repeated_names.yaml", REPEATED)]);
 
-    // Nothing here is located, and that is the point of the fixture. The outcome is written
-    // `- name: filed`, so the needle `filed:` occurs zero times in the document; the fallback
-    // needle `name: shop.repeat.File` occurs three times as a substring — the command itself, the
-    // sibling `shop.repeat.FileTwo`, and the event `shop.repeat.Filed`. A substring search that
-    // matches three lines knows nothing, and `Locator` says so instead of picking the first.
+    // Both halves of the fixture, and which half is which turns on what "used more than once"
+    // means. The outcome is written `- name: filed`, so the needle `filed:` occurs zero times in
+    // the document and the fallback needle is the declaration's own name.
+    //
+    // `shop.repeat.File` is *not* used more than once. It is spelt inside `shop.repeat.FileTwo`
+    // and `shop.repeat.Filed`, which are two other declarations; the search used to count those as
+    // occurrences of it and answer neither a line nor a file for a name written exactly once. It
+    // is cited at its own line now.
     assert_eq!(
         cited,
         vec![
             Cited {
                 code: "ESS-COMMAND-006".to_owned(),
-                source: "<document>".to_owned(),
+                source: "repeated_names.yaml".to_owned(),
                 path: "command.shop.repeat.File.input[1]".to_owned(),
-                located: None,
+                located: Some(Location {
+                    line: 12,
+                    column: 5
+                }),
             },
             Cited {
                 code: "ESS-COMMAND-006".to_owned(),
-                source: "<document>".to_owned(),
+                source: "repeated_names.yaml".to_owned(),
                 path: "command.shop.repeat.File.outcomes.filed".to_owned(),
+                located: Some(Location {
+                    line: 12,
+                    column: 5
+                }),
+            },
+            Cited {
+                code: "ESS-COMMAND-004".to_owned(),
+                source: "repeated_names.yaml".to_owned(),
+                path: "command.shop.repeat.File.outcomes".to_owned(),
+                located: Some(Location {
+                    line: 12,
+                    column: 5
+                }),
+            },
+            // …and the honest half. `shop.repeat.Solo` is declared twice in the fixture, under the
+            // same qualified name, so two declarations answer to one needle and the locator
+            // reports no line — and no file — rather than picking the first. That is the rule
+            // `crates/specify/ess-compiler/src/source.rs` states: a confidently wrong line is
+            // worse than none, because the reader edits there.
+            //
+            // The story's Validation clause asks that repeated names "retain correct
+            // codes/locations"; the unlocated half cannot check the second half of that, and
+            // answering the round-1 finding by making the whole fixture unlocated left nothing
+            // that did (adversary pass 2, F5). Both halves are pinned now.
+            Cited {
+                code: "ESS-COMMAND-006".to_owned(),
+                source: "<document>".to_owned(),
+                path: "command.shop.repeat.Solo.outcomes.noted".to_owned(),
                 located: None,
             },
             Cited {
                 code: "ESS-COMMAND-004".to_owned(),
                 source: "<document>".to_owned(),
-                path: "command.shop.repeat.File.outcomes".to_owned(),
-                located: None,
-            },
-            // …and the same hazard where the search *can* answer. `shop.repeat.Solo` repeats an
-            // outcome name too, and no other declaration's name contains its own, so the fallback
-            // needle is unique and both refusals are cited at the line the command is declared on.
-            // The story's Validation clause asks that repeated names "retain correct
-            // codes/locations"; the unlocated half above cannot check the second half of that, and
-            // answering the round-1 finding by making the whole fixture unlocated left nothing that
-            // did (adversary pass 2, F5). Both halves are pinned now.
-            Cited {
-                code: "ESS-COMMAND-006".to_owned(),
-                source: "repeated_names.yaml".to_owned(),
-                path: "command.shop.repeat.Solo.outcomes.noted".to_owned(),
-                located: Some(Location {
-                    line: 35,
-                    column: 5,
-                }),
-            },
-            Cited {
-                code: "ESS-COMMAND-004".to_owned(),
-                source: "repeated_names.yaml".to_owned(),
                 path: "command.shop.repeat.Solo.outcomes".to_owned(),
-                located: Some(Location {
-                    line: 35,
-                    column: 5,
-                }),
+                located: None,
             },
         ]
     );

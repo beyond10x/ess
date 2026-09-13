@@ -47,7 +47,7 @@ The class is all generated relative file destinations owned by these CLI sinks, 
 
 All Cargo commands used:
 ```text
-TMPDIR=/home/timo/.local/state/worktree/trees/b10x/ess/review-output-containment/target/review-boundaries-2
+TMPDIR=~/.local/state/worktree/trees/b10x/ess/review-output-containment/target/review-boundaries-2
 RUSTC_WRAPPER=/usr/bin/sccache
 CARGO_INCREMENTAL=0
 CARGO_PROFILE_DEV_DEBUG=0
@@ -58,7 +58,7 @@ The first six CLI cases were written and executed before production edits. The v
 
 ```text
 $ cargo test --locked -p ess-cli --test output_containment
-   Compiling ess-cli v0.18.0 (/home/timo/.local/state/worktree/trees/b10x/ess/review-output-containment/crates/edge/ess-cli)
+   Compiling ess-cli v0.18.0 (~/.local/state/worktree/trees/b10x/ess/review-output-containment/crates/edge/ess-cli)
     Finished `test` profile [unoptimized] target(s) in 0.20s
      Running tests/output_containment.rs (target/debug/deps/output_containment-6c42862c3bb02e7c)
 
@@ -126,7 +126,7 @@ The coordinator's requested-root compatibility correction was likewise preceded 
 
 ```text
 $ cargo test --locked -p ess-cli --bin ess caller_selected_parent_roots_resolve_without_creating_discarded_directories
-   Compiling ess-cli v0.18.0 (/home/timo/.local/state/worktree/trees/b10x/ess/review-output-containment/crates/edge/ess-cli)
+   Compiling ess-cli v0.18.0 (~/.local/state/worktree/trees/b10x/ess/review-output-containment/crates/edge/ess-cli)
     Finished `test` profile [unoptimized] target(s) in 1.37s
      Running unittests src/main.rs (target/debug/deps/ess-2a340c79ed142cb3)
 
@@ -138,7 +138,7 @@ failures:
 ---- tests::caller_selected_parent_roots_resolve_without_creating_discarded_directories stdout ----
 
 thread 'tests::caller_selected_parent_roots_resolve_without_creating_discarded_directories' (70815) panicked at crates/edge/ess-cli/src/main.rs:3279:84:
-called `Result::unwrap()` on an `Err` value: output root cannot contain `..`: /home/timo/.local/state/worktree/trees/b10x/ess/review-output-containment/target/review-boundaries-2/ess-parent-root-70814-1788606724131523786/existing/../generated
+called `Result::unwrap()` on an `Err` value: output root cannot contain `..`: ~/.local/state/worktree/trees/b10x/ess/review-output-containment/target/review-boundaries-2/ess-parent-root-70814-1788606724131523786/existing/../generated
 note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
 
 
@@ -211,11 +211,11 @@ Totals from these runner summaries: ess-cli 21→33, ess-gen 183→187, combined
 
 ```text
 $ cargo test --locked -p ess-cli --test output_containment
-   Compiling ess-gen v0.18.0 (/home/timo/.local/state/worktree/trees/b10x/ess/review-output-containment/crates/generate/ess-gen)
-   Compiling ess-conformance v0.18.0 (/home/timo/.local/state/worktree/trees/b10x/ess/review-output-containment/crates/verify/ess-conformance)
-   Compiling ess-synth v0.18.0 (/home/timo/.local/state/worktree/trees/b10x/ess/review-output-containment/crates/generate/ess-synth)
-   Compiling ess-diff v0.18.0 (/home/timo/.local/state/worktree/trees/b10x/ess/review-output-containment/crates/verify/ess-diff)
-   Compiling ess-cli v0.18.0 (/home/timo/.local/state/worktree/trees/b10x/ess/review-output-containment/crates/edge/ess-cli)
+   Compiling ess-gen v0.18.0 (~/.local/state/worktree/trees/b10x/ess/review-output-containment/crates/generate/ess-gen)
+   Compiling ess-conformance v0.18.0 (~/.local/state/worktree/trees/b10x/ess/review-output-containment/crates/verify/ess-conformance)
+   Compiling ess-synth v0.18.0 (~/.local/state/worktree/trees/b10x/ess/review-output-containment/crates/generate/ess-synth)
+   Compiling ess-diff v0.18.0 (~/.local/state/worktree/trees/b10x/ess/review-output-containment/crates/verify/ess-diff)
+   Compiling ess-cli v0.18.0 (~/.local/state/worktree/trees/b10x/ess/review-output-containment/crates/edge/ess-cli)
     Finished `test` profile [unoptimized] target(s) in 13.10s
      Running tests/output_containment.rs (target/debug/deps/output_containment-6c42862c3bb02e7c)
 
@@ -234,7 +234,7 @@ exit: 0
 
 ```text
 $ cargo test --locked -p ess-cli --bin ess
-   Compiling ess-cli v0.18.0 (/home/timo/.local/state/worktree/trees/b10x/ess/review-output-containment/crates/edge/ess-cli)
+   Compiling ess-cli v0.18.0 (~/.local/state/worktree/trees/b10x/ess/review-output-containment/crates/edge/ess-cli)
     Finished `test` profile [unoptimized] target(s) in 1.24s
      Running unittests src/main.rs (target/debug/deps/ess-2a340c79ed142cb3)
 
@@ -258,7 +258,7 @@ exit: 0
 
 ```text
 $ cargo test --locked -p ess-cli
-   Compiling ess-cli v0.18.0 (/home/timo/.local/state/worktree/trees/b10x/ess/review-output-containment/crates/edge/ess-cli)
+   Compiling ess-cli v0.18.0 (~/.local/state/worktree/trees/b10x/ess/review-output-containment/crates/edge/ess-cli)
     Finished `test` profile [unoptimized] target(s) in 1.83s
      Running unittests src/main.rs (target/debug/deps/ess-2a340c79ed142cb3)
 
@@ -340,13 +340,13 @@ $ cargo test --locked -p ess-gen
    Compiling ahash v0.8.12
    Compiling fluent-uri v0.4.1
    Compiling email_address v0.2.9
-   Compiling ess-primitives v0.18.0 (/home/timo/.local/state/worktree/trees/b10x/ess/review-output-containment/crates/specify/ess-primitives)
+   Compiling ess-primitives v0.18.0 (~/.local/state/worktree/trees/b10x/ess/review-output-containment/crates/specify/ess-primitives)
    Compiling referencing v0.52.1
    Compiling jsonschema-value v0.52.1
-   Compiling ess-domain v0.18.0 (/home/timo/.local/state/worktree/trees/b10x/ess/review-output-containment/crates/specify/ess-domain)
+   Compiling ess-domain v0.18.0 (~/.local/state/worktree/trees/b10x/ess/review-output-containment/crates/specify/ess-domain)
    Compiling jsonschema v0.52.1
-   Compiling ess-compiler v0.18.0 (/home/timo/.local/state/worktree/trees/b10x/ess/review-output-containment/crates/specify/ess-compiler)
-   Compiling ess-gen v0.18.0 (/home/timo/.local/state/worktree/trees/b10x/ess/review-output-containment/crates/generate/ess-gen)
+   Compiling ess-compiler v0.18.0 (~/.local/state/worktree/trees/b10x/ess/review-output-containment/crates/specify/ess-compiler)
+   Compiling ess-gen v0.18.0 (~/.local/state/worktree/trees/b10x/ess/review-output-containment/crates/generate/ess-gen)
     Finished `test` profile [unoptimized] target(s) in 20.96s
      Running unittests src/lib.rs (target/debug/deps/ess_gen-5cfeec7d828080d8)
 
@@ -616,7 +616,7 @@ exit: 0
 
 ```text
 $ cargo clippy --locked -p ess-cli --all-targets -- -D warnings
-    Checking ess-cli v0.18.0 (/home/timo/.local/state/worktree/trees/b10x/ess/review-output-containment/crates/edge/ess-cli)
+    Checking ess-cli v0.18.0 (~/.local/state/worktree/trees/b10x/ess/review-output-containment/crates/edge/ess-cli)
     Finished `dev` profile [unoptimized] target(s) in 1.00s
 exit: 0
 ```
@@ -631,13 +631,13 @@ $ cargo clippy --locked -p ess-gen --all-targets -- -D warnings
     Checking serde_yaml v0.9.34+deprecated
     Checking email_address v0.2.9
     Checking fluent-uri v0.4.1
-    Checking ess-primitives v0.18.0 (/home/timo/.local/state/worktree/trees/b10x/ess/review-output-containment/crates/specify/ess-primitives)
-    Checking ess-domain v0.18.0 (/home/timo/.local/state/worktree/trees/b10x/ess/review-output-containment/crates/specify/ess-domain)
+    Checking ess-primitives v0.18.0 (~/.local/state/worktree/trees/b10x/ess/review-output-containment/crates/specify/ess-primitives)
+    Checking ess-domain v0.18.0 (~/.local/state/worktree/trees/b10x/ess/review-output-containment/crates/specify/ess-domain)
     Checking jsonschema-value v0.52.1
     Checking referencing v0.52.1
     Checking jsonschema v0.52.1
-    Checking ess-compiler v0.18.0 (/home/timo/.local/state/worktree/trees/b10x/ess/review-output-containment/crates/specify/ess-compiler)
-    Checking ess-gen v0.18.0 (/home/timo/.local/state/worktree/trees/b10x/ess/review-output-containment/crates/generate/ess-gen)
+    Checking ess-compiler v0.18.0 (~/.local/state/worktree/trees/b10x/ess/review-output-containment/crates/specify/ess-compiler)
+    Checking ess-gen v0.18.0 (~/.local/state/worktree/trees/b10x/ess/review-output-containment/crates/generate/ess-gen)
     Finished `dev` profile [unoptimized] target(s) in 6.32s
 exit: 0
 ```
@@ -657,9 +657,9 @@ The first combined Clippy run found only a redundant method closure and a needle
 
 ## 6. Write locations and resource observation
 
-No authored file, scratch file, log or patch was written outside /home/timo/.local/state/worktree/trees/b10x/ess/review-output-containment. Cargo used this tree's target directory; TMPDIR was the assigned scratch directory. The mandated sccache/Cargo tooling may maintain its own shared caches; none was manually edited or removed.
+No authored file, scratch file, log or patch was written outside ~/.local/state/worktree/trees/b10x/ess/review-output-containment. Cargo used this tree's target directory; TMPDIR was the assigned scratch directory. The mandated sccache/Cargo tooling may maintain its own shared caches; none was manually edited or removed.
 
-All raw logs and this report are under /home/timo/.local/state/worktree/trees/b10x/ess/review-output-containment/target/review-boundaries-2. Temporary test fixtures were created there and removed by their test fixtures. No managed tree, target directory or shared cache was removed.
+All raw logs and this report are under ~/.local/state/worktree/trees/b10x/ess/review-output-containment/target/review-boundaries-2. Temporary test fixtures were created there and removed by their test fixtures. No managed tree, target directory or shared cache was removed.
 
 Final observed resource/check output:
 ```text
