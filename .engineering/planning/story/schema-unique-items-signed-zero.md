@@ -2,7 +2,7 @@
 format: aep.planning-md/1
 id: story:schema-unique-items-signed-zero
 kind: story
-status: draft
+status: implemented
 title: Correct size-dependent schema uniqueness for signed zero
 relations:
 - serves: vision:O2
@@ -17,9 +17,13 @@ scope:
   path: crates/generate/schema-contract/src/bundle.rs
 - confidence: cited
   path: crates/generate/schema-contract/src/realize/normalize/source.rs
-- confidence: inferred
+- confidence: cited
+  path: crates/generate/schema-contract/src/uniqueness.rs
+- confidence: cited
+  path: crates/generate/schema-contract/src/validate.rs
+- confidence: cited
   path: crates/generate/schema-contract/tests/schema_unique_items.rs
-revision: 3
+revision: 9
 ---
 # Correct size-dependent uniqueItems behavior for signed zero
 

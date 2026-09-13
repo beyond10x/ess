@@ -2,7 +2,7 @@
 format: aep.planning-md/1
 id: story:subject-state-outcome-guards
 kind: story
-status: active
+status: implemented
 title: Define subject-state outcomes from a verified behavior witness
 tags:
 - priority-high
@@ -69,7 +69,7 @@ scope:
   path: website/docs/guides/write-a-specification.md
 - confidence: cited
   path: website/docs/reference/formats.md
-revision: 5
+revision: 6
 ---
 ## Outcome and priority
 

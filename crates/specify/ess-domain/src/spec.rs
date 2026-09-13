@@ -525,29 +525,76 @@ impl Specification {
     }
 }
 
-/// Records a member, reporting a second declaration of the same name.
-fn insert<K, T>(
-    into: &mut BTreeMap<K, T>,
-    name: K,
-    value: T,
+/// Records that a name is declared here, reporting a second declaration of it.
+///
+/// `true` for the first declaration of a name and `false` for every later one, so that of two
+/// declarations that both convert the caller keeps what the first one meant and drops the second —
+/// the rule a registry keyed by name has always had, said once instead of once per kind. It is
+/// only that, and [`record`] is where the rest of it lives: a first declaration that fails its own
+/// conversion never means anything, and the copy that does is what the name means then.
+///
+/// **Asked before the declaration is converted, and that is the whole point.** Finding the first
+/// copy *in the registry* is the same question only for a copy that got there: a declaration whose
+/// own `try_from` failed is never recorded, so the second copy of its name found the registry empty
+/// and took the name in silence. The author was told about one copy's error and never about the two
+/// declarations, and fixing that error made a refusal appear that was true all along. A name is
+/// declared where it is written, whether or not what is written under it converts.
+///
+/// Keyed by kind as well as by name, which closes the same-kind half of the class and no more.
+/// One name held by two *different* kinds is a different fault with a different message, and the
+/// two reporters of it — [`DomainSpec::validate_all`](crate::domain::DomainSpec::validate_all) and
+/// `Assembly::claim` in `system.rs` — read member lists that a failed conversion never reaches. So
+/// the cross-kind half is reported **only when both copies convert**, and is otherwise open in
+/// exactly the way the registries were: a command carrying a duplicate input plus an event of the
+/// same name tells the author about the input field and nothing about the name. Measured rather
+/// than argued, in `tests/masked_declaration_boundaries.rs`, where the case is ignored against
+/// `story:one-name-held-by-two-kinds-is-refused-whether-or-not-it-converts` rather than deleted.
+fn declare(
+    declared: &mut BTreeSet<(&'static str, String)>,
+    kind: &'static str,
+    name: &impl std::fmt::Display,
     source: &Source,
-    kind: &str,
     errors: &mut ValidationErrors,
-) where
-    K: Ord + std::fmt::Display,
-{
-    if into.contains_key(&name) {
-        errors.push(
-            ValidationError::new(
-                ValidationCode::DuplicateDeclaration,
-                format!("{kind} {name}"),
-                format!("`{name}` is declared more than once; {source} declares it again"),
-            )
-            .with_hint("a name identifies one thing; two declarations cannot both be it"),
-        );
-        return;
+) -> bool {
+    if declared.insert((kind, name.to_string())) {
+        return true;
     }
-    into.insert(name, value);
+    errors.push(
+        ValidationError::new(
+            ValidationCode::DuplicateDeclaration,
+            format!("{kind} {name}"),
+            format!("`{name}` is declared more than once; {source} declares it again"),
+        )
+        .with_hint("a name identifies one thing; two declarations cannot both be it"),
+    );
+    false
+}
+
+/// Records what a name means, for the one declaration that owns it.
+///
+/// A later copy of a duplicated name is converted like any other — its own errors are the author's
+/// to see, and dropping them would trade one silence for another — and then it is dropped, because
+/// the first declaration is what the name means. [`declare`] is what decides which copy that is,
+/// and `first` is its answer.
+///
+/// **Except when the first declaration is broken, where the name would otherwise mean nothing.**
+/// A declaration that fails its own `try_from` never reaches here, so answering `first` alone drops
+/// the second copy into the same hole the first one fell in: the name is in no registry, and every
+/// reference to it is then refused as undeclared *in the same run* that reports it declared more
+/// than once — two refusals, one of which is false, where the author wrote one fault. The registry
+/// [`declare`] replaced never did that, because the question it was really answering was which copy
+/// **converted**, and that is the part of it worth keeping. So a name absent from `into` is
+/// recorded whichever copy it came from, and `first` decides only between copies that both
+/// converted. Both refusals still fire; the cascade behind them does not.
+///
+/// Measured for all eight registries at once by this file's
+/// `every_masked_rows_name_is_recorded_from_the_copy_that_converts`, and where an author meets it —
+/// a view on the entity, an actor's grant on the command — in
+/// `tests/masked_declaration_reference_cascade.rs`.
+fn record<K: Ord, T>(first: bool, into: &mut BTreeMap<K, T>, name: K, value: T) {
+    if first || !into.contains_key(&name) {
+        into.insert(name, value);
+    }
 }
 
 /// What a file contributed to one domain.
@@ -619,6 +666,17 @@ struct Collected {
     topology_source: Option<Source>,
     /// The domains the system header says it has, from whichever file carries the header.
     roster: Vec<QualifiedName>,
+    /// Every name declared so far in the kinds that go through [`declare`], whether or not the
+    /// declaration converted.
+    ///
+    /// Eight kinds, not every kind: a declared type, a conversion and the topology are absorbed
+    /// elsewhere and are not in here. [`declare`]'s own comment says which of those three is still
+    /// masked and which cannot be.
+    ///
+    /// Held beside the registries rather than read off them, because a registry holds what was
+    /// *recorded* and this has to answer what was *declared*. See [`declare`] for the difference
+    /// and for what the registries alone could not see.
+    declared: BTreeSet<(&'static str, String)>,
 }
 
 impl Collected {
@@ -685,61 +743,61 @@ impl Collected {
         let mut members = DomainMembers::default();
 
         for raw in file.entities {
+            let first = declare(&mut self.declared, "entity", &raw.name, source, errors);
             match EntitySpec::try_from(raw) {
                 Ok(entity) => {
                     members.entities.push(entity.name.clone());
-                    let name = entity.name.clone();
-                    insert(&mut self.entities, name, entity, source, "entity", errors);
+                    record(first, &mut self.entities, entity.name.clone(), entity);
                 }
                 Err(member_errors) => errors.extend(member_errors),
             }
         }
         for raw in file.commands {
+            let first = declare(&mut self.declared, "command", &raw.name, source, errors);
             match CommandSpec::try_from(raw) {
                 Ok(command) => {
                     members.commands.push(command.name.clone());
-                    let name = command.name.clone();
-                    insert(&mut self.commands, name, command, source, "command", errors);
+                    record(first, &mut self.commands, command.name.clone(), command);
                 }
                 Err(member_errors) => errors.extend(member_errors),
             }
         }
         for raw in file.events {
+            let first = declare(&mut self.declared, "event", &raw.name, source, errors);
             match EventSpec::try_from(raw) {
                 Ok(event) => {
                     members.events.push(event.name.clone());
-                    let name = event.name.clone();
-                    insert(&mut self.events, name, event, source, "event", errors);
+                    record(first, &mut self.events, event.name.clone(), event);
                 }
                 Err(member_errors) => errors.extend(member_errors),
             }
         }
         for raw in file.errors {
+            let first = declare(&mut self.declared, "error", &raw.name, source, errors);
             match ErrorSpec::try_from(raw) {
                 Ok(error) => {
                     members.errors.push(error.name.clone());
-                    let name = error.name.clone();
-                    insert(&mut self.errors, name, error, source, "error", errors);
+                    record(first, &mut self.errors, error.name.clone(), error);
                 }
                 Err(member_errors) => errors.extend(member_errors),
             }
         }
         for raw in file.views {
+            let first = declare(&mut self.declared, "view", &raw.name, source, errors);
             match ViewSpec::try_from(raw) {
                 Ok(view) => {
                     members.views.push(view.name.clone());
-                    let name = view.name.clone();
-                    insert(&mut self.views, name, view, source, "view", errors);
+                    record(first, &mut self.views, view.name.clone(), view);
                 }
                 Err(member_errors) => errors.extend(member_errors),
             }
         }
         for raw in file.actors {
+            let first = declare(&mut self.declared, "actor", &raw.name, source, errors);
             match ActorSpec::try_from(raw) {
                 Ok(actor) => {
                     members.actors.push(actor.name.clone());
-                    let name = actor.name.clone();
-                    insert(&mut self.actors, name, actor, source, "actor", errors);
+                    record(first, &mut self.actors, actor.name.clone(), actor);
                 }
                 Err(member_errors) => errors.extend(member_errors),
             }
@@ -797,26 +855,24 @@ impl Collected {
         // Components, bindings and topology sit above the domains rather than inside one: a
         // component owns domains, and a binding joins two of them, so neither can belong to either.
         for raw in components {
+            let first = declare(&mut self.declared, "component", &raw.name, source, errors);
             match crate::component::ComponentSpec::try_from(raw) {
                 Ok(component) => {
-                    let name = component.name.clone();
-                    insert(
+                    record(
+                        first,
                         &mut self.components,
-                        name,
+                        component.name.clone(),
                         component,
-                        source,
-                        "component",
-                        errors,
                     );
                 }
                 Err(member_errors) => errors.extend(member_errors),
             }
         }
         for raw in bindings {
+            let first = declare(&mut self.declared, "binding", &raw.name, source, errors);
             match crate::binding::BindingSpec::try_from(raw) {
                 Ok(binding) => {
-                    let name = binding.name.clone();
-                    insert(&mut self.bindings, name, binding, source, "binding", errors);
+                    record(first, &mut self.bindings, binding.name.clone(), binding);
                 }
                 Err(member_errors) => errors.extend(member_errors),
             }
@@ -1047,6 +1103,445 @@ events:
             rendered.contains("a.yaml") && rendered.contains("b.yaml"),
             "both sources have to be named or neither can be fixed: {rendered}"
         );
+    }
+
+    /// A sound domain, for the rows whose copies sit above the domains and refer into one.
+    ///
+    /// A component owns a domain and a binding joins a cause to a command, so neither row can be
+    /// written as one file. Nothing here is duplicated and nothing here is wrong.
+    const SHOP_CART: &str = r"
+domain: shop.cart
+events:
+  - name: shop.cart.ItemAdded
+    fields: []
+commands:
+  - name: shop.cart.AddItem
+    outcomes:
+      - name: added
+        emits: [shop.cart.ItemAdded]
+";
+
+    /// One name, declared twice, with the first copy broken — one document per kind.
+    ///
+    /// A row is the pieces a document is built from rather than the document itself, so that what
+    /// this comment claims of each piece can be asked instead of read: the first copy carries an
+    /// error of its own and nothing else — a duplicate field, a duplicate input, a projection of
+    /// nothing, a component of nothing, a `when:` that names no cause — and the second is sound and
+    /// takes the same name. [`every_masked_row_is_broken_then_sound_as_this_table_claims`] builds
+    /// each piece on its own and fails the row that does not do what is written here. This table is
+    /// the whole evidence that the class is closed, so a row that says one thing and does another
+    /// is the evidence failing, not a comment going stale.
+    struct Masked {
+        /// The kind whose name is declared twice.
+        kind: &'static str,
+        /// The file both copies are written in.
+        label: &'static str,
+        /// Everything the two copies need, and nothing that is wrong on its own.
+        preamble: &'static str,
+        /// The first copy of the name.
+        first: &'static str,
+        /// The second copy of the name.
+        second: &'static str,
+        /// The location the refusal of the second declaration has to carry.
+        location: &'static str,
+        /// Files the row's copies refer to, which are part of neither copy.
+        ///
+        /// Empty for a row whose preamble can carry everything it needs. A component owns a domain
+        /// and a binding joins two, and neither can be written in the document that declares one,
+        /// so those rows name the domain document here instead. Whatever is named has to be sound
+        /// on its own, or the row's own assembly is refused for something that is not either copy
+        /// — which is how the `component` row came to own a domain nothing declared.
+        support: &'static [(&'static str, &'static str)],
+        /// Whether `first` is the copy carrying an error of its own.
+        ///
+        /// `false` for the `actor` control row alone, whose conversion cannot fail.
+        first_is_broken: bool,
+    }
+
+    impl Masked {
+        /// The specification one of this row's documents is read in: the system header, whatever
+        /// the copies refer to, and the document itself.
+        fn spec(&self, document: &str) -> Vec<(Source, RawSpecFile)> {
+            let mut files = minimal();
+            files.extend(
+                self.support
+                    .iter()
+                    .map(|(label, support)| file(label, support)),
+            );
+            files.push(file(self.label, document));
+            files
+        }
+
+        /// Both copies, in the order they are written.
+        fn both(&self) -> String {
+            format!("{}{}{}", self.preamble, self.first, self.second)
+        }
+
+        /// The first copy alone, to ask whether it is the broken one this table claims.
+        fn first_alone(&self) -> String {
+            format!("{}{}", self.preamble, self.first)
+        }
+
+        /// The second copy alone, to ask whether it is the sound one this table claims.
+        fn second_alone(&self) -> String {
+            format!("{}{}", self.preamble, self.second)
+        }
+    }
+
+    const MASKED: &[Masked] = &[
+        Masked {
+            kind: "entity",
+            label: "domains/cart.yaml",
+            preamble: r"
+domain: shop.cart
+entities:
+",
+            first: r"  - name: shop.cart.Cart
+    identity: {name: id, type: Uuid}
+    fields:
+      - {name: total, type: Decimal}
+      - {name: total, type: Decimal}
+    lifecycle: {states: [Open], initial: Open, terminal: [Open]}
+",
+            second: r"  - name: shop.cart.Cart
+    identity: {name: id, type: Uuid}
+    lifecycle: {states: [Open], initial: Open, terminal: [Open]}
+",
+            location: "entity shop.cart.Cart",
+            support: &[],
+            first_is_broken: true,
+        },
+        Masked {
+            kind: "command",
+            label: "domains/cart.yaml",
+            preamble: r"
+domain: shop.cart
+events:
+  - name: shop.cart.ItemAdded
+    fields: []
+commands:
+",
+            first: r"  - name: shop.cart.AddItem
+    input:
+      - {name: note, type: String}
+      - {name: note, type: String}
+    outcomes:
+      - name: added
+        emits: [shop.cart.ItemAdded]
+",
+            second: r"  - name: shop.cart.AddItem
+    outcomes:
+      - name: added
+        emits: [shop.cart.ItemAdded]
+",
+            location: "command shop.cart.AddItem",
+            support: &[],
+            first_is_broken: true,
+        },
+        Masked {
+            kind: "event",
+            label: "domains/cart.yaml",
+            preamble: r"
+domain: shop.cart
+events:
+",
+            first: r"  - name: shop.cart.ItemAdded
+    fields:
+      - {name: total, type: Decimal}
+      - {name: total, type: Decimal}
+",
+            second: r"  - name: shop.cart.ItemAdded
+    fields: []
+",
+            location: "event shop.cart.ItemAdded",
+            support: &[],
+            first_is_broken: true,
+        },
+        Masked {
+            kind: "error",
+            label: "domains/cart.yaml",
+            preamble: r"
+domain: shop.cart
+errors:
+",
+            first: r"  - name: shop.cart.CartFull
+    fields:
+      - {name: total, type: Decimal}
+      - {name: total, type: Decimal}
+",
+            second: r"  - name: shop.cart.CartFull
+    fields: []
+",
+            location: "error shop.cart.CartFull",
+            support: &[],
+            first_is_broken: true,
+        },
+        Masked {
+            kind: "view",
+            label: "domains/cart.yaml",
+            preamble: r"
+domain: shop.cart
+entities:
+  - name: shop.cart.Cart
+    identity: {name: id, type: Uuid}
+    lifecycle: {states: [Open], initial: Open, terminal: [Open]}
+views:
+",
+            first: r"  - name: shop.cart.CartById
+    source: shop.cart.Cart
+",
+            second: r"  - name: shop.cart.CartById
+    source: shop.cart.Cart
+    fields:
+      - {name: id, type: Uuid}
+",
+            location: "view shop.cart.CartById",
+            support: &[],
+            first_is_broken: true,
+        },
+        // Two sound copies, because an actor cannot have the first kind of error: its conversion
+        // is documented as one that cannot fail ("nothing here can be wrong on its own",
+        // `actor.rs`), so no copy of one can be masked. A control rather than a case, and
+        // `first_is_broken: false` is what says so to the check as well as to the reader.
+        Masked {
+            kind: "actor",
+            label: "domains/cart.yaml",
+            preamble: r"
+domain: shop.cart
+actors:
+",
+            first: r"  - name: shop.cart.Shopper
+",
+            second: r"  - name: shop.cart.Shopper
+",
+            location: "actor shop.cart.Shopper",
+            support: &[],
+            first_is_broken: false,
+        },
+        Masked {
+            kind: "component",
+            label: "components.yaml",
+            preamble: r"
+components:
+",
+            first: r"  - component: cart-service
+",
+            second: r"  - component: cart-service
+    owns:
+      domains: [shop.cart]
+",
+            location: "component cart-service",
+            support: &[("domains/cart.yaml", SHOP_CART)],
+            first_is_broken: true,
+        },
+        Masked {
+            kind: "binding",
+            label: "bindings.yaml",
+            preamble: r"
+bindings:
+",
+            first: r"  - id: tell-the-shopper
+    when: {}
+    invoke: {command: shop.cart.AddItem}
+    delivery: at_least_once
+    on_failure: drop
+",
+            second: r"  - id: tell-the-shopper
+    when: {event: shop.cart.ItemAdded}
+    invoke: {command: shop.cart.AddItem}
+    delivery: at_least_once
+    on_failure: drop
+",
+            location: "binding tell-the-shopper",
+            support: &[("domains/cart.yaml", SHOP_CART)],
+            first_is_broken: true,
+        },
+    ];
+
+    /// Each [`MASKED`] row is the broken-then-sound pair its table says it is.
+    ///
+    /// The table is the evidence that the masking class is closed, and a row proves nothing about
+    /// masking unless the second copy is sound: [`declare`] refuses before either copy is
+    /// converted, so `a_name_declared_twice_is_refused_even_when_a_copy_is_broken_itself` passes
+    /// just as happily on a broken-then-*broken* row, which tests the registry blindness against
+    /// nothing at all. One row was exactly that — its second entity's only state was a dead end —
+    /// and no case in the tree could have noticed. So the claim is asked of every row here, each
+    /// copy assembled on its own, rather than left to the comment.
+    #[test]
+    fn every_masked_row_is_broken_then_sound_as_this_table_claims() {
+        for row in MASKED {
+            if let Err(errors) = Specification::assemble(row.spec(&row.second_alone())) {
+                panic!(
+                    "the {} row's second declaration is not sound on its own, so the row pairs a \
+                     broken copy with a broken copy and says nothing about a name being taken in \
+                     silence: {errors}",
+                    row.kind
+                );
+            }
+
+            let outcome = Specification::assemble(row.spec(&row.first_alone()));
+            if row.first_is_broken {
+                assert!(
+                    outcome.is_err(),
+                    "the {} row's first declaration carries no error of its own, so the row is \
+                     two sound copies and the masking it claims to exercise never happens",
+                    row.kind
+                );
+            } else if let Err(errors) = outcome {
+                panic!(
+                    "the {} row is marked a control because its conversion cannot fail, and one \
+                     copy of it was refused: {errors}",
+                    row.kind
+                );
+            }
+        }
+    }
+
+    /// Every kind that is recorded by conversion, declared twice with one copy broken.
+    ///
+    /// [`Collected::absorb`] reached a registry only with a declaration whose own `try_from`
+    /// succeeded, and a registry reports a second declaration by finding the first one in it. So a
+    /// copy with any error of its own was never recorded, and the *other* copy found the registry
+    /// empty and took the name in silence: the author was told about one copy's error and never
+    /// about the two declarations, and fixing that error made a refusal appear that was true all
+    /// along.
+    ///
+    /// All eight kinds that go through [`declare`] are in [`MASKED`], because all eight are
+    /// absorbed by the same shape. The three that are *not* are absorbed by something else: a
+    /// conversion is one crossing per system and is refused by
+    /// [`crate::types::ConversionRegistry`] without converting anything, and a topology is one per
+    /// system and records the source that carried it before converting it, so neither can be
+    /// masked this way. A declared *type* can be, and is not
+    /// fixed here, and it has **no second reporter** in the masked case: `SpecPart` carries to
+    /// `SystemSpec::merge` only the types that converted, so `merge` refuses a second declaration
+    /// when both copies convert and sees nothing at all when the first one fails — the same bound
+    /// as the cross-kind half above, and open for the same reason. Measured in
+    /// `tests/masked_declaration_boundaries.rs`; closing it is
+    /// `story:one-name-held-by-two-kinds-is-refused-whether-or-not-it-converts`.
+    #[test]
+    fn a_name_declared_twice_is_refused_even_when_a_copy_is_broken_itself() {
+        for row in MASKED {
+            let (kind, location) = (row.kind, row.location);
+            let errors =
+                Specification::assemble(row.spec(&row.both())).expect_err("declared twice");
+            assert!(
+                errors.as_slice().iter().any(|error| {
+                    error.code == ValidationCode::DuplicateDeclaration && error.location == location
+                }),
+                "one {kind} name, two declarations, and nothing at `{location}` says so — a \
+                 name is declared where it is written, whether or not what is written under it \
+                 converts: {errors}"
+            );
+        }
+    }
+
+    /// Every [`MASKED`] row's name still means something once both copies have been read.
+    ///
+    /// [`declare`] answers *was this name written* and [`record`] answers *what does it mean*, and
+    /// separating the two made the second question reachable for a copy the first had already
+    /// refused. Answering it with `first` alone drops that copy — so when the **first** copy is the
+    /// one that failed its own conversion, nothing is recorded at all and the name is in no
+    /// registry: every reference to it is then refused as undeclared, in the same run that reports
+    /// it declared twice. `insert` did not do that, because the registry it consulted was empty and
+    /// the copy that converted went into it. [`record`] keeps the first copy that *converts*, which
+    /// is what that registry was answering all along.
+    ///
+    /// What an author meets is the cascade, and that is measured where they meet it, in
+    /// `tests/masked_declaration_reference_cascade.rs`. This asks the rule of all eight registries
+    /// at once, which is the only place the eight can be enumerated: the `match` below is
+    /// exhaustive by panic, so a ninth kind routed through [`declare`] and [`record`] fails here
+    /// rather than being left unmeasured.
+    #[test]
+    fn every_masked_rows_name_is_recorded_from_the_copy_that_converts() {
+        for row in MASKED {
+            let mut collected = Collected::default();
+            let mut errors = ValidationErrors::new();
+            for (source, file) in row.spec(&row.both()) {
+                collected.absorb(&source, file, &mut errors);
+            }
+
+            let (kind, name) = row
+                .location
+                .split_once(' ')
+                .expect("every row's location is its kind and then its name");
+            let recorded: Vec<String> = match kind {
+                "entity" => collected.entities.keys().map(ToString::to_string).collect(),
+                "command" => collected.commands.keys().map(ToString::to_string).collect(),
+                "event" => collected.events.keys().map(ToString::to_string).collect(),
+                "error" => collected.errors.keys().map(ToString::to_string).collect(),
+                "view" => collected.views.keys().map(ToString::to_string).collect(),
+                "actor" => collected.actors.keys().map(ToString::to_string).collect(),
+                "component" => collected
+                    .components
+                    .keys()
+                    .map(ToString::to_string)
+                    .collect(),
+                "binding" => collected.bindings.keys().map(ToString::to_string).collect(),
+                other => panic!(
+                    "the {other} row goes through `declare` and `record` and this check does not \
+                     know which registry holds it, so nothing here measures whether its name \
+                     survives a broken first copy"
+                ),
+            };
+
+            assert!(
+                recorded.iter().any(|held| held == name),
+                "`{name}` is declared twice as a {kind}, the first copy fails its own conversion \
+                 and the second is sound — and no {kind} registry holds the name, so every \
+                 reference to it is refused as undeclared in the same run that reports it declared \
+                 more than once. The registry holds {recorded:?}; the refusals were: {errors}"
+            );
+        }
+    }
+
+    /// The same name twice, in all four combinations of sound and broken.
+    ///
+    /// The masking is not a property of *which* copy is broken. A registry is reached only by a
+    /// declaration that converted, so a sound first copy and a broken second one is masked in the
+    /// same way, and two broken copies report two local errors and nothing at all about the name.
+    /// One kind is enough to state that: the four rows differ only in which conversion fails.
+    #[test]
+    fn a_name_declared_twice_is_refused_in_all_four_soundness_combinations() {
+        let sound = r"
+  - name: shop.cart.AddItem
+    outcomes:
+      - name: added
+        emits: [shop.cart.ItemAdded]
+";
+        let broken = r"
+  - name: shop.cart.AddItem
+    input:
+      - {name: note, type: String}
+      - {name: note, type: String}
+    outcomes:
+      - name: added
+        emits: [shop.cart.ItemAdded]
+";
+        for (label, first, second) in [
+            ("sound, sound", sound, sound),
+            ("broken, sound", broken, sound),
+            ("sound, broken", sound, broken),
+            ("broken, broken", broken, broken),
+        ] {
+            let document = format!(
+                r"
+domain: shop.cart
+events:
+  - name: shop.cart.ItemAdded
+    fields: []
+commands:{first}{second}"
+            );
+            let mut files = minimal();
+            files.push(file("domains/cart.yaml", &document));
+            let errors = Specification::assemble(files).expect_err("declared twice");
+            assert!(
+                errors.as_slice().iter().any(|error| {
+                    error.code == ValidationCode::DuplicateDeclaration
+                        && error.location == "command shop.cart.AddItem"
+                }),
+                "`shop.cart.AddItem` is declared twice ({label}) and nothing says so: {errors}"
+            );
+        }
     }
 
     #[test]

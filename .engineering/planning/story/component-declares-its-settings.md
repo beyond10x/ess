@@ -2,20 +2,39 @@
 format: aep.planning-md/1
 id: story:component-declares-its-settings
 kind: story
-status: draft
+status: implemented
 title: A component declares its settings, and the runtime slots are derived from them
 relations:
 - decomposes: epic:configuration-declared-once
+- serves: vision:O2
 scope:
+- confidence: cited
+  path: changes/component-settings-0.24.0.yaml
 - confidence: cited
   path: crates/generate/ess-deployment/src/runtime.rs
 - confidence: cited
+  path: crates/generate/ess-deployment/tests/adversary2_component_settings.rs
+- confidence: cited
+  path: crates/generate/ess-deployment/tests/deployment.rs
+- confidence: cited
   path: crates/specify/ess-compiler/src/ir.rs
+- confidence: cited
+  path: crates/specify/ess-compiler/src/resolve.rs
+- confidence: cited
+  path: crates/specify/ess-compiler/tests/adversary2_component_settings.rs
+- confidence: cited
+  path: crates/specify/ess-compiler/tests/component_settings.rs
 - confidence: cited
   path: crates/specify/ess-domain/src/component.rs
 - confidence: cited
+  path: crates/specify/ess-domain/tests/adversary2_component_settings.rs
+- confidence: cited
+  path: crates/specify/ess-domain/tests/component_settings.rs
+- confidence: cited
+  path: docs/design/review-typed-diagnostics.md
+- confidence: cited
   path: schemas/generated/ess.schema.json
-revision: 2
+revision: 7
 ---
 # Story: a component declares its settings, and the runtime slots are derived from them
 
@@ -114,3 +133,33 @@ every existing document digests exactly as before. Part of this story, not a fol
 ## Integration Provenance
 
 Reconciled through AEP from wt-34496b6990aa at original revision 5 and status draft. Source artifact SHA-256: 5cdc89236cfd4eada84383c5d50bebaa35155dd8b9f964414f294741ec18f6fd. Original journal history remains with its source recovery snapshot; this store records the reconciliation as new governed operations.
+
+## Scope
+
+Written after the wave from the merged diff `1e9f48f1`. This story carried a frontmatter `scope` and
+no `## Scope` section before; this is the first one, and it is the merged diff rather than a reading.
+
+Predicted, and all four touched:
+
+- `crates/specify/ess-domain/src/component.rs` — `cited`
+- `crates/specify/ess-compiler/src/ir.rs` — `cited`
+- `crates/generate/ess-deployment/src/runtime.rs` — `cited`
+- `schemas/generated/ess.schema.json` — `cited`, regenerated: `RawComponentSetting.required`'s doc
+  comment reaches the published schema as its `description`
+
+Not predicted, and touched:
+
+- `crates/specify/ess-compiler/src/resolve.rs` — `cited`
+- `crates/specify/ess-domain/tests/component_settings.rs` — `cited`, and holds the two cases left
+  `#[ignore]`d against `review-result:adversary-wave25-unit3-pass-1` F3
+- `crates/specify/ess-domain/tests/adversary2_component_settings.rs` — `cited`
+- `crates/specify/ess-compiler/tests/component_settings.rs` — `cited`
+- `crates/specify/ess-compiler/tests/adversary2_component_settings.rs` — `cited`
+- `crates/generate/ess-deployment/tests/component_settings` cases in `deployment.rs` and
+  `adversary2_component_settings.rs` — `cited`
+- `changes/component-settings-0.24.0.yaml` — `cited`, the release-note entry
+- `docs/design/review-typed-diagnostics.md` — `cited`, and **shared with
+  `story:a-masked-first-declaration-hides-a-duplicate-name`**, the other unit in this wave
+
+The prediction was right about where the work starts and silent about its test surface: nine of the
+thirteen paths are tests, release notes and a second compiler pass that no pre-dispatch reading named.

@@ -130,6 +130,17 @@ fn without_docs(stream: proc_macro2::TokenStream) -> proc_macro2::TokenStream {
     }
     out
 }
+// What distinguishes two invocations of one macro in one module is the identifier the
+// invocation body leads with, once documentation attributes are stripped: the declaration the
+// invocation is about, and never a macro name written here. An invocation leading with
+// anything else mints no discriminator, so a second such invocation in the same module stays a
+// named `duplicate concrete consumer entry` refusal rather than a silently merged identity.
+fn leading_identifier(tokens: &proc_macro2::TokenStream) -> Option<proc_macro2::Ident> {
+    match without_docs(tokens.clone()).into_iter().next() {
+        Some(proc_macro2::TokenTree::Ident(name)) => Some(name),
+        _ => None,
+    }
+}
 fn declaration(item: &Item) -> String {
     let stream = if let Item::Fn(function) = item {
         let attrs = &function.attrs;
@@ -316,18 +327,8 @@ impl Inventory {
         let id = if let Some(name) = &m.ident {
             format!("definition/{name}")
         } else {
-            let anchor = if matches!(
-                text(&m.mac.path).as_str(),
-                "checked_deserialize" | "crate :: validation :: checked_deserialize"
-            ) {
-                let invocation = syn::parse2::<CheckedDeserialize>(m.mac.tokens.clone())
-                    .with_context(|| {
-                        format!("{module_owner}: checked_deserialize invocation grammar")
-                    })?;
-                format!("/for/{}", invocation.0)
-            } else {
-                String::new()
-            };
+            let anchor = leading_identifier(&m.mac.tokens)
+                .map_or_else(String::new, |name| format!("/for/{name}"));
             format!("invocation/{}{anchor}", text(&m.mac.path))
         };
         let mut row = common;
@@ -757,23 +758,6 @@ impl<'ast> Visit<'ast> for AssociatedNames {
     fn visit_expr_path(&mut self, path: &'ast syn::ExprPath) {
         self.qualified(path.qself.as_ref(), &path.path);
         visit::visit_expr_path(self, path);
-    }
-}
-struct CheckedDeserialize(syn::Ident);
-impl syn::parse::Parse for CheckedDeserialize {
-    fn parse(input: syn::parse::ParseStream<'_>) -> syn::Result<Self> {
-        let name = input.parse()?;
-        let fields;
-        syn::braced!(fields in input);
-        while !fields.is_empty() {
-            fields.call(Attribute::parse_outer)?;
-            fields.parse::<syn::Visibility>()?;
-            fields.parse::<syn::Ident>()?;
-            fields.parse::<syn::Token![:]>()?;
-            fields.parse::<syn::Type>()?;
-            fields.parse::<syn::Token![,]>()?;
-        }
-        Ok(Self(name))
     }
 }
 #[derive(Default)]

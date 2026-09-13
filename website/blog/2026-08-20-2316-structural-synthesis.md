@@ -177,6 +177,8 @@ linking rule is the plan's no-guessing rule again. For every obligation it takes
 offered implementation: **zero** offers is an unsatisfied obligation, **two** is an ambiguity error
 naming both claimants, and refusals accumulate, so a linker with three empty slots reports three.
 Selection among alternatives is `Realization` material from the design, and stays proposed with it.
+The rule is gap register D-2, and its home in the engineering record is
+`docs/design/linker-never-chooses.md`.
 Hand-written code lives outside the generated tree — the repository commits
 `examples/billing-realization`, one implementation per obligation — and satisfies generated
 interfaces by import, so `generated/` stays fully disposable.

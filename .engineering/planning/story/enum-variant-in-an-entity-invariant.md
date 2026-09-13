@@ -2,20 +2,27 @@
 format: aep.planning-md/1
 id: story:enum-variant-in-an-entity-invariant
 kind: story
-status: draft
+status: implemented
 title: An entity invariant may name an enum variant that does not exist, and validate accepts it
 relations:
 - informed_by: story:review-expression-typechecking
+- serves: vision:O2
 scope:
-- confidence: inferred
+- confidence: cited
+  path: crates/specify/ess-compiler/src/resolve.rs
+- confidence: cited
   path: crates/specify/ess-compiler/tests/billing.rs
+- confidence: cited
+  path: crates/specify/ess-compiler/tests/typed_diagnostics.rs
 - confidence: cited
   path: crates/specify/ess-domain
 - confidence: cited
   path: crates/specify/ess-domain/src/entity.rs
 - confidence: inferred
   path: crates/specify/ess-domain/src/view.rs
-revision: 6
+- confidence: cited
+  path: crates/specify/ess-domain/tests/expression.rs
+revision: 13
 ---
 ## What is wrong
 

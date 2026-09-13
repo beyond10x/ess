@@ -2,7 +2,7 @@
 format: aep.planning-md/1
 id: story:primitive-canonical-serialization
 kind: story
-status: draft
+status: active
 title: 'Canonical number serialization: the second stage of F08'
 summary: Carry exact integers and decimals on the wire behind a format version, coordinated with the relying readers; stage one kept the bytes.
 tags:
@@ -33,7 +33,7 @@ scope:
   path: crates/verify/ess-conformance/src/report.rs
 - confidence: cited
   path: crates/verify/ess-conformance/src/witness.rs
-revision: 11
+revision: 13
 ---
 # Canonical number serialization: the second stage of F08
 

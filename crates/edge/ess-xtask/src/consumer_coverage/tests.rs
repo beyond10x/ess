@@ -277,17 +277,51 @@ fn selected_root_reaching_guarded_diagnostic_type_is_not_an_opaque_leaf() {
 }
 
 #[test]
-fn generated_consumer_owner_uses_the_checked_invocation_grammar() {
+fn generated_consumer_owner_uses_the_leading_invocation_identifier() {
     let a=super::consumer::fixture("checked_deserialize! { First { pub x: u32, } } checked_deserialize! { Second { y: String, } }").unwrap();
     assert!(a["entries"]
         .get("fixture::macro::invocation/checked_deserialize/for/First")
         .is_some());
-    assert!(super::consumer::fixture(
-        "checked_deserialize! { First this_is_not_the_declared_grammar }"
-    )
-    .is_err());
+    assert!(a["entries"]
+        .get("fixture::macro::invocation/checked_deserialize/for/Second")
+        .is_some());
+    // An invocation leading with no identifier mints no discriminator, so a second one in the
+    // same module stays a named refusal instead of overwriting the first.
+    assert!(
+        super::consumer::fixture("opaque! { \"a\" } opaque! { \"b\" }")
+            .unwrap_err()
+            .to_string()
+            .contains("duplicate concrete consumer entry")
+    );
 }
 
+#[test]
+fn one_macro_invoked_twice_in_one_module_keeps_two_identities() {
+    // The class is every production item-macro invocation, whatever its path shape and
+    // whatever its body leads with; no macro is named in the extractor to make this hold.
+    // `profile_word!` (ess-domain binding::periodic, eight invocations) and
+    // `crate::validation::checked_deserialize!` (ess-deployment stack.rs, component.rs, two
+    // each) are the production members, and code-list macros lead their bodies with a doc
+    // comment rather than with the identifier they declare.
+    let a = super::consumer::fixture(
+        "word!(Anchor, HostActivation, \"a\"); word!(First, AfterPeriod, \"b\");\
+         crate::validation::guard! { Alpha { pub x: u32, } }\
+         crate::validation::guard! { Beta { y: String, } }\
+         listed! { /// one\n Red => 1; }\
+         listed! { /// two\n Blue => 2; }",
+    )
+    .unwrap();
+    for id in [
+        "fixture::macro::invocation/word/for/Anchor",
+        "fixture::macro::invocation/word/for/First",
+        "fixture::macro::invocation/crate :: validation :: guard/for/Alpha",
+        "fixture::macro::invocation/crate :: validation :: guard/for/Beta",
+        "fixture::macro::invocation/listed/for/Red",
+        "fixture::macro::invocation/listed/for/Blue",
+    ] {
+        assert!(a["entries"].get(id).is_some(), "{id}: {:?}", a["entries"]);
+    }
+}
 #[test]
 fn declaration_order_and_unknown_representation_grammar_are_not_erased() {
     assert_ne!(

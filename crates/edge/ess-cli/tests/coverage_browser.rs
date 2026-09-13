@@ -3,7 +3,13 @@
 mod browser;
 #[path = "support/coverage_cases.rs"]
 mod coverage_cases;
-use std::{fs, path::Path, process::Command};
+use std::{
+    fs,
+    os::unix::fs::PermissionsExt,
+    path::{Path, PathBuf},
+    process::Command,
+    time::{Duration, Instant},
+};
 
 #[test]
 fn actual_browser_and_rust_refuse_every_closed_model_field_boundary() {
@@ -395,4 +401,330 @@ fn actual_browser_checks_full_lineage_and_integer_metadata() {
             assert!(description.contains("incomplete"), "{description}");
         }
     }
+}
+
+// The three tests above start Firefox at the same moment. On a shared runner
+// they then miss one shared startup deadline together and read as a BiDi
+// protocol defect. These three cases decide how a start the fixture did not
+// get is reported, and that the fixture never asks for three starts at once.
+#[test]
+fn a_start_past_the_deadline_is_a_fixture_environment_refusal_not_a_bidi_defect() {
+    let evidence = std::env::temp_dir().join(format!(
+        "ess-browser-startup-deadline-{}",
+        std::process::id()
+    ));
+    fs::create_dir_all(&evidence).unwrap();
+    // No Firefox on any runner reaches BiDi readiness before an elapsed deadline.
+    let Err(refusal) = browser::Browser::launch(&evidence, Duration::ZERO) else {
+        panic!("an elapsed deadline admitted a browser")
+    };
+    fs::write(evidence.join("startup-refusal.txt"), &refusal).unwrap();
+    assert!(
+        refusal.starts_with("fixture environment refusal:"),
+        "{refusal}"
+    );
+    assert!(refusal.contains("not a BiDi protocol defect"), "{refusal}");
+    assert!(refusal.contains("stage:"), "{refusal}");
+    assert!(refusal.contains("measured startup: 0."), "{refusal}");
+    assert!(
+        refusal.contains("deadline:         0.000s (expired)"),
+        "{refusal}"
+    );
+    assert!(
+        refusal.contains(&evidence.display().to_string()),
+        "{refusal}"
+    );
+    let log = fs::read_to_string(evidence.join("firefox.stderr")).unwrap();
+    assert!(
+        refusal.contains(&format!("firefox.stderr ({} bytes):", log.len())),
+        "{refusal}"
+    );
+}
+
+/// The variant names of one enum, read out of the fixture's own source. A case
+/// that walks a list of stages has to walk the stages the fixture declares; a
+/// literal list is a claim about the fixture that nothing checks, and the last
+/// one was already wrong by a stage on the day it was written.
+fn declared_variants(source: &str, declaration: &str) -> Vec<String> {
+    let body = source
+        .split_once(declaration)
+        .expect("the fixture declares it")
+        .1
+        .split_once('{')
+        .expect("the declaration has a body")
+        .1;
+    let body = &body[..body.find("\n}").expect("the body ends at column zero")];
+    body.lines()
+        .map(str::trim)
+        .filter(|line| !line.is_empty() && !line.starts_with("//") && !line.starts_with('#'))
+        .map(|line| {
+            line.split(['(', ',', '{'])
+                .next()
+                .expect("a variant name")
+                .trim()
+                .to_owned()
+        })
+        .collect()
+}
+
+#[test]
+fn a_startup_refusal_attaches_the_stderr_firefox_actually_wrote() {
+    let evidence = std::env::temp_dir().join(format!(
+        "ess-browser-startup-evidence-{}",
+        std::process::id()
+    ));
+    fs::create_dir_all(&evidence).unwrap();
+    let written = "*** You are running in headless mode.\nthis runner was busy\n";
+    fs::write(evidence.join("firefox.stderr"), written).unwrap();
+    // Every way the fixture gives up on a start reports the same way, and the
+    // list of ways is the fixture's own `Stage`, held here against the variants
+    // its source declares rather than against three names typed into this case.
+    let declared = declared_variants(include_str!("support/browser.rs"), "pub enum Stage");
+    assert_eq!(
+        browser::Stage::ALL.len(),
+        declared.len(),
+        "Stage::ALL names {} stages and the fixture declares {}: {declared:?}",
+        browser::Stage::ALL.len(),
+        declared.len()
+    );
+    for (stage, variant) in browser::Stage::ALL.iter().zip(&declared) {
+        let label = stage.label();
+        assert!(
+            label.starts_with(&variant.to_lowercase()),
+            "Stage::ALL is out of step with the declared variants: {label} against {variant}"
+        );
+        let refusal = browser::startup_refusal(
+            *stage,
+            Duration::from_millis(31_500),
+            browser::STARTUP_DEADLINE,
+            &evidence,
+        );
+        assert!(
+            refusal.starts_with("fixture environment refusal:"),
+            "{refusal}"
+        );
+        assert!(refusal.contains("not a BiDi protocol defect"), "{refusal}");
+        assert!(
+            refusal.contains(&format!("stage:            {label}")),
+            "{refusal}"
+        );
+        // A stage that never timed a startup says so instead of printing a
+        // number beside a deadline that number was never compared against.
+        if matches!(stage, browser::Stage::Spawn(_)) {
+            assert!(
+                refusal.contains("measured startup: not timed; the browser was never spawned"),
+                "{refusal}"
+            );
+            assert!(!refusal.contains("deadline:"), "{refusal}");
+        } else {
+            assert!(
+                refusal.contains("measured startup: 31.500s (spawn to give-up)"),
+                "{refusal}"
+            );
+            assert!(
+                refusal.contains("deadline:         30.000s (expired)"),
+                "{refusal}"
+            );
+        }
+        assert!(
+            refusal.contains(&format!(
+                "firefox.stderr ({} bytes):\n{written}",
+                written.len()
+            )),
+            "{refusal}"
+        );
+    }
+}
+
+/// The class F1 named: a start this process loses reports through
+/// `startup_refusal`, and the only lines on the startup path that may end it any
+/// other way are the ones that say which exception they are. The sixth give-up
+/// site was found by an adversary because the enumeration behind that claim was
+/// a reading of the file; this is the same enumeration, made by the compiler's
+/// own copy of the file every time the suite runs.
+#[test]
+fn no_unaccounted_panic_site_can_end_a_start() {
+    // A marker is the whole tail of its line, so the region's own prose can name
+    // the markers without opening or closing anything.
+    let marks = |line: &str, marker: &str| line.trim_end().ends_with(marker);
+    let source = include_str!("support/browser.rs");
+    let mut region = Vec::new();
+    let mut inside = false;
+    for (index, line) in source.lines().enumerate() {
+        if marks(line, "// startup-path: begin") {
+            inside = true;
+        } else if marks(line, "// startup-path: end") {
+            inside = false;
+        } else if inside {
+            region.push((index + 1, line));
+        }
+    }
+    assert!(
+        region.len() > 50,
+        "the startup path region is not marked in support/browser.rs: {} lines found",
+        region.len()
+    );
+    let forms = [
+        ".unwrap()",
+        ".expect(",
+        "panic!",
+        "assert!",
+        "assert_eq!",
+        "assert_ne!",
+        "unreachable!",
+        "todo!",
+    ];
+    let mut accounted = 0;
+    let mut previous = "";
+    for (number, line) in region {
+        if forms.iter().any(|form| line.contains(form)) {
+            assert!(
+                [line, previous]
+                    .iter()
+                    .any(|text| marks(text, "// startup-path: harness")
+                        || marks(text, "// startup-path: defect")),
+                "support/browser.rs:{number} can end a start without a fixture environment \
+                 refusal and names no reason. Give up through startup_refusal, or mark the line \
+                 `startup-path: harness` (this runner's own filesystem) or `startup-path: defect` \
+                 (a deliberate BiDi defect signal):\n{line}"
+            );
+            accounted += 1;
+        }
+        previous = line;
+    }
+    assert!(
+        accounted >= 8,
+        "the startup path guard matched {accounted} panic sites, so it is no longer reading the \
+         fixture it is supposed to hold"
+    );
+}
+
+#[test]
+fn a_browser_that_exits_during_startup_refuses_with_its_own_stderr_too() {
+    let evidence =
+        std::env::temp_dir().join(format!("ess-browser-startup-exit-{}", std::process::id()));
+    fs::create_dir_all(&evidence).unwrap();
+    // A program that is not Firefox exits at once and writes its own reason.
+    let Err(refusal) = browser::Browser::launch_program(
+        &evidence,
+        env!("CARGO_BIN_EXE_ess").as_ref(),
+        browser::STARTUP_DEADLINE,
+    ) else {
+        panic!("a browser that exited admitted a session")
+    };
+    fs::write(evidence.join("exit-refusal.txt"), &refusal).unwrap();
+    assert!(
+        refusal.starts_with("fixture environment refusal:"),
+        "{refusal}"
+    );
+    assert!(refusal.contains("not a BiDi protocol defect"), "{refusal}");
+    assert!(refusal.contains("stage:            exited"), "{refusal}");
+    // The measurement is the time from spawn to the exit, and it is not a
+    // startup this runner was too slow for: pinning it at "0." would pin noise,
+    // so what this case holds is that the report says which one it is.
+    assert!(
+        refusal.contains("measured startup: 0.") && refusal.contains("(spawn to give-up)"),
+        "{refusal}"
+    );
+    assert!(
+        refusal.contains("deadline:         30.000s (not reached"),
+        "{refusal}"
+    );
+    let log = fs::read_to_string(evidence.join("firefox.stderr")).unwrap();
+    assert!(!log.is_empty(), "the child wrote nothing to stderr");
+    assert!(
+        refusal.contains(&format!("firefox.stderr ({} bytes):\n{log}", log.len())),
+        "{refusal}"
+    );
+}
+
+/// A stand-in for Firefox that occupies a startup for a window it cannot
+/// shorten and then exits, having never announced `BiDi`.
+fn stand_in_firefox(dir: &Path, window: Duration) -> PathBuf {
+    let script = dir.join("stand-in-firefox.sh");
+    fs::write(
+        &script,
+        format!("#!/bin/sh\nsleep {:.3}\n", window.as_secs_f64()),
+    )
+    .unwrap();
+    fs::set_permissions(&script, fs::Permissions::from_mode(0o755)).unwrap();
+    script
+}
+
+#[test]
+fn fixtures_never_start_more_than_one_firefox_at_a_time() {
+    let root =
+        std::env::temp_dir().join(format!("ess-browser-startup-gate-{}", std::process::id()));
+    fs::create_dir_all(&root).unwrap();
+    // An elapsed deadline would hold the lock across the spawn and nothing else,
+    // and a fixture that released it there would pass. These starts each occupy
+    // the fixture for a real window, so overlapping them is observable twice
+    // over: in the peak this process reached, and in the wall clock.
+    let window = Duration::from_millis(500);
+    let program = stand_in_firefox(&root, window);
+    let barrier = std::sync::Arc::new(std::sync::Barrier::new(3));
+    let started = Instant::now();
+    let mut threads = Vec::new();
+    for index in 0..3 {
+        let evidence = root.join(index.to_string());
+        fs::create_dir_all(&evidence).unwrap();
+        let barrier = std::sync::Arc::clone(&barrier);
+        let program = program.clone();
+        threads.push(std::thread::spawn(move || {
+            barrier.wait();
+            let Err(refusal) =
+                browser::Browser::launch_program(&evidence, program.as_os_str(), window * 40)
+            else {
+                panic!("a stand-in that never announced BiDi admitted a browser")
+            };
+            refusal
+        }));
+    }
+    let refusals: Vec<String> = threads
+        .into_iter()
+        .map(|thread| thread.join().unwrap())
+        .collect();
+    let elapsed = started.elapsed();
+    for refusal in &refusals {
+        assert!(
+            refusal.starts_with("fixture environment refusal:"),
+            "{refusal}"
+        );
+        assert!(refusal.contains("stage:            exited"), "{refusal}");
+    }
+    assert_eq!(browser::peak_concurrent_startups(), 1);
+    assert!(
+        elapsed >= (window * 3).saturating_sub(Duration::from_millis(200)),
+        "three {:.3}s startups finished in {:.3}s, so the fixture ran them concurrently",
+        window.as_secs_f64(),
+        elapsed.as_secs_f64()
+    );
+}
+
+#[test]
+fn a_firefox_this_runner_does_not_have_refuses_rather_than_reading_as_a_defect() {
+    let evidence =
+        std::env::temp_dir().join(format!("ess-browser-startup-absent-{}", std::process::id()));
+    fs::create_dir_all(&evidence).unwrap();
+    let absent = evidence.join("no-such-firefox");
+    let Err(refusal) =
+        browser::Browser::launch_program(&evidence, absent.as_os_str(), browser::STARTUP_DEADLINE)
+    else {
+        panic!("a browser that was never spawned admitted a session")
+    };
+    fs::write(evidence.join("absent-refusal.txt"), &refusal).unwrap();
+    assert!(
+        refusal.starts_with("fixture environment refusal:"),
+        "{refusal}"
+    );
+    assert!(refusal.contains("not a BiDi protocol defect"), "{refusal}");
+    assert!(refusal.contains("stage:            spawn ("), "{refusal}");
+    assert!(refusal.contains("os error 2"), "{refusal}");
+    // Nothing about a startup was measured here, and the report says that rather
+    // than printing a sub-millisecond number beside an untouched deadline.
+    assert!(
+        refusal.contains("measured startup: not timed; the browser was never spawned"),
+        "{refusal}"
+    );
+    assert!(!refusal.contains("deadline:"), "{refusal}");
 }

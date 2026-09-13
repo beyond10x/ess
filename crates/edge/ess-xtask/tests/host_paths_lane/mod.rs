@@ -57,10 +57,43 @@ pub const TRANSCRIBED: &[&str] = &[
     "fn runners_per_line(workflow: &str) -> Vec<(usize, BTreeSet<String>)> {",
     "fn runner_labels(workflow: &str) -> BTreeSet<String> {",
     "fn ci_runner_labels(root: &Path) -> BTreeSet<String> {",
+    "fn documented_unread_trees(source: &str) -> Vec<(String, bool, usize, usize)> {",
+    "fn tracked_files(root: &Path) -> Vec<String> {",
+    "fn tree_of(file: &str) -> String {",
+];
+
+/// Every free function the lane defines that this module deliberately does not copy, with why.
+///
+/// Paired with a reason rather than listed, because "not copied" and "forgotten" look identical
+/// from here and only one of them is a decision. [`unclassified_lane_functions`] holds this list
+/// and [`TRANSCRIBED`] between them to *every* function the lane defines, so the next helper added
+/// to the lane lands in one of the two or turns every adversarial case red saying so.
+const UNTRANSCRIBED: &[(&str, &str)] = &[
+    (
+        "fn this_file() -> &'static str {",
+        "answers `file!()`, so a copy would resolve to this module's own path and measure this \
+         file rather than the lane. Nothing here needs to ask it.",
+    ),
+    (
+        "fn synthetic_home_path(marker: &str, tail: &str) -> String {",
+        "joins the lane's own control paths. A copy would put a second constructor of \
+         home-directory paths in a tracked file under `crates/` for no case's benefit; the \
+         adversarial targets build the controls they need out of `HOME_MARKERS` directly.",
+    ),
+    (
+        "fn recorded_home(account: &str) -> Option<String> {",
+        "reads this host's `/etc/passwd`. Its answer is a fact about the machine the suite runs \
+         on, not about the lane, and no case here drives it.",
+    ),
 ];
 
 /// The name of each `&[&str]` constant this module resolves out of the lane's source.
-const STRING_CONSTANTS: &[&str] = &["HOME_MARKERS", "SEPARATOR_SPELLINGS", "SCANNED_PREFIXES"];
+const STRING_CONSTANTS: &[&str] = &[
+    "HOME_MARKERS",
+    "SEPARATOR_SPELLINGS",
+    "SCANNED_PREFIXES",
+    "UNREAD_TREE_SECTION",
+];
 
 /// The name of each `&[(&str, &str)]` constant this module resolves out of the lane's source.
 const PAIR_CONSTANTS: &[&str] = &["RUNNER_HOME_ROOTS"];
@@ -121,7 +154,68 @@ pub fn transcription_drift() -> Vec<String> {
                 )
             })
         })
+        .chain(unclassified_lane_functions().into_iter().map(|signature| {
+            format!(
+                "`{signature}` is a function `{LANE}` defines and this module neither transcribes \
+                 nor names in `UNTRANSCRIBED`. The warranty above walks `TRANSCRIBED` only, so an \
+                 addition to the lane is covered by nothing until somebody remembers it — which is \
+                 how three helpers shipped uncovered and an adversary had to hand-copy them. Copy \
+                 it below and add it to `TRANSCRIBED`, or say in `UNTRANSCRIBED` why no case needs \
+                 to drive it"
+            )
+        }))
         .collect()
+}
+
+/// Every free function the lane defines, by the signature line that identifies it.
+///
+/// Column zero and not preceded by `#[test]`, which is the same rule [`function_text`] relies on
+/// to find a definition rather than a signature quoted inside a string literal. A case is driven,
+/// not copied, so it is not a candidate for transcription.
+fn lane_functions() -> Vec<String> {
+    let lines: Vec<&str> = lane_source().lines().collect();
+    lines
+        .iter()
+        .enumerate()
+        .filter(|(number, line)| {
+            line.starts_with("fn ")
+                && line.ends_with('{')
+                && (*number == 0 || lines[number - 1].trim() != "#[test]")
+        })
+        .map(|(_, line)| (*line).to_owned())
+        .collect()
+}
+
+/// Every lane function this module neither transcribes nor deliberately excludes.
+///
+/// The converse of [`transcription_drift`]'s own walk, and the reason it exists: walking
+/// `TRANSCRIBED` proves that what *is* copied is current, and proves nothing whatever about what
+/// was never copied. A function the lane gains is invisible to that walk, so the warranty degrades
+/// silently every time the lane grows — exactly what it was built to prevent. This makes the list
+/// total: every function is copied or is named as not needing to be, and a new one is neither
+/// until somebody says which.
+fn unclassified_lane_functions() -> Vec<String> {
+    let excluded: BTreeSet<&str> = UNTRANSCRIBED
+        .iter()
+        .map(|(signature, _)| *signature)
+        .collect();
+    let mut unclassified: Vec<String> = lane_functions()
+        .into_iter()
+        .filter(|signature| !TRANSCRIBED.contains(&signature.as_str()))
+        .filter(|signature| !excluded.contains(signature.as_str()))
+        .collect();
+    unclassified.sort();
+    // Both lists have to name functions the lane still defines, or they rot in the other
+    // direction: an entry that matches nothing is an entry nobody notices has stopped applying.
+    let defined: BTreeSet<String> = lane_functions().into_iter().collect();
+    for (signature, _) in UNTRANSCRIBED {
+        assert!(
+            defined.contains(*signature),
+            "`UNTRANSCRIBED` excuses `{signature}` from being copied and `{LANE}` no longer \
+             defines it, so the exemption applies to nothing and is invisible"
+        );
+    }
+    unclassified
 }
 
 /// Every string literal in `text`, with `\\` and `\"` unescaped.
@@ -252,6 +346,9 @@ pub static SEPARATOR_SPELLINGS: LaneStrings = LaneStrings("SEPARATOR_SPELLINGS")
 
 /// The lane's `SCANNED_PREFIXES`, read from its source.
 pub static SCANNED_PREFIXES: LaneStrings = LaneStrings("SCANNED_PREFIXES");
+
+/// The lane's `UNREAD_TREE_SECTION`, read from its source: the opening anchor, then the closing.
+pub static UNREAD_TREE_SECTION: LaneStrings = LaneStrings("UNREAD_TREE_SECTION");
 
 /// The lane's `RUNNER_HOME_ROOTS`, read from its source.
 pub static RUNNER_HOME_ROOTS: LanePairs = LanePairs("RUNNER_HOME_ROOTS");
@@ -568,4 +665,131 @@ pub fn assert_current() {
          them measures a fossil rather than `{LANE}`:\n\n{}",
         drift.join("\n\n")
     );
+}
+
+/// The lane's `documented_unread_trees`, copied. Reads `UNREAD_TREE_SECTION` above.
+pub fn documented_unread_trees(source: &str) -> Vec<(String, bool, usize, usize)> {
+    let mut anchors = UNREAD_TREE_SECTION.iter();
+    // Held as the iterator's own item and compared through one dereference, rather than converted.
+    // This text has to be valid and clippy-clean in two places at once: here, where
+    // `UNREAD_TREE_SECTION` is a slice of `&str`, and in `host_paths_lane/mod.rs`, where the copy
+    // of this function reads the same constant parsed out of this source into a slice of `String`.
+    // The transcription warranty is a byte comparison, so one spelling has to serve both.
+    let opening = anchors
+        .next()
+        .expect("the unread-tree section has an opening anchor");
+    let closing = anchors
+        .next()
+        .expect("the unread-tree section has a closing anchor");
+    let doc: Vec<String> = source
+        .lines()
+        .map_while(|line| line.strip_prefix("//!"))
+        .map(str::to_owned)
+        .collect();
+    let open = doc
+        .iter()
+        .position(|line| line.trim() == *opening)
+        .unwrap_or_else(|| {
+            panic!(
+                "the module documentation has no line reading `{opening}`, so it names no tree as \
+                 unread and nothing can be compared against it"
+            )
+        });
+    let Some(offset) = doc
+        .iter()
+        .skip(open + 1)
+        .position(|line| line.trim() == *closing)
+    else {
+        panic!(
+            "the unread-tree list is opened by `{opening}` and never closed by `{closing}`, so \
+             where it ends is a guess and a bullet can fall outside it unnoticed"
+        )
+    };
+    let close = open + 1 + offset;
+    let mut claimed = Vec::new();
+    for line in &doc[open + 1..close] {
+        let Some(bullet) = line.trim().strip_prefix("* ") else {
+            continue;
+        };
+        let mut quoted = bullet.split('`');
+        quoted.next();
+        let tree = quoted
+            .next()
+            .unwrap_or_else(|| panic!("the bullet `{bullet}` names no tree in backticks"))
+            .to_owned();
+        let claim = quoted
+            .next()
+            .unwrap_or_else(|| panic!("the bullet for `{tree}` states nothing after the tree name"))
+            .trim()
+            .strip_prefix('—')
+            .unwrap_or_else(|| {
+                panic!("the bullet for `{tree}` does not state its claim after an em dash")
+            })
+            .trim();
+        // Up to the first colon, so a bullet's reasons can hold anything at all without the
+        // counts in front of them becoming unparseable — and so the counts are a fixed, short
+        // head a reader and this parse read the same way.
+        let head = claim.split_once(':').map_or(claim, |(head, _)| head);
+        let mut fields = head.splitn(3, ", ");
+        let verdict = fields
+            .next()
+            .unwrap_or_else(|| panic!("the bullet for `{tree}` states no verdict"));
+        let unread = match verdict {
+            "unread" => true,
+            "read" => false,
+            other => panic!(
+                "the bullet for `{tree}` opens with `{other}`, and the only two claims this parse \
+                 can check are `unread` and `read` — a bullet whose verdict it cannot read is a \
+                 decision nothing measures"
+            ),
+        };
+        let count = |field: Option<&str>, unit: &str| -> usize {
+            field
+                .and_then(|text| text.strip_suffix(unit))
+                .unwrap_or_else(|| {
+                    panic!("the bullet for `{tree}` states no `<n>{unit}` count for its claim")
+                })
+                .trim()
+                .parse()
+                .unwrap_or_else(|_| {
+                    panic!("the bullet for `{tree}` states a `{unit}` count that is not a number")
+                })
+        };
+        let files = count(fields.next(), " files");
+        let lines = count(fields.next(), " lines");
+        claimed.push((tree, unread, files, lines));
+    }
+    assert!(
+        !claimed.is_empty(),
+        "the unread-tree list between `{opening}` and `{closing}` holds no bullet at all, so every \
+         comparison against it is a comparison with nothing"
+    );
+    claimed
+}
+
+/// The lane's `tracked_files`, copied.
+pub fn tracked_files(root: &Path) -> Vec<String> {
+    let listed = Command::new("git")
+        .arg("-C")
+        .arg(root)
+        .args(["ls-files", "--cached", "-z"])
+        .output()
+        .expect("git lists the repository's files");
+    assert!(listed.status.success(), "`git ls-files` failed");
+    let mut files: Vec<String> = String::from_utf8_lossy(&listed.stdout)
+        .split('\0')
+        .filter(|file| !file.is_empty())
+        .map(str::to_owned)
+        .collect();
+    files.sort();
+    files.dedup();
+    files
+}
+
+/// The lane's `tree_of`, copied.
+pub fn tree_of(file: &str) -> String {
+    match file.split_once('/') {
+        Some((first, _)) => format!("{first}/"),
+        None => file.to_owned(),
+    }
 }

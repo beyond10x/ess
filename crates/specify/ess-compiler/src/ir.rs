@@ -76,7 +76,7 @@ use std::fmt;
 
 use ess_domain::binding::{BindingName, Delivery, Failure};
 use ess_domain::command::{OutcomeName, TestStrategy};
-use ess_domain::component::{CliName, ComponentName, Reach};
+use ess_domain::component::{environment_variable, CliName, ComponentName, Reach};
 use ess_domain::entity::{
     Cardinality, EntitySpec, Invariant, RelationKind, StateMachine, StateName, Transition,
 };
@@ -821,6 +821,78 @@ pub struct ResolvedCommand {
     pub refs: Refs,
 }
 
+/// One configuration input a component declares, with its type resolved.
+///
+/// The handle is what makes this worth carrying into the IR rather than reading the declaration
+/// again: a projector that binds a setting into a container reaches the type's invariants through
+/// the same total lookup every other reference uses, so "what shape is this value" is a question
+/// the deployment layer answers without a second parse of the specification.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
+pub struct ResolvedComponentSetting {
+    /// Its identity.
+    pub name: CliName,
+    /// Its type.
+    #[serde(rename = "type")]
+    pub type_ref: ResolvedTypeRef,
+    /// Whether a value must be present.
+    ///
+    /// The **answer**, not the document's restatement of it. A written `required:` is a
+    /// restatement of the type that
+    /// [`ComponentSpec::validate_settings`](ess_domain::component::ComponentSpec::validate_settings)
+    /// refuses the moment it disagrees, so two documents that differ only by that line state one
+    /// specification — and [`EssIr::source_digest`] is SHA-256 over these bytes and is the
+    /// `semantic_digest` every realization, runtime, build and release document pins. Carrying the
+    /// `Option<bool>` the document wrote made adding or deleting a line that changes no answer
+    /// invalidate the whole pinned chain. It is resolved once, in `resolve.rs`, through
+    /// `ess-domain`'s own [`requires_a_value`](ess_domain::component::requires_a_value) and
+    /// never a second copy of the rule.
+    ///
+    /// Always serialised, unlike every other optional key here: a reader of the serialised IR sees
+    /// requiredness without parsing a type expression, which is the entire reason the authored key
+    /// exists.
+    pub required: bool,
+    /// Whether the model may not hold the value.
+    #[serde(skip_serializing_if = "unstated_secrecy")]
+    pub secret: bool,
+    /// A public literal the specification fixes.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub value: Option<String>,
+    /// What it is, in one line.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub summary: Option<String>,
+}
+
+impl ResolvedComponentSetting {
+    /// The environment variable a runtime binds this setting to.
+    ///
+    /// Upper-snake-cased from the name, through `ess-domain`'s own function rather than a second
+    /// copy of the rule. See
+    /// [`ComponentSetting::environment`](ess_domain::component::ComponentSetting::environment) for
+    /// why two setting names cannot derive one variable.
+    pub fn environment(&self) -> String {
+        environment_variable(&self.name)
+    }
+
+    /// Whether a value must be present.
+    ///
+    /// Reads the resolved field. The rule —
+    /// `ess-domain`'s [`requires_a_value`](ess_domain::component::requires_a_value), and why silence
+    /// cannot be read as "optional" — was applied once, where the declaration was resolved, so
+    /// this is a projection of an answer and not a second place the answer is computed.
+    pub fn is_required(&self) -> bool {
+        self.required
+    }
+}
+
+/// `true` where a setting's secrecy is the unstated default.
+///
+/// A free function for the reason [`unstated_reach`] is one: `skip_serializing_if` hands the field
+/// by reference and there is no by-value form of the attribute.
+#[allow(clippy::trivially_copy_pass_by_ref)]
+fn unstated_secrecy(secret: &bool) -> bool {
+    !*secret
+}
+
 impl ResolvedCommand {
     /// Every event any outcome emits, in outcome order.
     ///
@@ -1264,6 +1336,13 @@ pub struct ResolvedComponent {
     pub cli: Option<ResolvedCommandLineSurface>,
     /// What it is called on the wire, and shown as.
     pub naming: Naming,
+    /// The configuration inputs it reads, in the order the document declared them.
+    ///
+    /// Skipped when empty, for the reason `reached_by` and `cli` are: the model digest is the
+    /// serialised IR, and a key that appeared everywhere to say nothing was declared would have
+    /// moved every committed artifact in the repository for a statement no author made.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub settings: Vec<ResolvedComponentSetting>,
     /// The records outside this model that explain it, such as `jira:DEV-630`.
     ///
     /// Carried through from the declaration so a projection can publish it. Empty by default.

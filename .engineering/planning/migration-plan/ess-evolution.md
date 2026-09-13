@@ -9,7 +9,7 @@ relations:
 revision: 1
 ---
 ## Plan
-See docs/design/ess-evolution/migration.md. Providers precede consumers. Keep old readers and original inputs until migration acceptance passes. Never dual-write authorities. Preserve Babelconnect's working-tree edits.
+See docs/design/ess-evolution/migration.md. Providers precede consumers. Keep old readers and original inputs until migration acceptance passes. Never dual-write authorities. Preserve a second internal adopter's working-tree edits.
 
 ## AEP
 One owning story includes configuration, inventory dry-run, identity/revision/relation/body/evidence/history migration, divergence refusal, staged verification, projection drift/rebuild and removal of hybrid runtime selection. Database/Eventlog/ER prerequisites stay in their owning repositories. Journal plus blobs are authoritative and tracked. Direct Markdown edits are drift. Post-commit projection failure reports a receipt; projection retry must not repeat mutation. A snapshot-only import is an explicit legacy boundary.

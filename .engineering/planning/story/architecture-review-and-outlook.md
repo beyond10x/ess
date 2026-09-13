@@ -2,11 +2,12 @@
 format: aep.planning-md/1
 id: story:architecture-review-and-outlook
 kind: story
-status: draft
+status: implemented
 title: Review ESS architecture and document its maturity outlook
 relations:
 - informed_by: epic:area-layout
 - informed_by: epic:oci-component-delivery
+- serves: vision:O2
 scope:
 - confidence: cited
   path: docs/reviews/2026-09-05-architecture-review.md
@@ -16,7 +17,7 @@ scope:
   path: website/docs/status/roadmap.md
 - confidence: cited
   path: website/sidebars.ts
-revision: 6
+revision: 9
 ---
 ## Outcome
 
