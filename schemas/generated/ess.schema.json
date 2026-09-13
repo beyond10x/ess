@@ -1345,6 +1345,59 @@
       },
       "additionalProperties": false
     },
+    "RawComponentSetting": {
+      "description": "One configuration input a component declares, as a document says it.\n\nThe type is a [`TypeRef`], so `types:` is reused entire — invariants included — rather than growing a second type language beside it. Configuration is unbounded per application, and what keeps this list from becoming that language is that it declares nothing of its own beyond a name and three flags.",
+      "type": "object",
+      "required": [
+        "name",
+        "type"
+      ],
+      "properties": {
+        "name": {
+          "description": "Its identity, spelt the way a word a person types is.\n\nThe charset is published, because it is checkable there: a schema that accepts what [`CliName::new`] refuses would hand an author a green editor and a red `ess validate`.",
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9]*(-[a-z0-9]+)*$"
+        },
+        "required": {
+          "description": "Whether a value must be present.\n\nA restatement of the type, and optional: unstated is unchecked — see [`ComponentSpec::validate_settings`] for why silence is not a contradiction — and answered by the type, which is [`requires_a_value`].",
+          "default": null,
+          "type": [
+            "boolean",
+            "null"
+          ]
+        },
+        "secret": {
+          "description": "Whether the model may not hold the value.",
+          "default": false,
+          "type": "boolean"
+        },
+        "summary": {
+          "description": "What it is, in one line, for generated documentation.",
+          "default": null,
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "type": {
+          "description": "Its type: anything the specification declares.",
+          "allOf": [
+            {
+              "$ref": "#/definitions/TypeRef"
+            }
+          ]
+        },
+        "value": {
+          "description": "A public literal the specification fixes.",
+          "default": null,
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "additionalProperties": false
+    },
     "RawComponentSpec": {
       "description": "What a component is made of, as a document says it.",
       "type": "object",
@@ -1414,6 +1467,13 @@
           "type": "array",
           "items": {
             "$ref": "#/definitions/ExternalRef"
+          }
+        },
+        "settings": {
+          "description": "The configuration inputs it reads.\n\nUnstated is empty, and empty serialises out, so a specification written before this key existed digests exactly as it did — the same position `reached_by` and `cli:` took.",
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/RawComponentSetting"
           }
         },
         "summary": {

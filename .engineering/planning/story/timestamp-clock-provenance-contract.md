@@ -2,7 +2,7 @@
 format: aep.planning-md/1
 id: story:timestamp-clock-provenance-contract
 kind: story
-status: active
+status: implemented
 title: Resolve clock provenance and timestamp crossing semantics before modeling them
 tags:
 - priority-high
@@ -65,7 +65,7 @@ scope:
   path: website/docs/guides/write-a-specification.md
 - confidence: cited
   path: website/docs/reference/formats.md
-revision: 5
+revision: 6
 ---
 ## Outcome and priority
 

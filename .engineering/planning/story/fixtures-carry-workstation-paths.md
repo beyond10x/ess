@@ -2,7 +2,7 @@
 format: aep.planning-md/1
 id: story:fixtures-carry-workstation-paths
 kind: story
-status: draft
+status: implemented
 title: Coverage-producer fixtures carry workstation paths
 summary: Two tracked coverage fixtures embed absolute workstation paths since 874962d; record repository-relative roots at the writer and refuse them in the gate.
 tags:
@@ -14,7 +14,7 @@ scope:
   path: crates/edge/ess-cli/tests/fixtures/coverage-producers/input-catalog.json
 - confidence: cited
   path: crates/edge/ess-cli/tests/fixtures/coverage-producers/semantic-plan.json
-revision: 3
+revision: 6
 ---
 # Coverage-producer fixtures carry workstation paths
 

@@ -1189,3 +1189,470 @@ fn adversary_unselected_catalog_candidate_mutation_is_revalidated() {
         assert_persisted_refused::<ReleaseCatalog>(&serde_json::to_value(&invalid).unwrap());
     }
 }
+
+// ---------------------------------------------------------------------------
+// A component declares its settings, and the runtime slots are derived from them.
+//
+// `ess-runtime/1` types configuration and says nothing about what any of it *is*. A component that
+// declares `settings:` says it once, in the specification, and the slots follow from that — so a
+// runtime document that also hand-authors them is two sources for one fact, and is refused.
+// ---------------------------------------------------------------------------
+
+/// The fixture's semantic model, with `settings:` added to `order-service`.
+///
+/// The declaration is injected into the text rather than committed to `examples/oracle-fixture`,
+/// because every other test in this file — and `ess-compiler`'s oracle tests — pin that directory's
+/// digest, and a component that declares no settings is exactly the case they are pinning.
+fn semantic_with_settings() -> ess_compiler::EssIr {
+    let root = fixture();
+    let mut sources = SourceMap::new();
+    let parsed: Vec<_> = [
+        "system.yaml",
+        "components.yaml",
+        "domains/order.yaml",
+        "domains/dispatch.yaml",
+    ]
+    .into_iter()
+    .map(|label| {
+        let mut text = std::fs::read_to_string(root.join(label)).expect("read fixture");
+        if label == "components.yaml" {
+            text = text.replace(
+                "  - component: order-service\n",
+                "  - component: order-service\n    settings:\n      \
+                 - name: state-root\n        type: oracle.order.Email\n        required: true\n      \
+                 - name: carrier-token\n        type: oracle.order.Email\n        required: true\n        secret: true\n",
+            );
+        }
+        let raw = RawSpecFile::parse(&text).expect("parse fixture");
+        sources.insert(label.to_owned(), text);
+        (Source::new(label), raw)
+    })
+    .collect();
+    let specification = Specification::assemble(parsed).expect("assemble fixture");
+    compile(&specification, &sources).expect("compile fixture")
+}
+
+/// The fixture runtime document, with whatever `config:` and `secrets:` blocks are passed in.
+fn runtime_spec_with_slots(
+    semantic: &ess_compiler::EssIr,
+    physical: &ess_realization::RealizationIr,
+    build: &BuildIr,
+    slots: &str,
+) -> RuntimeSpec {
+    RuntimeSpec::from_yaml(&format!(
+        r"
+format: ess-runtime/1
+runtime: oracle-runtime
+semantic_digest: sha256:{semantic_digest}
+realization_digest: {realization_digest}
+build_digest: {build_digest}
+processes:
+  - name: server
+    image: app
+containers:
+  - name: server
+    process: server
+    http_port: 8080
+{slots}    endpoints:
+      - name: carrier-api
+        environment: CARRIER_URL
+        system: carrier
+        endpoint: api
+workloads:
+  - name: oracle
+    components: [order-service, dispatch-service]
+    containers: [server]
+    replicas: 1
+provided_endpoints:
+  - name: api
+    workload: oracle
+    container: server
+    scheme: http
+",
+        semantic_digest = semantic.source_digest(),
+        realization_digest = physical.realization_digest(),
+        build_digest = build.digest(),
+    ))
+    .expect("runtime fixture parses")
+}
+
+#[test]
+fn declared_settings_derive_the_runtime_slots() {
+    let semantic = semantic_with_settings();
+    let build = build();
+    let physical = physical_realization(&semantic);
+    let compiled = compile_runtime(
+        &runtime_spec_with_slots(&semantic, &physical, &build, ""),
+        &semantic,
+        &physical,
+        &build,
+    )
+    .expect("a runtime that hand-authors no slot compiles");
+
+    let container = &compiled.containers()[&"server".parse().unwrap()];
+    assert_eq!(
+        container
+            .config
+            .iter()
+            .map(|slot| (slot.name.to_string(), slot.environment.clone(), slot.kind))
+            .collect::<Vec<_>>(),
+        vec![(
+            "state-root".to_owned(),
+            "STATE_ROOT".to_owned(),
+            ess_deployment::ConfigKind::Required
+        )],
+        "a non-secret setting becomes one config slot, keyed by an upper-snake-cased name"
+    );
+    assert_eq!(
+        container
+            .secrets
+            .iter()
+            .map(|slot| (
+                slot.name.to_string(),
+                slot.environment.clone(),
+                slot.key.clone()
+            ))
+            .collect::<Vec<_>>(),
+        vec![(
+            "carrier-token".to_owned(),
+            "CARRIER_TOKEN".to_owned(),
+            "carrier-token".to_owned()
+        )],
+        "a secret setting becomes a secret slot whose key is the setting's own name"
+    );
+}
+
+#[test]
+fn deriving_the_runtime_slots_twice_produces_identical_bytes() {
+    let semantic = semantic_with_settings();
+    let build = build();
+    let physical = physical_realization(&semantic);
+    let specification = runtime_spec_with_slots(&semantic, &physical, &build, "");
+    let first = compile_runtime(&specification, &semantic, &physical, &build)
+        .expect("compiles")
+        .to_canonical_json();
+    let second = compile_runtime(&specification, &semantic, &physical, &build)
+        .expect("compiles")
+        .to_canonical_json();
+    assert_eq!(first.as_bytes(), second.as_bytes());
+}
+
+#[test]
+fn a_hand_authored_slot_beside_a_declared_setting_is_refused_naming_both() {
+    let semantic = semantic_with_settings();
+    let build = build();
+    let physical = physical_realization(&semantic);
+    let specification = runtime_spec_with_slots(
+        &semantic,
+        &physical,
+        &build,
+        "    config:\n      - name: log-level\n        environment: LOG_LEVEL\n        kind: optional\n",
+    );
+    let refusal = compile_runtime(&specification, &semantic, &physical, &build)
+        .expect_err("two sources for one fact is refused");
+    let rendered = refusal
+        .as_slice()
+        .iter()
+        .map(|diagnostic| {
+            format!(
+                "{} {}",
+                diagnostic
+                    .subject()
+                    .map_or_else(String::new, ToString::to_string),
+                diagnostic.detail()
+            )
+        })
+        .collect::<Vec<_>>()
+        .join("\n");
+    assert!(
+        rendered.contains("log-level"),
+        "the refusal names the hand-authored slot: {rendered}"
+    );
+    assert!(
+        rendered.contains("order-service"),
+        "and the component whose settings replace it: {rendered}"
+    );
+}
+
+#[test]
+fn a_hand_authored_secret_beside_a_declared_setting_is_refused_naming_both() {
+    let semantic = semantic_with_settings();
+    let build = build();
+    let physical = physical_realization(&semantic);
+    let specification = runtime_spec_with_slots(
+        &semantic,
+        &physical,
+        &build,
+        "    secrets:\n      - name: database-password\n        environment: DATABASE_PASSWORD\n        key: password\n",
+    );
+    let refusal = compile_runtime(&specification, &semantic, &physical, &build)
+        .expect_err("a hand-authored secret is the same two sources");
+    let rendered = refusal
+        .as_slice()
+        .iter()
+        .map(|diagnostic| {
+            format!(
+                "{} {}",
+                diagnostic
+                    .subject()
+                    .map_or_else(String::new, ToString::to_string),
+                diagnostic.detail()
+            )
+        })
+        .collect::<Vec<_>>()
+        .join("\n");
+    assert!(
+        rendered.contains("database-password") && rendered.contains("order-service"),
+        "the refusal names both: {rendered}"
+    );
+}
+
+/// The property that makes this additive rather than a migration.
+#[test]
+fn a_component_declaring_no_settings_keeps_its_hand_authored_slots() {
+    let semantic = semantic();
+    let build = build();
+    let physical = physical_realization(&semantic);
+    let compiled = compile_runtime(
+        &runtime_spec(&semantic, &physical, &build),
+        &semantic,
+        &physical,
+        &build,
+    )
+    .expect("the hand-authored fixture still compiles");
+    let container = &compiled.containers()[&"server".parse().unwrap()];
+    assert_eq!(
+        container
+            .config
+            .iter()
+            .map(|slot| slot.environment.clone())
+            .collect::<Vec<_>>(),
+        vec!["LOG_LEVEL".to_owned()],
+        "nothing derived, nothing removed"
+    );
+    assert_eq!(
+        container
+            .secrets
+            .iter()
+            .map(|slot| slot.environment.clone())
+            .collect::<Vec<_>>(),
+        vec!["DATABASE_PASSWORD".to_owned()]
+    );
+}
+
+// ---------------------------------------------------------------------------
+// Two properties of the derivation that its first shape did not have, each found by the adversary
+// pass recorded at `review-result:adversary-wave25-unit3-pass-1`.
+// ---------------------------------------------------------------------------
+
+/// The fixture's semantic model with a `settings:` block spliced under each named component.
+///
+/// The general form of [`semantic_with_settings`], which splices one block under `order-service`.
+/// Injected into the text rather than committed to `examples/oracle-fixture` for the same reason:
+/// every other case in this file pins that directory's digest.
+fn semantic_with_settings_on(settings: &[(&str, &str)]) -> ess_compiler::EssIr {
+    let root = fixture();
+    let mut sources = SourceMap::new();
+    let parsed: Vec<_> = [
+        "system.yaml",
+        "components.yaml",
+        "domains/order.yaml",
+        "domains/dispatch.yaml",
+    ]
+    .into_iter()
+    .map(|label| {
+        let mut text = std::fs::read_to_string(root.join(label)).expect("read fixture");
+        if label == "components.yaml" {
+            for (component, block) in settings {
+                let anchor = format!("  - component: {component}\n");
+                assert!(
+                    text.contains(&anchor),
+                    "the fixture declares the component {component}"
+                );
+                text = text.replace(&anchor, &format!("{anchor}    settings:\n{block}"));
+            }
+        }
+        let raw = RawSpecFile::parse(&text).expect("parse fixture");
+        sources.insert(label.to_owned(), text);
+        (Source::new(label), raw)
+    })
+    .collect();
+    let specification = Specification::assemble(parsed).expect("assemble fixture");
+    compile(&specification, &sources).expect("compile fixture")
+}
+
+/// The fixture runtime document with whatever `workloads:` block is passed in, and no slot of its
+/// own: no `config:`, no `secrets:`, no `endpoints:`.
+fn runtime_spec_with_workloads(
+    semantic: &ess_compiler::EssIr,
+    physical: &ess_realization::RealizationIr,
+    build: &BuildIr,
+    workloads: &str,
+) -> RuntimeSpec {
+    RuntimeSpec::from_yaml(&format!(
+        r"
+format: ess-runtime/1
+runtime: oracle-runtime
+semantic_digest: sha256:{semantic_digest}
+realization_digest: {realization_digest}
+build_digest: {build_digest}
+processes:
+  - name: server
+    image: app
+containers:
+  - name: server
+    process: server
+    http_port: 8080
+{workloads}provided_endpoints:
+  - name: api
+    workload: oracle
+    container: server
+    scheme: http
+",
+        semantic_digest = semantic.source_digest(),
+        realization_digest = physical.realization_digest(),
+        build_digest = build.digest(),
+    ))
+    .expect("runtime fixture parses")
+}
+
+const ONE_WORKLOAD: &str = "\
+workloads:
+  - name: oracle
+    components: [order-service, dispatch-service]
+    containers: [server]
+    replicas: 1
+";
+
+/// Two workloads, each realizing one component, both selecting the one container role.
+///
+/// Nothing in `ess-runtime/1` refuses this: `compile_runtime` refuses a *component* realized by
+/// more than one workload, and says nothing about a container role selected by more than one.
+const TWO_WORKLOADS_ONE_CONTAINER: &str = "\
+workloads:
+  - name: dispatch
+    components: [dispatch-service]
+    containers: [server]
+    replicas: 1
+  - name: oracle
+    components: [order-service]
+    containers: [server]
+    replicas: 1
+";
+
+fn rendered(diagnostics: &ess_deployment::Diagnostics) -> String {
+    diagnostics
+        .as_slice()
+        .iter()
+        .map(|diagnostic| {
+            format!(
+                "{:?} {} {}",
+                diagnostic.code(),
+                diagnostic
+                    .subject()
+                    .map_or_else(String::new, ToString::to_string),
+                diagnostic.detail()
+            )
+        })
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+
+/// A type that admits no absence must not derive a slot the deployment gate treats as unbindable.
+///
+/// `validate_settings` refuses `required: false` over `oracle.order.Email` because — its own words
+/// — "`Optional<…>` is the model's only way of saying that a value may be absent". Deleting the
+/// `required:` line must therefore not buy the same slot the refusal exists to prevent: silence is
+/// answered by the type, not by `false`, and `ConfigKind::Optional` is the kind `environment.rs`
+/// does *not* require an environment binding for.
+#[test]
+fn a_setting_whose_type_admits_no_absence_does_not_derive_an_optional_slot() {
+    let semantic = semantic_with_settings_on(&[(
+        "order-service",
+        "      - name: state-root\n        type: oracle.order.Email\n",
+    )]);
+    let build = build();
+    let physical = physical_realization(&semantic);
+    let compiled = compile_runtime(
+        &runtime_spec_with_workloads(&semantic, &physical, &build, ONE_WORKLOAD),
+        &semantic,
+        &physical,
+        &build,
+    )
+    .expect("a runtime that hand-authors no slot compiles");
+
+    let container = &compiled.containers()[&"server".parse().unwrap()];
+    let derived: Vec<_> = container
+        .config
+        .iter()
+        .map(|slot| (slot.name.to_string(), slot.kind))
+        .collect();
+    assert_eq!(
+        derived,
+        vec![(
+            "state-root".to_owned(),
+            ess_deployment::ConfigKind::Required
+        )],
+        "a setting typed `oracle.order.Email` says the value is present — `Optional<…>` is the \
+         model's only way to say otherwise — so the derived slot must be `required`, and an \
+         environment that leaves it unbound must be refused by `environment.rs`"
+    );
+}
+
+/// A runtime document that hand-authors nothing must not be told that it hand-authored a slot.
+///
+/// The refusal reads `container.config`/`container.secrets` to decide whether the container has a
+/// second author. When the derivation walked workloads and appended in place, a container role
+/// selected by two workloads read its own first derivation back as hand-authored work and the
+/// document was refused with a message naming a slot that appears nowhere in it.
+#[test]
+fn a_container_role_shared_by_two_workloads_is_not_accused_of_hand_authoring() {
+    let semantic = semantic_with_settings_on(&[
+        (
+            "order-service",
+            "      - name: state-root\n        type: oracle.order.Email\n        required: true\n",
+        ),
+        (
+            "dispatch-service",
+            "      - name: carrier-token\n        type: oracle.order.Email\n        required: true\n",
+        ),
+    ]);
+    let build = build();
+    let physical = physical_realization(&semantic);
+    let specification =
+        runtime_spec_with_workloads(&semantic, &physical, &build, TWO_WORKLOADS_ONE_CONTAINER);
+    let source = serde_json::to_string(&specification).unwrap_or_default();
+    assert!(
+        !source.contains("\"config\":[{"),
+        "the runtime document under test hand-authors no config slot"
+    );
+
+    match compile_runtime(&specification, &semantic, &physical, &build) {
+        Ok(compiled) => {
+            let container = &compiled.containers()[&"server".parse().unwrap()];
+            assert_eq!(
+                container
+                    .config
+                    .iter()
+                    .map(|slot| slot.name.to_string())
+                    .collect::<Vec<_>>(),
+                vec!["carrier-token".to_owned(), "state-root".to_owned()],
+                "the shared role derives the union of both workloads' settings, once each, in \
+                 component-name order"
+            );
+        }
+        Err(diagnostics) => {
+            let text = rendered(&diagnostics);
+            assert!(
+                !text.contains("hand-authors the slot"),
+                "the runtime document hand-authors no slot, yet it is refused for hand-authoring \
+                 one; `derive_component_settings` read back its own derivation from the previous \
+                 workload:\n{text}"
+            );
+            assert!(
+                !text.contains(&format!("{:?}", DiagnosticCode::DuplicateIdentifier)),
+                "nor is any slot a duplicate:\n{text}"
+            );
+        }
+    }
+}

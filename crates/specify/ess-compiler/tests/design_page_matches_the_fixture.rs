@@ -12,6 +12,13 @@
 //! asserting what it says, so a reader can tell a stale test from a stale document: a failure on
 //! the first assertion means the page moved, and a failure on the second means the code did.
 //!
+//! A quoted sentence is matched with whitespace collapsed, because the page is hard-wrapped and a
+//! premise a reflow can silently switch off is not a premise. And each half's list of refusals is
+//! matched against every refusal the fixture actually makes about that name, because the halves
+//! state *counts*: the page went from two refusals to three and the unlocated half's list stayed
+//! at two, so the file that exists solely to hold the page to the fixture was guarding two thirds
+//! of it and said nothing. A hand-kept list is the defect there; the missing entry is the symptom.
+//!
 //! `story:the-design-page-is-held-to-the-fixture-it-describes` carries making this a gate step
 //! rather than a test in one package's suite.
 
@@ -63,6 +70,61 @@ fn cited() -> Vec<(String, String, Option<Location>)> {
         .collect()
 }
 
+/// The page, with every run of whitespace collapsed, so a sentence can be quoted across its wrap.
+///
+/// The page is hard-wrapped, so `contains` on a whole sentence is a check that a reflow silently
+/// turns off. Every count this file reads off the page is in a sentence, and a count is the exact
+/// thing that must not be quotable only in halves.
+fn page_says(sentence: &str) -> bool {
+    let flatten = |text: &str| text.split_whitespace().collect::<Vec<_>>().join(" ");
+    flatten(&design_page()).contains(&flatten(sentence))
+}
+
+/// Every cited refusal whose path names `name` — and not a longer name spelt around it.
+///
+/// `shop.repeat.FileTwo` contains `shop.repeat.File`, and a collision between exactly those two is
+/// where this fixture's unlocated half wrongly came from once. A count taken by plain substring
+/// would repeat that mistake inside the guard against it.
+fn refusals_naming(spans: &[(String, String, Option<Location>)], name: &str) -> Vec<String> {
+    spans
+        .iter()
+        .map(|(path, _, _)| path)
+        .filter(|path| {
+            path.match_indices(name).any(|(at, _)| {
+                path[at + name.len()..]
+                    .chars()
+                    .next()
+                    .is_none_or(|next| !next.is_alphanumeric())
+            })
+        })
+        .cloned()
+        .collect()
+}
+
+/// Every refusal the fixture makes about `name` is one of `checked`, and none is left over.
+///
+/// The halves below each assert a *list* of paths, and a list is the kind of guard that goes stale
+/// without saying so: the page moved from two refusals to three and the unlocated half's loop kept
+/// checking two, so a third of the claim it guards went unmeasured. Pairing the list against what
+/// the fixture actually produces is what makes the page's count checkable rather than copied — a
+/// refusal this file does not name fails here, whichever direction the drift came from.
+fn every_refusal_is_checked(
+    spans: &[(String, String, Option<Location>)],
+    name: &str,
+    checked: &[&str],
+) {
+    let mut produced = refusals_naming(spans, name);
+    produced.sort();
+    let mut named: Vec<String> = checked.iter().map(|path| (*path).to_owned()).collect();
+    named.sort();
+    assert_eq!(
+        produced, named,
+        "`{name}` is refused at {produced:?} and this case checks {named:?}. The page states a \
+         count of these refusals and this file is what holds the page to it, so a refusal it does \
+         not name is a part of the page nothing measures."
+    );
+}
+
 fn span_for(
     spans: &[(String, String, Option<Location>)],
     path: &str,
@@ -82,9 +144,8 @@ fn span_for(
 /// `repeated_names.yaml:12:5`".
 #[test]
 fn the_design_page_s_located_half_is_cited_where_the_page_says_it_is() {
-    let page = design_page();
     assert!(
-        page.contains("cited at `repeated_names.yaml:12:5`"),
+        page_says("all three of `File`'s refusals are cited at `repeated_names.yaml:12:5`"),
         "the page's own sentence is the premise of this case; it no longer contains it"
     );
 
@@ -93,11 +154,13 @@ fn the_design_page_s_located_half_is_cited_where_the_page_says_it_is() {
         line: 12,
         column: 5,
     });
-    for path in [
+    let located_paths = [
         "command.shop.repeat.File.input[1]",
         "command.shop.repeat.File.outcomes.filed",
         "command.shop.repeat.File.outcomes",
-    ] {
+    ];
+    every_refusal_is_checked(&spans, "shop.repeat.File", &located_paths);
+    for path in located_paths {
         let (source, located) = span_for(&spans, path);
         assert_eq!(
             (source.as_str(), located),
@@ -111,29 +174,42 @@ fn the_design_page_s_located_half_is_cited_where_the_page_says_it_is() {
 /// The **unlocated** half. The page says `shop.repeat.Solo` gets no line and no file.
 ///
 /// `Solo` is declared twice, at lines 35 and 56. Two occurrences of a whole name is a real
-/// ambiguity that the whole-name filter cannot resolve, and the page says so: both refusals
-/// "report `located: None` and `source: <document>`". `<document>` is not a file; it is the whole
-/// specification, which is what makes this the half the page must not get backwards.
+/// ambiguity that the whole-name filter cannot resolve, and the page says so: **all three** of its
+/// refusals "report `located: None` and `source: <document>`". `<document>` is not a file; it is
+/// the whole specification, which is what makes this the half the page must not get backwards.
+///
+/// Three, and the page said two until
+/// `story:a-masked-first-declaration-hides-a-duplicate-name` added the third — the name-level
+/// duplicate the second declaration earns, which nothing reported while `Solo`'s first declaration
+/// failed its own conversion and never reached the command registry. The page moved and this loop
+/// did not, so the guard covered two thirds of the claim it exists to guard. The count is read off
+/// the page as a *sentence* now, whitespace collapsed so a rewrap cannot hide it: a page that says
+/// `three` while this loop names two fails here instead of passing quietly.
 #[test]
 fn the_design_page_s_unlocated_half_reports_no_line_as_the_page_says() {
-    let page = design_page();
     assert!(
-        page.contains("report `located: None` and `source: <document>`"),
+        page_says(
+            "so all three of its refusals report `located: None` and `source: <document>` rather \
+             than picking the first."
+        ),
         "the page's own sentence is the premise of this case; it no longer contains it"
     );
 
     let spans = cited();
-    for path in [
+    let unlocated = [
         "command.shop.repeat.Solo.outcomes.noted",
         "command.shop.repeat.Solo.outcomes",
-    ] {
+        "command shop.repeat.Solo",
+    ];
+    every_refusal_is_checked(&spans, "shop.repeat.Solo", &unlocated);
+    for path in unlocated {
         let (source, located) = span_for(&spans, path);
         assert_eq!(
             (source.as_str(), located),
             ("<document>", None),
             "`docs/design/review-typed-diagnostics.md` says `shop.repeat.Solo` is declared twice \
-             and that both of its refusals report `located: None` and `source: <document>` rather \
-             than picking the first — cited: {spans:?}"
+             and that all three of its refusals report `located: None` and `source: <document>` \
+             rather than picking the first — cited: {spans:?}"
         );
     }
 }
@@ -146,13 +222,12 @@ fn the_design_page_s_unlocated_half_reports_no_line_as_the_page_says() {
 /// refusals would simply become located and the page's *other* half would be the wrong one.
 #[test]
 fn the_design_page_s_declaration_counts_are_the_fixture_s() {
-    let page = design_page();
     assert!(
-        page.contains("`shop.repeat.Solo`, declared twice, at lines 35 and 56"),
+        page_says("`shop.repeat.Solo`, declared twice, at lines 35 and 56"),
         "the page's own sentence is the premise of this case; it no longer contains it"
     );
     assert!(
-        page.contains("`shop.repeat.File`, declared once at line 12"),
+        page_says("`shop.repeat.File`, declared once at line 12"),
         "the page's own sentence is the premise of this case; it no longer contains it"
     );
 

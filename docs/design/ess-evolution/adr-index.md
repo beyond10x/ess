@@ -16,6 +16,6 @@ they are created; an outstanding record is not claimed to exist.
 | 05 — File Eventlog and atomic append groups | Eventlog | architecture-decision-record:ess-evolution-05-file-and-atomic-groups in Eventlog's governed store |
 | 06 — Markdown is an AEP projection | AEP | Outstanding owner-local record; exactly one AEP migration story |
 | 07 — Service execution delegates to ER | Service SDK | Outstanding owner-local record |
-| 11 — Babelconnect retains server and protocol authority | Babelconnect | Outstanding record under its existing planning conventions |
+| 11 — a second internal adopter retains server and protocol authority | a second internal adopter | Outstanding record under its existing planning conventions |
 | 12 — Connectors local runtime profile | Connectors v2 | Existing local CLI specification/reviews retained; implementation ADR outstanding |
 

@@ -3,7 +3,11 @@
 > **Repository:** `beyond10x/ess`
 > **Status:** Proposed. Nothing is implemented against this page yet, and the argument in §2 is what
 > it is asking for agreement on.
-> **Audience:** Implementors of `ess-conformance` and of a new `ess-interpret`, and anybody holding a
+> **Audience:** Implementors of `ess-conformance` — where the interpreter is a module beside
+> `reference.rs`, decided 2026-09-11, because six stories writing one `ConformanceTarget`
+> implementation collide identically either side of a crate boundary and a new workspace member
+> would additionally have to be added to the Taskfile's explicit fmt package list and the xtask
+> coverage classifications — and anybody holding a
 > specification that nothing has ever executed.
 > **Relationship to existing work:** Additive. One more implementation of a trait that already has
 > two, and one more verb beside three that already exist. No existing target, suite, emitter or
@@ -43,11 +47,7 @@ The obvious objection is that ESS refuses to choose behaviour. The web emitter s
 > **It never chooses a realization.** Every command behaviour is an obligation, and this bridge fills
 > none of them… Gap register D-2 says the machinery does not choose; a page is machinery.
 
-Read D-2 itself, as `docs/plan/ess-wave-6-structural-synthesis.md:73-76` records it:
-
-> One constraint on the linker, decided in `gap-register.md` D-2: it never chooses. Zero
-> implementations for an obligation is an unsatisfied obligation; two is an ambiguity error naming
-> both. **Selection among alternatives** is `Realization` material and stays proposed with it.
+Read D-2 itself, at its home: [`the linker never chooses`](linker-never-chooses.md).
 
 D-2 constrains **the linker**, and what it forbids is **selection among alternatives**. It is the rule
 that stops the machinery silently picking one of two candidate implementations and shipping it. It is
@@ -56,9 +56,9 @@ implementation, it is in this repository, and it does not violate D-2. It does n
 nobody's build silently selected it: an operator names it, with `--target`.
 
 An interpreter is in exactly that position. `--target interpreted` is a choice a person makes, in the
-same argument slot, with the same explicitness. Zero implementations for an obligation remains an
-unsatisfied obligation; two remains an ambiguity naming both. Nothing about the linker changes,
-because the interpreter is not linked — it reads the IR.
+same argument slot, with the same explicitness. Both refusals the rule makes stand exactly as
+[`the linker never chooses`](linker-never-chooses.md) states them, and nothing about the linker
+changes, because the interpreter is not linked — it reads the IR.
 
 So the distinction this page asks agreement on is not *may behaviour be chosen* but **who is
 choosing, and for what**:
@@ -70,11 +70,12 @@ choosing, and for what**:
 | `--target interpreted` | the operator, explicitly | checking a suite | untouched |
 | a synthesis target | nothing — emits obligations | code somebody ships | governs it |
 
-**One thing to fix while here:** wave 6 cites `docs/plan/gap-register.md` and that file does not exist
-at `11fc669`. The decision survives only as the sentence quoted above. Either the register comes back
-or D-2 should be restated somewhere that is not a plan document, because a constraint whose home is
-missing is a constraint the next reader will re-litigate. This page is currently the second-best copy
-of it, which is the situation this repository refuses everywhere else.
+**One thing that was fixed while here:** wave 6 cited `docs/plan/gap-register.md` and that file does
+not exist at `11fc669`; the decision survived only as a sentence quoted in a wave plan and as this
+page's paraphrase of it. A constraint whose home is missing is a constraint the next reader will
+re-litigate, which is the situation this repository refuses everywhere else. D-2 now has a home that
+is not a plan document — [`the linker never chooses`](linker-never-chooses.md) — and this page cites
+it rather than holding the second-best copy of it.
 
 ## 3. What the model determines, and what it does not
 

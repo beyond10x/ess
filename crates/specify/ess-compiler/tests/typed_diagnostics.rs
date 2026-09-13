@@ -249,6 +249,26 @@ fn a_name_used_more_than_once_falls_back_to_the_declaration_that_owns_it() {
                 path: "command.shop.repeat.Solo.outcomes".to_owned(),
                 located: None,
             },
+            // The refusal this fixture was accepted by *not* earning, until
+            // `story:a-masked-first-declaration-hides-a-duplicate-name`. `Solo`'s first
+            // declaration fails its own conversion, so it never reached the command registry, and
+            // the second declaration found the registry empty and took the name in silence: a
+            // document with two commands of one name was read as a document with one. The name is
+            // declared where it is written now, whether or not what is written under it converts,
+            // so the second declaration is refused — and the fixture keeps both `Solo`
+            // declarations rather than answering that by deleting the evidence, which is the
+            // mistake `docs/design/review-typed-diagnostics.md` records twice in its own history.
+            //
+            // Unlocated, for exactly the reason the two refusals above it are: two declarations
+            // answer to the needle `name: shop.repeat.Solo`, so any line cited would be a guess at
+            // which one. A name-level refusal is the one case where that is not a shortcoming —
+            // the refusal is *about* there being two, and neither is more it than the other.
+            Cited {
+                code: "ESS-COMMAND-006".to_owned(),
+                source: "<document>".to_owned(),
+                path: "command shop.repeat.Solo".to_owned(),
+                located: None,
+            },
         ]
     );
     assert_eq!(reworded(&errors), cited, "wording moved the machine facts");

@@ -9,7 +9,7 @@
 | ER Eventlog adapter | Maps complete entity history to stored records; implements ER ports using Eventlog |
 | Eventlog | Durable appends, concurrency, group idempotency, blobs, snapshots and projection storage; file, SQLite and PostgreSQL providers |
 | Rust service binding | Transport, authentication, authorization, effects and hosting; delegates entity execution to ER |
-| Babelconnect Go | Native Go implementation checked against specifications; no Rust FFI or mandatory ER service hop |
+| a second internal adopter Go | Native Go implementation checked against specifications; no Rust FFI or mandatory ER service hop |
 | AEP and Connectors | Product behavior and projections; assemble selected ER/Eventlog implementations |
 
 Host-owned Eventlog effect-delivery records do not constitute another entity state machine.

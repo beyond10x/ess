@@ -2,7 +2,7 @@
 format: aep.planning-md/1
 id: story:binding-mapping-bounded-accessor
 kind: story
-status: active
+status: implemented
 title: A binding mapping may read one bounded path into the event, so an envelope-shaped event can drive a flat-input command
 summary: 'mapping: <input>: event.data.<field> — segments resolved against declared types, Optional/union segments refused unless the target is Optional, bounded depth, no list traversal. Measured need: 17 commands and 0 bindings in consumer because its push events are wire envelopes.'
 relations:
@@ -98,7 +98,7 @@ scope:
   path: website/docs/guides/write-a-specification.md
 - confidence: cited
   path: website/docs/reference/formats.md
-revision: 5
+revision: 6
 ---
 ## Why
 

@@ -2,7 +2,7 @@
 format: aep.planning-md/1
 id: story:authored-entity-state-arrangement
 kind: story
-status: active
+status: implemented
 title: Establish typed upstream entity state for non-vacuous authored view tests
 tags:
 - priority-high
@@ -36,7 +36,7 @@ scope:
   path: website/docs/guides/verify-conformance.md
 - confidence: cited
   path: website/docs/reference/formats.md
-revision: 5
+revision: 6
 ---
 ## Outcome and priority
 

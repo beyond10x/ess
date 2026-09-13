@@ -2,9 +2,9 @@
 format: aep.planning-md/1
 id: epic:configuration-declared-once
 kind: epic
-status: draft
+status: active
 title: Configuration is declared once and delivered many ways
-revision: 1
+revision: 3
 ---
 # Epic: configuration is declared once and delivered many ways
 

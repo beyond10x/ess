@@ -12,7 +12,16 @@ tags:
 relations:
 - decomposes: epic:review-boundary-remediation
 - serves: vision:O2
-revision: 1
+scope:
+- confidence: inferred
+  path: crates/specify/ess-domain/src/command.rs
+- confidence: cited
+  path: docs/design
+- confidence: cited
+  path: docs/design/ess-closed-loop-execution-conformance-design-v0.1.md
+- confidence: cited
+  path: docs/design/ess-review-v0.1.md
+revision: 5
 ---
 ## Context
 `ESS-COMMAND-004` refuses two unconditional outcomes and `ESS-COMMAND-012` refuses `wrong_state` on a command that moves no entity, so a command's branches must be decided by input (`when`) or by the lifecycle state of the entity it moves. `specs/services/pusher` (the consumer repository, 2026-09-10) met a refusal that is neither: the pusher's HTTP publish endpoint answers 403 when the caller's source address is outside a configured CIDR list (src/HttpEndpoint.js:74-79). The address is not an input of `Publish` and no entity carries it; the 403 is now UNMAPPED prose in interfaces.md, and the model claims `Publish` has one outcome. Deployment allow lists, rate limits and feature flags are the same shape.

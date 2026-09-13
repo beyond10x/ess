@@ -609,6 +609,9 @@ enum ReferenceTarget {
     Billing,
     #[value(name = "oracle-fixture")]
     OracleFixture,
+    // No doc comment on any variant: one would switch clap from the inline `[possible values: …]`
+    // list to a described block, changing the help of an option whose other two values say nothing.
+    Interpreted,
 }
 
 #[derive(Debug, Subcommand)]
@@ -2810,6 +2813,8 @@ fn conform(command: ConformCommand) -> Result<ExitCode> {
                     .run_admitted(&admitted, &ess_conformance::reference::Billing::new()),
                 ReferenceTarget::OracleFixture => ess_conformance::Runner::for_suite(suite)
                     .run_admitted(&admitted, &ess_conformance::reference::Oracle::new()),
+                ReferenceTarget::Interpreted => ess_conformance::Runner::for_suite(suite)
+                    .run_admitted(&admitted, &ess_conformance::interpret::Interpreted::new()),
             })?;
             render_conformance_report(
                 &report,

@@ -62,7 +62,7 @@ The released feature/adopter delivery is complete at the bounded canonical subse
 
 ## Module identity during adoption
 
-The published namespace relocation at IVR cf1a9657298760af53b50fe9f5abd0eea3a1c222, docs/namespace-relocation.md:12–15, explicitly retains generated Go module declarations under gitlab.stack.babelforce.com/specs/ivr/... for compatibility. These are import identities, while origin fetch/push and navigation use specs/services/ivr. The ESS release adoption preserves those module identities. A later module cutover must coordinate generator and consumer pins together; an earlier private preparation note suggesting a generator-only namespace replacement is superseded by this source-backed rule.
+The published namespace relocation at IVR cf1a9657298760af53b50fe9f5abd0eea3a1c222, docs/namespace-relocation.md:12–15, explicitly retains generated Go module declarations under an internal specification host for compatibility. These are import identities, while origin fetch/push and navigation use specs/services/ivr. The ESS release adoption preserves those module identities. A later module cutover must coordinate generator and consumer pins together; an earlier private preparation note suggesting a generator-only namespace replacement is superseded by this source-backed rule.
 
 ## Orthogonal pre-bump qualification
 

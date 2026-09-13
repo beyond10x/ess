@@ -3,7 +3,7 @@
 ## 0. Preserve the source and acceptance baseline
 
 Record exact commits, dirty/index/untracked changes, lockfiles, generator identities and toolchains
-for ESS, ER, Eventlog, AEP, Service SDK, Connectors v2, Babelconnect and downstream server/controller
+for ESS, ER, Eventlog, AEP, Service SDK, Connectors v2, a second internal adopter and downstream server/controller
 sources. Preserve user edits. Evidence is tied to the actual source/dependency/configuration vector;
 unrelated repository movement does not invalidate another slice's completed evidence.
 
@@ -77,13 +77,13 @@ startup, restart policy, revocation fencing, protected-input and uncertain-outco
 describe/invoke/serve. Broader modeled governance/mutations remain outside selected acceptance.
 Advance exact ESS pins and lockfiles only after compatibility, including excluded CLI workspace.
 
-Babelconnect keeps Go AgentView, Subscribe/Send, acknowledgement versus streamed-error distinction,
+a second internal adopter keeps Go AgentView, Subscribe/Send, acknowledgement versus streamed-error distinction,
 Connect/gRPC-web and CGO_ENABLED=0. Preserve backend-call-ID correlation/field ownership, server Faye
 and WebSocket behavior, authoritative presence lookup, outbound-only auto-answer, inbound accept/
 reject, native/web auth, embed origins and media permissions. No Rust FFI. Keep SIP/media in native
 bindings. Generate composition without redesigning the application.
 
 Link selected deployment requirements to existing infrastructure expectations/projections. Cover
-Babelconnect server/web and Helm inputs, and Connectors local processes. Render manifests and use
+a second internal adopter server/web and Helm inputs, and Connectors local processes. Render manifests and use
 captured/synthetic observations locally. Never infer observed state from desired declarations.
 

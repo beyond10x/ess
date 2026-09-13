@@ -17,6 +17,47 @@
 //! | it owns nothing, accepts nothing and publishes nothing | [`EmptyDeclaration`](ValidationCode::EmptyDeclaration) |
 //! | it is [`reached_by: network`](Reach::Network) and no route follows — it accepts no command and owns no domain that declares a view | [`EmptyDeclaration`](ValidationCode::EmptyDeclaration) |
 //!
+//! # What a component declares about its configuration
+//!
+//! [`RawComponentSpec::settings`] is one list, and it is one list on purpose: configuration is
+//! unbounded per application, and the guard against this growing a second type language beside
+//! `types:` is that a setting declares nothing of its own except a name, two flags and an optional
+//! literal. The type is a [`TypeRef`], so every invariant `types:` can state is available here and
+//! none of them is restated.
+//!
+//! | rule | code | where |
+//! |---|---|---|
+//! | a setting whose `type` nothing declares | [`UndeclaredReference`](ValidationCode::UndeclaredReference) | [`validate_setting_types`] |
+//! | a setting typed by an **entity** | [`TypeMismatch`](ValidationCode::TypeMismatch) | [`validate_setting_types`] |
+//! | a setting typed by a name whose representation admits absence | [`TypeMismatch`](ValidationCode::TypeMismatch) | [`validate_setting_types`] |
+//! | two settings with one name | [`DuplicateDeclaration`](ValidationCode::DuplicateDeclaration) | [`ComponentSpec::validate_settings`] |
+//! | `secret: true` beside a literal `value:` | [`ConflictingDeclaration`](ValidationCode::ConflictingDeclaration) | [`ComponentSpec::validate_settings`] |
+//! | `secret: true` beside a type that admits absence | [`ConflictingDeclaration`](ValidationCode::ConflictingDeclaration) | [`ComponentSpec::validate_settings`] |
+//! | a written `required:` the type contradicts | [`ConflictingDeclaration`](ValidationCode::ConflictingDeclaration) | [`ComponentSpec::validate_settings`] |
+//!
+//! No new [`ValidationCode`]: each is an existing refusal reaching a new declaration.
+//!
+//! # `settings:` is `ess/1`, and it is forward-incompatible
+//!
+//! The two statements are not in tension, and both have to be written down.
+//!
+//! **No new format version.** The key is optional, the resolved list is empty when it is unstated,
+//! and an empty list serialises out — of [`ComponentSpec`], of the IR's resolved component and
+//! therefore of the model digest. So every document that does not use it compiles to exactly the
+//! bytes it compiled to before the key existed, and no committed artifact in this repository moves.
+//! That is the same position `reached_by` and `cli:` took, for the same reason, and
+//! `ess-compiler/tests/component_settings.rs` holds it as a test rather than as this paragraph.
+//!
+//! **And an older binary refuses a document that uses it.** [`RawComponentSpec`] is
+//! `deny_unknown_fields`, so a build made before this key existed does not ignore `settings:` — it
+//! reports an unknown-field refusal naming `settings` and stops. A document that declares
+//! settings therefore requires a build at least this new, while the format version it carries
+//! still reads `ess/1`. That is a real incompatibility the version number does not signal: `ess/N`
+//! is
+//! this repository's statement about *meaning*, and nothing about the meaning of an existing
+//! document changed. The upgrade obligation is one-directional and is recorded in
+//! `changes/component-settings-0.24.0.yaml`.
+//!
 //! # Where each rule lives
 //!
 //! The sixth row is the only one a component can answer alone, so it is [`ComponentSpec::validate`]
@@ -66,10 +107,13 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
-use ess_primitives::error::{ValidationCode, ValidationError, ValidationErrors};
+use ess_primitives::error::{
+    ConstructKind, ConstructRef, ValidationCode, ValidationError, ValidationErrors,
+};
 
 use crate::name::{Naming, QualifiedName};
 use crate::refs::Refs;
+use crate::types::{TypeBody, TypeRef};
 
 /// What a component is made of, as a document says it.
 #[derive(Debug, Clone, serde::Deserialize, schemars::JsonSchema)]
@@ -105,11 +149,53 @@ pub struct RawComponentSpec {
     /// What it is, in one line.
     #[serde(default)]
     pub summary: Option<String>,
+    /// The configuration inputs it reads.
+    ///
+    /// Unstated is empty, and empty serialises out, so a specification written before this key
+    /// existed digests exactly as it did — the same position `reached_by` and `cli:` took.
+    #[serde(default)]
+    pub settings: Vec<RawComponentSetting>,
     /// The records outside this model that explain it, such as `jira:DEV-630`.
     ///
     /// Empty by default. See [`crate::refs`] for why this is a reference and not a paragraph.
     #[serde(default, skip_serializing_if = "crate::refs::is_empty")]
     pub refs: Refs,
+}
+
+/// One configuration input a component declares, as a document says it.
+///
+/// The type is a [`TypeRef`], so `types:` is reused entire — invariants included — rather than
+/// growing a second type language beside it. Configuration is unbounded per application, and what
+/// keeps this list from becoming that language is that it declares nothing of its own beyond a name
+/// and three flags.
+#[derive(Debug, Clone, serde::Deserialize, schemars::JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct RawComponentSetting {
+    /// Its identity, spelt the way a word a person types is.
+    ///
+    /// The charset is published, because it is checkable there: a schema that accepts what
+    /// [`CliName::new`] refuses would hand an author a green editor and a red `ess validate`.
+    #[schemars(regex(pattern = "^[a-z][a-z0-9]*(-[a-z0-9]+)*$"))]
+    pub name: String,
+    /// Its type: anything the specification declares.
+    #[serde(rename = "type")]
+    pub type_ref: TypeRef,
+    /// Whether a value must be present.
+    ///
+    /// A restatement of the type, and optional: unstated is unchecked — see
+    /// [`ComponentSpec::validate_settings`] for why silence is not a contradiction — and answered
+    /// by the type, which is [`requires_a_value`].
+    #[serde(default)]
+    pub required: Option<bool>,
+    /// Whether the model may not hold the value.
+    #[serde(default)]
+    pub secret: bool,
+    /// A public literal the specification fixes.
+    #[serde(default)]
+    pub value: Option<String>,
+    /// What it is, in one line, for generated documentation.
+    #[serde(default)]
+    pub summary: Option<String>,
 }
 
 /// Where the callers of a component's surface are.
@@ -377,11 +463,115 @@ pub struct ComponentSpec {
     pub cli: Option<CommandLineSurface>,
     /// What it is called on the wire, and what a person is shown.
     pub naming: Naming,
+    /// The configuration inputs it reads, in the order the document declared them.
+    ///
+    /// Empty for every component that declares none, and skipped when it is, so a specification
+    /// written before this key existed serialises exactly as it did.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub settings: Vec<ComponentSetting>,
     /// The records outside this model that explain it, such as `jira:DEV-630`.
     ///
     /// Empty by default. See [`crate::refs`] for why this is a reference and not a paragraph.
     #[serde(default, skip_serializing_if = "crate::refs::is_empty")]
     pub refs: Refs,
+}
+
+/// One configuration input a component declares.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
+pub struct ComponentSetting {
+    /// Its identity.
+    pub name: CliName,
+    /// Its type.
+    #[serde(rename = "type")]
+    pub type_ref: TypeRef,
+    /// Whether a value must be present, when the document said so.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub required: Option<bool>,
+    /// Whether the model may not hold the value.
+    #[serde(skip_serializing_if = "unstated_secrecy")]
+    pub secret: bool,
+    /// A public literal the specification fixes.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub value: Option<String>,
+    /// What it is, in one line.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub summary: Option<String>,
+}
+
+/// `true` where a setting's secrecy is the unstated default.
+///
+/// A free function rather than a method, because `skip_serializing_if` hands the field by reference
+/// and there is no by-value form of the attribute — the same reason [`Reach`]'s
+/// `unstated_reach` sits beside the IR's component rather than on the enum.
+#[allow(clippy::trivially_copy_pass_by_ref)]
+fn unstated_secrecy(secret: &bool) -> bool {
+    !*secret
+}
+
+impl ComponentSetting {
+    /// The environment variable a runtime binds this setting to.
+    ///
+    /// # Two setting names never derive one variable
+    ///
+    /// The map is per character and length-preserving: `[a-z]` uppercases, `[0-9]` passes through,
+    /// `-` becomes `_`. Those three images are pairwise disjoint — `[A-Z]`, `[0-9]`, `{_}` — and
+    /// each map is injective on its own domain, so the map is injective on a character and
+    /// therefore on a string of equal length; and the length is the input's. [`CliName`] admits
+    /// nothing else, and in particular no underscore, which is the one character that could have
+    /// arrived by two routes. So a colliding pair does not exist, and this is not a sixth refusal.
+    ///
+    /// That argument holds exactly as far as [`CliName::PATTERN`] does, which is why
+    /// `no_two_setting_names_derive_one_environment_variable` enumerates the charset instead of
+    /// trusting the paragraph.
+    pub fn environment(&self) -> String {
+        environment_variable(&self.name)
+    }
+
+    /// Whether a value must be present.
+    ///
+    /// Unstated is answered by the type, through [`requires_a_value`] rather than a second copy of
+    /// the rule.
+    pub fn is_required(&self) -> bool {
+        requires_a_value(self.required, self.type_ref.is_optional())
+    }
+}
+
+/// Whether a setting written with this `required:` over a type of this optionality must carry a
+/// value.
+///
+/// # Silence is the type's answer, and never `false`
+///
+/// `required:` is a *restatement* of the type — [`ComponentSpec::validate_settings`] refuses it in
+/// both directions the moment it disagrees — so the type is the authority and the key is the
+/// reading aid. Answering an unstated `required` with `false` made that refusal evadable and left
+/// it preventing nothing: a setting typed by something that admits no absence and written
+/// `required: false` is refused, and the identical document with that one line deleted was
+/// accepted and derived the very slot the refusal exists to prevent, which
+/// `ess-deployment`'s `environment.rs` then never requires an environment binding for. Deleting
+/// the line now changes no answer, so there is nothing to evade.
+///
+/// Free and public for the reason [`environment_variable`] is: the compiler's resolved setting and
+/// the deployment projector behind it ask this question through this function, so the rule has one
+/// site and a third reader cannot quietly disagree with the first two.
+pub fn requires_a_value(required: Option<bool>, type_is_optional: bool) -> bool {
+    required.unwrap_or(!type_is_optional)
+}
+
+/// The environment variable a setting of this name binds to.
+///
+/// Free and public so that the IR's own setting — which holds a resolved type and the same name —
+/// derives the variable through this function rather than through a second copy of the rule.
+pub fn environment_variable(name: &CliName) -> String {
+    name.as_str()
+        .chars()
+        .map(|character| {
+            if character == '-' {
+                '_'
+            } else {
+                character.to_ascii_uppercase()
+            }
+        })
+        .collect()
 }
 
 /// A component's name.
@@ -475,6 +665,14 @@ impl TryFrom<RawComponentSpec> for ComponentSpec {
             },
         };
 
+        let settings = match resolve_settings(&raw.name, raw.settings) {
+            Ok(settings) => settings,
+            Err(refusals) => {
+                errors.extend(refusals);
+                Vec::new()
+            }
+        };
+
         let component = Self {
             name,
             owns: raw.owns.domains.into_iter().collect(),
@@ -486,6 +684,7 @@ impl TryFrom<RawComponentSpec> for ComponentSpec {
                 summary: raw.naming.summary.or(raw.summary),
                 ..raw.naming
             },
+            settings,
             refs: raw.refs,
         };
 
@@ -542,6 +741,50 @@ fn resolve_command_line(
     }
 }
 
+/// Where a refusal about one setting points.
+///
+/// One definition, used by every settings rule, so that the document path a reader is sent to is
+/// the same string whichever rule refused and cannot drift between them — which is the whole point
+/// of a typed [`ConstructRef`] over a `format!` per call site.
+fn setting_site(component: &str, setting: &str) -> ConstructRef {
+    ConstructRef::new(ConstructKind::Component, component)
+        .key("settings")
+        .named(setting)
+}
+
+/// Turns written settings into resolved ones, or names every name that is not a name.
+///
+/// Separate from [`ComponentSpec::validate_settings`] for the reason
+/// [`resolve_command_line`] is separate from
+/// [`ComponentSpec::validate_command_line`]: this one asks *is this spelt like something a person
+/// types*, and that one asks *do these declarations contradict each other*. A setting whose name
+/// failed here would make the second check report a derived problem about a name nobody can write.
+fn resolve_settings(
+    component: &str,
+    raw: Vec<RawComponentSetting>,
+) -> Result<Vec<ComponentSetting>, ValidationErrors> {
+    let mut errors = ValidationErrors::new();
+    let mut settings = Vec::with_capacity(raw.len());
+    for setting in raw {
+        match CliName::new(&setting.name) {
+            Ok(name) => settings.push(ComponentSetting {
+                name,
+                type_ref: setting.type_ref,
+                required: setting.required,
+                secret: setting.secret,
+                value: setting.value,
+                summary: setting.summary,
+            }),
+            Err(error) => errors.push(ValidationError::at(
+                setting_site(component, &setting.name),
+                ValidationCode::TypeMismatch,
+                error.to_string(),
+            )),
+        }
+    }
+    errors.into_result(settings)
+}
+
 impl ComponentSpec {
     /// Everything checkable without the rest of the specification.
     pub fn validate(&self) -> ValidationErrors {
@@ -562,6 +805,153 @@ impl ComponentSpec {
             );
         }
         errors.extend(self.validate_command_line());
+        errors.extend(self.validate_settings());
+        errors
+    }
+
+    /// Everything a settings list can be wrong about without the rest of the specification.
+    ///
+    /// | refused | code |
+    /// |---|---|
+    /// | two settings with one name | [`DuplicateDeclaration`](ValidationCode::DuplicateDeclaration) |
+    /// | `secret: true` beside a literal `value:` | [`ConflictingDeclaration`](ValidationCode::ConflictingDeclaration) |
+    /// | `secret: true` beside a type that admits absence | [`ConflictingDeclaration`](ValidationCode::ConflictingDeclaration) |
+    /// | a written `required:` that the type contradicts | [`ConflictingDeclaration`](ValidationCode::ConflictingDeclaration) |
+    ///
+    /// The other three settings rules — a type nothing declares, a type that is an entity, and a
+    /// type whose *name* admits absence — need the whole specification, and are
+    /// [`validate_setting_types`].
+    ///
+    /// # Why an optional secret is refused rather than derived
+    ///
+    /// A setting's optionality survives into the projection as
+    /// `ConfigKind::Required`/`ConfigKind::Optional`, and that is the whole of what the projection
+    /// can say about it. A secret becomes a `SecretSlot`, which carries a name, an environment
+    /// variable and a key and **nothing that says the value may be absent**, and
+    /// `ess-deployment`'s `environment.rs` requires every secret slot in a locked runtime to be
+    /// bound. So `secret: true` over an `Optional<…>` type is a statement the model accepts at the
+    /// declaration and drops at the slot: the setting is declared optional and then refused for
+    /// being unbound, in a document whose author never wrote the requirement.
+    ///
+    /// It is refused here rather than carried because carrying it is a new statement in a
+    /// persisted format — a kind on `SecretSlot`, a matching field in the composition lock's
+    /// secret set, and a gate that reads it — and `ess-runtime/1` cannot gain one without a format
+    /// consequence. Refusing says the same thing at the declaration, where the author can act on
+    /// it, and leaves the projection total: every slot the derivation builds carries every
+    /// statement its setting made.
+    ///
+    /// # Why `required:` is checked in both directions, and only when it is written
+    ///
+    /// [`TypeRef::Optional`] is the model's only statement that a value may be absent;
+    /// [`crate::binding`] says so in as many words, and a [`Field`](crate::types::Field) carries no
+    /// `required:` at all for that reason. The key here is a *restatement* of the type, written so
+    /// that a reader of a settings list sees requiredness without parsing a type expression — so
+    /// the rule is that the restatement agrees. `required: false` over a type that admits no
+    /// absence is refused, and so is `required: true` over one that does: they are one
+    /// contradiction read from two ends, and refusing only the first would leave `Optional` meaning
+    /// one thing to the type checker and another to whoever read the flag.
+    ///
+    /// Silence is not refused. A restatement can only be wrong when it is made, and refusing an
+    /// unstated `required` would make the key mandatory on every setting whose type is not
+    /// `Optional<…>` — the opposite of the optional key this is.
+    ///
+    /// Silence is not *free*, either. An unstated `required` is answered by the type, in
+    /// [`requires_a_value`], because answering it `false` would have made this refusal evadable by
+    /// deleting the line it refuses: the same document without `required: false` would be accepted
+    /// and derive the same optional slot. A rule a document escapes by saying less is not a rule.
+    pub fn validate_settings(&self) -> ValidationErrors {
+        let mut errors = ValidationErrors::new();
+        let at =
+            |setting: &ComponentSetting| setting_site(self.name.as_str(), setting.name.as_str());
+        let mut seen: BTreeSet<&str> = BTreeSet::new();
+        for setting in &self.settings {
+            if !seen.insert(setting.name.as_str()) {
+                errors.push(
+                    ValidationError::at(
+                        at(setting),
+                        ValidationCode::DuplicateDeclaration,
+                        format!(
+                            "`{}` declares the setting `{}` more than once",
+                            self.name, setting.name
+                        ),
+                    )
+                    .with_hint(
+                        "a setting has one name and one type; keep the declaration that is right \
+                         and drop the other",
+                    ),
+                );
+            }
+            if setting.secret && setting.value.is_some() {
+                errors.push(
+                    ValidationError::at(
+                        at(setting),
+                        ValidationCode::ConflictingDeclaration,
+                        format!(
+                            "the setting `{}` is `secret: true` and carries a literal `value:`",
+                            setting.name
+                        ),
+                    )
+                    .with_hint(
+                        "a secret is a value this model may not hold; drop the `value:`, or drop \
+                         `secret: true` and keep the literal",
+                    ),
+                );
+            }
+            if setting.secret && setting.type_ref.is_optional() {
+                errors.push(
+                    ValidationError::at(
+                        at(setting),
+                        ValidationCode::ConflictingDeclaration,
+                        format!(
+                            "the setting `{}` is `secret: true` and typed `{}`, which says the \
+                             value may be absent",
+                            setting.name, setting.type_ref
+                        ),
+                    )
+                    .with_hint(format!(
+                        "a secret derives a secret slot, and every secret slot must be bound \
+                         before an environment is deployed; the model has no way to say that a \
+                         secret is optional. Type it `{}`, or drop `secret: true` and declare it \
+                         as configuration",
+                        setting.type_ref.required()
+                    )),
+                );
+            }
+            match (setting.required, setting.type_ref.is_optional()) {
+                (Some(false), false) => errors.push(
+                    ValidationError::at(
+                        at(setting),
+                        ValidationCode::ConflictingDeclaration,
+                        format!(
+                            "the setting `{}` is `required: false` and typed `{}`, which is not \
+                             `Optional<…>`",
+                            setting.name, setting.type_ref
+                        ),
+                    )
+                    .with_hint(format!(
+                        "`Optional<…>` is the model's only way of saying that a value may be \
+                         absent: type it `Optional<{}>`, or say `required: true`",
+                        setting.type_ref
+                    )),
+                ),
+                (Some(true), true) => errors.push(
+                    ValidationError::at(
+                        at(setting),
+                        ValidationCode::ConflictingDeclaration,
+                        format!(
+                            "the setting `{}` is `required: true` and typed `{}`, which says the \
+                             value may be absent",
+                            setting.name, setting.type_ref
+                        ),
+                    )
+                    .with_hint(format!(
+                        "drop the wrapper and type it `{}`, or say `required: false`",
+                        setting.type_ref.required()
+                    )),
+                ),
+                _ => {}
+            }
+        }
         errors
     }
 
@@ -1000,6 +1390,186 @@ pub fn validate_components(
     }
 
     errors
+}
+
+/// The three settings rules that need the rest of the specification.
+///
+/// | refused | code |
+/// |---|---|
+/// | a setting whose `type` nothing declares | [`UndeclaredReference`](ValidationCode::UndeclaredReference) |
+/// | a setting typed by an **entity** | [`TypeMismatch`](ValidationCode::TypeMismatch) |
+/// | a setting typed by a name whose representation admits absence | [`TypeMismatch`](ValidationCode::TypeMismatch) |
+///
+/// The second is the load-bearing one, and it is why this is its own rule rather than a missing
+/// reference: an entity *is* declared, so resolving the name would succeed and configuration would
+/// quietly become a second entity model. A setting has no identity and no lifecycle; an entity has
+/// both, and a component that says its configuration is one has said something no projection can
+/// carry out — there is nothing to bind into a container.
+///
+/// # Why the third, and what it makes true
+///
+/// [`TypeRef::is_optional`] is `matches!(self, Self::Optional(_))`. It answers about the wrapper a
+/// document wrote, and it cannot see a name: `newtype of: Optional<String>` is a declared type
+/// that admits absence and does not look like one, and this repository already declares that shape
+/// (`ess-compiler/tests/fixtures/adversary_expression.yaml`). A setting typed by such a name is on
+/// the wrong side of every settings rule at once — [`ComponentSetting::is_required`] answers
+/// `true` over a representation that permits absence, the projection derives a required slot for a
+/// value the model says may be missing, and `required: false`, which is the author's only way to
+/// say what they meant, is refused by a grid that was reading the wrapper.
+///
+/// Refusing the name here is what makes the wrapper question total: **for every setting in an
+/// accepted specification, [`TypeRef::is_optional`] is exactly "this type admits absence"**, at
+/// all three sites that ask it — this pass, [`ComponentSetting::is_required`], and the compiled
+/// IR's own resolved setting. The alternative, resolving optionality through the registry at each
+/// of those sites, cannot be done at two of them: they hold a type *reference* and no registry,
+/// and giving them one changes a public signature in three crates so that a question the model
+/// already has a spelling for can be asked a second way.
+///
+/// # Where this runs
+///
+/// At the compiler's entrance, beside the revalidation of the sealed specification
+/// (`ess_compiler::resolve::compile_locating`), rather than inside
+/// [`Specification::validate`](crate::spec::Specification::validate). Both hold the two catalogues
+/// this needs and either would serve; the entrance is where it is because
+/// [`validate_components`] is reached from `Specification::validate` with the domain, command and
+/// event names only, and widening that call is an edit to a file this change does not own. Nothing
+/// reaches resolution without passing here, so `ess validate` refuses both — but a caller using
+/// `ess-domain` alone and stopping at `Specification::assemble` does not see them, and that seam is
+/// worth closing when `validate_components` can be given the registry.
+pub fn validate_setting_types(specification: &crate::spec::Specification) -> ValidationErrors {
+    let mut errors = ValidationErrors::new();
+    let entities: BTreeSet<&QualifiedName> = specification.entities().keys().collect();
+    let bodies: BTreeMap<&QualifiedName, &TypeBody> = specification
+        .system()
+        .types
+        .iter()
+        .map(|named| (&named.name, &named.body))
+        .collect();
+    let mut declared: BTreeSet<QualifiedName> = specification
+        .system()
+        .types
+        .iter()
+        .map(|named| named.name.clone())
+        .collect();
+    // The enum an entity's lifecycle forms is a type a setting may name, exactly as a view's
+    // projection may: leaving them out would refuse a reference the rest of the compiler accepts,
+    // and an author would have no way to tell which of the two passes was wrong.
+    for entity in specification.entities().values() {
+        declared.insert(entity.state_type().name);
+    }
+
+    for component in specification.components().values() {
+        for setting in &component.settings {
+            let at = || setting_site(component.name.as_str(), setting.name.as_str());
+            for name in setting.type_ref.named_dependencies() {
+                if entities.contains(name) {
+                    errors.push(
+                        ValidationError::at(
+                            at(),
+                            ValidationCode::TypeMismatch,
+                            format!(
+                                "the setting `{}` is typed `{name}`, which is an entity",
+                                setting.name
+                            ),
+                        )
+                        .with_hint(
+                            "a setting is a value; an entity is a thing with an identity and a \
+                             lifecycle, and configuration has neither. Type the setting with what \
+                             the entity's field holds, or declare a type for it",
+                        ),
+                    );
+                } else if !declared.contains(name) {
+                    errors.push(
+                        ValidationError::at(
+                            at(),
+                            ValidationCode::UndeclaredReference,
+                            format!(
+                                "the setting `{}` is typed `{name}`, which nothing declares",
+                                setting.name
+                            ),
+                        )
+                        .with_hint(declared_types(&declared)),
+                    );
+                }
+            }
+            if let TypeRef::Named(name) = &setting.type_ref {
+                if let Some(representation) = absence_admitting_representation(name, &bodies) {
+                    errors.push(
+                        ValidationError::at(
+                            at(),
+                            ValidationCode::TypeMismatch,
+                            format!(
+                                "the setting `{}` is typed `{name}`, whose representation \
+                                 `{representation}` says the value may be absent",
+                                setting.name
+                            ),
+                        )
+                        .with_hint(format!(
+                            "a setting says that with `Optional<…>` and with nothing else, \
+                             because the wrapper is what `required:` restates and what the \
+                             derived slot's kind is read from: type it `{representation}`, or \
+                             use a type that admits no absence"
+                        )),
+                    );
+                }
+            }
+        }
+    }
+    errors
+}
+
+/// The `Optional<…>` a declared name reaches through its representation, if it reaches one.
+///
+/// Only [`TypeBody::Newtype`] can: a struct field, a union variant or a map value that is
+/// `Optional<…>` says that a *part* of a value may be absent, which is a different statement and
+/// is not one a setting's requiredness reads.
+///
+/// The walk is transitive, because a newtype over a newtype over an `Optional` admits absence just
+/// as directly. It is bounded by a visited set rather than by an argument, and the bound is
+/// defensive: `A = newtype of B` beside `B = newtype of A` is refused at assembly by the
+/// `self_reference` check — measured, not assumed, while writing
+/// `every_accepted_setting_answers_the_wrapper_question_the_way_the_registry_does` — so no
+/// specification that reaches here carries one. This function is `pub(self)` to a `pub` rule that
+/// takes any [`Specification`](crate::spec::Specification), and an unbounded `loop` over a
+/// caller-supplied graph is not a thing to leave standing on that argument. A cycle reaches no
+/// `Optional`, so `None` is the right answer for one, and the refusal a cycle deserves belongs to
+/// the check that already owns it.
+fn absence_admitting_representation<'a>(
+    name: &'a QualifiedName,
+    bodies: &BTreeMap<&'a QualifiedName, &'a TypeBody>,
+) -> Option<&'a TypeRef> {
+    let mut seen: BTreeSet<&QualifiedName> = BTreeSet::new();
+    let mut current = name;
+    loop {
+        if !seen.insert(current) {
+            return None;
+        }
+        let Some(TypeBody::Newtype { of, .. }) = bodies.get(current) else {
+            return None;
+        };
+        if of.is_optional() {
+            return Some(of);
+        }
+        let TypeRef::Named(next) = of else {
+            return None;
+        };
+        current = next;
+    }
+}
+
+/// What types were available, which is where a misspelt one shows.
+fn declared_types(names: &BTreeSet<QualifiedName>) -> String {
+    if names.is_empty() {
+        return "no types are declared anywhere in the specification".to_owned();
+    }
+    format!(
+        "declared types: {}",
+        names
+            .iter()
+            .map(ToString::to_string)
+            .collect::<Vec<_>>()
+            .join(", ")
+    )
 }
 
 /// Which components claim which domain.

@@ -2,7 +2,7 @@
 format: aep.planning-md/1
 id: story:browser-fixture-startup-deadline
 kind: story
-status: draft
+status: active
 title: The Firefox BiDi fixture assumes a 30-second startup on a shared runner
 summary: Three ess-cli browser tests fail on a slow runner at a constant 30 s deadline; report the environment refusal and stop the three starts competing.
 tags:
@@ -11,16 +11,18 @@ relations:
 - serves: vision:O2
 scope:
 - confidence: cited
+  path: crates/edge/ess-cli/tests/coverage_browser.rs
+- confidence: cited
   path: crates/edge/ess-cli/tests/support/browser.rs
-revision: 2
+revision: 7
 ---
 # The Firefox BiDi fixture assumes a 30-second startup on a shared runner
 
 ## Finding
 
 Three `ess-cli` browser tests share one startup deadline in
-`crates/edge/ess-cli/tests/support/browser.rs:143` (`Duration::from_secs(30)`) and fail with
-`Firefox did not expose BiDi; read firefox.stderr` (`browser.rs:151`) when the runner is slow.
+`crates/edge/ess-cli/tests/support/browser.rs:168` (`Duration::from_secs(30)`) and fail with
+`Firefox did not expose BiDi; read firefox.stderr` (`browser.rs:177`) when the runner is slow.
 Observed on CI run 34288754559 (PR #17, `fix/fuzz-story-closure` at 954fb43): `retained_legacy_player_bytes_still_replay_in_actual_firefox`,
 `actual_browser_admits_the_pair_before_creating_replay_state` and
 `actual_browser_and_rust_refuse_every_closed_model_field_boundary` all panicked at that
@@ -39,6 +41,12 @@ startup or a deadline derived from a measured baseline rather than a constant).
 
 ## Scope
 
-- `crates/edge/ess-cli/tests/support/browser.rs:143-151` — cited.
+- `crates/edge/ess-cli/tests/support/browser.rs:168-177` — cited. Corrected 2026-09-12: the
+  scope originally cited `:143-151`, which is `Command::new(firefox)` at base `bd722fa9`, not the
+  deadline. Verified against `git show bd722fa9:…`.
+- `crates/edge/ess-cli/tests/coverage_browser.rs` — cited. The story says three tests share the
+  fixture. There are four in that file, and `support/browser.rs` is included by four test
+  binaries — `coverage_browser`, `replay_fidelity_browser`, `coverage_writer_adversary_pass1`,
+  `coverage_writer_adversary_pass2` — for 37 browser starts in total.
 - The three tests above in `crates/edge/ess-cli/tests/` — inferred; they share the fixture.
 - Would collide with: any unit touching `ess-cli/tests/support/browser.rs` — cited.

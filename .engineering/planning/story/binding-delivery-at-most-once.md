@@ -11,7 +11,32 @@ tags:
 relations:
 - decomposes: epic:review-boundary-remediation
 - serves: vision:O2
-revision: 2
+scope:
+- confidence: cited
+  path: CHANGELOG.md
+- confidence: inferred
+  path: crates/edge/ess-xtask/src/consumer_coverage/reviewed-schema-metadata.json
+- confidence: cited
+  path: crates/generate/ess-gen/src/asyncapi.rs
+- confidence: cited
+  path: crates/generate/ess-gen/src/docs.rs
+- confidence: cited
+  path: crates/generate/ess-gen/src/graph.rs
+- confidence: cited
+  path: crates/generate/ess-gen/src/openapi.rs
+- confidence: cited
+  path: crates/generate/ess-synth/src/plan.rs
+- confidence: cited
+  path: crates/specify/ess-domain/src/binding.rs
+- confidence: cited
+  path: crates/verify/ess-conformance/src/synthesize.rs
+- confidence: cited
+  path: crates/verify/ess-conformance/src/target.rs
+- confidence: cited
+  path: docs/design/binding-delivery-guarantees.md
+- confidence: cited
+  path: schemas/generated/ess.schema.json
+revision: 14
 ---
 ## Context
 `ess/1` bindings require `delivery:`, and `ess-domain::binding::Delivery` has one variant, `AtLeastOnce` (crates/specify/ess-domain/src/binding.rs:194-200, "the only guarantee this build implements"). The review design left the door open: docs/design/ess-review-v0.1.md:95 writes `delivery: at_least_once # the only value v0.1 accepts`. The first consumer that needed the other word arrived on 2026-09-10: `specs/services/pusher` (the consumer repository) models two crossings that are single HTTP attempts — the pusher's authorization request to the backend (`request` with no retry, auth.js:177) and the backend's publish to the pusher (response never read, HttpBrowserPusher.groovy:153). ESS 0.20.0 refused `delivery: at_most_once` with `unknown variant, expected at_least_once`; the model now says `at_least_once` and carries a header comment stating that the word is false. A specification forced to state a stronger guarantee than the system gives is the failure F3 exists to prevent.

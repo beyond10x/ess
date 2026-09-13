@@ -9,9 +9,11 @@ relations:
 - informed_by: review-result:typescript-equality-binding
 - serves: vision:O2
 scope:
+- confidence: cited
+  path: docs/design
 - confidence: inferred
   path: docs/design/normalization-equality-eligibility.md
-revision: 2
+revision: 3
 ---
 # Define recipe equality eligibility with an explicit compatibility policy
 

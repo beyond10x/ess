@@ -7,10 +7,10 @@ title: Evolve ESS without losing capabilities
 relations:
 - informed_by: epic:review-boundary-remediation
 - informed_by: story:cli-presentation-binding
-revision: 7
+revision: 8
 ---
 ## Outcome
-Implement the operator's ESS evolution plan while retaining ESS names, packages, supported formats and implemented behavior. Deliver repository-local Eventlog file authority for AEP, recorded ER execution, explicit ESS service/protocol/UI bindings, and verified adoption in Connectors v2 and Babelconnect.
+Implement the operator's ESS evolution plan while retaining ESS names, packages, supported formats and implemented behavior. Deliver repository-local Eventlog file authority for AEP, recorded ER execution, explicit ESS service/protocol/UI bindings, and verified adoption in Connectors v2 and a second internal adopter.
 
 ## Authority
 The operator supplied and authorized the implementation plan on 2026-09-10. This is an interactive implementation session; no approval bypass is claimed. Umbrella design: docs/design/ess-evolution/README.md. ADR index: docs/design/ess-evolution/adr-index.md. Migrations and acceptance remain separate claims.
@@ -27,15 +27,44 @@ Build on epic:review-boundary-remediation and story:cli-presentation-binding. Co
 5. Complete both application adoptions and desired-versus-observed infrastructure links.
 
 ## Completion
-Local acceptance against exact source, dependency and configuration evidence. Linux, web and Android execution and real disposable SIP/WebRTC media evidence are required for Babelconnect. Missing evidence is not success. Releases, publishing, Atlas delivery and deployment are separate work.
+Local acceptance against exact source, dependency and configuration evidence. Linux, web and Android execution and real disposable SIP/WebRTC media evidence are required for a second internal adopter. Missing evidence is not success. Releases, publishing, Atlas delivery and deployment are separate work.
 
 ## Progress
 
-The preserved design and complete 96-consumer baseline mapping have been reviewed for integration against ESS main 988f219e90c9a7b105daec2345f77d6035075e92. That release changed no consumer-accounting authority files. The mapping retains exact profile entrypoints and claim boundaries and does not grant semantic support; automatic preservation-drift enforcement remains a follow-up.
+The preserved design and complete 96-consumer baseline mapping have been reviewed for integration
+against ESS main 988f219e90c9a7b105daec2345f77d6035075e92. That release changed no consumer-accounting
+authority files. The mapping retains exact profile entrypoints and claim boundaries and does not grant
+semantic support; automatic preservation-drift enforcement remains a follow-up.
 
-Eventlog prerequisites are implemented and published: main 7d6bedc738b6037c7a1ba5218bc2a0d3271878c3 contains atomic groups and the file provider, with 129 local tests passed, no failures/skips, and formatter/strict Clippy and file-provider MSRV evidence. Its story:atomic-append-groups and story:file-eventlog records contain publication receipts. ER recorded execution and adapter work remains outstanding, followed by the one AEP migration story and the later service/UI/application work.
+Eventlog prerequisites are implemented and published: main 7d6bedc738b6037c7a1ba5218bc2a0d3271878c3
+contains atomic groups and the file provider, with 129 local tests passed, no failures/skips, and
+formatter/strict Clippy and file-provider MSRV evidence. Its story:atomic-append-groups and
+story:file-eventlog records contain publication receipts. ER recorded execution and adapter work
+remains outstanding, followed by the one AEP migration story and the later service/UI/application
+work.
 
-Integration retains original candidate cd80f202c4cd9ed1b25027e008ffbb2bc096c8cd as a Git parent. The independently advanced main planning store is the selected authority; the ten candidate artifacts were recreated with one AEP writer and their original relations, rather than concatenating journals. Original observations remain in that parent, while these writes record integration now. This is an interactive operator-authorized review and integration, not completed evolution.
+Integration retains original candidate cd80f202c4cd9ed1b25027e008ffbb2bc096c8cd as a Git parent. The
+independently advanced main planning store is the selected authority; the ten candidate artifacts
+were recreated with one AEP writer and their original relations, rather than concatenating journals.
+Original observations remain in that parent, while these writes record integration now. This is an
+interactive operator-authorized review and integration, not completed evolution.
+
+## Where sequence step 1 and after actually stand, 2026-09-13
+
+Read out of the four stores rather than asserted. `entity-runtime` has 48 stories and **0 active**;
+`aep` has 213 and 10 active, none of them the Eventlog file-authority migration; `connectors_v2` has
+73 and 2 active, both GitLab merge-request work rather than adoption. So sequence steps 1 (the ER
+half), 2, 3, 4 and 5 have **no artifact in any repository**. They are a plan, not a backlog, and the
+next bounded step has to be decomposed before it can be worked.
+
+What has moved in ESS itself: `epic:configuration-declared-once` and `epic:model-driven-interpretation`
+are `active` rather than `draft` — each has landed stories now. Neither is finished. The configuration
+epic's own outcome asks for two things and has one: runtime slots are a projection, and a second
+delivery form still costs parallel hand-written types rather than a projector. The interpretation epic
+has two of its seven stories implemented, and the target it added refuses every method it offers.
+
+Released as 0.24.0, which carries the settings declaration, the `interpreted` target and the toolchain
+model.
 
 ## Integration test portability
 

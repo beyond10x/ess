@@ -2,7 +2,7 @@
 format: aep.planning-md/1
 id: story:literal-representation-walk-exhaustion
 kind: story
-status: draft
+status: implemented
 title: Do not admit an unchecked literal when representation traversal exhausts its bound
 relations:
 - serves: vision:O2
@@ -12,7 +12,7 @@ scope:
   path: crates/specify/ess-domain/src/binding.rs
 - confidence: cited
   path: crates/specify/ess-domain/src/command.rs
-revision: 2
+revision: 5
 ---
 ## Finding
 

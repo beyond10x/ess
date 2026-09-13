@@ -37,5 +37,6 @@ website/static/lab/
 
 # Governed runs write model transcripts here; they carry the running account’s MCP inventory and
 # per-run spend, which a public tree should not carry. The readable account of a run is its wave
-# page (docs/plan/). Decision recorded in docs/plan/gap-register.md — delete this line to reverse.
+# page (docs/plan/). The decision was recorded in docs/plan/gap-register.md, which no longer exists
+# and was not recovered; this line is what survives of it — delete the line to reverse.
 .engineering/runs/
