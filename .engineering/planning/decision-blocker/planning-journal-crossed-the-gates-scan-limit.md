@@ -2,11 +2,11 @@
 format: aep.planning-md/1
 id: decision-blocker:planning-journal-crossed-the-gates-scan-limit
 kind: decision-blocker
-status: open
+status: cleared
 title: The planning journal crossed the gates scan limit, and nothing can be pushed
 relations:
 - blocks: initiative:ess-evolution
-revision: 2
+revision: 4
 ---
 ## What is blocked
 
@@ -81,3 +81,39 @@ One of:
    this repository, and it does not rewrite a single recorded line.
 
 Until one is taken, ESS cannot publish a release, and the 0.24.0 tag stays local.
+
+## The cause, measured again, and what cleared it
+
+The limit is neither 8 MiB nor per blob. `b10x-gates` sets `MAX_TOTAL` to 256 MiB in
+`src/git.rs:12`, and `candidate()` sums the changed blobs of **every commit from the repository's
+adoption baseline to the candidate head**. With the baseline at `24d2fe71`, the 46 commits already
+on `origin/main` weigh 260,089,116 bytes of changed blobs, 211,438,385 of them the journal rewritten
+nine times. Headroom: 8,346,340 bytes, which is the gap the table above found between 7,451,677 and
+9,435,326.
+
+So the budget is spent permanently, not per push: each planning commit costs another 25 MB of it
+until the baseline moves, and the held batch (86 commits, 24 journal rewrites, 669,375,456 bytes)
+could not fit in any order or chunking.
+
+Tried after this record was cut, each measured, none the answer:
+
+| attempt | result |
+|---|---|
+| publish the source with the store pinned to the published version | the `host_paths` and `internal_names` lanes fail: the batch's redaction lives in the store; PRs #32 and #33 closed |
+| rotate the journal into parts | `aep` reads `journal.jsonl` only; `history` silently loses entries while `validate` says `valid` |
+| scrub the home-directory prefix to `~` | 67,474 occurrences cleared, 607,266 bytes saved, 2.4%; worth doing, not the unblock |
+| compress the journal with gzip | 3,394,888 bytes, the gate signs it; retracted as PR #34 before merge and reverted, because a gate that cannot read a finding has not cleared it |
+| delete the journal | the gate signs it; it throws the record away |
+
+Cleared by two changes, neither in this repository's source:
+
+| change | measured |
+|---|---|
+| ESS baseline in the private policy advanced `24d2fe71` → `b90aeab1`, the public tip PR #31 merged; the previous policy file kept beside it | budget restored to 268,435,456 |
+| the held tree landed as one bot commit on `origin/main`, tree unchanged from the 41-commit record branch | `b10x-gates check`: `common checks passed`, 1 commit, 317 units, 0 findings |
+
+What stays true: the budget refills only when the baseline moves, and at 25 MB per planning commit
+ten of them exhaust it again. The durable fix is in the tools, not here: a per-commit limit in
+`gates` so the sum stops growing with history, or a smaller journal in `aep` (rotation with a reader
+that concatenates the parts, or bodies recorded by digest). Neither is filed in this store; they
+belong to the repositories they change.
