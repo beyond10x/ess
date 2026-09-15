@@ -56,6 +56,8 @@ impl Package {
 pub(crate) struct Layout {
     /// The module path — `example.invalid/billing`.
     module: String,
+    /// The identifier an author wrote for a declaration under `naming: { code: … }`.
+    code_aliases: BTreeMap<QualifiedName, String>,
     /// Package per bounded context.
     domains: BTreeMap<QualifiedName, Package>,
     /// Package per component.
@@ -148,6 +150,7 @@ impl Layout {
     /// Derives the layout of a resolved specification for the Go target.
     pub fn of(ir: &EssIr, plan: &SynthesisPlan, refusals: &TargetRefusals) -> Self {
         let module = format!("{MODULE_HOST}/{}", ir.system().segments().join("-"));
+        let code_aliases = crate::code_aliases(ir);
         let package = |name: &str, dir: &str| Package {
             name: name.to_owned(),
             dir: dir.to_owned(),
@@ -211,6 +214,7 @@ impl Layout {
         let system_events = system_events(ir, plan, refusals);
         let mut layout = Self {
             module,
+            code_aliases,
             domains,
             components,
             primitives,
@@ -465,9 +469,22 @@ impl Layout {
     }
 
     /// Every name the specification itself spells.
+    ///
+    /// Authored types before derived ones, which is the rule `allocate_names` states and this did
+    /// not implement. An entity's lifecycle enum is filed in `ir.types()` like an authored type, and
+    /// `acd.backend.Connection.State` sorts before `acd.backend.ConnectionState` — so the sweep used
+    /// to hand the identifier to the *derived* enum and rename the author's view `ConnectionState_`.
+    /// A name an author wrote is not this emitter's to move.
     fn allocate_declared(&mut self, ir: &EssIr, taken: &mut BTreeMap<String, BTreeSet<String>>) {
+        let derived_states: BTreeSet<QualifiedName> = ir
+            .entities()
+            .values()
+            .map(|entity| entity.state_type.name().clone())
+            .collect();
         for declared in ir.types().values() {
-            self.declare(taken, &declared.name);
+            if !derived_states.contains(&declared.name) {
+                self.declare(taken, &declared.name);
+            }
         }
         for entity in ir.entities().values() {
             self.declare(taken, &entity.name);
@@ -483,6 +500,12 @@ impl Layout {
         }
         for view in ir.views().values() {
             self.declare(taken, &view.name);
+        }
+        // Last, because it is the one name here nobody wrote.
+        for declared in ir.types().values() {
+            if derived_states.contains(&declared.name) {
+                self.declare(taken, &declared.name);
+            }
         }
     }
 
@@ -818,7 +841,10 @@ impl Layout {
         declared: &QualifiedName,
     ) {
         let package = self.package_of(declared).clone();
-        let candidate = name::type_name(declared, self.owner(declared).segments().len());
+        let candidate =
+            self.code_aliases.get(declared).cloned().unwrap_or_else(|| {
+                name::type_name(declared, self.owner(declared).segments().len())
+            });
         self.put(
             taken,
             &package,

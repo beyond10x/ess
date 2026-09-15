@@ -432,6 +432,13 @@
         "type"
       ],
       "properties": {
+        "code": {
+          "description": "The identifier a code emitter spells this as, when the one it would derive is taken.\n\nA target that has no dotted type names flattens a qualified name to one identifier, so `billing.invoice.Invoice.State` and an authored `billing.invoice.InvoiceState` both want to be `InvoiceState`. One of them has to move, and this says which — because the author knows which name carries meaning and an emitter does not.\n\nIt is deliberately not a per-target map. A name that differs between Rust and Go is two names to keep in step, and nothing in this model has ever needed one: the collision is a property of flattening, which every such target does the same way.\n\nOnly code emitters read it. Wire names, document schemas and the qualified name itself are untouched, so setting it cannot break a deployed consumer — which is the whole reason it is a separate key rather than a rename.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
         "display": {
           "description": "What a person is shown.",
           "type": [
@@ -841,9 +848,16 @@
       }
     },
     "Naming": {
-      "description": "What a concept is called on the wire, and what a person is shown.\n\nBoth are optional and both default to the qualified name's last segment. The point of separating them is that changing either is a different kind of event: a display change is free, a wire change breaks deployed consumers, and a qualified-name change breaks the model.",
+      "description": "What a concept is called on the wire, what a person is shown, and what a code emitter spells it.\n\nAll are optional and all default to the qualified name's last segment. The point of separating them is that changing each is a different kind of event: a display change is free, a wire change breaks deployed consumers, a `code` change breaks only a generated source tree, and a qualified-name change breaks the model.",
       "type": "object",
       "properties": {
+        "code": {
+          "description": "The identifier a code emitter spells this as, when the one it would derive is taken.\n\nA target that has no dotted type names flattens a qualified name to one identifier, so `billing.invoice.Invoice.State` and an authored `billing.invoice.InvoiceState` both want to be `InvoiceState`. One of them has to move, and this says which — because the author knows which name carries meaning and an emitter does not.\n\nIt is deliberately not a per-target map. A name that differs between Rust and Go is two names to keep in step, and nothing in this model has ever needed one: the collision is a property of flattening, which every such target does the same way.\n\nOnly code emitters read it. Wire names, document schemas and the qualified name itself are untouched, so setting it cannot break a deployed consumer — which is the whole reason it is a separate key rather than a rename.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
         "display": {
           "description": "What a person is shown.",
           "type": [

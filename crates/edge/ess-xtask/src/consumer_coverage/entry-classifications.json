@@ -33049,6 +33049,11 @@
     "macro_ast_sha256": null,
     "reason": "Concrete owned data/API declaration retained alongside the named behavioral callers. Its presence is not a behavior case and does not prove nonreachability."
   },
+  "ess_synth::lib(ess_synth)::alias::fn::code_aliases": {
+    "class": "OwnedHelper",
+    "macro_ast_sha256": null,
+    "reason": "Collects the `naming: { code: … }` identifiers authored declarations carry, for the already-bound Rust and Go synthesis consumers. One reader so the two targets cannot disagree about a name an author wrote; its classification grants no independent support or nonreachability."
+  },
   "ess_synth::lib(ess_synth)::clap::const::TARGET": {
     "class": "OwnedHelper",
     "macro_ast_sha256": null,
