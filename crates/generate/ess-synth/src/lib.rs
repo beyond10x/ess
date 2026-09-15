@@ -41,6 +41,7 @@
 //! growing parallel ones.
 
 mod accessor_output;
+mod alias;
 pub mod clap;
 mod failure;
 pub mod go;
@@ -49,6 +50,7 @@ pub mod rust;
 mod selection;
 pub mod web;
 
+pub(crate) use alias::code_aliases;
 pub use failure::{TargetFailure, TargetFailureCause, TargetFailureCode};
 
 use std::collections::BTreeMap;
