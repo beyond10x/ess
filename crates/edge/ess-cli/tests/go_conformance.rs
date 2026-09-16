@@ -925,13 +925,13 @@ fn count_module(label: &str) -> PathBuf {
     }
     std::fs::write(directory.join("go.mod"), "module countfixture\n\ngo 1.24\n").unwrap();
     std::fs::write(directory.join("essconform/count_test.go"), r#"package essconform
-import ("errors"; "os"; "runtime"; "strconv"; "testing")
+import ("errors"; "fmt"; "os"; "runtime"; "strconv"; "testing")
 type countTarget struct { Target; mode string }
 func (c countTarget) Identity() (Identity,error) { return Identity{Name:"count-fixture",Version:"1"},nil }
 func (c countTarget) BeginScenario(ScenarioContext) error { if c.mode=="begin-skip" { return ErrUnsupported }; if c.mode=="begin-error" {return errors.New("begin control")};return nil }
 func (c countTarget) EndScenario(ScenarioContext) error { if c.mode=="teardown" {return ErrUnsupported};return nil }
 func (c countTarget) ExecuteCommand(CommandRequest) (CommandResult,error) {
-    switch c.mode {case "skip","teardown":return CommandResult{},ErrUnsupported;case "failure":return CommandResult{},errors.New("ordinary control");case "goexit":runtime.Goexit();case "panic":panic("abnormal control")}
+    switch c.mode {case "skip","teardown":return CommandResult{},ErrUnsupported;case "skip-wrapped":return CommandResult{},fmt.Errorf("the reason this target could not answer: %w",ErrUnsupported);case "failure":return CommandResult{},errors.New("ordinary control");case "goexit":runtime.Goexit();case "panic":panic("abnormal control")}
     return CommandResult{},nil
 }
 func TestCount(t *testing.T) {
@@ -1192,6 +1192,37 @@ fn assert_count_suite_refusals(directory: &Path, marker: &Path, destination: &Pa
         assert!(!marker.exists());
         assert!(!destination.exists());
     }
+}
+
+/// A target's own sentence survives into the skip message.
+///
+/// A target returns `ErrUnsupported` wrapped around the reason it could not answer, and the runtime
+/// used to print only the construct's name — so three different causes rendered identically and an
+/// adopter had to patch the generated file to learn anything. Measured on one run: 41 skips, three
+/// distinct reasons, one message. Asserting the sentence is what stops the next refactor dropping it
+/// again.
+#[test]
+fn a_skip_reports_the_reason_the_target_gave() {
+    let directory = count_module("skip-reason");
+    let output = invoke_count(
+        &directory,
+        "skip-reason",
+        &[("COUNT_MODE", "skip-wrapped")],
+        "^TestCount$",
+    );
+    let log = format!(
+        "{}{}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert!(
+        log.contains("the reason this target could not answer"),
+        "the skip dropped the target's own sentence: {log}"
+    );
+    assert!(
+        log.contains("the target does not expose `example.domain.Execute`"),
+        "the skip stopped naming the construct: {log}"
+    );
 }
 
 #[test]

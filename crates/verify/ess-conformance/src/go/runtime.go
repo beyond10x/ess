@@ -1852,7 +1852,7 @@ func (r *run) executeCommand(index int, step Step) bool {
 		Correlation: r.correlation,
 	})
 	if errors.Is(err, ErrUnsupported) {
-		r.skip("step %d: the target does not expose `%s`", index, step.Command)
+		r.skip("step %d: the target does not expose `%s`: %v", index, step.Command, err)
 		return false
 	}
 	if err != nil {
@@ -2029,7 +2029,7 @@ func (r *run) queryView(index int, step Step) bool {
 		Deadline:    r.harness.Deadline(),
 	})
 	if errors.Is(err, ErrUnsupported) {
-		r.skip("step %d: the target does not expose `%s`", index, step.View)
+		r.skip("step %d: the target does not expose `%s`: %v", index, step.View, err)
 		return false
 	}
 	if err != nil {
@@ -2059,7 +2059,7 @@ func (r *run) expectView(index int, step Step, retry bool) bool {
 				Deadline:    Deadline{Attempts: attempts - attempt},
 			})
 			if errors.Is(err, ErrUnsupported) {
-				r.skip("step %d: the target does not expose `%s`", index, step.View)
+				r.skip("step %d: the target does not expose `%s`: %v", index, step.View, err)
 				return false
 			}
 			if err != nil {
@@ -2210,7 +2210,7 @@ func (r *run) expectInvocation(index int, step Step) bool {
 	if errors.Is(err, ErrUnsupported) {
 		// The one method the model explicitly refuses to require. Unsupported is a fact about the
 		// target, not a failure of the specification.
-		r.skip("step %d: the target does not expose what `%s` invoked", index, step.Binding)
+		r.skip("step %d: the target does not expose what `%s` invoked: %v", index, step.Binding, err)
 		return false
 	}
 	if err != nil {
@@ -2483,6 +2483,18 @@ func (r *run) fail(index int, format string, args ...any) bool {
 //
 // Every skip in this file goes through here so the report and the test log cannot disagree
 // about what the scenario came to.
+//
+// EVERY CALLER PASSES THE TARGET'S OWN ERROR. A target returns `ErrUnsupported` wrapped around the
+// sentence explaining what it could not answer — two adopters write carefully argued ones — and
+// printing only the construct's name threw that away, leaving three different causes rendered
+// identically. Measured on an adopter's run: 41 skips, three distinct reasons, one message. The
+// Rust runner never had this defect because it carries a `Diagnostic` (report.rs:487-493); this was
+// the Go emitter alone.
+//
+// The REPORT still carries only `<status> <id>`, because `ess-conformance-report/1` has no field for
+// a reason and `evidence.rs:99-104` reads everything after the first space as the scenario identity
+// — appending one would corrupt that field for every reader. Carrying the cause into the document
+// needs a new field in a new format, which is `story:a-report-says-why-a-scenario-was-skipped`.
 func (r *run) skip(format string, args ...any) {
 	r.status = statusSkipped
 	r.t.Skipf(format, args...)

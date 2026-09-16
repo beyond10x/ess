@@ -2,6 +2,25 @@
 
 ## [Unreleased]
 
+### Fixed
+
+- **A skipped scenario says why.** The emitted Go runtime discarded the target's own error on
+  `ErrUnsupported` and printed only the construct's name, so three different causes rendered
+  identically. Measured on an adopter's run: **41 skips, three distinct reasons, one message** — and
+  the only way to learn anything was to patch the generated file, which an adopter did four times in
+  one day before this landed. All four call sites now include the error: `execute_command`, both
+  view reads and the binding invocation.
+
+  The Rust runner never had this defect — it carries a `Diagnostic` (`report.rs:487-493`). This was
+  the Go emitter alone, and the asymmetry is why it went unnoticed.
+
+  The **report** still carries `<status> <id>` and no reason. It cannot carry one without a new
+  field: `failed_scenarios` is a list of strings and `evidence.rs:99-104` reads everything after the
+  first space as the scenario identity, so appending a reason would corrupt that field for every
+  reader. Filed as `story:a-report-says-why-a-scenario-was-skipped` rather than forced into a format
+  with no room for it.
+
+
 ## [0.25.0] — 2026-09-16
 
 ### Added
