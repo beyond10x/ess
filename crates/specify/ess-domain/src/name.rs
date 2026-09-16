@@ -188,11 +188,12 @@ impl schemars::JsonSchema for QualifiedName {
     }
 }
 
-/// What a concept is called on the wire, and what a person is shown.
+/// What a concept is called on the wire, what a person is shown, and what a code emitter spells it.
 ///
-/// Both are optional and both default to the qualified name's last segment. The point of separating
-/// them is that changing either is a different kind of event: a display change is free, a wire
-/// change breaks deployed consumers, and a qualified-name change breaks the model.
+/// All are optional and all default to the qualified name's last segment. The point of separating
+/// them is that changing each is a different kind of event: a display change is free, a wire
+/// change breaks deployed consumers, a `code` change breaks only a generated source tree, and a
+/// qualified-name change breaks the model.
 #[derive(
     Debug, Clone, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize, schemars::JsonSchema,
 )]
@@ -207,6 +208,22 @@ pub struct Naming {
     /// One line about what it is, for generated documentation.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub summary: Option<String>,
+    /// The identifier a code emitter spells this as, when the one it would derive is taken.
+    ///
+    /// A target that has no dotted type names flattens a qualified name to one identifier, so
+    /// `billing.invoice.Invoice.State` and an authored `billing.invoice.InvoiceState` both want to
+    /// be `InvoiceState`. One of them has to move, and this says which — because the author knows
+    /// which name carries meaning and an emitter does not.
+    ///
+    /// It is deliberately not a per-target map. A name that differs between Rust and Go is two
+    /// names to keep in step, and nothing in this model has ever needed one: the collision is a
+    /// property of flattening, which every such target does the same way.
+    ///
+    /// Only code emitters read it. Wire names, document schemas and the qualified name itself are
+    /// untouched, so setting it cannot break a deployed consumer — which is the whole reason it is
+    /// a separate key rather than a rename.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub code: Option<String>,
 }
 
 impl Naming {
@@ -220,9 +237,21 @@ impl Naming {
         self.display.as_deref().unwrap_or_else(|| name.local())
     }
 
+    /// The code identifier, when one was written.
+    ///
+    /// No fallback pair like `wire_or`/`display_or`: the derived spelling is a target's to compose
+    /// from the qualified name, and handing one back here would put a Rust or Go naming rule in the
+    /// language-neutral layer.
+    pub fn code(&self) -> Option<&str> {
+        self.code.as_deref()
+    }
+
     /// `true` when nothing is overridden.
     pub fn is_empty(&self) -> bool {
-        self.wire.is_none() && self.display.is_none() && self.summary.is_none()
+        self.wire.is_none()
+            && self.display.is_none()
+            && self.summary.is_none()
+            && self.code.is_none()
     }
 }
 
@@ -564,6 +593,7 @@ mod tests {
             wire: Some("invoices.created.v1".to_owned()),
             display: Some("Invoice created".to_owned()),
             summary: None,
+            code: None,
         };
 
         assert_eq!(naming.wire_or(&name), "invoices.created.v1");

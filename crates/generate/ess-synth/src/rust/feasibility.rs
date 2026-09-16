@@ -127,11 +127,21 @@ impl Inventory {
                 } else {
                     Code::SymbolCollision
                 };
+                // A collision between two authored declarations is the author's to resolve, and
+                // `naming: { code: … }` is how. Say so here rather than leaving the reader to work
+                // out that a name they never wrote — the lifecycle enum a target derives — is one
+                // of the two things holding the identifier.
+                let remedy = if code == Code::SymbolCollision {
+                    "; give one of them `naming: { code: … }` to choose the identifier it is \
+                     emitted as, which changes no wire name, no document schema and no qualified name"
+                } else {
+                    ""
+                };
                 self.causes.push(TargetFailureCause::new(
                     code,
                     entries.iter().map(|(source, _)| source.clone()).collect(),
                     format!(
-                        "`{ident}` is allocated {} times in `{scope}` ({})",
+                        "`{ident}` is allocated {} times in `{scope}` ({}){remedy}",
                         entries.len(),
                         entries
                             .iter()

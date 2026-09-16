@@ -36,6 +36,12 @@ pub struct Layout {
     owners: BTreeMap<QualifiedName, QualifiedName>,
     /// Derived entity boundary names, allocated without consuming authored declarations.
     entity_snapshots: BTreeMap<QualifiedName, String>,
+    /// The identifier an author wrote for a declaration under `naming: { code: … }`.
+    ///
+    /// Only present for declarations that carry one, which is almost none of them: it exists for
+    /// the case where flattening a qualified name lands on an identifier something else already
+    /// holds, and the author is the one who knows which of the two should move.
+    code_aliases: BTreeMap<QualifiedName, String>,
     /// Package name per component, keyed by the component's name.
     component_packages: BTreeMap<ComponentName, String>,
 }
@@ -71,7 +77,8 @@ impl Layout {
                 owners.insert(view.name().clone(), domain.name.clone());
             }
         }
-        let entity_snapshots = entity_snapshots(ir, &owners);
+        let code_aliases = crate::code_aliases(ir);
+        let entity_snapshots = entity_snapshots(ir, &owners, &code_aliases);
         Self {
             package,
             system_package,
@@ -79,6 +86,7 @@ impl Layout {
             modules,
             owners,
             entity_snapshots,
+            code_aliases,
             component_packages,
         }
     }
@@ -157,7 +165,16 @@ impl Layout {
     }
 
     /// The Rust type name of a declaration, unqualified.
+    ///
+    /// An authored `naming: { code: … }` wins over the derived spelling, and is the only way a name
+    /// here is not a pure function of the qualified name. That is the point: flattening
+    /// `billing.invoice.Invoice.State` and `billing.invoice.InvoiceState` produces one identifier
+    /// for two declarations, one of them has to move, and an emitter choosing which would be
+    /// choosing between two names an author wrote deliberately.
     pub fn type_name(&self, declared: &QualifiedName) -> String {
+        if let Some(alias) = self.code_aliases.get(declared) {
+            return alias.clone();
+        }
         name::type_name(declared, self.owner(declared).segments().len())
     }
 
@@ -277,11 +294,18 @@ fn module_idents(ir: &EssIr) -> BTreeMap<QualifiedName, String> {
 fn entity_snapshots(
     ir: &EssIr,
     owners: &BTreeMap<QualifiedName, QualifiedName>,
+    code_aliases: &BTreeMap<QualifiedName, String>,
 ) -> BTreeMap<QualifiedName, String> {
     let mut snapshots = BTreeMap::new();
     for domain in ir.domains().keys() {
-        let local_name =
-            |declared: &QualifiedName| name::type_name(declared, domain.segments().len());
+        // The same spelling `Layout::type_name` will use, alias included — otherwise this reserves
+        // the name a declaration no longer has and leaves the one it does have free.
+        let local_name = |declared: &QualifiedName| {
+            code_aliases
+                .get(declared)
+                .cloned()
+                .unwrap_or_else(|| name::type_name(declared, domain.segments().len()))
+        };
         let mut occupied: BTreeSet<String> = owners
             .iter()
             .filter(|(_, owner)| *owner == domain)
@@ -298,6 +322,10 @@ fn entity_snapshots(
                 format!("{ty}Data"),
                 format!("Any{ty}"),
                 format!("{}_state", name::value_ident(ty)),
+                // The lifecycle enum. It was missing here, and its absence is the reason two
+                // repairs could land on one identifier: a snapshot fallback was free to choose a
+                // name the state enum already held.
+                format!("{ty}State"),
             ]);
         }
         let mut reserved = occupied.clone();

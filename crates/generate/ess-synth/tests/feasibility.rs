@@ -283,6 +283,109 @@ fn normalized_type_collisions_refuse_before_returning_rust() {
     refusal(&core("types:\n  - name: demo.core.FooBar\n    kind: newtype\n    of: String\n  - name: demo.core.Foo_Bar\n    kind: newtype\n    of: String\n", ""), "symbol-collision", "type-collision");
 }
 
+/// An entity beside a view named for that entity's lifecycle state.
+///
+/// `demo.core.Call` derives the state enum `demo.core.Call.State`, and the authored view
+/// `demo.core.CallState` flattens to the same Rust identifier. One of them has to move, and
+/// `alias` is the author saying which.
+fn state_view_fixture(alias: Option<&str>) -> EssIr {
+    let naming = alias.map_or_else(String::new, |code| {
+        format!("    naming:\n      code: {code}\n")
+    });
+    let body = format!(
+        "entities:\n  - name: demo.core.Call\n    identity: {{name: id, type: String}}\n    fields:\n      - {{name: marker, type: String}}\n    lifecycle:\n      initial: Active\n      states: [Active]\n      terminal: [Active]\nviews:\n  - name: demo.core.CallState\n{naming}    source: demo.core.Call\n    consistency: eventual\n    fields:\n      - {{name: id, type: String}}\n      - {{name: marker, type: String}}\n"
+    );
+    core(&body, "")
+}
+
+#[test]
+fn a_view_named_for_a_state_refuses_and_says_how_to_resolve_it() {
+    let ir = state_view_fixture(None);
+    let Err(failure) = synthesize(&ir) else {
+        panic!("the derived state enum and the view want one identifier");
+    };
+    let detail = failure
+        .causes()
+        .iter()
+        .map(|cause| cause.detail().to_owned())
+        .collect::<Vec<_>>()
+        .join("\n");
+    assert!(
+        detail.contains("`CallState` is allocated 2 times"),
+        "{detail}"
+    );
+    // The refusal has to carry the remedy. A reader who did not write `demo.core.Call.State` cannot
+    // otherwise tell that one of the two colliding names is a target's and not theirs.
+    assert!(detail.contains("naming: { code: … }"), "{detail}");
+}
+
+#[test]
+fn go_moves_the_derived_state_enum_not_the_authored_view() {
+    // Go does not refuse a collision, it repairs one — and it repaired this one backwards. The
+    // derived `demo.core.Call.State` sorts before the authored `demo.core.CallState`, so the sweep
+    // handed the identifier to the enum nobody wrote and renamed the author's view `CallState_`.
+    // `allocate_names` states the opposite rule in its own doc comment: "a declared type's name
+    // comes from the specification and a derived one is this emitter's to move."
+    let ir = state_view_fixture(None);
+    let go = synthesize_for(&ir, Target::Go).expect("go repairs rather than refusing");
+    let source = &go.artifacts["types/core/core.go"].contents;
+    assert!(
+        source.contains("type CallState struct {"),
+        "the authored view keeps its name: {source}"
+    );
+    assert!(
+        source.contains("CallState_"),
+        "the derived enum is the one that moved: {source}"
+    );
+}
+
+#[test]
+fn an_authored_code_alias_resolves_the_collision() {
+    let ir = state_view_fixture(Some("CallStateView"));
+    let synthesis = synthesize(&ir).expect("an authored code alias moves the view out of the way");
+    let source = &synthesis.artifacts["crates/demo-types/src/core.rs"].contents;
+    // The author's view took the name the author chose; the derived enum kept the one nobody wrote.
+    assert!(source.contains("pub struct CallStateView {"), "{source}");
+    assert!(source.contains("pub enum CallState {"), "{source}");
+    assert!(!source.contains("pub struct CallState {"), "{source}");
+    assert_eq!(synthesis.plan, SynthesisPlan::of(&ir));
+
+    // The other flattening target must agree. Go had the same collision and repaired it the wrong
+    // way round: `demo.core.Call.State` sorts before `demo.core.CallState`, so the derived enum
+    // took the identifier and the author's view was renamed `CallState_` — silently, with nothing
+    // asserting it. Both emitters now read the same authored alias.
+    let go = synthesize_for(&ir, Target::Go).expect("go honours the same alias");
+    let go_source = &go.artifacts["types/core/core.go"].contents;
+    assert!(
+        go_source.contains("type CallStateView struct {"),
+        "{go_source}"
+    );
+    assert!(!go_source.contains("CallState_"), "{go_source}");
+
+    let directory = scratch("authored-code-alias");
+    write_emission(&directory, &synthesis);
+    check_generated(&directory);
+}
+
+#[test]
+fn a_code_alias_is_reserved_against_every_other_allocation() {
+    // The alias takes a name an entity boundary would otherwise have had, so the boundary must move
+    // instead of colliding with it. Before `entity_snapshots` reserved the chosen names, the two
+    // repairs could both land on `CallSnapshot`.
+    let ir = state_view_fixture(Some("CallSnapshot"));
+    let synthesis =
+        synthesize(&ir).expect("an alias is part of the namespace it is allocated into");
+    let source = &synthesis.artifacts["crates/demo-types/src/core.rs"].contents;
+    assert!(source.contains("pub struct CallSnapshot {"), "{source}");
+    assert!(
+        source.contains("pub struct CallEntitySnapshot {"),
+        "{source}"
+    );
+    let directory = scratch("code-alias-reserved");
+    write_emission(&directory, &synthesis);
+    check_generated(&directory);
+}
+
 fn snapshot_view_fixture(reverse: bool, occupied_fallback: bool) -> EssIr {
     let mut names = vec!["ApprovalCheckpoint", "ContextPin", "Workbench"];
     if reverse {
