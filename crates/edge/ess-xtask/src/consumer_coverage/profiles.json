@@ -1161,5 +1161,30 @@
     "evidence_status": "UNACCEPTED_SOURCE_CANDIDATE",
     "follow_up": null,
     "owner": null
+  },
+  {
+    "id": "compact-live-compilation",
+    "entrypoints": [
+      "ess_conformance::lib(ess_conformance)::models::impl<Models < 'a >;>::compile",
+      "ess_conformance::lib(ess_conformance)::compact::fn::compile"
+    ],
+    "claim_boundary": "Compile the selected composition against original EssIr documents, lower compact /3 and /4 scenarios with typed fixture captures and temporal checks, and admit the resulting native inventory and exact source manifest. This profile does not claim filesystem acquisition, Go emission or live execution.",
+    "execution_profile": "default-rust",
+    "classification": "model-consumer",
+    "evidence_status": "UNACCEPTED_SOURCE_CANDIDATE",
+    "follow_up": null,
+    "owner": null
+  },
+  {
+    "id": "typed-live-fixture-expansion",
+    "entrypoints": [
+      "ess_conformance::lib(ess_conformance)::recipes::impl<Library;>::expand"
+    ],
+    "claim_boundary": "Expand setup-only recipes against the retained component contracts, preserving original field types, actual response slots and full source locations. This is borrowed expansion, not persisted-suite admission, command execution or assertion evaluation.",
+    "execution_profile": "default-rust",
+    "classification": "model-consumer",
+    "evidence_status": "UNACCEPTED_SOURCE_CANDIDATE",
+    "follow_up": null,
+    "owner": null
   }
 ]

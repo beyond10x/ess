@@ -243,7 +243,7 @@
       },
       "source": "crates/generate/ess-cli-project/tests/consumer_cli_commands.rs",
       "case_ast_sha256": "f7ed44182e662adfe4bbd49c4ddc3363340babe48b15ba33bf3d70c95d4ffedb",
-      "reviewed_assertion": "A valid Work→Perform rename changes raw/assembled/resolved command identity; a separate valid domain move changes the resolved command domain. Full IR changes, while the independent local integer binding, complete artifact map and exact direct handler/input/result observation stay equal.",
+      "reviewed_assertion": "A valid Work\u2192Perform rename changes raw/assembled/resolved command identity; a separate valid domain move changes the resolved command domain. Full IR changes, while the independent local integer binding, complete artifact map and exact direct handler/input/result observation stay equal.",
       "attribution_limit": "Only the finite requirement model IDs exercised by these changed/control or named-admission-refusal assertions are candidates. Successful pipeline claims call the actual binding compiler, artifact projector and source runtime with recording-handler assertions; refused pipeline claims stop at their explicitly bound admission entry. No unrelated member, generated package, subprocess, provider or business-handler implementation is qualified.",
       "source_file_sha256": "66a2e8ac4045c32dc08a3157ef4f4fd4f46735d3259b025c6fb22c569fa185ba"
     },
@@ -661,7 +661,7 @@
       },
       "source": "crates/generate/ess-cli-project/tests/consumer_cli_ingress.rs",
       "case_ast_sha256": "2891ca8f71e43fd39f763e1e1cf162b4581e713fb972ef43b782be515b92b288",
-      "reviewed_assertion": "A valid domain move pilot.app→pilot.other changes exact resolved event/error owner handles. Both models enter all actual source admission and CLI terminal stages; the separately selected pilot.Input binding/artifacts/native invocation are equal.",
+      "reviewed_assertion": "A valid domain move pilot.app\u2192pilot.other changes exact resolved event/error owner handles. Both models enter all actual source admission and CLI terminal stages; the separately selected pilot.Input binding/artifacts/native invocation are equal.",
       "attribution_limit": "Only the explicitly enumerated model IDs and actual source-admission/terminal assertions are claimed. Refusals name the entered reader, assembly, compiler or binding boundary and preserve unentered downstream stages with an admitted full terminal control. No generated subprocess, installed-binary model reader, provider, business handler execution or JSON Schema enforcement is qualified.",
       "source_file_sha256": "1ae852c701f156fe6cb572c350055d093876620e7fd1323ae58209c0bb9eb7f7"
     },
@@ -680,7 +680,7 @@
       },
       "source": "crates/generate/ess-cli-project/tests/consumer_cli_ingress.rs",
       "case_ast_sha256": "30a78fb5db142553d00952e5de80efe04c76473318678d2131111a64f2e44fe8",
-      "reviewed_assertion": "Explicit null creates/moves/updates/instance on a subject-free outcome parse as None and normalize to the same full IR/terminals as omission. Separate real creation/update/move source controls enter assembly/ESS compilation, assert the corresponding resolved subject effects and identities, and reach all terminals. This accounts only for the represented named-or-null subject grammar. A real lifecycle transition and its causing outcome rename close→finish; exact resolved Moves/transition names and changed raw reference are asserted. A separate valid entity rename Record→Document changes the actual resolved subject handle. Every complete pipeline terminal is entered with equal selected CLI observations; no lifecycle operation is executed by the local handler.",
+      "reviewed_assertion": "Explicit null creates/moves/updates/instance on a subject-free outcome parse as None and normalize to the same full IR/terminals as omission. Separate real creation/update/move source controls enter assembly/ESS compilation, assert the corresponding resolved subject effects and identities, and reach all terminals. This accounts only for the represented named-or-null subject grammar. A real lifecycle transition and its causing outcome rename close\u2192finish; exact resolved Moves/transition names and changed raw reference are asserted. A separate valid entity rename Record\u2192Document changes the actual resolved subject handle. Every complete pipeline terminal is entered with equal selected CLI observations; no lifecycle operation is executed by the local handler.",
       "attribution_limit": "Only the explicitly enumerated model IDs and actual source-admission/terminal assertions are claimed. Refusals name the entered reader, assembly, compiler or binding boundary and preserve unentered downstream stages with an admitted full terminal control. No generated subprocess, installed-binary model reader, provider, business handler execution or JSON Schema enforcement is qualified.",
       "source_file_sha256": "1ae852c701f156fe6cb572c350055d093876620e7fd1323ae58209c0bb9eb7f7"
     },
@@ -699,7 +699,7 @@
       },
       "source": "crates/generate/ess-cli-project/tests/consumer_cli_ingress.rs",
       "case_ast_sha256": "35cdee08cbbfe4d77d067cad8048c79b49765517a9148f668dd78b37ea6ca2c8",
-      "reviewed_assertion": "Uppercase, whitespace and repeated-dash names are refused by the actual OutcomeName reader; numeric9 is refused as a string representation. Valid done→work-done changes resolved IR but preserves the selected full terminals. No later stage is entered on reader refusal.",
+      "reviewed_assertion": "Uppercase, whitespace and repeated-dash names are refused by the actual OutcomeName reader; numeric9 is refused as a string representation. Valid done\u2192work-done changes resolved IR but preserves the selected full terminals. No later stage is entered on reader refusal.",
       "attribution_limit": "Only the explicitly enumerated model IDs and actual source-admission/terminal assertions are claimed. Refusals name the entered reader, assembly, compiler or binding boundary and preserve unentered downstream stages with an admitted full terminal control. No generated subprocess, installed-binary model reader, provider, business handler execution or JSON Schema enforcement is qualified.",
       "source_file_sha256": "1ae852c701f156fe6cb572c350055d093876620e7fd1323ae58209c0bb9eb7f7"
     },
@@ -775,7 +775,7 @@
       },
       "source": "crates/generate/ess-cli-project/tests/consumer_cli_ingress.rs",
       "case_ast_sha256": "9dad3af784f3724207047a4ce2f709faeea8be2a32a9c48c3fb074ef57b2c434",
-      "reviewed_assertion": "Numeric payload outer/inner maps and numeric payload/set string sources are named reader refusals with no later-stage entry. Matched valid declared payload/set maps reach all terminals; further controls change actual entity-set targets/literals, event payload target/event and source/target types with explicit conversion. The listed map/value nodes receive those concrete representations. Valid String→String payload becomes declared Source→Target with a concrete explicit conversion reason. The exact resolved target type, source input type and optional conversion reason change; all selected CLI terminal observations remain equal. The application conversion itself is not executed.",
+      "reviewed_assertion": "Numeric payload outer/inner maps and numeric payload/set string sources are named reader refusals with no later-stage entry. Matched valid declared payload/set maps reach all terminals; further controls change actual entity-set targets/literals, event payload target/event and source/target types with explicit conversion. The listed map/value nodes receive those concrete representations. Valid String\u2192String payload becomes declared Source\u2192Target with a concrete explicit conversion reason. The exact resolved target type, source input type and optional conversion reason change; all selected CLI terminal observations remain equal. The application conversion itself is not executed.",
       "attribution_limit": "Only the explicitly enumerated model IDs and actual source-admission/terminal assertions are claimed. Refusals name the entered reader, assembly, compiler or binding boundary and preserve unentered downstream stages with an admitted full terminal control. No generated subprocess, installed-binary model reader, provider, business handler execution or JSON Schema enforcement is qualified.",
       "source_file_sha256": "1ae852c701f156fe6cb572c350055d093876620e7fd1323ae58209c0bb9eb7f7"
     },
@@ -794,7 +794,7 @@
       },
       "source": "crates/generate/ess-cli-project/tests/consumer_cli_ingress.rs",
       "case_ast_sha256": "d35f227040ec883176fbf61d83ba3a7fefa357fb600256053c4fe757cdd0b112",
-      "reviewed_assertion": "Numeric payload outer/inner maps and numeric payload/set string sources are named reader refusals with no later-stage entry. Matched valid declared payload/set maps reach all terminals; further controls change actual entity-set targets/literals, event payload target/event and source/target types with explicit conversion. The listed map/value nodes receive those concrete representations. Valid sources change entity-set target/value source, payload target value→note and emitted event Changed→Revised. Exact raw set differences and resolved set/payload target/event fields are asserted. All full CLI terminal observations remain equal; neither event publication nor entity mutation is executed.",
+      "reviewed_assertion": "Numeric payload outer/inner maps and numeric payload/set string sources are named reader refusals with no later-stage entry. Matched valid declared payload/set maps reach all terminals; further controls change actual entity-set targets/literals, event payload target/event and source/target types with explicit conversion. The listed map/value nodes receive those concrete representations. Valid sources change entity-set target/value source, payload target value\u2192note and emitted event Changed\u2192Revised. Exact raw set differences and resolved set/payload target/event fields are asserted. All full CLI terminal observations remain equal; neither event publication nor entity mutation is executed.",
       "attribution_limit": "Only the explicitly enumerated model IDs and actual source-admission/terminal assertions are claimed. Refusals name the entered reader, assembly, compiler or binding boundary and preserve unentered downstream stages with an admitted full terminal control. No generated subprocess, installed-binary model reader, provider, business handler execution or JSON Schema enforcement is qualified.",
       "source_file_sha256": "1ae852c701f156fe6cb572c350055d093876620e7fd1323ae58209c0bb9eb7f7"
     },
@@ -908,7 +908,7 @@
       },
       "source": "crates/generate/ess-cli-project/tests/consumer_cli_model_ingress.rs",
       "case_ast_sha256": "efafb6273898842b76923edc11c2c923a2fb8966f47daa694fbdedd8ad621586",
-      "reviewed_assertion": "The complete system namespace changes model→other in admitted authored files, raw system identity, SystemSpec and EssIr. The old binding has a named unresolved input refusal; explicitly rebinding the type reference changes exact plan/reference bytes while typed dispatch stays equal. Auxiliary null system fields normalize to no extra header.",
+      "reviewed_assertion": "The complete system namespace changes model\u2192other in admitted authored files, raw system identity, SystemSpec and EssIr. The old binding has a named unresolved input refusal; explicitly rebinding the type reference changes exact plan/reference bytes while typed dispatch stays equal. Auxiliary null system fields normalize to no extra header.",
       "attribution_limit": "Only the explicitly enumerated model IDs and actual source-admission/terminal assertions are claimed. Refusals name the entered reader, assembly, compiler or binding boundary and preserve unentered downstream stages with an admitted full terminal control. No generated subprocess, installed-binary model reader, provider, business handler execution or JSON Schema enforcement is qualified.",
       "source_file_sha256": "19da9ec07b1d7ab52abbec3027aca2302f66d737943f4c626da67e61f2181487"
     },
@@ -946,7 +946,7 @@
       },
       "source": "crates/generate/ess-cli-project/tests/consumer_cli_model_ingress.rs",
       "case_ast_sha256": "f1035e8add93079ed52d9238572fb7cf81ae1f2ac2ca9e074b92da4cd0fae466",
-      "reviewed_assertion": "A concrete Tag→Alias conversion and a separately admitted reverse Alias→Tag conversion change the raw conversion list, assembled registry and resolved from/to/because values while complete CLI outputs remain equal. No application conversion is executed.",
+      "reviewed_assertion": "A concrete Tag\u2192Alias conversion and a separately admitted reverse Alias\u2192Tag conversion change the raw conversion list, assembled registry and resolved from/to/because values while complete CLI outputs remain equal. No application conversion is executed.",
       "attribution_limit": "Only the explicitly enumerated model IDs and actual source-admission/terminal assertions are claimed. Refusals name the entered reader, assembly, compiler or binding boundary and preserve unentered downstream stages with an admitted full terminal control. No generated subprocess, installed-binary model reader, provider, business handler execution or JSON Schema enforcement is qualified.",
       "source_file_sha256": "19da9ec07b1d7ab52abbec3027aca2302f66d737943f4c626da67e61f2181487"
     },
@@ -1003,7 +1003,7 @@
       },
       "source": "crates/generate/ess-cli-project/tests/consumer_cli_model_ingress.rs",
       "case_ast_sha256": "14c15571b299271447c7fe2cd7a1cb15f3736c7b6056eff62cdc952dc0b241b1",
-      "reviewed_assertion": "The header roster and actual declaring source change together in a coordinated namespace move, with raw domain names, assembled DomainSpec membership and resolved handles asserted. An auxiliary null domain source normalizes to no domain, while a roster entry with no declaration is a named assembly refusal. The complete system namespace changes model→other in admitted authored files, raw system identity, SystemSpec and EssIr. The old binding has a named unresolved input refusal; explicitly rebinding the type reference changes exact plan/reference bytes while typed dispatch stays equal. Auxiliary null system fields normalize to no extra header. No topology, null topology and explicitly empty workloads normalize to the same empty compiled workload map; the original fixture has one asserted workload. A separate admitted component rename changes its actual raw and compiled workload key. Complete CLI terminals remain equal.",
+      "reviewed_assertion": "The header roster and actual declaring source change together in a coordinated namespace move, with raw domain names, assembled DomainSpec membership and resolved handles asserted. An auxiliary null domain source normalizes to no domain, while a roster entry with no declaration is a named assembly refusal. The complete system namespace changes model\u2192other in admitted authored files, raw system identity, SystemSpec and EssIr. The old binding has a named unresolved input refusal; explicitly rebinding the type reference changes exact plan/reference bytes while typed dispatch stays equal. Auxiliary null system fields normalize to no extra header. No topology, null topology and explicitly empty workloads normalize to the same empty compiled workload map; the original fixture has one asserted workload. A separate admitted component rename changes its actual raw and compiled workload key. Complete CLI terminals remain equal.",
       "attribution_limit": "Only the explicitly enumerated model IDs and actual source-admission/terminal assertions are claimed. Refusals name the entered reader, assembly, compiler or binding boundary and preserve unentered downstream stages with an admitted full terminal control. No generated subprocess, installed-binary model reader, provider, business handler execution or JSON Schema enforcement is qualified.",
       "source_file_sha256": "19da9ec07b1d7ab52abbec3027aca2302f66d737943f4c626da67e61f2181487"
     },
@@ -1022,7 +1022,7 @@
       },
       "source": "crates/generate/ess-cli-project/tests/consumer_cli_model_ingress.rs",
       "case_ast_sha256": "041060e37242c552189d239e6e5847d14f15ecc24b999e8fbd0a429981d31422",
-      "reviewed_assertion": "Other's field list is omitted versus explicitly empty (equal parsed/compiled behavior), then its identity name/type and an unrelated field type change in admitted sources and in the resolved entity. Complete terminal results remain equal. A source entity naming override reaches the exact resolved Naming value without affecting the CLI; absent versus explicit empty entity naming normalizes equally. amount >= 0→amount >= 1 is read as a real entity invariant; both authored statement and parsed predicate are asserted different after assembly, the resolved invariant changes, and all CLI terminals remain equal. No predicate evaluation or business enforcement is claimed.",
+      "reviewed_assertion": "Other's field list is omitted versus explicitly empty (equal parsed/compiled behavior), then its identity name/type and an unrelated field type change in admitted sources and in the resolved entity. Complete terminal results remain equal. A source entity naming override reaches the exact resolved Naming value without affecting the CLI; absent versus explicit empty entity naming normalizes equally. amount >= 0\u2192amount >= 1 is read as a real entity invariant; both authored statement and parsed predicate are asserted different after assembly, the resolved invariant changes, and all CLI terminals remain equal. No predicate evaluation or business enforcement is claimed.",
       "attribution_limit": "Only the explicitly enumerated model IDs and actual source-admission/terminal assertions are claimed. Refusals name the entered reader, assembly, compiler or binding boundary and preserve unentered downstream stages with an admitted full terminal control. No generated subprocess, installed-binary model reader, provider, business handler execution or JSON Schema enforcement is qualified.",
       "source_file_sha256": "19da9ec07b1d7ab52abbec3027aca2302f66d737943f4c626da67e61f2181487"
     },
@@ -1136,7 +1136,7 @@
       },
       "source": "crates/generate/ess-cli-project/tests/consumer_cli_model_ingress.rs",
       "case_ast_sha256": "b38a4feba4ce1e4acfa1a47a972c9b8bf9bc068d8cae0b504f47193c526fbc69",
-      "reviewed_assertion": "Draft→Open, Done→Closed and finish→complete change the actual admitted lifecycle, including initial/states/terminal/from/to or transition name as appropriate. Raw fields and resolved lifecycle differ; complete CLI terminals remain equal. Named command-to-transition causation is retained.",
+      "reviewed_assertion": "Draft\u2192Open, Done\u2192Closed and finish\u2192complete change the actual admitted lifecycle, including initial/states/terminal/from/to or transition name as appropriate. Raw fields and resolved lifecycle differ; complete CLI terminals remain equal. Named command-to-transition causation is retained.",
       "attribution_limit": "Only the explicitly enumerated model IDs and actual source-admission/terminal assertions are claimed. Refusals name the entered reader, assembly, compiler or binding boundary and preserve unentered downstream stages with an admitted full terminal control. No generated subprocess, installed-binary model reader, provider, business handler execution or JSON Schema enforcement is qualified.",
       "source_file_sha256": "19da9ec07b1d7ab52abbec3027aca2302f66d737943f4c626da67e61f2181487"
     },
@@ -1174,7 +1174,7 @@
       },
       "source": "crates/generate/ess-cli-project/tests/consumer_cli_model_ingress.rs",
       "case_ast_sha256": "20fec1d29b6741c66ffb646e85762f6faa1bd7d43ece53c2ebd896e54c374861",
-      "reviewed_assertion": "Authored ess/1→ess/2 changes the raw FormatVersion and SystemSpec.format but leaves this common primitive subset's IR and CLI terminals equal. Omitted/null format defaults to ess/1. ess/3 parses as a format value then yields named unsupported_format_version at assembly; malformed format spelling stops at the reader. ess/0, ess/01 and other/1 are explicitly rejected by the actual format reader before assembly; restored ess/1 reaches every terminal. This is distinct from the named assembly refusal for syntactically valid future ess/3.",
+      "reviewed_assertion": "Authored ess/1\u2192ess/2 changes the raw FormatVersion and SystemSpec.format but leaves this common primitive subset's IR and CLI terminals equal. Omitted/null format defaults to ess/1. ess/3 parses as a format value then yields named unsupported_format_version at assembly; malformed format spelling stops at the reader. ess/0, ess/01 and other/1 are explicitly rejected by the actual format reader before assembly; restored ess/1 reaches every terminal. This is distinct from the named assembly refusal for syntactically valid future ess/3.",
       "attribution_limit": "Only the explicitly enumerated model IDs and actual source-admission/terminal assertions are claimed. Refusals name the entered reader, assembly, compiler or binding boundary and preserve unentered downstream stages with an admitted full terminal control. No generated subprocess, installed-binary model reader, provider, business handler execution or JSON Schema enforcement is qualified.",
       "source_file_sha256": "19da9ec07b1d7ab52abbec3027aca2302f66d737943f4c626da67e61f2181487"
     },
@@ -1193,7 +1193,7 @@
       },
       "source": "crates/generate/ess-cli-project/tests/consumer_cli_model_ingress.rs",
       "case_ast_sha256": "ed06db06b55a26515cc9b9a7c12c2cc99dc40c246c46214103dfc734163073b5",
-      "reviewed_assertion": "Admitted owns→references and many→one change the exact raw relation alternatives and resolved relation fields while complete CLI plan, artifact map and direct process observations remain equal. Relation name, kind, target, cardinality and via each change in separately admitted sources and in the exact resolved relation member; the targets/carriers exist. Optional relations omitted versus empty normalize equally. No runtime ownership operation is executed.",
+      "reviewed_assertion": "Admitted owns\u2192references and many\u2192one change the exact raw relation alternatives and resolved relation fields while complete CLI plan, artifact map and direct process observations remain equal. Relation name, kind, target, cardinality and via each change in separately admitted sources and in the exact resolved relation member; the targets/carriers exist. Optional relations omitted versus empty normalize equally. No runtime ownership operation is executed.",
       "attribution_limit": "Only the explicitly enumerated model IDs and actual source-admission/terminal assertions are claimed. Refusals name the entered reader, assembly, compiler or binding boundary and preserve unentered downstream stages with an admitted full terminal control. No generated subprocess, installed-binary model reader, provider, business handler execution or JSON Schema enforcement is qualified.",
       "source_file_sha256": "19da9ec07b1d7ab52abbec3027aca2302f66d737943f4c626da67e61f2181487"
     },
@@ -1231,7 +1231,7 @@
       },
       "source": "crates/generate/ess-cli-project/tests/consumer_cli_model_ingress.rs",
       "case_ast_sha256": "e52754b96d746722562d7971fbedef25cca803be2e79f11f59fa7db836d764e7",
-      "reviewed_assertion": "The real compiled source graph contains every one of the 26 DependencyRelation alternatives. A coordinated admitted namespace/component/binding rename changes its exact endpoints; every renamed edge, relation, endpoint node and reverse-index entry is checked and total edge counts agree. All CLI terminal observations remain equal. Every one of the 12 semantic reference kinds is actually minted from the compiled model, renamed through real source changes, found by the corresponding IR and absent from the other input's IR. Namespace/component/binding identities, outcome-local finished→completed and transition-local finish→complete names are changed explicitly. Full renamed node-set equality, actual edge endpoints, and equal CLI terminal observations are asserted.",
+      "reviewed_assertion": "The real compiled source graph contains every one of the 26 DependencyRelation alternatives. A coordinated admitted namespace/component/binding rename changes its exact endpoints; every renamed edge, relation, endpoint node and reverse-index entry is checked and total edge counts agree. All CLI terminal observations remain equal. Every one of the 12 semantic reference kinds is actually minted from the compiled model, renamed through real source changes, found by the corresponding IR and absent from the other input's IR. Namespace/component/binding identities, outcome-local finished\u2192completed and transition-local finish\u2192complete names are changed explicitly. Full renamed node-set equality, actual edge endpoints, and equal CLI terminal observations are asserted.",
       "attribution_limit": "Only the explicitly enumerated model IDs and actual source-admission/terminal assertions are claimed. Refusals name the entered reader, assembly, compiler or binding boundary and preserve unentered downstream stages with an admitted full terminal control. No generated subprocess, installed-binary model reader, provider, business handler execution or JSON Schema enforcement is qualified.",
       "source_file_sha256": "19da9ec07b1d7ab52abbec3027aca2302f66d737943f4c626da67e61f2181487"
     },
@@ -1288,7 +1288,7 @@
       },
       "source": "crates/generate/ess-cli-project/tests/consumer_cli_model_ingress.rs",
       "case_ast_sha256": "e36ce4947ba0b8e8a619073d290cdd0e883089d90a7b20ecf7e8d3167f18742f",
-      "reviewed_assertion": "Authored ess/1→ess/2 changes the raw FormatVersion and SystemSpec.format but leaves this common primitive subset's IR and CLI terminals equal. Omitted/null format defaults to ess/1. ess/3 parses as a format value then yields named unsupported_format_version at assembly; malformed format spelling stops at the reader. Numeric and written version spellings at 1, 2 and u32::MAX normalize to the same raw Version and IR value; different admitted versions really change IR while leaving CLI terminals equal. Omitted/null versions normalize to v1.",
+      "reviewed_assertion": "Authored ess/1\u2192ess/2 changes the raw FormatVersion and SystemSpec.format but leaves this common primitive subset's IR and CLI terminals equal. Omitted/null format defaults to ess/1. ess/3 parses as a format value then yields named unsupported_format_version at assembly; malformed format spelling stops at the reader. Numeric and written version spellings at 1, 2 and u32::MAX normalize to the same raw Version and IR value; different admitted versions really change IR while leaving CLI terminals equal. Omitted/null versions normalize to v1.",
       "attribution_limit": "Only the explicitly enumerated model IDs and actual source-admission/terminal assertions are claimed. Refusals name the entered reader, assembly, compiler or binding boundary and preserve unentered downstream stages with an admitted full terminal control. No generated subprocess, installed-binary model reader, provider, business handler execution or JSON Schema enforcement is qualified.",
       "source_file_sha256": "19da9ec07b1d7ab52abbec3027aca2302f66d737943f4c626da67e61f2181487"
     },
@@ -1896,7 +1896,7 @@
       },
       "source": "crates/generate/ess-cli-project/tests/consumer_cli_types.rs",
       "case_ast_sha256": "d0c8030aecd91a997f89804da7321317877fc223f321bfabc2e71ccb1e2f8a6c",
-      "reviewed_assertion": "A declared conversion Value→String reverses to String→Value with a different exact reason. Raw entries, registry length/member/permits and resolved endpoints/reason are asserted; full selected CLI plan/artifacts and exact runtime outputs remain equal. No business command, view, invariant or predicate is evaluated by the local CLI handler.",
+      "reviewed_assertion": "A declared conversion Value\u2192String reverses to String\u2192Value with a different exact reason. Raw entries, registry length/member/permits and resolved endpoints/reason are asserted; full selected CLI plan/artifacts and exact runtime outputs remain equal. No business command, view, invariant or predicate is evaluated by the local CLI handler.",
       "attribution_limit": "Only the explicitly enumerated model IDs and actual source-admission/terminal assertions are claimed. Refusals name the entered reader, assembly, compiler or binding boundary and preserve unentered downstream stages with an admitted full terminal control. No generated subprocess, installed-binary model reader, provider, business handler execution or JSON Schema enforcement is qualified.",
       "source_file_sha256": "414cb54b20c48d8855e9612c5ad03246ea7b4351eca6fc3e5f68fae570405911"
     },
@@ -2887,6 +2887,44 @@
       "reviewed_assertion": "Assert actual OpenAPI carrying-property x-ess-relation equals the independent complete relation literal plus the exact owned-entity $ref and assert the referenced entity exists.",
       "attribution_limit": "Witnessed Billing many/owns relation only; no alternative cardinality or changed-input invalidation is proven.",
       "source_file_sha256": "f7d2c389b7df5ece9359d8838a04f08df0057bc1929a349ef07594d10ad68855"
+    },
+    "ess-conformance:test:compact:original_enum_variants_control_compact_payload_admission": {
+      "identity": {
+        "package": "ess-conformance",
+        "target_kind": "test",
+        "target_name": "compact",
+        "full_name": "original_enum_variants_control_compact_payload_admission",
+        "features": [],
+        "target_profile": "x86_64-unknown-linux-gnu/default",
+        "tool_requirements": [
+          "frozen Rust 1.98.1; locked offline owner-target build"
+        ],
+        "nested_runtime": "None claimed; direct Rust assertions only"
+      },
+      "source": "crates/verify/ess-conformance/tests/compact.rs",
+      "case_ast_sha256": "b65db47de27cf06299efb845887d9523057d0b1227936ab01830f0440bb5468b",
+      "source_file_sha256": "b96201e275ab70b44210d0c090e8201706e858b5f48910bba94f0a5081fa3763",
+      "reviewed_assertion": "A declared enum changes from bridged to connected. The old compact payload is refused with fixture.routing.Changed: literal violates item.state; the original and repaired controls compile, and their original manifests and native documents differ.",
+      "attribution_limit": "Only the explicit compiled declaration members named by this requirement are claimed. No wire grammar, unrelated model declaration, live target, generated runtime or blanket profile support is established."
+    },
+    "ess-conformance:test:recipes:nested_fixtures_have_typed_actual_outputs_and_full_expansion_locations": {
+      "identity": {
+        "package": "ess-conformance",
+        "target_kind": "test",
+        "target_name": "recipes",
+        "full_name": "nested_fixtures_have_typed_actual_outputs_and_full_expansion_locations",
+        "features": [],
+        "target_profile": "x86_64-unknown-linux-gnu/default",
+        "tool_requirements": [
+          "frozen Rust 1.98.1; locked offline owner-target build"
+        ],
+        "nested_runtime": "None claimed; direct Rust assertions only"
+      },
+      "source": "crates/verify/ess-conformance/tests/recipes.rs",
+      "case_ast_sha256": "e0b4380b181df64467765cb31dfdd1f3792aa4ddbddf113e2e4af2f57370e27a",
+      "source_file_sha256": "459ecd2aed337748d93acd45361a90745dbe0897cbda67edf3cf6716ea6b4349",
+      "reviewed_assertion": "Nested recipe expansion points its second command input at the actual first response capture, retaining exact ResolvedCommand model and ResolvedField pointer ownership. Distinct invocations have distinct slots; source comment changes alter only that recipe digest. No command executes.",
+      "attribution_limit": "Only the explicit compiled declaration members named by this requirement are claimed. No wire grammar, unrelated model declaration, live target, generated runtime or blanket profile support is established."
     }
   },
   "requirements": [
@@ -2910,7 +2948,7 @@
       "cases": [
         "ess-cli-project:test:consumer_cli_commands:command_identity_and_domain_are_not_the_selected_local_target"
       ],
-      "reason": "A valid Work→Perform rename changes raw/assembled/resolved command identity; a separate valid domain move changes the resolved command domain. Full IR changes, while the independent local integer binding, complete artifact map and exact direct handler/input/result observation stay equal.",
+      "reason": "A valid Work\u2192Perform rename changes raw/assembled/resolved command identity; a separate valid domain move changes the resolved command domain. Full IR changes, while the independent local integer binding, complete artifact map and exact direct handler/input/result observation stay equal.",
       "behavior": {
         "kind": "Supported"
       }
@@ -5031,7 +5069,7 @@
       "cases": [
         "ess-cli-project:test:consumer_cli_ingress:outcome_name_pattern_and_scalar_type_stop_at_the_source_reader"
       ],
-      "reason": "Uppercase, whitespace and repeated-dash names are refused by the actual OutcomeName reader; numeric9 is refused as a string representation. Valid done→work-done changes resolved IR but preserves the selected full terminals. No later stage is entered on reader refusal.",
+      "reason": "Uppercase, whitespace and repeated-dash names are refused by the actual OutcomeName reader; numeric9 is refused as a string representation. Valid done\u2192work-done changes resolved IR but preserves the selected full terminals. No later stage is entered on reader refusal.",
       "behavior": {
         "kind": "Refused",
         "refusal": "read:app: invalid outcome name; expected string"
@@ -5267,7 +5305,7 @@
       "cases": [
         "ess-cli-project:test:consumer_cli_ingress:lifecycle_move_identity_and_subject_entity_are_resolved_before_cli_terminals"
       ],
-      "reason": "A real lifecycle transition and its causing outcome rename close→finish; exact resolved Moves/transition names and changed raw reference are asserted. A separate valid entity rename Record→Document changes the actual resolved subject handle. Every complete pipeline terminal is entered with equal selected CLI observations; no lifecycle operation is executed by the local handler.",
+      "reason": "A real lifecycle transition and its causing outcome rename close\u2192finish; exact resolved Moves/transition names and changed raw reference are asserted. A separate valid entity rename Record\u2192Document changes the actual resolved subject handle. Every complete pipeline terminal is entered with equal selected CLI observations; no lifecycle operation is executed by the local handler.",
       "behavior": {
         "kind": "Supported"
       }
@@ -5290,7 +5328,7 @@
       "cases": [
         "ess-cli-project:test:consumer_cli_ingress:payload_targets_events_and_entity_sets_are_application_facts"
       ],
-      "reason": "Valid sources change entity-set target/value source, payload target value→note and emitted event Changed→Revised. Exact raw set differences and resolved set/payload target/event fields are asserted. All full CLI terminal observations remain equal; neither event publication nor entity mutation is executed.",
+      "reason": "Valid sources change entity-set target/value source, payload target value\u2192note and emitted event Changed\u2192Revised. Exact raw set differences and resolved set/payload target/event fields are asserted. All full CLI terminal observations remain equal; neither event publication nor entity mutation is executed.",
       "behavior": {
         "kind": "Supported"
       }
@@ -5310,7 +5348,7 @@
       "cases": [
         "ess-cli-project:test:consumer_cli_ingress:payload_source_target_types_and_declared_conversion_reach_resolved_facts"
       ],
-      "reason": "Valid String→String payload becomes declared Source→Target with a concrete explicit conversion reason. The exact resolved target type, source input type and optional conversion reason change; all selected CLI terminal observations remain equal. The application conversion itself is not executed.",
+      "reason": "Valid String\u2192String payload becomes declared Source\u2192Target with a concrete explicit conversion reason. The exact resolved target type, source input type and optional conversion reason change; all selected CLI terminal observations remain equal. The application conversion itself is not executed.",
       "behavior": {
         "kind": "Supported"
       }
@@ -5329,7 +5367,7 @@
       "cases": [
         "ess-cli-project:test:consumer_cli_ingress:event_and_error_domain_ownership_changes_before_independent_cli_execution"
       ],
-      "reason": "A valid domain move pilot.app→pilot.other changes exact resolved event/error owner handles. Both models enter all actual source admission and CLI terminal stages; the separately selected pilot.Input binding/artifacts/native invocation are equal.",
+      "reason": "A valid domain move pilot.app\u2192pilot.other changes exact resolved event/error owner handles. Both models enter all actual source admission and CLI terminal stages; the separately selected pilot.Input binding/artifacts/native invocation are equal.",
       "behavior": {
         "kind": "Supported"
       }
@@ -6033,7 +6071,7 @@
       "cases": [
         "ess-cli-project:test:consumer_cli_types:conversion_endpoints_and_reason_are_resolved_without_local_cli_effect"
       ],
-      "reason": "A declared conversion Value→String reverses to String→Value with a different exact reason. Raw entries, registry length/member/permits and resolved endpoints/reason are asserted; full selected CLI plan/artifacts and exact runtime outputs remain equal. No business command, view, invariant or predicate is evaluated by the local CLI handler.",
+      "reason": "A declared conversion Value\u2192String reverses to String\u2192Value with a different exact reason. Raw entries, registry length/member/permits and resolved endpoints/reason are asserted; full selected CLI plan/artifacts and exact runtime outputs remain equal. No business command, view, invariant or predicate is evaluated by the local CLI handler.",
       "behavior": {
         "kind": "Supported"
       }
@@ -6517,7 +6555,7 @@
       "cases": [
         "ess-cli-project:test:consumer_cli_model_ingress:relation_kind_cardinality_target_carrier_and_name_have_concrete_controls"
       ],
-      "reason": "Admitted owns→references and many→one change the exact raw relation alternatives and resolved relation fields while complete CLI plan, artifact map and direct process observations remain equal.",
+      "reason": "Admitted owns\u2192references and many\u2192one change the exact raw relation alternatives and resolved relation fields while complete CLI plan, artifact map and direct process observations remain equal.",
       "models": [
         "wire:RawSpecFile#/definitions/Cardinality",
         "wire:RawSpecFile#/definitions/Cardinality/oneOf",
@@ -6648,7 +6686,7 @@
       "cases": [
         "ess-cli-project:test:consumer_cli_model_ingress:entity_identity_fields_naming_and_invariants_change_the_model_only"
       ],
-      "reason": "amount >= 0→amount >= 1 is read as a real entity invariant; both authored statement and parsed predicate are asserted different after assembly, the resolved invariant changes, and all CLI terminals remain equal. No predicate evaluation or business enforcement is claimed.",
+      "reason": "amount >= 0\u2192amount >= 1 is read as a real entity invariant; both authored statement and parsed predicate are asserted different after assembly, the resolved invariant changes, and all CLI terminals remain equal. No predicate evaluation or business enforcement is claimed.",
       "models": [
         "wire:RawSpecFile#/definitions/RawEntitySpec/properties/invariants",
         "wire:RawSpecFile#/definitions/RawEntitySpec/properties/invariants/items",
@@ -6816,7 +6854,7 @@
       "cases": [
         "ess-cli-project:test:consumer_cli_model_ingress:lifecycle_state_and_transition_renaming_changes_declared_and_resolved_values"
       ],
-      "reason": "Draft→Open, Done→Closed and finish→complete change the actual admitted lifecycle, including initial/states/terminal/from/to or transition name as appropriate. Raw fields and resolved lifecycle differ; complete CLI terminals remain equal. Named command-to-transition causation is retained.",
+      "reason": "Draft\u2192Open, Done\u2192Closed and finish\u2192complete change the actual admitted lifecycle, including initial/states/terminal/from/to or transition name as appropriate. Raw fields and resolved lifecycle differ; complete CLI terminals remain equal. Named command-to-transition causation is retained.",
       "models": [
         "wire:RawSpecFile#/definitions/RawEntitySpec/properties/lifecycle",
         "wire:RawSpecFile#/definitions/RawEntitySpec/properties/lifecycle/allOf",
@@ -6981,7 +7019,7 @@
       "cases": [
         "ess-cli-project:test:consumer_cli_model_ingress:renamed_source_graph_has_every_concrete_relation_and_changed_semantic_reference_kind"
       ],
-      "reason": "Every one of the 12 semantic reference kinds is actually minted from the compiled model, renamed through real source changes, found by the corresponding IR and absent from the other input's IR. Namespace/component/binding identities, outcome-local finished→completed and transition-local finish→complete names are changed explicitly. Full renamed node-set equality, actual edge endpoints, and equal CLI terminal observations are asserted.",
+      "reason": "Every one of the 12 semantic reference kinds is actually minted from the compiled model, renamed through real source changes, found by the corresponding IR and absent from the other input's IR. Namespace/component/binding identities, outcome-local finished\u2192completed and transition-local finish\u2192complete names are changed explicitly. Full renamed node-set equality, actual edge endpoints, and equal CLI terminal observations are asserted.",
       "models": [
         "rust:ess_compiler::refs::EssSemanticRef",
         "rust:ess_compiler::refs::EssSemanticRef/variant/Actor",
@@ -7319,7 +7357,7 @@
         "ess-cli-project:test:consumer_cli_model_ingress:a_system_namespace_change_requires_explicit_rebinding_and_preserves_typed_dispatch",
         "ess-cli-project:test:consumer_cli_model_ingress:empty_optional_topology_and_domain_source_shapes_normalize_without_invented_members"
       ],
-      "reason": "The complete system namespace changes model→other in admitted authored files, raw system identity, SystemSpec and EssIr. The old binding has a named unresolved input refusal; explicitly rebinding the type reference changes exact plan/reference bytes while typed dispatch stays equal. Auxiliary null system fields normalize to no extra header.",
+      "reason": "The complete system namespace changes model\u2192other in admitted authored files, raw system identity, SystemSpec and EssIr. The old binding has a named unresolved input refusal; explicitly rebinding the type reference changes exact plan/reference bytes while typed dispatch stays equal. Auxiliary null system fields normalize to no extra header.",
       "models": [
         "wire:RawSpecFile#/properties/system",
         "wire:RawSpecFile#/properties/system/anyOf",
@@ -7350,7 +7388,7 @@
         "ess-cli-project:test:consumer_cli_model_ingress:malformed_format_spelling_and_unsupported_major_are_different_admission_stages",
         "ess-cli-project:test:consumer_cli_model_ingress:root_format_and_version_omission_and_null_use_declared_defaults"
       ],
-      "reason": "Authored ess/1→ess/2 changes the raw FormatVersion and SystemSpec.format but leaves this common primitive subset's IR and CLI terminals equal. Omitted/null format defaults to ess/1. ess/3 parses as a format value then yields named unsupported_format_version at assembly; malformed format spelling stops at the reader.",
+      "reason": "Authored ess/1\u2192ess/2 changes the raw FormatVersion and SystemSpec.format but leaves this common primitive subset's IR and CLI terminals equal. Omitted/null format defaults to ess/1. ess/3 parses as a format value then yields named unsupported_format_version at assembly; malformed format spelling stops at the reader.",
       "models": [
         "wire:RawSpecFile#/definitions/FormatVersion",
         "wire:RawSpecFile#/definitions/FormatVersion/type",
@@ -7540,7 +7578,7 @@
       "cases": [
         "ess-cli-project:test:consumer_cli_model_ingress:conversion_membership_direction_and_reason_survive_model_assembly_without_cli_execution"
       ],
-      "reason": "A concrete Tag→Alias conversion and a separately admitted reverse Alias→Tag conversion change the raw conversion list, assembled registry and resolved from/to/because values while complete CLI outputs remain equal. No application conversion is executed.",
+      "reason": "A concrete Tag\u2192Alias conversion and a separately admitted reverse Alias\u2192Tag conversion change the raw conversion list, assembled registry and resolved from/to/because values while complete CLI outputs remain equal. No application conversion is executed.",
       "models": [
         "wire:RawSpecFile#/properties/conversions",
         "wire:RawSpecFile#/properties/conversions/items",
@@ -7643,6 +7681,40 @@
       "behavior": {
         "kind": "Refused",
         "refusal": "RawSpecFile::parse: external reference object has invalid type; expected a string"
+      }
+    },
+    {
+      "id": "compact-original-enum-variants",
+      "models": [
+        "rust:ess_compiler::ir::ResolvedBody/variant/Enum",
+        "rust:ess_compiler::ir::ResolvedBody/variant/Enum/field/variants"
+      ],
+      "consumers": [
+        "compact-live-compilation"
+      ],
+      "cases": [
+        "ess-conformance:test:compact:original_enum_variants_control_compact_payload_admission"
+      ],
+      "reason": "A declared enum changes from bridged to connected. The old compact payload is refused with fixture.routing.Changed: literal violates item.state; the original and repaired controls compile, and their original manifests and native documents differ.",
+      "behavior": {
+        "kind": "Refused",
+        "refusal": "fixture.routing.Changed: literal violates item.state"
+      }
+    },
+    {
+      "id": "fixture-actual-response-field-ownership",
+      "models": [
+        "rust:ess_compiler::ir::ResolvedCommand/field/response"
+      ],
+      "consumers": [
+        "typed-live-fixture-expansion"
+      ],
+      "cases": [
+        "ess-conformance:test:recipes:nested_fixtures_have_typed_actual_outputs_and_full_expansion_locations"
+      ],
+      "reason": "Nested recipe expansion points its second command input at the actual first response capture, retaining exact ResolvedCommand model and ResolvedField pointer ownership. Distinct invocations have distinct slots; source comment changes alter only that recipe digest. No command executes.",
+      "behavior": {
+        "kind": "Supported"
       }
     }
   ]

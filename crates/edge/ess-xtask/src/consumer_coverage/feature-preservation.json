@@ -6469,7 +6469,67 @@
       "reviewed_requirements": [],
       "unknown_authority": "initial-baseline.json",
       "format_authority": "docs/design/review-format-catalog.md"
+    },
+    {
+      "consumer": "compact-live-compilation",
+      "semantic_entrypoints": [
+        "ess_conformance::lib(ess_conformance)::models::impl<Models < 'a >;>::compile",
+        "ess_conformance::lib(ess_conformance)::compact::fn::compile"
+      ],
+      "destination_entrypoints": [
+        "ess_conformance::lib(ess_conformance)::models::impl<Models < 'a >;>::compile",
+        "ess_conformance::lib(ess_conformance)::compact::fn::compile"
+      ],
+      "existing_claim_boundary": "Compile the selected composition against original EssIr documents, lower compact /3 and /4 scenarios with typed fixture captures and temporal checks, and admit the resulting native inventory and exact source manifest. This profile does not claim filesystem acquisition, Go emission or live execution.",
+      "compatibility": "Additive live authoring boundary; no transferred baseline eligibility.",
+      "acceptance_profiles": [
+        "default-rust",
+        "task check"
+      ],
+      "current_source_classification": "model-consumer",
+      "qualification": "existing-accounting-authority; not-promoted-by-this-mapping",
+      "reviewed_requirements": [
+        {
+          "id": "compact-original-enum-variants",
+          "cases": [
+            "ess-conformance:test:compact:original_enum_variants_control_compact_payload_admission"
+          ],
+          "behavior": {
+            "kind": "Refused",
+            "refusal": "fixture.routing.Changed: literal violates item.state"
+          }
+        }
+      ],
+      "unknown_authority": "initial-baseline.json"
+    },
+    {
+      "consumer": "typed-live-fixture-expansion",
+      "semantic_entrypoints": [
+        "ess_conformance::lib(ess_conformance)::recipes::impl<Library;>::expand"
+      ],
+      "destination_entrypoints": [
+        "ess_conformance::lib(ess_conformance)::recipes::impl<Library;>::expand"
+      ],
+      "existing_claim_boundary": "Expand setup-only recipes against the retained component contracts, preserving original field types, actual response slots and full source locations. This is borrowed expansion, not persisted-suite admission, command execution or assertion evaluation.",
+      "compatibility": "Additive live authoring boundary; no transferred baseline eligibility.",
+      "acceptance_profiles": [
+        "default-rust",
+        "task check"
+      ],
+      "current_source_classification": "model-consumer",
+      "qualification": "existing-accounting-authority; not-promoted-by-this-mapping",
+      "reviewed_requirements": [
+        {
+          "id": "fixture-actual-response-field-ownership",
+          "cases": [
+            "ess-conformance:test:recipes:nested_fixtures_have_typed_actual_outputs_and_full_expansion_locations"
+          ],
+          "behavior": {
+            "kind": "Supported"
+          }
+        }
+      ],
+      "unknown_authority": "initial-baseline.json"
     }
   ]
 }
-

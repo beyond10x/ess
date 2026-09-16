@@ -543,6 +543,11 @@
     "macro_ast_sha256": null,
     "reason": "Concrete owned data/API declaration retained alongside the named behavioral callers. Its presence is not a behavior case and does not prove nonreachability."
   },
+  "ess_cli::bin(ess)::enum::ConformCommand/variant/Live": {
+    "class": "OwnedHelper",
+    "macro_ast_sha256": null,
+    "reason": "CLI argument grammar/filesystem orchestration for verify conform live. Delegates typed semantics to Models::compile, compact::compile and the existing Go emitter; filesystem acquisition and output publication require CLI-specific checks and are not qualified by the compact profile."
+  },
   "ess_cli::bin(ess)::enum::ConformCommand/variant/Run": {
     "class": "OwnedHelper",
     "macro_ast_sha256": null,
@@ -645,7 +650,7 @@
   "ess_cli::bin(ess)::enum::GenerateCommand/variant/Output": {
     "class": "OwnedHelper",
     "macro_ast_sha256": null,
-    "reason": "Concrete CLI output-management or publication adapter over already-rendered artifact bytes, fixed owner selectors and explicit compose paths. G01–G14 route and original package cases exercise this caller path. This finite helper classification grants no new ESS model support or nonreachability; ordinary bound profiles stay unchanged."
+    "reason": "Concrete CLI output-management or publication adapter over already-rendered artifact bytes, fixed owner selectors and explicit compose paths. G01\u2013G14 route and original package cases exercise this caller path. This finite helper classification grants no new ESS model support or nonreachability; ordinary bound profiles stay unchanged."
   },
   "ess_cli::bin(ess)::enum::GenerateCommand/variant/Project": {
     "class": "OwnedHelper",
@@ -1237,7 +1242,7 @@
   "ess_cli::bin(ess)::fn::publish_composition_outputs": {
     "class": "OwnedHelper",
     "macro_ast_sha256": null,
-    "reason": "Concrete CLI output-management or publication adapter over already-rendered artifact bytes, fixed owner selectors and explicit compose paths. G01–G14 route and original package cases exercise this caller path. This finite helper classification grants no new ESS model support or nonreachability; ordinary bound profiles stay unchanged."
+    "reason": "Concrete CLI output-management or publication adapter over already-rendered artifact bytes, fixed owner selectors and explicit compose paths. G01\u2013G14 route and original package cases exercise this caller path. This finite helper classification grants no new ESS model support or nonreachability; ordinary bound profiles stay unchanged."
   },
   "ess_cli::bin(ess)::fn::qualify_release_report": {
     "class": "BoundEntry",
@@ -1357,17 +1362,17 @@
   "ess_cli::bin(ess)::fn::write_owned_artifacts": {
     "class": "OwnedHelper",
     "macro_ast_sha256": null,
-    "reason": "Concrete CLI output-management or publication adapter over already-rendered artifact bytes, fixed owner selectors and explicit compose paths. G01–G14 route and original package cases exercise this caller path. This finite helper classification grants no new ESS model support or nonreachability; ordinary bound profiles stay unchanged."
+    "reason": "Concrete CLI output-management or publication adapter over already-rendered artifact bytes, fixed owner selectors and explicit compose paths. G01\u2013G14 route and original package cases exercise this caller path. This finite helper classification grants no new ESS model support or nonreachability; ordinary bound profiles stay unchanged."
   },
   "ess_cli::bin(ess)::fn::write_owned_files": {
     "class": "OwnedHelper",
     "macro_ast_sha256": null,
-    "reason": "Concrete CLI output-management or publication adapter over already-rendered artifact bytes, fixed owner selectors and explicit compose paths. G01–G14 route and original package cases exercise this caller path. This finite helper classification grants no new ESS model support or nonreachability; ordinary bound profiles stay unchanged."
+    "reason": "Concrete CLI output-management or publication adapter over already-rendered artifact bytes, fixed owner selectors and explicit compose paths. G01\u2013G14 route and original package cases exercise this caller path. This finite helper classification grants no new ESS model support or nonreachability; ordinary bound profiles stay unchanged."
   },
   "ess_cli::bin(ess)::fn::write_owned_projection_files": {
     "class": "OwnedHelper",
     "macro_ast_sha256": null,
-    "reason": "Concrete CLI output-management or publication adapter over already-rendered artifact bytes, fixed owner selectors and explicit compose paths. G01–G14 route and original package cases exercise this caller path. This finite helper classification grants no new ESS model support or nonreachability; ordinary bound profiles stay unchanged."
+    "reason": "Concrete CLI output-management or publication adapter over already-rendered artifact bytes, fixed owner selectors and explicit compose paths. G01\u2013G14 route and original package cases exercise this caller path. This finite helper classification grants no new ESS model support or nonreachability; ordinary bound profiles stay unchanged."
   },
   "ess_cli::bin(ess)::fn::write_preflighted_files": {
     "class": "OwnedHelper",
@@ -1497,6 +1502,21 @@
     "class": "OwnedHelper",
     "macro_ast_sha256": null,
     "reason": "Concrete owned data/API declaration retained alongside the named behavioral callers. Its presence is not a behavior case and does not prove nonreachability."
+  },
+  "ess_cli::bin(ess)::live_conformance::fn::run": {
+    "class": "OwnedHelper",
+    "macro_ast_sha256": null,
+    "reason": "CLI argument grammar/filesystem orchestration for verify conform live. Delegates typed semantics to Models::compile, compact::compile and the existing Go emitter; filesystem acquisition and output publication require CLI-specific checks and are not qualified by the compact profile."
+  },
+  "ess_cli::bin(ess)::live_conformance::module": {
+    "class": "OwnedHelper",
+    "macro_ast_sha256": null,
+    "reason": "CLI argument grammar/filesystem orchestration for verify conform live. Delegates typed semantics to Models::compile, compact::compile and the existing Go emitter; filesystem acquisition and output publication require CLI-specific checks and are not qualified by the compact profile."
+  },
+  "ess_cli::bin(ess)::live_conformance::struct::Args": {
+    "class": "OwnedHelper",
+    "macro_ast_sha256": null,
+    "reason": "CLI argument grammar/filesystem orchestration for verify conform live. Delegates typed semantics to Models::compile, compact::compile and the existing Go emitter; filesystem acquisition and output publication require CLI-specific checks and are not qualified by the compact profile."
   },
   "ess_cli::bin(ess)::load::enum::LoadedInfra": {
     "class": "OwnedHelper",
@@ -10787,6 +10807,216 @@
     "class": "OwnedHelper",
     "reason": "Private authored-scenario identity adapter reads one entity identity type from EssIr. This exact declaration grants no behavioral support; execution remains attributed to separately bound consumer profiles."
   },
+  "ess_conformance::lib(ess_conformance)::compact::const::FORMAT": {
+    "class": "OwnedHelper",
+    "macro_ast_sha256": null,
+    "reason": "Compact document grammar and lowering implementation owned by compact-live-compilation. Exact source/capture/type/temporal semantics require its attributed cases; this entry grants no independent support."
+  },
+  "ess_conformance::lib(ess_conformance)::compact::const::OBSERVATION_FORMAT": {
+    "class": "OwnedHelper",
+    "macro_ast_sha256": null,
+    "reason": "Compact document grammar and lowering implementation owned by compact-live-compilation. Exact source/capture/type/temporal semantics require its attributed cases; this entry grants no independent support."
+  },
+  "ess_conformance::lib(ess_conformance)::compact::enum::Action": {
+    "class": "OwnedHelper",
+    "macro_ast_sha256": null,
+    "reason": "Compact document grammar and lowering implementation owned by compact-live-compilation. Exact source/capture/type/temporal semantics require its attributed cases; this entry grants no independent support."
+  },
+  "ess_conformance::lib(ess_conformance)::compact::enum::Action/variant/Command": {
+    "class": "OwnedHelper",
+    "macro_ast_sha256": null,
+    "reason": "Compact document grammar and lowering implementation owned by compact-live-compilation. Exact source/capture/type/temporal semantics require its attributed cases; this entry grants no independent support."
+  },
+  "ess_conformance::lib(ess_conformance)::compact::enum::Action/variant/Observe": {
+    "class": "OwnedHelper",
+    "macro_ast_sha256": null,
+    "reason": "Compact document grammar and lowering implementation owned by compact-live-compilation. Exact source/capture/type/temporal semantics require its attributed cases; this entry grants no independent support."
+  },
+  "ess_conformance::lib(ess_conformance)::compact::enum::Action/variant/Quiet": {
+    "class": "OwnedHelper",
+    "macro_ast_sha256": null,
+    "reason": "Compact document grammar and lowering implementation owned by compact-live-compilation. Exact source/capture/type/temporal semantics require its attributed cases; this entry grants no independent support."
+  },
+  "ess_conformance::lib(ess_conformance)::compact::enum::Action/variant/Stable": {
+    "class": "OwnedHelper",
+    "macro_ast_sha256": null,
+    "reason": "Compact document grammar and lowering implementation owned by compact-live-compilation. Exact source/capture/type/temporal semantics require its attributed cases; this entry grants no independent support."
+  },
+  "ess_conformance::lib(ess_conformance)::compact::enum::EventValue": {
+    "class": "OwnedHelper",
+    "macro_ast_sha256": null,
+    "reason": "Compact document grammar and lowering implementation owned by compact-live-compilation. Exact source/capture/type/temporal semantics require its attributed cases; this entry grants no independent support."
+  },
+  "ess_conformance::lib(ess_conformance)::compact::enum::EventValue/variant/Offset": {
+    "class": "OwnedHelper",
+    "macro_ast_sha256": null,
+    "reason": "Compact document grammar and lowering implementation owned by compact-live-compilation. Exact source/capture/type/temporal semantics require its attributed cases; this entry grants no independent support."
+  },
+  "ess_conformance::lib(ess_conformance)::compact::enum::EventValue/variant/Plain": {
+    "class": "OwnedHelper",
+    "macro_ast_sha256": null,
+    "reason": "Compact document grammar and lowering implementation owned by compact-live-compilation. Exact source/capture/type/temporal semantics require its attributed cases; this entry grants no independent support."
+  },
+  "ess_conformance::lib(ess_conformance)::compact::fn::compile": {
+    "class": "BoundEntry",
+    "macro_ast_sha256": null,
+    "reason": "Exact public entry bound to compact-live-compilation. Behavioral evidence is attributed only through that bounded profile."
+  },
+  "ess_conformance::lib(ess_conformance)::compact::fn::input_files": {
+    "class": "OwnedHelper",
+    "macro_ast_sha256": null,
+    "reason": "Compact document grammar and lowering implementation owned by compact-live-compilation. Exact source/capture/type/temporal semantics require its attributed cases; this entry grants no independent support."
+  },
+  "ess_conformance::lib(ess_conformance)::compact::fn::lower_source": {
+    "class": "OwnedHelper",
+    "macro_ast_sha256": null,
+    "reason": "Compact document grammar and lowering implementation owned by compact-live-compilation. Exact source/capture/type/temporal semantics require its attributed cases; this entry grants no independent support."
+  },
+  "ess_conformance::lib(ess_conformance)::compact::fn::refuse_ambiguous_exports": {
+    "class": "OwnedHelper",
+    "macro_ast_sha256": null,
+    "reason": "Compact document grammar and lowering implementation owned by compact-live-compilation. Exact source/capture/type/temporal semantics require its attributed cases; this entry grants no independent support."
+  },
+  "ess_conformance::lib(ess_conformance)::compact::impl<InputFile;>::new": {
+    "class": "OwnedHelper",
+    "macro_ast_sha256": null,
+    "reason": "Compact document grammar and lowering implementation owned by compact-live-compilation. Exact source/capture/type/temporal semantics require its attributed cases; this entry grants no independent support."
+  },
+  "ess_conformance::lib(ess_conformance)::compact::impl<Lowering < 'a , 'm , 's >;>::action": {
+    "class": "OwnedHelper",
+    "macro_ast_sha256": null,
+    "reason": "Compact document grammar and lowering implementation owned by compact-live-compilation. Exact source/capture/type/temporal semantics require its attributed cases; this entry grants no independent support."
+  },
+  "ess_conformance::lib(ess_conformance)::compact::impl<Lowering < 'a , 'm , 's >;>::capture_observation": {
+    "class": "OwnedHelper",
+    "macro_ast_sha256": null,
+    "reason": "Compact document grammar and lowering implementation owned by compact-live-compilation. Exact source/capture/type/temporal semantics require its attributed cases; this entry grants no independent support."
+  },
+  "ess_conformance::lib(ess_conformance)::compact::impl<Lowering < 'a , 'm , 's >;>::claim": {
+    "class": "OwnedHelper",
+    "macro_ast_sha256": null,
+    "reason": "Compact document grammar and lowering implementation owned by compact-live-compilation. Exact source/capture/type/temporal semantics require its attributed cases; this entry grants no independent support."
+  },
+  "ess_conformance::lib(ess_conformance)::compact::impl<Lowering < 'a , 'm , 's >;>::command": {
+    "class": "OwnedHelper",
+    "macro_ast_sha256": null,
+    "reason": "Compact document grammar and lowering implementation owned by compact-live-compilation. Exact source/capture/type/temporal semantics require its attributed cases; this entry grants no independent support."
+  },
+  "ess_conformance::lib(ess_conformance)::compact::impl<Lowering < 'a , 'm , 's >;>::dependency": {
+    "class": "OwnedHelper",
+    "macro_ast_sha256": null,
+    "reason": "Compact document grammar and lowering implementation owned by compact-live-compilation. Exact source/capture/type/temporal semantics require its attributed cases; this entry grants no independent support."
+  },
+  "ess_conformance::lib(ess_conformance)::compact::impl<Lowering < 'a , 'm , 's >;>::emit": {
+    "class": "OwnedHelper",
+    "macro_ast_sha256": null,
+    "reason": "Compact document grammar and lowering implementation owned by compact-live-compilation. Exact source/capture/type/temporal semantics require its attributed cases; this entry grants no independent support."
+  },
+  "ess_conformance::lib(ess_conformance)::compact::impl<Lowering < 'a , 'm , 's >;>::expose": {
+    "class": "OwnedHelper",
+    "macro_ast_sha256": null,
+    "reason": "Compact document grammar and lowering implementation owned by compact-live-compilation. Exact source/capture/type/temporal semantics require its attributed cases; this entry grants no independent support."
+  },
+  "ess_conformance::lib(ess_conformance)::compact::impl<Lowering < 'a , 'm , 's >;>::given": {
+    "class": "OwnedHelper",
+    "macro_ast_sha256": null,
+    "reason": "Compact document grammar and lowering implementation owned by compact-live-compilation. Exact source/capture/type/temporal semantics require its attributed cases; this entry grants no independent support."
+  },
+  "ess_conformance::lib(ess_conformance)::compact::impl<Lowering < 'a , 'm , 's >;>::location": {
+    "class": "OwnedHelper",
+    "macro_ast_sha256": null,
+    "reason": "Compact document grammar and lowering implementation owned by compact-live-compilation. Exact source/capture/type/temporal semantics require its attributed cases; this entry grants no independent support."
+  },
+  "ess_conformance::lib(ess_conformance)::compact::impl<Lowering < 'a , 'm , 's >;>::new": {
+    "class": "OwnedHelper",
+    "macro_ast_sha256": null,
+    "reason": "Compact document grammar and lowering implementation owned by compact-live-compilation. Exact source/capture/type/temporal semantics require its attributed cases; this entry grants no independent support."
+  },
+  "ess_conformance::lib(ess_conformance)::compact::impl<Lowering < 'a , 'm , 's >;>::next_binding": {
+    "class": "OwnedHelper",
+    "macro_ast_sha256": null,
+    "reason": "Compact document grammar and lowering implementation owned by compact-live-compilation. Exact source/capture/type/temporal semantics require its attributed cases; this entry grants no independent support."
+  },
+  "ess_conformance::lib(ess_conformance)::compact::impl<Lowering < 'a , 'm , 's >;>::observation": {
+    "class": "OwnedHelper",
+    "macro_ast_sha256": null,
+    "reason": "Compact document grammar and lowering implementation owned by compact-live-compilation. Exact source/capture/type/temporal semantics require its attributed cases; this entry grants no independent support."
+  },
+  "ess_conformance::lib(ess_conformance)::compact::impl<Lowering < 'a , 'm , 's >;>::observe": {
+    "class": "OwnedHelper",
+    "macro_ast_sha256": null,
+    "reason": "Compact document grammar and lowering implementation owned by compact-live-compilation. Exact source/capture/type/temporal semantics require its attributed cases; this entry grants no independent support."
+  },
+  "ess_conformance::lib(ess_conformance)::compact::impl<Lowering < 'a , 'm , 's >;>::resolve": {
+    "class": "OwnedHelper",
+    "macro_ast_sha256": null,
+    "reason": "Compact document grammar and lowering implementation owned by compact-live-compilation. Exact source/capture/type/temporal semantics require its attributed cases; this entry grants no independent support."
+  },
+  "ess_conformance::lib(ess_conformance)::compact::impl<Lowering < 'a , 'm , 's >;>::typed_capture": {
+    "class": "OwnedHelper",
+    "macro_ast_sha256": null,
+    "reason": "Compact document grammar and lowering implementation owned by compact-live-compilation. Exact source/capture/type/temporal semantics require its attributed cases; this entry grants no independent support."
+  },
+  "ess_conformance::lib(ess_conformance)::compact::impl<Lowering < 'a , 'm , 's >;>::value": {
+    "class": "OwnedHelper",
+    "macro_ast_sha256": null,
+    "reason": "Compact document grammar and lowering implementation owned by compact-live-compilation. Exact source/capture/type/temporal semantics require its attributed cases; this entry grants no independent support."
+  },
+  "ess_conformance::lib(ess_conformance)::compact::module": {
+    "class": "OwnedHelper",
+    "macro_ast_sha256": null,
+    "reason": "Compact document grammar and lowering implementation owned by compact-live-compilation. Exact source/capture/type/temporal semantics require its attributed cases; this entry grants no independent support."
+  },
+  "ess_conformance::lib(ess_conformance)::compact::struct::Compilation": {
+    "class": "OwnedHelper",
+    "macro_ast_sha256": null,
+    "reason": "Compact document grammar and lowering implementation owned by compact-live-compilation. Exact source/capture/type/temporal semantics require its attributed cases; this entry grants no independent support."
+  },
+  "ess_conformance::lib(ess_conformance)::compact::struct::Document": {
+    "class": "OwnedHelper",
+    "macro_ast_sha256": null,
+    "reason": "Compact document grammar and lowering implementation owned by compact-live-compilation. Exact source/capture/type/temporal semantics require its attributed cases; this entry grants no independent support."
+  },
+  "ess_conformance::lib(ess_conformance)::compact::struct::EventCapture": {
+    "class": "OwnedHelper",
+    "macro_ast_sha256": null,
+    "reason": "Compact document grammar and lowering implementation owned by compact-live-compilation. Exact source/capture/type/temporal semantics require its attributed cases; this entry grants no independent support."
+  },
+  "ess_conformance::lib(ess_conformance)::compact::struct::Given": {
+    "class": "OwnedHelper",
+    "macro_ast_sha256": null,
+    "reason": "Compact document grammar and lowering implementation owned by compact-live-compilation. Exact source/capture/type/temporal semantics require its attributed cases; this entry grants no independent support."
+  },
+  "ess_conformance::lib(ess_conformance)::compact::struct::InputFile": {
+    "class": "OwnedHelper",
+    "macro_ast_sha256": null,
+    "reason": "Compact document grammar and lowering implementation owned by compact-live-compilation. Exact source/capture/type/temporal semantics require its attributed cases; this entry grants no independent support."
+  },
+  "ess_conformance::lib(ess_conformance)::compact::struct::InputManifest": {
+    "class": "OwnedHelper",
+    "macro_ast_sha256": null,
+    "reason": "Compact document grammar and lowering implementation owned by compact-live-compilation. Exact source/capture/type/temporal semantics require its attributed cases; this entry grants no independent support."
+  },
+  "ess_conformance::lib(ess_conformance)::compact::struct::IntegerBounds": {
+    "class": "OwnedHelper",
+    "macro_ast_sha256": null,
+    "reason": "Compact document grammar and lowering implementation owned by compact-live-compilation. Exact source/capture/type/temporal semantics require its attributed cases; this entry grants no independent support."
+  },
+  "ess_conformance::lib(ess_conformance)::compact::struct::Lowering": {
+    "class": "OwnedHelper",
+    "macro_ast_sha256": null,
+    "reason": "Compact document grammar and lowering implementation owned by compact-live-compilation. Exact source/capture/type/temporal semantics require its attributed cases; this entry grants no independent support."
+  },
+  "ess_conformance::lib(ess_conformance)::compact::struct::Observation": {
+    "class": "OwnedHelper",
+    "macro_ast_sha256": null,
+    "reason": "Compact document grammar and lowering implementation owned by compact-live-compilation. Exact source/capture/type/temporal semantics require its attributed cases; this entry grants no independent support."
+  },
+  "ess_conformance::lib(ess_conformance)::compact::struct::Offset": {
+    "class": "OwnedHelper",
+    "macro_ast_sha256": null,
+    "reason": "Compact document grammar and lowering implementation owned by compact-live-compilation. Exact source/capture/type/temporal semantics require its attributed cases; this entry grants no independent support."
+  },
   "ess_conformance::lib(ess_conformance)::count_json::enum::Kind": {
     "class": "OwnedHelper",
     "macro_ast_sha256": null,
@@ -12317,6 +12547,246 @@
     "macro_ast_sha256": null,
     "reason": "Concrete owned data/API declaration retained alongside the named behavioral callers. Its presence is not a behavior case and does not prove nonreachability."
   },
+  "ess_conformance::lib(ess_conformance)::live_bindings::fn::admit": {
+    "class": "OwnedHelper",
+    "macro_ast_sha256": null,
+    "reason": "Native suite admission helper for response-slot ordering, declared payload paths and version refusal; exercised through the existing suite-admission boundary, not independent model consumption."
+  },
+  "ess_conformance::lib(ess_conformance)::live_bindings::fn::used_by": {
+    "class": "OwnedHelper",
+    "macro_ast_sha256": null,
+    "reason": "Native suite admission helper for response-slot ordering, declared payload paths and version refusal; exercised through the existing suite-admission boundary, not independent model consumption."
+  },
+  "ess_conformance::lib(ess_conformance)::live_bindings::module": {
+    "class": "OwnedHelper",
+    "macro_ast_sha256": null,
+    "reason": "Native suite admission helper for response-slot ordering, declared payload paths and version refusal; exercised through the existing suite-admission boundary, not independent model consumption."
+  },
+  "ess_conformance::lib(ess_conformance)::live_trace::enum::Check": {
+    "class": "OwnedHelper",
+    "macro_ast_sha256": null,
+    "reason": "Native suite temporal-check admission and execution helper owned by suite-admission and conformance-rust-runner. Capture, offset, integer and quiet variants remain subject to exact runtime evidence."
+  },
+  "ess_conformance::lib(ess_conformance)::live_trace::enum::Check/variant/Absent": {
+    "class": "OwnedHelper",
+    "macro_ast_sha256": null,
+    "reason": "Native suite temporal-check admission and execution helper owned by suite-admission and conformance-rust-runner. Capture, offset, integer and quiet variants remain subject to exact runtime evidence."
+  },
+  "ess_conformance::lib(ess_conformance)::live_trace::enum::Check/variant/Await": {
+    "class": "OwnedHelper",
+    "macro_ast_sha256": null,
+    "reason": "Native suite temporal-check admission and execution helper owned by suite-admission and conformance-rust-runner. Capture, offset, integer and quiet variants remain subject to exact runtime evidence."
+  },
+  "ess_conformance::lib(ess_conformance)::live_trace::enum::Check/variant/Capture": {
+    "class": "OwnedHelper",
+    "macro_ast_sha256": null,
+    "reason": "Native suite temporal-check admission and execution helper owned by suite-admission and conformance-rust-runner. Capture, offset, integer and quiet variants remain subject to exact runtime evidence."
+  },
+  "ess_conformance::lib(ess_conformance)::live_trace::enum::Check/variant/IntegerBounds": {
+    "class": "OwnedHelper",
+    "macro_ast_sha256": null,
+    "reason": "Native suite temporal-check admission and execution helper owned by suite-admission and conformance-rust-runner. Capture, offset, integer and quiet variants remain subject to exact runtime evidence."
+  },
+  "ess_conformance::lib(ess_conformance)::live_trace::enum::Check/variant/Offset": {
+    "class": "OwnedHelper",
+    "macro_ast_sha256": null,
+    "reason": "Native suite temporal-check admission and execution helper owned by suite-admission and conformance-rust-runner. Capture, offset, integer and quiet variants remain subject to exact runtime evidence."
+  },
+  "ess_conformance::lib(ess_conformance)::live_trace::enum::Check/variant/Open": {
+    "class": "OwnedHelper",
+    "macro_ast_sha256": null,
+    "reason": "Native suite temporal-check admission and execution helper owned by suite-admission and conformance-rust-runner. Capture, offset, integer and quiet variants remain subject to exact runtime evidence."
+  },
+  "ess_conformance::lib(ess_conformance)::live_trace::enum::Check/variant/Ordered": {
+    "class": "OwnedHelper",
+    "macro_ast_sha256": null,
+    "reason": "Native suite temporal-check admission and execution helper owned by suite-admission and conformance-rust-runner. Capture, offset, integer and quiet variants remain subject to exact runtime evidence."
+  },
+  "ess_conformance::lib(ess_conformance)::live_trace::enum::Check/variant/Quiet": {
+    "class": "OwnedHelper",
+    "macro_ast_sha256": null,
+    "reason": "Native suite temporal-check admission and execution helper owned by suite-admission and conformance-rust-runner. Capture, offset, integer and quiet variants remain subject to exact runtime evidence."
+  },
+  "ess_conformance::lib(ess_conformance)::live_trace::enum::Check/variant/Stable": {
+    "class": "OwnedHelper",
+    "macro_ast_sha256": null,
+    "reason": "Native suite temporal-check admission and execution helper owned by suite-admission and conformance-rust-runner. Capture, offset, integer and quiet variants remain subject to exact runtime evidence."
+  },
+  "ess_conformance::lib(ess_conformance)::live_trace::fn::admit": {
+    "class": "OwnedHelper",
+    "macro_ast_sha256": null,
+    "reason": "Native suite temporal-check admission and execution helper owned by suite-admission and conformance-rust-runner. Capture, offset, integer and quiet variants remain subject to exact runtime evidence."
+  },
+  "ess_conformance::lib(ess_conformance)::live_trace::fn::admit_values": {
+    "class": "OwnedHelper",
+    "macro_ast_sha256": null,
+    "reason": "Native suite temporal-check admission and execution helper owned by suite-admission and conformance-rust-runner. Capture, offset, integer and quiet variants remain subject to exact runtime evidence."
+  },
+  "ess_conformance::lib(ess_conformance)::live_trace::fn::integer_leaf": {
+    "class": "OwnedHelper",
+    "macro_ast_sha256": null,
+    "reason": "Native suite temporal-check admission and execution helper owned by suite-admission and conformance-rust-runner. Capture, offset, integer and quiet variants remain subject to exact runtime evidence."
+  },
+  "ess_conformance::lib(ess_conformance)::live_trace::fn::single_leaf": {
+    "class": "OwnedHelper",
+    "macro_ast_sha256": null,
+    "reason": "Native suite temporal-check admission and execution helper owned by suite-admission and conformance-rust-runner. Capture, offset, integer and quiet variants remain subject to exact runtime evidence."
+  },
+  "ess_conformance::lib(ess_conformance)::live_trace::impl<Check;>::events": {
+    "class": "OwnedHelper",
+    "macro_ast_sha256": null,
+    "reason": "Native suite temporal-check admission and execution helper owned by suite-admission and conformance-rust-runner. Capture, offset, integer and quiet variants remain subject to exact runtime evidence."
+  },
+  "ess_conformance::lib(ess_conformance)::live_trace::impl<Check;>::requires_v12": {
+    "class": "OwnedHelper",
+    "macro_ast_sha256": null,
+    "reason": "Native suite temporal-check admission and execution helper owned by suite-admission and conformance-rust-runner. Capture, offset, integer and quiet variants remain subject to exact runtime evidence."
+  },
+  "ess_conformance::lib(ess_conformance)::live_trace::impl<State;>::accept": {
+    "class": "OwnedHelper",
+    "macro_ast_sha256": null,
+    "reason": "Native suite temporal-check admission and execution helper owned by suite-admission and conformance-rust-runner. Capture, offset, integer and quiet variants remain subject to exact runtime evidence."
+  },
+  "ess_conformance::lib(ess_conformance)::live_trace::impl<State;>::anchor": {
+    "class": "OwnedHelper",
+    "macro_ast_sha256": null,
+    "reason": "Native suite temporal-check admission and execution helper owned by suite-admission and conformance-rust-runner. Capture, offset, integer and quiet variants remain subject to exact runtime evidence."
+  },
+  "ess_conformance::lib(ess_conformance)::live_trace::impl<State;>::bind": {
+    "class": "OwnedHelper",
+    "macro_ast_sha256": null,
+    "reason": "Native suite temporal-check admission and execution helper owned by suite-admission and conformance-rust-runner. Capture, offset, integer and quiet variants remain subject to exact runtime evidence."
+  },
+  "ess_conformance::lib(ess_conformance)::live_trace::impl<State;>::binding": {
+    "class": "OwnedHelper",
+    "macro_ast_sha256": null,
+    "reason": "Native suite temporal-check admission and execution helper owned by suite-admission and conformance-rust-runner. Capture, offset, integer and quiet variants remain subject to exact runtime evidence."
+  },
+  "ess_conformance::lib(ess_conformance)::live_trace::impl<State;>::evaluate": {
+    "class": "OwnedHelper",
+    "macro_ast_sha256": null,
+    "reason": "Native suite temporal-check admission and execution helper owned by suite-admission and conformance-rust-runner. Capture, offset, integer and quiet variants remain subject to exact runtime evidence."
+  },
+  "ess_conformance::lib(ess_conformance)::live_trace::impl<State;>::new": {
+    "class": "OwnedHelper",
+    "macro_ast_sha256": null,
+    "reason": "Native suite temporal-check admission and execution helper owned by suite-admission and conformance-rust-runner. Capture, offset, integer and quiet variants remain subject to exact runtime evidence."
+  },
+  "ess_conformance::lib(ess_conformance)::live_trace::impl<State;>::request": {
+    "class": "OwnedHelper",
+    "macro_ast_sha256": null,
+    "reason": "Native suite temporal-check admission and execution helper owned by suite-admission and conformance-rust-runner. Capture, offset, integer and quiet variants remain subject to exact runtime evidence."
+  },
+  "ess_conformance::lib(ess_conformance)::live_trace::module": {
+    "class": "OwnedHelper",
+    "macro_ast_sha256": null,
+    "reason": "Native suite temporal-check admission and execution helper owned by suite-admission and conformance-rust-runner. Capture, offset, integer and quiet variants remain subject to exact runtime evidence."
+  },
+  "ess_conformance::lib(ess_conformance)::live_trace::struct::Claim": {
+    "class": "OwnedHelper",
+    "macro_ast_sha256": null,
+    "reason": "Native suite temporal-check admission and execution helper owned by suite-admission and conformance-rust-runner. Capture, offset, integer and quiet variants remain subject to exact runtime evidence."
+  },
+  "ess_conformance::lib(ess_conformance)::live_trace::struct::QuietStart": {
+    "class": "OwnedHelper",
+    "macro_ast_sha256": null,
+    "reason": "Native suite temporal-check admission and execution helper owned by suite-admission and conformance-rust-runner. Capture, offset, integer and quiet variants remain subject to exact runtime evidence."
+  },
+  "ess_conformance::lib(ess_conformance)::live_trace::struct::Request": {
+    "class": "OwnedHelper",
+    "macro_ast_sha256": null,
+    "reason": "Native suite temporal-check admission and execution helper owned by suite-admission and conformance-rust-runner. Capture, offset, integer and quiet variants remain subject to exact runtime evidence."
+  },
+  "ess_conformance::lib(ess_conformance)::live_trace::struct::State": {
+    "class": "OwnedHelper",
+    "macro_ast_sha256": null,
+    "reason": "Native suite temporal-check admission and execution helper owned by suite-admission and conformance-rust-runner. Capture, offset, integer and quiet variants remain subject to exact runtime evidence."
+  },
+  "ess_conformance::lib(ess_conformance)::models::impl<Models < 'a >;>::canonical_originals": {
+    "class": "OwnedHelper",
+    "macro_ast_sha256": null,
+    "reason": "Borrowed original-model lookup and ownership support for compact-live-compilation and typed-live-fixture-expansion. Lookup stays inside the selected component; retained EssIr type authority is not replaced by exported names."
+  },
+  "ess_conformance::lib(ess_conformance)::models::impl<Models < 'a >;>::command": {
+    "class": "OwnedHelper",
+    "macro_ast_sha256": null,
+    "reason": "Borrowed original-model lookup and ownership support for compact-live-compilation and typed-live-fixture-expansion. Lookup stays inside the selected component; retained EssIr type authority is not replaced by exported names."
+  },
+  "ess_conformance::lib(ess_conformance)::models::impl<Models < 'a >;>::compile": {
+    "class": "BoundEntry",
+    "macro_ast_sha256": null,
+    "reason": "Exact public entry bound to compact-live-compilation. Behavioral evidence is attributed only through that bounded profile."
+  },
+  "ess_conformance::lib(ess_conformance)::models::impl<Models < 'a >;>::composition": {
+    "class": "OwnedHelper",
+    "macro_ast_sha256": null,
+    "reason": "Borrowed original-model lookup and ownership support for compact-live-compilation and typed-live-fixture-expansion. Lookup stays inside the selected component; retained EssIr type authority is not replaced by exported names."
+  },
+  "ess_conformance::lib(ess_conformance)::models::impl<Models < 'a >;>::entity": {
+    "class": "OwnedHelper",
+    "macro_ast_sha256": null,
+    "reason": "Borrowed original-model lookup and ownership support for compact-live-compilation and typed-live-fixture-expansion. Lookup stays inside the selected component; retained EssIr type authority is not replaced by exported names."
+  },
+  "ess_conformance::lib(ess_conformance)::models::impl<Models < 'a >;>::event": {
+    "class": "OwnedHelper",
+    "macro_ast_sha256": null,
+    "reason": "Borrowed original-model lookup and ownership support for compact-live-compilation and typed-live-fixture-expansion. Lookup stays inside the selected component; retained EssIr type authority is not replaced by exported names."
+  },
+  "ess_conformance::lib(ess_conformance)::models::impl<Models < 'a >;>::view": {
+    "class": "OwnedHelper",
+    "macro_ast_sha256": null,
+    "reason": "Borrowed original-model lookup and ownership support for compact-live-compilation and typed-live-fixture-expansion. Lookup stays inside the selected component; retained EssIr type authority is not replaced by exported names."
+  },
+  "ess_conformance::lib(ess_conformance)::models::impl<Owned < 'a , ResolvedCommand >;>::types": {
+    "class": "OwnedHelper",
+    "macro_ast_sha256": null,
+    "reason": "Borrowed original-model lookup and ownership support for compact-live-compilation and typed-live-fixture-expansion. Lookup stays inside the selected component; retained EssIr type authority is not replaced by exported names."
+  },
+  "ess_conformance::lib(ess_conformance)::models::impl<Owned < 'a , ResolvedEntity >;>::types": {
+    "class": "OwnedHelper",
+    "macro_ast_sha256": null,
+    "reason": "Borrowed original-model lookup and ownership support for compact-live-compilation and typed-live-fixture-expansion. Lookup stays inside the selected component; retained EssIr type authority is not replaced by exported names."
+  },
+  "ess_conformance::lib(ess_conformance)::models::impl<Owned < 'a , ResolvedEvent >;>::types": {
+    "class": "OwnedHelper",
+    "macro_ast_sha256": null,
+    "reason": "Borrowed original-model lookup and ownership support for compact-live-compilation and typed-live-fixture-expansion. Lookup stays inside the selected component; retained EssIr type authority is not replaced by exported names."
+  },
+  "ess_conformance::lib(ess_conformance)::models::impl<Owned < 'a , ResolvedView >;>::types": {
+    "class": "OwnedHelper",
+    "macro_ast_sha256": null,
+    "reason": "Borrowed original-model lookup and ownership support for compact-live-compilation and typed-live-fixture-expansion. Lookup stays inside the selected component; retained EssIr type authority is not replaced by exported names."
+  },
+  "ess_conformance::lib(ess_conformance)::models::impl<Owned < 'a , T >;>::declaration": {
+    "class": "OwnedHelper",
+    "macro_ast_sha256": null,
+    "reason": "Borrowed original-model lookup and ownership support for compact-live-compilation and typed-live-fixture-expansion. Lookup stays inside the selected component; retained EssIr type authority is not replaced by exported names."
+  },
+  "ess_conformance::lib(ess_conformance)::models::impl<Owned < 'a , T >;>::field_types": {
+    "class": "OwnedHelper",
+    "macro_ast_sha256": null,
+    "reason": "Borrowed original-model lookup and ownership support for compact-live-compilation and typed-live-fixture-expansion. Lookup stays inside the selected component; retained EssIr type authority is not replaced by exported names."
+  },
+  "ess_conformance::lib(ess_conformance)::models::impl<Owned < 'a , T >;>::model": {
+    "class": "OwnedHelper",
+    "macro_ast_sha256": null,
+    "reason": "Borrowed original-model lookup and ownership support for compact-live-compilation and typed-live-fixture-expansion. Lookup stays inside the selected component; retained EssIr type authority is not replaced by exported names."
+  },
+  "ess_conformance::lib(ess_conformance)::models::module": {
+    "class": "OwnedHelper",
+    "macro_ast_sha256": null,
+    "reason": "Borrowed original-model lookup and ownership support for compact-live-compilation and typed-live-fixture-expansion. Lookup stays inside the selected component; retained EssIr type authority is not replaced by exported names."
+  },
+  "ess_conformance::lib(ess_conformance)::models::struct::Models": {
+    "class": "OwnedHelper",
+    "macro_ast_sha256": null,
+    "reason": "Borrowed original-model lookup and ownership support for compact-live-compilation and typed-live-fixture-expansion. Lookup stays inside the selected component; retained EssIr type authority is not replaced by exported names."
+  },
+  "ess_conformance::lib(ess_conformance)::models::struct::Owned": {
+    "class": "OwnedHelper",
+    "macro_ast_sha256": null,
+    "reason": "Borrowed original-model lookup and ownership support for compact-live-compilation and typed-live-fixture-expansion. Lookup stays inside the selected component; retained EssIr type authority is not replaced by exported names."
+  },
   "ess_conformance::lib(ess_conformance)::module": {
     "class": "OwnedHelper",
     "macro_ast_sha256": null,
@@ -12691,6 +13161,161 @@
     "class": "OwnedHelper",
     "macro_ast_sha256": null,
     "reason": "Concrete owned data/API declaration retained alongside the named behavioral callers. Its presence is not a behavior case and does not prove nonreachability."
+  },
+  "ess_conformance::lib(ess_conformance)::recipes::const::FORMAT": {
+    "class": "OwnedHelper",
+    "macro_ast_sha256": null,
+    "reason": "Setup-only recipe grammar, dependency traversal and typed expansion support for typed-live-fixture-expansion and compact-live-compilation. No assertion evaluator or independent persisted suite is introduced."
+  },
+  "ess_conformance::lib(ess_conformance)::recipes::const::MAX_COMMANDS": {
+    "class": "OwnedHelper",
+    "macro_ast_sha256": null,
+    "reason": "Setup-only recipe grammar, dependency traversal and typed expansion support for typed-live-fixture-expansion and compact-live-compilation. No assertion evaluator or independent persisted suite is introduced."
+  },
+  "ess_conformance::lib(ess_conformance)::recipes::const::MAX_DEPTH": {
+    "class": "OwnedHelper",
+    "macro_ast_sha256": null,
+    "reason": "Setup-only recipe grammar, dependency traversal and typed expansion support for typed-live-fixture-expansion and compact-live-compilation. No assertion evaluator or independent persisted suite is introduced."
+  },
+  "ess_conformance::lib(ess_conformance)::recipes::enum::Bound": {
+    "class": "OwnedHelper",
+    "macro_ast_sha256": null,
+    "reason": "Setup-only recipe grammar, dependency traversal and typed expansion support for typed-live-fixture-expansion and compact-live-compilation. No assertion evaluator or independent persisted suite is introduced."
+  },
+  "ess_conformance::lib(ess_conformance)::recipes::enum::Bound/variant/Capture": {
+    "class": "OwnedHelper",
+    "macro_ast_sha256": null,
+    "reason": "Setup-only recipe grammar, dependency traversal and typed expansion support for typed-live-fixture-expansion and compact-live-compilation. No assertion evaluator or independent persisted suite is introduced."
+  },
+  "ess_conformance::lib(ess_conformance)::recipes::enum::Bound/variant/Literal": {
+    "class": "OwnedHelper",
+    "macro_ast_sha256": null,
+    "reason": "Setup-only recipe grammar, dependency traversal and typed expansion support for typed-live-fixture-expansion and compact-live-compilation. No assertion evaluator or independent persisted suite is introduced."
+  },
+  "ess_conformance::lib(ess_conformance)::recipes::enum::Step": {
+    "class": "OwnedHelper",
+    "macro_ast_sha256": null,
+    "reason": "Setup-only recipe grammar, dependency traversal and typed expansion support for typed-live-fixture-expansion and compact-live-compilation. No assertion evaluator or independent persisted suite is introduced."
+  },
+  "ess_conformance::lib(ess_conformance)::recipes::enum::Step/variant/Command": {
+    "class": "OwnedHelper",
+    "macro_ast_sha256": null,
+    "reason": "Setup-only recipe grammar, dependency traversal and typed expansion support for typed-live-fixture-expansion and compact-live-compilation. No assertion evaluator or independent persisted suite is introduced."
+  },
+  "ess_conformance::lib(ess_conformance)::recipes::enum::Step/variant/Use": {
+    "class": "OwnedHelper",
+    "macro_ast_sha256": null,
+    "reason": "Setup-only recipe grammar, dependency traversal and typed expansion support for typed-live-fixture-expansion and compact-live-compilation. No assertion evaluator or independent persisted suite is introduced."
+  },
+  "ess_conformance::lib(ess_conformance)::recipes::enum::Value": {
+    "class": "OwnedHelper",
+    "macro_ast_sha256": null,
+    "reason": "Setup-only recipe grammar, dependency traversal and typed expansion support for typed-live-fixture-expansion and compact-live-compilation. No assertion evaluator or independent persisted suite is introduced."
+  },
+  "ess_conformance::lib(ess_conformance)::recipes::enum::Value/variant/Capture": {
+    "class": "OwnedHelper",
+    "macro_ast_sha256": null,
+    "reason": "Setup-only recipe grammar, dependency traversal and typed expansion support for typed-live-fixture-expansion and compact-live-compilation. No assertion evaluator or independent persisted suite is introduced."
+  },
+  "ess_conformance::lib(ess_conformance)::recipes::enum::Value/variant/Literal": {
+    "class": "OwnedHelper",
+    "macro_ast_sha256": null,
+    "reason": "Setup-only recipe grammar, dependency traversal and typed expansion support for typed-live-fixture-expansion and compact-live-compilation. No assertion evaluator or independent persisted suite is introduced."
+  },
+  "ess_conformance::lib(ess_conformance)::recipes::enum::Value/variant/Parameter": {
+    "class": "OwnedHelper",
+    "macro_ast_sha256": null,
+    "reason": "Setup-only recipe grammar, dependency traversal and typed expansion support for typed-live-fixture-expansion and compact-live-compilation. No assertion evaluator or independent persisted suite is introduced."
+  },
+  "ess_conformance::lib(ess_conformance)::recipes::fn::check_value": {
+    "class": "OwnedHelper",
+    "macro_ast_sha256": null,
+    "reason": "Setup-only recipe grammar, dependency traversal and typed expansion support for typed-live-fixture-expansion and compact-live-compilation. No assertion evaluator or independent persisted suite is introduced."
+  },
+  "ess_conformance::lib(ess_conformance)::recipes::fn::resolve": {
+    "class": "OwnedHelper",
+    "macro_ast_sha256": null,
+    "reason": "Setup-only recipe grammar, dependency traversal and typed expansion support for typed-live-fixture-expansion and compact-live-compilation. No assertion evaluator or independent persisted suite is introduced."
+  },
+  "ess_conformance::lib(ess_conformance)::recipes::impl<Library;>::expand": {
+    "class": "BoundEntry",
+    "macro_ast_sha256": null,
+    "reason": "Exact public entry bound to typed-live-fixture-expansion. Behavioral evidence is attributed only through that bounded profile."
+  },
+  "ess_conformance::lib(ess_conformance)::recipes::impl<Library;>::expand_into": {
+    "class": "OwnedHelper",
+    "macro_ast_sha256": null,
+    "reason": "Setup-only recipe grammar, dependency traversal and typed expansion support for typed-live-fixture-expansion and compact-live-compilation. No assertion evaluator or independent persisted suite is introduced."
+  },
+  "ess_conformance::lib(ess_conformance)::recipes::impl<Library;>::expand_with_bindings": {
+    "class": "OwnedHelper",
+    "macro_ast_sha256": null,
+    "reason": "Setup-only recipe grammar, dependency traversal and typed expansion support for typed-live-fixture-expansion and compact-live-compilation. No assertion evaluator or independent persisted suite is introduced."
+  },
+  "ess_conformance::lib(ess_conformance)::recipes::impl<Library;>::parse": {
+    "class": "OwnedHelper",
+    "macro_ast_sha256": null,
+    "reason": "Setup-only recipe grammar, dependency traversal and typed expansion support for typed-live-fixture-expansion and compact-live-compilation. No assertion evaluator or independent persisted suite is introduced."
+  },
+  "ess_conformance::lib(ess_conformance)::recipes::impl<Library;>::sources": {
+    "class": "OwnedHelper",
+    "macro_ast_sha256": null,
+    "reason": "Setup-only recipe grammar, dependency traversal and typed expansion support for typed-live-fixture-expansion and compact-live-compilation. No assertion evaluator or independent persisted suite is introduced."
+  },
+  "ess_conformance::lib(ess_conformance)::recipes::impl<Library;>::visit": {
+    "class": "OwnedHelper",
+    "macro_ast_sha256": null,
+    "reason": "Setup-only recipe grammar, dependency traversal and typed expansion support for typed-live-fixture-expansion and compact-live-compilation. No assertion evaluator or independent persisted suite is introduced."
+  },
+  "ess_conformance::lib(ess_conformance)::recipes::impl<Value;serde :: Deserialize < 'de >>::deserialize": {
+    "class": "OwnedHelper",
+    "macro_ast_sha256": null,
+    "reason": "Setup-only recipe grammar, dependency traversal and typed expansion support for typed-live-fixture-expansion and compact-live-compilation. No assertion evaluator or independent persisted suite is introduced."
+  },
+  "ess_conformance::lib(ess_conformance)::recipes::module": {
+    "class": "OwnedHelper",
+    "macro_ast_sha256": null,
+    "reason": "Setup-only recipe grammar, dependency traversal and typed expansion support for typed-live-fixture-expansion and compact-live-compilation. No assertion evaluator or independent persisted suite is introduced."
+  },
+  "ess_conformance::lib(ess_conformance)::recipes::struct::Capture": {
+    "class": "OwnedHelper",
+    "macro_ast_sha256": null,
+    "reason": "Setup-only recipe grammar, dependency traversal and typed expansion support for typed-live-fixture-expansion and compact-live-compilation. No assertion evaluator or independent persisted suite is introduced."
+  },
+  "ess_conformance::lib(ess_conformance)::recipes::struct::Document": {
+    "class": "OwnedHelper",
+    "macro_ast_sha256": null,
+    "reason": "Setup-only recipe grammar, dependency traversal and typed expansion support for typed-live-fixture-expansion and compact-live-compilation. No assertion evaluator or independent persisted suite is introduced."
+  },
+  "ess_conformance::lib(ess_conformance)::recipes::struct::Expansion": {
+    "class": "OwnedHelper",
+    "macro_ast_sha256": null,
+    "reason": "Setup-only recipe grammar, dependency traversal and typed expansion support for typed-live-fixture-expansion and compact-live-compilation. No assertion evaluator or independent persisted suite is introduced."
+  },
+  "ess_conformance::lib(ess_conformance)::recipes::struct::Invocation": {
+    "class": "OwnedHelper",
+    "macro_ast_sha256": null,
+    "reason": "Setup-only recipe grammar, dependency traversal and typed expansion support for typed-live-fixture-expansion and compact-live-compilation. No assertion evaluator or independent persisted suite is introduced."
+  },
+  "ess_conformance::lib(ess_conformance)::recipes::struct::Library": {
+    "class": "OwnedHelper",
+    "macro_ast_sha256": null,
+    "reason": "Setup-only recipe grammar, dependency traversal and typed expansion support for typed-live-fixture-expansion and compact-live-compilation. No assertion evaluator or independent persisted suite is introduced."
+  },
+  "ess_conformance::lib(ess_conformance)::recipes::struct::Location": {
+    "class": "OwnedHelper",
+    "macro_ast_sha256": null,
+    "reason": "Setup-only recipe grammar, dependency traversal and typed expansion support for typed-live-fixture-expansion and compact-live-compilation. No assertion evaluator or independent persisted suite is introduced."
+  },
+  "ess_conformance::lib(ess_conformance)::recipes::struct::Parameter": {
+    "class": "OwnedHelper",
+    "macro_ast_sha256": null,
+    "reason": "Setup-only recipe grammar, dependency traversal and typed expansion support for typed-live-fixture-expansion and compact-live-compilation. No assertion evaluator or independent persisted suite is introduced."
+  },
+  "ess_conformance::lib(ess_conformance)::recipes::struct::SourceIdentity": {
+    "class": "OwnedHelper",
+    "macro_ast_sha256": null,
+    "reason": "Setup-only recipe grammar, dependency traversal and typed expansion support for typed-live-fixture-expansion and compact-live-compilation. No assertion evaluator or independent persisted suite is introduced."
   },
   "ess_conformance::lib(ess_conformance)::reexport::AdmissionError": {
     "class": "OwnedHelper",
@@ -14327,6 +14952,11 @@
     "macro_ast_sha256": null,
     "reason": "Concrete owned implementation/helper entry within the bounded caller families. Complete body evidence remains visible and changes require ordinary behavioral review; this finite classification grants no independent support or nonreachability."
   },
+  "ess_conformance::lib(ess_conformance)::runner::fn::capture_response": {
+    "class": "OwnedHelper",
+    "macro_ast_sha256": null,
+    "reason": "Live step dispatch or cleanup-policy helper of the existing conformance-rust-runner boundary; it creates no separate model projection or blanket behavioral support."
+  },
   "ess_conformance::lib(ess_conformance)::runner::fn::check_periodic": {
     "class": "OwnedHelper",
     "macro_ast_sha256": null,
@@ -14629,6 +15259,11 @@
     "macro_ast_sha256": null,
     "reason": "Concrete owned implementation/helper entry within the bounded caller families. Complete body evidence remains visible and changes require ordinary behavioral review; this finite classification grants no independent support or nonreachability."
   },
+  "ess_conformance::lib(ess_conformance)::runner::impl<Runner < C >;>::check_live": {
+    "class": "OwnedHelper",
+    "macro_ast_sha256": null,
+    "reason": "Live step dispatch or cleanup-policy helper of the existing conformance-rust-runner boundary; it creates no separate model projection or blanket behavioral support."
+  },
   "ess_conformance::lib(ess_conformance)::runner::impl<Runner < C >;>::deadline": {
     "class": "OwnedHelper",
     "macro_ast_sha256": null,
@@ -14638,6 +15273,11 @@
     "class": "OwnedHelper",
     "macro_ast_sha256": null,
     "reason": "Concrete owned implementation/helper entry within the bounded caller families. Complete body evidence remains visible and changes require ordinary behavioral review; this finite classification grants no independent support or nonreachability."
+  },
+  "ess_conformance::lib(ess_conformance)::runner::impl<Runner < C >;>::eventually_matching_event": {
+    "class": "OwnedHelper",
+    "macro_ast_sha256": null,
+    "reason": "Live step dispatch or cleanup-policy helper of the existing conformance-rust-runner boundary; it creates no separate model projection or blanket behavioral support."
   },
   "ess_conformance::lib(ess_conformance)::runner::impl<Runner < C >;>::eventually_view": {
     "class": "OwnedHelper",
@@ -14688,6 +15328,11 @@
     "class": "OwnedHelper",
     "macro_ast_sha256": null,
     "reason": "Concrete owned implementation/helper entry within the bounded caller families. Complete body evidence remains visible and changes require ordinary behavioral review; this finite classification grants no independent support or nonreachability."
+  },
+  "ess_conformance::lib(ess_conformance)::runner::impl<Runner < C >;>::with_failed_setup_cleanup": {
+    "class": "OwnedHelper",
+    "macro_ast_sha256": null,
+    "reason": "Live step dispatch or cleanup-policy helper of the existing conformance-rust-runner boundary; it creates no separate model projection or blanket behavioral support."
   },
   "ess_conformance::lib(ess_conformance)::runner::impl<RunnerConfig;>::const::DEFAULT_EVENTUAL_TIMEOUT_MS": {
     "class": "OwnedHelper",
@@ -14882,6 +15527,16 @@
     "macro_ast_sha256": null,
     "reason": "Concrete owned data/API declaration retained alongside the named behavioral callers. Its presence is not a behavior case and does not prove nonreachability."
   },
+  "ess_conformance::lib(ess_conformance)::scenario::enum::ScenarioStep/variant/CaptureResponse": {
+    "class": "OwnedHelper",
+    "macro_ast_sha256": null,
+    "reason": "Native live step vocabulary consumed by existing admission, Rust-runner and Go-runner profiles; adding this variant does not transfer their old eligibility to changed declaration shapes."
+  },
+  "ess_conformance::lib(ess_conformance)::scenario::enum::ScenarioStep/variant/CheckLive": {
+    "class": "OwnedHelper",
+    "macro_ast_sha256": null,
+    "reason": "Native live step vocabulary consumed by existing admission, Rust-runner and Go-runner profiles; adding this variant does not transfer their old eligibility to changed declaration shapes."
+  },
   "ess_conformance::lib(ess_conformance)::scenario::enum::ScenarioStep/variant/CheckPeriodic": {
     "class": "OwnedHelper",
     "macro_ast_sha256": null,
@@ -14906,6 +15561,11 @@
     "class": "OwnedHelper",
     "macro_ast_sha256": null,
     "reason": "Concrete owned data/API declaration retained alongside the named behavioral callers. Its presence is not a behavior case and does not prove nonreachability."
+  },
+  "ess_conformance::lib(ess_conformance)::scenario::enum::ScenarioStep/variant/EventuallyMatchingEvent": {
+    "class": "OwnedHelper",
+    "macro_ast_sha256": null,
+    "reason": "Native live step vocabulary consumed by existing admission, Rust-runner and Go-runner profiles; adding this variant does not transfer their old eligibility to changed declaration shapes."
   },
   "ess_conformance::lib(ess_conformance)::scenario::enum::ScenarioStep/variant/EventuallyView": {
     "class": "OwnedHelper",
@@ -16782,10 +17442,20 @@
     "class": "OwnedHelper",
     "reason": "Abstract conformance target reports binding invocations; its default returns Unsupported. This exact declaration grants no behavioral support; execution remains attributed to separately bound consumer profiles."
   },
+  "ess_conformance::lib(ess_conformance)::target::trait::ConformanceTarget::fn::observe_occurrences": {
+    "class": "OwnedHelper",
+    "macro_ast_sha256": null,
+    "reason": "Observation callback on the existing conformance target contract. Supplies occurrences/watermarks to the native runner; target implementations do not supply verdicts."
+  },
   "ess_conformance::lib(ess_conformance)::target::trait::ConformanceTarget::fn::observe_periodic": {
     "class": "OwnedHelper",
     "macro_ast_sha256": null,
     "reason": "Concrete owned data/API declaration retained alongside the named behavioral callers. Its presence is not a behavior case and does not prove nonreachability."
+  },
+  "ess_conformance::lib(ess_conformance)::target::trait::ConformanceTarget::fn::open_observations": {
+    "class": "OwnedHelper",
+    "macro_ast_sha256": null,
+    "reason": "Observation callback on the existing conformance target contract. Supplies occurrences/watermarks to the native runner; target implementations do not supply verdicts."
   },
   "ess_conformance::lib(ess_conformance)::target::trait::ConformanceTarget::fn::open_periodic": {
     "class": "OwnedHelper",
@@ -16808,6 +17478,166 @@
     "class": "OwnedHelper",
     "macro_ast_sha256": null,
     "reason": "Concrete owned data/API declaration retained alongside the named behavioral callers. Its presence is not a behavior case and does not prove nonreachability."
+  },
+  "ess_conformance::lib(ess_conformance)::temporal::enum::Error": {
+    "class": "OwnedHelper",
+    "macro_ast_sha256": null,
+    "reason": "Occurrence-ledger/value-matcher primitive used by the native Rust runner. Consumes admitted events and actual occurrence batches, not EssIr source; completeness/cancellation/counterexample behavior is runner-owned."
+  },
+  "ess_conformance::lib(ess_conformance)::temporal::enum::Error/variant/Counterexample": {
+    "class": "OwnedHelper",
+    "macro_ast_sha256": null,
+    "reason": "Occurrence-ledger/value-matcher primitive used by the native Rust runner. Consumes admitted events and actual occurrence batches, not EssIr source; completeness/cancellation/counterexample behavior is runner-owned."
+  },
+  "ess_conformance::lib(ess_conformance)::temporal::enum::Error/variant/EmptyClaim": {
+    "class": "OwnedHelper",
+    "macro_ast_sha256": null,
+    "reason": "Occurrence-ledger/value-matcher primitive used by the native Rust runner. Consumes admitted events and actual occurrence batches, not EssIr source; completeness/cancellation/counterexample behavior is runner-owned."
+  },
+  "ess_conformance::lib(ess_conformance)::temporal::enum::Error/variant/FilteredClaim": {
+    "class": "OwnedHelper",
+    "macro_ast_sha256": null,
+    "reason": "Occurrence-ledger/value-matcher primitive used by the native Rust runner. Consumes admitted events and actual occurrence batches, not EssIr source; completeness/cancellation/counterexample behavior is runner-owned."
+  },
+  "ess_conformance::lib(ess_conformance)::temporal::enum::Error/variant/Incomplete": {
+    "class": "OwnedHelper",
+    "macro_ast_sha256": null,
+    "reason": "Occurrence-ledger/value-matcher primitive used by the native Rust runner. Consumes admitted events and actual occurrence batches, not EssIr source; completeness/cancellation/counterexample behavior is runner-owned."
+  },
+  "ess_conformance::lib(ess_conformance)::temporal::enum::Error/variant/InvalidWindow": {
+    "class": "OwnedHelper",
+    "macro_ast_sha256": null,
+    "reason": "Occurrence-ledger/value-matcher primitive used by the native Rust runner. Consumes admitted events and actual occurrence batches, not EssIr source; completeness/cancellation/counterexample behavior is runner-owned."
+  },
+  "ess_conformance::lib(ess_conformance)::temporal::enum::Error/variant/Order": {
+    "class": "OwnedHelper",
+    "macro_ast_sha256": null,
+    "reason": "Occurrence-ledger/value-matcher primitive used by the native Rust runner. Consumes admitted events and actual occurrence batches, not EssIr source; completeness/cancellation/counterexample behavior is runner-owned."
+  },
+  "ess_conformance::lib(ess_conformance)::temporal::enum::Error/variant/Unfinished": {
+    "class": "OwnedHelper",
+    "macro_ast_sha256": null,
+    "reason": "Occurrence-ledger/value-matcher primitive used by the native Rust runner. Consumes admitted events and actual occurrence batches, not EssIr source; completeness/cancellation/counterexample behavior is runner-owned."
+  },
+  "ess_conformance::lib(ess_conformance)::temporal::enum::Error/variant/UnknownAnchor": {
+    "class": "OwnedHelper",
+    "macro_ast_sha256": null,
+    "reason": "Occurrence-ledger/value-matcher primitive used by the native Rust runner. Consumes admitted events and actual occurrence batches, not EssIr source; completeness/cancellation/counterexample behavior is runner-owned."
+  },
+  "ess_conformance::lib(ess_conformance)::temporal::fn::overlapping_paths": {
+    "class": "OwnedHelper",
+    "macro_ast_sha256": null,
+    "reason": "Occurrence-ledger/value-matcher primitive used by the native Rust runner. Consumes admitted events and actual occurrence batches, not EssIr source; completeness/cancellation/counterexample behavior is runner-owned."
+  },
+  "ess_conformance::lib(ess_conformance)::temporal::fn::path_value": {
+    "class": "OwnedHelper",
+    "macro_ast_sha256": null,
+    "reason": "Occurrence-ledger/value-matcher primitive used by the native Rust runner. Consumes admitted events and actual occurrence batches, not EssIr source; completeness/cancellation/counterexample behavior is runner-owned."
+  },
+  "ess_conformance::lib(ess_conformance)::temporal::impl<Ledger;>::absent": {
+    "class": "OwnedHelper",
+    "macro_ast_sha256": null,
+    "reason": "Occurrence-ledger/value-matcher primitive used by the native Rust runner. Consumes admitted events and actual occurrence batches, not EssIr source; completeness/cancellation/counterexample behavior is runner-owned."
+  },
+  "ess_conformance::lib(ess_conformance)::temporal::impl<Ledger;>::accept": {
+    "class": "OwnedHelper",
+    "macro_ast_sha256": null,
+    "reason": "Occurrence-ledger/value-matcher primitive used by the native Rust runner. Consumes admitted events and actual occurrence batches, not EssIr source; completeness/cancellation/counterexample behavior is runner-owned."
+  },
+  "ess_conformance::lib(ess_conformance)::temporal::impl<Ledger;>::anchor": {
+    "class": "OwnedHelper",
+    "macro_ast_sha256": null,
+    "reason": "Occurrence-ledger/value-matcher primitive used by the native Rust runner. Consumes admitted events and actual occurrence batches, not EssIr source; completeness/cancellation/counterexample behavior is runner-owned."
+  },
+  "ess_conformance::lib(ess_conformance)::temporal::impl<Ledger;>::complete": {
+    "class": "OwnedHelper",
+    "macro_ast_sha256": null,
+    "reason": "Occurrence-ledger/value-matcher primitive used by the native Rust runner. Consumes admitted events and actual occurrence batches, not EssIr source; completeness/cancellation/counterexample behavior is runner-owned."
+  },
+  "ess_conformance::lib(ess_conformance)::temporal::impl<Ledger;>::complete_before_ms": {
+    "class": "OwnedHelper",
+    "macro_ast_sha256": null,
+    "reason": "Occurrence-ledger/value-matcher primitive used by the native Rust runner. Consumes admitted events and actual occurrence batches, not EssIr source; completeness/cancellation/counterexample behavior is runner-owned."
+  },
+  "ess_conformance::lib(ess_conformance)::temporal::impl<Ledger;>::cursor": {
+    "class": "OwnedHelper",
+    "macro_ast_sha256": null,
+    "reason": "Occurrence-ledger/value-matcher primitive used by the native Rust runner. Consumes admitted events and actual occurrence batches, not EssIr source; completeness/cancellation/counterexample behavior is runner-owned."
+  },
+  "ess_conformance::lib(ess_conformance)::temporal::impl<Ledger;>::end": {
+    "class": "OwnedHelper",
+    "macro_ast_sha256": null,
+    "reason": "Occurrence-ledger/value-matcher primitive used by the native Rust runner. Consumes admitted events and actual occurrence batches, not EssIr source; completeness/cancellation/counterexample behavior is runner-owned."
+  },
+  "ess_conformance::lib(ess_conformance)::temporal::impl<Ledger;>::find": {
+    "class": "OwnedHelper",
+    "macro_ast_sha256": null,
+    "reason": "Occurrence-ledger/value-matcher primitive used by the native Rust runner. Consumes admitted events and actual occurrence batches, not EssIr source; completeness/cancellation/counterexample behavior is runner-owned."
+  },
+  "ess_conformance::lib(ess_conformance)::temporal::impl<Ledger;>::healthy": {
+    "class": "OwnedHelper",
+    "macro_ast_sha256": null,
+    "reason": "Occurrence-ledger/value-matcher primitive used by the native Rust runner. Consumes admitted events and actual occurrence batches, not EssIr source; completeness/cancellation/counterexample behavior is runner-owned."
+  },
+  "ess_conformance::lib(ess_conformance)::temporal::impl<Ledger;>::invalidate": {
+    "class": "OwnedHelper",
+    "macro_ast_sha256": null,
+    "reason": "Occurrence-ledger/value-matcher primitive used by the native Rust runner. Consumes admitted events and actual occurrence batches, not EssIr source; completeness/cancellation/counterexample behavior is runner-owned."
+  },
+  "ess_conformance::lib(ess_conformance)::temporal::impl<Ledger;>::new": {
+    "class": "OwnedHelper",
+    "macro_ast_sha256": null,
+    "reason": "Occurrence-ledger/value-matcher primitive used by the native Rust runner. Consumes admitted events and actual occurrence batches, not EssIr source; completeness/cancellation/counterexample behavior is runner-owned."
+  },
+  "ess_conformance::lib(ess_conformance)::temporal::impl<Ledger;>::ordered": {
+    "class": "OwnedHelper",
+    "macro_ast_sha256": null,
+    "reason": "Occurrence-ledger/value-matcher primitive used by the native Rust runner. Consumes admitted events and actual occurrence batches, not EssIr source; completeness/cancellation/counterexample behavior is runner-owned."
+  },
+  "ess_conformance::lib(ess_conformance)::temporal::impl<Ledger;>::quiet": {
+    "class": "OwnedHelper",
+    "macro_ast_sha256": null,
+    "reason": "Occurrence-ledger/value-matcher primitive used by the native Rust runner. Consumes admitted events and actual occurrence batches, not EssIr source; completeness/cancellation/counterexample behavior is runner-owned."
+  },
+  "ess_conformance::lib(ess_conformance)::temporal::impl<Ledger;>::stable": {
+    "class": "OwnedHelper",
+    "macro_ast_sha256": null,
+    "reason": "Occurrence-ledger/value-matcher primitive used by the native Rust runner. Consumes admitted events and actual occurrence batches, not EssIr source; completeness/cancellation/counterexample behavior is runner-owned."
+  },
+  "ess_conformance::lib(ess_conformance)::temporal::impl<Ledger;>::validate": {
+    "class": "OwnedHelper",
+    "macro_ast_sha256": null,
+    "reason": "Occurrence-ledger/value-matcher primitive used by the native Rust runner. Consumes admitted events and actual occurrence batches, not EssIr source; completeness/cancellation/counterexample behavior is runner-owned."
+  },
+  "ess_conformance::lib(ess_conformance)::temporal::impl<Matcher;>::matches": {
+    "class": "OwnedHelper",
+    "macro_ast_sha256": null,
+    "reason": "Occurrence-ledger/value-matcher primitive used by the native Rust runner. Consumes admitted events and actual occurrence batches, not EssIr source; completeness/cancellation/counterexample behavior is runner-owned."
+  },
+  "ess_conformance::lib(ess_conformance)::temporal::module": {
+    "class": "OwnedHelper",
+    "macro_ast_sha256": null,
+    "reason": "Occurrence-ledger/value-matcher primitive used by the native Rust runner. Consumes admitted events and actual occurrence batches, not EssIr source; completeness/cancellation/counterexample behavior is runner-owned."
+  },
+  "ess_conformance::lib(ess_conformance)::temporal::struct::Batch": {
+    "class": "OwnedHelper",
+    "macro_ast_sha256": null,
+    "reason": "Occurrence-ledger/value-matcher primitive used by the native Rust runner. Consumes admitted events and actual occurrence batches, not EssIr source; completeness/cancellation/counterexample behavior is runner-owned."
+  },
+  "ess_conformance::lib(ess_conformance)::temporal::struct::Ledger": {
+    "class": "OwnedHelper",
+    "macro_ast_sha256": null,
+    "reason": "Occurrence-ledger/value-matcher primitive used by the native Rust runner. Consumes admitted events and actual occurrence batches, not EssIr source; completeness/cancellation/counterexample behavior is runner-owned."
+  },
+  "ess_conformance::lib(ess_conformance)::temporal::struct::Matcher": {
+    "class": "OwnedHelper",
+    "macro_ast_sha256": null,
+    "reason": "Occurrence-ledger/value-matcher primitive used by the native Rust runner. Consumes admitted events and actual occurrence batches, not EssIr source; completeness/cancellation/counterexample behavior is runner-owned."
+  },
+  "ess_conformance::lib(ess_conformance)::temporal::struct::Occurrence": {
+    "class": "OwnedHelper",
+    "macro_ast_sha256": null,
+    "reason": "Occurrence-ledger/value-matcher primitive used by the native Rust runner. Consumes admitted events and actual occurrence batches, not EssIr source; completeness/cancellation/counterexample behavior is runner-owned."
   },
   "ess_conformance::lib(ess_conformance)::web::const::INDEX": {
     "class": "OwnedHelper",
@@ -24453,6 +25283,11 @@
     "class": "OwnedHelper",
     "macro_ast_sha256": null,
     "reason": "Concrete owned implementation/helper entry within the bounded caller families. Complete body evidence remains visible and changes require ordinary behavioral review; this finite classification grants no independent support or nonreachability."
+  },
+  "ess_domain::lib(ess_domain)::name::impl<Naming;>::code": {
+    "class": "OwnedHelper",
+    "macro_ast_sha256": null,
+    "reason": "Naming::code reads the existing optional code_name override. Used by model-consuming projections; this accessor alone claims no target naming behavior."
   },
   "ess_domain::lib(ess_domain)::name::impl<Naming;>::display_or": {
     "class": "OwnedHelper",
@@ -33052,7 +33887,12 @@
   "ess_synth::lib(ess_synth)::alias::fn::code_aliases": {
     "class": "OwnedHelper",
     "macro_ast_sha256": null,
-    "reason": "Collects the `naming: { code: … }` identifiers authored declarations carry, for the already-bound Rust and Go synthesis consumers. One reader so the two targets cannot disagree about a name an author wrote; its classification grants no independent support or nonreachability."
+    "reason": "Collects the `naming: { code: \u2026 }` identifiers authored declarations carry, for the already-bound Rust and Go synthesis consumers. One reader so the two targets cannot disagree about a name an author wrote; its classification grants no independent support or nonreachability."
+  },
+  "ess_synth::lib(ess_synth)::alias::module": {
+    "class": "OwnedHelper",
+    "macro_ast_sha256": null,
+    "reason": "Code-alias collection/re-export shared by existing Rust, Go, Web and Clap synthesis profiles. Actual target declaration naming remains each target profile obligation."
   },
   "ess_synth::lib(ess_synth)::clap::const::TARGET": {
     "class": "OwnedHelper",
@@ -35393,6 +36233,11 @@
     "class": "OwnedHelper",
     "macro_ast_sha256": null,
     "reason": "Concrete public re-export declaration with explicit exported identity, target/alias and declaration shape. New aliases require a new finite classification; no whole call graph or behavior support is inferred."
+  },
+  "ess_synth::lib(ess_synth)::reexport::code_aliases": {
+    "class": "OwnedHelper",
+    "macro_ast_sha256": null,
+    "reason": "Code-alias collection/re-export shared by existing Rust, Go, Web and Clap synthesis profiles. Actual target declaration naming remains each target profile obligation."
   },
   "ess_synth::lib(ess_synth)::rust::accessor::fn::borrowed": {
     "class": "OwnedHelper",

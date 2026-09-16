@@ -70,9 +70,13 @@ then:
 ";
 
 fn model() -> EssIr {
+    model_with_domain(DOMAIN)
+}
+
+fn model_with_domain(domain: &str) -> EssIr {
     let files = [
         ("system.yaml", "format: ess/4\nsystem: fixture\nversion: v1\ndomains: [fixture.routing]\n"),
-        ("routing.yaml", DOMAIN),
+        ("routing.yaml", domain),
         ("components.yaml", "components:\n  - component: fixture\n    owns: {domains: [fixture.routing]}\n    accepts: {commands: [fixture.routing.Create]}\n    publishes: {events: [fixture.routing.Created, fixture.routing.Changed]}\n"),
     ];
     let spec = Specification::assemble(
@@ -80,6 +84,41 @@ fn model() -> EssIr {
     )
     .unwrap();
     compile(&spec, &SourceMap::new()).unwrap()
+}
+
+#[test]
+fn original_enum_variants_control_compact_payload_admission() {
+    let compile_source = |ir: &EssIr, source: &str| {
+        let key = ServiceKey::new("fixture").unwrap();
+        let composition = CompositionSpec::new(
+            "live".parse().unwrap(),
+            vec![ServiceImportSpec::of(
+                key.clone(),
+                "fixture".parse().unwrap(),
+                ir,
+            )],
+            vec![],
+        );
+        let models = Models::compile(&composition, &[(key, ir)]).unwrap();
+        let library = Library::parse(&[Source::new("participant.yaml", RECIPE)]).unwrap();
+        compact::compile(&models, &library, &[Source::new("routing.yaml", source)])
+    };
+    let original = model();
+    let changed = model_with_domain(&DOMAIN.replace("[queued, bridged]", "[queued, connected]"));
+    assert_ne!(original.to_canonical_json(), changed.to_canonical_json());
+    let accepted = compile_source(&original, SCENARIO).unwrap();
+    let refusal = compile_source(&changed, SCENARIO).unwrap_err();
+    assert!(
+        refusal.contains("fixture.routing.Changed: literal violates item.state"),
+        "{refusal}"
+    );
+    let repaired = compile_source(
+        &changed,
+        &SCENARIO.replace("item.state: bridged", "item.state: connected"),
+    )
+    .unwrap();
+    assert_ne!(accepted.manifest, repaired.manifest);
+    assert_ne!(accepted.input.document(), repaired.input.document());
 }
 
 #[test]
