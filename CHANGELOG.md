@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [0.25.0] — 2026-09-16
+
 ### Added
 
 - `naming: { code: … }` names the identifier a code emitter spells a declaration as. A
