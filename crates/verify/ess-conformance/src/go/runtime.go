@@ -1579,6 +1579,10 @@ func Run(t *testing.T, newTarget func() Target) {
 
 	harness := NewHarness(suite.Provenance.System)
 	results := make([]scenarioResult, 0, len(ids))
+	// How many scenarios actually ran to a conclusion. `-run` filtering skips a subtest's body
+	// entirely, so its `status` keeps the optimistic default and no defer corrects it; counting
+	// terminations is the only way to tell a run that answered from one that was never asked.
+	terminated := 0
 	for _, id := range ids {
 		scenario := suite.Scenarios[id]
 		// Read after the subtest, not returned from it: Skipf and Fatalf leave through Goexit,
@@ -1607,14 +1611,17 @@ func Run(t *testing.T, newTarget func() Target) {
 			run.execute(id, scenario)
 			returned = true
 		})
+		if terminal {
+			terminated++
+		}
 		if config.version == "1" || terminal {
 			results = append(results, scenarioResult{id: id, status: status})
 		}
 	}
 	if config.version == "2" {
-		writeCountReport(t, suite, identity, results, config.strict)
+		writeCountReport(t, suite, identity, results, terminated, config.strict)
 	} else {
-		writeReport(t, suite, identity, results)
+		writeReport(t, suite, identity, results, terminated)
 	}
 }
 
@@ -1659,10 +1666,37 @@ type report struct {
 // An environment variable rather than a flag, because `go test` owns the flags and a generated
 // package cannot add one without every adopter's test binary learning it. The clock is read here,
 // once, at the edge: the one place in this file that knows what time it is.
-func writeReport(t *testing.T, suite Suite, identity Identity, results []scenarioResult) {
+// accountForEveryScenario refuses a report for a run that did not reach every scenario the suite
+// holds.
+//
+// `-run` filtering is the ordinary way this happens, and it used to produce a document claiming the
+// scenarios that never ran had PASSED — measured on an adopter's suite/4: one selected scenario,
+// `go test` exit 0, and a report/1 asserting `"status": "passed"`, `"scenarios_total": 112`,
+// `"scenarios_failed": 0`, with the 61 that normally skip recorded as passes. That document is the
+// one an adopter's own instructions say to trust instead of the exit code.
+//
+// Filtering without asking for a document is unaffected: no `ESS_REPORT_OUT`, no document, nothing
+// to be wrong. This refuses only the combination of a partial run and a request to publish it.
+func accountForEveryScenario(suite Suite, terminated int) error {
+	held := len(suite.Scenarios)
+	if terminated == held {
+		return nil
+	}
+	return fmt.Errorf(
+		"incomplete execution: %d of %d scenarios reached a conclusion, so this run cannot say what "+
+			"the other %d came to. A `-run` filter is the usual cause — drop it to publish a document, "+
+			"or unset ESS_REPORT_OUT to filter without publishing one",
+		terminated, held, held-terminated)
+}
+
+func writeReport(t *testing.T, suite Suite, identity Identity, results []scenarioResult, terminated int) {
 	t.Helper()
 	path := os.Getenv("ESS_REPORT_OUT")
 	if path == "" {
+		return
+	}
+	if err := accountForEveryScenario(suite, terminated); err != nil {
+		t.Errorf("report/1 refused: %v", err)
 		return
 	}
 
@@ -4020,8 +4054,11 @@ func countDocument(suite Suite, identity Identity, results []scenarioResult, now
 		counts[result.status]++
 		outcomes[result.status] = append(outcomes[result.status], result.id)
 	}
+	// Retained as a second line of defence: `writeCountReport` refuses an incomplete run before
+	// reaching here, so this fires only if a caller builds a document by another route.
 	if len(seen) != len(suite.Scenarios) {
-		return nil, fmt.Errorf("incomplete execution: selected subtests omitted or did not terminate")
+		return nil, fmt.Errorf(
+			"incomplete execution: %d of %d scenarios accounted for", len(seen), len(suite.Scenarios))
 	}
 	for _, ids := range outcomes {
 		sort.Strings(ids)
@@ -4052,8 +4089,12 @@ func countDocument(suite Suite, identity Identity, results []scenarioResult, now
 		"execution_status": execution, "conformance_status": conformance, "counts": counts, "outcomes": outcomes, "coverage": coverage, "policy": "complete-selection/1", "completed_at": uint64(now),
 	}, nil
 }
-func writeCountReport(t *testing.T, suite Suite, identity Identity, results []scenarioResult, strict bool) {
+func writeCountReport(t *testing.T, suite Suite, identity Identity, results []scenarioResult, terminated int, strict bool) {
 	t.Helper()
+	if err := accountForEveryScenario(suite, terminated); err != nil {
+		t.Errorf("report/2 refused: %v", err)
+		return
+	}
 	document, err := countDocument(suite, identity, results, countReportNow())
 	if err != nil {
 		t.Errorf("report/2 refused: %v", err)

@@ -1201,6 +1201,51 @@ fn assert_count_suite_refusals(directory: &Path, marker: &Path, destination: &Pa
 /// adopter had to patch the generated file to learn anything. Measured on one run: 41 skips, three
 /// distinct reasons, one message. Asserting the sentence is what stops the next refactor dropping it
 /// again.
+/// A filtered run does not publish a report/1 claiming the scenarios it never ran passed.
+///
+/// It used to. `-run` skips a subtest's body, so its status kept the optimistic default and report/1
+/// recorded it anyway — measured on an adopter's suite/4: one selected scenario, `go test` exit 0,
+/// and a document asserting `"status": "passed"`, `"scenarios_total": 112`, `"scenarios_failed": 0`,
+/// with the 61 that normally skip counted as passes. That is the document an adopter's own
+/// instructions say to trust instead of the exit code.
+///
+/// Filtering without asking for a document stays fine: no destination, no document, nothing to be
+/// wrong. Only publishing a partial run is refused.
+#[test]
+fn a_filtered_run_publishes_no_report_claiming_the_scenarios_it_skipped_passed() {
+    let directory = count_module("filtered-v1");
+    let destination = directory.join("filtered.json");
+    let output = invoke_count(
+        &directory,
+        "filtered-v1",
+        &[("ESS_REPORT_OUT", destination.to_str().unwrap())],
+        "^TestCount$/omitted",
+    );
+    let log = format!(
+        "{}{}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert!(
+        !destination.exists(),
+        "a partial run published a document: {log}"
+    );
+    assert!(!output.status.success(), "a refused report passed: {log}");
+    assert!(
+        log.contains("report/1 refused") && log.contains("of 1 scenarios reached a conclusion"),
+        "the refusal did not say what was missing: {log}"
+    );
+
+    // The same filter without a destination is not an error: nothing was claimed.
+    let quiet = invoke_count(&directory, "filtered-v1-quiet", &[], "^TestCount$/omitted");
+    assert!(
+        quiet.status.success(),
+        "filtering without publishing was refused: {}{}",
+        String::from_utf8_lossy(&quiet.stdout),
+        String::from_utf8_lossy(&quiet.stderr)
+    );
+}
+
 #[test]
 fn a_skip_reports_the_reason_the_target_gave() {
     let directory = count_module("skip-reason");

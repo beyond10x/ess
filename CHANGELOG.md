@@ -18,6 +18,27 @@
   field: `failed_scenarios` is a list of strings and `evidence.rs:99-104` reads everything after the
   first space as the scenario identity, so appending a reason would corrupt that field for every
   reader. Filed as `story:a-report-says-why-a-scenario-was-skipped` rather than forced into a format
+
+- **A filtered run published a report claiming the scenarios it never ran had passed.** `-run` skips
+  a subtest's body, so its status kept the optimistic default set before `t.Run` and report/1
+  recorded it anyway. Measured on an adopter's suite/4: **one** selected scenario, `go test` exit
+  **0**, and a document asserting `"status": "passed"`, `"scenarios_total": 112`,
+  `"scenarios_failed": 0` — with the 61 that normally skip counted as passes. That is the document an
+  adopter's own instructions say to trust *instead of* the exit code.
+
+  Both formats now refuse a run that did not reach every scenario the suite holds, and say what is
+  missing and what to do:
+
+      report/1 refused: incomplete execution: 1 of 99 scenarios reached a conclusion, so this
+      run cannot say what the other 98 came to. A `-run` filter is the usual cause — drop it to
+      publish a document, or unset ESS_REPORT_OUT to filter without publishing one
+
+  report/2 already refused, via `countDocument`, but said only "selected subtests omitted or did not
+  terminate" — neither the counts nor the remedy. Both now share one check.
+
+  Filtering without asking for a document is unaffected: no `ESS_REPORT_OUT`, no document, nothing to
+  be wrong. An unfiltered run is unchanged — verified on the same consumer: `inconclusive`, 99 total,
+  59 not passed.
   with no room for it.
 
 
