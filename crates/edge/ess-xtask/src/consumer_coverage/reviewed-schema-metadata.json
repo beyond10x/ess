@@ -36,7 +36,7 @@
     },
     {
       "model": "wire:RawSpecFile#/definitions",
-      "shape": "615be694111083d6c5df1223eaa291403d0bf4d8bac0c2e389678a66f3db4233",
+      "shape": "0f325bab1d5d1a5653f9febf5fa7727e4023ddcf9c09bb0c1efde77da5ad467c",
       "consumer": "cli-binding-resolution",
       "profile": "d6053254374dbef8a24773e7a01869c0f0c5fc6f3ffb0c6dac06a87c6a13f974",
       "relationship": "RootDefinitionsContainer",
@@ -47,7 +47,7 @@
     },
     {
       "model": "wire:RawSpecFile#/definitions",
-      "shape": "615be694111083d6c5df1223eaa291403d0bf4d8bac0c2e389678a66f3db4233",
+      "shape": "0f325bab1d5d1a5653f9febf5fa7727e4023ddcf9c09bb0c1efde77da5ad467c",
       "consumer": "cli-binding-rust-emission",
       "profile": "6586c839bd5f66210652d1b21a80e81de557dc851972916dd5a0a07e85012579",
       "relationship": "RootDefinitionsContainer",
@@ -58,7 +58,7 @@
     },
     {
       "model": "wire:RawSpecFile#/definitions",
-      "shape": "615be694111083d6c5df1223eaa291403d0bf4d8bac0c2e389678a66f3db4233",
+      "shape": "0f325bab1d5d1a5653f9febf5fa7727e4023ddcf9c09bb0c1efde77da5ad467c",
       "consumer": "cli-binding-process-execution",
       "profile": "27ada91bfca1d41a4e5b917f68344b284cc5f54297235c535ec9fc507ec0878e",
       "relationship": "RootDefinitionsContainer",
