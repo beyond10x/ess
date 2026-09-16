@@ -2,6 +2,31 @@
 
 ## [Unreleased]
 
+### Added
+
+- **A branch may say the field it owns holds nothing: `sets: {field: {cleared: true}}`.** `sets:`
+  admitted `input.<field>` or a literal, and neither can say "absent". The three ways to write it
+  before this, measured on an adopter's model:
+
+  | written | what happened |
+  |---|---|
+  | nothing | the field kept what an earlier act determined, so the suite required the old value |
+  | `metrics: none` | compiled, then dropped by synthesis — a literal is not read as the field's type |
+  | `lane_id: ""` | an empty string, which is a different reading from absent, and impossible for a struct |
+
+  The first cost that adopter a red scenario in one run of three: its `dispose` branch clears a lead
+  and an asynchronous backend read sometimes put it back before the assertion.
+
+  Two rules, and each is about a place rather than a value. The field's type must be `Optional<…>` —
+  a required field cannot hold nothing, and a specification saying it can is wrong rather than
+  surprising. And it is an **entity** source: refused on an event payload, because an event field the
+  emitter does not determine is one the outcome does not list, which is what `PayloadSource` already
+  calls undetermined.
+
+  Synthesis **asserts** it rather than abstaining: the scenario reads the view and requires the field
+  empty, so a target that leaves the old value fails. That is the difference from every other source
+  this could have been modelled as.
+
 ### Fixed
 
 - **A suite required a field at the value an earlier act supplied, after a later act overwrote it.**

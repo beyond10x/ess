@@ -646,6 +646,22 @@ pub enum PayloadSource {
         /// The value, as written.
         value: String,
     },
+    /// The branch leaves this field holding NOTHING: `{cleared: true}`.
+    ///
+    /// An entity source only, and refused on an event payload — an event field the emitter has no
+    /// value for is a field the outcome does not list, which is what "undetermined" above already
+    /// means. On a `sets:` entry it is the one thing a literal cannot say: `Optional<Lead>` has no
+    /// text form for "absent", and writing one (`lead: none`) types as the string `none` for a
+    /// String-backed target and is admitted unchecked for every other.
+    ///
+    /// It exists because the alternatives were all wrong. An adopter's `leave` branch ends a
+    /// campaign membership and its `dispose` branch finishes with a lead; saying nothing left the
+    /// suite requiring the value an earlier act determined, `lead: ""` typed as an empty string
+    /// rather than an absence and is impossible for a struct, and `lead: none` compiled and was
+    /// then dropped without a diagnostic. Refused on a field whose type is not `Optional<…>`,
+    /// because a required field cannot hold nothing and a specification that says it can is wrong
+    /// rather than surprising.
+    Cleared,
 }
 
 impl PayloadSource {
@@ -673,6 +689,7 @@ impl fmt::Display for PayloadSource {
             Self::Literal { value } => f.write_str(value),
             Self::ResponseField { field } => write!(f, "response field `{field}`"),
             Self::Generated => f.write_str("implementation-generated"),
+            Self::Cleared => f.write_str("cleared"),
         }
     }
 }
@@ -704,7 +721,9 @@ impl<'de> serde::Deserialize<'de> for RawPayloadSource {
             type Value = RawPayloadSource;
 
             fn expecting(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-                f.write_str("a string, `{response: <field>}`, or `{generated: true}`")
+                f.write_str(
+                    "a string, `{response: <field>}`, `{generated: true}`, or `{cleared: true}`",
+                )
             }
 
             fn visit_str<E: serde::de::Error>(self, value: &str) -> Result<Self::Value, E> {
@@ -732,6 +751,8 @@ struct ExplicitPayloadSource {
     response: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     generated: Option<bool>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    cleared: Option<bool>,
 }
 impl TryFrom<RawPayloadSource> for PayloadSource {
     type Error = &'static str;
@@ -741,14 +762,22 @@ impl TryFrom<RawPayloadSource> for PayloadSource {
             RawPayloadSource::Explicit(ExplicitPayloadSource {
                 response: Some(field),
                 generated: None,
+                cleared: None,
             }) if !field.is_empty() && !field.contains('.') => Ok(Self::ResponseField { field }),
             RawPayloadSource::Explicit(ExplicitPayloadSource {
                 response: None,
                 generated: Some(true),
+                cleared: None,
             }) => Ok(Self::Generated),
-            RawPayloadSource::Explicit(_) => {
-                Err("payload source requires exactly {response: field} or {generated: true}")
-            }
+            RawPayloadSource::Explicit(ExplicitPayloadSource {
+                response: None,
+                generated: None,
+                cleared: Some(true),
+            }) => Ok(Self::Cleared),
+            RawPayloadSource::Explicit(_) => Err(
+                "payload source requires exactly one of {response: field}, {generated: true} or \
+                 {cleared: true}",
+            ),
         }
     }
 }
@@ -758,10 +787,17 @@ impl From<&PayloadSource> for RawPayloadSource {
             PayloadSource::ResponseField { field } => Self::Explicit(ExplicitPayloadSource {
                 response: Some(field.clone()),
                 generated: None,
+                cleared: None,
             }),
             PayloadSource::Generated => Self::Explicit(ExplicitPayloadSource {
                 response: None,
                 generated: Some(true),
+                cleared: None,
+            }),
+            PayloadSource::Cleared => Self::Explicit(ExplicitPayloadSource {
+                response: None,
+                generated: None,
+                cleared: Some(true),
             }),
             _ => Self::Text(source.to_string()),
         }
@@ -1946,6 +1982,27 @@ fn check_payload_entry(
                 at, command, event, target, filled, value, resolved,
             ));
         }
+        PayloadSource::Cleared => {
+            // An entity source only. A payload says what the event CARRIES, and an event field the
+            // emitter has no value for is a field the outcome does not list — which `PayloadSource`'s
+            // own documentation calls undetermined, and which a synthesized suite already shows by
+            // asserting the field's presence and type and never its value. Admitting `cleared` here
+            // would be a second spelling of that, and the two would be free to disagree.
+            errors.push(
+                ValidationError::at(
+                    at.clone(),
+                    ValidationCode::UndeclaredReference,
+                    format!(
+                        "`{target}` is filled `{{cleared: true}}`, which says a field holds \
+                         nothing — an entity's field, not an event's"
+                    ),
+                )
+                .with_hint(
+                    "an event field the emitter does not determine is one this outcome does not \
+                     list; `{cleared: true}` belongs on a `sets:` entry over an `Optional<…>` field",
+                ),
+            );
+        }
     }
     errors
 }
@@ -2067,6 +2124,30 @@ pub fn validate_sets(
                     continue;
                 };
 
+                if matches!(source, PayloadSource::Cleared) {
+                    // The one `sets:` source with a rule of its own, and it is a rule about the
+                    // TARGET rather than about a value: a required field cannot hold nothing, so a
+                    // branch that says it can is wrong rather than surprising. Nothing else needs
+                    // checking — there is no value to type.
+                    if !held.type_ref.is_optional() {
+                        errors.push(
+                            ValidationError::new(
+                                ValidationCode::TypeMismatch,
+                                at,
+                                format!(
+                                    "`{}.{target}` holds `{}`, and `{{cleared: true}}` leaves a \
+                                     field with nothing in it",
+                                    entity.name, held.type_ref
+                                ),
+                            )
+                            .with_hint(format!(
+                                "make it `Optional<{}>`, or set a value instead",
+                                held.type_ref
+                            )),
+                        );
+                    }
+                    continue;
+                }
                 let PayloadSource::InputField { field } = source else {
                     // A literal is checked where a payload literal is, against the same rules; the
                     // entity side adds nothing a reader would learn twice.

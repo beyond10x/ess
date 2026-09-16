@@ -767,6 +767,10 @@ pub enum ResolvedPayloadValue {
         /// The value, as written.
         value: String,
     },
+    /// The branch leaves the field holding nothing. An entity field only, and `Optional<…>`:
+    /// `ess-domain` refuses it on an event payload and on a required field, so one that reaches
+    /// this IR was checked.
+    Cleared,
 }
 
 /// One event field an outcome determines, with both ends resolved.

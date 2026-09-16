@@ -937,6 +937,7 @@ fn written_payload(payload: &[ResolvedPayload]) -> Vec<String> {
                 ess_compiler::ir::ResolvedPayloadValue::Literal { value } => {
                     format!("literal `{value}`")
                 }
+                ess_compiler::ir::ResolvedPayloadValue::Cleared => "cleared".to_owned(),
             };
             let conversion = field
                 .conversion
@@ -1716,6 +1717,7 @@ fn written_sets(fields: &[ess_compiler::ir::ResolvedPayloadField]) -> Vec<String
                 ess_compiler::ir::ResolvedPayloadValue::Literal { value } => {
                     format!("literal `{value}`")
                 }
+                ess_compiler::ir::ResolvedPayloadValue::Cleared => "cleared".to_owned(),
             };
             let conversion = field
                 .conversion

@@ -1436,18 +1436,31 @@ fn sets_sentence(outcome: &ess_compiler::ir::ResolvedOutcome) -> Vec<Inline> {
             .sets
             .iter()
             .map(|field| {
-                let mut said = vec![
-                    Inline::code(field.target.clone()),
-                    Inline::text(" from "),
-                    Inline::code(match &field.value {
-                        ResolvedPayloadValue::InputField { field, .. } => format!("input.{field}"),
-                        ResolvedPayloadValue::Literal { value } => format!("\"{value}\""),
-                        ResolvedPayloadValue::ResponseField { field, .. } => {
-                            format!("response field `{field}`")
-                        }
-                        ResolvedPayloadValue::Generated => "implementation-generated".to_owned(),
-                    }),
-                ];
+                // `cleared` reads as a phrase rather than a source: "`lead` from `cleared`" would
+                // name a place the value came from, and there is no value.
+                let mut said = match &field.value {
+                    ResolvedPayloadValue::Cleared => vec![
+                        Inline::code(field.target.clone()),
+                        Inline::text(" cleared"),
+                    ],
+                    value => vec![
+                        Inline::code(field.target.clone()),
+                        Inline::text(" from "),
+                        Inline::code(match value {
+                            ResolvedPayloadValue::InputField { field, .. } => {
+                                format!("input.{field}")
+                            }
+                            ResolvedPayloadValue::Literal { value } => format!("\"{value}\""),
+                            ResolvedPayloadValue::ResponseField { field, .. } => {
+                                format!("response field `{field}`")
+                            }
+                            ResolvedPayloadValue::Generated => {
+                                "implementation-generated".to_owned()
+                            }
+                            ResolvedPayloadValue::Cleared => unreachable!("matched above"),
+                        }),
+                    ],
+                };
                 if let Some(because) = &field.conversion {
                     said.push(Inline::text(format!(", converted because {because}")));
                 }

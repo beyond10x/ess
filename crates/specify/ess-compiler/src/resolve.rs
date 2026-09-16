@@ -1923,6 +1923,12 @@ impl<'a> Resolver<'a> {
             PayloadSource::Generated => {
                 return Some(payload_constant(target, ResolvedPayloadValue::Generated))
             }
+            // No value to resolve and no type to check against one: what `{cleared: true}` needs
+            // checking is the TARGET's type, and `ess-domain::validate_sets` is where the entity is
+            // in hand to check it.
+            PayloadSource::Cleared => {
+                return Some(payload_constant(target, ResolvedPayloadValue::Cleared))
+            }
             PayloadSource::InputField { field } | PayloadSource::ResponseField { field } => field,
         };
         let response;

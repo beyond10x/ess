@@ -2248,7 +2248,12 @@ fn determined_payload(
     };
     for field in &determined.fields {
         match &field.value {
-            ResolvedPayloadValue::ResponseField { .. } | ResolvedPayloadValue::Generated => {}
+            // `Cleared` is refused on an event payload by `ess-domain`, so it cannot reach here;
+            // matched with the other two that determine nothing rather than by a wildcard, so a
+            // fifth source has to be decided rather than silently ignored.
+            ResolvedPayloadValue::ResponseField { .. }
+            | ResolvedPayloadValue::Generated
+            | ResolvedPayloadValue::Cleared => {}
             ResolvedPayloadValue::Literal { value } => {
                 values.insert(field.target.clone(), Node::Text(value.clone()));
             }
@@ -2534,6 +2539,10 @@ fn view_expectations(
 /// invocation actually sent. Together they say what the row will hold, which is the relation
 /// nothing in the model carried before `sets:` existed.
 ///
+/// A `{cleared: true}` entry is determined and is the one entry with no value to read: the field
+/// holds nothing after this branch, which is a claim a row can be checked against, so it is carried
+/// as a null. `ess-domain` has already refused it on a field whose type is not `Optional<…>`.
+///
 /// Three kinds of entry are left out rather than guessed at, and each is a thing the model does
 /// not determine:
 ///
@@ -2555,6 +2564,16 @@ fn settled(
     let mut out = BTreeMap::new();
     for field in &outcome.sets {
         if field.conversion.is_some() {
+            continue;
+        }
+        if matches!(field.value, ResolvedPayloadValue::Cleared) {
+            out.insert(
+                field.target.clone(),
+                Determined {
+                    value: ScenarioValue::Literal { value: Node::Null },
+                    type_ref: field.target_type.clone(),
+                },
+            );
             continue;
         }
         let ResolvedPayloadValue::InputField { field: read, .. } = &field.value else {

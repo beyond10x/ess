@@ -3525,6 +3525,129 @@ commands:
           - quiet.lanes.OrderCleared
 "#;
 
+/// The same two acts with the field `Optional`, and the second act CLEARING it.
+///
+/// The pair that `{cleared: true}` exists for: one act determines the field from its input, the next
+/// says it holds nothing. Abstaining here is what the literal form already did and is what left the
+/// suite requiring the first act's value; a cleared field is a claim a row can be checked against.
+const CLEARED_BY_A_LATER_ACT: &str = r"
+format: ess/1
+system: quiet
+version: v1
+domain: quiet.lanes
+
+types:
+  - name: quiet.lanes.OrderId
+    kind: newtype
+    of: Uuid
+  - name: quiet.lanes.LaneId
+    kind: newtype
+    of: String
+
+entities:
+  - name: quiet.lanes.Order
+    identity:
+      name: order_id
+      type: quiet.lanes.OrderId
+    fields:
+      - name: lane_id
+        type: Optional<quiet.lanes.LaneId>
+    lifecycle:
+      initial: Placed
+      states: [Placed, Cleared]
+      terminal: [Cleared]
+      transitions:
+        - name: clear
+          from: [Placed]
+          to: Cleared
+
+views:
+  - name: quiet.lanes.MyOrders
+    source: quiet.lanes.Order
+    consistency: read_your_writes
+    fields:
+      - name: order_id
+        type: quiet.lanes.OrderId
+      - name: lane_id
+        type: Optional<quiet.lanes.LaneId>
+
+events:
+  - name: quiet.lanes.OrderPlaced
+    fields:
+      - name: order_id
+        type: quiet.lanes.OrderId
+
+  - name: quiet.lanes.OrderCleared
+    fields:
+      - name: order_id
+        type: quiet.lanes.OrderId
+
+commands:
+  - name: quiet.lanes.PlaceOrder
+    input:
+      - name: lane_id
+        type: Optional<quiet.lanes.LaneId>
+    outcomes:
+      - name: accepted
+        creates: quiet.lanes.Order
+        instance: order_id
+        sets:
+          lane_id: input.lane_id
+        emits:
+          - quiet.lanes.OrderPlaced
+
+  - name: quiet.lanes.ClearLane
+    input:
+      - name: order_id
+        type: quiet.lanes.OrderId
+    outcomes:
+      - name: cleared
+        moves: quiet.lanes.Order.clear
+        instance: order_id
+        sets:
+          lane_id: {cleared: true}
+        emits:
+          - quiet.lanes.OrderCleared
+";
+
+#[test]
+fn a_cleared_field_is_asserted_empty_rather_than_left_unsaid() {
+    let synthesis = synthesize(&fixture(CLEARED_BY_A_LATER_ACT));
+
+    let mut asserted = 0;
+    for id in ids(&synthesis) {
+        if !id.contains("ClearLane") {
+            continue;
+        }
+        for step in steps(&synthesis, &id) {
+            let (ScenarioStep::ExpectView { view, expectation }
+            | ScenarioStep::EventuallyView {
+                view, expectation, ..
+            }) = step
+            else {
+                continue;
+            };
+            let (ViewExpectation::Contains { fields } | ViewExpectation::Excludes { fields }) =
+                expectation
+            else {
+                continue;
+            };
+            let held = fields.get("lane_id");
+            assert_eq!(
+                held,
+                Some(&ScenarioValue::Literal { value: Node::Null }),
+                "`{id}` reads `{view}` and asserts `lane_id` at {held:?}; the branch cleared it, \
+                 and saying nothing is what the literal form already did"
+            );
+            asserted += 1;
+        }
+    }
+    assert!(
+        asserted > 0,
+        "the fixture is supposed to produce a view assertion for the cleared field to be in"
+    );
+}
+
 #[test]
 fn a_field_a_later_act_overwrites_is_not_asserted_at_the_value_an_earlier_one_supplied() {
     let synthesis = synthesize(&fixture(OVERWRITTEN_BY_A_LITERAL));
