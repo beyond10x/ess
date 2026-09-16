@@ -105,6 +105,38 @@ It asks the remote and GitHub whether every pushed version tag is on `origin/mai
 release behind it, and fails while one is not. `.github/workflows/release-record.yml` runs it after
 every release run and daily.
 
+**A change to `RawSpecFile` is not finished until `cargo xtask schema` has run.**
+`schemas/generated/ess.schema.json` is a projection of that type like any other, and
+`projection-check` is the only thing that says so. `{cleared: true}` added one key to
+`ExplicitPayloadSource`, the projection was not regenerated, and the published schema went on
+refusing the key the model had just gained — the direction the task's own comment warns about,
+because nothing downstream complains about a schema that is merely too strict. It failed the Gate
+on PR 40 and nowhere else: `cargo fmt`, Clippy and every test were green.
+
+**Reading a failed `Gate` without the log.** The Actions log endpoint redirects to a zip and
+`b10x-gates api` reports `GitHub response invalid`, so it is not a route. The **check-run
+annotations** endpoint is plain JSON and carries the failing task by name:
+
+```console
+b10x-gates api --method GET \
+  --path /repos/beyond10x/ess/check-runs/<check_run_id>/annotations \
+  --output <file> --policy <policy> --key <key>
+```
+
+Get `<check_run_id>` from `/repos/beyond10x/ess/commits/<sha>/check-runs`. The annotation reads
+`task: Failed to run task "<name>": exit status N`, which is enough to run that one task locally.
+Going the other way — guessing which task broke and reproducing the whole gate — cost an hour and
+found a different failure that CI does not have (see below).
+
+**`task check` cannot pass where `$TMPDIR` sits inside a Git checkout.**
+`observed_bindings::tests::an_output_created_after_preflight_is_preserved` calls
+`new_output(path, outside_git: true)`, which refuses any path with a `.git` ancestor
+(`crates/edge/ess-cli/src/observed_bindings.rs:511-518`), and it builds its root under
+`std::env::temp_dir()`. On `ubuntu-latest` that is `/tmp` and the test passes; on a machine whose
+`TMPDIR` is under a dotfiles checkout it can never pass. Run the gate with a `TMPDIR` outside every
+checkout, and do not read this failure as a repository defect. The test is asserting a create-new
+race, not the Git refusal, so the flag is incidental to it.
+
 **Merge the branch, then tag.** `0.10.0` was tagged on `feat/outcome-sets-entity-fields`, published,
 and `main` did not have a line of it — every other check reads the workspace and the remote's tag
 list, and neither says which line a commit is on. AEP hit the same shape one version later and cut a
