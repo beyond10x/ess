@@ -365,6 +365,12 @@
     "ExplicitPayloadSource": {
       "type": "object",
       "properties": {
+        "cleared": {
+          "type": [
+            "boolean",
+            "null"
+          ]
+        },
         "generated": {
           "type": [
             "boolean",
