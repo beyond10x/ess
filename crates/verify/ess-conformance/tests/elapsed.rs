@@ -258,6 +258,7 @@ fn scenario_id() -> ScenarioId {
 fn suite(steps: Vec<ScenarioStep>) -> ConformanceSuite {
     let digest = |value: &str| SpecDigest::new(value).expect("a digest");
     let mut suite = ConformanceSuite::new(SuiteProvenance {
+        live_inputs_digest: None,
         suite_version: SuiteFormat::CURRENT,
         system: "billing".to_owned(),
         specification_version: "v3".to_owned(),

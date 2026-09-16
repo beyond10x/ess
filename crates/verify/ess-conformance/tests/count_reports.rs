@@ -115,11 +115,13 @@ impl Clock for FixedClock {
 }
 struct Target {
     identity_calls: Cell<usize>,
+    end_calls: Cell<usize>,
 }
 impl Target {
     fn new() -> Self {
         Self {
             identity_calls: Cell::new(0),
+            end_calls: Cell::new(0),
         }
     }
 }
@@ -139,6 +141,7 @@ impl ConformanceTarget for Target {
         }
     }
     fn end_scenario(&self, scenario: &ScenarioContext) -> Result<(), TargetError> {
+        self.end_calls.set(self.end_calls.get() + 1);
         if scenario.scenario.to_string().ends_with("/mixed-checks") {
             Err(TargetError::unavailable(
                 "end",
@@ -169,6 +172,17 @@ impl ConformanceTarget for Target {
     fn redeliver_event(&self, _: RedeliveryRequest) -> Result<(), TargetError> {
         unreachable!()
     }
+}
+#[test]
+fn failed_and_unsupported_setup_are_always_released() {
+    let suite = admitted(&["error", "unsupported"]);
+    let target = Target::new();
+    let run = Runner::for_suite(suite.suite())
+        .with_failed_setup_cleanup()
+        .run_admitted(&suite, &target);
+    assert_eq!(target.end_calls.get(), 2);
+    let report = CountReport::from_run(&run, &suite).unwrap();
+    assert_ne!(report.conformance_status(), CountStatus::Passed);
 }
 fn execute(suite: &AdmittedSuite, clock: u64) -> ess_conformance::ExecutedRun {
     Runner::new(
@@ -455,7 +469,8 @@ fn suite_admission_closes_structural_variants_before_target_identity() {
         "ess-conformance/5",
         "ess-conformance/7",
         "ess-conformance/9",
-        "ess-conformance/10",
+        "ess-conformance/11",
+        "ess-conformance/12",
         "ess-conformance/99",
     ] {
         let mut value = document(&["passed"]);

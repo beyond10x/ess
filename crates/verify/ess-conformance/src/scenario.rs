@@ -154,14 +154,15 @@ impl ConformanceSuite {
     /// Call only for newly generated suites, never to rewrite admitted bytes or a caller-pinned
     /// legacy document. Coverage builders select their inventory-bearing counterpart separately.
     pub fn select_fresh_format(&mut self) {
-        self.provenance.suite_version =
-            if crate::response::used_by(self) || crate::quoted_predicate_format::used_by(self) {
-                SuiteFormat::parse("ess-conformance/8").expect("constant suite version")
-            } else if self.requires_extended_format() {
-                SuiteFormat::parse("ess-conformance/6").expect("constant suite version")
-            } else {
-                SuiteFormat::CURRENT
-            };
+        self.provenance.suite_version = if crate::live_bindings::used_by(self) {
+            SuiteFormat::parse("ess-conformance/10").expect("constant suite version")
+        } else if crate::response::used_by(self) || crate::quoted_predicate_format::used_by(self) {
+            SuiteFormat::parse("ess-conformance/8").expect("constant suite version")
+        } else if self.requires_extended_format() {
+            SuiteFormat::parse("ess-conformance/6").expect("constant suite version")
+        } else {
+            SuiteFormat::CURRENT
+        };
     }
 
     pub(crate) fn requires_extended_format(&self) -> bool {
@@ -278,6 +279,10 @@ impl ConformanceSuite {
 /// two ever disagree.
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct SuiteProvenance {
+    /// Exact native input manifest (models, authored sources, recipes and step mappings).
+    /// Only suite/10 and /11 admit this reference; absent legacy bytes remain unchanged.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub live_inputs_digest: Option<SpecDigest>,
     /// The format this document is written in — what a runner checks before reading the rest.
     pub suite_version: SuiteFormat,
     /// The system the suite checks.
@@ -335,6 +340,7 @@ impl SuiteProvenance {
         };
         Self {
             suite_version: SuiteFormat::CURRENT,
+            live_inputs_digest: None,
             system: projection.system,
             specification_version: projection.specification_version,
             spec_digest: digest(projection.source_digest.as_str()),
@@ -349,7 +355,7 @@ impl SuiteProvenance {
 /// All four, because a `1` suite means in `4` exactly what it meant in `1` — the vocabulary grew
 /// three times and nothing in it changed meaning. A reader that refused an older number would
 /// refuse a suite it understands perfectly.
-pub const SUPPORTED_SUITE_FORMATS: &[u32] = &[1, 2, 3, 4, 5, 6, 7, 8, 9];
+pub const SUPPORTED_SUITE_FORMATS: &[u32] = &[1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11];
 
 /// The version of the *document shape* a suite is written in — `ess-conformance/1`.
 ///
@@ -1692,6 +1698,33 @@ impl fmt::Display for Holds {
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 #[serde(tag = "step", rename_all = "snake_case")]
 pub enum ScenarioStep {
+    /// Evaluate a closed occurrence-based claim from complete target observations.
+    CheckLive {
+        /// Native live observation operation.
+        trace: crate::live_trace::Check,
+    },
+    /// Bind an actual response value from the preceding invocation (suite 10).
+    /// This variable is not a fabricated entity identity or an adapter-supplied verdict.
+    CaptureResponse {
+        /// The exact preceding command whose actual response is read.
+        command: CommandRef,
+        /// Native variable bound for later inputs and payload matchers.
+        instance: InstanceName,
+        /// Declared response field to capture.
+        field: String,
+        /// Original declared shape, including the required captured leaf.
+        shape: PayloadShape,
+    },
+    /// Observe a real event matching literals and previously captured values at declared
+    /// dotted payload paths (suite 10). The native evaluator resolves and compares them.
+    EventuallyMatchingEvent {
+        /// Declared event to observe.
+        event: EventRef,
+        /// Required values at declared payload paths.
+        matches: BTreeMap<String, ScenarioValue>,
+        /// Original event's payload shape.
+        shape: PayloadShape,
+    },
     /// Compare a mapped payload against the actual response of the same invocation.
     ExpectResponsePayload {
         /// Closed typed observation authority.
@@ -2609,12 +2642,14 @@ mod tests {
             "ess-conformance/7",
             "ess-conformance/8",
             "ess-conformance/9",
+            "ess-conformance/10",
+            "ess-conformance/11",
         ] {
             let earlier = SuiteFormat::parse(earlier).expect("well formed");
             assert!(earlier.is_supported());
         }
 
-        let later = SuiteFormat::parse("ess-conformance/10").expect("well formed");
+        let later = SuiteFormat::parse("ess-conformance/12").expect("well formed");
         assert!(
             !later.is_supported(),
             "a later format may mean something different by the same words"
@@ -2665,6 +2700,7 @@ mod tests {
     fn provenance() -> SuiteProvenance {
         SuiteProvenance {
             suite_version: SuiteFormat::CURRENT,
+            live_inputs_digest: None,
             system: "billing".to_owned(),
             specification_version: "v3".to_owned(),
             spec_digest: SpecDigest::new(

@@ -31,6 +31,7 @@ package essconform
 
 import (
 	"bytes"
+	"context"
 	"crypto/sha256"
 	"encoding/json"
 	"errors"
@@ -44,6 +45,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 	"unicode"
@@ -77,7 +79,7 @@ func suiteReference(value any) error {
 		return err
 	}
 	d, ok := r["digest"].(string)
-	if (r["version"] != "ess-conformance/5" && r["version"] != "ess-conformance/7" && r["version"] != "ess-conformance/9") || r["digest_profile"] != "sha256-json-bytes/1" ||
+	if (r["version"] != "ess-conformance/5" && r["version"] != "ess-conformance/7" && r["version"] != "ess-conformance/9" && r["version"] != "ess-conformance/11") || r["digest_profile"] != "sha256-json-bytes/1" ||
 		!ok || !strings.HasPrefix(d, "sha256:") || !modelDigest.MatchString(strings.TrimPrefix(d, "sha256:")) {
 		return coverageError()
 	}
@@ -1066,6 +1068,8 @@ type Target interface {
 
 	// BeginScenario and EndScenario bracket each scenario. Observations from one scenario may not
 	// satisfy another, and this is where a target makes that true.
+	// With Session, EndScenario also releases partial setup when BeginScenario fails. It must
+	// tolerate incomplete setup and clean up independently of run cancellation.
 	BeginScenario(scenario ScenarioContext) error
 	EndScenario(scenario ScenarioContext) error
 
@@ -1419,6 +1423,7 @@ type Provenance struct {
 	SpecificationVersion string `json:"specification_version"`
 	SpecDigest           string `json:"spec_digest"`
 	ContractDigest       string `json:"contract_digest"`
+	LiveInputsDigest     string `json:"live_inputs_digest,omitempty"`
 }
 
 // Scenario is one thing the specification obliges an implementation to do.
@@ -1429,6 +1434,8 @@ type Scenario struct {
 
 // Step is one step of a scenario. Which fields are set depends on Step.
 type Step struct {
+	Trace        *LiveCheck           `json:"trace,omitempty"`
+	Matches      map[string]Value     `json:"matches,omitempty"`
 	Response     *responseObservation `json:"response,omitempty"`
 	Check        *PeriodicCheck       `json:"check,omitempty"`
 	ReadingLeft  *ReadingReference    `json:"left,omitempty"`
@@ -1479,8 +1486,10 @@ type Step struct {
 // free: a value is assertable only where some construct says where it comes from, and a type is
 // declared outright.
 type Held struct {
-	Holds string `json:"holds"`
-	Kind  string `json:"kind,omitempty"`
+	Holds    string   `json:"holds"`
+	Kind     string   `json:"kind,omitempty"`
+	Variants []string `json:"variants,omitempty"`
+	Optional bool     `json:"optional,omitempty"`
 }
 
 // OutcomeRef names one branch of one command.
@@ -1541,8 +1550,8 @@ func Run(t *testing.T, newTarget func() Target) {
 	if err != nil {
 		t.Fatalf("suite admission: %v", err)
 	}
-	if (suite.Provenance.SuiteVersion == "ess-conformance/8" || suite.Provenance.SuiteVersion == "ess-conformance/9") && config.version != "2" {
-		t.Fatalf("suite/8 and /9 require explicit ESS_REPORT_FORMAT=2 before execution")
+	if (suite.Provenance.SuiteVersion == "ess-conformance/8" || suite.Provenance.SuiteVersion == "ess-conformance/9" || suite.Provenance.SuiteVersion == "ess-conformance/10" || suite.Provenance.SuiteVersion == "ess-conformance/11") && config.version != "2" {
+		t.Fatalf("suite/8 through /11 require explicit ESS_REPORT_FORMAT=2 before execution")
 	}
 	if (suite.Provenance.SuiteVersion == "ess-conformance/5" || suite.Provenance.SuiteVersion == "ess-conformance/6" || suite.Provenance.SuiteVersion == "ess-conformance/7") && config.version != "2" {
 		t.Fatalf("suite/5, /6 and /7 require explicit ESS_REPORT_FORMAT=2 before execution")
@@ -1616,6 +1625,249 @@ func Run(t *testing.T, newTarget func() Target) {
 	} else {
 		writeReport(t, suite, identity, results)
 	}
+}
+
+// scenarioReporter keeps the evaluator independent of the host runner. Both a
+// testing.T and a Session use this same evaluator and terminal-state tracking.
+type scenarioReporter interface {
+	Log(...any)
+	Errorf(string, ...any)
+	Fatalf(string, ...any)
+	Skipf(string, ...any)
+}
+
+type sessionStop struct{}
+type sessionReporter struct{ messages []string }
+
+func (r *sessionReporter) Log(args ...any) { r.messages = append(r.messages, fmt.Sprint(args...)) }
+func (r *sessionReporter) Errorf(format string, args ...any) {
+	r.messages = append(r.messages, fmt.Sprintf(format, args...))
+}
+func (r *sessionReporter) Fatalf(format string, args ...any) {
+	r.Errorf(format, args...)
+	panic(sessionStop{})
+}
+func (r *sessionReporter) Skipf(format string, args ...any) {
+	r.Errorf(format, args...)
+	panic(sessionStop{})
+}
+
+// Execution is a copy of a scenario's native terminal result. Editing it cannot
+// change the session's receipts or report.
+type Execution struct {
+	Scenario    string
+	Status      string
+	Diagnostics []string
+}
+
+// Session executes the fixed, admitted inventory embedded in this package.
+// Calls are serialized, each scenario executes once, and only the evaluator can
+// create a receipt. Finish refuses incomplete execution. Sessions always produce
+// native report/2; unknown or incomplete coverage cannot become conformance.
+type Session struct {
+	mu       sync.Mutex
+	input    string
+	suite    Suite
+	identity Identity
+	harness  *Harness
+	started  map[string]bool
+	results  []scenarioResult
+	finished []byte
+}
+
+// NewSession admits the exact embedded input and all original coverage parents
+// before any target is invoked. It reads no report configuration from the host.
+func NewSession(identity Identity) (*Session, error) {
+	return NewSessionFromInput(identity, []byte(suiteJSON))
+}
+
+// SelectInput narrows a coverage inventory using sorted, distinct explicit IDs.
+// It retains all original parent bytes and all omitted/refused coverage records,
+// and re-admits the result. An ordinary suite without coverage cannot be narrowed.
+func SelectInput(original []byte, ids []string) ([]byte, error) {
+	parent, err := admitRunInput(string(original))
+	if err != nil {
+		return nil, err
+	}
+	if parent.coverage == nil {
+		return nil, fmt.Errorf("selection requires a coverage inventory")
+	}
+	scenarios := map[string]any{}
+	selectedIDs := []any{}
+	for i, id := range ids {
+		value, ok := parent.document["scenarios"].(map[string]any)[id]
+		if !ok || (i > 0 && ids[i-1] >= id) {
+			return nil, fmt.Errorf("selection IDs must be sorted, distinct and present in the parent")
+		}
+		scenarios[id] = value
+		selectedIDs = append(selectedIDs, id)
+	}
+	coverage := copyObject(parent.coverage)
+	selection := copyObject(coverage["selection"].(map[string]any))
+	selection["filter"] = map[string]any{"kind": "explicit", "ids": selectedIDs, "parent": referenceFor(parent)}
+	coverage["selection"] = selection
+	outside := append([]any{}, coverage["outside"].([]any)...)
+	for _, origin := range []string{"generated", "authored"} {
+		kept := []any{}
+		for _, value := range coverage[origin].([]any) {
+			id := value.(string)
+			if _, ok := scenarios[id]; ok {
+				kept = append(kept, id)
+			} else {
+				outside = append(outside, map[string]any{"scenario": id, "origin": origin, "reason": "selection_filter", "needs": []any{}})
+			}
+		}
+		coverage[origin] = kept
+	}
+	sort.Slice(outside, func(i, j int) bool {
+		return outside[i].(map[string]any)["scenario"].(string) < outside[j].(map[string]any)["scenario"].(string)
+	})
+	coverage["outside"] = outside
+	counts := copyObject(coverage["counts"].(map[string]any))
+	for _, key := range []string{"generated", "authored", "outside"} {
+		counts[key] = json.Number(strconv.Itoa(len(coverage[key].([]any))))
+	}
+	coverage["counts"] = counts
+	child := copyObject(parent.document)
+	child["scenarios"], child["coverage"] = scenarios, coverage
+	// Child suites contain general Node scalars, unlike the unsigned-only count
+	// report envelope. Encode a new deterministic document without narrowing them.
+	raw, err := json.MarshalIndent(child, "", "  ")
+	if err != nil {
+		return nil, err
+	}
+	parents := []any{parent.original}
+	input, err := strictJSON(string(original))
+	if err != nil {
+		return nil, err
+	}
+	if carrier := input.(map[string]any); carrier["format"] != nil {
+		parents = append(parents, carrier["parent_suites"].([]any)...)
+	}
+	encoded, err := countCanonical(map[string]any{"format": "ess-conformance-input/1", "suite_json": string(raw) + "\n", "parent_suites": parents})
+	if err != nil {
+		return nil, err
+	}
+	encoded = append(encoded, '\n')
+	if _, err := admitRunInput(string(encoded)); err != nil {
+		return nil, fmt.Errorf("selection admission: %w", err)
+	}
+	return encoded, nil
+}
+
+// NewSessionFromInput admits an original suite or coverage carrier supplied by
+// a host runner. Select with the native ESS selector before constructing the
+// session; mutating the selected inventory during execution is not supported.
+// The retained copy is the exact input, including original parent lineage.
+func NewSessionFromInput(identity Identity, original []byte) (*Session, error) {
+	input := string(original)
+	suite, err := admitRunInput(input)
+	if err != nil {
+		return nil, fmt.Errorf("suite admission: %w", err)
+	}
+	suite, err = executionSuite(suite)
+	if err != nil {
+		return nil, fmt.Errorf("suite execution adaptation: %w", err)
+	}
+	if identity.Name == "" || identity.Version == "" || !utf8.ValidString(identity.Name) || !utf8.ValidString(identity.Version) {
+		return nil, fmt.Errorf("invalid implementation identity")
+	}
+	return &Session{input: input, suite: suite, identity: identity, harness: NewHarness(suite.Provenance.System), started: map[string]bool{}}, nil
+}
+
+// OriginalInput returns an independent copy for evidence delivery.
+func (s *Session) OriginalInput() []byte { return []byte(s.input) }
+
+// Scenarios returns a sorted copy of the admitted execution inventory.
+func (s *Session) Scenarios() []string {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	ids := make([]string, 0, len(s.suite.Scenarios))
+	for id := range s.suite.Scenarios {
+		ids = append(ids, id)
+	}
+	sort.Strings(ids)
+	return ids
+}
+
+// CheckLiveInputs verifies the exact native source manifest referenced by this
+// session's admitted suite. Call before acquiring live resources; retain these
+// same bytes with OriginalInput and Finish output as the evidence bundle.
+func (s *Session) CheckLiveInputs(manifest []byte) error {
+	want := s.suite.Provenance.LiveInputsDigest
+	if want == "" || fmt.Sprintf("%x", sha256.Sum256(manifest)) != want {
+		return fmt.Errorf("live input manifest differs from admitted suite provenance")
+	}
+	return nil
+}
+
+// Execute runs one selected scenario. The factory binds ctx to all live target
+// operations; existing Target implementations and the Run testing wrapper remain
+// supported. EndScenario must release partial setup on an independent cleanup
+// context. A panic from target code propagates and cannot manufacture a receipt.
+func (s *Session) Execute(ctx context.Context, id string, factory func(context.Context) Target) (result Execution, err error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if ctx == nil || factory == nil {
+		return result, fmt.Errorf("context and target factory are required")
+	}
+	scenario, ok := s.suite.Scenarios[id]
+	if !ok {
+		return result, fmt.Errorf("scenario %q is not selected", id)
+	}
+	if s.finished != nil || s.started[id] {
+		return result, fmt.Errorf("scenario %q cannot execute again", id)
+	}
+	s.started[id] = true
+	reporter := &sessionReporter{}
+	target := factory(ctx)
+	identity, identityErr := target.Identity()
+	if identityErr != nil {
+		return result, fmt.Errorf("target identity: %w", identityErr)
+	}
+	if identity != s.identity {
+		return result, fmt.Errorf("target identity differs from session identity")
+	}
+	r := &run{t: reporter, ctx: ctx, cleanupFailedSetup: true, target: target, harness: s.harness, correlation: s.harness.Correlation(), instances: map[string]Node{}, marked: map[string]bool{}, observed: map[string][]ObservedEvent{}, status: statusPassed}
+	defer func() {
+		if recovered := recover(); recovered != nil {
+			if _, stopped := recovered.(sessionStop); !stopped {
+				panic(recovered)
+			}
+		}
+		result = Execution{Scenario: id, Status: r.status, Diagnostics: append([]string(nil), reporter.messages...)}
+		if !r.callbacksComplete {
+			err = fmt.Errorf("scenario %q did not complete callbacks", id)
+			return
+		}
+		s.results = append(s.results, scenarioResult{id: id, status: r.status})
+		if r.status != statusPassed {
+			err = fmt.Errorf("%s: %s: %s", id, r.status, strings.Join(reporter.messages, "; "))
+		}
+	}()
+	r.execute(id, scenario)
+	return result, nil
+}
+
+// Finish returns exact native report bytes. It refuses missing or interrupted
+// scenario callbacks and is idempotent after success. The caller owns persistence
+// and must treat an artifact-write error as a delivery failure.
+func (s *Session) Finish() ([]byte, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.finished != nil {
+		return append([]byte(nil), s.finished...), nil
+	}
+	document, err := countDocument(s.suite, s.identity, s.results, countReportNow())
+	if err != nil {
+		return nil, err
+	}
+	encoded, err := countCanonical(document)
+	if err != nil {
+		return nil, err
+	}
+	s.finished = append(encoded, '\n')
+	return append([]byte(nil), s.finished...), nil
 }
 
 // ---- the report ------------------------------------------------------------------------------
@@ -1713,10 +1965,13 @@ func writeReport(t *testing.T, suite Suite, identity Identity, results []scenari
 
 // run is one scenario in flight, and everything it has bound.
 type run struct {
-	t           *testing.T
-	target      Target
-	harness     *Harness
-	correlation string
+	trace              *liveTraceState
+	t                  scenarioReporter
+	ctx                context.Context
+	cleanupFailedSetup bool
+	target             Target
+	harness            *Harness
+	correlation        string
 
 	// instances are what `capture_instance` bound, by name.
 	instances   map[string]Node
@@ -1753,30 +2008,53 @@ type run struct {
 
 func (r *run) execute(id string, scenario Scenario) {
 	context := ScenarioContext{Scenario: id, Correlation: r.correlation}
-	if err := r.target.BeginScenario(context); err != nil {
-		r.callbacksComplete = true // begin returned; no teardown is required
-		if errors.Is(err, ErrUnsupported) {
-			r.skip("the target does not support this scenario: %v", err)
-		}
-		r.status = statusFailed
-		r.t.Fatalf("begin: %v", err)
-	}
+	began := false
+	// EndScenario releases even partially acquired setup. Targets must tolerate a
+	// failed BeginScenario and use their own cleanup context after cancellation.
 	defer func() {
+		if !began && !r.cleanupFailedSetup {
+			return
+		}
 		err := r.target.EndScenario(context)
 		r.callbacksComplete = true
 		if err != nil {
 			r.status = statusFailed
 			r.t.Errorf("end: %v", err)
 		}
+		if r.ctx != nil && r.ctx.Err() != nil && r.status == statusPassed {
+			r.fail(-1, "scenario context: %v", r.ctx.Err())
+		}
 	}()
+	if r.ctx != nil && r.ctx.Err() != nil {
+		r.fail(-1, "scenario context: %v", r.ctx.Err())
+		return
+	}
+	if err := r.target.BeginScenario(context); err != nil {
+		if !r.cleanupFailedSetup {
+			r.callbacksComplete = true
+		}
+		if errors.Is(err, ErrUnsupported) {
+			r.skip("the target does not support this scenario: %v", err)
+		}
+		r.status = statusFailed
+		r.t.Fatalf("begin: %v", err)
+	}
+	began = true
 
 	if scenario.Purpose != "" {
 		r.t.Log(scenario.Purpose)
 	}
 	for index, step := range scenario.Steps {
+		if r.ctx != nil && r.ctx.Err() != nil {
+			r.fail(index, "scenario context: %v", r.ctx.Err())
+			return
+		}
 		if !r.step(index, step) {
 			return
 		}
+	}
+	if r.ctx != nil && r.ctx.Err() != nil {
+		r.fail(len(scenario.Steps), "scenario context: %v", r.ctx.Err())
 	}
 }
 
@@ -1786,6 +2064,8 @@ func (r *run) execute(id string, scenario Scenario) {
 // and running them produces a second failure about the first one's cause.
 func (r *run) step(index int, step Step) bool {
 	switch step.Step {
+	case "check_live":
+		return r.checkLive(index, step.Trace)
 	case "expect_response_payload":
 		return r.expectResponsePayload(index, step)
 	case "check_periodic":
@@ -1806,6 +2086,15 @@ func (r *run) step(index int, step Step) bool {
 		return r.expectNoEvent(index, step)
 	case "eventually_event":
 		return r.eventuallyEvent(index, step)
+	case "eventually_matching_event":
+		payload, ok := r.resolveAll(index, step.Matches)
+		if !ok {
+			return false
+		}
+		step.Payload = payload
+		return r.eventuallyEventWith(index, step, true)
+	case "capture_response":
+		return r.captureResponse(index, step)
 	case "capture_instance":
 		return r.captureInstance(index, step)
 	case "query_view":
@@ -1946,12 +2235,27 @@ func (r *run) expectNoEvent(index int, step Step) bool {
 }
 
 func (r *run) eventuallyEvent(index int, step Step) bool {
+	return r.eventuallyEventWith(index, step, false)
+}
+
+func (r *run) eventuallyEventWith(index int, step Step, paths bool) bool {
 	deadline := r.harness.Deadline()
-	for attempt := 0; attempt < deadline.Attempts; attempt++ {
+	liveBudget := false
+	if paths && r.ctx != nil {
+		_, liveBudget = r.ctx.Deadline()
+	}
+	for attempt := 0; liveBudget || attempt < deadline.Attempts; attempt++ {
+		if r.ctx != nil && r.ctx.Err() != nil {
+			return r.fail(index, "event observation context: %v", r.ctx.Err())
+		}
+		remaining := deadline.Attempts - attempt
+		if remaining < 1 {
+			remaining = 1
+		}
 		events, err := r.target.ObserveEvents(EventObservationRequest{
 			Event:       step.Event,
 			Correlation: r.correlation,
-			Deadline:    Deadline{Attempts: deadline.Attempts - attempt},
+			Deadline:    Deadline{Attempts: remaining},
 		})
 		if errors.Is(err, ErrUnsupported) {
 			r.skip("step %d: the target cannot observe `%s`", index, step.Event)
@@ -1964,11 +2268,209 @@ func (r *run) eventuallyEvent(index int, step Step) bool {
 			r.observed[event.Event] = append(r.observed[event.Event], event)
 			r.remember(event)
 		}
-		if len(r.observed[step.Event]) > 0 {
+		for _, event := range events {
+			if event.Event != step.Event {
+				continue
+			}
+			matched := matches(event.Payload, step.Payload)
+			if paths {
+				snapshot, err := snapshotResponseResult(CommandResult{Response: event.Payload})
+				if err != nil {
+					return r.fail(index, "event observation: %v", err)
+				}
+				event.Payload = snapshot.Response
+				matched = matchesLivePaths(event.Payload, step.Payload)
+			}
+			if !matched {
+				continue
+			}
+			reason := holds(event.Payload, step.Shape)
+			if paths {
+				reason = holdsLive(event.Payload, step.Shape)
+			}
+			if reason != "" {
+				return r.fail(index, "`%s` was observed, and %s", step.Event, reason)
+			}
 			return true
 		}
 	}
 	return r.fail(index, "`%s` was not observed within the run's budget", step.Event)
+}
+
+func (r *run) captureResponse(index int, step Step) bool {
+	if r.lastCommand != step.Command || r.last.Response == nil {
+		return r.fail(index, "capture requires the preceding command's actual response")
+	}
+	if _, bound := r.instances[step.Instance]; bound {
+		return r.fail(index, "duplicate capture `%s`", step.Instance)
+	}
+	if reason := holdsLive(r.last.Response, step.Shape); reason != "" {
+		return r.fail(index, "response capture: %s", reason)
+	}
+	value, present := r.last.Response[step.Field]
+	if !present || value == nil {
+		return r.fail(index, "response lacks captured field `%s`", step.Field)
+	}
+	r.instances[step.Instance] = value
+	return true
+}
+
+func matchesLivePaths(payload, wanted map[string]Node) bool {
+	snapshot, err := snapshotResponseResult(CommandResult{Response: wanted})
+	if err != nil {
+		return false
+	}
+	for path, expected := range snapshot.Response {
+		actual, present := lookup(payload, path)
+		if !present || !responseEqual(actual, expected) {
+			return false
+		}
+	}
+	return true
+}
+
+func liveLeafAdmits(leaf Held, value Node, present bool) bool {
+	if !present || value == nil {
+		return leaf.Optional
+	}
+	switch leaf.Holds {
+	case "primitive":
+		if leaf.Kind == "" {
+			return false
+		}
+		return responsePrimitiveAdmits(strings.ToUpper(leaf.Kind[:1])+leaf.Kind[1:], value)
+	case "enum":
+		text, ok := value.(string)
+		if !ok {
+			return false
+		}
+		for _, variant := range leaf.Variants {
+			if text == variant {
+				return true
+			}
+		}
+		return false
+	case "list":
+		_, ok := value.([]any)
+		return ok
+	case "map", "union":
+		_, ok := value.(map[string]any)
+		return ok
+	}
+	return false
+}
+
+func holdsLive(payload map[string]Node, shape map[string]Held) string {
+	paths := make([]string, 0, len(shape))
+	for path := range shape {
+		paths = append(paths, path)
+	}
+	sort.Strings(paths)
+	for _, path := range paths {
+		var value Node = payload
+		present := true
+		for _, part := range strings.Split(path, ".") {
+			object, ok := value.(map[string]any)
+			if !ok {
+				return fmt.Sprintf("payload path `%s` crosses a non-object", path)
+			}
+			value, present = object[part]
+			if !present {
+				break
+			}
+		}
+		if !liveLeafAdmits(shape[path], value, present) {
+			return fmt.Sprintf("payload path `%s` violates its declared shape", path)
+		}
+	}
+	return ""
+}
+
+func admitLiveBindings(steps []any, major int) error {
+	if err := admitLiveSequence(steps, major); err != nil {
+		return err
+	}
+	used := false
+	for _, raw := range steps {
+		tag := raw.(map[string]any)["step"]
+		if tag == "capture_response" || tag == "eventually_matching_event" {
+			used = true
+		}
+	}
+	if !used {
+		return nil
+	}
+	if major < 10 {
+		return fmt.Errorf("live bindings require suite/10 or /11")
+	}
+	bound := map[string]bool{}
+	lastCommand := ""
+	for _, raw := range steps {
+		encoded, err := json.Marshal(raw)
+		if err != nil {
+			return err
+		}
+		// Only live binding fields belong to this admission pass. Unselected
+		// parents may carry legacy integer metadata wider than the execution API.
+		var step struct {
+			Step     string           `json:"step"`
+			Command  string           `json:"command"`
+			Instance string           `json:"instance"`
+			Field    string           `json:"field"`
+			Input    map[string]Value `json:"input"`
+			Matches  map[string]Value `json:"matches"`
+			Shape    map[string]Held  `json:"shape"`
+		}
+		decoder := json.NewDecoder(strings.NewReader(string(encoded)))
+		decoder.UseNumber()
+		if err := decoder.Decode(&step); err != nil {
+			return err
+		}
+		switch step.Step {
+		case "execute_command":
+			for _, value := range step.Input {
+				if value.Kind == "instance" && !bound[value.Instance] {
+					return fmt.Errorf("input capture is not bound by an earlier step")
+				}
+			}
+			lastCommand = step.Command
+		case "capture_instance", "establish_entity", "capture_response":
+			if bound[step.Instance] {
+				return fmt.Errorf("duplicate capture")
+			}
+			bound[step.Instance] = true
+			if step.Step == "capture_response" {
+				if lastCommand != step.Command {
+					return fmt.Errorf("capture does not name the preceding command")
+				}
+				if step.Field == "" || strings.Contains(step.Field, ".") {
+					return fmt.Errorf("response capture requires one declared field")
+				}
+				leaf, present := step.Shape[step.Field]
+				if !present || leaf.Optional {
+					return fmt.Errorf("captured response field must have a required declared leaf shape")
+				}
+			}
+		case "eventually_matching_event":
+			if len(step.Matches) == 0 {
+				return fmt.Errorf("event matcher must constrain a payload path")
+			}
+			for path, value := range step.Matches {
+				leaf, present := step.Shape[path]
+				if !present {
+					return fmt.Errorf("match path has no declared shape")
+				}
+				if value.Kind == "literal" && liveLeafAdmits(leaf, value.Value, true) {
+					continue
+				}
+				if value.Kind == "instance" && bound[value.Instance] {
+					continue
+				}
+				return fmt.Errorf("matcher requires an admitted literal or a preceding actual capture")
+			}
+		}
+	}
+	return nil
 }
 
 func (r *run) establishEntity(index int, step Step) bool {
@@ -3146,7 +3648,7 @@ func admitSuiteDocument(raw string, explicit bool) (Suite, error) {
 	if err != nil {
 		return suite, err
 	}
-	p, err := closed(root["provenance"], "suite_version system specification_version spec_digest contract_digest", "component")
+	p, err := closed(root["provenance"], "suite_version system specification_version spec_digest contract_digest", "component live_inputs_digest")
 	if err != nil {
 		return suite, err
 	}
@@ -3174,11 +3676,21 @@ func admitSuiteDocument(raw string, explicit bool) (Suite, error) {
 		major = 8
 	case "ess-conformance/9":
 		major = 9
+	case "ess-conformance/10":
+		major = 10
+	case "ess-conformance/11":
+		major = 11
 	default:
 		return suite, fmt.Errorf("unsupported suite version %q", version)
 	}
-	if _, present := root["coverage"]; present != (major == 5 || major == 7 || major == 9) {
-		return suite, fmt.Errorf("coverage is required exactly for suite/5, suite/7 and suite/9")
+	if _, present := root["coverage"]; present != (major == 5 || major == 7 || major == 9 || major == 11) {
+		return suite, fmt.Errorf("coverage is required exactly for suite/5, suite/7, suite/9 and suite/11")
+	}
+	if rawDigest, ok := p["live_inputs_digest"]; ok {
+		digest, err := text(rawDigest)
+		if major < 10 || err != nil || !modelDigest.MatchString(digest) {
+			return suite, fmt.Errorf("invalid live input manifest reference")
+		}
 	}
 	for _, key := range []string{"system", "specification_version", "spec_digest", "contract_digest"} {
 		s, err := text(p[key])
@@ -3230,6 +3742,9 @@ func admitSuiteDocument(raw string, explicit bool) (Suite, error) {
 		if err := admitEntitySetups(steps); err != nil {
 			return suite, fmt.Errorf("%s: %w", id, err)
 		}
+		if err := admitLiveBindings(steps, major); err != nil {
+			return suite, fmt.Errorf("%s: %w", id, err)
+		}
 		sources, err := array(s["source"])
 		if err != nil {
 			return suite, err
@@ -3240,7 +3755,7 @@ func admitSuiteDocument(raw string, explicit bool) (Suite, error) {
 			}
 		}
 	}
-	if major == 5 || major == 7 || major == 9 {
+	if major == 5 || major == 7 || major == 9 || major == 11 {
 		coverage, _ := root["coverage"].(map[string]any)
 		if refused, ok := coverage["refused"].([]any); ok {
 			for _, item := range refused {
@@ -3266,20 +3781,29 @@ func admitSuiteDocument(raw string, explicit bool) (Suite, error) {
 		}
 	}
 	suite.original, suite.document = raw, root
-	if major == 5 || major == 7 || major == 9 {
+	if major == 5 || major == 7 || major == 9 || major == 11 {
 		suite.coverage = root["coverage"].(map[string]any)
 		// Original admission includes parents which will never execute. Retain their exact
 		// unsigned metadata independently of the inherited target API's narrower int fields.
 		suite.Provenance = Provenance{SuiteVersion: version, System: p["system"].(string),
 			SpecificationVersion: p["specification_version"].(string), SpecDigest: p["spec_digest"].(string),
 			ContractDigest: p["contract_digest"].(string)}
+		if digest, ok := p["live_inputs_digest"].(string); ok {
+			suite.Provenance.LiveInputsDigest = digest
+		}
 		suite.Scenarios = make(map[string]Scenario, len(scenarios))
 		for id, value := range scenarios {
 			suite.Scenarios[id] = Scenario{Purpose: value.(map[string]any)["purpose"].(string)}
 		}
 		return suite, nil
 	}
-	err = json.Unmarshal([]byte(raw), &suite)
+	if major >= 10 {
+		decoder := json.NewDecoder(strings.NewReader(raw))
+		decoder.UseNumber()
+		err = decoder.Decode(&suite)
+	} else {
+		err = json.Unmarshal([]byte(raw), &suite)
+	}
 	return suite, err
 }
 func executionSuite(suite Suite) (Suite, error) {
@@ -3287,7 +3811,15 @@ func executionSuite(suite Suite) (Suite, error) {
 		if err := executionIntegers(suite.document["scenarios"].(map[string]any)); err != nil {
 			return Suite{}, err
 		}
-		if err := json.Unmarshal([]byte(suite.original), &suite); err != nil {
+		var decodeError error
+		if suite.Provenance.SuiteVersion == "ess-conformance/11" {
+			decoder := json.NewDecoder(strings.NewReader(suite.original))
+			decoder.UseNumber()
+			decodeError = decoder.Decode(&suite)
+		} else {
+			decodeError = json.Unmarshal([]byte(suite.original), &suite)
+		}
+		if err := decodeError; err != nil {
 			return Suite{}, fmt.Errorf("exact selected metadata exceeds the inherited Go execution view: %w", err)
 		}
 	}
@@ -3759,6 +4291,11 @@ func admitStep(value any, major int) error {
 	}
 	required, optional := "step", ""
 	switch tag {
+	case "check_live":
+		if major < 10 {
+			return fmt.Errorf("live trace requires suite/10 or /11")
+		}
+		required += " trace"
 	case "expect_response_payload":
 		if major < 8 {
 			return fmt.Errorf("response payload requires suite/8 or /9")
@@ -3796,6 +4333,16 @@ func admitStep(value any, major int) error {
 		required += " event"
 	case "capture_instance":
 		required += " instance entity event field"
+	case "capture_response":
+		if major < 10 {
+			return fmt.Errorf("response captures require suite/10 or /11")
+		}
+		required += " command instance field shape"
+	case "eventually_matching_event":
+		if major < 10 {
+			return fmt.Errorf("payload-path matchers require suite/10 or /11")
+		}
+		required += " event matches shape"
 	case "expect_invocation":
 		required += " binding command"
 		optional = "input"
@@ -3836,6 +4383,8 @@ func admitStep(value any, major int) error {
 	}
 	for key, v := range f {
 		switch key {
+		case "trace":
+			err = admitLiveTrace(v)
 		case "response":
 			err = admitResponse(v)
 		case "check":
@@ -3868,7 +4417,7 @@ func admitStep(value any, major int) error {
 			err = admitPayload(v)
 		case "field":
 			_, err = text(v)
-		case "input", "params":
+		case "input", "params", "matches":
 			err = admitValues(v, major, tag == "expect_invocation")
 		case "payload", "fields":
 			if _, ok := v.(map[string]any); !ok {

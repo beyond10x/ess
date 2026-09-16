@@ -3,6 +3,7 @@
 mod cli_binding;
 mod coverage;
 mod input_discovery;
+mod live_conformance;
 mod load;
 mod model_types;
 mod normalize;
@@ -424,6 +425,8 @@ impl SynthesisTarget {
 
 #[derive(Debug, Subcommand)]
 enum ConformCommand {
+    /// Compile compact live scenarios against original pinned component models.
+    Live(live_conformance::Args),
     /// Generate the suite the specification obliges.
     ///
     /// `ir` writes the canonical suite document to the file `--out` names. `go` writes a Go test
@@ -2734,6 +2737,7 @@ fn synthesize(
 
 fn conform(command: ConformCommand) -> Result<ExitCode> {
     match command {
+        ConformCommand::Live(args) => live_conformance::run(&args),
         ConformCommand::Synthesize {
             input,
             target,
@@ -3829,7 +3833,7 @@ mod tests {
     ///
     /// Written down on purpose. A verb added to the tree and to no area would otherwise be
     /// counted by the enumeration it is missing from and pass every case below.
-    const AREA_LEAVES: usize = 59;
+    const AREA_LEAVES: usize = 60;
     const AREA_ONLY_LEAVES: [&[&str]; 2] = [&["specify", "cli"], &["generate", "cli"]];
 
     /// The order they are offered in is checked where it is rendered, in

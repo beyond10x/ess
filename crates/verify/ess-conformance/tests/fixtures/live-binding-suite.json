@@ -1,0 +1,35 @@
+{
+  "provenance": {
+    "suite_version": "ess-conformance/10",
+    "system": "fixture",
+    "specification_version": "v1",
+    "spec_digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "contract_digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+  },
+  "scenarios": {
+    "fixture.routing/authored/real-identities": {
+      "purpose": "Only the actual call bridging to the actual agent satisfies routing",
+      "steps": [
+        {"step": "execute_command", "command": "fixture.routing.Agent"},
+        {"step": "capture_response", "command": "fixture.routing.Agent", "instance": "agent", "field": "agent_id", "shape": {"agent_id": {"holds": "primitive", "kind": "string"}}},
+        {"step": "execute_command", "command": "fixture.routing.Call"},
+        {"step": "capture_response", "command": "fixture.routing.Call", "instance": "call", "field": "call_id", "shape": {"call_id": {"holds": "primitive", "kind": "string"}}},
+        {
+          "step": "eventually_matching_event",
+          "event": "fixture.routing.CallStateChanged",
+          "matches": {
+            "item.id": {"kind": "instance", "instance": "call"},
+            "item.agent.id": {"kind": "instance", "instance": "agent"},
+            "item.state": {"kind": "literal", "value": "bridged"}
+          },
+          "shape": {
+            "item.id": {"holds": "primitive", "kind": "string"},
+            "item.agent.id": {"holds": "primitive", "kind": "string"},
+            "item.state": {"holds": "enum", "variants": ["queued", "bridged"]}
+          }
+        }
+      ],
+      "source": []
+    }
+  }
+}

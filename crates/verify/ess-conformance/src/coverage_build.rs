@@ -474,17 +474,17 @@ fn coverage_version(
     suite: &crate::ConformanceSuite,
     inventory: &Inventory,
 ) -> crate::scenario::SuiteFormat {
-    crate::scenario::SuiteFormat::parse(
-        if crate::response::used_by(suite) || crate::quoted_predicate_format::used_by(suite) {
-            "ess-conformance/9"
-        } else if suite.requires_extended_format()
-            || inventory.refused.iter().any(|r| r.code == "ESS-SYNTH-015")
-        {
-            "ess-conformance/7"
-        } else {
-            coverage::COVERAGE_SUITE_FORMAT
-        },
-    )
+    crate::scenario::SuiteFormat::parse(if crate::live_bindings::used_by(suite) {
+        "ess-conformance/11"
+    } else if crate::response::used_by(suite) || crate::quoted_predicate_format::used_by(suite) {
+        "ess-conformance/9"
+    } else if suite.requires_extended_format()
+        || inventory.refused.iter().any(|r| r.code == "ESS-SYNTH-015")
+    {
+        "ess-conformance/7"
+    } else {
+        coverage::COVERAGE_SUITE_FORMAT
+    })
     .expect("constant suite version")
 }
 

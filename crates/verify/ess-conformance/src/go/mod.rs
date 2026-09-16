@@ -146,6 +146,32 @@ func TestConformance(t *testing.T) {{
 `Run` builds one target per scenario, because scenario isolation is the suite's requirement and a
 shared target would make it your discipline instead.
 
+## Calling from an application runner
+
+Use a session when the host already owns scenario selection and lifecycle:
+
+```go
+session, err := essconform.NewSession(essconform.Identity{{Name: "service", Version: "candidate"}})
+// Handle admission failure before starting any fixture.
+for _, id := range session.Scenarios() {{
+    execution, err := session.Execute(ctx, id, func(ctx context.Context) essconform.Target {{
+        return newTargetBoundTo(ctx)
+    }})
+    // Preserve the returned status and diagnostics; unsupported is not a pass.
+    _ = execution
+    _ = err
+}}
+originalReport, err := session.Finish()
+// Persist originalReport unchanged; failure to persist is a delivery failure.
+```
+
+The factory binds the context to live operations. Targets must release partial
+setup from `EndScenario` even after `BeginScenario` fails, using an independent
+cleanup context. The session checks target identity, admits the fixed inventory,
+executes each scenario once, and uses the same evaluator as `Run`. Finalization
+refuses missing or interrupted callbacks and emits native report/2 without
+reading host environment variables. Unknown coverage remains inconclusive.
+
 ## What to return when you cannot answer
 
 `ErrUnsupported`, not an error. A scenario whose semantic the implementation does not expose is
@@ -195,10 +221,12 @@ ESS_REPORT_OUT=$PWD/report.json go test ./...
 
 fn runtime() -> String {
     format!(
-        "{}\n{}\n{}\n{}",
+        "{}\n{}\n{}\n{}\n{}\n{}",
         include_str!("runtime.go"),
         include_str!("reading.go"),
         include_str!("response.go"),
+        include_str!("temporal.go"),
+        include_str!("live_trace.go"),
         include_str!("../../../../specify/ess-domain/src/reading/coordinate.go")
     )
 }
@@ -215,6 +243,7 @@ mod tests {
     fn suite() -> ConformanceSuite {
         let digest = |value: &str| SpecDigest::new(value).expect("a digest");
         ConformanceSuite::new(SuiteProvenance {
+            live_inputs_digest: None,
             suite_version: SuiteFormat::CURRENT,
             system: "billing".to_owned(),
             specification_version: "v3".to_owned(),

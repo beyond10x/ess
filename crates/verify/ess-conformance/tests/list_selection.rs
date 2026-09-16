@@ -199,7 +199,15 @@ fn independent_go_observation_witness_receives_closed_typed_contract() {
         .unwrap();
         std::fs::write(
             base.join("runtime.go"),
-            include_str!("../src/go/runtime.go"),
+            format!(
+                "{}\n{}\n{}\n{}\n{}\n{}",
+                include_str!("../src/go/runtime.go"),
+                include_str!("../src/go/reading.go"),
+                include_str!("../src/go/response.go"),
+                include_str!("../src/go/temporal.go"),
+                include_str!("../src/go/live_trace.go"),
+                include_str!("../../../specify/ess-domain/src/reading/coordinate.go")
+            ),
         )
         .unwrap();
         std::fs::write(

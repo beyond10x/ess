@@ -122,6 +122,7 @@ impl AdmittedSuite {
         let suite: ConformanceSuite = serde_json::from_str(original)
             .map_err(|e| AdmissionError::new("InvalidSuite", "$suite", e.to_string()))?;
         self::suite(&suite)?;
+        crate::live_bindings::admit(&suite)?;
         payload_agrees_with_its_shape(&suite)?;
         entity_setup(&suite)?;
         let coverage = value
@@ -175,21 +176,31 @@ fn validate_suite(value: &Json) -> Result<(), AdmissionError> {
             "spec_digest",
             "contract_digest",
         ],
-        &["component"],
+        &["component", "live_inputs_digest"],
     )?;
     let version = SuiteFormat::parse(p["suite_version"].text()?)
         .map_err(|e| p["suite_version"].error("UnsupportedSuiteVersion", e.to_string()))?;
-    if !matches!(version.major(), 1..=9) {
+    if !matches!(version.major(), 1..=11) {
         return Err(p["suite_version"].error(
             "UnsupportedSuiteVersion",
-            "execution readers admit suite majors 1–9",
+            "execution readers admit suite majors 1–11",
         ));
     }
-    if matches!(version.major(), 5 | 7 | 9) != root.contains_key("coverage") {
+    if matches!(version.major(), 5 | 7 | 9 | 11) != root.contains_key("coverage") {
         return Err(value.error(
             "InvalidCoverage",
-            "coverage is required exactly for suite/5, suite/7 and suite/9",
+            "coverage is required exactly for suite/5, suite/7, suite/9 and suite/11",
         ));
+    }
+    if let Some(digest) = p.get("live_inputs_digest") {
+        if version.major() < 10 {
+            return Err(digest.error(
+                "UnsupportedVocabulary",
+                "live input manifests require suite/10 or /11",
+            ));
+        }
+        ess_primitives::evidence::SpecDigest::new(digest.text()?)
+            .map_err(|e| digest.error("InvalidLiveInputs", e.to_string()))?;
     }
     for scenario in root["scenarios"].object()?.values() {
         let s = scenario.closed(&["purpose", "steps", "source"], &[])?;
@@ -374,6 +385,11 @@ fn step_value(value: &Json, major: u32) -> Result<(), AdmissionError> {
         "expect_event" | "eventually_event" => (&["step", "event"], &["payload", "shape"]),
         "expect_no_event" | "redeliver_event" => (&["step", "event"], &[]),
         "capture_instance" => (&["step", "instance", "entity", "event", "field"], &[]),
+        "capture_response" if major >= 10 => {
+            (&["step", "command", "instance", "field", "shape"], &[])
+        }
+        "check_live" if major >= 10 => (&["step", "trace"], &[]),
+        "eventually_matching_event" if major >= 10 => (&["step", "event", "matches", "shape"], &[]),
         "expect_invocation" => (&["step", "binding", "command"], &["input"]),
         "query_view" => (&["step", "view"], &["params"]),
         "expect_view" => (&["step", "view", "expectation"], &[]),
@@ -387,6 +403,10 @@ fn step_value(value: &Json, major: u32) -> Result<(), AdmissionError> {
     };
     for (key, field) in value.closed(required, optional)? {
         match key.as_str() {
+            "trace" => {
+                let _: crate::live_trace::Check = serde_json::from_str(&field.raw)
+                    .map_err(|error| field.error("InvalidLiveTrace", error.to_string()))?;
+            }
             "response" if tag == "expect_response_payload" => {
                 let _: crate::response::Observation = serde_json::from_str(&field.raw)
                     .map_err(|error| field.error("InvalidResponse", error.to_string()))?;
@@ -401,7 +421,7 @@ fn step_value(value: &Json, major: u32) -> Result<(), AdmissionError> {
             "force" | "outcome" => {
                 field.closed(&["command", "outcome"], &[])?;
             }
-            "input" | "params" => values(field, major, tag == "expect_invocation")?,
+            "input" | "params" | "matches" => values(field, major, tag == "expect_invocation")?,
             "identity" => field.payload()?,
             "fields" | "payload" => {
                 field.object()?;
@@ -444,6 +464,7 @@ fn response_payloads(suite: &ConformanceSuite) -> Result<(), AdmissionError> {
 
 /// Check directly constructed suites before artifact creation or target effects.
 pub fn suite(suite: &ConformanceSuite) -> Result<(), AdmissionError> {
+    crate::live_bindings::admit(suite)?;
     crate::quoted_predicate_format::admit_suite(suite)?;
     response_payloads(suite)?;
     entity_setup(suite)?;
@@ -607,7 +628,8 @@ pub(crate) fn entity_setup(suite: &ConformanceSuite) -> Result<(), AdmissionErro
                     }
                     identities.push((entity, identity));
                 }
-                ScenarioStep::CaptureInstance { instance, .. } => {
+                ScenarioStep::CaptureInstance { instance, .. }
+                | ScenarioStep::CaptureResponse { instance, .. } => {
                     if !instances.insert(instance) {
                         return Err(AdmissionError::new(
                             "DuplicateEntitySetup",
@@ -623,6 +645,7 @@ pub(crate) fn entity_setup(suite: &ConformanceSuite) -> Result<(), AdmissionErro
                 | ScenarioStep::ExpectEvent { .. }
                 | ScenarioStep::ExpectNoEvent { .. }
                 | ScenarioStep::EventuallyEvent { .. }
+                | ScenarioStep::EventuallyMatchingEvent { .. }
                 | ScenarioStep::ExpectInvocation { .. }
                 | ScenarioStep::ExpectNotBefore { .. }
                 | ScenarioStep::ExpectWithin { .. }

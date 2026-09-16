@@ -11,6 +11,7 @@ authors.workspace = true
 [dependencies]
 ess-primitives.workspace = true
 ess-compiler.workspace = true
+ess-composition.workspace = true
 ess-domain.workspace = true
 
 # For `SuiteProvenance`, which derives every fact it shares with a projected artifact from

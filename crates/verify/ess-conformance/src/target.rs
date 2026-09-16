@@ -85,6 +85,26 @@ use crate::scenario::{
 /// See the [module documentation](self) for why it has exactly these methods and no assertion among
 /// them.
 pub trait ConformanceTarget {
+    /// Subscribe to the fixed event set before stimulus; cleanup belongs to `end_scenario`.
+    fn open_observations(
+        &self,
+        _events: std::collections::BTreeSet<EventRef>,
+    ) -> Result<String, TargetError> {
+        Err(TargetError::unsupported(
+            "live observations",
+            "no complete occurrence source",
+        ))
+    }
+    /// Return a complete append-only batch, waiting inside the adapter when necessary.
+    fn observe_occurrences(
+        &self,
+        _request: crate::live_trace::Request,
+    ) -> Result<crate::temporal::Batch, TargetError> {
+        Err(TargetError::unsupported(
+            "live observations",
+            "no complete occurrence source",
+        ))
+    }
     /// Bind and re-admit the declared host authority, then activate the actual periodic loop.
     /// Named types, nested values and invariants must match this host's authoritative contract.
     fn open_periodic(
@@ -327,6 +347,9 @@ pub trait ConformanceTarget {
     }
 
     /// Closes the scenario's execution context (§8).
+    ///
+    /// With `Runner::with_failed_setup_cleanup`, also called after a failed begin.
+    /// Targets opting into that live lifecycle must tolerate incomplete setup.
     fn end_scenario(&self, scenario: &ScenarioContext) -> Result<(), TargetError>;
 }
 

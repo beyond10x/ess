@@ -224,6 +224,7 @@ mod tests {
     fn report(scenarios: Vec<ScenarioResult>) -> ConformanceReport {
         ConformanceReport {
             suite: SuiteProvenance {
+                live_inputs_digest: None,
                 suite_version: SuiteFormat::CURRENT,
                 system: "billing".to_owned(),
                 specification_version: "v3".to_owned(),

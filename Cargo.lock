@@ -441,6 +441,7 @@ name = "ess-conformance"
 version = "0.25.0"
 dependencies = [
  "ess-compiler",
+ "ess-composition",
  "ess-domain",
  "ess-gen",
  "ess-primitives",

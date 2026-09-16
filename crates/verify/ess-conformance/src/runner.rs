@@ -291,6 +291,7 @@ pub struct Runner<C: Clock = AdvancingClock> {
     config: RunnerConfig,
     clock: C,
     ids: Ids,
+    cleanup_failed_setup: bool,
 }
 
 impl Runner<AdvancingClock> {
@@ -311,7 +312,21 @@ impl Runner<AdvancingClock> {
 impl<C: Clock> Runner<C> {
     /// A runner over an explicit configuration, clock and id source.
     pub fn new(config: RunnerConfig, clock: C, ids: Ids) -> Self {
-        Self { config, clock, ids }
+        Self {
+            config,
+            clock,
+            ids,
+            cleanup_failed_setup: false,
+        }
+    }
+
+    /// Release partially acquired setup through `end_scenario` after begin fails.
+    /// Targets opting into live lifecycle ownership must tolerate incomplete
+    /// setup. Legacy callback behavior stays unchanged unless selected here.
+    #[must_use]
+    pub fn with_failed_setup_cleanup(mut self) -> Self {
+        self.cleanup_failed_setup = true;
+        self
     }
 
     /// Runs every scenario in `suite` against `target`, in id order.
@@ -391,7 +406,9 @@ impl<C: Clock> Runner<C> {
         let context = ScenarioContext::new(id.clone(), self.ids.correlation());
         let mut run = Run::new(id.clone(), context);
 
-        if let Err(error) = target.begin_scenario(&run.context) {
+        let begin = target.begin_scenario(&run.context);
+        let setup_complete = begin.is_ok();
+        if let Err(error) = begin {
             run.record(target_failure(
                 &run.id,
                 "opening an isolated execution context",
@@ -403,6 +420,8 @@ impl<C: Clock> Runner<C> {
                     break;
                 }
             }
+        }
+        if setup_complete || self.cleanup_failed_setup {
             if let Err(error) = target.end_scenario(&run.context) {
                 run.record(target_failure(
                     &run.id,
@@ -449,6 +468,7 @@ impl<C: Clock> Runner<C> {
         target: &T,
     ) -> Flow {
         match step {
+            ScenarioStep::CheckLive { trace } => self.check_live(trace, run, target),
             ScenarioStep::ExpectResponsePayload { response } => {
                 expect_response_payload(response, run)
             }
@@ -485,6 +505,17 @@ impl<C: Clock> Runner<C> {
                 event,
                 field,
             } => capture_instance(instance, entity, event, field, run),
+            ScenarioStep::CaptureResponse {
+                command,
+                instance,
+                field,
+                shape,
+            } => capture_response(command, instance, field, shape, run),
+            ScenarioStep::EventuallyMatchingEvent {
+                event,
+                matches,
+                shape,
+            } => self.eventually_matching_event(event, matches, shape, run, target),
             ScenarioStep::RedeliverEvent { event } => redeliver_event(event, run, target),
             ScenarioStep::ExpectInvocation {
                 binding,
@@ -497,7 +528,7 @@ impl<C: Clock> Runner<C> {
                 event,
                 payload,
                 shape,
-            } => self.eventually_event(event, payload, shape, run, target),
+            } => self.eventually_event(event, payload, shape, run, target, false),
             ScenarioStep::EventuallyView {
                 view,
                 params,
@@ -808,6 +839,133 @@ impl<C: Clock> Runner<C> {
         }
     }
 
+    fn eventually_matching_event<T: ConformanceTarget>(
+        &mut self,
+        event: &EventRef,
+        matches: &BTreeMap<String, ScenarioValue>,
+        shape: &PayloadShape,
+        run: &mut Run,
+        target: &T,
+    ) -> Flow {
+        let values = matches
+            .iter()
+            .map(|(path, value)| run.resolve(value).map(|value| (path.clone(), value)))
+            .collect::<Result<BTreeMap<_, _>, _>>();
+        match values {
+            Ok(values) => self.eventually_event(event, &values, shape, run, target, true),
+            Err(reason) => {
+                run.record(CheckResult::errored(
+                    "binding observed event payload",
+                    Diagnostic::new(CheckCode::EventualEvent, run.id.clone()).observed(reason),
+                ));
+                Flow::Stop
+            }
+        }
+    }
+
+    fn check_live<T: ConformanceTarget>(
+        &mut self,
+        check: &crate::live_trace::Check,
+        run: &mut Run,
+        target: &T,
+    ) -> Flow {
+        use crate::live_trace::{Check, State};
+        use crate::temporal::Error;
+        if let Check::Open { events } = check {
+            let opened = target
+                .open_observations(events.clone())
+                .and_then(|lifetime| {
+                    State::new(lifetime, events.clone()).map_err(|error| {
+                        TargetError::unavailable("observation lifetime", format!("{error:?}"))
+                    })
+                });
+            return match opened {
+                Ok(state) => {
+                    run.trace = Some(state);
+                    run.record(CheckResult::passed(
+                        CheckCode::EventualEvent,
+                        "observation subscribed",
+                    ));
+                    Flow::Continue
+                }
+                Err(error) => {
+                    run.record(target_failure(&run.id, "subscribing observations", &error));
+                    Flow::Stop
+                }
+            };
+        }
+        let resolve = |map: &BTreeMap<String, ScenarioValue>| {
+            map.iter()
+                .map(|(path, value)| run.resolve(value).map(|value| (path.clone(), value)))
+                .collect::<Result<BTreeMap<_, _>, _>>()
+        };
+        let empty = BTreeMap::new();
+        let (claim, required) = match check {
+            Check::Await { claim, .. } | Check::Absent { claim, .. } => (&claim.matches, &empty),
+            Check::Stable {
+                claim, required, ..
+            } => (&claim.matches, required),
+            _ => (&empty, &empty),
+        };
+        let values =
+            resolve(claim).and_then(|claim| resolve(required).map(|required| (claim, required)));
+        let (values, required) = match values {
+            Ok(values) => values,
+            Err(reason) => {
+                run.record(CheckResult::errored(
+                    "live capture",
+                    Diagnostic::new(CheckCode::EventualEvent, run.id.clone()).observed(reason),
+                ));
+                return Flow::Stop;
+            }
+        };
+        let deadline = self.deadline();
+        loop {
+            let state = run.trace.as_mut().expect("admitted trace subscription");
+            match state.evaluate(check, &values, &required) {
+                Ok(()) => {
+                    run.record(CheckResult::passed(
+                        CheckCode::EventualEvent,
+                        "complete live occurrence assertion",
+                    ));
+                    return Flow::Continue;
+                }
+                Err(Error::Unfinished { required_ms, .. })
+                    if !deadline.has_passed(self.clock.now()) =>
+                {
+                    match target.observe_occurrences(state.request(required_ms)) {
+                        Ok(batch) => {
+                            if let Err(error) = state.accept(batch) {
+                                run.record(CheckResult::errored(
+                                    "incomplete live observation",
+                                    Diagnostic::new(CheckCode::EventualEvent, run.id.clone())
+                                        .observed(format!("{error:?}")),
+                                ));
+                                return Flow::Stop;
+                            }
+                        }
+                        Err(error) => {
+                            run.record(target_failure(
+                                &run.id,
+                                "observing complete occurrences",
+                                &error,
+                            ));
+                            return Flow::Stop;
+                        }
+                    }
+                }
+                Err(error) => {
+                    run.record(CheckResult::failed(
+                        "live occurrence assertion",
+                        Diagnostic::new(CheckCode::EventualEvent, run.id.clone())
+                            .observed(format!("{error:?}")),
+                    ));
+                    return Flow::Stop;
+                }
+            }
+        }
+    }
+
     /// Asks for an event until it is observed or the deadline has passed (§15, §40).
     fn eventually_event<T: ConformanceTarget>(
         &mut self,
@@ -816,6 +974,7 @@ impl<C: Clock> Runner<C> {
         shape: &PayloadShape,
         run: &mut Run,
         target: &T,
+        paths: bool,
     ) -> Flow {
         let deadline = self.deadline();
         let mut asks = 0_u32;
@@ -840,7 +999,9 @@ impl<C: Clock> Runner<C> {
             run.remember(&observed);
             let carried = observed
                 .iter()
-                .find(|seen| &seen.event == event && matches(&seen.payload, payload))
+                .find(|seen| &seen.event == event && if paths {
+                    payload.iter().all(|(path, expected)| matches!(reach_into(&seen.payload, path), Reached::Value(actual) if actual == expected))
+                } else { matches(&seen.payload, payload) })
                 .map(|seen| seen.payload.clone());
             if let Some(carried) = carried {
                 run.record(CheckResult::passed(
@@ -1484,6 +1645,51 @@ fn capture_instance(
     Flow::Stop
 }
 
+fn capture_response(
+    command: &CommandRef,
+    instance: &InstanceName,
+    field: &str,
+    shape: &PayloadShape,
+    run: &mut Run,
+) -> Flow {
+    let captured = run
+        .last_command
+        .as_ref()
+        .filter(|executed| executed.command == command.to_string())
+        .and_then(|executed| executed.result.response.as_ref())
+        .and_then(|response| {
+            if shape
+                .leaves()
+                .iter()
+                .all(|(path, leaf)| match reach_into(response, path) {
+                    Reached::Value(value) => leaf.admits(Some(value)),
+                    Reached::Absent => leaf.admits(None),
+                    Reached::Blocked { .. } => false,
+                })
+            {
+                response.get(field).cloned()
+            } else {
+                None
+            }
+        });
+    if let Some(value) = captured {
+        if !run.instances.contains_key(instance) {
+            run.instances.insert(instance.clone(), value);
+            return Flow::Continue;
+        }
+    }
+    run.record(CheckResult::errored(
+        format!("capturing {command}.{field} as {instance}"),
+        Diagnostic::new(CheckCode::Instance, run.id.clone())
+            .declared_by(command.clone())
+            .expected("an unbound variable and the preceding command's actual declared response")
+            .observed(
+                "response missing, malformed, from another invocation, or capture already bound",
+            ),
+    ));
+    Flow::Stop
+}
+
 /// Names the instant a later claim measures from (§37).
 ///
 /// An `error` rather than a `failed` when the target refuses, for the same reason
@@ -1813,6 +2019,7 @@ impl Executed {
 
 /// What one scenario has established so far.
 struct Run {
+    trace: Option<crate::live_trace::State>,
     id: ScenarioId,
     context: ScenarioContext,
     last_command: Option<Executed>,
@@ -1833,6 +2040,7 @@ impl Run {
         Self {
             id,
             context,
+            trace: None,
             last_command: None,
             last_view: None,
             unreadable: None,
@@ -2507,6 +2715,7 @@ mod tests {
     #[test]
     fn ids_come_from_the_suite_and_from_nothing_ambient() {
         let mut ids = Ids::for_suite(&ConformanceSuite::new(SuiteProvenance {
+            live_inputs_digest: None,
             suite_version: SuiteFormat::CURRENT,
             system: "billing".to_owned(),
             specification_version: "v3".to_owned(),

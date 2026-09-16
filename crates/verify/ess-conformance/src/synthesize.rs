@@ -1136,6 +1136,11 @@ pub(crate) fn needs_of(
                 if !handles(ir, component, check.command.name()) { needs.insert(check.command.clone().into()); }
                 if check.periodic.host.owner != component.name { needs.insert(ComponentRef::new(check.periodic.host.owner.clone()).into()); }
             }
+            ScenarioStep::CheckLive { trace } => {
+                for event in trace.events() {
+                    if !emits(ir, component, event.name()) { needs.insert(event.into()); }
+                }
+            }
             ScenarioStep::ExpectReadingOrder { left, right, .. } => {
                 for reference in [left, right] {
                     if !emits(ir, component, reference.event.name()) {
@@ -1144,6 +1149,7 @@ pub(crate) fn needs_of(
                 }
             }
             ScenarioStep::ExecuteCommand { command, .. }
+            | ScenarioStep::CaptureResponse { command, .. }
             | ScenarioStep::ExpectInvocation { command, .. } => {
                 if !handles(ir, component, command.name()) {
                     needs.insert(command.clone().into());
@@ -1155,6 +1161,7 @@ pub(crate) fn needs_of(
                 }
             }
             ScenarioStep::ExpectEvent { event, .. }
+            | ScenarioStep::EventuallyMatchingEvent { event, .. }
             | ScenarioStep::EventuallyEvent { event, .. }
             | ScenarioStep::RedeliverEvent { event, .. }
             | ScenarioStep::CaptureInstance { event, .. } => {
@@ -2275,7 +2282,7 @@ pub(crate) fn payload_shape(ir: &EssIr, event: &EventRef) -> PayloadShape {
 /// The same walk [`crate::input`] documents as a table, so a payload and a command input are held to
 /// one reading of what `Optional<Money>` exposes. A type that refers to itself contributes nothing
 /// past [`MAX_TYPE_DEPTH`]: refusing to describe a leaf is a weaker assertion, never a wrong one.
-fn describe(
+pub(crate) fn describe(
     ir: &EssIr,
     type_ref: &ResolvedTypeRef,
     path: &str,

@@ -1385,6 +1385,7 @@ mod tests {
     /// A suite holding one scenario that depends on the constructs given, and on nothing else.
     fn suite_depending_on(source: impl IntoIterator<Item = EssSemanticRef>) -> ConformanceSuite {
         let mut suite = ConformanceSuite::new(SuiteProvenance {
+            live_inputs_digest: None,
             suite_version: SuiteFormat::CURRENT,
             system: "catalog".to_owned(),
             specification_version: "v1".to_owned(),

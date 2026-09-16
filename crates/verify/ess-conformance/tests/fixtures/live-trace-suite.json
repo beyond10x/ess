@@ -1,0 +1,17 @@
+{
+  "provenance": {"suite_version":"ess-conformance/10","system":"fixture","specification_version":"v1","spec_digest":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","contract_digest":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"},
+  "scenarios": {
+    "fixture.routing/authored/complete-live-windows": {
+      "purpose":"Absence and stability use actual ordered occurrences and complete intervals",
+      "steps":[
+        {"step":"check_live","trace":{"kind":"open","events":["fixture.routing.Agent","fixture.routing.Metrics"]}},
+        {"step":"check_live","trace":{"kind":"await","anchor":"wrap","after":null,"claim":{"event":"fixture.routing.Agent","matches":{"id":{"kind":"literal","value":"owned"},"state":{"kind":"literal","value":"wrap-up"}},"shape":{"id":{"holds":"primitive","kind":"string"},"state":{"holds":"primitive","kind":"string"}}}}},
+        {"step":"check_live","trace":{"kind":"absent","anchor":"wrap","duration_ms":20,"claim":{"event":"fixture.routing.Agent","matches":{"id":{"kind":"literal","value":"owned"},"state":{"kind":"literal","value":"selected"}},"shape":{"id":{"holds":"primitive","kind":"string"},"state":{"holds":"primitive","kind":"string"}}}}},
+        {"step":"check_live","trace":{"kind":"await","anchor":"available","after":"wrap","claim":{"event":"fixture.routing.Agent","matches":{"id":{"kind":"literal","value":"owned"},"state":{"kind":"literal","value":"available"}},"shape":{"id":{"holds":"primitive","kind":"string"},"state":{"holds":"primitive","kind":"string"}}}}},
+        {"step":"check_live","trace":{"kind":"await","anchor":"baseline","after":null,"claim":{"event":"fixture.routing.Metrics","matches":{"account":{"kind":"literal","value":"owned"},"waiting":{"kind":"literal","value":3}},"shape":{"account":{"holds":"primitive","kind":"string"},"waiting":{"holds":"primitive","kind":"integer"}}}}},
+        {"step":"check_live","trace":{"kind":"stable","anchor":"baseline","duration_ms":10,"claim":{"event":"fixture.routing.Metrics","matches":{"account":{"kind":"literal","value":"owned"}},"shape":{"account":{"holds":"primitive","kind":"string"}}},"required":{"waiting":{"kind":"literal","value":3}},"shape":{"waiting":{"holds":"primitive","kind":"integer"}}}}
+      ],
+      "source":[]
+    }
+  }
+}
