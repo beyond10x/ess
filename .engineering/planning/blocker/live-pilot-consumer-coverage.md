@@ -8,7 +8,7 @@ relations:
 - blocks: story:compact-live-authoring
 - blocks: story:callable-live-evaluator
 withholds: test_result
-revision: 2
+revision: 3
 ---
 ## Observation
 
@@ -50,3 +50,7 @@ Feature checkpoints remain published for review; no merge or release is claimed.
 ## Release-base comparison 2026-09-16
 
 A clean managed checkout of exact release/base d85f083cf0705c4c403fc3c56e09c7bf5f2ac272 reproduces consumer-check refusal under the required Rust 1.98.1 profile. It has three unclassified concrete entries: Naming::code, ess_synth::alias module and ess_synth::code_aliases re-export. Provisional accounting is 2430 model obligations, 90 bound profiles, 147506 eligible baseline-unknown cells and 66571 stale/unaccounted diagnostics, with zero executed cases/metadata guards. These are inherited accounting gaps, not 66571 failed behavioral tests. Exact refusal and extraction are retained in metrics-base-consumer-evidence. The feature adds its own live-compiler/recipe/session/temporal entries which still need finite classification and supported/refused witnesses; passing focused tests does not discharge that gate. No baseline fingerprint, exemption or profile has been refreshed to make this pass.
+
+## Exact metrics candidate comparison
+
+Fresh extraction of implementation 10be80e1 discovers 169 unclassified concrete entries: the same three inherited entries plus 166 feature additions. Compared with the clean d85f083c release checkout, rust-inventory.json, wire-inventory.json and provider-schema.json are exactly equal. Both report the same 66571 provisional stale/unaccounted diagnostics; the set difference is empty in both directions. No cases or metadata guards execute while extraction/classification is refused. Retain metrics-consumer-comparison.json and metrics-candidate-consumer-evidence alongside the base evidence. The new compact compiler boundary and its live helpers still need explicit finite classifications and behavioral witnesses; this task has not changed the sealed baseline or claimed that existing profile eligibility covers a new consumer.
