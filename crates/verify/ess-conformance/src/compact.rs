@@ -17,6 +17,53 @@ use std::collections::{BTreeMap, BTreeSet};
 
 /// Compact live document format; legacy timeline formats keep their existing meaning.
 pub const FORMAT: &str = "ess-scenario/3";
+/// Captured observations, exact offsets and quiet baselines.
+pub const OBSERVATION_FORMAT: &str = "ess-scenario/4";
+
+/// An event comparison value; fixture and command inputs retain their own vocabulary.
+#[derive(Debug, serde::Deserialize)]
+#[serde(untagged, deny_unknown_fields)]
+pub enum EventValue {
+    /// Closed exact integer addition to a preceding typed capture.
+    Offset {
+        /// A single explicitly marked arithmetic expression.
+        #[serde(rename = "$offset")]
+        expression: Offset,
+    },
+    /// Existing literal or capture syntax.
+    Plain(recipes::Value),
+}
+
+/// Exact signed integer offset, not an expression language.
+#[derive(Debug, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct Offset {
+    /// Earlier capture name.
+    pub capture: String,
+    /// Signed checked addition.
+    pub plus: i64,
+}
+
+/// A declared event field captured from a named actual occurrence.
+#[derive(Debug, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct EventCapture {
+    /// Original dotted payload path.
+    pub path: String,
+    /// Required explicitly when the declaration is optional.
+    #[serde(default)]
+    pub require_present: bool,
+}
+
+/// Inclusive signed integer bounds on one selected observation.
+#[derive(Debug, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct IntegerBounds {
+    /// Inclusive minimum.
+    pub min: i64,
+    /// Inclusive maximum.
+    pub max: i64,
+}
 
 /// One named setup recipe.
 #[derive(Debug, serde::Deserialize)]
@@ -56,13 +103,53 @@ pub enum Action {
         /// Declared event.
         event: EventRef,
         /// Payload paths constrained by literals or earlier captures.
-        matches: BTreeMap<String, recipes::Value>,
+        matches: BTreeMap<String, EventValue>,
         /// Name this actual occurrence for later temporal assertions.
         #[serde(default)]
         anchor: Option<InstanceName>,
         /// Require an occurrence strictly after an earlier named observation.
         #[serde(default)]
         after: Option<InstanceName>,
+        /// Actual event fields; requires source format /4.
+        #[serde(default)]
+        capture: Option<BTreeMap<InstanceName, EventCapture>>,
+        /// Bounds on the selected first occurrence, never selection filters.
+        #[serde(default)]
+        integers: Option<BTreeMap<String, IntegerBounds>>,
+    },
+    /// Complete a native stability assertion before a later stimulus (/4 only).
+    Stable {
+        /// Original event owner.
+        service: ServiceKey,
+        /// Declared event.
+        event: EventRef,
+        /// Observation scope, independent of required values.
+        matches: BTreeMap<String, EventValue>,
+        /// Named actual occurrence starting the interval.
+        since: InstanceName,
+        /// Complete stability interval in milliseconds.
+        stable_for_ms: u64,
+        /// Values required on every scoped occurrence.
+        required: BTreeMap<String, EventValue>,
+    },
+    /// Wait for a complete quiet interval after a fresh native observation fence.
+    Quiet {
+        /// Original event owner.
+        service: ServiceKey,
+        /// Declared event.
+        event: EventRef,
+        /// Account or resource scope.
+        matches: BTreeMap<String, EventValue>,
+        /// Name the latest actual scoped snapshot.
+        anchor: InstanceName,
+        /// Full quiet interval in milliseconds.
+        quiet_for_ms: u64,
+        /// Actual fields captured after the interval completes.
+        #[serde(default)]
+        capture: Option<BTreeMap<InstanceName, EventCapture>>,
+        /// Bounds on the selected baseline.
+        #[serde(default)]
+        integers: Option<BTreeMap<String, IntegerBounds>>,
     },
 }
 
@@ -75,7 +162,7 @@ pub struct Observation {
     /// Declared event.
     pub event: EventRef,
     /// Original dotted payload paths.
-    pub matches: BTreeMap<String, recipes::Value>,
+    pub matches: BTreeMap<String, EventValue>,
     /// Name an eventual observation; required by later temporal references.
     #[serde(default)]
     pub anchor: Option<InstanceName>,
@@ -93,14 +180,20 @@ pub struct Observation {
     pub stable_for_ms: Option<u64>,
     /// Payload values that must hold on every scoped snapshot.
     #[serde(default)]
-    pub required: BTreeMap<String, recipes::Value>,
+    pub required: BTreeMap<String, EventValue>,
+    /// Capture fields of the named actual occurrence.
+    #[serde(default)]
+    pub capture: Option<BTreeMap<InstanceName, EventCapture>>,
+    /// Bounds checked on the named actual occurrence.
+    #[serde(default)]
+    pub integers: Option<BTreeMap<String, IntegerBounds>>,
 }
 
 /// A compact Given/When/Then document with no executable snippets or pretend timestamps.
 #[derive(Debug, serde::Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Document {
-    /// Exactly `ess-scenario/3`.
+    /// `ess-scenario/3` or `ess-scenario/4`.
     #[serde(rename = "type")]
     pub format: String,
     /// Domain in an original selected model.
@@ -216,6 +309,10 @@ pub fn compile(
             return Err(format!("duplicate source {}", source.origin));
         }
         let (id, lower) = lower_source(models, library, source, &mut recipes)?;
+        if lower.extended {
+            suite.provenance.suite_version =
+                SuiteFormat::parse("ess-conformance/13").expect("constant format");
+        }
         suite
             .insert(id.clone(), lower.scenario)
             .map_err(|id| format!("duplicate scenario {id}"))?;
@@ -268,7 +365,10 @@ fn lower_source<'a, 'm, 's>(
 ) -> Result<(ScenarioId, Lowering<'a, 'm, 's>), String> {
     let doc: Document =
         serde_yaml::from_str(&source.text).map_err(|e| format!("{}: {e}", source.origin))?;
-    if doc.format != FORMAT || doc.then.is_empty() || doc.when.is_empty() {
+    if ![FORMAT, OBSERVATION_FORMAT].contains(&doc.format.as_str())
+        || doc.then.is_empty()
+        || doc.when.is_empty()
+    {
         return Err(format!(
             "{}: expected {FORMAT} with nonempty when and then",
             source.origin
@@ -278,7 +378,12 @@ fn lower_source<'a, 'm, 's>(
         domain: doc.domain.clone(),
         name: doc.scenario,
     };
-    let mut lower = Lowering::new(models, &source.origin, doc.summary);
+    let mut lower = Lowering::new(
+        models,
+        &source.origin,
+        doc.summary,
+        doc.format == OBSERVATION_FORMAT,
+    );
     let mut aliases = BTreeSet::new();
     for (index, given) in doc.given.iter().enumerate() {
         if !aliases.insert(&given.alias) {
@@ -350,8 +455,15 @@ struct Lowering<'a, 'm, 's> {
     captures: BTreeMap<String, Capture<'a>>,
     slots: BTreeMap<String, InstanceName>,
     domains: BTreeSet<String>,
+    extended: bool,
+    observed: BTreeMap<String, (InstanceName, crate::scenario::LeafShape)>,
+    next_value: usize,
 }
 impl<'a, 'm, 's> Lowering<'a, 'm, 's> {
+    #[allow(
+        clippy::too_many_lines,
+        reason = "Keep the closed source action vocabulary and its lowering in one dispatch."
+    )]
     fn action(&mut self, action: &Action, index: usize) -> Result<(), String> {
         let stack = vec![self.location(format!("/when/{index}"))];
         match action {
@@ -404,9 +516,14 @@ impl<'a, 'm, 's> Lowering<'a, 'm, 's> {
                 matches,
                 anchor,
                 after,
+                capture,
+                integers,
             } => {
+                if !self.extended && (capture.is_some() || integers.is_some()) {
+                    return Err("event captures and integer bounds require ess-scenario/4".into());
+                }
                 if let Some(anchor) = anchor {
-                    let claim = self.claim(service, event, matches)?;
+                    let claim = self.claim(service, event, matches, &stack)?;
                     self.emit(
                         ScenarioStep::CheckLive {
                             trace: crate::live_trace::Check::Await {
@@ -415,20 +532,91 @@ impl<'a, 'm, 's> Lowering<'a, 'm, 's> {
                                 claim,
                             },
                         },
-                        stack,
+                        stack.clone(),
+                    )?;
+                    self.capture_observation(
+                        service,
+                        event,
+                        anchor,
+                        capture.as_ref(),
+                        integers.as_ref(),
+                        &stack,
                     )?;
                 } else {
-                    if after.is_some() {
+                    if after.is_some() || capture.is_some() || integers.is_some() {
                         return Err("an ordered observation needs an anchor name".into());
                     }
                     self.observe(service, event, matches, stack)?;
                 }
             }
+            Action::Stable {
+                service,
+                event,
+                matches,
+                since,
+                stable_for_ms,
+                required,
+            } => {
+                if !self.extended {
+                    return Err("intermediate stability requires ess-scenario/4".into());
+                }
+                let claim = self.claim(service, event, matches, &stack)?;
+                let required = self.claim(service, event, required, &stack)?;
+                self.emit(
+                    ScenarioStep::CheckLive {
+                        trace: crate::live_trace::Check::Stable {
+                            anchor: since.clone(),
+                            duration_ms: *stable_for_ms,
+                            claim,
+                            required: required.matches,
+                            shape: required.shape,
+                        },
+                    },
+                    stack,
+                )?;
+            }
+            Action::Quiet {
+                service,
+                event,
+                matches,
+                anchor,
+                quiet_for_ms,
+                capture,
+                integers,
+            } => {
+                if !self.extended {
+                    return Err("quiet baselines require ess-scenario/4".into());
+                }
+                let claim = self.claim(service, event, matches, &stack)?;
+                self.emit(
+                    ScenarioStep::CheckLive {
+                        trace: crate::live_trace::Check::Quiet {
+                            anchor: anchor.clone(),
+                            duration_ms: *quiet_for_ms,
+                            claim,
+                        },
+                    },
+                    stack.clone(),
+                )?;
+                self.capture_observation(
+                    service,
+                    event,
+                    anchor,
+                    capture.as_ref(),
+                    integers.as_ref(),
+                    &stack,
+                )?;
+            }
         }
         Ok(())
     }
 
-    fn new(models: &'m Models<'a>, origin: &'s str, purpose: ScenarioPurpose) -> Self {
+    fn new(
+        models: &'m Models<'a>,
+        origin: &'s str,
+        purpose: ScenarioPurpose,
+        extended: bool,
+    ) -> Self {
         Self {
             models,
             origin,
@@ -441,6 +629,9 @@ impl<'a, 'm, 's> Lowering<'a, 'm, 's> {
             captures: BTreeMap::new(),
             slots: BTreeMap::new(),
             domains: BTreeSet::new(),
+            extended,
+            observed: BTreeMap::new(),
+            next_value: 0,
         }
     }
     fn location(&self, pointer: String) -> Location {
@@ -481,7 +672,9 @@ impl<'a, 'm, 's> Lowering<'a, 'm, 's> {
         Ok(())
     }
     fn expose(&mut self, name: &str, capture: Capture<'a>) -> Result<(), String> {
-        if self.captures.insert(name.to_owned(), capture).is_some() {
+        if self.observed.contains_key(name)
+            || self.captures.insert(name.to_owned(), capture).is_some()
+        {
             return Err(format!("duplicate capture {name}"));
         }
         Ok(())
@@ -615,10 +808,10 @@ impl<'a, 'm, 's> Lowering<'a, 'm, 's> {
         &mut self,
         service: &ServiceKey,
         event: &EventRef,
-        matches: &BTreeMap<String, recipes::Value>,
+        matches: &BTreeMap<String, EventValue>,
         locations: Vec<Location>,
     ) -> Result<(), String> {
-        let claim = self.claim(service, event, matches)?;
+        let claim = self.claim(service, event, matches, &locations)?;
         self.emit(
             ScenarioStep::EventuallyMatchingEvent {
                 event: claim.event,
@@ -635,6 +828,12 @@ impl<'a, 'm, 's> Lowering<'a, 'm, 's> {
     ) -> Result<(), String> {
         use crate::live_trace::Check;
         let o = observation;
+        if (o.capture.is_some() || o.integers.is_some()) && (!self.extended || o.anchor.is_none()) {
+            return Err(
+                "event captures and integer bounds require a named ess-scenario/4 observation"
+                    .into(),
+            );
+        }
         let temporal = o.anchor.is_some()
             || o.since.is_some()
             || o.absent_for_ms.is_some()
@@ -645,7 +844,7 @@ impl<'a, 'm, 's> Lowering<'a, 'm, 's> {
             }
             return self.observe(&o.service, &o.event, &o.matches, locations);
         }
-        let claim = self.claim(&o.service, &o.event, &o.matches)?;
+        let claim = self.claim(&o.service, &o.event, &o.matches, &locations)?;
         let trace = match (&o.anchor, &o.since, o.absent_for_ms, o.stable_for_ms) {
             (Some(anchor), None, None, None) if o.required.is_empty() => Check::Await {
                 anchor: anchor.clone(),
@@ -662,7 +861,7 @@ impl<'a, 'm, 's> Lowering<'a, 'm, 's> {
                 }
             }
             (None, Some(anchor), None, Some(duration_ms)) if o.after.is_none() => {
-                let required = self.claim(&o.service, &o.event, &o.required)?;
+                let required = self.claim(&o.service, &o.event, &o.required, &locations)?;
                 Check::Stable {
                     anchor: anchor.clone(),
                     duration_ms,
@@ -673,13 +872,143 @@ impl<'a, 'm, 's> Lowering<'a, 'm, 's> {
             }
             _ => return Err("conflicting or incomplete temporal observation fields".into()),
         };
-        self.emit(ScenarioStep::CheckLive { trace }, locations)
+        self.emit(ScenarioStep::CheckLive { trace }, locations.clone())?;
+        if let Some(anchor) = &o.anchor {
+            self.capture_observation(
+                &o.service,
+                &o.event,
+                anchor,
+                o.capture.as_ref(),
+                o.integers.as_ref(),
+                &locations,
+            )?;
+        }
+        Ok(())
     }
+
+    fn next_binding(&mut self) -> InstanceName {
+        let instance = InstanceName::new(format!("observed-{}", self.next_value))
+            .expect("compiler-minted binding");
+        self.next_value += 1;
+        instance
+    }
+
+    fn typed_capture(
+        &self,
+        name: &str,
+    ) -> Result<(InstanceName, crate::scenario::LeafShape), String> {
+        if let Some(value) = self.observed.get(name) {
+            return Ok(value.clone());
+        }
+        let capture = self
+            .captures
+            .get(name)
+            .ok_or_else(|| format!("unknown or forward capture {name}"))?;
+        let mut shape = PayloadShape::new();
+        crate::synthesize::describe(
+            capture.command.model(),
+            &capture.field.type_ref,
+            &capture.field.name,
+            false,
+            0,
+            &mut shape,
+        );
+        Ok((
+            self.slots
+                .get(&capture.slot)
+                .cloned()
+                .ok_or("unbound response capture")?,
+            shape
+                .leaves()
+                .get(&capture.field.name)
+                .cloned()
+                .ok_or("capture has no declared shape")?,
+        ))
+    }
+
+    fn capture_observation(
+        &mut self,
+        service: &ServiceKey,
+        event: &EventRef,
+        anchor: &InstanceName,
+        captures: Option<&BTreeMap<InstanceName, EventCapture>>,
+        integers: Option<&BTreeMap<String, IntegerBounds>>,
+        locations: &[Location],
+    ) -> Result<(), String> {
+        use crate::live_trace::Check;
+        if captures.is_none() && integers.is_none() {
+            return Ok(());
+        }
+        let owner = self
+            .models
+            .event(service, event)
+            .ok_or("unknown observed event")?;
+        let declared = crate::synthesize::payload_shape(owner.model(), event);
+        for (path, bounds) in integers.into_iter().flatten() {
+            let leaf = declared
+                .leaves()
+                .get(path)
+                .ok_or("undeclared integer observation path")?;
+            if !crate::live_trace::integer_leaf(leaf) || bounds.min > bounds.max {
+                return Err("integer bounds require a declared Integer and ordered range".into());
+            }
+            let mut shape = PayloadShape::new();
+            shape.insert(path, leaf.clone());
+            self.emit(
+                ScenarioStep::CheckLive {
+                    trace: Check::IntegerBounds {
+                        anchor: anchor.clone(),
+                        event: event.clone(),
+                        path: path.clone(),
+                        shape,
+                        min: bounds.min,
+                        max: bounds.max,
+                    },
+                },
+                locations.to_vec(),
+            )?;
+        }
+        for (name, capture) in captures.into_iter().flatten() {
+            let leaf = declared
+                .leaves()
+                .get(&capture.path)
+                .ok_or("undeclared event capture path")?;
+            if leaf.optional && !capture.require_present {
+                return Err("optional event capture requires require_present: true".into());
+            }
+            if self.captures.contains_key(name.as_str())
+                || self.observed.contains_key(name.as_str())
+            {
+                return Err(format!("duplicate capture {name}"));
+            }
+            let instance = self.next_binding();
+            let mut shape = PayloadShape::new();
+            shape.insert(&capture.path, leaf.clone());
+            self.emit(
+                ScenarioStep::CheckLive {
+                    trace: Check::Capture {
+                        anchor: anchor.clone(),
+                        instance: instance.clone(),
+                        event: event.clone(),
+                        path: capture.path.clone(),
+                        shape,
+                        require_present: capture.require_present,
+                    },
+                },
+                locations.to_vec(),
+            )?;
+            self.observed
+                .insert(name.to_string(), (instance, leaf.clone()));
+        }
+        Ok(())
+    }
+
     fn claim(
         &mut self,
         service: &ServiceKey,
         event: &EventRef,
-        matches: &BTreeMap<String, recipes::Value>,
+        matches: &BTreeMap<String, EventValue>,
+        locations: &[Location],
     ) -> Result<crate::live_trace::Claim, String> {
         let owner = self
             .models
@@ -700,33 +1029,51 @@ impl<'a, 'm, 's> Lowering<'a, 'm, 's> {
                 .leaves()
                 .get(path)
                 .ok_or_else(|| format!("{event}: undeclared or unsupported payload path {path}"))?;
-            let bound = self.resolve(authored)?;
-            match &bound {
-                Bound::Literal(value) if !leaf.admits(Some(value)) => {
-                    return Err(format!("{event}: literal violates {path}"))
+            let value = match authored {
+                EventValue::Offset { expression } => {
+                    if !self.extended || !crate::live_trace::integer_leaf(leaf) {
+                        return Err(
+                            "integer offsets require ess-scenario/4 and a declared Integer".into(),
+                        );
+                    }
+                    let (source, captured) = self.typed_capture(&expression.capture)?;
+                    if !crate::live_trace::integer_leaf(&captured) {
+                        return Err("integer offset source is not a declared Integer".into());
+                    }
+                    let instance = self.next_binding();
+                    self.emit(
+                        ScenarioStep::CheckLive {
+                            trace: crate::live_trace::Check::Offset {
+                                instance: instance.clone(),
+                                source,
+                                plus: expression.plus,
+                            },
+                        },
+                        locations.to_vec(),
+                    )?;
+                    ScenarioValue::Instance { instance }
                 }
-                Bound::Capture(capture) => {
-                    let mut captured = PayloadShape::new();
-                    crate::synthesize::describe(
-                        capture.command.model(),
-                        &capture.field.type_ref,
-                        &capture.field.name,
-                        false,
-                        0,
-                        &mut captured,
-                    );
-                    if captured.leaves().get(&capture.field.name).map(|v| &v.holds)
-                        != Some(&leaf.holds)
-                    {
+                EventValue::Plain(recipes::Value::Capture(name)) => {
+                    let (instance, captured) = self.typed_capture(name)?;
+                    if captured.holds != leaf.holds {
                         return Err(format!(
                             "{event}: capture representation differs from {path}"
                         ));
                     }
+                    ScenarioValue::Instance { instance }
                 }
-                Bound::Literal(_) => {}
-            }
+                EventValue::Plain(authored) => {
+                    let bound = self.resolve(authored)?;
+                    if let Bound::Literal(value) = &bound {
+                        if !leaf.admits(Some(value)) {
+                            return Err(format!("{event}: literal violates {path}"));
+                        }
+                    }
+                    self.value(&bound)?
+                }
+            };
             shape.insert(path, leaf.clone());
-            values.insert(path.clone(), self.value(&bound)?);
+            values.insert(path.clone(), value);
         }
         Ok(crate::live_trace::Claim {
             event: event.clone(),

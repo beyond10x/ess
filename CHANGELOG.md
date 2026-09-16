@@ -2,6 +2,15 @@
 
 ## [Unreleased]
 
+### Added
+
+- Live compact source `/4` captures typed fields from actual event occurrences,
+  checks exact signed-integer bounds and offsets, and captures a baseline only
+  after a fresh complete quiet interval. Intermediate stability assertions can
+  finish before later stimulus. Native Rust and generated Go share suite `/12`
+  and inventory `/13` semantics, with shared counterexamples and old-format
+  refusal. Earlier source and suite formats retain their meaning.
+
 ## [0.25.0] — 2026-09-16
 
 ### Added

@@ -18,6 +18,10 @@ pub fn used_by(suite: &ConformanceSuite) -> bool {
         })
 }
 
+#[allow(
+    clippy::too_many_lines,
+    reason = "Keep all ordered binding checks in one exhaustive step dispatch."
+)]
 pub(crate) fn admit(suite: &ConformanceSuite) -> Result<(), AdmissionError> {
     for (id, scenario) in &suite.scenarios {
         crate::live_trace::admit(
@@ -64,7 +68,12 @@ pub(crate) fn admit(suite: &ConformanceSuite) -> Result<(), AdmissionError> {
                     last_command = Some(command);
                 }
                 ScenarioStep::CaptureInstance { instance, .. }
-                | ScenarioStep::EstablishEntity { instance, .. } => {
+                | ScenarioStep::EstablishEntity { instance, .. }
+                | ScenarioStep::CheckLive {
+                    trace:
+                        crate::live_trace::Check::Capture { instance, .. }
+                        | crate::live_trace::Check::Offset { instance, .. },
+                } => {
                     if !bound.insert(instance) {
                         return Err(error("duplicate capture"));
                     }
@@ -102,7 +111,11 @@ pub(crate) fn admit(suite: &ConformanceSuite) -> Result<(), AdmissionError> {
                         match value {
                             ScenarioValue::Literal { value } if leaf.admits(Some(value)) => {}
                             ScenarioValue::Instance { instance } if bound.contains(instance) => {}
-                            _ => return Err(error("matcher requires an admitted literal or a preceding actual capture")),
+                            _ => {
+                                return Err(error(
+                                    "matcher requires an admitted literal or a preceding actual capture",
+                                ));
+                            }
                         }
                     }
                 }

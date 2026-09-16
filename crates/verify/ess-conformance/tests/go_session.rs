@@ -1,5 +1,12 @@
 //! A host runner uses the native Go evaluator without manufacturing testing.T.
+#[path = "support/live_metrics.rs"]
+mod metrics_fixture;
+
 #[test]
+#[allow(
+    clippy::too_many_lines,
+    reason = "Keep shared Rust/Go inputs, subprocess execution and cross-reader assertions together."
+)]
 fn native_go_session_and_event_counterexamples() {
     let directory = std::env::temp_dir().join(format!("ess-session-{}", std::process::id()));
     std::fs::create_dir(&directory).unwrap();
@@ -54,6 +61,27 @@ fn native_go_session_and_event_counterexamples() {
         include_str!("fixtures/live-trace-runtime.go"),
     )
     .unwrap();
+    let metrics = metrics_fixture::compilation(metrics_fixture::SOURCE).unwrap();
+    std::fs::write(
+        directory.join("live-metrics-suite.json"),
+        metrics.input.selected().original_json(),
+    )
+    .unwrap();
+    std::fs::write(
+        directory.join("live-metrics-manifest.json"),
+        &metrics.manifest,
+    )
+    .unwrap();
+    std::fs::write(
+        directory.join("live-metrics-cases.json"),
+        metrics_fixture::cases().to_string(),
+    )
+    .unwrap();
+    std::fs::write(
+        directory.join("live_metrics_test.go"),
+        include_str!("fixtures/live-metrics-runtime.go"),
+    )
+    .unwrap();
     let output = std::process::Command::new("go")
         .args(["test", "-race", "-count=1", "."])
         .env("GOWORK", "off")
@@ -86,6 +114,23 @@ fn native_go_session_and_event_counterexamples() {
     .unwrap();
     assert_eq!(nested.parents().len(), 2);
     assert!(nested.selected().suite().is_empty());
+    let selected_metrics = ess_conformance::coverage::AdmittedInput::from_json(
+        &std::fs::read_to_string(directory.join("live-metrics-selected.json")).unwrap(),
+    )
+    .unwrap();
+    assert_eq!(
+        selected_metrics
+            .selected()
+            .suite()
+            .provenance
+            .suite_version
+            .major(),
+        13
+    );
+    assert_eq!(
+        selected_metrics.parents()[0].original_json(),
+        metrics.input.selected().original_json()
+    );
     std::fs::remove_dir_all(&directory).unwrap();
 }
 

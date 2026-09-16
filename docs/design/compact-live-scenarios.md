@@ -57,8 +57,9 @@ absence or stability from an anchor. An absence interval excludes its exact end.
 Stability checks its baseline and every subsequent scoped occurrence; the fields
 being asserted cannot also filter which snapshots count. Event paths resolve
 against their original owner's type declarations, and matchers use prior actual
-response captures. Integer bounds on status observations remain a planned
-extension; compilation must refuse those claims until both evaluators support them.
+response captures. The [metrics extension](compact-live-metrics.md) adds declared
+event captures, integer bounds and quiet baselines in source /4 and suite /12–13.
+The original /3 remains unchanged and refuses these additions.
 
 Transport adapters provide facts and wait to extend the observed interval. They
 never answer whether a window passed. The native ledger retains the first gap or

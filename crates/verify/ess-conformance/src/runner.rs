@@ -863,6 +863,10 @@ impl<C: Clock> Runner<C> {
         }
     }
 
+    #[allow(
+        clippy::too_many_lines,
+        reason = "Keep target polling, native evaluation and receipt recording in one lifecycle loop."
+    )]
     fn check_live<T: ConformanceTarget>(
         &mut self,
         check: &crate::live_trace::Check,
@@ -900,8 +904,20 @@ impl<C: Clock> Runner<C> {
                 .collect::<Result<BTreeMap<_, _>, _>>()
         };
         let empty = BTreeMap::new();
+        let offset = match check {
+            Check::Offset { source, .. } => BTreeMap::from([(
+                "base".into(),
+                ScenarioValue::Instance {
+                    instance: source.clone(),
+                },
+            )]),
+            _ => BTreeMap::new(),
+        };
         let (claim, required) = match check {
-            Check::Await { claim, .. } | Check::Absent { claim, .. } => (&claim.matches, &empty),
+            Check::Await { claim, .. }
+            | Check::Absent { claim, .. }
+            | Check::Quiet { claim, .. } => (&claim.matches, &empty),
+            Check::Offset { .. } => (&offset, &empty),
             Check::Stable {
                 claim, required, ..
             } => (&claim.matches, required),
@@ -924,6 +940,16 @@ impl<C: Clock> Runner<C> {
             let state = run.trace.as_mut().expect("admitted trace subscription");
             match state.evaluate(check, &values, &required) {
                 Ok(()) => {
+                    if let Some((instance, value)) = state.binding(check) {
+                        if run.instances.insert(instance, value).is_some() {
+                            run.record(CheckResult::errored(
+                                "duplicate live capture",
+                                Diagnostic::new(CheckCode::EventualEvent, run.id.clone())
+                                    .observed("value was already bound"),
+                            ));
+                            return Flow::Stop;
+                        }
+                    }
                     run.record(CheckResult::passed(
                         CheckCode::EventualEvent,
                         "complete live occurrence assertion",

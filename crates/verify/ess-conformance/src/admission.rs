@@ -180,16 +180,16 @@ fn validate_suite(value: &Json) -> Result<(), AdmissionError> {
     )?;
     let version = SuiteFormat::parse(p["suite_version"].text()?)
         .map_err(|e| p["suite_version"].error("UnsupportedSuiteVersion", e.to_string()))?;
-    if !matches!(version.major(), 1..=11) {
+    if !matches!(version.major(), 1..=13) {
         return Err(p["suite_version"].error(
             "UnsupportedSuiteVersion",
-            "execution readers admit suite majors 1–11",
+            "execution readers admit suite majors 1–13",
         ));
     }
-    if matches!(version.major(), 5 | 7 | 9 | 11) != root.contains_key("coverage") {
+    if matches!(version.major(), 5 | 7 | 9 | 11 | 13) != root.contains_key("coverage") {
         return Err(value.error(
             "InvalidCoverage",
-            "coverage is required exactly for suite/5, suite/7, suite/9 and suite/11",
+            "coverage is required exactly for suite/5, suite/7, suite/9, suite/11 and suite/13",
         ));
     }
     if let Some(digest) = p.get("live_inputs_digest") {

@@ -188,6 +188,41 @@ impl Ledger {
         self.occurrences.last().map_or(0, |item| item.sequence)
     }
 
+    /// Current exclusive watermark, used to fence a newly activated quiet interval.
+    pub fn complete_before_ms(&self) -> u64 {
+        self.complete_before_ms
+    }
+
+    /// Latest scoped snapshot, after a full quiet interval beginning no earlier than
+    /// the fresh activation fence. A newer scoped snapshot restarts the interval.
+    pub fn quiet(
+        &self,
+        matcher: &Matcher,
+        floor_ms: u64,
+        duration_ms: u64,
+    ) -> Result<&Occurrence, Error> {
+        self.healthy()?;
+        if duration_ms == 0 {
+            return Err(Error::InvalidWindow);
+        }
+        let item = self
+            .occurrences
+            .iter()
+            .rev()
+            .find(|item| matcher.matches(item))
+            .ok_or(Error::Unfinished {
+                required_ms: 0,
+                observed_ms: self.complete_before_ms,
+            })?;
+        let end = item
+            .at_ms
+            .max(floor_ms)
+            .checked_add(duration_ms)
+            .ok_or(Error::InvalidWindow)?;
+        self.complete(end)?;
+        Ok(item)
+    }
+
     /// The first matching occurrence strictly after an earlier occurrence, or after
     /// subscription when `after` is zero. Payload matching never borrows another call's event.
     pub fn find(&self, matcher: &Matcher, after: u64) -> Result<Option<&Occurrence>, Error> {

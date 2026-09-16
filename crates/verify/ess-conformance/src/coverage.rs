@@ -377,6 +377,10 @@ impl Inventory {
         };
         Ok(())
     }
+    #[allow(
+        clippy::too_many_lines,
+        reason = "Keep the complete inventory admission sequence together across versioned carriers."
+    )]
     pub(crate) fn validate(&self, suite: &ConformanceSuite) -> Result<(), AdmissionError> {
         require(
             suite.provenance.suite_version.major() >= 7
@@ -471,6 +475,7 @@ impl Inventory {
                         | "ess-conformance/7"
                         | "ess-conformance/9"
                         | "ess-conformance/11"
+                        | "ess-conformance/13"
                 ) && parent.version == suite.provenance.suite_version.to_string()
                     && parent.digest_profile == "sha256-json-bytes/1"
                     && valid_digest(&parent.digest),

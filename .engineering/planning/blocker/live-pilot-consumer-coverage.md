@@ -8,7 +8,7 @@ relations:
 - blocks: story:compact-live-authoring
 - blocks: story:callable-live-evaluator
 withholds: test_result
-revision: 1
+revision: 2
 ---
 ## Observation
 
@@ -46,3 +46,7 @@ eligibility. A corrected classification file alone is not behavioral qualificati
 
 Run task consumer-check and the complete repository gate to zero before landing.
 Feature checkpoints remain published for review; no merge or release is claimed.
+
+## Release-base comparison 2026-09-16
+
+A clean managed checkout of exact release/base d85f083cf0705c4c403fc3c56e09c7bf5f2ac272 reproduces consumer-check refusal under the required Rust 1.98.1 profile. It has three unclassified concrete entries: Naming::code, ess_synth::alias module and ess_synth::code_aliases re-export. Provisional accounting is 2430 model obligations, 90 bound profiles, 147506 eligible baseline-unknown cells and 66571 stale/unaccounted diagnostics, with zero executed cases/metadata guards. These are inherited accounting gaps, not 66571 failed behavioral tests. Exact refusal and extraction are retained in metrics-base-consumer-evidence. The feature adds its own live-compiler/recipe/session/temporal entries which still need finite classification and supported/refused witnesses; passing focused tests does not discharge that gate. No baseline fingerprint, exemption or profile has been refreshed to make this pass.

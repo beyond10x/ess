@@ -211,6 +211,27 @@ func (l *ObservationLedger) Find(matcher OccurrenceMatcher, after uint64) (*Occu
 	return nil, nil
 }
 
+// Quiet returns the latest scoped snapshot after a full interval fenced at activation.
+func (l *ObservationLedger) Quiet(matcher OccurrenceMatcher, floorMS, durationMS uint64) (*Occurrence, error) {
+	if err := l.healthy(); err != nil { return nil, err }
+	if durationMS == 0 { return nil, &TemporalError{Kind: "invalid_window"} }
+	matcher, err := matcher.checked()
+	if err != nil { return nil, err }
+	for index := len(l.occurrences)-1; index >= 0; index-- {
+		item := l.occurrences[index]
+		if !matcher.matches(item) { continue }
+		start := item.AtMS
+		if start < floorMS { start = floorMS }
+		if durationMS > ^uint64(0)-start { return nil, &TemporalError{Kind: "invalid_window"} }
+		end := start+durationMS
+		if l.completeBeforeMS < end {
+			return nil, &TemporalError{Kind: "unfinished", RequiredMS: end, ObservedMS: l.completeBeforeMS}
+		}
+		return copyOccurrence(item), nil
+	}
+	return nil, &TemporalError{Kind: "unfinished", ObservedMS: l.completeBeforeMS}
+}
+
 // Ordered requires distinct actual occurrences in strict order, including one clock tick.
 func (l *ObservationLedger) Ordered(before, after uint64) error {
 	if _, err := l.anchor(before); err != nil {

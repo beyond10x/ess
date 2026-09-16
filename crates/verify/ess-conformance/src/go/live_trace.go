@@ -18,6 +18,14 @@ type LiveClaim struct {
 }
 
 type LiveCheck struct {
+	Instance string `json:"instance"`
+	Source string `json:"source"`
+	Event string `json:"event"`
+	Path string `json:"path"`
+	RequirePresent bool `json:"require_present"`
+	Min int64 `json:"min"`
+	Max int64 `json:"max"`
+	Plus int64 `json:"plus"`
 	Kind       string           `json:"kind"`
 	Events     []string         `json:"events"`
 	Anchor     string           `json:"anchor"`
@@ -33,6 +41,8 @@ type liveTraceState struct {
 	ledger  *ObservationLedger
 	anchors map[string]uint64
 	events  map[string]bool
+	quietAnchor string
+	quietFloor *uint64
 }
 
 func admitLiveTrace(value any) error {
@@ -46,6 +56,14 @@ func admitLiveTrace(value any) error {
 	}
 	required := "kind"
 	switch kind {
+	case "capture":
+		required += " anchor instance event path shape require_present"
+	case "offset":
+		required += " instance source plus"
+	case "integer_bounds":
+		required += " anchor event path shape min max"
+	case "quiet":
+		required += " anchor duration_ms claim"
 	case "open":
 		required += " events"
 	case "await":
@@ -61,6 +79,12 @@ func admitLiveTrace(value any) error {
 	}
 	if _, err := closed(value, required, ""); err != nil {
 		return err
+	}
+	if raw, exists := f["shape"]; exists {
+		if err := admitShape(raw); err != nil { return err }
+	}
+	if raw, exists := f["event"]; exists {
+		if err := name(raw, false); err != nil { return err }
 	}
 	if raw, exists := f["claim"]; exists {
 		claim, err := closed(raw, "event matches shape", "")
@@ -92,7 +116,7 @@ func admitLiveTrace(value any) error {
 			return err
 		}
 	}
-	for _, field := range []string{"anchor", "before", "after"} {
+	for _, field := range []string{"anchor", "before", "after", "instance", "source"} {
 		if v, exists := f[field]; exists && !(kind == "await" && field == "after" && v == nil) {
 			if err := name(v, true); err != nil {
 				return err
@@ -109,6 +133,22 @@ func admitLiveTrace(value any) error {
 	if err := decoder.Decode(&check); err != nil {
 		return err
 	}
+	if kind == "capture" || kind == "integer_bounds" {
+		leaf, exists := check.Shape[check.Path]
+		if !exists || len(check.Shape) != 1 || check.Path == "" {
+			return fmt.Errorf("event capture needs exactly one declared payload path")
+		}
+		for _, part := range strings.Split(check.Path, ".") {
+			if part == "" { return fmt.Errorf("empty observed payload path segment") }
+		}
+		if kind == "capture" {
+			if _, ok := f["require_present"].(bool); !ok || (leaf.Optional && !check.RequirePresent) {
+				return fmt.Errorf("optional event capture requires explicit presence")
+			}
+		} else if !liveIntegerLeaf(leaf) || check.Min > check.Max {
+			return fmt.Errorf("integer bounds require a declared Integer and ordered range")
+		}
+	}
 	if kind == "open" {
 		if len(check.Events) == 0 {
 			return fmt.Errorf("empty observation subscription")
@@ -121,14 +161,16 @@ func admitLiveTrace(value any) error {
 			seen[event] = true
 		}
 	}
-	if (kind == "absent" || kind == "stable") && check.DurationMS == 0 {
+	if (kind == "absent" || kind == "stable" || kind == "quiet") && check.DurationMS == 0 {
 		return fmt.Errorf("live window must be positive")
 	}
 	return nil
 }
 
 func admitLiveSequence(steps []any, major int) error {
-	events, anchors, captures := map[string]bool{}, map[string]bool{}, map[string]bool{}
+	events, captures := map[string]bool{}, map[string]bool{}
+	anchors := map[string]string{}
+	integers := map[string]bool{}
 	for index, raw := range steps {
 		data, _ := json.Marshal(raw)
 		// Parent admission must not narrow unrelated legacy u64 metadata to
@@ -137,6 +179,8 @@ func admitLiveSequence(steps []any, major int) error {
 			Step     string     `json:"step"`
 			Instance string     `json:"instance"`
 			Trace    *LiveCheck `json:"trace"`
+			Field string `json:"field"`
+			Shape map[string]Held `json:"shape"`
 		}
 		decoder := json.NewDecoder(strings.NewReader(string(data)))
 		decoder.UseNumber()
@@ -146,11 +190,18 @@ func admitLiveSequence(steps []any, major int) error {
 		switch step.Step {
 		case "capture_response", "capture_instance", "establish_entity":
 			captures[step.Instance] = true
+			if step.Step == "capture_response" && liveIntegerLeaf(step.Shape[step.Field]) {
+				integers[step.Instance] = true
+			}
 		case "check_live":
 			if major < 10 {
 				return fmt.Errorf("live trace requires suite/10 or /11")
 			}
 			c := step.Trace
+			if major < 12 && (c.Kind == "capture" || c.Kind == "offset" ||
+				c.Kind == "integer_bounds" || c.Kind == "quiet") {
+				return fmt.Errorf("captured observations require suite/12 or /13")
+			}
 			if c.Kind == "open" {
 				if index != 0 {
 					return fmt.Errorf("observation subscription must be first")
@@ -163,6 +214,9 @@ func admitLiveSequence(steps []any, major int) error {
 			if len(events) == 0 {
 				return fmt.Errorf("live assertion before subscription")
 			}
+			if c.Event != "" && !events[c.Event] {
+				return fmt.Errorf("observed event was not subscribed")
+			}
 			if c.Claim != nil {
 				if !events[c.Claim.Event] {
 					return fmt.Errorf("assertion event was not subscribed")
@@ -172,16 +226,34 @@ func admitLiveSequence(steps []any, major int) error {
 				}
 			}
 			switch c.Kind {
+			case "capture":
+				if anchors[c.Anchor] != c.Event || captures[c.Instance] {
+					return fmt.Errorf("capture needs its actual event and a unique value name")
+				}
+				captures[c.Instance] = true
+				integers[c.Instance] = liveIntegerLeaf(c.Shape[c.Path])
+			case "offset":
+				if !integers[c.Source] || captures[c.Instance] {
+					return fmt.Errorf("offset needs a preceding typed integer and unique value name")
+				}
+				captures[c.Instance], integers[c.Instance] = true, true
+			case "integer_bounds":
+				if anchors[c.Anchor] != c.Event {
+					return fmt.Errorf("integer bound event differs from its occurrence")
+				}
+			case "quiet":
+				if anchors[c.Anchor] != "" { return fmt.Errorf("duplicate occurrence anchor") }
+				anchors[c.Anchor] = c.Claim.Event
 			case "await":
-				if c.After != nil && !anchors[*c.After] {
+				if c.After != nil && anchors[*c.After] == "" {
 					return fmt.Errorf("unknown occurrence anchor")
 				}
-				if anchors[c.Anchor] {
+				if anchors[c.Anchor] != "" {
 					return fmt.Errorf("duplicate occurrence anchor")
 				}
-				anchors[c.Anchor] = true
+				anchors[c.Anchor] = c.Claim.Event
 			case "absent", "stable":
-				if !anchors[c.Anchor] {
+				if anchors[c.Anchor] == "" {
 					return fmt.Errorf("unknown occurrence anchor")
 				}
 				if c.Kind == "stable" {
@@ -197,13 +269,23 @@ func admitLiveSequence(steps []any, major int) error {
 					}
 				}
 			case "ordered":
-				if !anchors[c.Before] || c.After == nil || !anchors[*c.After] {
+				if anchors[c.Before] == "" || c.After == nil || anchors[*c.After] == "" {
 					return fmt.Errorf("unknown occurrence anchor")
 				}
 			}
 		}
 	}
 	return nil
+}
+
+func liveIntegerLeaf(leaf Held) bool {
+	return leaf.Holds == "primitive" && leaf.Kind == "integer"
+}
+
+func liveInteger(value Node) (int64, bool) {
+	number, ok := responseNumber(value)
+	if !ok || !number.IsInt() || !number.Num().IsInt64() { return 0, false }
+	return number.Num().Int64(), true
 }
 
 func admitLiveClaimValues(values map[string]Value, shape map[string]Held, captures map[string]bool) error {
@@ -277,6 +359,58 @@ func (r *run) checkLive(index int, c *LiveCheck) bool {
 		}
 		var err error
 		switch c.Kind {
+		case "capture", "integer_bounds":
+			var item *Occurrence
+			item, err = state.ledger.anchor(state.anchors[c.Anchor])
+			if err != nil { break }
+			value, present := lookup(item.Payload, c.Path)
+			valid := item.Event == c.Event && present && value != nil
+			if c.Kind == "integer_bounds" {
+				count, ok := liveInteger(value)
+				valid = valid && ok && c.Min <= count && count <= c.Max
+			} else {
+				valid = valid && holdsLive(item.Payload, c.Shape) == ""
+			}
+			if !valid {
+				err = &TemporalError{Kind: "counterexample", Counterexample: copyOccurrence(*item)}
+				break
+			}
+			if c.Kind == "capture" {
+				if _, exists := r.instances[c.Instance]; exists {
+					err = fmt.Errorf("duplicate live capture")
+					break
+				}
+				var copied map[string]Node
+				copied, err = temporalFields(map[string]Node{"value": value})
+				if err == nil { r.instances[c.Instance] = copied["value"] }
+			}
+		case "offset":
+			base, ok := liveInteger(r.instances[c.Source])
+			_, exists := r.instances[c.Instance]
+			if !ok || exists {
+				err = fmt.Errorf("offset requires a present signed integer and fresh binding")
+			} else if (c.Plus > 0 && base > math.MaxInt64-c.Plus) ||
+				(c.Plus < 0 && base < math.MinInt64-c.Plus) {
+				err = fmt.Errorf("signed integer offset overflow")
+			} else {
+				r.instances[c.Instance] = json.Number(strconv.FormatInt(base+c.Plus, 10))
+			}
+		case "quiet":
+			if state.quietAnchor != c.Anchor {
+				state.quietAnchor, state.quietFloor = c.Anchor, nil
+			}
+			if state.quietFloor == nil {
+				err = &TemporalError{Kind: "unfinished"}
+				break
+			}
+			var found *Occurrence
+			found, err = state.ledger.Quiet(matcher, *state.quietFloor, c.DurationMS)
+			if err == nil {
+				if violation := holdsLive(found.Payload, c.Claim.Shape); violation != "" {
+					return r.fail(index, "%s", violation)
+				}
+				state.anchors[c.Anchor] = found.Sequence
+			}
 		case "await":
 			after := uint64(0)
 			if c.After != nil {
@@ -321,6 +455,10 @@ func (r *run) checkLive(index int, c *LiveCheck) bool {
 		}
 		if err := state.ledger.Accept(batch); err != nil {
 			return fail(err)
+		}
+		if c.Kind == "quiet" && state.quietFloor == nil {
+			floor := state.ledger.completeBeforeMS
+			state.quietFloor = &floor
 		}
 	}
 }
