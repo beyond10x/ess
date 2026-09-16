@@ -8,7 +8,7 @@ relations:
 - blocks: story:compact-live-authoring
 - blocks: story:callable-live-evaluator
 withholds: test_result
-revision: 1
+revision: 2
 ---
 ## Observation
 
@@ -35,3 +35,13 @@ docs/design/cli-schema-metadata-accounting.md, retain all descendant obligations
 and run the complete native metadata and consumer gates. Do not replace the hash
 solely to obtain a green test, edit sealed baselines, or count focused pilot tests
 as a passing full ESS gate. Pilot implementation can continue; landing is blocked.
+
+## Upstream fix and current verification
+
+The feature checkpoint was rebased onto upstream d85f083c, which includes
+af569cad's reviewed schema metadata and release-accounting fixes. At candidate
+65ed702a all metadata tests now pass in the complete workspace test lane. The
+full task check then reaches a different refusal, recorded as
+blocker:live-pilot-consumer-coverage. That consumer run executes no guards or
+behavior cases, so the original clearing condition requiring completed native
+consumer execution is still pending. Do not report the full gate green.
