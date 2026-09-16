@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [0.26.0] - 2026-09-16
+
 ### Added
 
 - **A branch may say the field it owns holds nothing: `sets: {field: {cleared: true}}`.** `sets:`
