@@ -113,6 +113,20 @@ refusing the key the model had just gained — the direction the task's own comm
 because nothing downstream complains about a schema that is merely too strict. It failed the Gate
 on PR 40 and nowhere else: `cargo fmt`, Clippy and every test were green.
 
+**A version bump touches TWO lock files.** `fuzz/` is its own workspace with its own
+`Cargo.lock`, and it pins the specification crates by path. The 0.26.0 bump moved the workspace
+version and every crate manifest and left `fuzz/Cargo.lock` at `0.25.0` for five crates —
+`ess-compiler`, `ess-domain`, `ess-gen`, `ess-primitives`, `ess-synth`. Only `fuzz-check` can see
+it, because only it passes `--locked`, and the failure it prints is about the lock file rather than
+about a version:
+
+```console
+cargo update --manifest-path fuzz/Cargo.toml --offline --workspace
+```
+
+Same shape as the schema projection above: a bump leaves a derived artifact behind, nothing
+downstream complains, and one task in the gate is the only thing that knows.
+
 **Reading a failed `Gate` without the log.** The Actions log endpoint redirects to a zip and
 `b10x-gates api` reports `GitHub response invalid`, so it is not a route. The **check-run
 annotations** endpoint is plain JSON and carries the failing task by name:
