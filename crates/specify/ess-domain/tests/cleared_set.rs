@@ -101,7 +101,10 @@ fn clearing_an_optional_entity_field_is_admitted_and_round_trips() {
 fn clearing_a_field_that_cannot_be_absent_is_refused_by_name() {
     let error = spec(&model("label", "")).expect_err("a required field cannot hold nothing");
     for required in ["cleared: true", "demo.lanes.Order.label", "String"] {
-        assert!(error.contains(required), "{required:?} missing from:\n{error}");
+        assert!(
+            error.contains(required),
+            "{required:?} missing from:\n{error}"
+        );
     }
     assert!(
         error.contains("Optional<"),
@@ -113,7 +116,10 @@ fn clearing_a_field_that_cannot_be_absent_is_refused_by_name() {
 fn clearing_an_event_payload_field_is_refused_by_name() {
     let error = spec(&model("lane_id", NOTE)).expect_err("an event field is not an entity field");
     for required in ["cleared: true", "note"] {
-        assert!(error.contains(required), "{required:?} missing from:\n{error}");
+        assert!(
+            error.contains(required),
+            "{required:?} missing from:\n{error}"
+        );
     }
 }
 

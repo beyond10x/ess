@@ -1439,10 +1439,9 @@ fn sets_sentence(outcome: &ess_compiler::ir::ResolvedOutcome) -> Vec<Inline> {
                 // `cleared` reads as a phrase rather than a source: "`lead` from `cleared`" would
                 // name a place the value came from, and there is no value.
                 let mut said = match &field.value {
-                    ResolvedPayloadValue::Cleared => vec![
-                        Inline::code(field.target.clone()),
-                        Inline::text(" cleared"),
-                    ],
+                    ResolvedPayloadValue::Cleared => {
+                        vec![Inline::code(field.target.clone()), Inline::text(" cleared")]
+                    }
                     value => vec![
                         Inline::code(field.target.clone()),
                         Inline::text(" from "),

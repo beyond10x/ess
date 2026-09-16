@@ -1911,25 +1911,13 @@ impl<'a> Resolver<'a> {
         source: &PayloadSource,
         input: Option<&[ResolvedField]>,
     ) -> Option<ResolvedPayloadField> {
-        let value = match source {
-            PayloadSource::Literal { value } => {
-                return Some(payload_constant(
-                    target,
-                    ResolvedPayloadValue::Literal {
-                        value: value.clone(),
-                    },
-                ));
-            }
-            PayloadSource::Generated => {
-                return Some(payload_constant(target, ResolvedPayloadValue::Generated))
-            }
-            // No value to resolve and no type to check against one: what `{cleared: true}` needs
-            // checking is the TARGET's type, and `ess-domain::validate_sets` is where the entity is
-            // in hand to check it.
-            PayloadSource::Cleared => {
-                return Some(payload_constant(target, ResolvedPayloadValue::Cleared))
-            }
-            PayloadSource::InputField { field } | PayloadSource::ResponseField { field } => field,
+        if let Some(constant) = payload_constant_source(target, source) {
+            return Some(constant);
+        }
+        let (PayloadSource::InputField { field: value }
+        | PayloadSource::ResponseField { field: value }) = source
+        else {
+            unreachable!("every other source is a constant, handled above");
         };
         let response;
         let response_source = matches!(source, PayloadSource::ResponseField { .. });
@@ -3503,6 +3491,28 @@ fn condition_of(outcome: &Outcome) -> ResolvedCondition {
         },
         OutcomeCondition::WrongState => ResolvedCondition::WrongState,
     }
+}
+
+/// The sources that carry their own value, so there is no field to resolve and no pair of types to
+/// check against each other. Split out of `payload_field` rather than inlined: the function was one
+/// line under clippy's limit and a fourth constant source put it over, which is the signal that the
+/// two halves are different work.
+///
+/// `{cleared: true}` is the one that needs saying: what it requires checking is the TARGET's type,
+/// and `ess-domain::validate_sets` is where the entity is in hand to check it.
+fn payload_constant_source(
+    target: &ResolvedField,
+    source: &PayloadSource,
+) -> Option<ResolvedPayloadField> {
+    let value = match source {
+        PayloadSource::Literal { value } => ResolvedPayloadValue::Literal {
+            value: value.clone(),
+        },
+        PayloadSource::Generated => ResolvedPayloadValue::Generated,
+        PayloadSource::Cleared => ResolvedPayloadValue::Cleared,
+        PayloadSource::InputField { .. } | PayloadSource::ResponseField { .. } => return None,
+    };
+    Some(payload_constant(target, value))
 }
 
 fn payload_constant(target: &ResolvedField, value: ResolvedPayloadValue) -> ResolvedPayloadField {
