@@ -1562,6 +1562,30 @@ fn condition_sentence(
                 " and `{guard}` holds of the input"
             )),
         ))],
+        // The states are printed rather than the word the author wrote, for the reason
+        // `WrongState` below prints its own: the document's reader would otherwise have to
+        // partition a `from` set by an arrival state by hand to learn which rows this branch
+        // answers, and resolving that is what the IR already did.
+        ResolvedCondition::StateChange {
+            changes,
+            states,
+            predicate,
+        } => {
+            let mut out = vec![Inline::text("Taken when the existing subject is in ")];
+            out.extend(inline_list(names(states)));
+            out.push(Inline::text(if *changes {
+                ", so this branch's move changes the state it holds rather than restating it — it                  is the first report of the state the move arrives at"
+            } else {
+                ", the state this branch's move arrives at, so this branch answers a report that                  restates what is already held"
+            }));
+            if let Some(guard) = predicate {
+                out.push(Inline::text(", and "));
+                out.push(Inline::code(guard.to_string()));
+                out.push(Inline::text(" holds of the input"));
+            }
+            out.push(Inline::text("."));
+            out
+        }
         ResolvedCondition::Otherwise => vec![Inline::text(
             "The default branch, taken when no other outcome's condition matched.",
         )],

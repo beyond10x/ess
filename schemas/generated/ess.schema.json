@@ -1837,6 +1837,13 @@
             }
           ]
         },
+        "when_state_changes": {
+          "description": "Whether this branch's `moves:` changes the lifecycle state the subject already holds, composed with `when`.\n\n`true` is the **first** report of the state the move arrives at; `false` is a restatement of the state already held. It names no state — the transition declares its arrival state and its `from` set, and this picks a side of that set. Admitted only beside `moves:`, for the reason the [module documentation](self) gives: nothing else declares an arrival state to compare against.\n\nAn `Option<bool>` and not a `bool`, because `false` is a condition rather than an absence — the distinction [`refuses`](Self::refuses) draws for the same reason. `wrong_state: false` is the same document as leaving that key out; `when_state_changes: false` is not.",
+          "type": [
+            "boolean",
+            "null"
+          ]
+        },
         "when_subject_state": {
           "description": "Equality against the existing subject's declared lifecycle state, composed with `when`.",
           "anyOf": [

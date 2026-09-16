@@ -11,10 +11,17 @@ use ess_primitives::predicate::{Predicate, PredicateOutcome};
 
 /// The `when` predicate an outcome is taken by, when its condition is one.
 ///
-/// `None` for the other three conditions, and the three are `None` for different reasons that a
-/// caller must not merge. [`Otherwise`](ResolvedCondition::Otherwise) *is* decided by the input, but
-/// only relative to every other branch of the same command, so deciding it needs the command rather
-/// than one predicate. [`External`](ResolvedCondition::External) is decided outside the input, so no
+/// Two conditions carry an input predicate *beside* something else they read about the subject, and
+/// both hand back only that predicate: [`SubjectState`](ResolvedCondition::SubjectState) names the
+/// state the subject must hold and [`StateChange`](ResolvedCondition::StateChange) says whether the
+/// branch's own move must change it. The state half of each is not a predicate over the input and
+/// cannot be decided by one — it is established by the arrangement, and
+/// `synthesize::prepare_state_input` is where the two halves are decided together.
+///
+/// `None` for the other three, and the three are `None` for different reasons that a caller must not
+/// merge. [`Otherwise`](ResolvedCondition::Otherwise) *is* decided by the input, but only relative
+/// to every other branch of the same command, so deciding it needs the command rather than one
+/// predicate. [`External`](ResolvedCondition::External) is decided outside the input, so no
 /// candidate reaches it and a test has to inject the cause instead.
 /// [`WrongState`](ResolvedCondition::WrongState) is decided by the subject the command arrives at,
 /// so a test reaches it by arranging that subject and sends the input that would otherwise have
@@ -22,7 +29,8 @@ use ess_primitives::predicate::{Predicate, PredicateOutcome};
 pub fn when(outcome: &ResolvedOutcome) -> Option<&Predicate> {
     match &outcome.condition {
         ResolvedCondition::When { predicate } => Some(predicate),
-        ResolvedCondition::SubjectState { predicate, .. } => predicate.as_ref(),
+        ResolvedCondition::SubjectState { predicate, .. }
+        | ResolvedCondition::StateChange { predicate, .. } => predicate.as_ref(),
         ResolvedCondition::Otherwise
         | ResolvedCondition::External { .. }
         | ResolvedCondition::WrongState => None,

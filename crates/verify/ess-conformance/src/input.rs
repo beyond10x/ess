@@ -330,29 +330,60 @@ fn setup_body(ir: &EssIr, body: &ResolvedBody, value: &Node, depth: usize) -> Re
 }
 
 fn setup_map_key(kind: Primitive, spelling: &str) -> Result<(), String> {
+    if primitive_literal(kind, spelling).is_some() {
+        return Ok(());
+    }
+    Err(match kind {
+        Primitive::Boolean => "invalid Boolean map key".to_owned(),
+        Primitive::Integer if spelling.parse::<i64>().is_err() => {
+            "invalid Integer map key".to_owned()
+        }
+        Primitive::Integer => "Integer map keys require canonical decimal spelling".to_owned(),
+        Primitive::Decimal | Primitive::Binary64 => {
+            "numeric decimal map keys have no admitted setup spelling".to_owned()
+        }
+        _ => format!("invalid {kind} map key"),
+    })
+}
+
+/// The value a literal's TEXT is when read as `kind`, or `None` where it is not one.
+///
+/// One reader for the two places a spelling has to become a value: a `Map<K, V>` setup key, and a
+/// `sets:` or `payload:` literal. `ess-domain::primitive_literal` refuses at authoring time exactly
+/// what this returns `None` for, and its own documentation names this reader as the reason the two
+/// spellings are what they are — so the pair has to stay one rule. Two readers is how a literal
+/// gets admitted by the validator and then dropped by the generator, which is precisely the defect
+/// the `sets:` literal work of 2026-09-16 was: `paused: "false"` over a `Boolean` validated and
+/// then vanished.
+///
+/// `true`/`false`, and a decimal that round-trips through `i64` — so `007`, `+7` and ` 7` answer
+/// `None` rather than being normalised, because normalising puts a spelling into the suite that
+/// nothing else writes. `Decimal` and `Binary64` have no admitted literal spelling. Every other
+/// primitive is carried as the text itself and then held to that primitive's own grammar by
+/// [`primitive_value`], so a literal that is not a legal `Uuid` answers `None` rather than becoming
+/// an assertion no implementation can satisfy.
+pub(crate) fn primitive_literal(kind: Primitive, spelling: &str) -> Option<Node> {
     let value = match kind {
         Primitive::Boolean => match spelling {
             "true" => Node::Bool(true),
             "false" => Node::Bool(false),
-            _ => return Err("invalid Boolean map key".into()),
+            _ => return None,
         },
         Primitive::Integer => {
-            let number = spelling
-                .parse::<i64>()
-                .map_err(|_| "invalid Integer map key")?;
+            let number = spelling.parse::<i64>().ok()?;
             if number.to_string() != spelling {
-                return Err("Integer map keys require canonical decimal spelling".into());
+                return None;
             }
             Node::Number(number.into())
         }
-        Primitive::Decimal | Primitive::Binary64 => {
-            return Err("numeric decimal map keys have no admitted setup spelling".into())
-        }
-        _ => Node::Text(spelling.into()),
+        Primitive::Decimal | Primitive::Binary64 => return None,
+        Primitive::String
+        | Primitive::Timestamp
+        | Primitive::Duration
+        | Primitive::Uuid
+        | Primitive::Bytes => Node::Text(spelling.to_owned()),
     };
-    primitive_value(kind, &value)
-        .map(|_| ())
-        .ok_or_else(|| format!("invalid {kind} map key"))
+    primitive_value(kind, &value).is_some().then_some(value)
 }
 
 /// Whether every declared field has to be supplied, or only the ones named.

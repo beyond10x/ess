@@ -653,6 +653,29 @@ pub(crate) fn condition_phrase(condition: &ResolvedCondition) -> String {
                 .as_ref()
                 .map_or(String::new(), |guard| format!(" and `{guard}`")),
         ),
+        // The states rather than the answer the author wrote: a plan line is read beside the
+        // scenario it produced, and the scenario establishes one of these states before it sends
+        // anything. Which ones is the IR's already-resolved partition of the move's `from` set.
+        ResolvedCondition::StateChange {
+            changes,
+            states,
+            predicate,
+        } => format!(
+            "when the existing subject is in {}{}{}",
+            states
+                .iter()
+                .map(ToString::to_string)
+                .collect::<Vec<_>>()
+                .join(", "),
+            if *changes {
+                ", which this branch's move changes rather than restates"
+            } else {
+                ", the state this branch's move arrives at and therefore restates"
+            },
+            predicate
+                .as_ref()
+                .map_or(String::new(), |guard| format!(" and `{guard}`")),
+        ),
         ResolvedCondition::Otherwise => "otherwise".to_owned(),
         ResolvedCondition::External { cause } => format!("externally decided ({cause})"),
         ResolvedCondition::WrongState => "from a state no declared move starts in".to_owned(),

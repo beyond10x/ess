@@ -897,6 +897,22 @@ fn outcome_description(ir: &EssIr, outcome: &ResolvedOutcome) -> String {
                 " and `{guard}` holds of the input"
             )),
         ),
+        ResolvedCondition::StateChange {
+            changes,
+            states,
+            predicate,
+        } => format!(
+            "Taken when the existing subject is in {}{}{}.",
+            list(&states.iter().map(ToString::to_string).collect::<Vec<_>>()),
+            if *changes {
+                ", so this branch's move changes the state it holds rather than restating it"
+            } else {
+                ", the state this branch's move arrives at, so it restates what is already held"
+            },
+            predicate.as_ref().map_or(String::new(), |guard| format!(
+                ", and `{guard}` holds of the input"
+            )),
+        ),
         ResolvedCondition::Otherwise => {
             "Taken when no other outcome's condition matched.".to_owned()
         }

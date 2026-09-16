@@ -56,11 +56,11 @@ fn finite_state_only_partition_and_joint_bound() {
     let states = [init.clone(), bridged.clone()].into_iter().collect();
     let guards = [
         StateGuard {
-            state: Some(&init),
+            states: Some([init.clone()].into()),
             predicate: None,
         },
         StateGuard {
-            state: Some(&bridged),
+            states: Some([bridged.clone()].into()),
             predicate: None,
         },
     ];

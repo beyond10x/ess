@@ -137,10 +137,17 @@ fn analyze_inputs<E: TypeEnvironment>(
 }
 
 /// One guarded branch, keeping held-state authority separate from the input namespace.
-#[derive(Debug, Clone, Copy)]
+///
+/// The held side is the **set** of states the branch admits rather than one state, because two
+/// conditions now select on it and only one of them names a state: a literal `when_subject_state:`
+/// contributes a set of one, and `when_state_changes:` contributes the side of its move's own
+/// `from` set that the answer picks. Generalising here rather than teaching this prover about
+/// either condition keeps the proof one question — *does this branch admit this state* — asked the
+/// same way for both.
+#[derive(Debug, Clone)]
 pub struct StateGuard<'a> {
-    /// A held-state equality, or any existing declared state.
-    pub state: Option<&'a crate::entity::StateName>,
+    /// The held states this branch admits, or any existing declared state.
+    pub states: Option<BTreeSet<crate::entity::StateName>>,
     /// The ordinary input guard, or any admitted input.
     pub predicate: Option<&'a Predicate>,
 }
@@ -179,8 +186,9 @@ pub fn analyze_with_states<E: TypeEnvironment>(
             let mut input = case.clone();
             input.selected.retain(|index| {
                 guards[*index]
-                    .state
-                    .is_none_or(|required| required == state)
+                    .states
+                    .as_ref()
+                    .is_none_or(|admitted| admitted.contains(state))
             });
             result.push(StateCase {
                 state: state.clone(),

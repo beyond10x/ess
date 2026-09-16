@@ -883,6 +883,25 @@ fn written_condition(condition: &ResolvedCondition) -> String {
                 .as_ref()
                 .map_or(String::new(), |guard| format!(" and {guard}")),
         ),
+        // Both halves, because both can move without the other: an author flipping the answer and
+        // a lifecycle gaining a state each change which rows this branch answers, and a rendering
+        // that carried only the word would report the second as no change at all.
+        ResolvedCondition::StateChange {
+            changes,
+            states,
+            predicate,
+        } => format!(
+            "when the move {} the held state, which is {}{}",
+            if *changes { "changes" } else { "restates" },
+            states
+                .iter()
+                .map(ToString::to_string)
+                .collect::<Vec<_>>()
+                .join(", "),
+            predicate
+                .as_ref()
+                .map_or(String::new(), |guard| format!(" and {guard}")),
+        ),
         ResolvedCondition::Otherwise => "otherwise".to_owned(),
         ResolvedCondition::External { cause } => format!("external: {cause}"),
         ResolvedCondition::WrongState => "wrong-state".to_owned(),

@@ -14,6 +14,8 @@
 //! | [`OutcomeCondition`] | meaning | how a generated scenario reaches it |
 //! |---|---|---|
 //! | [`When`](OutcomeCondition::When) | a predicate over the input holds | construct an input satisfying the predicate |
+//! | [`SubjectState`](OutcomeCondition::SubjectState) | the existing subject is resting in a named state | establish that state, then construct an input |
+//! | [`StateChange`](OutcomeCondition::StateChange) | the move this branch takes does — or does not — change the state the subject already holds | establish one of the states the answer admits, then construct an input |
 //! | [`Otherwise`](OutcomeCondition::Otherwise) | no conditional outcome matched | construct an input that matches no other branch |
 //! | [`External`](OutcomeCondition::External) | something outside the input decided it | inject the fault; no input can produce it |
 //! | [`WrongState`](OutcomeCondition::WrongState) | the subject is resting in a state none of this command's moves start from | drive an instance to such a state, then issue the command |
@@ -53,6 +55,52 @@
 //! carry, and a `summary:` to print. A scalar on the command would have been a fourth place a
 //! projection has to look for an error, and a conformance target reporting *which branch it took*
 //! would still have had nothing to name.
+//!
+//! # The first report of a state, and every later one
+//!
+//! A `when:` is a predicate over the **input**, so a push that re-reports a state its subject
+//! already holds is indistinguishable from the push that first put it there. An adopter reducer
+//! rebuilds every row from every push without comparing what the row already holds: a member
+//! resting in `Added` is re-reported as `added` by the next push about any member of its
+//! conference, so one guard — `when: state == Added` — answers both the join and a later
+//! hold/unhold that changed fields only. Three of that model's branches carry the same defect, and
+//! the scenario written for the pair fails, because the specification cannot say which of the two
+//! a push is.
+//!
+//! [`StateChange`](OutcomeCondition::StateChange) is the one word that says it, written
+//! `when_state_changes:` beside the ordinary `when:` and conjunctive with it:
+//!
+//! ```yaml
+//! - name: joined
+//!   when: state == Added
+//!   when_state_changes: true          # the first report: the subject was not already Added
+//!   moves: conference.ConferenceMember.join
+//!   instance: member_id
+//! - name: refreshed                   # every later one falls to the default, fields only
+//!   updates: conference.ConferenceMember
+//!   instance: member_id
+//! ```
+//!
+//! **It names no state, and that is the whole point.** `moves:` already declares the state the
+//! branch arrives at and the states it may start from, so the held states this condition admits are
+//! that transition's own `from` set partitioned by whether each state is the one it arrives at —
+//! computed, never authored, exactly as [`WrongState`](OutcomeCondition::WrongState)'s states are.
+//! A literal [`SubjectState`](OutcomeCondition::SubjectState) guard can express the same selection
+//! for one transition, and it is a second copy of the `from` set: it has to be re-derived per
+//! branch, it drifts when a transition gains a state, and it cannot be written at all where `from`
+//! holds more than one state that is not the arrival state.
+//!
+//! **Refused where there is no arrival state to compare against**, which is every branch without
+//! `moves:` — `creates:` brings an instance into existence at its initial state, `updates:` takes no
+//! transition, and a branch with no subject has nothing resting anywhere. The re-report is then
+//! answered by the default, or by a self-transition the lifecycle declares.
+//!
+//! **Both readings are checked, and an empty answer is refused.** `when_state_changes: false` on a
+//! move whose `from` set is exactly its `to` admits every held state and `true` admits none; the
+//! second is refused as an [`UnreachableBranch`](ValidationCode::UnreachableBranch), which is what
+//! tells an author that a re-report is not this move but the default beside it. The joint
+//! state/input partition the [`subject_state`] prover already performs then decides every
+//! (held state, input) pair against both conditions together.
 //!
 //! # An outcome says what it changes, and a command does not
 //!
@@ -165,7 +213,7 @@ use ess_primitives::predicate::Predicate;
 
 use crate::name::{Naming, QualifiedName};
 use crate::refs::Refs;
-use crate::types::{Field, TypeRegistry};
+use crate::types::{Field, Primitive, TypeRegistry};
 
 /// The name of one outcome of a command, such as `accepted`, `rejected` or `not-found`.
 ///
@@ -318,8 +366,8 @@ impl schemars::JsonSchema for OutcomeName {
 
 /// What decides that an outcome is the one taken.
 ///
-/// Three cases rather than an `Option<Predicate>`, because a generated conformance scenario has to
-/// treat them differently — see the table in the [module documentation](self).
+/// Cases rather than an `Option<Predicate>`, because a generated conformance scenario has to treat
+/// them differently — see the table in the [module documentation](self).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum OutcomeCondition {
     /// Taken when this predicate over the command's input holds.
@@ -328,6 +376,22 @@ pub enum OutcomeCondition {
     SubjectState {
         /// The held lifecycle state, read from the subject rather than the input.
         state: crate::entity::StateName,
+        /// An additional predicate over the unchanged command-input namespace.
+        predicate: Option<Predicate>,
+    },
+    /// Taken when this branch's `moves:` would — or would not — change the state already held, and
+    /// the optional input guard holds.
+    ///
+    /// The condition that separates the **first** report of a state from every later one. It names
+    /// no state: the transition already declares the one it arrives at and the ones it may start
+    /// from, so the held states this admits are that `from` set partitioned by whether each state
+    /// is the arrival state. See the [module documentation](self) for why a literal
+    /// [`SubjectState`](Self::SubjectState) guard is the second copy of that set rather than a
+    /// cheaper spelling of this.
+    StateChange {
+        /// `true` admits the held states the move would move *away* from — the first report of its
+        /// arrival state. `false` admits the arrival state itself — a restatement of what is held.
+        changes: bool,
         /// An additional predicate over the unchanged command-input namespace.
         predicate: Option<Predicate>,
     },
@@ -361,7 +425,9 @@ impl OutcomeCondition {
     pub fn predicate(&self) -> Option<&Predicate> {
         match self {
             Self::When(predicate) => Some(predicate),
-            Self::SubjectState { predicate, .. } => predicate.as_ref(),
+            Self::SubjectState { predicate, .. } | Self::StateChange { predicate, .. } => {
+                predicate.as_ref()
+            }
             Self::Otherwise | Self::External { .. } | Self::WrongState => None,
         }
     }
@@ -370,7 +436,11 @@ impl OutcomeCondition {
     pub fn cause(&self) -> Option<&str> {
         match self {
             Self::External { cause } => Some(cause),
-            Self::When(_) | Self::SubjectState { .. } | Self::Otherwise | Self::WrongState => None,
+            Self::When(_)
+            | Self::SubjectState { .. }
+            | Self::StateChange { .. }
+            | Self::Otherwise
+            | Self::WrongState => None,
         }
     }
 
@@ -378,11 +448,24 @@ impl OutcomeCondition {
     pub fn test_strategy(&self) -> TestStrategy {
         match self {
             Self::When(_) => TestStrategy::ConstructInput,
-            Self::SubjectState { .. } => TestStrategy::ConstructInputInState,
+            Self::SubjectState { .. } | Self::StateChange { .. } => {
+                TestStrategy::ConstructInputInState
+            }
             Self::Otherwise => TestStrategy::DefaultBranch,
             Self::External { .. } => TestStrategy::InjectFault,
             Self::WrongState => TestStrategy::ArrangeState,
         }
+    }
+
+    /// `true` when this condition reads the state the subject already holds.
+    ///
+    /// One question asked in four places — the format gate, the coverage routing, the shape check
+    /// and the joint partition — so the two held-state conditions cannot come apart by one of them
+    /// being extended and another not. [`WrongState`](Self::WrongState) is deliberately not one of
+    /// them: it reads the *complement* of this command's moves rather than a state the author's
+    /// branch selected, and it carries its own precedence.
+    pub fn reads_held_state(&self) -> bool {
+        matches!(self, Self::SubjectState { .. } | Self::StateChange { .. })
     }
 }
 
@@ -1095,6 +1178,7 @@ impl Outcome {
             OutcomeCondition::Otherwise => true,
             OutcomeCondition::When(predicate) => predicate.is_trivially_true(),
             OutcomeCondition::SubjectState { .. }
+            | OutcomeCondition::StateChange { .. }
             | OutcomeCondition::External { .. }
             | OutcomeCondition::WrongState => false,
         }
@@ -1625,7 +1709,7 @@ impl CommandSpec {
         if self
             .outcomes
             .iter()
-            .any(|outcome| matches!(outcome.condition, OutcomeCondition::SubjectState { .. }))
+            .any(|outcome| outcome.condition.reads_held_state())
         {
             return subject_state::validate_shape(self);
         }
@@ -2074,9 +2158,14 @@ pub(crate) fn validate_response_contracts(spec: &crate::Specification) -> Valida
 pub fn validate_sets(
     commands: &BTreeMap<QualifiedName, CommandSpec>,
     entities: &BTreeMap<QualifiedName, crate::entity::EntitySpec>,
+    types: &TypeRegistry,
     conversions: &crate::types::ConversionRegistry,
 ) -> ValidationErrors {
     let mut errors = ValidationErrors::new();
+    // Once for the document, for the reason `validate_payloads` states about its own: the
+    // inhabitation set is a fixpoint over the whole registry, and asking it per literal makes one
+    // document quadratic in its own size.
+    let inhabitation = crate::system::Inhabitation::of(types);
     for command in commands.values() {
         for outcome in &command.outcomes {
             // An outcome that sets fields on nothing was already reported by the command's own
@@ -2125,32 +2214,39 @@ pub fn validate_sets(
                 };
 
                 if matches!(source, PayloadSource::Cleared) {
-                    // The one `sets:` source with a rule of its own, and it is a rule about the
-                    // TARGET rather than about a value: a required field cannot hold nothing, so a
-                    // branch that says it can is wrong rather than surprising. Nothing else needs
-                    // checking — there is no value to type.
-                    if !held.type_ref.is_optional() {
+                    errors.extend(check_cleared_target(at, &entity.name, target, held));
+                    continue;
+                }
+                if let PayloadSource::Literal { value } = source {
+                    // The same rule a payload literal is held to, against the entity's field
+                    // instead of the event's. It used to say it was checked "where a payload
+                    // literal is", and it was not: `literal_representation` was reachable from the
+                    // payload path alone, so a literal set on a `Boolean` or a struct compiled
+                    // clean and the synthesizer abstained on it in silence.
+                    if let Some(refusal) = literal_representation(
+                        &entity.name,
+                        target,
+                        held,
+                        value,
+                        "`sets:` entry",
+                        command,
+                        Resolved {
+                            types,
+                            conversions,
+                            inhabitation: &inhabitation,
+                        },
+                    ) {
                         errors.push(
-                            ValidationError::new(
-                                ValidationCode::TypeMismatch,
-                                at,
-                                format!(
-                                    "`{}.{target}` holds `{}`, and `{{cleared: true}}` leaves a \
-                                     field with nothing in it",
-                                    entity.name, held.type_ref
-                                ),
-                            )
-                            .with_hint(format!(
-                                "make it `Optional<{}>`, or set a value instead",
-                                held.type_ref
-                            )),
+                            ValidationError::new(ValidationCode::TypeMismatch, at, refusal.reason)
+                                .with_hint(refusal.hint),
                         );
                     }
                     continue;
                 }
                 let PayloadSource::InputField { field } = source else {
-                    // A literal is checked where a payload literal is, against the same rules; the
-                    // entity side adds nothing a reader would learn twice.
+                    // `{generated: true}` and a response field determine no value here for a
+                    // reader to type: the first hands ownership to the implementation, and the
+                    // second is checked against the command's declared response.
                     continue;
                 };
                 let Some(read) = command.input_field(field) else {
@@ -2196,7 +2292,7 @@ fn check_payload_literal(
     value: &str,
     resolved: Resolved<'_>,
 ) -> ValidationErrors {
-    use crate::binding::{is_field_name, near_miss, representation, Representation, Resolution};
+    use crate::binding::{is_field_name, near_miss};
 
     let mut errors = ValidationErrors::new();
     let prefix = PayloadSource::INPUT_PREFIX;
@@ -2243,14 +2339,139 @@ fn check_payload_literal(
         }
     }
 
-    let refuse = |reason: String| {
-        ValidationError::at(at.clone(), ValidationCode::TypeMismatch, reason).with_hint(format!(
-            "only text and the variants of an enum can be written as a literal; take the \
-                 value from an input of `{}` instead",
-            command.name
-        ))
+    if let Some(refusal) = literal_representation(
+        &event.name,
+        target,
+        filled,
+        value,
+        "payload",
+        command,
+        resolved,
+    ) {
+        errors.push(
+            ValidationError::at(at.clone(), ValidationCode::TypeMismatch, refusal.reason)
+                .with_hint(refusal.hint),
+        );
+    }
+    errors
+}
+
+/// `{cleared: true}` against the field it clears.
+///
+/// The one `sets:` source with a rule of its own, and it is a rule about the TARGET rather than
+/// about a value: a required field cannot hold nothing, so a branch that says it can is wrong
+/// rather than surprising. Nothing else needs checking — there is no value to type.
+fn check_cleared_target(
+    at: String,
+    entity: &QualifiedName,
+    target: &str,
+    held: &Field,
+) -> ValidationErrors {
+    if held.type_ref.is_optional() {
+        return ValidationErrors::new();
+    }
+    ValidationErrors::from(
+        ValidationError::new(
+            ValidationCode::TypeMismatch,
+            at,
+            format!(
+                "`{entity}.{target}` holds `{}`, and `{{cleared: true}}` leaves a field with \
+                 nothing in it",
+                held.type_ref
+            ),
+        )
+        .with_hint(format!(
+            "make it `Optional<{}>`, or set a value instead",
+            held.type_ref
+        )),
+    )
+}
+
+/// Why a literal cannot be the value of the field it is written against, when it cannot.
+///
+/// Returned rather than reported, because the two callers locate a refusal differently — a payload
+/// entry carries a typed site and an entity `sets:` entry still carries a rendered one — while the
+/// rule itself is about neither. Every case is a [`TypeMismatch`](ValidationCode::TypeMismatch);
+/// what varies is the sentence and the repair.
+struct LiteralRefusal {
+    reason: String,
+    hint: String,
+}
+
+/// Whether the TEXT of a literal is a value of `primitive`, and how to spell one when it is not.
+///
+/// `Ok(())` admits it. `Err(Some(spelling))` means the primitive has a literal spelling and this
+/// text is not it — `paused: "perhaps"` over a `Boolean`. `Err(None)` means the primitive has no
+/// literal spelling at all, and the value has to come from an input.
+///
+/// Two primitives, and the spellings are the ones `ess-conformance`'s own setup reader admits for
+/// the same two: exactly `true` and `false`, and a decimal whose text round-trips through `i64`, so
+/// `007`, `+7` and ` 7` are refused rather than normalised. Normalising would put a second spelling
+/// into the model that nothing downstream writes, and the reader that has to send the value would
+/// be the place it was discovered.
+///
+/// The other primitives have canonical text forms too, and none of them is claimed here. A
+/// `Timestamp` or a `Uuid` admitted in this function and not in the reader that sends it is exactly
+/// how the two come apart, and the adopter's 52 refusals were 50 `Boolean` and 2 `Integer` — there
+/// is no third case waiting behind them.
+fn primitive_literal(primitive: Primitive, value: &str) -> Result<(), Option<&'static str>> {
+    let spelling = match primitive {
+        Primitive::Boolean => {
+            if value == "true" || value == "false" {
+                return Ok(());
+            }
+            "`true` or `false`"
+        }
+        Primitive::Integer => {
+            if value
+                .parse::<i64>()
+                .is_ok_and(|number| number.to_string() == value)
+            {
+                return Ok(());
+            }
+            "a whole number written in decimal, without a sign or leading zeroes"
+        }
+        Primitive::String
+        | Primitive::Decimal
+        | Primitive::Binary64
+        | Primitive::Timestamp
+        | Primitive::Duration
+        | Primitive::Uuid
+        | Primitive::Bytes => return Err(None),
     };
-    match representation(&filled.type_ref, resolved.types, resolved.inhabitation) {
+    Err(Some(spelling))
+}
+
+/// Whether `value` can be written as the literal value of `held`, a field of `owner`.
+///
+/// One rule, and it is a question about the **target**: what a literal may be written as depends on
+/// the representation the target's type resolves to, and an event's field and an entity's field are
+/// the same kind of target. It was reachable only from the payload path for two releases, while the
+/// comment at the `sets:` loop said it was checked "where a payload literal is" — so
+/// `paused: "false"` over a `Boolean` field compiled with no diagnostic at all, and the synthesizer
+/// then abstained on it without saying so: a `sets:` that claimed something and proved nothing.
+fn literal_representation(
+    owner: &QualifiedName,
+    target: &str,
+    held: &Field,
+    value: &str,
+    place: &str,
+    command: &CommandSpec,
+    resolved: Resolved<'_>,
+) -> Option<LiteralRefusal> {
+    use crate::binding::{representation, Representation, Resolution};
+
+    let refuse = |reason: String| {
+        Some(LiteralRefusal {
+            reason,
+            hint: format!(
+                "a literal may be text, a variant of an enum, `true` or `false`, or a whole \
+                 number in decimal; anything else has to come from an input of `{}`",
+                command.name
+            ),
+        })
+    };
+    match representation(&held.type_ref, resolved.types, resolved.inhabitation) {
         // Text is checked as far as text can be. The other two silences belong to other passes,
         // and each is a deferral to a refusal that is actually made about the type in hand: a name
         // nothing declares is reported where unresolved references are, and `Uninhabited` is
@@ -2260,43 +2481,53 @@ fn check_payload_literal(
         // here, because here is where they are refused at all.
         Resolution::Established(Representation::Text)
         | Resolution::Undeclared
-        | Resolution::Uninhabited => {}
+        | Resolution::Uninhabited => None,
         // A type that has values and still resolves through itself is nobody else's error: no pass
         // reports it, so admitting the literal would be admitting one that was never checked.
-        Resolution::Cyclic(through) => errors.push(refuse(format!(
-            "`{}.{target}` is `{}`, whose representation resolves through `{through}` again, so \
-             no representation a literal could be written as is ever reached",
-            event.name, filled.type_ref
-        ))),
-        Resolution::Established(Representation::Variants(variants)) => {
-            if !variants.iter().any(|variant| variant == value) {
-                errors.push(
-                    ValidationError::at(
-                        at.clone(),
-                        ValidationCode::TypeMismatch,
-                        format!(
-                            "`{value}` is not a variant of what `{}.{target}` carries",
-                            event.name
-                        ),
-                    )
-                    .with_hint(format!("variants: {}", variants.join(", "))),
-                );
+        Resolution::Cyclic(through) => refuse(format!(
+            "`{owner}.{target}` is `{}`, whose representation resolves through `{through}` again, \
+             so no representation a literal could be written as is ever reached",
+            held.type_ref
+        )),
+        Resolution::Established(Representation::Variants(variants)) => variants
+            .iter()
+            .all(|variant| variant != value)
+            .then(|| LiteralRefusal {
+                reason: format!("`{value}` is not a variant of what `{owner}.{target}` carries"),
+                hint: format!("variants: {}", variants.join(", ")),
+            }),
+        // A literal is one piece of text, and for two primitives that text spells a value: the
+        // adopter's `paused: "false"` and `unread: "0"` each say something true and checkable about
+        // what the branch writes. Refusing them left a correct intent with no spelling at all,
+        // which is a worse failure than the silent one this rule was added to end — so the text is
+        // PARSED here, where it is also refused, and the two cannot come apart.
+        // A literal is one piece of text, and for two primitives that text spells a value: the
+        // adopter's `paused: "false"` and `unread: "0"` each say something true and checkable about
+        // what the branch writes. Refusing them left a correct intent with no spelling at all,
+        // which is a worse failure than the silent one this rule was added to end — so the text is
+        // PARSED here, where it is also refused, and the two cannot come apart.
+        Resolution::Established(Representation::Primitive(primitive)) => {
+            match primitive_literal(primitive, value) {
+                Ok(()) => None,
+                Err(Some(spelling)) => Some(LiteralRefusal {
+                    reason: format!(
+                        "`{owner}.{target}` is `{primitive}` underneath, and `{value}` is not one \
+                         of its values"
+                    ),
+                    hint: format!(
+                        "a literal is one piece of text, so write the value quoted: {spelling}"
+                    ),
+                }),
+                Err(None) => refuse(format!(
+                    "`{owner}.{target}` is `{primitive}` underneath, and a literal in a {place} \
+                     is text, `true` or `false`, or a whole number"
+                )),
             }
         }
-        Resolution::Established(Representation::Primitive(primitive)) => {
-            errors.push(refuse(format!(
-                "`{}.{target}` is `{primitive}` underneath, and a literal in a payload is text",
-                event.name
-            )));
-        }
-        Resolution::Established(Representation::Structured) => {
-            errors.push(refuse(format!(
-                "`{}.{target}` has structure, and a literal in a payload is one piece of text",
-                event.name
-            )));
-        }
+        Resolution::Established(Representation::Structured) => refuse(format!(
+            "`{owner}.{target}` has structure, and a literal in a {place} is one piece of text"
+        )),
     }
-    errors
 }
 
 /// An immutable fact: something that happened, named in the domain's own words.
@@ -2462,6 +2693,20 @@ pub struct RawOutcome {
     /// Equality against the existing subject's declared lifecycle state, composed with `when`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub when_subject_state: Option<crate::entity::StateName>,
+    /// Whether this branch's `moves:` changes the lifecycle state the subject already holds,
+    /// composed with `when`.
+    ///
+    /// `true` is the **first** report of the state the move arrives at; `false` is a restatement of
+    /// the state already held. It names no state — the transition declares its arrival state and
+    /// its `from` set, and this picks a side of that set. Admitted only beside `moves:`, for the
+    /// reason the [module documentation](self) gives: nothing else declares an arrival state to
+    /// compare against.
+    ///
+    /// An `Option<bool>` and not a `bool`, because `false` is a condition rather than an absence —
+    /// the distinction [`refuses`](Self::refuses) draws for the same reason. `wrong_state: false`
+    /// is the same document as leaving that key out; `when_state_changes: false` is not.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub when_state_changes: Option<bool>,
     /// What outside the input decides this branch.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub external: Option<String>,
@@ -2574,75 +2819,127 @@ pub struct RawErrorSpec {
     pub fields: Vec<Field>,
 }
 
+/// A refusal for two declarations that contradict each other, on the key an author would edit.
+///
+/// The nearest protocol code for the shape, and a free function rather than a closure so that
+/// [`outcome_condition`] can report in the same voice as [`Outcome::try_from`] without a second
+/// copy of the location.
+fn outcome_conflict(
+    name: &OutcomeName,
+    key: &str,
+    message: String,
+    hint: &str,
+) -> ValidationErrors {
+    ValidationErrors::from(
+        ValidationError::new(
+            ValidationCode::ConflictingDeclaration,
+            format!("outcomes.{name}.{key}"),
+            message,
+        )
+        .with_hint(hint.to_owned()),
+    )
+}
+
+/// The one condition a document's condition keys add up to, or why they do not add up to one.
+///
+/// Five keys and at most one condition. Two of them read the state the subject already holds —
+/// `when_subject_state:` names it and `when_state_changes:` derives it from the branch's own move —
+/// and both compose with `when:` rather than replacing it, so the input predicate is handed to
+/// whichever of the two was written. Everything else is the mutual exclusion that existed before
+/// either: a branch decided by the input is not a branch decided outside it, and neither is the
+/// branch the subject's resting state decides.
+fn outcome_condition(
+    name: &OutcomeName,
+    when: Option<Predicate>,
+    subject_state: Option<crate::entity::StateName>,
+    state_changes: Option<bool>,
+    external: Option<String>,
+    wrong_state: bool,
+) -> Result<OutcomeCondition, ValidationErrors> {
+    let conflict =
+        |key: &str, message: String, hint: &str| Err(outcome_conflict(name, key, message, hint));
+    if subject_state.is_some() && state_changes.is_some() {
+        return conflict(
+            "when_state_changes",
+            format!(
+                "outcome `{name}` declares both `when_subject_state` and `when_state_changes`; a                  branch reads the state its subject already holds one way"
+            ),
+            "keep the literal state, or keep the test that derives it from the move's own from set",
+        );
+    }
+    if (subject_state.is_some() || state_changes.is_some()) && (external.is_some() || wrong_state) {
+        return conflict(
+            held_state_key(subject_state.is_some()),
+            "an explicit subject-state guard cannot also be external or wrong_state".to_owned(),
+            "declare one condition authority",
+        );
+    }
+    if let Some(state) = subject_state {
+        return Ok(OutcomeCondition::SubjectState {
+            state,
+            predicate: when,
+        });
+    }
+    if let Some(changes) = state_changes {
+        return Ok(OutcomeCondition::StateChange {
+            changes,
+            predicate: when,
+        });
+    }
+    match (when, external, wrong_state) {
+        (Some(_), Some(_), _) => conflict(
+            "when",
+            format!(
+                "outcome `{name}` declares both a `when` predicate and an `external` cause; a                  branch is either decided by the input or it is not"
+            ),
+            "keep `external` and drop the predicate, or the other way round",
+        ),
+        (Some(_), None, true) => conflict(
+            "when",
+            format!(
+                "outcome `{name}` declares both a `when` predicate and `wrong_state`; a branch                  the subject's state decides is not one the input decides"
+            ),
+            "keep `wrong_state` and drop the predicate, or the other way round",
+        ),
+        (None, Some(_), true) => conflict(
+            "external",
+            format!(
+                "outcome `{name}` declares both an `external` cause and `wrong_state`; the                  subject's own state is not something outside the system"
+            ),
+            "keep `wrong_state` and drop `external`, or the other way round",
+        ),
+        (Some(predicate), None, false) => Ok(OutcomeCondition::When(predicate)),
+        (None, Some(cause), false) => Ok(OutcomeCondition::External { cause }),
+        (None, None, true) => Ok(OutcomeCondition::WrongState),
+        (None, None, false) => Ok(OutcomeCondition::Otherwise),
+    }
+}
+
+/// Which of the two held-state keys the author wrote, so a refusal names the one they would edit.
+fn held_state_key(literal: bool) -> &'static str {
+    if literal {
+        "when_subject_state"
+    } else {
+        "when_state_changes"
+    }
+}
+
 impl TryFrom<RawOutcome> for Outcome {
     type Error = ValidationErrors;
 
     fn try_from(raw: RawOutcome) -> Result<Self, Self::Error> {
-        // The nearest protocol code for "two declarations contradict each other", and the location
-        // is the key an author would go and edit rather than the outcome as a whole.
         let conflict = |key: &str, message: String, hint: &str| {
-            ValidationErrors::from(
-                ValidationError::new(
-                    ValidationCode::ConflictingDeclaration,
-                    format!("outcomes.{}.{key}", raw.name),
-                    message,
-                )
-                .with_hint(hint.to_owned()),
-            )
+            outcome_conflict(&raw.name, key, message, hint)
         };
-        if raw.when_subject_state.is_some() && (raw.external.is_some() || raw.wrong_state) {
-            return Err(conflict(
-                "when_subject_state",
-                "an explicit subject-state guard cannot also be external or wrong_state".to_owned(),
-                "declare one condition authority",
-            ));
-        }
-        let condition = if let Some(state) = raw.when_subject_state {
-            OutcomeCondition::SubjectState {
-                state,
-                predicate: raw.when,
-            }
-        } else {
-            match (raw.when, raw.external, raw.wrong_state) {
-                (Some(_), Some(_), _) => {
-                    return Err(conflict(
-                        "when",
-                        format!(
-                        "outcome `{}` declares both a `when` predicate and an `external` cause; a \
-                         branch is either decided by the input or it is not",
-                        raw.name
-                    ),
-                        "keep `external` and drop the predicate, or the other way round",
-                    ));
-                }
-                (Some(_), None, true) => {
-                    return Err(conflict(
-                        "when",
-                        format!(
-                        "outcome `{}` declares both a `when` predicate and `wrong_state`; a branch \
-                         the subject's state decides is not one the input decides",
-                        raw.name
-                    ),
-                        "keep `wrong_state` and drop the predicate, or the other way round",
-                    ));
-                }
-                (None, Some(_), true) => {
-                    return Err(conflict(
-                        "external",
-                        format!(
-                        "outcome `{}` declares both an `external` cause and `wrong_state`; the \
-                         subject's own state is not something outside the system",
-                        raw.name
-                    ),
-                        "keep `wrong_state` and drop `external`, or the other way round",
-                    ));
-                }
-                (Some(predicate), None, false) => OutcomeCondition::When(predicate),
-                (None, Some(cause), false) => OutcomeCondition::External { cause },
-                (None, None, true) => OutcomeCondition::WrongState,
-                (None, None, false) => OutcomeCondition::Otherwise,
-            }
-        };
+        let held_state_key = held_state_key(raw.when_subject_state.is_some());
+        let condition = outcome_condition(
+            &raw.name,
+            raw.when,
+            raw.when_subject_state,
+            raw.when_state_changes,
+            raw.external,
+            raw.wrong_state,
+        )?;
         // `refuses:` answers a question only a wrong-state branch is asked. On any other branch it
         // reads like a claim about the outcome and decides nothing, so it is refused where the
         // author would go and delete it rather than carried as a field nothing consults.
@@ -2659,15 +2956,32 @@ impl TryFrom<RawOutcome> for Outcome {
         }
         let refuses = raw.refuses.unwrap_or(true);
         let subject = subject_of(&raw.name, raw.creates, raw.moves, raw.updates, raw.instance)?;
-        if matches!(condition, OutcomeCondition::SubjectState { .. })
+        if condition.reads_held_state()
             && !subject
                 .as_ref()
                 .is_some_and(|subject| subject.surface() == InstanceSurface::CommandInput)
         {
             return Err(conflict(
-                "when_subject_state",
+                held_state_key,
                 "a subject-state guard requires an existing moves or updates subject and input identity".to_owned(),
                 "name the existing subject with moves or updates and instance",
+            ));
+        }
+        // `updates:` takes no transition and `creates:` starts at the lifecycle's initial state, so
+        // neither declares an arrival state for this condition to be about. Refused rather than
+        // read as "any state", which is the reading that would make the key decide nothing.
+        if matches!(condition, OutcomeCondition::StateChange { .. })
+            && !subject
+                .as_ref()
+                .is_some_and(|subject| matches!(subject.effect, Effect::Moves { .. }))
+        {
+            return Err(conflict(
+                "when_state_changes",
+                "a branch saying whether it changes the state already held must take a \
+                 declared move; nothing else arrives at a state"
+                    .to_owned(),
+                "name the transition with `moves:`, or drop the key — a push that restates \
+                 the state already held is answered by the default branch beside it",
             ));
         }
         Ok(Self {
@@ -2936,15 +3250,19 @@ impl TryFrom<RawErrorSpec> for ErrorSpec {
 
 impl From<Outcome> for RawOutcome {
     fn from(outcome: Outcome) -> Self {
-        let (when, when_subject_state, external, wrong_state) = match outcome.condition {
-            OutcomeCondition::When(predicate) => (Some(predicate), None, None, false),
-            OutcomeCondition::SubjectState { state, predicate } => {
-                (predicate, Some(state), None, false)
-            }
-            OutcomeCondition::Otherwise => (None, None, None, false),
-            OutcomeCondition::External { cause } => (None, None, Some(cause), false),
-            OutcomeCondition::WrongState => (None, None, None, true),
-        };
+        let (when, when_subject_state, when_state_changes, external, wrong_state) =
+            match outcome.condition {
+                OutcomeCondition::When(predicate) => (Some(predicate), None, None, None, false),
+                OutcomeCondition::SubjectState { state, predicate } => {
+                    (predicate, Some(state), None, None, false)
+                }
+                OutcomeCondition::StateChange { changes, predicate } => {
+                    (predicate, None, Some(changes), None, false)
+                }
+                OutcomeCondition::Otherwise => (None, None, None, None, false),
+                OutcomeCondition::External { cause } => (None, None, None, Some(cause), false),
+                OutcomeCondition::WrongState => (None, None, None, None, true),
+            };
         let (creates, moves, updates, instance) = match outcome.subject {
             None => (None, None, None, None),
             Some(Subject {
@@ -2984,6 +3302,7 @@ impl From<Outcome> for RawOutcome {
             name: outcome.name,
             when,
             when_subject_state,
+            when_state_changes,
             external,
             wrong_state,
             // Written back only where it says something. On any branch but a refusing wrong-state

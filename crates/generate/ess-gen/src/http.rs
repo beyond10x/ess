@@ -84,7 +84,15 @@ pub const CONFLICT: &str = "409";
 pub fn status(outcome: &ResolvedOutcome) -> &'static str {
     match (&outcome.condition, outcome.error.is_some()) {
         (ResolvedCondition::External { .. }, true) => UPSTREAM,
-        (ResolvedCondition::WrongState | ResolvedCondition::SubjectState { .. }, true) => CONFLICT,
+        // All three are decided by the state the subject is resting in rather than by the
+        // request, so a refusal from one of them is a conflict with that state and not a bad
+        // request: `StateChange` is `SubjectState` with the states derived from the move.
+        (
+            ResolvedCondition::WrongState
+            | ResolvedCondition::SubjectState { .. }
+            | ResolvedCondition::StateChange { .. },
+            true,
+        ) => CONFLICT,
         (ResolvedCondition::When { .. } | ResolvedCondition::Otherwise, true) => REFUSED,
         // An external branch that emits rather than errors is still a branch that was taken; what
         // decided it does not change what happened.

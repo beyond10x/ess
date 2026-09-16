@@ -2,6 +2,53 @@
 
 ## [Unreleased]
 
+### Added
+
+- **A branch may say it is the FIRST report of the state it moves to: `when_state_changes: <bool>`.**
+  A `when:` guard is a predicate over the input, so a push that re-reports a state the entity already
+  holds was indistinguishable from the push that first put it there. The new key is conjunctive with
+  `when:`, admitted only on an outcome that declares `moves:`, and it names no state — the held states
+  it admits are that transition's own `from` set partitioned by whether each state is the arrival
+  state, computed rather than authored. `true` admits the states the move moves away from; `false`
+  admits the arrival state itself, a restatement of what is held. An empty side is refused as an
+  unreachable branch. Compiled to `ResolvedCondition::StateChange`, carrying the partition so a
+  consumer does not re-implement the rule beside every generator that asks. Requires `ess/4`.
+  Design: `docs/design/state-change-outcome-guards.md`, including the five spellings rejected.
+
+### Fixed
+
+- **A `sets:` literal is now type-checked, and one whose text spells a value of the target's
+  primitive is asserted rather than silently dropped.** Three defects in one path, found by reading
+  it end to end:
+  - `ess-domain` never checked a `sets:` literal at all. The comment claimed it "is checked where a
+    payload literal is"; `check_payload_literal` was only ever called from the payload path. So
+    `paused: "false"` over a `Boolean` compiled with no diagnostic.
+  - synthesis then dropped every literal — `settled()` handled `Cleared` and `InputField` and fell
+    through the rest — so the field was neither checked nor asserted. A branch that declared
+    `campaign_id: ""` produced a suite that said nothing about it.
+  - the first repair overshot: type-checking alone refused 52 literals in an adopter's model with no
+    valid spelling available, since an unquoted `false` is not a literal source. Admitting text that
+    spells a value of the primitive — `"true"`/`"false"` for `Boolean`, canonical decimal for
+    `Integer` — turns those 52 refusals into 52 asserted fields. `"perhaps"` over a `Boolean` still
+    refuses, and the diagnostic now says what IS accepted.
+
+  The admitted spellings are read from one place: `ess-conformance`'s own setup reader, extracted so
+  both crates share it. A non-canonical integer (`007`, `+7`) is refused at authoring time rather
+  than reshaped. `Decimal` and `Binary64` still abstain deliberately — admitting a spelling without
+  the reader that sends it is how two crates come apart.
+
+  Measured on an adopter's suite: 130 view-assertion fields now carry a Boolean literal, 7 a numeric
+  one, and 13 the empty string, where all 150 previously carried nothing.
+
+- **An arrangement step no longer leaves an earlier step's value asserted.** `arrange()` extended
+  `settled` without the invalidation `run()` applies, at both its accumulation sites. Where a later
+  step wrote a literal synthesis could not spell, the suite kept demanding the earlier step's value —
+  and because a Boolean witness base is `true` while the branch wrote `false`, the stale claim was
+  the NEGATION of the specification's final write, not merely unproven. A test carrying it could only
+  pass against an implementation that ignored the branch. The rule now lives in one `absorb`
+  function called at all three sites, because it had to hold at all three and was written at one.
+
+
 ## [0.26.0] — 2026-09-16
 
 ### Added

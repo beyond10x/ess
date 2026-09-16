@@ -375,6 +375,7 @@ impl Specification {
         errors.extend(crate::command::validate_sets(
             &self.commands,
             &self.entities,
+            &registry,
             &self.conversions,
         ));
 

@@ -513,7 +513,8 @@ pub struct ResolvedConversion {
 /// What decides that an outcome is the one taken.
 ///
 /// A mirror of [`OutcomeCondition`](ess_domain::command::OutcomeCondition), which is deliberately
-/// not serialisable in the domain crate. Same four cases, no extra meaning.
+/// not serialisable in the domain crate. Same cases, no extra meaning — with one lookup performed,
+/// on [`StateChange`](Self::StateChange).
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum ResolvedCondition {
@@ -526,6 +527,24 @@ pub enum ResolvedCondition {
     SubjectState {
         /// The declared lifecycle state immediately before command selection.
         state: StateName,
+        /// The additional ordinary input predicate, when declared.
+        predicate: Option<Predicate>,
+    },
+    /// The branch's own move must — or must not — change the state the subject already holds.
+    ///
+    /// The condition that separates the **first** report of a state from every later one. The
+    /// author writes one word and names no state; `states` is that word resolved against the
+    /// transition's own `from` set, which follows this module's rule — *a question a projection
+    /// will ask must have an answer in here*. A consumer arranging a scenario needs the held states
+    /// this branch admits, and re-deriving them means re-implementing the partition rule beside
+    /// every generator that asks.
+    StateChange {
+        /// `true` when the branch requires its move to change the state already held.
+        changes: bool,
+        /// The held states that select this branch: the move's `from` set, partitioned by whether
+        /// each state is the one it arrives at. Never empty — an empty side is refused by
+        /// `ess-domain` as an unreachable branch.
+        states: BTreeSet<StateName>,
         /// The additional ordinary input predicate, when declared.
         predicate: Option<Predicate>,
     },

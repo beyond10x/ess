@@ -3438,13 +3438,23 @@ commands:
         summary: The order has already shipped, so the command is answered and nothing moves.
 ";
 
-/// A field one act fills from its input and a later act OVERWRITES with a literal.
+/// Two fields one act fills from its input and a later act OVERWRITES — one it can read, one it
+/// cannot.
 ///
-/// The pair is the whole point: synthesis can determine what `PlaceOrder` leaves in `lane_id`,
-/// because the value came from an input it chose, and it cannot determine what `ClearLane` leaves
-/// there, because `""` is text and reading it at the field's declared type is a parse no
-/// declaration specifies. So the second act's scenario must assert nothing about `lane_id` — and in
-/// particular not the value the first act put there, which is the one thing that is certainly wrong.
+/// `lane_id` is `String` underneath, so `""` IS what the row holds: the literal needs no parse, and
+/// `ClearLane`'s scenario has to say the field is empty. `weight` crosses a declared **conversion**,
+/// which says the two types may meet and not what it computes — so the value the row ends up
+/// holding is not the value sent, synthesis can determine nothing, and the one thing it must not do
+/// is go on requiring what `PlaceOrder` supplied.
+///
+/// `paused` and `tally` are the two primitives a literal has a spelling for. `paused` is the sharp
+/// one: `PlaceOrder` fills it from an input whose witness is `true` and `ClearLane` writes
+/// `"false"`, so a suite that carried the earlier value forward asserted the NEGATION of the last
+/// write. It has to come out as `false`, and as a Boolean rather than the text `"false"` — a string
+/// there is an assertion no implementation can satisfy.
+///
+/// The conversion is the abstention that must survive all of this: `weight` crosses one, nothing
+/// says what it computes, and widening the literal rule must not quietly start asserting it.
 const OVERWRITTEN_BY_A_LITERAL: &str = r#"
 format: ess/1
 system: quiet
@@ -3458,6 +3468,19 @@ types:
   - name: quiet.lanes.LaneId
     kind: newtype
     of: String
+  - name: quiet.lanes.Grams
+    kind: newtype
+    of: Integer
+  - name: quiet.lanes.Kilos
+    kind: newtype
+    of: Integer
+
+conversions:
+  - from: quiet.lanes.Kilos
+    to: quiet.lanes.Grams
+    because: >-
+      A caller weighing an order in kilos is talking about the same mass the lane records in grams;
+      the scale factor is the implementation's and no declaration here states it.
 
 entities:
   - name: quiet.lanes.Order
@@ -3467,6 +3490,12 @@ entities:
     fields:
       - name: lane_id
         type: quiet.lanes.LaneId
+      - name: paused
+        type: Boolean
+      - name: tally
+        type: Integer
+      - name: weight
+        type: quiet.lanes.Grams
     lifecycle:
       initial: Placed
       states: [Placed, Cleared]
@@ -3485,6 +3514,12 @@ views:
         type: quiet.lanes.OrderId
       - name: lane_id
         type: quiet.lanes.LaneId
+      - name: paused
+        type: Boolean
+      - name: tally
+        type: Integer
+      - name: weight
+        type: quiet.lanes.Grams
 
 events:
   - name: quiet.lanes.OrderPlaced
@@ -3502,12 +3537,18 @@ commands:
     input:
       - name: lane_id
         type: quiet.lanes.LaneId
+      - name: paused
+        type: Boolean
+      - name: weight
+        type: quiet.lanes.Grams
     outcomes:
       - name: accepted
         creates: quiet.lanes.Order
         instance: order_id
         sets:
           lane_id: input.lane_id
+          paused: input.paused
+          weight: input.weight
         emits:
           - quiet.lanes.OrderPlaced
 
@@ -3515,15 +3556,138 @@ commands:
     input:
       - name: order_id
         type: quiet.lanes.OrderId
+      - name: weight
+        type: quiet.lanes.Kilos
     outcomes:
       - name: cleared
         moves: quiet.lanes.Order.clear
         instance: order_id
         sets:
           lane_id: ""
+          paused: "false"
+          tally: "0"
+          weight: input.weight
         emits:
           - quiet.lanes.OrderCleared
 "#;
+
+/// The same overwrite, one act earlier: inside the ARRANGEMENT rather than in the branch under test.
+///
+/// `ship` starts only in `Held` and `hold` only in `Placed`, so the route to `ShipOrder`'s branch is
+/// two commands and the second of them writes `weight` across a declared conversion — determining
+/// nothing, because nothing says what the conversion computes. `ShipOrder` itself writes nothing, so
+/// the branch's own invalidation cannot be what takes `PlaceOrder`'s value out of the row — only the
+/// arrangement's can.
+const OVERWRITTEN_DURING_THE_ARRANGEMENT: &str = r"
+format: ess/1
+system: quiet
+version: v1
+domain: quiet.hold
+
+types:
+  - name: quiet.hold.OrderId
+    kind: newtype
+    of: Uuid
+  - name: quiet.hold.Grams
+    kind: newtype
+    of: Integer
+  - name: quiet.hold.Kilos
+    kind: newtype
+    of: Integer
+
+conversions:
+  - from: quiet.hold.Kilos
+    to: quiet.hold.Grams
+    because: >-
+      A caller weighing an order in kilos is talking about the same mass the hold records in grams;
+      the scale factor is the implementation's and no declaration here states it.
+
+entities:
+  - name: quiet.hold.Order
+    identity:
+      name: order_id
+      type: quiet.hold.OrderId
+    fields:
+      - name: weight
+        type: quiet.hold.Grams
+    lifecycle:
+      initial: Placed
+      states: [Placed, Held, Shipped]
+      terminal: [Shipped]
+      transitions:
+        - name: hold
+          from: [Placed]
+          to: Held
+        - name: ship
+          from: [Held]
+          to: Shipped
+
+views:
+  - name: quiet.hold.MyOrders
+    source: quiet.hold.Order
+    consistency: read_your_writes
+    fields:
+      - name: order_id
+        type: quiet.hold.OrderId
+      - name: weight
+        type: quiet.hold.Grams
+
+events:
+  - name: quiet.hold.OrderPlaced
+    fields:
+      - name: order_id
+        type: quiet.hold.OrderId
+
+  - name: quiet.hold.OrderHeld
+    fields:
+      - name: order_id
+        type: quiet.hold.OrderId
+
+  - name: quiet.hold.OrderShipped
+    fields:
+      - name: order_id
+        type: quiet.hold.OrderId
+
+commands:
+  - name: quiet.hold.PlaceOrder
+    input:
+      - name: weight
+        type: quiet.hold.Grams
+    outcomes:
+      - name: accepted
+        creates: quiet.hold.Order
+        instance: order_id
+        sets:
+          weight: input.weight
+        emits:
+          - quiet.hold.OrderPlaced
+
+  - name: quiet.hold.HoldOrder
+    input:
+      - name: order_id
+        type: quiet.hold.OrderId
+      - name: weight
+        type: quiet.hold.Kilos
+    outcomes:
+      - name: held
+        moves: quiet.hold.Order.hold
+        instance: order_id
+        sets:
+          weight: input.weight
+        emits:
+          - quiet.hold.OrderHeld
+
+  - name: quiet.hold.ShipOrder
+    input:
+      - name: order_id
+        type: quiet.hold.OrderId
+    outcomes:
+      - name: shipped
+        moves: quiet.hold.Order.ship
+        instance: order_id
+        emits:
+          - quiet.hold.OrderShipped
+";
 
 /// The same two acts with the field `Optional`, and the second act CLEARING it.
 ///
@@ -3610,6 +3774,164 @@ commands:
           - quiet.lanes.OrderCleared
 ";
 
+/// The first report of a state, and every later one, over ONE transition.
+///
+/// `join` starts in `New` or in `Added` and arrives at `Added`, so `when_state_changes:` partitions
+/// its `from` set into two halves that share a command, a transition and an input: `true` admits
+/// `{New}` — the state the move would move away from — and `false` admits `{Added}`, the arrival
+/// state restated. Nothing else in the document distinguishes the two branches, so a synthesizer
+/// that read the condition as admitting every state would arrange either branch in either state and
+/// the suite would prove nothing about which report it was.
+const THE_FIRST_REPORT_AND_EVERY_LATER_ONE: &str = r"
+format: ess/4
+system: conf
+version: v1
+domain: conf.room
+types:
+  - name: conf.room.Status
+    kind: enum
+    variants: [Present, Gone]
+entities:
+  - name: conf.room.Member
+    identity: {name: member_id, type: Uuid}
+    fields:
+      - {name: note, type: String}
+    lifecycle:
+      initial: New
+      states: [New, Added, Removed]
+      terminal: [Removed]
+      transitions:
+        - {name: join, from: [New, Added], to: Added}
+        - {name: leave, from: [Added], to: Removed}
+events:
+  - name: conf.room.Opened
+    fields:
+      - {name: member_id, type: Uuid}
+  - name: conf.room.Observed
+    fields: []
+commands:
+  - name: conf.room.Open
+    input:
+      - {name: note, type: String}
+    outcomes:
+      - name: opened
+        creates: conf.room.Member
+        instance: member_id
+        emits: [conf.room.Opened]
+        sets: {note: input.note}
+        payload:
+          conf.room.Opened: {member_id: {generated: true}}
+  - name: conf.room.Push
+    input:
+      - {name: member_id, type: Uuid}
+      - {name: status, type: conf.room.Status}
+      - {name: note, type: String}
+    outcomes:
+      - name: joined
+        when_state_changes: true
+        when: status == Present
+        moves: conf.room.Member.join
+        instance: member_id
+        emits: [conf.room.Observed]
+        sets: {note: input.note}
+      - name: refreshed
+        when_state_changes: false
+        when: status == Present
+        moves: conf.room.Member.join
+        instance: member_id
+        emits: [conf.room.Observed]
+        sets: {note: input.note}
+      - name: enriched
+        updates: conf.room.Member
+        instance: member_id
+        emits: [conf.room.Observed]
+        sets: {note: input.note}
+  - name: conf.room.Leave
+    input:
+      - {name: member_id, type: Uuid}
+    outcomes:
+      - name: left
+        moves: conf.room.Member.leave
+        instance: member_id
+        emits: [conf.room.Observed]
+views:
+  - name: conf.room.Members
+    source: conf.room.Member
+    consistency: read_your_writes
+    fields:
+      - {name: member_id, type: Uuid}
+      - {name: state, type: conf.room.Member.State}
+      - {name: note, type: String}
+";
+
+/// Every held state a scenario established, in order, read off the subject-state observation.
+///
+/// `observe_subject_state` is the only step that asserts a row's `state`, so a `Contains` carrying
+/// that key is an established-state claim and an ordinary view assertion is not. The first one is
+/// the state the arrangement put the subject in before the branch ran; a later one is where the
+/// branch left it.
+fn established_states(synthesis: &Synthesis, id: &str) -> Vec<String> {
+    assert!(
+        ids(synthesis).iter().any(|held| held == id),
+        "`{id}` is not in the suite at all, so no state was established for it; the suite holds \
+         {:?} and the refusals are {:?}",
+        ids(synthesis),
+        synthesis
+            .refusals
+            .iter()
+            .map(ToString::to_string)
+            .collect::<Vec<_>>()
+    );
+    steps(synthesis, id)
+        .iter()
+        .filter_map(|step| match step {
+            ScenarioStep::ExpectView {
+                expectation: ViewExpectation::Contains { fields },
+                ..
+            } => match fields.get("state") {
+                Some(ScenarioValue::Literal {
+                    value: Node::Text(state),
+                }) => Some(state.clone()),
+                _ => None,
+            },
+            _ => None,
+        })
+        .collect()
+}
+
+/// A `when_state_changes:` branch is arranged in a state it admits, and never in the other half.
+///
+/// The partition is not this crate's to compute: `ess-compiler` carries
+/// `ResolvedCondition::StateChange::states` as "the move's `from` set, partitioned by whether each
+/// state is the one it arrives at", precisely so a consumer arranging a scenario does not
+/// re-implement the rule. What this pins is that the consumer *reads* it — a branch that admitted
+/// every state would be arranged wherever the trial happened to land first, and both scenarios would
+/// then be about whichever report the lifecycle order chose.
+#[test]
+fn a_state_change_branch_is_arranged_only_in_the_held_states_it_admits() {
+    let synthesis = synthesize(&fixture(THE_FIRST_REPORT_AND_EVERY_LATER_ONE));
+
+    let first = established_states(&synthesis, "conf.room.Push/outcome/joined");
+    let later = established_states(&synthesis, "conf.room.Push/outcome/refreshed");
+
+    assert_eq!(
+        first.first().map(String::as_str),
+        Some("New"),
+        "`joined` requires its move to CHANGE the held state, so the only state it admits is `New`; \
+         it was arranged in {first:?}"
+    );
+    assert_eq!(
+        later.first().map(String::as_str),
+        Some("Added"),
+        "`refreshed` requires its move NOT to change the held state, so the only state it admits is \
+         `Added`, the state `join` arrives at; it was arranged in {later:?}"
+    );
+    assert!(
+        !first.contains(&"Added".to_owned()) || first.len() > 1,
+        "`joined` must not be arranged in the arrival state: {first:?}"
+    );
+}
+
 #[test]
 fn a_cleared_field_is_asserted_empty_rather_than_left_unsaid() {
     let synthesis = synthesize(&fixture(CLEARED_BY_A_LATER_ACT));
@@ -3648,6 +3970,110 @@ fn a_cleared_field_is_asserted_empty_rather_than_left_unsaid() {
     );
 }
 
+/// A branch that sets a field to `""` says what the row will hold, and the suite has to say it.
+///
+/// `LaneId` is `String` underneath, so the literal needs no parse: the row holds the empty string.
+/// Dropping it left the suite requiring the value the creating act supplied — measured 2026-09-16
+/// on an adopter's model, where two scenarios could not pass against any implementation that
+/// cleared the field exactly as the specification said to.
+#[test]
+fn a_field_set_to_the_empty_string_is_asserted_empty() {
+    let synthesis = synthesize(&fixture(OVERWRITTEN_BY_A_LITERAL));
+
+    let mut asserted = 0;
+    for id in ids(&synthesis) {
+        if !id.contains("ClearLane") {
+            continue;
+        }
+        for step in steps(&synthesis, &id) {
+            let (ScenarioStep::ExpectView { view, expectation }
+            | ScenarioStep::EventuallyView {
+                view, expectation, ..
+            }) = step
+            else {
+                continue;
+            };
+            let ViewExpectation::Contains { fields } = expectation else {
+                continue;
+            };
+            let held = fields.get("lane_id");
+            assert_eq!(
+                held,
+                Some(&ScenarioValue::Literal {
+                    value: Node::Text(String::new())
+                }),
+                "`{id}` reads `{view}` and asserts `lane_id` at {held:?}; the branch set it to the \
+                 empty string, which is what the row will hold"
+            );
+            asserted += 1;
+        }
+    }
+    assert!(
+        asserted > 0,
+        "the fixture is supposed to produce a view assertion for the emptied field to be in"
+    );
+}
+
+/// A literal over a primitive that has a spelling is asserted AS that primitive.
+///
+/// The widening `ess-domain` admits and this crate has to keep step with. Three claims, and the
+/// second is the one that used to be inverted: `paused` was filled `true` by the creating act and
+/// written `"false"` by the branch under test, so `Bool(false)` is the only answer that is not
+/// either silence or the opposite of the specification. `Node::Text("false")` would satisfy neither
+/// — it is a string where the row holds a bool — which is why the reader returns a value and not a
+/// verdict.
+#[test]
+fn a_literal_over_a_spellable_primitive_is_asserted_as_that_primitive() {
+    let synthesis = synthesize(&fixture(OVERWRITTEN_BY_A_LITERAL));
+
+    let mut read = 0;
+    for id in ids(&synthesis) {
+        if !id.contains("ClearLane") {
+            continue;
+        }
+        for step in steps(&synthesis, &id) {
+            let ScenarioStep::ExpectView {
+                view,
+                expectation: ViewExpectation::Contains { fields },
+            } = step
+            else {
+                continue;
+            };
+            read += 1;
+            assert_eq!(
+                fields.get("paused"),
+                Some(&ScenarioValue::Literal {
+                    value: Node::Bool(false)
+                }),
+                "`{id}` reads `{view}` and asserts `paused` at {:?}; the branch wrote `\"false\"` \
+                 over a `Boolean`, and the creating act had put `true` there",
+                fields.get("paused")
+            );
+            assert_eq!(
+                fields.get("tally"),
+                Some(&ScenarioValue::Literal {
+                    value: Node::Number(0_i64.into())
+                }),
+                "`{id}` reads `{view}` and asserts `tally` at {:?}; the branch wrote `\"0\"` over \
+                 an `Integer`",
+                fields.get("tally")
+            );
+            assert_eq!(
+                fields.get("lane_id"),
+                Some(&ScenarioValue::Literal {
+                    value: Node::Text(String::new())
+                }),
+                "`{id}` reads `{view}` and asserts `lane_id` at {:?}; text is still text",
+                fields.get("lane_id")
+            );
+        }
+    }
+    assert!(
+        read > 0,
+        "the fixture is supposed to produce a view assertion for the three literals to be in"
+    );
+}
+
 #[test]
 fn a_field_a_later_act_overwrites_is_not_asserted_at_the_value_an_earlier_one_supplied() {
     let synthesis = synthesize(&fixture(OVERWRITTEN_BY_A_LITERAL));
@@ -3672,16 +4098,60 @@ fn a_field_a_later_act_overwrites_is_not_asserted_at_the_value_an_earlier_one_su
             };
             read += 1;
             assert!(
-                !fields.contains_key("lane_id"),
-                "`{id}` reads `{view}` and still requires `lane_id` = {:?}, which `ClearLane` \
-                 overwrote",
-                fields.get("lane_id")
+                !fields.contains_key("weight"),
+                "`{id}` reads `{view}` and still requires `weight` = {:?}; `ClearLane` overwrote it \
+                 across a conversion, so what the row holds is not what any act sent",
+                fields.get("weight")
             );
         }
     }
     assert!(
         read > 0,
         "the fixture is supposed to produce a view assertion for `ClearLane` to be wrong about"
+    );
+}
+
+/// The same rule one act earlier: a field an ARRANGEMENT step overwrote is not claimed either.
+///
+/// The branch under test invalidates what it writes. The arrangement that reaches it has to do the
+/// same, and for the same reason: `HoldOrder` writes `weight` across a conversion, so after it runs
+/// the row holds something this suite does not know — and certainly not the value `PlaceOrder` was
+/// handed two steps earlier. `ShipOrder` writes nothing, so this is the arrangement's own
+/// accumulation and nothing else.
+#[test]
+fn a_field_an_arrangement_step_overwrote_is_not_asserted_at_what_an_earlier_step_supplied() {
+    let synthesis = synthesize(&fixture(OVERWRITTEN_DURING_THE_ARRANGEMENT));
+
+    let mut read = 0;
+    for id in ids(&synthesis) {
+        if !id.ends_with("/shipped") {
+            continue;
+        }
+        for step in steps(&synthesis, &id) {
+            let (ScenarioStep::ExpectView { view, expectation }
+            | ScenarioStep::EventuallyView {
+                view, expectation, ..
+            }) = step
+            else {
+                continue;
+            };
+            let (ViewExpectation::Contains { fields } | ViewExpectation::Excludes { fields }) =
+                expectation
+            else {
+                continue;
+            };
+            read += 1;
+            assert!(
+                !fields.contains_key("weight"),
+                "`{id}` reads `{view}` and still requires `weight` = {:?}, which `HoldOrder` \
+                 overwrote while arranging the very instance this scenario is about",
+                fields.get("weight")
+            );
+        }
+    }
+    assert!(
+        read > 0,
+        "the fixture is supposed to produce a view assertion for the arrangement to be wrong about"
     );
 }
 

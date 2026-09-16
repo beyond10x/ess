@@ -79,6 +79,32 @@ pub(crate) fn system(system: &SystemSpec) -> ValidationErrors {
     errors
 }
 
+/// The two conditions that read the state a subject already holds, each against its own format.
+///
+/// Split out of [`specification`] rather than inlined, and two checks rather than one over
+/// [`uses`](crate::command::subject_state::uses): the constructs arrived in different source
+/// formats, so a document written before either has to be told which one it reached for.
+fn held_state_conditions(
+    command: &crate::command::CommandSpec,
+    format: FormatVersion,
+    errors: &mut ValidationErrors,
+) {
+    if format.major() < 3 && crate::command::subject_state::uses_subject_state(command) {
+        errors.push(ValidationError::at(
+            command.site().key("outcomes"),
+            ValidationCode::UnsupportedFormatVersion,
+            "subject-state outcome guards require specification format ess/3",
+        ));
+    }
+    if format.major() < 4 && crate::command::subject_state::uses_state_changes(command) {
+        errors.push(ValidationError::at(
+            command.site().key("outcomes"),
+            ValidationCode::UnsupportedFormatVersion,
+            "state-change outcome guards require specification format ess/4",
+        ));
+    }
+}
+
 pub(crate) fn specification(spec: &Specification) -> ValidationErrors {
     let mut errors = system(spec.system());
     errors.extend(crate::command::validate_response_contracts(spec));
@@ -124,13 +150,7 @@ pub(crate) fn specification(spec: &Specification) -> ValidationErrors {
         );
     }
     for command in spec.commands().values() {
-        if format.major() < 3 && crate::command::subject_state::uses(command) {
-            errors.push(ValidationError::at(
-                command.site().key("outcomes"),
-                ValidationCode::UnsupportedFormatVersion,
-                "subject-state outcome guards require specification format ess/3",
-            ));
-        }
+        held_state_conditions(command, format, &mut errors);
         fields(
             &command.input,
             format,

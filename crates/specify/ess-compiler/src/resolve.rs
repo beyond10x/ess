@@ -1702,7 +1702,7 @@ impl<'a> Resolver<'a> {
             let sets = sets.unwrap_or_default();
             resolved.push(ResolvedOutcome {
                 name: outcome.name.clone(),
-                condition: condition_of(outcome),
+                condition: condition_of(outcome, subject.as_ref()),
                 subject,
                 test_strategy: outcome.test_strategy(),
                 emits,
@@ -3476,13 +3476,37 @@ fn names(values: impl IntoIterator<Item = String>) -> String {
 }
 
 /// The IR's spelling of an outcome's condition.
-fn condition_of(outcome: &Outcome) -> ResolvedCondition {
+///
+/// It takes the branch's already-resolved subject because one condition needs it:
+/// `when_state_changes:` names no state, and the states it admits are its own transition's `from`
+/// set partitioned by whether each is the state the move arrives at. [`ResolvedEffect::Moves`]
+/// carries that transition by value, so the set is read off work this resolver has already done
+/// rather than looked up again — which is the difference between the domain's condition and the
+/// IR's mirror of it.
+fn condition_of(outcome: &Outcome, subject: Option<&ResolvedSubject>) -> ResolvedCondition {
     match &outcome.condition {
         OutcomeCondition::When(predicate) => ResolvedCondition::When {
             predicate: predicate.clone(),
         },
         OutcomeCondition::SubjectState { state, predicate } => ResolvedCondition::SubjectState {
             state: state.clone(),
+            predicate: predicate.clone(),
+        },
+        OutcomeCondition::StateChange { changes, predicate } => ResolvedCondition::StateChange {
+            changes: *changes,
+            // Empty only where the subject did not resolve, and an outcome whose subject did not
+            // resolve leaves the command incomplete: no `EssIr` carries this value.
+            states: subject
+                .and_then(|subject| subject.effect.transition())
+                .map(|transition| {
+                    transition
+                        .from
+                        .iter()
+                        .filter(|from| (**from != transition.to) == *changes)
+                        .cloned()
+                        .collect()
+                })
+                .unwrap_or_default(),
             predicate: predicate.clone(),
         },
         OutcomeCondition::Otherwise => ResolvedCondition::Otherwise,

@@ -164,7 +164,7 @@ The *Machine-checked inventory* below now carries a per-head census as well as a
 | `CommandSpec::validate_branch_coverage` | `command.rs:1457` | 4 |
 | `CommandSpec::validate` | `command.rs:1566` | 2 |
 | `check_payload_entry` | `command.rs:1662` | 2 |
-| `check_payload_literal` | `command.rs:1819` | 4 |
+| `check_payload_literal` | `command.rs:1819` | 3 |
 | `CommandSpec::validate`, through `TypeRegistry::resolve_at` | `command.rs:1566`, `types.rs:900` | 1 |
 | `validate_lifecycle_causes` (**`entity.rs`**) | `entity.rs:929` | 2 |
 | `validate_wrong_state_is_reachable` (**`entity.rs`**) | `entity.rs:1073` | 1 |
@@ -173,6 +173,13 @@ The *Machine-checked inventory* below now carries a per-head census as well as a
 
 Those functions take a `&ConstructRef` where they took an `&str` location, so the path is typed the
 whole way down rather than re-parsed at the end.
+
+`check_payload_literal` fell from 4 typed sites to 3 and `validate_sets` rose from 2 untyped to 3
+without a refusal moving in either direction: the representation rule a literal is held to was
+reachable from the payload path alone, so it was factored into `literal_representation` — one typed
+site where there were two — and called from the entity `sets:` loop, which still writes the plural
+`commands.…` head this table's own row defers. The total is unchanged in meaning and one lower in
+typed sites; migrating `validate_sets` moves all three at once, as that row says.
 
 28 is `grep -c 'ValidationError::at' crates/specify/ess-domain/src/command.rs`, and the inventory
 below is the same grep for `ValidationError::new`. The first version of this page counted by hand and
@@ -188,7 +195,7 @@ compatibility clause. Nothing here is a silent omission.
 
 | Path | Sites | Result | Reason |
 |---|---|---|---|
-| `command.rs` `validate_sets` (`:1722`) | 2 | **unsupported this wave** | It writes `commands.<name>.…` — plural. `family_of` trims a trailing `s` so the code is right by accident. Rendering it from a `ConstructRef` produces `command.…`, which is a **location change, not a wording change**, and is therefore outside this story's acceptance. Filed for a follow-up that may change the string. |
+| `command.rs` `validate_sets` (`:1722`) | 3 | **unsupported this wave** | It writes `commands.<name>.…` — plural. `family_of` trims a trailing `s` so the code is right by accident. Rendering it from a `ConstructRef` produces `command.…`, which is a **location change, not a wording change**, and is therefore outside this story's acceptance. Filed for a follow-up that may change the string. |
 | `command.rs` `field_shape` (`:1987`), used by `ErrorSpec::validate` (`:1974`) | 1 | deferred | Shared with the `error` family; migrating it belongs with that family, not with `command`. |
 | `TypeRegistry::resolve(&type_ref, &location)` call sites (`command.rs:1573`, `:1978`; the signature is `types.rs:900`) | 0 of `command.rs`'s own | deferred | These pass a location *into* `types.rs`, which constructs the refusal; they are counted against `types.rs`, not `command.rs`. `validate_typed_guard` is the same shape into `expression.rs` and is handled the same way — it passes `owner.render()`, so the two spellings cannot drift. |
 | `Outcome::try_from` (`command.rs:2163`), `keyed_sets` (`:2259`), `keyed_payload` (`:2286`), `subject_of` (`:2336`) — relative locations rebased by string concatenation at `command.rs:2447` | 1 + 1 + 2 + 4 = **8** | deferred | These build a location *relative* to a construct they do not know, and the prefix is prepended later by mutating `error.location`. The typed replacement is a `ConstructRef` passed into admission; it is a signature change on the raw→admitted conversion and is the next unit of this migration. |
@@ -247,12 +254,12 @@ this block, a count that does not match, and a listed file that has none, are ea
 accessor.rs 1 0
 actor.rs 1 0
 binding.rs 28 0
-command.rs 12 36
+command.rs 13 35
 component.rs 15 9
 domain.rs 5 0
 entity.rs 16 4
 expression.rs 1 0
-primitive_admission.rs 6 1
+primitive_admission.rs 6 2
 selection.rs 2 0
 spec.rs 7 0
 system.rs 10 0

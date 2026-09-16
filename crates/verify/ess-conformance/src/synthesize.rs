@@ -134,9 +134,11 @@
 //! | `payload:` | a field of an event the branch emits | the field carries the value the input supplied | the field is present and of its declared type |
 //! | `sets:` | a field of the entity the branch acts on | every view that projects that field holds a row carrying the value | the row is found by its identity and nothing is said about what it holds |
 //!
-//! `sets:` is read in two steps, `settled` and `shown`: a source that is a literal, that crosses a
-//! declared conversion, or that fills a field no view projects at the entity's own type is left
-//! out rather than guessed at, because in each the value the row holds is not the value sent.
+//! `sets:` is read in two steps, `settled` and `shown`: a source that is a literal the target's
+//! representation cannot be written as, that crosses a declared conversion, or that fills a field
+//! no view projects at the entity's own type is left out rather than guessed at, because in each
+//! the value the row holds is not the value sent. A literal over text or an enum variant IS the
+//! value, so `campaign_id: ""` is asserted as the empty string rather than dropped.
 //!
 //! # What the model cannot say yet, and what is therefore not asserted
 //!
@@ -1421,18 +1423,11 @@ fn run(
     }
 
     let mut settled = setup.settled;
-    // A branch that writes a field INVALIDATES what an earlier act determined for it, whether or
-    // not this one determines a value in its place. `settled` abstains on a literal source and on a
-    // conversion — both for good reasons of its own — and abstaining is a statement about THIS act;
-    // leaving the older determination standing turned it into a claim about the row, and the
-    // opposite claim. Measured 2026-09-16 on an adopter's model: a `leave` branch writing
-    // `campaign_id: ""` produced a suite that went on requiring the campaign id the creating act
-    // had supplied, so the scenario failed against an implementation that cleared the field exactly
-    // as the specification said to.
-    for field in &outcome.sets {
-        settled.remove(&field.target);
-    }
-    settled.extend(super::synthesize::settled(outcome, &supplied));
+    absorb(
+        &mut settled,
+        outcome,
+        super::synthesize::settled(ir, outcome, &supplied),
+    );
     Ok(Run {
         setup: setup.steps,
         invoke,
@@ -1626,7 +1621,7 @@ fn arrange(
     let created = invoke(ir, creator, None, None, actors, distinction)?;
     steps.extend(created.steps);
     source.extend(created.source);
-    settled.extend(created.settled);
+    absorb(&mut settled, creator.outcome, created.settled);
     // Where the identity becomes knowable. `creates:` names a field of an event the branch emits,
     // because the caller could not have named an instance that did not exist when it called — and
     // because §9's command result already carries the events a command emitted, so binding it here
@@ -1655,7 +1650,7 @@ fn arrange(
         )?;
         steps.extend(moved.steps);
         source.extend(moved.source);
-        settled.extend(moved.settled);
+        absorb(&mut settled, driver.outcome, moved.settled);
         if let Some(transition) = driver.effect.transition() {
             held = transition.to.clone();
         }
@@ -1706,7 +1701,7 @@ fn invoke(
         });
     }
     let supplied = supply(&input, driver.outcome.subject.as_ref(), instance);
-    let settled = settled(driver.outcome, &supplied);
+    let settled = settled(ir, driver.outcome, &supplied);
     steps.push(ScenarioStep::ExecuteCommand {
         command: command_ref.clone(),
         actor: actors.get(&driver.command.name).cloned(),
@@ -1758,8 +1753,11 @@ fn route<'a>(
             continue;
         };
         for from in &transition.from {
-            if matches!(&driver.outcome.condition, ResolvedCondition::SubjectState { state, .. } if state != from)
-            {
+            // An edge exists only where the branch that drives it admits the state it leaves. Both
+            // state-reading conditions narrow the `from` set and neither may be ignored: routing
+            // through a state the driver refuses produces a path whose own step cannot be reached,
+            // and the refusal then names the wrong construct.
+            if !admits_held_state(&driver.outcome.condition, from) {
                 continue;
             }
             edges
@@ -1884,11 +1882,59 @@ fn supply(
         .collect()
 }
 
+/// `true` when any branch of this command is chosen by what the subject already holds.
+///
+/// Both state-reading conditions count. A command carrying only
+/// [`StateChange`](ResolvedCondition::StateChange) branches still cannot be reached by constructing
+/// an input alone — the state has to be established first — so answering `false` for one sent it
+/// down the stateless path, where the held state is never arranged and the branch is selected
+/// against a subject resting wherever the creating act left it.
 fn has_subject_guards(command: &ResolvedCommand) -> bool {
-    command
-        .outcomes
-        .iter()
-        .any(|outcome| matches!(outcome.condition, ResolvedCondition::SubjectState { .. }))
+    command.outcomes.iter().any(|outcome| {
+        matches!(
+            outcome.condition,
+            ResolvedCondition::SubjectState { .. } | ResolvedCondition::StateChange { .. }
+        )
+    })
+}
+
+/// The held states one branch's condition admits, or `None` where it reads no state at all.
+///
+/// Read from the IR and never re-derived. `ess-compiler` computes
+/// [`StateChange`](ResolvedCondition::StateChange)`::states` as "the move's `from` set, partitioned
+/// by whether each state is the one it arrives at", and says in the same breath why it is carried
+/// rather than left to the caller: *a consumer arranging a scenario needs the held states this
+/// branch admits, and re-deriving them means re-implementing the partition rule beside every
+/// generator that asks* (`ess-compiler::ir::ResolvedCondition::StateChange`). This crate is that
+/// consumer, so it reads the answer instead of computing a second one that can disagree.
+///
+/// `None` is not "every state". It means the condition says nothing about the held state, so the
+/// caller's own rule applies — which for [`route`] is every `from` the transition declares.
+///
+/// [`prepare_state_input`] deliberately does NOT consult this. It offers the lifecycle's states
+/// filtered by the transition's `from` set and lets [`reach_in_state`] reject the ones the branch
+/// refuses, which it does, so narrowing here changed no scenario this crate synthesises — measured
+/// 2026-09-16 by reverting the narrowing with every other arm in place. It would change one thing:
+/// which state is picked for a branch admitting more than one, and that is a policy choice about
+/// arrangement that belongs with whoever owns `when_state_changes:`, not a consequence of reading
+/// their partition. The single place the partition decides anything is [`admits_held_state`].
+fn admitted_states(condition: &ResolvedCondition) -> Option<BTreeSet<&StateName>> {
+    match condition {
+        ResolvedCondition::SubjectState { state, .. } => Some(BTreeSet::from([state])),
+        ResolvedCondition::StateChange { states, .. } => Some(states.iter().collect()),
+        ResolvedCondition::When { .. }
+        | ResolvedCondition::Otherwise
+        | ResolvedCondition::External { .. }
+        | ResolvedCondition::WrongState => None,
+    }
+}
+
+/// Whether this branch can be the one taken while the subject rests in `held`.
+///
+/// A condition that reads no state admits every state, which is why the `None` case answers `true`:
+/// the question being asked is whether this branch is *excluded* there.
+fn admits_held_state(condition: &ResolvedCondition, held: &StateName) -> bool {
+    admitted_states(condition).is_none_or(|states| states.contains(held))
 }
 
 fn state_default(outcome: &ResolvedOutcome) -> bool {
@@ -1916,7 +1962,14 @@ fn reach_in_state(
         {
             let predicate = match &branch.condition {
                 ResolvedCondition::When { predicate } => Some(predicate),
-                ResolvedCondition::SubjectState { state, predicate } if state == held => {
+                // Both state-reading conditions compete here, and a branch whose admitted states
+                // exclude `held` is not competing: it is the *uniqueness* below that this feeds, so
+                // dropping a branch that does admit `held` would let another one look uniquely
+                // selected when two of them match the same (state, input) pair.
+                ResolvedCondition::SubjectState { predicate, .. }
+                | ResolvedCondition::StateChange { predicate, .. }
+                    if admits_held_state(&branch.condition, held) =>
+                {
                     predicate.as_ref()
                 }
                 _ => continue,
@@ -1966,6 +2019,10 @@ fn prepare_state_input(
             strategy: outcome.test_strategy,
         })?;
     let lifecycle = &ir.entity(&subject.entity).lifecycle;
+    // Only the states this branch admits are candidates. Falling back to the whole lifecycle for a
+    // condition that narrows it is the silent-admit failure: a `StateChange` branch requiring its
+    // move to CHANGE the held state would have had the arrival state offered to it, and a scenario
+    // that arranges a state the branch refuses proves nothing about the branch it names.
     let states: Vec<_> = match &outcome.condition {
         ResolvedCondition::SubjectState { state, .. } => vec![state.clone()],
         _ => lifecycle.states.iter().cloned().collect(),
@@ -2081,6 +2138,12 @@ fn reach(
     outcome: &ResolvedOutcome,
     distinction: Distinction,
 ) -> Result<BTreeMap<String, Node>, RefusalCause> {
+    // `SubjectState` names exactly one state, so the input can be chosen against it here.
+    // `StateChange` names a SET, and picking one of them is a choice about the arrangement rather
+    // than about the input — so it deliberately does NOT get an arm: it falls to the refusal below,
+    // which `has_subject_guards` now answers for it. `run` and `invoke` both route such a command
+    // through `prepare_state_input`, which decides the state and the input together and is the only
+    // place allowed to pick.
     if let ResolvedCondition::SubjectState { state, .. } = &outcome.condition {
         return reach_in_state(ir, command, outcome, state, distinction);
     }
@@ -2543,12 +2606,21 @@ fn view_expectations(
 /// holds nothing after this branch, which is a claim a row can be checked against, so it is carried
 /// as a null. `ess-domain` has already refused it on a field whose type is not `Optional<…>`.
 ///
+/// A **literal** entry is determined exactly where the literal *is* the value — where the target's
+/// representation is text or the variants of an enum, both of which are carried as the text the
+/// document wrote, so there is nothing to read the literal *as*. `lane_id: ""` over a
+/// `String`-backed `LaneId` is the empty string and nothing else, and dropping it left the suite
+/// requiring the value an earlier act supplied: measured 2026-09-16 on an adopter's model, where a
+/// branch clearing a campaign id produced two scenarios no implementation could pass. See
+/// [`spelled_as_text`] for where the reading stops.
+///
 /// Three kinds of entry are left out rather than guessed at, and each is a thing the model does
 /// not determine:
 ///
-/// * a field whose source is a **literal** — it is written as text, and reading it as the field's
-///   declared type is a parse no declaration specifies, which is the reading
-///   [`ResolvedPayloadValue::Literal`] already gets one construct over;
+/// * a field whose source is a literal the target's representation cannot be written as, where
+///   reading the text as the declared type would be a parse no declaration specifies. `ess-domain`
+///   refuses such a literal where it is written, so this is a floor and not a working case — see
+///   [`spelled_as_text`];
 /// * a field that crosses a declared **conversion** — the conversion says the two types may meet
 ///   and nothing says what it computes, so the value the row holds is not the value sent;
 /// * a field the arrangement did not choose a **literal** for — an identity captured from an
@@ -2558,6 +2630,7 @@ fn view_expectations(
 /// The entity field's type is carried out beside the value, because the fourth exclusion needs a
 /// view in hand — see [`shown`].
 fn settled(
+    ir: &EssIr,
     outcome: &ResolvedOutcome,
     supplied: &BTreeMap<String, ScenarioValue>,
 ) -> BTreeMap<String, Determined> {
@@ -2566,31 +2639,115 @@ fn settled(
         if field.conversion.is_some() {
             continue;
         }
-        if matches!(field.value, ResolvedPayloadValue::Cleared) {
-            out.insert(
-                field.target.clone(),
-                Determined {
-                    value: ScenarioValue::Literal { value: Node::Null },
-                    type_ref: field.target_type.clone(),
-                },
-            );
-            continue;
-        }
-        let ResolvedPayloadValue::InputField { field: read, .. } = &field.value else {
-            continue;
-        };
-        let Some(value @ ScenarioValue::Literal { .. }) = supplied.get(read) else {
-            continue;
+        let value = match &field.value {
+            ResolvedPayloadValue::Cleared => ScenarioValue::Literal { value: Node::Null },
+            ResolvedPayloadValue::Literal { value } => {
+                let Some(read) = literal_value(ir, &field.target_type, value, 0) else {
+                    continue;
+                };
+                ScenarioValue::Literal { value: read }
+            }
+            ResolvedPayloadValue::InputField { field: read, .. } => {
+                let Some(value @ ScenarioValue::Literal { .. }) = supplied.get(read) else {
+                    continue;
+                };
+                value.clone()
+            }
+            _ => continue,
         };
         out.insert(
             field.target.clone(),
             Determined {
-                value: value.clone(),
+                value,
                 type_ref: field.target_type.clone(),
             },
         );
     }
     out
+}
+
+/// Folds what one act determined into what the acts before it left, invalidating first.
+///
+/// Every field this act WROTE stops being a claim about the row, whether or not this act determined
+/// a value in its place. [`settled`] abstains on a field that crosses a declared **conversion** —
+/// the conversion says two types may meet and not what it computes, so the row does not end up
+/// holding the value that was sent — and abstaining is a statement about THIS act; leaving the older
+/// determination standing turns it into a claim about the row, and the opposite claim. Measured 2026-09-16 on an adopter's model: a `leave` branch
+/// writing `campaign_id: ""` produced a suite that went on requiring the campaign id the creating
+/// act had supplied, so the scenario failed against an implementation that cleared the field exactly
+/// as the specification said to.
+///
+/// One function rather than the rule restated at each accumulation, because it has to hold at all of
+/// them and it did not: [`run`] applied it to the branch under test while [`arrange`] extended
+/// straight over the route that reaches it, so a two-command arrangement whose second command
+/// overwrote what the first determined kept the first act's value — the same defect one act earlier.
+///
+/// **Whoever comes to simplify this: the stale claim was INVERTED, not merely unproven.** Measured
+/// 2026-09-16 with `ess verify conform synthesize` on a two-command arrangement whose second command
+/// wrote a Boolean field the suite could not read: the suite demanded `true` of that row — the
+/// witness the *first* command was handed — while the branch that ran last had written the opposite.
+/// So it required the negation of what the specification's final write said. An unproven field is a
+/// weak test; this was a test that could only pass against an implementation which ignored the
+/// branch. The removal has to happen for every act, not only the one under test, and that is why
+/// this is a function and not two lines in the caller.
+fn absorb(
+    settled: &mut BTreeMap<String, Determined>,
+    outcome: &ResolvedOutcome,
+    determined: BTreeMap<String, Determined>,
+) {
+    for field in &outcome.sets {
+        settled.remove(&field.target);
+    }
+    settled.extend(determined);
+}
+
+/// The value a literal written in the document leaves in a field of this type, where it is one.
+///
+/// The one question that decides whether a `sets:` literal is assertable, and it answers with the
+/// **value** rather than a yes: the row will hold `false` and not the text `"false"`, so a reader
+/// that only said "assertable" would have produced an assertion comparing a bool against a string,
+/// which no implementation can satisfy. That is why this returns a [`Node`].
+///
+/// | target resolves to | the literal is |
+/// |---|---|
+/// | text, or a variant of an enum | the text itself |
+/// | `Boolean`, `Integer` | that value, spelled as [`crate::input::primitive_literal`] admits |
+/// | `Decimal`, `Binary64` | nothing — no admitted literal spelling |
+/// | a struct, a union, a list, a map | nothing — a literal is one piece of text |
+///
+/// **This deliberately duplicates a rule `ess-domain` also enforces, and is not dead for it.**
+/// `validate_sets` refuses a literal this would answer `None` for, so in a *compiled* IR the `None`
+/// arms are unreachable from a document that validates. They stay because the alternative is
+/// trusting an upstream invariant with no local check: where the two ever come apart the choice is
+/// between abstaining and asserting a value nobody can read, and abstaining is a weaker claim rather
+/// than a wrong one. The primitive half is not duplicated at all — it is
+/// [`crate::input::primitive_literal`], the same function `ess-domain`'s own rule was written to
+/// agree with, so the spellings cannot drift.
+///
+/// `Optional` and a newtype are transparent, exactly as they are to [`describe`] and to the
+/// flattener — neither has a spelling of its own, so `Optional<LaneId>` answers as `String` does.
+/// A type that resolves through itself gets no answer past [`MAX_TYPE_DEPTH`].
+fn literal_value(
+    ir: &EssIr,
+    type_ref: &ResolvedTypeRef,
+    written: &str,
+    depth: usize,
+) -> Option<Node> {
+    if depth > MAX_TYPE_DEPTH {
+        return None;
+    }
+    match type_ref {
+        ResolvedTypeRef::Primitive { name } => crate::input::primitive_literal(*name, written),
+        ResolvedTypeRef::Optional { of } => literal_value(ir, of, written, depth + 1),
+        ResolvedTypeRef::List { .. } | ResolvedTypeRef::Map { .. } => None,
+        ResolvedTypeRef::Declared { name } => match &ir.named_type(name).body {
+            ResolvedBody::Newtype { of, .. } => literal_value(ir, of, written, depth + 1),
+            // Membership was checked against the declared variants where the literal was written;
+            // a suite carries a variant as its name, which is what the enum witness sends too.
+            ResolvedBody::Enum { .. } => Some(Node::Text(written.to_owned())),
+            ResolvedBody::Union { .. } | ResolvedBody::Struct { .. } => None,
+        },
+    }
 }
 
 /// One entity field a scenario determined the value of, and the type the entity holds it at.
