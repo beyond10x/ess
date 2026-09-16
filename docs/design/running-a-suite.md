@@ -121,14 +121,12 @@ honest realization's acceptance — same store, same mint, same event — and sk
 replacing exactly one of eight obligations while the other seven keep their state
 (`examples/billing-realization/src/corrupted.rs`).
 
-**The limit, and it is deliberate.** The linker does not choose:
-
-> Gap register D-2, taken as written: the linker does not choose. Zero implementations offered for an
-> obligation is an **unsatisfied obligation**; two is an **ambiguity error naming both**. […] there is
-> deliberately no priority, no default, no "first wins" — the only accepted state is exactly one
-> implementation per obligation the plan owes.
->
-> — `examples/billing-realization/src/linker.rs:3-7`
+**The limit, and it is deliberate.** The linker does not choose. Gap register D-2 states that rule
+and its two refusals, and it is stated once: [linker-never-chooses.md](linker-never-chooses.md).
+Restating it here would make a second home for a constraint that has one, so this record only takes
+what follows from it — there is no priority, no default and no "first wins", and the only accepted
+state is exactly one implementation per obligation the plan owes
+(`examples/billing-realization/src/linker.rs:3-7`).
 
 **Decision.** Obligations are the substitution seam, and substitution is a linking decision the
 adopter makes in their own code. ESS will not grow a `--fake` flag, a stub component kind or a
