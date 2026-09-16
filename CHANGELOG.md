@@ -4,6 +4,23 @@
 
 ### Fixed
 
+- **A suite required a field at the value an earlier act supplied, after a later act overwrote it.**
+  Synthesis accumulates what each invoked branch leaves in the entity's fields, and it abstains on
+  two sources it cannot read as a value — a literal, and a field crossing a declared conversion.
+  Abstaining is a statement about *that* act; the older determination was left standing, which turned
+  it into a claim about the row, and the opposite claim.
+
+  Measured on an adopter's model: a `leave` branch writing `campaign_id: ""` produced a suite whose
+  view assertion went on requiring the campaign id the creating act had supplied. Two scenarios
+  failed against an implementation that cleared the field exactly as the specification said to, and
+  nothing in either document said why. A branch that writes a field now drops any earlier
+  determination of it, whether or not it determines a value in its place.
+
+  What is still unsaid, and is a construct rather than a defect: a branch that *clears* an
+  `Optional` field has no spelling. `sets:` admits `input.<field>` or a literal, so "this branch
+  leaves nothing here" can only be written as a literal the reader must not believe. Filed as
+  `story:a-branch-may-clear-the-field-it-owns`.
+
 - **A skipped scenario says why.** The emitted Go runtime discarded the target's own error on
   `ErrUnsupported` and printed only the construct's name, so three different causes rendered
   identically. Measured on an adopter's run: **41 skips, three distinct reasons, one message** — and

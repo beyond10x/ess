@@ -1421,6 +1421,17 @@ fn run(
     }
 
     let mut settled = setup.settled;
+    // A branch that writes a field INVALIDATES what an earlier act determined for it, whether or
+    // not this one determines a value in its place. `settled` abstains on a literal source and on a
+    // conversion — both for good reasons of its own — and abstaining is a statement about THIS act;
+    // leaving the older determination standing turned it into a claim about the row, and the
+    // opposite claim. Measured 2026-09-16 on an adopter's model: a `leave` branch writing
+    // `campaign_id: ""` produced a suite that went on requiring the campaign id the creating act
+    // had supplied, so the scenario failed against an implementation that cleared the field exactly
+    // as the specification said to.
+    for field in &outcome.sets {
+        settled.remove(&field.target);
+    }
     settled.extend(super::synthesize::settled(outcome, &supplied));
     Ok(Run {
         setup: setup.steps,

@@ -3438,6 +3438,130 @@ commands:
         summary: The order has already shipped, so the command is answered and nothing moves.
 ";
 
+/// A field one act fills from its input and a later act OVERWRITES with a literal.
+///
+/// The pair is the whole point: synthesis can determine what `PlaceOrder` leaves in `lane_id`,
+/// because the value came from an input it chose, and it cannot determine what `ClearLane` leaves
+/// there, because `""` is text and reading it at the field's declared type is a parse no
+/// declaration specifies. So the second act's scenario must assert nothing about `lane_id` — and in
+/// particular not the value the first act put there, which is the one thing that is certainly wrong.
+const OVERWRITTEN_BY_A_LITERAL: &str = r#"
+format: ess/1
+system: quiet
+version: v1
+domain: quiet.lanes
+
+types:
+  - name: quiet.lanes.OrderId
+    kind: newtype
+    of: Uuid
+  - name: quiet.lanes.LaneId
+    kind: newtype
+    of: String
+
+entities:
+  - name: quiet.lanes.Order
+    identity:
+      name: order_id
+      type: quiet.lanes.OrderId
+    fields:
+      - name: lane_id
+        type: quiet.lanes.LaneId
+    lifecycle:
+      initial: Placed
+      states: [Placed, Cleared]
+      terminal: [Cleared]
+      transitions:
+        - name: clear
+          from: [Placed]
+          to: Cleared
+
+views:
+  - name: quiet.lanes.MyOrders
+    source: quiet.lanes.Order
+    consistency: read_your_writes
+    fields:
+      - name: order_id
+        type: quiet.lanes.OrderId
+      - name: lane_id
+        type: quiet.lanes.LaneId
+
+events:
+  - name: quiet.lanes.OrderPlaced
+    fields:
+      - name: order_id
+        type: quiet.lanes.OrderId
+
+  - name: quiet.lanes.OrderCleared
+    fields:
+      - name: order_id
+        type: quiet.lanes.OrderId
+
+commands:
+  - name: quiet.lanes.PlaceOrder
+    input:
+      - name: lane_id
+        type: quiet.lanes.LaneId
+    outcomes:
+      - name: accepted
+        creates: quiet.lanes.Order
+        instance: order_id
+        sets:
+          lane_id: input.lane_id
+        emits:
+          - quiet.lanes.OrderPlaced
+
+  - name: quiet.lanes.ClearLane
+    input:
+      - name: order_id
+        type: quiet.lanes.OrderId
+    outcomes:
+      - name: cleared
+        moves: quiet.lanes.Order.clear
+        instance: order_id
+        sets:
+          lane_id: ""
+        emits:
+          - quiet.lanes.OrderCleared
+"#;
+
+#[test]
+fn a_field_a_later_act_overwrites_is_not_asserted_at_the_value_an_earlier_one_supplied() {
+    let synthesis = synthesize(&fixture(OVERWRITTEN_BY_A_LITERAL));
+
+    let mut read = 0;
+    for id in ids(&synthesis) {
+        if !id.contains("ClearLane") {
+            continue;
+        }
+        for step in steps(&synthesis, &id) {
+            let (ScenarioStep::ExpectView { view, expectation }
+            | ScenarioStep::EventuallyView {
+                view, expectation, ..
+            }) = step
+            else {
+                continue;
+            };
+            let (ViewExpectation::Contains { fields } | ViewExpectation::Excludes { fields }) =
+                expectation
+            else {
+                continue;
+            };
+            read += 1;
+            assert!(
+                !fields.contains_key("lane_id"),
+                "`{id}` reads `{view}` and still requires `lane_id` = {:?}, which `ClearLane` \
+                 overwrote",
+                fields.get("lane_id")
+            );
+        }
+    }
+    assert!(
+        read > 0,
+        "the fixture is supposed to produce a view assertion for `ClearLane` to be wrong about"
+    );
+}
+
 // ---- one component's suite ------------------------------------------------------------------------
 
 /// The billing example declares two components. The suite for one of them holds exactly the
