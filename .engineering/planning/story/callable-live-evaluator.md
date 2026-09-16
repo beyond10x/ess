@@ -11,7 +11,7 @@ relations:
 scope:
 - confidence: cited
   path: crates/verify/ess-conformance
-revision: 5
+revision: 6
 ---
 ## Acceptance
 Expose a context-aware per-scenario execution session with fixed admitted inventory and native report finalization; retain Run(testing.T, factory) as a wrapper using the same evaluator. Compare event payloads and shapes, not names alone. Windows observe every occurrence and retain completeness/error information while commands run. Cancellation reaches target I/O. Clean up partial setup and retain cleanup errors. No unavailable selected scenario or missing receipt can qualify. Rust/Go share fixture expectations and report meanings.
@@ -25,3 +25,7 @@ Wrong-resource matching, delayed match, malformed payload, duplicate/reordered o
 ## Metrics continuation
 
 Extend both native evaluators for the versioned metrics vocabulary: event capture with required presence, exact signed-64-bit bounds/checked offsets, and a quiet baseline beginning at a fresh native completeness fence after setup. Every scoped frame remains visible during stable windows and blocking sync stimuli. Counterexamples cover slow first status, absent/malformed integers, nonzero baselines, quiet resets, overflow, transient zero, source gaps, cancellation and cleanup errors. Complete consumer coverage without rewriting sealed baseline eligibility.
+
+## Metrics full validation checkpoint
+
+At implementation 10be80e1, the complete task check passes formatting, workspace strict Clippy, all workspace tests including Rust/Go metrics parity and metadata tests, rustdoc, command smoke, projection drift and support checks. It exits 201 at consumer-check because the new Live CLI entry still lacks finite classification; the exact candidate/base comparison is in blocker:live-pilot-consumer-coverage. Separately invoked fuzz-check, release-check and action-check pass, as does site-build. E2e build/unit/race checks and deterministic regeneration of all three pilots pass. This is a published implementation checkpoint, not a full green gate, merge/release authorization or live service qualification.
