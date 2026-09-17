@@ -1481,6 +1481,21 @@ type Step struct {
 type Held struct {
 	Holds string `json:"holds"`
 	Kind  string `json:"kind,omitempty"`
+	// Variants is the closed set of names an `enum` leaf admits, in declaration order.
+	//
+	// Carried in the leaf, so checking membership re-derives nothing: the suite says what the set
+	// is. Unnamed here, every enum assertion in the one runner an adopter executes proved nothing —
+	// see holds.
+	Variants []string `json:"variants,omitempty"`
+	// Optional is whether the declaration permits the path to carry nothing.
+	//
+	// Must be here, and not only in the document: the synthesizer writes it on every leaf an
+	// `Optional` was walked through on the way down, and a struct field this type does not name is
+	// dropped in silence at unmarshal. Dropped, it made every leaf of an `Optional` a check no
+	// conforming implementation could pass.
+	//
+	// It excuses absence, not the value. See holds.
+	Optional bool `json:"optional,omitempty"`
 }
 
 // OutcomeRef names one branch of one command.
@@ -2690,6 +2705,28 @@ func render(value Node) string {
 //
 // A shape path is dotted — `amount.currency` — because a declared field may itself be a struct, and
 // what is checked is the leaf that actually holds a value.
+//
+// # What `optional` excuses, and what it does not
+//
+// Absence, and an explicit null, which is absence spelled differently. Nothing else. A reading that
+// skipped a declared-optional path altogether would pass an implementation publishing the field
+// with the wrong kind in it, and that is a weaker suite than the one that wrongly refused absence:
+// the first failure is visible the moment a conforming implementation runs, and the second is
+// visible to nobody. `optional` means "may be absent", never "unchecked".
+//
+// # What is checked when a value is there
+//
+// A primitive against its grammar, and an `enum` against its declared variants. Both sets travel in
+// the leaf, so neither re-derives a decision the compiler already took. A list, a map and a union
+// say only what container they are and their members are not described, so this runner does not
+// reach into them.
+//
+// Measured on one adopter specification of 272 scenarios before these two were fixed: 15 of its 163
+// shape-bearing steps were unsatisfiable by a producer that honours the declaration (all 326 of its
+// optional leaves sit in those 15), and 72 of its 591 leaves are enum leaves that nothing in this
+// function looked at. ess_conformance::scenario's `Holds::Enum`, the Rust admitter and the browser
+// admitter all checked membership — only the lane an adopter actually executes did not, which makes
+// a green run in the lane that counts weaker than a green run in the lanes that do not.
 func holds(payload map[string]Node, shape map[string]Held) string {
 	paths := make([]string, 0, len(shape))
 	for path := range shape {
@@ -2698,38 +2735,105 @@ func holds(payload map[string]Node, shape map[string]Held) string {
 	sort.Strings(paths)
 
 	for _, path := range paths {
-		value, ok := lookup(payload, path)
-		if !ok {
+		expected := shape[path]
+		value, state, at := lookup(payload, path)
+		switch state {
+		case reachBlocked:
+			// Not excusable by `optional`. A prefix holding a value no field can be read out of
+			// contradicts the declaration whatever the leaf permits, and reading it as absence
+			// would admit a scalar wherever the specification declares a struct.
+			return fmt.Sprintf("`%s` holds %s, so `%s` is not there to read", at, render(value), path)
+		case reachAbsent:
+			if expected.Optional {
+				continue
+			}
 			return fmt.Sprintf("did not carry `%s`", path)
 		}
-		expected := shape[path]
-		if expected.Holds != "primitive" {
-			// Only primitives are checked. A list or a map is a shape this runner would have to
-			// re-derive to compare, and re-deriving a decision the compiler already took is how two
-			// answers to one question appear.
+		if value == nil && expected.Optional {
 			continue
 		}
-		if reason := primitive(expected.Kind, value); reason != "" {
-			return fmt.Sprintf("`%s` %s", path, reason)
+		switch expected.Holds {
+		case "primitive":
+			if reason := primitive(expected.Kind, value); reason != "" {
+				return fmt.Sprintf("`%s` %s", path, reason)
+			}
+		case "enum":
+			if !variant(expected.Variants, value) {
+				// Worded as ess_conformance::scenario's `Holds` writes it — "one of Email, Post" —
+				// so the two runners describe one refusal one way.
+				return fmt.Sprintf(
+					"`%s` holds %s and the specification declares one of %s",
+					path, render(value), strings.Join(expected.Variants, ", "),
+				)
+			}
+		default:
+			// A list, a map and a union are containers whose members a path cannot name, so there
+			// is nothing here to compare them against. Re-deriving what they should hold is how two
+			// answers to one question appear.
 		}
 	}
 	return ""
 }
 
-// lookup follows a dotted path into a payload.
-func lookup(payload map[string]Node, path string) (Node, bool) {
-	var current Node = payload
-	for _, segment := range strings.Split(path, ".") {
-		mapping, ok := current.(map[string]any)
-		if !ok {
-			return nil, false
-		}
-		current, ok = mapping[segment]
-		if !ok {
-			return nil, false
+// variant reports whether value is one of a closed set of names, as text.
+//
+// The rule ess_conformance::scenario's `Holds::Enum::admits` applies, called the same way round: a
+// value that is not text is not one of the names, rather than something to be rendered and
+// compared. A closed set of names is closed, which is the whole reason to declare one.
+func variant(variants []string, value Node) bool {
+	text, ok := value.(string)
+	if !ok {
+		return false
+	}
+	for _, declared := range variants {
+		if declared == text {
+			return true
 		}
 	}
-	return current, true
+	return false
+}
+
+// reach is what a dotted path found in a payload.
+//
+// Three answers rather than two, the same three ess_conformance::runner's `reach_into` gives:
+// absence and a prefix that contradicts the declaration are different facts, and only the first of
+// them is one `optional` may excuse. Conflated, an optional leaf under a prefix holding a scalar
+// passed here and failed there — two answers to one question.
+type reach int
+
+const (
+	// reachValue: a value sits at the path. It may be null.
+	reachValue reach = iota
+	// reachAbsent: nothing is carried there. No segment held it, or a segment on the way held null
+	// — a value published as null has no fields, so every leaf under it is absent.
+	reachAbsent
+	// reachBlocked: a prefix holds something that is neither a mapping nor null.
+	reachBlocked
+)
+
+// lookup follows a dotted path into a payload, reporting the prefix that blocked it and what that
+// prefix held when one did.
+func lookup(payload map[string]Node, path string) (Node, reach, string) {
+	var current Node = payload
+	walked := ""
+	for _, segment := range strings.Split(path, ".") {
+		if current == nil {
+			return nil, reachAbsent, walked
+		}
+		mapping, ok := current.(map[string]any)
+		if !ok {
+			return current, reachBlocked, walked
+		}
+		if walked != "" {
+			walked += "."
+		}
+		walked += segment
+		current, ok = mapping[segment]
+		if !ok {
+			return nil, reachAbsent, walked
+		}
+	}
+	return current, reachValue, walked
 }
 
 // canonicalUUID reports whether text is a UUID in the one hyphenated form the specification

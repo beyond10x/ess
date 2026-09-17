@@ -1327,6 +1327,8 @@ enum Reached<'a> {
     /// Nothing was carried under that path, and the walk got as far as it could.
     Absent,
     /// A prefix of the path holds something a field cannot be read out of.
+    ///
+    /// Null is not one of them: see [`reach_into`].
     Blocked {
         /// The prefix.
         at: String,
@@ -1339,6 +1341,15 @@ enum Reached<'a> {
 ///
 /// A field name cannot contain a dot — the model holds one to `Field::PATTERN` — so splitting on one
 /// is a reading of the path rather than a parse that could go wrong.
+///
+/// # A null on the way down is absence, not a blockage
+///
+/// `Optional<Money>` published as `null` carries no `amount` and no `currency`, so both leaves under
+/// it are [`Absent`](Reached::Absent) — which the [`LeafShape`](crate::LeafShape) they came from
+/// permits, because the same `Optional` is what marked them optional in the first place. Read as
+/// [`Blocked`](Reached::Blocked) it was refused, and every leaf of an optional struct was a check no
+/// conforming implementation could pass. A prefix holding something that is neither a mapping nor
+/// null still blocks: that contradicts the declaration whatever the leaf permits.
 fn reach_into<'a>(payload: &'a BTreeMap<String, Node>, path: &str) -> Reached<'a> {
     let mut walked = String::new();
     let mut at: Option<&Node> = None;
@@ -1346,6 +1357,7 @@ fn reach_into<'a>(payload: &'a BTreeMap<String, Node>, path: &str) -> Reached<'a
         let here = match at {
             None => payload.get(segment),
             Some(Node::Map(fields)) => fields.get(segment),
+            Some(Node::Null) => return Reached::Absent,
             Some(value) => {
                 return Reached::Blocked {
                     at: walked,
@@ -2536,6 +2548,132 @@ mod tests {
         assert_eq!(awkward.correlation().as_str(), "Billing-v3-main-000001");
         let mut empty = Ids::seeded("///");
         assert_eq!(empty.correlation().as_str(), "ess-000001");
+    }
+
+    #[test]
+    fn an_optional_leaf_is_satisfied_by_absence_and_by_null_and_is_still_checked_when_present() {
+        // The pair `expect_payload` decides with, asked the four questions `optional` has. The
+        // fourth is the one that matters: a reading of `optional` as "ignore this path" would pass
+        // an implementation publishing the field with the wrong kind in it, which is a weaker suite
+        // than the one that wrongly refused absence — that failure is visible the moment a
+        // conforming implementation runs, and this one is visible to nobody.
+        let leaf = crate::scenario::LeafShape::required(crate::scenario::Holds::Primitive {
+            kind: ess_domain::types::Primitive::String,
+        })
+        .optional();
+        let admits = |payload: &BTreeMap<String, Node>, path: &str| match reach_into(payload, path)
+        {
+            Reached::Value(value) => leaf.admits(Some(value)),
+            Reached::Absent => leaf.admits(None),
+            Reached::Blocked { .. } => false,
+        };
+
+        let empty = BTreeMap::new();
+        assert!(admits(&empty, "note"));
+        assert!(admits(
+            &BTreeMap::from([("note".to_owned(), Node::Null)]),
+            "note"
+        ));
+        assert!(admits(
+            &BTreeMap::from([("note".to_owned(), Node::Text("resolved".to_owned()))]),
+            "note"
+        ));
+        assert!(
+            !admits(
+                &BTreeMap::from([("note".to_owned(), Node::Bool(true))]),
+                "note"
+            ),
+            "`optional` permits the field to be absent, not to hold a boolean where the \
+             specification declares a string"
+        );
+
+        // And one level down, where a specification that wraps a struct in `Optional` puts most of
+        // its optional leaves: no leaf sits at `wrapup` itself, so the whole value being absent has
+        // to be read off every leaf under it. In the adopter specification that exposed this, 82 of
+        // the 84 optional leaves of its largest shape are nested that way.
+        let wrapped = |value: Node| BTreeMap::from([("wrapup".to_owned(), value)]);
+        assert!(admits(&empty, "wrapup.code"));
+        assert!(
+            admits(&wrapped(Node::Null), "wrapup.code"),
+            "a value published as null carries no fields, so the leaf under it is absent"
+        );
+        assert!(admits(&wrapped(Node::Map(BTreeMap::new())), "wrapup.code"));
+        assert!(admits(
+            &wrapped(Node::Map(BTreeMap::from([(
+                "code".to_owned(),
+                Node::Text("resolved".to_owned())
+            )]))),
+            "wrapup.code"
+        ));
+        assert!(!admits(
+            &wrapped(Node::Map(BTreeMap::from([(
+                "code".to_owned(),
+                Node::Bool(true)
+            )]))),
+            "wrapup.code"
+        ));
+        assert!(
+            !admits(&wrapped(Node::Text("resolved".to_owned())), "wrapup.code"),
+            "a scalar where the declaration says a struct contradicts it whatever the leaf permits"
+        );
+
+        // A leaf the declaration does not mark optional is unchanged by all of this.
+        let required = crate::scenario::LeafShape::required(crate::scenario::Holds::Primitive {
+            kind: ess_domain::types::Primitive::String,
+        });
+        assert!(!required.admits(None));
+        assert!(!required.admits(Some(&Node::Null)));
+        assert!(matches!(
+            reach_into(&wrapped(Node::Null), "wrapup.code"),
+            Reached::Absent
+        ));
+    }
+
+    #[test]
+    fn an_enum_leaf_admits_a_declared_variant_and_nothing_else_here_or_in_the_go_runtime() {
+        // The authority the Go runtime's `variant` was written against. Stated here as well so the
+        // two cannot drift apart silently: this lane checked membership from the start and the
+        // executed lane did not, which left 72 of the 591 leaves of one adopter suite asserting
+        // nothing at all.
+        let state = crate::scenario::Holds::Enum {
+            variants: vec!["Open".to_owned(), "Closed".to_owned()],
+        };
+        let leaf = crate::scenario::LeafShape::required(state.clone());
+        assert!(leaf.admits(Some(&Node::Text("Open".to_owned()))));
+        assert!(
+            !leaf.admits(Some(&Node::Text("Nonsense".to_owned()))),
+            "a closed set of names is closed, which is the whole reason to declare one"
+        );
+        assert!(
+            !leaf.admits(Some(&Node::Bool(true))),
+            "a value that is not text is not one of the names"
+        );
+        assert!(
+            !leaf.admits(Some(&Node::Number(
+                ess_primitives::facts::Number::new(7.0).expect("finite")
+            ))),
+            "and a number is not either"
+        );
+        assert!(!leaf.admits(None), "a required enum has to be carried");
+
+        // Optional moves absence and null, and moves nothing about a value that is there.
+        let optional = crate::scenario::LeafShape::required(state).optional();
+        assert!(optional.admits(None));
+        assert!(optional.admits(Some(&Node::Null)));
+        assert!(optional.admits(Some(&Node::Text("Closed".to_owned()))));
+        assert!(
+            !optional.admits(Some(&Node::Text("Nonsense".to_owned()))),
+            "an optional enum that is present is still held to its variants"
+        );
+
+        // The sentence both runners refuse with, so one refusal reads one way in either lane.
+        assert_eq!(
+            crate::scenario::Holds::Enum {
+                variants: vec!["Open".to_owned(), "Closed".to_owned()],
+            }
+            .to_string(),
+            "one of Open, Closed"
+        );
     }
 
     /// A row with a `priority` and a `queued_at`, the two keys an ordered queue view ranks by.
