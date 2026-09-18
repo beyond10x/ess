@@ -1,0 +1,77 @@
+# An owner that something creates, and a child whose `sets:` says which input names it.
+#
+# `examples/billing/` cannot make this claim: its `Account` owns `Invoice` and no command brings an
+# account into existence, so an arrangement there has nothing to arrange. This model is the other
+# case — the one where the specification does say how the owner comes to be.
+format: ess/4
+system: ledger
+version: v1
+domain: ledger.book
+types:
+  - name: ledger.book.AccountId
+    kind: newtype
+    of: Uuid
+entities:
+  - name: ledger.book.Account
+    identity: {name: account_id, type: ledger.book.AccountId}
+    fields:
+      - {name: holder, type: String}
+    relations:
+      - {name: entries, kind: owns, target: ledger.book.Entry, cardinality: many, via: account_id}
+    lifecycle:
+      initial: Open
+      states: [Open]
+      terminal: [Open]
+  - name: ledger.book.Entry
+    identity: {name: entry_id, type: Uuid}
+    fields:
+      - {name: account_id, type: ledger.book.AccountId}
+      - {name: memo, type: String}
+    lifecycle:
+      initial: Posted
+      states: [Posted]
+      terminal: [Posted]
+events:
+  - name: ledger.book.AccountOpened
+    fields:
+      - {name: account_id, type: ledger.book.AccountId}
+  - name: ledger.book.EntryPosted
+    fields:
+      - {name: entry_id, type: Uuid}
+commands:
+  - name: ledger.book.OpenAccount
+    input:
+      - {name: holder, type: String}
+    outcomes:
+      - name: opened
+        creates: ledger.book.Account
+        instance: account_id
+        emits: [ledger.book.AccountOpened]
+        payload:
+          ledger.book.AccountOpened:
+            account_id: {generated: true}
+        sets: {holder: input.holder}
+  - name: ledger.book.PostEntry
+    input:
+      - {name: account_id, type: ledger.book.AccountId}
+      - {name: memo, type: String}
+    outcomes:
+      - name: posted
+        creates: ledger.book.Entry
+        instance: entry_id
+        emits: [ledger.book.EntryPosted]
+        payload:
+          ledger.book.EntryPosted:
+            entry_id: {generated: true}
+        # The one line that says which input names the owner. Without it the relation is still
+        # declared and still validated, and an arrangement still has nothing to point at.
+        sets: {account_id: input.account_id, memo: input.memo}
+views:
+  - name: ledger.book.EntryById
+    source: ledger.book.Entry
+    consistency: read_your_writes
+    fields:
+      - {name: entry_id, type: Uuid}
+      - {name: state, type: ledger.book.Entry.State}
+      - {name: account_id, type: ledger.book.AccountId}
+      - {name: memo, type: String}
