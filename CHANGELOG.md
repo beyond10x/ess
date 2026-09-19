@@ -41,6 +41,38 @@
 
 ### Added
 
+- **A generated scenario that creates an owned entity now creates its owner first.** `owns` says the
+  far side does not stand on its own, and synthesis was not reading that: a `creates:` subject was
+  taken to need nothing arranged, so every generated scenario reaching an owned row invented an
+  owner id and handed it to the implementation. On an adopter's model — `Agent owns AgentDraft` —
+  that was fifteen scenarios reporting `unsupported`, which is not a failure and not a pass but **no
+  information about the implementation**, produced by a suite asking a question with no answer.
+
+  The arrangement recurses (a three-deep chain is three commands) and stops at each owner's
+  **initial** state: the relation says the owner must exist and says nothing about the state it must
+  be in. The link from the relation to the input that names the owner is the creating branch's
+  `sets:`, and nothing else — matching on a shared field name, or on the one input typed as the
+  owner's identity, is a guess that does not fail loudly but points a scenario at somebody else's
+  row. A model closes the gap with one line: `sets: {account_id: input.account_id}`.
+
+  **Four ways there is no owner to arrange, and every one falls back to the suite as it was rather
+  than refusing**: nothing owns the entity (a root is not an error); `sets:` does not determine the
+  carrying field; nothing creates the owner — which is `examples/billing/`, where `Account` owns
+  `Invoice` and no command brings an account into existence; and an ownership cycle, guarded by the
+  chain of entities being arranged rather than by a depth count. Refusing instead would have deleted
+  every billing invoice scenario, and those scenarios pass.
+
+  `EssIr::owner_of` is the lookup, beside `relations_carried_by` and deliberately narrower than it:
+  a `references` is a link the far side outlives, so it is not something a row's existence depends
+  on. Design: `docs/design/owned-subject-arrangement.md`.
+
+- **A `sets:` field filled from an input that names an arranged row is now asserted as that
+  reference.** `settled` kept a source only where the invocation supplied a literal, so exactly the
+  field carrying an owner was dropped and nothing was said about it. A suite now asserts that the
+  new row holds the id of the owner *this scenario created* — a value neither the suite nor the
+  specification can spell, and the assertion an implementation that files the row under a different
+  owner fails.
+
 - **A branch may say it is the FIRST report of the state it moves to: `when_state_changes: <bool>`.**
   A `when:` guard is a predicate over the input, so a push that re-reports a state the entity already
   holds was indistinguishable from the push that first put it there. The new key is conjunctive with

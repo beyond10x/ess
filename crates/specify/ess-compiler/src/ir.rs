@@ -428,6 +428,22 @@ pub struct CarriedRelation<'a> {
     pub relation: &'a ResolvedRelation,
 }
 
+/// Who owns one entity, as [`EssIr::owner_of`] answers it.
+///
+/// The owner is a *handle* and not a name, which is the whole reason this type exists beside
+/// [`CarriedRelation`]: a caller that has to arrange an owner has to look the owner's lifecycle and
+/// drivers up, and a [`QualifiedName`] cannot do that. Minted here rather than by the caller because
+/// minting is the check — the name came out of `entities`, so the entity is there.
+#[derive(Debug)]
+pub struct OwnedBy<'a> {
+    /// The entity that declared the `owns`.
+    pub owner: EntityHandle,
+    /// The field of the owned entity that carries the owner's identity.
+    pub via: &'a str,
+    /// The relation as it was declared, on the owner.
+    pub relation: &'a ResolvedRelation,
+}
+
 impl ResolvedEntity {
     /// The declared field with this name. The identity is not one; it is [`ResolvedEntity::identity`].
     pub fn field(&self, name: &str) -> Option<&ResolvedField> {
@@ -1666,6 +1682,34 @@ impl EssIr {
             }
         }
         out
+    }
+
+    /// The entity that declares it `owns` this one, and the field carrying that claim.
+    ///
+    /// [`Self::relations_carried_by`] answers "what do my fields mean" for both kinds; this asks the
+    /// one question an *arrangement* has, and it is a different question: a row of an owned entity
+    /// cannot exist without a row of its owner, so anything that brings one into being has to bring
+    /// the other into being first. `references` is excluded for exactly that reason — the far side
+    /// of a reference stands on its own (§1 of the entity-relations design), so it is not something
+    /// the near side's existence depends on.
+    ///
+    /// `None` for a root. An unowned entity is not an error — refusing one would make every
+    /// aggregate root an error — so the absence here is an answer and not a gap.
+    ///
+    /// At most one, and that is `ess-domain`'s rule rather than this function's: `validate_relations`
+    /// refuses a second entity claiming to own one target as a `conflicting_declaration`. Where two
+    /// ever reached this map the first in name order would be taken, because `entities` is ordered
+    /// and the first `owns` wins — a deterministic answer to a question the specification should
+    /// never have been able to ask.
+    pub fn owner_of(&self, entity: &EntityHandle) -> Option<OwnedBy<'_>> {
+        self.relations_carried_by(entity.name())
+            .into_iter()
+            .find(|(_, carried)| carried.relation.kind == RelationKind::Owns)
+            .map(|(via, carried)| OwnedBy {
+                owner: EntityHandle::new(carried.source.clone()),
+                via,
+                relation: carried.relation,
+            })
     }
 
     /// Every event that causes a command, and the bindings that make it so.

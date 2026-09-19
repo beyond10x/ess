@@ -138,7 +138,10 @@
 //! representation cannot be written as, that crosses a declared conversion, or that fills a field
 //! no view projects at the entity's own type is left out rather than guessed at, because in each
 //! the value the row holds is not the value sent. A literal over text or an enum variant IS the
-//! value, so `campaign_id: ""` is asserted as the empty string rather than dropped.
+//! value, so `campaign_id: ""` is asserted as the empty string rather than dropped. Where the source
+//! is an input field the arrangement pointed at a row it created — the field carrying the subject's
+//! owner — what is asserted is that reference: the row holds *that* owner's id, which is a claim
+//! about a value neither the suite nor the specification can spell.
 //!
 //! # What the model cannot say yet, and what is therefore not asserted
 //!
@@ -1403,7 +1406,12 @@ fn run(
             force: outcome_ref.clone(),
         });
     }
-    let supplied = supply(&input, outcome.subject.as_ref(), setup.instance.as_ref());
+    let supplied = supply(
+        &input,
+        outcome.subject.as_ref(),
+        setup.instance.as_ref(),
+        &setup.bound,
+    );
     invoke.push(ScenarioStep::ExecuteCommand {
         command: command_ref,
         actor: actor.clone(),
@@ -1442,13 +1450,22 @@ fn run(
 
 /// What has to be true before a branch can be run, and what is true of its subject afterwards.
 ///
-/// Empty for a branch that changes no entity, and for one that *creates* its own subject: a created
-/// instance is the scenario's own doing, so there is nothing to arrange first.
+/// Empty for a branch that changes no entity. A branch that *creates* its own subject has no
+/// instance to arrange — the new row is the scenario's own doing — but it may still have an
+/// **owner** to arrange, because a row of an owned entity cannot exist without the row it belongs
+/// to. See [`arrange_owner`].
 struct Setup {
     /// The steps that bring the instance into the state the branch needs.
     steps: Vec<ScenarioStep>,
     /// What those steps bound the instance as, where they bound one.
     instance: Option<InstanceName>,
+    /// Input fields of the branch under test that name something the arrangement created, by field.
+    ///
+    /// Separate from `instance`, which is the branch's *subject*. This is everything else the input
+    /// has to point at — today exactly the field carrying the subject's owner — and it is a map
+    /// because the question "which arranged row does this field name" is per field and the subject's
+    /// answer is already spoken for.
+    bound: BTreeMap<String, InstanceName>,
     /// The constructs the arrangement depends on, so a change to one makes a stored result stale.
     source: BTreeSet<EssSemanticRef>,
     /// The state the subject is in once the branch has been taken, where there is a subject.
@@ -1463,6 +1480,7 @@ impl Setup {
         Self {
             steps: Vec::new(),
             instance: None,
+            bound: BTreeMap::new(),
             source: BTreeSet::new(),
             after: None,
             settled: BTreeMap::new(),
@@ -1489,9 +1507,33 @@ fn prepare(
     let lifecycle = &ir.entity(&subject.entity).lifecycle;
     let (mut targets, need): (Vec<StateName>, InstanceNeed) = match &subject.effect {
         ResolvedEffect::Creates => {
-            return Ok(Setup {
-                after: Some(lifecycle.initial.clone()),
-                ..Setup::none()
+            // The new row is the scenario's own doing and needs nothing arranged — except the row it
+            // belongs to, where it belongs to one.
+            let owner = arrange_owner(
+                ir,
+                outcome,
+                &subject.entity,
+                actors,
+                Distinction::PLAIN,
+                &[],
+            );
+            return Ok(match owner {
+                None => Setup {
+                    after: Some(lifecycle.initial.clone()),
+                    ..Setup::none()
+                },
+                Some((field, arrangement)) => Setup {
+                    steps: arrangement.steps,
+                    // Not `instance`: that names the branch's subject, and this arrangement made
+                    // the subject's *owner*. The subject does not exist yet.
+                    bound: [(field, arrangement.instance)].into_iter().collect(),
+                    source: arrangement.source,
+                    after: Some(lifecycle.initial.clone()),
+                    // Not the owner's either. `settled` is what the *subject's* fields hold, and
+                    // the owner's fields are another row's.
+                    settled: BTreeMap::new(),
+                    instance: None,
+                },
             });
         }
         ResolvedEffect::Moves { transition } => (
@@ -1512,15 +1554,25 @@ fn prepare(
         }
     };
 
-    let arrangement = arrange_first(ir, &subject.entity, &targets, actors, Distinction::PLAIN)
-        .map_err(|reason| RefusalCause::InstanceRequired {
-            entity: EntityRef::from(&subject.entity),
-            need,
-            reason,
-        })?;
+    let arrangement = arrange_first(
+        ir,
+        &subject.entity,
+        &targets,
+        actors,
+        Distinction::PLAIN,
+        &[],
+    )
+    .map_err(|reason| RefusalCause::InstanceRequired {
+        entity: EntityRef::from(&subject.entity),
+        need,
+        reason,
+    })?;
     Ok(Setup {
         steps: arrangement.steps,
         instance: Some(arrangement.instance),
+        // The branch under test acts on an instance that already exists, so its own input names the
+        // subject and nothing else the arrangement built.
+        bound: BTreeMap::new(),
         source: arrangement.source,
         after: Some(after),
         settled: arrangement.settled,
@@ -1566,11 +1618,12 @@ fn arrange_first(
     targets: &[StateName],
     actors: &BTreeMap<QualifiedName, ActorRef>,
     distinction: Distinction,
+    arranging: &[&EntityHandle],
 ) -> Result<Arrangement, Unreachable> {
     let mut cheapest: Option<Arrangement> = None;
     let mut first: Option<Unreachable> = None;
     for target in targets {
-        match arrange(ir, entity, target, actors, distinction) {
+        match arrange(ir, entity, target, actors, distinction, arranging) {
             Ok(arrangement) => {
                 if cheapest
                     .as_ref()
@@ -1596,12 +1649,17 @@ fn arrange_first(
 /// The route is the shortest sequence of declared, driven transitions from the lifecycle's `initial`
 /// to `target`. Shortest because a scenario is a fixture, not a tour: every extra command is another
 /// way for the arrangement to fail for a reason that has nothing to do with what is being tested.
+///
+/// `arranging` is the chain of entities this one is being arranged *for* — empty at the top, and one
+/// longer at each hop into an owner. It is what stops a specification in which two entities own each
+/// other from arranging forever; see [`arrange_owner`].
 fn arrange(
     ir: &EssIr,
     entity: &EntityHandle,
     target: &StateName,
     actors: &BTreeMap<QualifiedName, ActorRef>,
     distinction: Distinction,
+    arranging: &[&EntityHandle],
 ) -> Result<Arrangement, Unreachable> {
     let all = ir.drivers();
     let drivers: &[Driver<'_>] = all.get(entity).map_or(&[], Vec::as_slice);
@@ -1617,8 +1675,22 @@ fn arrange(
     let mut steps = Vec::new();
     let mut source = BTreeSet::new();
 
+    // Its owner first, and everything that owns *that*. An owned row cannot exist without the row it
+    // belongs to, so the arrangement that brings one into being is incomplete without it.
+    let owner = arrange_owner(ir, creator.outcome, entity, actors, distinction, arranging);
+    let bound: BTreeMap<String, InstanceName> = match &owner {
+        None => BTreeMap::new(),
+        Some((field, arrangement)) => {
+            steps.extend(arrangement.steps.iter().cloned());
+            source.extend(arrangement.source.iter().cloned());
+            [(field.clone(), arrangement.instance.clone())]
+                .into_iter()
+                .collect()
+        }
+    };
+
     let mut settled = BTreeMap::new();
-    let created = invoke(ir, creator, None, None, actors, distinction)?;
+    let created = invoke(ir, creator, None, None, actors, distinction, &bound)?;
     steps.extend(created.steps);
     source.extend(created.source);
     absorb(&mut settled, creator.outcome, created.settled);
@@ -1647,6 +1719,9 @@ fn arrange(
             Some(&held),
             actors,
             distinction,
+            // A move acts on a row that already exists, so its input names that row and nothing
+            // else: whatever owner it needed was arranged before the row was created.
+            &BTreeMap::new(),
         )?;
         steps.extend(moved.steps);
         source.extend(moved.source);
@@ -1664,6 +1739,82 @@ fn arrange(
     })
 }
 
+/// The row an owned row belongs to, and the input field that points the creating command at it.
+///
+/// **Why a `creates:` can need an arrangement at all.** Until this existed, a created subject was
+/// taken to need nothing arranged — the new row is the scenario's own doing — and for a root that is
+/// exactly right. For an entity another one declares it `owns`, it is not: `owns` says the far side
+/// does not stand on its own, so a suite that creates one without its owner arranges a world the
+/// specification says cannot exist. Measured on an adopter's model: every scenario that reached a
+/// draft began by saving one against a fabricated agent id, the implementation refused because the
+/// agent was not there, and fifteen scenarios reported `unsupported` — no information about the
+/// implementation, from a suite that was asking an impossible question.
+///
+/// **The link is `sets:`, and nothing else.** A relation names the *entity field* that carries the
+/// ownership; what this needs is the *command input* that fills it, and the one place the model says
+/// which input fills which field is the creating branch's `sets:`. Matching on a shared spelling, or
+/// on an input that happens to be typed as the owner's identity, is the invention this repository
+/// refuses everywhere else — and a wrong guess here does not fail loudly, it points a scenario at
+/// somebody else's row.
+///
+/// So a model closes this gap by declaring the link it already relies on:
+///
+/// ```yaml
+/// sets:
+///   account_id: input.account_id   # the field `owns` is carried by
+/// ```
+///
+/// **Where it answers `None`, the arrangement is what it was before.** Four ways that happens, and
+/// none of them is a refusal:
+///
+/// | | |
+/// |---|---|
+/// | nothing owns this entity | it is a root, which is not an error (entity-relations design §3) |
+/// | `sets:` does not determine the carrying field | the model has not said which input names the owner, and this will not guess |
+/// | nothing creates the owner | `examples/billing/` is this case — `Account` is declared, owns `Invoice`, and no command brings one into existence. An arrangement cannot create what the specification never says how to create |
+/// | the owner is already being arranged | two entities owning each other, which `validate_relations` does not refuse because neither declaration is wrong alone |
+///
+/// A refusal was the alternative and is the wrong answer: it would delete every scenario that
+/// creates a billing invoice, and those scenarios pass. What is lost by falling back is visible in
+/// the suite itself — the arrangement simply has no command creating the owner in it.
+fn arrange_owner(
+    ir: &EssIr,
+    creating: &ResolvedOutcome,
+    entity: &EntityHandle,
+    actors: &BTreeMap<QualifiedName, ActorRef>,
+    distinction: Distinction,
+    arranging: &[&EntityHandle],
+) -> Option<(String, Arrangement)> {
+    let belongs = ir.owner_of(entity)?;
+    // The chain, not a depth count: what makes an owner unarrangeable is that arranging it is
+    // already in progress, and a number would have to be right about how deep is deep enough.
+    if arranging.contains(&&belongs.owner) || belongs.owner == *entity {
+        return None;
+    }
+    let field = creating.sets.iter().find_map(|set| {
+        // A conversion says two types may meet and not what it computes, so what the input holds is
+        // not what the field ends up holding — and an owner named through one would be a row nobody
+        // can show is the row that was arranged.
+        match (
+            &set.value,
+            set.target == belongs.via,
+            set.conversion.is_some(),
+        ) {
+            (ResolvedPayloadValue::InputField { field, .. }, true, false) => Some(field.clone()),
+            _ => None,
+        }
+    })?;
+
+    let owner = &belongs.owner;
+    let initial = ir.entity(owner).lifecycle.initial.clone();
+    // Where the lifecycle starts, and no further. The relation says the owner must exist; it says
+    // nothing about what state it must be in, and driving it somewhere else would be this function
+    // inventing a requirement the model does not have.
+    let chain: Vec<&EntityHandle> = arranging.iter().copied().chain([entity]).collect();
+    let arrangement = arrange_first(ir, owner, &[initial], actors, distinction, &chain).ok()?;
+    Some((field, arrangement))
+}
+
 /// One command run as part of an arrangement: reach its branch, and require that it was taken.
 ///
 /// The outcome is asserted rather than assumed, because an arrangement that quietly failed produces
@@ -1676,6 +1827,7 @@ fn invoke(
     held: Option<&StateName>,
     actors: &BTreeMap<QualifiedName, ActorRef>,
     distinction: Distinction,
+    bound: &BTreeMap<String, InstanceName>,
 ) -> Result<Invocation, Unreachable> {
     let command_ref = CommandRef::new(driver.command.name.clone());
     let outcome_ref = OutcomeRef::new(command_ref.clone(), driver.outcome.name.clone());
@@ -1700,7 +1852,7 @@ fn invoke(
             force: outcome_ref.clone(),
         });
     }
-    let supplied = supply(&input, driver.outcome.subject.as_ref(), instance);
+    let supplied = supply(&input, driver.outcome.subject.as_ref(), instance, bound);
     let settled = settled(ir, driver.outcome, &supplied);
     steps.push(ScenarioStep::ExecuteCommand {
         command: command_ref.clone(),
@@ -1850,19 +2002,25 @@ fn instance_name(entity: &QualifiedName, distinction: Distinction) -> InstanceNa
         .expect("`subject` and its number are lower-kebab")
 }
 
-/// A witness input, with the field that names the instance replaced by the instance itself.
+/// A witness input, with every field that names an arranged row replaced by the row itself.
 ///
 /// The one place a scenario carries a reference rather than a value. Every other field holds what
-/// synthesis decided against the branch's guard; this one holds "the instance step one created",
-/// because no generator can know an identity a target has not assigned yet.
+/// synthesis decided against the branch's guard; these hold "the instance step one created", because
+/// no generator can know an identity a target has not assigned yet.
 ///
-/// A guard may not read this field — `ess-domain` refuses that under `unobservable_fact`, since
-/// invariant 13 makes an identity opaque — so replacing it cannot invalidate the decision that chose
-/// the rest of the input.
+/// Two fields can be one: the branch's **subject**, which `instance:` names, and the field carrying
+/// the subject's **owner**, which `bound` carries from [`arrange_owner`]. They never collide — a
+/// `creates:` names its subject in an *event* and so has no subject field in the input at all, and
+/// an owner is arranged for a `creates:` only.
+///
+/// A guard may not read either field — `ess-domain` refuses that under `unobservable_fact`, since
+/// invariant 13 makes an identity opaque — so replacing them cannot invalidate the decision that
+/// chose the rest of the input.
 fn supply(
     input: &BTreeMap<String, Node>,
     subject: Option<&ResolvedSubject>,
     instance: Option<&InstanceName>,
+    bound: &BTreeMap<String, InstanceName>,
 ) -> BTreeMap<String, ScenarioValue> {
     let named = subject.and_then(|subject| match &subject.instance {
         ResolvedInstance::Supplied { field } => Some(field.name.as_str()),
@@ -1872,10 +2030,13 @@ fn supply(
         .iter()
         .map(|(field, value)| {
             let supplied = match (named, instance) {
-                (Some(named), Some(bound)) if named == field => {
-                    ScenarioValue::instance(bound.clone())
+                (Some(named), Some(subject)) if named == field => {
+                    ScenarioValue::instance(subject.clone())
                 }
-                _ => ScenarioValue::literal(value.clone()),
+                _ => match bound.get(field) {
+                    Some(owner) => ScenarioValue::instance(owner.clone()),
+                    None => ScenarioValue::literal(value.clone()),
+                },
             };
             (field.clone(), supplied)
         })
@@ -2647,8 +2808,15 @@ fn settled(
                 };
                 ScenarioValue::Literal { value: read }
             }
+            // Whatever the invocation supplied, which is a literal for almost every field and a
+            // reference to an arranged row for the two that name one — the branch's subject, and
+            // the field carrying its owner. A reference is the *stronger* claim of the two: the row
+            // holds the id of the account this scenario created, and asserting that is how a
+            // generated suite catches an implementation that files the new row under a different
+            // owner. Restricting this to literals dropped the field instead, which asserted nothing
+            // about it at all.
             ResolvedPayloadValue::InputField { field: read, .. } => {
-                let Some(value @ ScenarioValue::Literal { .. }) = supplied.get(read) else {
+                let Some(value) = supplied.get(read) else {
                     continue;
                 };
                 value.clone()
@@ -2868,7 +3036,7 @@ fn arrange_beside(
             from: lifecycle.initial.clone(),
         });
     }
-    arrange_first(ir, entity, &admitted, actors, distinction)
+    arrange_first(ir, entity, &admitted, actors, distinction, &[])
 }
 
 /// The field match that names the instance this scenario is about, where the model publishes one.
@@ -3272,7 +3440,7 @@ fn refused_here(
         .collect();
     let attempt = movers.first().copied()?;
 
-    let arrangement = match arrange(ir, handle, state, actors, Distinction::PLAIN) {
+    let arrangement = match arrange(ir, handle, state, actors, Distinction::PLAIN, &[]) {
         Ok(arrangement) => arrangement,
         Err(reason) => {
             refusals.push(Refusal::about(
@@ -3305,6 +3473,9 @@ fn refused_here(
             &input,
             attempt.outcome.subject.as_ref(),
             Some(&arrangement.instance),
+            // The command under test moves the row the arrangement already created, so its input
+            // names that row; an owner, where there was one, was arranged inside `arrange`.
+            &BTreeMap::new(),
         ),
     });
 
