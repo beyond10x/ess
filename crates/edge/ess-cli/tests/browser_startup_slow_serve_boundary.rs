@@ -221,10 +221,15 @@ fn a_socket_lost_while_the_child_is_alive_is_retried_like_every_other_state_on_t
 /// `BiDi` call it will ever make — starting with `session.new`, which
 /// `launch_program` issues before it returns. On the slow runner the story is
 /// about, that is the difference between a start that is reported and a start
-/// that ends in a bare `WouldBlock` at `support/browser.rs:566`, reached from
-/// `support/browser.rs:346`, a line inside the marked startup region.
+/// that ends in a bare `WouldBlock` at `support/browser.rs:610`, reached from
+/// `support/browser.rs:374`, a line inside the marked startup region.
+///
+/// No longer ignored. `reach_bidi` restores the socket's read and write timeouts to
+/// `SESSION_TIMEOUT` on the successful return, so what this case measures is now a property of the
+/// session rather than a leftover of the start. It is the case that fails if that restore is
+/// removed: the browser here registers with 0.3s of a 3.0s budget left and then takes 0.8s to
+/// answer, which no leftover budget can serve.
 #[test]
-#[ignore = "story:the-startup-clamp-does-not-outlive-the-startup — the startup clamp is left on the socket the Browser keeps for life"]
 fn a_browser_that_became_ready_late_does_not_inherit_the_leftover_deadline_as_its_call_timeout() {
     let evidence = evidence_dir("late-ready");
     let listener = TcpListener::bind("127.0.0.1:0").unwrap();

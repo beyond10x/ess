@@ -74,6 +74,27 @@
 
 ### Fixed
 
+- **A browser that becomes ready late no longer carries the leftover startup budget as its call
+  timeout.** `reach_bidi` clamps the upgrade socket to what is LEFT of the startup deadline, so that
+  one connect iteration cannot overrun that deadline by its own length — it did, by 20s, which is
+  why the clamp exists. But that socket becomes `Browser::stream` and is the browser's transport for
+  its whole life, so the clamp decided how long every later `session.new`, `open`, `evaluate` and
+  `receive` had.
+
+  A stand-in ready at 2.700s of a 3.000s deadline therefore served its first call with 300ms and
+  died in `receive` with a bare `WouldBlock` — no stage, no measured startup, no `firefox.stderr`.
+  The same browser ready at 0.050s passed the same call in 0.85s. The harm scales with slowness,
+  which is the one condition a loaded CI runner guarantees, and it reached CI as a `Gate` failure in
+  `coverage_browser` whose test took 37.64s where the same target takes under 5s locally.
+
+  The socket's read and write timeouts are restored to `SESSION_TIMEOUT` on the successful return,
+  so a call's budget is a property of the SESSION rather than a leftover of the start. 20s is what
+  this transport had before the clamp was introduced.
+  `tests/browser_startup_slow_serve_boundary.rs`'s
+  `a_browser_that_became_ready_late_does_not_inherit_the_leftover_deadline_as_its_call_timeout` was
+  written by the wave-24 adversary and left `#[ignore]`d against this story; it is no longer ignored
+  and is the case that fails if the restore is removed.
+
 - **A `sets:` literal is now type-checked, and one whose text spells a value of the target's
   primitive is asserted rather than silently dropped.** Three defects in one path, found by reading
   it end to end:
