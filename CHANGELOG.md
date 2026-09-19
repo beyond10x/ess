@@ -4,6 +4,31 @@
 
 ### Added
 
+- **A conformance suite can be emitted as a TypeScript test package.** `ess verify conform
+  synthesize --target typescript --out <dir>` writes the runner, the predicate evaluator, the
+  response decoder, the reading accessor and the coordinate reader as an ESM package `node --test`
+  runs, beside `suite.json`, a `package.json`, a `tsconfig.json` and a README. An adopter whose
+  server is Go and whose client SDK is TypeScript could hold the server to a specification through
+  `--target go` and could hold the client to nothing; the client is the half an integrator writes
+  against.
+
+  **Spelled in full, not `ts`.** This binary already calls the language `typescript` in three other
+  `--target` values — `ess generate types`, `ess normalize generate` and `ess schema types-bundle`.
+
+  Every place TypeScript and Go could not be the same is a difference of mechanism and none is a
+  difference of verdict; the runtime lists all five with its reasons. `ErrUnsupported` is a sentinel
+  `Error` whose wrapping survives because `isUnsupported` walks the `cause` chain. The four optional
+  capabilities are discovered by method presence, an interface being erased at run time. Every
+  `Target` method may return a promise. A JSON number is carried as `JsonNumber` holding its own
+  digits, because `JSON.parse` collapses 9007199254740993 onto 9007199254740992 and the two runtimes
+  would then admit different lineages. Object keys sort by UTF-8 bytes, which is where Go and
+  JavaScript disagree above the basic plane.
+
+  The package's own 201 cases run in the repository gate, their formatting is checked against the
+  committed configuration, and both the emitted package and the repository's sources are
+  typechecked against Node's declarations — a `--noCheck` standing in for a typecheck is how the
+  emitted `tsconfig.json` first shipped without `types: ["node"]`.
+
 - **A generated scenario that creates an owned entity now creates its owner first.** `owns` says the
   far side does not stand on its own, and synthesis was not reading that: a `creates:` subject was
   taken to need nothing arranged, so every generated scenario reaching an owned row invented an

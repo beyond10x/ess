@@ -426,17 +426,18 @@ impl SynthesisTarget {
 enum ConformCommand {
     /// Generate the suite the specification obliges.
     ///
-    /// `ir` writes the canonical suite document to the file `--out` names. `go` writes a Go test
-    /// package into the directory `--out` names — the runner, the evaluator and the suite — so an
-    /// implementation in Go can be held to the specification by `go test` rather than by nothing,
-    /// which is what a synthesized suite no runner can reach amounts to.
+    /// `ir` writes the canonical suite document to the file `--out` names. `go` and `typescript`
+    /// write a test package into the directory `--out` names — the runner, the evaluator and the
+    /// suite — so an implementation in that language can be held to the specification by
+    /// `go test` or `npm test` rather than by nothing, which is what a synthesized suite no runner
+    /// can reach amounts to.
     Synthesize {
         #[command(flatten)]
         input: SpecPath,
         /// What to write the suite as.
         #[arg(long, value_enum, default_value_t = SuiteTarget::Ir)]
         target: SuiteTarget,
-        /// A file for `--target ir`, a directory for `--target go`.
+        /// A file for `--target ir`, a directory for `--target go` or `--target typescript`.
         #[arg(long)]
         out: Option<PathBuf>,
         /// Hold one component to the specification rather than the whole system.
@@ -602,6 +603,14 @@ enum SuiteTarget {
     Ir,
     /// A Go test package: the runner, the evaluator and the suite.
     Go,
+    // Spelled in full rather than `ts`. This CLI already calls the language `typescript` in three
+    // other `--target` values — `ess generate types`, `ess normalize generate` and
+    // `ess schema types-bundle` — and one binary with two spellings for one language is a worse
+    // confusion than the one with the `schema typescript` projector that `ts` was proposed to
+    // avoid. That projector emits declarations; `normalize generate --target typescript` already
+    // emits an executable library, so `typescript` does not mean "declarations only" here either.
+    /// A TypeScript test package: the same runner, as an ESM package `node --test` can run.
+    Typescript,
 }
 
 #[derive(Debug, Clone, Copy, ValueEnum)]
@@ -2895,6 +2904,53 @@ fn render_conformance_report(
 
 /// `ess conform synthesize`: the suite the specification obliges, for the system or for one
 /// component of it, written where `--out` says and reported as `--format` says.
+/// Writes one synthesized suite as the target says, and says what was written.
+///
+/// Extracted rather than inlined into the match it came from: `ir` writes one file and every
+/// package target writes a tree, and the only thing that differs between two package targets is
+/// which emitter and which output owner — which is the shape a third language should be able to
+/// join without touching the verb around it.
+fn write_suite(
+    suite: &ess_conformance::ConformanceSuite,
+    target: SuiteTarget,
+    json: &str,
+    out: &Path,
+) -> Result<String> {
+    if target == SuiteTarget::Ir {
+        fs::write(out, json).with_context(|| format!("writing {}", out.display()))?;
+        return Ok(format!("written to {}", out.display()));
+    }
+    let (files, family) = match target {
+        SuiteTarget::Ir => unreachable!("answered above"),
+        SuiteTarget::Go => (
+            ess_conformance::go::emit(suite)?
+                .into_iter()
+                .map(|file| (file.path, file.contents))
+                .collect::<Vec<_>>(),
+            "conformance-go",
+        ),
+        SuiteTarget::Typescript => (
+            ess_conformance::ts::emit(suite)?
+                .into_iter()
+                .map(|file| (file.path, file.contents))
+                .collect::<Vec<_>>(),
+            "conformance-typescript",
+        ),
+    };
+    write_owned_files(
+        out,
+        family,
+        files
+            .iter()
+            .map(|(path, contents)| (path.as_str(), contents.as_str())),
+    )?;
+    Ok(format!(
+        "{} file(s) written to {}",
+        files.len(),
+        out.display()
+    ))
+}
+
 fn synthesize_suite(
     input: &SpecPath,
     target: SuiteTarget,
@@ -2948,30 +3004,12 @@ fn synthesize_suite(
         synthesis.suite.to_canonical_json()?
     };
 
-    let written = match (target, &out) {
-        (SuiteTarget::Ir, Some(out)) => {
-            fs::write(out, &json).with_context(|| format!("writing {}", out.display()))?;
-            Some(format!("written to {}", out.display()))
-        }
-        (SuiteTarget::Go, Some(out)) => {
-            let files = ess_conformance::go::emit(&synthesis.suite)?;
-            write_owned_files(
-                out,
-                "conformance-go",
-                files
-                    .iter()
-                    .map(|file| (file.path.as_str(), file.contents.as_str())),
-            )?;
-            Some(format!(
-                "{} file(s) written to {}",
-                files.len(),
-                out.display()
-            ))
-        }
-        // Refusing to write without `--out` is the rule every generating verb here keeps:
-        // a verb that scatters a tree over a working directory the first time somebody
-        // tries it is a verb nobody tries twice.
-        (_, None) => None,
+    // Refusing to write without `--out` is the rule every generating verb here keeps: a verb that
+    // scatters a tree over a working directory the first time somebody tries it is a verb nobody
+    // tries twice.
+    let written = match &out {
+        None => None,
+        Some(out) => Some(write_suite(&synthesis.suite, target, &json, out)?),
     };
 
     match input.format {

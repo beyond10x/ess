@@ -63,6 +63,26 @@ jobs:
           go install github.com/go-task/task/v3/cmd/task@v3.52.0
           echo "$(go env GOPATH)/bin" >> "$GITHUB_PATH"
 
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          # The emitted conformance runtime is TypeScript, and its cases run under Node's own
+          # test runner. Without a Node here the whole lane skips — and it says so in the log
+          # rather than failing, so a gate that never compiled a line of it still reports green.
+          node-version: "22"
+
+      - name: Install the TypeScript toolchain the conformance lane needs
+        run: |
+          # Every case in `crates/verify/ess-conformance/tests/typescript_runtime.rs` is gated on
+          # a tool being present: `tsc` compiles the sources, `prettier` checks their formatting,
+          # and `@types/node` is what makes the typecheck a typecheck rather than `--noCheck`.
+          # Versions are the ones the sources were measured green against, not floating ranges;
+          # a prettier major decides formatting and a TypeScript major decides what typechecks.
+          npm install --global typescript@6.0.3 prettier@3.8.1
+          # Outside the checkout on purpose: a `node_modules` inside it is a tree the gate did
+          # not start with. The test resolves this path first, ahead of either in-tree location.
+          npm install --prefix "$RUNNER_TEMP/ess-types" @types/node@26.3.0
+          echo "ESS_TYPES_NODE=$RUNNER_TEMP/ess-types/node_modules" >> "$GITHUB_ENV"
+
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2
 
       - name: Run the repository gate (consumer checks disabled)

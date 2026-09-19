@@ -76,6 +76,16 @@ pub(super) fn generate(
                 )?;
             }
         }
+        SuiteTarget::Typescript => {
+            let files = ess_conformance::ts::emit_input(&admitted)?;
+            if let Some(out) = out {
+                super::write_owned_files(
+                    out,
+                    "conformance-typescript",
+                    files.iter().map(|f| (f.path.as_str(), f.contents.as_str())),
+                )?;
+            }
+        }
     }
     match input.format {
         Format::Json => print!("{json}"),

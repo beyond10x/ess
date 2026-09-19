@@ -137,6 +137,8 @@ pub(super) enum Family {
     Compose,
     #[serde(rename = "conformance-go")]
     ConformanceGo,
+    #[serde(rename = "conformance-typescript")]
+    ConformanceTypescript,
     #[serde(rename = "conformance-browser")]
     ConformanceBrowser,
     #[serde(rename = "buildkit")]

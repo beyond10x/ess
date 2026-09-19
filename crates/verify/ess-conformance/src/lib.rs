@@ -148,6 +148,7 @@ pub mod scenario;
 pub mod selection;
 pub mod synthesize;
 pub mod target;
+pub mod ts;
 pub mod web;
 pub mod web_replay;
 pub mod witness;
