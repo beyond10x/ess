@@ -2,6 +2,43 @@
 
 ## [Unreleased]
 
+## [0.26.1] — 2026-09-17
+
+### Fixed
+
+- **An optional leaf may be absent or null, and both runners now say so.** The synthesizer wrote
+  `"optional": true` on every leaf it walked an `Optional` through, the scenario document carried it,
+  the Go format validator admitted the key and the canonicalizer defaulted it — and the struct
+  `encoding/json` unmarshals into never NAMED it. The flag was discarded in silence at the last step,
+  so a declared-optional path could not be satisfied by absence or by an explicit null.
+
+  The same defect sat one level up in the Rust runner, which is what made this more than a one-line
+  fix: a null on the PATH read as blocked, a hard failure regardless of `optional`, so
+  `Optional<Struct>` published as null was unsatisfiable in both lanes. Of the 84 optional leaves in
+  the shape that exposed this, 82 are nested under an optional struct at depth 3-5 — repairing only
+  the Go struct would have left the two lanes disagreeing on all 82.
+
+  Optional means "may be absent", NOT "unchecked", and that is the case a careless repair breaks. Ten
+  cases are pinned side by side against the pre-change and post-change runtime, and the load-bearing
+  ones are the failures: present-and-wrong with optional still fails, a wrong leaf inside an optional
+  struct that WAS sent still fails, and a scalar where a struct is declared still fails — now named
+  as blocked rather than mis-reported as absent. Required behaviour is unchanged.
+
+  Measured on an adopter's suite: 163 shape-bearing steps, 326 optional leaves concentrated in 15 of
+  them. Before, 15 of 163 steps were unsatisfiable as written. After, none.
+
+  No committed suite drifts, because the synthesizer was not touched — one of them already carried
+  two `"optional": true` leaves the Go runtime was discarding.
+
+### Known
+
+- The Go runtime does not check an `enum` leaf at all: `holds()` skips everything where the leaf is
+  not a primitive, so a declared enum admits a string outside the enum, a number or a boolean. The
+  Rust runner, the Rust admitter and the browser admitter all check membership; only the runner an
+  adopter executes does not. Measured at 72 of 591 leaves in one adopter's suite. Same shape of bug
+  one type along, and it has its own change.
+
+
 ### Added
 
 - **A generated scenario that creates an owned entity now creates its owner first.** `owns` says the
