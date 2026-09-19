@@ -154,6 +154,28 @@ tasks:
       # and refusing the key the model has just gained.
       - cargo xtask schema --check
 
+  typescript-check:
+    desc: Compile and execute the emitted conformance runtime's own TypeScript cases.
+    # Not a dependency of `check`, because it is already in it: these are ordinary Rust cases and
+    # `task test` runs the whole workspace. Named here so the lane can be run by itself and so a
+    # reader looking for what executes the TypeScript finds it, rather than concluding — as was
+    # true until this existed — that nothing does.
+    #
+    # `--nocapture` because the interesting output is the printed case count and, on a machine
+    # with no `tsc`, `node` or `prettier`, the printed reason the lane was skipped. A skip that
+    # nobody sees is the absent lane this exists to rule out.
+    cmds:
+      - cargo test --package ess-conformance --locked --test typescript_runtime -- --nocapture
+    # The checking half is inside those cases, not a command here, and it binds only where
+    # `@types/node` is reachable. This repository installs nothing, so a local run finds the
+    # declarations at `<repo>/node_modules/@types/node`, beside the sources, or under a
+    # `node_modules` named by `ESS_TYPES_NODE` — and prints which, or prints that it found none:
+    #
+    #   ESS_TYPES_NODE=/path/to/node_modules task typescript-check
+    #
+    # CI installs them into `$RUNNER_TEMP` and names that path, so both typecheck cases run there.
+    # The emitted package runs its own build: its `npm test` is `tsc && node --test dist`.
+
   site-lab:
     desc: Build and exercise the WebAssembly module used by the public browser lab.
     cmds:

@@ -106,6 +106,25 @@ pub struct Browser {
 /// The startup deadline every fixture in this process is judged against.
 pub const STARTUP_DEADLINE: Duration = Duration::from_secs(30);
 
+/// What one `BiDi` call may take once the browser is up, and why it is not the startup budget.
+///
+/// `upgrade` clamps the socket to what is LEFT of the startup deadline so that a single connect
+/// iteration cannot overrun that deadline by its own length — it did, by 20s, which is why the
+/// clamp exists. But that socket becomes `Browser::stream` and is the browser's transport for its
+/// whole life, so the clamp used to decide how long every later `session.new`, `open`, `evaluate`
+/// and `receive` had. A browser that became ready LATE then served its first call with whatever
+/// few milliseconds were left.
+///
+/// Measured by the wave-24 unit-1 pass-2 adversary with a control that differed in one thing:
+/// a stand-in ready at 2.700s of a 3.000s deadline died in `receive` with a bare `WouldBlock`, no
+/// stage, no measured startup and no `firefox.stderr`; the same browser ready at 0.050s passed the
+/// same call in 0.85s. The harm scales with slowness, which is the one condition a loaded CI runner
+/// guarantees.
+///
+/// 20s is what this transport had before the clamp was introduced, restored here as a property of
+/// the SESSION rather than of the start.
+pub const SESSION_TIMEOUT: Duration = Duration::from_secs(20);
+
 /// RFC 6455 section 1.3's worked example `Sec-WebSocket-Key`, base64 of the ASCII text
 /// `the sample nonce`. A WebSocket key is a handshake nonce and not a credential — the protocol
 /// requires the client to send one and the server to hash it back, and the RFC prints this exact
@@ -435,6 +454,22 @@ impl Browser {
                 answered = Some(response);
                 thread::sleep(Duration::from_millis(50));
                 continue;
+            }
+            // The startup clamp does not outlive the startup. This socket is about to become the
+            // browser's transport; the budget it carried was a bound on STARTING, and keeping it
+            // made every later call inherit whatever was left over. See `SESSION_TIMEOUT`.
+            if let Err(error) = stream
+                .set_read_timeout(Some(SESSION_TIMEOUT))
+                .and_then(|()| stream.set_write_timeout(Some(SESSION_TIMEOUT)))
+            {
+                // startup-path: harness
+                let reason = format!("restoring the session timeouts: {error}");
+                return Err(startup_refusal(
+                    Stage::Upgrade(&reason),
+                    started.elapsed(),
+                    deadline,
+                    evidence,
+                ));
             }
             return Ok((stream, response));
         }

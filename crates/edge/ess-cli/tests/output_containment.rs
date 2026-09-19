@@ -698,6 +698,16 @@ fn local_tree_command(fixture: &Fixture, workflow: &str, output: &Path) -> Comma
         "go-suite" => {
             command.args(["conform", "synthesize", "--path", "spec", "--target", "go"]);
         }
+        "ts-suite" => {
+            command.args([
+                "conform",
+                "synthesize",
+                "--path",
+                "spec",
+                "--target",
+                "typescript",
+            ]);
+        }
         "web" => {
             command.args(["conform", "web", "--path", "spec"]);
         }
@@ -788,7 +798,7 @@ fn local_generation_sinks_refuse_late_conflicts_before_any_generated_file_change
         &workspace_root().join("examples/billing"),
         &fixture.0.join("spec"),
     );
-    for workflow in ["generate", "synthesize", "go-suite", "web"] {
+    for workflow in ["generate", "synthesize", "go-suite", "ts-suite", "web"] {
         assert_local_tree_refuses_late_conflicts(&fixture, workflow);
     }
 }

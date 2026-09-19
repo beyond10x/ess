@@ -19,6 +19,10 @@ fn binary64_sparse_model_refuses_every_unsupported_publication_route() {
             false,
         ),
         (&["verify", "conform", "synthesize", "--target", "go"], true),
+        (
+            &["verify", "conform", "synthesize", "--target", "typescript"],
+            true,
+        ),
         (&["verify", "conform", "author"], false),
         (&["verify", "conform", "web"], true),
         (&["verify", "conform", "run", "--target", "billing"], false),
