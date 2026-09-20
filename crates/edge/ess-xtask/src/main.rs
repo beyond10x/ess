@@ -2,6 +2,7 @@
 
 mod consumer_coverage;
 mod support;
+mod whats_changed;
 
 use anyhow::{bail, Context, Result as AnyResult};
 use clap::{Parser, Subcommand};
@@ -86,6 +87,12 @@ enum Command {
         #[arg(long)]
         check: bool,
     },
+    /// Regenerate or check `WHATS-CHANGED.md` from the `changes/` fragments.
+    WhatsChanged {
+        /// Compare byte for byte without writing.
+        #[arg(long)]
+        check: bool,
+    },
     /// Verify or render release records.
     Release {
         #[command(subcommand)]
@@ -138,6 +145,9 @@ fn run(cli: Cli) -> Result<String, String> {
         }
         Command::Generate { check } => generate(&root, check).map_err(|error| format!("{error:#}")),
         Command::Schema { check } => schema(&root, check).map_err(|error| format!("{error:#}")),
+        Command::WhatsChanged { check } => {
+            whats_changed::run(&root, check).map_err(|error| format!("{error:#}"))
+        }
         Command::Release {
             command: ReleaseCommand::Verify { version },
         } => {
@@ -171,7 +181,7 @@ fn run(cli: Cli) -> Result<String, String> {
             let tags = pushed_version_tags(&root)?;
             let releases = published_releases(&root)?;
             let stranded = tags_off_main(&root, &tags)?;
-            release_status(&version, &changelog, &tags, &releases, &stranded)
+            release_status(&root, &version, &changelog, &tags, &releases, &stranded)
         }
     }
 }
@@ -235,6 +245,23 @@ fn release_notes(changelog: &str, version: &str) -> Result<String, String> {
     Ok(format!("{body}\n"))
 }
 
+/// Pushed tags that will never have a release, and why.
+///
+/// `release status` used to say "delete the tag instead when that tree cannot pass", and for a
+/// tag nobody has downloaded that is the right repair. It is not available for a tag that has
+/// been public for ten days: deleting it breaks whatever already pins it, to tidy a report. So
+/// the exemption is stated here instead, where a reviewer sees it beside the check it disables.
+///
+/// Nothing is exempt from having a changelog section or a change entry. This covers the release
+/// artifacts alone.
+const WITHOUT_RELEASE: &[(&str, &str)] = &[(
+    "0.21.0",
+    "backfill run 35511832399 gated that tree and it failed \
+     `consumer_coverage::metadata::tests::current_compiled_provider_executes_one_guard_and_binds_\
+     its_opaque_proof_to_this_run`. The tag stays public and the release cannot be gated. Remove \
+     this entry if that tree is ever made to pass.",
+)];
+
 /// The release record: what the workspace claims, and what the remote actually carries.
 ///
 /// A version tag is what an install instruction names, so a tag with no GitHub Release behind it
@@ -245,6 +272,7 @@ fn release_notes(changelog: &str, version: &str) -> Result<String, String> {
 /// A version named by Cargo and the changelog but not yet tagged is the ordinary state between two
 /// releases and is reported, not refused.
 fn release_status(
+    root: &Path,
     version: &str,
     changelog: &str,
     tags: &BTreeSet<String>,
@@ -261,6 +289,11 @@ fn release_status(
     let stranded: Vec<&str> = tags
         .iter()
         .filter(|tag| !releases.contains(*tag))
+        .filter(|tag| {
+            !WITHOUT_RELEASE
+                .iter()
+                .any(|(exempt, _)| exempt == &tag.as_str())
+        })
         .map(String::as_str)
         .collect();
     if !off_main.is_empty() {
@@ -274,23 +307,64 @@ fn release_status(
         );
         return Err(report);
     }
-    if stranded.is_empty() {
-        let _ = writeln!(
+    // Every remaining class of defect is reported together. A tag with no release and a tag with
+    // no changelog section are different repairs, and stopping at the first one hides the second
+    // until the first is fixed — which is how four versions reached this state unnoticed.
+    let mut defects = false;
+    if !stranded.is_empty() {
+        defects = true;
+        let _ = write!(
             report,
-            "version tags pushed: {}, each on `origin/main` and each with a GitHub Release",
-            tags.len()
+            "version tags with no GitHub Release: {}\n\
+             re-run the release for one with `gh workflow run release.yml -f tag=<version>`, which \
+             gates the tagged tree again and publishes it if it passes; delete the tag instead when \
+             that tree cannot pass.\n",
+            stranded.join(", ")
         );
-        return Ok(report);
     }
-    let _ = write!(
+    // `release notes` renders a release body from that section, so a tag without one can be
+    // neither published nor backfilled. Until this existed the section was checked for the
+    // workspace version alone, so an omission surfaced at the next release of that exact
+    // version — which never comes.
+    let unwritten: Vec<&str> = tags
+        .iter()
+        .filter(|tag| release_notes(changelog, tag).is_err())
+        .map(String::as_str)
+        .collect();
+    if !unwritten.is_empty() {
+        defects = true;
+        let _ = write!(
+            report,
+            "version tags with no dated CHANGELOG.md section: {}\n\
+             `release notes` renders a release's body from that section, so a tag without one \
+             cannot be published or backfilled. Write the section.\n",
+            unwritten.join(", ")
+        );
+    }
+    let unrecorded =
+        whats_changed::unrecorded_minors(root, &tags.iter().cloned().collect::<Vec<_>>())
+            .map_err(|error| format!("{error:#}"))?;
+    if !unrecorded.is_empty() {
+        defects = true;
+        let _ = write!(
+            report,
+            "minor releases with no `changes/*.yaml` entry: {}\n\
+             Atlas publishes that directory as the organization's change feed, so a release \
+             missing from it is a release nobody outside this repository hears about. Add a \
+             fragment and run `cargo xtask whats-changed`.\n",
+            unrecorded.join(", ")
+        );
+    }
+    if defects {
+        return Err(report);
+    }
+    let _ = writeln!(
         report,
-        "version tags with no GitHub Release: {}\n\
-         re-run the release for one with `gh workflow run release.yml -f tag=<version>`, which \
-         gates the tagged tree again and publishes it if it passes; delete the tag instead when \
-         that tree cannot pass.\n",
-        stranded.join(", ")
+        "version tags pushed: {}, each on `origin/main`, each with a GitHub Release, a dated \
+         changelog section and a recorded change",
+        tags.len()
     );
-    Err(report)
+    Ok(report)
 }
 
 /// The version tags whose commit is not reachable from `main` on `origin`.
@@ -1370,7 +1444,9 @@ mod tests {
 
     #[test]
     fn a_version_tag_with_no_release_behind_it_is_refused() {
+        let root = workspace_root().expect("workspace root");
         let refusal = release_status(
+            &root,
             "0.5.1",
             "## [0.5.1] \u{2014} 2026-09-03\n\n- Fixed.\n",
             &BTreeSet::from(["0.5.0".to_owned(), "0.5.1".to_owned()]),
@@ -1386,13 +1462,14 @@ mod tests {
     fn a_named_but_untagged_version_is_not_an_incomplete_release() {
         assert_eq!(
             release_status(
+                &workspace_root().expect("workspace root"),
                 "0.6.0",
-                "## [0.6.0] \u{2014} 2026-09-04\n\n- Next.\n",
+                "## [0.6.0] \u{2014} 2026-09-04\n\n- Next.\n\n## [0.5.1] \u{2014} 2026-09-03\n\n- Fixed.\n",
                 &BTreeSet::from(["0.5.1".to_owned()]),
                 &BTreeSet::from(["0.5.1".to_owned()]),
                 &BTreeSet::new(),
             ),
-            Ok("release 0.6.0: workspace version and changelog agree, not cut yet\nversion tags pushed: 1, each on `origin/main` and each with a GitHub Release\n".to_owned())
+            Ok("release 0.6.0: workspace version and changelog agree, not cut yet\nversion tags pushed: 1, each on `origin/main`, each with a GitHub Release, a dated changelog section and a recorded change\n".to_owned())
         );
     }
 
@@ -1402,7 +1479,9 @@ mod tests {
         // not have a line of it — because every other check here reads the workspace and the
         // remote's tag list, and neither says which line a commit is on. AEP hit the same shape
         // and cut a *newer* release that silently dropped the older one's features.
+        let root = workspace_root().expect("workspace root");
         let refusal = release_status(
+            &root,
             "0.5.1",
             "## [0.5.1] \u{2014} 2026-09-03\n\n- Fixed.\n",
             &BTreeSet::from(["0.5.0".to_owned(), "0.5.1".to_owned()]),
@@ -1417,6 +1496,64 @@ mod tests {
         assert!(
             refusal.contains("Merge the branch, then tag."),
             "the refusal says what to do about it: {refusal}"
+        );
+    }
+
+    #[test]
+    fn a_tag_that_cannot_be_gated_is_exempt_with_its_reason() {
+        // 0.21.0 is public and its tree fails a test 0.22.0 repaired, so neither backfilling the
+        // release nor deleting the tag is available. The exemption says so where the check is.
+        let report = release_status(
+            &workspace_root().expect("workspace root"),
+            "0.21.0",
+            "## [0.21.0] \u{2014} 2026-09-10\n\n- Coverage.\n",
+            &BTreeSet::from(["0.21.0".to_owned()]),
+            &BTreeSet::new(),
+            &BTreeSet::new(),
+        )
+        .expect("an exempt tag is not an incomplete release");
+        assert!(!report.contains("no GitHub Release"), "{report}");
+        for (version, reason) in WITHOUT_RELEASE {
+            assert!(!reason.trim().is_empty(), "{version} has no stated reason");
+        }
+    }
+
+    #[test]
+    fn a_version_tag_with_no_changelog_section_is_refused() {
+        // `release notes` renders a release body from that section, so a tag without one cannot be
+        // published or backfilled. Until this check existed the section was verified for the
+        // workspace version alone, and a tag cut without one stayed invisible forever.
+        let refusal = release_status(
+            &workspace_root().expect("workspace root"),
+            "0.5.1",
+            "## [0.5.1] \u{2014} 2026-09-03\n\n- Fixed.\n",
+            &BTreeSet::from(["0.5.0".to_owned(), "0.5.1".to_owned()]),
+            &BTreeSet::from(["0.5.0".to_owned(), "0.5.1".to_owned()]),
+            &BTreeSet::new(),
+        )
+        .expect_err("a tag with no section is an unreadable release");
+        assert!(
+            refusal.contains("version tags with no dated CHANGELOG.md section: 0.5.0"),
+            "{refusal}"
+        );
+    }
+
+    #[test]
+    fn a_minor_release_with_no_change_fragment_is_refused() {
+        // Atlas publishes `changes/` as the organization's change feed. A release missing from it
+        // is one nobody outside this repository hears about, and nothing said so before.
+        let refusal = release_status(
+            &workspace_root().expect("workspace root"),
+            "0.99.0",
+            "## [0.99.0] \u{2014} 2026-12-01\n\n- Next.\n",
+            &BTreeSet::from(["0.99.0".to_owned()]),
+            &BTreeSet::from(["0.99.0".to_owned()]),
+            &BTreeSet::new(),
+        )
+        .expect_err("a minor with no fragment is an unannounced release");
+        assert!(
+            refusal.contains("minor releases with no `changes/*.yaml` entry: 0.99.0"),
+            "{refusal}"
         );
     }
 

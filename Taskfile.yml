@@ -153,6 +153,10 @@ tasks:
       # it goes stale in the one direction nobody notices: still accepting what it always accepted,
       # and refusing the key the model has just gained.
       - cargo xtask schema --check
+      # `WHATS-CHANGED.md` is a projection of `changes/*.yaml` like any other, and this lane also
+      # enforces the 360-character summary bound the public Docs System validator applies after
+      # the documentation bundle has already been built.
+      - cargo xtask whats-changed --check
 
   typescript-check:
     desc: Compile and execute the emitted conformance runtime's own TypeScript cases.
