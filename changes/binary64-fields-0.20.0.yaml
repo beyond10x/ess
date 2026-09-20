@@ -1,0 +1,17 @@
+schema: b10x-change/v1
+id: ess/binary64-fields-0.20.0
+repository: ess
+publishedAt: 2026-09-06T16:07:45Z
+title: A specification can declare a finite floating-point field
+summary: >-
+  Authored `ess/2` adds `Binary64` fields, distinct from integer and decimal values. Reference,
+  Rust and Go preserve signed zero, subnormals and nearest-even rounding; two typed operands use
+  IEEE equality. Synthesis and conformance refuse unsupported `Binary64` before publication rather
+  than emitting a target that would disagree.
+kind: capability
+impact: significant
+source:
+  url: https://github.com/beyond10x/ess/releases/tag/0.20.0
+  version: 0.20.0
+journeys: [specify]
+affectedSurfaces: [ess/docs]

@@ -1,0 +1,17 @@
+schema: b10x-change/v1
+id: ess/declared-coverage-0.21.0
+repository: ess
+publishedAt: 2026-09-09T22:16:05Z
+title: A conformance suite records what it covers, and what it left out
+summary: >-
+  Opt-in `ess-conformance/5` records selected generated and authored coverage, omitted scenarios,
+  source identities and every refusal occurrence. Report 2 then distinguishes complete passing
+  conformance from empty, unknown or incomplete coverage — a pass over nothing and a pass over
+  everything stop reading the same.
+kind: capability
+impact: significant
+source:
+  url: https://github.com/beyond10x/ess/releases/tag/0.21.0
+  version: 0.21.0
+journeys: [specify]
+affectedSurfaces: [ess/docs]

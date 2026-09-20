@@ -1,0 +1,17 @@
+schema: b10x-change/v1
+id: ess/a-branch-can-clear-a-field-0.26.0
+repository: ess
+publishedAt: 2026-09-17T00:07:24Z
+title: A branch may say the field it owns holds nothing
+summary: >-
+  `sets: {field: {cleared: true}}` states absence. Before it, a branch either left the field alone,
+  wrote a literal that synthesis dropped, or wrote an empty string, which is a different reading.
+  The field's type must be `Optional<...>` and the source must be an entity; an event payload is
+  refused because an undetermined field is not the outcome's to set.
+kind: capability
+impact: significant
+source:
+  url: https://github.com/beyond10x/ess/releases/tag/0.26.0
+  version: 0.26.0
+journeys: [specify]
+affectedSurfaces: [ess/docs]

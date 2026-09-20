@@ -1,0 +1,17 @@
+schema: b10x-change/v1
+id: ess/held-state-guards-0.23.0
+repository: ess
+publishedAt: 2026-09-11T14:14:26Z
+title: A branch can turn on the state a subject is already in
+summary: >-
+  `when_subject_state` in `ess/3` combines a declared held lifecycle state with input guards, so
+  equal input applied to two different existing states is distinguished. `ess/4` declares error wire
+  names without merging semantic identities and fills emitted event payloads from typed command
+  response fields. New deltas use `ess-diff/3` and `ess-diff/4`.
+kind: capability
+impact: significant
+source:
+  url: https://github.com/beyond10x/ess/releases/tag/0.23.0
+  version: 0.23.0
+journeys: [specify]
+affectedSurfaces: [ess/docs]

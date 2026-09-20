@@ -1,0 +1,17 @@
+schema: b10x-change/v1
+id: ess/code-emitter-names-0.25.0
+repository: ess
+publishedAt: 2026-09-16T07:42:42Z
+title: An author names the identifier a code emitter spells a declaration as
+summary: >-
+  `naming: { code: ... }` settles a collision the emitter cannot: a target without dotted type names
+  flattens `X.State` and an authored view `XState` to one identifier. Only code emitters read it, so
+  wire names, document schemas and qualified names are untouched and setting one cannot break a
+  deployed consumer. The source format stays `ess/4`.
+kind: capability
+impact: significant
+source:
+  url: https://github.com/beyond10x/ess/releases/tag/0.25.0
+  version: 0.25.0
+journeys: [specify]
+affectedSurfaces: [ess/docs]

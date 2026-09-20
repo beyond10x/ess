@@ -1,0 +1,17 @@
+schema: b10x-change/v1
+id: ess/enum-variant-wire-names-0.27.0
+repository: ess
+publishedAt: 2026-09-20T10:12:14Z
+title: An enum variant carries its own wire spelling
+summary: >-
+  A variant is authored as a bare name or as a mapping that also carries `wire`, `display`,
+  `summary` and `code`, so a variant whose wire form is not derivable from its name can be declared
+  at all. Specification format `ess/5`; delta format `ess-diff/5` adds three `TypeChange` cases, so
+  a moved spelling no longer returns an empty delta.
+kind: capability
+impact: significant
+source:
+  url: https://github.com/beyond10x/ess/releases/tag/0.27.0
+  version: 0.27.0
+journeys: [specify]
+affectedSurfaces: [ess/docs]

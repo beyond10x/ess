@@ -1,0 +1,17 @@
+schema: b10x-change/v1
+id: ess/at-most-once-delivery-0.22.0
+repository: ess
+publishedAt: 2026-09-10T12:27:04Z
+title: A binding can declare one delivery attempt and no redelivery
+summary: >-
+  `delivery: at_most_once` states that a binding is tried once. Loss stays possible and no
+  idempotency obligation is imposed on the handler. OpenAPI requires `Idempotency-Key` only for
+  `at_least_once` commands, conformance records `BindingGap::DeliverySingleAttempt` instead of
+  synthesizing a redelivery, and the format stays `ess/1`.
+kind: capability
+impact: significant
+source:
+  url: https://github.com/beyond10x/ess/releases/tag/0.22.0
+  version: 0.22.0
+journeys: [specify, operate-services]
+affectedSurfaces: [ess/docs]
