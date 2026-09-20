@@ -49,3 +49,26 @@ jobs:
 
       - name: Build the public documentation and browser lab
         run: task site-build
+
+      # The built site, for `beyond10x/website` `project-site.yml` to deploy to this repository's
+      # project Pages. Nothing here deploys anything and nothing here holds a credential: the
+      # artifact is bound to this run, and the publisher selects the run by the commit it is
+      # publishing. `b10x-site.json` is this build's own declaration of what it built, which the
+      # publisher refuses on mismatch — a site built for another base path deploys without error
+      # and answers 404 for every asset.
+      - name: Declare what was built
+        if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+        run: |
+          set -euo pipefail
+          mkdir -p website/build/.well-known
+          printf '{"schema":"b10x-project-site/v1","repository":"ess","commit":"%s","baseUrl":"/ess/"}\n' \
+            "$GITHUB_SHA" > website/build/.well-known/b10x-site.json
+
+      - name: Upload the built site
+        if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: b10x-project-site
+          path: website/build
+          retention-days: 30
+          if-no-files-found: error

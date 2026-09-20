@@ -2,6 +2,7 @@ import type {Config} from '@docusaurus/types';
 import type * as Preset from '@docusaurus/preset-classic';
 import {themes as prismThemes} from 'prism-react-renderer';
 import docsSystemPlugin, {ecosystemFooterGroup, ecosystemNavbarItems} from '@beyond10x/docs-system/docusaurus';
+import canonicalToUnifiedDocs from './src/canonical';
 
 const config: Config = {
   title: 'ESS',
@@ -23,7 +24,7 @@ const config: Config = {
     mermaid: true,
   },
   themes: ['@docusaurus/theme-mermaid'],
-  plugins: [docsSystemPlugin],
+  plugins: [docsSystemPlugin, canonicalToUnifiedDocs],
   i18n: {defaultLocale: 'en', locales: ['en']},
 
   presets: [

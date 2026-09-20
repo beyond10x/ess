@@ -19,6 +19,24 @@
   were write-only from this repository's side: nothing here read them and nothing here checked
   them.
 
+- **`beyond10x.github.io/ess/` serves this repository's own documentation site again.**
+  `/ess/` has answered with a redirect to the unified site since the migration. The unified site
+  renders `docs/**/*.md`, `blog/*.md` and `static/**`, so the browser lab, the landing page and
+  the per-release index had no public address, and `docs/examples/specification-to-contracts.md`
+  is excluded from the bundle outright because its MDX imports a React component.
+
+  `pages.yml` already built the site on every push to `main`; it now also uploads it as an
+  ordinary artifact. The generated `.github/workflows/b10x-docs-site.yml` fires when that build
+  finishes and hands `beyond10x/website` the artifact of that exact run, which deploys it. A
+  documentation change reaches `/ess/` when it reaches `main`, with no dispatch and no wait on the
+  organization's publication cycle. This repository still deploys nothing itself and holds no App
+  credentials, and `.github/workflows/b10x-docs-pages.yml` is gone, because one Pages deployment
+  answers `/ess/` and two callers would race for it.
+
+  The nineteen documents that both sites render carry `<link rel="canonical">` at their
+  `/docs/ess/` address. `/ess/lab`, `/ess/releases` and the worked example, which the unified site
+  does not carry, stay canonical to themselves.
+
 - **`cargo xtask docs`, a checker for the release claims the public documents make.**
   `where-this-stands.md` carries one generated block and the block was current at every release;
   everything a person wrote beside it had drifted five releases. The lane reads the three
