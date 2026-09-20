@@ -1,5 +1,6 @@
 ---
 title: Import and project Kubernetes infrastructure
+sidebar_position: 6
 description: Turn a sanitized Kubernetes observation into typed infrastructure IR, diagnose it, compare it, and project reviewed manifests without applying them.
 ---
 
@@ -107,8 +108,7 @@ Upgrade readers before selecting this profile; older readers reject version 2.
 
 ## Connect implementation selections to observed workloads
 
-`ess verify bindings` is available in the source preview; pin an exact published Git revision
-containing this command. Released ESS 0.19.0 does not provide it. The service owns its semantic
+`ess verify bindings` was introduced in 0.21.0. The service owns its semantic
 model and realization; the system owns environment-specific `ess-observed-bindings/1` declarations.
 Infrastructure remains a separate observed authority. A monolith may assign several components
 to one implementation and bind that implementation to several named deployment roles.

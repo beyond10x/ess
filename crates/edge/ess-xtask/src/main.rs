@@ -1,6 +1,7 @@
 //! Repository-only maintenance checks for ESS.
 
 mod consumer_coverage;
+mod docs;
 mod support;
 mod whats_changed;
 
@@ -87,6 +88,8 @@ enum Command {
         #[arg(long)]
         check: bool,
     },
+    /// Check what the published documents claim about releases.
+    Docs,
     /// Regenerate or check `WHATS-CHANGED.md` from the `changes/` fragments.
     WhatsChanged {
         /// Compare byte for byte without writing.
@@ -145,6 +148,7 @@ fn run(cli: Cli) -> Result<String, String> {
         }
         Command::Generate { check } => generate(&root, check).map_err(|error| format!("{error:#}")),
         Command::Schema { check } => schema(&root, check).map_err(|error| format!("{error:#}")),
+        Command::Docs => docs::run(&root),
         Command::WhatsChanged { check } => {
             whats_changed::run(&root, check).map_err(|error| format!("{error:#}"))
         }

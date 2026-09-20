@@ -1,5 +1,6 @@
 ---
 title: CLI reference
+sidebar_position: 1
 description: The canonical ESS command, the four areas its first level is made of, and the flat spelling every verb keeps.
 ---
 
@@ -43,7 +44,7 @@ refused with exit 2 rather than run against the current directory.
 
 ## Directory input selection
 
-This optional manifest capability is available in current source and is unreleased.
+This optional manifest capability was introduced in 0.21.0.
 An explicitly supplied directory may opt into [the `ess-inputs/1` configuration](formats.md#directory-input-configuration)
 through its immediate `ess-inputs.yaml`. No new flag, ancestor search or implicit scenarios are
 introduced. Model arguments select `specification`; `--scenarios` selects `scenarios`. Both lists are
@@ -219,8 +220,7 @@ without writing them. The repository-only `cargo xtask generate` command reconci
 
 Generated tree outputs use their output root as the ownership root; a standalone generated file
 uses its parent. Existing unowned destinations refuse. See [repeated generation and recovery](../guides/generate-artifacts.md#repeated-generation-and-recovery)
-for adoption, stale-file retirement, and the filesystem contract. Output-management commands are
-an unreleased source addition.
+for adoption, stale-file retirement, and the filesystem contract. Output-management commands were introduced in 0.21.0.
 
 ## Component delivery
 
@@ -306,7 +306,7 @@ These operations are offline. Schema identity comes from `$id`; filenames only l
 | `ess verify bindings --spec PATH --realization FILE --bindings FILE (--infra FILE \| --live --observation-out FILE) [--format text\|json] [--markdown-out FILE]` | Compare an exact implementation selection with scoped workload templates; exit 0 satisfied, 1 violated/refused, 2 unknown. |
 
 See [observed implementation bindings](../guides/check-infrastructure.md#connect-implementation-selections-to-observed-workloads)
-for the authored contract, source-preview requirement and evidence limits.
+for the authored contract and evidence limits.
 
 Run `ess verify conform <command> --help` for target-specific arguments.
 

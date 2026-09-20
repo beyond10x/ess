@@ -1,5 +1,6 @@
 ---
 title: Format version history
+sidebar_position: 3
 description: What each ESS format version number means, which release introduced it, and what an older reader does with a newer document.
 ---
 

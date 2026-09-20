@@ -1,6 +1,6 @@
 ---
 title: "ESS: executable system specifications"
-sidebar_position: 5
+sidebar_position: 2
 description: The specification model, the compile pipeline, and the five things derived from one document — docs, contracts, tests, diffs and structural code.
 ---
 

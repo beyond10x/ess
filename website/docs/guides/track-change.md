@@ -1,6 +1,6 @@
 ---
 title: Track specification change
-sidebar_position: 6
+sidebar_position: 4
 description: Compare compiled specification revisions and explain which scenarios and generated artifacts need another check.
 ---
 

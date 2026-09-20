@@ -1,5 +1,6 @@
 ---
 title: Architecture overview
+sidebar_position: 1
 description: The pure model, deterministic compiler, adapters, projectors, and credential edge.
 ---
 

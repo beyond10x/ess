@@ -19,6 +19,14 @@
   were write-only from this repository's side: nothing here read them and nothing here checked
   them.
 
+- **`cargo xtask docs`, a checker for the release claims the public documents make.**
+  `where-this-stands.md` carries one generated block and the block was current at every release;
+  everything a person wrote beside it had drifted five releases. The lane reads the three
+  `SUPPORTED_*` constants and `CHANGELOG.md` and refuses three things: a supported format version
+  with no recorded release, a supported version named in neither reference page, and a document
+  that calls a released format unreleased. It also refuses an install walkthrough that names a
+  version other than the newest release. It joins `projection-check`.
+
 - **Seven `changes/*.yaml` entries**, for 0.20.0, 0.21.0, 0.22.0, 0.23.0, 0.25.0, 0.26.0 and
   0.27.0. Atlas publishes that directory as the organization's change feed, so those seven
   releases were ones nobody outside this repository heard about.
@@ -40,6 +48,30 @@
   built.
 
 ### Fixed
+
+- **The published documents said `ess/2`, `ess/3`, `ess/4`, `ess-diff/3`, `ess-diff/4`,
+  `ess-conformance/6`–`/9`, `ess-scenario/2` and `ess-target-failure/3` were unreleased.** They
+  shipped in 0.20.0 and 0.23.0. Twenty-nine sentences across six pages carried the word; every one
+  now names the release that introduced the thing it describes. The same held for the
+  `ess-inputs.yaml` manifest, generated-output ownership, the output-management commands and
+  `ess verify bindings`, all 0.21.0, and for suite/5, the original-byte carrier and paired replay,
+  also 0.21.0.
+
+- **`ess/5` and `ess-diff/5` were supported and documented nowhere.** `reference/formats.md`
+  stopped at `ess/4` and `ess-diff/4`; `guides/write-a-specification.md` had no section on a
+  variant carrying its own wire spelling. Both formats now have rows, and the authoring guide has
+  the section.
+
+- **The install walkthrough downloaded 0.13.2**, fourteen minors behind. `getting-started.md`,
+  `examples/specification-to-contracts.md` and `guides/write-a-specification.md` all named it as
+  the current tag.
+
+- **`status/where-this-stands.md` reported 0.22.1 as the latest release.** It reports 0.27.0 and
+  its assets, dated 20 September 2026.
+
+- Every published document declares a `sidebar_position`. The unified site generates its sidebar
+  from the directory tree and cannot see `website/sidebars.ts`, so the order a reader met there
+  was alphabetical rather than the authored one.
 
 - Three version tags existed only in one clone and were never pushed: `0.3.0`, `0.5.0` and
   `0.15.0`. `task release-status` reads `git ls-remote`, so it never saw them, and the earlier

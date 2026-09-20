@@ -1,5 +1,6 @@
 ---
 title: Roadmap
+sidebar_position: 3
 description: The evidence-driven direction for new ESS model kinds and adapters.
 ---
 

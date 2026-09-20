@@ -1,5 +1,6 @@
 ---
 title: Limitations and trust assumptions
+sidebar_position: 2
 description: What ESS deliberately does not infer, apply, or attest.
 ---
 

@@ -1,6 +1,6 @@
 ---
 title: Generate contracts and documentation
-sidebar_position: 5
+sidebar_position: 2
 description: Derive repository docs, static-site source, JSON Schema, OpenAPI and AsyncAPI from a specification, keep the committed output drift-checked, and know what a projection cannot carry.
 ---
 
@@ -49,7 +49,7 @@ each generated document.
 
 ## Repeated generation and recovery
 
-Output ownership is an unreleased source change. Generation records the files it owns beneath
+Output ownership was introduced in 0.21.0. Generation records the files it owns beneath
 the output root in `.ess-output`. Repeating a command replaces that owner's files and removes
 its obsolete files, while preserving authored neighbours. A selected projection updates only
 its own files; generating all five projections publishes their combined change as one

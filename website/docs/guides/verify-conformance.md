@@ -1,5 +1,6 @@
 ---
 title: Verify conformance
+sidebar_position: 3
 description: Generate the semantic suite a specification requires, run it, and emit a standalone ESS conformance report.
 ---
 
@@ -28,7 +29,7 @@ not rewrite an already committed suite.
 
 ## Select authored scenarios explicitly
 
-The manifest capability described here is available in current source and is unreleased.
+The manifest capability described here was introduced in 0.21.0.
 `--scenarios` accepts one file or one directory. An immediate `ess-inputs.yaml` in that directory
 selects its exact `scenarios` list, including explicitly listed nested files of any extension.
 The [mixed-layout example](write-a-specification.md#keep-sources-and-generated-output-together)
@@ -62,7 +63,7 @@ semantic refusals can still retain incomplete diagnostic evidence.
 
 ## Establish backend state in an authored scenario
 
-Unreleased `ess-scenario/2` supports typed setup for entities whose rows arrive
+`ess-scenario/2`, introduced in 0.23.0, supports typed setup for entities whose rows arrive
 from an upstream system. A scenario can establish those rows and query their
 view without inventing a creator command:
 
@@ -109,7 +110,7 @@ declaration requires `ess/3`.
 
 ## Observe selection, periodic activity and clock evidence
 
-Unreleased selection observations compare actual source occurrences and selected
+Selection observations, introduced in 0.23.0, compare actual source occurrences and selected
 indices, preserving optional absence and occurrence-based exclusion. A host
 conversion remains an explicit obligation; declaring the conversion does not
 execute or prove it.
@@ -212,11 +213,10 @@ or skipped scenarios into passing evidence.
 
 ## Opt into declared coverage
 
-The suite/5, original-byte carrier and paired replay features in this section are current-source
-changes after the [0.20.0 release observed on 7 September 2026](../status/where-this-stands.md).
-They remain unreleased relative to that record, even though the workspace still declares `0.20.0`.
-That release establishes the report/2 count surface described above, not these later coverage
-features. Use a source build containing them; the default suite/4 and report/1 paths remain unchanged.
+The suite/5, original-byte carrier and paired replay features in this section were introduced in
+[0.21.0](https://github.com/beyond10x/ess/releases/tag/0.21.0). 0.20.0 establishes the report/2
+count surface described above, not these later coverage features. The default suite/4 and report/1
+paths remain unchanged.
 
 ```shell-session
 $ ess verify conform synthesize --path examples/billing \
@@ -283,10 +283,10 @@ with its existing fields; invalidation within a selection is not whole-system ex
 
 ## Observe bounded binding accessors
 
-The unreleased `ess/3` binding paths described in
+The `ess/3` binding paths described in
 [Write a specification](write-a-specification.md#read-a-field-inside-an-event-envelope)
-require new suite vocabulary. An ordinary suite retaining an accessor uses
-`ess-conformance/6`; a declared-coverage suite retaining the new accessor
+require new suite vocabulary, introduced alongside them in 0.23.0. An ordinary suite retaining an
+accessor uses `ess-conformance/6`; a declared-coverage suite retaining the new accessor
 vocabulary uses `ess-conformance/7`. Models that do not retain that vocabulary
 keep their existing suite formats. Both new versions require explicit
 `--report-format 2` for execution. Report format 1 is refused before the target

@@ -1,6 +1,6 @@
 ---
 title: Synthesize code from a specification
-sidebar_position: 7
+sidebar_position: 5
 description: The synthesis plan, the four targets behind it, obligations as the contract with the human, and how the generated code is proven against the generated suite.
 ---
 

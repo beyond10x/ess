@@ -157,6 +157,11 @@ tasks:
       # enforces the 360-character summary bound the public Docs System validator applies after
       # the documentation bundle has already been built.
       - cargo xtask whats-changed --check
+      # The public documents make release claims the same way the support matrix does, and only the
+      # support matrix had a checker: by 0.27.0 the install walkthrough still downloaded 0.13.2 and
+      # twenty-nine sentences called a shipped format unreleased. This reads the `SUPPORTED_*`
+      # constants and the changelog and refuses the claims that disagree with them.
+      - cargo xtask docs
 
   typescript-check:
     desc: Compile and execute the emitted conformance runtime's own TypeScript cases.

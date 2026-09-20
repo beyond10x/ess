@@ -1,5 +1,6 @@
 ---
 title: Independent component delivery
+sidebar_position: 3
 description: How ESS checks component delivery consistency, qualifies supplied local reports, and reconciles affected Helm releases.
 ---
 

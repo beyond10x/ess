@@ -1,6 +1,7 @@
 ---
 slug: /
 title: Executable System Specification
+sidebar_position: 1
 description: Model system intent as validated typed data, then derive deterministic artifacts and conformance checks from it.
 ---
 

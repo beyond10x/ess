@@ -1,5 +1,6 @@
 ---
 title: Outlook — making ESS dependable
+sidebar_position: 4
 description: The proposed priorities, vocabulary, and evidence needed for ESS to mature.
 ---
 
@@ -11,8 +12,10 @@ stage should make those foundations dependable across the full path from authore
 generated artifacts and execution evidence.
 
 This outlook describes **proposed improvement priorities**, based on an architectural assessment
-of the `0.18.0` source tree on 5 September 2026. It is not a release schedule, an accepted format
-migration, or a claim that the capabilities below already exist. For supported behavior, use the
+of the `0.18.0` source tree on 5 September 2026. That assessment has not been re-run against
+`0.27.0`, so read the priorities below as standing direction rather than a current reading of the
+source. It is not a release schedule, an accepted format migration, or a claim that the
+capabilities below already exist. For supported behavior, use the
 [status page](./where-this-stands.md) and
 [limitations and trust assumptions](./limitations.md).
 

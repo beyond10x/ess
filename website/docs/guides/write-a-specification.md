@@ -1,6 +1,6 @@
 ---
 title: Write a specification
-sidebar_position: 4
+sidebar_position: 1
 description: Author an ESS document — the layout, the constructs the model insists on, and the validation errors that teach the model fastest.
 ---
 
@@ -8,7 +8,7 @@ description: Author an ESS document — the layout, the constructs the model ins
 
 This guide covers authoring an Executable System Specification. The normative example is
 `examples/billing/` in the repository — deliberately the smallest system that exercises the
-current `0.13.2` model. Concepts are covered in [ESS](../concepts/ess.md); this page is about writing
+current `0.27.0` model. Concepts are covered in [ESS](../concepts/ess.md); this page is about writing
 one.
 
 ## Layout
@@ -41,7 +41,7 @@ offline gate is `task check`, which exercises the schema contract alongside the 
 
 ## Keep sources and generated output together
 
-Current source supports this configuration; it is unreleased. For a mixed directory, add an immediate
+This configuration was introduced in 0.21.0. For a mixed directory, add an immediate
 `ess-inputs.yaml` and pass that directory:
 
 ```yaml
@@ -86,7 +86,7 @@ See the [complete input format](../reference/formats.md#directory-input-configur
 
 ## Validate early, read the refusals
 
-The unreleased `ess/2` format adds `Binary64` for finite IEEE-754 values. Use it
+The `ess/2` format, introduced in 0.20.0, adds `Binary64` for finite IEEE-754 values. Use it
 when a source contract requires binary floating-point rounding and signed zero:
 
 ```yaml
@@ -167,7 +167,7 @@ generates a suite that never checks the branch where the money does not move.
 
 ### Cover every declared enum value
 
-Current unreleased source accepts a command without a default when its input guards
+Since 0.23.0 a command may omit its default when its input guards
 select exactly one outcome for every value of a required, closed enum. For example,
 if `status` has the declared variants `Ready` and `Stopped`, the two guards
 `status == Ready` and `status == Stopped` cover that input. Synthesis uses the same
@@ -182,7 +182,7 @@ requirement for a default. Existing defaults and external outcomes keep their be
 
 ### Select an outcome from the held subject state
 
-Unreleased `ess/3` allows `when_subject_state` beside an ordinary input predicate:
+`ess/3`, introduced in 0.23.0, allows `when_subject_state` beside an ordinary input predicate:
 
 ```yaml
 - name: preserved
@@ -266,7 +266,7 @@ are derived. The `error:` is required — without it a generated scenario could 
 Without this, an implementation announcing an amount nobody submitted contradicts nothing. In source formats 1–3, the block
 is optional per field: `invoice_id` has no line because the identity is the implementation's to assign.
 
-Source `ess/4` requires every field of each emitted event to have a mapping. Use
+Source `ess/4`, introduced in 0.23.0, requires every field of each emitted event to have a mapping. Use
 `invoice_id: {generated: true}` for an explicitly implementation-generated identity.
 Events with no emitting outcome remain valid; they may have an external producer.
 
@@ -355,7 +355,7 @@ redelivery is the thing that word says will not happen.
 
 ### Read a field inside an event envelope
 
-The unreleased `ess/3` format adds bounded binding accessors. Set `format: ess/3`
+The `ess/3` format adds bounded binding accessors. Set `format: ess/3`
 in the specification header, then use two or three field segments after `event`:
 
 ```yaml
@@ -391,7 +391,7 @@ For execution and observation limits, see
 
 ### Select ordered records in a binding
 
-Unreleased `ess/3` adds binding-local `selection_inputs` and ordered `selections`.
+`ess/3` adds binding-local `selection_inputs` and ordered `selections`.
 For an event whose `candidates` field already has type `List<example.calls.Leg>`:
 
 ```yaml
@@ -514,6 +514,36 @@ conversions:
 grant the reverse, which is usually the unsafe one. The reason is not decoration: it is what
 `ess specify inspect` prints back at the crossing, so the person reading the binding a year later reads the
 argument for it rather than reconstructing one.
+
+### An enum variant can carry its own wire spelling
+
+`ess/5`, introduced in 0.27.0, lets a variant declare the name it is called on the wire. Until it
+existed, `variants:` was a list of strings, so a variant whose wire form is not derivable from its
+name could not be declared at all — the naming had to be written again in every target.
+
+```yaml
+types:
+  - name: calls.recording.Action
+    kind: enum
+    variants:
+      - name: Stop
+        wire: ""
+      - name: Flag
+        wire: flag
+      - Tags
+```
+
+Both forms are admitted in one list. A variant that declares nothing stays a bare name, and a
+variant that declares something takes the `wire`, `display`, `summary` and `code` members every
+other named thing already has. An authored empty string is a spelling rather than an absent one:
+`Stop` is the route with no suffix, and falling back to the variant's name would spell the route
+that does not exist.
+
+A generated JSON Schema enumerates the wire spellings; the CLI contract keeps the authored names,
+which are what an operator types. Formats `ess/1` … `ess/4` refuse a variant that declares naming
+with `unsupported_format_version` at `types.<type>.variants.<variant>`, and a bare list is admitted
+by every format, so nothing written before this moves. `ess verify diff` reports a moved spelling as
+`VariantWireNameChanged` under [`ess-diff/5`](../reference/formats.md#change-and-conformance-records).
 
 ## Three layers above the domains
 
