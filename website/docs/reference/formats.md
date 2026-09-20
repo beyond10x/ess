@@ -14,6 +14,8 @@ such as `0.18.0` identify different things. Specification versions are major-onl
 that major as a number. Delivery release versions and constraints use SemVer independently.
 [Version owners][versions], [specification format support][system].
 
+[Format version history](./spec-versions.md) says what each version number changed and which release introduced it.
+
 ## Which digest is this?
 
 | Identity | Hash input and spelling |
