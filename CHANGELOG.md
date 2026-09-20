@@ -2,6 +2,82 @@
 
 ## [Unreleased]
 
+### Added
+
+- **`website/docs/reference/spec-versions.md` — what each format version number changed.**
+  Eleven format families have been revised past their first version, and `ess/5` is the fifth
+  number in one of them: nothing public said what any of them meant. The page carries one row per version, the release that introduced
+  it, and what an older reader does with a newer document. Two facts a reader would otherwise
+  hunt for: `ess/3` and `ess/4` both arrived in 0.23.0, and `ess-conformance/6` through `/9` did
+  too, so a build advertising `SUPPORTED_SUITE_FORMATS = [1..9]` is not the record of nine
+  releases.
+
+- **`WHATS-CHANGED.md`, rendered from `changes/*.yaml` by `cargo xtask whats-changed`.**
+  `CHANGELOG.md` records every change at the level the change was made, which is 1466 lines and
+  the wrong record for somebody deciding whether a release is worth adopting. The fragments
+  already carry that judgement — a title, a summary, a kind and an impact — and until now they
+  were write-only from this repository's side: nothing here read them and nothing here checked
+  them.
+
+- **Seven `changes/*.yaml` entries**, for 0.20.0, 0.21.0, 0.22.0, 0.23.0, 0.25.0, 0.26.0 and
+  0.27.0. Atlas publishes that directory as the organization's change feed, so those seven
+  releases were ones nobody outside this repository heard about.
+
+### Changed
+
+- **`cargo xtask release status` checks two more things**, in the same shape and the same report.
+  A pushed tag must have a dated `CHANGELOG.md` section — `release notes` renders a release body
+  from that section, so a tag without one can be neither published nor backfilled, and until now
+  the section was verified for the workspace version alone. And every minor release must have a
+  `changes/*.yaml` entry, with the one exemption named in source and the reason stated. The
+  command now reports every class of defect it found rather than stopping at the first, because
+  stopping at the first is how four versions reached this state unnoticed.
+
+- `cargo xtask whats-changed --check` joins `projection-check`, so a fragment edited without
+  re-rendering fails the gate. It also enforces the 360-character `summary` bound that the public
+  Docs System validator applies — a bound this repository could not see before, and which refused
+  `changes/source-driven-realization-0.19.0.yaml` after its documentation bundle had already been
+  built.
+
+### Fixed
+
+- Three version tags existed only in one clone and were never pushed: `0.3.0`, `0.5.0` and
+  `0.15.0`. `task release-status` reads `git ls-remote`, so it never saw them, and the earlier
+  note calling them "pushed tags with no release" was wrong about why. They are deleted locally;
+  their commits are on `origin/main` and their changelog sections stand as the record. The code
+  each names shipped in 0.4.0, 0.5.1 and 0.16.0.
+
+- **Four releases that promised a download and carried none now carry one.** `0.1.1`, `0.2.0`,
+  `0.2.1` and `0.4.0` predate the packaging job, which arrived in 0.6.0, so each had a release
+  body and no archives. A `workflow_dispatch` backfill gated and packaged each tree at its own
+  commit; every one now carries the four archives and `SHA256SUMS`.
+
+### Known
+
+- **Three trees cannot pass today's gate, so three backfills failed.** The release workflow's
+  dispatch path runs the current `ci.yml` against the tagged source, and current is not what
+  September's source was written against.
+
+  | Tag | Run | What refused |
+  |---|---|---|
+  | 0.1.0 | 35512364896 | `task site-lab`, exit 200 — the browser lab at 2026-09-01 source |
+  | 0.21.0 | 35511832399 | `consumer_coverage::metadata::tests::current_compiled_provider_executes_one_guard_and_binds_its_opaque_proof_to_this_run` |
+  | 0.22.0 | 35512351961 | five cases in `consumer_coverage::enforce::metadata_tests` |
+
+  `0.1.0` and `0.22.0` keep a published release with no archives; `0.21.0` keeps a tag with no
+  release. None of the three tags is touched — deleting a tag that has been public for weeks
+  breaks whatever pins it, to tidy a report. `0.21.0` is named in `WITHOUT_RELEASE` in
+  `crates/edge/ess-xtask/src/main.rs` with that reason, so `release status` reports it as
+  exempted rather than as an open defect.
+
+- **`0.17.0`'s section says "The release workflow for it produced no assets" and that is no
+  longer true** — the release carries all five. The rest of that section stands: the tag holds
+  one of the two features written under it, and both first ship in 0.18.0.
+
+- `0.17.0` is the one minor with no `changes/*.yaml` entry, named in `WITHOUT_FRAGMENT` with the
+  reason. Its two features are recorded under 0.18.0, which is where they shipped.
+
+
 ## [0.27.0] — 2026-09-20
 
 ### Added
