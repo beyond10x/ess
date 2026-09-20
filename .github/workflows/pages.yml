@@ -70,5 +70,9 @@ jobs:
         with:
           name: b10x-project-site
           path: website/build
+          # `.well-known/b10x-site.json` is what the publisher refuses on, and `.nojekyll` is what
+          # keeps Pages from reprocessing the build. Both start with a dot, and this action drops
+          # dot-entries unless told otherwise, so the first publish arrived without either.
+          include-hidden-files: true
           retention-days: 30
           if-no-files-found: error
