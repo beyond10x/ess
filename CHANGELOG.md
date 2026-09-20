@@ -37,6 +37,19 @@
   `/docs/ess/` address. `/ess/lab`, `/ess/releases` and the worked example, which the unified site
   does not carry, stay canonical to themselves.
 
+- **Six release notes, for the nineteen minors that had none.** `/ess/releases` stopped at 0.7.1
+  on 21 August; 0.8.0 through 0.27.0 went unwritten. One note per release would have been nineteen
+  pieces, several about a release whose only content is a fix, so the catch-up is thematic: a
+  deployment described (0.8–0.9), the claims a generated scenario could not make (0.10–0.11), four
+  areas and a command line (0.12–0.14), the scenarios an author writes (0.16–0.18), a pass over
+  nothing (0.19–0.21), and the names nobody may invent (0.22–0.27). `/changes/` keeps the
+  per-release record; these say what the releases were for.
+
+- **`cargo xtask docs` refuses release notes that have stopped.** The newest note's `release_tag`
+  may trail the newest release by at most `BLOG_LAG` minors, three today. Not one note per release,
+  because a gate that fires on a release nobody wanted to write about is a gate somebody silences —
+  but nineteen is not a gap, it is a stop, and nothing noticed.
+
 - **`cargo xtask docs`, a checker for the release claims the public documents make.**
   `where-this-stands.md` carries one generated block and the block was current at every release;
   everything a person wrote beside it had drifted five releases. The lane reads the three

@@ -26,6 +26,17 @@ const REFERENCE: &[&str] = &[
     "website/docs/reference/spec-versions.md",
 ];
 
+/// Where the release notes live.
+const BLOG: &str = "website/blog";
+
+/// How many minor releases the newest release note may trail the newest release by.
+///
+/// Not one per release: a release whose only content is a fix has nothing to write about, and a
+/// gate that fires on one becomes a gate people silence. Three is the point at which the notes
+/// have stopped being a record of the project and started being a record of one month of it — the
+/// state they were in on 2026-09-21, nineteen minors behind, which nothing noticed.
+const BLOG_LAG: u64 = 3;
+
 /// The page whose version literals must name the newest release.
 ///
 /// This is the page a newcomer follows, so every version in it is an instruction to download that
@@ -140,7 +151,28 @@ pub fn run(root: &Path) -> Result<String, String> {
         .map_err(|error| format!("read {INSTALL}: {error}"))?;
     let pinned = install_defects(INSTALL, &install, &newest);
 
+    let notes = newest_note(root)?;
+    let trailing = match (
+        minor(&newest),
+        notes.as_ref().and_then(|(_, tag)| minor(tag)),
+    ) {
+        (Some(release), Some(note)) => release.saturating_sub(note),
+        _ => 0,
+    };
+
     let mut refusals = Vec::new();
+    match &notes {
+        None => refusals.push(format!(
+            "no file in {BLOG} declares a `release_tag`, so how far the release notes trail cannot \
+             be read"
+        )),
+        Some((path, tag)) if trailing > BLOG_LAG => refusals.push(format!(
+            "the newest release note is {path}, for {tag}; the newest release is {newest}, \
+             {trailing} minors later, and {BLOG_LAG} is the most this lane admits"
+        )),
+        Some(_) => {}
+    }
+
     if !undeclared.is_empty() {
         refusals.push(format!(
             "supported format versions with no release recorded in FORMAT_RELEASES: {}",
@@ -174,7 +206,8 @@ pub fn run(root: &Path) -> Result<String, String> {
     let count: usize = supported.values().map(Vec::len).sum();
     Ok(format!(
         "{count} supported format versions, each with a recorded release, each named in a \
-         reference page, none called unreleased; the install walkthrough names {newest}\n"
+         reference page, none called unreleased; the install walkthrough names {newest}; the \
+         newest release note trails it by {trailing}\n"
     ))
 }
 
@@ -294,6 +327,54 @@ fn install_defects(path: &str, text: &str, newest: &str) -> Vec<String> {
         }
     }
     defects
+}
+
+/// The newest release note, by the release its front matter declares.
+///
+/// `release_tag` carries a plain version on a current note and a historical wave spelling on an
+/// older one (`0.3.0-ess-wave-1`), so the leading three numbers are read and the rest ignored.
+fn newest_note(root: &Path) -> Result<Option<(String, String)>, String> {
+    let directory = root.join(BLOG);
+    let entries = fs::read_dir(&directory).map_err(|error| format!("read {BLOG}: {error}"))?;
+    let mut newest: Option<(u64, String, String)> = None;
+    for entry in entries {
+        let entry = entry.map_err(|error| format!("read {BLOG}: {error}"))?;
+        let path = entry.path();
+        if path.extension().is_none_or(|extension| extension != "md") {
+            continue;
+        }
+        let name = path
+            .file_name()
+            .map(|value| value.to_string_lossy().into_owned())
+            .unwrap_or_default();
+        let text =
+            fs::read_to_string(&path).map_err(|error| format!("read {BLOG}/{name}: {error}"))?;
+        let Some(tag) = text
+            .lines()
+            .skip(1)
+            .take_while(|line| line.trim_end() != "---")
+            .find_map(|line| line.trim().strip_prefix("release_tag:"))
+            .map(|value| value.trim().trim_matches('"').to_owned())
+        else {
+            continue;
+        };
+        let Some(ordinal) = minor(&tag) else { continue };
+        if newest.as_ref().is_none_or(|(held, _, _)| ordinal > *held) {
+            newest = Some((ordinal, format!("{BLOG}/{name}"), tag));
+        }
+    }
+    Ok(newest.map(|(_, path, tag)| (path, tag)))
+}
+
+/// A version's major and minor as one increasing number, ignoring any suffix.
+fn minor(version: &str) -> Option<u64> {
+    let mut parts = version.split('.');
+    let major: u64 = parts.next()?.parse().ok()?;
+    let rest = parts.next()?;
+    let digits = rest
+        .find(|character: char| !character.is_ascii_digit())
+        .map_or(rest, |end| &rest[..end]);
+    Some(major * 1000 + digits.parse::<u64>().ok()?)
 }
 
 /// Every `1.2.3` in one line.
@@ -430,6 +511,32 @@ mod tests {
         let changelog = "# Changelog\n\n## [Unreleased]\n\n## [0.27.0] — 2026-09-20\n\n## [0.26.1] — 2026-09-17\n";
         assert_eq!(newest_release(changelog).as_deref(), Ok("0.27.0"));
         assert!(newest_release("## [0.27.0]\n").is_err());
+    }
+
+    #[test]
+    fn a_wave_spelling_and_a_plain_version_both_order_by_minor() {
+        assert_eq!(minor("0.27.0"), Some(27));
+        assert_eq!(minor("0.3.0-ess-wave-1"), Some(3));
+        assert_eq!(minor("0.7.1-infra-waves-1-4"), Some(7));
+        assert!(minor("0.27.0").unwrap() > minor("0.9.2").unwrap());
+        assert!(minor("1.0.0").unwrap() > minor("0.99.0").unwrap());
+        assert_eq!(minor("v0.3.0"), None);
+        assert_eq!(minor("0"), None);
+    }
+
+    #[test]
+    fn the_committed_release_notes_do_not_trail_the_newest_release() {
+        let root = crate::workspace_root().expect("workspace root");
+        let changelog = fs::read_to_string(root.join("CHANGELOG.md")).expect("changelog");
+        let newest = newest_release(&changelog).expect("newest release");
+        let (path, tag) = newest_note(&root)
+            .expect("reads the release notes")
+            .expect("a release note declares a release_tag");
+        let trailing = minor(&newest).expect("release minor") - minor(&tag).expect("note minor");
+        assert!(
+            trailing <= BLOG_LAG,
+            "{path} is for {tag}, {trailing} minors behind {newest}"
+        );
     }
 
     #[test]
