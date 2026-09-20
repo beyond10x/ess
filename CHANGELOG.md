@@ -2,6 +2,56 @@
 
 ## [Unreleased]
 
+## [0.27.0] — 2026-09-20
+
+### Added
+
+- **An enum variant carries its own wire spelling.** `TypeBody::Enum` carried `Vec<String>`, so
+  `Naming` was reachable from a domain, a command, an event, an error, a view and a field, and not
+  from a variant. A variant whose wire form is not derivable from its name could not be declared at
+  all. A variant is now authored either as a bare name or as a mapping that also carries `wire`,
+  `display`, `summary` and `code`:
+
+  ```yaml
+  variants:
+    - name: Stop
+      wire: ""
+    - Flag
+  ```
+
+  The case that asked for it is one command over several route shapes, where one variant's path
+  suffix is empty and the others are not; without a declared spelling the alternatives were
+  splitting the command to satisfy a path, or writing the table again in every target. An authored
+  empty string is a wire spelling rather than an absent one, because that variant is the route with
+  no suffix. `docs/design/enum-variant-wire-names.md` states the shape.
+
+- **Specification format `ess/5`.** A variant that declares naming under `ess/1` … `ess/4` is
+  refused with `unsupported_format_version` at `types.<type>.variants.<variant>`. A bare variant
+  list is admitted by every format, and a variant that declares nothing serializes back as a bare
+  name, so every specification and IR document written before this keeps its bytes.
+
+- **Delta format `ess-diff/5`, and three cases on `TypeChange`** — `VariantWireNameChanged`,
+  `VariantDisplayNameChanged` and `VariantSummaryChanged`. A variant's own name does not move when
+  its wire spelling does, so the variant set and the variant order both said nothing and the
+  comparison returned an empty delta for a change a deployed consumer breaks on. A delta carrying
+  one of the three is refused by a reader of `ess-diff/1` … `ess-diff/4`.
+
+### Changed
+
+- A generated JSON Schema enumerates an enum's wire spellings rather than its variant names. For a
+  variant that declares no naming the two are the same string, so no existing model moves. The CLI
+  contract keeps the authored names, which are what an operator types.
+
+- The workspace's internal dependency requirements move from `0.26.0` to `0.27.0`. A minor bump
+  invalidates a caret requirement, so all 20 `workspace.dependencies` entries move with the
+  workspace version. `fuzz/Cargo.lock` is its own workspace and moves with them.
+
+### Known
+
+- A variant name is still not checked against a spelling pattern on the way in, as it never has
+  been. The published schema therefore declares none for either authored form, so an author's
+  editor cannot refuse a document this repository assembles.
+
 ## [0.26.1] — 2026-09-17
 
 ### Fixed
