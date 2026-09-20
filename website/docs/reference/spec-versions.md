@@ -8,7 +8,7 @@ description: What each ESS format version number means, which release introduced
 An ESS document declares its own format in its bytes — `ess/5`, `ess-diff/5`,
 `ess-conformance/9`. That number is the format's major version and nothing else. It is not the
 release that produced the document, and not the specification version the document describes;
-[Formats and digests][formats] separates those three. This page says what each number changed,
+[Formats and digests](./formats.md) separates those three. This page says what each number changed,
 which release introduced it, and what happens when an older reader meets a newer document.
 
 ## When the number moves
@@ -137,7 +137,6 @@ The tag `v0.3.0` is a fifth artifact of the same period, under the naming conven
 preceded bare versions. The release workflow triggers on bare versions only, so it never asked
 for a release and promises none.
 
-[formats]: ./formats.md
 [changelog]: https://github.com/beyond10x/ess/blob/main/CHANGELOG.md
 [r1]: https://github.com/beyond10x/ess/releases/tag/0.1.0
 [r7]: https://github.com/beyond10x/ess/releases/tag/0.7.0
