@@ -213,7 +213,7 @@ use ess_primitives::predicate::Predicate;
 
 use crate::name::{Naming, QualifiedName};
 use crate::refs::Refs;
-use crate::types::{Field, Primitive, TypeRegistry};
+use crate::types::{EnumVariant, Field, Primitive, TypeRegistry};
 
 /// The name of one outcome of a command, such as `accepted`, `rejected` or `not-found`.
 ///
@@ -2491,10 +2491,17 @@ fn literal_representation(
         )),
         Resolution::Established(Representation::Variants(variants)) => variants
             .iter()
-            .all(|variant| variant != value)
+            .all(|variant| variant.name() != value)
             .then(|| LiteralRefusal {
                 reason: format!("`{value}` is not a variant of what `{owner}.{target}` carries"),
-                hint: format!("variants: {}", variants.join(", ")),
+                hint: format!(
+                    "variants: {}",
+                    variants
+                        .iter()
+                        .map(EnumVariant::name)
+                        .collect::<Vec<_>>()
+                        .join(", ")
+                ),
             }),
         // A literal is one piece of text, and for two primitives that text spells a value: the
         // adopter's `paused: "false"` and `unread: "0"` each say something true and checkable about
@@ -5026,7 +5033,7 @@ payload:
                 reading: None,
                 name: name("billing.invoice.Channel"),
                 body: TypeBody::Enum {
-                    variants: vec!["Email".to_owned(), "Post".to_owned(), "Portal".to_owned()],
+                    variants: EnumVariant::bare(["Email", "Post", "Portal"]),
                 },
                 naming: Naming::default(),
             })

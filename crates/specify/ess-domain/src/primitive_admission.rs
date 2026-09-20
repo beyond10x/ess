@@ -73,7 +73,17 @@ pub(crate) fn system(system: &SystemSpec) -> ValidationErrors {
                     );
                 }
             }
-            TypeBody::Enum { .. } => {}
+            TypeBody::Enum { variants } => {
+                for variant in variants {
+                    if system.format.major() < 5 && !variant.is_bare() {
+                        errors.push(ValidationError::new(
+                            ValidationCode::UnsupportedFormatVersion,
+                            format!("{at}.variants.{}", variant.name()),
+                            "declared enum variant naming requires specification format ess/5",
+                        ));
+                    }
+                }
+            }
         }
     }
     errors

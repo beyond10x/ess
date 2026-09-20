@@ -238,7 +238,12 @@ impl TypeEnvironment for DomainEnvironment<'_> {
             {
                 TypeBody::Newtype { of, .. } => Shape::Alias(of.clone()),
                 TypeBody::Struct { .. } => Shape::Struct,
-                TypeBody::Enum { variants } => Shape::Enum(variants.clone()),
+                TypeBody::Enum { variants } => Shape::Enum(
+                    variants
+                        .iter()
+                        .map(|variant| variant.name().to_owned())
+                        .collect(),
+                ),
                 TypeBody::Union { .. } => Shape::Union,
             },
         })

@@ -317,9 +317,12 @@ pub enum ResolvedBody {
         invariants: Vec<Invariant>,
     },
     /// One of a fixed set of names.
+    ///
+    /// A variant that declares no naming serializes as a bare name, so an IR document for a model
+    /// that predates declared variant naming keeps its bytes.
     Enum {
         /// The variants, in declaration order.
-        variants: Vec<String>,
+        variants: Vec<ess_domain::types::EnumVariant>,
     },
     /// One of several shapes, distinguished by a tag field.
     Union {

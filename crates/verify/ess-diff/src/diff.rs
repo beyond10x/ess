@@ -43,6 +43,7 @@ use ess_conformance::scenario::{
 };
 use ess_domain::entity::StateMachine;
 use ess_domain::name::{Naming, QualifiedName};
+use ess_domain::types::EnumVariant;
 
 use crate::change::{
     ActorChange, BindingChange, CommandChange, ComponentChange, EntityChange, ErrorChange,
@@ -357,25 +358,30 @@ fn invariants(body: &ResolvedBody) -> Vec<String> {
 /// decides whether anything else moved. Order is compared over the common variants only, for the
 /// reason a field list is: inserting one necessarily moves the rest, and reporting that as a
 /// reordering on top of the addition is one edit reported twice.
-fn enum_changes(was: &[String], is: &[String], push: &mut impl FnMut(TypeChange)) {
-    let (declared, now): (BTreeSet<&String>, BTreeSet<&String>) =
-        (was.iter().collect(), is.iter().collect());
+fn enum_changes(was: &[EnumVariant], is: &[EnumVariant], push: &mut impl FnMut(TypeChange)) {
+    let names = |variants: &[EnumVariant]| -> BTreeSet<String> {
+        variants
+            .iter()
+            .map(|variant| variant.name().to_owned())
+            .collect()
+    };
+    let (declared, now) = (names(was), names(is));
     for variant in now.difference(&declared) {
         push(TypeChange::VariantAdded {
-            variant: (*variant).clone(),
+            variant: variant.clone(),
         });
     }
     for variant in declared.difference(&now) {
         push(TypeChange::VariantRemoved {
-            variant: (*variant).clone(),
+            variant: variant.clone(),
         });
     }
 
-    let common = |variants: &[String], other: &BTreeSet<&String>| -> Vec<String> {
+    let common = |variants: &[EnumVariant], other: &BTreeSet<String>| -> Vec<String> {
         variants
             .iter()
-            .filter(|variant| other.contains(variant))
-            .cloned()
+            .filter(|variant| other.contains(variant.name()))
+            .map(|variant| variant.name().to_owned())
             .collect()
     };
     let (was_order, is_order) = (common(was, &now), common(is, &declared));
@@ -384,6 +390,49 @@ fn enum_changes(was: &[String], is: &[String], push: &mut impl FnMut(TypeChange)
             before: was_order,
             after: is_order,
         });
+    }
+
+    // Naming, for the variants both revisions declare. A variant renamed on the wire keeps its
+    // own name, so the set and the order say nothing about it and nothing else here would report
+    // a change a deployed consumer breaks on.
+    let before: BTreeMap<&str, &EnumVariant> = was
+        .iter()
+        .map(|variant| (variant.name(), variant))
+        .collect();
+    for after in is {
+        let Some(earlier) = before.get(after.name()) else {
+            continue;
+        };
+        let variant = after.name().to_owned();
+        if earlier.wire() != after.wire() {
+            push(TypeChange::VariantWireNameChanged {
+                variant: variant.clone(),
+                before: earlier.wire().to_owned(),
+                after: after.wire().to_owned(),
+            });
+        }
+        let display = |variant: &EnumVariant| {
+            variant
+                .naming
+                .display
+                .clone()
+                .unwrap_or_else(|| variant.name().to_owned())
+        };
+        if display(earlier) != display(after) {
+            push(TypeChange::VariantDisplayNameChanged {
+                variant: variant.clone(),
+                before: display(earlier),
+                after: display(after),
+            });
+        }
+        let summary = |variant: &EnumVariant| variant.naming.summary.clone().unwrap_or_default();
+        if summary(earlier) != summary(after) {
+            push(TypeChange::VariantSummaryChanged {
+                variant,
+                before: summary(earlier),
+                after: summary(after),
+            });
+        }
     }
 }
 

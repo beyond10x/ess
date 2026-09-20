@@ -362,6 +362,17 @@
         }
       ]
     },
+    "EnumVariant": {
+      "description": "An enum variant: a bare name, or a mapping that also declares its wire spelling.",
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "$ref": "#/definitions/NamedEnumVariant"
+        }
+      ]
+    },
     "ExplicitPayloadSource": {
       "type": "object",
       "properties": {
@@ -628,6 +639,47 @@
         }
       ]
     },
+    "NamedEnumVariant": {
+      "description": "The mapping form, used only to read and write a variant that declares naming.",
+      "type": "object",
+      "required": [
+        "name"
+      ],
+      "properties": {
+        "code": {
+          "description": "The identifier a code emitter spells this as, when the one it would derive is taken.\n\nA target that has no dotted type names flattens a qualified name to one identifier, so `billing.invoice.Invoice.State` and an authored `billing.invoice.InvoiceState` both want to be `InvoiceState`. One of them has to move, and this says which — because the author knows which name carries meaning and an emitter does not.\n\nIt is deliberately not a per-target map. A name that differs between Rust and Go is two names to keep in step, and nothing in this model has ever needed one: the collision is a property of flattening, which every such target does the same way.\n\nOnly code emitters read it. Wire names, document schemas and the qualified name itself are untouched, so setting it cannot break a deployed consumer — which is the whole reason it is a separate key rather than a rename.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "display": {
+          "description": "What a person is shown.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "name": {
+          "type": "string"
+        },
+        "summary": {
+          "description": "One line about what it is, for generated documentation.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "wire": {
+          "description": "What this is called on the wire — an HTTP path segment, a topic name, a JSON field.",
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "additionalProperties": false
+    },
     "NamedType": {
       "description": "What a named type is made of, as parsed.\n\n`deny_unknown_fields` sits here rather than on [`RawNamedType`], which cannot carry it: serde ignores the attribute on a struct with a flattened field. The body is what the keys nothing else claimed are offered to, so refusing an unknown one here is what refuses `invarants:` and `namin:` — each of which used to parse clean and silently drop what the author wrote.",
       "oneOf": [
@@ -772,7 +824,7 @@
               "description": "The variants, in declaration order.",
               "type": "array",
               "items": {
-                "type": "string"
+                "$ref": "#/definitions/EnumVariant"
               }
             }
           },

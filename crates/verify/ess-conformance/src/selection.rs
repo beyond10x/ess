@@ -52,7 +52,7 @@ impl Declaration {
                 invariants: Vec::new(),
             },
             Self::Enum { variants } => ess_domain::types::RawTypeBody::Enum {
-                variants: variants.clone(),
+                variants: ess_domain::types::EnumVariant::bare(variants.clone()),
             },
             Self::Union { tag, variants } => ess_domain::types::RawTypeBody::Union {
                 tag: tag.clone(),
@@ -172,7 +172,10 @@ impl Observation {
                         .collect(),
                 },
                 ResolvedBody::Enum { variants } => Declaration::Enum {
-                    variants: variants.clone(),
+                    variants: variants
+                        .iter()
+                        .map(|variant| variant.name().to_owned())
+                        .collect(),
                 },
                 ResolvedBody::Union { tag, variants } => Declaration::Union {
                     tag: tag.clone(),

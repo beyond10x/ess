@@ -151,7 +151,10 @@ fn value_shape(
                         serde_json::to_writer(&mut bytes, variants)
                             .map_err(|_| resource(at, "enum shape bytes", bytes.0, MAX_BYTES))?;
                         break ValueShape::Enum {
-                            variants: variants.clone(),
+                            variants: variants
+                                .iter()
+                                .map(|variant| variant.name().to_owned())
+                                .collect(),
                         };
                     }
                     TypeBody::Struct { .. } | TypeBody::Union { .. } => break ValueShape::Object,

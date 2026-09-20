@@ -86,7 +86,12 @@ fn structure(
 
 /// A closed set of names. The synthesised state enums arrive here too, and get the doc that says
 /// where their variants come from.
-fn enumeration(out: &mut String, emit: &Emit<'_>, declared: &ResolvedType, variants: &[String]) {
+fn enumeration(
+    out: &mut String,
+    emit: &Emit<'_>,
+    declared: &ResolvedType,
+    variants: &[ess_domain::types::EnumVariant],
+) {
     if let Some(entity) = state_owner(emit.ir, &declared.name) {
         let _ = writeln!(
             out,

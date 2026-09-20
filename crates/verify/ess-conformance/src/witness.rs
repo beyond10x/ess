@@ -497,7 +497,9 @@ impl<'ir> Builder<'ir> {
                         let chosen = if variants.is_empty() {
                             String::new()
                         } else {
-                            variants[self.distinction.get() % variants.len()].clone()
+                            variants[self.distinction.get() % variants.len()]
+                                .name()
+                                .to_owned()
                         };
                         let base = Node::Text(chosen);
                         if record {
@@ -505,7 +507,10 @@ impl<'ir> Builder<'ir> {
                                 path.clone(),
                                 (
                                     Leaf::Enum {
-                                        variants: variants.clone(),
+                                        variants: variants
+                                            .iter()
+                                            .map(|variant| variant.name().to_owned())
+                                            .collect(),
                                     },
                                     base.clone(),
                                 ),

@@ -795,7 +795,12 @@ impl EntitySpec {
             reading: None,
             name: self.name.child(Self::STATE_TYPE),
             body: crate::types::TypeBody::Enum {
-                variants: self.states.states.iter().map(ToString::to_string).collect(),
+                variants: self
+                    .states
+                    .states
+                    .iter()
+                    .map(|state| crate::types::EnumVariant::new(state.to_string()))
+                    .collect(),
             },
             naming: Naming::default(),
         }

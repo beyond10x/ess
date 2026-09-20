@@ -227,8 +227,9 @@ fn type_encoder(out: &mut String, emit: &Emit<'_>, declared: &ResolvedType) {
             for variant in variants {
                 let _ = writeln!(
                     out,
-                    "\tcase {}:\n\t\treturn {variant:?}",
-                    emit.reference_variant(&declared.name, variant)
+                    "\tcase {}:\n\t\treturn {:?}",
+                    emit.reference_variant(&declared.name, variant),
+                    variant.wire()
                 );
             }
             out.push_str(UNREACHABLE_VARIANT);
@@ -294,7 +295,12 @@ fn type_decoder(out: &mut String, emit: &Emit<'_>, declared: &ResolvedType) {
             out.push_str("\treturn out, nil\n");
         }
         ResolvedBody::Enum { variants } => {
-            let expected = variant_list(variants);
+            let expected = variant_list(
+                &variants
+                    .iter()
+                    .map(|variant| variant.wire().to_owned())
+                    .collect::<Vec<_>>(),
+            );
             let _ = writeln!(
                 out,
                 "\ttext, err := textAt(value, at, {expected:?})\n\tif err != nil {{\n\t\treturn \
@@ -303,7 +309,8 @@ fn type_decoder(out: &mut String, emit: &Emit<'_>, declared: &ResolvedType) {
             for variant in variants {
                 let _ = writeln!(
                     out,
-                    "\tcase {variant:?}:\n\t\treturn {}{{}}, nil",
+                    "\tcase {:?}:\n\t\treturn {}{{}}, nil",
+                    variant.wire(),
                     emit.reference_variant(&declared.name, variant)
                 );
             }
@@ -349,12 +356,12 @@ fn type_decoder(out: &mut String, emit: &Emit<'_>, declared: &ResolvedType) {
 }
 
 /// The set of legal spellings, as one phrase a refusal can carry.
-fn variant_list(variants: &[String]) -> String {
+fn variant_list<T: AsRef<str>>(variants: &[T]) -> String {
     format!(
         "one of {}",
         variants
             .iter()
-            .map(|variant| format!("`{variant}`"))
+            .map(|variant| format!("`{}`", variant.as_ref()))
             .collect::<Vec<_>>()
             .join(", ")
     )

@@ -79,8 +79,13 @@ fn named(
         ResolvedBody::Struct { fields, invariants } if invariants.is_empty() => {
             fields_shape(model, fields, stack)
         }
+        // The authored names, not the wire spellings: this shape is what an operator types at
+        // the command line, and a declared wire spelling is what the request body carries.
         ResolvedBody::Enum { variants } => Ok(Shape::Enum {
-            variants: variants.clone(),
+            variants: variants
+                .iter()
+                .map(|variant| variant.name().to_owned())
+                .collect(),
         }),
         _ => Err(refuse(format!(
             "CLI type `{name}` has unsupported invariants or union semantics"

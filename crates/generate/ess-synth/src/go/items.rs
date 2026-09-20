@@ -220,7 +220,12 @@ fn structure(
 /// Not `type Channel string` with constants, which is what a Go author writes by hand: that admits
 /// `Channel("whatever")`, so the set is not closed and the specification's own guarantee — one of
 /// *these* names — is gone. The synthesised state enums arrive here too.
-fn enumeration(out: &mut String, emit: &Emit<'_>, declared: &ResolvedType, variants: &[String]) {
+fn enumeration(
+    out: &mut String,
+    emit: &Emit<'_>,
+    declared: &ResolvedType,
+    variants: &[ess_domain::types::EnumVariant],
+) {
     let type_name = emit.layout.declared(&declared.name);
     if let Some(entity) = state_owner(emit.ir, &declared.name) {
         let _ = writeln!(

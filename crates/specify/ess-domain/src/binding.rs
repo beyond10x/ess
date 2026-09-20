@@ -142,7 +142,9 @@ use crate::command::{CommandSpec, EventSpec};
 use crate::name::{Naming, QualifiedName};
 use crate::refs::Refs;
 use crate::system::Inhabitation;
-use crate::types::{ConversionRegistry, Field, Primitive, TypeBody, TypeRef, TypeRegistry};
+use crate::types::{
+    ConversionRegistry, EnumVariant, Field, Primitive, TypeBody, TypeRef, TypeRegistry,
+};
 
 pub mod periodic;
 use periodic::PeriodicCause;
@@ -1607,7 +1609,7 @@ impl Ends<'_> {
                 command.name, input.name, input.type_ref
             ))),
             Resolution::Established(Representation::Variants(variants)) => {
-                if !variants.iter().any(|variant| variant == value) {
+                if !variants.iter().any(|variant| variant.name() == value) {
                     errors.push(
                         ValidationError::new(
                             ValidationCode::TypeMismatch,
@@ -1680,7 +1682,7 @@ pub(crate) enum Representation<'a> {
     /// Text. A literal fills it, and the model can say nothing further about the value.
     Text,
     /// A closed set of names. A literal has to be one of them, which is checked exactly.
-    Variants(&'a [String]),
+    Variants(&'a [EnumVariant]),
     /// A primitive that is not text.
     Primitive(Primitive),
     /// Something with structure: a struct, a union, a list or a map.
@@ -2052,7 +2054,7 @@ on_failure: {escalate: {emits: billing.email.DeliveryEscalated}}
             (
                 "billing.invoice.Channel",
                 TypeBody::Enum {
-                    variants: vec!["Email".to_owned(), "Post".to_owned(), "Portal".to_owned()],
+                    variants: EnumVariant::bare(["Email", "Post", "Portal"]),
                 },
             ),
         ] {

@@ -97,7 +97,12 @@ fn value_set(ir: &EssIr, type_ref: &ResolvedTypeRef) -> Option<Vec<String>> {
     match type_ref {
         ResolvedTypeRef::Optional { of } | ResolvedTypeRef::List { of } => value_set(ir, of),
         ResolvedTypeRef::Declared { name } => match &ir.named_type(name).body {
-            ResolvedBody::Enum { variants } => Some(variants.clone()),
+            ResolvedBody::Enum { variants } => Some(
+                variants
+                    .iter()
+                    .map(|variant| variant.name().to_owned())
+                    .collect(),
+            ),
             ResolvedBody::Newtype { of, .. } => value_set(ir, of),
             _ => None,
         },

@@ -704,6 +704,17 @@ pub(crate) fn predicate_projectable(
 }
 
 /// Binds one fact per scalar leaf of `value`, guided by `type_ref`.
+/// The authored names of an enum's variants.
+///
+/// A variant's declared wire spelling is what a document carries; these errors are read by the
+/// person who wrote the scenario, so they name what that person typed.
+fn variant_names(variants: &[ess_domain::types::EnumVariant]) -> Vec<String> {
+    variants
+        .iter()
+        .map(|variant| variant.name().to_owned())
+        .collect()
+}
+
 fn project(
     ir: &EssIr,
     type_ref: &ResolvedTypeRef,
@@ -773,9 +784,12 @@ fn project(
                         at: path.to_string(),
                         declared_by: name.to_string(),
                         value: text.to_owned(),
-                        variants: variants.clone(),
+                        variants: variant_names(variants),
                     }),
-                    None => wrong(errors, format!("one of {}", variants.join(", "))),
+                    None => wrong(
+                        errors,
+                        format!("one of {}", variant_names(variants).join(", ")),
+                    ),
                 },
                 // Shape only, as for a list: the tag is a text a fact could hold, and binding it is
                 // a decision this gate does not take.

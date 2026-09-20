@@ -52,7 +52,12 @@ impl TypeEnvironment for Environment<'_> {
             {
                 ResolvedBody::Newtype { of, .. } => Shape::Alias(of.clone()),
                 ResolvedBody::Struct { .. } => Shape::Struct,
-                ResolvedBody::Enum { variants } => Shape::Enum(variants.clone()),
+                ResolvedBody::Enum { variants } => Shape::Enum(
+                    variants
+                        .iter()
+                        .map(|variant| variant.name().to_owned())
+                        .collect(),
+                ),
                 ResolvedBody::Union { .. } => Shape::Union,
             },
         })

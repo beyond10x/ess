@@ -812,12 +812,12 @@ mod tests {
             (
                 "billing.invoice.Invoice.State",
                 TypeBody::Enum {
-                    variants: vec![
-                        "Draft".to_owned(),
-                        "Issued".to_owned(),
-                        "Paid".to_owned(),
-                        "Cancelled".to_owned(),
-                    ],
+                    variants: crate::types::EnumVariant::bare([
+                        "Draft",
+                        "Issued",
+                        "Paid",
+                        "Cancelled",
+                    ]),
                 },
             ),
         ] {

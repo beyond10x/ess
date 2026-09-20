@@ -142,8 +142,9 @@ fn type_encoder(
             for variant in variants {
                 let _ = writeln!(
                     out,
-                    "        {path}::{} => json::push_text(out, {variant:?}),",
-                    name::pascal(variant)
+                    "        {path}::{} => json::push_text(out, {:?}),",
+                    name::pascal(variant),
+                    variant.wire()
                 );
             }
             out.push_str("    }\n");
@@ -205,7 +206,12 @@ fn type_decoder(
             out.push_str("    })\n");
         }
         ResolvedBody::Enum { variants } => {
-            let expected = variant_list(variants);
+            let expected = variant_list(
+                &variants
+                    .iter()
+                    .map(|variant| variant.wire().to_owned())
+                    .collect::<Vec<_>>(),
+            );
             let _ = writeln!(
                 out,
                 "    Ok(match json::text_at(value, at, {expected:?})? {{"
@@ -213,7 +219,8 @@ fn type_decoder(
             for variant in variants {
                 let _ = writeln!(
                     out,
-                    "        {variant:?} => {path}::{},",
+                    "        {:?} => {path}::{},",
+                    variant.wire(),
                     name::pascal(variant)
                 );
             }
@@ -256,12 +263,12 @@ fn type_decoder(
 }
 
 /// The set of legal spellings, as one phrase a refusal can carry.
-fn variant_list(variants: &[String]) -> String {
+fn variant_list<T: AsRef<str>>(variants: &[T]) -> String {
     format!(
         "one of {}",
         variants
             .iter()
-            .map(|variant| format!("`{variant}`"))
+            .map(|variant| format!("`{}`", variant.as_ref()))
             .collect::<Vec<_>>()
             .join(", ")
     )

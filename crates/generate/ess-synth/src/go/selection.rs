@@ -88,8 +88,9 @@ fn scalar(emit: &Emit<'_>, ty: &ResolvedTypeRef, value: &str) -> String {
                     .iter()
                     .map(|variant| {
                         format!(
-                            "case {}: return {variant:?}, true, true",
-                            emit.reference_variant(name.name(), variant)
+                            "case {}: return {:?}, true, true",
+                            emit.reference_variant(name.name(), variant),
+                            variant.wire()
                         )
                     })
                     .collect::<Vec<_>>()
@@ -309,7 +310,7 @@ fn validators(emit: &Emit<'_>, selection: &ResolvedSelectionPlan) -> Result<Stri
                             out,
                             "case {}: *bytes += {}",
                             emit.reference_variant(handle.name(), variant),
-                            variant.len()
+                            variant.wire().len()
                         );
                     }
                     out.push_str("default: return SelectionInvalidInput\n}\n");

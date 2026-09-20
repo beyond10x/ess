@@ -459,10 +459,10 @@ fn selected_enum_wire_variants_change_admission_and_runtime_values() {
     let before = model(&enum_text);
     let after = model(&revised);
     assert!(
-        matches!(&before.raw.types[1].body, RawTypeBody::Enum { variants } if variants == &["Safe"])
+        matches!(&before.raw.types[1].body, RawTypeBody::Enum { variants } if variants.iter().map(ess_domain::types::EnumVariant::name).eq(["Safe"]))
     );
     assert!(
-        matches!(&after.raw.types[1].body, RawTypeBody::Enum { variants } if variants == &["Fast"])
+        matches!(&after.raw.types[1].body, RawTypeBody::Enum { variants } if variants.iter().map(ess_domain::types::EnumVariant::name).eq(["Fast"]))
     );
     let a = bound(&before, &binding_text("sample"));
     let b = bound(&after, &binding_text("sample"));

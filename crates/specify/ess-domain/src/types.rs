@@ -338,6 +338,211 @@ impl Field {
     }
 }
 
+/// One variant of an enum.
+///
+/// Authored either as a bare name — `variants: [Stop, Flag]` — or as a mapping that also says what
+/// the variant is called on the wire:
+///
+/// ```yaml
+/// variants:
+///   - Flag
+///   - name: Stop
+///     wire: ""
+/// ```
+///
+/// The second form exists because a variant's wire spelling is not always derivable from its name.
+/// A command that is one name over several route shapes has one variant whose path suffix is empty
+/// and others that are not, and without a declared spelling the alternatives are splitting the
+/// command to satisfy a path or writing the table again in every target.
+///
+/// A variant that declares nothing serializes back as a bare name, so a document written before
+/// this existed keeps its bytes.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct EnumVariant {
+    /// Its name.
+    pub name: String,
+    /// What it is called on the wire, and what a person is shown.
+    pub naming: Naming,
+}
+
+impl EnumVariant {
+    /// A variant with no naming overrides.
+    pub fn new(name: impl Into<String>) -> Self {
+        Self {
+            name: name.into(),
+            naming: Naming::default(),
+        }
+    }
+
+    /// Its name.
+    pub fn name(&self) -> &str {
+        &self.name
+    }
+
+    /// Its wire spelling, falling back to its name.
+    ///
+    /// An authored empty string is a wire spelling like any other — it is how the variant that
+    /// carries no path suffix is written — so this returns it rather than treating it as absent.
+    pub fn wire(&self) -> &str {
+        self.naming.wire.as_deref().unwrap_or(&self.name)
+    }
+
+    /// `true` when nothing beyond the name is declared.
+    pub fn is_bare(&self) -> bool {
+        self.naming.is_empty()
+    }
+
+    /// Variants that declare nothing beyond their names, in the order given.
+    pub fn bare<I, S>(names: I) -> Vec<Self>
+    where
+        I: IntoIterator<Item = S>,
+        S: Into<String>,
+    {
+        names.into_iter().map(Self::new).collect()
+    }
+}
+
+impl From<&str> for EnumVariant {
+    fn from(name: &str) -> Self {
+        Self::new(name)
+    }
+}
+
+impl From<String> for EnumVariant {
+    fn from(name: String) -> Self {
+        Self::new(name)
+    }
+}
+
+impl fmt::Display for EnumVariant {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(&self.name)
+    }
+}
+
+/// A variant reads as its name everywhere a name was read before this type existed.
+///
+/// The alternative was `variant.name()` at every one of those positions, which is the same string
+/// with more places to get it wrong during the change that introduced the type.
+impl std::ops::Deref for EnumVariant {
+    type Target = str;
+
+    fn deref(&self) -> &Self::Target {
+        &self.name
+    }
+}
+
+impl AsRef<str> for EnumVariant {
+    fn as_ref(&self) -> &str {
+        &self.name
+    }
+}
+
+impl PartialEq<str> for EnumVariant {
+    fn eq(&self, other: &str) -> bool {
+        self.name == other
+    }
+}
+
+impl PartialEq<&str> for EnumVariant {
+    fn eq(&self, other: &&str) -> bool {
+        self.name == *other
+    }
+}
+
+impl PartialEq<String> for EnumVariant {
+    fn eq(&self, other: &String) -> bool {
+        &self.name == other
+    }
+}
+
+/// The mapping form, used only to read and write a variant that declares naming.
+#[derive(serde::Serialize, serde::Deserialize, schemars::JsonSchema)]
+#[serde(deny_unknown_fields)]
+struct NamedEnumVariant {
+    name: String,
+    #[serde(default, flatten, skip_serializing_if = "Naming::is_empty")]
+    naming: Naming,
+}
+
+impl serde::Serialize for EnumVariant {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        if self.naming.is_empty() {
+            return serializer.serialize_str(&self.name);
+        }
+        NamedEnumVariant {
+            name: self.name.clone(),
+            naming: self.naming.clone(),
+        }
+        .serialize(serializer)
+    }
+}
+
+impl<'de> serde::Deserialize<'de> for EnumVariant {
+    /// Reads either authored form.
+    ///
+    /// A visitor rather than `#[serde(untagged)]`: an untagged enum discards the inner error and
+    /// reports `data did not match any variant`, so a misspelt key inside the mapping form would
+    /// stop naming the key. Forwarding the map to the mapping form keeps that refusal, which
+    /// `deny_unknown_fields` on it produces.
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        struct Authored;
+
+        impl<'de> serde::de::Visitor<'de> for Authored {
+            type Value = EnumVariant;
+
+            fn expecting(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+                f.write_str("a variant name, or a mapping carrying `name` and its naming")
+            }
+
+            fn visit_str<E: serde::de::Error>(self, value: &str) -> Result<Self::Value, E> {
+                Ok(EnumVariant::new(value))
+            }
+
+            fn visit_map<A: serde::de::MapAccess<'de>>(
+                self,
+                map: A,
+            ) -> Result<Self::Value, A::Error> {
+                let NamedEnumVariant { name, naming } =
+                    <NamedEnumVariant as serde::Deserialize>::deserialize(
+                        serde::de::value::MapAccessDeserializer::new(map),
+                    )?;
+                Ok(EnumVariant { name, naming })
+            }
+        }
+
+        deserializer.deserialize_any(Authored)
+    }
+}
+
+impl schemars::JsonSchema for EnumVariant {
+    fn schema_name() -> String {
+        "EnumVariant".to_owned()
+    }
+
+    fn json_schema(generator: &mut schemars::gen::SchemaGenerator) -> schemars::schema::Schema {
+        // No name pattern on either form. A variant name has never been checked against one on
+        // the way in, and publishing a pattern the parser does not enforce is the inconsistency
+        // `Field::PATTERN` exists to prevent, in the direction where the editor refuses a document
+        // this repository accepts.
+        let bare = schemars::schema::SchemaObject {
+            instance_type: Some(schemars::schema::InstanceType::String.into()),
+            ..Default::default()
+        };
+
+        let mut schema = schemars::schema::SchemaObject::default();
+        schema.subschemas().any_of = Some(vec![
+            bare.into(),
+            generator.subschema_for::<NamedEnumVariant>(),
+        ]);
+        schema.metadata().description = Some(
+            "An enum variant: a bare name, or a mapping that also declares its wire spelling."
+                .to_owned(),
+        );
+        schema.into()
+    }
+}
+
 /// Checks that `value` can be spelled as a field name.
 ///
 /// A field name is not decoration: it becomes a struct field in generated code, a key on the wire
@@ -402,7 +607,7 @@ pub enum TypeBody {
     /// One of a fixed set of names.
     Enum {
         /// The variants, in declaration order.
-        variants: Vec<String>,
+        variants: Vec<EnumVariant>,
     },
     /// One of several shapes, distinguished by a tag field.
     ///
@@ -647,7 +852,7 @@ pub enum RawTypeBody {
     /// One of a fixed set of names.
     Enum {
         /// The variants, in declaration order.
-        variants: Vec<String>,
+        variants: Vec<EnumVariant>,
     },
     /// One of several shapes, distinguished by a tag field.
     Union {
@@ -1193,7 +1398,7 @@ mod tests {
                 reading: None,
                 name: name("billing.Email"),
                 body: TypeBody::Enum {
-                    variants: vec!["Work".to_owned(), "Personal".to_owned()],
+                    variants: EnumVariant::bare(["Work", "Personal"]),
                 },
                 naming: Naming::default(),
             })

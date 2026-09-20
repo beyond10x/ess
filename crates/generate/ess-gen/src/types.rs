@@ -665,9 +665,15 @@ pub(crate) fn body(declared: &ResolvedType) -> Node {
             invariants: statements(invariants),
             ..object(fields)
         },
+        // The wire spellings: a generated schema describes the document on the wire, and for a
+        // variant that declares none the spelling is its name, so nothing an older model produced
+        // moves.
         ResolvedBody::Enum { variants } => Node {
             kind: Some("string"),
-            choices: variants.clone(),
+            choices: variants
+                .iter()
+                .map(|variant| variant.wire().to_owned())
+                .collect(),
             ..Node::default()
         },
         ResolvedBody::Union { tag, variants } => Node {

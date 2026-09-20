@@ -2549,7 +2549,10 @@ fn describe(
             // does not grow.
             ResolvedBody::Newtype { of, .. } => describe(ir, of, path, optional, depth + 1, shape),
             ResolvedBody::Enum { variants } => leaf(Holds::Enum {
-                variants: variants.clone(),
+                variants: variants
+                    .iter()
+                    .map(|variant| variant.name().to_owned())
+                    .collect(),
             }),
             ResolvedBody::Union { .. } => leaf(Holds::Union),
             ResolvedBody::Struct { fields, .. } => {

@@ -118,7 +118,10 @@ impl Observation {
                             .collect(),
                     },
                     ResolvedBody::Enum { variants } => Declaration::Enum {
-                        variants: variants.clone(),
+                        variants: variants
+                            .iter()
+                            .map(|variant| variant.name().to_owned())
+                            .collect(),
                     },
                     ResolvedBody::Union { tag, variants } => Declaration::Union {
                         tag: tag.clone(),

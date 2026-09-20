@@ -342,6 +342,13 @@ impl SemanticChange {
     /// The first document version that can represent this change without losing meaning.
     pub const fn minimum_format(&self) -> u32 {
         match self {
+            Self::Type {
+                changed:
+                    TypeChange::VariantWireNameChanged { .. }
+                    | TypeChange::VariantDisplayNameChanged { .. }
+                    | TypeChange::VariantSummaryChanged { .. },
+                ..
+            } => 5,
             Self::Error {
                 changed:
                     ErrorChange::WireNameChanged { .. }
@@ -723,6 +730,37 @@ pub enum TypeChange {
         /// The order it has.
         after: Vec<String>,
     },
+    /// An enum variant is called something else on the wire.
+    ///
+    /// Consumer-visible and breaking: the text a producer writes and a consumer matches on moved,
+    /// while the variant's own name — and therefore the variant list — did not. Only an `ess/5`
+    /// specification can declare one, so only an `ess-diff/5` delta can report one.
+    VariantWireNameChanged {
+        /// Which variant.
+        variant: String,
+        /// What it was called on the wire.
+        before: String,
+        /// What it is called.
+        after: String,
+    },
+    /// An enum variant's display name moved. Presentation only.
+    VariantDisplayNameChanged {
+        /// Which variant.
+        variant: String,
+        /// What it was.
+        before: String,
+        /// What it is.
+        after: String,
+    },
+    /// An enum variant's one-line summary moved. Documentation only.
+    VariantSummaryChanged {
+        /// Which variant.
+        variant: String,
+        /// What it was.
+        before: String,
+        /// What it is.
+        after: String,
+    },
     /// A union variant carries a different payload type.
     VariantTypeChanged {
         /// Which variant.
@@ -793,6 +831,9 @@ impl TypeChange {
             Self::VariantAdded { .. } => "variant-added",
             Self::VariantRemoved { .. } => "variant-removed",
             Self::VariantOrderChanged { .. } => "variant-order-changed",
+            Self::VariantWireNameChanged { .. } => "variant-wire-name-changed",
+            Self::VariantDisplayNameChanged { .. } => "variant-display-name-changed",
+            Self::VariantSummaryChanged { .. } => "variant-summary-changed",
             Self::VariantTypeChanged { .. } => "variant-type-changed",
             Self::UnionTagChanged { .. } => "union-tag-changed",
             Self::InvariantsChanged { .. } => "invariants-changed",
@@ -813,6 +854,9 @@ impl TypeChange {
             | Self::FieldSummaryChanged { field, .. } => Some(field.clone()),
             Self::VariantAdded { variant }
             | Self::VariantRemoved { variant }
+            | Self::VariantWireNameChanged { variant, .. }
+            | Self::VariantDisplayNameChanged { variant, .. }
+            | Self::VariantSummaryChanged { variant, .. }
             | Self::VariantTypeChanged { variant, .. } => Some(variant.clone()),
             _ => None,
         }
@@ -878,6 +922,19 @@ impl TypeChange {
                     before.join(", "),
                     after.join(", ")
                 )
+            }
+            Self::VariantWireNameChanged {
+                variant,
+                before,
+                after,
+            } => format!("variant `{variant}` is `{after}` on the wire, was `{before}`"),
+            Self::VariantDisplayNameChanged {
+                variant,
+                before,
+                after,
+            } => format!("variant `{variant}` display name `{before}` → `{after}`"),
+            Self::VariantSummaryChanged { variant, .. } => {
+                format!("variant `{variant}` summary changed")
             }
             Self::VariantTypeChanged {
                 variant,

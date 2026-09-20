@@ -634,13 +634,13 @@ fn malformed_format_spelling_and_unsupported_major_are_different_admission_stage
     let supported = admitted(&input);
     assert_eq!(supported.spec.system().format.major(), 2);
     unchanged(&admitted(&fixture()), &supported, true);
-    replace(&mut input, 0, "/format", json!("ess/5"));
+    replace(&mut input, 0, "/format", json!("ess/6"));
     let raw = RawSpecFile::parse(&serde_json::to_string(&input[0]).unwrap()).unwrap();
-    assert_eq!(raw.format.unwrap().to_string(), "ess/5");
+    assert_eq!(raw.format.unwrap().to_string(), "ess/6");
     refused(
         &input,
         Stage::Assembly,
-        &["unsupported_format_version", "ess/5"],
+        &["unsupported_format_version", "ess/6"],
     );
 }
 
