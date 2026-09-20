@@ -52,6 +52,29 @@
   been. The published schema therefore declares none for either authored form, so an author's
   editor cannot refuse a document this repository assembles.
 
+- `task consumer-check` is red, for two reasons, and `ci.yml:89` runs the gate with
+  `SKIP_CONSUMER_CHECKS=true`, so it gates neither CI nor this release. The lane reports both in one
+  refusal:
+
+  ```
+  extraction/classification refused: unclassified concrete consumer entry
+  ess_cli::bin(ess)::enum::SuiteTarget/variant/Typescript; finite review required;
+  accounting diagnostics: {"SchemaDocumentMetadata":0,"details":"unknown claimed model
+  wire:RawSpecFile#/definitions/NamedType/oneOf/2/properties/variants/items/type",
+  "format":"ess-consumer-accounting/1","no_cells_admitted":true,
+  "status":"PROVISIONAL_ACCOUNTING_REFUSAL"}
+  ```
+
+  The unclassified `SuiteTarget/variant/Typescript` arrived with the `origin/main` merge `7bf315a9`
+  (PR 47) and is untouched here — `SuiteTarget` at `crates/edge/ess-cli/src/main.rs:601` held only
+  `Ir` and `Go` at 0.26.0. The unknown claimed model is this release's: `variants` became an `anyOf`
+  of a bare name and a mapping, so `.../variants/items/type` no longer exists and
+  `crates/edge/ess-xtask/src/consumer_coverage/reviewed-candidates.json` still claims it. That file
+  is a reviewed artifact — `cargo xtask consumer-extract` writes a fresh `UNACCEPTED` checkpoint
+  elsewhere and never rewrites it (`consumer_coverage/mod.rs:47-133`), and `preservation.rs:15`
+  only reads it — so retiring the claim is a finite review, not a regeneration, and is not done
+  here.
+
 ## [0.26.1] — 2026-09-17
 
 ### Fixed
