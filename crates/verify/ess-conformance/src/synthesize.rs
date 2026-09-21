@@ -165,6 +165,8 @@
 //! one is a gap in this crate rather than in the model, and it is
 //! [`RefusalCause::NotSynthesisedYet`].
 
+mod subject_fact;
+
 use std::collections::{BTreeMap, BTreeSet, VecDeque};
 use std::fmt;
 
@@ -1168,6 +1170,8 @@ pub(crate) fn needs_of(
                 }
             }
             ScenarioStep::QueryView { view, .. }
+            | ScenarioStep::SnapshotSubject { view, .. }
+            | ScenarioStep::ExpectSubjectUnchanged { view }
             | ScenarioStep::ExpectView { view, .. }
             | ScenarioStep::EventuallyView { view, .. }
             // A halt is a *read* of a view, so it needs the view the same way a query does — the
@@ -1188,6 +1192,7 @@ pub(crate) fn needs_of(
             // Keep upstream-backed view witnesses in the component that owns the view.
             ScenarioStep::EstablishEntity { .. }
             | ScenarioStep::ExpectOutcome { .. }
+            | ScenarioStep::ExpectNoError
             | ScenarioStep::ExpectError { .. }
             | ScenarioStep::ExpectNoEvent { .. }
             | ScenarioStep::MarkInstant { .. }
@@ -1385,7 +1390,9 @@ fn run(
     outcome: &ResolvedOutcome,
     actors: &BTreeMap<QualifiedName, ActorRef>,
 ) -> Result<Run, RefusalCause> {
-    let (setup, input) = if has_subject_guards(command) {
+    let (mut setup, input) = if subject_fact::uses(command) && outcome.subject.is_some() {
+        subject_fact::prepare(ir, command, outcome, actors)?
+    } else if has_subject_guards(command) {
         prepare_state_input(ir, command, outcome, actors)?
     } else {
         (
@@ -1420,6 +1427,23 @@ fn run(
     invoke.push(ScenarioStep::ExpectOutcome {
         outcome: outcome_ref,
     });
+
+    if subject_fact::uses(command) && outcome.error.is_none() {
+        invoke.push(ScenarioStep::ExpectNoError);
+    }
+    if outcome
+        .subject
+        .as_ref()
+        .is_some_and(|subject| subject.effect == ResolvedEffect::Preserves)
+    {
+        if !subject_fact::uses(command) {
+            invoke.push(ScenarioStep::ExpectNoError);
+        }
+        let preservation = subject_fact::preservation(ir, outcome, &setup)?;
+        setup.steps.extend(preservation.before);
+        invoke.extend(preservation.after);
+        setup.source.extend(preservation.source);
+    }
 
     let mut source = setup.source;
     if has_subject_guards(command) {
@@ -1542,14 +1566,16 @@ fn prepare(
                 transition: transition.name.clone(),
             },
         ),
-        ResolvedEffect::Updates => (vec![lifecycle.initial.clone()], InstanceNeed::Updates),
+        ResolvedEffect::Updates | ResolvedEffect::Preserves => {
+            (vec![lifecycle.initial.clone()], InstanceNeed::Updates)
+        }
     };
     if let Some(state) = held {
         targets = vec![state.clone()];
     }
     let after = match &subject.effect {
         ResolvedEffect::Moves { transition } => transition.to.clone(),
-        ResolvedEffect::Creates | ResolvedEffect::Updates => {
+        ResolvedEffect::Creates | ResolvedEffect::Updates | ResolvedEffect::Preserves => {
             held.unwrap_or(&lifecycle.initial).clone()
         }
     };
@@ -1580,7 +1606,7 @@ fn prepare(
 }
 
 /// One instance of an entity, resting in a state, and the name the scenario calls it by.
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 struct Arrangement {
     /// What it is called for the rest of the scenario.
     instance: InstanceName,
@@ -1834,7 +1860,9 @@ fn invoke(
     // The cause is not carried up. That branch has a refusal of its own, under its own id, saying
     // exactly why no input reaches it; repeating it here would be one defect reported twice with two
     // repairs to weigh.
-    let input = if has_subject_guards(driver.command) {
+    let input = if has_subject_guards(driver.command)
+        && driver.outcome.test_strategy != TestStrategy::InjectFault
+    {
         held.ok_or(RefusalCause::StrategyWithoutGuard {
             strategy: driver.outcome.test_strategy,
         })
@@ -2086,7 +2114,9 @@ fn admitted_states(condition: &ResolvedCondition) -> Option<BTreeSet<&StateName>
         ResolvedCondition::When { .. }
         | ResolvedCondition::Otherwise
         | ResolvedCondition::External { .. }
-        | ResolvedCondition::WrongState => None,
+        | ResolvedCondition::ExternalWhen { .. }
+        | ResolvedCondition::WrongState
+        | ResolvedCondition::SubjectField { .. } => None,
     }
 }
 
@@ -2170,7 +2200,7 @@ fn prepare_state_input(
     if outcome.test_strategy == TestStrategy::InjectFault {
         return Ok((
             prepare(ir, outcome, actors, None)?,
-            reach_external(ir, command)?,
+            reach_external(ir, command, outcome, Distinction::PLAIN)?,
         ));
     }
     let subject = outcome
@@ -2272,15 +2302,24 @@ fn observe_subject_state(
 fn reach_external(
     ir: &EssIr,
     command: &ResolvedCommand,
+    outcome: &ResolvedOutcome,
+    distinction: Distinction,
 ) -> Result<BTreeMap<String, Node>, RefusalCause> {
-    candidates(ir, command, &[], Distinction::PLAIN)
-        .map_err(RefusalCause::NoWitness)?
-        .into_iter()
-        .next()
-        .ok_or(RefusalCause::GuardUnsatisfiable {
-            predicate: "an admitted external-branch input".into(),
-            tried: 0,
-        })
+    let guards = match &outcome.condition {
+        ResolvedCondition::ExternalWhen { predicate, .. } => vec![predicate],
+        _ => Vec::new(),
+    };
+    let inputs = candidates(ir, command, &guards, distinction).map_err(RefusalCause::NoWitness)?;
+    for input in &inputs {
+        let facts = flatten(ir, command, input).map_err(RefusalCause::WitnessRejected)?;
+        if decides(&facts, &guards, true)? {
+            return Ok(input.clone());
+        }
+    }
+    Err(RefusalCause::GuardUnsatisfiable {
+        predicate: rendered(&guards, true),
+        tried: inputs.len().min(MAX_CANDIDATES),
+    })
 }
 
 /// The input that reaches this branch, decided rather than assumed.
@@ -2299,6 +2338,9 @@ fn reach(
     outcome: &ResolvedOutcome,
     distinction: Distinction,
 ) -> Result<BTreeMap<String, Node>, RefusalCause> {
+    if matches!(outcome.condition, ResolvedCondition::ExternalWhen { .. }) {
+        return reach_external(ir, command, outcome, distinction);
+    }
     // `SubjectState` names exactly one state, so the input can be chosen against it here.
     // `StateChange` names a SET, and picking one of them is a choice about the arrangement rather
     // than about the input — so it deliberately does NOT get an arm: it falls to the refusal below,
@@ -2333,7 +2375,9 @@ fn reach(
         // *moving* branch and arranges the subject instead. Answering with "no guards" would hand
         // back an arbitrary candidate presented as the one that reaches the branch, which is the
         // invention this crate refuses everywhere else — so it is a drift alarm.
-        TestStrategy::ArrangeState | TestStrategy::ConstructInputInState => {
+        TestStrategy::ArrangeState
+        | TestStrategy::ConstructInputInState
+        | TestStrategy::ObserveSubjectFact => {
             return Err(RefusalCause::StrategyWithoutGuard { strategy })
         }
     };
@@ -3274,6 +3318,9 @@ pub(crate) fn reachable_types(
 fn purpose(command: &ResolvedCommand, outcome: &ResolvedOutcome) -> ScenarioPurpose {
     let reached = match outcome.test_strategy {
         TestStrategy::ConstructInput => "an input that satisfies that branch's guard",
+        TestStrategy::ObserveSubjectFact => {
+            "an independently observed subject enum fact and an eligible input"
+        }
         TestStrategy::ConstructInputInState => {
             "an input selecting the branch in its established subject state"
         }
@@ -4426,6 +4473,11 @@ fn on_failure(
         .ok_or_else(|| BindingGap::NoForcibleFailure {
             command: CommandRef::new(invoked.name.clone()),
         })?;
+    if matches!(forced.condition, ResolvedCondition::ExternalWhen { .. }) {
+        return Err(BindingGap::AccessorObservation {
+            reason: "GuardedExternalEligibility: fault eligibility requires an observation of the binding-mapped input".into(),
+        });
+    }
     let forced_ref = OutcomeRef::new(CommandRef::new(invoked.name.clone()), forced.name.clone());
 
     let mut steps = trigger.setup.clone();

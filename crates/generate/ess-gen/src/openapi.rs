@@ -888,6 +888,11 @@ fn outcome_description(ir: &EssIr, outcome: &ResolvedOutcome) -> String {
         parts.push(summary.clone());
     }
     parts.push(match &outcome.condition {
+        ResolvedCondition::SubjectField {
+            field,
+            equals,
+            predicate,
+        } => format!("Subject {field} equals {equals}; input condition {predicate:?}."),
         ResolvedCondition::When { predicate } => {
             format!("Taken when `{predicate}` holds of the input.")
         }
@@ -916,6 +921,9 @@ fn outcome_description(ir: &EssIr, outcome: &ResolvedOutcome) -> String {
         ResolvedCondition::Otherwise => {
             "Taken when no other outcome's condition matched.".to_owned()
         }
+        ResolvedCondition::ExternalWhen { cause, predicate } => {
+            format!("Eligible when {predicate}; externally decided: {cause}.")
+        }
         ResolvedCondition::External { cause } => {
             format!("Decided outside the request: {cause}.")
         }
@@ -931,6 +939,10 @@ fn outcome_description(ir: &EssIr, outcome: &ResolvedOutcome) -> String {
     if let Some(subject) = &outcome.subject {
         let entity = ir.entity(&subject.entity);
         parts.push(match &subject.effect {
+            ResolvedEffect::Preserves => format!(
+                "The existing `{}` is preserved without an error or event.",
+                entity.name
+            ),
             ResolvedEffect::Creates => format!(
                 "A `{}` now exists, in `{}`.",
                 entity.name, entity.lifecycle.initial

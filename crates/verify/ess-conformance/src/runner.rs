@@ -472,6 +472,11 @@ impl<C: Clock> Runner<C> {
                 input,
             } => execute_command(command, actor.as_ref(), input, run, target),
             ScenarioStep::ExpectOutcome { outcome } => expect_outcome(outcome, run),
+            ScenarioStep::ExpectNoError => expect_no_error(run),
+            ScenarioStep::SnapshotSubject { view, subject } => {
+                snapshot_subject(view, Some(subject), run)
+            }
+            ScenarioStep::ExpectSubjectUnchanged { view } => snapshot_subject(view, None, run),
             ScenarioStep::ExpectError { error, fields } => expect_error(error, fields, run),
             ScenarioStep::ExpectEvent {
                 event,
@@ -1145,6 +1150,24 @@ fn expect_outcome(outcome: &OutcomeRef, run: &mut Run) -> Flow {
     Flow::Continue
 }
 
+/// The absence of an error is explicit; legacy outcome checks retain their meaning.
+fn expect_no_error(run: &mut Run) -> Flow {
+    let Some(executed) = run.last_command.as_ref() else {
+        run.record(no_command(&run.id, "absence of an error"));
+        return Flow::Stop;
+    };
+    if let Some(error) = &executed.result.error {
+        let diagnostic = Diagnostic::new(CheckCode::Error, run.id.clone())
+            .executing(executed.quoted())
+            .expected("no error")
+            .observed(format!("error = {}", error.error));
+        run.record(CheckResult::failed("no error", diagnostic));
+    } else {
+        run.record(CheckResult::passed(CheckCode::Error, "no error"));
+    }
+    Flow::Continue
+}
+
 /// Requires the declared error a refusing branch carries, and the fields the suite names of it.
 fn expect_error(error: &ErrorRef, fields: &BTreeMap<String, Node>, run: &mut Run) -> Flow {
     let Some(executed) = run.last_command.as_ref() else {
@@ -1785,6 +1808,102 @@ fn expect_view(view: &ViewRef, expectation: &ViewExpectation, run: &mut Run) -> 
     Flow::Continue
 }
 
+/// A snapshot is an observation of one real row, including values synthesis cannot predict.
+fn snapshot_subject(
+    view: &ViewRef,
+    subject: Option<&BTreeMap<String, ScenarioValue>>,
+    run: &mut Run,
+) -> Flow {
+    let selected = if let Some(subject) = subject {
+        if subject.is_empty() {
+            run.record(unresolvable(view, &run.id, "empty subject identity"));
+            return Flow::Stop;
+        }
+        let mut selected = BTreeMap::new();
+        for (field, value) in subject {
+            match run.resolve(value) {
+                Ok(value) => {
+                    selected.insert(field.clone(), value);
+                }
+                Err(reason) => {
+                    run.record(unresolvable(view, &run.id, &reason));
+                    return Flow::Stop;
+                }
+            }
+        }
+        selected
+    } else {
+        let Some((selected, _)) = run.snapshots.get(view) else {
+            run.record(unresolvable(
+                view,
+                &run.id,
+                "no subject snapshot preceded this assertion",
+            ));
+            return Flow::Stop;
+        };
+        selected.clone()
+    };
+    let Some((queried, result)) = &run.last_view else {
+        run.record(unresolvable(
+            view,
+            &run.id,
+            "no consistent view query preceded the snapshot assertion",
+        ));
+        return Flow::Stop;
+    };
+    if queried != view {
+        run.record(unresolvable(
+            view,
+            &run.id,
+            "the last query names a different view",
+        ));
+        return Flow::Stop;
+    }
+    let rows: Vec<_> = result
+        .rows
+        .iter()
+        .filter(|row| {
+            selected
+                .iter()
+                .all(|(field, value)| row.get(field) == Some(value))
+        })
+        .collect();
+    let matches = rows.len() == 1;
+    let unchanged = matches
+        && (subject.is_some()
+            || run
+                .snapshots
+                .get(view)
+                .is_some_and(|(_, prior)| prior == rows[0]));
+    if unchanged {
+        if subject.is_some() {
+            run.snapshots
+                .insert(view.clone(), (selected, rows[0].clone()));
+        }
+        run.record(CheckResult::passed(
+            CheckCode::View,
+            format!("subject snapshot {view}"),
+        ));
+    } else {
+        run.record(CheckResult::failed(
+            format!("subject snapshot {view}"),
+            Diagnostic::new(CheckCode::View, run.id.clone())
+                .declared_by(view.clone())
+                .expected(
+                    "exactly one subject row, unchanged after a preserving command".to_owned(),
+                )
+                .observed(format!(
+                    "{} matching rows; unchanged={unchanged}",
+                    rows.len()
+                )),
+        ));
+        if subject.is_some() {
+            return Flow::Stop;
+        }
+    }
+    Flow::Continue
+}
+
 /// The suite defect of an expectation naming something no earlier step established.
 fn unresolvable(view: &ViewRef, id: &ScenarioId, reason: &str) -> CheckResult {
     CheckResult::errored(
@@ -1832,6 +1951,7 @@ struct Run {
     /// The view a read-your-writes read could not be made of, and the command that owes the token.
     unreadable: Option<(ViewRef, String)>,
     instances: BTreeMap<InstanceName, Node>,
+    snapshots: BTreeMap<ViewRef, (ViewRow, ViewRow)>,
     established: Vec<(EntityRef, Node)>,
     /// The instants an earlier step named, so a window measured from an unmarked one is a suite
     /// defect rather than a measurement from whatever was in hand.
@@ -1849,6 +1969,7 @@ impl Run {
             last_view: None,
             unreadable: None,
             instances: BTreeMap::new(),
+            snapshots: BTreeMap::new(),
             established: Vec::new(),
             marked: BTreeSet::new(),
             seen: Vec::new(),

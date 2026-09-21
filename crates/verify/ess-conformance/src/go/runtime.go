@@ -77,7 +77,7 @@ func suiteReference(value any) error {
 		return err
 	}
 	d, ok := r["digest"].(string)
-	if (r["version"] != "ess-conformance/5" && r["version"] != "ess-conformance/7" && r["version"] != "ess-conformance/9") || r["digest_profile"] != "sha256-json-bytes/1" ||
+	if (r["version"] != "ess-conformance/5" && r["version"] != "ess-conformance/7" && r["version"] != "ess-conformance/9" && r["version"] != "ess-conformance/11") || r["digest_profile"] != "sha256-json-bytes/1" ||
 		!ok || !strings.HasPrefix(d, "sha256:") || !modelDigest.MatchString(strings.TrimPrefix(d, "sha256:")) {
 		return coverageError()
 	}
@@ -1454,6 +1454,7 @@ type Step struct {
 	// Params is what the caller supplies for a view that declares `params:`. Value, not Node, for
 	// the same reason `input` is: a parameter may be the identity an earlier step captured, which
 	// the suite cannot know and names instead.
+	Subject     map[string]Value `json:"subject,omitempty"`
 	Params      map[string]Value `json:"params,omitempty"`
 	Expectation *Expectation     `json:"expectation,omitempty"`
 	Binding     string           `json:"binding,omitempty"`
@@ -1556,7 +1557,7 @@ func Run(t *testing.T, newTarget func() Target) {
 	if err != nil {
 		t.Fatalf("suite admission: %v", err)
 	}
-	if (suite.Provenance.SuiteVersion == "ess-conformance/8" || suite.Provenance.SuiteVersion == "ess-conformance/9") && config.version != "2" {
+	if (suite.Provenance.SuiteVersion == "ess-conformance/8" || suite.Provenance.SuiteVersion == "ess-conformance/9" || suite.Provenance.SuiteVersion == "ess-conformance/10" || suite.Provenance.SuiteVersion == "ess-conformance/11") && config.version != "2" {
 		t.Fatalf("suite/8 and /9 require explicit ESS_REPORT_FORMAT=2 before execution")
 	}
 	if (suite.Provenance.SuiteVersion == "ess-conformance/5" || suite.Provenance.SuiteVersion == "ess-conformance/6" || suite.Provenance.SuiteVersion == "ess-conformance/7") && config.version != "2" {
@@ -1761,6 +1762,11 @@ func writeReport(t *testing.T, suite Suite, identity Identity, results []scenari
 }
 
 // run is one scenario in flight, and everything it has bound.
+type subjectSnapshot struct {
+	identity map[string]Node
+	row      []byte
+}
+
 type run struct {
 	t           *testing.T
 	target      Target
@@ -1790,7 +1796,8 @@ type run struct {
 	// consistency is the token the last command returned, for a read_your_writes query.
 	consistency string
 	// lastView is what the last query_view returned, for the expect_view after it.
-	lastView ViewResult
+	lastView  ViewResult
+	snapshots map[string]subjectSnapshot
 	// queried is which view lastView came from.
 	queried string
 	// status is what this scenario has come to so far: passed until a step fails or skips.
@@ -1847,6 +1854,16 @@ func (r *run) step(index int, step Step) bool {
 		return r.executeCommand(index, step)
 	case "expect_outcome":
 		return r.expectOutcome(index, step)
+	case "snapshot_subject", "expect_subject_unchanged":
+		return r.snapshotSubject(index, step)
+	case "expect_no_error":
+		if r.lastCommand == "" {
+			return r.fail(index, "no command preceded the no-error assertion")
+		}
+		if r.last.Error != "" {
+			return r.fail(index, "unexpected error `%s`", r.last.Error)
+		}
+		return true
 	case "expect_error":
 		return r.expectError(index, step)
 	case "expect_event":
@@ -2086,6 +2103,55 @@ func (r *run) queryView(index int, step Step) bool {
 	}
 	r.lastView = result
 	r.queried = step.View
+	return true
+}
+
+// Snapshots own a deep copy: targets may reuse or mutate row maps between queries.
+func (r *run) snapshotSubject(index int, step Step) bool {
+	if r.queried != step.View {
+		return r.fail(index, "subject snapshot requires a preceding query of %s", step.View)
+	}
+	capture := step.Step == "snapshot_subject"
+	var identity map[string]Node
+	if capture {
+		var ok bool
+		identity, ok = r.resolveAll(index, step.Subject)
+		if !ok {
+			return false
+		}
+		if len(identity) == 0 {
+			return r.fail(index, "subject identity cannot be empty")
+		}
+	} else {
+		previous, ok := r.snapshots[step.View]
+		if !ok {
+			return r.fail(index, "no earlier subject snapshot for %s", step.View)
+		}
+		identity = previous.identity
+	}
+	var rows []map[string]Node
+	for _, row := range r.lastView.Rows {
+		if matches(row, identity) {
+			rows = append(rows, row)
+		}
+	}
+	if len(rows) != 1 {
+		return r.fail(index, "subject snapshot %s matched %d rows, want exactly one", step.View, len(rows))
+	}
+	encoded, err := json.Marshal(rows[0])
+	if err != nil {
+		return r.fail(index, "snapshot: %v", err)
+	}
+	if capture {
+		if r.snapshots == nil {
+			r.snapshots = map[string]subjectSnapshot{}
+		}
+		r.snapshots[step.View] = subjectSnapshot{identity: identity, row: encoded}
+		return true
+	}
+	if !bytes.Equal(encoded, r.snapshots[step.View].row) {
+		return r.fail(index, "subject changed in %s: before=%s after=%s", step.View, r.snapshots[step.View].row, encoded)
+	}
 	return true
 }
 
@@ -3324,11 +3390,15 @@ func admitSuiteDocument(raw string, explicit bool) (Suite, error) {
 		major = 8
 	case "ess-conformance/9":
 		major = 9
+	case "ess-conformance/10":
+		major = 10
+	case "ess-conformance/11":
+		major = 11
 	default:
 		return suite, fmt.Errorf("unsupported suite version %q", version)
 	}
-	if _, present := root["coverage"]; present != (major == 5 || major == 7 || major == 9) {
-		return suite, fmt.Errorf("coverage is required exactly for suite/5, suite/7 and suite/9")
+	if _, present := root["coverage"]; present != (major == 5 || major == 7 || major == 9 || major == 11) {
+		return suite, fmt.Errorf("coverage is required exactly for suite/5, suite/7, suite/9 and suite/11")
 	}
 	for _, key := range []string{"system", "specification_version", "spec_digest", "contract_digest"} {
 		s, err := text(p[key])
@@ -3390,7 +3460,7 @@ func admitSuiteDocument(raw string, explicit bool) (Suite, error) {
 			}
 		}
 	}
-	if major == 5 || major == 7 || major == 9 {
+	if major == 5 || major == 7 || major == 9 || major == 11 {
 		coverage, _ := root["coverage"].(map[string]any)
 		if refused, ok := coverage["refused"].([]any); ok {
 			for _, item := range refused {
@@ -3416,7 +3486,7 @@ func admitSuiteDocument(raw string, explicit bool) (Suite, error) {
 		}
 	}
 	suite.original, suite.document = raw, root
-	if major == 5 || major == 7 || major == 9 {
+	if major == 5 || major == 7 || major == 9 || major == 11 {
 		suite.coverage = root["coverage"].(map[string]any)
 		// Original admission includes parents which will never execute. Retain their exact
 		// unsigned metadata independently of the inherited target API's narrower int fields.
@@ -3936,6 +4006,20 @@ func admitStep(value any, major int) error {
 		optional = "actor input"
 	case "expect_outcome":
 		required += " outcome"
+	case "snapshot_subject":
+		if major < 10 {
+			return fmt.Errorf("subject snapshots require suite/10 or /11")
+		}
+		required += " view subject"
+	case "expect_subject_unchanged":
+		if major < 10 {
+			return fmt.Errorf("subject preservation requires suite/10 or /11")
+		}
+		required += " view"
+	case "expect_no_error":
+		if major < 10 {
+			return fmt.Errorf("no-error assertions require suite/10 or /11")
+		}
 	case "expect_error":
 		required += " error"
 		optional = "fields"
@@ -4018,7 +4102,7 @@ func admitStep(value any, major int) error {
 			err = admitPayload(v)
 		case "field":
 			_, err = text(v)
-		case "input", "params":
+		case "input", "params", "subject":
 			err = admitValues(v, major, tag == "expect_invocation")
 		case "payload", "fields":
 			if _, ok := v.(map[string]any); !ok {
@@ -4097,7 +4181,7 @@ func admitEntitySetups(steps []any) error {
 				return fmt.Errorf("duplicate setup instance binding")
 			}
 			instances[instance] = true
-		case "check_periodic", "expect_view", "eventually_view", "expect_outcome", "expect_error", "expect_event", "expect_no_event", "eventually_event", "expect_invocation", "expect_not_before", "expect_within", "expect_quiet", "expect_halt", "eventually_halt":
+		case "expect_no_error", "expect_subject_unchanged", "check_periodic", "expect_view", "eventually_view", "expect_outcome", "expect_error", "expect_event", "expect_no_event", "eventually_event", "expect_invocation", "expect_not_before", "expect_within", "expect_quiet", "expect_halt", "eventually_halt":
 			asserted = true
 		}
 	}

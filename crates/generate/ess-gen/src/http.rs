@@ -83,13 +83,16 @@ pub const CONFLICT: &str = "409";
 /// statuses were computed separately would agree on the day it was written.
 pub fn status(outcome: &ResolvedOutcome) -> &'static str {
     match (&outcome.condition, outcome.error.is_some()) {
-        (ResolvedCondition::External { .. }, true) => UPSTREAM,
+        (ResolvedCondition::External { .. } | ResolvedCondition::ExternalWhen { .. }, true) => {
+            UPSTREAM
+        }
         // All three are decided by the state the subject is resting in rather than by the
         // request, so a refusal from one of them is a conflict with that state and not a bad
         // request: `StateChange` is `SubjectState` with the states derived from the move.
         (
             ResolvedCondition::WrongState
             | ResolvedCondition::SubjectState { .. }
+            | ResolvedCondition::SubjectField { .. }
             | ResolvedCondition::StateChange { .. },
             true,
         ) => CONFLICT,

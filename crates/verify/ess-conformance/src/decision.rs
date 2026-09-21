@@ -33,6 +33,8 @@ pub fn when(outcome: &ResolvedOutcome) -> Option<&Predicate> {
         | ResolvedCondition::StateChange { predicate, .. } => predicate.as_ref(),
         ResolvedCondition::Otherwise
         | ResolvedCondition::External { .. }
+        | ResolvedCondition::ExternalWhen { .. }
+        | ResolvedCondition::SubjectField { .. }
         | ResolvedCondition::WrongState => None,
     }
 }

@@ -286,6 +286,7 @@ impl Specification {
             }
         }
         errors.extend(crate::command::subject_state::validate(self, &registry));
+        errors.extend(crate::command::subject_fact::validate(self, &registry));
         for event in self.events.values() {
             if let Err(event_errors) = event.validate(&registry) {
                 errors.extend(event_errors);
@@ -1647,7 +1648,7 @@ events:
             file(
                 "system.yaml",
                 r"
-format: ess/6
+format: ess/7
 system: shop
 version: v1
 ",

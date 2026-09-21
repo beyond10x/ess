@@ -6,8 +6,8 @@ description: What each ESS format version number means, which release introduced
 
 # Format version history
 
-An ESS document declares its own format in its bytes — `ess/5`, `ess-diff/5`,
-`ess-conformance/9`. That number is the format's major version and nothing else. It is not the
+An ESS document declares its own format in its bytes — `ess/6`, `ess-diff/5`,
+`ess-conformance/11`. That number is the format's major version and nothing else. It is not the
 release that produced the document, and not the specification version the document describes;
 [Formats and digests](./formats.md) separates those three. This page says what each number changed,
 which release introduced it, and what happens when an older reader meets a newer document.
@@ -22,7 +22,7 @@ Every family is read by a build that states which versions it implements and ref
 refusal is the point: a reader that accepts a shape it does not understand returns a wrong answer
 about somebody's system, and blames the document for the age of the tool.
 
-A version number is per family. `ess/5` and `ess-conformance/9` are both current; they count
+A version number is per family. `ess/6` and `ess-conformance/11` are both current; they count
 separately and always have.
 
 ## `ess/` — the authored specification
@@ -37,6 +37,14 @@ of it.
 | `ess/3` | [0.23.0][r23] | `when_subject_state`, which combines a declared held lifecycle state with input guards. Opt-in binding accessors read two or three declared field segments from an event envelope. | Refuses the document. |
 | `ess/4` | [0.23.0][r23] | Error wire names declared without merging semantic error identities. Typed command response fields fill emitted event payloads through explicit response mappings, with complete payload ownership. | Refuses the document. |
 | `ess/5` | [0.27.0][r27] | An enum variant carries its own `wire`, `display`, `summary` and `code`. A variant is authored as a bare name or as a mapping. | Refuses with `unsupported_format_version` at `types.<type>.variants.<variant>`. |
+
+`ess/6`, introduced in [0.28.0][r28], admits an input eligibility predicate beside an external
+cause. The fault remains independently arranged; the guard does not select the observed outcome.
+Earlier source formats refuse this combination. It also admits `when_subject` over a
+declared enum field of an existing subject and `preserves` for a successful silent no-op.
+History is observed independently from lifecycle. The bounded arrangement search preserves
+different histories that reach the same state; unknown or unobservable history refuses synthesis.
+A preserving outcome cannot assign fields, emit events, or declare an error.
 
 `ess/3` and `ess/4` both arrived in 0.23.0. There was never a release that implemented `3` and not
 `4`, and there is no missing release between them.
@@ -74,6 +82,13 @@ persisted document's shape is.
 | `ess-conformance/7` | [0.23.0][r23] | The same, with declared coverage. |
 | `ess-conformance/8` | [0.23.0][r23] | Corrected structured text comparison; response-mapping value comparison. |
 | `ess-conformance/9` | [0.23.0][r23] | The same, with declared coverage. |
+
+`ess-conformance/10` and `ess-conformance/11` arrive in [0.28.0][r28]. Version 10 adds
+`expect_no_error`, `snapshot_subject`, and `expect_subject_unchanged`; version 11
+carries the same steps with coverage. Snapshots capture exactly one actual row by
+identity before a command and compare every returned field afterward. Synthesis
+requires immediate views covering all subject fields, including generated values.
+Missing or duplicate rows fail. Legacy suite formats refuse these steps.
 
 Versions `6` through `9` all arrived in 0.23.0. They are two capabilities crossed with the
 ordinary/coverage distinction, not four separate releases.
@@ -148,3 +163,5 @@ for a release and promises none.
 [r21]: https://github.com/beyond10x/ess/releases/tag/0.21.0
 [r23]: https://github.com/beyond10x/ess/releases/tag/0.23.0
 [r27]: https://github.com/beyond10x/ess/releases/tag/0.27.0
+
+[r28]: https://github.com/beyond10x/ess/releases/tag/0.28.0

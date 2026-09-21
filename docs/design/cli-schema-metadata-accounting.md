@@ -130,3 +130,18 @@ checks, then run fresh extraction, planning and qualification under one source
 authority. Full task check and task site-build remain mandatory before landing.
 The exact final ESS source is then pinned, rebuilt and used to regenerate and
 validate Connectors; focused tests alone do not complete the CLI epic.
+
+## ess/6 container review — 2026-09-21
+
+Only `RawOutcome` and the new `RawSubjectField` change in this schema revision. The outcome gains
+`when_subject` and `preserves`; the nested subject fact holds the declared field and enum value.
+These are authored-domain semantics with their own behavioral obligations. None changes the three
+CLI pipelines into consumers of the generated JSON Schema document. The root dialect, six literal
+relationships, consumer profile fingerprints and executed metadata guard are unchanged.
+
+The extracted root-definitions shape changes from `dcfd3383c4cc7082a423bfffafe0b74e27b5b30512bb5f9351eb544b0311ca0c`
+to `68e68c7cb8cc7b6a3a0dbe854c1b74ab54c9da825009a85770efa2d4f3e23322`.
+Exactly the three RootDefinitionsContainer rows are re-reviewed at that shape. No descendant
+is exempted and no behavior coverage is claimed. The separate pre-existing missing classification
+for `ess_cli::bin(ess)::enum::SuiteTarget/variant/Typescript` still refuses consumer accounting;
+this container review does not repair or conceal that registry debt.

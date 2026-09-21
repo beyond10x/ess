@@ -597,7 +597,9 @@ fn plan_commands(ir: &EssIr, capabilities: &mut Vec<PlannedCapability>) {
 /// External when any outcome is: the specification itself says the input cannot decide it.
 fn behavior_reason(command: &ResolvedCommand) -> ObligationReason {
     for outcome in &command.outcomes {
-        if let ResolvedCondition::External { cause } = &outcome.condition {
+        if let ResolvedCondition::External { cause }
+        | ResolvedCondition::ExternalWhen { cause, .. } = &outcome.condition
+        {
             return ObligationReason::External {
                 cause: cause.clone(),
             };
@@ -676,7 +678,15 @@ pub(crate) fn condition_phrase(condition: &ResolvedCondition) -> String {
                 .as_ref()
                 .map_or(String::new(), |guard| format!(" and `{guard}`")),
         ),
+        ResolvedCondition::SubjectField {
+            field,
+            equals,
+            predicate,
+        } => format!("subject {field} == {equals}; input {predicate:?}"),
         ResolvedCondition::Otherwise => "otherwise".to_owned(),
+        ResolvedCondition::ExternalWhen { cause, predicate } => {
+            format!("externally decided ({cause}) when eligible ({predicate})")
+        }
         ResolvedCondition::External { cause } => format!("externally decided ({cause})"),
         ResolvedCondition::WrongState => "from a state no declared move starts in".to_owned(),
     }
@@ -688,6 +698,7 @@ fn effect_phrase(effect: &ResolvedEffect) -> String {
         ResolvedEffect::Creates => "creates".to_owned(),
         ResolvedEffect::Moves { transition } => format!("takes `{}` of", transition.name),
         ResolvedEffect::Updates => "updates".to_owned(),
+        ResolvedEffect::Preserves => "preserves".to_owned(),
     }
 }
 

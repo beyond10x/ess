@@ -63,7 +63,9 @@ fn admitted(outcome: &Outcome, entity: &EntitySpec) -> Option<BTreeSet<StateName
         }
         OutcomeCondition::When(_)
         | OutcomeCondition::Otherwise
+        | OutcomeCondition::SubjectField { .. }
         | OutcomeCondition::External { .. }
+        | OutcomeCondition::ExternalWhen { .. }
         | OutcomeCondition::WrongState => None,
     }
 }
@@ -89,7 +91,10 @@ pub fn validate_shape(command: &CommandSpec) -> ValidationErrors {
     let mut identity = None;
     let mut defaults = 0;
     for outcome in &command.outcomes {
-        if matches!(outcome.condition, OutcomeCondition::External { .. }) {
+        if matches!(
+            outcome.condition,
+            OutcomeCondition::External { .. } | OutcomeCondition::ExternalWhen { .. }
+        ) {
             continue;
         }
         if outcome.is_unconditional() {
@@ -138,7 +143,12 @@ pub fn validate(spec: &Specification, types: &TypeRegistry) -> ValidationErrors 
         let Some(subject) = command
             .outcomes
             .iter()
-            .filter(|outcome| !matches!(outcome.condition, OutcomeCondition::External { .. }))
+            .filter(|outcome| {
+                !matches!(
+                    outcome.condition,
+                    OutcomeCondition::External { .. } | OutcomeCondition::ExternalWhen { .. }
+                )
+            })
             .find_map(|outcome| outcome.subject.as_ref())
         else {
             continue;
@@ -172,7 +182,9 @@ pub fn validate(spec: &Specification, types: &TypeRegistry) -> ValidationErrors 
                 }
                 OutcomeCondition::When(_)
                 | OutcomeCondition::Otherwise
+                | OutcomeCondition::SubjectField { .. }
                 | OutcomeCondition::External { .. }
+                | OutcomeCondition::ExternalWhen { .. }
                 | OutcomeCondition::WrongState => {}
             }
         }
@@ -194,7 +206,9 @@ fn validate_partition(
             !outcome.is_unconditional()
                 && !matches!(
                     outcome.condition,
-                    OutcomeCondition::External { .. } | OutcomeCondition::WrongState
+                    OutcomeCondition::External { .. }
+                        | OutcomeCondition::ExternalWhen { .. }
+                        | OutcomeCondition::WrongState
                 )
         })
         .collect();
@@ -222,7 +236,9 @@ fn validate_partition(
             for outcome in command.outcomes.iter().filter(|outcome| {
                 matches!(
                     outcome.condition,
-                    OutcomeCondition::When(_) | OutcomeCondition::Otherwise
+                    OutcomeCondition::When(_)
+                        | OutcomeCondition::Otherwise
+                        | OutcomeCondition::SubjectField { .. }
                 )
             }) {
                 for state in &entity.states.states {

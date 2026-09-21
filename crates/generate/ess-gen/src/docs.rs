@@ -1503,6 +1503,9 @@ fn effect_sentence(ir: &EssIr, subject: Option<&ResolvedSubject>) -> Vec<Inline>
             moved.push(Inline::text("."));
             moved
         }
+        ResolvedEffect::Preserves => vec![Inline::text(
+            "It preserves the existing subject, without an error or event.",
+        )],
         ResolvedEffect::Updates => vec![
             Inline::text("It changes a "),
             Inline::code(entity.name.to_string()),
@@ -1586,9 +1589,22 @@ fn condition_sentence(
             out.push(Inline::text("."));
             out
         }
+        ResolvedCondition::SubjectField {
+            field,
+            equals,
+            predicate,
+        } => vec![Inline::text(format!(
+            "The observed subject field {field} equals {equals}{}.",
+            predicate
+                .as_ref()
+                .map_or_else(String::new, |guard| format!(" when {guard}"))
+        ))],
         ResolvedCondition::Otherwise => vec![Inline::text(
             "The default branch, taken when no other outcome's condition matched.",
         )],
+        ResolvedCondition::ExternalWhen { cause, predicate } => vec![Inline::text(format!(
+            "Eligible when {predicate}; externally decided: {cause}."
+        ))],
         ResolvedCondition::External { cause } => vec![
             Inline::text(format!(
                 "Decided outside the input: {cause}. No predicate over the input reaches this \
@@ -1626,6 +1642,7 @@ fn condition_sentence(
 /// can disagree about whether a branch can be reached by constructing an input.
 fn strategy_sentence(strategy: TestStrategy) -> &'static str {
     match strategy {
+        TestStrategy::ObserveSubjectFact => "A test establishes and independently observes the subject enum fact before selecting this branch.",
         TestStrategy::ConstructInput => {
             "A test reaches it by constructing an input that satisfies that condition."
         }

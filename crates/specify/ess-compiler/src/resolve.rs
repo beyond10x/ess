@@ -2095,6 +2095,7 @@ impl<'a> Resolver<'a> {
 
         let effect = match subject.effect.transition() {
             None if matches!(subject.effect, Effect::Creates) => ResolvedEffect::Creates,
+            None if matches!(subject.effect, Effect::Preserves) => ResolvedEffect::Preserves,
             None => ResolvedEffect::Updates,
             Some(named) => {
                 let declared = entities
@@ -3509,7 +3510,20 @@ fn condition_of(outcome: &Outcome, subject: Option<&ResolvedSubject>) -> Resolve
                 .unwrap_or_default(),
             predicate: predicate.clone(),
         },
+        OutcomeCondition::SubjectField {
+            field,
+            equals,
+            predicate,
+        } => ResolvedCondition::SubjectField {
+            field: field.clone(),
+            equals: equals.clone(),
+            predicate: predicate.clone(),
+        },
         OutcomeCondition::Otherwise => ResolvedCondition::Otherwise,
+        OutcomeCondition::ExternalWhen { cause, predicate } => ResolvedCondition::ExternalWhen {
+            cause: cause.clone(),
+            predicate: predicate.clone(),
+        },
         OutcomeCondition::External { cause } => ResolvedCondition::External {
             cause: cause.clone(),
         },

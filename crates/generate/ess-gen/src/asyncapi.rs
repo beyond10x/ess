@@ -750,6 +750,9 @@ fn state_changes(ir: &EssIr, event: &ResolvedEvent) -> Vec<String> {
                 })
                 .unwrap_or_default();
             out.push(match &subject.effect {
+                ResolvedEffect::Preserves => {
+                    "The subject is preserved; this branch emits nothing.".to_owned()
+                }
                 ResolvedEffect::Creates => format!(
                     "`{}` emits it on `{}`, which creates a `{}` in `{}`.{publishes}",
                     command.name, outcome.name, entity.name, entity.lifecycle.initial

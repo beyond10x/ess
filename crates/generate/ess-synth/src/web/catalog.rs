@@ -215,6 +215,7 @@ fn effect(effect: &ess_compiler::ir::ResolvedEffect) -> Value {
     match effect {
         ess_compiler::ir::ResolvedEffect::Creates => json!({ "kind": "creates" }),
         ess_compiler::ir::ResolvedEffect::Updates => json!({ "kind": "updates" }),
+        ess_compiler::ir::ResolvedEffect::Preserves => json!({ "kind": "preserves" }),
         ess_compiler::ir::ResolvedEffect::Moves { transition } => json!({
             "kind": "moves",
             "transition": transition.name,

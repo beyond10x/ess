@@ -347,6 +347,9 @@ fn shape(synthesis: &Synthesis, id: &str) -> Vec<&'static str> {
             ScenarioStep::EventuallyHalt { .. } => "halt, eventually",
             ScenarioStep::ExpectReadingOrder { .. } => "clock reading order",
             ScenarioStep::CheckPeriodic { .. } => "periodic host",
+            ScenarioStep::ExpectNoError => "no error",
+            ScenarioStep::SnapshotSubject { .. } => "snapshot subject",
+            ScenarioStep::ExpectSubjectUnchanged { .. } => "unchanged subject",
         })
         .collect()
 }

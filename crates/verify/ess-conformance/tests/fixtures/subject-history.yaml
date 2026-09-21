@@ -1,0 +1,90 @@
+format: ess/6
+system: calls
+version: v1
+domain: calls.core
+types:
+  - name: calls.core.AnswerHistory
+    kind: enum
+    variants: [Unanswered, Answered]
+entities:
+  - name: calls.core.Call
+    identity: {name: call_id, type: Uuid}
+    fields:
+      - {name: answer_history, type: calls.core.AnswerHistory}
+      - {name: note, type: String}
+      - {name: server_stamp, type: Integer}
+    lifecycle:
+      initial: Init
+      states: [Init, Bridged, Ended]
+      terminal: [Ended]
+      transitions:
+        - {name: bridge, from: [Init, Bridged], to: Bridged}
+        - {name: report_bridge, from: [Init, Bridged], to: Bridged}
+        - {name: close, from: [Init, Bridged], to: Ended}
+events:
+  - name: calls.core.Opened
+    fields: [{name: call_id, type: Uuid}]
+  - name: calls.core.Answered
+    fields: []
+  - name: calls.core.Observed
+    fields: []
+errors:
+  - name: calls.core.Gone
+    fields: []
+commands:
+  - name: calls.core.Open
+    input: [{name: note, type: String}]
+    outcomes:
+      - name: opened
+        creates: calls.core.Call
+        instance: call_id
+        sets: {answer_history: Unanswered, note: input.note}
+        emits: [calls.core.Opened]
+        payload:
+          calls.core.Opened:
+            call_id: {generated: true}
+  - name: calls.core.Answer
+    input: [{name: call_id, type: Uuid}]
+    outcomes:
+      - name: answered
+        moves: calls.core.Call.bridge
+        instance: call_id
+        sets: {answer_history: Answered}
+        emits: [calls.core.Answered]
+      - name: already-answered
+        when_subject: {field: answer_history, equals: Answered}
+        preserves: calls.core.Call
+        instance: call_id
+      - name: gone
+        wrong_state: true
+        error: calls.core.Gone
+  - name: calls.core.Report
+    input: [{name: call_id, type: Uuid}]
+    outcomes:
+      - name: observed
+        moves: calls.core.Call.report_bridge
+        instance: call_id
+        emits: [calls.core.Observed]
+      - name: gone
+        wrong_state: true
+        error: calls.core.Gone
+  - name: calls.core.Close
+    input: [{name: call_id, type: Uuid}]
+    outcomes:
+      - name: closed
+        moves: calls.core.Call.close
+        instance: call_id
+        emits: [calls.core.Observed]
+      - name: gone
+        wrong_state: true
+        error: calls.core.Gone
+views:
+  - name: calls.core.Calls
+    source: calls.core.Call
+    consistency: read_your_writes
+    fields:
+      - {name: call_id, type: Uuid}
+      - {name: state, type: calls.core.Call.State}
+      - {name: answer_history, type: calls.core.AnswerHistory}
+      - {name: note, type: String}
+      - {name: server_stamp, type: Integer}

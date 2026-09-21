@@ -92,6 +92,7 @@ const FORMAT_RELEASES: &[(&str, u32, Option<&str>)] = &[
     ("ess", 3, Some("0.23.0")),
     ("ess", 4, Some("0.23.0")),
     ("ess", 5, Some("0.27.0")),
+    ("ess", 6, Some("0.28.0")),
     ("ess-diff", 1, Some("0.1.0")),
     ("ess-diff", 2, Some("0.19.0")),
     ("ess-diff", 3, Some("0.23.0")),
@@ -106,6 +107,8 @@ const FORMAT_RELEASES: &[(&str, u32, Option<&str>)] = &[
     ("ess-conformance", 7, Some("0.23.0")),
     ("ess-conformance", 8, Some("0.23.0")),
     ("ess-conformance", 9, Some("0.23.0")),
+    ("ess-conformance", 10, Some("0.28.0")),
+    ("ess-conformance", 11, Some("0.28.0")),
 ];
 
 /// Checks the published documents against the source and the changelog.
@@ -468,10 +471,10 @@ mod tests {
 
     #[test]
     fn a_format_version_no_release_ships_may_still_be_called_unreleased() {
-        // `ess/6` does not exist. A version with no release in `FORMAT_RELEASES` never reaches the
+        // A future version with no release in `FORMAT_RELEASES` never reaches the
         // released map, so the sentence that announces it before its release is not a defect.
         assert!(
-            stale_claims("page.md", "The unreleased `ess/6` format.\n", &released()).is_empty()
+            stale_claims("page.md", "The unreleased `ess/7` format.\n", &released()).is_empty()
         );
     }
 

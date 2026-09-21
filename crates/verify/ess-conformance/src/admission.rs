@@ -179,16 +179,16 @@ fn validate_suite(value: &Json) -> Result<(), AdmissionError> {
     )?;
     let version = SuiteFormat::parse(p["suite_version"].text()?)
         .map_err(|e| p["suite_version"].error("UnsupportedSuiteVersion", e.to_string()))?;
-    if !matches!(version.major(), 1..=9) {
+    if !matches!(version.major(), 1..=11) {
         return Err(p["suite_version"].error(
             "UnsupportedSuiteVersion",
-            "execution readers admit suite majors 1–9",
+            "execution readers admit suite majors 1–11",
         ));
     }
-    if matches!(version.major(), 5 | 7 | 9) != root.contains_key("coverage") {
+    if matches!(version.major(), 5 | 7 | 9 | 11) != root.contains_key("coverage") {
         return Err(value.error(
             "InvalidCoverage",
-            "coverage is required exactly for suite/5, suite/7 and suite/9",
+            "coverage is required exactly for suite/5, suite/7, suite/9 and suite/11",
         ));
     }
     for scenario in root["scenarios"].object()?.values() {
@@ -370,6 +370,9 @@ fn step_value(value: &Json, major: u32) -> Result<(), AdmissionError> {
         "configure_external_outcome" => (&["step", "force"], &[]),
         "execute_command" => (&["step", "command"], &["actor", "input"]),
         "expect_outcome" => (&["step", "outcome"], &[]),
+        "expect_no_error" if major >= 10 => (&["step"], &[]),
+        "snapshot_subject" if major >= 10 => (&["step", "view", "subject"], &[]),
+        "expect_subject_unchanged" if major >= 10 => (&["step", "view"], &[]),
         "expect_error" => (&["step", "error"], &["fields"]),
         "expect_event" | "eventually_event" => (&["step", "event"], &["payload", "shape"]),
         "expect_no_event" | "redeliver_event" => (&["step", "event"], &[]),
@@ -401,7 +404,7 @@ fn step_value(value: &Json, major: u32) -> Result<(), AdmissionError> {
             "force" | "outcome" => {
                 field.closed(&["command", "outcome"], &[])?;
             }
-            "input" | "params" => values(field, major, tag == "expect_invocation")?,
+            "input" | "params" | "subject" => values(field, major, tag == "expect_invocation")?,
             "identity" => field.payload()?,
             "fields" | "payload" => {
                 field.object()?;
@@ -619,6 +622,8 @@ pub(crate) fn entity_setup(suite: &ConformanceSuite) -> Result<(), AdmissionErro
                 ScenarioStep::ExpectView { .. }
                 | ScenarioStep::EventuallyView { .. }
                 | ScenarioStep::ExpectOutcome { .. }
+                | ScenarioStep::ExpectNoError
+                | ScenarioStep::ExpectSubjectUnchanged { .. }
                 | ScenarioStep::ExpectError { .. }
                 | ScenarioStep::ExpectEvent { .. }
                 | ScenarioStep::ExpectNoEvent { .. }

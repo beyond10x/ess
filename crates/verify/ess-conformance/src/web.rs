@@ -163,6 +163,7 @@ fn subject(subject: &ess_compiler::ir::ResolvedSubject) -> serde_json::Value {
     let (kind, transition, from, to) = match &subject.effect {
         ess_compiler::ir::ResolvedEffect::Creates => ("creates", None, Vec::new(), None),
         ess_compiler::ir::ResolvedEffect::Updates => ("updates", None, Vec::new(), None),
+        ess_compiler::ir::ResolvedEffect::Preserves => ("preserves", None, Vec::new(), None),
         ess_compiler::ir::ResolvedEffect::Moves { transition } => (
             "moves",
             Some(transition.name.clone()),

@@ -194,6 +194,13 @@ pub fn candidates(
         .outcomes
         .iter()
         .all(|outcome| outcome.test_strategy != ess_domain::command::TestStrategy::DefaultBranch)
+        && guards.iter().all(|guard| {
+            command
+                .outcomes
+                .iter()
+                .filter_map(crate::when)
+                .any(|ordinary| ordinary == *guard)
+        })
     {
         let all_guards: Vec<_> = command.outcomes.iter().filter_map(crate::when).collect();
         if let Some(cases) = ess_domain::command::finite::analyze(

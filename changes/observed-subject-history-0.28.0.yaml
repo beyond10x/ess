@@ -1,0 +1,17 @@
+schema: b10x-change/v1
+id: ess/observed-subject-history-0.28.0
+repository: ess
+publishedAt: 2026-09-21T16:57:25Z
+title: Conformance observes history and independently arranged failures
+summary: >-
+  Source format ess/6 models input eligibility for external failures and enum subject history.
+  Suite formats 10/11 compare actual before-and-after subject values and assert silent success.
+  Rust, Go and TypeScript runners reject changed, missing or duplicate subjects; older formats
+  refuse the new vocabulary.
+kind: capability
+impact: significant
+source:
+  url: https://github.com/beyond10x/ess/releases/tag/0.28.0
+  version: 0.28.0
+journeys: [specify, verify]
+affectedSurfaces: [ess/docs]

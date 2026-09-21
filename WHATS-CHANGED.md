@@ -6,6 +6,7 @@ Generated from `changes/*.yaml` by `cargo xtask whats-changed`. Edit a fragment,
 
 | Release | Change | Kind | Impact |
 |---|---|---|---|
+| [0.28.0](#conformance-observes-history-and-independently-arranged-failures) | Conformance observes history and independently arranged failures | capability | significant |
 | [0.27.0](#an-enum-variant-carries-its-own-wire-spelling) | An enum variant carries its own wire spelling | capability | significant |
 | [0.26.0](#a-branch-may-say-the-field-it-owns-holds-nothing) | A branch may say the field it owns holds nothing | capability | significant |
 | [0.25.0](#an-author-names-the-identifier-a-code-emitter-spells-a-declaration-as) | An author names the identifier a code emitter spells a declaration as | capability | significant |
@@ -21,6 +22,14 @@ Generated from `changes/*.yaml` by `cargo xtask whats-changed`. Edit a fragment,
 | [0.16.0](#an-authored-scenario-can-claim-a-length-of-time-and-a-target-has-to-answer-for-it) | An authored scenario can claim a length of time, and a target has to answer for it | capability | significant |
 | [0.14.0](#a-component-can-declare-a-command-line-surface-and-ess-synthesizes-its-parser) | A component can declare a command-line surface, and ESS synthesizes its parser | capability | significant |
 | [0.1.0](#ess-becomes-a-standalone-executable-specification-toolchain) | ESS becomes a standalone executable specification toolchain | migration | significant |
+
+## 0.28.0 — 2026-09-21
+
+### Conformance observes history and independently arranged failures
+
+capability · significant impact · [release notes](https://github.com/beyond10x/ess/releases/tag/0.28.0)
+
+Source format ess/6 models input eligibility for external failures and enum subject history. Suite formats 10/11 compare actual before-and-after subject values and assert silent success. Rust, Go and TypeScript runners reject changed, missing or duplicate subjects; older formats refuse the new vocabulary.
 
 ## 0.27.0 — 2026-09-20
 

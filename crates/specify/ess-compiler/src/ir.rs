@@ -537,6 +537,15 @@ pub struct ResolvedConversion {
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum ResolvedCondition {
+    /// Equality on an independently observed enum field of the existing subject.
+    SubjectField {
+        /// The entity field.
+        field: String,
+        /// Its admitted enum variant.
+        equals: String,
+        /// Additional input eligibility.
+        predicate: Option<Predicate>,
+    },
     /// Taken when this predicate over the command's input holds.
     When {
         /// The predicate.
@@ -570,6 +579,13 @@ pub enum ResolvedCondition {
     /// The default branch, taken when no conditional outcome matched.
     Otherwise,
     /// Decided by something outside the input.
+    ExternalWhen {
+        /// The external cause to arrange.
+        cause: String,
+        /// The input eligibility, not the verdict.
+        predicate: Predicate,
+    },
+    /// An externally decided outcome without an input guard.
     External {
         /// What decides it, in one phrase.
         cause: String,
@@ -607,6 +623,8 @@ pub enum ResolvedEffect {
     },
     /// An existing instance changes without moving along its lifecycle.
     Updates,
+    /// A silent accepted outcome preserves the existing subject and its fields.
+    Preserves,
 }
 
 impl ResolvedEffect {
@@ -614,7 +632,7 @@ impl ResolvedEffect {
     pub fn transition(&self) -> Option<&Transition> {
         match self {
             Self::Moves { transition } => Some(transition),
-            Self::Creates | Self::Updates => None,
+            Self::Creates | Self::Updates | Self::Preserves => None,
         }
     }
 
@@ -624,6 +642,7 @@ impl ResolvedEffect {
             Self::Creates => "creates",
             Self::Moves { .. } => "moves",
             Self::Updates => "updates",
+            Self::Preserves => "preserves",
         }
     }
 }

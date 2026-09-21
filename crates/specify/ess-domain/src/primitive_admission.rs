@@ -99,6 +99,24 @@ fn held_state_conditions(
     format: FormatVersion,
     errors: &mut ValidationErrors,
 ) {
+    if format.major() < 6
+        && command.outcomes.iter().any(|outcome| {
+            matches!(
+                outcome.condition,
+                crate::command::OutcomeCondition::ExternalWhen { .. }
+                    | crate::command::OutcomeCondition::SubjectField { .. }
+            ) || outcome
+                .subject
+                .as_ref()
+                .is_some_and(|subject| subject.effect == crate::command::Effect::Preserves)
+        })
+    {
+        errors.push(ValidationError::at(
+            command.site().key("outcomes"),
+            ValidationCode::UnsupportedFormatVersion,
+            "guarded external outcomes, subject facts and preservation require specification format ess/6",
+        ));
+    }
     if format.major() < 3 && crate::command::subject_state::uses_subject_state(command) {
         errors.push(ValidationError::at(
             command.site().key("outcomes"),

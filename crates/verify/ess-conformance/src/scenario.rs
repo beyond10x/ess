@@ -154,14 +154,28 @@ impl ConformanceSuite {
     /// Call only for newly generated suites, never to rewrite admitted bytes or a caller-pinned
     /// legacy document. Coverage builders select their inventory-bearing counterpart separately.
     pub fn select_fresh_format(&mut self) {
-        self.provenance.suite_version =
-            if crate::response::used_by(self) || crate::quoted_predicate_format::used_by(self) {
-                SuiteFormat::parse("ess-conformance/8").expect("constant suite version")
-            } else if self.requires_extended_format() {
-                SuiteFormat::parse("ess-conformance/6").expect("constant suite version")
-            } else {
-                SuiteFormat::CURRENT
-            };
+        self.provenance.suite_version = if self.requires_preservation_format() {
+            SuiteFormat::parse("ess-conformance/10").expect("constant suite version")
+        } else if crate::response::used_by(self) || crate::quoted_predicate_format::used_by(self) {
+            SuiteFormat::parse("ess-conformance/8").expect("constant suite version")
+        } else if self.requires_extended_format() {
+            SuiteFormat::parse("ess-conformance/6").expect("constant suite version")
+        } else {
+            SuiteFormat::CURRENT
+        };
+    }
+
+    pub(crate) fn requires_preservation_format(&self) -> bool {
+        self.scenarios.values().any(|scenario| {
+            scenario.steps.iter().any(|step| {
+                matches!(
+                    step,
+                    ScenarioStep::ExpectNoError
+                        | ScenarioStep::SnapshotSubject { .. }
+                        | ScenarioStep::ExpectSubjectUnchanged { .. }
+                )
+            })
+        })
     }
 
     pub(crate) fn requires_extended_format(&self) -> bool {
@@ -349,7 +363,7 @@ impl SuiteProvenance {
 /// All four, because a `1` suite means in `4` exactly what it meant in `1` — the vocabulary grew
 /// three times and nothing in it changed meaning. A reader that refused an older number would
 /// refuse a suite it understands perfectly.
-pub const SUPPORTED_SUITE_FORMATS: &[u32] = &[1, 2, 3, 4, 5, 6, 7, 8, 9];
+pub const SUPPORTED_SUITE_FORMATS: &[u32] = &[1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11];
 
 /// The version of the *document shape* a suite is written in — `ess-conformance/1`.
 ///
@@ -1763,6 +1777,20 @@ pub enum ScenarioStep {
         /// The branch.
         outcome: OutcomeRef,
     },
+    /// Require that the immediately preceding command returned without an error.
+    ExpectNoError,
+    /// Capture exactly one row from the preceding query, selected by subject identity.
+    SnapshotSubject {
+        /// The immediate view that was just queried.
+        view: ViewRef,
+        /// Identity fields that select the subject, never an expected copy of its state.
+        subject: BTreeMap<String, ScenarioValue>,
+    },
+    /// Compare the selected subject's complete row with its earlier snapshot.
+    ExpectSubjectUnchanged {
+        /// The same immediate view, queried again after the command.
+        view: ViewRef,
+    },
     /// Require the declared error, and what it carries.
     ExpectError {
         /// Which declared error.
@@ -2609,12 +2637,14 @@ mod tests {
             "ess-conformance/7",
             "ess-conformance/8",
             "ess-conformance/9",
+            "ess-conformance/10",
+            "ess-conformance/11",
         ] {
             let earlier = SuiteFormat::parse(earlier).expect("well formed");
             assert!(earlier.is_supported());
         }
 
-        let later = SuiteFormat::parse("ess-conformance/10").expect("well formed");
+        let later = SuiteFormat::parse("ess-conformance/12").expect("well formed");
         assert!(
             !later.is_supported(),
             "a later format may mean something different by the same words"

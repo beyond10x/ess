@@ -723,7 +723,8 @@ export function suiteReference(value: Node): void {
   if (
     (reference.version !== 'ess-conformance/5' &&
       reference.version !== 'ess-conformance/7' &&
-      reference.version !== 'ess-conformance/9') ||
+      reference.version !== 'ess-conformance/9' &&
+      reference.version !== 'ess-conformance/11') ||
     reference.digest_profile !== 'sha256-json-bytes/1' ||
     typeof digest !== 'string' ||
     !digest.startsWith('sha256:') ||
@@ -2183,6 +2184,7 @@ export interface Step {
   view: string;
   /** What the caller supplies for a view that declares `params:`. Value, not Node, because a
    * parameter may be the identity an earlier step captured. */
+  subject?: { [field: string]: Value };
   params?: { [parameter: string]: Value };
   expectation?: Expectation;
   binding: string;
@@ -2322,7 +2324,10 @@ export async function runWith(
   }
   const version = suite.provenance.suite_version;
   if (
-    (version === 'ess-conformance/8' || version === 'ess-conformance/9') &&
+    (version === 'ess-conformance/8' ||
+      version === 'ess-conformance/9' ||
+      version === 'ess-conformance/10' ||
+      version === 'ess-conformance/11') &&
     config.version !== '2'
   ) {
     throw new Error('suite/8 and /9 require explicit ESS_REPORT_FORMAT=2 before execution');
@@ -2590,6 +2595,7 @@ export class ScenarioRun {
   /** What the most recent command did, for the assertions that read it. */
   last: ObservedCommandResult = normalizeResult(undefined);
   lastCommand = '';
+  snapshots = new Map<string, { identity: { [field: string]: Node }; row: string }>();
   /** The token the last command returned, for a read_your_writes query. */
   consistency = '';
   /** What the last query_view returned, for the expect_view after it. */
@@ -2669,6 +2675,14 @@ export class ScenarioRun {
         return this.executeCommand(index, step);
       case 'expect_outcome':
         return this.expectOutcome(index, step);
+      case 'snapshot_subject':
+      case 'expect_subject_unchanged':
+        return this.snapshotSubject(index, step);
+      case 'expect_no_error':
+        if (!this.lastCommand)
+          return this.fail(index, 'no command preceded the no-error assertion');
+        if (this.last.error) return this.fail(index, `unexpected error ${this.last.error}`);
+        return true;
       case 'expect_error':
         return this.expectError(index, step);
       case 'expect_event':
@@ -2925,6 +2939,32 @@ export class ScenarioRun {
     }
     this.lastView = result?.rows ?? [];
     this.queried = step.view;
+    return true;
+  }
+
+  snapshotSubject(index: number, step: Step): boolean {
+    if (this.queried !== step.view)
+      return this.fail(index, `subject snapshot requires a preceding query of ${step.view}`);
+    const capture = step.step === 'snapshot_subject';
+    const previous = this.snapshots.get(step.view);
+    const identity = capture ? this.resolveAll(index, step.subject) : previous?.identity;
+    if (!identity || Object.keys(identity).length === 0)
+      return this.fail(index, 'missing subject identity or previous snapshot');
+    const rows = this.lastView.filter((row) => matches(row, identity));
+    if (rows.length !== 1)
+      return this.fail(
+        index,
+        `subject snapshot ${step.view} matched ${rows.length} rows, want exactly one`,
+      );
+    if (capture) {
+      this.snapshots.set(step.view, { identity, row: goMarshal(rows[0]!) });
+      return true;
+    }
+    if (goMarshal(rows[0]!) !== previous!.row)
+      return this.fail(
+        index,
+        `subject changed in ${step.view}: before=${previous!.row} after=${goMarshal(rows[0]!)}`,
+      );
     return true;
   }
 
@@ -4170,6 +4210,8 @@ const SUITE_MAJORS: { [version: string]: number } = {
   'ess-conformance/7': 7,
   'ess-conformance/8': 8,
   'ess-conformance/9': 9,
+  'ess-conformance/10': 10,
+  'ess-conformance/11': 11,
 };
 
 export function admitSuite(raw: string): Suite {
@@ -4191,8 +4233,8 @@ export function admitSuiteDocument(raw: string, explicit: boolean): Suite {
     throw new Error(`unsupported suite version ${quoteGo(version)}`);
   }
   const carriesCoverage = Object.prototype.hasOwnProperty.call(root, 'coverage');
-  if (carriesCoverage !== (major === 5 || major === 7 || major === 9)) {
-    throw new Error('coverage is required exactly for suite/5, suite/7 and suite/9');
+  if (carriesCoverage !== (major === 5 || major === 7 || major === 9 || major === 11)) {
+    throw new Error('coverage is required exactly for suite/5, suite/7, suite/9 and suite/11');
   }
   for (const key of ['system', 'specification_version', 'spec_digest', 'contract_digest']) {
     const held = text(provenance[key]);
@@ -4240,7 +4282,7 @@ export function admitSuiteDocument(raw: string, explicit: boolean): Suite {
       admitReference(source);
     }
   }
-  if (major === 5 || major === 7 || major === 9) {
+  if (major === 5 || major === 7 || major === 9 || major === 11) {
     const coverage = root.coverage as { [key: string]: Node };
     if (Array.isArray(coverage.refused)) {
       for (const item of coverage.refused as Node[]) {
@@ -4278,7 +4320,7 @@ export function admitSuiteDocument(raw: string, explicit: boolean): Suite {
     original: raw,
     document: root,
   };
-  if (major === 5 || major === 7 || major === 9) {
+  if (major === 5 || major === 7 || major === 9 || major === 11) {
     suite.coverage = root.coverage as { [key: string]: Node };
     // Original admission includes parents which will never execute. Retain their exact unsigned
     // metadata independently of the narrower execution view.
@@ -4505,6 +4547,8 @@ function decodeStep(value: Node): Step {
   if (input !== undefined) {
     step.input = input;
   }
+  const subject = decodeValues(written.subject);
+  if (subject !== undefined) step.subject = subject;
   const params = decodeValues(written.params);
   if (params !== undefined) {
     step.params = params;
@@ -4982,6 +5026,17 @@ export function admitStep(value: Node, major: number): void {
     case 'expect_outcome':
       required += ' outcome';
       break;
+    case 'snapshot_subject':
+      if (major < 10) throw new Error('subject snapshots require suite/10 or /11');
+      required += ' view subject';
+      break;
+    case 'expect_subject_unchanged':
+      if (major < 10) throw new Error('subject preservation requires suite/10 or /11');
+      required += ' view';
+      break;
+    case 'expect_no_error':
+      if (major < 10) throw new Error('no-error assertions require suite/10 or /11');
+      break;
     case 'expect_error':
       required += ' error';
       optional = 'fields';
@@ -5100,6 +5155,7 @@ export function admitStep(value: Node, major: number): void {
         break;
       case 'input':
       case 'params':
+      case 'subject':
         admitValues(held, major, tag === 'expect_invocation');
         break;
       case 'payload':
@@ -5186,6 +5242,8 @@ export function admitEntitySetups(steps: Node[]): void {
       case 'expect_view':
       case 'eventually_view':
       case 'expect_outcome':
+      case 'expect_no_error':
+      case 'expect_subject_unchanged':
       case 'expect_error':
       case 'expect_event':
       case 'expect_no_event':

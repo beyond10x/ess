@@ -455,7 +455,8 @@ fn suite_admission_closes_structural_variants_before_target_identity() {
         "ess-conformance/5",
         "ess-conformance/7",
         "ess-conformance/9",
-        "ess-conformance/10",
+        "ess-conformance/11",
+        "ess-conformance/12",
         "ess-conformance/99",
     ] {
         let mut value = document(&["passed"]);

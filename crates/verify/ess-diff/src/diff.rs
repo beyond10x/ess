@@ -951,7 +951,15 @@ fn written_condition(condition: &ResolvedCondition) -> String {
                 .as_ref()
                 .map_or(String::new(), |guard| format!(" and {guard}")),
         ),
+        ResolvedCondition::SubjectField {
+            field,
+            equals,
+            predicate,
+        } => format!("subject {field} == {equals}; input {predicate:?}"),
         ResolvedCondition::Otherwise => "otherwise".to_owned(),
+        ResolvedCondition::ExternalWhen { cause, predicate } => {
+            format!("external: {cause}; eligible: {predicate}")
+        }
         ResolvedCondition::External { cause } => format!("external: {cause}"),
         ResolvedCondition::WrongState => "wrong-state".to_owned(),
     }
@@ -970,6 +978,7 @@ fn written_subject(subject: &ResolvedSubject) -> String {
             )
         }
         ess_compiler::ir::ResolvedEffect::Updates => format!("updates {entity}"),
+        ess_compiler::ir::ResolvedEffect::Preserves => format!("preserves {entity}"),
     };
     let instance = match &subject.instance {
         ResolvedInstance::Supplied { field } => {

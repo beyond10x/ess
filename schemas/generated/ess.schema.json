@@ -1761,7 +1761,7 @@
       "additionalProperties": false
     },
     "RawOutcome": {
-      "description": "One outcome as written in a document, before validation.\n\n`when`, `external` and `wrong_state` are the three spellings of a condition; writing none of them is the default branch, and writing two is refused.\n\n`creates`, `moves` and `updates` are the three spellings of a [`Subject`], and follow the same shape for the same reason: three keys an author writes at most one of, rather than one key whose value is sometimes a keyword and sometimes a name. Writing none of them says the outcome changes no entity, which is the honest answer for `SendEmail`.",
+      "description": "One outcome as written in a document, before validation.\n\n`when`, `external` and `wrong_state` are the three spellings of a condition; writing none of them is the default branch. In ess/6, `when` beside `external` states input eligibility while retaining an independently arranged external cause. Other conflicts are refused.\n\n`creates`, `moves` and `updates` are the three spellings of a [`Subject`], and follow the same shape for the same reason: three keys an author writes at most one of, rather than one key whose value is sometimes a keyword and sometimes a name. Writing none of them says the outcome changes no entity, which is the honest answer for `SendEmail`.",
       "type": "object",
       "required": [
         "name"
@@ -1839,6 +1839,17 @@
             }
           }
         },
+        "preserves": {
+          "description": "The existing entity whose state and fields this silent branch preserves (ess/6).",
+          "anyOf": [
+            {
+              "$ref": "#/definitions/QualifiedName"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
         "refs": {
           "description": "The records outside this model that explain it, such as `jira:DEV-630`.\n\nEmpty by default. See [`crate::refs`] for why this is a reference and not a paragraph.",
           "type": "array",
@@ -1894,6 +1905,17 @@
           "type": [
             "boolean",
             "null"
+          ]
+        },
+        "when_subject": {
+          "description": "An independently observed subject enum fact (ess/6).",
+          "anyOf": [
+            {
+              "$ref": "#/definitions/RawSubjectField"
+            },
+            {
+              "type": "null"
+            }
           ]
         },
         "when_subject_state": {
@@ -1991,6 +2013,25 @@
           "items": {
             "$ref": "#/definitions/Transition"
           }
+        }
+      },
+      "additionalProperties": false
+    },
+    "RawSubjectField": {
+      "description": "A bounded fact on an existing subject, not the command input or lifecycle state.",
+      "type": "object",
+      "required": [
+        "equals",
+        "field"
+      ],
+      "properties": {
+        "equals": {
+          "description": "One declared variant of that field's enum.",
+          "type": "string"
+        },
+        "field": {
+          "description": "The declared enum field to observe.",
+          "type": "string"
         }
       },
       "additionalProperties": false

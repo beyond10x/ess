@@ -2,7 +2,16 @@
 
 ## [Unreleased]
 
+## [0.28.0] — 2026-09-21
+
 ### Added
+
+- `ess/6` models input eligibility beside an independently arranged external cause,
+  and bounded enum subject history with explicit silent preservation. Conformance synthesis
+  observes history separately from lifecycle and keeps same-state histories distinct.
+  Suite formats 10/11 add no-error assertions and actual subject snapshots; the Rust, Go and
+  TypeScript runners reject missing/duplicate subjects and changed values. Legacy documents
+  retain their formats and reject the new vocabulary. The published source schema is regenerated.
 
 - **`website/docs/reference/spec-versions.md` — what each format version number changed.**
   Eleven format families have been revised past their first version, and `ess/5` is the fifth

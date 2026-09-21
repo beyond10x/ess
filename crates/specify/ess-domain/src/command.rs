@@ -173,7 +173,7 @@
 //! | a `wrong_state` outcome names no error | [`MissingDeclaration`](ValidationCode::MissingDeclaration) |
 //! | a command declares two `wrong_state` outcomes | [`ConflictingDeclaration`](ValidationCode::ConflictingDeclaration) |
 //! | a `wrong_state` outcome on a command with no state to be wrong in | [`UnreachableBranch`](ValidationCode::UnreachableBranch) |
-//! | an outcome is both conditional and external, is `wrong_state` and either, or declares two of `creates`/`moves`/`updates` | [`ConflictingDeclaration`](ValidationCode::ConflictingDeclaration) |
+//! | an outcome is `wrong_state` and either conditional or external, or declares two of `creates`/`moves`/`updates` | [`ConflictingDeclaration`](ValidationCode::ConflictingDeclaration) |
 //! | a `moves:` names no entity, only a bare transition | [`MissingDeclaration`](ValidationCode::MissingDeclaration) |
 //! | an outcome declares a subject and no `instance:`, or an `instance:` and no subject | [`MissingDeclaration`](ValidationCode::MissingDeclaration) |
 //! | an `instance:` names no field of the surface its verb decides | [`UndeclaredReference`](ValidationCode::UndeclaredReference) |
@@ -199,6 +199,7 @@
 //! have shared since wave 1.
 
 pub mod finite;
+pub mod subject_fact;
 pub mod subject_state;
 
 use std::collections::{BTreeMap, BTreeSet};
@@ -372,6 +373,15 @@ impl schemars::JsonSchema for OutcomeName {
 pub enum OutcomeCondition {
     /// Taken when this predicate over the command's input holds.
     When(Predicate),
+    /// A declared enum fact observed on the existing subject, independent of lifecycle.
+    SubjectField {
+        /// The subject field whose type supplies the finite domain.
+        field: String,
+        /// The declared enum variant required by this branch.
+        equals: String,
+        /// Additional input eligibility.
+        predicate: Option<Predicate>,
+    },
     /// Taken when the named existing subject is in this state and the optional input guard holds.
     SubjectState {
         /// The held lifecycle state, read from the subject rather than the input.
@@ -403,6 +413,13 @@ pub enum OutcomeCondition {
     ///
     /// No predicate over the input can decide it, so a generated test must *inject* the condition
     /// rather than construct an input that triggers it.
+    ExternalWhen {
+        /// The external cause, which must still be arranged.
+        cause: String,
+        /// Input eligibility, which does not decide the external result.
+        predicate: Predicate,
+    },
+    /// An externally decided outcome with no input eligibility restriction.
     External {
         /// What outside the input decides this branch, in one phrase — `the provider rejects the
         /// recipient address`. Required: "it can fail" without saying how is not something a test
@@ -424,10 +441,10 @@ impl OutcomeCondition {
     /// The predicate this condition tests, when it tests one.
     pub fn predicate(&self) -> Option<&Predicate> {
         match self {
-            Self::When(predicate) => Some(predicate),
-            Self::SubjectState { predicate, .. } | Self::StateChange { predicate, .. } => {
-                predicate.as_ref()
-            }
+            Self::When(predicate) | Self::ExternalWhen { predicate, .. } => Some(predicate),
+            Self::SubjectState { predicate, .. }
+            | Self::StateChange { predicate, .. }
+            | Self::SubjectField { predicate, .. } => predicate.as_ref(),
             Self::Otherwise | Self::External { .. } | Self::WrongState => None,
         }
     }
@@ -435,9 +452,10 @@ impl OutcomeCondition {
     /// What decides this branch from outside the input, when something does.
     pub fn cause(&self) -> Option<&str> {
         match self {
-            Self::External { cause } => Some(cause),
+            Self::External { cause } | Self::ExternalWhen { cause, .. } => Some(cause),
             Self::When(_)
             | Self::SubjectState { .. }
+            | Self::SubjectField { .. }
             | Self::StateChange { .. }
             | Self::Otherwise
             | Self::WrongState => None,
@@ -448,11 +466,12 @@ impl OutcomeCondition {
     pub fn test_strategy(&self) -> TestStrategy {
         match self {
             Self::When(_) => TestStrategy::ConstructInput,
+            Self::SubjectField { .. } => TestStrategy::ObserveSubjectFact,
             Self::SubjectState { .. } | Self::StateChange { .. } => {
                 TestStrategy::ConstructInputInState
             }
             Self::Otherwise => TestStrategy::DefaultBranch,
-            Self::External { .. } => TestStrategy::InjectFault,
+            Self::External { .. } | Self::ExternalWhen { .. } => TestStrategy::InjectFault,
             Self::WrongState => TestStrategy::ArrangeState,
         }
     }
@@ -484,6 +503,8 @@ pub enum TestStrategy {
     ConstructInput,
     /// Establish the declared held state, then construct an input satisfying the branch guard.
     ConstructInputInState,
+    /// Establish and observe a declared finite subject fact before selection.
+    ObserveSubjectFact,
     /// Build an input that matches no other outcome's `when`.
     DefaultBranch,
     /// Fault-inject the declared cause; no input reaches this branch.
@@ -503,6 +524,7 @@ impl TestStrategy {
         match self {
             Self::ConstructInput => "construct_input",
             Self::ConstructInputInState => "construct_input_in_state",
+            Self::ObserveSubjectFact => "observe_subject_fact",
             Self::DefaultBranch => "default_branch",
             Self::InjectFault => "inject_fault",
             Self::ArrangeState => "arrange_state",
@@ -551,6 +573,8 @@ pub enum Effect {
     /// entity, so an invariant scenario has something to evaluate afterwards, and it changes no
     /// state, so a lifecycle scenario must not claim it moved one.
     Updates,
+    /// An existing subject and its fields remain unchanged, with no error or event.
+    Preserves,
 }
 
 impl Effect {
@@ -558,7 +582,7 @@ impl Effect {
     pub fn transition(&self) -> Option<&str> {
         match self {
             Self::Moves { transition } => Some(transition.as_str()),
-            Self::Creates | Self::Updates => None,
+            Self::Creates | Self::Updates | Self::Preserves => None,
         }
     }
 
@@ -571,6 +595,7 @@ impl Effect {
             Self::Creates => "creates",
             Self::Moves { .. } => "moves",
             Self::Updates => "updates",
+            Self::Preserves => "preserves",
         }
     }
 }
@@ -642,7 +667,9 @@ impl Subject {
     pub fn surface(&self) -> InstanceSurface {
         match self.effect {
             Effect::Creates => InstanceSurface::EmittedEvent,
-            Effect::Moves { .. } | Effect::Updates => InstanceSurface::CommandInput,
+            Effect::Moves { .. } | Effect::Updates | Effect::Preserves => {
+                InstanceSurface::CommandInput
+            }
         }
     }
 }
@@ -1180,7 +1207,9 @@ impl Outcome {
             OutcomeCondition::SubjectState { .. }
             | OutcomeCondition::StateChange { .. }
             | OutcomeCondition::External { .. }
-            | OutcomeCondition::WrongState => false,
+            | OutcomeCondition::ExternalWhen { .. }
+            | OutcomeCondition::WrongState
+            | OutcomeCondition::SubjectField { .. } => false,
         }
     }
 
@@ -1370,7 +1399,21 @@ impl CommandSpec {
         // event and no error really is unobservable, so the rule stands for it.
         let accepts_wrong_state =
             outcome.condition == OutcomeCondition::WrongState && !outcome.refuses;
-        if outcome.emits.is_empty() && outcome.error.is_none() && !accepts_wrong_state {
+        let preserves = outcome
+            .subject
+            .as_ref()
+            .is_some_and(|subject| subject.effect == Effect::Preserves);
+        if preserves
+            && (!outcome.sets.is_empty() || !outcome.emits.is_empty() || outcome.error.is_some())
+        {
+            errors.push(ValidationError::at(
+                location.clone(),
+                ValidationCode::RefusalMutatedState,
+                "a preserving outcome declares no assignment, event or error",
+            ));
+        }
+        if outcome.emits.is_empty() && outcome.error.is_none() && !accepts_wrong_state && !preserves
+        {
             errors.push(
                 ValidationError::at(
                     location.clone(),
@@ -1438,7 +1481,7 @@ impl CommandSpec {
         // the one thing the branch carries, and a branch without one carries nothing at all.
         errors.extend(validate_wrong_state_answer(outcome, &location));
 
-        if let OutcomeCondition::External { cause } = &outcome.condition {
+        if let Some(cause) = outcome.condition.cause() {
             if cause.trim().is_empty() {
                 errors.push(
                     ValidationError::at(
@@ -1760,6 +1803,7 @@ impl CommandSpec {
         let guarded: Vec<_> = self
             .outcomes
             .iter()
+            .filter(|outcome| outcome.condition.cause().is_none())
             .filter_map(|outcome| {
                 outcome
                     .condition
@@ -2680,10 +2724,21 @@ pub struct RawCommandSpec {
     pub refs: Refs,
 }
 
+/// A bounded fact on an existing subject, not the command input or lifecycle state.
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize, schemars::JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct RawSubjectField {
+    /// The declared enum field to observe.
+    pub field: String,
+    /// One declared variant of that field's enum.
+    pub equals: String,
+}
+
 /// One outcome as written in a document, before validation.
 ///
 /// `when`, `external` and `wrong_state` are the three spellings of a condition; writing none of them
-/// is the default branch, and writing two is refused.
+/// is the default branch. In ess/6, `when` beside `external` states input eligibility
+/// while retaining an independently arranged external cause. Other conflicts are refused.
 ///
 /// `creates`, `moves` and `updates` are the three spellings of a [`Subject`], and follow the same
 /// shape for the same reason: three keys an author writes at most one of, rather than one key whose
@@ -2697,6 +2752,9 @@ pub struct RawOutcome {
     /// A predicate over the command's input.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub when: Option<Predicate>,
+    /// An independently observed subject enum fact (ess/6).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub when_subject: Option<RawSubjectField>,
     /// Equality against the existing subject's declared lifecycle state, composed with `when`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub when_subject_state: Option<crate::entity::StateName>,
@@ -2756,6 +2814,9 @@ pub struct RawOutcome {
     /// The entity this outcome changes without moving along its lifecycle.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub updates: Option<QualifiedName>,
+    /// The existing entity whose state and fields this silent branch preserves (ess/6).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub preserves: Option<QualifiedName>,
     /// Which field carries the identity of the instance this outcome acts on.
     ///
     /// Required beside `creates`, `moves` and `updates`, and meaningless without one. The verb
@@ -2894,12 +2955,11 @@ fn outcome_condition(
         });
     }
     match (when, external, wrong_state) {
-        (Some(_), Some(_), _) => conflict(
-            "when",
-            format!(
-                "outcome `{name}` declares both a `when` predicate and an `external` cause; a                  branch is either decided by the input or it is not"
-            ),
-            "keep `external` and drop the predicate, or the other way round",
+        (Some(predicate), Some(cause), false) => Ok(OutcomeCondition::ExternalWhen { cause, predicate }),
+        (Some(_), Some(_), true) => conflict(
+            "wrong_state",
+            "an external input guard cannot also declare wrong_state".to_owned(),
+            "drop wrong_state",
         ),
         (Some(_), None, true) => conflict(
             "when",
@@ -2939,6 +2999,20 @@ impl TryFrom<RawOutcome> for Outcome {
             outcome_conflict(&raw.name, key, message, hint)
         };
         let held_state_key = held_state_key(raw.when_subject_state.is_some());
+        let subject_fact = raw.when_subject;
+        let input_predicate = raw.when.clone();
+        if subject_fact.is_some()
+            && (raw.when_subject_state.is_some()
+                || raw.when_state_changes.is_some()
+                || raw.external.is_some()
+                || raw.wrong_state)
+        {
+            return Err(conflict(
+                "when_subject",
+                "a subject fact has one selection authority".into(),
+                "keep the subject fact and optional input predicate",
+            ));
+        }
         let condition = outcome_condition(
             &raw.name,
             raw.when,
@@ -2947,6 +3021,14 @@ impl TryFrom<RawOutcome> for Outcome {
             raw.external,
             raw.wrong_state,
         )?;
+        let condition = match subject_fact {
+            Some(fact) => OutcomeCondition::SubjectField {
+                field: fact.field,
+                equals: fact.equals,
+                predicate: input_predicate,
+            },
+            None => condition,
+        };
         // `refuses:` answers a question only a wrong-state branch is asked. On any other branch it
         // reads like a claim about the outcome and decides nothing, so it is refused where the
         // author would go and delete it rather than carried as a field nothing consults.
@@ -2962,8 +3044,16 @@ impl TryFrom<RawOutcome> for Outcome {
             ));
         }
         let refuses = raw.refuses.unwrap_or(true);
-        let subject = subject_of(&raw.name, raw.creates, raw.moves, raw.updates, raw.instance)?;
-        if condition.reads_held_state()
+        let subject = subject_of(
+            &raw.name,
+            raw.creates,
+            raw.moves,
+            raw.updates,
+            raw.preserves,
+            raw.instance,
+        )?;
+        if (condition.reads_held_state()
+            || matches!(condition, OutcomeCondition::SubjectField { .. }))
             && !subject
                 .as_ref()
                 .is_some_and(|subject| subject.surface() == InstanceSurface::CommandInput)
@@ -3099,12 +3189,14 @@ fn subject_of(
     creates: Option<QualifiedName>,
     moves: Option<QualifiedName>,
     updates: Option<QualifiedName>,
+    preserves: Option<QualifiedName>,
     instance: Option<String>,
 ) -> Result<Option<Subject>, ValidationErrors> {
     let declared: Vec<&'static str> = [
         creates.as_ref().map(|_| "creates"),
         moves.as_ref().map(|_| "moves"),
         updates.as_ref().map(|_| "updates"),
+        preserves.as_ref().map(|_| "preserves"),
     ]
     .into_iter()
     .flatten()
@@ -3169,6 +3261,13 @@ fn subject_of(
     }
     if let Some(entity) = updates {
         return Ok(Some(Subject::updates(entity, instance)));
+    }
+    if let Some(entity) = preserves {
+        return Ok(Some(Subject {
+            entity,
+            instance,
+            effect: Effect::Preserves,
+        }));
     }
     let Some(qualified) = moves else {
         unreachable!("one of the three keys is declared, and the other two were taken above")
@@ -3257,9 +3356,24 @@ impl TryFrom<RawErrorSpec> for ErrorSpec {
 
 impl From<Outcome> for RawOutcome {
     fn from(outcome: Outcome) -> Self {
+        let when_subject = match &outcome.condition {
+            OutcomeCondition::SubjectField { field, equals, .. } => Some(RawSubjectField {
+                field: field.clone(),
+                equals: equals.clone(),
+            }),
+            _ => None,
+        };
+        let preserves = outcome
+            .subject
+            .as_ref()
+            .filter(|subject| subject.effect == Effect::Preserves)
+            .map(|subject| subject.entity.clone());
         let (when, when_subject_state, when_state_changes, external, wrong_state) =
             match outcome.condition {
                 OutcomeCondition::When(predicate) => (Some(predicate), None, None, None, false),
+                OutcomeCondition::SubjectField { predicate, .. } => {
+                    (predicate, None, None, None, false)
+                }
                 OutcomeCondition::SubjectState { state, predicate } => {
                     (predicate, Some(state), None, None, false)
                 }
@@ -3268,6 +3382,9 @@ impl From<Outcome> for RawOutcome {
                 }
                 OutcomeCondition::Otherwise => (None, None, None, None, false),
                 OutcomeCondition::External { cause } => (None, None, None, Some(cause), false),
+                OutcomeCondition::ExternalWhen { cause, predicate } => {
+                    (Some(predicate), None, None, Some(cause), false)
+                }
                 OutcomeCondition::WrongState => (None, None, None, None, true),
             };
         let (creates, moves, updates, instance) = match outcome.subject {
@@ -3287,6 +3404,11 @@ impl From<Outcome> for RawOutcome {
                 effect: Effect::Updates,
                 instance,
             }) => (None, None, Some(entity), Some(instance)),
+            Some(Subject {
+                effect: Effect::Preserves,
+                instance,
+                ..
+            }) => (None, None, None, Some(instance)),
         };
         let payload = PayloadDeclaration(
             outcome
@@ -3309,6 +3431,7 @@ impl From<Outcome> for RawOutcome {
             name: outcome.name,
             when,
             when_subject_state,
+            when_subject,
             when_state_changes,
             external,
             wrong_state,
@@ -3319,6 +3442,7 @@ impl From<Outcome> for RawOutcome {
             creates,
             moves,
             updates,
+            preserves,
             instance,
             emits: outcome.emits,
             payload,
@@ -3708,30 +3832,30 @@ outcomes:
     }
 
     #[test]
-    fn an_outcome_cannot_be_both_conditional_and_external() {
+    fn guarded_external_retains_fault_strategy_and_eligibility() {
         let raw: RawCommandSpec = serde_yaml::from_str(
-            r"
+            r#"
 name: billing.email.SendEmail
 input:
   - name: recipient
-    type: billing.invoice.Email
+    type: String
 outcomes:
+  - name: sent
+    emits: [billing.email.Sent]
   - name: failed
-    when: recipient == none
+    when: recipient != ""
     external: the provider rejects the address
     error: billing.invoice.InvalidAmount
-",
+"#,
         )
         .expect("parses");
-
-        let errors = CommandSpec::try_from(raw).expect_err("contradictory condition");
-        assert!(errors.contains(ValidationCode::ConflictingDeclaration));
-        assert!(
-            errors
-                .to_string()
-                .contains("either decided by the input or it is not"),
-            "{errors}"
-        );
+        let command = CommandSpec::try_from(raw).expect("typed guarded fault");
+        let outcome = &command.outcomes[1];
+        assert!(matches!(
+            outcome.condition,
+            OutcomeCondition::ExternalWhen { .. }
+        ));
+        assert_eq!(outcome.condition.test_strategy(), TestStrategy::InjectFault);
     }
 
     #[test]
