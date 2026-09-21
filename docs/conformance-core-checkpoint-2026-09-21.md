@@ -1,7 +1,10 @@
-# Conformance core release candidate — 2026-09-21
+# Conformance core release verification — 2026-09-21
 
-Version 0.28.0 is prepared on `feat/conformance-core-semantics`, based on
-`809d7e31c3b22840643d56f47768fc22d605048a`. It has not been released or integrated into main.
+Version [0.28.0](https://github.com/beyond10x/ess/releases/tag/0.28.0) is published.
+[PR #56](https://github.com/beyond10x/ess/pull/56) integrated
+`68581d70bb47a048cd399e55c68f225b80303977` into main before the organization bot created the
+annotated `0.28.0` tag at that same commit. The base was
+`809d7e31c3b22840643d56f47768fc22d605048a`.
 
 The candidate adds ess/6 input-eligible external outcomes and observed enum subject history,
 plus explicit silent subject preservation. Suite/10 and its coverage counterpart /11 carry
@@ -12,7 +15,7 @@ Legacy format refusal and canonical projection checks remain binding.
 
 The approved missing planning epic was recovered exactly from commit `16fb2cfe`:
 SHA256 `622634c42b46e80dd6d811dc30cd3a6b43a69921b01320f1de5c894d491df9dc`.
-The two stories and `task:release-0-28-0` remain active pending integration and publication.
+The two stories and `task:release-0-28-0` are implemented, with exact-tag release evidence recorded.
 An internal adopter retains its own full reports and named regression comparisons; these are not
 public release evidence and carry no public source paths here.
 
@@ -56,10 +59,13 @@ authorized under that existing CI profile; `decision-blocker:local-release-gate-
 the approval and is cleared. This does not claim that the full default gate passes and does not
 change the consumer-accounting baseline or the default gate configuration.
 
-Qualify the exact tag commit with `task check SKIP_CONSUMER_CHECKS=true` and `task site-lab`, retain
-the shared security/privacy evidence, and integrate into main before tagging. Release completion
-still requires the exact remote tag, successful release checks and all four native archives plus
-checksums on a published GitHub Release. No consumer download pin has changed.
+The exact tag commit passed `task check SKIP_CONSUMER_CHECKS=true`, `task site-lab`, and the shared
+security/privacy check before tagging. [Release workflow 35639713420](https://github.com/beyond10x/ess/actions/runs/35639713420)
+passed its required gate, browser checks and all four native package jobs. The published release's
+four archives were downloaded and verified against `SHA256SUMS` and their API digests. The Linux
+x86_64 binary reports `ess 0.28.0`. `task release-status` confirms 38 published version tags, each
+on main and backed by a release and dated change record. Documentation publication is asynchronous
+and was not used as a source-release completion condition.
 
 Run the native consumer lane without `CARGO_TARGET_DIR`, under its reviewed toolchain and flags.
 A different target directory is refused before accounting. The standalone semantic, runtime and

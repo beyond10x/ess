@@ -2,7 +2,7 @@
 format: aep.planning-md/1
 id: story:guarded-external-outcomes
 kind: story
-status: active
+status: implemented
 title: External outcomes preserve input eligibility
 relations:
 - decomposes: epic:model-driven-interpretation
@@ -28,7 +28,7 @@ scope:
   path: schemas/generated
 - confidence: cited
   path: website/docs/reference
-revision: 13
+revision: 15
 ---
 ## Goal
 Permit an externally decided command outcome to declare the input eligibility that must hold before its cause can act. Preserve truthful observation of the resulting outcome.
@@ -47,4 +47,5 @@ crates/specify/ess-domain; crates/specify/ess-compiler; crates/verify/ess-confor
 Operator approved local implementation and a checkpoint after core model and consumer conformance validation on 2026-09-21. No release is claimed by local validation.
 
 ## Checkpoint
-Local semantic and emitted-runtime tests pass. An internal adopter retains all previous named passes. Full consumer accounting remains refused on inherited finite registry gaps. No release is claimed; see docs/conformance-core-checkpoint-2026-09-21.md.
+
+Implemented in PR #56 at 68581d70bb47a048cd399e55c68f225b80303977 and published as ESS 0.28.0. The exact source passed the operator-approved task check SKIP_CONSUMER_CHECKS=true profile, task site-lab, required shared and repository checks, and the release workflow. All four native archives and SHA256SUMS were downloaded and verified; the Linux binary reports ess 0.28.0. The annotated tag belongs to main and task release-status passes. The full default consumer-accounting refusal remains recorded; no accounting baseline was relaxed. See docs/conformance-core-checkpoint-2026-09-21.md and https://github.com/beyond10x/ess/actions/runs/35639713420.
