@@ -49,11 +49,17 @@ metadata guard passes. No descendant was exempted.
 
 ## Publication boundary
 
-The repository's existing CI/release workflow explicitly excludes consumer accounting; local
-`task check` retains it. An operator decision on applying the CI profile to this release is pending
-as `decision-blocker:local-release-gate-profile`. Until that decision or complete qualified
-accounting, do not report the full gate green, merge this candidate, or push its release tag.
-Branch publication for review does not qualify a release. No consumer download pin has changed.
+The repository's existing CI/release workflow explicitly excludes consumer accounting; default
+local `task check` retains it. After the distinction and refusal were explained, the operator
+explicitly instructed merging and tagging PR #56 on 2026-09-21. The bounded 0.28.0 release is
+authorized under that existing CI profile; `decision-blocker:local-release-gate-profile` records
+the approval and is cleared. This does not claim that the full default gate passes and does not
+change the consumer-accounting baseline or the default gate configuration.
+
+Qualify the exact tag commit with `task check SKIP_CONSUMER_CHECKS=true` and `task site-lab`, retain
+the shared security/privacy evidence, and integrate into main before tagging. Release completion
+still requires the exact remote tag, successful release checks and all four native archives plus
+checksums on a published GitHub Release. No consumer download pin has changed.
 
 Run the native consumer lane without `CARGO_TARGET_DIR`, under its reviewed toolchain and flags.
 A different target directory is refused before accounting. The standalone semantic, runtime and

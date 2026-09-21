@@ -8,19 +8,21 @@ relations:
 - verifies: story:guarded-external-outcomes
 - verifies: story:observed-subject-history
 - serves: vision:O2
-revision: 3
+revision: 5
 ---
 ## Goal
 Integrate the guarded external outcome and observed subject history candidates, validate the release, and publish version 0.28.0 with verified archives.
 
 ## Acceptance
+
 - Existing canonical projections and behavioral checks pass; new semantic and emitted runtime mutation witnesses pass.
 - The shared security and privacy check passes on the exact integration commit.
 - The tagged commit belongs to main, release jobs pass, and all four native archives and checksums are published.
-- Required local consumer-accounting refusal remains visible. Using the existing CI profile for local release qualification requires the pending operator decision; no accounting baseline is broadened.
+- The operator-approved existing CI profile qualifies this bounded release; the default local consumer-accounting refusal remains visible and no accounting baseline is broadened.
 
 ## Scope
 Cargo.toml; Cargo.lock; fuzz/Cargo.lock; CHANGELOG.md; changes; WHATS-CHANGED.md; website/docs/getting-started.md; website/docs/reference/spec-versions.md; crates/edge/ess-xtask/src/docs.rs; docs/conformance-core-checkpoint-2026-09-21.md. Integrates the two related stories without concurrent implementation.
 
 ## Authorization
-The operator requested integration into main and passing checks on 2026-09-21. Release preparation is necessary for the adopter's published-binary pin. A separate decision is pending on the inherited local consumer-accounting refusal versus the already configured CI/release profile.
+
+The operator explicitly instructed merging and tagging PR #56 on 2026-09-21, after being told that every CI check passes, the full local consumer-accounting gate still refuses, and release under the existing CI profile awaits approval. This authorizes the existing CI/release profile for this bounded 0.28.0 release. Local qualification will use task check SKIP_CONSUMER_CHECKS=true plus task site-lab on the exact tag commit. The ordinary default task check retains consumer accounting; its refusal remains recorded and no accounting baseline or assertion is relaxed. Integration and annotated tagging use the organization bot, followed by verification of the exact tag, required checks, published release and four archives plus checksums.
