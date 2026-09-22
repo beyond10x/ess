@@ -1,0 +1,89 @@
+format: ess/7
+system: retained
+version: v1
+domain: retained.core
+entities:
+  - name: retained.core.Transaction
+    identity: {name: transaction_id, type: Uuid}
+    fields: [{name: note, type: String}]
+    lifecycle:
+      initial: Proposed
+      states: [Proposed, Validated, Rejected, Stale, Committed]
+      terminal: [Rejected, Stale, Committed]
+      transitions:
+        - {name: validate, from: [Proposed], to: Validated}
+        - {name: reject, from: [Proposed], to: Rejected}
+        - {name: stale, from: [Validated], to: Stale}
+        - {name: commit, from: [Validated], to: Committed}
+events:
+  - name: retained.core.Proposed
+    fields: [{name: transaction_id, type: Uuid}]
+  - name: retained.core.Changed
+    fields: []
+errors:
+  - name: retained.core.TransactionStateConflict
+    fields: []
+commands:
+  - name: retained.core.Propose
+    input: [{name: note, type: String}]
+    outcomes:
+      - name: proposed
+        creates: retained.core.Transaction
+        instance: transaction_id
+        emits: [retained.core.Proposed]
+        payload:
+          retained.core.Proposed:
+            transaction_id: {generated: true}
+        sets: {note: input.note}
+  - name: retained.core.Validate
+    input: [{name: transaction_id, type: Uuid}]
+    outcomes:
+      - name: validated
+        moves: retained.core.Transaction.validate
+        instance: transaction_id
+        emits: [retained.core.Changed]
+      - name: refused
+        wrong_state: true
+        error: retained.core.TransactionStateConflict
+  - name: retained.core.Reject
+    input: [{name: transaction_id, type: Uuid}]
+    outcomes:
+      - name: rejected
+        moves: retained.core.Transaction.reject
+        instance: transaction_id
+        emits: [retained.core.Changed]
+      - name: refused
+        wrong_state: true
+        error: retained.core.TransactionStateConflict
+  - name: retained.core.Stale
+    input: [{name: transaction_id, type: Uuid}]
+    outcomes:
+      - name: stale
+        moves: retained.core.Transaction.stale
+        instance: transaction_id
+        emits: [retained.core.Changed]
+      - name: refused
+        wrong_state: true
+        error: retained.core.TransactionStateConflict
+  - name: retained.core.Commit
+    input: [{name: transaction_id, type: Uuid}]
+    response: [{name: revision, type: Integer}]
+    outcomes:
+      - name: committed
+        when_subject_state: Validated
+        moves: retained.core.Transaction.commit
+        instance: transaction_id
+        emits: [retained.core.Changed]
+      - name: replayed
+        when_subject_state: Committed
+        replays: committed
+      - name: refused
+        error: retained.core.TransactionStateConflict
+views:
+  - name: retained.core.Transactions
+    source: retained.core.Transaction
+    consistency: read_your_writes
+    fields:
+      - {name: transaction_id, type: Uuid}
+      - {name: note, type: String}
+      - {name: state, type: retained.core.Transaction.State}

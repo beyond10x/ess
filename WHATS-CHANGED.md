@@ -6,6 +6,7 @@ Generated from `changes/*.yaml` by `cargo xtask whats-changed`. Edit a fragment,
 
 | Release | Change | Kind | Impact |
 |---|---|---|---|
+| [0.29.0](#verify-retries-against-their-original-command-results) | Verify retries against their original command results | capability | significant |
 | [0.28.0](#conformance-observes-history-and-independently-arranged-failures) | Conformance observes history and independently arranged failures | capability | significant |
 | [0.27.0](#an-enum-variant-carries-its-own-wire-spelling) | An enum variant carries its own wire spelling | capability | significant |
 | [0.26.0](#a-branch-may-say-the-field-it-owns-holds-nothing) | A branch may say the field it owns holds nothing | capability | significant |
@@ -22,6 +23,14 @@ Generated from `changes/*.yaml` by `cargo xtask whats-changed`. Edit a fragment,
 | [0.16.0](#an-authored-scenario-can-claim-a-length-of-time-and-a-target-has-to-answer-for-it) | An authored scenario can claim a length of time, and a target has to answer for it | capability | significant |
 | [0.14.0](#a-component-can-declare-a-command-line-surface-and-ess-synthesizes-its-parser) | A component can declare a command-line surface, and ESS synthesizes its parser | capability | significant |
 | [0.1.0](#ess-becomes-a-standalone-executable-specification-toolchain) | ESS becomes a standalone executable specification toolchain | migration | significant |
+
+## 0.29.0 — 2026-09-22
+
+### Verify retries against their original command results
+
+capability · significant impact · [release notes](https://github.com/beyond10x/ess/releases/tag/0.29.0)
+
+Source ess/7 declares silent retries of original command results and finite state refusals. Conformance suites 12/13 compare actual retained responses and complete subjects in Rust and Go; unsupported runners refuse. Native APIs preserve typed results, and diff/6 records the new semantics.
 
 ## 0.28.0 — 2026-09-21
 

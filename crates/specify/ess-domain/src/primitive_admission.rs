@@ -99,6 +99,19 @@ fn held_state_conditions(
     format: FormatVersion,
     errors: &mut ValidationErrors,
 ) {
+    if format.major() < 7
+        && (command.has_state_refusal()
+            || command
+                .outcomes
+                .iter()
+                .any(|outcome| outcome.replays.is_some()))
+    {
+        errors.push(ValidationError::at(
+            command.site().key("outcomes"),
+            ValidationCode::UnsupportedFormatVersion,
+            "retained results and effect-free state defaults require specification format ess/7",
+        ));
+    }
     if format.major() < 6
         && command.outcomes.iter().any(|outcome| {
             matches!(

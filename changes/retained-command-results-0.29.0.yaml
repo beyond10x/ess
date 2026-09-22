@@ -1,0 +1,14 @@
+schema: b10x-change/v1
+id: ess/retained-command-results-0.29.0
+repository: ess
+publishedAt: 2026-09-22T06:46:21Z
+title: Verify retries against their original command results
+summary: >-
+  Source ess/7 declares silent retries of original command results and finite state refusals. Conformance suites 12/13 compare actual retained responses and complete subjects in Rust and Go; unsupported runners refuse. Native APIs preserve typed results, and diff/6 records the new semantics.
+kind: capability
+impact: significant
+source:
+  url: https://github.com/beyond10x/ess/releases/tag/0.29.0
+  version: 0.29.0
+journeys: [specify, verify]
+affectedSurfaces: [ess/docs]

@@ -40,6 +40,32 @@ use ess_gen::asyncapi::AsyncApi;
 use ess_gen::provenance::Provenance;
 use serde_yaml::Value;
 
+#[test]
+fn retained_command_relation_is_visible_without_a_synthetic_event() {
+    let raw = RawSpecFile::parse(include_str!(
+        "../../../verify/ess-conformance/tests/fixtures/retained-replay.yaml"
+    ))
+    .unwrap();
+    let components = RawSpecFile::parse("components:\n  - component: retained-service\n    owns:\n      domains: [retained.core]\n    accepts:\n      commands: [retained.core.Seed]\n    publishes:\n      events: [retained.core.Seeded]\n").unwrap();
+    let spec = Specification::assemble([
+        (Source::new("retained.yaml"), raw),
+        (Source::new("components.yaml"), components),
+    ])
+    .unwrap();
+    let ir = compile(&spec, &ess_compiler::source::SourceMap::new()).unwrap();
+    let docs = documents(&ir);
+    let text = docs.values().next().unwrap();
+    let doc: Value = serde_yaml::from_str(text).unwrap();
+    let relation = &doc["x-ess-retained-results"][0];
+    assert_eq!(relation["command"].as_str(), Some("retained.core.Seed"));
+    assert_eq!(relation["outcome"].as_str(), Some("replayed"));
+    assert_eq!(relation["origin"].as_str(), Some("seeded"));
+    assert!(relation["response"]
+        .as_sequence()
+        .is_some_and(|fields| fields.len() == 5));
+    assert_eq!(doc["channels"].as_mapping().unwrap().len(), 1);
+}
+
 /// The billing example's directory.
 fn example() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR"))

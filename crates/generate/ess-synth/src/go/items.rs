@@ -393,7 +393,10 @@ fn outcome_variant(
         let _ = writeln!(out, "//\n// {}", summary.trim());
     }
     let carried = outcome_event_fields(emit, outcome);
-    if carried.is_empty() && outcome.error.is_none() {
+    if carried.is_empty()
+        && outcome.error.is_none()
+        && !super::super::rust::items::response_bearing(outcome)
+    {
         let _ = writeln!(
             out,
             "type {variant_name} struct{{}}\n\nfunc ({variant_name}) {}() {{}}",
@@ -576,7 +579,7 @@ fn response_field_name(fields: &[ResolvedField], wanted: &str) -> String {
 }
 fn response_checks(out: &mut String, emit: &Emit<'_>, command: &ResolvedCommand) {
     for outcome in &command.outcomes {
-        if !super::super::rust::items::response_bearing(outcome) {
+        if !super::super::rust::items::response_mapped(outcome) {
             continue;
         }
         emit.import("reflect");

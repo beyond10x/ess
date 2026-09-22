@@ -714,11 +714,18 @@ fn schemas(ir: &EssIr, component: &ResolvedComponent) -> BTreeMap<String, Fragme
             );
         }
         roots.extend(types::field_leaves(&command.input));
+        if command.outcomes.iter().any(|o| o.retains_result) {
+            out.insert(
+                format!("{}.Result", command.name),
+                embedded(&types::message(&Message::of_response(command))),
+            );
+            roots.extend(types::field_leaves(&command.response));
+        }
 
         for outcome in &command.outcomes {
             out.insert(
                 response_key(command, outcome),
-                written(outcome_schema(ir, outcome)),
+                written(outcome_schema(ir, command, outcome)),
             );
             if let Some(error) = &outcome.error {
                 let declared = ir.error(error);
@@ -840,7 +847,7 @@ fn view_key(view: &ResolvedView) -> String {
 }
 
 /// The response body for one outcome.
-fn outcome_schema(ir: &EssIr, outcome: &ResolvedOutcome) -> Value {
+fn outcome_schema(ir: &EssIr, command: &ResolvedCommand, outcome: &ResolvedOutcome) -> Value {
     let mut required = vec![Value::String(OUTCOME.to_owned())];
     let mut properties = Map::new();
     properties.insert(
@@ -872,13 +879,24 @@ fn outcome_schema(ir: &EssIr, outcome: &ResolvedOutcome) -> Value {
         }
     }
 
-    json!({
+    if outcome.retains_result {
+        required.push(Value::String("response".to_owned()));
+        properties.insert(
+            "response".into(),
+            json!({"$ref": reference(&format!("{}.Result", command.name))}),
+        );
+    }
+    let mut schema = json!({
         "type": "object",
         "additionalProperties": false,
         "description": outcome_description(ir, outcome),
         "required": required,
         "properties": properties,
-    })
+    });
+    if let Some(replay) = &outcome.replays {
+        schema["x-ess-replays"] = json!({"command": command.name, "outcome": replay.origin});
+    }
+    schema
 }
 
 /// What the model says about one outcome, as prose.
@@ -936,6 +954,7 @@ fn outcome_description(ir: &EssIr, outcome: &ResolvedOutcome) -> String {
     // What the caller's request did to the system's state, in the response that reports it. A
     // caller reading `202` learns that a branch was taken; without this it does not learn that an
     // invoice now exists, and the specification does say so.
+    parts.extend(retained_result_description(outcome));
     if let Some(subject) = &outcome.subject {
         let entity = ir.entity(&subject.entity);
         parts.push(match &subject.effect {
@@ -992,6 +1011,15 @@ fn outcome_description(ir: &EssIr, outcome: &ResolvedOutcome) -> String {
 /// out alphabetical, and the one ordering the specification's author expressed would be gone from
 /// the published contract. Both are deterministic; only one of them still shows the model.
 type Fragment = serde_yaml::Value;
+
+fn retained_result_description(outcome: &ResolvedOutcome) -> Option<String> {
+    outcome.replays.as_ref().map(|replay| {
+        format!(
+            "Returns the exact retained result of `{}` without an error, event, or subject change.",
+            replay.origin
+        )
+    })
+}
 
 /// The fragment [`types`] publishes for one construct, aimed at this document's own table.
 ///

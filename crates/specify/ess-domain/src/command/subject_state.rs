@@ -108,9 +108,11 @@ pub fn validate_shape(command: &CommandSpec) -> ValidationErrors {
             ));
             continue;
         }
-        let Some(subject) = outcome
-            .subject
-            .as_ref()
+        if outcome.is_unconditional() && outcome.error.is_some() && outcome.subject.is_none() {
+            continue;
+        }
+        let Some(subject) = command
+            .selection_subject(outcome)
             .filter(|subject| subject.surface() == InstanceSurface::CommandInput)
         else {
             errors.push(ValidationError::at(command.site().key("outcomes").named(outcome.name.as_str()), ValidationCode::UnobservableFact,
@@ -149,7 +151,7 @@ pub fn validate(spec: &Specification, types: &TypeRegistry) -> ValidationErrors 
                     OutcomeCondition::External { .. } | OutcomeCondition::ExternalWhen { .. }
                 )
             })
-            .find_map(|outcome| outcome.subject.as_ref())
+            .find_map(|outcome| command.selection_subject(outcome))
         else {
             continue;
         };
@@ -225,7 +227,7 @@ fn validate_partition(
         &guards,
         &entity.states.states,
     ) else {
-        if default.is_none() {
+        if default.is_none() || command.has_state_refusal() {
             errors.push(ValidationError::at(command.site().key("outcomes"), ValidationCode::NonExhaustiveBranches,
                     "subject-state/input coverage is open, unsupported, or exceeds 64 joint assignments; declare a genuine default"));
         } else {

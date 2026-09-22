@@ -449,6 +449,9 @@ impl<C: Clock> Runner<C> {
         target: &T,
     ) -> Flow {
         match step {
+            ScenarioStep::ExpectNoEvents => expect_no_events(run),
+            ScenarioStep::CaptureCommandResult { capture } => retained_result(capture, true, run),
+            ScenarioStep::ExpectReplayResult { capture } => retained_result(capture, false, run),
             ScenarioStep::ExpectResponsePayload { response } => {
                 expect_response_payload(response, run)
             }
@@ -474,9 +477,19 @@ impl<C: Clock> Runner<C> {
             ScenarioStep::ExpectOutcome { outcome } => expect_outcome(outcome, run),
             ScenarioStep::ExpectNoError => expect_no_error(run),
             ScenarioStep::SnapshotSubject { view, subject } => {
-                snapshot_subject(view, Some(subject), run)
+                snapshot_subject(view, Some(subject), None, run)
             }
-            ScenarioStep::ExpectSubjectUnchanged { view } => snapshot_subject(view, None, run),
+            ScenarioStep::ExpectSubjectUnchanged { view } => {
+                snapshot_subject(view, None, None, run)
+            }
+            ScenarioStep::SnapshotCompleteSubject {
+                view,
+                subject,
+                shape,
+            } => capture_complete_subject(view, subject, shape, run),
+            ScenarioStep::ExpectCompleteSubjectUnchanged { view } => {
+                compare_complete_subject(view, run)
+            }
             ScenarioStep::ExpectError { error, fields } => expect_error(error, fields, run),
             ScenarioStep::ExpectEvent {
                 event,
@@ -1106,6 +1119,7 @@ fn execute_command<T: ConformanceTarget>(
             run.remember(&result.direct_events);
             run.last_command = Some(Executed {
                 command: command.to_string(),
+                actor: actor.cloned(),
                 input: resolved,
                 result,
             });
@@ -1151,6 +1165,24 @@ fn expect_outcome(outcome: &OutcomeRef, run: &mut Run) -> Flow {
 }
 
 /// The absence of an error is explicit; legacy outcome checks retain their meaning.
+fn expect_no_events(run: &mut Run) -> Flow {
+    if run
+        .last_command
+        .as_ref()
+        .is_some_and(|c| c.result.direct_events.is_empty())
+    {
+        run.record(CheckResult::passed(CheckCode::Event, "no direct events"));
+    } else {
+        run.record(CheckResult::failed(
+            "no direct events",
+            Diagnostic::new(CheckCode::Event, run.id.clone())
+                .expected("a preceding command with zero direct events")
+                .observed("missing command or new events"),
+        ));
+    }
+    Flow::Continue
+}
+
 fn expect_no_error(run: &mut Run) -> Flow {
     let Some(executed) = run.last_command.as_ref() else {
         run.record(no_command(&run.id, "absence of an error"));
@@ -1222,6 +1254,95 @@ fn expect_response_payload(response: &crate::response::Observation, run: &mut Ru
             Diagnostic::new(CheckCode::Payload, run.id.clone())
                 .declared_by(response.event.clone())
                 .expected("event payload matches the actual typed command response")
+                .observed(reason),
+        )),
+    }
+    Flow::Continue
+}
+
+struct RetainedResult {
+    authority: crate::replay::Observation,
+    response: BTreeMap<String, Node>,
+    identity: Node,
+    input: BTreeMap<String, Node>,
+    actor: Option<ActorRef>,
+}
+
+fn retained_result(capture: &crate::replay::Observation, original: bool, run: &mut Run) -> Flow {
+    let result = (|| {
+        let executed = run.last_command.as_ref().ok_or("no preceding command")?;
+        let expected = if original {
+            &capture.origin
+        } else {
+            &capture.replay
+        };
+        if executed.command != expected.command.to_string()
+            || executed.result.outcome.as_ref() != Some(expected)
+        {
+            return Err("retained result names a different command or outcome".to_owned());
+        }
+        if executed.result.error.is_some() {
+            return Err("retained result returned an error".into());
+        }
+        let identity = run
+            .instances
+            .get(&capture.instance)
+            .ok_or("original subject has no observed identity")?;
+        if original {
+            if capture
+                .identity
+                .read(&executed.input, &executed.result.direct_events)?
+                != identity
+            {
+                return Err("captured subject differs from the actual original identity".into());
+            }
+            capture.admit_result(executed.result.response.as_ref())?;
+            if run.retained.contains_key(&capture.snapshot) {
+                return Err("original result snapshot already exists".into());
+            }
+            run.retained.insert(
+                capture.snapshot.clone(),
+                RetainedResult {
+                    authority: capture.clone(),
+                    response: executed
+                        .result
+                        .response
+                        .clone()
+                        .ok_or("missing original response")?,
+                    identity: identity.clone(),
+                    input: executed.input.clone(),
+                    actor: executed.actor.clone(),
+                },
+            );
+        } else {
+            let saved = run
+                .retained
+                .get(&capture.snapshot)
+                .ok_or("original result snapshot is missing")?;
+            if &saved.authority != capture
+                || &saved.identity != identity
+                || saved.input != executed.input
+                || saved.actor != executed.actor
+            {
+                return Err(
+                    "replay substituted the original authority, subject, input, or actor".into(),
+                );
+            }
+            if !executed.result.direct_events.is_empty() {
+                return Err("replay emitted new facts".into());
+            }
+            capture.compare(&saved.response, executed.result.response.as_ref())?;
+        }
+        Ok(())
+    })();
+    let about = format!("retained result {}", capture.snapshot);
+    match result {
+        Ok(()) => run.record(CheckResult::passed(CheckCode::Payload, about)),
+        Err(reason) => run.record(CheckResult::failed(
+            about,
+            Diagnostic::new(CheckCode::Payload, run.id.clone())
+                .declared_by(capture.replay.clone())
+                .expected("exact retained original result, without error or new facts")
                 .observed(reason),
         )),
     }
@@ -1808,10 +1929,30 @@ fn expect_view(view: &ViewRef, expectation: &ViewExpectation, run: &mut Run) -> 
     Flow::Continue
 }
 
+fn capture_complete_subject(
+    view: &ViewRef,
+    subject: &BTreeMap<String, ScenarioValue>,
+    shape: &crate::subject::SubjectShape,
+    run: &mut Run,
+) -> Flow {
+    run.complete_shapes.insert(view.clone(), shape.clone());
+    snapshot_subject(view, Some(subject), Some(shape), run)
+}
+
+fn compare_complete_subject(view: &ViewRef, run: &mut Run) -> Flow {
+    let shape = run
+        .complete_shapes
+        .get(view)
+        .cloned()
+        .expect("admitted complete pair");
+    snapshot_subject(view, None, Some(&shape), run)
+}
+
 /// A snapshot is an observation of one real row, including values synthesis cannot predict.
 fn snapshot_subject(
     view: &ViewRef,
     subject: Option<&BTreeMap<String, ScenarioValue>>,
+    shape: Option<&crate::subject::SubjectShape>,
     run: &mut Run,
 ) -> Flow {
     let selected = if let Some(subject) = subject {
@@ -1869,6 +2010,18 @@ fn snapshot_subject(
         })
         .collect();
     let matches = rows.len() == 1;
+    if let Some(shape) = shape.filter(|_| matches) {
+        if let Err(reason) = shape.admit_row(rows[0]) {
+            run.record(CheckResult::failed(
+                format!("complete subject snapshot {view}"),
+                Diagnostic::new(CheckCode::View, run.id.clone())
+                    .declared_by(view.clone())
+                    .expected("an actual row satisfying its complete declared shape".to_owned())
+                    .observed(reason),
+            ));
+            return Flow::Stop;
+        }
+    }
     let unchanged = matches
         && (subject.is_some()
             || run
@@ -1931,6 +2084,7 @@ enum Flow {
 /// The command a scenario last executed, and what it answered.
 struct Executed {
     command: String,
+    actor: Option<ActorRef>,
     input: BTreeMap<String, Node>,
     result: SemanticCommandResult,
 }
@@ -1952,6 +2106,8 @@ struct Run {
     unreadable: Option<(ViewRef, String)>,
     instances: BTreeMap<InstanceName, Node>,
     snapshots: BTreeMap<ViewRef, (ViewRow, ViewRow)>,
+    complete_shapes: BTreeMap<ViewRef, crate::subject::SubjectShape>,
+    retained: BTreeMap<InstanceName, RetainedResult>,
     established: Vec<(EntityRef, Node)>,
     /// The instants an earlier step named, so a window measured from an unmarked one is a suite
     /// defect rather than a measurement from whatever was in hand.
@@ -1970,6 +2126,8 @@ impl Run {
             unreadable: None,
             instances: BTreeMap::new(),
             snapshots: BTreeMap::new(),
+            complete_shapes: BTreeMap::new(),
+            retained: BTreeMap::new(),
             established: Vec::new(),
             marked: BTreeSet::new(),
             seen: Vec::new(),

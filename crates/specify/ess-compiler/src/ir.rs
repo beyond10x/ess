@@ -712,6 +712,18 @@ pub struct ResolvedSubject {
     pub instance: ResolvedInstance,
 }
 
+/// A command-local original success and its retained identity authority.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
+pub struct ResolvedReplay {
+    /// Name of the original successful outcome.
+    pub origin: OutcomeName,
+    /// Original subject; this is observation authority, not a replay effect.
+    pub subject: ResolvedSubject,
+    /// Resolver-owned index into the same command's outcomes.
+    #[serde(skip)]
+    pub(crate) index: usize,
+}
+
 /// Whether a branch takes the default answer, so the key is left out of the compiled document.
 ///
 /// Only `refuses: false` is written. The IR is serialised and never read back, and an IR that
@@ -742,6 +754,16 @@ pub struct ResolvedOutcome {
     /// it. [`EssIr::drivers`] is that relation, from the entity's side.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub subject: Option<ResolvedSubject>,
+    /// Retained result observed from an earlier success of this command.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub replays: Option<ResolvedReplay>,
+    /// This branch returns a retained typed result, even without an event payload mapping.
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    pub retains_result: bool,
+    /// Compiler-minted source/7 requirement: observe the complete held subject and zero direct
+    /// events for an ordinary named wrong-state refusal. This grants no product effect authority.
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    pub complete_refusal: bool,
     /// How a generated test reaches this branch.
     ///
     /// Computed once here, from the domain's own answer, so two projections cannot disagree about
@@ -955,6 +977,29 @@ fn unstated_secrecy(secret: &bool) -> bool {
 }
 
 impl ResolvedCommand {
+    /// Resolve the original success using the index minted with this command.
+    pub fn replay_origin(&self, replay: &ResolvedReplay) -> &ResolvedOutcome {
+        &self.outcomes[replay.index]
+    }
+
+    /// The entity identity used to select a held-state branch, independently of its effects.
+    pub fn selection_subject(&self, outcome: &ResolvedOutcome) -> Option<&ResolvedSubject> {
+        self.outcomes
+            .iter()
+            .find(|o| o.name == outcome.name)
+            .and_then(|o| {
+                o.subject
+                    .as_ref()
+                    .or_else(|| o.replays.as_ref().map(|r| &r.subject))
+            })
+            .or_else(|| {
+                (matches!(outcome.condition, ResolvedCondition::Otherwise)
+                    && outcome.error.is_some())
+                .then(|| self.outcomes.iter().find_map(|o| o.subject.as_ref()))
+                .flatten()
+            })
+    }
+
     /// Every event any outcome emits, in outcome order.
     ///
     /// An event emitted by two outcomes appears twice: the caller asking this question is usually

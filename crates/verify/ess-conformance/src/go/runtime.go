@@ -77,7 +77,7 @@ func suiteReference(value any) error {
 		return err
 	}
 	d, ok := r["digest"].(string)
-	if (r["version"] != "ess-conformance/5" && r["version"] != "ess-conformance/7" && r["version"] != "ess-conformance/9" && r["version"] != "ess-conformance/11") || r["digest_profile"] != "sha256-json-bytes/1" ||
+	if (r["version"] != "ess-conformance/5" && r["version"] != "ess-conformance/7" && r["version"] != "ess-conformance/9" && r["version"] != "ess-conformance/11" && r["version"] != "ess-conformance/13") || r["digest_profile"] != "sha256-json-bytes/1" ||
 		!ok || !strings.HasPrefix(d, "sha256:") || !modelDigest.MatchString(strings.TrimPrefix(d, "sha256:")) {
 		return coverageError()
 	}
@@ -911,7 +911,7 @@ func scenarioMeaning(value any) any {
 				step[key] = nodeMeaning(values)
 			}
 		}
-		if shape, ok := step["shape"].(map[string]any); ok {
+		if shape, ok := step["shape"].(map[string]any); ok && step["step"] != "snapshot_complete_subject" {
 			shapes := map[string]any{}
 			for key, value := range shape {
 				leaf := copyObject(value.(map[string]any))
@@ -1429,21 +1429,23 @@ type Scenario struct {
 
 // Step is one step of a scenario. Which fields are set depends on Step.
 type Step struct {
-	Response     *responseObservation `json:"response,omitempty"`
-	Check        *PeriodicCheck       `json:"check,omitempty"`
-	ReadingLeft  *ReadingReference    `json:"left,omitempty"`
-	ReadingRight *ReadingReference    `json:"right,omitempty"`
-	ReadingOrder string               `json:"order,omitempty"`
-	Identity     Node                 `json:"identity,omitempty"`
-	Fields       map[string]Node      `json:"fields,omitempty"`
-	State        string               `json:"state,omitempty"`
-	Step         string               `json:"step"`
-	Command      string               `json:"command,omitempty"`
-	Actor        string               `json:"actor,omitempty"`
-	Input        map[string]Value     `json:"input,omitempty"`
-	Outcome      *OutcomeRef          `json:"outcome,omitempty"`
-	Force        *OutcomeRef          `json:"force,omitempty"`
-	Event        string               `json:"event,omitempty"`
+	CompleteShape *subjectShape        `json:"-"`
+	Capture       *replayObservation   `json:"capture,omitempty"`
+	Response      *responseObservation `json:"response,omitempty"`
+	Check         *PeriodicCheck       `json:"check,omitempty"`
+	ReadingLeft   *ReadingReference    `json:"left,omitempty"`
+	ReadingRight  *ReadingReference    `json:"right,omitempty"`
+	ReadingOrder  string               `json:"order,omitempty"`
+	Identity      Node                 `json:"identity,omitempty"`
+	Fields        map[string]Node      `json:"fields,omitempty"`
+	State         string               `json:"state,omitempty"`
+	Step          string               `json:"step"`
+	Command       string               `json:"command,omitempty"`
+	Actor         string               `json:"actor,omitempty"`
+	Input         map[string]Value     `json:"input,omitempty"`
+	Outcome       *OutcomeRef          `json:"outcome,omitempty"`
+	Force         *OutcomeRef          `json:"force,omitempty"`
+	Event         string               `json:"event,omitempty"`
 	// Payload is plain values, not Value: an event's fields are compared against what the
 	// specification declared them to be, and there is nothing earlier in the scenario for them to
 	// refer to. `input` and a view expectation's `fields` are the ones that can refer back.
@@ -1557,8 +1559,8 @@ func Run(t *testing.T, newTarget func() Target) {
 	if err != nil {
 		t.Fatalf("suite admission: %v", err)
 	}
-	if (suite.Provenance.SuiteVersion == "ess-conformance/8" || suite.Provenance.SuiteVersion == "ess-conformance/9" || suite.Provenance.SuiteVersion == "ess-conformance/10" || suite.Provenance.SuiteVersion == "ess-conformance/11") && config.version != "2" {
-		t.Fatalf("suite/8 and /9 require explicit ESS_REPORT_FORMAT=2 before execution")
+	if (suite.Provenance.SuiteVersion == "ess-conformance/8" || suite.Provenance.SuiteVersion == "ess-conformance/9" || suite.Provenance.SuiteVersion == "ess-conformance/10" || suite.Provenance.SuiteVersion == "ess-conformance/11" || suite.Provenance.SuiteVersion == "ess-conformance/12" || suite.Provenance.SuiteVersion == "ess-conformance/13") && config.version != "2" {
+		t.Fatalf("suite/8 through /13 require explicit ESS_REPORT_FORMAT=2 before execution")
 	}
 	if (suite.Provenance.SuiteVersion == "ess-conformance/5" || suite.Provenance.SuiteVersion == "ess-conformance/6" || suite.Provenance.SuiteVersion == "ess-conformance/7") && config.version != "2" {
 		t.Fatalf("suite/5, /6 and /7 require explicit ESS_REPORT_FORMAT=2 before execution")
@@ -1765,6 +1767,8 @@ func writeReport(t *testing.T, suite Suite, identity Identity, results []scenari
 type subjectSnapshot struct {
 	identity map[string]Node
 	row      []byte
+	shape    *subjectShape
+	complete map[string]Node
 }
 
 type run struct {
@@ -1793,6 +1797,10 @@ type run struct {
 	// last is what the most recent command did, for the assertions that read it.
 	last        CommandResult
 	lastCommand string
+	lastInput   map[string]Node
+	lastActor   string
+	retained    map[string]retainedCommandResult
+	replayMode  bool
 	// consistency is the token the last command returned, for a read_your_writes query.
 	consistency string
 	// lastView is what the last query_view returned, for the expect_view after it.
@@ -1808,6 +1816,11 @@ type run struct {
 }
 
 func (r *run) execute(id string, scenario Scenario) {
+	for _, step := range scenario.Steps {
+		if step.Capture != nil {
+			r.replayMode = true
+		}
+	}
 	context := ScenarioContext{Scenario: id, Correlation: r.correlation}
 	if err := r.target.BeginScenario(context); err != nil {
 		r.callbacksComplete = true // begin returned; no teardown is required
@@ -1842,6 +1855,13 @@ func (r *run) execute(id string, scenario Scenario) {
 // and running them produces a second failure about the first one's cause.
 func (r *run) step(index int, step Step) bool {
 	switch step.Step {
+	case "capture_command_result", "expect_replay_result":
+		return r.retainedResult(index, step)
+	case "expect_no_events":
+		if r.lastCommand == "" || len(r.last.DirectEvents) != 0 {
+			return r.fail(index, "expected a command with no direct events")
+		}
+		return true
 	case "expect_response_payload":
 		return r.expectResponsePayload(index, step)
 	case "check_periodic":
@@ -1856,6 +1876,8 @@ func (r *run) step(index int, step Step) bool {
 		return r.expectOutcome(index, step)
 	case "snapshot_subject", "expect_subject_unchanged":
 		return r.snapshotSubject(index, step)
+	case "snapshot_complete_subject", "expect_complete_subject_unchanged":
+		return r.snapshotCompleteSubject(index, step)
 	case "expect_no_error":
 		if r.lastCommand == "" {
 			return r.fail(index, "no command preceded the no-error assertion")
@@ -1910,6 +1932,18 @@ func (r *run) executeCommand(index int, step Step) bool {
 	input, ok := r.resolveAll(index, step.Input)
 	if !ok {
 		return false
+	}
+	if r.replayMode {
+		var err error
+		r.lastInput, err = replaySnapshot(input)
+		if err != nil {
+			return r.fail(index, "replay input snapshot: %v", err)
+		}
+		input, err = replaySnapshot(input)
+		if err != nil {
+			return r.fail(index, "replay request snapshot: %v", err)
+		}
+		r.lastActor = step.Actor
 	}
 	result, err := r.target.ExecuteCommand(CommandRequest{
 		Command:     step.Command,
@@ -3394,11 +3428,15 @@ func admitSuiteDocument(raw string, explicit bool) (Suite, error) {
 		major = 10
 	case "ess-conformance/11":
 		major = 11
+	case "ess-conformance/12":
+		major = 12
+	case "ess-conformance/13":
+		major = 13
 	default:
 		return suite, fmt.Errorf("unsupported suite version %q", version)
 	}
-	if _, present := root["coverage"]; present != (major == 5 || major == 7 || major == 9 || major == 11) {
-		return suite, fmt.Errorf("coverage is required exactly for suite/5, suite/7, suite/9 and suite/11")
+	if _, present := root["coverage"]; present != (major == 5 || major == 7 || major == 9 || major == 11 || major == 13) {
+		return suite, fmt.Errorf("coverage is required exactly for suite/5, /7, /9, /11 and /13")
 	}
 	for _, key := range []string{"system", "specification_version", "spec_digest", "contract_digest"} {
 		s, err := text(p[key])
@@ -3450,6 +3488,9 @@ func admitSuiteDocument(raw string, explicit bool) (Suite, error) {
 		if err := admitEntitySetups(steps); err != nil {
 			return suite, fmt.Errorf("%s: %w", id, err)
 		}
+		if err := admitReplaySteps(steps); err != nil {
+			return suite, fmt.Errorf("%s: %w", id, err)
+		}
 		sources, err := array(s["source"])
 		if err != nil {
 			return suite, err
@@ -3460,7 +3501,7 @@ func admitSuiteDocument(raw string, explicit bool) (Suite, error) {
 			}
 		}
 	}
-	if major == 5 || major == 7 || major == 9 || major == 11 {
+	if major == 5 || major == 7 || major == 9 || major == 11 || major == 13 {
 		coverage, _ := root["coverage"].(map[string]any)
 		if refused, ok := coverage["refused"].([]any); ok {
 			for _, item := range refused {
@@ -3486,7 +3527,7 @@ func admitSuiteDocument(raw string, explicit bool) (Suite, error) {
 		}
 	}
 	suite.original, suite.document = raw, root
-	if major == 5 || major == 7 || major == 9 || major == 11 {
+	if major == 5 || major == 7 || major == 9 || major == 11 || major == 13 {
 		suite.coverage = root["coverage"].(map[string]any)
 		// Original admission includes parents which will never execute. Retain their exact
 		// unsigned metadata independently of the inherited target API's narrower int fields.
@@ -3499,7 +3540,16 @@ func admitSuiteDocument(raw string, explicit bool) (Suite, error) {
 		}
 		return suite, nil
 	}
-	err = json.Unmarshal([]byte(raw), &suite)
+	if major == 12 {
+		decoder := json.NewDecoder(strings.NewReader(raw))
+		decoder.UseNumber()
+		err = decoder.Decode(&suite)
+	} else {
+		err = json.Unmarshal([]byte(raw), &suite)
+	}
+	if err == nil {
+		err = decodeExactSuiteSteps(&suite)
+	}
 	return suite, err
 }
 func executionSuite(suite Suite) (Suite, error) {
@@ -3507,8 +3557,19 @@ func executionSuite(suite Suite) (Suite, error) {
 		if err := executionIntegers(suite.document["scenarios"].(map[string]any)); err != nil {
 			return Suite{}, err
 		}
-		if err := json.Unmarshal([]byte(suite.original), &suite); err != nil {
+		var err error
+		if suite.Provenance.SuiteVersion == "ess-conformance/13" {
+			decoder := json.NewDecoder(strings.NewReader(suite.original))
+			decoder.UseNumber()
+			err = decoder.Decode(&suite)
+		} else {
+			err = json.Unmarshal([]byte(suite.original), &suite)
+		}
+		if err != nil {
 			return Suite{}, fmt.Errorf("exact selected metadata exceeds the inherited Go execution view: %w", err)
+		}
+		if err := decodeExactSuiteSteps(&suite); err != nil {
+			return Suite{}, err
 		}
 	}
 	return suite, nil
@@ -3979,6 +4040,15 @@ func admitStep(value any, major int) error {
 	}
 	required, optional := "step", ""
 	switch tag {
+	case "capture_command_result", "expect_replay_result":
+		if major < 12 {
+			return fmt.Errorf("retained results require suite/12 or /13")
+		}
+		required += " capture"
+	case "expect_no_events":
+		if major < 12 {
+			return fmt.Errorf("complete no-event assertions require suite/12 or /13")
+		}
 	case "expect_response_payload":
 		if major < 8 {
 			return fmt.Errorf("response payload requires suite/8 or /9")
@@ -4006,6 +4076,16 @@ func admitStep(value any, major int) error {
 		optional = "actor input"
 	case "expect_outcome":
 		required += " outcome"
+	case "snapshot_complete_subject":
+		if major < 12 {
+			return fmt.Errorf("complete subject snapshots require suite/12 or /13")
+		}
+		required += " view subject shape"
+	case "expect_complete_subject_unchanged":
+		if major < 12 {
+			return fmt.Errorf("complete subject preservation requires suite/12 or /13")
+		}
+		required += " view"
 	case "snapshot_subject":
 		if major < 10 {
 			return fmt.Errorf("subject snapshots require suite/10 or /11")
@@ -4070,6 +4150,8 @@ func admitStep(value any, major int) error {
 	}
 	for key, v := range f {
 		switch key {
+		case "capture":
+			err = admitReplay(v)
 		case "response":
 			err = admitResponse(v)
 		case "check":
@@ -4110,7 +4192,11 @@ func admitStep(value any, major int) error {
 			}
 			err = admitPayload(v)
 		case "shape":
-			err = admitShape(v)
+			if tag == "snapshot_complete_subject" {
+				err = admitSubjectShape(v)
+			} else {
+				err = admitShape(v)
+			}
 		case "expectation":
 			err = admitExpectation(v, major)
 		case "elapsed", "after":
@@ -4181,7 +4267,7 @@ func admitEntitySetups(steps []any) error {
 				return fmt.Errorf("duplicate setup instance binding")
 			}
 			instances[instance] = true
-		case "expect_no_error", "expect_subject_unchanged", "check_periodic", "expect_view", "eventually_view", "expect_outcome", "expect_error", "expect_event", "expect_no_event", "eventually_event", "expect_invocation", "expect_not_before", "expect_within", "expect_quiet", "expect_halt", "eventually_halt":
+		case "expect_replay_result", "expect_no_events", "expect_no_error", "expect_subject_unchanged", "expect_complete_subject_unchanged", "check_periodic", "expect_view", "eventually_view", "expect_outcome", "expect_error", "expect_event", "expect_no_event", "eventually_event", "expect_invocation", "expect_not_before", "expect_within", "expect_quiet", "expect_halt", "eventually_halt":
 			asserted = true
 		}
 	}

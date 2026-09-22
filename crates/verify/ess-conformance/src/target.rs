@@ -84,6 +84,12 @@ use crate::scenario::{
 ///
 /// See the [module documentation](self) for why it has exactly these methods and no assertion among
 /// them.
+///
+/// Retained-result observations require a lossless adapter from actual handler values. In
+/// particular, construct Integer nodes from the actual `i64` using
+/// [`Number::from`](ess_primitives::facts::Number::from), without an intermediate `f64`.
+/// A JSON adapter must establish exact Integer decoding or return
+/// [`TargetError::Unsupported`]; generic JSON-to-Node parsing is not an exactness certificate.
 pub trait ConformanceTarget {
     /// Bind and re-admit the declared host authority, then activate the actual periodic loop.
     /// Named types, nested values and invariants must match this host's authoritative contract.
@@ -486,6 +492,11 @@ pub struct SemanticCommandResult {
     /// component's, and requiring them of the caller's result would be a transport assumption (§41).
     pub direct_events: Vec<ObservedEvent>,
     /// Actual returned response, admitted against the command's closed declared fields before use.
+    ///
+    /// Retained results compare the complete actual typed value. The adapter must preserve every
+    /// Integer exactly before constructing this map: use `Number::from(actual_i64)` for native
+    /// integers. JSON adapters need proven lossless decoding or must report Unsupported. A value
+    /// rounded before observation cannot be recovered by the retained-result comparison.
     pub response: Option<BTreeMap<String, Node>>,
 }
 

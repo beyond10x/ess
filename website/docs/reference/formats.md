@@ -101,7 +101,9 @@ the row says otherwise; it does not imply that those bytes are hashed.
 | Document and discriminator | Version/identity carried separately | Reader and byte contract |
 |---|---|---|
 | Authored specification: `format: ess/1` … `ess/5` | Specification `vN` | `RawSpecFile::parse`, assembly/validation and compilation. Binary64 requires major 2 or later at every declared position; map keys refuse. Major 3 (0.23.0) adds bounded binding accessors, ordered list selection, periodic host causes, subject-state guards and clock-reading attachments; earlier source formats refuse those declarations. Major 4 (0.23.0) adds error naming, typed command responses and explicit emitted-payload ownership; majors 1–3 preserve sparse payload semantics. Major 5 (0.27.0) lets an enum variant declare its own `wire`, `display`, `summary` and `code`; majors 1–4 refuse a variant that declares naming. No canonical raw-source hash. [Source][spec], [version history](./spec-versions.md) |
-| Compiled `EssIr`: **unversioned** | Numeric specification major | Compiler-minted, Serialize-only; no general persisted-IR reader. Pretty JSON output; **compiled-model** digest uses compact bytes instead. There is no current `ess-ir/1` marker. [Source][ir] |
+| Authored specification: `format: ess/6` | Specification `vN` | Added in 0.28.0. External eligibility predicates, observed subject-history selection and silent subject preservation. Earlier source formats refuse these declarations. [Source][spec] |
+| Authored specification: `format: ess/7` | Specification `vN` | Added in 0.29.0. Command-local retained-result replay and effect-free default state refusals. Origin references, identity authority, exclusivity and finite state coverage are validated; exact replay observation refuses recursive Decimal/Binary64 response positions. [Source][spec] |
+| Compiled `EssIr`: **unversioned** | Numeric specification major | Compiler-minted, Serialize-only; no general persisted-IR reader. Pretty JSON output; **compiled-model** digest uses compact bytes instead. Optional replay/retained-result metadata is omitted for legacy models. There is no current `ess-ir/1` marker. [Source][ir] |
 | Authored composition: `format: ess-composition/1` with a **services array** | Composition/service keys, system/version, selected component and exact compiled-model digest | Closed JSON/YAML DTO, then `compile` checks identity and selected-surface membership against supplied services. Pretty canonical JSON; no whole-composition digest. [Source][composition] |
 | Compiled composition: `format: ess-composition/1` with a **services map** | Resolved imported model identities, components and selected named references | Serialize-only compiler output; no complete payload or codec definitions. The authored reader does not read this shape. Pretty JSON; model digests remain references. [Source][composition] |
 | Client plan: `format: ess-client-plan/1` | Composition key and the same selected service metadata/names | Derived from compiled composition; Serialize-only. No complete payload or codec definitions. Pretty JSON; no client-plan byte digest or live service identity check. [Source][composition] |
@@ -248,22 +250,50 @@ format's canonical digest profile or provide remote attachment proof. See the
 | Document and discriminator | Separate identity | Reader and byte contract |
 |---|---|---|
 | `format: ess-diff/1` | Before/after compiled-model digests and specification majors | Legacy vocabulary/bytes retained; raw closed DTO → validated delta. Explicit legacy writing refuses new-only kinds. Pretty JSON; no delta-file hash. [Writer][delta], [reader][delta-reader] |
-| **Default** `format: ess-diff/2` | Same endpoint identities | Supported delta majors are 1 to 5; legacy changes retain /2. Admission checks ids, relations, order, uniqueness and same-system identity; serialization checks the selected vocabulary. Pretty JSON. [Source][delta] |
+| **Default** `format: ess-diff/2` | Same endpoint identities | Supported delta majors are 1 to 6; legacy changes retain /2. Admission checks ids, relations, order, uniqueness and same-system identity; serialization checks the selected vocabulary. Pretty JSON. [Source][delta] |
 | `format: ess-diff/3` | Same endpoint identities | Added in 0.23.0. New periodic-cause, selection-plan and clock-reading-contract changes retain typed before/after values. Explicit /1 or /2 writing refuses these variants. [Source][delta] |
 | `format: ess-diff/4` | Same endpoint identities | Added in 0.23.0. Error naming, command response declarations and response/generated payload source changes. Earlier delta writers refuse this vocabulary; legacy-only changes keep their existing formats. [Source][delta] |
 | `format: ess-diff/5` | Same endpoint identities | Added in 0.27.0. `VariantWireNameChanged`, `VariantDisplayNameChanged` and `VariantSummaryChanged` on `TypeChange`: a variant's own name does not move when its wire spelling does, so majors 1 to 4 returned an empty delta for it and refuse this vocabulary. [Source][delta] |
+| `format: ess-diff/6` | Same endpoint identities | Added in 0.29.0. Typed changes record the original outcome whose result a retry retains and the complete refusal-observation requirement. Earlier formats refuse the new vocabulary; unchanged legacy comparisons retain their bytes. [Source][delta] |
 | **Current** `format: ess-impact/3` | Embedded versioned delta, optional suite and artifact identities | `ess_diff::impact` returns `EssImpact` with typed dependency relations; no persisted report reader. Pretty JSON; references input digests. [Source][impact] |
 | Authored **`type: ess-scenario/1`** or **`ess-scenario/2`** | Domain/scenario identity and purpose | Closed authored DTO, then compilation against IR. /2, added in 0.23.0, adds typed backend entity setup; /1 refuses setup fields. No raw-source canonical digest. [Source][authored] |
 | Suite **`provenance.suite_version: ess-conformance/4`** | Specification `vN`, model and whole-contract digests | Historical Deserialize/from_json parses an unadmitted DTO. Original-byte admission checks the closed, major-specific vocabulary before execution; serialize-once admission of a DTO binds only its newly serialized bytes. Suite bytes/defaults stay frozen; report/2 separately carries exact identity. [Source][suite] |
 | Rust `format: ess-conformance-report/1` | Model digest, implementation and suite-version claim | Checked closed reader validates version/counts/list/status; it does not establish exact-suite coverage or unique opaque result ids. Pretty JSON; unsigned u64 `completed_at`. [Source][report] |
 | Go `format: ess-conformance-report/1` | Same claims, Go failed/skipped vocabulary | Generated Go writer; current Rust admission accommodates its non-pass vocabulary. Indented JSON+LF, signed int64 `completed_at`; no cross-producer byte/range equivalence is implied. [Source][go-report] |
 | Default detailed `ConformanceReport`: **unversioned** | Suite provenance, implementation, run/scenario identities | Detailed CLI JSON/YAML is distinct from standalone `--report-out` JSON. Serialize-only; pretty canonical JSON, no report-file or exact-suite hash. [Source][detailed-report] |
-| Opt-in `ess-conformance-report/2` and `ess-conformance-run/2` | Exact original suite/1–9 bytes, producer profile and five outcome categories | Separate standalone and detailed surfaces with paired readers. Sorted UTF-8 object keys, two-space JSON plus LF, exact unsigned u64 counts/timestamps. Ordinary coverage remains unknown; complete nonempty suite/5, /7 or /9 selection can qualify. Suites /6 to /9 arrived in 0.23.0. [Count contracts][count-report] |
+| Opt-in `ess-conformance-report/2` and `ess-conformance-run/2` | Exact original suite/1–13 bytes, producer profile and five outcome categories | Separate standalone and detailed surfaces with paired readers. Sorted UTF-8 object keys, two-space JSON plus LF, exact unsigned u64 counts/timestamps. Ordinary coverage remains unknown; complete nonempty suite/5, /7, /9, /11 or /13 selection can qualify. Suites /6 to /9 arrived in 0.23.0. [Count contracts][count-report] |
 | Opt-in `provenance.suite_version: ess-conformance/5` | Model/contract provenance and complete declared selection inventory | Closed original-byte admission retains source ownership, known outside IDs and every refusal occurrence. Explicit selections require exact parent input. [Coverage contract][coverage] |
 | `provenance.suite_version: ess-conformance/6` or `ess-conformance/7` | Existing provenance; /7 also carries declared coverage | Added in 0.23.0. Conditional accessor, entity setup, selection, periodic and clock-observation vocabulary: /6 is ordinary, /7 retains the /5 coverage and exact-parent contract. Execution requires existing report/2; report/1 refuses before target callbacks. Existing /4 and /5 bytes remain unchanged. [Accessor observation](../guides/verify-conformance.md#observe-bounded-binding-accessors) |
 | `provenance.suite_version: ess-conformance/8` or `ess-conformance/9` | Existing provenance; /9 also carries declared coverage | Added in 0.23.0. Typed command-response observations compare an invocation's actual response with its emitted event payload. Structured text predicates requiring lossless literal decoding also select these versions. /8 is ordinary; /9 retains exact-parent coverage lineage. Rust and generated Go require report/2; older suite envelopes refuse the new vocabulary before execution. Browser execution retains explicit refusals for unsupported steps. |
+| `provenance.suite_version: ess-conformance/10` or `ess-conformance/11` | Existing provenance; /11 also carries declared coverage | Added in 0.28.0. Independent subject snapshots compare every actual field, with an explicit no-error assertion. /10 is ordinary; /11 retains declared coverage and exact-parent lineage. Requires report/2. |
+| `provenance.suite_version: ess-conformance/12` or `ess-conformance/13` | Existing provenance; /13 also carries declared coverage | Added in 0.29.0. Immutable original-command result capture and exact retry comparison bind response, original subject identity, input and actor. Retry has no error or direct events; paired snapshots compare the complete subject. Integer/text/collection equality preserves optional absence versus null; Decimal/Binary64 responses refuse. Rust and Go execute with report/2. TypeScript/browser and older envelopes refuse before callbacks. |
 | `format: ess-conformance-input/1` | Selected inner original bytes and full original parent chain | Closed format/suite_json/parent_suites carrier; complete admission checks original references and typed lineage. Only selected inner bytes are hashed. [Coverage contract][coverage] |
 | `format: ess-conformance-replay/1` | Paired typed model, exact selected suite reference and input | Closed format/model/suite/input; browser admission precedes replay state. Reduced projection, no execution evidence or full model digest reconstruction. [Replay contract][coverage-replay] |
+
+For retained-result Integer observations, the actual target adapter must preserve
+the handler's exact integer before constructing its typed response. JSON adapters
+must decode it losslessly or report Unsupported; parity of typed observations
+does not certify arbitrary JSON numeric spellings or a generic floating-point
+conversion. Existing numeric bytes remain unchanged.
+
+Source `ess/7` also selects these stronger observations for ordinary `wrong_state`
+refusal witnesses: every direct event is refused and the complete held subject
+must remain unchanged. Missing complete observations refuse synthesis. Earlier
+source formats keep their existing canonical witnesses.
+
+The complete pair is `snapshot_complete_subject` followed by
+`expect_complete_subject_unchanged`. Its required `shape` contains
+`identity_field`, typed `fields` and reachable `declarations`; it supplies
+schema authority, not expected target values. Both actual rows must satisfy that
+shape; missing required fields or incompatible values fail execution. Invalid
+pairings or unsupported recursive observers refuse admission. Extra top-level row fields remain
+permitted and participate in exact comparison. Legacy `snapshot_subject` and
+`expect_subject_unchanged` retain their original semantics, including inside a
+newer suite.
+
+Replay synthesis checks the retry's condition against the original input and
+post-command subject. It refuses an unavailable immediate witness without
+rejecting a model whose retry may become eligible after later activity.
 
 `ess verify impact` computes generated-artifact obligations from the compared models. The CLI
 has no `--generated` option and does not inspect a committed output tree. The library API can accept
@@ -355,13 +385,15 @@ Generic String deserialization does not perform that check. Cargo synthesis stam
 not validate TOML, and a docs document has per-page stamps rather than one artifact stamp.
 [Stamp reader][stamp].
 
-Explicit report **/2** and detailed **ess-conformance-run/2** pair admitted original suite/1–9
-bytes under `sha256-json-bytes/1`. Ordinary suite/1–4, /6 and /8 coverage remains unknown, including all-pass runs.
+Explicit report **/2** and detailed **ess-conformance-run/2** pair admitted original suite/1–13
+bytes under `sha256-json-bytes/1`. Ordinary suite/1–4, /6, /8, /10 and /12 coverage remains unknown, including all-pass runs.
 Suite **/5** adds a closed declared inventory: exact selection, origin/source ownership, outside
 scenarios and every refusal occurrence. Only nonempty all-pass execution with complete inventory
 and no in-scope refusal qualifies for that exact selection. Suite/7 retains these rules with
-extended observation/setup vocabulary, and suite/9 retains them with the typed command-response vocabulary. Legacy defaults remain suite/4, report/1 and diagnostic execution;
-an extended suite requires explicit report/2. Suites /5 to /9 with report/1 refuse before execution, including without an
+extended observation/setup vocabulary; suite/9 adds typed command-response observation,
+suite/11 adds independent subject snapshots, and suite/13 adds retained-result comparison.
+Legacy defaults remain suite/4, report/1 and diagnostic execution;
+an extended suite requires explicit report/2. Suites /5 to /13 with report/1 refuse before execution, including without an
 output destination or with allow-incomplete. Report/1 keeps its historical non-pass aggregate and
 does not establish exact suite-byte identity. [Coverage workflow](../guides/verify-conformance.md#opt-into-declared-coverage).
 

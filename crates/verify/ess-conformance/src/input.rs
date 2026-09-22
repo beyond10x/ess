@@ -77,6 +77,28 @@ pub fn flatten<'ir>(
     })
 }
 
+/// Project only actual literal arguments; instance identities remain unavailable to predicates.
+pub(crate) fn replay_facts<'ir>(
+    ir: &'ir EssIr,
+    command: &'ir ResolvedCommand,
+    input: &BTreeMap<String, crate::ScenarioValue>,
+) -> Result<InputFacts<'ir>, ShapeErrors> {
+    let values = input
+        .iter()
+        .filter_map(|(name, value)| {
+            value
+                .as_literal()
+                .map(|value| (name.clone(), value.clone()))
+        })
+        .collect();
+    bind(ir, &command.input, &values, Completeness::Partial).map(|facts| InputFacts {
+        ir,
+        command,
+        facts,
+        scales: Scales::default(),
+    })
+}
+
 /// Projects a map of values into facts, guided by the fields some construct declares.
 ///
 /// The half of [`flatten`] that is not about a command. A command's input, an event's payload, a

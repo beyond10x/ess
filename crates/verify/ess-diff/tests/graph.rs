@@ -75,6 +75,20 @@ fn every_relation_in_the_vocabulary_is_minted_by_a_specification_this_repository
             .edges()
             .map(|edge| edge.relation),
     );
+    let replay = include_str!("../../ess-conformance/tests/fixtures/retained-replay.yaml");
+    let specification = ess_domain::Specification::assemble([(
+        ess_domain::system::Source::new("replay.yaml"),
+        ess_domain::RawSpecFile::parse(replay).unwrap(),
+    )])
+    .unwrap();
+    let ir =
+        ess_compiler::resolve::compile(&specification, &ess_compiler::source::SourceMap::new())
+            .unwrap();
+    minted.extend(
+        SemanticDependencyGraph::of(&ir)
+            .edges()
+            .map(|edge| edge.relation),
+    );
     let missing: Vec<DependencyRelation> = DependencyRelation::ALL
         .into_iter()
         .filter(|relation| !minted.contains(relation))

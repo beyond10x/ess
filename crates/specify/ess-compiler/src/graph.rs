@@ -98,6 +98,8 @@ pub enum DependencyRelation {
     Takes,
     /// An outcome reads the identity of what it created from an emitted event.
     Observes,
+    /// An outcome retains the actual result of an earlier command-local success.
+    Replays,
     /// An actor may invoke a command.
     MayInvoke,
     /// A binding reacts to an event.
@@ -133,7 +135,7 @@ impl DependencyRelation {
     ///
     /// Written from the same lines as the variants above, so a relation added without a walk that
     /// mints it fails `tests/graph.rs` rather than sitting in the vocabulary unproduced.
-    pub const ALL: [Self; 27] = [
+    pub const ALL: [Self; 28] = [
         Self::DeclaredIn,
         Self::Wraps,
         Self::FieldType,
@@ -147,6 +149,7 @@ impl DependencyRelation {
         Self::ActsOn,
         Self::Takes,
         Self::Observes,
+        Self::Replays,
         Self::MayInvoke,
         Self::ReactsTo,
         Self::HostedBy,
@@ -183,6 +186,7 @@ impl DependencyRelation {
             Self::ActsOn => "acts on",
             Self::Takes => "takes",
             Self::Observes => "reads the new identity from",
+            Self::Replays => "retains the result of",
             Self::MayInvoke => "may invoke",
             Self::ReactsTo => "reacts to",
             Self::HostedBy => "is hosted by",
@@ -646,6 +650,13 @@ impl SemanticDependencyGraph {
                 // The `when:` predicate is deliberately not walked. See the module documentation:
                 // a fact path is a name inside a construct, and reading one as a reference would be
                 // parsing a path for meaning.
+                if let Some(replay) = &outcome.replays {
+                    self.edge(
+                        branch.clone(),
+                        DependencyRelation::Replays,
+                        OutcomeRef::new(command.clone(), replay.origin.clone()),
+                    );
+                }
                 if let Some(subject_of) = &outcome.subject {
                     let acted_on = EntityRef::from(&subject_of.entity);
                     self.edge(branch.clone(), DependencyRelation::ActsOn, acted_on.clone());

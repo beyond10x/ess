@@ -4,8 +4,8 @@ use super::{
     ActorRef, Arrangement, AssertionStyle, BTreeMap, BTreeSet, CommandRef, Distinction, Driver,
     EntityHandle, EntityRef, EntitySpec, EssIr, EssSemanticRef, InstanceNeed, Invocation, Node,
     OutcomeRef, QualifiedName, RefusalCause, ResolvedCommand, ResolvedCondition, ResolvedEffect,
-    ResolvedOutcome, ScenarioStep, ScenarioValue, Setup, StateName, VecDeque, ViewExpectation,
-    ViewRef, WitnessGap,
+    ResolvedOutcome, ResolvedSubject, ScenarioStep, ScenarioValue, Setup, StateName, VecDeque,
+    ViewExpectation, ViewRef, WitnessGap,
 };
 
 pub(super) fn uses(command: &ResolvedCommand) -> bool {
@@ -107,7 +107,7 @@ fn reach_fact(
     })
 }
 
-fn observe(
+pub(super) fn observe(
     ir: &EssIr,
     entity: &EntityHandle,
     field: &str,
@@ -354,6 +354,31 @@ pub(super) fn preservation(
         .subject
         .as_ref()
         .expect("preservation has a subject");
+    preserve_subject(ir, subject, setup)
+}
+
+pub(super) fn preserve_subject(
+    ir: &EssIr,
+    subject: &ResolvedSubject,
+    setup: &Setup,
+) -> Result<Preservation, RefusalCause> {
+    preserve(ir, subject, setup, false)
+}
+
+pub(super) fn preserve_complete_subject(
+    ir: &EssIr,
+    subject: &ResolvedSubject,
+    setup: &Setup,
+) -> Result<Preservation, RefusalCause> {
+    preserve(ir, subject, setup, true)
+}
+
+fn preserve(
+    ir: &EssIr,
+    subject: &ResolvedSubject,
+    setup: &Setup,
+    complete: bool,
+) -> Result<Preservation, RefusalCause> {
     let entity = ir.entity(&subject.entity);
     let instance = setup
         .instance
@@ -399,20 +424,42 @@ pub(super) fn preservation(
             view: name.clone(),
             params: BTreeMap::new(),
         });
-        before.push(ScenarioStep::SnapshotSubject {
-            view: name.clone(),
-            subject: [(
-                entity.identity.name.clone(),
-                ScenarioValue::instance(instance.clone()),
-            )]
-            .into_iter()
-            .collect(),
+        let selected = [(
+            entity.identity.name.clone(),
+            ScenarioValue::instance(instance.clone()),
+        )]
+        .into_iter()
+        .collect();
+        before.push(if complete {
+            let shape = crate::subject::SubjectShape::of(ir, view, &entity.identity.name).map_err(
+                |reason| {
+                    RefusalCause::NoWitness(WitnessGap {
+                        path: format!("{name}: {reason}"),
+                        type_ref: "complete subject observation".into(),
+                        reason: "complete subject requires a finite exact typed observer",
+                    })
+                },
+            )?;
+            ScenarioStep::SnapshotCompleteSubject {
+                view: name.clone(),
+                subject: selected,
+                shape,
+            }
+        } else {
+            ScenarioStep::SnapshotSubject {
+                view: name.clone(),
+                subject: selected,
+            }
         });
         after.push(ScenarioStep::QueryView {
             view: name.clone(),
             params: BTreeMap::new(),
         });
-        after.push(ScenarioStep::ExpectSubjectUnchanged { view: name.clone() });
+        after.push(if complete {
+            ScenarioStep::ExpectCompleteSubjectUnchanged { view: name.clone() }
+        } else {
+            ScenarioStep::ExpectSubjectUnchanged { view: name.clone() }
+        });
         source.insert(name.into());
     }
     if !required.is_empty() {

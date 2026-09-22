@@ -237,6 +237,11 @@ impl<T: serde::Serialize> serde::Serialize for Table<T> {
 #[derive(serde::Serialize)]
 struct Document {
     #[serde(
+        rename = "x-ess-retained-results",
+        skip_serializing_if = "Vec::is_empty"
+    )]
+    retained_results: Vec<RetainedResult>,
+    #[serde(
         rename = "x-ess-periodic-bindings",
         skip_serializing_if = "Vec::is_empty"
     )]
@@ -248,6 +253,28 @@ struct Document {
     channels: Table<Channel>,
     operations: Table<Operation>,
     components: Components,
+}
+
+/// Command response semantics; never represented as a new channel or message.
+#[derive(serde::Serialize)]
+struct RetainedResult {
+    command: String,
+    outcome: String,
+    origin: String,
+    response: Vec<ess_compiler::ir::ResolvedField>,
+    description: &'static str,
+}
+
+fn retained_results(ir: &EssIr, component: &ResolvedComponent) -> Vec<RetainedResult> {
+    ir.commands().values().filter(|command| component.accepts.iter().any(|handle| handle.name() == &command.name)).flat_map(|command| {
+        command.outcomes.iter().filter_map(|outcome| outcome.replays.as_ref().map(|origin| RetainedResult {
+            command: command.name.to_string(),
+            outcome: outcome.name.to_string(),
+            origin: origin.origin.to_string(),
+            response: command.response.clone(),
+            description: "Returns the exact original typed command result; emits no new events, changes no subject, and returns no error. Command result transport is outside this event projection.",
+        }))
+    }).collect()
 }
 
 /// Who this document is about, and where it came from.
@@ -510,6 +537,7 @@ fn document(ir: &EssIr, component: &ResolvedComponent, provenance: &Provenance) 
     }
 
     Document {
+        retained_results: retained_results(ir, component),
         periodic: ir
             .bindings()
             .values()

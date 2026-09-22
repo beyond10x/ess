@@ -634,13 +634,13 @@ fn malformed_format_spelling_and_unsupported_major_are_different_admission_stage
     let supported = admitted(&input);
     assert_eq!(supported.spec.system().format.major(), 2);
     unchanged(&admitted(&fixture()), &supported, true);
-    replace(&mut input, 0, "/format", json!("ess/7"));
+    replace(&mut input, 0, "/format", json!("ess/8"));
     let raw = RawSpecFile::parse(&serde_json::to_string(&input[0]).unwrap()).unwrap();
-    assert_eq!(raw.format.unwrap().to_string(), "ess/7");
+    assert_eq!(raw.format.unwrap().to_string(), "ess/8");
     refused(
         &input,
         Stage::Assembly,
-        &["unsupported_format_version", "ess/7"],
+        &["unsupported_format_version", "ess/8"],
     );
 }
 
@@ -987,6 +987,21 @@ fn renamed_source_graph_has_every_concrete_relation_and_changed_semantic_referen
         .unwrap();
     relations.extend(
         SemanticDependencyGraph::of(&ir)
+            .edges()
+            .map(|edge| edge.relation),
+    );
+    let replay =
+        include_str!("../../../verify/ess-conformance/tests/fixtures/retained-replay.yaml");
+    let specification = Specification::assemble([(
+        Source::new("replay.yaml"),
+        RawSpecFile::parse(replay).unwrap(),
+    )])
+    .unwrap();
+    let replay_ir =
+        ess_compiler::resolve::compile(&specification, &ess_compiler::source::SourceMap::new())
+            .unwrap();
+    relations.extend(
+        SemanticDependencyGraph::of(&replay_ir)
             .edges()
             .map(|edge| edge.relation),
     );

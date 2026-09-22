@@ -499,6 +499,8 @@ impl OutcomeCondition {
 )]
 #[serde(rename_all = "snake_case")]
 pub enum TestStrategy {
+    /// Invoke an originating success, then observe its retained result on retry.
+    ReplayResult,
     /// Build an input satisfying the outcome's `when`.
     ConstructInput,
     /// Establish the declared held state, then construct an input satisfying the branch guard.
@@ -522,6 +524,7 @@ impl TestStrategy {
     /// The strategy as it appears in generated output.
     pub fn as_str(self) -> &'static str {
         match self {
+            Self::ReplayResult => "replay_result",
             Self::ConstructInput => "construct_input",
             Self::ConstructInputInState => "construct_input_in_state",
             Self::ObserveSubjectFact => "observe_subject_fact",
@@ -1087,6 +1090,9 @@ pub struct Outcome {
     /// [`MissingCausation`](ValidationCode::MissingCausation), because a move nothing can trigger is
     /// the lifecycle's version of the type no value can inhabit.
     pub subject: Option<Subject>,
+    /// Command-local success whose complete result this silent outcome retains (ess/7).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub replays: Option<OutcomeName>,
     /// The events this outcome emits, as facts, in the order they happen.
     pub emits: Vec<QualifiedName>,
     /// Which fields of the subject this outcome sets, and from where.
@@ -1128,6 +1134,7 @@ impl Outcome {
             name,
             condition: OutcomeCondition::When(predicate),
             subject: None,
+            replays: None,
             emits,
             payload: BTreeMap::new(),
             error: None,
@@ -1144,6 +1151,7 @@ impl Outcome {
             name,
             condition: OutcomeCondition::Otherwise,
             subject: None,
+            replays: None,
             emits,
             payload: BTreeMap::new(),
             error: None,
@@ -1164,6 +1172,7 @@ impl Outcome {
             name,
             condition: OutcomeCondition::WrongState,
             subject: None,
+            replays: None,
             emits: Vec::new(),
             payload: BTreeMap::new(),
             error: Some(error),
@@ -1220,7 +1229,11 @@ impl Outcome {
 
     /// How a generated test has to reach this outcome.
     pub fn test_strategy(&self) -> TestStrategy {
-        self.condition.test_strategy()
+        if self.replays.is_some() {
+            TestStrategy::ReplayResult
+        } else {
+            self.condition.test_strategy()
+        }
     }
 
     /// `true` when some input reaches this outcome, so a test can be written by constructing one.
@@ -1273,6 +1286,81 @@ impl CommandSpec {
     /// The outcome with this name.
     pub fn outcome(&self, name: &OutcomeName) -> Option<&Outcome> {
         self.outcomes.iter().find(|outcome| &outcome.name == name)
+    }
+
+    /// Identity authority for an ordinary effect or the origin of a replay.
+    pub fn selection_subject<'a>(&'a self, outcome: &'a Outcome) -> Option<&'a Subject> {
+        outcome
+            .subject
+            .as_ref()
+            .or_else(|| self.outcome(outcome.replays.as_ref()?)?.subject.as_ref())
+    }
+
+    /// Whether the new effect-free default uses a common held-state authority.
+    pub fn has_state_refusal(&self) -> bool {
+        subject_state::uses(self)
+            && self.outcomes.iter().any(|outcome| {
+                outcome.is_unconditional() && outcome.error.is_some() && outcome.subject.is_none()
+            })
+    }
+
+    fn validate_replay(&self, outcome: &Outcome) -> ValidationErrors {
+        let mut errors = ValidationErrors::new();
+        let Some(name) = &outcome.replays else {
+            return errors;
+        };
+        let site = self
+            .site()
+            .key("outcomes")
+            .named(outcome.name.as_str())
+            .key("replays");
+        if outcome.subject.is_some()
+            || !outcome.sets.is_empty()
+            || !outcome.emits.is_empty()
+            || !outcome.payload.is_empty()
+            || outcome.error.is_some()
+            || matches!(
+                outcome.condition,
+                OutcomeCondition::WrongState
+                    | OutcomeCondition::StateChange { .. }
+                    | OutcomeCondition::SubjectField { .. }
+            )
+        {
+            errors.push(ValidationError::at(site.clone(), ValidationCode::ConflictingDeclaration,
+                "replay declares no independent identity, effect, assignment, event, payload or error"));
+        }
+        let origin = self.outcome(name);
+        if name == &outcome.name
+            || origin.is_none_or(|origin| {
+                origin.replays.is_some()
+                    || origin.error.is_some()
+                    || !origin.subject.as_ref().is_some_and(|subject| {
+                        matches!(subject.effect, Effect::Creates | Effect::Moves { .. })
+                    })
+            })
+        {
+            errors.push(ValidationError::at(site.clone(), ValidationCode::UndeclaredReference,
+                "replays requires a distinct command-local creates or moves success; chains and cycles are refused"));
+        }
+        if self.response.is_empty() {
+            errors.push(ValidationError::at(
+                site.clone(),
+                ValidationCode::UnobservableFact,
+                "replays requires a nonempty typed command response",
+            ));
+        }
+        if outcome.condition.reads_held_state()
+            && !origin
+                .and_then(|origin| origin.subject.as_ref())
+                .is_some_and(|subject| subject.surface() == InstanceSurface::CommandInput)
+        {
+            errors.push(ValidationError::at(
+                site,
+                ValidationCode::UnobservableFact,
+                "a state-guarded replay requires its origin's real command-input identity",
+            ));
+        }
+        errors
     }
 
     /// The branch taken when no conditional outcome matched.
@@ -1359,6 +1447,7 @@ impl CommandSpec {
                 );
             }
             errors.extend(self.validate_outcome(outcome, &inputs));
+            errors.extend(self.validate_replay(outcome));
             let location = self.site().key("outcomes").named(outcome.name.as_str());
             errors.extend(match types {
                 Some(types) => self.validate_typed_guard(outcome, types, &location),
@@ -1412,7 +1501,11 @@ impl CommandSpec {
                 "a preserving outcome declares no assignment, event or error",
             ));
         }
-        if outcome.emits.is_empty() && outcome.error.is_none() && !accepts_wrong_state && !preserves
+        if outcome.emits.is_empty()
+            && outcome.error.is_none()
+            && !accepts_wrong_state
+            && !preserves
+            && outcome.replays.is_none()
         {
             errors.push(
                 ValidationError::at(
@@ -2817,6 +2910,9 @@ pub struct RawOutcome {
     /// The existing entity whose state and fields this silent branch preserves (ess/6).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub preserves: Option<QualifiedName>,
+    /// The originating success of this same command, retained without another effect (ess/7).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub replays: Option<OutcomeName>,
     /// Which field carries the identity of the instance this outcome acts on.
     ///
     /// Required beside `creates`, `moves` and `updates`, and meaningless without one. The verb
@@ -3054,6 +3150,7 @@ impl TryFrom<RawOutcome> for Outcome {
         )?;
         if (condition.reads_held_state()
             || matches!(condition, OutcomeCondition::SubjectField { .. }))
+            && raw.replays.is_none()
             && !subject
                 .as_ref()
                 .is_some_and(|subject| subject.surface() == InstanceSurface::CommandInput)
@@ -3087,6 +3184,7 @@ impl TryFrom<RawOutcome> for Outcome {
             name: raw.name,
             condition,
             subject,
+            replays: raw.replays,
             emits: raw.emits,
             error: raw.error,
             refuses,
@@ -3443,6 +3541,7 @@ impl From<Outcome> for RawOutcome {
             moves,
             updates,
             preserves,
+            replays: outcome.replays,
             instance,
             emits: outcome.emits,
             payload,
@@ -3702,6 +3801,7 @@ outcomes:
                 vec![name("billing.invoice.InvoiceCreated")],
             ),
             Outcome {
+                replays: None,
                 name: outcome_name("rejected"),
                 condition: OutcomeCondition::When(negative),
                 subject: None,
@@ -3746,6 +3846,7 @@ outcomes:
     #[test]
     fn an_outcome_that_names_an_error_and_also_emits_is_refused() {
         let errors = refuse(&command_with(vec![Outcome {
+            replays: None,
             name: outcome_name("rejected"),
             condition: OutcomeCondition::Otherwise,
             subject: None,
@@ -3778,6 +3879,7 @@ outcomes:
                 vec![name("billing.invoice.InvoiceCreated")],
             ),
             Outcome {
+                replays: None,
                 name: outcome_name("failed"),
                 condition: OutcomeCondition::External {
                     cause: "  ".to_owned(),
@@ -3805,6 +3907,7 @@ outcomes:
     #[test]
     fn a_command_whose_every_outcome_is_external_specifies_no_change_rather_than_nothing_at_all() {
         let errors = refuse(&command_with(vec![Outcome {
+            replays: None,
             name: outcome_name("failed"),
             condition: OutcomeCondition::External {
                 cause: "the provider is down".to_owned(),
@@ -3865,6 +3968,7 @@ outcomes:
         // already ended answers and does nothing — and a specification with no way to write that
         // either claims a refusal the implementation never makes or says nothing about the state.
         let accepting = |error: Option<QualifiedName>| Outcome {
+            replays: None,
             name: outcome_name("already-done"),
             condition: OutcomeCondition::WrongState,
             subject: None,
@@ -3942,6 +4046,7 @@ outcomes:
         // A round trip that added `refuses: true` to every outcome would rewrite every document
         // that has ever been read and re-emitted, for a value that says what its absence says.
         let accepting = Outcome {
+            replays: None,
             name: outcome_name("already-done"),
             condition: OutcomeCondition::WrongState,
             subject: None,
@@ -3984,6 +4089,7 @@ outcomes:
                 vec![name("billing.invoice.InvoiceCreated")],
             ),
             Outcome {
+                replays: None,
                 name: outcome_name("wrong-state"),
                 condition: OutcomeCondition::WrongState,
                 subject: None,
@@ -4164,6 +4270,7 @@ outcomes:
                 vec![name("billing.invoice.InvoiceCreated")],
             ),
             Outcome {
+                replays: None,
                 name: outcome_name("rejected"),
                 condition: OutcomeCondition::Otherwise,
                 subject: None,
@@ -4196,6 +4303,7 @@ outcomes:
                 vec![name("billing.invoice.InvoiceIssued")],
             ),
             Outcome {
+                replays: None,
                 name: outcome_name("rejected"),
                 condition: OutcomeCondition::Otherwise,
                 subject: None,
@@ -4315,6 +4423,7 @@ outcomes:
     #[test]
     fn a_test_strategy_is_decided_by_the_model_and_not_by_a_generator() {
         let inject = Outcome {
+            replays: None,
             name: outcome_name("failed"),
             condition: OutcomeCondition::External {
                 cause: "the provider rejects the address".to_owned(),
@@ -4631,6 +4740,7 @@ outcomes:
                 vec![name("billing.invoice.InvoiceCreated")],
             ),
             Outcome {
+                replays: None,
                 name: outcome_name("rejected"),
                 condition: OutcomeCondition::Otherwise,
                 subject: Some(Subject::moves(
@@ -4759,6 +4869,7 @@ outcomes:
                     "invoice_id",
                 )),
                 Outcome {
+                    replays: None,
                     name: outcome_name("rejected"),
                     condition: OutcomeCondition::Otherwise,
                     subject: None,

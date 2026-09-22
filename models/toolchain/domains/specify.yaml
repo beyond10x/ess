@@ -34,12 +34,12 @@ types:
     kind: newtype
     of: String
 
-  # `SUPPORTED_FORMATS` is `[1, 2, 3, 4]` (`crates/specify/ess-domain/src/system.rs:53`).
+  # Mirrors `SUPPORTED_FORMATS` in crates/specify/ess-domain/src/system.rs.
   # `FormatVersion` parses `ess/N` for any positive major, and parsing a well-shaped version is not
   # support for it — so the closed set here is what validation admits, not what the syntax accepts.
   - name: toolchain.specify.SpecificationFormat
     kind: enum
-    variants: ["ess/1", "ess/2", "ess/3", "ess/4", "ess/5", "ess/6"]
+    variants: ["ess/1", "ess/2", "ess/3", "ess/4", "ess/5", "ess/6", "ess/7"]
 
   # The twelve families of `ESS-<FAMILY>-<NNN>`, in the order a specification is read —
   # `crates/specify/ess-compiler/src/resolve.rs:186`.

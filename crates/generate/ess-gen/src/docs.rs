@@ -1385,7 +1385,13 @@ fn outcome_prose(
     }
     out.extend(condition_sentence(ir, command, &outcome.condition));
     out.push(Inline::text(" "));
-    out.extend(effect_sentence(ir, outcome.subject.as_ref()));
+    if let Some(replay) = &outcome.replays {
+        out.push(Inline::text("It returns the exact retained result of "));
+        out.push(Inline::code(replay.origin.to_string()));
+        out.push(Inline::text(" without an error, event, or subject change."));
+    } else {
+        out.extend(effect_sentence(ir, outcome.subject.as_ref()));
+    }
     if let Some(error) = &outcome.error {
         let reported = ir.error(error);
         out.push(Inline::text(" It reports "));
@@ -1642,6 +1648,7 @@ fn condition_sentence(
 /// can disagree about whether a branch can be reached by constructing an input.
 fn strategy_sentence(strategy: TestStrategy) -> &'static str {
     match strategy {
+        TestStrategy::ReplayResult => "A test invokes the original success, captures its actual result and identity, then observes a silent retained-result retry.",
         TestStrategy::ObserveSubjectFact => "A test establishes and independently observes the subject enum fact before selecting this branch.",
         TestStrategy::ConstructInput => {
             "A test reaches it by constructing an input that satisfies that condition."
