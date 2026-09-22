@@ -2,48 +2,64 @@
 format: aep.planning-md/1
 id: decision-blocker:retained-result-release-qualification
 kind: decision-blocker
-status: open
+status: cleared
 title: Qualify the local gate for the retained-result release
 relations:
 - blocks: story:retained-command-result-replay
 withholds: test_result
-revision: 1
+revision: 4
 ---
 ## Decision boundary
 
-The retained-result release remains subject to AGENTS.md's local task check and
-exact-tag qualification. Existing CI and release workflows explicitly use
-SKIP_CONSUMER_CHECKS=true. The prior local-release-gate-profile resolution
-authorized that profile for0.28.0 only; it does not authorize0.29.0.
+AGENTS.md requires the local task check and exact-tag qualification. Existing
+CI and release workflows explicitly use SKIP_CONSUMER_CHECKS=true. The previous
+local-release-gate-profile resolution authorizes that profile for 0.28.0 only;
+it does not authorize 0.29.0.
 
-## Observed refusal
+## Concrete candidate
 
-A fresh task consumer-check on the prepared0.29.0 coordinator refused:
+The independently reviewed source and its preserved regression cases are in
+https://github.com/beyond10x/ess/pull/59. The published delivery tree is identical
+to the local qualification candidate. Original development refs and a verified
+complete Git bundle preserve the intermediate history; the governed journal is
+unchanged by delivery consolidation. Security publication passed under the
+unchanged active policy.
 
-```text
-unclassified concrete consumer entry ess_cli::bin(ess)::enum::SuiteTarget/variant/Typescript; finite review required
-```
+Local qualification candidate: b69e6de3213d87579ef6c8946bf76f83b38a3c35.
 
-Accounting also reported an unknown claimed NamedType wire path. The retained
-consumer-check-preflight.log, status and extraction inventory distinguish this
-registry/accounting debt from the independent retained-result runtime findings.
-The inventory includes inherited and newly introduced entries; no claim says
-every outstanding entry predates this release. No consumer cases qualified in
-that refused run. The final corrected candidate still requires a fresh gate.
+The workspace/tooling run reports 3312 passed, 0 failed and 14 ignored.
+Formatting, strict Clippy, rustdoc, examples, projections and support checks passed before the consumer refusal.
 
-## Current handling
+- task fuzz-check: exit 0.
+- task release-check: exit 0.
+- task action-check: exit 0.
+- task site-build: exit 0.
 
-Finish and independently review the source correction, and execute the remaining
-repository, documentation and release checks before presenting a concrete
-release decision. No request or answer is recorded yet. Continue independent
-implementation and verification while preparing that candidate.
+## Remaining refusal
 
-The bounded choice will be to authorize the existing CI/release profile for
-this release, preserving the default local refusal, or to complete the finite
-consumer-accounting qualification first. Do not weaken the gate, bulk-invent
-applicability or rewrite the pinned historical accounting baseline. The existing
-consumer-accounting-baseline-never-extended story retains that broader work.
+extraction/classification refused: unclassified concrete consumer entry ess_cli::bin(ess)::enum::SuiteTarget/variant/Typescript; finite review required; accounting diagnostics: {"SchemaDocumentMetadata":0,"details":"unknown claimed model wire:RawSpecFile#/definitions/NamedType/oneOf/2/properties/variants/items/type","format":"ess-consumer-accounting/1","no_cells_admitted":true,"status":"PROVISIONAL_ACCOUNTING_REFUSAL"}
 
-This blocker concerns source integration/release qualification. Passing scoped
-tests or publishing a review branch cannot clear it or establish EKR runtime
-conformance, durability or phase completion.
+Fresh extraction: 213 unclassified concrete entries, including inherited and introduced entries. No accounting cells or completed qualification receipt were admitted.
+
+The documentation fixture that still called ess/7 unreleased was corrected,
+and its module and the subsequent full workspace run pass. The original failure
+and the refused default gate remain in the retained qualification evidence.
+No consumer classification, pinned accounting baseline or assertion was relaxed.
+
+## Operator decision requested
+
+The operator answered the bounded 0.29.0 qualification question on 2026-09-22:
+
+> what exactly is there to be approved? if we should merge you mean, yes
+
+The question explicitly offered the existing CI/release profile for this release,
+with the local consumer-accounting refusal retained, or completing that separate
+accounting work first. This answer authorizes merging PR 59 and using the existing
+SKIP_CONSUMER_CHECKS=true profile for local exact-tag qualification of 0.29.0.
+
+Required CI must remain green. The exact merged commit must pass that profile and
+site-lab before tagging, and the published release and assets must be verified.
+This approval does not classify the 213 entries, admit any accounting cell, change
+the default gate, or complete consumer-accounting-baseline-never-extended.
+The default refusal and its original evidence remain retained. This decision
+does not establish EKR durability, runtime conformance or phase completion.
