@@ -49,13 +49,13 @@ The final formatted assertion for the first failure is CLI test line 129; first 
 
 ```text
 cargo test -p ess-cli --locked --test count_writer_pass2 generated_go_admits_only_typed_predicate_paths_and_operator_envelopes -- --exact --nocapture
-   Compiling ess-cli v0.19.0 (/home/timo/.local/state/worktree/trees/b10x/ess/ess-conformance-count-writer/crates/edge/ess-cli)
+   Compiling ess-cli v0.19.0 (~/.local/state/worktree/trees/b10x/ess/ess-conformance-count-writer/crates/edge/ess-cli)
     Finished `test` profile [unoptimized] target(s) in 0.27s
      Running tests/count_writer_pass2.rs (target/debug/deps/count_writer_pass2-a7133ca202cf1f1f)
 
 running 1 test
-cwd: /home/timo/.local/state/worktree/trees/b10x/ess/ess-conformance-count-writer/target/review-boundaries-8/adversary-pass-2/go-leaf-admission-821308
-command: cd "/home/timo/.local/state/worktree/trees/b10x/ess/ess-conformance-count-writer/target/review-boundaries-8/adversary-pass-2/go-leaf-admission-821308" && env -u ESS_CONFORMANCE_ALLOW_INCOMPLETE -u ESS_CONFORMANCE_STRICT ESS_REPORT_FORMAT="2" ESS_REPORT_OUT="/home/timo/.local/state/worktree/trees/b10x/ess/ess-conformance-count-writer/target/review-boundaries-8/adversary-pass-2/go-leaf-admission-821308/valid.report.json" REVIEW_MARKER="/home/timo/.local/state/worktree/trees/b10x/ess/ess-conformance-count-writer/target/review-boundaries-8/adversary-pass-2/go-leaf-admission-821308/valid.marker" REVIEW_MODE="begin-skip" "go" "test" "-count=1" "-v" "./..." "-run" "^TestReviewSecond$"
+cwd: ~/.local/state/worktree/trees/b10x/ess/ess-conformance-count-writer/target/review-boundaries-8/adversary-pass-2/go-leaf-admission-821308
+command: cd "~/.local/state/worktree/trees/b10x/ess/ess-conformance-count-writer/target/review-boundaries-8/adversary-pass-2/go-leaf-admission-821308" && env -u ESS_CONFORMANCE_ALLOW_INCOMPLETE -u ESS_CONFORMANCE_STRICT ESS_REPORT_FORMAT="2" ESS_REPORT_OUT="~/.local/state/worktree/trees/b10x/ess/ess-conformance-count-writer/target/review-boundaries-8/adversary-pass-2/go-leaf-admission-821308/valid.report.json" REVIEW_MARKER="~/.local/state/worktree/trees/b10x/ess/ess-conformance-count-writer/target/review-boundaries-8/adversary-pass-2/go-leaf-admission-821308/valid.marker" REVIEW_MODE="begin-skip" "go" "test" "-count=1" "-v" "./..." "-run" "^TestReviewSecond$"
 exit: Some(0)
 stdout:
 === RUN   TestReviewSecond
@@ -69,8 +69,8 @@ ok  	countreviewsecond/essconform	0.002s
 
 stderr:
 
-cwd: /home/timo/.local/state/worktree/trees/b10x/ess/ess-conformance-count-writer/target/review-boundaries-8/adversary-pass-2/go-leaf-admission-821308
-command: cd "/home/timo/.local/state/worktree/trees/b10x/ess/ess-conformance-count-writer/target/review-boundaries-8/adversary-pass-2/go-leaf-admission-821308" && env -u ESS_CONFORMANCE_ALLOW_INCOMPLETE -u ESS_CONFORMANCE_STRICT ESS_REPORT_FORMAT="2" ESS_REPORT_OUT="/home/timo/.local/state/worktree/trees/b10x/ess/ess-conformance-count-writer/target/review-boundaries-8/adversary-pass-2/go-leaf-admission-821308/invalid-fact-path.report.json" REVIEW_MARKER="/home/timo/.local/state/worktree/trees/b10x/ess/ess-conformance-count-writer/target/review-boundaries-8/adversary-pass-2/go-leaf-admission-821308/invalid-fact-path.marker" REVIEW_MODE="begin-skip" "go" "test" "-count=1" "-v" "./..." "-run" "^TestReviewSecond$"
+cwd: ~/.local/state/worktree/trees/b10x/ess/ess-conformance-count-writer/target/review-boundaries-8/adversary-pass-2/go-leaf-admission-821308
+command: cd "~/.local/state/worktree/trees/b10x/ess/ess-conformance-count-writer/target/review-boundaries-8/adversary-pass-2/go-leaf-admission-821308" && env -u ESS_CONFORMANCE_ALLOW_INCOMPLETE -u ESS_CONFORMANCE_STRICT ESS_REPORT_FORMAT="2" ESS_REPORT_OUT="~/.local/state/worktree/trees/b10x/ess/ess-conformance-count-writer/target/review-boundaries-8/adversary-pass-2/go-leaf-admission-821308/invalid-fact-path.report.json" REVIEW_MARKER="~/.local/state/worktree/trees/b10x/ess/ess-conformance-count-writer/target/review-boundaries-8/adversary-pass-2/go-leaf-admission-821308/invalid-fact-path.marker" REVIEW_MODE="begin-skip" "go" "test" "-count=1" "-v" "./..." "-run" "^TestReviewSecond$"
 exit: Some(0)
 stdout:
 === RUN   TestReviewSecond
@@ -84,8 +84,8 @@ ok  	countreviewsecond/essconform	0.002s
 
 stderr:
 
-cwd: /home/timo/.local/state/worktree/trees/b10x/ess/ess-conformance-count-writer/target/review-boundaries-8/adversary-pass-2/go-leaf-admission-821308
-command: cd "/home/timo/.local/state/worktree/trees/b10x/ess/ess-conformance-count-writer/target/review-boundaries-8/adversary-pass-2/go-leaf-admission-821308" && env -u ESS_CONFORMANCE_ALLOW_INCOMPLETE -u ESS_CONFORMANCE_STRICT ESS_REPORT_FORMAT="2" ESS_REPORT_OUT="/home/timo/.local/state/worktree/trees/b10x/ess/ess-conformance-count-writer/target/review-boundaries-8/adversary-pass-2/go-leaf-admission-821308/unknown-constraint-operator.report.json" REVIEW_MARKER="/home/timo/.local/state/worktree/trees/b10x/ess/ess-conformance-count-writer/target/review-boundaries-8/adversary-pass-2/go-leaf-admission-821308/unknown-constraint-operator.marker" REVIEW_MODE="begin-skip" "go" "test" "-count=1" "-v" "./..." "-run" "^TestReviewSecond$"
+cwd: ~/.local/state/worktree/trees/b10x/ess/ess-conformance-count-writer/target/review-boundaries-8/adversary-pass-2/go-leaf-admission-821308
+command: cd "~/.local/state/worktree/trees/b10x/ess/ess-conformance-count-writer/target/review-boundaries-8/adversary-pass-2/go-leaf-admission-821308" && env -u ESS_CONFORMANCE_ALLOW_INCOMPLETE -u ESS_CONFORMANCE_STRICT ESS_REPORT_FORMAT="2" ESS_REPORT_OUT="~/.local/state/worktree/trees/b10x/ess/ess-conformance-count-writer/target/review-boundaries-8/adversary-pass-2/go-leaf-admission-821308/unknown-constraint-operator.report.json" REVIEW_MARKER="~/.local/state/worktree/trees/b10x/ess/ess-conformance-count-writer/target/review-boundaries-8/adversary-pass-2/go-leaf-admission-821308/unknown-constraint-operator.marker" REVIEW_MODE="begin-skip" "go" "test" "-count=1" "-v" "./..." "-run" "^TestReviewSecond$"
 exit: Some(0)
 stdout:
 === RUN   TestReviewSecond
@@ -99,8 +99,8 @@ ok  	countreviewsecond/essconform	0.002s
 
 stderr:
 
-cwd: /home/timo/.local/state/worktree/trees/b10x/ess/ess-conformance-count-writer/target/review-boundaries-8/adversary-pass-2/go-leaf-admission-821308
-command: cd "/home/timo/.local/state/worktree/trees/b10x/ess/ess-conformance-count-writer/target/review-boundaries-8/adversary-pass-2/go-leaf-admission-821308" && env -u ESS_CONFORMANCE_ALLOW_INCOMPLETE -u ESS_CONFORMANCE_STRICT ESS_REPORT_FORMAT="2" ESS_REPORT_OUT="/home/timo/.local/state/worktree/trees/b10x/ess/ess-conformance-count-writer/target/review-boundaries-8/adversary-pass-2/go-leaf-admission-821308/invalid-expression-path.report.json" REVIEW_MARKER="/home/timo/.local/state/worktree/trees/b10x/ess/ess-conformance-count-writer/target/review-boundaries-8/adversary-pass-2/go-leaf-admission-821308/invalid-expression-path.marker" REVIEW_MODE="begin-skip" "go" "test" "-count=1" "-v" "./..." "-run" "^TestReviewSecond$"
+cwd: ~/.local/state/worktree/trees/b10x/ess/ess-conformance-count-writer/target/review-boundaries-8/adversary-pass-2/go-leaf-admission-821308
+command: cd "~/.local/state/worktree/trees/b10x/ess/ess-conformance-count-writer/target/review-boundaries-8/adversary-pass-2/go-leaf-admission-821308" && env -u ESS_CONFORMANCE_ALLOW_INCOMPLETE -u ESS_CONFORMANCE_STRICT ESS_REPORT_FORMAT="2" ESS_REPORT_OUT="~/.local/state/worktree/trees/b10x/ess/ess-conformance-count-writer/target/review-boundaries-8/adversary-pass-2/go-leaf-admission-821308/invalid-expression-path.report.json" REVIEW_MARKER="~/.local/state/worktree/trees/b10x/ess/ess-conformance-count-writer/target/review-boundaries-8/adversary-pass-2/go-leaf-admission-821308/invalid-expression-path.marker" REVIEW_MODE="begin-skip" "go" "test" "-count=1" "-v" "./..." "-run" "^TestReviewSecond$"
 exit: Some(0)
 stdout:
 === RUN   TestReviewSecond
@@ -136,13 +136,13 @@ exit: 101
 
 ```text
 cargo test -p ess-cli --locked --test count_writer_pass2 generated_go_abnormal_unsupported_error_formatting_cannot_complete -- --exact --nocapture
-   Compiling ess-cli v0.19.0 (/home/timo/.local/state/worktree/trees/b10x/ess/ess-conformance-count-writer/crates/edge/ess-cli)
+   Compiling ess-cli v0.19.0 (~/.local/state/worktree/trees/b10x/ess/ess-conformance-count-writer/crates/edge/ess-cli)
     Finished `test` profile [unoptimized] target(s) in 0.30s
      Running tests/count_writer_pass2.rs (target/debug/deps/count_writer_pass2-a7133ca202cf1f1f)
 
 running 1 test
-cwd: /home/timo/.local/state/worktree/trees/b10x/ess/ess-conformance-count-writer/target/review-boundaries-8/adversary-pass-2/go-error-formatting-838231
-command: cd "/home/timo/.local/state/worktree/trees/b10x/ess/ess-conformance-count-writer/target/review-boundaries-8/adversary-pass-2/go-error-formatting-838231" && env -u ESS_CONFORMANCE_ALLOW_INCOMPLETE -u ESS_CONFORMANCE_STRICT ESS_REPORT_FORMAT="2" ESS_REPORT_OUT="/home/timo/.local/state/worktree/trees/b10x/ess/ess-conformance-count-writer/target/review-boundaries-8/adversary-pass-2/go-error-formatting-838231/ordinary-skip.report.json" REVIEW_MARKER="/home/timo/.local/state/worktree/trees/b10x/ess/ess-conformance-count-writer/target/review-boundaries-8/adversary-pass-2/go-error-formatting-838231/ordinary-skip.marker" REVIEW_MODE="begin-skip" "go" "test" "-count=1" "-v" "./..." "-run" "^TestReviewSecond$"
+cwd: ~/.local/state/worktree/trees/b10x/ess/ess-conformance-count-writer/target/review-boundaries-8/adversary-pass-2/go-error-formatting-838231
+command: cd "~/.local/state/worktree/trees/b10x/ess/ess-conformance-count-writer/target/review-boundaries-8/adversary-pass-2/go-error-formatting-838231" && env -u ESS_CONFORMANCE_ALLOW_INCOMPLETE -u ESS_CONFORMANCE_STRICT ESS_REPORT_FORMAT="2" ESS_REPORT_OUT="~/.local/state/worktree/trees/b10x/ess/ess-conformance-count-writer/target/review-boundaries-8/adversary-pass-2/go-error-formatting-838231/ordinary-skip.report.json" REVIEW_MARKER="~/.local/state/worktree/trees/b10x/ess/ess-conformance-count-writer/target/review-boundaries-8/adversary-pass-2/go-error-formatting-838231/ordinary-skip.marker" REVIEW_MODE="begin-skip" "go" "test" "-count=1" "-v" "./..." "-run" "^TestReviewSecond$"
 exit: Some(0)
 stdout:
 === RUN   TestReviewSecond
@@ -156,8 +156,8 @@ ok  	countreviewsecond/essconform	0.002s
 
 stderr:
 
-cwd: /home/timo/.local/state/worktree/trees/b10x/ess/ess-conformance-count-writer/target/review-boundaries-8/adversary-pass-2/go-error-formatting-838231
-command: cd "/home/timo/.local/state/worktree/trees/b10x/ess/ess-conformance-count-writer/target/review-boundaries-8/adversary-pass-2/go-error-formatting-838231" && env -u ESS_CONFORMANCE_ALLOW_INCOMPLETE -u ESS_CONFORMANCE_STRICT -u ESS_REPORT_OUT ESS_REPORT_FORMAT="2" REVIEW_MARKER="/home/timo/.local/state/worktree/trees/b10x/ess/ess-conformance-count-writer/target/review-boundaries-8/adversary-pass-2/go-error-formatting-838231/format-goexit-false.marker" REVIEW_MODE="begin-error-format-goexit" "go" "test" "-count=1" "-v" "./..." "-run" "^TestReviewSecond$"
+cwd: ~/.local/state/worktree/trees/b10x/ess/ess-conformance-count-writer/target/review-boundaries-8/adversary-pass-2/go-error-formatting-838231
+command: cd "~/.local/state/worktree/trees/b10x/ess/ess-conformance-count-writer/target/review-boundaries-8/adversary-pass-2/go-error-formatting-838231" && env -u ESS_CONFORMANCE_ALLOW_INCOMPLETE -u ESS_CONFORMANCE_STRICT -u ESS_REPORT_OUT ESS_REPORT_FORMAT="2" REVIEW_MARKER="~/.local/state/worktree/trees/b10x/ess/ess-conformance-count-writer/target/review-boundaries-8/adversary-pass-2/go-error-formatting-838231/format-goexit-false.marker" REVIEW_MODE="begin-error-format-goexit" "go" "test" "-count=1" "-v" "./..." "-run" "^TestReviewSecond$"
 exit: Some(1)
 stdout:
 === RUN   TestReviewSecond
@@ -175,7 +175,7 @@ testing.tRunner.func1()
 runtime.Goexit()
 	/usr/lib/go/src/runtime/panic.go:694 +0x5e
 countreviewsecond/essconform.exitError.Error(...)
-	/home/timo/.local/state/worktree/trees/b10x/ess/ess-conformance-count-writer/target/review-boundaries-8/adversary-pass-2/go-error-formatting-838231/essconform/review_test.go:14
+	~/.local/state/worktree/trees/b10x/ess/ess-conformance-count-writer/target/review-boundaries-8/adversary-pass-2/go-error-formatting-838231/essconform/review_test.go:14
 fmt.(*pp).handleMethods(0x1fc989da2410, 0x4?)
 	/usr/lib/go/src/fmt/print.go:668 +0x394
 fmt.(*pp).printArg(0x1fc989da2410, {0x5b2700, 0x77c440}, 0x76)
@@ -187,11 +187,11 @@ fmt.Sprintf({0x5e7fe5, 0x2d}, {0x1fc989d98d28, 0x1, 0x1})
 testing.(*common).Skipf(0x1fc989de6488, {0x5e7fe5?, 0x5eef68?}, {0x1fc989d98d28?, 0x499b5a?, 0x1fc989da2410?})
 	/usr/lib/go/src/testing/testing.go:1241 +0x3f
 countreviewsecond/essconform.(*run).skip(...)
-	/home/timo/.local/state/worktree/trees/b10x/ess/ess-conformance-count-writer/target/review-boundaries-8/adversary-pass-2/go-error-formatting-838231/essconform/runtime.go:1386
+	~/.local/state/worktree/trees/b10x/ess/ess-conformance-count-writer/target/review-boundaries-8/adversary-pass-2/go-error-formatting-838231/essconform/runtime.go:1386
 countreviewsecond/essconform.(*run).execute(0x1fc989dd1e50, {0x1fc989cee620, 0x1c}, {{0x1fc989cf4a80, 0x2c}, {0x1fc989cc8200, 0x1, 0x1}})
-	/home/timo/.local/state/worktree/trees/b10x/ess/ess-conformance-count-writer/target/review-boundaries-8/adversary-pass-2/go-error-formatting-838231/essconform/runtime.go:718 +0x171
+	~/.local/state/worktree/trees/b10x/ess/ess-conformance-count-writer/target/review-boundaries-8/adversary-pass-2/go-error-formatting-838231/essconform/runtime.go:718 +0x171
 countreviewsecond/essconform.Run.func1(0x1fc989de6488)
-	/home/timo/.local/state/worktree/trees/b10x/ess/ess-conformance-count-writer/target/review-boundaries-8/adversary-pass-2/go-error-formatting-838231/essconform/runtime.go:568 +0x2cd
+	~/.local/state/worktree/trees/b10x/ess/ess-conformance-count-writer/target/review-boundaries-8/adversary-pass-2/go-error-formatting-838231/essconform/runtime.go:568 +0x2cd
 testing.tRunner(0x1fc989de6488, 0x1fc989dc6380)
 	/usr/lib/go/src/testing/testing.go:2036 +0xea
 created by testing.(*T).Run in goroutine 6
@@ -201,8 +201,8 @@ FAIL
 
 stderr:
 
-cwd: /home/timo/.local/state/worktree/trees/b10x/ess/ess-conformance-count-writer/target/review-boundaries-8/adversary-pass-2/go-error-formatting-838231
-command: cd "/home/timo/.local/state/worktree/trees/b10x/ess/ess-conformance-count-writer/target/review-boundaries-8/adversary-pass-2/go-error-formatting-838231" && env -u ESS_CONFORMANCE_ALLOW_INCOMPLETE -u ESS_CONFORMANCE_STRICT ESS_REPORT_FORMAT="2" ESS_REPORT_OUT="/home/timo/.local/state/worktree/trees/b10x/ess/ess-conformance-count-writer/target/review-boundaries-8/adversary-pass-2/go-error-formatting-838231/format-goexit-true.report.json" REVIEW_MARKER="/home/timo/.local/state/worktree/trees/b10x/ess/ess-conformance-count-writer/target/review-boundaries-8/adversary-pass-2/go-error-formatting-838231/format-goexit-true.marker" REVIEW_MODE="begin-error-format-goexit" "go" "test" "-count=1" "-v" "./..." "-run" "^TestReviewSecond$"
+cwd: ~/.local/state/worktree/trees/b10x/ess/ess-conformance-count-writer/target/review-boundaries-8/adversary-pass-2/go-error-formatting-838231
+command: cd "~/.local/state/worktree/trees/b10x/ess/ess-conformance-count-writer/target/review-boundaries-8/adversary-pass-2/go-error-formatting-838231" && env -u ESS_CONFORMANCE_ALLOW_INCOMPLETE -u ESS_CONFORMANCE_STRICT ESS_REPORT_FORMAT="2" ESS_REPORT_OUT="~/.local/state/worktree/trees/b10x/ess/ess-conformance-count-writer/target/review-boundaries-8/adversary-pass-2/go-error-formatting-838231/format-goexit-true.report.json" REVIEW_MARKER="~/.local/state/worktree/trees/b10x/ess/ess-conformance-count-writer/target/review-boundaries-8/adversary-pass-2/go-error-formatting-838231/format-goexit-true.marker" REVIEW_MODE="begin-error-format-goexit" "go" "test" "-count=1" "-v" "./..." "-run" "^TestReviewSecond$"
 exit: Some(1)
 stdout:
 === RUN   TestReviewSecond
@@ -220,7 +220,7 @@ testing.tRunner.func1()
 runtime.Goexit()
 	/usr/lib/go/src/runtime/panic.go:694 +0x5e
 countreviewsecond/essconform.exitError.Error(...)
-	/home/timo/.local/state/worktree/trees/b10x/ess/ess-conformance-count-writer/target/review-boundaries-8/adversary-pass-2/go-error-formatting-838231/essconform/review_test.go:14
+	~/.local/state/worktree/trees/b10x/ess/ess-conformance-count-writer/target/review-boundaries-8/adversary-pass-2/go-error-formatting-838231/essconform/review_test.go:14
 fmt.(*pp).handleMethods(0x3a1877f36410, 0x4?)
 	/usr/lib/go/src/fmt/print.go:668 +0x394
 fmt.(*pp).printArg(0x3a1877f36410, {0x5b2700, 0x77c440}, 0x76)
@@ -232,11 +232,11 @@ fmt.Sprintf({0x5e7fe5, 0x2d}, {0x3a1877f20d28, 0x1, 0x1})
 testing.(*common).Skipf(0x3a1877f92488, {0x5e7fe5?, 0x5eef68?}, {0x3a1877f20d28?, 0x499b5a?, 0x3a1877f36410?})
 	/usr/lib/go/src/testing/testing.go:1241 +0x3f
 countreviewsecond/essconform.(*run).skip(...)
-	/home/timo/.local/state/worktree/trees/b10x/ess/ess-conformance-count-writer/target/review-boundaries-8/adversary-pass-2/go-error-formatting-838231/essconform/runtime.go:1386
+	~/.local/state/worktree/trees/b10x/ess/ess-conformance-count-writer/target/review-boundaries-8/adversary-pass-2/go-error-formatting-838231/essconform/runtime.go:1386
 countreviewsecond/essconform.(*run).execute(0x3a1877f75e50, {0x3a1877f5a360, 0x1c}, {{0x3a1877f64630, 0x2c}, {0x3a1877f80100, 0x1, 0x1}})
-	/home/timo/.local/state/worktree/trees/b10x/ess/ess-conformance-count-writer/target/review-boundaries-8/adversary-pass-2/go-error-formatting-838231/essconform/runtime.go:718 +0x171
+	~/.local/state/worktree/trees/b10x/ess/ess-conformance-count-writer/target/review-boundaries-8/adversary-pass-2/go-error-formatting-838231/essconform/runtime.go:718 +0x171
 countreviewsecond/essconform.Run.func1(0x3a1877f92488)
-	/home/timo/.local/state/worktree/trees/b10x/ess/ess-conformance-count-writer/target/review-boundaries-8/adversary-pass-2/go-error-formatting-838231/essconform/runtime.go:568 +0x2cd
+	~/.local/state/worktree/trees/b10x/ess/ess-conformance-count-writer/target/review-boundaries-8/adversary-pass-2/go-error-formatting-838231/essconform/runtime.go:568 +0x2cd
 testing.tRunner(0x3a1877f92488, 0x3a1877f6a380)
 	/usr/lib/go/src/testing/testing.go:2036 +0xea
 created by testing.(*T).Run in goroutine 18
@@ -255,7 +255,7 @@ exit: 0
 
 ```text
 cargo test -p ess-conformance --locked --test count_writer_pass2 cloned_execution_binding_survives_mutation_of_extracted_legacy_diagnostics -- --exact --nocapture
-   Compiling ess-conformance v0.19.0 (/home/timo/.local/state/worktree/trees/b10x/ess/ess-conformance-count-writer/crates/verify/ess-conformance)
+   Compiling ess-conformance v0.19.0 (~/.local/state/worktree/trees/b10x/ess/ess-conformance-count-writer/crates/verify/ess-conformance)
 error[E0308]: mismatched types
   --> crates/verify/ess-conformance/tests/count_writer_pass2.rs:23:21
    |
@@ -271,7 +271,7 @@ exit: 101
 
 ```text
 cargo test -p ess-conformance --locked --test count_writer_pass2 cloned_execution_binding_survives_mutation_of_extracted_legacy_diagnostics -- --exact --nocapture
-   Compiling ess-conformance v0.19.0 (/home/timo/.local/state/worktree/trees/b10x/ess/ess-conformance-count-writer/crates/verify/ess-conformance)
+   Compiling ess-conformance v0.19.0 (~/.local/state/worktree/trees/b10x/ess/ess-conformance-count-writer/crates/verify/ess-conformance)
     Finished `test` profile [unoptimized] target(s) in 0.26s
      Running tests/count_writer_pass2.rs (target/debug/deps/count_writer_pass2-934fcf0bb27c1cc4)
 
@@ -288,7 +288,7 @@ exit: 0
 
 Baseline is the correction's final actual command, `cargo test -p ess-conformance -p ess-cli --locked --no-fail-fast`: 405 passed, 0 failed/ignored across 33 runner summaries. This is inherited baseline evidence, not a preemptive run. The initially requested command below stopped at the new CLI failure: 71 executed, 70 passed, 1 failed, 0 ignored across 9 summaries, exit 101. The subsequent complete `--no-fail-fast` command executed 408, with 407 passed, 1 failed, 0 ignored across 35 summaries, exit 101. All 405 inherited names remain selected and passing; exactly the three added names account for the increase. measured-counts.json retains the counts and added/removed/nonpassing inherited name comparison.
 
-All Cargo test commands ran from `/home/timo/.local/state/worktree/trees/b10x/ess/ess-conformance-count-writer` with the following explicit environment. Rust compiler and Go tests used the assigned local build/scratch paths; no sccache server or shared target was used.
+All Cargo test commands ran from `~/.local/state/worktree/trees/b10x/ess/ess-conformance-count-writer` with the following explicit environment. Rust compiler and Go tests used the assigned local build/scratch paths; no sccache server or shared target was used.
 
 ```text
 unset RUSTC_WRAPPER SCCACHE_SERVER_UDS CARGO_TARGET_DIR
@@ -300,8 +300,8 @@ The exact argv, combined Cargo stdout/stderr and actual exit follow for both pac
 
 ```text
 cargo test -p ess-conformance -p ess-cli --locked
-   Compiling ess-cli v0.19.0 (/home/timo/.local/state/worktree/trees/b10x/ess/ess-conformance-count-writer/crates/edge/ess-cli)
-   Compiling ess-conformance v0.19.0 (/home/timo/.local/state/worktree/trees/b10x/ess/ess-conformance-count-writer/crates/verify/ess-conformance)
+   Compiling ess-cli v0.19.0 (~/.local/state/worktree/trees/b10x/ess/ess-conformance-count-writer/crates/edge/ess-cli)
+   Compiling ess-conformance v0.19.0 (~/.local/state/worktree/trees/b10x/ess/ess-conformance-count-writer/crates/verify/ess-conformance)
     Finished `test` profile [unoptimized] target(s) in 0.35s
      Running unittests src/main.rs (target/debug/deps/ess-d3edf4c0ecde1ae7)
 
@@ -429,8 +429,8 @@ test generated_go_admits_only_typed_predicate_paths_and_operator_envelopes ... F
 failures:
 
 ---- generated_go_admits_only_typed_predicate_paths_and_operator_envelopes stdout ----
-cwd: /home/timo/.local/state/worktree/trees/b10x/ess/ess-conformance-count-writer/target/review-boundaries-8/adversary-pass-2/go-leaf-admission-860313
-command: cd "/home/timo/.local/state/worktree/trees/b10x/ess/ess-conformance-count-writer/target/review-boundaries-8/adversary-pass-2/go-leaf-admission-860313" && env -u ESS_CONFORMANCE_ALLOW_INCOMPLETE -u ESS_CONFORMANCE_STRICT ESS_REPORT_FORMAT="2" ESS_REPORT_OUT="/home/timo/.local/state/worktree/trees/b10x/ess/ess-conformance-count-writer/target/review-boundaries-8/adversary-pass-2/go-leaf-admission-860313/valid.report.json" REVIEW_MARKER="/home/timo/.local/state/worktree/trees/b10x/ess/ess-conformance-count-writer/target/review-boundaries-8/adversary-pass-2/go-leaf-admission-860313/valid.marker" REVIEW_MODE="begin-skip" "go" "test" "-count=1" "-v" "./..." "-run" "^TestReviewSecond$"
+cwd: ~/.local/state/worktree/trees/b10x/ess/ess-conformance-count-writer/target/review-boundaries-8/adversary-pass-2/go-leaf-admission-860313
+command: cd "~/.local/state/worktree/trees/b10x/ess/ess-conformance-count-writer/target/review-boundaries-8/adversary-pass-2/go-leaf-admission-860313" && env -u ESS_CONFORMANCE_ALLOW_INCOMPLETE -u ESS_CONFORMANCE_STRICT ESS_REPORT_FORMAT="2" ESS_REPORT_OUT="~/.local/state/worktree/trees/b10x/ess/ess-conformance-count-writer/target/review-boundaries-8/adversary-pass-2/go-leaf-admission-860313/valid.report.json" REVIEW_MARKER="~/.local/state/worktree/trees/b10x/ess/ess-conformance-count-writer/target/review-boundaries-8/adversary-pass-2/go-leaf-admission-860313/valid.marker" REVIEW_MODE="begin-skip" "go" "test" "-count=1" "-v" "./..." "-run" "^TestReviewSecond$"
 exit: Some(0)
 stdout:
 === RUN   TestReviewSecond
@@ -444,8 +444,8 @@ ok  	countreviewsecond/essconform	0.002s
 
 stderr:
 
-cwd: /home/timo/.local/state/worktree/trees/b10x/ess/ess-conformance-count-writer/target/review-boundaries-8/adversary-pass-2/go-leaf-admission-860313
-command: cd "/home/timo/.local/state/worktree/trees/b10x/ess/ess-conformance-count-writer/target/review-boundaries-8/adversary-pass-2/go-leaf-admission-860313" && env -u ESS_CONFORMANCE_ALLOW_INCOMPLETE -u ESS_CONFORMANCE_STRICT ESS_REPORT_FORMAT="2" ESS_REPORT_OUT="/home/timo/.local/state/worktree/trees/b10x/ess/ess-conformance-count-writer/target/review-boundaries-8/adversary-pass-2/go-leaf-admission-860313/invalid-fact-path.report.json" REVIEW_MARKER="/home/timo/.local/state/worktree/trees/b10x/ess/ess-conformance-count-writer/target/review-boundaries-8/adversary-pass-2/go-leaf-admission-860313/invalid-fact-path.marker" REVIEW_MODE="begin-skip" "go" "test" "-count=1" "-v" "./..." "-run" "^TestReviewSecond$"
+cwd: ~/.local/state/worktree/trees/b10x/ess/ess-conformance-count-writer/target/review-boundaries-8/adversary-pass-2/go-leaf-admission-860313
+command: cd "~/.local/state/worktree/trees/b10x/ess/ess-conformance-count-writer/target/review-boundaries-8/adversary-pass-2/go-leaf-admission-860313" && env -u ESS_CONFORMANCE_ALLOW_INCOMPLETE -u ESS_CONFORMANCE_STRICT ESS_REPORT_FORMAT="2" ESS_REPORT_OUT="~/.local/state/worktree/trees/b10x/ess/ess-conformance-count-writer/target/review-boundaries-8/adversary-pass-2/go-leaf-admission-860313/invalid-fact-path.report.json" REVIEW_MARKER="~/.local/state/worktree/trees/b10x/ess/ess-conformance-count-writer/target/review-boundaries-8/adversary-pass-2/go-leaf-admission-860313/invalid-fact-path.marker" REVIEW_MODE="begin-skip" "go" "test" "-count=1" "-v" "./..." "-run" "^TestReviewSecond$"
 exit: Some(0)
 stdout:
 === RUN   TestReviewSecond
@@ -459,8 +459,8 @@ ok  	countreviewsecond/essconform	0.002s
 
 stderr:
 
-cwd: /home/timo/.local/state/worktree/trees/b10x/ess/ess-conformance-count-writer/target/review-boundaries-8/adversary-pass-2/go-leaf-admission-860313
-command: cd "/home/timo/.local/state/worktree/trees/b10x/ess/ess-conformance-count-writer/target/review-boundaries-8/adversary-pass-2/go-leaf-admission-860313" && env -u ESS_CONFORMANCE_ALLOW_INCOMPLETE -u ESS_CONFORMANCE_STRICT ESS_REPORT_FORMAT="2" ESS_REPORT_OUT="/home/timo/.local/state/worktree/trees/b10x/ess/ess-conformance-count-writer/target/review-boundaries-8/adversary-pass-2/go-leaf-admission-860313/unknown-constraint-operator.report.json" REVIEW_MARKER="/home/timo/.local/state/worktree/trees/b10x/ess/ess-conformance-count-writer/target/review-boundaries-8/adversary-pass-2/go-leaf-admission-860313/unknown-constraint-operator.marker" REVIEW_MODE="begin-skip" "go" "test" "-count=1" "-v" "./..." "-run" "^TestReviewSecond$"
+cwd: ~/.local/state/worktree/trees/b10x/ess/ess-conformance-count-writer/target/review-boundaries-8/adversary-pass-2/go-leaf-admission-860313
+command: cd "~/.local/state/worktree/trees/b10x/ess/ess-conformance-count-writer/target/review-boundaries-8/adversary-pass-2/go-leaf-admission-860313" && env -u ESS_CONFORMANCE_ALLOW_INCOMPLETE -u ESS_CONFORMANCE_STRICT ESS_REPORT_FORMAT="2" ESS_REPORT_OUT="~/.local/state/worktree/trees/b10x/ess/ess-conformance-count-writer/target/review-boundaries-8/adversary-pass-2/go-leaf-admission-860313/unknown-constraint-operator.report.json" REVIEW_MARKER="~/.local/state/worktree/trees/b10x/ess/ess-conformance-count-writer/target/review-boundaries-8/adversary-pass-2/go-leaf-admission-860313/unknown-constraint-operator.marker" REVIEW_MODE="begin-skip" "go" "test" "-count=1" "-v" "./..." "-run" "^TestReviewSecond$"
 exit: Some(0)
 stdout:
 === RUN   TestReviewSecond
@@ -474,8 +474,8 @@ ok  	countreviewsecond/essconform	0.002s
 
 stderr:
 
-cwd: /home/timo/.local/state/worktree/trees/b10x/ess/ess-conformance-count-writer/target/review-boundaries-8/adversary-pass-2/go-leaf-admission-860313
-command: cd "/home/timo/.local/state/worktree/trees/b10x/ess/ess-conformance-count-writer/target/review-boundaries-8/adversary-pass-2/go-leaf-admission-860313" && env -u ESS_CONFORMANCE_ALLOW_INCOMPLETE -u ESS_CONFORMANCE_STRICT ESS_REPORT_FORMAT="2" ESS_REPORT_OUT="/home/timo/.local/state/worktree/trees/b10x/ess/ess-conformance-count-writer/target/review-boundaries-8/adversary-pass-2/go-leaf-admission-860313/invalid-expression-path.report.json" REVIEW_MARKER="/home/timo/.local/state/worktree/trees/b10x/ess/ess-conformance-count-writer/target/review-boundaries-8/adversary-pass-2/go-leaf-admission-860313/invalid-expression-path.marker" REVIEW_MODE="begin-skip" "go" "test" "-count=1" "-v" "./..." "-run" "^TestReviewSecond$"
+cwd: ~/.local/state/worktree/trees/b10x/ess/ess-conformance-count-writer/target/review-boundaries-8/adversary-pass-2/go-leaf-admission-860313
+command: cd "~/.local/state/worktree/trees/b10x/ess/ess-conformance-count-writer/target/review-boundaries-8/adversary-pass-2/go-leaf-admission-860313" && env -u ESS_CONFORMANCE_ALLOW_INCOMPLETE -u ESS_CONFORMANCE_STRICT ESS_REPORT_FORMAT="2" ESS_REPORT_OUT="~/.local/state/worktree/trees/b10x/ess/ess-conformance-count-writer/target/review-boundaries-8/adversary-pass-2/go-leaf-admission-860313/invalid-expression-path.report.json" REVIEW_MARKER="~/.local/state/worktree/trees/b10x/ess/ess-conformance-count-writer/target/review-boundaries-8/adversary-pass-2/go-leaf-admission-860313/invalid-expression-path.marker" REVIEW_MODE="begin-skip" "go" "test" "-count=1" "-v" "./..." "-run" "^TestReviewSecond$"
 exit: Some(0)
 stdout:
 === RUN   TestReviewSecond
@@ -636,8 +636,8 @@ test generated_go_admits_only_typed_predicate_paths_and_operator_envelopes ... F
 failures:
 
 ---- generated_go_admits_only_typed_predicate_paths_and_operator_envelopes stdout ----
-cwd: /home/timo/.local/state/worktree/trees/b10x/ess/ess-conformance-count-writer/target/review-boundaries-8/adversary-pass-2/go-leaf-admission-869947
-command: cd "/home/timo/.local/state/worktree/trees/b10x/ess/ess-conformance-count-writer/target/review-boundaries-8/adversary-pass-2/go-leaf-admission-869947" && env -u ESS_CONFORMANCE_ALLOW_INCOMPLETE -u ESS_CONFORMANCE_STRICT ESS_REPORT_FORMAT="2" ESS_REPORT_OUT="/home/timo/.local/state/worktree/trees/b10x/ess/ess-conformance-count-writer/target/review-boundaries-8/adversary-pass-2/go-leaf-admission-869947/valid.report.json" REVIEW_MARKER="/home/timo/.local/state/worktree/trees/b10x/ess/ess-conformance-count-writer/target/review-boundaries-8/adversary-pass-2/go-leaf-admission-869947/valid.marker" REVIEW_MODE="begin-skip" "go" "test" "-count=1" "-v" "./..." "-run" "^TestReviewSecond$"
+cwd: ~/.local/state/worktree/trees/b10x/ess/ess-conformance-count-writer/target/review-boundaries-8/adversary-pass-2/go-leaf-admission-869947
+command: cd "~/.local/state/worktree/trees/b10x/ess/ess-conformance-count-writer/target/review-boundaries-8/adversary-pass-2/go-leaf-admission-869947" && env -u ESS_CONFORMANCE_ALLOW_INCOMPLETE -u ESS_CONFORMANCE_STRICT ESS_REPORT_FORMAT="2" ESS_REPORT_OUT="~/.local/state/worktree/trees/b10x/ess/ess-conformance-count-writer/target/review-boundaries-8/adversary-pass-2/go-leaf-admission-869947/valid.report.json" REVIEW_MARKER="~/.local/state/worktree/trees/b10x/ess/ess-conformance-count-writer/target/review-boundaries-8/adversary-pass-2/go-leaf-admission-869947/valid.marker" REVIEW_MODE="begin-skip" "go" "test" "-count=1" "-v" "./..." "-run" "^TestReviewSecond$"
 exit: Some(0)
 stdout:
 === RUN   TestReviewSecond
@@ -651,8 +651,8 @@ ok  	countreviewsecond/essconform	0.002s
 
 stderr:
 
-cwd: /home/timo/.local/state/worktree/trees/b10x/ess/ess-conformance-count-writer/target/review-boundaries-8/adversary-pass-2/go-leaf-admission-869947
-command: cd "/home/timo/.local/state/worktree/trees/b10x/ess/ess-conformance-count-writer/target/review-boundaries-8/adversary-pass-2/go-leaf-admission-869947" && env -u ESS_CONFORMANCE_ALLOW_INCOMPLETE -u ESS_CONFORMANCE_STRICT ESS_REPORT_FORMAT="2" ESS_REPORT_OUT="/home/timo/.local/state/worktree/trees/b10x/ess/ess-conformance-count-writer/target/review-boundaries-8/adversary-pass-2/go-leaf-admission-869947/invalid-fact-path.report.json" REVIEW_MARKER="/home/timo/.local/state/worktree/trees/b10x/ess/ess-conformance-count-writer/target/review-boundaries-8/adversary-pass-2/go-leaf-admission-869947/invalid-fact-path.marker" REVIEW_MODE="begin-skip" "go" "test" "-count=1" "-v" "./..." "-run" "^TestReviewSecond$"
+cwd: ~/.local/state/worktree/trees/b10x/ess/ess-conformance-count-writer/target/review-boundaries-8/adversary-pass-2/go-leaf-admission-869947
+command: cd "~/.local/state/worktree/trees/b10x/ess/ess-conformance-count-writer/target/review-boundaries-8/adversary-pass-2/go-leaf-admission-869947" && env -u ESS_CONFORMANCE_ALLOW_INCOMPLETE -u ESS_CONFORMANCE_STRICT ESS_REPORT_FORMAT="2" ESS_REPORT_OUT="~/.local/state/worktree/trees/b10x/ess/ess-conformance-count-writer/target/review-boundaries-8/adversary-pass-2/go-leaf-admission-869947/invalid-fact-path.report.json" REVIEW_MARKER="~/.local/state/worktree/trees/b10x/ess/ess-conformance-count-writer/target/review-boundaries-8/adversary-pass-2/go-leaf-admission-869947/invalid-fact-path.marker" REVIEW_MODE="begin-skip" "go" "test" "-count=1" "-v" "./..." "-run" "^TestReviewSecond$"
 exit: Some(0)
 stdout:
 === RUN   TestReviewSecond
@@ -666,8 +666,8 @@ ok  	countreviewsecond/essconform	0.002s
 
 stderr:
 
-cwd: /home/timo/.local/state/worktree/trees/b10x/ess/ess-conformance-count-writer/target/review-boundaries-8/adversary-pass-2/go-leaf-admission-869947
-command: cd "/home/timo/.local/state/worktree/trees/b10x/ess/ess-conformance-count-writer/target/review-boundaries-8/adversary-pass-2/go-leaf-admission-869947" && env -u ESS_CONFORMANCE_ALLOW_INCOMPLETE -u ESS_CONFORMANCE_STRICT ESS_REPORT_FORMAT="2" ESS_REPORT_OUT="/home/timo/.local/state/worktree/trees/b10x/ess/ess-conformance-count-writer/target/review-boundaries-8/adversary-pass-2/go-leaf-admission-869947/unknown-constraint-operator.report.json" REVIEW_MARKER="/home/timo/.local/state/worktree/trees/b10x/ess/ess-conformance-count-writer/target/review-boundaries-8/adversary-pass-2/go-leaf-admission-869947/unknown-constraint-operator.marker" REVIEW_MODE="begin-skip" "go" "test" "-count=1" "-v" "./..." "-run" "^TestReviewSecond$"
+cwd: ~/.local/state/worktree/trees/b10x/ess/ess-conformance-count-writer/target/review-boundaries-8/adversary-pass-2/go-leaf-admission-869947
+command: cd "~/.local/state/worktree/trees/b10x/ess/ess-conformance-count-writer/target/review-boundaries-8/adversary-pass-2/go-leaf-admission-869947" && env -u ESS_CONFORMANCE_ALLOW_INCOMPLETE -u ESS_CONFORMANCE_STRICT ESS_REPORT_FORMAT="2" ESS_REPORT_OUT="~/.local/state/worktree/trees/b10x/ess/ess-conformance-count-writer/target/review-boundaries-8/adversary-pass-2/go-leaf-admission-869947/unknown-constraint-operator.report.json" REVIEW_MARKER="~/.local/state/worktree/trees/b10x/ess/ess-conformance-count-writer/target/review-boundaries-8/adversary-pass-2/go-leaf-admission-869947/unknown-constraint-operator.marker" REVIEW_MODE="begin-skip" "go" "test" "-count=1" "-v" "./..." "-run" "^TestReviewSecond$"
 exit: Some(0)
 stdout:
 === RUN   TestReviewSecond
@@ -681,8 +681,8 @@ ok  	countreviewsecond/essconform	0.002s
 
 stderr:
 
-cwd: /home/timo/.local/state/worktree/trees/b10x/ess/ess-conformance-count-writer/target/review-boundaries-8/adversary-pass-2/go-leaf-admission-869947
-command: cd "/home/timo/.local/state/worktree/trees/b10x/ess/ess-conformance-count-writer/target/review-boundaries-8/adversary-pass-2/go-leaf-admission-869947" && env -u ESS_CONFORMANCE_ALLOW_INCOMPLETE -u ESS_CONFORMANCE_STRICT ESS_REPORT_FORMAT="2" ESS_REPORT_OUT="/home/timo/.local/state/worktree/trees/b10x/ess/ess-conformance-count-writer/target/review-boundaries-8/adversary-pass-2/go-leaf-admission-869947/invalid-expression-path.report.json" REVIEW_MARKER="/home/timo/.local/state/worktree/trees/b10x/ess/ess-conformance-count-writer/target/review-boundaries-8/adversary-pass-2/go-leaf-admission-869947/invalid-expression-path.marker" REVIEW_MODE="begin-skip" "go" "test" "-count=1" "-v" "./..." "-run" "^TestReviewSecond$"
+cwd: ~/.local/state/worktree/trees/b10x/ess/ess-conformance-count-writer/target/review-boundaries-8/adversary-pass-2/go-leaf-admission-869947
+command: cd "~/.local/state/worktree/trees/b10x/ess/ess-conformance-count-writer/target/review-boundaries-8/adversary-pass-2/go-leaf-admission-869947" && env -u ESS_CONFORMANCE_ALLOW_INCOMPLETE -u ESS_CONFORMANCE_STRICT ESS_REPORT_FORMAT="2" ESS_REPORT_OUT="~/.local/state/worktree/trees/b10x/ess/ess-conformance-count-writer/target/review-boundaries-8/adversary-pass-2/go-leaf-admission-869947/invalid-expression-path.report.json" REVIEW_MARKER="~/.local/state/worktree/trees/b10x/ess/ess-conformance-count-writer/target/review-boundaries-8/adversary-pass-2/go-leaf-admission-869947/invalid-expression-path.marker" REVIEW_MODE="begin-skip" "go" "test" "-count=1" "-v" "./..." "-run" "^TestReviewSecond$"
 exit: Some(0)
 stdout:
 === RUN   TestReviewSecond
@@ -1243,10 +1243,10 @@ The three new test/fixture paths immediately after the header are the only autho
 Initial immutable report SHA256 remains `32563d1fcbcc00489f7d6f897a0c6f471d2774ef99e65ad4a861e69c959b84ff`; correction report remains `b5197b11aa13bf152a09dd03ea6d896ca1d19a485b3f2055f919c8db94796296`. No earlier report, production file, existing assertion, planning artifact, Git index/ref/object or managed-worktree lifecycle was edited.
 
 All authored scratch, complete command/stdout/stderr/exit records, generated modules, markers/reports and caches are under:
-`/home/timo/.local/state/worktree/trees/b10x/ess/ess-conformance-count-writer/target/review-boundaries-8/adversary-pass-2`.
+`~/.local/state/worktree/trees/b10x/ess/ess-conformance-count-writer/target/review-boundaries-8/adversary-pass-2`.
 TMPDIR, GOCACHE and GOMODCACHE are its `tmp`, `go-cache` and `go-mod-cache` children. Compilation uses only the assigned worktree's existing target. Inherited package tests also regenerate their established in-tree producer exports and test scratch, including pass1 CLI PID modules under correction-pass-1/go-tests; those helpers were preserved. No new test intentionally rewrites shared exports.
 
-No authored file outside the worktree was written. Cargo's pre-existing shared infrastructure metadata `/home/timo/.cargo/.global-cache` is conservatively disclosed as one external path: 1,007,616 bytes, final observed mtime 2026-09-06 12:18:55.521773819 +0200. Cargo and coordinator activity share that file, so attribution to a specific process is not established. No external Go cache was selected and no daemon was launched.
+No authored file outside the worktree was written. Cargo's pre-existing shared infrastructure metadata `~/.cargo/.global-cache` is conservatively disclosed as one external path: 1,007,616 bytes, final observed mtime 2026-09-06 12:18:55.521773819 +0200. Cargo and coordinator activity share that file, so attribution to a specific process is not established. No external Go cache was selected and no daemon was launched.
 
 Every owned command session has exited; no owned Cargo/test/Go process remains. Final observed free space was 23,233,638,400 bytes, above the 8 GiB floor. Report is immutable on return, with matching findings.yaml, and all source/scratch writes are relinquished to the coordinator. No third attack is launched.
 

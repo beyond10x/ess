@@ -2,10 +2,10 @@
 format: aep.planning-md/1
 id: epic:specification-runs-as-a-fake-backend
 kind: epic
-status: draft
+status: archived
 title: A specification can be run as a fake backend
 summary: What ESS is missing before a model can serve a frontend without a human writing the behaviour.
-revision: 1
+revision: 3
 ---
 ## What was tried
 
@@ -42,3 +42,7 @@ Filed from the adopter's services repository by the session that hit them. The a
 hand-written realization and the shim are on the services repository's `ess-docs` branch and its frontend branch
 branch `fake-backend` — both being removed, so the citations below are to ESS's own sources and to
 command output quoted in each story, not to that work.
+
+## Retirement under the revised ESS evolution scope
+
+The operator explicitly excluded this epic and all twelve dedicated stories on 2026-09-15 in approved plan ess-evolution-20260915 revision 1. Retire this draft through AEP without deleting its original content, relations or journal history. Its acceptance is no longer a requirement of the current initiative. Generic future protocol/UI work is recorded separately in task:deferred-protocol-ui-bindings and does not reopen this artifact.

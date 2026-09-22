@@ -354,7 +354,7 @@ Ordinary bodies and unselected associated declarations stay outside callable eli
 After all assigned producers held, root archived, independently verified and retired only the four
 historical coordinator target/review-boundaries-{7,8,9,10} record roots. All12 actual commands returned0.
 Original successes, failures, raw streams, source snapshots and native metadata/payloads remain in
-/home/timo/.cache/ess-review/2026-09-06-resume/waves7-10-historical-records-retirement.
+~/.cache/ess-review/2026-09-06-resume/waves7-10-historical-records-retirement.
 Complete receipt SHA256 d71c6c53f60a0c5d5a1241da577eddf610aabae18339b1ccdd4ddf92d8c443ad.
 No managed source checkout, current unit target/TMP, frozen tool or Git branch was removed.
 

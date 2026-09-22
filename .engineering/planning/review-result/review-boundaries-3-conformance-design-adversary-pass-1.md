@@ -128,7 +128,7 @@ AEP was inspected only through Git objects at 00c742e4179593738a2e8aa69e2ecc07d3
 The following read-only comparison emitted no diff and exited 0:
 
 ```console
-git -C /home/timo/beyond10x/aep --no-pager diff cc321f31fa0120b32a5b9f5e7b8c8fdfa55f69f9 00c742e4179593738a2e8aa69e2ecc07d3c89402 -- crates/observe/aep-ess-evidence/src/lib.rs crates/edge/aep-cli/src/planning.rs
+git -C ~/beyond10x/aep --no-pager diff cc321f31fa0120b32a5b9f5e7b8c8fdfa55f69f9 00c742e4179593738a2e8aa69e2ecc07d3c89402 -- crates/observe/aep-ess-evidence/src/lib.rs crates/edge/aep-cli/src/planning.rs
 ```
 
 ```text
@@ -343,7 +343,7 @@ Exit: `0`.
 
 ## 6. Outside writes
 
-None. Report path: /home/timo/.local/state/worktree/trees/b10x/ess/review-conformance-format-design/target/review-boundaries-3/adversary-pass-1.md. No separate scratch fixture or log was created; command excerpts are retained in this report.
+None. Report path: ~/.local/state/worktree/trees/b10x/ess/review-conformance-format-design/target/review-boundaries-3/adversary-pass-1.md. No separate scratch fixture or log was created; command excerpts are retained in this report.
 
 ## 7. Findings for the coordinator
 

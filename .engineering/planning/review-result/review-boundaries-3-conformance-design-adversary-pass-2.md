@@ -114,7 +114,7 @@ First-pass disposition:
 AEP reads used Git objects at 00c742e4179593738a2e8aa69e2ecc07d3c89402, including the complete optional adapter, planning.rs:5907–5985, and domain evidence.rs:1006–1051 and 1862–1889. AEP's planning reader independently parses JSON Value and records prose; it is not silently promoted to the adapter's domain evidence path. The two report-reader files remain unchanged from the earlier advertised object:
 
 ```console
-git -C /home/timo/beyond10x/aep --no-pager diff cc321f31fa0120b32a5b9f5e7b8c8fdfa55f69f9 00c742e4179593738a2e8aa69e2ecc07d3c89402 -- crates/observe/aep-ess-evidence/src/lib.rs crates/edge/aep-cli/src/planning.rs
+git -C ~/beyond10x/aep --no-pager diff cc321f31fa0120b32a5b9f5e7b8c8fdfa55f69f9 00c742e4179593738a2e8aa69e2ecc07d3c89402 -- crates/observe/aep-ess-evidence/src/lib.rs crates/edge/aep-cli/src/planning.rs
 ```
 
 ```text
@@ -617,7 +617,7 @@ Exit: `0`.
 
 6. Outside writes
 
-None. The sole authored path is /home/timo/.local/state/worktree/trees/b10x/ess/review-conformance-format-design/target/review-boundaries-3/adversary-pass-2.md. No external scratch, fixture, cache or build directory was created. No cleanup was performed.
+None. The sole authored path is ~/.local/state/worktree/trees/b10x/ess/review-conformance-format-design/target/review-boundaries-3/adversary-pass-2.md. No external scratch, fixture, cache or build directory was created. No cleanup was performed.
 
 7. Findings for the coordinator
 

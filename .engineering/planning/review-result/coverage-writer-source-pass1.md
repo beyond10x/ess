@@ -12,7 +12,7 @@ unit: ESS coverage writer source pass 1, 874962d3c7f84d0337bb1477892da065aeadc2f
 verdict: NEEDS-CHANGE
 cases: executed 642→646, red 3
 origin: introduced 2 / pre-existing 0 / undecided 0
-wrote-outside-worktree: 513 retained paths under /home/timo/.cache/ess-w11-review1-tmp
+wrote-outside-worktree: 513 retained paths under ~/.cache/ess-w11-review1-tmp
 needs-coordinator: route explicit D1 rendering correction and Go diagnostic; root owns source freeze, second attack, integration and actual AEP correspondence
 
 1. git --no-pager diff --stat
@@ -70,17 +70,17 @@ Full actual focused command receipts and output follow. `run-lane.py` records ex
     "--exact",
     "--nocapture"
   ],
-  "cwd": "/home/timo/.local/state/worktree/trees/b10x/ess/ess-conformance-coverage-writer",
+  "cwd": "~/.local/state/worktree/trees/b10x/ess/ess-conformance-coverage-writer",
   "environment": {
-    "PATH": "/home/timo/.rustup/toolchains/stable-x86_64-unknown-linux-gnu/bin:/home/timo/.nvm/versions/node/v24.20.0/bin:/home/timo/.local/bin:/home/timo/.deno/bin:/home/linuxbrew/.linuxbrew/Caskroom/codex/0.153.4/codex-path:/home/timo/.codex/tmp/arg0/codex-arg0jTsWIw:/home/timo/.bun/bin:/home/linuxbrew/.linuxbrew/bin:/home/linuxbrew/.linuxbrew/sbin:/home/timo/.opencode/bin:/home/timo/.fly/bin:/home/timo/.cargo/bin:/home/timo:/home/timo/anaconda/bin:/usr/bin:/home/timo/.rbenv:/usr/local/go/bin:/home/timo/go/bin:/home/timo/go:/home/timo/.local/share/gem/ruby/3.0.0/bin:/home/timo/.deno/bin:/home/timo/.yarn/bin:/home/timo/.pulumi/bin:/opt/rocm/bin:/home/timo/.bun/bin:/home/linuxbrew/.linuxbrew/bin:/home/linuxbrew/.linuxbrew/sbin:/home/timo/.sdkman/candidates/scala/current/bin:/home/timo/.sdkman/candidates/maven/current/bin:/home/timo/.sdkman/candidates/java/current/bin:/home/timo/.sdkman/candidates/groovy/current/bin:/home/timo/.sdkman/candidates/grails/current/bin:/home/timo/.sdkman/candidates/gradle/current/bin:/home/timo/.local/bin:/usr/local/bin:/bin:/usr/local/sbin:/opt/cuda/bin:/opt/cuda/integration/nsight-compute:/opt/cuda/integration/nsight-systems:/usr/lib/jvm/default/bin:/usr/bin/site_perl:/usr/bin/vendor_perl:/usr/bin/core_perl:/usr/lib/rustup/bin:/var/lib/snapd/snap/bin:/opt/cuda/bin:/opt/cuda/integration/nsight-compute:/opt/cuda/integration/nsight-systems",
-    "RUSTC": "/home/timo/.rustup/toolchains/stable-x86_64-unknown-linux-gnu/bin/rustc",
-    "RUSTDOC": "/home/timo/.rustup/toolchains/stable-x86_64-unknown-linux-gnu/bin/rustdoc",
-    "TMPDIR": "/home/timo/.local/state/worktree/trees/b10x/ess/ess-conformance-coverage-writer/target/review-boundaries-11/adversary-pass-1/tmp",
-    "GOCACHE": "/home/timo/.local/state/worktree/trees/b10x/ess/ess-conformance-coverage-writer/target/review-boundaries-11/adversary-pass-1/go-cache",
-    "GOMODCACHE": "/home/timo/.local/state/worktree/trees/b10x/ess/ess-conformance-coverage-writer/target/review-boundaries-11/adversary-pass-1/go-mod",
-    "CARGO_HOME": "/home/timo/.local/state/worktree/trees/b10x/ess/ess-conformance-coverage-writer/target/review-boundaries-11/adversary-pass-1/cargo-home",
-    "ESS_BROWSER_TMPDIR": "/home/timo/.cache/ess-w11-review1-tmp",
-    "ESS_COVERAGE_EXPORT_ROOT": "/home/timo/.local/state/worktree/trees/b10x/ess/ess-conformance-coverage-writer/target/review-boundaries-11/adversary-pass-1/exports-focused-first",
+    "PATH": "~/.rustup/toolchains/stable-x86_64-unknown-linux-gnu/bin:~/.nvm/versions/node/v24.20.0/bin:~/.local/bin:~/.deno/bin:~/.linuxbrew/Caskroom/codex/0.153.4/codex-path:~/.codex/tmp/arg0/codex-arg0jTsWIw:~/.bun/bin:~/.linuxbrew/bin:~/.linuxbrew/sbin:~/.opencode/bin:~/.fly/bin:~/.cargo/bin:~:~/anaconda/bin:/usr/bin:~/.rbenv:/usr/local/go/bin:~/go/bin:~/go:~/.local/share/gem/ruby/3.0.0/bin:~/.deno/bin:~/.yarn/bin:~/.pulumi/bin:/opt/rocm/bin:~/.bun/bin:~/.linuxbrew/bin:~/.linuxbrew/sbin:~/.sdkman/candidates/scala/current/bin:~/.sdkman/candidates/maven/current/bin:~/.sdkman/candidates/java/current/bin:~/.sdkman/candidates/groovy/current/bin:~/.sdkman/candidates/grails/current/bin:~/.sdkman/candidates/gradle/current/bin:~/.local/bin:/usr/local/bin:/bin:/usr/local/sbin:/opt/cuda/bin:/opt/cuda/integration/nsight-compute:/opt/cuda/integration/nsight-systems:/usr/lib/jvm/default/bin:/usr/bin/site_perl:/usr/bin/vendor_perl:/usr/bin/core_perl:/usr/lib/rustup/bin:/var/lib/snapd/snap/bin:/opt/cuda/bin:/opt/cuda/integration/nsight-compute:/opt/cuda/integration/nsight-systems",
+    "RUSTC": "~/.rustup/toolchains/stable-x86_64-unknown-linux-gnu/bin/rustc",
+    "RUSTDOC": "~/.rustup/toolchains/stable-x86_64-unknown-linux-gnu/bin/rustdoc",
+    "TMPDIR": "~/.local/state/worktree/trees/b10x/ess/ess-conformance-coverage-writer/target/review-boundaries-11/adversary-pass-1/tmp",
+    "GOCACHE": "~/.local/state/worktree/trees/b10x/ess/ess-conformance-coverage-writer/target/review-boundaries-11/adversary-pass-1/go-cache",
+    "GOMODCACHE": "~/.local/state/worktree/trees/b10x/ess/ess-conformance-coverage-writer/target/review-boundaries-11/adversary-pass-1/go-mod",
+    "CARGO_HOME": "~/.local/state/worktree/trees/b10x/ess/ess-conformance-coverage-writer/target/review-boundaries-11/adversary-pass-1/cargo-home",
+    "ESS_BROWSER_TMPDIR": "~/.cache/ess-w11-review1-tmp",
+    "ESS_COVERAGE_EXPORT_ROOT": "~/.local/state/worktree/trees/b10x/ess/ess-conformance-coverage-writer/target/review-boundaries-11/adversary-pass-1/exports-focused-first",
     "CARGO_INCREMENTAL": "0",
     "CARGO_PROFILE_DEV_DEBUG": "0",
     "CARGO_PROFILE_TEST_DEBUG": "0",
@@ -141,10 +141,10 @@ Full actual focused command receipts and output follow. `run-lane.py` records ex
    Compiling dyn-clone v1.0.20
    Compiling serde_yaml v0.9.34+deprecated
    Compiling autocfg v1.5.1
-   Compiling ess-primitives v0.20.0 (/home/timo/.local/state/worktree/trees/b10x/ess/ess-conformance-coverage-writer/crates/specify/ess-primitives)
+   Compiling ess-primitives v0.20.0 (~/.local/state/worktree/trees/b10x/ess/ess-conformance-coverage-writer/crates/specify/ess-primitives)
    Compiling num-traits v0.2.19
    Compiling libc v0.2.189
-   Compiling ess-domain v0.20.0 (/home/timo/.local/state/worktree/trees/b10x/ess/ess-conformance-coverage-writer/crates/specify/ess-domain)
+   Compiling ess-domain v0.20.0 (~/.local/state/worktree/trees/b10x/ess/ess-conformance-coverage-writer/crates/specify/ess-domain)
    Compiling num-integer v0.1.47
    Compiling getrandom v0.3.4
    Compiling zerocopy v0.8.56
@@ -153,7 +153,7 @@ Full actual focused command receipts and output follow. `run-lane.py` records ex
    Compiling pulldown-cmark v0.13.4
    Compiling ahash v0.8.12
    Compiling num-bigint v0.4.8
-   Compiling ess-compiler v0.20.0 (/home/timo/.local/state/worktree/trees/b10x/ess/ess-conformance-coverage-writer/crates/specify/ess-compiler)
+   Compiling ess-compiler v0.20.0 (~/.local/state/worktree/trees/b10x/ess/ess-conformance-coverage-writer/crates/specify/ess-compiler)
    Compiling bitflags v2.13.1
    Compiling unicase v2.9.0
    Compiling pulldown-cmark-escape v0.11.0
@@ -173,8 +173,8 @@ Full actual focused command receipts and output follow. `run-lane.py` records ex
    Compiling anstyle-parse v1.0.0
    Compiling regex-automata v0.4.18
    Compiling num v0.4.3
-   Compiling ess-gen v0.20.0 (/home/timo/.local/state/worktree/trees/b10x/ess/ess-conformance-coverage-writer/crates/generate/ess-gen)
-   Compiling infra-domain v0.20.0 (/home/timo/.local/state/worktree/trees/b10x/ess/ess-conformance-coverage-writer/crates/infra/infra-domain)
+   Compiling ess-gen v0.20.0 (~/.local/state/worktree/trees/b10x/ess/ess-conformance-coverage-writer/crates/generate/ess-gen)
+   Compiling infra-domain v0.20.0 (~/.local/state/worktree/trees/b10x/ess/ess-conformance-coverage-writer/crates/infra/infra-domain)
    Compiling anstyle v1.0.14
    Compiling colorchoice v1.0.5
    Compiling anstyle-query v1.1.5
@@ -184,7 +184,7 @@ Full actual focused command receipts and output follow. `run-lane.py` records ex
    Compiling is_terminal_polyfill v1.70.2
    Compiling anstream v1.0.0
    Compiling bit-set v0.8.0
-   Compiling infra-compiler v0.20.0 (/home/timo/.local/state/worktree/trees/b10x/ess/ess-conformance-coverage-writer/crates/infra/infra-compiler)
+   Compiling infra-compiler v0.20.0 (~/.local/state/worktree/trees/b10x/ess/ess-conformance-coverage-writer/crates/infra/infra-compiler)
    Compiling fluent-uri v0.4.1
    Compiling fraction v0.17.0
    Compiling parking_lot v0.12.5
@@ -202,7 +202,7 @@ Full actual focused command receipts and output follow. `run-lane.py` records ex
    Compiling referencing v0.52.1
    Compiling jsonschema-value v0.52.1
    Compiling strum v0.28.0
-   Compiling infra-analyze v0.20.0 (/home/timo/.local/state/worktree/trees/b10x/ess/ess-conformance-coverage-writer/crates/infra/infra-analyze)
+   Compiling infra-analyze v0.20.0 (~/.local/state/worktree/trees/b10x/ess/ess-conformance-coverage-writer/crates/infra/infra-analyze)
    Compiling fancy-regex v0.19.0
    Compiling regex v1.13.1
    Compiling jsonschema-regex v0.52.1
@@ -212,20 +212,20 @@ Full actual focused command receipts and output follow. `run-lane.py` records ex
    Compiling anyhow v1.0.104
    Compiling jsonschema v0.52.1
    Compiling clap v4.6.6
-   Compiling infra-spec v0.20.0 (/home/timo/.local/state/worktree/trees/b10x/ess/ess-conformance-coverage-writer/crates/infra/infra-spec)
-   Compiling ess-conformance v0.20.0 (/home/timo/.local/state/worktree/trees/b10x/ess/ess-conformance-coverage-writer/crates/verify/ess-conformance)
-   Compiling ess-realization v0.20.0 (/home/timo/.local/state/worktree/trees/b10x/ess/ess-conformance-coverage-writer/crates/specify/ess-realization)
+   Compiling infra-spec v0.20.0 (~/.local/state/worktree/trees/b10x/ess/ess-conformance-coverage-writer/crates/infra/infra-spec)
+   Compiling ess-conformance v0.20.0 (~/.local/state/worktree/trees/b10x/ess/ess-conformance-coverage-writer/crates/verify/ess-conformance)
+   Compiling ess-realization v0.20.0 (~/.local/state/worktree/trees/b10x/ess/ess-conformance-coverage-writer/crates/specify/ess-realization)
    Compiling semver v1.0.28
    Compiling base64 v0.22.1
-   Compiling ess-deployment v0.20.0 (/home/timo/.local/state/worktree/trees/b10x/ess/ess-conformance-coverage-writer/crates/generate/ess-deployment)
-   Compiling schema-contract v0.20.0 (/home/timo/.local/state/worktree/trees/b10x/ess/ess-conformance-coverage-writer/crates/generate/schema-contract)
-   Compiling ess-diff v0.20.0 (/home/timo/.local/state/worktree/trees/b10x/ess/ess-conformance-coverage-writer/crates/verify/ess-diff)
-   Compiling infra-project v0.20.0 (/home/timo/.local/state/worktree/trees/b10x/ess/ess-conformance-coverage-writer/crates/infra/infra-project)
-   Compiling ess-kubernetes v0.20.0 (/home/timo/.local/state/worktree/trees/b10x/ess/ess-conformance-coverage-writer/crates/infra/ess-kubernetes)
-   Compiling ess-synth v0.20.0 (/home/timo/.local/state/worktree/trees/b10x/ess/ess-conformance-coverage-writer/crates/generate/ess-synth)
-   Compiling ess-composition v0.20.0 (/home/timo/.local/state/worktree/trees/b10x/ess/ess-conformance-coverage-writer/crates/specify/ess-composition)
-   Compiling ess-openapi v0.20.0 (/home/timo/.local/state/worktree/trees/b10x/ess/ess-conformance-coverage-writer/crates/generate/ess-openapi)
-   Compiling ess-cli v0.20.0 (/home/timo/.local/state/worktree/trees/b10x/ess/ess-conformance-coverage-writer/crates/edge/ess-cli)
+   Compiling ess-deployment v0.20.0 (~/.local/state/worktree/trees/b10x/ess/ess-conformance-coverage-writer/crates/generate/ess-deployment)
+   Compiling schema-contract v0.20.0 (~/.local/state/worktree/trees/b10x/ess/ess-conformance-coverage-writer/crates/generate/schema-contract)
+   Compiling ess-diff v0.20.0 (~/.local/state/worktree/trees/b10x/ess/ess-conformance-coverage-writer/crates/verify/ess-diff)
+   Compiling infra-project v0.20.0 (~/.local/state/worktree/trees/b10x/ess/ess-conformance-coverage-writer/crates/infra/infra-project)
+   Compiling ess-kubernetes v0.20.0 (~/.local/state/worktree/trees/b10x/ess/ess-conformance-coverage-writer/crates/infra/ess-kubernetes)
+   Compiling ess-synth v0.20.0 (~/.local/state/worktree/trees/b10x/ess/ess-conformance-coverage-writer/crates/generate/ess-synth)
+   Compiling ess-composition v0.20.0 (~/.local/state/worktree/trees/b10x/ess/ess-conformance-coverage-writer/crates/specify/ess-composition)
+   Compiling ess-openapi v0.20.0 (~/.local/state/worktree/trees/b10x/ess/ess-conformance-coverage-writer/crates/generate/ess-openapi)
+   Compiling ess-cli v0.20.0 (~/.local/state/worktree/trees/b10x/ess/ess-conformance-coverage-writer/crates/edge/ess-cli)
     Finished `test` profile [unoptimized] target(s) in 36.41s
      Running tests/coverage_writer_adversary_pass1.rs (target/debug/deps/coverage_writer_adversary_pass1-96fa9eb4cce59dee)
 
@@ -257,17 +257,17 @@ Actual exit 0; wall 38.096866 seconds.
     "--exact",
     "--nocapture"
   ],
-  "cwd": "/home/timo/.local/state/worktree/trees/b10x/ess/ess-conformance-coverage-writer",
+  "cwd": "~/.local/state/worktree/trees/b10x/ess/ess-conformance-coverage-writer",
   "environment": {
-    "PATH": "/home/timo/.rustup/toolchains/stable-x86_64-unknown-linux-gnu/bin:/home/timo/.nvm/versions/node/v24.20.0/bin:/home/timo/.local/bin:/home/timo/.deno/bin:/home/linuxbrew/.linuxbrew/Caskroom/codex/0.153.4/codex-path:/home/timo/.codex/tmp/arg0/codex-arg0jTsWIw:/home/timo/.bun/bin:/home/linuxbrew/.linuxbrew/bin:/home/linuxbrew/.linuxbrew/sbin:/home/timo/.opencode/bin:/home/timo/.fly/bin:/home/timo/.cargo/bin:/home/timo:/home/timo/anaconda/bin:/usr/bin:/home/timo/.rbenv:/usr/local/go/bin:/home/timo/go/bin:/home/timo/go:/home/timo/.local/share/gem/ruby/3.0.0/bin:/home/timo/.deno/bin:/home/timo/.yarn/bin:/home/timo/.pulumi/bin:/opt/rocm/bin:/home/timo/.bun/bin:/home/linuxbrew/.linuxbrew/bin:/home/linuxbrew/.linuxbrew/sbin:/home/timo/.sdkman/candidates/scala/current/bin:/home/timo/.sdkman/candidates/maven/current/bin:/home/timo/.sdkman/candidates/java/current/bin:/home/timo/.sdkman/candidates/groovy/current/bin:/home/timo/.sdkman/candidates/grails/current/bin:/home/timo/.sdkman/candidates/gradle/current/bin:/home/timo/.local/bin:/usr/local/bin:/bin:/usr/local/sbin:/opt/cuda/bin:/opt/cuda/integration/nsight-compute:/opt/cuda/integration/nsight-systems:/usr/lib/jvm/default/bin:/usr/bin/site_perl:/usr/bin/vendor_perl:/usr/bin/core_perl:/usr/lib/rustup/bin:/var/lib/snapd/snap/bin:/opt/cuda/bin:/opt/cuda/integration/nsight-compute:/opt/cuda/integration/nsight-systems",
-    "RUSTC": "/home/timo/.rustup/toolchains/stable-x86_64-unknown-linux-gnu/bin/rustc",
-    "RUSTDOC": "/home/timo/.rustup/toolchains/stable-x86_64-unknown-linux-gnu/bin/rustdoc",
-    "TMPDIR": "/home/timo/.local/state/worktree/trees/b10x/ess/ess-conformance-coverage-writer/target/review-boundaries-11/adversary-pass-1/tmp",
-    "GOCACHE": "/home/timo/.local/state/worktree/trees/b10x/ess/ess-conformance-coverage-writer/target/review-boundaries-11/adversary-pass-1/go-cache",
-    "GOMODCACHE": "/home/timo/.local/state/worktree/trees/b10x/ess/ess-conformance-coverage-writer/target/review-boundaries-11/adversary-pass-1/go-mod",
-    "CARGO_HOME": "/home/timo/.local/state/worktree/trees/b10x/ess/ess-conformance-coverage-writer/target/review-boundaries-11/adversary-pass-1/cargo-home",
-    "ESS_BROWSER_TMPDIR": "/home/timo/.cache/ess-w11-review1-tmp",
-    "ESS_COVERAGE_EXPORT_ROOT": "/home/timo/.local/state/worktree/trees/b10x/ess/ess-conformance-coverage-writer/target/review-boundaries-11/adversary-pass-1/exports-focused-d1-generated",
+    "PATH": "~/.rustup/toolchains/stable-x86_64-unknown-linux-gnu/bin:~/.nvm/versions/node/v24.20.0/bin:~/.local/bin:~/.deno/bin:~/.linuxbrew/Caskroom/codex/0.153.4/codex-path:~/.codex/tmp/arg0/codex-arg0jTsWIw:~/.bun/bin:~/.linuxbrew/bin:~/.linuxbrew/sbin:~/.opencode/bin:~/.fly/bin:~/.cargo/bin:~:~/anaconda/bin:/usr/bin:~/.rbenv:/usr/local/go/bin:~/go/bin:~/go:~/.local/share/gem/ruby/3.0.0/bin:~/.deno/bin:~/.yarn/bin:~/.pulumi/bin:/opt/rocm/bin:~/.bun/bin:~/.linuxbrew/bin:~/.linuxbrew/sbin:~/.sdkman/candidates/scala/current/bin:~/.sdkman/candidates/maven/current/bin:~/.sdkman/candidates/java/current/bin:~/.sdkman/candidates/groovy/current/bin:~/.sdkman/candidates/grails/current/bin:~/.sdkman/candidates/gradle/current/bin:~/.local/bin:/usr/local/bin:/bin:/usr/local/sbin:/opt/cuda/bin:/opt/cuda/integration/nsight-compute:/opt/cuda/integration/nsight-systems:/usr/lib/jvm/default/bin:/usr/bin/site_perl:/usr/bin/vendor_perl:/usr/bin/core_perl:/usr/lib/rustup/bin:/var/lib/snapd/snap/bin:/opt/cuda/bin:/opt/cuda/integration/nsight-compute:/opt/cuda/integration/nsight-systems",
+    "RUSTC": "~/.rustup/toolchains/stable-x86_64-unknown-linux-gnu/bin/rustc",
+    "RUSTDOC": "~/.rustup/toolchains/stable-x86_64-unknown-linux-gnu/bin/rustdoc",
+    "TMPDIR": "~/.local/state/worktree/trees/b10x/ess/ess-conformance-coverage-writer/target/review-boundaries-11/adversary-pass-1/tmp",
+    "GOCACHE": "~/.local/state/worktree/trees/b10x/ess/ess-conformance-coverage-writer/target/review-boundaries-11/adversary-pass-1/go-cache",
+    "GOMODCACHE": "~/.local/state/worktree/trees/b10x/ess/ess-conformance-coverage-writer/target/review-boundaries-11/adversary-pass-1/go-mod",
+    "CARGO_HOME": "~/.local/state/worktree/trees/b10x/ess/ess-conformance-coverage-writer/target/review-boundaries-11/adversary-pass-1/cargo-home",
+    "ESS_BROWSER_TMPDIR": "~/.cache/ess-w11-review1-tmp",
+    "ESS_COVERAGE_EXPORT_ROOT": "~/.local/state/worktree/trees/b10x/ess/ess-conformance-coverage-writer/target/review-boundaries-11/adversary-pass-1/exports-focused-d1-generated",
     "CARGO_INCREMENTAL": "0",
     "CARGO_PROFILE_DEV_DEBUG": "0",
     "CARGO_PROFILE_TEST_DEBUG": "0",
@@ -303,12 +303,12 @@ Actual exit 0; wall 38.096866 seconds.
    Compiling schemars v0.8.22
    Compiling indexmap v2.14.1
    Compiling thiserror v2.0.20
-   Compiling ess-primitives v0.20.0 (/home/timo/.local/state/worktree/trees/b10x/ess/ess-conformance-coverage-writer/crates/specify/ess-primitives)
+   Compiling ess-primitives v0.20.0 (~/.local/state/worktree/trees/b10x/ess/ess-conformance-coverage-writer/crates/specify/ess-primitives)
    Compiling serde_yaml v0.9.34+deprecated
-   Compiling ess-domain v0.20.0 (/home/timo/.local/state/worktree/trees/b10x/ess/ess-conformance-coverage-writer/crates/specify/ess-domain)
-   Compiling ess-compiler v0.20.0 (/home/timo/.local/state/worktree/trees/b10x/ess/ess-conformance-coverage-writer/crates/specify/ess-compiler)
-   Compiling ess-gen v0.20.0 (/home/timo/.local/state/worktree/trees/b10x/ess/ess-conformance-coverage-writer/crates/generate/ess-gen)
-   Compiling ess-conformance v0.20.0 (/home/timo/.local/state/worktree/trees/b10x/ess/ess-conformance-coverage-writer/crates/verify/ess-conformance)
+   Compiling ess-domain v0.20.0 (~/.local/state/worktree/trees/b10x/ess/ess-conformance-coverage-writer/crates/specify/ess-domain)
+   Compiling ess-compiler v0.20.0 (~/.local/state/worktree/trees/b10x/ess/ess-conformance-coverage-writer/crates/specify/ess-compiler)
+   Compiling ess-gen v0.20.0 (~/.local/state/worktree/trees/b10x/ess/ess-conformance-coverage-writer/crates/generate/ess-gen)
+   Compiling ess-conformance v0.20.0 (~/.local/state/worktree/trees/b10x/ess/ess-conformance-coverage-writer/crates/verify/ess-conformance)
     Finished `test` profile [unoptimized] target(s) in 13.99s
      Running tests/coverage_writer_adversary_pass1.rs (target/debug/deps/coverage_writer_adversary_pass1-e33d0eba38e6ca1d)
 
@@ -351,17 +351,17 @@ Actual exit 101; wall 14.094497 seconds.
     "--exact",
     "--nocapture"
   ],
-  "cwd": "/home/timo/.local/state/worktree/trees/b10x/ess/ess-conformance-coverage-writer",
+  "cwd": "~/.local/state/worktree/trees/b10x/ess/ess-conformance-coverage-writer",
   "environment": {
-    "PATH": "/home/timo/.rustup/toolchains/stable-x86_64-unknown-linux-gnu/bin:/home/timo/.nvm/versions/node/v24.20.0/bin:/home/timo/.local/bin:/home/timo/.deno/bin:/home/linuxbrew/.linuxbrew/Caskroom/codex/0.153.4/codex-path:/home/timo/.codex/tmp/arg0/codex-arg0jTsWIw:/home/timo/.bun/bin:/home/linuxbrew/.linuxbrew/bin:/home/linuxbrew/.linuxbrew/sbin:/home/timo/.opencode/bin:/home/timo/.fly/bin:/home/timo/.cargo/bin:/home/timo:/home/timo/anaconda/bin:/usr/bin:/home/timo/.rbenv:/usr/local/go/bin:/home/timo/go/bin:/home/timo/go:/home/timo/.local/share/gem/ruby/3.0.0/bin:/home/timo/.deno/bin:/home/timo/.yarn/bin:/home/timo/.pulumi/bin:/opt/rocm/bin:/home/timo/.bun/bin:/home/linuxbrew/.linuxbrew/bin:/home/linuxbrew/.linuxbrew/sbin:/home/timo/.sdkman/candidates/scala/current/bin:/home/timo/.sdkman/candidates/maven/current/bin:/home/timo/.sdkman/candidates/java/current/bin:/home/timo/.sdkman/candidates/groovy/current/bin:/home/timo/.sdkman/candidates/grails/current/bin:/home/timo/.sdkman/candidates/gradle/current/bin:/home/timo/.local/bin:/usr/local/bin:/bin:/usr/local/sbin:/opt/cuda/bin:/opt/cuda/integration/nsight-compute:/opt/cuda/integration/nsight-systems:/usr/lib/jvm/default/bin:/usr/bin/site_perl:/usr/bin/vendor_perl:/usr/bin/core_perl:/usr/lib/rustup/bin:/var/lib/snapd/snap/bin:/opt/cuda/bin:/opt/cuda/integration/nsight-compute:/opt/cuda/integration/nsight-systems",
-    "RUSTC": "/home/timo/.rustup/toolchains/stable-x86_64-unknown-linux-gnu/bin/rustc",
-    "RUSTDOC": "/home/timo/.rustup/toolchains/stable-x86_64-unknown-linux-gnu/bin/rustdoc",
-    "TMPDIR": "/home/timo/.local/state/worktree/trees/b10x/ess/ess-conformance-coverage-writer/target/review-boundaries-11/adversary-pass-1/tmp",
-    "GOCACHE": "/home/timo/.local/state/worktree/trees/b10x/ess/ess-conformance-coverage-writer/target/review-boundaries-11/adversary-pass-1/go-cache",
-    "GOMODCACHE": "/home/timo/.local/state/worktree/trees/b10x/ess/ess-conformance-coverage-writer/target/review-boundaries-11/adversary-pass-1/go-mod",
-    "CARGO_HOME": "/home/timo/.local/state/worktree/trees/b10x/ess/ess-conformance-coverage-writer/target/review-boundaries-11/adversary-pass-1/cargo-home",
-    "ESS_BROWSER_TMPDIR": "/home/timo/.cache/ess-w11-review1-tmp",
-    "ESS_COVERAGE_EXPORT_ROOT": "/home/timo/.local/state/worktree/trees/b10x/ess/ess-conformance-coverage-writer/target/review-boundaries-11/adversary-pass-1/exports-focused-d1-authored",
+    "PATH": "~/.rustup/toolchains/stable-x86_64-unknown-linux-gnu/bin:~/.nvm/versions/node/v24.20.0/bin:~/.local/bin:~/.deno/bin:~/.linuxbrew/Caskroom/codex/0.153.4/codex-path:~/.codex/tmp/arg0/codex-arg0jTsWIw:~/.bun/bin:~/.linuxbrew/bin:~/.linuxbrew/sbin:~/.opencode/bin:~/.fly/bin:~/.cargo/bin:~:~/anaconda/bin:/usr/bin:~/.rbenv:/usr/local/go/bin:~/go/bin:~/go:~/.local/share/gem/ruby/3.0.0/bin:~/.deno/bin:~/.yarn/bin:~/.pulumi/bin:/opt/rocm/bin:~/.bun/bin:~/.linuxbrew/bin:~/.linuxbrew/sbin:~/.sdkman/candidates/scala/current/bin:~/.sdkman/candidates/maven/current/bin:~/.sdkman/candidates/java/current/bin:~/.sdkman/candidates/groovy/current/bin:~/.sdkman/candidates/grails/current/bin:~/.sdkman/candidates/gradle/current/bin:~/.local/bin:/usr/local/bin:/bin:/usr/local/sbin:/opt/cuda/bin:/opt/cuda/integration/nsight-compute:/opt/cuda/integration/nsight-systems:/usr/lib/jvm/default/bin:/usr/bin/site_perl:/usr/bin/vendor_perl:/usr/bin/core_perl:/usr/lib/rustup/bin:/var/lib/snapd/snap/bin:/opt/cuda/bin:/opt/cuda/integration/nsight-compute:/opt/cuda/integration/nsight-systems",
+    "RUSTC": "~/.rustup/toolchains/stable-x86_64-unknown-linux-gnu/bin/rustc",
+    "RUSTDOC": "~/.rustup/toolchains/stable-x86_64-unknown-linux-gnu/bin/rustdoc",
+    "TMPDIR": "~/.local/state/worktree/trees/b10x/ess/ess-conformance-coverage-writer/target/review-boundaries-11/adversary-pass-1/tmp",
+    "GOCACHE": "~/.local/state/worktree/trees/b10x/ess/ess-conformance-coverage-writer/target/review-boundaries-11/adversary-pass-1/go-cache",
+    "GOMODCACHE": "~/.local/state/worktree/trees/b10x/ess/ess-conformance-coverage-writer/target/review-boundaries-11/adversary-pass-1/go-mod",
+    "CARGO_HOME": "~/.local/state/worktree/trees/b10x/ess/ess-conformance-coverage-writer/target/review-boundaries-11/adversary-pass-1/cargo-home",
+    "ESS_BROWSER_TMPDIR": "~/.cache/ess-w11-review1-tmp",
+    "ESS_COVERAGE_EXPORT_ROOT": "~/.local/state/worktree/trees/b10x/ess/ess-conformance-coverage-writer/target/review-boundaries-11/adversary-pass-1/exports-focused-d1-authored",
     "CARGO_INCREMENTAL": "0",
     "CARGO_PROFILE_DEV_DEBUG": "0",
     "CARGO_PROFILE_TEST_DEBUG": "0",
@@ -429,17 +429,17 @@ Actual exit 101; wall 0.108809 seconds.
     "--exact",
     "--nocapture"
   ],
-  "cwd": "/home/timo/.local/state/worktree/trees/b10x/ess/ess-conformance-coverage-writer",
+  "cwd": "~/.local/state/worktree/trees/b10x/ess/ess-conformance-coverage-writer",
   "environment": {
-    "PATH": "/home/timo/.rustup/toolchains/stable-x86_64-unknown-linux-gnu/bin:/home/timo/.nvm/versions/node/v24.20.0/bin:/home/timo/.local/bin:/home/timo/.deno/bin:/home/linuxbrew/.linuxbrew/Caskroom/codex/0.153.4/codex-path:/home/timo/.codex/tmp/arg0/codex-arg0jTsWIw:/home/timo/.bun/bin:/home/linuxbrew/.linuxbrew/bin:/home/linuxbrew/.linuxbrew/sbin:/home/timo/.opencode/bin:/home/timo/.fly/bin:/home/timo/.cargo/bin:/home/timo:/home/timo/anaconda/bin:/usr/bin:/home/timo/.rbenv:/usr/local/go/bin:/home/timo/go/bin:/home/timo/go:/home/timo/.local/share/gem/ruby/3.0.0/bin:/home/timo/.deno/bin:/home/timo/.yarn/bin:/home/timo/.pulumi/bin:/opt/rocm/bin:/home/timo/.bun/bin:/home/linuxbrew/.linuxbrew/bin:/home/linuxbrew/.linuxbrew/sbin:/home/timo/.sdkman/candidates/scala/current/bin:/home/timo/.sdkman/candidates/maven/current/bin:/home/timo/.sdkman/candidates/java/current/bin:/home/timo/.sdkman/candidates/groovy/current/bin:/home/timo/.sdkman/candidates/grails/current/bin:/home/timo/.sdkman/candidates/gradle/current/bin:/home/timo/.local/bin:/usr/local/bin:/bin:/usr/local/sbin:/opt/cuda/bin:/opt/cuda/integration/nsight-compute:/opt/cuda/integration/nsight-systems:/usr/lib/jvm/default/bin:/usr/bin/site_perl:/usr/bin/vendor_perl:/usr/bin/core_perl:/usr/lib/rustup/bin:/var/lib/snapd/snap/bin:/opt/cuda/bin:/opt/cuda/integration/nsight-compute:/opt/cuda/integration/nsight-systems",
-    "RUSTC": "/home/timo/.rustup/toolchains/stable-x86_64-unknown-linux-gnu/bin/rustc",
-    "RUSTDOC": "/home/timo/.rustup/toolchains/stable-x86_64-unknown-linux-gnu/bin/rustdoc",
-    "TMPDIR": "/home/timo/.local/state/worktree/trees/b10x/ess/ess-conformance-coverage-writer/target/review-boundaries-11/adversary-pass-1/tmp",
-    "GOCACHE": "/home/timo/.local/state/worktree/trees/b10x/ess/ess-conformance-coverage-writer/target/review-boundaries-11/adversary-pass-1/go-cache",
-    "GOMODCACHE": "/home/timo/.local/state/worktree/trees/b10x/ess/ess-conformance-coverage-writer/target/review-boundaries-11/adversary-pass-1/go-mod",
-    "CARGO_HOME": "/home/timo/.local/state/worktree/trees/b10x/ess/ess-conformance-coverage-writer/target/review-boundaries-11/adversary-pass-1/cargo-home",
-    "ESS_BROWSER_TMPDIR": "/home/timo/.cache/ess-w11-review1-tmp",
-    "ESS_COVERAGE_EXPORT_ROOT": "/home/timo/.local/state/worktree/trees/b10x/ess/ess-conformance-coverage-writer/target/review-boundaries-11/adversary-pass-1/exports-focused-go-diagnostic",
+    "PATH": "~/.rustup/toolchains/stable-x86_64-unknown-linux-gnu/bin:~/.nvm/versions/node/v24.20.0/bin:~/.local/bin:~/.deno/bin:~/.linuxbrew/Caskroom/codex/0.153.4/codex-path:~/.codex/tmp/arg0/codex-arg0jTsWIw:~/.bun/bin:~/.linuxbrew/bin:~/.linuxbrew/sbin:~/.opencode/bin:~/.fly/bin:~/.cargo/bin:~:~/anaconda/bin:/usr/bin:~/.rbenv:/usr/local/go/bin:~/go/bin:~/go:~/.local/share/gem/ruby/3.0.0/bin:~/.deno/bin:~/.yarn/bin:~/.pulumi/bin:/opt/rocm/bin:~/.bun/bin:~/.linuxbrew/bin:~/.linuxbrew/sbin:~/.sdkman/candidates/scala/current/bin:~/.sdkman/candidates/maven/current/bin:~/.sdkman/candidates/java/current/bin:~/.sdkman/candidates/groovy/current/bin:~/.sdkman/candidates/grails/current/bin:~/.sdkman/candidates/gradle/current/bin:~/.local/bin:/usr/local/bin:/bin:/usr/local/sbin:/opt/cuda/bin:/opt/cuda/integration/nsight-compute:/opt/cuda/integration/nsight-systems:/usr/lib/jvm/default/bin:/usr/bin/site_perl:/usr/bin/vendor_perl:/usr/bin/core_perl:/usr/lib/rustup/bin:/var/lib/snapd/snap/bin:/opt/cuda/bin:/opt/cuda/integration/nsight-compute:/opt/cuda/integration/nsight-systems",
+    "RUSTC": "~/.rustup/toolchains/stable-x86_64-unknown-linux-gnu/bin/rustc",
+    "RUSTDOC": "~/.rustup/toolchains/stable-x86_64-unknown-linux-gnu/bin/rustdoc",
+    "TMPDIR": "~/.local/state/worktree/trees/b10x/ess/ess-conformance-coverage-writer/target/review-boundaries-11/adversary-pass-1/tmp",
+    "GOCACHE": "~/.local/state/worktree/trees/b10x/ess/ess-conformance-coverage-writer/target/review-boundaries-11/adversary-pass-1/go-cache",
+    "GOMODCACHE": "~/.local/state/worktree/trees/b10x/ess/ess-conformance-coverage-writer/target/review-boundaries-11/adversary-pass-1/go-mod",
+    "CARGO_HOME": "~/.local/state/worktree/trees/b10x/ess/ess-conformance-coverage-writer/target/review-boundaries-11/adversary-pass-1/cargo-home",
+    "ESS_BROWSER_TMPDIR": "~/.cache/ess-w11-review1-tmp",
+    "ESS_COVERAGE_EXPORT_ROOT": "~/.local/state/worktree/trees/b10x/ess/ess-conformance-coverage-writer/target/review-boundaries-11/adversary-pass-1/exports-focused-go-diagnostic",
     "CARGO_INCREMENTAL": "0",
     "CARGO_PROFILE_DEV_DEBUG": "0",
     "CARGO_PROFILE_TEST_DEBUG": "0",
@@ -465,7 +465,7 @@ Actual exit 101; wall 0.108809 seconds.
 ```
 
 ```text
-   Compiling ess-cli v0.20.0 (/home/timo/.local/state/worktree/trees/b10x/ess/ess-conformance-coverage-writer/crates/edge/ess-cli)
+   Compiling ess-cli v0.20.0 (~/.local/state/worktree/trees/b10x/ess/ess-conformance-coverage-writer/crates/edge/ess-cli)
     Finished `test` profile [unoptimized] target(s) in 0.36s
      Running tests/coverage_writer_adversary_pass1.rs (target/debug/deps/coverage_writer_adversary_pass1-96fa9eb4cce59dee)
 
@@ -536,17 +536,17 @@ The permanent producer-export tests also ran within this package suite using a f
     "ess-diff",
     "--no-fail-fast"
   ],
-  "cwd": "/home/timo/.local/state/worktree/trees/b10x/ess/ess-conformance-coverage-writer",
+  "cwd": "~/.local/state/worktree/trees/b10x/ess/ess-conformance-coverage-writer",
   "environment": {
-    "PATH": "/home/timo/.rustup/toolchains/stable-x86_64-unknown-linux-gnu/bin:/home/timo/.nvm/versions/node/v24.20.0/bin:/home/timo/.local/bin:/home/timo/.deno/bin:/home/linuxbrew/.linuxbrew/Caskroom/codex/0.153.4/codex-path:/home/timo/.codex/tmp/arg0/codex-arg0jTsWIw:/home/timo/.bun/bin:/home/linuxbrew/.linuxbrew/bin:/home/linuxbrew/.linuxbrew/sbin:/home/timo/.opencode/bin:/home/timo/.fly/bin:/home/timo/.cargo/bin:/home/timo:/home/timo/anaconda/bin:/usr/bin:/home/timo/.rbenv:/usr/local/go/bin:/home/timo/go/bin:/home/timo/go:/home/timo/.local/share/gem/ruby/3.0.0/bin:/home/timo/.deno/bin:/home/timo/.yarn/bin:/home/timo/.pulumi/bin:/opt/rocm/bin:/home/timo/.bun/bin:/home/linuxbrew/.linuxbrew/bin:/home/linuxbrew/.linuxbrew/sbin:/home/timo/.sdkman/candidates/scala/current/bin:/home/timo/.sdkman/candidates/maven/current/bin:/home/timo/.sdkman/candidates/java/current/bin:/home/timo/.sdkman/candidates/groovy/current/bin:/home/timo/.sdkman/candidates/grails/current/bin:/home/timo/.sdkman/candidates/gradle/current/bin:/home/timo/.local/bin:/usr/local/bin:/bin:/usr/local/sbin:/opt/cuda/bin:/opt/cuda/integration/nsight-compute:/opt/cuda/integration/nsight-systems:/usr/lib/jvm/default/bin:/usr/bin/site_perl:/usr/bin/vendor_perl:/usr/bin/core_perl:/usr/lib/rustup/bin:/var/lib/snapd/snap/bin:/opt/cuda/bin:/opt/cuda/integration/nsight-compute:/opt/cuda/integration/nsight-systems",
-    "RUSTC": "/home/timo/.rustup/toolchains/stable-x86_64-unknown-linux-gnu/bin/rustc",
-    "RUSTDOC": "/home/timo/.rustup/toolchains/stable-x86_64-unknown-linux-gnu/bin/rustdoc",
-    "TMPDIR": "/home/timo/.local/state/worktree/trees/b10x/ess/ess-conformance-coverage-writer/target/review-boundaries-11/adversary-pass-1/tmp",
-    "GOCACHE": "/home/timo/.local/state/worktree/trees/b10x/ess/ess-conformance-coverage-writer/target/review-boundaries-11/adversary-pass-1/go-cache",
-    "GOMODCACHE": "/home/timo/.local/state/worktree/trees/b10x/ess/ess-conformance-coverage-writer/target/review-boundaries-11/adversary-pass-1/go-mod",
-    "CARGO_HOME": "/home/timo/.local/state/worktree/trees/b10x/ess/ess-conformance-coverage-writer/target/review-boundaries-11/adversary-pass-1/cargo-home",
-    "ESS_BROWSER_TMPDIR": "/home/timo/.cache/ess-w11-review1-tmp",
-    "ESS_COVERAGE_EXPORT_ROOT": "/home/timo/.local/state/worktree/trees/b10x/ess/ess-conformance-coverage-writer/target/review-boundaries-11/adversary-pass-1/exports-package-suite",
+    "PATH": "~/.rustup/toolchains/stable-x86_64-unknown-linux-gnu/bin:~/.nvm/versions/node/v24.20.0/bin:~/.local/bin:~/.deno/bin:~/.linuxbrew/Caskroom/codex/0.153.4/codex-path:~/.codex/tmp/arg0/codex-arg0jTsWIw:~/.bun/bin:~/.linuxbrew/bin:~/.linuxbrew/sbin:~/.opencode/bin:~/.fly/bin:~/.cargo/bin:~:~/anaconda/bin:/usr/bin:~/.rbenv:/usr/local/go/bin:~/go/bin:~/go:~/.local/share/gem/ruby/3.0.0/bin:~/.deno/bin:~/.yarn/bin:~/.pulumi/bin:/opt/rocm/bin:~/.bun/bin:~/.linuxbrew/bin:~/.linuxbrew/sbin:~/.sdkman/candidates/scala/current/bin:~/.sdkman/candidates/maven/current/bin:~/.sdkman/candidates/java/current/bin:~/.sdkman/candidates/groovy/current/bin:~/.sdkman/candidates/grails/current/bin:~/.sdkman/candidates/gradle/current/bin:~/.local/bin:/usr/local/bin:/bin:/usr/local/sbin:/opt/cuda/bin:/opt/cuda/integration/nsight-compute:/opt/cuda/integration/nsight-systems:/usr/lib/jvm/default/bin:/usr/bin/site_perl:/usr/bin/vendor_perl:/usr/bin/core_perl:/usr/lib/rustup/bin:/var/lib/snapd/snap/bin:/opt/cuda/bin:/opt/cuda/integration/nsight-compute:/opt/cuda/integration/nsight-systems",
+    "RUSTC": "~/.rustup/toolchains/stable-x86_64-unknown-linux-gnu/bin/rustc",
+    "RUSTDOC": "~/.rustup/toolchains/stable-x86_64-unknown-linux-gnu/bin/rustdoc",
+    "TMPDIR": "~/.local/state/worktree/trees/b10x/ess/ess-conformance-coverage-writer/target/review-boundaries-11/adversary-pass-1/tmp",
+    "GOCACHE": "~/.local/state/worktree/trees/b10x/ess/ess-conformance-coverage-writer/target/review-boundaries-11/adversary-pass-1/go-cache",
+    "GOMODCACHE": "~/.local/state/worktree/trees/b10x/ess/ess-conformance-coverage-writer/target/review-boundaries-11/adversary-pass-1/go-mod",
+    "CARGO_HOME": "~/.local/state/worktree/trees/b10x/ess/ess-conformance-coverage-writer/target/review-boundaries-11/adversary-pass-1/cargo-home",
+    "ESS_BROWSER_TMPDIR": "~/.cache/ess-w11-review1-tmp",
+    "ESS_COVERAGE_EXPORT_ROOT": "~/.local/state/worktree/trees/b10x/ess/ess-conformance-coverage-writer/target/review-boundaries-11/adversary-pass-1/exports-package-suite",
     "CARGO_INCREMENTAL": "0",
     "CARGO_PROFILE_DEV_DEBUG": "0",
     "CARGO_PROFILE_TEST_DEBUG": "0",
@@ -572,9 +572,9 @@ The permanent producer-export tests also ran within this package suite using a f
 ```
 
 ```text
-   Compiling ess-diff v0.20.0 (/home/timo/.local/state/worktree/trees/b10x/ess/ess-conformance-coverage-writer/crates/verify/ess-diff)
-   Compiling ess-cli v0.20.0 (/home/timo/.local/state/worktree/trees/b10x/ess/ess-conformance-coverage-writer/crates/edge/ess-cli)
-   Compiling ess-conformance v0.20.0 (/home/timo/.local/state/worktree/trees/b10x/ess/ess-conformance-coverage-writer/crates/verify/ess-conformance)
+   Compiling ess-diff v0.20.0 (~/.local/state/worktree/trees/b10x/ess/ess-conformance-coverage-writer/crates/verify/ess-diff)
+   Compiling ess-cli v0.20.0 (~/.local/state/worktree/trees/b10x/ess/ess-conformance-coverage-writer/crates/edge/ess-cli)
+   Compiling ess-conformance v0.20.0 (~/.local/state/worktree/trees/b10x/ess/ess-conformance-coverage-writer/crates/verify/ess-conformance)
     Finished `test` profile [unoptimized] target(s) in 14.90s
      Running unittests src/main.rs (target/debug/deps/ess-63929f179d60f606)
 
@@ -1676,17 +1676,17 @@ Formatting check and strict all-target package Clippy both exited 0. No test/sou
     "-p",
     "ess-diff"
   ],
-  "cwd": "/home/timo/.local/state/worktree/trees/b10x/ess/ess-conformance-coverage-writer",
+  "cwd": "~/.local/state/worktree/trees/b10x/ess/ess-conformance-coverage-writer",
   "environment": {
-    "PATH": "/home/timo/.rustup/toolchains/stable-x86_64-unknown-linux-gnu/bin:/home/timo/.nvm/versions/node/v24.20.0/bin:/home/timo/.local/bin:/home/timo/.deno/bin:/home/linuxbrew/.linuxbrew/Caskroom/codex/0.153.4/codex-path:/home/timo/.codex/tmp/arg0/codex-arg0jTsWIw:/home/timo/.bun/bin:/home/linuxbrew/.linuxbrew/bin:/home/linuxbrew/.linuxbrew/sbin:/home/timo/.opencode/bin:/home/timo/.fly/bin:/home/timo/.cargo/bin:/home/timo:/home/timo/anaconda/bin:/usr/bin:/home/timo/.rbenv:/usr/local/go/bin:/home/timo/go/bin:/home/timo/go:/home/timo/.local/share/gem/ruby/3.0.0/bin:/home/timo/.deno/bin:/home/timo/.yarn/bin:/home/timo/.pulumi/bin:/opt/rocm/bin:/home/timo/.bun/bin:/home/linuxbrew/.linuxbrew/bin:/home/linuxbrew/.linuxbrew/sbin:/home/timo/.sdkman/candidates/scala/current/bin:/home/timo/.sdkman/candidates/maven/current/bin:/home/timo/.sdkman/candidates/java/current/bin:/home/timo/.sdkman/candidates/groovy/current/bin:/home/timo/.sdkman/candidates/grails/current/bin:/home/timo/.sdkman/candidates/gradle/current/bin:/home/timo/.local/bin:/usr/local/bin:/bin:/usr/local/sbin:/opt/cuda/bin:/opt/cuda/integration/nsight-compute:/opt/cuda/integration/nsight-systems:/usr/lib/jvm/default/bin:/usr/bin/site_perl:/usr/bin/vendor_perl:/usr/bin/core_perl:/usr/lib/rustup/bin:/var/lib/snapd/snap/bin:/opt/cuda/bin:/opt/cuda/integration/nsight-compute:/opt/cuda/integration/nsight-systems",
-    "RUSTC": "/home/timo/.rustup/toolchains/stable-x86_64-unknown-linux-gnu/bin/rustc",
-    "RUSTDOC": "/home/timo/.rustup/toolchains/stable-x86_64-unknown-linux-gnu/bin/rustdoc",
-    "TMPDIR": "/home/timo/.local/state/worktree/trees/b10x/ess/ess-conformance-coverage-writer/target/review-boundaries-11/adversary-pass-1/tmp",
-    "GOCACHE": "/home/timo/.local/state/worktree/trees/b10x/ess/ess-conformance-coverage-writer/target/review-boundaries-11/adversary-pass-1/go-cache",
-    "GOMODCACHE": "/home/timo/.local/state/worktree/trees/b10x/ess/ess-conformance-coverage-writer/target/review-boundaries-11/adversary-pass-1/go-mod",
-    "CARGO_HOME": "/home/timo/.local/state/worktree/trees/b10x/ess/ess-conformance-coverage-writer/target/review-boundaries-11/adversary-pass-1/cargo-home",
-    "ESS_BROWSER_TMPDIR": "/home/timo/.cache/ess-w11-review1-tmp",
-    "ESS_COVERAGE_EXPORT_ROOT": "/home/timo/.local/state/worktree/trees/b10x/ess/ess-conformance-coverage-writer/target/review-boundaries-11/adversary-pass-1/exports-fmt-check",
+    "PATH": "~/.rustup/toolchains/stable-x86_64-unknown-linux-gnu/bin:~/.nvm/versions/node/v24.20.0/bin:~/.local/bin:~/.deno/bin:~/.linuxbrew/Caskroom/codex/0.153.4/codex-path:~/.codex/tmp/arg0/codex-arg0jTsWIw:~/.bun/bin:~/.linuxbrew/bin:~/.linuxbrew/sbin:~/.opencode/bin:~/.fly/bin:~/.cargo/bin:~:~/anaconda/bin:/usr/bin:~/.rbenv:/usr/local/go/bin:~/go/bin:~/go:~/.local/share/gem/ruby/3.0.0/bin:~/.deno/bin:~/.yarn/bin:~/.pulumi/bin:/opt/rocm/bin:~/.bun/bin:~/.linuxbrew/bin:~/.linuxbrew/sbin:~/.sdkman/candidates/scala/current/bin:~/.sdkman/candidates/maven/current/bin:~/.sdkman/candidates/java/current/bin:~/.sdkman/candidates/groovy/current/bin:~/.sdkman/candidates/grails/current/bin:~/.sdkman/candidates/gradle/current/bin:~/.local/bin:/usr/local/bin:/bin:/usr/local/sbin:/opt/cuda/bin:/opt/cuda/integration/nsight-compute:/opt/cuda/integration/nsight-systems:/usr/lib/jvm/default/bin:/usr/bin/site_perl:/usr/bin/vendor_perl:/usr/bin/core_perl:/usr/lib/rustup/bin:/var/lib/snapd/snap/bin:/opt/cuda/bin:/opt/cuda/integration/nsight-compute:/opt/cuda/integration/nsight-systems",
+    "RUSTC": "~/.rustup/toolchains/stable-x86_64-unknown-linux-gnu/bin/rustc",
+    "RUSTDOC": "~/.rustup/toolchains/stable-x86_64-unknown-linux-gnu/bin/rustdoc",
+    "TMPDIR": "~/.local/state/worktree/trees/b10x/ess/ess-conformance-coverage-writer/target/review-boundaries-11/adversary-pass-1/tmp",
+    "GOCACHE": "~/.local/state/worktree/trees/b10x/ess/ess-conformance-coverage-writer/target/review-boundaries-11/adversary-pass-1/go-cache",
+    "GOMODCACHE": "~/.local/state/worktree/trees/b10x/ess/ess-conformance-coverage-writer/target/review-boundaries-11/adversary-pass-1/go-mod",
+    "CARGO_HOME": "~/.local/state/worktree/trees/b10x/ess/ess-conformance-coverage-writer/target/review-boundaries-11/adversary-pass-1/cargo-home",
+    "ESS_BROWSER_TMPDIR": "~/.cache/ess-w11-review1-tmp",
+    "ESS_COVERAGE_EXPORT_ROOT": "~/.local/state/worktree/trees/b10x/ess/ess-conformance-coverage-writer/target/review-boundaries-11/adversary-pass-1/exports-fmt-check",
     "CARGO_INCREMENTAL": "0",
     "CARGO_PROFILE_DEV_DEBUG": "0",
     "CARGO_PROFILE_TEST_DEBUG": "0",
@@ -1736,17 +1736,17 @@ Actual exit 0; wall 0.430219 seconds.
     "-D",
     "warnings"
   ],
-  "cwd": "/home/timo/.local/state/worktree/trees/b10x/ess/ess-conformance-coverage-writer",
+  "cwd": "~/.local/state/worktree/trees/b10x/ess/ess-conformance-coverage-writer",
   "environment": {
-    "PATH": "/home/timo/.rustup/toolchains/stable-x86_64-unknown-linux-gnu/bin:/home/timo/.nvm/versions/node/v24.20.0/bin:/home/timo/.local/bin:/home/timo/.deno/bin:/home/linuxbrew/.linuxbrew/Caskroom/codex/0.153.4/codex-path:/home/timo/.codex/tmp/arg0/codex-arg0jTsWIw:/home/timo/.bun/bin:/home/linuxbrew/.linuxbrew/bin:/home/linuxbrew/.linuxbrew/sbin:/home/timo/.opencode/bin:/home/timo/.fly/bin:/home/timo/.cargo/bin:/home/timo:/home/timo/anaconda/bin:/usr/bin:/home/timo/.rbenv:/usr/local/go/bin:/home/timo/go/bin:/home/timo/go:/home/timo/.local/share/gem/ruby/3.0.0/bin:/home/timo/.deno/bin:/home/timo/.yarn/bin:/home/timo/.pulumi/bin:/opt/rocm/bin:/home/timo/.bun/bin:/home/linuxbrew/.linuxbrew/bin:/home/linuxbrew/.linuxbrew/sbin:/home/timo/.sdkman/candidates/scala/current/bin:/home/timo/.sdkman/candidates/maven/current/bin:/home/timo/.sdkman/candidates/java/current/bin:/home/timo/.sdkman/candidates/groovy/current/bin:/home/timo/.sdkman/candidates/grails/current/bin:/home/timo/.sdkman/candidates/gradle/current/bin:/home/timo/.local/bin:/usr/local/bin:/bin:/usr/local/sbin:/opt/cuda/bin:/opt/cuda/integration/nsight-compute:/opt/cuda/integration/nsight-systems:/usr/lib/jvm/default/bin:/usr/bin/site_perl:/usr/bin/vendor_perl:/usr/bin/core_perl:/usr/lib/rustup/bin:/var/lib/snapd/snap/bin:/opt/cuda/bin:/opt/cuda/integration/nsight-compute:/opt/cuda/integration/nsight-systems",
-    "RUSTC": "/home/timo/.rustup/toolchains/stable-x86_64-unknown-linux-gnu/bin/rustc",
-    "RUSTDOC": "/home/timo/.rustup/toolchains/stable-x86_64-unknown-linux-gnu/bin/rustdoc",
-    "TMPDIR": "/home/timo/.local/state/worktree/trees/b10x/ess/ess-conformance-coverage-writer/target/review-boundaries-11/adversary-pass-1/tmp",
-    "GOCACHE": "/home/timo/.local/state/worktree/trees/b10x/ess/ess-conformance-coverage-writer/target/review-boundaries-11/adversary-pass-1/go-cache",
-    "GOMODCACHE": "/home/timo/.local/state/worktree/trees/b10x/ess/ess-conformance-coverage-writer/target/review-boundaries-11/adversary-pass-1/go-mod",
-    "CARGO_HOME": "/home/timo/.local/state/worktree/trees/b10x/ess/ess-conformance-coverage-writer/target/review-boundaries-11/adversary-pass-1/cargo-home",
-    "ESS_BROWSER_TMPDIR": "/home/timo/.cache/ess-w11-review1-tmp",
-    "ESS_COVERAGE_EXPORT_ROOT": "/home/timo/.local/state/worktree/trees/b10x/ess/ess-conformance-coverage-writer/target/review-boundaries-11/adversary-pass-1/exports-strict-clippy",
+    "PATH": "~/.rustup/toolchains/stable-x86_64-unknown-linux-gnu/bin:~/.nvm/versions/node/v24.20.0/bin:~/.local/bin:~/.deno/bin:~/.linuxbrew/Caskroom/codex/0.153.4/codex-path:~/.codex/tmp/arg0/codex-arg0jTsWIw:~/.bun/bin:~/.linuxbrew/bin:~/.linuxbrew/sbin:~/.opencode/bin:~/.fly/bin:~/.cargo/bin:~:~/anaconda/bin:/usr/bin:~/.rbenv:/usr/local/go/bin:~/go/bin:~/go:~/.local/share/gem/ruby/3.0.0/bin:~/.deno/bin:~/.yarn/bin:~/.pulumi/bin:/opt/rocm/bin:~/.bun/bin:~/.linuxbrew/bin:~/.linuxbrew/sbin:~/.sdkman/candidates/scala/current/bin:~/.sdkman/candidates/maven/current/bin:~/.sdkman/candidates/java/current/bin:~/.sdkman/candidates/groovy/current/bin:~/.sdkman/candidates/grails/current/bin:~/.sdkman/candidates/gradle/current/bin:~/.local/bin:/usr/local/bin:/bin:/usr/local/sbin:/opt/cuda/bin:/opt/cuda/integration/nsight-compute:/opt/cuda/integration/nsight-systems:/usr/lib/jvm/default/bin:/usr/bin/site_perl:/usr/bin/vendor_perl:/usr/bin/core_perl:/usr/lib/rustup/bin:/var/lib/snapd/snap/bin:/opt/cuda/bin:/opt/cuda/integration/nsight-compute:/opt/cuda/integration/nsight-systems",
+    "RUSTC": "~/.rustup/toolchains/stable-x86_64-unknown-linux-gnu/bin/rustc",
+    "RUSTDOC": "~/.rustup/toolchains/stable-x86_64-unknown-linux-gnu/bin/rustdoc",
+    "TMPDIR": "~/.local/state/worktree/trees/b10x/ess/ess-conformance-coverage-writer/target/review-boundaries-11/adversary-pass-1/tmp",
+    "GOCACHE": "~/.local/state/worktree/trees/b10x/ess/ess-conformance-coverage-writer/target/review-boundaries-11/adversary-pass-1/go-cache",
+    "GOMODCACHE": "~/.local/state/worktree/trees/b10x/ess/ess-conformance-coverage-writer/target/review-boundaries-11/adversary-pass-1/go-mod",
+    "CARGO_HOME": "~/.local/state/worktree/trees/b10x/ess/ess-conformance-coverage-writer/target/review-boundaries-11/adversary-pass-1/cargo-home",
+    "ESS_BROWSER_TMPDIR": "~/.cache/ess-w11-review1-tmp",
+    "ESS_COVERAGE_EXPORT_ROOT": "~/.local/state/worktree/trees/b10x/ess/ess-conformance-coverage-writer/target/review-boundaries-11/adversary-pass-1/exports-strict-clippy",
     "CARGO_INCREMENTAL": "0",
     "CARGO_PROFILE_DEV_DEBUG": "0",
     "CARGO_PROFILE_TEST_DEBUG": "0",
@@ -1798,24 +1798,24 @@ Actual exit 0; wall 0.430219 seconds.
     Checking schemars v0.8.22
     Checking serde_yaml v0.9.34+deprecated
     Checking thiserror v2.0.20
-    Checking ess-primitives v0.20.0 (/home/timo/.local/state/worktree/trees/b10x/ess/ess-conformance-coverage-writer/crates/specify/ess-primitives)
+    Checking ess-primitives v0.20.0 (~/.local/state/worktree/trees/b10x/ess/ess-conformance-coverage-writer/crates/specify/ess-primitives)
     Checking bitflags v2.13.1
-    Checking ess-domain v0.20.0 (/home/timo/.local/state/worktree/trees/b10x/ess/ess-conformance-coverage-writer/crates/specify/ess-domain)
+    Checking ess-domain v0.20.0 (~/.local/state/worktree/trees/b10x/ess/ess-conformance-coverage-writer/crates/specify/ess-domain)
     Checking unicase v2.9.0
     Checking pulldown-cmark-escape v0.11.0
     Checking pulldown-cmark v0.13.4
     Checking num-traits v0.2.19
     Checking libc v0.2.189
-    Checking ess-compiler v0.20.0 (/home/timo/.local/state/worktree/trees/b10x/ess/ess-conformance-coverage-writer/crates/specify/ess-compiler)
+    Checking ess-compiler v0.20.0 (~/.local/state/worktree/trees/b10x/ess/ess-conformance-coverage-writer/crates/specify/ess-compiler)
     Checking num-integer v0.1.47
-    Checking ess-gen v0.20.0 (/home/timo/.local/state/worktree/trees/b10x/ess/ess-conformance-coverage-writer/crates/generate/ess-gen)
+    Checking ess-gen v0.20.0 (~/.local/state/worktree/trees/b10x/ess/ess-conformance-coverage-writer/crates/generate/ess-gen)
     Checking num-bigint v0.4.8
     Checking regex-syntax v0.8.11
-    Checking ess-conformance v0.20.0 (/home/timo/.local/state/worktree/trees/b10x/ess/ess-conformance-coverage-writer/crates/verify/ess-conformance)
+    Checking ess-conformance v0.20.0 (~/.local/state/worktree/trees/b10x/ess/ess-conformance-coverage-writer/crates/verify/ess-conformance)
     Checking num-rational v0.4.2
     Checking getrandom v0.3.4
     Checking zerocopy v0.8.56
-    Checking ess-diff v0.20.0 (/home/timo/.local/state/worktree/trees/b10x/ess/ess-conformance-coverage-writer/crates/verify/ess-diff)
+    Checking ess-diff v0.20.0 (~/.local/state/worktree/trees/b10x/ess/ess-conformance-coverage-writer/crates/verify/ess-diff)
     Checking num-iter v0.1.46
     Checking num-complex v0.4.6
     Checking aho-corasick v1.1.5
@@ -1830,7 +1830,7 @@ Actual exit 0; wall 0.430219 seconds.
     Checking lock_api v0.4.14
     Checking ref-cast v1.0.27
     Checking num v0.4.3
-    Checking infra-domain v0.20.0 (/home/timo/.local/state/worktree/trees/b10x/ess/ess-conformance-coverage-writer/crates/infra/infra-domain)
+    Checking infra-domain v0.20.0 (~/.local/state/worktree/trees/b10x/ess/ess-conformance-coverage-writer/crates/infra/infra-domain)
     Checking anstyle v1.0.14
     Checking is_terminal_polyfill v1.70.2
     Checking bit-vec v0.8.0
@@ -1840,7 +1840,7 @@ Actual exit 0; wall 0.430219 seconds.
     Checking fluent-uri v0.4.1
     Checking anstream v1.0.0
     Checking bit-set v0.8.0
-    Checking infra-compiler v0.20.0 (/home/timo/.local/state/worktree/trees/b10x/ess/ess-conformance-coverage-writer/crates/infra/infra-compiler)
+    Checking infra-compiler v0.20.0 (~/.local/state/worktree/trees/b10x/ess/ess-conformance-coverage-writer/crates/infra/infra-compiler)
     Checking fraction v0.17.0
     Checking parking_lot v0.12.5
     Checking num-cmp v0.1.0
@@ -1855,7 +1855,7 @@ Actual exit 0; wall 0.430219 seconds.
     Checking uuid-simd v0.8.0
     Checking clap_builder v4.6.6
     Checking referencing v0.52.1
-    Checking infra-analyze v0.20.0 (/home/timo/.local/state/worktree/trees/b10x/ess/ess-conformance-coverage-writer/crates/infra/infra-analyze)
+    Checking infra-analyze v0.20.0 (~/.local/state/worktree/trees/b10x/ess/ess-conformance-coverage-writer/crates/infra/infra-analyze)
     Checking strum v0.28.0
     Checking unicode-general-category v1.1.0
     Checking fancy-regex v0.19.0
@@ -1864,20 +1864,20 @@ Actual exit 0; wall 0.430219 seconds.
     Checking email_address v0.2.9
     Checking data-encoding v2.11.1
     Checking clap v4.6.6
-    Checking infra-spec v0.20.0 (/home/timo/.local/state/worktree/trees/b10x/ess/ess-conformance-coverage-writer/crates/infra/infra-spec)
+    Checking infra-spec v0.20.0 (~/.local/state/worktree/trees/b10x/ess/ess-conformance-coverage-writer/crates/infra/infra-spec)
     Checking jsonschema v0.52.1
-    Checking ess-realization v0.20.0 (/home/timo/.local/state/worktree/trees/b10x/ess/ess-conformance-coverage-writer/crates/specify/ess-realization)
+    Checking ess-realization v0.20.0 (~/.local/state/worktree/trees/b10x/ess/ess-conformance-coverage-writer/crates/specify/ess-realization)
     Checking semver v1.0.28
     Checking base64 v0.22.1
-    Checking ess-deployment v0.20.0 (/home/timo/.local/state/worktree/trees/b10x/ess/ess-conformance-coverage-writer/crates/generate/ess-deployment)
-    Checking infra-project v0.20.0 (/home/timo/.local/state/worktree/trees/b10x/ess/ess-conformance-coverage-writer/crates/infra/infra-project)
-    Checking ess-kubernetes v0.20.0 (/home/timo/.local/state/worktree/trees/b10x/ess/ess-conformance-coverage-writer/crates/infra/ess-kubernetes)
-    Checking schema-contract v0.20.0 (/home/timo/.local/state/worktree/trees/b10x/ess/ess-conformance-coverage-writer/crates/generate/schema-contract)
+    Checking ess-deployment v0.20.0 (~/.local/state/worktree/trees/b10x/ess/ess-conformance-coverage-writer/crates/generate/ess-deployment)
+    Checking infra-project v0.20.0 (~/.local/state/worktree/trees/b10x/ess/ess-conformance-coverage-writer/crates/infra/infra-project)
+    Checking ess-kubernetes v0.20.0 (~/.local/state/worktree/trees/b10x/ess/ess-conformance-coverage-writer/crates/infra/ess-kubernetes)
+    Checking schema-contract v0.20.0 (~/.local/state/worktree/trees/b10x/ess/ess-conformance-coverage-writer/crates/generate/schema-contract)
     Checking anyhow v1.0.104
-    Checking ess-synth v0.20.0 (/home/timo/.local/state/worktree/trees/b10x/ess/ess-conformance-coverage-writer/crates/generate/ess-synth)
-    Checking ess-composition v0.20.0 (/home/timo/.local/state/worktree/trees/b10x/ess/ess-conformance-coverage-writer/crates/specify/ess-composition)
-    Checking ess-openapi v0.20.0 (/home/timo/.local/state/worktree/trees/b10x/ess/ess-conformance-coverage-writer/crates/generate/ess-openapi)
-    Checking ess-cli v0.20.0 (/home/timo/.local/state/worktree/trees/b10x/ess/ess-conformance-coverage-writer/crates/edge/ess-cli)
+    Checking ess-synth v0.20.0 (~/.local/state/worktree/trees/b10x/ess/ess-conformance-coverage-writer/crates/generate/ess-synth)
+    Checking ess-composition v0.20.0 (~/.local/state/worktree/trees/b10x/ess/ess-conformance-coverage-writer/crates/specify/ess-composition)
+    Checking ess-openapi v0.20.0 (~/.local/state/worktree/trees/b10x/ess/ess-conformance-coverage-writer/crates/generate/ess-openapi)
+    Checking ess-cli v0.20.0 (~/.local/state/worktree/trees/b10x/ess/ess-conformance-coverage-writer/crates/edge/ess-cli)
     Finished `dev` profile [unoptimized] target(s) in 25.87s
 ```
 
@@ -1909,527 +1909,527 @@ Origin accounting uses read-only base objects at d2057ffb944455d0ef3a90ab7c5043a
 - No AEP dependency, helper execution, store/lifecycle action, Git mutation, source gate, Website/Atlas publication, release, integration or cleanup was performed. Root owns source correction and the next bounded source attack (at most two total), final source/export freeze and actual AEP qualification.
 - Toolchains measured: Rust/Cargo 1.98.0, Node v24.20.0, Go go1.26.5-X:nodwarf5 linux/amd64, Firefox 153.0. Actual browser session/PID/WebSocket/BiDi receipts remain with each case. This report is agent judgement plus actual command records; it grants no approval or claimed independent qualification.
 - The first scratch setup command exited 1 at mkdir because root had already provisioned the empty assigned directories; it wrote nothing. The adjusted setup reused those exact paths. A read for unit-brief.md in the coordinator (rather than the unit) also exited 1; the actual unit brief was then read in full. These are setup/read observations, not semantic test failures. No compile-failure test is represented as a finding.
-- New scratch writes are under this report's directory, plus the two additive tests and the assigned unit target build output. CARGO_HOME uses the explicitly borrowed literal registry/git links to /home/timo/.cargo/registry and /home/timo/.cargo/git, without following them for ownership/census. No shared target or cache daemon was created. The measured free-space floor was 8,589,934,592 bytes; setup measured 23,678,291,968 and the final strict-Clippy receipt measured 20,485,578,752 free bytes. Every lane's before/after values are retained.
+- New scratch writes are under this report's directory, plus the two additive tests and the assigned unit target build output. CARGO_HOME uses the explicitly borrowed literal registry/git links to ~/.cargo/registry and ~/.cargo/git, without following them for ownership/census. No shared target or cache daemon was created. The measured free-space floor was 8,589,934,592 bytes; setup measured 23,678,291,968 and the final strict-Clippy receipt measured 20,485,578,752 free bytes. Every lane's before/after values are retained.
 - All assertions remain intact. Four final Rust/CLI executable copies are retained and hashed for provenance; the first focused executable was not separately copied before later additive test compilation, so its exact binary hash is not invented. The first command records its test-source hashes and full build output.
 
 6. Every retained path written outside the worktree
 
-Only /home/timo/.cache/ess-w11-review1-tmp was used outside the assigned unit. The following is the complete post-run census, also in external-browser-paths.txt; external-browser-catalog.jsonl records full path/native bytes, lstat mode/owner/size/inode/device/mtime, literal symlink targets and SHA256 for regular files without following links. It contains 513 entries: 199 directories, 308 files (161,983,501 bytes), six symlinks and no sockets at capture. Per-case command/profile/PID/BiDi receipts retain the observed transient browser endpoints. This census is not a syscall trace of temporary files internally created and removed by tools. No reviewer cleanup was run.
+Only ~/.cache/ess-w11-review1-tmp was used outside the assigned unit. The following is the complete post-run census, also in external-browser-paths.txt; external-browser-catalog.jsonl records full path/native bytes, lstat mode/owner/size/inode/device/mtime, literal symlink targets and SHA256 for regular files without following links. It contains 513 entries: 199 directories, 308 files (161,983,501 bytes), six symlinks and no sockets at capture. Per-case command/profile/PID/BiDi receipts retain the observed transient browser endpoints. This census is not a syscall trace of temporary files internally created and removed by tools. No reviewer cleanup was run.
 
 ```text
-/home/timo/.cache/ess-w11-review1-tmp
-/home/timo/.cache/ess-w11-review1-tmp/ess-bidi-1053388-0
-/home/timo/.cache/ess-w11-review1-tmp/ess-bidi-1053388-0/.parentlock
-/home/timo/.cache/ess-w11-review1-tmp/ess-bidi-1053388-0/.startup-incomplete
-/home/timo/.cache/ess-w11-review1-tmp/ess-bidi-1053388-0/73fdb0b3.sqlite
-/home/timo/.cache/ess-w11-review1-tmp/ess-bidi-1053388-0/73fdb0b3.sqlite-shm
-/home/timo/.cache/ess-w11-review1-tmp/ess-bidi-1053388-0/73fdb0b3.sqlite-wal
-/home/timo/.cache/ess-w11-review1-tmp/ess-bidi-1053388-0/SiteSecurityServiceState.bin
-/home/timo/.cache/ess-w11-review1-tmp/ess-bidi-1053388-0/WebDriverBiDiServer.json
-/home/timo/.cache/ess-w11-review1-tmp/ess-bidi-1053388-0/activity-stream.shortcut_cache.json
-/home/timo/.cache/ess-w11-review1-tmp/ess-bidi-1053388-0/bookmarkbackups
-/home/timo/.cache/ess-w11-review1-tmp/ess-bidi-1053388-0/bounce-tracking-protection.sqlite
-/home/timo/.cache/ess-w11-review1-tmp/ess-bidi-1053388-0/cache2
-/home/timo/.cache/ess-w11-review1-tmp/ess-bidi-1053388-0/cache2/doomed
-/home/timo/.cache/ess-w11-review1-tmp/ess-bidi-1053388-0/cache2/entries
-/home/timo/.cache/ess-w11-review1-tmp/ess-bidi-1053388-0/cache2/entries/360DE1F3E174E84794C36651DD126686164A2F9A
-/home/timo/.cache/ess-w11-review1-tmp/ess-bidi-1053388-0/cache2/entries/5E43012191E7B1F510ACD5BF039D8BF1B9A277B2
-/home/timo/.cache/ess-w11-review1-tmp/ess-bidi-1053388-0/cache2/entries/BB95D0607349D05725D5FE01D4FB300E319072AD
-/home/timo/.cache/ess-w11-review1-tmp/ess-bidi-1053388-0/cert9.db
-/home/timo/.cache/ess-w11-review1-tmp/ess-bidi-1053388-0/compatibility.ini
-/home/timo/.cache/ess-w11-review1-tmp/ess-bidi-1053388-0/content-prefs.sqlite
-/home/timo/.cache/ess-w11-review1-tmp/ess-bidi-1053388-0/cookies.sqlite
-/home/timo/.cache/ess-w11-review1-tmp/ess-bidi-1053388-0/crashes
-/home/timo/.cache/ess-w11-review1-tmp/ess-bidi-1053388-0/crashes/events
-/home/timo/.cache/ess-w11-review1-tmp/ess-bidi-1053388-0/datareporting
-/home/timo/.cache/ess-w11-review1-tmp/ess-bidi-1053388-0/datareporting/archived
-/home/timo/.cache/ess-w11-review1-tmp/ess-bidi-1053388-0/datareporting/archived/2026-09
-/home/timo/.cache/ess-w11-review1-tmp/ess-bidi-1053388-0/datareporting/archived/2026-09/1788724886510.428114db-5dd3-4509-9c7a-dfb999106a33.deletion-request.jsonlz4
-/home/timo/.cache/ess-w11-review1-tmp/ess-bidi-1053388-0/datareporting/glean
-/home/timo/.cache/ess-w11-review1-tmp/ess-bidi-1053388-0/datareporting/glean/client_id.txt
-/home/timo/.cache/ess-w11-review1-tmp/ess-bidi-1053388-0/datareporting/glean/db
-/home/timo/.cache/ess-w11-review1-tmp/ess-bidi-1053388-0/datareporting/glean/db/data.safe.bin
-/home/timo/.cache/ess-w11-review1-tmp/ess-bidi-1053388-0/datareporting/glean/events
-/home/timo/.cache/ess-w11-review1-tmp/ess-bidi-1053388-0/datareporting/glean/events/events
-/home/timo/.cache/ess-w11-review1-tmp/ess-bidi-1053388-0/datareporting/glean/pending_pings
-/home/timo/.cache/ess-w11-review1-tmp/ess-bidi-1053388-0/datareporting/glean/tmp
-/home/timo/.cache/ess-w11-review1-tmp/ess-bidi-1053388-0/datareporting/state.json
-/home/timo/.cache/ess-w11-review1-tmp/ess-bidi-1053388-0/domain_to_categories.sqlite
-/home/timo/.cache/ess-w11-review1-tmp/ess-bidi-1053388-0/domain_to_categories.sqlite-journal
-/home/timo/.cache/ess-w11-review1-tmp/ess-bidi-1053388-0/extension-store
-/home/timo/.cache/ess-w11-review1-tmp/ess-bidi-1053388-0/extension-store/data.safe.bin
-/home/timo/.cache/ess-w11-review1-tmp/ess-bidi-1053388-0/extensions.json
-/home/timo/.cache/ess-w11-review1-tmp/ess-bidi-1053388-0/favicons.sqlite
-/home/timo/.cache/ess-w11-review1-tmp/ess-bidi-1053388-0/favicons.sqlite-wal
-/home/timo/.cache/ess-w11-review1-tmp/ess-bidi-1053388-0/key4.db
-/home/timo/.cache/ess-w11-review1-tmp/ess-bidi-1053388-0/lock
-/home/timo/.cache/ess-w11-review1-tmp/ess-bidi-1053388-0/logins.db
-/home/timo/.cache/ess-w11-review1-tmp/ess-bidi-1053388-0/minidumps
-/home/timo/.cache/ess-w11-review1-tmp/ess-bidi-1053388-0/permissions.sqlite
-/home/timo/.cache/ess-w11-review1-tmp/ess-bidi-1053388-0/pkcs11.txt
-/home/timo/.cache/ess-w11-review1-tmp/ess-bidi-1053388-0/places.sqlite
-/home/timo/.cache/ess-w11-review1-tmp/ess-bidi-1053388-0/places.sqlite-wal
-/home/timo/.cache/ess-w11-review1-tmp/ess-bidi-1053388-0/prefs.js
-/home/timo/.cache/ess-w11-review1-tmp/ess-bidi-1053388-0/safebrowsing
-/home/timo/.cache/ess-w11-review1-tmp/ess-bidi-1053388-0/saved-telemetry-pings
-/home/timo/.cache/ess-w11-review1-tmp/ess-bidi-1053388-0/saved-telemetry-pings/428114db-5dd3-4509-9c7a-dfb999106a33
-/home/timo/.cache/ess-w11-review1-tmp/ess-bidi-1053388-0/security_state
-/home/timo/.cache/ess-w11-review1-tmp/ess-bidi-1053388-0/sessionCheckpoints.json
-/home/timo/.cache/ess-w11-review1-tmp/ess-bidi-1053388-0/startupCache
-/home/timo/.cache/ess-w11-review1-tmp/ess-bidi-1053388-0/startupCache/startupCache.8.little
-/home/timo/.cache/ess-w11-review1-tmp/ess-bidi-1053388-0/storage
-/home/timo/.cache/ess-w11-review1-tmp/ess-bidi-1053388-0/storage/default
-/home/timo/.cache/ess-w11-review1-tmp/ess-bidi-1053388-0/storage/ls-archive.sqlite
-/home/timo/.cache/ess-w11-review1-tmp/ess-bidi-1053388-0/storage/permanent
-/home/timo/.cache/ess-w11-review1-tmp/ess-bidi-1053388-0/storage/permanent/chrome
-/home/timo/.cache/ess-w11-review1-tmp/ess-bidi-1053388-0/storage/permanent/chrome/.metadata-v2
-/home/timo/.cache/ess-w11-review1-tmp/ess-bidi-1053388-0/storage/permanent/chrome/idb
-/home/timo/.cache/ess-w11-review1-tmp/ess-bidi-1053388-0/storage/permanent/chrome/idb/1451318868ntouromlalnodry--epcr.files
-/home/timo/.cache/ess-w11-review1-tmp/ess-bidi-1053388-0/storage/permanent/chrome/idb/1451318868ntouromlalnodry--epcr.sqlite
-/home/timo/.cache/ess-w11-review1-tmp/ess-bidi-1053388-0/storage/permanent/chrome/idb/1451318868ntouromlalnodry--epcr.sqlite-wal
-/home/timo/.cache/ess-w11-review1-tmp/ess-bidi-1053388-0/storage/permanent/chrome/idb/1657114595AmcateirvtiSty.files
-/home/timo/.cache/ess-w11-review1-tmp/ess-bidi-1053388-0/storage/permanent/chrome/idb/1657114595AmcateirvtiSty.sqlite
-/home/timo/.cache/ess-w11-review1-tmp/ess-bidi-1053388-0/storage/permanent/chrome/idb/1657114595AmcateirvtiSty.sqlite-wal
-/home/timo/.cache/ess-w11-review1-tmp/ess-bidi-1053388-0/storage/permanent/chrome/idb/2918063365piupsah.files
-/home/timo/.cache/ess-w11-review1-tmp/ess-bidi-1053388-0/storage/permanent/chrome/idb/2918063365piupsah.sqlite
-/home/timo/.cache/ess-w11-review1-tmp/ess-bidi-1053388-0/storage/permanent/chrome/idb/2918063365piupsah.sqlite-wal
-/home/timo/.cache/ess-w11-review1-tmp/ess-bidi-1053388-0/storage/permanent/chrome/idb/3561288849sdhlie.files
-/home/timo/.cache/ess-w11-review1-tmp/ess-bidi-1053388-0/storage/permanent/chrome/idb/3561288849sdhlie.sqlite
-/home/timo/.cache/ess-w11-review1-tmp/ess-bidi-1053388-0/storage/permanent/chrome/idb/3561288849sdhlie.sqlite-wal
-/home/timo/.cache/ess-w11-review1-tmp/ess-bidi-1053388-0/storage/permanent/chrome/idb/3870112724rsegmnoittet-es.files
-/home/timo/.cache/ess-w11-review1-tmp/ess-bidi-1053388-0/storage/permanent/chrome/idb/3870112724rsegmnoittet-es.sqlite
-/home/timo/.cache/ess-w11-review1-tmp/ess-bidi-1053388-0/storage/permanent/chrome/idb/3870112724rsegmnoittet-es.sqlite-wal
-/home/timo/.cache/ess-w11-review1-tmp/ess-bidi-1053388-0/storage/temporary
-/home/timo/.cache/ess-w11-review1-tmp/ess-bidi-1053388-0/storage.sqlite
-/home/timo/.cache/ess-w11-review1-tmp/ess-bidi-1053388-0/thumbnails
-/home/timo/.cache/ess-w11-review1-tmp/ess-bidi-1053388-0/times.json
-/home/timo/.cache/ess-w11-review1-tmp/ess-bidi-1138007-0
-/home/timo/.cache/ess-w11-review1-tmp/ess-bidi-1138007-0/.parentlock
-/home/timo/.cache/ess-w11-review1-tmp/ess-bidi-1138007-0/.startup-incomplete
-/home/timo/.cache/ess-w11-review1-tmp/ess-bidi-1138007-0/SiteSecurityServiceState.bin
-/home/timo/.cache/ess-w11-review1-tmp/ess-bidi-1138007-0/WebDriverBiDiServer.json
-/home/timo/.cache/ess-w11-review1-tmp/ess-bidi-1138007-0/activity-stream.shortcut_cache.json
-/home/timo/.cache/ess-w11-review1-tmp/ess-bidi-1138007-0/bookmarkbackups
-/home/timo/.cache/ess-w11-review1-tmp/ess-bidi-1138007-0/bounce-tracking-protection.sqlite
-/home/timo/.cache/ess-w11-review1-tmp/ess-bidi-1138007-0/ca7f7af5.sqlite
-/home/timo/.cache/ess-w11-review1-tmp/ess-bidi-1138007-0/ca7f7af5.sqlite-shm
-/home/timo/.cache/ess-w11-review1-tmp/ess-bidi-1138007-0/ca7f7af5.sqlite-wal
-/home/timo/.cache/ess-w11-review1-tmp/ess-bidi-1138007-0/cache2
-/home/timo/.cache/ess-w11-review1-tmp/ess-bidi-1138007-0/cache2/doomed
-/home/timo/.cache/ess-w11-review1-tmp/ess-bidi-1138007-0/cache2/entries
-/home/timo/.cache/ess-w11-review1-tmp/ess-bidi-1138007-0/cache2/entries/360DE1F3E174E84794C36651DD126686164A2F9A
-/home/timo/.cache/ess-w11-review1-tmp/ess-bidi-1138007-0/cache2/entries/5E43012191E7B1F510ACD5BF039D8BF1B9A277B2
-/home/timo/.cache/ess-w11-review1-tmp/ess-bidi-1138007-0/cache2/entries/BB95D0607349D05725D5FE01D4FB300E319072AD
-/home/timo/.cache/ess-w11-review1-tmp/ess-bidi-1138007-0/cert9.db
-/home/timo/.cache/ess-w11-review1-tmp/ess-bidi-1138007-0/compatibility.ini
-/home/timo/.cache/ess-w11-review1-tmp/ess-bidi-1138007-0/content-prefs.sqlite
-/home/timo/.cache/ess-w11-review1-tmp/ess-bidi-1138007-0/cookies.sqlite
-/home/timo/.cache/ess-w11-review1-tmp/ess-bidi-1138007-0/crashes
-/home/timo/.cache/ess-w11-review1-tmp/ess-bidi-1138007-0/crashes/events
-/home/timo/.cache/ess-w11-review1-tmp/ess-bidi-1138007-0/datareporting
-/home/timo/.cache/ess-w11-review1-tmp/ess-bidi-1138007-0/datareporting/archived
-/home/timo/.cache/ess-w11-review1-tmp/ess-bidi-1138007-0/datareporting/archived/2026-09
-/home/timo/.cache/ess-w11-review1-tmp/ess-bidi-1138007-0/datareporting/archived/2026-09/1788725412887.7d6d6474-df9c-4ee2-8639-a8f166bca399.deletion-request.jsonlz4
-/home/timo/.cache/ess-w11-review1-tmp/ess-bidi-1138007-0/datareporting/glean
-/home/timo/.cache/ess-w11-review1-tmp/ess-bidi-1138007-0/datareporting/glean/client_id.txt
-/home/timo/.cache/ess-w11-review1-tmp/ess-bidi-1138007-0/datareporting/glean/db
-/home/timo/.cache/ess-w11-review1-tmp/ess-bidi-1138007-0/datareporting/glean/db/data.safe.bin
-/home/timo/.cache/ess-w11-review1-tmp/ess-bidi-1138007-0/datareporting/glean/events
-/home/timo/.cache/ess-w11-review1-tmp/ess-bidi-1138007-0/datareporting/glean/events/events
-/home/timo/.cache/ess-w11-review1-tmp/ess-bidi-1138007-0/datareporting/glean/pending_pings
-/home/timo/.cache/ess-w11-review1-tmp/ess-bidi-1138007-0/datareporting/glean/tmp
-/home/timo/.cache/ess-w11-review1-tmp/ess-bidi-1138007-0/datareporting/state.json
-/home/timo/.cache/ess-w11-review1-tmp/ess-bidi-1138007-0/domain_to_categories.sqlite
-/home/timo/.cache/ess-w11-review1-tmp/ess-bidi-1138007-0/domain_to_categories.sqlite-journal
-/home/timo/.cache/ess-w11-review1-tmp/ess-bidi-1138007-0/extension-store
-/home/timo/.cache/ess-w11-review1-tmp/ess-bidi-1138007-0/extension-store/data.safe.bin
-/home/timo/.cache/ess-w11-review1-tmp/ess-bidi-1138007-0/extensions.json
-/home/timo/.cache/ess-w11-review1-tmp/ess-bidi-1138007-0/favicons.sqlite
-/home/timo/.cache/ess-w11-review1-tmp/ess-bidi-1138007-0/favicons.sqlite-wal
-/home/timo/.cache/ess-w11-review1-tmp/ess-bidi-1138007-0/key4.db
-/home/timo/.cache/ess-w11-review1-tmp/ess-bidi-1138007-0/lock
-/home/timo/.cache/ess-w11-review1-tmp/ess-bidi-1138007-0/logins.db
-/home/timo/.cache/ess-w11-review1-tmp/ess-bidi-1138007-0/minidumps
-/home/timo/.cache/ess-w11-review1-tmp/ess-bidi-1138007-0/permissions.sqlite
-/home/timo/.cache/ess-w11-review1-tmp/ess-bidi-1138007-0/pkcs11.txt
-/home/timo/.cache/ess-w11-review1-tmp/ess-bidi-1138007-0/places.sqlite
-/home/timo/.cache/ess-w11-review1-tmp/ess-bidi-1138007-0/places.sqlite-wal
-/home/timo/.cache/ess-w11-review1-tmp/ess-bidi-1138007-0/prefs.js
-/home/timo/.cache/ess-w11-review1-tmp/ess-bidi-1138007-0/safebrowsing
-/home/timo/.cache/ess-w11-review1-tmp/ess-bidi-1138007-0/saved-telemetry-pings
-/home/timo/.cache/ess-w11-review1-tmp/ess-bidi-1138007-0/saved-telemetry-pings/7d6d6474-df9c-4ee2-8639-a8f166bca399
-/home/timo/.cache/ess-w11-review1-tmp/ess-bidi-1138007-0/security_state
-/home/timo/.cache/ess-w11-review1-tmp/ess-bidi-1138007-0/sessionCheckpoints.json
-/home/timo/.cache/ess-w11-review1-tmp/ess-bidi-1138007-0/startupCache
-/home/timo/.cache/ess-w11-review1-tmp/ess-bidi-1138007-0/startupCache/startupCache.8.little
-/home/timo/.cache/ess-w11-review1-tmp/ess-bidi-1138007-0/storage
-/home/timo/.cache/ess-w11-review1-tmp/ess-bidi-1138007-0/storage/default
-/home/timo/.cache/ess-w11-review1-tmp/ess-bidi-1138007-0/storage/ls-archive.sqlite
-/home/timo/.cache/ess-w11-review1-tmp/ess-bidi-1138007-0/storage/permanent
-/home/timo/.cache/ess-w11-review1-tmp/ess-bidi-1138007-0/storage/permanent/chrome
-/home/timo/.cache/ess-w11-review1-tmp/ess-bidi-1138007-0/storage/permanent/chrome/.metadata-v2
-/home/timo/.cache/ess-w11-review1-tmp/ess-bidi-1138007-0/storage/permanent/chrome/idb
-/home/timo/.cache/ess-w11-review1-tmp/ess-bidi-1138007-0/storage/permanent/chrome/idb/1451318868ntouromlalnodry--epcr.files
-/home/timo/.cache/ess-w11-review1-tmp/ess-bidi-1138007-0/storage/permanent/chrome/idb/1451318868ntouromlalnodry--epcr.sqlite
-/home/timo/.cache/ess-w11-review1-tmp/ess-bidi-1138007-0/storage/permanent/chrome/idb/1451318868ntouromlalnodry--epcr.sqlite-wal
-/home/timo/.cache/ess-w11-review1-tmp/ess-bidi-1138007-0/storage/permanent/chrome/idb/1657114595AmcateirvtiSty.files
-/home/timo/.cache/ess-w11-review1-tmp/ess-bidi-1138007-0/storage/permanent/chrome/idb/1657114595AmcateirvtiSty.sqlite
-/home/timo/.cache/ess-w11-review1-tmp/ess-bidi-1138007-0/storage/permanent/chrome/idb/1657114595AmcateirvtiSty.sqlite-wal
-/home/timo/.cache/ess-w11-review1-tmp/ess-bidi-1138007-0/storage/permanent/chrome/idb/2918063365piupsah.files
-/home/timo/.cache/ess-w11-review1-tmp/ess-bidi-1138007-0/storage/permanent/chrome/idb/2918063365piupsah.sqlite
-/home/timo/.cache/ess-w11-review1-tmp/ess-bidi-1138007-0/storage/permanent/chrome/idb/2918063365piupsah.sqlite-wal
-/home/timo/.cache/ess-w11-review1-tmp/ess-bidi-1138007-0/storage/permanent/chrome/idb/3561288849sdhlie.files
-/home/timo/.cache/ess-w11-review1-tmp/ess-bidi-1138007-0/storage/permanent/chrome/idb/3561288849sdhlie.sqlite
-/home/timo/.cache/ess-w11-review1-tmp/ess-bidi-1138007-0/storage/permanent/chrome/idb/3561288849sdhlie.sqlite-wal
-/home/timo/.cache/ess-w11-review1-tmp/ess-bidi-1138007-0/storage/permanent/chrome/idb/3870112724rsegmnoittet-es.files
-/home/timo/.cache/ess-w11-review1-tmp/ess-bidi-1138007-0/storage/permanent/chrome/idb/3870112724rsegmnoittet-es.sqlite
-/home/timo/.cache/ess-w11-review1-tmp/ess-bidi-1138007-0/storage/permanent/chrome/idb/3870112724rsegmnoittet-es.sqlite-wal
-/home/timo/.cache/ess-w11-review1-tmp/ess-bidi-1138007-0/storage/temporary
-/home/timo/.cache/ess-w11-review1-tmp/ess-bidi-1138007-0/storage.sqlite
-/home/timo/.cache/ess-w11-review1-tmp/ess-bidi-1138007-0/thumbnails
-/home/timo/.cache/ess-w11-review1-tmp/ess-bidi-1138007-0/times.json
-/home/timo/.cache/ess-w11-review1-tmp/ess-bidi-1138007-1
-/home/timo/.cache/ess-w11-review1-tmp/ess-bidi-1138007-1/.parentlock
-/home/timo/.cache/ess-w11-review1-tmp/ess-bidi-1138007-1/.startup-incomplete
-/home/timo/.cache/ess-w11-review1-tmp/ess-bidi-1138007-1/4bcdcee8.sqlite
-/home/timo/.cache/ess-w11-review1-tmp/ess-bidi-1138007-1/4bcdcee8.sqlite-shm
-/home/timo/.cache/ess-w11-review1-tmp/ess-bidi-1138007-1/4bcdcee8.sqlite-wal
-/home/timo/.cache/ess-w11-review1-tmp/ess-bidi-1138007-1/SiteSecurityServiceState.bin
-/home/timo/.cache/ess-w11-review1-tmp/ess-bidi-1138007-1/WebDriverBiDiServer.json
-/home/timo/.cache/ess-w11-review1-tmp/ess-bidi-1138007-1/activity-stream.shortcut_cache.json
-/home/timo/.cache/ess-w11-review1-tmp/ess-bidi-1138007-1/addonStartup.json.lz4
-/home/timo/.cache/ess-w11-review1-tmp/ess-bidi-1138007-1/bookmarkbackups
-/home/timo/.cache/ess-w11-review1-tmp/ess-bidi-1138007-1/bounce-tracking-protection.sqlite
-/home/timo/.cache/ess-w11-review1-tmp/ess-bidi-1138007-1/cache2
-/home/timo/.cache/ess-w11-review1-tmp/ess-bidi-1138007-1/cache2/doomed
-/home/timo/.cache/ess-w11-review1-tmp/ess-bidi-1138007-1/cache2/entries
-/home/timo/.cache/ess-w11-review1-tmp/ess-bidi-1138007-1/cache2/entries/360DE1F3E174E84794C36651DD126686164A2F9A
-/home/timo/.cache/ess-w11-review1-tmp/ess-bidi-1138007-1/cache2/entries/5E43012191E7B1F510ACD5BF039D8BF1B9A277B2
-/home/timo/.cache/ess-w11-review1-tmp/ess-bidi-1138007-1/cache2/entries/BB95D0607349D05725D5FE01D4FB300E319072AD
-/home/timo/.cache/ess-w11-review1-tmp/ess-bidi-1138007-1/cert9.db
-/home/timo/.cache/ess-w11-review1-tmp/ess-bidi-1138007-1/compatibility.ini
-/home/timo/.cache/ess-w11-review1-tmp/ess-bidi-1138007-1/content-prefs.sqlite
-/home/timo/.cache/ess-w11-review1-tmp/ess-bidi-1138007-1/cookies.sqlite
-/home/timo/.cache/ess-w11-review1-tmp/ess-bidi-1138007-1/crashes
-/home/timo/.cache/ess-w11-review1-tmp/ess-bidi-1138007-1/crashes/events
-/home/timo/.cache/ess-w11-review1-tmp/ess-bidi-1138007-1/datareporting
-/home/timo/.cache/ess-w11-review1-tmp/ess-bidi-1138007-1/datareporting/archived
-/home/timo/.cache/ess-w11-review1-tmp/ess-bidi-1138007-1/datareporting/archived/2026-09
-/home/timo/.cache/ess-w11-review1-tmp/ess-bidi-1138007-1/datareporting/archived/2026-09/1788725413191.d4b76b97-220b-45d7-a66f-0fa394e1cfa8.deletion-request.jsonlz4
-/home/timo/.cache/ess-w11-review1-tmp/ess-bidi-1138007-1/datareporting/glean
-/home/timo/.cache/ess-w11-review1-tmp/ess-bidi-1138007-1/datareporting/glean/client_id.txt
-/home/timo/.cache/ess-w11-review1-tmp/ess-bidi-1138007-1/datareporting/glean/db
-/home/timo/.cache/ess-w11-review1-tmp/ess-bidi-1138007-1/datareporting/glean/db/data.safe.bin
-/home/timo/.cache/ess-w11-review1-tmp/ess-bidi-1138007-1/datareporting/glean/events
-/home/timo/.cache/ess-w11-review1-tmp/ess-bidi-1138007-1/datareporting/glean/events/events
-/home/timo/.cache/ess-w11-review1-tmp/ess-bidi-1138007-1/datareporting/glean/pending_pings
-/home/timo/.cache/ess-w11-review1-tmp/ess-bidi-1138007-1/datareporting/glean/tmp
-/home/timo/.cache/ess-w11-review1-tmp/ess-bidi-1138007-1/datareporting/state.json
-/home/timo/.cache/ess-w11-review1-tmp/ess-bidi-1138007-1/domain_to_categories.sqlite
-/home/timo/.cache/ess-w11-review1-tmp/ess-bidi-1138007-1/domain_to_categories.sqlite-journal
-/home/timo/.cache/ess-w11-review1-tmp/ess-bidi-1138007-1/extension-preferences.json
-/home/timo/.cache/ess-w11-review1-tmp/ess-bidi-1138007-1/extension-store
-/home/timo/.cache/ess-w11-review1-tmp/ess-bidi-1138007-1/extension-store/data.safe.bin
-/home/timo/.cache/ess-w11-review1-tmp/ess-bidi-1138007-1/extensions.json
-/home/timo/.cache/ess-w11-review1-tmp/ess-bidi-1138007-1/favicons.sqlite
-/home/timo/.cache/ess-w11-review1-tmp/ess-bidi-1138007-1/favicons.sqlite-wal
-/home/timo/.cache/ess-w11-review1-tmp/ess-bidi-1138007-1/key4.db
-/home/timo/.cache/ess-w11-review1-tmp/ess-bidi-1138007-1/lock
-/home/timo/.cache/ess-w11-review1-tmp/ess-bidi-1138007-1/logins.db
-/home/timo/.cache/ess-w11-review1-tmp/ess-bidi-1138007-1/minidumps
-/home/timo/.cache/ess-w11-review1-tmp/ess-bidi-1138007-1/permissions.sqlite
-/home/timo/.cache/ess-w11-review1-tmp/ess-bidi-1138007-1/pkcs11.txt
-/home/timo/.cache/ess-w11-review1-tmp/ess-bidi-1138007-1/places.sqlite
-/home/timo/.cache/ess-w11-review1-tmp/ess-bidi-1138007-1/places.sqlite-wal
-/home/timo/.cache/ess-w11-review1-tmp/ess-bidi-1138007-1/prefs.js
-/home/timo/.cache/ess-w11-review1-tmp/ess-bidi-1138007-1/safebrowsing
-/home/timo/.cache/ess-w11-review1-tmp/ess-bidi-1138007-1/saved-telemetry-pings
-/home/timo/.cache/ess-w11-review1-tmp/ess-bidi-1138007-1/saved-telemetry-pings/d4b76b97-220b-45d7-a66f-0fa394e1cfa8
-/home/timo/.cache/ess-w11-review1-tmp/ess-bidi-1138007-1/security_state
-/home/timo/.cache/ess-w11-review1-tmp/ess-bidi-1138007-1/sessionCheckpoints.json
-/home/timo/.cache/ess-w11-review1-tmp/ess-bidi-1138007-1/startupCache
-/home/timo/.cache/ess-w11-review1-tmp/ess-bidi-1138007-1/startupCache/startupCache.8.little
-/home/timo/.cache/ess-w11-review1-tmp/ess-bidi-1138007-1/storage
-/home/timo/.cache/ess-w11-review1-tmp/ess-bidi-1138007-1/storage/default
-/home/timo/.cache/ess-w11-review1-tmp/ess-bidi-1138007-1/storage/ls-archive.sqlite
-/home/timo/.cache/ess-w11-review1-tmp/ess-bidi-1138007-1/storage/permanent
-/home/timo/.cache/ess-w11-review1-tmp/ess-bidi-1138007-1/storage/permanent/chrome
-/home/timo/.cache/ess-w11-review1-tmp/ess-bidi-1138007-1/storage/permanent/chrome/.metadata-v2
-/home/timo/.cache/ess-w11-review1-tmp/ess-bidi-1138007-1/storage/permanent/chrome/idb
-/home/timo/.cache/ess-w11-review1-tmp/ess-bidi-1138007-1/storage/permanent/chrome/idb/1451318868ntouromlalnodry--epcr.files
-/home/timo/.cache/ess-w11-review1-tmp/ess-bidi-1138007-1/storage/permanent/chrome/idb/1451318868ntouromlalnodry--epcr.sqlite
-/home/timo/.cache/ess-w11-review1-tmp/ess-bidi-1138007-1/storage/permanent/chrome/idb/1451318868ntouromlalnodry--epcr.sqlite-wal
-/home/timo/.cache/ess-w11-review1-tmp/ess-bidi-1138007-1/storage/permanent/chrome/idb/1657114595AmcateirvtiSty.files
-/home/timo/.cache/ess-w11-review1-tmp/ess-bidi-1138007-1/storage/permanent/chrome/idb/1657114595AmcateirvtiSty.sqlite
-/home/timo/.cache/ess-w11-review1-tmp/ess-bidi-1138007-1/storage/permanent/chrome/idb/1657114595AmcateirvtiSty.sqlite-wal
-/home/timo/.cache/ess-w11-review1-tmp/ess-bidi-1138007-1/storage/permanent/chrome/idb/2918063365piupsah.files
-/home/timo/.cache/ess-w11-review1-tmp/ess-bidi-1138007-1/storage/permanent/chrome/idb/2918063365piupsah.sqlite
-/home/timo/.cache/ess-w11-review1-tmp/ess-bidi-1138007-1/storage/permanent/chrome/idb/2918063365piupsah.sqlite-wal
-/home/timo/.cache/ess-w11-review1-tmp/ess-bidi-1138007-1/storage/permanent/chrome/idb/3561288849sdhlie.files
-/home/timo/.cache/ess-w11-review1-tmp/ess-bidi-1138007-1/storage/permanent/chrome/idb/3561288849sdhlie.sqlite
-/home/timo/.cache/ess-w11-review1-tmp/ess-bidi-1138007-1/storage/permanent/chrome/idb/3561288849sdhlie.sqlite-wal
-/home/timo/.cache/ess-w11-review1-tmp/ess-bidi-1138007-1/storage/permanent/chrome/idb/3870112724rsegmnoittet-es.files
-/home/timo/.cache/ess-w11-review1-tmp/ess-bidi-1138007-1/storage/permanent/chrome/idb/3870112724rsegmnoittet-es.sqlite
-/home/timo/.cache/ess-w11-review1-tmp/ess-bidi-1138007-1/storage/permanent/chrome/idb/3870112724rsegmnoittet-es.sqlite-wal
-/home/timo/.cache/ess-w11-review1-tmp/ess-bidi-1138007-1/storage/temporary
-/home/timo/.cache/ess-w11-review1-tmp/ess-bidi-1138007-1/storage.sqlite
-/home/timo/.cache/ess-w11-review1-tmp/ess-bidi-1138007-1/thumbnails
-/home/timo/.cache/ess-w11-review1-tmp/ess-bidi-1138007-1/times.json
-/home/timo/.cache/ess-w11-review1-tmp/ess-bidi-1138007-2
-/home/timo/.cache/ess-w11-review1-tmp/ess-bidi-1138007-2/.parentlock
-/home/timo/.cache/ess-w11-review1-tmp/ess-bidi-1138007-2/.startup-incomplete
-/home/timo/.cache/ess-w11-review1-tmp/ess-bidi-1138007-2/SiteSecurityServiceState.bin
-/home/timo/.cache/ess-w11-review1-tmp/ess-bidi-1138007-2/WebDriverBiDiServer.json
-/home/timo/.cache/ess-w11-review1-tmp/ess-bidi-1138007-2/activity-stream.shortcut_cache.json
-/home/timo/.cache/ess-w11-review1-tmp/ess-bidi-1138007-2/addonStartup.json.lz4
-/home/timo/.cache/ess-w11-review1-tmp/ess-bidi-1138007-2/b3ee102a.sqlite
-/home/timo/.cache/ess-w11-review1-tmp/ess-bidi-1138007-2/b3ee102a.sqlite-shm
-/home/timo/.cache/ess-w11-review1-tmp/ess-bidi-1138007-2/b3ee102a.sqlite-wal
-/home/timo/.cache/ess-w11-review1-tmp/ess-bidi-1138007-2/bookmarkbackups
-/home/timo/.cache/ess-w11-review1-tmp/ess-bidi-1138007-2/bounce-tracking-protection.sqlite
-/home/timo/.cache/ess-w11-review1-tmp/ess-bidi-1138007-2/cache2
-/home/timo/.cache/ess-w11-review1-tmp/ess-bidi-1138007-2/cache2/doomed
-/home/timo/.cache/ess-w11-review1-tmp/ess-bidi-1138007-2/cache2/entries
-/home/timo/.cache/ess-w11-review1-tmp/ess-bidi-1138007-2/cache2/entries/360DE1F3E174E84794C36651DD126686164A2F9A
-/home/timo/.cache/ess-w11-review1-tmp/ess-bidi-1138007-2/cache2/entries/BB95D0607349D05725D5FE01D4FB300E319072AD
-/home/timo/.cache/ess-w11-review1-tmp/ess-bidi-1138007-2/cert9.db
-/home/timo/.cache/ess-w11-review1-tmp/ess-bidi-1138007-2/compatibility.ini
-/home/timo/.cache/ess-w11-review1-tmp/ess-bidi-1138007-2/content-prefs.sqlite
-/home/timo/.cache/ess-w11-review1-tmp/ess-bidi-1138007-2/cookies.sqlite
-/home/timo/.cache/ess-w11-review1-tmp/ess-bidi-1138007-2/crashes
-/home/timo/.cache/ess-w11-review1-tmp/ess-bidi-1138007-2/crashes/events
-/home/timo/.cache/ess-w11-review1-tmp/ess-bidi-1138007-2/datareporting
-/home/timo/.cache/ess-w11-review1-tmp/ess-bidi-1138007-2/datareporting/archived
-/home/timo/.cache/ess-w11-review1-tmp/ess-bidi-1138007-2/datareporting/archived/2026-09
-/home/timo/.cache/ess-w11-review1-tmp/ess-bidi-1138007-2/datareporting/archived/2026-09/1788725413981.80719d95-6321-43dd-9aab-edb9ed0ef34e.deletion-request.jsonlz4
-/home/timo/.cache/ess-w11-review1-tmp/ess-bidi-1138007-2/datareporting/glean
-/home/timo/.cache/ess-w11-review1-tmp/ess-bidi-1138007-2/datareporting/glean/client_id.txt
-/home/timo/.cache/ess-w11-review1-tmp/ess-bidi-1138007-2/datareporting/glean/db
-/home/timo/.cache/ess-w11-review1-tmp/ess-bidi-1138007-2/datareporting/glean/db/data.safe.bin
-/home/timo/.cache/ess-w11-review1-tmp/ess-bidi-1138007-2/datareporting/glean/events
-/home/timo/.cache/ess-w11-review1-tmp/ess-bidi-1138007-2/datareporting/glean/events/events
-/home/timo/.cache/ess-w11-review1-tmp/ess-bidi-1138007-2/datareporting/glean/pending_pings
-/home/timo/.cache/ess-w11-review1-tmp/ess-bidi-1138007-2/datareporting/glean/tmp
-/home/timo/.cache/ess-w11-review1-tmp/ess-bidi-1138007-2/datareporting/state.json
-/home/timo/.cache/ess-w11-review1-tmp/ess-bidi-1138007-2/domain_to_categories.sqlite
-/home/timo/.cache/ess-w11-review1-tmp/ess-bidi-1138007-2/domain_to_categories.sqlite-journal
-/home/timo/.cache/ess-w11-review1-tmp/ess-bidi-1138007-2/extension-store
-/home/timo/.cache/ess-w11-review1-tmp/ess-bidi-1138007-2/extension-store/data.safe.bin
-/home/timo/.cache/ess-w11-review1-tmp/ess-bidi-1138007-2/extensions.json
-/home/timo/.cache/ess-w11-review1-tmp/ess-bidi-1138007-2/favicons.sqlite
-/home/timo/.cache/ess-w11-review1-tmp/ess-bidi-1138007-2/favicons.sqlite-wal
-/home/timo/.cache/ess-w11-review1-tmp/ess-bidi-1138007-2/key4.db
-/home/timo/.cache/ess-w11-review1-tmp/ess-bidi-1138007-2/lock
-/home/timo/.cache/ess-w11-review1-tmp/ess-bidi-1138007-2/logins.db
-/home/timo/.cache/ess-w11-review1-tmp/ess-bidi-1138007-2/minidumps
-/home/timo/.cache/ess-w11-review1-tmp/ess-bidi-1138007-2/permissions.sqlite
-/home/timo/.cache/ess-w11-review1-tmp/ess-bidi-1138007-2/pkcs11.txt
-/home/timo/.cache/ess-w11-review1-tmp/ess-bidi-1138007-2/places.sqlite
-/home/timo/.cache/ess-w11-review1-tmp/ess-bidi-1138007-2/places.sqlite-wal
-/home/timo/.cache/ess-w11-review1-tmp/ess-bidi-1138007-2/prefs.js
-/home/timo/.cache/ess-w11-review1-tmp/ess-bidi-1138007-2/safebrowsing
-/home/timo/.cache/ess-w11-review1-tmp/ess-bidi-1138007-2/saved-telemetry-pings
-/home/timo/.cache/ess-w11-review1-tmp/ess-bidi-1138007-2/saved-telemetry-pings/80719d95-6321-43dd-9aab-edb9ed0ef34e
-/home/timo/.cache/ess-w11-review1-tmp/ess-bidi-1138007-2/security_state
-/home/timo/.cache/ess-w11-review1-tmp/ess-bidi-1138007-2/sessionCheckpoints.json
-/home/timo/.cache/ess-w11-review1-tmp/ess-bidi-1138007-2/startupCache
-/home/timo/.cache/ess-w11-review1-tmp/ess-bidi-1138007-2/startupCache/startupCache.8.little
-/home/timo/.cache/ess-w11-review1-tmp/ess-bidi-1138007-2/storage
-/home/timo/.cache/ess-w11-review1-tmp/ess-bidi-1138007-2/storage/default
-/home/timo/.cache/ess-w11-review1-tmp/ess-bidi-1138007-2/storage/ls-archive.sqlite
-/home/timo/.cache/ess-w11-review1-tmp/ess-bidi-1138007-2/storage/permanent
-/home/timo/.cache/ess-w11-review1-tmp/ess-bidi-1138007-2/storage/permanent/chrome
-/home/timo/.cache/ess-w11-review1-tmp/ess-bidi-1138007-2/storage/permanent/chrome/.metadata-v2
-/home/timo/.cache/ess-w11-review1-tmp/ess-bidi-1138007-2/storage/permanent/chrome/idb
-/home/timo/.cache/ess-w11-review1-tmp/ess-bidi-1138007-2/storage/permanent/chrome/idb/1451318868ntouromlalnodry--epcr.files
-/home/timo/.cache/ess-w11-review1-tmp/ess-bidi-1138007-2/storage/permanent/chrome/idb/1451318868ntouromlalnodry--epcr.sqlite
-/home/timo/.cache/ess-w11-review1-tmp/ess-bidi-1138007-2/storage/permanent/chrome/idb/1451318868ntouromlalnodry--epcr.sqlite-wal
-/home/timo/.cache/ess-w11-review1-tmp/ess-bidi-1138007-2/storage/permanent/chrome/idb/1657114595AmcateirvtiSty.files
-/home/timo/.cache/ess-w11-review1-tmp/ess-bidi-1138007-2/storage/permanent/chrome/idb/1657114595AmcateirvtiSty.sqlite
-/home/timo/.cache/ess-w11-review1-tmp/ess-bidi-1138007-2/storage/permanent/chrome/idb/1657114595AmcateirvtiSty.sqlite-wal
-/home/timo/.cache/ess-w11-review1-tmp/ess-bidi-1138007-2/storage/permanent/chrome/idb/2918063365piupsah.files
-/home/timo/.cache/ess-w11-review1-tmp/ess-bidi-1138007-2/storage/permanent/chrome/idb/2918063365piupsah.sqlite
-/home/timo/.cache/ess-w11-review1-tmp/ess-bidi-1138007-2/storage/permanent/chrome/idb/2918063365piupsah.sqlite-wal
-/home/timo/.cache/ess-w11-review1-tmp/ess-bidi-1138007-2/storage/permanent/chrome/idb/3561288849sdhlie.files
-/home/timo/.cache/ess-w11-review1-tmp/ess-bidi-1138007-2/storage/permanent/chrome/idb/3561288849sdhlie.sqlite
-/home/timo/.cache/ess-w11-review1-tmp/ess-bidi-1138007-2/storage/permanent/chrome/idb/3561288849sdhlie.sqlite-wal
-/home/timo/.cache/ess-w11-review1-tmp/ess-bidi-1138007-2/storage/permanent/chrome/idb/3870112724rsegmnoittet-es.files
-/home/timo/.cache/ess-w11-review1-tmp/ess-bidi-1138007-2/storage/permanent/chrome/idb/3870112724rsegmnoittet-es.sqlite
-/home/timo/.cache/ess-w11-review1-tmp/ess-bidi-1138007-2/storage/permanent/chrome/idb/3870112724rsegmnoittet-es.sqlite-wal
-/home/timo/.cache/ess-w11-review1-tmp/ess-bidi-1138007-2/storage/temporary
-/home/timo/.cache/ess-w11-review1-tmp/ess-bidi-1138007-2/storage.sqlite
-/home/timo/.cache/ess-w11-review1-tmp/ess-bidi-1138007-2/thumbnails
-/home/timo/.cache/ess-w11-review1-tmp/ess-bidi-1138007-2/times.json
-/home/timo/.cache/ess-w11-review1-tmp/ess-bidi-1138007-3
-/home/timo/.cache/ess-w11-review1-tmp/ess-bidi-1138007-3/.parentlock
-/home/timo/.cache/ess-w11-review1-tmp/ess-bidi-1138007-3/.startup-incomplete
-/home/timo/.cache/ess-w11-review1-tmp/ess-bidi-1138007-3/612a1ed7.sqlite
-/home/timo/.cache/ess-w11-review1-tmp/ess-bidi-1138007-3/612a1ed7.sqlite-shm
-/home/timo/.cache/ess-w11-review1-tmp/ess-bidi-1138007-3/612a1ed7.sqlite-wal
-/home/timo/.cache/ess-w11-review1-tmp/ess-bidi-1138007-3/SiteSecurityServiceState.bin
-/home/timo/.cache/ess-w11-review1-tmp/ess-bidi-1138007-3/WebDriverBiDiServer.json
-/home/timo/.cache/ess-w11-review1-tmp/ess-bidi-1138007-3/activity-stream.shortcut_cache.json
-/home/timo/.cache/ess-w11-review1-tmp/ess-bidi-1138007-3/bookmarkbackups
-/home/timo/.cache/ess-w11-review1-tmp/ess-bidi-1138007-3/bounce-tracking-protection.sqlite
-/home/timo/.cache/ess-w11-review1-tmp/ess-bidi-1138007-3/cache2
-/home/timo/.cache/ess-w11-review1-tmp/ess-bidi-1138007-3/cache2/doomed
-/home/timo/.cache/ess-w11-review1-tmp/ess-bidi-1138007-3/cache2/entries
-/home/timo/.cache/ess-w11-review1-tmp/ess-bidi-1138007-3/cache2/entries/360DE1F3E174E84794C36651DD126686164A2F9A
-/home/timo/.cache/ess-w11-review1-tmp/ess-bidi-1138007-3/cache2/entries/5E43012191E7B1F510ACD5BF039D8BF1B9A277B2
-/home/timo/.cache/ess-w11-review1-tmp/ess-bidi-1138007-3/cache2/entries/BB95D0607349D05725D5FE01D4FB300E319072AD
-/home/timo/.cache/ess-w11-review1-tmp/ess-bidi-1138007-3/cert9.db
-/home/timo/.cache/ess-w11-review1-tmp/ess-bidi-1138007-3/compatibility.ini
-/home/timo/.cache/ess-w11-review1-tmp/ess-bidi-1138007-3/content-prefs.sqlite
-/home/timo/.cache/ess-w11-review1-tmp/ess-bidi-1138007-3/cookies.sqlite
-/home/timo/.cache/ess-w11-review1-tmp/ess-bidi-1138007-3/crashes
-/home/timo/.cache/ess-w11-review1-tmp/ess-bidi-1138007-3/crashes/events
-/home/timo/.cache/ess-w11-review1-tmp/ess-bidi-1138007-3/datareporting
-/home/timo/.cache/ess-w11-review1-tmp/ess-bidi-1138007-3/datareporting/archived
-/home/timo/.cache/ess-w11-review1-tmp/ess-bidi-1138007-3/datareporting/archived/2026-09
-/home/timo/.cache/ess-w11-review1-tmp/ess-bidi-1138007-3/datareporting/archived/2026-09/1788725414904.4f34c269-16c0-4970-9108-ea534609d77e.deletion-request.jsonlz4
-/home/timo/.cache/ess-w11-review1-tmp/ess-bidi-1138007-3/datareporting/glean
-/home/timo/.cache/ess-w11-review1-tmp/ess-bidi-1138007-3/datareporting/glean/client_id.txt
-/home/timo/.cache/ess-w11-review1-tmp/ess-bidi-1138007-3/datareporting/glean/db
-/home/timo/.cache/ess-w11-review1-tmp/ess-bidi-1138007-3/datareporting/glean/db/data.safe.bin
-/home/timo/.cache/ess-w11-review1-tmp/ess-bidi-1138007-3/datareporting/glean/events
-/home/timo/.cache/ess-w11-review1-tmp/ess-bidi-1138007-3/datareporting/glean/events/events
-/home/timo/.cache/ess-w11-review1-tmp/ess-bidi-1138007-3/datareporting/glean/pending_pings
-/home/timo/.cache/ess-w11-review1-tmp/ess-bidi-1138007-3/datareporting/glean/tmp
-/home/timo/.cache/ess-w11-review1-tmp/ess-bidi-1138007-3/datareporting/state.json
-/home/timo/.cache/ess-w11-review1-tmp/ess-bidi-1138007-3/domain_to_categories.sqlite
-/home/timo/.cache/ess-w11-review1-tmp/ess-bidi-1138007-3/domain_to_categories.sqlite-journal
-/home/timo/.cache/ess-w11-review1-tmp/ess-bidi-1138007-3/extension-store
-/home/timo/.cache/ess-w11-review1-tmp/ess-bidi-1138007-3/extension-store/data.safe.bin
-/home/timo/.cache/ess-w11-review1-tmp/ess-bidi-1138007-3/extensions.json
-/home/timo/.cache/ess-w11-review1-tmp/ess-bidi-1138007-3/favicons.sqlite
-/home/timo/.cache/ess-w11-review1-tmp/ess-bidi-1138007-3/favicons.sqlite-wal
-/home/timo/.cache/ess-w11-review1-tmp/ess-bidi-1138007-3/key4.db
-/home/timo/.cache/ess-w11-review1-tmp/ess-bidi-1138007-3/lock
-/home/timo/.cache/ess-w11-review1-tmp/ess-bidi-1138007-3/logins.db
-/home/timo/.cache/ess-w11-review1-tmp/ess-bidi-1138007-3/minidumps
-/home/timo/.cache/ess-w11-review1-tmp/ess-bidi-1138007-3/permissions.sqlite
-/home/timo/.cache/ess-w11-review1-tmp/ess-bidi-1138007-3/pkcs11.txt
-/home/timo/.cache/ess-w11-review1-tmp/ess-bidi-1138007-3/places.sqlite
-/home/timo/.cache/ess-w11-review1-tmp/ess-bidi-1138007-3/places.sqlite-wal
-/home/timo/.cache/ess-w11-review1-tmp/ess-bidi-1138007-3/prefs.js
-/home/timo/.cache/ess-w11-review1-tmp/ess-bidi-1138007-3/safebrowsing
-/home/timo/.cache/ess-w11-review1-tmp/ess-bidi-1138007-3/saved-telemetry-pings
-/home/timo/.cache/ess-w11-review1-tmp/ess-bidi-1138007-3/saved-telemetry-pings/4f34c269-16c0-4970-9108-ea534609d77e
-/home/timo/.cache/ess-w11-review1-tmp/ess-bidi-1138007-3/security_state
-/home/timo/.cache/ess-w11-review1-tmp/ess-bidi-1138007-3/sessionCheckpoints.json
-/home/timo/.cache/ess-w11-review1-tmp/ess-bidi-1138007-3/startupCache
-/home/timo/.cache/ess-w11-review1-tmp/ess-bidi-1138007-3/startupCache/startupCache.8.little
-/home/timo/.cache/ess-w11-review1-tmp/ess-bidi-1138007-3/storage
-/home/timo/.cache/ess-w11-review1-tmp/ess-bidi-1138007-3/storage/default
-/home/timo/.cache/ess-w11-review1-tmp/ess-bidi-1138007-3/storage/ls-archive.sqlite
-/home/timo/.cache/ess-w11-review1-tmp/ess-bidi-1138007-3/storage/permanent
-/home/timo/.cache/ess-w11-review1-tmp/ess-bidi-1138007-3/storage/permanent/chrome
-/home/timo/.cache/ess-w11-review1-tmp/ess-bidi-1138007-3/storage/permanent/chrome/.metadata-v2
-/home/timo/.cache/ess-w11-review1-tmp/ess-bidi-1138007-3/storage/permanent/chrome/idb
-/home/timo/.cache/ess-w11-review1-tmp/ess-bidi-1138007-3/storage/permanent/chrome/idb/1451318868ntouromlalnodry--epcr.files
-/home/timo/.cache/ess-w11-review1-tmp/ess-bidi-1138007-3/storage/permanent/chrome/idb/1451318868ntouromlalnodry--epcr.sqlite
-/home/timo/.cache/ess-w11-review1-tmp/ess-bidi-1138007-3/storage/permanent/chrome/idb/1451318868ntouromlalnodry--epcr.sqlite-wal
-/home/timo/.cache/ess-w11-review1-tmp/ess-bidi-1138007-3/storage/permanent/chrome/idb/1657114595AmcateirvtiSty.files
-/home/timo/.cache/ess-w11-review1-tmp/ess-bidi-1138007-3/storage/permanent/chrome/idb/1657114595AmcateirvtiSty.sqlite
-/home/timo/.cache/ess-w11-review1-tmp/ess-bidi-1138007-3/storage/permanent/chrome/idb/1657114595AmcateirvtiSty.sqlite-wal
-/home/timo/.cache/ess-w11-review1-tmp/ess-bidi-1138007-3/storage/permanent/chrome/idb/2918063365piupsah.files
-/home/timo/.cache/ess-w11-review1-tmp/ess-bidi-1138007-3/storage/permanent/chrome/idb/2918063365piupsah.sqlite
-/home/timo/.cache/ess-w11-review1-tmp/ess-bidi-1138007-3/storage/permanent/chrome/idb/2918063365piupsah.sqlite-wal
-/home/timo/.cache/ess-w11-review1-tmp/ess-bidi-1138007-3/storage/permanent/chrome/idb/3561288849sdhlie.files
-/home/timo/.cache/ess-w11-review1-tmp/ess-bidi-1138007-3/storage/permanent/chrome/idb/3561288849sdhlie.sqlite
-/home/timo/.cache/ess-w11-review1-tmp/ess-bidi-1138007-3/storage/permanent/chrome/idb/3561288849sdhlie.sqlite-wal
-/home/timo/.cache/ess-w11-review1-tmp/ess-bidi-1138007-3/storage/permanent/chrome/idb/3870112724rsegmnoittet-es.files
-/home/timo/.cache/ess-w11-review1-tmp/ess-bidi-1138007-3/storage/permanent/chrome/idb/3870112724rsegmnoittet-es.sqlite
-/home/timo/.cache/ess-w11-review1-tmp/ess-bidi-1138007-3/storage/permanent/chrome/idb/3870112724rsegmnoittet-es.sqlite-wal
-/home/timo/.cache/ess-w11-review1-tmp/ess-bidi-1138007-3/storage/temporary
-/home/timo/.cache/ess-w11-review1-tmp/ess-bidi-1138007-3/storage.sqlite
-/home/timo/.cache/ess-w11-review1-tmp/ess-bidi-1138007-3/thumbnails
-/home/timo/.cache/ess-w11-review1-tmp/ess-bidi-1138007-3/times.json
-/home/timo/.cache/ess-w11-review1-tmp/ess-bidi-1147781-0
-/home/timo/.cache/ess-w11-review1-tmp/ess-bidi-1147781-0/.parentlock
-/home/timo/.cache/ess-w11-review1-tmp/ess-bidi-1147781-0/.startup-incomplete
-/home/timo/.cache/ess-w11-review1-tmp/ess-bidi-1147781-0/SiteSecurityServiceState.bin
-/home/timo/.cache/ess-w11-review1-tmp/ess-bidi-1147781-0/WebDriverBiDiServer.json
-/home/timo/.cache/ess-w11-review1-tmp/ess-bidi-1147781-0/a0b5a4c8.sqlite
-/home/timo/.cache/ess-w11-review1-tmp/ess-bidi-1147781-0/a0b5a4c8.sqlite-shm
-/home/timo/.cache/ess-w11-review1-tmp/ess-bidi-1147781-0/a0b5a4c8.sqlite-wal
-/home/timo/.cache/ess-w11-review1-tmp/ess-bidi-1147781-0/activity-stream.shortcut_cache.json
-/home/timo/.cache/ess-w11-review1-tmp/ess-bidi-1147781-0/bookmarkbackups
-/home/timo/.cache/ess-w11-review1-tmp/ess-bidi-1147781-0/bounce-tracking-protection.sqlite
-/home/timo/.cache/ess-w11-review1-tmp/ess-bidi-1147781-0/cache2
-/home/timo/.cache/ess-w11-review1-tmp/ess-bidi-1147781-0/cache2/doomed
-/home/timo/.cache/ess-w11-review1-tmp/ess-bidi-1147781-0/cache2/entries
-/home/timo/.cache/ess-w11-review1-tmp/ess-bidi-1147781-0/cache2/entries/360DE1F3E174E84794C36651DD126686164A2F9A
-/home/timo/.cache/ess-w11-review1-tmp/ess-bidi-1147781-0/cache2/entries/5E43012191E7B1F510ACD5BF039D8BF1B9A277B2
-/home/timo/.cache/ess-w11-review1-tmp/ess-bidi-1147781-0/cache2/entries/BB95D0607349D05725D5FE01D4FB300E319072AD
-/home/timo/.cache/ess-w11-review1-tmp/ess-bidi-1147781-0/cert9.db
-/home/timo/.cache/ess-w11-review1-tmp/ess-bidi-1147781-0/compatibility.ini
-/home/timo/.cache/ess-w11-review1-tmp/ess-bidi-1147781-0/content-prefs.sqlite
-/home/timo/.cache/ess-w11-review1-tmp/ess-bidi-1147781-0/cookies.sqlite
-/home/timo/.cache/ess-w11-review1-tmp/ess-bidi-1147781-0/crashes
-/home/timo/.cache/ess-w11-review1-tmp/ess-bidi-1147781-0/crashes/events
-/home/timo/.cache/ess-w11-review1-tmp/ess-bidi-1147781-0/datareporting
-/home/timo/.cache/ess-w11-review1-tmp/ess-bidi-1147781-0/datareporting/archived
-/home/timo/.cache/ess-w11-review1-tmp/ess-bidi-1147781-0/datareporting/archived/2026-09
-/home/timo/.cache/ess-w11-review1-tmp/ess-bidi-1147781-0/datareporting/archived/2026-09/1788725428602.71e44463-3290-4ac7-9f22-07652440f4a0.deletion-request.jsonlz4
-/home/timo/.cache/ess-w11-review1-tmp/ess-bidi-1147781-0/datareporting/glean
-/home/timo/.cache/ess-w11-review1-tmp/ess-bidi-1147781-0/datareporting/glean/client_id.txt
-/home/timo/.cache/ess-w11-review1-tmp/ess-bidi-1147781-0/datareporting/glean/db
-/home/timo/.cache/ess-w11-review1-tmp/ess-bidi-1147781-0/datareporting/glean/db/data.safe.bin
-/home/timo/.cache/ess-w11-review1-tmp/ess-bidi-1147781-0/datareporting/glean/events
-/home/timo/.cache/ess-w11-review1-tmp/ess-bidi-1147781-0/datareporting/glean/events/events
-/home/timo/.cache/ess-w11-review1-tmp/ess-bidi-1147781-0/datareporting/glean/pending_pings
-/home/timo/.cache/ess-w11-review1-tmp/ess-bidi-1147781-0/datareporting/glean/tmp
-/home/timo/.cache/ess-w11-review1-tmp/ess-bidi-1147781-0/datareporting/state.json
-/home/timo/.cache/ess-w11-review1-tmp/ess-bidi-1147781-0/domain_to_categories.sqlite
-/home/timo/.cache/ess-w11-review1-tmp/ess-bidi-1147781-0/domain_to_categories.sqlite-journal
-/home/timo/.cache/ess-w11-review1-tmp/ess-bidi-1147781-0/extension-store
-/home/timo/.cache/ess-w11-review1-tmp/ess-bidi-1147781-0/extension-store/data.safe.bin
-/home/timo/.cache/ess-w11-review1-tmp/ess-bidi-1147781-0/extensions.json
-/home/timo/.cache/ess-w11-review1-tmp/ess-bidi-1147781-0/favicons.sqlite
-/home/timo/.cache/ess-w11-review1-tmp/ess-bidi-1147781-0/favicons.sqlite-wal
-/home/timo/.cache/ess-w11-review1-tmp/ess-bidi-1147781-0/key4.db
-/home/timo/.cache/ess-w11-review1-tmp/ess-bidi-1147781-0/lock
-/home/timo/.cache/ess-w11-review1-tmp/ess-bidi-1147781-0/logins.db
-/home/timo/.cache/ess-w11-review1-tmp/ess-bidi-1147781-0/minidumps
-/home/timo/.cache/ess-w11-review1-tmp/ess-bidi-1147781-0/permissions.sqlite
-/home/timo/.cache/ess-w11-review1-tmp/ess-bidi-1147781-0/pkcs11.txt
-/home/timo/.cache/ess-w11-review1-tmp/ess-bidi-1147781-0/places.sqlite
-/home/timo/.cache/ess-w11-review1-tmp/ess-bidi-1147781-0/places.sqlite-wal
-/home/timo/.cache/ess-w11-review1-tmp/ess-bidi-1147781-0/prefs.js
-/home/timo/.cache/ess-w11-review1-tmp/ess-bidi-1147781-0/safebrowsing
-/home/timo/.cache/ess-w11-review1-tmp/ess-bidi-1147781-0/saved-telemetry-pings
-/home/timo/.cache/ess-w11-review1-tmp/ess-bidi-1147781-0/saved-telemetry-pings/71e44463-3290-4ac7-9f22-07652440f4a0
-/home/timo/.cache/ess-w11-review1-tmp/ess-bidi-1147781-0/security_state
-/home/timo/.cache/ess-w11-review1-tmp/ess-bidi-1147781-0/sessionCheckpoints.json
-/home/timo/.cache/ess-w11-review1-tmp/ess-bidi-1147781-0/startupCache
-/home/timo/.cache/ess-w11-review1-tmp/ess-bidi-1147781-0/startupCache/startupCache.8.little
-/home/timo/.cache/ess-w11-review1-tmp/ess-bidi-1147781-0/storage
-/home/timo/.cache/ess-w11-review1-tmp/ess-bidi-1147781-0/storage/default
-/home/timo/.cache/ess-w11-review1-tmp/ess-bidi-1147781-0/storage/ls-archive.sqlite
-/home/timo/.cache/ess-w11-review1-tmp/ess-bidi-1147781-0/storage/permanent
-/home/timo/.cache/ess-w11-review1-tmp/ess-bidi-1147781-0/storage/permanent/chrome
-/home/timo/.cache/ess-w11-review1-tmp/ess-bidi-1147781-0/storage/permanent/chrome/.metadata-v2
-/home/timo/.cache/ess-w11-review1-tmp/ess-bidi-1147781-0/storage/permanent/chrome/idb
-/home/timo/.cache/ess-w11-review1-tmp/ess-bidi-1147781-0/storage/permanent/chrome/idb/1451318868ntouromlalnodry--epcr.files
-/home/timo/.cache/ess-w11-review1-tmp/ess-bidi-1147781-0/storage/permanent/chrome/idb/1451318868ntouromlalnodry--epcr.sqlite
-/home/timo/.cache/ess-w11-review1-tmp/ess-bidi-1147781-0/storage/permanent/chrome/idb/1451318868ntouromlalnodry--epcr.sqlite-wal
-/home/timo/.cache/ess-w11-review1-tmp/ess-bidi-1147781-0/storage/permanent/chrome/idb/1657114595AmcateirvtiSty.files
-/home/timo/.cache/ess-w11-review1-tmp/ess-bidi-1147781-0/storage/permanent/chrome/idb/1657114595AmcateirvtiSty.sqlite
-/home/timo/.cache/ess-w11-review1-tmp/ess-bidi-1147781-0/storage/permanent/chrome/idb/1657114595AmcateirvtiSty.sqlite-wal
-/home/timo/.cache/ess-w11-review1-tmp/ess-bidi-1147781-0/storage/permanent/chrome/idb/2918063365piupsah.files
-/home/timo/.cache/ess-w11-review1-tmp/ess-bidi-1147781-0/storage/permanent/chrome/idb/2918063365piupsah.sqlite
-/home/timo/.cache/ess-w11-review1-tmp/ess-bidi-1147781-0/storage/permanent/chrome/idb/2918063365piupsah.sqlite-wal
-/home/timo/.cache/ess-w11-review1-tmp/ess-bidi-1147781-0/storage/permanent/chrome/idb/3561288849sdhlie.files
-/home/timo/.cache/ess-w11-review1-tmp/ess-bidi-1147781-0/storage/permanent/chrome/idb/3561288849sdhlie.sqlite
-/home/timo/.cache/ess-w11-review1-tmp/ess-bidi-1147781-0/storage/permanent/chrome/idb/3561288849sdhlie.sqlite-wal
-/home/timo/.cache/ess-w11-review1-tmp/ess-bidi-1147781-0/storage/permanent/chrome/idb/3870112724rsegmnoittet-es.files
-/home/timo/.cache/ess-w11-review1-tmp/ess-bidi-1147781-0/storage/permanent/chrome/idb/3870112724rsegmnoittet-es.sqlite
-/home/timo/.cache/ess-w11-review1-tmp/ess-bidi-1147781-0/storage/permanent/chrome/idb/3870112724rsegmnoittet-es.sqlite-wal
-/home/timo/.cache/ess-w11-review1-tmp/ess-bidi-1147781-0/storage/temporary
-/home/timo/.cache/ess-w11-review1-tmp/ess-bidi-1147781-0/storage.sqlite
-/home/timo/.cache/ess-w11-review1-tmp/ess-bidi-1147781-0/thumbnails
-/home/timo/.cache/ess-w11-review1-tmp/ess-bidi-1147781-0/times.json
+~/.cache/ess-w11-review1-tmp
+~/.cache/ess-w11-review1-tmp/ess-bidi-1053388-0
+~/.cache/ess-w11-review1-tmp/ess-bidi-1053388-0/.parentlock
+~/.cache/ess-w11-review1-tmp/ess-bidi-1053388-0/.startup-incomplete
+~/.cache/ess-w11-review1-tmp/ess-bidi-1053388-0/73fdb0b3.sqlite
+~/.cache/ess-w11-review1-tmp/ess-bidi-1053388-0/73fdb0b3.sqlite-shm
+~/.cache/ess-w11-review1-tmp/ess-bidi-1053388-0/73fdb0b3.sqlite-wal
+~/.cache/ess-w11-review1-tmp/ess-bidi-1053388-0/SiteSecurityServiceState.bin
+~/.cache/ess-w11-review1-tmp/ess-bidi-1053388-0/WebDriverBiDiServer.json
+~/.cache/ess-w11-review1-tmp/ess-bidi-1053388-0/activity-stream.shortcut_cache.json
+~/.cache/ess-w11-review1-tmp/ess-bidi-1053388-0/bookmarkbackups
+~/.cache/ess-w11-review1-tmp/ess-bidi-1053388-0/bounce-tracking-protection.sqlite
+~/.cache/ess-w11-review1-tmp/ess-bidi-1053388-0/cache2
+~/.cache/ess-w11-review1-tmp/ess-bidi-1053388-0/cache2/doomed
+~/.cache/ess-w11-review1-tmp/ess-bidi-1053388-0/cache2/entries
+~/.cache/ess-w11-review1-tmp/ess-bidi-1053388-0/cache2/entries/360DE1F3E174E84794C36651DD126686164A2F9A
+~/.cache/ess-w11-review1-tmp/ess-bidi-1053388-0/cache2/entries/5E43012191E7B1F510ACD5BF039D8BF1B9A277B2
+~/.cache/ess-w11-review1-tmp/ess-bidi-1053388-0/cache2/entries/BB95D0607349D05725D5FE01D4FB300E319072AD
+~/.cache/ess-w11-review1-tmp/ess-bidi-1053388-0/cert9.db
+~/.cache/ess-w11-review1-tmp/ess-bidi-1053388-0/compatibility.ini
+~/.cache/ess-w11-review1-tmp/ess-bidi-1053388-0/content-prefs.sqlite
+~/.cache/ess-w11-review1-tmp/ess-bidi-1053388-0/cookies.sqlite
+~/.cache/ess-w11-review1-tmp/ess-bidi-1053388-0/crashes
+~/.cache/ess-w11-review1-tmp/ess-bidi-1053388-0/crashes/events
+~/.cache/ess-w11-review1-tmp/ess-bidi-1053388-0/datareporting
+~/.cache/ess-w11-review1-tmp/ess-bidi-1053388-0/datareporting/archived
+~/.cache/ess-w11-review1-tmp/ess-bidi-1053388-0/datareporting/archived/2026-09
+~/.cache/ess-w11-review1-tmp/ess-bidi-1053388-0/datareporting/archived/2026-09/1788724886510.428114db-5dd3-4509-9c7a-dfb999106a33.deletion-request.jsonlz4
+~/.cache/ess-w11-review1-tmp/ess-bidi-1053388-0/datareporting/glean
+~/.cache/ess-w11-review1-tmp/ess-bidi-1053388-0/datareporting/glean/client_id.txt
+~/.cache/ess-w11-review1-tmp/ess-bidi-1053388-0/datareporting/glean/db
+~/.cache/ess-w11-review1-tmp/ess-bidi-1053388-0/datareporting/glean/db/data.safe.bin
+~/.cache/ess-w11-review1-tmp/ess-bidi-1053388-0/datareporting/glean/events
+~/.cache/ess-w11-review1-tmp/ess-bidi-1053388-0/datareporting/glean/events/events
+~/.cache/ess-w11-review1-tmp/ess-bidi-1053388-0/datareporting/glean/pending_pings
+~/.cache/ess-w11-review1-tmp/ess-bidi-1053388-0/datareporting/glean/tmp
+~/.cache/ess-w11-review1-tmp/ess-bidi-1053388-0/datareporting/state.json
+~/.cache/ess-w11-review1-tmp/ess-bidi-1053388-0/domain_to_categories.sqlite
+~/.cache/ess-w11-review1-tmp/ess-bidi-1053388-0/domain_to_categories.sqlite-journal
+~/.cache/ess-w11-review1-tmp/ess-bidi-1053388-0/extension-store
+~/.cache/ess-w11-review1-tmp/ess-bidi-1053388-0/extension-store/data.safe.bin
+~/.cache/ess-w11-review1-tmp/ess-bidi-1053388-0/extensions.json
+~/.cache/ess-w11-review1-tmp/ess-bidi-1053388-0/favicons.sqlite
+~/.cache/ess-w11-review1-tmp/ess-bidi-1053388-0/favicons.sqlite-wal
+~/.cache/ess-w11-review1-tmp/ess-bidi-1053388-0/key4.db
+~/.cache/ess-w11-review1-tmp/ess-bidi-1053388-0/lock
+~/.cache/ess-w11-review1-tmp/ess-bidi-1053388-0/logins.db
+~/.cache/ess-w11-review1-tmp/ess-bidi-1053388-0/minidumps
+~/.cache/ess-w11-review1-tmp/ess-bidi-1053388-0/permissions.sqlite
+~/.cache/ess-w11-review1-tmp/ess-bidi-1053388-0/pkcs11.txt
+~/.cache/ess-w11-review1-tmp/ess-bidi-1053388-0/places.sqlite
+~/.cache/ess-w11-review1-tmp/ess-bidi-1053388-0/places.sqlite-wal
+~/.cache/ess-w11-review1-tmp/ess-bidi-1053388-0/prefs.js
+~/.cache/ess-w11-review1-tmp/ess-bidi-1053388-0/safebrowsing
+~/.cache/ess-w11-review1-tmp/ess-bidi-1053388-0/saved-telemetry-pings
+~/.cache/ess-w11-review1-tmp/ess-bidi-1053388-0/saved-telemetry-pings/428114db-5dd3-4509-9c7a-dfb999106a33
+~/.cache/ess-w11-review1-tmp/ess-bidi-1053388-0/security_state
+~/.cache/ess-w11-review1-tmp/ess-bidi-1053388-0/sessionCheckpoints.json
+~/.cache/ess-w11-review1-tmp/ess-bidi-1053388-0/startupCache
+~/.cache/ess-w11-review1-tmp/ess-bidi-1053388-0/startupCache/startupCache.8.little
+~/.cache/ess-w11-review1-tmp/ess-bidi-1053388-0/storage
+~/.cache/ess-w11-review1-tmp/ess-bidi-1053388-0/storage/default
+~/.cache/ess-w11-review1-tmp/ess-bidi-1053388-0/storage/ls-archive.sqlite
+~/.cache/ess-w11-review1-tmp/ess-bidi-1053388-0/storage/permanent
+~/.cache/ess-w11-review1-tmp/ess-bidi-1053388-0/storage/permanent/chrome
+~/.cache/ess-w11-review1-tmp/ess-bidi-1053388-0/storage/permanent/chrome/.metadata-v2
+~/.cache/ess-w11-review1-tmp/ess-bidi-1053388-0/storage/permanent/chrome/idb
+~/.cache/ess-w11-review1-tmp/ess-bidi-1053388-0/storage/permanent/chrome/idb/1451318868ntouromlalnodry--epcr.files
+~/.cache/ess-w11-review1-tmp/ess-bidi-1053388-0/storage/permanent/chrome/idb/1451318868ntouromlalnodry--epcr.sqlite
+~/.cache/ess-w11-review1-tmp/ess-bidi-1053388-0/storage/permanent/chrome/idb/1451318868ntouromlalnodry--epcr.sqlite-wal
+~/.cache/ess-w11-review1-tmp/ess-bidi-1053388-0/storage/permanent/chrome/idb/1657114595AmcateirvtiSty.files
+~/.cache/ess-w11-review1-tmp/ess-bidi-1053388-0/storage/permanent/chrome/idb/1657114595AmcateirvtiSty.sqlite
+~/.cache/ess-w11-review1-tmp/ess-bidi-1053388-0/storage/permanent/chrome/idb/1657114595AmcateirvtiSty.sqlite-wal
+~/.cache/ess-w11-review1-tmp/ess-bidi-1053388-0/storage/permanent/chrome/idb/2918063365piupsah.files
+~/.cache/ess-w11-review1-tmp/ess-bidi-1053388-0/storage/permanent/chrome/idb/2918063365piupsah.sqlite
+~/.cache/ess-w11-review1-tmp/ess-bidi-1053388-0/storage/permanent/chrome/idb/2918063365piupsah.sqlite-wal
+~/.cache/ess-w11-review1-tmp/ess-bidi-1053388-0/storage/permanent/chrome/idb/3561288849sdhlie.files
+~/.cache/ess-w11-review1-tmp/ess-bidi-1053388-0/storage/permanent/chrome/idb/3561288849sdhlie.sqlite
+~/.cache/ess-w11-review1-tmp/ess-bidi-1053388-0/storage/permanent/chrome/idb/3561288849sdhlie.sqlite-wal
+~/.cache/ess-w11-review1-tmp/ess-bidi-1053388-0/storage/permanent/chrome/idb/3870112724rsegmnoittet-es.files
+~/.cache/ess-w11-review1-tmp/ess-bidi-1053388-0/storage/permanent/chrome/idb/3870112724rsegmnoittet-es.sqlite
+~/.cache/ess-w11-review1-tmp/ess-bidi-1053388-0/storage/permanent/chrome/idb/3870112724rsegmnoittet-es.sqlite-wal
+~/.cache/ess-w11-review1-tmp/ess-bidi-1053388-0/storage/temporary
+~/.cache/ess-w11-review1-tmp/ess-bidi-1053388-0/storage.sqlite
+~/.cache/ess-w11-review1-tmp/ess-bidi-1053388-0/thumbnails
+~/.cache/ess-w11-review1-tmp/ess-bidi-1053388-0/times.json
+~/.cache/ess-w11-review1-tmp/ess-bidi-1138007-0
+~/.cache/ess-w11-review1-tmp/ess-bidi-1138007-0/.parentlock
+~/.cache/ess-w11-review1-tmp/ess-bidi-1138007-0/.startup-incomplete
+~/.cache/ess-w11-review1-tmp/ess-bidi-1138007-0/SiteSecurityServiceState.bin
+~/.cache/ess-w11-review1-tmp/ess-bidi-1138007-0/WebDriverBiDiServer.json
+~/.cache/ess-w11-review1-tmp/ess-bidi-1138007-0/activity-stream.shortcut_cache.json
+~/.cache/ess-w11-review1-tmp/ess-bidi-1138007-0/bookmarkbackups
+~/.cache/ess-w11-review1-tmp/ess-bidi-1138007-0/bounce-tracking-protection.sqlite
+~/.cache/ess-w11-review1-tmp/ess-bidi-1138007-0/ca7f7af5.sqlite
+~/.cache/ess-w11-review1-tmp/ess-bidi-1138007-0/ca7f7af5.sqlite-shm
+~/.cache/ess-w11-review1-tmp/ess-bidi-1138007-0/ca7f7af5.sqlite-wal
+~/.cache/ess-w11-review1-tmp/ess-bidi-1138007-0/cache2
+~/.cache/ess-w11-review1-tmp/ess-bidi-1138007-0/cache2/doomed
+~/.cache/ess-w11-review1-tmp/ess-bidi-1138007-0/cache2/entries
+~/.cache/ess-w11-review1-tmp/ess-bidi-1138007-0/cache2/entries/360DE1F3E174E84794C36651DD126686164A2F9A
+~/.cache/ess-w11-review1-tmp/ess-bidi-1138007-0/cache2/entries/5E43012191E7B1F510ACD5BF039D8BF1B9A277B2
+~/.cache/ess-w11-review1-tmp/ess-bidi-1138007-0/cache2/entries/BB95D0607349D05725D5FE01D4FB300E319072AD
+~/.cache/ess-w11-review1-tmp/ess-bidi-1138007-0/cert9.db
+~/.cache/ess-w11-review1-tmp/ess-bidi-1138007-0/compatibility.ini
+~/.cache/ess-w11-review1-tmp/ess-bidi-1138007-0/content-prefs.sqlite
+~/.cache/ess-w11-review1-tmp/ess-bidi-1138007-0/cookies.sqlite
+~/.cache/ess-w11-review1-tmp/ess-bidi-1138007-0/crashes
+~/.cache/ess-w11-review1-tmp/ess-bidi-1138007-0/crashes/events
+~/.cache/ess-w11-review1-tmp/ess-bidi-1138007-0/datareporting
+~/.cache/ess-w11-review1-tmp/ess-bidi-1138007-0/datareporting/archived
+~/.cache/ess-w11-review1-tmp/ess-bidi-1138007-0/datareporting/archived/2026-09
+~/.cache/ess-w11-review1-tmp/ess-bidi-1138007-0/datareporting/archived/2026-09/1788725412887.7d6d6474-df9c-4ee2-8639-a8f166bca399.deletion-request.jsonlz4
+~/.cache/ess-w11-review1-tmp/ess-bidi-1138007-0/datareporting/glean
+~/.cache/ess-w11-review1-tmp/ess-bidi-1138007-0/datareporting/glean/client_id.txt
+~/.cache/ess-w11-review1-tmp/ess-bidi-1138007-0/datareporting/glean/db
+~/.cache/ess-w11-review1-tmp/ess-bidi-1138007-0/datareporting/glean/db/data.safe.bin
+~/.cache/ess-w11-review1-tmp/ess-bidi-1138007-0/datareporting/glean/events
+~/.cache/ess-w11-review1-tmp/ess-bidi-1138007-0/datareporting/glean/events/events
+~/.cache/ess-w11-review1-tmp/ess-bidi-1138007-0/datareporting/glean/pending_pings
+~/.cache/ess-w11-review1-tmp/ess-bidi-1138007-0/datareporting/glean/tmp
+~/.cache/ess-w11-review1-tmp/ess-bidi-1138007-0/datareporting/state.json
+~/.cache/ess-w11-review1-tmp/ess-bidi-1138007-0/domain_to_categories.sqlite
+~/.cache/ess-w11-review1-tmp/ess-bidi-1138007-0/domain_to_categories.sqlite-journal
+~/.cache/ess-w11-review1-tmp/ess-bidi-1138007-0/extension-store
+~/.cache/ess-w11-review1-tmp/ess-bidi-1138007-0/extension-store/data.safe.bin
+~/.cache/ess-w11-review1-tmp/ess-bidi-1138007-0/extensions.json
+~/.cache/ess-w11-review1-tmp/ess-bidi-1138007-0/favicons.sqlite
+~/.cache/ess-w11-review1-tmp/ess-bidi-1138007-0/favicons.sqlite-wal
+~/.cache/ess-w11-review1-tmp/ess-bidi-1138007-0/key4.db
+~/.cache/ess-w11-review1-tmp/ess-bidi-1138007-0/lock
+~/.cache/ess-w11-review1-tmp/ess-bidi-1138007-0/logins.db
+~/.cache/ess-w11-review1-tmp/ess-bidi-1138007-0/minidumps
+~/.cache/ess-w11-review1-tmp/ess-bidi-1138007-0/permissions.sqlite
+~/.cache/ess-w11-review1-tmp/ess-bidi-1138007-0/pkcs11.txt
+~/.cache/ess-w11-review1-tmp/ess-bidi-1138007-0/places.sqlite
+~/.cache/ess-w11-review1-tmp/ess-bidi-1138007-0/places.sqlite-wal
+~/.cache/ess-w11-review1-tmp/ess-bidi-1138007-0/prefs.js
+~/.cache/ess-w11-review1-tmp/ess-bidi-1138007-0/safebrowsing
+~/.cache/ess-w11-review1-tmp/ess-bidi-1138007-0/saved-telemetry-pings
+~/.cache/ess-w11-review1-tmp/ess-bidi-1138007-0/saved-telemetry-pings/7d6d6474-df9c-4ee2-8639-a8f166bca399
+~/.cache/ess-w11-review1-tmp/ess-bidi-1138007-0/security_state
+~/.cache/ess-w11-review1-tmp/ess-bidi-1138007-0/sessionCheckpoints.json
+~/.cache/ess-w11-review1-tmp/ess-bidi-1138007-0/startupCache
+~/.cache/ess-w11-review1-tmp/ess-bidi-1138007-0/startupCache/startupCache.8.little
+~/.cache/ess-w11-review1-tmp/ess-bidi-1138007-0/storage
+~/.cache/ess-w11-review1-tmp/ess-bidi-1138007-0/storage/default
+~/.cache/ess-w11-review1-tmp/ess-bidi-1138007-0/storage/ls-archive.sqlite
+~/.cache/ess-w11-review1-tmp/ess-bidi-1138007-0/storage/permanent
+~/.cache/ess-w11-review1-tmp/ess-bidi-1138007-0/storage/permanent/chrome
+~/.cache/ess-w11-review1-tmp/ess-bidi-1138007-0/storage/permanent/chrome/.metadata-v2
+~/.cache/ess-w11-review1-tmp/ess-bidi-1138007-0/storage/permanent/chrome/idb
+~/.cache/ess-w11-review1-tmp/ess-bidi-1138007-0/storage/permanent/chrome/idb/1451318868ntouromlalnodry--epcr.files
+~/.cache/ess-w11-review1-tmp/ess-bidi-1138007-0/storage/permanent/chrome/idb/1451318868ntouromlalnodry--epcr.sqlite
+~/.cache/ess-w11-review1-tmp/ess-bidi-1138007-0/storage/permanent/chrome/idb/1451318868ntouromlalnodry--epcr.sqlite-wal
+~/.cache/ess-w11-review1-tmp/ess-bidi-1138007-0/storage/permanent/chrome/idb/1657114595AmcateirvtiSty.files
+~/.cache/ess-w11-review1-tmp/ess-bidi-1138007-0/storage/permanent/chrome/idb/1657114595AmcateirvtiSty.sqlite
+~/.cache/ess-w11-review1-tmp/ess-bidi-1138007-0/storage/permanent/chrome/idb/1657114595AmcateirvtiSty.sqlite-wal
+~/.cache/ess-w11-review1-tmp/ess-bidi-1138007-0/storage/permanent/chrome/idb/2918063365piupsah.files
+~/.cache/ess-w11-review1-tmp/ess-bidi-1138007-0/storage/permanent/chrome/idb/2918063365piupsah.sqlite
+~/.cache/ess-w11-review1-tmp/ess-bidi-1138007-0/storage/permanent/chrome/idb/2918063365piupsah.sqlite-wal
+~/.cache/ess-w11-review1-tmp/ess-bidi-1138007-0/storage/permanent/chrome/idb/3561288849sdhlie.files
+~/.cache/ess-w11-review1-tmp/ess-bidi-1138007-0/storage/permanent/chrome/idb/3561288849sdhlie.sqlite
+~/.cache/ess-w11-review1-tmp/ess-bidi-1138007-0/storage/permanent/chrome/idb/3561288849sdhlie.sqlite-wal
+~/.cache/ess-w11-review1-tmp/ess-bidi-1138007-0/storage/permanent/chrome/idb/3870112724rsegmnoittet-es.files
+~/.cache/ess-w11-review1-tmp/ess-bidi-1138007-0/storage/permanent/chrome/idb/3870112724rsegmnoittet-es.sqlite
+~/.cache/ess-w11-review1-tmp/ess-bidi-1138007-0/storage/permanent/chrome/idb/3870112724rsegmnoittet-es.sqlite-wal
+~/.cache/ess-w11-review1-tmp/ess-bidi-1138007-0/storage/temporary
+~/.cache/ess-w11-review1-tmp/ess-bidi-1138007-0/storage.sqlite
+~/.cache/ess-w11-review1-tmp/ess-bidi-1138007-0/thumbnails
+~/.cache/ess-w11-review1-tmp/ess-bidi-1138007-0/times.json
+~/.cache/ess-w11-review1-tmp/ess-bidi-1138007-1
+~/.cache/ess-w11-review1-tmp/ess-bidi-1138007-1/.parentlock
+~/.cache/ess-w11-review1-tmp/ess-bidi-1138007-1/.startup-incomplete
+~/.cache/ess-w11-review1-tmp/ess-bidi-1138007-1/4bcdcee8.sqlite
+~/.cache/ess-w11-review1-tmp/ess-bidi-1138007-1/4bcdcee8.sqlite-shm
+~/.cache/ess-w11-review1-tmp/ess-bidi-1138007-1/4bcdcee8.sqlite-wal
+~/.cache/ess-w11-review1-tmp/ess-bidi-1138007-1/SiteSecurityServiceState.bin
+~/.cache/ess-w11-review1-tmp/ess-bidi-1138007-1/WebDriverBiDiServer.json
+~/.cache/ess-w11-review1-tmp/ess-bidi-1138007-1/activity-stream.shortcut_cache.json
+~/.cache/ess-w11-review1-tmp/ess-bidi-1138007-1/addonStartup.json.lz4
+~/.cache/ess-w11-review1-tmp/ess-bidi-1138007-1/bookmarkbackups
+~/.cache/ess-w11-review1-tmp/ess-bidi-1138007-1/bounce-tracking-protection.sqlite
+~/.cache/ess-w11-review1-tmp/ess-bidi-1138007-1/cache2
+~/.cache/ess-w11-review1-tmp/ess-bidi-1138007-1/cache2/doomed
+~/.cache/ess-w11-review1-tmp/ess-bidi-1138007-1/cache2/entries
+~/.cache/ess-w11-review1-tmp/ess-bidi-1138007-1/cache2/entries/360DE1F3E174E84794C36651DD126686164A2F9A
+~/.cache/ess-w11-review1-tmp/ess-bidi-1138007-1/cache2/entries/5E43012191E7B1F510ACD5BF039D8BF1B9A277B2
+~/.cache/ess-w11-review1-tmp/ess-bidi-1138007-1/cache2/entries/BB95D0607349D05725D5FE01D4FB300E319072AD
+~/.cache/ess-w11-review1-tmp/ess-bidi-1138007-1/cert9.db
+~/.cache/ess-w11-review1-tmp/ess-bidi-1138007-1/compatibility.ini
+~/.cache/ess-w11-review1-tmp/ess-bidi-1138007-1/content-prefs.sqlite
+~/.cache/ess-w11-review1-tmp/ess-bidi-1138007-1/cookies.sqlite
+~/.cache/ess-w11-review1-tmp/ess-bidi-1138007-1/crashes
+~/.cache/ess-w11-review1-tmp/ess-bidi-1138007-1/crashes/events
+~/.cache/ess-w11-review1-tmp/ess-bidi-1138007-1/datareporting
+~/.cache/ess-w11-review1-tmp/ess-bidi-1138007-1/datareporting/archived
+~/.cache/ess-w11-review1-tmp/ess-bidi-1138007-1/datareporting/archived/2026-09
+~/.cache/ess-w11-review1-tmp/ess-bidi-1138007-1/datareporting/archived/2026-09/1788725413191.d4b76b97-220b-45d7-a66f-0fa394e1cfa8.deletion-request.jsonlz4
+~/.cache/ess-w11-review1-tmp/ess-bidi-1138007-1/datareporting/glean
+~/.cache/ess-w11-review1-tmp/ess-bidi-1138007-1/datareporting/glean/client_id.txt
+~/.cache/ess-w11-review1-tmp/ess-bidi-1138007-1/datareporting/glean/db
+~/.cache/ess-w11-review1-tmp/ess-bidi-1138007-1/datareporting/glean/db/data.safe.bin
+~/.cache/ess-w11-review1-tmp/ess-bidi-1138007-1/datareporting/glean/events
+~/.cache/ess-w11-review1-tmp/ess-bidi-1138007-1/datareporting/glean/events/events
+~/.cache/ess-w11-review1-tmp/ess-bidi-1138007-1/datareporting/glean/pending_pings
+~/.cache/ess-w11-review1-tmp/ess-bidi-1138007-1/datareporting/glean/tmp
+~/.cache/ess-w11-review1-tmp/ess-bidi-1138007-1/datareporting/state.json
+~/.cache/ess-w11-review1-tmp/ess-bidi-1138007-1/domain_to_categories.sqlite
+~/.cache/ess-w11-review1-tmp/ess-bidi-1138007-1/domain_to_categories.sqlite-journal
+~/.cache/ess-w11-review1-tmp/ess-bidi-1138007-1/extension-preferences.json
+~/.cache/ess-w11-review1-tmp/ess-bidi-1138007-1/extension-store
+~/.cache/ess-w11-review1-tmp/ess-bidi-1138007-1/extension-store/data.safe.bin
+~/.cache/ess-w11-review1-tmp/ess-bidi-1138007-1/extensions.json
+~/.cache/ess-w11-review1-tmp/ess-bidi-1138007-1/favicons.sqlite
+~/.cache/ess-w11-review1-tmp/ess-bidi-1138007-1/favicons.sqlite-wal
+~/.cache/ess-w11-review1-tmp/ess-bidi-1138007-1/key4.db
+~/.cache/ess-w11-review1-tmp/ess-bidi-1138007-1/lock
+~/.cache/ess-w11-review1-tmp/ess-bidi-1138007-1/logins.db
+~/.cache/ess-w11-review1-tmp/ess-bidi-1138007-1/minidumps
+~/.cache/ess-w11-review1-tmp/ess-bidi-1138007-1/permissions.sqlite
+~/.cache/ess-w11-review1-tmp/ess-bidi-1138007-1/pkcs11.txt
+~/.cache/ess-w11-review1-tmp/ess-bidi-1138007-1/places.sqlite
+~/.cache/ess-w11-review1-tmp/ess-bidi-1138007-1/places.sqlite-wal
+~/.cache/ess-w11-review1-tmp/ess-bidi-1138007-1/prefs.js
+~/.cache/ess-w11-review1-tmp/ess-bidi-1138007-1/safebrowsing
+~/.cache/ess-w11-review1-tmp/ess-bidi-1138007-1/saved-telemetry-pings
+~/.cache/ess-w11-review1-tmp/ess-bidi-1138007-1/saved-telemetry-pings/d4b76b97-220b-45d7-a66f-0fa394e1cfa8
+~/.cache/ess-w11-review1-tmp/ess-bidi-1138007-1/security_state
+~/.cache/ess-w11-review1-tmp/ess-bidi-1138007-1/sessionCheckpoints.json
+~/.cache/ess-w11-review1-tmp/ess-bidi-1138007-1/startupCache
+~/.cache/ess-w11-review1-tmp/ess-bidi-1138007-1/startupCache/startupCache.8.little
+~/.cache/ess-w11-review1-tmp/ess-bidi-1138007-1/storage
+~/.cache/ess-w11-review1-tmp/ess-bidi-1138007-1/storage/default
+~/.cache/ess-w11-review1-tmp/ess-bidi-1138007-1/storage/ls-archive.sqlite
+~/.cache/ess-w11-review1-tmp/ess-bidi-1138007-1/storage/permanent
+~/.cache/ess-w11-review1-tmp/ess-bidi-1138007-1/storage/permanent/chrome
+~/.cache/ess-w11-review1-tmp/ess-bidi-1138007-1/storage/permanent/chrome/.metadata-v2
+~/.cache/ess-w11-review1-tmp/ess-bidi-1138007-1/storage/permanent/chrome/idb
+~/.cache/ess-w11-review1-tmp/ess-bidi-1138007-1/storage/permanent/chrome/idb/1451318868ntouromlalnodry--epcr.files
+~/.cache/ess-w11-review1-tmp/ess-bidi-1138007-1/storage/permanent/chrome/idb/1451318868ntouromlalnodry--epcr.sqlite
+~/.cache/ess-w11-review1-tmp/ess-bidi-1138007-1/storage/permanent/chrome/idb/1451318868ntouromlalnodry--epcr.sqlite-wal
+~/.cache/ess-w11-review1-tmp/ess-bidi-1138007-1/storage/permanent/chrome/idb/1657114595AmcateirvtiSty.files
+~/.cache/ess-w11-review1-tmp/ess-bidi-1138007-1/storage/permanent/chrome/idb/1657114595AmcateirvtiSty.sqlite
+~/.cache/ess-w11-review1-tmp/ess-bidi-1138007-1/storage/permanent/chrome/idb/1657114595AmcateirvtiSty.sqlite-wal
+~/.cache/ess-w11-review1-tmp/ess-bidi-1138007-1/storage/permanent/chrome/idb/2918063365piupsah.files
+~/.cache/ess-w11-review1-tmp/ess-bidi-1138007-1/storage/permanent/chrome/idb/2918063365piupsah.sqlite
+~/.cache/ess-w11-review1-tmp/ess-bidi-1138007-1/storage/permanent/chrome/idb/2918063365piupsah.sqlite-wal
+~/.cache/ess-w11-review1-tmp/ess-bidi-1138007-1/storage/permanent/chrome/idb/3561288849sdhlie.files
+~/.cache/ess-w11-review1-tmp/ess-bidi-1138007-1/storage/permanent/chrome/idb/3561288849sdhlie.sqlite
+~/.cache/ess-w11-review1-tmp/ess-bidi-1138007-1/storage/permanent/chrome/idb/3561288849sdhlie.sqlite-wal
+~/.cache/ess-w11-review1-tmp/ess-bidi-1138007-1/storage/permanent/chrome/idb/3870112724rsegmnoittet-es.files
+~/.cache/ess-w11-review1-tmp/ess-bidi-1138007-1/storage/permanent/chrome/idb/3870112724rsegmnoittet-es.sqlite
+~/.cache/ess-w11-review1-tmp/ess-bidi-1138007-1/storage/permanent/chrome/idb/3870112724rsegmnoittet-es.sqlite-wal
+~/.cache/ess-w11-review1-tmp/ess-bidi-1138007-1/storage/temporary
+~/.cache/ess-w11-review1-tmp/ess-bidi-1138007-1/storage.sqlite
+~/.cache/ess-w11-review1-tmp/ess-bidi-1138007-1/thumbnails
+~/.cache/ess-w11-review1-tmp/ess-bidi-1138007-1/times.json
+~/.cache/ess-w11-review1-tmp/ess-bidi-1138007-2
+~/.cache/ess-w11-review1-tmp/ess-bidi-1138007-2/.parentlock
+~/.cache/ess-w11-review1-tmp/ess-bidi-1138007-2/.startup-incomplete
+~/.cache/ess-w11-review1-tmp/ess-bidi-1138007-2/SiteSecurityServiceState.bin
+~/.cache/ess-w11-review1-tmp/ess-bidi-1138007-2/WebDriverBiDiServer.json
+~/.cache/ess-w11-review1-tmp/ess-bidi-1138007-2/activity-stream.shortcut_cache.json
+~/.cache/ess-w11-review1-tmp/ess-bidi-1138007-2/addonStartup.json.lz4
+~/.cache/ess-w11-review1-tmp/ess-bidi-1138007-2/b3ee102a.sqlite
+~/.cache/ess-w11-review1-tmp/ess-bidi-1138007-2/b3ee102a.sqlite-shm
+~/.cache/ess-w11-review1-tmp/ess-bidi-1138007-2/b3ee102a.sqlite-wal
+~/.cache/ess-w11-review1-tmp/ess-bidi-1138007-2/bookmarkbackups
+~/.cache/ess-w11-review1-tmp/ess-bidi-1138007-2/bounce-tracking-protection.sqlite
+~/.cache/ess-w11-review1-tmp/ess-bidi-1138007-2/cache2
+~/.cache/ess-w11-review1-tmp/ess-bidi-1138007-2/cache2/doomed
+~/.cache/ess-w11-review1-tmp/ess-bidi-1138007-2/cache2/entries
+~/.cache/ess-w11-review1-tmp/ess-bidi-1138007-2/cache2/entries/360DE1F3E174E84794C36651DD126686164A2F9A
+~/.cache/ess-w11-review1-tmp/ess-bidi-1138007-2/cache2/entries/BB95D0607349D05725D5FE01D4FB300E319072AD
+~/.cache/ess-w11-review1-tmp/ess-bidi-1138007-2/cert9.db
+~/.cache/ess-w11-review1-tmp/ess-bidi-1138007-2/compatibility.ini
+~/.cache/ess-w11-review1-tmp/ess-bidi-1138007-2/content-prefs.sqlite
+~/.cache/ess-w11-review1-tmp/ess-bidi-1138007-2/cookies.sqlite
+~/.cache/ess-w11-review1-tmp/ess-bidi-1138007-2/crashes
+~/.cache/ess-w11-review1-tmp/ess-bidi-1138007-2/crashes/events
+~/.cache/ess-w11-review1-tmp/ess-bidi-1138007-2/datareporting
+~/.cache/ess-w11-review1-tmp/ess-bidi-1138007-2/datareporting/archived
+~/.cache/ess-w11-review1-tmp/ess-bidi-1138007-2/datareporting/archived/2026-09
+~/.cache/ess-w11-review1-tmp/ess-bidi-1138007-2/datareporting/archived/2026-09/1788725413981.80719d95-6321-43dd-9aab-edb9ed0ef34e.deletion-request.jsonlz4
+~/.cache/ess-w11-review1-tmp/ess-bidi-1138007-2/datareporting/glean
+~/.cache/ess-w11-review1-tmp/ess-bidi-1138007-2/datareporting/glean/client_id.txt
+~/.cache/ess-w11-review1-tmp/ess-bidi-1138007-2/datareporting/glean/db
+~/.cache/ess-w11-review1-tmp/ess-bidi-1138007-2/datareporting/glean/db/data.safe.bin
+~/.cache/ess-w11-review1-tmp/ess-bidi-1138007-2/datareporting/glean/events
+~/.cache/ess-w11-review1-tmp/ess-bidi-1138007-2/datareporting/glean/events/events
+~/.cache/ess-w11-review1-tmp/ess-bidi-1138007-2/datareporting/glean/pending_pings
+~/.cache/ess-w11-review1-tmp/ess-bidi-1138007-2/datareporting/glean/tmp
+~/.cache/ess-w11-review1-tmp/ess-bidi-1138007-2/datareporting/state.json
+~/.cache/ess-w11-review1-tmp/ess-bidi-1138007-2/domain_to_categories.sqlite
+~/.cache/ess-w11-review1-tmp/ess-bidi-1138007-2/domain_to_categories.sqlite-journal
+~/.cache/ess-w11-review1-tmp/ess-bidi-1138007-2/extension-store
+~/.cache/ess-w11-review1-tmp/ess-bidi-1138007-2/extension-store/data.safe.bin
+~/.cache/ess-w11-review1-tmp/ess-bidi-1138007-2/extensions.json
+~/.cache/ess-w11-review1-tmp/ess-bidi-1138007-2/favicons.sqlite
+~/.cache/ess-w11-review1-tmp/ess-bidi-1138007-2/favicons.sqlite-wal
+~/.cache/ess-w11-review1-tmp/ess-bidi-1138007-2/key4.db
+~/.cache/ess-w11-review1-tmp/ess-bidi-1138007-2/lock
+~/.cache/ess-w11-review1-tmp/ess-bidi-1138007-2/logins.db
+~/.cache/ess-w11-review1-tmp/ess-bidi-1138007-2/minidumps
+~/.cache/ess-w11-review1-tmp/ess-bidi-1138007-2/permissions.sqlite
+~/.cache/ess-w11-review1-tmp/ess-bidi-1138007-2/pkcs11.txt
+~/.cache/ess-w11-review1-tmp/ess-bidi-1138007-2/places.sqlite
+~/.cache/ess-w11-review1-tmp/ess-bidi-1138007-2/places.sqlite-wal
+~/.cache/ess-w11-review1-tmp/ess-bidi-1138007-2/prefs.js
+~/.cache/ess-w11-review1-tmp/ess-bidi-1138007-2/safebrowsing
+~/.cache/ess-w11-review1-tmp/ess-bidi-1138007-2/saved-telemetry-pings
+~/.cache/ess-w11-review1-tmp/ess-bidi-1138007-2/saved-telemetry-pings/80719d95-6321-43dd-9aab-edb9ed0ef34e
+~/.cache/ess-w11-review1-tmp/ess-bidi-1138007-2/security_state
+~/.cache/ess-w11-review1-tmp/ess-bidi-1138007-2/sessionCheckpoints.json
+~/.cache/ess-w11-review1-tmp/ess-bidi-1138007-2/startupCache
+~/.cache/ess-w11-review1-tmp/ess-bidi-1138007-2/startupCache/startupCache.8.little
+~/.cache/ess-w11-review1-tmp/ess-bidi-1138007-2/storage
+~/.cache/ess-w11-review1-tmp/ess-bidi-1138007-2/storage/default
+~/.cache/ess-w11-review1-tmp/ess-bidi-1138007-2/storage/ls-archive.sqlite
+~/.cache/ess-w11-review1-tmp/ess-bidi-1138007-2/storage/permanent
+~/.cache/ess-w11-review1-tmp/ess-bidi-1138007-2/storage/permanent/chrome
+~/.cache/ess-w11-review1-tmp/ess-bidi-1138007-2/storage/permanent/chrome/.metadata-v2
+~/.cache/ess-w11-review1-tmp/ess-bidi-1138007-2/storage/permanent/chrome/idb
+~/.cache/ess-w11-review1-tmp/ess-bidi-1138007-2/storage/permanent/chrome/idb/1451318868ntouromlalnodry--epcr.files
+~/.cache/ess-w11-review1-tmp/ess-bidi-1138007-2/storage/permanent/chrome/idb/1451318868ntouromlalnodry--epcr.sqlite
+~/.cache/ess-w11-review1-tmp/ess-bidi-1138007-2/storage/permanent/chrome/idb/1451318868ntouromlalnodry--epcr.sqlite-wal
+~/.cache/ess-w11-review1-tmp/ess-bidi-1138007-2/storage/permanent/chrome/idb/1657114595AmcateirvtiSty.files
+~/.cache/ess-w11-review1-tmp/ess-bidi-1138007-2/storage/permanent/chrome/idb/1657114595AmcateirvtiSty.sqlite
+~/.cache/ess-w11-review1-tmp/ess-bidi-1138007-2/storage/permanent/chrome/idb/1657114595AmcateirvtiSty.sqlite-wal
+~/.cache/ess-w11-review1-tmp/ess-bidi-1138007-2/storage/permanent/chrome/idb/2918063365piupsah.files
+~/.cache/ess-w11-review1-tmp/ess-bidi-1138007-2/storage/permanent/chrome/idb/2918063365piupsah.sqlite
+~/.cache/ess-w11-review1-tmp/ess-bidi-1138007-2/storage/permanent/chrome/idb/2918063365piupsah.sqlite-wal
+~/.cache/ess-w11-review1-tmp/ess-bidi-1138007-2/storage/permanent/chrome/idb/3561288849sdhlie.files
+~/.cache/ess-w11-review1-tmp/ess-bidi-1138007-2/storage/permanent/chrome/idb/3561288849sdhlie.sqlite
+~/.cache/ess-w11-review1-tmp/ess-bidi-1138007-2/storage/permanent/chrome/idb/3561288849sdhlie.sqlite-wal
+~/.cache/ess-w11-review1-tmp/ess-bidi-1138007-2/storage/permanent/chrome/idb/3870112724rsegmnoittet-es.files
+~/.cache/ess-w11-review1-tmp/ess-bidi-1138007-2/storage/permanent/chrome/idb/3870112724rsegmnoittet-es.sqlite
+~/.cache/ess-w11-review1-tmp/ess-bidi-1138007-2/storage/permanent/chrome/idb/3870112724rsegmnoittet-es.sqlite-wal
+~/.cache/ess-w11-review1-tmp/ess-bidi-1138007-2/storage/temporary
+~/.cache/ess-w11-review1-tmp/ess-bidi-1138007-2/storage.sqlite
+~/.cache/ess-w11-review1-tmp/ess-bidi-1138007-2/thumbnails
+~/.cache/ess-w11-review1-tmp/ess-bidi-1138007-2/times.json
+~/.cache/ess-w11-review1-tmp/ess-bidi-1138007-3
+~/.cache/ess-w11-review1-tmp/ess-bidi-1138007-3/.parentlock
+~/.cache/ess-w11-review1-tmp/ess-bidi-1138007-3/.startup-incomplete
+~/.cache/ess-w11-review1-tmp/ess-bidi-1138007-3/612a1ed7.sqlite
+~/.cache/ess-w11-review1-tmp/ess-bidi-1138007-3/612a1ed7.sqlite-shm
+~/.cache/ess-w11-review1-tmp/ess-bidi-1138007-3/612a1ed7.sqlite-wal
+~/.cache/ess-w11-review1-tmp/ess-bidi-1138007-3/SiteSecurityServiceState.bin
+~/.cache/ess-w11-review1-tmp/ess-bidi-1138007-3/WebDriverBiDiServer.json
+~/.cache/ess-w11-review1-tmp/ess-bidi-1138007-3/activity-stream.shortcut_cache.json
+~/.cache/ess-w11-review1-tmp/ess-bidi-1138007-3/bookmarkbackups
+~/.cache/ess-w11-review1-tmp/ess-bidi-1138007-3/bounce-tracking-protection.sqlite
+~/.cache/ess-w11-review1-tmp/ess-bidi-1138007-3/cache2
+~/.cache/ess-w11-review1-tmp/ess-bidi-1138007-3/cache2/doomed
+~/.cache/ess-w11-review1-tmp/ess-bidi-1138007-3/cache2/entries
+~/.cache/ess-w11-review1-tmp/ess-bidi-1138007-3/cache2/entries/360DE1F3E174E84794C36651DD126686164A2F9A
+~/.cache/ess-w11-review1-tmp/ess-bidi-1138007-3/cache2/entries/5E43012191E7B1F510ACD5BF039D8BF1B9A277B2
+~/.cache/ess-w11-review1-tmp/ess-bidi-1138007-3/cache2/entries/BB95D0607349D05725D5FE01D4FB300E319072AD
+~/.cache/ess-w11-review1-tmp/ess-bidi-1138007-3/cert9.db
+~/.cache/ess-w11-review1-tmp/ess-bidi-1138007-3/compatibility.ini
+~/.cache/ess-w11-review1-tmp/ess-bidi-1138007-3/content-prefs.sqlite
+~/.cache/ess-w11-review1-tmp/ess-bidi-1138007-3/cookies.sqlite
+~/.cache/ess-w11-review1-tmp/ess-bidi-1138007-3/crashes
+~/.cache/ess-w11-review1-tmp/ess-bidi-1138007-3/crashes/events
+~/.cache/ess-w11-review1-tmp/ess-bidi-1138007-3/datareporting
+~/.cache/ess-w11-review1-tmp/ess-bidi-1138007-3/datareporting/archived
+~/.cache/ess-w11-review1-tmp/ess-bidi-1138007-3/datareporting/archived/2026-09
+~/.cache/ess-w11-review1-tmp/ess-bidi-1138007-3/datareporting/archived/2026-09/1788725414904.4f34c269-16c0-4970-9108-ea534609d77e.deletion-request.jsonlz4
+~/.cache/ess-w11-review1-tmp/ess-bidi-1138007-3/datareporting/glean
+~/.cache/ess-w11-review1-tmp/ess-bidi-1138007-3/datareporting/glean/client_id.txt
+~/.cache/ess-w11-review1-tmp/ess-bidi-1138007-3/datareporting/glean/db
+~/.cache/ess-w11-review1-tmp/ess-bidi-1138007-3/datareporting/glean/db/data.safe.bin
+~/.cache/ess-w11-review1-tmp/ess-bidi-1138007-3/datareporting/glean/events
+~/.cache/ess-w11-review1-tmp/ess-bidi-1138007-3/datareporting/glean/events/events
+~/.cache/ess-w11-review1-tmp/ess-bidi-1138007-3/datareporting/glean/pending_pings
+~/.cache/ess-w11-review1-tmp/ess-bidi-1138007-3/datareporting/glean/tmp
+~/.cache/ess-w11-review1-tmp/ess-bidi-1138007-3/datareporting/state.json
+~/.cache/ess-w11-review1-tmp/ess-bidi-1138007-3/domain_to_categories.sqlite
+~/.cache/ess-w11-review1-tmp/ess-bidi-1138007-3/domain_to_categories.sqlite-journal
+~/.cache/ess-w11-review1-tmp/ess-bidi-1138007-3/extension-store
+~/.cache/ess-w11-review1-tmp/ess-bidi-1138007-3/extension-store/data.safe.bin
+~/.cache/ess-w11-review1-tmp/ess-bidi-1138007-3/extensions.json
+~/.cache/ess-w11-review1-tmp/ess-bidi-1138007-3/favicons.sqlite
+~/.cache/ess-w11-review1-tmp/ess-bidi-1138007-3/favicons.sqlite-wal
+~/.cache/ess-w11-review1-tmp/ess-bidi-1138007-3/key4.db
+~/.cache/ess-w11-review1-tmp/ess-bidi-1138007-3/lock
+~/.cache/ess-w11-review1-tmp/ess-bidi-1138007-3/logins.db
+~/.cache/ess-w11-review1-tmp/ess-bidi-1138007-3/minidumps
+~/.cache/ess-w11-review1-tmp/ess-bidi-1138007-3/permissions.sqlite
+~/.cache/ess-w11-review1-tmp/ess-bidi-1138007-3/pkcs11.txt
+~/.cache/ess-w11-review1-tmp/ess-bidi-1138007-3/places.sqlite
+~/.cache/ess-w11-review1-tmp/ess-bidi-1138007-3/places.sqlite-wal
+~/.cache/ess-w11-review1-tmp/ess-bidi-1138007-3/prefs.js
+~/.cache/ess-w11-review1-tmp/ess-bidi-1138007-3/safebrowsing
+~/.cache/ess-w11-review1-tmp/ess-bidi-1138007-3/saved-telemetry-pings
+~/.cache/ess-w11-review1-tmp/ess-bidi-1138007-3/saved-telemetry-pings/4f34c269-16c0-4970-9108-ea534609d77e
+~/.cache/ess-w11-review1-tmp/ess-bidi-1138007-3/security_state
+~/.cache/ess-w11-review1-tmp/ess-bidi-1138007-3/sessionCheckpoints.json
+~/.cache/ess-w11-review1-tmp/ess-bidi-1138007-3/startupCache
+~/.cache/ess-w11-review1-tmp/ess-bidi-1138007-3/startupCache/startupCache.8.little
+~/.cache/ess-w11-review1-tmp/ess-bidi-1138007-3/storage
+~/.cache/ess-w11-review1-tmp/ess-bidi-1138007-3/storage/default
+~/.cache/ess-w11-review1-tmp/ess-bidi-1138007-3/storage/ls-archive.sqlite
+~/.cache/ess-w11-review1-tmp/ess-bidi-1138007-3/storage/permanent
+~/.cache/ess-w11-review1-tmp/ess-bidi-1138007-3/storage/permanent/chrome
+~/.cache/ess-w11-review1-tmp/ess-bidi-1138007-3/storage/permanent/chrome/.metadata-v2
+~/.cache/ess-w11-review1-tmp/ess-bidi-1138007-3/storage/permanent/chrome/idb
+~/.cache/ess-w11-review1-tmp/ess-bidi-1138007-3/storage/permanent/chrome/idb/1451318868ntouromlalnodry--epcr.files
+~/.cache/ess-w11-review1-tmp/ess-bidi-1138007-3/storage/permanent/chrome/idb/1451318868ntouromlalnodry--epcr.sqlite
+~/.cache/ess-w11-review1-tmp/ess-bidi-1138007-3/storage/permanent/chrome/idb/1451318868ntouromlalnodry--epcr.sqlite-wal
+~/.cache/ess-w11-review1-tmp/ess-bidi-1138007-3/storage/permanent/chrome/idb/1657114595AmcateirvtiSty.files
+~/.cache/ess-w11-review1-tmp/ess-bidi-1138007-3/storage/permanent/chrome/idb/1657114595AmcateirvtiSty.sqlite
+~/.cache/ess-w11-review1-tmp/ess-bidi-1138007-3/storage/permanent/chrome/idb/1657114595AmcateirvtiSty.sqlite-wal
+~/.cache/ess-w11-review1-tmp/ess-bidi-1138007-3/storage/permanent/chrome/idb/2918063365piupsah.files
+~/.cache/ess-w11-review1-tmp/ess-bidi-1138007-3/storage/permanent/chrome/idb/2918063365piupsah.sqlite
+~/.cache/ess-w11-review1-tmp/ess-bidi-1138007-3/storage/permanent/chrome/idb/2918063365piupsah.sqlite-wal
+~/.cache/ess-w11-review1-tmp/ess-bidi-1138007-3/storage/permanent/chrome/idb/3561288849sdhlie.files
+~/.cache/ess-w11-review1-tmp/ess-bidi-1138007-3/storage/permanent/chrome/idb/3561288849sdhlie.sqlite
+~/.cache/ess-w11-review1-tmp/ess-bidi-1138007-3/storage/permanent/chrome/idb/3561288849sdhlie.sqlite-wal
+~/.cache/ess-w11-review1-tmp/ess-bidi-1138007-3/storage/permanent/chrome/idb/3870112724rsegmnoittet-es.files
+~/.cache/ess-w11-review1-tmp/ess-bidi-1138007-3/storage/permanent/chrome/idb/3870112724rsegmnoittet-es.sqlite
+~/.cache/ess-w11-review1-tmp/ess-bidi-1138007-3/storage/permanent/chrome/idb/3870112724rsegmnoittet-es.sqlite-wal
+~/.cache/ess-w11-review1-tmp/ess-bidi-1138007-3/storage/temporary
+~/.cache/ess-w11-review1-tmp/ess-bidi-1138007-3/storage.sqlite
+~/.cache/ess-w11-review1-tmp/ess-bidi-1138007-3/thumbnails
+~/.cache/ess-w11-review1-tmp/ess-bidi-1138007-3/times.json
+~/.cache/ess-w11-review1-tmp/ess-bidi-1147781-0
+~/.cache/ess-w11-review1-tmp/ess-bidi-1147781-0/.parentlock
+~/.cache/ess-w11-review1-tmp/ess-bidi-1147781-0/.startup-incomplete
+~/.cache/ess-w11-review1-tmp/ess-bidi-1147781-0/SiteSecurityServiceState.bin
+~/.cache/ess-w11-review1-tmp/ess-bidi-1147781-0/WebDriverBiDiServer.json
+~/.cache/ess-w11-review1-tmp/ess-bidi-1147781-0/a0b5a4c8.sqlite
+~/.cache/ess-w11-review1-tmp/ess-bidi-1147781-0/a0b5a4c8.sqlite-shm
+~/.cache/ess-w11-review1-tmp/ess-bidi-1147781-0/a0b5a4c8.sqlite-wal
+~/.cache/ess-w11-review1-tmp/ess-bidi-1147781-0/activity-stream.shortcut_cache.json
+~/.cache/ess-w11-review1-tmp/ess-bidi-1147781-0/bookmarkbackups
+~/.cache/ess-w11-review1-tmp/ess-bidi-1147781-0/bounce-tracking-protection.sqlite
+~/.cache/ess-w11-review1-tmp/ess-bidi-1147781-0/cache2
+~/.cache/ess-w11-review1-tmp/ess-bidi-1147781-0/cache2/doomed
+~/.cache/ess-w11-review1-tmp/ess-bidi-1147781-0/cache2/entries
+~/.cache/ess-w11-review1-tmp/ess-bidi-1147781-0/cache2/entries/360DE1F3E174E84794C36651DD126686164A2F9A
+~/.cache/ess-w11-review1-tmp/ess-bidi-1147781-0/cache2/entries/5E43012191E7B1F510ACD5BF039D8BF1B9A277B2
+~/.cache/ess-w11-review1-tmp/ess-bidi-1147781-0/cache2/entries/BB95D0607349D05725D5FE01D4FB300E319072AD
+~/.cache/ess-w11-review1-tmp/ess-bidi-1147781-0/cert9.db
+~/.cache/ess-w11-review1-tmp/ess-bidi-1147781-0/compatibility.ini
+~/.cache/ess-w11-review1-tmp/ess-bidi-1147781-0/content-prefs.sqlite
+~/.cache/ess-w11-review1-tmp/ess-bidi-1147781-0/cookies.sqlite
+~/.cache/ess-w11-review1-tmp/ess-bidi-1147781-0/crashes
+~/.cache/ess-w11-review1-tmp/ess-bidi-1147781-0/crashes/events
+~/.cache/ess-w11-review1-tmp/ess-bidi-1147781-0/datareporting
+~/.cache/ess-w11-review1-tmp/ess-bidi-1147781-0/datareporting/archived
+~/.cache/ess-w11-review1-tmp/ess-bidi-1147781-0/datareporting/archived/2026-09
+~/.cache/ess-w11-review1-tmp/ess-bidi-1147781-0/datareporting/archived/2026-09/1788725428602.71e44463-3290-4ac7-9f22-07652440f4a0.deletion-request.jsonlz4
+~/.cache/ess-w11-review1-tmp/ess-bidi-1147781-0/datareporting/glean
+~/.cache/ess-w11-review1-tmp/ess-bidi-1147781-0/datareporting/glean/client_id.txt
+~/.cache/ess-w11-review1-tmp/ess-bidi-1147781-0/datareporting/glean/db
+~/.cache/ess-w11-review1-tmp/ess-bidi-1147781-0/datareporting/glean/db/data.safe.bin
+~/.cache/ess-w11-review1-tmp/ess-bidi-1147781-0/datareporting/glean/events
+~/.cache/ess-w11-review1-tmp/ess-bidi-1147781-0/datareporting/glean/events/events
+~/.cache/ess-w11-review1-tmp/ess-bidi-1147781-0/datareporting/glean/pending_pings
+~/.cache/ess-w11-review1-tmp/ess-bidi-1147781-0/datareporting/glean/tmp
+~/.cache/ess-w11-review1-tmp/ess-bidi-1147781-0/datareporting/state.json
+~/.cache/ess-w11-review1-tmp/ess-bidi-1147781-0/domain_to_categories.sqlite
+~/.cache/ess-w11-review1-tmp/ess-bidi-1147781-0/domain_to_categories.sqlite-journal
+~/.cache/ess-w11-review1-tmp/ess-bidi-1147781-0/extension-store
+~/.cache/ess-w11-review1-tmp/ess-bidi-1147781-0/extension-store/data.safe.bin
+~/.cache/ess-w11-review1-tmp/ess-bidi-1147781-0/extensions.json
+~/.cache/ess-w11-review1-tmp/ess-bidi-1147781-0/favicons.sqlite
+~/.cache/ess-w11-review1-tmp/ess-bidi-1147781-0/favicons.sqlite-wal
+~/.cache/ess-w11-review1-tmp/ess-bidi-1147781-0/key4.db
+~/.cache/ess-w11-review1-tmp/ess-bidi-1147781-0/lock
+~/.cache/ess-w11-review1-tmp/ess-bidi-1147781-0/logins.db
+~/.cache/ess-w11-review1-tmp/ess-bidi-1147781-0/minidumps
+~/.cache/ess-w11-review1-tmp/ess-bidi-1147781-0/permissions.sqlite
+~/.cache/ess-w11-review1-tmp/ess-bidi-1147781-0/pkcs11.txt
+~/.cache/ess-w11-review1-tmp/ess-bidi-1147781-0/places.sqlite
+~/.cache/ess-w11-review1-tmp/ess-bidi-1147781-0/places.sqlite-wal
+~/.cache/ess-w11-review1-tmp/ess-bidi-1147781-0/prefs.js
+~/.cache/ess-w11-review1-tmp/ess-bidi-1147781-0/safebrowsing
+~/.cache/ess-w11-review1-tmp/ess-bidi-1147781-0/saved-telemetry-pings
+~/.cache/ess-w11-review1-tmp/ess-bidi-1147781-0/saved-telemetry-pings/71e44463-3290-4ac7-9f22-07652440f4a0
+~/.cache/ess-w11-review1-tmp/ess-bidi-1147781-0/security_state
+~/.cache/ess-w11-review1-tmp/ess-bidi-1147781-0/sessionCheckpoints.json
+~/.cache/ess-w11-review1-tmp/ess-bidi-1147781-0/startupCache
+~/.cache/ess-w11-review1-tmp/ess-bidi-1147781-0/startupCache/startupCache.8.little
+~/.cache/ess-w11-review1-tmp/ess-bidi-1147781-0/storage
+~/.cache/ess-w11-review1-tmp/ess-bidi-1147781-0/storage/default
+~/.cache/ess-w11-review1-tmp/ess-bidi-1147781-0/storage/ls-archive.sqlite
+~/.cache/ess-w11-review1-tmp/ess-bidi-1147781-0/storage/permanent
+~/.cache/ess-w11-review1-tmp/ess-bidi-1147781-0/storage/permanent/chrome
+~/.cache/ess-w11-review1-tmp/ess-bidi-1147781-0/storage/permanent/chrome/.metadata-v2
+~/.cache/ess-w11-review1-tmp/ess-bidi-1147781-0/storage/permanent/chrome/idb
+~/.cache/ess-w11-review1-tmp/ess-bidi-1147781-0/storage/permanent/chrome/idb/1451318868ntouromlalnodry--epcr.files
+~/.cache/ess-w11-review1-tmp/ess-bidi-1147781-0/storage/permanent/chrome/idb/1451318868ntouromlalnodry--epcr.sqlite
+~/.cache/ess-w11-review1-tmp/ess-bidi-1147781-0/storage/permanent/chrome/idb/1451318868ntouromlalnodry--epcr.sqlite-wal
+~/.cache/ess-w11-review1-tmp/ess-bidi-1147781-0/storage/permanent/chrome/idb/1657114595AmcateirvtiSty.files
+~/.cache/ess-w11-review1-tmp/ess-bidi-1147781-0/storage/permanent/chrome/idb/1657114595AmcateirvtiSty.sqlite
+~/.cache/ess-w11-review1-tmp/ess-bidi-1147781-0/storage/permanent/chrome/idb/1657114595AmcateirvtiSty.sqlite-wal
+~/.cache/ess-w11-review1-tmp/ess-bidi-1147781-0/storage/permanent/chrome/idb/2918063365piupsah.files
+~/.cache/ess-w11-review1-tmp/ess-bidi-1147781-0/storage/permanent/chrome/idb/2918063365piupsah.sqlite
+~/.cache/ess-w11-review1-tmp/ess-bidi-1147781-0/storage/permanent/chrome/idb/2918063365piupsah.sqlite-wal
+~/.cache/ess-w11-review1-tmp/ess-bidi-1147781-0/storage/permanent/chrome/idb/3561288849sdhlie.files
+~/.cache/ess-w11-review1-tmp/ess-bidi-1147781-0/storage/permanent/chrome/idb/3561288849sdhlie.sqlite
+~/.cache/ess-w11-review1-tmp/ess-bidi-1147781-0/storage/permanent/chrome/idb/3561288849sdhlie.sqlite-wal
+~/.cache/ess-w11-review1-tmp/ess-bidi-1147781-0/storage/permanent/chrome/idb/3870112724rsegmnoittet-es.files
+~/.cache/ess-w11-review1-tmp/ess-bidi-1147781-0/storage/permanent/chrome/idb/3870112724rsegmnoittet-es.sqlite
+~/.cache/ess-w11-review1-tmp/ess-bidi-1147781-0/storage/permanent/chrome/idb/3870112724rsegmnoittet-es.sqlite-wal
+~/.cache/ess-w11-review1-tmp/ess-bidi-1147781-0/storage/temporary
+~/.cache/ess-w11-review1-tmp/ess-bidi-1147781-0/storage.sqlite
+~/.cache/ess-w11-review1-tmp/ess-bidi-1147781-0/thumbnails
+~/.cache/ess-w11-review1-tmp/ess-bidi-1147781-0/times.json
 ```
 
 The evidence-manifest.jsonl is the complete native-byte census of retained review scratch (excluding only the report/manifest/summary/seal self-reference set); SEAL-SHA256SUMS pins that manifest, this complete report, findings, summary and source/authority manifests. No original preparation or implementor record was overwritten. All source, test, scratch and external-browser writes are relinquished with this seal. No further attack is launched.

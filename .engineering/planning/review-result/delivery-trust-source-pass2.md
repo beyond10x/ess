@@ -8,11 +8,11 @@ relations:
 - reviews: story:review-delivery-trust-contract
 revision: 1
 ---
-unit: story:review-delivery-trust-contract — second and final source attack; working tree /home/timo/.local/state/worktree/trees/b10x/ess/ess-delivery-trust-contract, branch impl/review-delivery-trust-contract, base d9c9905546b774c7520755289933c125a005b1d1; final-source-pins.json identifies reviewed bytes
+unit: story:review-delivery-trust-contract — second and final source attack; working tree ~/.local/state/worktree/trees/b10x/ess/ess-delivery-trust-contract, branch impl/review-delivery-trust-contract, base d9c9905546b774c7520755289933c125a005b1d1; final-source-pins.json identifies reviewed bytes
 verdict: nothing found
 cases: executed 56→59, red 0
 origin: introduced 0 / pre-existing 0 / undecided 0
-wrote-outside-worktree: 6993 retained native paths in assigned /home/timo/.cache/ess-w16-delivery-adversary-2-tmp; exhaustive paths in outside-paths.tsv
+wrote-outside-worktree: 6993 retained native paths in assigned ~/.cache/ess-w16-delivery-adversary-2-tmp; exhaustive paths in outside-paths.tsv
 needs-coordinator: none
 git --no-pager diff --stat
 ```text
@@ -52,7 +52,7 @@ All cases were justified in cases-before-run.md and written before their first f
 
 command.txt
 ```text
-cwd /home/timo/.local/state/worktree/trees/b10x/ess/ess-delivery-trust-contract
+cwd ~/.local/state/worktree/trees/b10x/ess/ess-delivery-trust-contract
 argv ["cargo", "test", "--locked", "--offline", "-p", "ess-cli", "--test", "delivery_trust", "adversary2_coherent_wrong_model_bundle_refuses_qualification_after_plain_consistency", "--", "--exact", "--nocapture"]
 launch-environment-sha256 a5d888b8b5a3966bc00a9569da15f80921fb9fec5b7b8438629b03303bd09634
 ```
@@ -79,7 +79,7 @@ test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 37 filtered out; fin
 
 stderr.raw
 ```text
-   Compiling ess-cli v0.20.0 (/home/timo/.local/state/worktree/trees/b10x/ess/ess-delivery-trust-contract/crates/edge/ess-cli)
+   Compiling ess-cli v0.20.0 (~/.local/state/worktree/trees/b10x/ess/ess-delivery-trust-contract/crates/edge/ess-cli)
     Finished `test` profile [unoptimized] target(s) in 1.13s
      Running tests/delivery_trust.rs (target/debug/deps/delivery_trust-8268e192ee8c98d2)
 ```
@@ -88,7 +88,7 @@ stderr.raw
 
 command.txt
 ```text
-cwd /home/timo/.local/state/worktree/trees/b10x/ess/ess-delivery-trust-contract
+cwd ~/.local/state/worktree/trees/b10x/ess/ess-delivery-trust-contract
 argv ["cargo", "test", "--locked", "--offline", "-p", "ess-cli", "--test", "delivery_trust", "adversary2_action_rechecks_current_model_and_deployment_before_evidence_upload", "--", "--exact", "--nocapture"]
 launch-environment-sha256 a5d888b8b5a3966bc00a9569da15f80921fb9fec5b7b8438629b03303bd09634
 ```
@@ -202,7 +202,7 @@ error: test failed, to rerun pass `-p ess-cli --test delivery_trust`
 
 command.txt
 ```text
-cwd /home/timo/.local/state/worktree/trees/b10x/ess/ess-delivery-trust-contract
+cwd ~/.local/state/worktree/trees/b10x/ess/ess-delivery-trust-contract
 argv ["cargo", "test", "--locked", "--offline", "-p", "ess-cli", "--test", "delivery_trust", "adversary2_action_rechecks_current_model_and_deployment_before_evidence_upload", "--", "--exact", "--nocapture"]
 launch-environment-sha256 a5d888b8b5a3966bc00a9569da15f80921fb9fec5b7b8438629b03303bd09634
 ```
@@ -229,7 +229,7 @@ test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 37 filtered out; fin
 
 stderr.raw
 ```text
-   Compiling ess-cli v0.20.0 (/home/timo/.local/state/worktree/trees/b10x/ess/ess-delivery-trust-contract/crates/edge/ess-cli)
+   Compiling ess-cli v0.20.0 (~/.local/state/worktree/trees/b10x/ess/ess-delivery-trust-contract/crates/edge/ess-cli)
     Finished `test` profile [unoptimized] target(s) in 0.85s
      Running tests/delivery_trust.rs (target/debug/deps/delivery_trust-8268e192ee8c98d2)
 ```
@@ -238,7 +238,7 @@ stderr.raw
 
 command.txt
 ```text
-cwd /home/timo/.local/state/worktree/trees/b10x/ess/ess-delivery-trust-contract
+cwd ~/.local/state/worktree/trees/b10x/ess/ess-delivery-trust-contract
 argv ["cargo", "test", "--locked", "--offline", "-p", "ess-cli", "--test", "delivery_trust", "adversary2_post_admission_model_and_deployment_replacement_keeps_owned_context", "--", "--exact", "--nocapture"]
 launch-environment-sha256 a5d888b8b5a3966bc00a9569da15f80921fb9fec5b7b8438629b03303bd09634
 ```
@@ -277,8 +277,8 @@ The handed correction supplied the actual baseline: delivery_trust 35 plus deplo
 
 command.txt
 ```text
-cwd /home/timo/.local/state/worktree/trees/b10x/ess/ess-delivery-trust-contract
-argv ["/home/timo/.local/state/worktree/trees/b10x/ess/wt-752828a285ba/target/review-boundaries-12/preparation/toolchain-snapshot/bin/rustfmt", "--edition", "2021", "--config", "skip_children=true", "crates/edge/ess-cli/tests/delivery_trust.rs"]
+cwd ~/.local/state/worktree/trees/b10x/ess/ess-delivery-trust-contract
+argv ["~/.local/state/worktree/trees/b10x/ess/wt-752828a285ba/target/review-boundaries-12/preparation/toolchain-snapshot/bin/rustfmt", "--edition", "2021", "--config", "skip_children=true", "crates/edge/ess-cli/tests/delivery_trust.rs"]
 launch-environment-sha256 a5d888b8b5a3966bc00a9569da15f80921fb9fec5b7b8438629b03303bd09634
 ```
 
@@ -304,7 +304,7 @@ stderr.raw
 
 command.txt
 ```text
-cwd /home/timo/.local/state/worktree/trees/b10x/ess/ess-delivery-trust-contract
+cwd ~/.local/state/worktree/trees/b10x/ess/ess-delivery-trust-contract
 argv ["cargo", "test", "--locked", "--offline", "-p", "ess-cli", "--test", "delivery_trust"]
 launch-environment-sha256 a5d888b8b5a3966bc00a9569da15f80921fb9fec5b7b8438629b03303bd09634
 ```
@@ -368,7 +368,7 @@ test result: ok. 38 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; fin
 
 stderr.raw
 ```text
-   Compiling ess-cli v0.20.0 (/home/timo/.local/state/worktree/trees/b10x/ess/ess-delivery-trust-contract/crates/edge/ess-cli)
+   Compiling ess-cli v0.20.0 (~/.local/state/worktree/trees/b10x/ess/ess-delivery-trust-contract/crates/edge/ess-cli)
     Finished `test` profile [unoptimized] target(s) in 0.87s
      Running tests/delivery_trust.rs (target/debug/deps/delivery_trust-8268e192ee8c98d2)
 ```
@@ -377,7 +377,7 @@ stderr.raw
 
 command.txt
 ```text
-cwd /home/timo/.local/state/worktree/trees/b10x/ess/ess-delivery-trust-contract
+cwd ~/.local/state/worktree/trees/b10x/ess/ess-delivery-trust-contract
 argv ["cargo", "test", "--locked", "--offline", "-p", "ess-deployment", "--test", "deployment"]
 launch-environment-sha256 a5d888b8b5a3966bc00a9569da15f80921fb9fec5b7b8438629b03303bd09634
 ```
@@ -432,7 +432,7 @@ stderr.raw
 
 command.txt
 ```text
-cwd /home/timo/.local/state/worktree/trees/b10x/ess/ess-delivery-trust-contract
+cwd ~/.local/state/worktree/trees/b10x/ess/ess-delivery-trust-contract
 argv ["cargo", "clippy", "-p", "ess-cli", "-p", "ess-deployment", "--all-targets", "--locked", "--offline", "--", "-D", "warnings"]
 launch-environment-sha256 a5d888b8b5a3966bc00a9569da15f80921fb9fec5b7b8438629b03303bd09634
 ```
@@ -453,7 +453,7 @@ stdout.raw
 
 stderr.raw
 ```text
-    Checking ess-cli v0.20.0 (/home/timo/.local/state/worktree/trees/b10x/ess/ess-delivery-trust-contract/crates/edge/ess-cli)
+    Checking ess-cli v0.20.0 (~/.local/state/worktree/trees/b10x/ess/ess-delivery-trust-contract/crates/edge/ess-cli)
 error: this function has too many lines (104/100)
     --> crates/edge/ess-cli/tests/delivery_trust.rs:1851:1
      |
@@ -471,8 +471,8 @@ error: could not compile `ess-cli` (test "delivery_trust") due to 1 previous err
 
 command.txt
 ```text
-cwd /home/timo/.local/state/worktree/trees/b10x/ess/ess-delivery-trust-contract
-argv ["/home/timo/.local/state/worktree/trees/b10x/ess/wt-752828a285ba/target/review-boundaries-12/preparation/toolchain-snapshot/bin/rustfmt", "--edition", "2021", "--config", "skip_children=true", "crates/edge/ess-cli/tests/delivery_trust.rs"]
+cwd ~/.local/state/worktree/trees/b10x/ess/ess-delivery-trust-contract
+argv ["~/.local/state/worktree/trees/b10x/ess/wt-752828a285ba/target/review-boundaries-12/preparation/toolchain-snapshot/bin/rustfmt", "--edition", "2021", "--config", "skip_children=true", "crates/edge/ess-cli/tests/delivery_trust.rs"]
 launch-environment-sha256 a5d888b8b5a3966bc00a9569da15f80921fb9fec5b7b8438629b03303bd09634
 ```
 
@@ -498,7 +498,7 @@ stderr.raw
 
 command.txt
 ```text
-cwd /home/timo/.local/state/worktree/trees/b10x/ess/ess-delivery-trust-contract
+cwd ~/.local/state/worktree/trees/b10x/ess/ess-delivery-trust-contract
 argv ["cargo", "test", "--locked", "--offline", "-p", "ess-cli", "--test", "delivery_trust"]
 launch-environment-sha256 a5d888b8b5a3966bc00a9569da15f80921fb9fec5b7b8438629b03303bd09634
 ```
@@ -562,7 +562,7 @@ test result: ok. 38 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; fin
 
 stderr.raw
 ```text
-   Compiling ess-cli v0.20.0 (/home/timo/.local/state/worktree/trees/b10x/ess/ess-delivery-trust-contract/crates/edge/ess-cli)
+   Compiling ess-cli v0.20.0 (~/.local/state/worktree/trees/b10x/ess/ess-delivery-trust-contract/crates/edge/ess-cli)
     Finished `test` profile [unoptimized] target(s) in 0.89s
      Running tests/delivery_trust.rs (target/debug/deps/delivery_trust-8268e192ee8c98d2)
 ```
@@ -571,7 +571,7 @@ stderr.raw
 
 command.txt
 ```text
-cwd /home/timo/.local/state/worktree/trees/b10x/ess/ess-delivery-trust-contract
+cwd ~/.local/state/worktree/trees/b10x/ess/ess-delivery-trust-contract
 argv ["cargo", "clippy", "-p", "ess-cli", "-p", "ess-deployment", "--all-targets", "--locked", "--offline", "--", "-D", "warnings"]
 launch-environment-sha256 a5d888b8b5a3966bc00a9569da15f80921fb9fec5b7b8438629b03303bd09634
 ```
@@ -592,7 +592,7 @@ stdout.raw
 
 stderr.raw
 ```text
-    Checking ess-cli v0.20.0 (/home/timo/.local/state/worktree/trees/b10x/ess/ess-delivery-trust-contract/crates/edge/ess-cli)
+    Checking ess-cli v0.20.0 (~/.local/state/worktree/trees/b10x/ess/ess-delivery-trust-contract/crates/edge/ess-cli)
     Finished `dev` profile [unoptimized] target(s) in 0.35s
 ```
 
@@ -600,7 +600,7 @@ stderr.raw
 
 command.txt
 ```text
-cwd /home/timo/.local/state/worktree/trees/b10x/ess/ess-delivery-trust-contract
+cwd ~/.local/state/worktree/trees/b10x/ess/ess-delivery-trust-contract
 argv ["cargo", "fmt", "-p", "ess-cli", "-p", "ess-deployment", "--check"]
 launch-environment-sha256 a5d888b8b5a3966bc00a9569da15f80921fb9fec5b7b8438629b03303bd09634
 ```
@@ -627,8 +627,8 @@ stderr.raw
 
 command.txt
 ```text
-cwd /home/timo/.local/state/worktree/trees/b10x/ess/ess-delivery-trust-contract
-argv ["/home/timo/.local/state/worktree/trees/b10x/ess/wt-752828a285ba/target/review-boundaries-12/preparation/toolchain-snapshot/bin/rustfmt", "--edition", "2021", "--check", "crates/edge/ess-cli/tests/support/fake_release_component.rs"]
+cwd ~/.local/state/worktree/trees/b10x/ess/ess-delivery-trust-contract
+argv ["~/.local/state/worktree/trees/b10x/ess/wt-752828a285ba/target/review-boundaries-12/preparation/toolchain-snapshot/bin/rustfmt", "--edition", "2021", "--check", "crates/edge/ess-cli/tests/support/fake_release_component.rs"]
 launch-environment-sha256 a5d888b8b5a3966bc00a9569da15f80921fb9fec5b7b8438629b03303bd09634
 ```
 
@@ -664,7 +664,7 @@ No new product defect or judgement finding was established in this second source
 
 6. Retained paths, execution controls and sealing
 
-The assigned external write root is /home/timo/.cache/ess-w16-delivery-adversary-2-tmp. Every retained native descendant and literal symlink target is listed losslessly in outside-paths.tsv; native-seal.tsv supplies the final complete hashes and modes. Original implementation /home/timo/.cache/ess-w16-delivery-tmp, first review /home/timo/.cache/ess-w16-delivery-adversary-1-tmp and correction /home/timo/.cache/ess-w16-delivery-fix1-tmp were read and counted, not written or cleaned by this pass. The fifth counted root is /home/timo/.local/state/worktree/trees/b10x/ess/ess-delivery-trust-contract/target. Own scratch and all raw records are under its review-boundaries-16/adversary-pass-2 directory. No /tmp, target override, shared build directory, package installation, network, integration, AEP operation, Git mutation, publication, delegation or cleanup was used.
+The assigned external write root is ~/.cache/ess-w16-delivery-adversary-2-tmp. Every retained native descendant and literal symlink target is listed losslessly in outside-paths.tsv; native-seal.tsv supplies the final complete hashes and modes. Original implementation ~/.cache/ess-w16-delivery-tmp, first review ~/.cache/ess-w16-delivery-adversary-1-tmp and correction ~/.cache/ess-w16-delivery-fix1-tmp were read and counted, not written or cleaned by this pass. The fifth counted root is ~/.local/state/worktree/trees/b10x/ess/ess-delivery-trust-contract/target. Own scratch and all raw records are under its review-boundaries-16/adversary-pass-2 directory. No /tmp, target override, shared build directory, package installation, network, integration, AEP operation, Git mutation, publication, delegation or cleanup was used.
 
 The exact launch-environment.json has SHA256 a5d888b8b5a3966bc00a9569da15f80921fb9fec5b7b8438629b03303bd09634. All product producers use the default unit target, existing private Cargo/Go inputs, frozen Rust, two Rust jobs, one producer at a time, all four wrappers empty, preserved HOME, own private TMP/XDG and a distinct explicit never-used actual-producers/<label> coverage-export leaf. No historical counters or exports were reused. Real Bash and jq run the actual action; external tool effects are finite offline fixture calls, with raw requests/payloads/status retained. The model change is independently compiled before use. No browser or whole integration/package repetition was needed for these test-only additions.
 
@@ -724,7 +724,7 @@ Final native sealer direct command and result:
 
 command.txt
 ```text
-cwd /home/timo/.local/state/worktree/trees/b10x/ess/ess-delivery-trust-contract
+cwd ~/.local/state/worktree/trees/b10x/ess/ess-delivery-trust-contract
 argv ["target/review-boundaries-16/adversary-pass-2/seal"]
 launch-environment-sha256 a5d888b8b5a3966bc00a9569da15f80921fb9fec5b7b8438629b03303bd09634
 ```

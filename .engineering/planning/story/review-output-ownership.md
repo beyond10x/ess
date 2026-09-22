@@ -117,7 +117,7 @@ Root selected the concrete adoption spelling: --owner FAMILY; standalone owners 
 
 At source base11bf599fa4680ee4adb8d93e3523f86ec0b30cab, the CLI implementor observed three new behavioral failures: unowned destination overwritten with exit0, withdrawn site publication left stale, and no enrollment state. The runner printed 0 passed/3 failed/0 ignored and exited101. Original streams are retained in the unit's target/review-output-ownership-wave19/first-behavioral-red; root separately read all three assertions and retained stream hashes. They establish the current defects, not a completed fix.
 
-The initial CLI package baseline had five environment panics across four targets because root assigned a long TMPDIR inside Git. The corrected short external TMPDIR /home/timo/.cache/e19-tmp is on the same SSD. The implementor then observed all114 cases in those four targets pass, actual0; the original baseline is preserved and its assertions are unchanged.
+The initial CLI package baseline had five environment panics across four targets because root assigned a long TMPDIR inside Git. The corrected short external TMPDIR ~/.cache/e19-tmp is on the same SSD. The implementor then observed all114 cases in those four targets pass, actual0; the original baseline is preserved and its assertions are unchanged.
 
 Root added repository projection-sync preflight with four meaningful preservation tests. The initial xtask baseline observed105 unit passes and4/5 layout passes: the new wave page's verbatim command output quoted14 future paths where the checker requires current paths. Root moved that raw output unchanged into the established review-evidence location and linked it from the plan; the layout rerun observed5/5 passes. The bypass mutation then observed2 passed/3 failed among5 sync cases, exit101. Restoring the guard gave109 unit+5 layout=114 passes, package/Clippy/fmt each0. Final source main.rs SHA256: 1ebb62860c73f3d878474ff69648df05e4aa286d1f6e8fed056b1bf1ddf61ade. Actual commands, statuses, streams and producer-PID absence are retained in the unit's target/review-boundaries-19-root-checks. The four new helpers have explicit finite classifications; no baseline eligibility or e005 change was made.
 
@@ -138,7 +138,7 @@ Root read the complete report and additive diff, verified78 sealed payloads,1234
 pins and both native executables. The completed adversary tree and assigned TMP were archived
 in full and compared before removal. Exact managed cleanup and branch retirement succeeded.
 Reports and archives are retained at
-/home/timo/.cache/ess-review/2026-09-06-resume/wave19-adversary-final-retention;
+~/.cache/ess-review/2026-09-06-resume/wave19-adversary-final-retention;
 its completion receipt SHA256 is60a317cfdddc30dd7d0902ce3b7c71fc3fbe72b21e142ddd4a9375398608e334.
 
 At f6ebe903, both native Mac jobs passed all7 adversary cases, including the new actual case
@@ -177,5 +177,5 @@ qualified result. No no-resource-stop claim is made. Root verified quiescence an
 The exact per-step exits, elapsed times, executable manifest digest, consumer result,
 platform observations, resource event and unavailable aggregate agent-cost counters are in
 docs/reviews/2026-09-08-output-ownership-closure.json. Retained raw records are selected for
-/home/timo/.cache/ess-review/2026-09-06-resume/wave19-final-retention before owned cleanup.
+~/.cache/ess-review/2026-09-06-resume/wave19-final-retention before owned cleanup.
 Publication and cleanup follow this implementation evidence; no release or deployment is selected.

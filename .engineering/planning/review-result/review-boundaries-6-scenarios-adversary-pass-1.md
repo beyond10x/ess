@@ -30,7 +30,7 @@ The no-index command returned exit 1, its ordinary difference status. `git statu
 
 ## 1. Subject and retained sources
 
-Subject: 75db774d84ed5883e670ee4c94a0c2986c87dc12; base: 009bf3cad2f01eaf1717ea737fa045ffb52d7f12. Worktree: /home/timo/.local/state/worktree/trees/b10x/ess/review-empty-scenarios. Assigned scratch: /home/timo/.local/state/worktree/trees/b10x/ess/review-empty-scenarios/target/review-boundaries-6. The exact 0.7.0 adversary charter was read at /home/timo/.claude/plugins/cache/beyond10x/aep-drive/0.7.0/agents/adversary.md, along with repository AGENTS.md, unit-brief.md, the subject's complete two-file diff, acceptance, original cases, source callers and retained implementor report sections. Oversized historical assertion dumps were inspected with their command/status and output boundaries; every raw byte remains in the implementor's immutable report.
+Subject: 75db774d84ed5883e670ee4c94a0c2986c87dc12; base: 009bf3cad2f01eaf1717ea737fa045ffb52d7f12. Worktree: ~/.local/state/worktree/trees/b10x/ess/review-empty-scenarios. Assigned scratch: ~/.local/state/worktree/trees/b10x/ess/review-empty-scenarios/target/review-boundaries-6. The exact 0.7.0 adversary charter was read at ~/.claude/plugins/cache/beyond10x/aep-drive/0.7.0/agents/adversary.md, along with repository AGENTS.md, unit-brief.md, the subject's complete two-file diff, acceptance, original cases, source callers and retained implementor report sections. Oversized historical assertion dumps were inspected with their command/status and output boundaries; every raw byte remains in the implementor's immutable report.
 
 The implementor report SHA-256 is d3d37edef40775be5904f61e155513c2bd477fc5067d0cd4c532ba0000c5aa5f. Its declared final count of 106 is the before count; no preemptive suite was run here. Its baseline binary provenance says it was copied after the unchanged package baseline and before production edits. Its retained SHA-256 was checked before the baseline probes: c10f5ee5a510cecac1adcd5ad2c06f45e7737f5ee35ddb3b05c6e9212f48cd22.
 
@@ -52,11 +52,11 @@ All nine cases were written before any test execution. Only the new file was for
 ### adversary-case-1
 
 ```console
-env -u CARGO_TARGET_DIR TMPDIR=/home/timo/.local/state/worktree/trees/b10x/ess/review-empty-scenarios/target CARGO_INCREMENTAL=0 CARGO_PROFILE_DEV_DEBUG=0 CARGO_PROFILE_TEST_DEBUG=0 CARGO_BUILD_JOBS=4 CARGO_NET_OFFLINE=true RUSTC_WRAPPER=/usr/bin/sccache SCCACHE_SERVER_UDS=/home/timo/.local/state/worktree/trees/b10x/ess/wt-752828a285ba/target/w4-cache.sock GOCACHE=/home/timo/.local/state/worktree/trees/b10x/ess/review-empty-scenarios/target/go-cache GOTMPDIR=/home/timo/.local/state/worktree/trees/b10x/ess/review-empty-scenarios/target/go-tmp cargo test -p ess-cli --test authored_scenarios_adversary --locked --offline empty_selection_precedes_conflicting_output_for_every_alias_format_and_runner -- --exact --nocapture
+env -u CARGO_TARGET_DIR TMPDIR=~/.local/state/worktree/trees/b10x/ess/review-empty-scenarios/target CARGO_INCREMENTAL=0 CARGO_PROFILE_DEV_DEBUG=0 CARGO_PROFILE_TEST_DEBUG=0 CARGO_BUILD_JOBS=4 CARGO_NET_OFFLINE=true RUSTC_WRAPPER=/usr/bin/sccache SCCACHE_SERVER_UDS=~/.local/state/worktree/trees/b10x/ess/wt-752828a285ba/target/w4-cache.sock GOCACHE=~/.local/state/worktree/trees/b10x/ess/review-empty-scenarios/target/go-cache GOTMPDIR=~/.local/state/worktree/trees/b10x/ess/review-empty-scenarios/target/go-tmp cargo test -p ess-cli --test authored_scenarios_adversary --locked --offline empty_selection_precedes_conflicting_output_for_every_alias_format_and_runner -- --exact --nocapture
 start: 2026-09-05T23:49:01Z
 end: 2026-09-05T23:49:02Z
 exit: 0
-   Compiling ess-cli v0.19.0 (/home/timo/.local/state/worktree/trees/b10x/ess/review-empty-scenarios/crates/edge/ess-cli)
+   Compiling ess-cli v0.19.0 (~/.local/state/worktree/trees/b10x/ess/review-empty-scenarios/crates/edge/ess-cli)
     Finished `test` profile [unoptimized] target(s) in 0.25s
      Running tests/authored_scenarios_adversary.rs (target/debug/deps/authored_scenarios_adversary-5515e5bc921946a6)
 
@@ -72,7 +72,7 @@ test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 8 filtered out; fini
 ### adversary-case-2
 
 ```console
-env -u CARGO_TARGET_DIR TMPDIR=/home/timo/.local/state/worktree/trees/b10x/ess/review-empty-scenarios/target CARGO_INCREMENTAL=0 CARGO_PROFILE_DEV_DEBUG=0 CARGO_PROFILE_TEST_DEBUG=0 CARGO_BUILD_JOBS=4 CARGO_NET_OFFLINE=true RUSTC_WRAPPER=/usr/bin/sccache SCCACHE_SERVER_UDS=/home/timo/.local/state/worktree/trees/b10x/ess/wt-752828a285ba/target/w4-cache.sock GOCACHE=/home/timo/.local/state/worktree/trees/b10x/ess/review-empty-scenarios/target/go-cache GOTMPDIR=/home/timo/.local/state/worktree/trees/b10x/ess/review-empty-scenarios/target/go-tmp cargo test -p ess-cli --test authored_scenarios_adversary --locked --offline selected_directory_symlink_reports_the_requested_path_and_stays_shallow -- --exact --nocapture
+env -u CARGO_TARGET_DIR TMPDIR=~/.local/state/worktree/trees/b10x/ess/review-empty-scenarios/target CARGO_INCREMENTAL=0 CARGO_PROFILE_DEV_DEBUG=0 CARGO_PROFILE_TEST_DEBUG=0 CARGO_BUILD_JOBS=4 CARGO_NET_OFFLINE=true RUSTC_WRAPPER=/usr/bin/sccache SCCACHE_SERVER_UDS=~/.local/state/worktree/trees/b10x/ess/wt-752828a285ba/target/w4-cache.sock GOCACHE=~/.local/state/worktree/trees/b10x/ess/review-empty-scenarios/target/go-cache GOTMPDIR=~/.local/state/worktree/trees/b10x/ess/review-empty-scenarios/target/go-tmp cargo test -p ess-cli --test authored_scenarios_adversary --locked --offline selected_directory_symlink_reports_the_requested_path_and_stays_shallow -- --exact --nocapture
 start: 2026-09-05T23:49:20Z
 end: 2026-09-05T23:49:20Z
 exit: 0
@@ -91,7 +91,7 @@ test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 8 filtered out; fini
 ### adversary-case-3
 
 ```console
-env -u CARGO_TARGET_DIR TMPDIR=/home/timo/.local/state/worktree/trees/b10x/ess/review-empty-scenarios/target CARGO_INCREMENTAL=0 CARGO_PROFILE_DEV_DEBUG=0 CARGO_PROFILE_TEST_DEBUG=0 CARGO_BUILD_JOBS=4 CARGO_NET_OFFLINE=true RUSTC_WRAPPER=/usr/bin/sccache SCCACHE_SERVER_UDS=/home/timo/.local/state/worktree/trees/b10x/ess/wt-752828a285ba/target/w4-cache.sock GOCACHE=/home/timo/.local/state/worktree/trees/b10x/ess/review-empty-scenarios/target/go-cache GOTMPDIR=/home/timo/.local/state/worktree/trees/b10x/ess/review-empty-scenarios/target/go-tmp cargo test -p ess-cli --test authored_scenarios_adversary --locked --offline empty_selection_cannot_follow_or_replace_an_output_symlink -- --exact --nocapture
+env -u CARGO_TARGET_DIR TMPDIR=~/.local/state/worktree/trees/b10x/ess/review-empty-scenarios/target CARGO_INCREMENTAL=0 CARGO_PROFILE_DEV_DEBUG=0 CARGO_PROFILE_TEST_DEBUG=0 CARGO_BUILD_JOBS=4 CARGO_NET_OFFLINE=true RUSTC_WRAPPER=/usr/bin/sccache SCCACHE_SERVER_UDS=~/.local/state/worktree/trees/b10x/ess/wt-752828a285ba/target/w4-cache.sock GOCACHE=~/.local/state/worktree/trees/b10x/ess/review-empty-scenarios/target/go-cache GOTMPDIR=~/.local/state/worktree/trees/b10x/ess/review-empty-scenarios/target/go-tmp cargo test -p ess-cli --test authored_scenarios_adversary --locked --offline empty_selection_cannot_follow_or_replace_an_output_symlink -- --exact --nocapture
 start: 2026-09-05T23:49:20Z
 end: 2026-09-05T23:49:20Z
 exit: 0
@@ -110,7 +110,7 @@ test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 8 filtered out; fini
 ### adversary-case-4
 
 ```console
-env -u CARGO_TARGET_DIR TMPDIR=/home/timo/.local/state/worktree/trees/b10x/ess/review-empty-scenarios/target CARGO_INCREMENTAL=0 CARGO_PROFILE_DEV_DEBUG=0 CARGO_PROFILE_TEST_DEBUG=0 CARGO_BUILD_JOBS=4 CARGO_NET_OFFLINE=true RUSTC_WRAPPER=/usr/bin/sccache SCCACHE_SERVER_UDS=/home/timo/.local/state/worktree/trees/b10x/ess/wt-752828a285ba/target/w4-cache.sock GOCACHE=/home/timo/.local/state/worktree/trees/b10x/ess/review-empty-scenarios/target/go-cache GOTMPDIR=/home/timo/.local/state/worktree/trees/b10x/ess/review-empty-scenarios/target/go-tmp cargo test -p ess-cli --test authored_scenarios_adversary --locked --offline matching_broken_links_are_read_errors_even_beside_a_valid_source -- --exact --nocapture
+env -u CARGO_TARGET_DIR TMPDIR=~/.local/state/worktree/trees/b10x/ess/review-empty-scenarios/target CARGO_INCREMENTAL=0 CARGO_PROFILE_DEV_DEBUG=0 CARGO_PROFILE_TEST_DEBUG=0 CARGO_BUILD_JOBS=4 CARGO_NET_OFFLINE=true RUSTC_WRAPPER=/usr/bin/sccache SCCACHE_SERVER_UDS=~/.local/state/worktree/trees/b10x/ess/wt-752828a285ba/target/w4-cache.sock GOCACHE=~/.local/state/worktree/trees/b10x/ess/review-empty-scenarios/target/go-cache GOTMPDIR=~/.local/state/worktree/trees/b10x/ess/review-empty-scenarios/target/go-tmp cargo test -p ess-cli --test authored_scenarios_adversary --locked --offline matching_broken_links_are_read_errors_even_beside_a_valid_source -- --exact --nocapture
 start: 2026-09-05T23:49:20Z
 end: 2026-09-05T23:49:21Z
 exit: 0
@@ -129,7 +129,7 @@ test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 8 filtered out; fini
 ### adversary-case-5
 
 ```console
-env -u CARGO_TARGET_DIR TMPDIR=/home/timo/.local/state/worktree/trees/b10x/ess/review-empty-scenarios/target CARGO_INCREMENTAL=0 CARGO_PROFILE_DEV_DEBUG=0 CARGO_PROFILE_TEST_DEBUG=0 CARGO_BUILD_JOBS=4 CARGO_NET_OFFLINE=true RUSTC_WRAPPER=/usr/bin/sccache SCCACHE_SERVER_UDS=/home/timo/.local/state/worktree/trees/b10x/ess/wt-752828a285ba/target/w4-cache.sock GOCACHE=/home/timo/.local/state/worktree/trees/b10x/ess/review-empty-scenarios/target/go-cache GOTMPDIR=/home/timo/.local/state/worktree/trees/b10x/ess/review-empty-scenarios/target/go-tmp cargo test -p ess-cli --test authored_scenarios_adversary --locked --offline lexical_selection_order_decides_the_first_read_error -- --exact --nocapture
+env -u CARGO_TARGET_DIR TMPDIR=~/.local/state/worktree/trees/b10x/ess/review-empty-scenarios/target CARGO_INCREMENTAL=0 CARGO_PROFILE_DEV_DEBUG=0 CARGO_PROFILE_TEST_DEBUG=0 CARGO_BUILD_JOBS=4 CARGO_NET_OFFLINE=true RUSTC_WRAPPER=/usr/bin/sccache SCCACHE_SERVER_UDS=~/.local/state/worktree/trees/b10x/ess/wt-752828a285ba/target/w4-cache.sock GOCACHE=~/.local/state/worktree/trees/b10x/ess/review-empty-scenarios/target/go-cache GOTMPDIR=~/.local/state/worktree/trees/b10x/ess/review-empty-scenarios/target/go-tmp cargo test -p ess-cli --test authored_scenarios_adversary --locked --offline lexical_selection_order_decides_the_first_read_error -- --exact --nocapture
 start: 2026-09-05T23:49:21Z
 end: 2026-09-05T23:49:21Z
 exit: 0
@@ -148,7 +148,7 @@ test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 8 filtered out; fini
 ### adversary-case-6
 
 ```console
-env -u CARGO_TARGET_DIR TMPDIR=/home/timo/.local/state/worktree/trees/b10x/ess/review-empty-scenarios/target CARGO_INCREMENTAL=0 CARGO_PROFILE_DEV_DEBUG=0 CARGO_PROFILE_TEST_DEBUG=0 CARGO_BUILD_JOBS=4 CARGO_NET_OFFLINE=true RUSTC_WRAPPER=/usr/bin/sccache SCCACHE_SERVER_UDS=/home/timo/.local/state/worktree/trees/b10x/ess/wt-752828a285ba/target/w4-cache.sock GOCACHE=/home/timo/.local/state/worktree/trees/b10x/ess/review-empty-scenarios/target/go-cache GOTMPDIR=/home/timo/.local/state/worktree/trees/b10x/ess/review-empty-scenarios/target/go-tmp cargo test -p ess-cli --test authored_scenarios_adversary --locked --offline non_utf8_matching_content_is_refused_before_any_output_write -- --exact --nocapture
+env -u CARGO_TARGET_DIR TMPDIR=~/.local/state/worktree/trees/b10x/ess/review-empty-scenarios/target CARGO_INCREMENTAL=0 CARGO_PROFILE_DEV_DEBUG=0 CARGO_PROFILE_TEST_DEBUG=0 CARGO_BUILD_JOBS=4 CARGO_NET_OFFLINE=true RUSTC_WRAPPER=/usr/bin/sccache SCCACHE_SERVER_UDS=~/.local/state/worktree/trees/b10x/ess/wt-752828a285ba/target/w4-cache.sock GOCACHE=~/.local/state/worktree/trees/b10x/ess/review-empty-scenarios/target/go-cache GOTMPDIR=~/.local/state/worktree/trees/b10x/ess/review-empty-scenarios/target/go-tmp cargo test -p ess-cli --test authored_scenarios_adversary --locked --offline non_utf8_matching_content_is_refused_before_any_output_write -- --exact --nocapture
 start: 2026-09-05T23:49:22Z
 end: 2026-09-05T23:49:22Z
 exit: 0
@@ -167,7 +167,7 @@ test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 8 filtered out; fini
 ### adversary-case-7
 
 ```console
-env -u CARGO_TARGET_DIR TMPDIR=/home/timo/.local/state/worktree/trees/b10x/ess/review-empty-scenarios/target CARGO_INCREMENTAL=0 CARGO_PROFILE_DEV_DEBUG=0 CARGO_PROFILE_TEST_DEBUG=0 CARGO_BUILD_JOBS=4 CARGO_NET_OFFLINE=true RUSTC_WRAPPER=/usr/bin/sccache SCCACHE_SERVER_UDS=/home/timo/.local/state/worktree/trees/b10x/ess/wt-752828a285ba/target/w4-cache.sock GOCACHE=/home/timo/.local/state/worktree/trees/b10x/ess/review-empty-scenarios/target/go-cache GOTMPDIR=/home/timo/.local/state/worktree/trees/b10x/ess/review-empty-scenarios/target/go-tmp cargo test -p ess-cli --test authored_scenarios_adversary --locked --offline valid_file_links_keep_direct_extension_independence_and_ignore_nonmatching_links -- --exact --nocapture
+env -u CARGO_TARGET_DIR TMPDIR=~/.local/state/worktree/trees/b10x/ess/review-empty-scenarios/target CARGO_INCREMENTAL=0 CARGO_PROFILE_DEV_DEBUG=0 CARGO_PROFILE_TEST_DEBUG=0 CARGO_BUILD_JOBS=4 CARGO_NET_OFFLINE=true RUSTC_WRAPPER=/usr/bin/sccache SCCACHE_SERVER_UDS=~/.local/state/worktree/trees/b10x/ess/wt-752828a285ba/target/w4-cache.sock GOCACHE=~/.local/state/worktree/trees/b10x/ess/review-empty-scenarios/target/go-cache GOTMPDIR=~/.local/state/worktree/trees/b10x/ess/review-empty-scenarios/target/go-tmp cargo test -p ess-cli --test authored_scenarios_adversary --locked --offline valid_file_links_keep_direct_extension_independence_and_ignore_nonmatching_links -- --exact --nocapture
 start: 2026-09-05T23:49:22Z
 end: 2026-09-05T23:49:23Z
 exit: 0
@@ -186,7 +186,7 @@ test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 8 filtered out; fini
 ### adversary-case-8
 
 ```console
-env -u CARGO_TARGET_DIR TMPDIR=/home/timo/.local/state/worktree/trees/b10x/ess/review-empty-scenarios/target CARGO_INCREMENTAL=0 CARGO_PROFILE_DEV_DEBUG=0 CARGO_PROFILE_TEST_DEBUG=0 CARGO_BUILD_JOBS=4 CARGO_NET_OFFLINE=true RUSTC_WRAPPER=/usr/bin/sccache SCCACHE_SERVER_UDS=/home/timo/.local/state/worktree/trees/b10x/ess/wt-752828a285ba/target/w4-cache.sock GOCACHE=/home/timo/.local/state/worktree/trees/b10x/ess/review-empty-scenarios/target/go-cache GOTMPDIR=/home/timo/.local/state/worktree/trees/b10x/ess/review-empty-scenarios/target/go-tmp cargo test -p ess-cli --test authored_scenarios_adversary --locked --offline omitted_scenarios_ignore_a_poisoned_working_directory_default -- --exact --nocapture
+env -u CARGO_TARGET_DIR TMPDIR=~/.local/state/worktree/trees/b10x/ess/review-empty-scenarios/target CARGO_INCREMENTAL=0 CARGO_PROFILE_DEV_DEBUG=0 CARGO_PROFILE_TEST_DEBUG=0 CARGO_BUILD_JOBS=4 CARGO_NET_OFFLINE=true RUSTC_WRAPPER=/usr/bin/sccache SCCACHE_SERVER_UDS=~/.local/state/worktree/trees/b10x/ess/wt-752828a285ba/target/w4-cache.sock GOCACHE=~/.local/state/worktree/trees/b10x/ess/review-empty-scenarios/target/go-cache GOTMPDIR=~/.local/state/worktree/trees/b10x/ess/review-empty-scenarios/target/go-tmp cargo test -p ess-cli --test authored_scenarios_adversary --locked --offline omitted_scenarios_ignore_a_poisoned_working_directory_default -- --exact --nocapture
 start: 2026-09-05T23:49:23Z
 end: 2026-09-05T23:49:23Z
 exit: 0
@@ -205,7 +205,7 @@ test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 8 filtered out; fini
 ### adversary-case-9
 
 ```console
-env -u CARGO_TARGET_DIR TMPDIR=/home/timo/.local/state/worktree/trees/b10x/ess/review-empty-scenarios/target CARGO_INCREMENTAL=0 CARGO_PROFILE_DEV_DEBUG=0 CARGO_PROFILE_TEST_DEBUG=0 CARGO_BUILD_JOBS=4 CARGO_NET_OFFLINE=true RUSTC_WRAPPER=/usr/bin/sccache SCCACHE_SERVER_UDS=/home/timo/.local/state/worktree/trees/b10x/ess/wt-752828a285ba/target/w4-cache.sock GOCACHE=/home/timo/.local/state/worktree/trees/b10x/ess/review-empty-scenarios/target/go-cache GOTMPDIR=/home/timo/.local/state/worktree/trees/b10x/ess/review-empty-scenarios/target/go-tmp cargo test -p ess-cli --test authored_scenarios_adversary --locked --offline committed_suite_bypasses_poisoned_scenarios_and_missing_model_for_both_runners -- --exact --nocapture
+env -u CARGO_TARGET_DIR TMPDIR=~/.local/state/worktree/trees/b10x/ess/review-empty-scenarios/target CARGO_INCREMENTAL=0 CARGO_PROFILE_DEV_DEBUG=0 CARGO_PROFILE_TEST_DEBUG=0 CARGO_BUILD_JOBS=4 CARGO_NET_OFFLINE=true RUSTC_WRAPPER=/usr/bin/sccache SCCACHE_SERVER_UDS=~/.local/state/worktree/trees/b10x/ess/wt-752828a285ba/target/w4-cache.sock GOCACHE=~/.local/state/worktree/trees/b10x/ess/review-empty-scenarios/target/go-cache GOTMPDIR=~/.local/state/worktree/trees/b10x/ess/review-empty-scenarios/target/go-tmp cargo test -p ess-cli --test authored_scenarios_adversary --locked --offline committed_suite_bypasses_poisoned_scenarios_and_missing_model_for_both_runners -- --exact --nocapture
 start: 2026-09-05T23:49:23Z
 end: 2026-09-05T23:49:24Z
 exit: 0
@@ -228,7 +228,7 @@ The initial strict Clippy run found manual_assert_eq at my new test's line 172. 
 ### adversary-baseline-compile
 
 ```console
-env -u CARGO_TARGET_DIR TMPDIR=/home/timo/.local/state/worktree/trees/b10x/ess/review-empty-scenarios/target CARGO_INCREMENTAL=0 CARGO_PROFILE_DEV_DEBUG=0 CARGO_PROFILE_TEST_DEBUG=0 CARGO_BUILD_JOBS=4 CARGO_NET_OFFLINE=true RUSTC_WRAPPER=/usr/bin/sccache SCCACHE_SERVER_UDS=/home/timo/.local/state/worktree/trees/b10x/ess/wt-752828a285ba/target/w4-cache.sock GOCACHE=/home/timo/.local/state/worktree/trees/b10x/ess/review-empty-scenarios/target/go-cache GOTMPDIR=/home/timo/.local/state/worktree/trees/b10x/ess/review-empty-scenarios/target/go-tmp CARGO_MANIFEST_DIR=/home/timo/.local/state/worktree/trees/b10x/ess/review-empty-scenarios/crates/edge/ess-cli CARGO_BIN_EXE_ess=/home/timo/.local/state/worktree/trees/b10x/ess/review-empty-scenarios/target/review-boundaries-6/baseline-ess rustc --test --edition=2024 crates/edge/ess-cli/tests/authored_scenarios_adversary.rs -o target/review-boundaries-6/adversary-baseline-tests
+env -u CARGO_TARGET_DIR TMPDIR=~/.local/state/worktree/trees/b10x/ess/review-empty-scenarios/target CARGO_INCREMENTAL=0 CARGO_PROFILE_DEV_DEBUG=0 CARGO_PROFILE_TEST_DEBUG=0 CARGO_BUILD_JOBS=4 CARGO_NET_OFFLINE=true RUSTC_WRAPPER=/usr/bin/sccache SCCACHE_SERVER_UDS=~/.local/state/worktree/trees/b10x/ess/wt-752828a285ba/target/w4-cache.sock GOCACHE=~/.local/state/worktree/trees/b10x/ess/review-empty-scenarios/target/go-cache GOTMPDIR=~/.local/state/worktree/trees/b10x/ess/review-empty-scenarios/target/go-tmp CARGO_MANIFEST_DIR=~/.local/state/worktree/trees/b10x/ess/review-empty-scenarios/crates/edge/ess-cli CARGO_BIN_EXE_ess=~/.local/state/worktree/trees/b10x/ess/review-empty-scenarios/target/review-boundaries-6/baseline-ess rustc --test --edition=2024 crates/edge/ess-cli/tests/authored_scenarios_adversary.rs -o target/review-boundaries-6/adversary-baseline-tests
 start: 2026-09-05T23:49:51Z
 end: 2026-09-05T23:49:51Z
 exit: 0
@@ -237,7 +237,7 @@ exit: 0
 ### adversary-suite
 
 ```console
-env -u CARGO_TARGET_DIR TMPDIR=/home/timo/.local/state/worktree/trees/b10x/ess/review-empty-scenarios/target CARGO_INCREMENTAL=0 CARGO_PROFILE_DEV_DEBUG=0 CARGO_PROFILE_TEST_DEBUG=0 CARGO_BUILD_JOBS=4 CARGO_NET_OFFLINE=true RUSTC_WRAPPER=/usr/bin/sccache SCCACHE_SERVER_UDS=/home/timo/.local/state/worktree/trees/b10x/ess/wt-752828a285ba/target/w4-cache.sock GOCACHE=/home/timo/.local/state/worktree/trees/b10x/ess/review-empty-scenarios/target/go-cache GOTMPDIR=/home/timo/.local/state/worktree/trees/b10x/ess/review-empty-scenarios/target/go-tmp cargo test -p ess-cli --locked --offline
+env -u CARGO_TARGET_DIR TMPDIR=~/.local/state/worktree/trees/b10x/ess/review-empty-scenarios/target CARGO_INCREMENTAL=0 CARGO_PROFILE_DEV_DEBUG=0 CARGO_PROFILE_TEST_DEBUG=0 CARGO_BUILD_JOBS=4 CARGO_NET_OFFLINE=true RUSTC_WRAPPER=/usr/bin/sccache SCCACHE_SERVER_UDS=~/.local/state/worktree/trees/b10x/ess/wt-752828a285ba/target/w4-cache.sock GOCACHE=~/.local/state/worktree/trees/b10x/ess/review-empty-scenarios/target/go-cache GOTMPDIR=~/.local/state/worktree/trees/b10x/ess/review-empty-scenarios/target/go-tmp cargo test -p ess-cli --locked --offline
 start: 2026-09-05T23:49:51Z
 end: 2026-09-05T23:49:55Z
 exit: 0
@@ -446,7 +446,7 @@ test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; fini
 ### adversary-baseline-red-1
 
 ```console
-env -u CARGO_TARGET_DIR TMPDIR=/home/timo/.local/state/worktree/trees/b10x/ess/review-empty-scenarios/target CARGO_INCREMENTAL=0 CARGO_PROFILE_DEV_DEBUG=0 CARGO_PROFILE_TEST_DEBUG=0 CARGO_BUILD_JOBS=4 CARGO_NET_OFFLINE=true RUSTC_WRAPPER=/usr/bin/sccache SCCACHE_SERVER_UDS=/home/timo/.local/state/worktree/trees/b10x/ess/wt-752828a285ba/target/w4-cache.sock GOCACHE=/home/timo/.local/state/worktree/trees/b10x/ess/review-empty-scenarios/target/go-cache GOTMPDIR=/home/timo/.local/state/worktree/trees/b10x/ess/review-empty-scenarios/target/go-tmp target/review-boundaries-6/adversary-baseline-tests empty_selection_precedes_conflicting_output_for_every_alias_format_and_runner --exact --nocapture
+env -u CARGO_TARGET_DIR TMPDIR=~/.local/state/worktree/trees/b10x/ess/review-empty-scenarios/target CARGO_INCREMENTAL=0 CARGO_PROFILE_DEV_DEBUG=0 CARGO_PROFILE_TEST_DEBUG=0 CARGO_BUILD_JOBS=4 CARGO_NET_OFFLINE=true RUSTC_WRAPPER=/usr/bin/sccache SCCACHE_SERVER_UDS=~/.local/state/worktree/trees/b10x/ess/wt-752828a285ba/target/w4-cache.sock GOCACHE=~/.local/state/worktree/trees/b10x/ess/review-empty-scenarios/target/go-cache GOTMPDIR=~/.local/state/worktree/trees/b10x/ess/review-empty-scenarios/target/go-tmp target/review-boundaries-6/adversary-baseline-tests empty_selection_precedes_conflicting_output_for_every_alias_format_and_runner --exact --nocapture
 start: 2026-09-05T23:50:11Z
 end: 2026-09-05T23:50:11Z
 exit: 101
@@ -454,7 +454,7 @@ exit: 101
 running 1 test
 
 thread 'empty_selection_precedes_conflicting_output_for_every_alias_format_and_runner' (1263947) panicked at crates/edge/ess-cli/tests/authored_scenarios_adversary.rs:112:9:
-expected "refused --scenarios" in "error: writing /home/timo/.local/state/worktree/trees/b10x/ess/review-empty-scenarios/target/review-boundaries-6/adversary-fixture-1263946-0/empty selection: Is a directory (os error 21)\n"
+expected "refused --scenarios" in "error: writing ~/.local/state/worktree/trees/b10x/ess/review-empty-scenarios/target/review-boundaries-6/adversary-fixture-1263946-0/empty selection: Is a directory (os error 21)\n"
 note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
 test empty_selection_precedes_conflicting_output_for_every_alias_format_and_runner ... FAILED
 
@@ -470,7 +470,7 @@ test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 8 filtered out; 
 ### adversary-baseline-red-2
 
 ```console
-env -u CARGO_TARGET_DIR TMPDIR=/home/timo/.local/state/worktree/trees/b10x/ess/review-empty-scenarios/target CARGO_INCREMENTAL=0 CARGO_PROFILE_DEV_DEBUG=0 CARGO_PROFILE_TEST_DEBUG=0 CARGO_BUILD_JOBS=4 CARGO_NET_OFFLINE=true RUSTC_WRAPPER=/usr/bin/sccache SCCACHE_SERVER_UDS=/home/timo/.local/state/worktree/trees/b10x/ess/wt-752828a285ba/target/w4-cache.sock GOCACHE=/home/timo/.local/state/worktree/trees/b10x/ess/review-empty-scenarios/target/go-cache GOTMPDIR=/home/timo/.local/state/worktree/trees/b10x/ess/review-empty-scenarios/target/go-tmp target/review-boundaries-6/adversary-baseline-tests selected_directory_symlink_reports_the_requested_path_and_stays_shallow --exact --nocapture
+env -u CARGO_TARGET_DIR TMPDIR=~/.local/state/worktree/trees/b10x/ess/review-empty-scenarios/target CARGO_INCREMENTAL=0 CARGO_PROFILE_DEV_DEBUG=0 CARGO_PROFILE_TEST_DEBUG=0 CARGO_BUILD_JOBS=4 CARGO_NET_OFFLINE=true RUSTC_WRAPPER=/usr/bin/sccache SCCACHE_SERVER_UDS=~/.local/state/worktree/trees/b10x/ess/wt-752828a285ba/target/w4-cache.sock GOCACHE=~/.local/state/worktree/trees/b10x/ess/review-empty-scenarios/target/go-cache GOTMPDIR=~/.local/state/worktree/trees/b10x/ess/review-empty-scenarios/target/go-tmp target/review-boundaries-6/adversary-baseline-tests selected_directory_symlink_reports_the_requested_path_and_stays_shallow --exact --nocapture
 start: 2026-09-05T23:50:11Z
 end: 2026-09-05T23:50:11Z
 exit: 101
@@ -496,7 +496,7 @@ test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 8 filtered out; 
 ### adversary-baseline-red-3
 
 ```console
-env -u CARGO_TARGET_DIR TMPDIR=/home/timo/.local/state/worktree/trees/b10x/ess/review-empty-scenarios/target CARGO_INCREMENTAL=0 CARGO_PROFILE_DEV_DEBUG=0 CARGO_PROFILE_TEST_DEBUG=0 CARGO_BUILD_JOBS=4 CARGO_NET_OFFLINE=true RUSTC_WRAPPER=/usr/bin/sccache SCCACHE_SERVER_UDS=/home/timo/.local/state/worktree/trees/b10x/ess/wt-752828a285ba/target/w4-cache.sock GOCACHE=/home/timo/.local/state/worktree/trees/b10x/ess/review-empty-scenarios/target/go-cache GOTMPDIR=/home/timo/.local/state/worktree/trees/b10x/ess/review-empty-scenarios/target/go-tmp target/review-boundaries-6/adversary-baseline-tests empty_selection_cannot_follow_or_replace_an_output_symlink --exact --nocapture
+env -u CARGO_TARGET_DIR TMPDIR=~/.local/state/worktree/trees/b10x/ess/review-empty-scenarios/target CARGO_INCREMENTAL=0 CARGO_PROFILE_DEV_DEBUG=0 CARGO_PROFILE_TEST_DEBUG=0 CARGO_BUILD_JOBS=4 CARGO_NET_OFFLINE=true RUSTC_WRAPPER=/usr/bin/sccache SCCACHE_SERVER_UDS=~/.local/state/worktree/trees/b10x/ess/wt-752828a285ba/target/w4-cache.sock GOCACHE=~/.local/state/worktree/trees/b10x/ess/review-empty-scenarios/target/go-cache GOTMPDIR=~/.local/state/worktree/trees/b10x/ess/review-empty-scenarios/target/go-tmp target/review-boundaries-6/adversary-baseline-tests empty_selection_cannot_follow_or_replace_an_output_symlink --exact --nocapture
 start: 2026-09-05T23:50:11Z
 end: 2026-09-05T23:50:11Z
 exit: 101
@@ -522,7 +522,7 @@ test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 8 filtered out; 
 ### adversary-baseline-preserved
 
 ```console
-env -u CARGO_TARGET_DIR TMPDIR=/home/timo/.local/state/worktree/trees/b10x/ess/review-empty-scenarios/target CARGO_INCREMENTAL=0 CARGO_PROFILE_DEV_DEBUG=0 CARGO_PROFILE_TEST_DEBUG=0 CARGO_BUILD_JOBS=4 CARGO_NET_OFFLINE=true RUSTC_WRAPPER=/usr/bin/sccache SCCACHE_SERVER_UDS=/home/timo/.local/state/worktree/trees/b10x/ess/wt-752828a285ba/target/w4-cache.sock GOCACHE=/home/timo/.local/state/worktree/trees/b10x/ess/review-empty-scenarios/target/go-cache GOTMPDIR=/home/timo/.local/state/worktree/trees/b10x/ess/review-empty-scenarios/target/go-tmp target/review-boundaries-6/adversary-baseline-tests --skip empty_selection --skip selected_directory_symlink --nocapture
+env -u CARGO_TARGET_DIR TMPDIR=~/.local/state/worktree/trees/b10x/ess/review-empty-scenarios/target CARGO_INCREMENTAL=0 CARGO_PROFILE_DEV_DEBUG=0 CARGO_PROFILE_TEST_DEBUG=0 CARGO_BUILD_JOBS=4 CARGO_NET_OFFLINE=true RUSTC_WRAPPER=/usr/bin/sccache SCCACHE_SERVER_UDS=~/.local/state/worktree/trees/b10x/ess/wt-752828a285ba/target/w4-cache.sock GOCACHE=~/.local/state/worktree/trees/b10x/ess/review-empty-scenarios/target/go-cache GOTMPDIR=~/.local/state/worktree/trees/b10x/ess/review-empty-scenarios/target/go-tmp target/review-boundaries-6/adversary-baseline-tests --skip empty_selection --skip selected_directory_symlink --nocapture
 start: 2026-09-05T23:50:11Z
 end: 2026-09-05T23:50:12Z
 exit: 0
@@ -542,7 +542,7 @@ test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 3 filtered out; fini
 ### adversary-fmt
 
 ```console
-env -u CARGO_TARGET_DIR TMPDIR=/home/timo/.local/state/worktree/trees/b10x/ess/review-empty-scenarios/target CARGO_INCREMENTAL=0 CARGO_PROFILE_DEV_DEBUG=0 CARGO_PROFILE_TEST_DEBUG=0 CARGO_BUILD_JOBS=4 CARGO_NET_OFFLINE=true RUSTC_WRAPPER=/usr/bin/sccache SCCACHE_SERVER_UDS=/home/timo/.local/state/worktree/trees/b10x/ess/wt-752828a285ba/target/w4-cache.sock GOCACHE=/home/timo/.local/state/worktree/trees/b10x/ess/review-empty-scenarios/target/go-cache GOTMPDIR=/home/timo/.local/state/worktree/trees/b10x/ess/review-empty-scenarios/target/go-tmp cargo fmt -p ess-cli --check
+env -u CARGO_TARGET_DIR TMPDIR=~/.local/state/worktree/trees/b10x/ess/review-empty-scenarios/target CARGO_INCREMENTAL=0 CARGO_PROFILE_DEV_DEBUG=0 CARGO_PROFILE_TEST_DEBUG=0 CARGO_BUILD_JOBS=4 CARGO_NET_OFFLINE=true RUSTC_WRAPPER=/usr/bin/sccache SCCACHE_SERVER_UDS=~/.local/state/worktree/trees/b10x/ess/wt-752828a285ba/target/w4-cache.sock GOCACHE=~/.local/state/worktree/trees/b10x/ess/review-empty-scenarios/target/go-cache GOTMPDIR=~/.local/state/worktree/trees/b10x/ess/review-empty-scenarios/target/go-tmp cargo fmt -p ess-cli --check
 start: 2026-09-05T23:50:12Z
 end: 2026-09-05T23:50:12Z
 exit: 0
@@ -551,11 +551,11 @@ exit: 0
 ### adversary-clippy
 
 ```console
-env -u CARGO_TARGET_DIR TMPDIR=/home/timo/.local/state/worktree/trees/b10x/ess/review-empty-scenarios/target CARGO_INCREMENTAL=0 CARGO_PROFILE_DEV_DEBUG=0 CARGO_PROFILE_TEST_DEBUG=0 CARGO_BUILD_JOBS=4 CARGO_NET_OFFLINE=true RUSTC_WRAPPER=/usr/bin/sccache SCCACHE_SERVER_UDS=/home/timo/.local/state/worktree/trees/b10x/ess/wt-752828a285ba/target/w4-cache.sock GOCACHE=/home/timo/.local/state/worktree/trees/b10x/ess/review-empty-scenarios/target/go-cache GOTMPDIR=/home/timo/.local/state/worktree/trees/b10x/ess/review-empty-scenarios/target/go-tmp cargo clippy -p ess-cli --all-targets --locked --offline -- -D warnings
+env -u CARGO_TARGET_DIR TMPDIR=~/.local/state/worktree/trees/b10x/ess/review-empty-scenarios/target CARGO_INCREMENTAL=0 CARGO_PROFILE_DEV_DEBUG=0 CARGO_PROFILE_TEST_DEBUG=0 CARGO_BUILD_JOBS=4 CARGO_NET_OFFLINE=true RUSTC_WRAPPER=/usr/bin/sccache SCCACHE_SERVER_UDS=~/.local/state/worktree/trees/b10x/ess/wt-752828a285ba/target/w4-cache.sock GOCACHE=~/.local/state/worktree/trees/b10x/ess/review-empty-scenarios/target/go-cache GOTMPDIR=~/.local/state/worktree/trees/b10x/ess/review-empty-scenarios/target/go-tmp cargo clippy -p ess-cli --all-targets --locked --offline -- -D warnings
 start: 2026-09-05T23:50:12Z
 end: 2026-09-05T23:50:12Z
 exit: 101
-    Checking ess-cli v0.19.0 (/home/timo/.local/state/worktree/trees/b10x/ess/review-empty-scenarios/crates/edge/ess-cli)
+    Checking ess-cli v0.19.0 (~/.local/state/worktree/trees/b10x/ess/review-empty-scenarios/crates/edge/ess-cli)
 error: used `assert!` with an equality comparison
    --> crates/edge/ess-cli/tests/authored_scenarios_adversary.rs:172:9
     |
@@ -577,7 +577,7 @@ error: could not compile `ess-cli` (test "authored_scenarios_adversary") due to 
 ### adversary-fmt-final
 
 ```console
-env -u CARGO_TARGET_DIR TMPDIR=/home/timo/.local/state/worktree/trees/b10x/ess/review-empty-scenarios/target CARGO_INCREMENTAL=0 CARGO_PROFILE_DEV_DEBUG=0 CARGO_PROFILE_TEST_DEBUG=0 CARGO_BUILD_JOBS=4 CARGO_NET_OFFLINE=true RUSTC_WRAPPER=/usr/bin/sccache SCCACHE_SERVER_UDS=/home/timo/.local/state/worktree/trees/b10x/ess/wt-752828a285ba/target/w4-cache.sock GOCACHE=/home/timo/.local/state/worktree/trees/b10x/ess/review-empty-scenarios/target/go-cache GOTMPDIR=/home/timo/.local/state/worktree/trees/b10x/ess/review-empty-scenarios/target/go-tmp cargo fmt -p ess-cli --check
+env -u CARGO_TARGET_DIR TMPDIR=~/.local/state/worktree/trees/b10x/ess/review-empty-scenarios/target CARGO_INCREMENTAL=0 CARGO_PROFILE_DEV_DEBUG=0 CARGO_PROFILE_TEST_DEBUG=0 CARGO_BUILD_JOBS=4 CARGO_NET_OFFLINE=true RUSTC_WRAPPER=/usr/bin/sccache SCCACHE_SERVER_UDS=~/.local/state/worktree/trees/b10x/ess/wt-752828a285ba/target/w4-cache.sock GOCACHE=~/.local/state/worktree/trees/b10x/ess/review-empty-scenarios/target/go-cache GOTMPDIR=~/.local/state/worktree/trees/b10x/ess/review-empty-scenarios/target/go-tmp cargo fmt -p ess-cli --check
 start: 2026-09-05T23:50:40Z
 end: 2026-09-05T23:50:40Z
 exit: 0
@@ -586,22 +586,22 @@ exit: 0
 ### adversary-clippy-final
 
 ```console
-env -u CARGO_TARGET_DIR TMPDIR=/home/timo/.local/state/worktree/trees/b10x/ess/review-empty-scenarios/target CARGO_INCREMENTAL=0 CARGO_PROFILE_DEV_DEBUG=0 CARGO_PROFILE_TEST_DEBUG=0 CARGO_BUILD_JOBS=4 CARGO_NET_OFFLINE=true RUSTC_WRAPPER=/usr/bin/sccache SCCACHE_SERVER_UDS=/home/timo/.local/state/worktree/trees/b10x/ess/wt-752828a285ba/target/w4-cache.sock GOCACHE=/home/timo/.local/state/worktree/trees/b10x/ess/review-empty-scenarios/target/go-cache GOTMPDIR=/home/timo/.local/state/worktree/trees/b10x/ess/review-empty-scenarios/target/go-tmp cargo clippy -p ess-cli --all-targets --locked --offline -- -D warnings
+env -u CARGO_TARGET_DIR TMPDIR=~/.local/state/worktree/trees/b10x/ess/review-empty-scenarios/target CARGO_INCREMENTAL=0 CARGO_PROFILE_DEV_DEBUG=0 CARGO_PROFILE_TEST_DEBUG=0 CARGO_BUILD_JOBS=4 CARGO_NET_OFFLINE=true RUSTC_WRAPPER=/usr/bin/sccache SCCACHE_SERVER_UDS=~/.local/state/worktree/trees/b10x/ess/wt-752828a285ba/target/w4-cache.sock GOCACHE=~/.local/state/worktree/trees/b10x/ess/review-empty-scenarios/target/go-cache GOTMPDIR=~/.local/state/worktree/trees/b10x/ess/review-empty-scenarios/target/go-tmp cargo clippy -p ess-cli --all-targets --locked --offline -- -D warnings
 start: 2026-09-05T23:50:40Z
 end: 2026-09-05T23:50:40Z
 exit: 0
-    Checking ess-cli v0.19.0 (/home/timo/.local/state/worktree/trees/b10x/ess/review-empty-scenarios/crates/edge/ess-cli)
+    Checking ess-cli v0.19.0 (~/.local/state/worktree/trees/b10x/ess/review-empty-scenarios/crates/edge/ess-cli)
     Finished `dev` profile [unoptimized] target(s) in 0.11s
 ```
 
 ### adversary-suite-final
 
 ```console
-env -u CARGO_TARGET_DIR TMPDIR=/home/timo/.local/state/worktree/trees/b10x/ess/review-empty-scenarios/target CARGO_INCREMENTAL=0 CARGO_PROFILE_DEV_DEBUG=0 CARGO_PROFILE_TEST_DEBUG=0 CARGO_BUILD_JOBS=4 CARGO_NET_OFFLINE=true RUSTC_WRAPPER=/usr/bin/sccache SCCACHE_SERVER_UDS=/home/timo/.local/state/worktree/trees/b10x/ess/wt-752828a285ba/target/w4-cache.sock GOCACHE=/home/timo/.local/state/worktree/trees/b10x/ess/review-empty-scenarios/target/go-cache GOTMPDIR=/home/timo/.local/state/worktree/trees/b10x/ess/review-empty-scenarios/target/go-tmp cargo test -p ess-cli --locked --offline
+env -u CARGO_TARGET_DIR TMPDIR=~/.local/state/worktree/trees/b10x/ess/review-empty-scenarios/target CARGO_INCREMENTAL=0 CARGO_PROFILE_DEV_DEBUG=0 CARGO_PROFILE_TEST_DEBUG=0 CARGO_BUILD_JOBS=4 CARGO_NET_OFFLINE=true RUSTC_WRAPPER=/usr/bin/sccache SCCACHE_SERVER_UDS=~/.local/state/worktree/trees/b10x/ess/wt-752828a285ba/target/w4-cache.sock GOCACHE=~/.local/state/worktree/trees/b10x/ess/review-empty-scenarios/target/go-cache GOTMPDIR=~/.local/state/worktree/trees/b10x/ess/review-empty-scenarios/target/go-tmp cargo test -p ess-cli --locked --offline
 start: 2026-09-05T23:50:41Z
 end: 2026-09-05T23:50:44Z
 exit: 0
-   Compiling ess-cli v0.19.0 (/home/timo/.local/state/worktree/trees/b10x/ess/review-empty-scenarios/crates/edge/ess-cli)
+   Compiling ess-cli v0.19.0 (~/.local/state/worktree/trees/b10x/ess/review-empty-scenarios/crates/edge/ess-cli)
     Finished `test` profile [unoptimized] target(s) in 0.22s
      Running unittests src/main.rs (target/debug/deps/ess-c6179ec2412cb9c0)
 
@@ -825,15 +825,15 @@ General output ownership, semantic compilation partial writes after nonempty dis
 
 ## 6. Paths outside the worktree and handoff
 
-All explicit test, command-record, fixture, build, standalone-harness, log, patch and report writes are under /home/timo/.local/state/worktree/trees/b10x/ess/review-empty-scenarios. No cleanup ran, and every record/build directory remains. New subprocess records are retained under target/review-boundaries-6/adversary-fixture-*/command-* as command.txt, stdout, stderr and exit.
+All explicit test, command-record, fixture, build, standalone-harness, log, patch and report writes are under ~/.local/state/worktree/trees/b10x/ess/review-empty-scenarios. No cleanup ran, and every record/build directory remains. New subprocess records are retained under target/review-boundaries-6/adversary-fixture-*/command-* as command.txt, stdout, stderr and exit.
 
 Shared infrastructure accessed by the instructed Cargo environment:
 
-- /home/timo/.cache/sccache — explicitly authorized shared compiler cache; compiler cache writes may occur here.
-- /home/timo/.local/state/worktree/trees/b10x/ess/wt-752828a285ba/target/w4-cache.sock — explicitly authorized cache-server socket; server was neither stopped nor cleaned.
-- /home/timo/.cargo/.global-cache — Cargo global metadata; its timestamp advanced during this concurrently active workspace session, so exact per-agent write attribution is unavailable.
-- /home/timo/.cargo/.package-cache — Cargo package-cache lock; observed timestamp predates this task.
-- /home/timo/.cargo/.package-cache-mutate — Cargo package-cache mutation lock; observed timestamp predates this task.
+- ~/.cache/sccache — explicitly authorized shared compiler cache; compiler cache writes may occur here.
+- ~/.local/state/worktree/trees/b10x/ess/wt-752828a285ba/target/w4-cache.sock — explicitly authorized cache-server socket; server was neither stopped nor cleaned.
+- ~/.cargo/.global-cache — Cargo global metadata; its timestamp advanced during this concurrently active workspace session, so exact per-agent write attribution is unavailable.
+- ~/.cargo/.package-cache — Cargo package-cache lock; observed timestamp predates this task.
+- ~/.cargo/.package-cache-mutate — Cargo package-cache mutation lock; observed timestamp predates this task.
 
 No task-owned path was created outside the worktree. TMPDIR, GOCACHE and GOTMPDIR name the assigned tree's target directory, and CARGO_TARGET_DIR was explicitly unset. The two shared cache locations named in the header are cache data and Cargo metadata, not task-owned cleanup targets.
 

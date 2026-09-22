@@ -35,7 +35,7 @@ All four cases were written before the first test execution. Each was selected a
 
 After the first case's original red, formatting was applied to the new target and its still-unselected compose success postcondition was corrected to the actual third generated artifact, ess-client-plan.json. The directory-spelling assertion remains unchanged; the original first output remains retained. There were no compile/setup failures. All final source cases were subsequently exercised by the suite.
 
-Every Cargo command used the assigned frozen Rust tools, own default target, `--offline --locked`, jobs2, test threads2, debug0 and incremental0. PATH begins `/home/timo/.cache/ess-review/2026-09-06-resume/wave19-retained-inputs/rust-toolchain/bin`; RUSTC and RUSTDOC name its exact rustc/rustdoc binaries. The four RUSTC_WRAPPER/RUSTC_WORKSPACE_WRAPPER/CARGO_BUILD_RUSTC_WRAPPER/CARGO_BUILD_RUSTC_WORKSPACE_WRAPPER variables were blank; RUSTFLAGS, CARGO_ENCODED_RUSTFLAGS, CARGO_TARGET_DIR and any CARGO_TARGET_*_RUSTFLAGS variables were unset. The existing `/home/timo/.cargo/config.toml` supplies the single native lld flag. TMPDIR was `/home/timo/.cache/e19-adversary-tmp`. No dependency install/change or foreign mutable CLI execution occurred.
+Every Cargo command used the assigned frozen Rust tools, own default target, `--offline --locked`, jobs2, test threads2, debug0 and incremental0. PATH begins `~/.cache/ess-review/2026-09-06-resume/wave19-retained-inputs/rust-toolchain/bin`; RUSTC and RUSTDOC name its exact rustc/rustdoc binaries. The four RUSTC_WRAPPER/RUSTC_WORKSPACE_WRAPPER/CARGO_BUILD_RUSTC_WRAPPER/CARGO_BUILD_RUSTC_WORKSPACE_WRAPPER variables were blank; RUSTFLAGS, CARGO_ENCODED_RUSTFLAGS, CARGO_TARGET_DIR and any CARGO_TARGET_*_RUSTFLAGS variables were unset. The existing `~/.cargo/config.toml` supplies the single native lld flag. TMPDIR was `~/.cache/e19-adversary-tmp`. No dependency install/change or foreign mutable CLI execution occurred.
 
 Actual first command: `cargo test --offline --locked -p ess-cli --test output_ownership_adversary standalone_generation_refuses_directory_spelling_before_enrollment -- --exact --nocapture`
 
@@ -43,7 +43,7 @@ stdout, verbatim:
 ```text
 
 running 1 test
-retained fixture: /home/timo/.cache/e19-adversary-tmp/e19-adversary-2257495-0
+retained fixture: ~/.cache/e19-adversary-tmp/e19-adversary-2257495-0
 CLI ["schema", "typescript", "--schemas", "record.schema.json", "urn:record", "--root", "Record", "--out", "out/record.ts/"]: status=exit status: 0
 stdout:
 wrote out/record.ts/ from record.schema.json
@@ -99,9 +99,9 @@ stderr, verbatim:
    Compiling serde_yaml v0.9.34+deprecated
    Compiling autocfg v1.5.1
    Compiling num-traits v0.2.19
-   Compiling ess-primitives v0.20.0 (/home/timo/.local/state/worktree/trees/b10x/ess/ess-output-ownership-adversary-wave19/crates/specify/ess-primitives)
+   Compiling ess-primitives v0.20.0 (~/.local/state/worktree/trees/b10x/ess/ess-output-ownership-adversary-wave19/crates/specify/ess-primitives)
    Compiling libc v0.2.189
-   Compiling ess-domain v0.20.0 (/home/timo/.local/state/worktree/trees/b10x/ess/ess-output-ownership-adversary-wave19/crates/specify/ess-domain)
+   Compiling ess-domain v0.20.0 (~/.local/state/worktree/trees/b10x/ess/ess-output-ownership-adversary-wave19/crates/specify/ess-domain)
    Compiling num-integer v0.1.47
    Compiling heck v0.5.0
    Compiling version_check v0.9.5
@@ -111,7 +111,7 @@ stderr, verbatim:
    Compiling getrandom v0.3.4
    Compiling ahash v0.8.12
    Compiling num-bigint v0.4.8
-   Compiling ess-compiler v0.20.0 (/home/timo/.local/state/worktree/trees/b10x/ess/ess-output-ownership-adversary-wave19/crates/specify/ess-compiler)
+   Compiling ess-compiler v0.20.0 (~/.local/state/worktree/trees/b10x/ess/ess-output-ownership-adversary-wave19/crates/specify/ess-compiler)
    Compiling regex-syntax v0.8.11
    Compiling parking_lot_core v0.9.12
    Compiling ref-cast v1.0.27
@@ -120,7 +120,7 @@ stderr, verbatim:
    Compiling num-rational v0.4.2
    Compiling num-iter v0.1.46
    Compiling num-complex v0.4.6
-   Compiling infra-domain v0.20.0 (/home/timo/.local/state/worktree/trees/b10x/ess/ess-output-ownership-adversary-wave19/crates/infra/infra-domain)
+   Compiling infra-domain v0.20.0 (~/.local/state/worktree/trees/b10x/ess/ess-output-ownership-adversary-wave19/crates/infra/infra-domain)
    Compiling ref-cast-impl v1.0.27
    Compiling aho-corasick v1.1.5
    Compiling scopeguard v1.2.0
@@ -131,7 +131,7 @@ stderr, verbatim:
    Compiling anstyle-parse v1.0.0
    Compiling lock_api v0.4.14
    Compiling num v0.4.3
-   Compiling ess-gen v0.20.0 (/home/timo/.local/state/worktree/trees/b10x/ess/ess-output-ownership-adversary-wave19/crates/generate/ess-gen)
+   Compiling ess-gen v0.20.0 (~/.local/state/worktree/trees/b10x/ess/ess-output-ownership-adversary-wave19/crates/generate/ess-gen)
    Compiling anstyle v1.0.14
    Compiling anstyle-query v1.1.5
    Compiling bit-vec v0.8.0
@@ -144,7 +144,7 @@ stderr, verbatim:
    Compiling bit-set v0.8.0
    Compiling fraction v0.17.0
    Compiling parking_lot v0.12.5
-   Compiling infra-compiler v0.20.0 (/home/timo/.local/state/worktree/trees/b10x/ess/ess-output-ownership-adversary-wave19/crates/infra/infra-compiler)
+   Compiling infra-compiler v0.20.0 (~/.local/state/worktree/trees/b10x/ess/ess-output-ownership-adversary-wave19/crates/infra/infra-compiler)
    Compiling strum_macros v0.28.0
    Compiling bytecount v0.6.9
    Compiling outref v0.5.2
@@ -159,7 +159,7 @@ stderr, verbatim:
    Compiling clap_builder v4.6.6
    Compiling jsonschema-value v0.52.1
    Compiling strum v0.28.0
-   Compiling infra-analyze v0.20.0 (/home/timo/.local/state/worktree/trees/b10x/ess/ess-output-ownership-adversary-wave19/crates/infra/infra-analyze)
+   Compiling infra-analyze v0.20.0 (~/.local/state/worktree/trees/b10x/ess/ess-output-ownership-adversary-wave19/crates/infra/infra-analyze)
    Compiling fancy-regex v0.19.0
    Compiling regex v1.13.1
    Compiling jsonschema-regex v0.52.1
@@ -170,21 +170,21 @@ stderr, verbatim:
    Compiling rustix v1.1.4
    Compiling jsonschema v0.52.1
    Compiling clap v4.6.6
-   Compiling infra-spec v0.20.0 (/home/timo/.local/state/worktree/trees/b10x/ess/ess-output-ownership-adversary-wave19/crates/infra/infra-spec)
-   Compiling ess-conformance v0.20.0 (/home/timo/.local/state/worktree/trees/b10x/ess/ess-output-ownership-adversary-wave19/crates/verify/ess-conformance)
-   Compiling ess-realization v0.20.0 (/home/timo/.local/state/worktree/trees/b10x/ess/ess-output-ownership-adversary-wave19/crates/specify/ess-realization)
+   Compiling infra-spec v0.20.0 (~/.local/state/worktree/trees/b10x/ess/ess-output-ownership-adversary-wave19/crates/infra/infra-spec)
+   Compiling ess-conformance v0.20.0 (~/.local/state/worktree/trees/b10x/ess/ess-output-ownership-adversary-wave19/crates/verify/ess-conformance)
+   Compiling ess-realization v0.20.0 (~/.local/state/worktree/trees/b10x/ess/ess-output-ownership-adversary-wave19/crates/specify/ess-realization)
    Compiling semver v1.0.28
    Compiling base64 v0.22.1
    Compiling linux-raw-sys v0.12.1
-   Compiling schema-contract v0.20.0 (/home/timo/.local/state/worktree/trees/b10x/ess/ess-output-ownership-adversary-wave19/crates/generate/schema-contract)
-   Compiling ess-deployment v0.20.0 (/home/timo/.local/state/worktree/trees/b10x/ess/ess-output-ownership-adversary-wave19/crates/generate/ess-deployment)
-   Compiling ess-diff v0.20.0 (/home/timo/.local/state/worktree/trees/b10x/ess/ess-output-ownership-adversary-wave19/crates/verify/ess-diff)
-   Compiling infra-project v0.20.0 (/home/timo/.local/state/worktree/trees/b10x/ess/ess-output-ownership-adversary-wave19/crates/infra/infra-project)
-   Compiling ess-kubernetes v0.20.0 (/home/timo/.local/state/worktree/trees/b10x/ess/ess-output-ownership-adversary-wave19/crates/infra/ess-kubernetes)
-   Compiling ess-synth v0.20.0 (/home/timo/.local/state/worktree/trees/b10x/ess/ess-output-ownership-adversary-wave19/crates/generate/ess-synth)
-   Compiling ess-composition v0.20.0 (/home/timo/.local/state/worktree/trees/b10x/ess/ess-output-ownership-adversary-wave19/crates/specify/ess-composition)
-   Compiling ess-openapi v0.20.0 (/home/timo/.local/state/worktree/trees/b10x/ess/ess-output-ownership-adversary-wave19/crates/generate/ess-openapi)
-   Compiling ess-cli v0.20.0 (/home/timo/.local/state/worktree/trees/b10x/ess/ess-output-ownership-adversary-wave19/crates/edge/ess-cli)
+   Compiling schema-contract v0.20.0 (~/.local/state/worktree/trees/b10x/ess/ess-output-ownership-adversary-wave19/crates/generate/schema-contract)
+   Compiling ess-deployment v0.20.0 (~/.local/state/worktree/trees/b10x/ess/ess-output-ownership-adversary-wave19/crates/generate/ess-deployment)
+   Compiling ess-diff v0.20.0 (~/.local/state/worktree/trees/b10x/ess/ess-output-ownership-adversary-wave19/crates/verify/ess-diff)
+   Compiling infra-project v0.20.0 (~/.local/state/worktree/trees/b10x/ess/ess-output-ownership-adversary-wave19/crates/infra/infra-project)
+   Compiling ess-kubernetes v0.20.0 (~/.local/state/worktree/trees/b10x/ess/ess-output-ownership-adversary-wave19/crates/infra/ess-kubernetes)
+   Compiling ess-synth v0.20.0 (~/.local/state/worktree/trees/b10x/ess/ess-output-ownership-adversary-wave19/crates/generate/ess-synth)
+   Compiling ess-composition v0.20.0 (~/.local/state/worktree/trees/b10x/ess/ess-output-ownership-adversary-wave19/crates/specify/ess-composition)
+   Compiling ess-openapi v0.20.0 (~/.local/state/worktree/trees/b10x/ess/ess-output-ownership-adversary-wave19/crates/generate/ess-openapi)
+   Compiling ess-cli v0.20.0 (~/.local/state/worktree/trees/b10x/ess/ess-output-ownership-adversary-wave19/crates/edge/ess-cli)
     Finished `test` profile [unoptimized] target(s) in 1m 25s
      Running tests/output_ownership_adversary.rs (target/debug/deps/output_ownership_adversary-f917312615a5063e)
 
@@ -205,18 +205,18 @@ stdout, verbatim:
 ```text
 
 running 1 test
-retained fixture: /home/timo/.cache/e19-adversary-tmp/e19-adversary-2294466-0
-CLI ["compose", "--path", "/home/timo/.local/state/worktree/trees/b10x/ess/ess-output-ownership-adversary-wave19/crates/specify/ess-composition/tests/fixtures/compositions/workbench.yaml", "--service", "todo=/home/timo/.local/state/worktree/trees/b10x/ess/ess-output-ownership-adversary-wave19/crates/specify/ess-composition/tests/fixtures/two-components", "--service", "usage=/home/timo/.local/state/worktree/trees/b10x/ess/ess-output-ownership-adversary-wave19/crates/specify/ess-composition/tests/fixtures/two-components", "--ownership-root", "anchor", "--out", "anchor/client"]: status=exit status: 0
+retained fixture: ~/.cache/e19-adversary-tmp/e19-adversary-2294466-0
+CLI ["compose", "--path", "~/.local/state/worktree/trees/b10x/ess/ess-output-ownership-adversary-wave19/crates/specify/ess-composition/tests/fixtures/compositions/workbench.yaml", "--service", "todo=~/.local/state/worktree/trees/b10x/ess/ess-output-ownership-adversary-wave19/crates/specify/ess-composition/tests/fixtures/two-components", "--service", "usage=~/.local/state/worktree/trees/b10x/ess/ess-output-ownership-adversary-wave19/crates/specify/ess-composition/tests/fixtures/two-components", "--ownership-root", "anchor", "--out", "anchor/client"]: status=exit status: 0
 stdout:
 devcenter — 2 exact component surface(s), 2 semantic reference(s), compiled to anchor/client
 
 stderr:
 
-CLI ["compose", "--path", "/home/timo/.local/state/worktree/trees/b10x/ess/ess-output-ownership-adversary-wave19/crates/specify/ess-composition/tests/fixtures/compositions/workbench.yaml", "--service", "todo=/home/timo/.local/state/worktree/trees/b10x/ess/ess-output-ownership-adversary-wave19/crates/specify/ess-composition/tests/fixtures/two-components", "--service", "usage=/home/timo/.local/state/worktree/trees/b10x/ess/ess-output-ownership-adversary-wave19/crates/specify/ess-composition/tests/fixtures/two-components", "--ownership-root", "anchor", "--client-rust-out", "anchor/client"]: status=exit status: 1
+CLI ["compose", "--path", "~/.local/state/worktree/trees/b10x/ess/ess-output-ownership-adversary-wave19/crates/specify/ess-composition/tests/fixtures/compositions/workbench.yaml", "--service", "todo=~/.local/state/worktree/trees/b10x/ess/ess-output-ownership-adversary-wave19/crates/specify/ess-composition/tests/fixtures/two-components", "--service", "usage=~/.local/state/worktree/trees/b10x/ess/ess-output-ownership-adversary-wave19/crates/specify/ess-composition/tests/fixtures/two-components", "--ownership-root", "anchor", "--client-rust-out", "anchor/client"]: status=exit status: 1
 stdout:
 
 stderr:
-error: output path has an incompatible file type or symlink: /home/timo/.cache/e19-adversary-tmp/e19-adversary-2294466-0/anchor/client
+error: output path has an incompatible file type or symlink: ~/.cache/e19-adversary-tmp/e19-adversary-2294466-0/anchor/client
 
 test composition_replaces_its_owned_companion_with_a_client_directory ... FAILED
 
@@ -231,7 +231,7 @@ test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 3 filtered out; 
 ```
 stderr, verbatim:
 ```text
-   Compiling ess-cli v0.20.0 (/home/timo/.local/state/worktree/trees/b10x/ess/ess-output-ownership-adversary-wave19/crates/edge/ess-cli)
+   Compiling ess-cli v0.20.0 (~/.local/state/worktree/trees/b10x/ess/ess-output-ownership-adversary-wave19/crates/edge/ess-cli)
     Finished `test` profile [unoptimized] target(s) in 3.01s
      Running tests/output_ownership_adversary.rs (target/debug/deps/output_ownership_adversary-f917312615a5063e)
 
@@ -253,9 +253,9 @@ stdout, verbatim:
 ```text
 
 running 1 test
-retained fixture: /home/timo/.cache/e19-adversary-tmp/e19-adversary-2294652-0
+retained fixture: ~/.cache/e19-adversary-tmp/e19-adversary-2294652-0
 native É.json/é.json alias lookup: false
-CLI ["compose", "--path", "/home/timo/.local/state/worktree/trees/b10x/ess/ess-output-ownership-adversary-wave19/crates/specify/ess-composition/tests/fixtures/compositions/workbench.yaml", "--service", "todo=/home/timo/.local/state/worktree/trees/b10x/ess/ess-output-ownership-adversary-wave19/crates/specify/ess-composition/tests/fixtures/two-components", "--service", "usage=/home/timo/.local/state/worktree/trees/b10x/ess/ess-output-ownership-adversary-wave19/crates/specify/ess-composition/tests/fixtures/two-components", "--ownership-root", "anchor", "--out", "anchor/É.json", "--client-plan-out", "anchor/é.json"]: status=exit status: 0
+CLI ["compose", "--path", "~/.local/state/worktree/trees/b10x/ess/ess-output-ownership-adversary-wave19/crates/specify/ess-composition/tests/fixtures/compositions/workbench.yaml", "--service", "todo=~/.local/state/worktree/trees/b10x/ess/ess-output-ownership-adversary-wave19/crates/specify/ess-composition/tests/fixtures/two-components", "--service", "usage=~/.local/state/worktree/trees/b10x/ess/ess-output-ownership-adversary-wave19/crates/specify/ess-composition/tests/fixtures/two-components", "--ownership-root", "anchor", "--out", "anchor/É.json", "--client-plan-out", "anchor/é.json"]: status=exit status: 0
 stdout:
 devcenter — 2 exact component surface(s), 2 semantic reference(s), compiled to anchor/É.json; client plan written to anchor/é.json
 
@@ -285,7 +285,7 @@ stdout, verbatim:
 ```text
 
 running 1 test
-retained fixture: /home/timo/.cache/e19-adversary-tmp/e19-adversary-2294935-0
+retained fixture: ~/.cache/e19-adversary-tmp/e19-adversary-2294935-0
 first installation interruption: Err(injected process-equivalent interruption after first install)
 test rollback_preserves_an_unselected_owner_and_actual_readonly_file_modes ... ok
 
@@ -315,22 +315,22 @@ stdout, verbatim:
 ```text
 
 running 4 tests
-retained fixture: /home/timo/.cache/e19-adversary-tmp/e19-adversary-2303741-0
-retained fixture: /home/timo/.cache/e19-adversary-tmp/e19-adversary-2303741-1
-CLI ["compose", "--path", "/home/timo/.local/state/worktree/trees/b10x/ess/ess-output-ownership-adversary-wave19/crates/specify/ess-composition/tests/fixtures/compositions/workbench.yaml", "--service", "todo=/home/timo/.local/state/worktree/trees/b10x/ess/ess-output-ownership-adversary-wave19/crates/specify/ess-composition/tests/fixtures/two-components", "--service", "usage=/home/timo/.local/state/worktree/trees/b10x/ess/ess-output-ownership-adversary-wave19/crates/specify/ess-composition/tests/fixtures/two-components", "--ownership-root", "anchor", "--out", "anchor/client"]: status=exit status: 0
+retained fixture: ~/.cache/e19-adversary-tmp/e19-adversary-2303741-0
+retained fixture: ~/.cache/e19-adversary-tmp/e19-adversary-2303741-1
+CLI ["compose", "--path", "~/.local/state/worktree/trees/b10x/ess/ess-output-ownership-adversary-wave19/crates/specify/ess-composition/tests/fixtures/compositions/workbench.yaml", "--service", "todo=~/.local/state/worktree/trees/b10x/ess/ess-output-ownership-adversary-wave19/crates/specify/ess-composition/tests/fixtures/two-components", "--service", "usage=~/.local/state/worktree/trees/b10x/ess/ess-output-ownership-adversary-wave19/crates/specify/ess-composition/tests/fixtures/two-components", "--ownership-root", "anchor", "--out", "anchor/client"]: status=exit status: 0
 stdout:
 devcenter — 2 exact component surface(s), 2 semantic reference(s), compiled to anchor/client
 
 stderr:
 
-CLI ["compose", "--path", "/home/timo/.local/state/worktree/trees/b10x/ess/ess-output-ownership-adversary-wave19/crates/specify/ess-composition/tests/fixtures/compositions/workbench.yaml", "--service", "todo=/home/timo/.local/state/worktree/trees/b10x/ess/ess-output-ownership-adversary-wave19/crates/specify/ess-composition/tests/fixtures/two-components", "--service", "usage=/home/timo/.local/state/worktree/trees/b10x/ess/ess-output-ownership-adversary-wave19/crates/specify/ess-composition/tests/fixtures/two-components", "--ownership-root", "anchor", "--client-rust-out", "anchor/client"]: status=exit status: 1
+CLI ["compose", "--path", "~/.local/state/worktree/trees/b10x/ess/ess-output-ownership-adversary-wave19/crates/specify/ess-composition/tests/fixtures/compositions/workbench.yaml", "--service", "todo=~/.local/state/worktree/trees/b10x/ess/ess-output-ownership-adversary-wave19/crates/specify/ess-composition/tests/fixtures/two-components", "--service", "usage=~/.local/state/worktree/trees/b10x/ess/ess-output-ownership-adversary-wave19/crates/specify/ess-composition/tests/fixtures/two-components", "--ownership-root", "anchor", "--client-rust-out", "anchor/client"]: status=exit status: 1
 stdout:
 
 stderr:
-error: output path has an incompatible file type or symlink: /home/timo/.cache/e19-adversary-tmp/e19-adversary-2303741-0/anchor/client
+error: output path has an incompatible file type or symlink: ~/.cache/e19-adversary-tmp/e19-adversary-2303741-0/anchor/client
 
 test composition_replaces_its_owned_companion_with_a_client_directory ... FAILED
-retained fixture: /home/timo/.cache/e19-adversary-tmp/e19-adversary-2303741-2
+retained fixture: ~/.cache/e19-adversary-tmp/e19-adversary-2303741-2
 CLI ["schema", "typescript", "--schemas", "record.schema.json", "urn:record", "--root", "Record", "--out", "out/record.ts/"]: status=exit status: 0
 stdout:
 wrote out/record.ts/ from record.schema.json
@@ -338,10 +338,10 @@ wrote out/record.ts/ from record.schema.json
 stderr:
 
 test standalone_generation_refuses_directory_spelling_before_enrollment ... FAILED
-retained fixture: /home/timo/.cache/e19-adversary-tmp/e19-adversary-2303741-3
+retained fixture: ~/.cache/e19-adversary-tmp/e19-adversary-2303741-3
 native É.json/é.json alias lookup: false
 first installation interruption: Err(injected process-equivalent interruption after first install)
-CLI ["compose", "--path", "/home/timo/.local/state/worktree/trees/b10x/ess/ess-output-ownership-adversary-wave19/crates/specify/ess-composition/tests/fixtures/compositions/workbench.yaml", "--service", "todo=/home/timo/.local/state/worktree/trees/b10x/ess/ess-output-ownership-adversary-wave19/crates/specify/ess-composition/tests/fixtures/two-components", "--service", "usage=/home/timo/.local/state/worktree/trees/b10x/ess/ess-output-ownership-adversary-wave19/crates/specify/ess-composition/tests/fixtures/two-components", "--ownership-root", "anchor", "--out", "anchor/É.json", "--client-plan-out", "anchor/é.json"]: status=exit status: 0
+CLI ["compose", "--path", "~/.local/state/worktree/trees/b10x/ess/ess-output-ownership-adversary-wave19/crates/specify/ess-composition/tests/fixtures/compositions/workbench.yaml", "--service", "todo=~/.local/state/worktree/trees/b10x/ess/ess-output-ownership-adversary-wave19/crates/specify/ess-composition/tests/fixtures/two-components", "--service", "usage=~/.local/state/worktree/trees/b10x/ess/ess-output-ownership-adversary-wave19/crates/specify/ess-composition/tests/fixtures/two-components", "--ownership-root", "anchor", "--out", "anchor/É.json", "--client-plan-out", "anchor/é.json"]: status=exit status: 0
 stdout:
 devcenter — 2 exact component surface(s), 2 semantic reference(s), compiled to anchor/É.json; client plan written to anchor/é.json
 
@@ -401,7 +401,7 @@ Distinct native Unicode companion names published distinct contents and recovere
 
 5. Source/native retention and resource handoff
 
-Assigned managed checkout: `/home/timo/.local/state/worktree/trees/b10x/ess/ess-output-ownership-adversary-wave19`; branch `probe/output-ownership-wave19`; unchanged HEAD050c416650119852d213d464dfb76c51673121c6. The whole candidate delta, selected contract/model, touched code/tests and production callers were read; retained source-scoping records supplied the exact W01–W17 wording. Previous consumer attacks and removed trees were not resumed.
+Assigned managed checkout: `~/.local/state/worktree/trees/b10x/ess/ess-output-ownership-adversary-wave19`; branch `probe/output-ownership-wave19`; unchanged HEAD050c416650119852d213d464dfb76c51673121c6. The whole candidate delta, selected contract/model, touched code/tests and production callers were read; retained source-scoping records supplied the exact W01–W17 wording. Previous consumer attacks and removed trees were not resumed.
 
 Full brief SHA2562a282b834bab69e697a0cb1b3de5a851c4dbd2fc3bcd67f94eebb461fe93ec48; resource grant SHA25648c1e384f952e46cdbff6326668d745676838c743201ff08ce570e6ad658bf9b; exact adversary0.8.1 charter SHA25675bb7514688c3ba89f5788b6150e1ce35fedb42c85a85d717c4dc979c2e27910. The initial compiler hold was respected, and only root's explicit handback admitted the first build.
 
@@ -416,20 +416,20 @@ All owned test/Clippy processes completed, all tool sessions were consumed, and 
 
 6. Every outside write surface
 
-`/home/timo/.cache/e19-adversary-tmp` contains all retained test fixtures and any native compiler temporary files created under the assigned TMPDIR. The complete surviving tree is in native.tar; the eight retained fixture roots are:
+`~/.cache/e19-adversary-tmp` contains all retained test fixtures and any native compiler temporary files created under the assigned TMPDIR. The complete surviving tree is in native.tar; the eight retained fixture roots are:
 
-- /home/timo/.cache/e19-adversary-tmp/e19-adversary-2257495-0
-- /home/timo/.cache/e19-adversary-tmp/e19-adversary-2294466-0
-- /home/timo/.cache/e19-adversary-tmp/e19-adversary-2294652-0
-- /home/timo/.cache/e19-adversary-tmp/e19-adversary-2294935-0
-- /home/timo/.cache/e19-adversary-tmp/e19-adversary-2303741-0
-- /home/timo/.cache/e19-adversary-tmp/e19-adversary-2303741-1
-- /home/timo/.cache/e19-adversary-tmp/e19-adversary-2303741-2
-- /home/timo/.cache/e19-adversary-tmp/e19-adversary-2303741-3
+- ~/.cache/e19-adversary-tmp/e19-adversary-2257495-0
+- ~/.cache/e19-adversary-tmp/e19-adversary-2294466-0
+- ~/.cache/e19-adversary-tmp/e19-adversary-2294652-0
+- ~/.cache/e19-adversary-tmp/e19-adversary-2294935-0
+- ~/.cache/e19-adversary-tmp/e19-adversary-2303741-0
+- ~/.cache/e19-adversary-tmp/e19-adversary-2303741-1
+- ~/.cache/e19-adversary-tmp/e19-adversary-2303741-2
+- ~/.cache/e19-adversary-tmp/e19-adversary-2303741-3
 
-Cargo updated existing `/home/timo/.cargo/.global-cache` bookkeeping (observed mtime1788859302→1788859623 before the lint). Its existing `.package-cache` and `.package-cache-mutate` lock files were used; their size/mtime stayed unchanged. No dependency source/cache was removed or installed. These shared Cargo bookkeeping paths are not coordinator-owned disposable outputs.
+Cargo updated existing `~/.cargo/.global-cache` bookkeeping (observed mtime1788859302→1788859623 before the lint). Its existing `.package-cache` and `.package-cache-mutate` lock files were used; their size/mtime stayed unchanged. No dependency source/cache was removed or installed. These shared Cargo bookkeeping paths are not coordinator-owned disposable outputs.
 
-The own lifecycle hook updated `/home/timo/.local/state/worktree/registry.sqlite3` for this assigned session lease. Only that lease was acquired/renewed/released; no other lease or worktree lifecycle was changed. Shared registry bookkeeping is not an output to retire. All reports, source/native archives, patches and raw logs are inside the assigned checkout scratch. No /tmp, tmpfs, Atlas/Website, network integration or unassigned scratch write was made.
+The own lifecycle hook updated `~/.local/state/worktree/registry.sqlite3` for this assigned session lease. Only that lease was acquired/renewed/released; no other lease or worktree lifecycle was changed. Shared registry bookkeeping is not an output to retire. All reports, source/native archives, patches and raw logs are inside the assigned checkout scratch. No /tmp, tmpfs, Atlas/Website, network integration or unassigned scratch write was made.
 
 ```findings
 - file: crates/edge/ess-cli/src/output_ownership/mod.rs

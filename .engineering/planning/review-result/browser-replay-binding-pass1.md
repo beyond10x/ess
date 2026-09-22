@@ -45,12 +45,12 @@ The remaining assessment is bounded to the candidate and inspected source:
 For input accounting, paths below use these exact prefixes:
 
 ```text
-R = /home/timo/.local/state/worktree/trees/b10x/ess/wt-752828a285ba/
+R = ~/.local/state/worktree/trees/b10x/ess/wt-752828a285ba/
 C = R + target/review-boundaries-14/preparation/browser-replay-candidate/
 V = R + crates/verify/ess-conformance/
 E = R + crates/edge/ess-cli/
-D = /home/timo/.codex/plugins/cache/beyond10x/aep-drive/0.8.0/
-S = /home/timo/.codex/plugins/cache/beyond10x/ess-specify/0.8.0/
+D = ~/.codex/plugins/cache/beyond10x/aep-drive/0.8.0/
+S = ~/.codex/plugins/cache/beyond10x/ess-specify/0.8.0/
 ```
 
 All **34 inputs, 918,043 bytes** were read for SHA256 verification. All original manifest entries matched their retained size/hash; the 25 Git source inputs matched the frozen commit and local bytes. “Full” below means semantic reading of the entire file; line ranges distinguish partial reading from whole-file hashing. The historical fixture was additionally verified byte-identical to the fully read current default player.

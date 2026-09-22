@@ -44,8 +44,8 @@ All 63 original manifest inputs were reread as complete bytes for SHA256 compari
 
 Every path written by this pass:
 
-- /home/timo/.local/state/worktree/trees/b10x/ess/wt-752828a285ba/target/review-boundaries-15/preparation/delivery-trust-binding-pass-1/report.md
-- /home/timo/.local/state/worktree/trees/b10x/ess/wt-752828a285ba/target/review-boundaries-15/preparation/delivery-trust-binding-pass-1/readback.json
+- ~/.local/state/worktree/trees/b10x/ess/wt-752828a285ba/target/review-boundaries-15/preparation/delivery-trust-binding-pass-1/report.md
+- ~/.local/state/worktree/trees/b10x/ess/wt-752828a285ba/target/review-boundaries-15/preparation/delivery-trust-binding-pass-1/readback.json
 
 Paths written outside the assigned scratch: none. Paths written outside the worktree: none. Source, tests, planning, Git state and external scratch were not mutated; no files were deleted. No subagents, background processes or outstanding tool sessions were created. Quiescent after report/readback completion. Root records this report before routing; this is binding pass 1 of at most two, separate from browser source review.
 

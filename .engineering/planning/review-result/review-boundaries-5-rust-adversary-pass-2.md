@@ -28,7 +28,7 @@ Only those two tracked test files changed. There are no deletions: every pre-exi
 
 ## 2. New cases and first isolated executions
 
-The carried 190-case baseline comes from `correction-report-1.md`, SHA256 `a6de385b57462880e04dfdbbeeb3c6e57c7d433864f864205a1b9273b71415ff`; no baseline suite was run before these cases existed. This pass adds nine synth cases and two CLI cases. Every new case was run by its exact name before the first package run. The five synth failures and two CLI failures remain red in both complete package runs. The four new positive controls remain green. The actual charter used was `/home/timo/.claude/plugins/cache/beyond10x/aep-drive/0.7.0/agents/adversary.md`, the brief's same-version fallback. Acceptance is compiler-admitted valid models yielding compilable output or explicit pre-write refusals; the binding separately requires supported collection recursion and previously compilable output to remain admitted.
+The carried 190-case baseline comes from `correction-report-1.md`, SHA256 `a6de385b57462880e04dfdbbeeb3c6e57c7d433864f864205a1b9273b71415ff`; no baseline suite was run before these cases existed. This pass adds nine synth cases and two CLI cases. Every new case was run by its exact name before the first package run. The five synth failures and two CLI failures remain red in both complete package runs. The four new positive controls remain green. The actual charter used was `~/.claude/plugins/cache/beyond10x/aep-drive/0.7.0/agents/adversary.md`, the brief's same-version fallback. Acceptance is compiler-admitted valid models yielding compilable output or explicit pre-write refusals; the binding separately requires supported collection recursion and previously compilable output to remain admitted.
 
 | Test file / final line | Case | Final result | What the real runner establishes |
 |---|---|---|---|
@@ -61,21 +61,21 @@ cargo test --locked --offline -p ess-synth --test feasibility_adversary binding_
 Output:
 
 ```text
-   Compiling ess-synth v0.18.0 (/home/timo/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/crates/generate/ess-synth)
+   Compiling ess-synth v0.18.0 (~/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/crates/generate/ess-synth)
     Finished `test` profile [unoptimized] target(s) in 0.31s
      Running tests/feasibility_adversary.rs (target/debug/deps/feasibility_adversary-7a8cc9f9c85b11d8)
 
 running 1 test
-source witness: /home/timo/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/crates/generate/ess-synth/../../../target/review-boundaries-5/adversary-compiler/pass-2-binding-source-3304630-0
-cd "/home/timo/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/crates/generate/ess-synth/../../../target/review-boundaries-5/adversary-compiler/pass-2-binding-event-3304630-1" && env -u CARGO_TARGET_DIR "/home/timo/.rustup/toolchains/stable-x86_64-unknown-linux-gnu/bin/cargo" "generate-lockfile" "--offline"
+source witness: ~/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/crates/generate/ess-synth/../../../target/review-boundaries-5/adversary-compiler/pass-2-binding-source-3304630-0
+cd "~/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/crates/generate/ess-synth/../../../target/review-boundaries-5/adversary-compiler/pass-2-binding-event-3304630-1" && env -u CARGO_TARGET_DIR "~/.rustup/toolchains/stable-x86_64-unknown-linux-gnu/bin/cargo" "generate-lockfile" "--offline"
 
 
 exit status: 0
-cd "/home/timo/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/crates/generate/ess-synth/../../../target/review-boundaries-5/adversary-compiler/pass-2-binding-event-3304630-1" && env -u CARGO_TARGET_DIR "/home/timo/.rustup/toolchains/stable-x86_64-unknown-linux-gnu/bin/cargo" "check" "--locked" "--offline" "--workspace" "--all-targets" "--target-dir" "target"
+cd "~/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/crates/generate/ess-synth/../../../target/review-boundaries-5/adversary-compiler/pass-2-binding-event-3304630-1" && env -u CARGO_TARGET_DIR "~/.rustup/toolchains/stable-x86_64-unknown-linux-gnu/bin/cargo" "check" "--locked" "--offline" "--workspace" "--all-targets" "--target-dir" "target"
 
-    Checking demo-types v1.0.0 (/home/timo/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/target/review-boundaries-5/adversary-compiler/pass-2-binding-event-3304630-1/crates/demo-types)
-    Checking worker v1.0.0 (/home/timo/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/target/review-boundaries-5/adversary-compiler/pass-2-binding-event-3304630-1/crates/worker)
-    Checking demo-system v1.0.0 (/home/timo/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/target/review-boundaries-5/adversary-compiler/pass-2-binding-event-3304630-1/crates/demo-system)
+    Checking demo-types v1.0.0 (~/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/target/review-boundaries-5/adversary-compiler/pass-2-binding-event-3304630-1/crates/demo-types)
+    Checking worker v1.0.0 (~/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/target/review-boundaries-5/adversary-compiler/pass-2-binding-event-3304630-1/crates/worker)
+    Checking demo-system v1.0.0 (~/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/target/review-boundaries-5/adversary-compiler/pass-2-binding-event-3304630-1/crates/demo-system)
 error[E0618]: expected function, found `&demo_types::core::Fired`
    --> crates/demo-system/src/lib.rs:139:29
     |
@@ -108,7 +108,7 @@ error: could not compile `demo-system` (lib) due to 1 previous error; 1 warning 
 exit status: 101
 
 thread 'binding_function_cannot_be_hidden_by_the_delivery_event_parameter' (3304631) panicked at crates/generate/ess-synth/tests/feasibility_adversary.rs:115:5:
-admitted generated workspace failed its actual compiler: /home/timo/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/crates/generate/ess-synth/../../../target/review-boundaries-5/adversary-compiler/pass-2-binding-event-3304630-1
+admitted generated workspace failed its actual compiler: ~/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/crates/generate/ess-synth/../../../target/review-boundaries-5/adversary-compiler/pass-2-binding-event-3304630-1
 note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
 test binding_function_cannot_be_hidden_by_the_delivery_event_parameter ... FAILED
 
@@ -139,16 +139,16 @@ Output:
      Running tests/feasibility_adversary.rs (target/debug/deps/feasibility_adversary-7a8cc9f9c85b11d8)
 
 running 1 test
-source witness: /home/timo/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/crates/generate/ess-synth/../../../target/review-boundaries-5/adversary-compiler/pass-2-binding-source-3308583-0
-cd "/home/timo/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/crates/generate/ess-synth/../../../target/review-boundaries-5/adversary-compiler/pass-2-binding-input-later-3308583-1" && env -u CARGO_TARGET_DIR "/home/timo/.rustup/toolchains/stable-x86_64-unknown-linux-gnu/bin/cargo" "generate-lockfile" "--offline"
+source witness: ~/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/crates/generate/ess-synth/../../../target/review-boundaries-5/adversary-compiler/pass-2-binding-source-3308583-0
+cd "~/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/crates/generate/ess-synth/../../../target/review-boundaries-5/adversary-compiler/pass-2-binding-input-later-3308583-1" && env -u CARGO_TARGET_DIR "~/.rustup/toolchains/stable-x86_64-unknown-linux-gnu/bin/cargo" "generate-lockfile" "--offline"
 
 
 exit status: 0
-cd "/home/timo/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/crates/generate/ess-synth/../../../target/review-boundaries-5/adversary-compiler/pass-2-binding-input-later-3308583-1" && env -u CARGO_TARGET_DIR "/home/timo/.rustup/toolchains/stable-x86_64-unknown-linux-gnu/bin/cargo" "check" "--locked" "--offline" "--workspace" "--all-targets" "--target-dir" "target"
+cd "~/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/crates/generate/ess-synth/../../../target/review-boundaries-5/adversary-compiler/pass-2-binding-input-later-3308583-1" && env -u CARGO_TARGET_DIR "~/.rustup/toolchains/stable-x86_64-unknown-linux-gnu/bin/cargo" "check" "--locked" "--offline" "--workspace" "--all-targets" "--target-dir" "target"
 
-    Checking demo-types v1.0.0 (/home/timo/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/target/review-boundaries-5/adversary-compiler/pass-2-binding-input-later-3308583-1/crates/demo-types)
-    Checking worker v1.0.0 (/home/timo/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/target/review-boundaries-5/adversary-compiler/pass-2-binding-input-later-3308583-1/crates/worker)
-    Checking demo-system v1.0.0 (/home/timo/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/target/review-boundaries-5/adversary-compiler/pass-2-binding-input-later-3308583-1/crates/demo-system)
+    Checking demo-types v1.0.0 (~/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/target/review-boundaries-5/adversary-compiler/pass-2-binding-input-later-3308583-1/crates/demo-types)
+    Checking worker v1.0.0 (~/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/target/review-boundaries-5/adversary-compiler/pass-2-binding-input-later-3308583-1/crates/worker)
+    Checking demo-system v1.0.0 (~/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/target/review-boundaries-5/adversary-compiler/pass-2-binding-input-later-3308583-1/crates/demo-system)
 error[E0618]: expected function, found `Handle`
    --> crates/demo-system/src/lib.rs:156:29
     |
@@ -187,7 +187,7 @@ error: could not compile `demo-system` (lib) due to 1 previous error; 2 warnings
 exit status: 101
 
 thread 'a_later_binding_function_cannot_be_hidden_by_a_prior_input_local' (3308584) panicked at crates/generate/ess-synth/tests/feasibility_adversary.rs:115:5:
-admitted generated workspace failed its actual compiler: /home/timo/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/crates/generate/ess-synth/../../../target/review-boundaries-5/adversary-compiler/pass-2-binding-input-later-3308583-1
+admitted generated workspace failed its actual compiler: ~/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/crates/generate/ess-synth/../../../target/review-boundaries-5/adversary-compiler/pass-2-binding-input-later-3308583-1
 note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
 test a_later_binding_function_cannot_be_hidden_by_a_prior_input_local ... FAILED
 
@@ -218,16 +218,16 @@ Output:
      Running tests/feasibility_adversary.rs (target/debug/deps/feasibility_adversary-7a8cc9f9c85b11d8)
 
 running 1 test
-source witness: /home/timo/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/crates/generate/ess-synth/../../../target/review-boundaries-5/adversary-compiler/pass-2-binding-source-3308777-0
-cd "/home/timo/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/crates/generate/ess-synth/../../../target/review-boundaries-5/adversary-compiler/pass-2-binding-input-first-3308777-1/generated/rust/demo" && env -u CARGO_TARGET_DIR "/home/timo/.rustup/toolchains/stable-x86_64-unknown-linux-gnu/bin/cargo" "generate-lockfile" "--offline"
+source witness: ~/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/crates/generate/ess-synth/../../../target/review-boundaries-5/adversary-compiler/pass-2-binding-source-3308777-0
+cd "~/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/crates/generate/ess-synth/../../../target/review-boundaries-5/adversary-compiler/pass-2-binding-input-first-3308777-1/generated/rust/demo" && env -u CARGO_TARGET_DIR "~/.rustup/toolchains/stable-x86_64-unknown-linux-gnu/bin/cargo" "generate-lockfile" "--offline"
 
 
 exit status: 0
-cd "/home/timo/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/crates/generate/ess-synth/../../../target/review-boundaries-5/adversary-compiler/pass-2-binding-input-first-3308777-1/generated/rust/demo" && env -u CARGO_TARGET_DIR "/home/timo/.rustup/toolchains/stable-x86_64-unknown-linux-gnu/bin/cargo" "check" "--locked" "--offline" "--workspace" "--all-targets" "--target-dir" "target"
+cd "~/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/crates/generate/ess-synth/../../../target/review-boundaries-5/adversary-compiler/pass-2-binding-input-first-3308777-1/generated/rust/demo" && env -u CARGO_TARGET_DIR "~/.rustup/toolchains/stable-x86_64-unknown-linux-gnu/bin/cargo" "check" "--locked" "--offline" "--workspace" "--all-targets" "--target-dir" "target"
 
-    Checking demo-types v1.0.0 (/home/timo/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/target/review-boundaries-5/adversary-compiler/pass-2-binding-input-first-3308777-1/generated/rust/demo/crates/demo-types)
-    Checking worker v1.0.0 (/home/timo/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/target/review-boundaries-5/adversary-compiler/pass-2-binding-input-first-3308777-1/generated/rust/demo/crates/worker)
-    Checking demo-system v1.0.0 (/home/timo/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/target/review-boundaries-5/adversary-compiler/pass-2-binding-input-first-3308777-1/generated/rust/demo/crates/demo-system)
+    Checking demo-types v1.0.0 (~/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/target/review-boundaries-5/adversary-compiler/pass-2-binding-input-first-3308777-1/generated/rust/demo/crates/demo-types)
+    Checking worker v1.0.0 (~/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/target/review-boundaries-5/adversary-compiler/pass-2-binding-input-first-3308777-1/generated/rust/demo/crates/worker)
+    Checking demo-system v1.0.0 (~/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/target/review-boundaries-5/adversary-compiler/pass-2-binding-input-first-3308777-1/generated/rust/demo/crates/demo-system)
 warning: unused variable: `event`
   --> crates/demo-system/src/lib.rs:53:14
    |
@@ -241,18 +241,18 @@ warning: `demo-system` (lib) generated 1 warning (1 duplicate)
     Finished `dev` profile [unoptimized] target(s) in 0.36s
 
 exit status: 0
-cd "/home/timo/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/crates/generate/ess-synth/../../../target/review-boundaries-5/adversary-compiler/pass-2-binding-input-first-3308777-1/generated/web/demo" && env -u CARGO_TARGET_DIR "/home/timo/.rustup/toolchains/stable-x86_64-unknown-linux-gnu/bin/cargo" "generate-lockfile" "--offline"
+cd "~/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/crates/generate/ess-synth/../../../target/review-boundaries-5/adversary-compiler/pass-2-binding-input-first-3308777-1/generated/web/demo" && env -u CARGO_TARGET_DIR "~/.rustup/toolchains/stable-x86_64-unknown-linux-gnu/bin/cargo" "generate-lockfile" "--offline"
 
      Locking 3 packages to latest compatible versions
 
 exit status: 0
-cd "/home/timo/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/crates/generate/ess-synth/../../../target/review-boundaries-5/adversary-compiler/pass-2-binding-input-first-3308777-1/generated/web/demo" && env -u CARGO_TARGET_DIR "/home/timo/.rustup/toolchains/stable-x86_64-unknown-linux-gnu/bin/cargo" "check" "--locked" "--offline" "--workspace" "--all-targets" "--target-dir" "target" "--target" "wasm32-unknown-unknown"
+cd "~/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/crates/generate/ess-synth/../../../target/review-boundaries-5/adversary-compiler/pass-2-binding-input-first-3308777-1/generated/web/demo" && env -u CARGO_TARGET_DIR "~/.rustup/toolchains/stable-x86_64-unknown-linux-gnu/bin/cargo" "check" "--locked" "--offline" "--workspace" "--all-targets" "--target-dir" "target" "--target" "wasm32-unknown-unknown"
 
-    Checking demo-types v1.0.0 (/home/timo/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/target/review-boundaries-5/adversary-compiler/pass-2-binding-input-first-3308777-1/generated/rust/demo/crates/demo-types)
-    Checking worker v1.0.0 (/home/timo/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/target/review-boundaries-5/adversary-compiler/pass-2-binding-input-first-3308777-1/generated/rust/demo/crates/worker)
-    Checking demo-system v1.0.0 (/home/timo/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/target/review-boundaries-5/adversary-compiler/pass-2-binding-input-first-3308777-1/generated/rust/demo/crates/demo-system)
+    Checking demo-types v1.0.0 (~/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/target/review-boundaries-5/adversary-compiler/pass-2-binding-input-first-3308777-1/generated/rust/demo/crates/demo-types)
+    Checking worker v1.0.0 (~/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/target/review-boundaries-5/adversary-compiler/pass-2-binding-input-first-3308777-1/generated/rust/demo/crates/worker)
+    Checking demo-system v1.0.0 (~/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/target/review-boundaries-5/adversary-compiler/pass-2-binding-input-first-3308777-1/generated/rust/demo/crates/demo-system)
 warning: unused variable: `event`
-  --> /home/timo/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/target/review-boundaries-5/adversary-compiler/pass-2-binding-input-first-3308777-1/generated/rust/demo/crates/demo-system/src/lib.rs:53:14
+  --> ~/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/target/review-boundaries-5/adversary-compiler/pass-2-binding-input-first-3308777-1/generated/rust/demo/crates/demo-system/src/lib.rs:53:14
    |
 53 | pub fn input(event: &demo_types::core::Fired) -> demo_types::core::Handle {
    |              ^^^^^ help: if this is intentional, prefix it with an underscore: `_event`
@@ -260,7 +260,7 @@ warning: unused variable: `event`
    = note: `#[warn(unused_variables)]` (part of `#[warn(unused)]`) on by default
 
 warning: `demo-system` (lib) generated 1 warning (run `cargo fix --lib -p demo-system` to apply 1 suggestion)
-    Checking demo-web v1.0.0 (/home/timo/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/target/review-boundaries-5/adversary-compiler/pass-2-binding-input-first-3308777-1/generated/web/demo/crates/demo-web)
+    Checking demo-web v1.0.0 (~/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/target/review-boundaries-5/adversary-compiler/pass-2-binding-input-first-3308777-1/generated/web/demo/crates/demo-web)
     Finished `dev` profile [unoptimized] target(s) in 0.43s
 
 exit status: 0
@@ -323,14 +323,14 @@ Output:
      Running tests/feasibility_adversary.rs (target/debug/deps/feasibility_adversary-7a8cc9f9c85b11d8)
 
 running 1 test
-cd "/home/timo/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/crates/generate/ess-synth/../../../target/review-boundaries-5/adversary-compiler/pass-2-unaccepted-out-3309302-0/generated/rust/demo" && env -u CARGO_TARGET_DIR "/home/timo/.rustup/toolchains/stable-x86_64-unknown-linux-gnu/bin/cargo" "generate-lockfile" "--offline"
+cd "~/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/crates/generate/ess-synth/../../../target/review-boundaries-5/adversary-compiler/pass-2-unaccepted-out-3309302-0/generated/rust/demo" && env -u CARGO_TARGET_DIR "~/.rustup/toolchains/stable-x86_64-unknown-linux-gnu/bin/cargo" "generate-lockfile" "--offline"
 
 
 exit status: 0
-cd "/home/timo/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/crates/generate/ess-synth/../../../target/review-boundaries-5/adversary-compiler/pass-2-unaccepted-out-3309302-0/generated/rust/demo" && env -u CARGO_TARGET_DIR "/home/timo/.rustup/toolchains/stable-x86_64-unknown-linux-gnu/bin/cargo" "check" "--locked" "--offline" "--workspace" "--all-targets" "--target-dir" "target"
+cd "~/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/crates/generate/ess-synth/../../../target/review-boundaries-5/adversary-compiler/pass-2-unaccepted-out-3309302-0/generated/rust/demo" && env -u CARGO_TARGET_DIR "~/.rustup/toolchains/stable-x86_64-unknown-linux-gnu/bin/cargo" "check" "--locked" "--offline" "--workspace" "--all-targets" "--target-dir" "target"
 
-    Checking demo-types v1.0.0 (/home/timo/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/target/review-boundaries-5/adversary-compiler/pass-2-unaccepted-out-3309302-0/generated/rust/demo/crates/demo-types)
-    Checking worker v1.0.0 (/home/timo/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/target/review-boundaries-5/adversary-compiler/pass-2-unaccepted-out-3309302-0/generated/rust/demo/crates/worker)
+    Checking demo-types v1.0.0 (~/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/target/review-boundaries-5/adversary-compiler/pass-2-unaccepted-out-3309302-0/generated/rust/demo/crates/demo-types)
+    Checking worker v1.0.0 (~/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/target/review-boundaries-5/adversary-compiler/pass-2-unaccepted-out-3309302-0/generated/rust/demo/crates/worker)
 warning: field `behaviors` is never read
   --> crates/worker/src/lib.rs:29:5
    |
@@ -343,21 +343,21 @@ warning: field `behaviors` is never read
 
 warning: `worker` (lib test) generated 1 warning
 warning: `worker` (lib) generated 1 warning (1 duplicate)
-    Checking demo-system v1.0.0 (/home/timo/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/target/review-boundaries-5/adversary-compiler/pass-2-unaccepted-out-3309302-0/generated/rust/demo/crates/demo-system)
+    Checking demo-system v1.0.0 (~/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/target/review-boundaries-5/adversary-compiler/pass-2-unaccepted-out-3309302-0/generated/rust/demo/crates/demo-system)
     Finished `dev` profile [unoptimized] target(s) in 0.35s
 
 exit status: 0
-cd "/home/timo/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/crates/generate/ess-synth/../../../target/review-boundaries-5/adversary-compiler/pass-2-unaccepted-out-3309302-0/generated/web/demo" && env -u CARGO_TARGET_DIR "/home/timo/.rustup/toolchains/stable-x86_64-unknown-linux-gnu/bin/cargo" "generate-lockfile" "--offline"
+cd "~/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/crates/generate/ess-synth/../../../target/review-boundaries-5/adversary-compiler/pass-2-unaccepted-out-3309302-0/generated/web/demo" && env -u CARGO_TARGET_DIR "~/.rustup/toolchains/stable-x86_64-unknown-linux-gnu/bin/cargo" "generate-lockfile" "--offline"
 
      Locking 3 packages to latest compatible versions
 
 exit status: 0
-cd "/home/timo/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/crates/generate/ess-synth/../../../target/review-boundaries-5/adversary-compiler/pass-2-unaccepted-out-3309302-0/generated/web/demo" && env -u CARGO_TARGET_DIR "/home/timo/.rustup/toolchains/stable-x86_64-unknown-linux-gnu/bin/cargo" "check" "--locked" "--offline" "--workspace" "--all-targets" "--target-dir" "target" "--target" "wasm32-unknown-unknown"
+cd "~/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/crates/generate/ess-synth/../../../target/review-boundaries-5/adversary-compiler/pass-2-unaccepted-out-3309302-0/generated/web/demo" && env -u CARGO_TARGET_DIR "~/.rustup/toolchains/stable-x86_64-unknown-linux-gnu/bin/cargo" "check" "--locked" "--offline" "--workspace" "--all-targets" "--target-dir" "target" "--target" "wasm32-unknown-unknown"
 
-    Checking demo-types v1.0.0 (/home/timo/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/target/review-boundaries-5/adversary-compiler/pass-2-unaccepted-out-3309302-0/generated/rust/demo/crates/demo-types)
-    Checking worker v1.0.0 (/home/timo/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/target/review-boundaries-5/adversary-compiler/pass-2-unaccepted-out-3309302-0/generated/rust/demo/crates/worker)
+    Checking demo-types v1.0.0 (~/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/target/review-boundaries-5/adversary-compiler/pass-2-unaccepted-out-3309302-0/generated/rust/demo/crates/demo-types)
+    Checking worker v1.0.0 (~/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/target/review-boundaries-5/adversary-compiler/pass-2-unaccepted-out-3309302-0/generated/rust/demo/crates/worker)
 warning: field `behaviors` is never read
-  --> /home/timo/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/target/review-boundaries-5/adversary-compiler/pass-2-unaccepted-out-3309302-0/generated/rust/demo/crates/worker/src/lib.rs:29:5
+  --> ~/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/target/review-boundaries-5/adversary-compiler/pass-2-unaccepted-out-3309302-0/generated/rust/demo/crates/worker/src/lib.rs:29:5
    |
 28 | pub struct Worker<B> {
    |            ------ field in this struct
@@ -367,8 +367,8 @@ warning: field `behaviors` is never read
    = note: `#[warn(dead_code)]` (part of `#[warn(unused)]`) on by default
 
 warning: `worker` (lib) generated 1 warning
-    Checking demo-system v1.0.0 (/home/timo/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/target/review-boundaries-5/adversary-compiler/pass-2-unaccepted-out-3309302-0/generated/rust/demo/crates/demo-system)
-    Checking demo-web v1.0.0 (/home/timo/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/target/review-boundaries-5/adversary-compiler/pass-2-unaccepted-out-3309302-0/generated/web/demo/crates/demo-web)
+    Checking demo-system v1.0.0 (~/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/target/review-boundaries-5/adversary-compiler/pass-2-unaccepted-out-3309302-0/generated/rust/demo/crates/demo-system)
+    Checking demo-web v1.0.0 (~/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/target/review-boundaries-5/adversary-compiler/pass-2-unaccepted-out-3309302-0/generated/web/demo/crates/demo-web)
 warning: unused import: `crate::json`
   --> crates/demo-web/src/wire.rs:12:5
    |
@@ -441,25 +441,25 @@ Output:
      Running tests/feasibility_adversary.rs (target/debug/deps/feasibility_adversary-7a8cc9f9c85b11d8)
 
 running 1 test
-cd "/home/timo/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/crates/generate/ess-synth/../../../target/review-boundaries-5/adversary-compiler/pass-2-map-recursion-3309632-0/generated/rust/demo" && env -u CARGO_TARGET_DIR "/home/timo/.rustup/toolchains/stable-x86_64-unknown-linux-gnu/bin/cargo" "generate-lockfile" "--offline"
+cd "~/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/crates/generate/ess-synth/../../../target/review-boundaries-5/adversary-compiler/pass-2-map-recursion-3309632-0/generated/rust/demo" && env -u CARGO_TARGET_DIR "~/.rustup/toolchains/stable-x86_64-unknown-linux-gnu/bin/cargo" "generate-lockfile" "--offline"
 
 
 exit status: 0
-cd "/home/timo/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/crates/generate/ess-synth/../../../target/review-boundaries-5/adversary-compiler/pass-2-map-recursion-3309632-0/generated/rust/demo" && env -u CARGO_TARGET_DIR "/home/timo/.rustup/toolchains/stable-x86_64-unknown-linux-gnu/bin/cargo" "check" "--locked" "--offline" "--workspace" "--all-targets" "--target-dir" "target"
+cd "~/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/crates/generate/ess-synth/../../../target/review-boundaries-5/adversary-compiler/pass-2-map-recursion-3309632-0/generated/rust/demo" && env -u CARGO_TARGET_DIR "~/.rustup/toolchains/stable-x86_64-unknown-linux-gnu/bin/cargo" "check" "--locked" "--offline" "--workspace" "--all-targets" "--target-dir" "target"
 
-    Checking demo-types v1.0.0 (/home/timo/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/target/review-boundaries-5/adversary-compiler/pass-2-map-recursion-3309632-0/generated/rust/demo/crates/demo-types)
+    Checking demo-types v1.0.0 (~/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/target/review-boundaries-5/adversary-compiler/pass-2-map-recursion-3309632-0/generated/rust/demo/crates/demo-types)
     Finished `dev` profile [unoptimized] target(s) in 0.13s
 
 exit status: 0
-cd "/home/timo/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/crates/generate/ess-synth/../../../target/review-boundaries-5/adversary-compiler/pass-2-map-recursion-3309632-0/generated/web/demo" && env -u CARGO_TARGET_DIR "/home/timo/.rustup/toolchains/stable-x86_64-unknown-linux-gnu/bin/cargo" "generate-lockfile" "--offline"
+cd "~/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/crates/generate/ess-synth/../../../target/review-boundaries-5/adversary-compiler/pass-2-map-recursion-3309632-0/generated/web/demo" && env -u CARGO_TARGET_DIR "~/.rustup/toolchains/stable-x86_64-unknown-linux-gnu/bin/cargo" "generate-lockfile" "--offline"
 
      Locking 1 package to latest compatible version
 
 exit status: 0
-cd "/home/timo/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/crates/generate/ess-synth/../../../target/review-boundaries-5/adversary-compiler/pass-2-map-recursion-3309632-0/generated/web/demo" && env -u CARGO_TARGET_DIR "/home/timo/.rustup/toolchains/stable-x86_64-unknown-linux-gnu/bin/cargo" "check" "--locked" "--offline" "--workspace" "--all-targets" "--target-dir" "target" "--target" "wasm32-unknown-unknown"
+cd "~/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/crates/generate/ess-synth/../../../target/review-boundaries-5/adversary-compiler/pass-2-map-recursion-3309632-0/generated/web/demo" && env -u CARGO_TARGET_DIR "~/.rustup/toolchains/stable-x86_64-unknown-linux-gnu/bin/cargo" "check" "--locked" "--offline" "--workspace" "--all-targets" "--target-dir" "target" "--target" "wasm32-unknown-unknown"
 
-    Checking demo-types v1.0.0 (/home/timo/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/target/review-boundaries-5/adversary-compiler/pass-2-map-recursion-3309632-0/generated/rust/demo/crates/demo-types)
-    Checking demo-web v1.0.0 (/home/timo/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/target/review-boundaries-5/adversary-compiler/pass-2-map-recursion-3309632-0/generated/web/demo/crates/demo-web)
+    Checking demo-types v1.0.0 (~/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/target/review-boundaries-5/adversary-compiler/pass-2-map-recursion-3309632-0/generated/rust/demo/crates/demo-types)
+    Checking demo-web v1.0.0 (~/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/target/review-boundaries-5/adversary-compiler/pass-2-map-recursion-3309632-0/generated/web/demo/crates/demo-web)
 error[E0308]: mismatched types
    --> crates/demo-web/src/wire.rs:60:61
     |
@@ -486,7 +486,7 @@ error: could not compile `demo-web` (lib) due to 1 previous error
 exit status: 101
 
 thread 'optional_recursion_behind_nested_collections_keeps_its_size_break' (3309633) panicked at crates/generate/ess-synth/tests/feasibility_adversary.rs:115:5:
-admitted generated workspace failed its actual compiler: /home/timo/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/crates/generate/ess-synth/../../../target/review-boundaries-5/adversary-compiler/pass-2-map-recursion-3309632-0/generated/web/demo
+admitted generated workspace failed its actual compiler: ~/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/crates/generate/ess-synth/../../../target/review-boundaries-5/adversary-compiler/pass-2-map-recursion-3309632-0/generated/web/demo
 note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
 test optional_recursion_behind_nested_collections_keeps_its_size_break ... FAILED
 
@@ -513,7 +513,7 @@ cargo test --locked --offline -p ess-synth --test feasibility_adversary error_en
 Output:
 
 ```text
-   Compiling ess-synth v0.18.0 (/home/timo/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/crates/generate/ess-synth)
+   Compiling ess-synth v0.18.0 (~/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/crates/generate/ess-synth)
     Finished `test` profile [unoptimized] target(s) in 3.01s
      Running tests/feasibility_adversary.rs (target/debug/deps/feasibility_adversary-7a8cc9f9c85b11d8)
 
@@ -554,25 +554,25 @@ Output:
      Running tests/feasibility_adversary.rs (target/debug/deps/feasibility_adversary-7a8cc9f9c85b11d8)
 
 running 1 test
-cd "/home/timo/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/crates/generate/ess-synth/../../../target/review-boundaries-5/adversary-compiler/pass-2-map-Boolean-3371460-0/generated/rust/demo" && env -u CARGO_TARGET_DIR "/home/timo/.rustup/toolchains/stable-x86_64-unknown-linux-gnu/bin/cargo" "generate-lockfile" "--offline"
+cd "~/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/crates/generate/ess-synth/../../../target/review-boundaries-5/adversary-compiler/pass-2-map-Boolean-3371460-0/generated/rust/demo" && env -u CARGO_TARGET_DIR "~/.rustup/toolchains/stable-x86_64-unknown-linux-gnu/bin/cargo" "generate-lockfile" "--offline"
 
 
 exit status: 0
-cd "/home/timo/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/crates/generate/ess-synth/../../../target/review-boundaries-5/adversary-compiler/pass-2-map-Boolean-3371460-0/generated/rust/demo" && env -u CARGO_TARGET_DIR "/home/timo/.rustup/toolchains/stable-x86_64-unknown-linux-gnu/bin/cargo" "check" "--locked" "--offline" "--workspace" "--all-targets" "--target-dir" "target"
+cd "~/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/crates/generate/ess-synth/../../../target/review-boundaries-5/adversary-compiler/pass-2-map-Boolean-3371460-0/generated/rust/demo" && env -u CARGO_TARGET_DIR "~/.rustup/toolchains/stable-x86_64-unknown-linux-gnu/bin/cargo" "check" "--locked" "--offline" "--workspace" "--all-targets" "--target-dir" "target"
 
-    Checking demo-types v1.0.0 (/home/timo/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/target/review-boundaries-5/adversary-compiler/pass-2-map-Boolean-3371460-0/generated/rust/demo/crates/demo-types)
+    Checking demo-types v1.0.0 (~/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/target/review-boundaries-5/adversary-compiler/pass-2-map-Boolean-3371460-0/generated/rust/demo/crates/demo-types)
     Finished `dev` profile [unoptimized] target(s) in 0.14s
 
 exit status: 0
-cd "/home/timo/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/crates/generate/ess-synth/../../../target/review-boundaries-5/adversary-compiler/pass-2-map-Boolean-3371460-0/generated/web/demo" && env -u CARGO_TARGET_DIR "/home/timo/.rustup/toolchains/stable-x86_64-unknown-linux-gnu/bin/cargo" "generate-lockfile" "--offline"
+cd "~/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/crates/generate/ess-synth/../../../target/review-boundaries-5/adversary-compiler/pass-2-map-Boolean-3371460-0/generated/web/demo" && env -u CARGO_TARGET_DIR "~/.rustup/toolchains/stable-x86_64-unknown-linux-gnu/bin/cargo" "generate-lockfile" "--offline"
 
      Locking 1 package to latest compatible version
 
 exit status: 0
-cd "/home/timo/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/crates/generate/ess-synth/../../../target/review-boundaries-5/adversary-compiler/pass-2-map-Boolean-3371460-0/generated/web/demo" && env -u CARGO_TARGET_DIR "/home/timo/.rustup/toolchains/stable-x86_64-unknown-linux-gnu/bin/cargo" "check" "--locked" "--offline" "--workspace" "--all-targets" "--target-dir" "target" "--target" "wasm32-unknown-unknown"
+cd "~/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/crates/generate/ess-synth/../../../target/review-boundaries-5/adversary-compiler/pass-2-map-Boolean-3371460-0/generated/web/demo" && env -u CARGO_TARGET_DIR "~/.rustup/toolchains/stable-x86_64-unknown-linux-gnu/bin/cargo" "check" "--locked" "--offline" "--workspace" "--all-targets" "--target-dir" "target" "--target" "wasm32-unknown-unknown"
 
-    Checking demo-types v1.0.0 (/home/timo/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/target/review-boundaries-5/adversary-compiler/pass-2-map-Boolean-3371460-0/generated/rust/demo/crates/demo-types)
-    Checking demo-web v1.0.0 (/home/timo/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/target/review-boundaries-5/adversary-compiler/pass-2-map-Boolean-3371460-0/generated/web/demo/crates/demo-web)
+    Checking demo-types v1.0.0 (~/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/target/review-boundaries-5/adversary-compiler/pass-2-map-Boolean-3371460-0/generated/rust/demo/crates/demo-types)
+    Checking demo-web v1.0.0 (~/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/target/review-boundaries-5/adversary-compiler/pass-2-map-Boolean-3371460-0/generated/web/demo/crates/demo-web)
 error[E0308]: mismatched types
    --> crates/demo-web/src/wire.rs:45:58
     |
@@ -599,7 +599,7 @@ error: could not compile `demo-web` (lib test) due to 1 previous error
 exit status: 101
 
 thread 'boolean_map_decoder_path_is_borrowed_in_the_supported_codec' (3371461) panicked at crates/generate/ess-synth/tests/feasibility_adversary.rs:115:5:
-admitted generated workspace failed its actual compiler: /home/timo/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/crates/generate/ess-synth/../../../target/review-boundaries-5/adversary-compiler/pass-2-map-Boolean-3371460-0/generated/web/demo
+admitted generated workspace failed its actual compiler: ~/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/crates/generate/ess-synth/../../../target/review-boundaries-5/adversary-compiler/pass-2-map-Boolean-3371460-0/generated/web/demo
 note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
 test boolean_map_decoder_path_is_borrowed_in_the_supported_codec ... FAILED
 
@@ -630,25 +630,25 @@ Output:
      Running tests/feasibility_adversary.rs (target/debug/deps/feasibility_adversary-7a8cc9f9c85b11d8)
 
 running 1 test
-cd "/home/timo/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/crates/generate/ess-synth/../../../target/review-boundaries-5/adversary-compiler/pass-2-map-Bytes-3371684-0/generated/rust/demo" && env -u CARGO_TARGET_DIR "/home/timo/.rustup/toolchains/stable-x86_64-unknown-linux-gnu/bin/cargo" "generate-lockfile" "--offline"
+cd "~/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/crates/generate/ess-synth/../../../target/review-boundaries-5/adversary-compiler/pass-2-map-Bytes-3371684-0/generated/rust/demo" && env -u CARGO_TARGET_DIR "~/.rustup/toolchains/stable-x86_64-unknown-linux-gnu/bin/cargo" "generate-lockfile" "--offline"
 
 
 exit status: 0
-cd "/home/timo/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/crates/generate/ess-synth/../../../target/review-boundaries-5/adversary-compiler/pass-2-map-Bytes-3371684-0/generated/rust/demo" && env -u CARGO_TARGET_DIR "/home/timo/.rustup/toolchains/stable-x86_64-unknown-linux-gnu/bin/cargo" "check" "--locked" "--offline" "--workspace" "--all-targets" "--target-dir" "target"
+cd "~/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/crates/generate/ess-synth/../../../target/review-boundaries-5/adversary-compiler/pass-2-map-Bytes-3371684-0/generated/rust/demo" && env -u CARGO_TARGET_DIR "~/.rustup/toolchains/stable-x86_64-unknown-linux-gnu/bin/cargo" "check" "--locked" "--offline" "--workspace" "--all-targets" "--target-dir" "target"
 
-    Checking demo-types v1.0.0 (/home/timo/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/target/review-boundaries-5/adversary-compiler/pass-2-map-Bytes-3371684-0/generated/rust/demo/crates/demo-types)
+    Checking demo-types v1.0.0 (~/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/target/review-boundaries-5/adversary-compiler/pass-2-map-Bytes-3371684-0/generated/rust/demo/crates/demo-types)
     Finished `dev` profile [unoptimized] target(s) in 0.13s
 
 exit status: 0
-cd "/home/timo/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/crates/generate/ess-synth/../../../target/review-boundaries-5/adversary-compiler/pass-2-map-Bytes-3371684-0/generated/web/demo" && env -u CARGO_TARGET_DIR "/home/timo/.rustup/toolchains/stable-x86_64-unknown-linux-gnu/bin/cargo" "generate-lockfile" "--offline"
+cd "~/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/crates/generate/ess-synth/../../../target/review-boundaries-5/adversary-compiler/pass-2-map-Bytes-3371684-0/generated/web/demo" && env -u CARGO_TARGET_DIR "~/.rustup/toolchains/stable-x86_64-unknown-linux-gnu/bin/cargo" "generate-lockfile" "--offline"
 
      Locking 1 package to latest compatible version
 
 exit status: 0
-cd "/home/timo/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/crates/generate/ess-synth/../../../target/review-boundaries-5/adversary-compiler/pass-2-map-Bytes-3371684-0/generated/web/demo" && env -u CARGO_TARGET_DIR "/home/timo/.rustup/toolchains/stable-x86_64-unknown-linux-gnu/bin/cargo" "check" "--locked" "--offline" "--workspace" "--all-targets" "--target-dir" "target" "--target" "wasm32-unknown-unknown"
+cd "~/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/crates/generate/ess-synth/../../../target/review-boundaries-5/adversary-compiler/pass-2-map-Bytes-3371684-0/generated/web/demo" && env -u CARGO_TARGET_DIR "~/.rustup/toolchains/stable-x86_64-unknown-linux-gnu/bin/cargo" "check" "--locked" "--offline" "--workspace" "--all-targets" "--target-dir" "target" "--target" "wasm32-unknown-unknown"
 
-    Checking demo-types v1.0.0 (/home/timo/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/target/review-boundaries-5/adversary-compiler/pass-2-map-Bytes-3371684-0/generated/rust/demo/crates/demo-types)
-    Checking demo-web v1.0.0 (/home/timo/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/target/review-boundaries-5/adversary-compiler/pass-2-map-Bytes-3371684-0/generated/web/demo/crates/demo-web)
+    Checking demo-types v1.0.0 (~/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/target/review-boundaries-5/adversary-compiler/pass-2-map-Bytes-3371684-0/generated/rust/demo/crates/demo-types)
+    Checking demo-web v1.0.0 (~/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/target/review-boundaries-5/adversary-compiler/pass-2-map-Bytes-3371684-0/generated/web/demo/crates/demo-web)
 error[E0308]: mismatched types
    --> crates/demo-web/src/wire.rs:45:59
     |
@@ -675,7 +675,7 @@ error: could not compile `demo-web` (lib) due to 1 previous error
 exit status: 101
 
 thread 'bytes_map_decoder_path_is_borrowed_in_the_supported_codec' (3371685) panicked at crates/generate/ess-synth/tests/feasibility_adversary.rs:115:5:
-admitted generated workspace failed its actual compiler: /home/timo/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/crates/generate/ess-synth/../../../target/review-boundaries-5/adversary-compiler/pass-2-map-Bytes-3371684-0/generated/web/demo
+admitted generated workspace failed its actual compiler: ~/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/crates/generate/ess-synth/../../../target/review-boundaries-5/adversary-compiler/pass-2-map-Bytes-3371684-0/generated/web/demo
 note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
 test bytes_map_decoder_path_is_borrowed_in_the_supported_codec ... FAILED
 
@@ -706,25 +706,25 @@ Output:
      Running tests/feasibility_adversary.rs (target/debug/deps/feasibility_adversary-7a8cc9f9c85b11d8)
 
 running 1 test
-cd "/home/timo/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/crates/generate/ess-synth/../../../target/review-boundaries-5/adversary-compiler/pass-2-map-string-3371889-0/generated/rust/demo" && env -u CARGO_TARGET_DIR "/home/timo/.rustup/toolchains/stable-x86_64-unknown-linux-gnu/bin/cargo" "generate-lockfile" "--offline"
+cd "~/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/crates/generate/ess-synth/../../../target/review-boundaries-5/adversary-compiler/pass-2-map-string-3371889-0/generated/rust/demo" && env -u CARGO_TARGET_DIR "~/.rustup/toolchains/stable-x86_64-unknown-linux-gnu/bin/cargo" "generate-lockfile" "--offline"
 
 
 exit status: 0
-cd "/home/timo/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/crates/generate/ess-synth/../../../target/review-boundaries-5/adversary-compiler/pass-2-map-string-3371889-0/generated/rust/demo" && env -u CARGO_TARGET_DIR "/home/timo/.rustup/toolchains/stable-x86_64-unknown-linux-gnu/bin/cargo" "check" "--locked" "--offline" "--workspace" "--all-targets" "--target-dir" "target"
+cd "~/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/crates/generate/ess-synth/../../../target/review-boundaries-5/adversary-compiler/pass-2-map-string-3371889-0/generated/rust/demo" && env -u CARGO_TARGET_DIR "~/.rustup/toolchains/stable-x86_64-unknown-linux-gnu/bin/cargo" "check" "--locked" "--offline" "--workspace" "--all-targets" "--target-dir" "target"
 
-    Checking demo-types v1.0.0 (/home/timo/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/target/review-boundaries-5/adversary-compiler/pass-2-map-string-3371889-0/generated/rust/demo/crates/demo-types)
+    Checking demo-types v1.0.0 (~/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/target/review-boundaries-5/adversary-compiler/pass-2-map-string-3371889-0/generated/rust/demo/crates/demo-types)
     Finished `dev` profile [unoptimized] target(s) in 0.13s
 
 exit status: 0
-cd "/home/timo/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/crates/generate/ess-synth/../../../target/review-boundaries-5/adversary-compiler/pass-2-map-string-3371889-0/generated/web/demo" && env -u CARGO_TARGET_DIR "/home/timo/.rustup/toolchains/stable-x86_64-unknown-linux-gnu/bin/cargo" "generate-lockfile" "--offline"
+cd "~/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/crates/generate/ess-synth/../../../target/review-boundaries-5/adversary-compiler/pass-2-map-string-3371889-0/generated/web/demo" && env -u CARGO_TARGET_DIR "~/.rustup/toolchains/stable-x86_64-unknown-linux-gnu/bin/cargo" "generate-lockfile" "--offline"
 
      Locking 1 package to latest compatible version
 
 exit status: 0
-cd "/home/timo/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/crates/generate/ess-synth/../../../target/review-boundaries-5/adversary-compiler/pass-2-map-string-3371889-0/generated/web/demo" && env -u CARGO_TARGET_DIR "/home/timo/.rustup/toolchains/stable-x86_64-unknown-linux-gnu/bin/cargo" "check" "--locked" "--offline" "--workspace" "--all-targets" "--target-dir" "target" "--target" "wasm32-unknown-unknown"
+cd "~/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/crates/generate/ess-synth/../../../target/review-boundaries-5/adversary-compiler/pass-2-map-string-3371889-0/generated/web/demo" && env -u CARGO_TARGET_DIR "~/.rustup/toolchains/stable-x86_64-unknown-linux-gnu/bin/cargo" "check" "--locked" "--offline" "--workspace" "--all-targets" "--target-dir" "target" "--target" "wasm32-unknown-unknown"
 
-    Checking demo-types v1.0.0 (/home/timo/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/target/review-boundaries-5/adversary-compiler/pass-2-map-string-3371889-0/generated/rust/demo/crates/demo-types)
-    Checking demo-web v1.0.0 (/home/timo/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/target/review-boundaries-5/adversary-compiler/pass-2-map-string-3371889-0/generated/web/demo/crates/demo-web)
+    Checking demo-types v1.0.0 (~/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/target/review-boundaries-5/adversary-compiler/pass-2-map-string-3371889-0/generated/rust/demo/crates/demo-types)
+    Checking demo-web v1.0.0 (~/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/target/review-boundaries-5/adversary-compiler/pass-2-map-string-3371889-0/generated/web/demo/crates/demo-web)
     Finished `dev` profile [unoptimized] target(s) in 0.20s
 
 exit status: 0
@@ -747,15 +747,15 @@ cargo test --locked --offline -p ess-cli --test feasibility_adversary a_binding_
 Output:
 
 ```text
-   Compiling ess-cli v0.18.0 (/home/timo/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/crates/edge/ess-cli)
+   Compiling ess-cli v0.18.0 (~/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/crates/edge/ess-cli)
     Finished `test` profile [unoptimized] target(s) in 4.47s
      Running tests/feasibility_adversary.rs (target/debug/deps/feasibility_adversary-8390c22bcf99a72e)
 
 running 1 test
-"/home/timo/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/target/debug/ess" "synthesize" "--target" "rust" "--format" "json" "--path" "/home/timo/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/crates/edge/ess-cli/../../../target/review-boundaries-5/adversary-cli/pass-2-binding-rust-3372552-0/spec" "--out" "/home/timo/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/crates/edge/ess-cli/../../../target/review-boundaries-5/adversary-cli/pass-2-binding-rust-3372552-0/absent"
-exit status: 0; output entries ["Cargo.toml", "PLAN.md", "crates", "plan.json"]; complete streams: /home/timo/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/crates/edge/ess-cli/../../../target/review-boundaries-5/adversary-cli/pass-2-binding-rust-3372552-0/absent.stdout and .stderr
-"/home/timo/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/target/debug/ess" "synthesize" "--target" "rust" "--format" "json" "--path" "/home/timo/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/crates/edge/ess-cli/../../../target/review-boundaries-5/adversary-cli/pass-2-binding-rust-3372552-0/spec" "--out" "/home/timo/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/crates/edge/ess-cli/../../../target/review-boundaries-5/adversary-cli/pass-2-binding-rust-3372552-0/existing"
-exit status: 0; output entries ["Cargo.toml", "PLAN.md", "crates", "plan.json", "sentinel.txt"]; complete streams: /home/timo/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/crates/edge/ess-cli/../../../target/review-boundaries-5/adversary-cli/pass-2-binding-rust-3372552-0/existing.stdout and .stderr
+"~/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/target/debug/ess" "synthesize" "--target" "rust" "--format" "json" "--path" "~/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/crates/edge/ess-cli/../../../target/review-boundaries-5/adversary-cli/pass-2-binding-rust-3372552-0/spec" "--out" "~/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/crates/edge/ess-cli/../../../target/review-boundaries-5/adversary-cli/pass-2-binding-rust-3372552-0/absent"
+exit status: 0; output entries ["Cargo.toml", "PLAN.md", "crates", "plan.json"]; complete streams: ~/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/crates/edge/ess-cli/../../../target/review-boundaries-5/adversary-cli/pass-2-binding-rust-3372552-0/absent.stdout and .stderr
+"~/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/target/debug/ess" "synthesize" "--target" "rust" "--format" "json" "--path" "~/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/crates/edge/ess-cli/../../../target/review-boundaries-5/adversary-cli/pass-2-binding-rust-3372552-0/spec" "--out" "~/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/crates/edge/ess-cli/../../../target/review-boundaries-5/adversary-cli/pass-2-binding-rust-3372552-0/existing"
+exit status: 0; output entries ["Cargo.toml", "PLAN.md", "crates", "plan.json", "sentinel.txt"]; complete streams: ~/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/crates/edge/ess-cli/../../../target/review-boundaries-5/adversary-cli/pass-2-binding-rust-3372552-0/existing.stdout and .stderr
 
 thread 'a_binding_function_capture_is_refused_before_rust_cli_writes' (3372554) panicked at crates/edge/ess-cli/tests/feasibility_adversary.rs:145:5:
 binding collision reached CLI writes:
@@ -798,10 +798,10 @@ Output:
      Running tests/feasibility_adversary.rs (target/debug/deps/feasibility_adversary-8390c22bcf99a72e)
 
 running 1 test
-"/home/timo/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/target/debug/ess" "synthesize" "--target" "web" "--format" "json" "--path" "/home/timo/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/crates/edge/ess-cli/../../../target/review-boundaries-5/adversary-cli/pass-2-binding-web-3375796-0/spec" "--out" "/home/timo/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/crates/edge/ess-cli/../../../target/review-boundaries-5/adversary-cli/pass-2-binding-web-3375796-0/absent"
-exit status: 0; output entries ["Cargo.toml", "PLAN.md", "README.md", "TARGET.md", "bridge.js", "catalog.json", "crates", "index.html", "plan.json", "target.json"]; complete streams: /home/timo/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/crates/edge/ess-cli/../../../target/review-boundaries-5/adversary-cli/pass-2-binding-web-3375796-0/absent.stdout and .stderr
-"/home/timo/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/target/debug/ess" "synthesize" "--target" "web" "--format" "json" "--path" "/home/timo/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/crates/edge/ess-cli/../../../target/review-boundaries-5/adversary-cli/pass-2-binding-web-3375796-0/spec" "--out" "/home/timo/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/crates/edge/ess-cli/../../../target/review-boundaries-5/adversary-cli/pass-2-binding-web-3375796-0/existing"
-exit status: 0; output entries ["Cargo.toml", "PLAN.md", "README.md", "TARGET.md", "bridge.js", "catalog.json", "crates", "index.html", "plan.json", "sentinel.txt", "target.json"]; complete streams: /home/timo/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/crates/edge/ess-cli/../../../target/review-boundaries-5/adversary-cli/pass-2-binding-web-3375796-0/existing.stdout and .stderr
+"~/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/target/debug/ess" "synthesize" "--target" "web" "--format" "json" "--path" "~/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/crates/edge/ess-cli/../../../target/review-boundaries-5/adversary-cli/pass-2-binding-web-3375796-0/spec" "--out" "~/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/crates/edge/ess-cli/../../../target/review-boundaries-5/adversary-cli/pass-2-binding-web-3375796-0/absent"
+exit status: 0; output entries ["Cargo.toml", "PLAN.md", "README.md", "TARGET.md", "bridge.js", "catalog.json", "crates", "index.html", "plan.json", "target.json"]; complete streams: ~/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/crates/edge/ess-cli/../../../target/review-boundaries-5/adversary-cli/pass-2-binding-web-3375796-0/absent.stdout and .stderr
+"~/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/target/debug/ess" "synthesize" "--target" "web" "--format" "json" "--path" "~/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/crates/edge/ess-cli/../../../target/review-boundaries-5/adversary-cli/pass-2-binding-web-3375796-0/spec" "--out" "~/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/crates/edge/ess-cli/../../../target/review-boundaries-5/adversary-cli/pass-2-binding-web-3375796-0/existing"
+exit status: 0; output entries ["Cargo.toml", "PLAN.md", "README.md", "TARGET.md", "bridge.js", "catalog.json", "crates", "index.html", "plan.json", "sentinel.txt", "target.json"]; complete streams: ~/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/crates/edge/ess-cli/../../../target/review-boundaries-5/adversary-cli/pass-2-binding-web-3375796-0/existing.stdout and .stderr
 
 thread 'a_binding_function_capture_is_refused_before_web_cli_writes' (3375797) panicked at crates/edge/ess-cli/tests/feasibility_adversary.rs:145:5:
 binding collision reached CLI writes:
@@ -837,21 +837,21 @@ cargo test --locked --offline -p ess-synth --test feasibility_adversary error_en
 Output:
 
 ```text
-   Compiling ess-synth v0.18.0 (/home/timo/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/crates/generate/ess-synth)
+   Compiling ess-synth v0.18.0 (~/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/crates/generate/ess-synth)
     Finished `test` profile [unoptimized] target(s) in 0.32s
      Running tests/feasibility_adversary.rs (target/debug/deps/feasibility_adversary-7a8cc9f9c85b11d8)
 
 running 1 test
-cd "/home/timo/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/crates/generate/ess-synth/../../../target/review-boundaries-5/adversary-compiler/pass-2-error-encoder-separate-arms-3390881-0" && env -u CARGO_TARGET_DIR "/home/timo/.rustup/toolchains/stable-x86_64-unknown-linux-gnu/bin/cargo" "generate-lockfile" "--offline"
+cd "~/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/crates/generate/ess-synth/../../../target/review-boundaries-5/adversary-compiler/pass-2-error-encoder-separate-arms-3390881-0" && env -u CARGO_TARGET_DIR "~/.rustup/toolchains/stable-x86_64-unknown-linux-gnu/bin/cargo" "generate-lockfile" "--offline"
 
 
 exit status: 0
-cd "/home/timo/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/crates/generate/ess-synth/../../../target/review-boundaries-5/adversary-compiler/pass-2-error-encoder-separate-arms-3390881-0" && env -u CARGO_TARGET_DIR "/home/timo/.rustup/toolchains/stable-x86_64-unknown-linux-gnu/bin/cargo" "check" "--locked" "--offline" "--workspace" "--all-targets" "--target-dir" "target"
+cd "~/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/crates/generate/ess-synth/../../../target/review-boundaries-5/adversary-compiler/pass-2-error-encoder-separate-arms-3390881-0" && env -u CARGO_TARGET_DIR "~/.rustup/toolchains/stable-x86_64-unknown-linux-gnu/bin/cargo" "check" "--locked" "--offline" "--workspace" "--all-targets" "--target-dir" "target"
 
-    Checking demo-types v1.0.0 (/home/timo/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/target/review-boundaries-5/adversary-compiler/pass-2-error-encoder-separate-arms-3390881-0/crates/demo-types)
-    Checking worker v1.0.0 (/home/timo/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/target/review-boundaries-5/adversary-compiler/pass-2-error-encoder-separate-arms-3390881-0/crates/worker)
-    Checking demo-system v1.0.0 (/home/timo/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/target/review-boundaries-5/adversary-compiler/pass-2-error-encoder-separate-arms-3390881-0/crates/demo-system)
-    Checking demo-server v1.0.0 (/home/timo/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/target/review-boundaries-5/adversary-compiler/pass-2-error-encoder-separate-arms-3390881-0/crates/demo-server)
+    Checking demo-types v1.0.0 (~/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/target/review-boundaries-5/adversary-compiler/pass-2-error-encoder-separate-arms-3390881-0/crates/demo-types)
+    Checking worker v1.0.0 (~/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/target/review-boundaries-5/adversary-compiler/pass-2-error-encoder-separate-arms-3390881-0/crates/worker)
+    Checking demo-system v1.0.0 (~/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/target/review-boundaries-5/adversary-compiler/pass-2-error-encoder-separate-arms-3390881-0/crates/demo-system)
+    Checking demo-server v1.0.0 (~/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/target/review-boundaries-5/adversary-compiler/pass-2-error-encoder-separate-arms-3390881-0/crates/demo-server)
 warning: unused variable: `error`
    --> crates/demo-server/src/worker.rs:170:50
     |
@@ -890,8 +890,8 @@ cargo test --locked --offline -p ess-synth -p ess-cli --no-fail-fast
 Output:
 
 ```text
-   Compiling ess-synth v0.18.0 (/home/timo/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/crates/generate/ess-synth)
-   Compiling ess-cli v0.18.0 (/home/timo/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/crates/edge/ess-cli)
+   Compiling ess-synth v0.18.0 (~/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/crates/generate/ess-synth)
+   Compiling ess-cli v0.18.0 (~/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/crates/edge/ess-cli)
     Finished `test` profile [unoptimized] target(s) in 0.34s
      Running unittests src/main.rs (target/debug/deps/ess-2a340c79ed142cb3)
 
@@ -942,10 +942,10 @@ test a_binding_function_capture_is_refused_before_web_cli_writes ... FAILED
 failures:
 
 ---- a_binding_function_capture_is_refused_before_rust_cli_writes stdout ----
-"/home/timo/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/target/debug/ess" "synthesize" "--target" "rust" "--format" "json" "--path" "/home/timo/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/crates/edge/ess-cli/../../../target/review-boundaries-5/adversary-cli/pass-2-binding-rust-3392546-0/spec" "--out" "/home/timo/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/crates/edge/ess-cli/../../../target/review-boundaries-5/adversary-cli/pass-2-binding-rust-3392546-0/absent"
-exit status: 0; output entries ["Cargo.toml", "PLAN.md", "crates", "plan.json"]; complete streams: /home/timo/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/crates/edge/ess-cli/../../../target/review-boundaries-5/adversary-cli/pass-2-binding-rust-3392546-0/absent.stdout and .stderr
-"/home/timo/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/target/debug/ess" "synthesize" "--target" "rust" "--format" "json" "--path" "/home/timo/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/crates/edge/ess-cli/../../../target/review-boundaries-5/adversary-cli/pass-2-binding-rust-3392546-0/spec" "--out" "/home/timo/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/crates/edge/ess-cli/../../../target/review-boundaries-5/adversary-cli/pass-2-binding-rust-3392546-0/existing"
-exit status: 0; output entries ["Cargo.toml", "PLAN.md", "crates", "plan.json", "sentinel.txt"]; complete streams: /home/timo/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/crates/edge/ess-cli/../../../target/review-boundaries-5/adversary-cli/pass-2-binding-rust-3392546-0/existing.stdout and .stderr
+"~/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/target/debug/ess" "synthesize" "--target" "rust" "--format" "json" "--path" "~/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/crates/edge/ess-cli/../../../target/review-boundaries-5/adversary-cli/pass-2-binding-rust-3392546-0/spec" "--out" "~/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/crates/edge/ess-cli/../../../target/review-boundaries-5/adversary-cli/pass-2-binding-rust-3392546-0/absent"
+exit status: 0; output entries ["Cargo.toml", "PLAN.md", "crates", "plan.json"]; complete streams: ~/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/crates/edge/ess-cli/../../../target/review-boundaries-5/adversary-cli/pass-2-binding-rust-3392546-0/absent.stdout and .stderr
+"~/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/target/debug/ess" "synthesize" "--target" "rust" "--format" "json" "--path" "~/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/crates/edge/ess-cli/../../../target/review-boundaries-5/adversary-cli/pass-2-binding-rust-3392546-0/spec" "--out" "~/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/crates/edge/ess-cli/../../../target/review-boundaries-5/adversary-cli/pass-2-binding-rust-3392546-0/existing"
+exit status: 0; output entries ["Cargo.toml", "PLAN.md", "crates", "plan.json", "sentinel.txt"]; complete streams: ~/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/crates/edge/ess-cli/../../../target/review-boundaries-5/adversary-cli/pass-2-binding-rust-3392546-0/existing.stdout and .stderr
 
 thread 'a_binding_function_capture_is_refused_before_rust_cli_writes' (3392547) panicked at crates/edge/ess-cli/tests/feasibility_adversary.rs:179:5:
 binding collision reached CLI writes:
@@ -958,10 +958,10 @@ existing: destination gained files
 note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
 
 ---- a_binding_function_capture_is_refused_before_web_cli_writes stdout ----
-"/home/timo/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/target/debug/ess" "synthesize" "--target" "web" "--format" "json" "--path" "/home/timo/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/crates/edge/ess-cli/../../../target/review-boundaries-5/adversary-cli/pass-2-binding-web-3392546-1/spec" "--out" "/home/timo/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/crates/edge/ess-cli/../../../target/review-boundaries-5/adversary-cli/pass-2-binding-web-3392546-1/absent"
-exit status: 0; output entries ["Cargo.toml", "PLAN.md", "README.md", "TARGET.md", "bridge.js", "catalog.json", "crates", "index.html", "plan.json", "target.json"]; complete streams: /home/timo/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/crates/edge/ess-cli/../../../target/review-boundaries-5/adversary-cli/pass-2-binding-web-3392546-1/absent.stdout and .stderr
-"/home/timo/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/target/debug/ess" "synthesize" "--target" "web" "--format" "json" "--path" "/home/timo/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/crates/edge/ess-cli/../../../target/review-boundaries-5/adversary-cli/pass-2-binding-web-3392546-1/spec" "--out" "/home/timo/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/crates/edge/ess-cli/../../../target/review-boundaries-5/adversary-cli/pass-2-binding-web-3392546-1/existing"
-exit status: 0; output entries ["Cargo.toml", "PLAN.md", "README.md", "TARGET.md", "bridge.js", "catalog.json", "crates", "index.html", "plan.json", "sentinel.txt", "target.json"]; complete streams: /home/timo/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/crates/edge/ess-cli/../../../target/review-boundaries-5/adversary-cli/pass-2-binding-web-3392546-1/existing.stdout and .stderr
+"~/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/target/debug/ess" "synthesize" "--target" "web" "--format" "json" "--path" "~/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/crates/edge/ess-cli/../../../target/review-boundaries-5/adversary-cli/pass-2-binding-web-3392546-1/spec" "--out" "~/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/crates/edge/ess-cli/../../../target/review-boundaries-5/adversary-cli/pass-2-binding-web-3392546-1/absent"
+exit status: 0; output entries ["Cargo.toml", "PLAN.md", "README.md", "TARGET.md", "bridge.js", "catalog.json", "crates", "index.html", "plan.json", "target.json"]; complete streams: ~/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/crates/edge/ess-cli/../../../target/review-boundaries-5/adversary-cli/pass-2-binding-web-3392546-1/absent.stdout and .stderr
+"~/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/target/debug/ess" "synthesize" "--target" "web" "--format" "json" "--path" "~/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/crates/edge/ess-cli/../../../target/review-boundaries-5/adversary-cli/pass-2-binding-web-3392546-1/spec" "--out" "~/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/crates/edge/ess-cli/../../../target/review-boundaries-5/adversary-cli/pass-2-binding-web-3392546-1/existing"
+exit status: 0; output entries ["Cargo.toml", "PLAN.md", "README.md", "TARGET.md", "bridge.js", "catalog.json", "crates", "index.html", "plan.json", "sentinel.txt", "target.json"]; complete streams: ~/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/crates/edge/ess-cli/../../../target/review-boundaries-5/adversary-cli/pass-2-binding-web-3392546-1/existing.stdout and .stderr
 
 thread 'a_binding_function_capture_is_refused_before_web_cli_writes' (3392548) panicked at crates/edge/ess-cli/tests/feasibility_adversary.rs:179:5:
 binding collision reached CLI writes:
@@ -1130,22 +1130,22 @@ test a_first_binding_named_input_remains_compilable_on_both_targets ... ok
 failures:
 
 ---- binding_function_cannot_be_hidden_by_the_delivery_event_parameter stdout ----
-source witness: /home/timo/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/crates/generate/ess-synth/../../../target/review-boundaries-5/adversary-compiler/pass-2-binding-source-3396995-2
-cd "/home/timo/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/crates/generate/ess-synth/../../../target/review-boundaries-5/adversary-compiler/pass-2-binding-event-3396995-13" && env -u CARGO_TARGET_DIR "/home/timo/.rustup/toolchains/stable-x86_64-unknown-linux-gnu/bin/cargo" "generate-lockfile" "--offline"
+source witness: ~/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/crates/generate/ess-synth/../../../target/review-boundaries-5/adversary-compiler/pass-2-binding-source-3396995-2
+cd "~/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/crates/generate/ess-synth/../../../target/review-boundaries-5/adversary-compiler/pass-2-binding-event-3396995-13" && env -u CARGO_TARGET_DIR "~/.rustup/toolchains/stable-x86_64-unknown-linux-gnu/bin/cargo" "generate-lockfile" "--offline"
 
     Blocking waiting for file lock on package cache
     Blocking waiting for file lock on package cache
 
 exit status: 0
-cd "/home/timo/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/crates/generate/ess-synth/../../../target/review-boundaries-5/adversary-compiler/pass-2-binding-event-3396995-13" && env -u CARGO_TARGET_DIR "/home/timo/.rustup/toolchains/stable-x86_64-unknown-linux-gnu/bin/cargo" "check" "--locked" "--offline" "--workspace" "--all-targets" "--target-dir" "target"
+cd "~/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/crates/generate/ess-synth/../../../target/review-boundaries-5/adversary-compiler/pass-2-binding-event-3396995-13" && env -u CARGO_TARGET_DIR "~/.rustup/toolchains/stable-x86_64-unknown-linux-gnu/bin/cargo" "check" "--locked" "--offline" "--workspace" "--all-targets" "--target-dir" "target"
 
     Blocking waiting for file lock on package cache
     Blocking waiting for file lock on package cache
     Blocking waiting for file lock on package cache
     Blocking waiting for file lock on package cache
-    Checking demo-types v1.0.0 (/home/timo/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/target/review-boundaries-5/adversary-compiler/pass-2-binding-event-3396995-13/crates/demo-types)
-    Checking worker v1.0.0 (/home/timo/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/target/review-boundaries-5/adversary-compiler/pass-2-binding-event-3396995-13/crates/worker)
-    Checking demo-system v1.0.0 (/home/timo/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/target/review-boundaries-5/adversary-compiler/pass-2-binding-event-3396995-13/crates/demo-system)
+    Checking demo-types v1.0.0 (~/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/target/review-boundaries-5/adversary-compiler/pass-2-binding-event-3396995-13/crates/demo-types)
+    Checking worker v1.0.0 (~/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/target/review-boundaries-5/adversary-compiler/pass-2-binding-event-3396995-13/crates/worker)
+    Checking demo-system v1.0.0 (~/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/target/review-boundaries-5/adversary-compiler/pass-2-binding-event-3396995-13/crates/demo-system)
 error[E0618]: expected function, found `&demo_types::core::Fired`
    --> crates/demo-system/src/lib.rs:139:29
     |
@@ -1178,29 +1178,29 @@ error: could not compile `demo-system` (lib) due to 1 previous error; 1 warning 
 exit status: 101
 
 thread 'binding_function_cannot_be_hidden_by_the_delivery_event_parameter' (3397000) panicked at crates/generate/ess-synth/tests/feasibility_adversary.rs:115:5:
-admitted generated workspace failed its actual compiler: /home/timo/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/crates/generate/ess-synth/../../../target/review-boundaries-5/adversary-compiler/pass-2-binding-event-3396995-13
+admitted generated workspace failed its actual compiler: ~/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/crates/generate/ess-synth/../../../target/review-boundaries-5/adversary-compiler/pass-2-binding-event-3396995-13
 note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
 
 ---- bytes_map_decoder_path_is_borrowed_in_the_supported_codec stdout ----
-cd "/home/timo/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/crates/generate/ess-synth/../../../target/review-boundaries-5/adversary-compiler/pass-2-map-Bytes-3396995-5/generated/rust/demo" && env -u CARGO_TARGET_DIR "/home/timo/.rustup/toolchains/stable-x86_64-unknown-linux-gnu/bin/cargo" "generate-lockfile" "--offline"
+cd "~/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/crates/generate/ess-synth/../../../target/review-boundaries-5/adversary-compiler/pass-2-map-Bytes-3396995-5/generated/rust/demo" && env -u CARGO_TARGET_DIR "~/.rustup/toolchains/stable-x86_64-unknown-linux-gnu/bin/cargo" "generate-lockfile" "--offline"
 
 
 exit status: 0
-cd "/home/timo/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/crates/generate/ess-synth/../../../target/review-boundaries-5/adversary-compiler/pass-2-map-Bytes-3396995-5/generated/rust/demo" && env -u CARGO_TARGET_DIR "/home/timo/.rustup/toolchains/stable-x86_64-unknown-linux-gnu/bin/cargo" "check" "--locked" "--offline" "--workspace" "--all-targets" "--target-dir" "target"
+cd "~/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/crates/generate/ess-synth/../../../target/review-boundaries-5/adversary-compiler/pass-2-map-Bytes-3396995-5/generated/rust/demo" && env -u CARGO_TARGET_DIR "~/.rustup/toolchains/stable-x86_64-unknown-linux-gnu/bin/cargo" "check" "--locked" "--offline" "--workspace" "--all-targets" "--target-dir" "target"
 
-    Checking demo-types v1.0.0 (/home/timo/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/target/review-boundaries-5/adversary-compiler/pass-2-map-Bytes-3396995-5/generated/rust/demo/crates/demo-types)
+    Checking demo-types v1.0.0 (~/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/target/review-boundaries-5/adversary-compiler/pass-2-map-Bytes-3396995-5/generated/rust/demo/crates/demo-types)
     Finished `dev` profile [unoptimized] target(s) in 0.49s
 
 exit status: 0
-cd "/home/timo/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/crates/generate/ess-synth/../../../target/review-boundaries-5/adversary-compiler/pass-2-map-Bytes-3396995-5/generated/web/demo" && env -u CARGO_TARGET_DIR "/home/timo/.rustup/toolchains/stable-x86_64-unknown-linux-gnu/bin/cargo" "generate-lockfile" "--offline"
+cd "~/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/crates/generate/ess-synth/../../../target/review-boundaries-5/adversary-compiler/pass-2-map-Bytes-3396995-5/generated/web/demo" && env -u CARGO_TARGET_DIR "~/.rustup/toolchains/stable-x86_64-unknown-linux-gnu/bin/cargo" "generate-lockfile" "--offline"
 
      Locking 1 package to latest compatible version
 
 exit status: 0
-cd "/home/timo/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/crates/generate/ess-synth/../../../target/review-boundaries-5/adversary-compiler/pass-2-map-Bytes-3396995-5/generated/web/demo" && env -u CARGO_TARGET_DIR "/home/timo/.rustup/toolchains/stable-x86_64-unknown-linux-gnu/bin/cargo" "check" "--locked" "--offline" "--workspace" "--all-targets" "--target-dir" "target" "--target" "wasm32-unknown-unknown"
+cd "~/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/crates/generate/ess-synth/../../../target/review-boundaries-5/adversary-compiler/pass-2-map-Bytes-3396995-5/generated/web/demo" && env -u CARGO_TARGET_DIR "~/.rustup/toolchains/stable-x86_64-unknown-linux-gnu/bin/cargo" "check" "--locked" "--offline" "--workspace" "--all-targets" "--target-dir" "target" "--target" "wasm32-unknown-unknown"
 
-    Checking demo-types v1.0.0 (/home/timo/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/target/review-boundaries-5/adversary-compiler/pass-2-map-Bytes-3396995-5/generated/rust/demo/crates/demo-types)
-    Checking demo-web v1.0.0 (/home/timo/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/target/review-boundaries-5/adversary-compiler/pass-2-map-Bytes-3396995-5/generated/web/demo/crates/demo-web)
+    Checking demo-types v1.0.0 (~/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/target/review-boundaries-5/adversary-compiler/pass-2-map-Bytes-3396995-5/generated/rust/demo/crates/demo-types)
+    Checking demo-web v1.0.0 (~/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/target/review-boundaries-5/adversary-compiler/pass-2-map-Bytes-3396995-5/generated/web/demo/crates/demo-web)
 error[E0308]: mismatched types
    --> crates/demo-web/src/wire.rs:45:59
     |
@@ -1227,24 +1227,24 @@ error: could not compile `demo-web` (lib) due to 1 previous error
 exit status: 101
 
 thread 'bytes_map_decoder_path_is_borrowed_in_the_supported_codec' (3397002) panicked at crates/generate/ess-synth/tests/feasibility_adversary.rs:115:5:
-admitted generated workspace failed its actual compiler: /home/timo/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/crates/generate/ess-synth/../../../target/review-boundaries-5/adversary-compiler/pass-2-map-Bytes-3396995-5/generated/web/demo
+admitted generated workspace failed its actual compiler: ~/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/crates/generate/ess-synth/../../../target/review-boundaries-5/adversary-compiler/pass-2-map-Bytes-3396995-5/generated/web/demo
 
 ---- a_later_binding_function_cannot_be_hidden_by_a_prior_input_local stdout ----
-source witness: /home/timo/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/crates/generate/ess-synth/../../../target/review-boundaries-5/adversary-compiler/pass-2-binding-source-3396995-1
-cd "/home/timo/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/crates/generate/ess-synth/../../../target/review-boundaries-5/adversary-compiler/pass-2-binding-input-later-3396995-14" && env -u CARGO_TARGET_DIR "/home/timo/.rustup/toolchains/stable-x86_64-unknown-linux-gnu/bin/cargo" "generate-lockfile" "--offline"
+source witness: ~/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/crates/generate/ess-synth/../../../target/review-boundaries-5/adversary-compiler/pass-2-binding-source-3396995-1
+cd "~/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/crates/generate/ess-synth/../../../target/review-boundaries-5/adversary-compiler/pass-2-binding-input-later-3396995-14" && env -u CARGO_TARGET_DIR "~/.rustup/toolchains/stable-x86_64-unknown-linux-gnu/bin/cargo" "generate-lockfile" "--offline"
 
     Blocking waiting for file lock on package cache
 
 exit status: 0
-cd "/home/timo/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/crates/generate/ess-synth/../../../target/review-boundaries-5/adversary-compiler/pass-2-binding-input-later-3396995-14" && env -u CARGO_TARGET_DIR "/home/timo/.rustup/toolchains/stable-x86_64-unknown-linux-gnu/bin/cargo" "check" "--locked" "--offline" "--workspace" "--all-targets" "--target-dir" "target"
+cd "~/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/crates/generate/ess-synth/../../../target/review-boundaries-5/adversary-compiler/pass-2-binding-input-later-3396995-14" && env -u CARGO_TARGET_DIR "~/.rustup/toolchains/stable-x86_64-unknown-linux-gnu/bin/cargo" "check" "--locked" "--offline" "--workspace" "--all-targets" "--target-dir" "target"
 
     Blocking waiting for file lock on package cache
     Blocking waiting for file lock on package cache
     Blocking waiting for file lock on package cache
     Blocking waiting for file lock on package cache
-    Checking demo-types v1.0.0 (/home/timo/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/target/review-boundaries-5/adversary-compiler/pass-2-binding-input-later-3396995-14/crates/demo-types)
-    Checking worker v1.0.0 (/home/timo/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/target/review-boundaries-5/adversary-compiler/pass-2-binding-input-later-3396995-14/crates/worker)
-    Checking demo-system v1.0.0 (/home/timo/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/target/review-boundaries-5/adversary-compiler/pass-2-binding-input-later-3396995-14/crates/demo-system)
+    Checking demo-types v1.0.0 (~/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/target/review-boundaries-5/adversary-compiler/pass-2-binding-input-later-3396995-14/crates/demo-types)
+    Checking worker v1.0.0 (~/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/target/review-boundaries-5/adversary-compiler/pass-2-binding-input-later-3396995-14/crates/worker)
+    Checking demo-system v1.0.0 (~/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/target/review-boundaries-5/adversary-compiler/pass-2-binding-input-later-3396995-14/crates/demo-system)
 error[E0618]: expected function, found `Handle`
    --> crates/demo-system/src/lib.rs:156:29
     |
@@ -1283,36 +1283,36 @@ error: could not compile `demo-system` (lib) due to 1 previous error; 2 warnings
 exit status: 101
 
 thread 'a_later_binding_function_cannot_be_hidden_by_a_prior_input_local' (3396997) panicked at crates/generate/ess-synth/tests/feasibility_adversary.rs:115:5:
-admitted generated workspace failed its actual compiler: /home/timo/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/crates/generate/ess-synth/../../../target/review-boundaries-5/adversary-compiler/pass-2-binding-input-later-3396995-14
+admitted generated workspace failed its actual compiler: ~/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/crates/generate/ess-synth/../../../target/review-boundaries-5/adversary-compiler/pass-2-binding-input-later-3396995-14
 
 ---- boolean_map_decoder_path_is_borrowed_in_the_supported_codec stdout ----
-cd "/home/timo/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/crates/generate/ess-synth/../../../target/review-boundaries-5/adversary-compiler/pass-2-map-Boolean-3396995-3/generated/rust/demo" && env -u CARGO_TARGET_DIR "/home/timo/.rustup/toolchains/stable-x86_64-unknown-linux-gnu/bin/cargo" "generate-lockfile" "--offline"
+cd "~/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/crates/generate/ess-synth/../../../target/review-boundaries-5/adversary-compiler/pass-2-map-Boolean-3396995-3/generated/rust/demo" && env -u CARGO_TARGET_DIR "~/.rustup/toolchains/stable-x86_64-unknown-linux-gnu/bin/cargo" "generate-lockfile" "--offline"
 
     Blocking waiting for file lock on package cache
     Blocking waiting for file lock on package cache
 
 exit status: 0
-cd "/home/timo/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/crates/generate/ess-synth/../../../target/review-boundaries-5/adversary-compiler/pass-2-map-Boolean-3396995-3/generated/rust/demo" && env -u CARGO_TARGET_DIR "/home/timo/.rustup/toolchains/stable-x86_64-unknown-linux-gnu/bin/cargo" "check" "--locked" "--offline" "--workspace" "--all-targets" "--target-dir" "target"
+cd "~/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/crates/generate/ess-synth/../../../target/review-boundaries-5/adversary-compiler/pass-2-map-Boolean-3396995-3/generated/rust/demo" && env -u CARGO_TARGET_DIR "~/.rustup/toolchains/stable-x86_64-unknown-linux-gnu/bin/cargo" "check" "--locked" "--offline" "--workspace" "--all-targets" "--target-dir" "target"
 
     Blocking waiting for file lock on package cache
     Blocking waiting for file lock on package cache
     Blocking waiting for file lock on package cache
     Blocking waiting for file lock on package cache
-    Checking demo-types v1.0.0 (/home/timo/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/target/review-boundaries-5/adversary-compiler/pass-2-map-Boolean-3396995-3/generated/rust/demo/crates/demo-types)
+    Checking demo-types v1.0.0 (~/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/target/review-boundaries-5/adversary-compiler/pass-2-map-Boolean-3396995-3/generated/rust/demo/crates/demo-types)
     Finished `dev` profile [unoptimized] target(s) in 0.59s
 
 exit status: 0
-cd "/home/timo/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/crates/generate/ess-synth/../../../target/review-boundaries-5/adversary-compiler/pass-2-map-Boolean-3396995-3/generated/web/demo" && env -u CARGO_TARGET_DIR "/home/timo/.rustup/toolchains/stable-x86_64-unknown-linux-gnu/bin/cargo" "generate-lockfile" "--offline"
+cd "~/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/crates/generate/ess-synth/../../../target/review-boundaries-5/adversary-compiler/pass-2-map-Boolean-3396995-3/generated/web/demo" && env -u CARGO_TARGET_DIR "~/.rustup/toolchains/stable-x86_64-unknown-linux-gnu/bin/cargo" "generate-lockfile" "--offline"
 
      Locking 1 package to latest compatible version
 
 exit status: 0
-cd "/home/timo/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/crates/generate/ess-synth/../../../target/review-boundaries-5/adversary-compiler/pass-2-map-Boolean-3396995-3/generated/web/demo" && env -u CARGO_TARGET_DIR "/home/timo/.rustup/toolchains/stable-x86_64-unknown-linux-gnu/bin/cargo" "check" "--locked" "--offline" "--workspace" "--all-targets" "--target-dir" "target" "--target" "wasm32-unknown-unknown"
+cd "~/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/crates/generate/ess-synth/../../../target/review-boundaries-5/adversary-compiler/pass-2-map-Boolean-3396995-3/generated/web/demo" && env -u CARGO_TARGET_DIR "~/.rustup/toolchains/stable-x86_64-unknown-linux-gnu/bin/cargo" "check" "--locked" "--offline" "--workspace" "--all-targets" "--target-dir" "target" "--target" "wasm32-unknown-unknown"
 
     Blocking waiting for file lock on package cache
     Blocking waiting for file lock on package cache
-    Checking demo-types v1.0.0 (/home/timo/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/target/review-boundaries-5/adversary-compiler/pass-2-map-Boolean-3396995-3/generated/rust/demo/crates/demo-types)
-    Checking demo-web v1.0.0 (/home/timo/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/target/review-boundaries-5/adversary-compiler/pass-2-map-Boolean-3396995-3/generated/web/demo/crates/demo-web)
+    Checking demo-types v1.0.0 (~/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/target/review-boundaries-5/adversary-compiler/pass-2-map-Boolean-3396995-3/generated/rust/demo/crates/demo-types)
+    Checking demo-web v1.0.0 (~/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/target/review-boundaries-5/adversary-compiler/pass-2-map-Boolean-3396995-3/generated/web/demo/crates/demo-web)
 error[E0308]: mismatched types
    --> crates/demo-web/src/wire.rs:45:58
     |
@@ -1339,35 +1339,35 @@ error: could not compile `demo-web` (lib) due to 1 previous error
 exit status: 101
 
 thread 'boolean_map_decoder_path_is_borrowed_in_the_supported_codec' (3397001) panicked at crates/generate/ess-synth/tests/feasibility_adversary.rs:115:5:
-admitted generated workspace failed its actual compiler: /home/timo/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/crates/generate/ess-synth/../../../target/review-boundaries-5/adversary-compiler/pass-2-map-Boolean-3396995-3/generated/web/demo
+admitted generated workspace failed its actual compiler: ~/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/crates/generate/ess-synth/../../../target/review-boundaries-5/adversary-compiler/pass-2-map-Boolean-3396995-3/generated/web/demo
 
 ---- optional_recursion_behind_nested_collections_keeps_its_size_break stdout ----
-cd "/home/timo/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/crates/generate/ess-synth/../../../target/review-boundaries-5/adversary-compiler/pass-2-map-recursion-3396995-7/generated/rust/demo" && env -u CARGO_TARGET_DIR "/home/timo/.rustup/toolchains/stable-x86_64-unknown-linux-gnu/bin/cargo" "generate-lockfile" "--offline"
+cd "~/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/crates/generate/ess-synth/../../../target/review-boundaries-5/adversary-compiler/pass-2-map-recursion-3396995-7/generated/rust/demo" && env -u CARGO_TARGET_DIR "~/.rustup/toolchains/stable-x86_64-unknown-linux-gnu/bin/cargo" "generate-lockfile" "--offline"
 
     Blocking waiting for file lock on package cache
     Blocking waiting for file lock on package cache
 
 exit status: 0
-cd "/home/timo/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/crates/generate/ess-synth/../../../target/review-boundaries-5/adversary-compiler/pass-2-map-recursion-3396995-7/generated/rust/demo" && env -u CARGO_TARGET_DIR "/home/timo/.rustup/toolchains/stable-x86_64-unknown-linux-gnu/bin/cargo" "check" "--locked" "--offline" "--workspace" "--all-targets" "--target-dir" "target"
+cd "~/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/crates/generate/ess-synth/../../../target/review-boundaries-5/adversary-compiler/pass-2-map-recursion-3396995-7/generated/rust/demo" && env -u CARGO_TARGET_DIR "~/.rustup/toolchains/stable-x86_64-unknown-linux-gnu/bin/cargo" "check" "--locked" "--offline" "--workspace" "--all-targets" "--target-dir" "target"
 
     Blocking waiting for file lock on package cache
     Blocking waiting for file lock on package cache
     Blocking waiting for file lock on package cache
-    Checking demo-types v1.0.0 (/home/timo/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/target/review-boundaries-5/adversary-compiler/pass-2-map-recursion-3396995-7/generated/rust/demo/crates/demo-types)
+    Checking demo-types v1.0.0 (~/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/target/review-boundaries-5/adversary-compiler/pass-2-map-recursion-3396995-7/generated/rust/demo/crates/demo-types)
     Finished `dev` profile [unoptimized] target(s) in 0.49s
 
 exit status: 0
-cd "/home/timo/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/crates/generate/ess-synth/../../../target/review-boundaries-5/adversary-compiler/pass-2-map-recursion-3396995-7/generated/web/demo" && env -u CARGO_TARGET_DIR "/home/timo/.rustup/toolchains/stable-x86_64-unknown-linux-gnu/bin/cargo" "generate-lockfile" "--offline"
+cd "~/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/crates/generate/ess-synth/../../../target/review-boundaries-5/adversary-compiler/pass-2-map-recursion-3396995-7/generated/web/demo" && env -u CARGO_TARGET_DIR "~/.rustup/toolchains/stable-x86_64-unknown-linux-gnu/bin/cargo" "generate-lockfile" "--offline"
 
     Blocking waiting for file lock on package cache
     Blocking waiting for file lock on package cache
      Locking 1 package to latest compatible version
 
 exit status: 0
-cd "/home/timo/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/crates/generate/ess-synth/../../../target/review-boundaries-5/adversary-compiler/pass-2-map-recursion-3396995-7/generated/web/demo" && env -u CARGO_TARGET_DIR "/home/timo/.rustup/toolchains/stable-x86_64-unknown-linux-gnu/bin/cargo" "check" "--locked" "--offline" "--workspace" "--all-targets" "--target-dir" "target" "--target" "wasm32-unknown-unknown"
+cd "~/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/crates/generate/ess-synth/../../../target/review-boundaries-5/adversary-compiler/pass-2-map-recursion-3396995-7/generated/web/demo" && env -u CARGO_TARGET_DIR "~/.rustup/toolchains/stable-x86_64-unknown-linux-gnu/bin/cargo" "check" "--locked" "--offline" "--workspace" "--all-targets" "--target-dir" "target" "--target" "wasm32-unknown-unknown"
 
-    Checking demo-types v1.0.0 (/home/timo/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/target/review-boundaries-5/adversary-compiler/pass-2-map-recursion-3396995-7/generated/rust/demo/crates/demo-types)
-    Checking demo-web v1.0.0 (/home/timo/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/target/review-boundaries-5/adversary-compiler/pass-2-map-recursion-3396995-7/generated/web/demo/crates/demo-web)
+    Checking demo-types v1.0.0 (~/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/target/review-boundaries-5/adversary-compiler/pass-2-map-recursion-3396995-7/generated/rust/demo/crates/demo-types)
+    Checking demo-web v1.0.0 (~/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/target/review-boundaries-5/adversary-compiler/pass-2-map-recursion-3396995-7/generated/web/demo/crates/demo-web)
 error[E0308]: mismatched types
    --> crates/demo-web/src/wire.rs:60:61
     |
@@ -1394,7 +1394,7 @@ error: could not compile `demo-web` (lib) due to 1 previous error
 exit status: 101
 
 thread 'optional_recursion_behind_nested_collections_keeps_its_size_break' (3397006) panicked at crates/generate/ess-synth/tests/feasibility_adversary.rs:115:5:
-admitted generated workspace failed its actual compiler: /home/timo/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/crates/generate/ess-synth/../../../target/review-boundaries-5/adversary-compiler/pass-2-map-recursion-3396995-7/generated/web/demo
+admitted generated workspace failed its actual compiler: ~/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/crates/generate/ess-synth/../../../target/review-boundaries-5/adversary-compiler/pass-2-map-recursion-3396995-7/generated/web/demo
 
 
 failures:
@@ -1552,8 +1552,8 @@ cargo clippy --locked --offline -p ess-synth -p ess-cli --all-targets -- -D warn
 Output:
 
 ```text
-    Checking ess-synth v0.18.0 (/home/timo/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/crates/generate/ess-synth)
-    Checking ess-cli v0.18.0 (/home/timo/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/crates/edge/ess-cli)
+    Checking ess-synth v0.18.0 (~/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/crates/generate/ess-synth)
+    Checking ess-cli v0.18.0 (~/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/crates/edge/ess-cli)
 error: `format!(..)` appended to existing `String`
    --> crates/generate/ess-synth/tests/feasibility_adversary.rs:238:9
     |
@@ -1586,7 +1586,7 @@ cargo clippy --locked --offline -p ess-synth -p ess-cli --all-targets -- -D warn
 Output:
 
 ```text
-    Checking ess-synth v0.18.0 (/home/timo/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/crates/generate/ess-synth)
+    Checking ess-synth v0.18.0 (~/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/crates/generate/ess-synth)
     Finished `dev` profile [unoptimized] target(s) in 0.33s
 ```
 
@@ -1618,7 +1618,7 @@ cargo test --locked --offline -p ess-synth -p ess-cli --no-fail-fast
 Output:
 
 ```text
-   Compiling ess-synth v0.18.0 (/home/timo/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/crates/generate/ess-synth)
+   Compiling ess-synth v0.18.0 (~/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/crates/generate/ess-synth)
     Finished `test` profile [unoptimized] target(s) in 0.83s
      Running unittests src/main.rs (target/debug/deps/ess-2a340c79ed142cb3)
 
@@ -1669,10 +1669,10 @@ test a_binding_function_capture_is_refused_before_web_cli_writes ... FAILED
 failures:
 
 ---- a_binding_function_capture_is_refused_before_rust_cli_writes stdout ----
-"/home/timo/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/target/debug/ess" "synthesize" "--target" "rust" "--format" "json" "--path" "/home/timo/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/crates/edge/ess-cli/../../../target/review-boundaries-5/adversary-cli/pass-2-binding-rust-3435694-0/spec" "--out" "/home/timo/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/crates/edge/ess-cli/../../../target/review-boundaries-5/adversary-cli/pass-2-binding-rust-3435694-0/absent"
-exit status: 0; output entries ["Cargo.toml", "PLAN.md", "crates", "plan.json"]; complete streams: /home/timo/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/crates/edge/ess-cli/../../../target/review-boundaries-5/adversary-cli/pass-2-binding-rust-3435694-0/absent.stdout and .stderr
-"/home/timo/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/target/debug/ess" "synthesize" "--target" "rust" "--format" "json" "--path" "/home/timo/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/crates/edge/ess-cli/../../../target/review-boundaries-5/adversary-cli/pass-2-binding-rust-3435694-0/spec" "--out" "/home/timo/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/crates/edge/ess-cli/../../../target/review-boundaries-5/adversary-cli/pass-2-binding-rust-3435694-0/existing"
-exit status: 0; output entries ["Cargo.toml", "PLAN.md", "crates", "plan.json", "sentinel.txt"]; complete streams: /home/timo/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/crates/edge/ess-cli/../../../target/review-boundaries-5/adversary-cli/pass-2-binding-rust-3435694-0/existing.stdout and .stderr
+"~/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/target/debug/ess" "synthesize" "--target" "rust" "--format" "json" "--path" "~/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/crates/edge/ess-cli/../../../target/review-boundaries-5/adversary-cli/pass-2-binding-rust-3435694-0/spec" "--out" "~/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/crates/edge/ess-cli/../../../target/review-boundaries-5/adversary-cli/pass-2-binding-rust-3435694-0/absent"
+exit status: 0; output entries ["Cargo.toml", "PLAN.md", "crates", "plan.json"]; complete streams: ~/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/crates/edge/ess-cli/../../../target/review-boundaries-5/adversary-cli/pass-2-binding-rust-3435694-0/absent.stdout and .stderr
+"~/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/target/debug/ess" "synthesize" "--target" "rust" "--format" "json" "--path" "~/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/crates/edge/ess-cli/../../../target/review-boundaries-5/adversary-cli/pass-2-binding-rust-3435694-0/spec" "--out" "~/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/crates/edge/ess-cli/../../../target/review-boundaries-5/adversary-cli/pass-2-binding-rust-3435694-0/existing"
+exit status: 0; output entries ["Cargo.toml", "PLAN.md", "crates", "plan.json", "sentinel.txt"]; complete streams: ~/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/crates/edge/ess-cli/../../../target/review-boundaries-5/adversary-cli/pass-2-binding-rust-3435694-0/existing.stdout and .stderr
 
 thread 'a_binding_function_capture_is_refused_before_rust_cli_writes' (3435695) panicked at crates/edge/ess-cli/tests/feasibility_adversary.rs:179:5:
 binding collision reached CLI writes:
@@ -1685,10 +1685,10 @@ existing: destination gained files
 note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
 
 ---- a_binding_function_capture_is_refused_before_web_cli_writes stdout ----
-"/home/timo/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/target/debug/ess" "synthesize" "--target" "web" "--format" "json" "--path" "/home/timo/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/crates/edge/ess-cli/../../../target/review-boundaries-5/adversary-cli/pass-2-binding-web-3435694-1/spec" "--out" "/home/timo/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/crates/edge/ess-cli/../../../target/review-boundaries-5/adversary-cli/pass-2-binding-web-3435694-1/absent"
-exit status: 0; output entries ["Cargo.toml", "PLAN.md", "README.md", "TARGET.md", "bridge.js", "catalog.json", "crates", "index.html", "plan.json", "target.json"]; complete streams: /home/timo/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/crates/edge/ess-cli/../../../target/review-boundaries-5/adversary-cli/pass-2-binding-web-3435694-1/absent.stdout and .stderr
-"/home/timo/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/target/debug/ess" "synthesize" "--target" "web" "--format" "json" "--path" "/home/timo/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/crates/edge/ess-cli/../../../target/review-boundaries-5/adversary-cli/pass-2-binding-web-3435694-1/spec" "--out" "/home/timo/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/crates/edge/ess-cli/../../../target/review-boundaries-5/adversary-cli/pass-2-binding-web-3435694-1/existing"
-exit status: 0; output entries ["Cargo.toml", "PLAN.md", "README.md", "TARGET.md", "bridge.js", "catalog.json", "crates", "index.html", "plan.json", "sentinel.txt", "target.json"]; complete streams: /home/timo/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/crates/edge/ess-cli/../../../target/review-boundaries-5/adversary-cli/pass-2-binding-web-3435694-1/existing.stdout and .stderr
+"~/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/target/debug/ess" "synthesize" "--target" "web" "--format" "json" "--path" "~/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/crates/edge/ess-cli/../../../target/review-boundaries-5/adversary-cli/pass-2-binding-web-3435694-1/spec" "--out" "~/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/crates/edge/ess-cli/../../../target/review-boundaries-5/adversary-cli/pass-2-binding-web-3435694-1/absent"
+exit status: 0; output entries ["Cargo.toml", "PLAN.md", "README.md", "TARGET.md", "bridge.js", "catalog.json", "crates", "index.html", "plan.json", "target.json"]; complete streams: ~/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/crates/edge/ess-cli/../../../target/review-boundaries-5/adversary-cli/pass-2-binding-web-3435694-1/absent.stdout and .stderr
+"~/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/target/debug/ess" "synthesize" "--target" "web" "--format" "json" "--path" "~/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/crates/edge/ess-cli/../../../target/review-boundaries-5/adversary-cli/pass-2-binding-web-3435694-1/spec" "--out" "~/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/crates/edge/ess-cli/../../../target/review-boundaries-5/adversary-cli/pass-2-binding-web-3435694-1/existing"
+exit status: 0; output entries ["Cargo.toml", "PLAN.md", "README.md", "TARGET.md", "bridge.js", "catalog.json", "crates", "index.html", "plan.json", "sentinel.txt", "target.json"]; complete streams: ~/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/crates/edge/ess-cli/../../../target/review-boundaries-5/adversary-cli/pass-2-binding-web-3435694-1/existing.stdout and .stderr
 
 thread 'a_binding_function_capture_is_refused_before_web_cli_writes' (3435696) panicked at crates/edge/ess-cli/tests/feasibility_adversary.rs:179:5:
 binding collision reached CLI writes:
@@ -1857,22 +1857,22 @@ test an_unaccepted_outcome_binding_has_no_web_codec_local_scope ... ok
 failures:
 
 ---- a_later_binding_function_cannot_be_hidden_by_a_prior_input_local stdout ----
-source witness: /home/timo/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/crates/generate/ess-synth/../../../target/review-boundaries-5/adversary-compiler/pass-2-binding-source-3440600-1
-cd "/home/timo/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/crates/generate/ess-synth/../../../target/review-boundaries-5/adversary-compiler/pass-2-binding-input-later-3440600-14" && env -u CARGO_TARGET_DIR "/home/timo/.rustup/toolchains/stable-x86_64-unknown-linux-gnu/bin/cargo" "generate-lockfile" "--offline"
+source witness: ~/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/crates/generate/ess-synth/../../../target/review-boundaries-5/adversary-compiler/pass-2-binding-source-3440600-1
+cd "~/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/crates/generate/ess-synth/../../../target/review-boundaries-5/adversary-compiler/pass-2-binding-input-later-3440600-14" && env -u CARGO_TARGET_DIR "~/.rustup/toolchains/stable-x86_64-unknown-linux-gnu/bin/cargo" "generate-lockfile" "--offline"
 
     Blocking waiting for file lock on package cache
     Blocking waiting for file lock on package cache
 
 exit status: 0
-cd "/home/timo/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/crates/generate/ess-synth/../../../target/review-boundaries-5/adversary-compiler/pass-2-binding-input-later-3440600-14" && env -u CARGO_TARGET_DIR "/home/timo/.rustup/toolchains/stable-x86_64-unknown-linux-gnu/bin/cargo" "check" "--locked" "--offline" "--workspace" "--all-targets" "--target-dir" "target"
+cd "~/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/crates/generate/ess-synth/../../../target/review-boundaries-5/adversary-compiler/pass-2-binding-input-later-3440600-14" && env -u CARGO_TARGET_DIR "~/.rustup/toolchains/stable-x86_64-unknown-linux-gnu/bin/cargo" "check" "--locked" "--offline" "--workspace" "--all-targets" "--target-dir" "target"
 
     Blocking waiting for file lock on package cache
     Blocking waiting for file lock on package cache
     Blocking waiting for file lock on package cache
     Blocking waiting for file lock on package cache
-    Checking demo-types v1.0.0 (/home/timo/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/target/review-boundaries-5/adversary-compiler/pass-2-binding-input-later-3440600-14/crates/demo-types)
-    Checking worker v1.0.0 (/home/timo/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/target/review-boundaries-5/adversary-compiler/pass-2-binding-input-later-3440600-14/crates/worker)
-    Checking demo-system v1.0.0 (/home/timo/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/target/review-boundaries-5/adversary-compiler/pass-2-binding-input-later-3440600-14/crates/demo-system)
+    Checking demo-types v1.0.0 (~/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/target/review-boundaries-5/adversary-compiler/pass-2-binding-input-later-3440600-14/crates/demo-types)
+    Checking worker v1.0.0 (~/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/target/review-boundaries-5/adversary-compiler/pass-2-binding-input-later-3440600-14/crates/worker)
+    Checking demo-system v1.0.0 (~/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/target/review-boundaries-5/adversary-compiler/pass-2-binding-input-later-3440600-14/crates/demo-system)
 error[E0618]: expected function, found `Handle`
    --> crates/demo-system/src/lib.rs:156:29
     |
@@ -1911,30 +1911,30 @@ error: could not compile `demo-system` (lib) due to 1 previous error; 2 warnings
 exit status: 101
 
 thread 'a_later_binding_function_cannot_be_hidden_by_a_prior_input_local' (3440602) panicked at crates/generate/ess-synth/tests/feasibility_adversary.rs:116:5:
-admitted generated workspace failed its actual compiler: /home/timo/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/crates/generate/ess-synth/../../../target/review-boundaries-5/adversary-compiler/pass-2-binding-input-later-3440600-14
+admitted generated workspace failed its actual compiler: ~/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/crates/generate/ess-synth/../../../target/review-boundaries-5/adversary-compiler/pass-2-binding-input-later-3440600-14
 note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
 
 ---- optional_recursion_behind_nested_collections_keeps_its_size_break stdout ----
-cd "/home/timo/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/crates/generate/ess-synth/../../../target/review-boundaries-5/adversary-compiler/pass-2-map-recursion-3440600-7/generated/rust/demo" && env -u CARGO_TARGET_DIR "/home/timo/.rustup/toolchains/stable-x86_64-unknown-linux-gnu/bin/cargo" "generate-lockfile" "--offline"
+cd "~/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/crates/generate/ess-synth/../../../target/review-boundaries-5/adversary-compiler/pass-2-map-recursion-3440600-7/generated/rust/demo" && env -u CARGO_TARGET_DIR "~/.rustup/toolchains/stable-x86_64-unknown-linux-gnu/bin/cargo" "generate-lockfile" "--offline"
 
     Blocking waiting for file lock on package cache
 
 exit status: 0
-cd "/home/timo/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/crates/generate/ess-synth/../../../target/review-boundaries-5/adversary-compiler/pass-2-map-recursion-3440600-7/generated/rust/demo" && env -u CARGO_TARGET_DIR "/home/timo/.rustup/toolchains/stable-x86_64-unknown-linux-gnu/bin/cargo" "check" "--locked" "--offline" "--workspace" "--all-targets" "--target-dir" "target"
+cd "~/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/crates/generate/ess-synth/../../../target/review-boundaries-5/adversary-compiler/pass-2-map-recursion-3440600-7/generated/rust/demo" && env -u CARGO_TARGET_DIR "~/.rustup/toolchains/stable-x86_64-unknown-linux-gnu/bin/cargo" "check" "--locked" "--offline" "--workspace" "--all-targets" "--target-dir" "target"
 
-    Checking demo-types v1.0.0 (/home/timo/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/target/review-boundaries-5/adversary-compiler/pass-2-map-recursion-3440600-7/generated/rust/demo/crates/demo-types)
+    Checking demo-types v1.0.0 (~/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/target/review-boundaries-5/adversary-compiler/pass-2-map-recursion-3440600-7/generated/rust/demo/crates/demo-types)
     Finished `dev` profile [unoptimized] target(s) in 0.44s
 
 exit status: 0
-cd "/home/timo/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/crates/generate/ess-synth/../../../target/review-boundaries-5/adversary-compiler/pass-2-map-recursion-3440600-7/generated/web/demo" && env -u CARGO_TARGET_DIR "/home/timo/.rustup/toolchains/stable-x86_64-unknown-linux-gnu/bin/cargo" "generate-lockfile" "--offline"
+cd "~/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/crates/generate/ess-synth/../../../target/review-boundaries-5/adversary-compiler/pass-2-map-recursion-3440600-7/generated/web/demo" && env -u CARGO_TARGET_DIR "~/.rustup/toolchains/stable-x86_64-unknown-linux-gnu/bin/cargo" "generate-lockfile" "--offline"
 
      Locking 1 package to latest compatible version
 
 exit status: 0
-cd "/home/timo/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/crates/generate/ess-synth/../../../target/review-boundaries-5/adversary-compiler/pass-2-map-recursion-3440600-7/generated/web/demo" && env -u CARGO_TARGET_DIR "/home/timo/.rustup/toolchains/stable-x86_64-unknown-linux-gnu/bin/cargo" "check" "--locked" "--offline" "--workspace" "--all-targets" "--target-dir" "target" "--target" "wasm32-unknown-unknown"
+cd "~/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/crates/generate/ess-synth/../../../target/review-boundaries-5/adversary-compiler/pass-2-map-recursion-3440600-7/generated/web/demo" && env -u CARGO_TARGET_DIR "~/.rustup/toolchains/stable-x86_64-unknown-linux-gnu/bin/cargo" "check" "--locked" "--offline" "--workspace" "--all-targets" "--target-dir" "target" "--target" "wasm32-unknown-unknown"
 
-    Checking demo-types v1.0.0 (/home/timo/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/target/review-boundaries-5/adversary-compiler/pass-2-map-recursion-3440600-7/generated/rust/demo/crates/demo-types)
-    Checking demo-web v1.0.0 (/home/timo/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/target/review-boundaries-5/adversary-compiler/pass-2-map-recursion-3440600-7/generated/web/demo/crates/demo-web)
+    Checking demo-types v1.0.0 (~/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/target/review-boundaries-5/adversary-compiler/pass-2-map-recursion-3440600-7/generated/rust/demo/crates/demo-types)
+    Checking demo-web v1.0.0 (~/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/target/review-boundaries-5/adversary-compiler/pass-2-map-recursion-3440600-7/generated/web/demo/crates/demo-web)
 error[E0308]: mismatched types
    --> crates/demo-web/src/wire.rs:60:61
     |
@@ -1961,34 +1961,34 @@ error: could not compile `demo-web` (lib) due to 1 previous error
 exit status: 101
 
 thread 'optional_recursion_behind_nested_collections_keeps_its_size_break' (3440611) panicked at crates/generate/ess-synth/tests/feasibility_adversary.rs:116:5:
-admitted generated workspace failed its actual compiler: /home/timo/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/crates/generate/ess-synth/../../../target/review-boundaries-5/adversary-compiler/pass-2-map-recursion-3440600-7/generated/web/demo
+admitted generated workspace failed its actual compiler: ~/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/crates/generate/ess-synth/../../../target/review-boundaries-5/adversary-compiler/pass-2-map-recursion-3440600-7/generated/web/demo
 
 ---- boolean_map_decoder_path_is_borrowed_in_the_supported_codec stdout ----
-cd "/home/timo/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/crates/generate/ess-synth/../../../target/review-boundaries-5/adversary-compiler/pass-2-map-Boolean-3440600-4/generated/rust/demo" && env -u CARGO_TARGET_DIR "/home/timo/.rustup/toolchains/stable-x86_64-unknown-linux-gnu/bin/cargo" "generate-lockfile" "--offline"
+cd "~/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/crates/generate/ess-synth/../../../target/review-boundaries-5/adversary-compiler/pass-2-map-Boolean-3440600-4/generated/rust/demo" && env -u CARGO_TARGET_DIR "~/.rustup/toolchains/stable-x86_64-unknown-linux-gnu/bin/cargo" "generate-lockfile" "--offline"
 
     Blocking waiting for file lock on package cache
 
 exit status: 0
-cd "/home/timo/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/crates/generate/ess-synth/../../../target/review-boundaries-5/adversary-compiler/pass-2-map-Boolean-3440600-4/generated/rust/demo" && env -u CARGO_TARGET_DIR "/home/timo/.rustup/toolchains/stable-x86_64-unknown-linux-gnu/bin/cargo" "check" "--locked" "--offline" "--workspace" "--all-targets" "--target-dir" "target"
+cd "~/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/crates/generate/ess-synth/../../../target/review-boundaries-5/adversary-compiler/pass-2-map-Boolean-3440600-4/generated/rust/demo" && env -u CARGO_TARGET_DIR "~/.rustup/toolchains/stable-x86_64-unknown-linux-gnu/bin/cargo" "check" "--locked" "--offline" "--workspace" "--all-targets" "--target-dir" "target"
 
     Blocking waiting for file lock on package cache
     Blocking waiting for file lock on package cache
     Blocking waiting for file lock on package cache
-    Checking demo-types v1.0.0 (/home/timo/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/target/review-boundaries-5/adversary-compiler/pass-2-map-Boolean-3440600-4/generated/rust/demo/crates/demo-types)
+    Checking demo-types v1.0.0 (~/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/target/review-boundaries-5/adversary-compiler/pass-2-map-Boolean-3440600-4/generated/rust/demo/crates/demo-types)
     Finished `dev` profile [unoptimized] target(s) in 0.54s
 
 exit status: 0
-cd "/home/timo/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/crates/generate/ess-synth/../../../target/review-boundaries-5/adversary-compiler/pass-2-map-Boolean-3440600-4/generated/web/demo" && env -u CARGO_TARGET_DIR "/home/timo/.rustup/toolchains/stable-x86_64-unknown-linux-gnu/bin/cargo" "generate-lockfile" "--offline"
+cd "~/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/crates/generate/ess-synth/../../../target/review-boundaries-5/adversary-compiler/pass-2-map-Boolean-3440600-4/generated/web/demo" && env -u CARGO_TARGET_DIR "~/.rustup/toolchains/stable-x86_64-unknown-linux-gnu/bin/cargo" "generate-lockfile" "--offline"
 
     Blocking waiting for file lock on package cache
      Locking 1 package to latest compatible version
 
 exit status: 0
-cd "/home/timo/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/crates/generate/ess-synth/../../../target/review-boundaries-5/adversary-compiler/pass-2-map-Boolean-3440600-4/generated/web/demo" && env -u CARGO_TARGET_DIR "/home/timo/.rustup/toolchains/stable-x86_64-unknown-linux-gnu/bin/cargo" "check" "--locked" "--offline" "--workspace" "--all-targets" "--target-dir" "target" "--target" "wasm32-unknown-unknown"
+cd "~/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/crates/generate/ess-synth/../../../target/review-boundaries-5/adversary-compiler/pass-2-map-Boolean-3440600-4/generated/web/demo" && env -u CARGO_TARGET_DIR "~/.rustup/toolchains/stable-x86_64-unknown-linux-gnu/bin/cargo" "check" "--locked" "--offline" "--workspace" "--all-targets" "--target-dir" "target" "--target" "wasm32-unknown-unknown"
 
     Blocking waiting for file lock on package cache
-    Checking demo-types v1.0.0 (/home/timo/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/target/review-boundaries-5/adversary-compiler/pass-2-map-Boolean-3440600-4/generated/rust/demo/crates/demo-types)
-    Checking demo-web v1.0.0 (/home/timo/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/target/review-boundaries-5/adversary-compiler/pass-2-map-Boolean-3440600-4/generated/web/demo/crates/demo-web)
+    Checking demo-types v1.0.0 (~/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/target/review-boundaries-5/adversary-compiler/pass-2-map-Boolean-3440600-4/generated/rust/demo/crates/demo-types)
+    Checking demo-web v1.0.0 (~/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/target/review-boundaries-5/adversary-compiler/pass-2-map-Boolean-3440600-4/generated/web/demo/crates/demo-web)
 error[E0308]: mismatched types
    --> crates/demo-web/src/wire.rs:45:58
     |
@@ -2015,34 +2015,34 @@ error: could not compile `demo-web` (lib) due to 1 previous error
 exit status: 101
 
 thread 'boolean_map_decoder_path_is_borrowed_in_the_supported_codec' (3440606) panicked at crates/generate/ess-synth/tests/feasibility_adversary.rs:116:5:
-admitted generated workspace failed its actual compiler: /home/timo/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/crates/generate/ess-synth/../../../target/review-boundaries-5/adversary-compiler/pass-2-map-Boolean-3440600-4/generated/web/demo
+admitted generated workspace failed its actual compiler: ~/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/crates/generate/ess-synth/../../../target/review-boundaries-5/adversary-compiler/pass-2-map-Boolean-3440600-4/generated/web/demo
 
 ---- bytes_map_decoder_path_is_borrowed_in_the_supported_codec stdout ----
-cd "/home/timo/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/crates/generate/ess-synth/../../../target/review-boundaries-5/adversary-compiler/pass-2-map-Bytes-3440600-3/generated/rust/demo" && env -u CARGO_TARGET_DIR "/home/timo/.rustup/toolchains/stable-x86_64-unknown-linux-gnu/bin/cargo" "generate-lockfile" "--offline"
+cd "~/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/crates/generate/ess-synth/../../../target/review-boundaries-5/adversary-compiler/pass-2-map-Bytes-3440600-3/generated/rust/demo" && env -u CARGO_TARGET_DIR "~/.rustup/toolchains/stable-x86_64-unknown-linux-gnu/bin/cargo" "generate-lockfile" "--offline"
 
     Blocking waiting for file lock on package cache
 
 exit status: 0
-cd "/home/timo/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/crates/generate/ess-synth/../../../target/review-boundaries-5/adversary-compiler/pass-2-map-Bytes-3440600-3/generated/rust/demo" && env -u CARGO_TARGET_DIR "/home/timo/.rustup/toolchains/stable-x86_64-unknown-linux-gnu/bin/cargo" "check" "--locked" "--offline" "--workspace" "--all-targets" "--target-dir" "target"
+cd "~/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/crates/generate/ess-synth/../../../target/review-boundaries-5/adversary-compiler/pass-2-map-Bytes-3440600-3/generated/rust/demo" && env -u CARGO_TARGET_DIR "~/.rustup/toolchains/stable-x86_64-unknown-linux-gnu/bin/cargo" "check" "--locked" "--offline" "--workspace" "--all-targets" "--target-dir" "target"
 
     Blocking waiting for file lock on package cache
     Blocking waiting for file lock on package cache
     Blocking waiting for file lock on package cache
     Blocking waiting for file lock on package cache
-    Checking demo-types v1.0.0 (/home/timo/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/target/review-boundaries-5/adversary-compiler/pass-2-map-Bytes-3440600-3/generated/rust/demo/crates/demo-types)
+    Checking demo-types v1.0.0 (~/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/target/review-boundaries-5/adversary-compiler/pass-2-map-Bytes-3440600-3/generated/rust/demo/crates/demo-types)
     Finished `dev` profile [unoptimized] target(s) in 0.54s
 
 exit status: 0
-cd "/home/timo/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/crates/generate/ess-synth/../../../target/review-boundaries-5/adversary-compiler/pass-2-map-Bytes-3440600-3/generated/web/demo" && env -u CARGO_TARGET_DIR "/home/timo/.rustup/toolchains/stable-x86_64-unknown-linux-gnu/bin/cargo" "generate-lockfile" "--offline"
+cd "~/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/crates/generate/ess-synth/../../../target/review-boundaries-5/adversary-compiler/pass-2-map-Bytes-3440600-3/generated/web/demo" && env -u CARGO_TARGET_DIR "~/.rustup/toolchains/stable-x86_64-unknown-linux-gnu/bin/cargo" "generate-lockfile" "--offline"
 
      Locking 1 package to latest compatible version
 
 exit status: 0
-cd "/home/timo/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/crates/generate/ess-synth/../../../target/review-boundaries-5/adversary-compiler/pass-2-map-Bytes-3440600-3/generated/web/demo" && env -u CARGO_TARGET_DIR "/home/timo/.rustup/toolchains/stable-x86_64-unknown-linux-gnu/bin/cargo" "check" "--locked" "--offline" "--workspace" "--all-targets" "--target-dir" "target" "--target" "wasm32-unknown-unknown"
+cd "~/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/crates/generate/ess-synth/../../../target/review-boundaries-5/adversary-compiler/pass-2-map-Bytes-3440600-3/generated/web/demo" && env -u CARGO_TARGET_DIR "~/.rustup/toolchains/stable-x86_64-unknown-linux-gnu/bin/cargo" "check" "--locked" "--offline" "--workspace" "--all-targets" "--target-dir" "target" "--target" "wasm32-unknown-unknown"
 
     Blocking waiting for file lock on package cache
-    Checking demo-types v1.0.0 (/home/timo/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/target/review-boundaries-5/adversary-compiler/pass-2-map-Bytes-3440600-3/generated/rust/demo/crates/demo-types)
-    Checking demo-web v1.0.0 (/home/timo/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/target/review-boundaries-5/adversary-compiler/pass-2-map-Bytes-3440600-3/generated/web/demo/crates/demo-web)
+    Checking demo-types v1.0.0 (~/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/target/review-boundaries-5/adversary-compiler/pass-2-map-Bytes-3440600-3/generated/rust/demo/crates/demo-types)
+    Checking demo-web v1.0.0 (~/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/target/review-boundaries-5/adversary-compiler/pass-2-map-Bytes-3440600-3/generated/web/demo/crates/demo-web)
 error[E0308]: mismatched types
    --> crates/demo-web/src/wire.rs:45:59
     |
@@ -2069,24 +2069,24 @@ error: could not compile `demo-web` (lib) due to 1 previous error
 exit status: 101
 
 thread 'bytes_map_decoder_path_is_borrowed_in_the_supported_codec' (3440607) panicked at crates/generate/ess-synth/tests/feasibility_adversary.rs:116:5:
-admitted generated workspace failed its actual compiler: /home/timo/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/crates/generate/ess-synth/../../../target/review-boundaries-5/adversary-compiler/pass-2-map-Bytes-3440600-3/generated/web/demo
+admitted generated workspace failed its actual compiler: ~/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/crates/generate/ess-synth/../../../target/review-boundaries-5/adversary-compiler/pass-2-map-Bytes-3440600-3/generated/web/demo
 
 ---- binding_function_cannot_be_hidden_by_the_delivery_event_parameter stdout ----
-source witness: /home/timo/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/crates/generate/ess-synth/../../../target/review-boundaries-5/adversary-compiler/pass-2-binding-source-3440600-2
-cd "/home/timo/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/crates/generate/ess-synth/../../../target/review-boundaries-5/adversary-compiler/pass-2-binding-event-3440600-13" && env -u CARGO_TARGET_DIR "/home/timo/.rustup/toolchains/stable-x86_64-unknown-linux-gnu/bin/cargo" "generate-lockfile" "--offline"
+source witness: ~/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/crates/generate/ess-synth/../../../target/review-boundaries-5/adversary-compiler/pass-2-binding-source-3440600-2
+cd "~/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/crates/generate/ess-synth/../../../target/review-boundaries-5/adversary-compiler/pass-2-binding-event-3440600-13" && env -u CARGO_TARGET_DIR "~/.rustup/toolchains/stable-x86_64-unknown-linux-gnu/bin/cargo" "generate-lockfile" "--offline"
 
     Blocking waiting for file lock on package cache
     Blocking waiting for file lock on package cache
 
 exit status: 0
-cd "/home/timo/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/crates/generate/ess-synth/../../../target/review-boundaries-5/adversary-compiler/pass-2-binding-event-3440600-13" && env -u CARGO_TARGET_DIR "/home/timo/.rustup/toolchains/stable-x86_64-unknown-linux-gnu/bin/cargo" "check" "--locked" "--offline" "--workspace" "--all-targets" "--target-dir" "target"
+cd "~/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/crates/generate/ess-synth/../../../target/review-boundaries-5/adversary-compiler/pass-2-binding-event-3440600-13" && env -u CARGO_TARGET_DIR "~/.rustup/toolchains/stable-x86_64-unknown-linux-gnu/bin/cargo" "check" "--locked" "--offline" "--workspace" "--all-targets" "--target-dir" "target"
 
     Blocking waiting for file lock on package cache
     Blocking waiting for file lock on package cache
     Blocking waiting for file lock on package cache
-    Checking demo-types v1.0.0 (/home/timo/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/target/review-boundaries-5/adversary-compiler/pass-2-binding-event-3440600-13/crates/demo-types)
-    Checking worker v1.0.0 (/home/timo/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/target/review-boundaries-5/adversary-compiler/pass-2-binding-event-3440600-13/crates/worker)
-    Checking demo-system v1.0.0 (/home/timo/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/target/review-boundaries-5/adversary-compiler/pass-2-binding-event-3440600-13/crates/demo-system)
+    Checking demo-types v1.0.0 (~/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/target/review-boundaries-5/adversary-compiler/pass-2-binding-event-3440600-13/crates/demo-types)
+    Checking worker v1.0.0 (~/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/target/review-boundaries-5/adversary-compiler/pass-2-binding-event-3440600-13/crates/worker)
+    Checking demo-system v1.0.0 (~/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/target/review-boundaries-5/adversary-compiler/pass-2-binding-event-3440600-13/crates/demo-system)
 error[E0618]: expected function, found `&demo_types::core::Fired`
    --> crates/demo-system/src/lib.rs:139:29
     |
@@ -2119,7 +2119,7 @@ error: could not compile `demo-system` (lib) due to 1 previous error; 1 warning 
 exit status: 101
 
 thread 'binding_function_cannot_be_hidden_by_the_delivery_event_parameter' (3440605) panicked at crates/generate/ess-synth/tests/feasibility_adversary.rs:116:5:
-admitted generated workspace failed its actual compiler: /home/timo/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/crates/generate/ess-synth/../../../target/review-boundaries-5/adversary-compiler/pass-2-binding-event-3440600-13
+admitted generated workspace failed its actual compiler: ~/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/crates/generate/ess-synth/../../../target/review-boundaries-5/adversary-compiler/pass-2-binding-event-3440600-13
 
 
 failures:
@@ -2284,15 +2284,15 @@ Five emitted failing source files are byte-identical opening/candidate, verified
 Command:
 
 ```text
-cd '/home/timo/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/target/review-boundaries-5/adversary-2-base/binding-event/generated/rust/demo' && env -u CARGO_TARGET_DIR cargo check --locked --offline --workspace --all-targets --target-dir target
+cd '~/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/target/review-boundaries-5/adversary-2-base/binding-event/generated/rust/demo' && env -u CARGO_TARGET_DIR cargo check --locked --offline --workspace --all-targets --target-dir target
 ```
 
 Output:
 
 ```text
-    Checking demo-types v1.0.0 (/home/timo/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/target/review-boundaries-5/adversary-2-base/binding-event/generated/rust/demo/crates/demo-types)
-    Checking worker v1.0.0 (/home/timo/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/target/review-boundaries-5/adversary-2-base/binding-event/generated/rust/demo/crates/worker)
-    Checking demo-system v1.0.0 (/home/timo/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/target/review-boundaries-5/adversary-2-base/binding-event/generated/rust/demo/crates/demo-system)
+    Checking demo-types v1.0.0 (~/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/target/review-boundaries-5/adversary-2-base/binding-event/generated/rust/demo/crates/demo-types)
+    Checking worker v1.0.0 (~/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/target/review-boundaries-5/adversary-2-base/binding-event/generated/rust/demo/crates/worker)
+    Checking demo-system v1.0.0 (~/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/target/review-boundaries-5/adversary-2-base/binding-event/generated/rust/demo/crates/demo-system)
 error[E0618]: expected function, found `&demo_types::core::Fired`
    --> crates/demo-system/src/lib.rs:139:29
     |
@@ -2330,14 +2330,14 @@ Exit: 101
 Command:
 
 ```text
-'/home/timo/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/target/review-boundaries-5/base-cli-for-pass-2/ess' synthesize --target rust --format text --path '/home/timo/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/target/review-boundaries-5/adversary-compiler/pass-2-binding-source-3304630-0' --out '/home/timo/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/target/review-boundaries-5/adversary-2-base/binding-event/generated/rust/demo'
+'~/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/target/review-boundaries-5/base-cli-for-pass-2/ess' synthesize --target rust --format text --path '~/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/target/review-boundaries-5/adversary-compiler/pass-2-binding-source-3304630-0' --out '~/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/target/review-boundaries-5/adversary-2-base/binding-event/generated/rust/demo'
 ```
 
 Output:
 
 ```text
 7 capabilities: 6 generated, 1 obligation(s), 0 refused
-12 artifact(s), written to /home/timo/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/target/review-boundaries-5/adversary-2-base/binding-event/generated/rust/demo
+12 artifact(s), written to ~/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/target/review-boundaries-5/adversary-2-base/binding-event/generated/rust/demo
 ```
 
 Exit: 0
@@ -2347,7 +2347,7 @@ Exit: 0
 Command:
 
 ```text
-cd '/home/timo/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/target/review-boundaries-5/adversary-2-base/binding-event/generated/rust/demo' && env -u CARGO_TARGET_DIR cargo generate-lockfile --offline
+cd '~/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/target/review-boundaries-5/adversary-2-base/binding-event/generated/rust/demo' && env -u CARGO_TARGET_DIR cargo generate-lockfile --offline
 ```
 
 Output:
@@ -2362,15 +2362,15 @@ Exit: 0
 Command:
 
 ```text
-cd '/home/timo/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/target/review-boundaries-5/adversary-2-base/binding-input-first/generated/rust/demo' && env -u CARGO_TARGET_DIR cargo check --locked --offline --workspace --all-targets --target-dir target
+cd '~/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/target/review-boundaries-5/adversary-2-base/binding-input-first/generated/rust/demo' && env -u CARGO_TARGET_DIR cargo check --locked --offline --workspace --all-targets --target-dir target
 ```
 
 Output:
 
 ```text
-    Checking demo-types v1.0.0 (/home/timo/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/target/review-boundaries-5/adversary-2-base/binding-input-first/generated/rust/demo/crates/demo-types)
-    Checking worker v1.0.0 (/home/timo/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/target/review-boundaries-5/adversary-2-base/binding-input-first/generated/rust/demo/crates/worker)
-    Checking demo-system v1.0.0 (/home/timo/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/target/review-boundaries-5/adversary-2-base/binding-input-first/generated/rust/demo/crates/demo-system)
+    Checking demo-types v1.0.0 (~/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/target/review-boundaries-5/adversary-2-base/binding-input-first/generated/rust/demo/crates/demo-types)
+    Checking worker v1.0.0 (~/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/target/review-boundaries-5/adversary-2-base/binding-input-first/generated/rust/demo/crates/worker)
+    Checking demo-system v1.0.0 (~/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/target/review-boundaries-5/adversary-2-base/binding-input-first/generated/rust/demo/crates/demo-system)
 warning: unused variable: `event`
   --> crates/demo-system/src/lib.rs:53:14
    |
@@ -2391,14 +2391,14 @@ Exit: 0
 Command:
 
 ```text
-'/home/timo/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/target/review-boundaries-5/base-cli-for-pass-2/ess' synthesize --target rust --format text --path '/home/timo/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/target/review-boundaries-5/adversary-compiler/pass-2-binding-source-3308777-0' --out '/home/timo/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/target/review-boundaries-5/adversary-2-base/binding-input-first/generated/rust/demo'
+'~/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/target/review-boundaries-5/base-cli-for-pass-2/ess' synthesize --target rust --format text --path '~/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/target/review-boundaries-5/adversary-compiler/pass-2-binding-source-3308777-0' --out '~/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/target/review-boundaries-5/adversary-2-base/binding-input-first/generated/rust/demo'
 ```
 
 Output:
 
 ```text
 7 capabilities: 6 generated, 1 obligation(s), 0 refused
-12 artifact(s), written to /home/timo/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/target/review-boundaries-5/adversary-2-base/binding-input-first/generated/rust/demo
+12 artifact(s), written to ~/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/target/review-boundaries-5/adversary-2-base/binding-input-first/generated/rust/demo
 ```
 
 Exit: 0
@@ -2408,7 +2408,7 @@ Exit: 0
 Command:
 
 ```text
-cd '/home/timo/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/target/review-boundaries-5/adversary-2-base/binding-input-first/generated/rust/demo' && env -u CARGO_TARGET_DIR cargo generate-lockfile --offline
+cd '~/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/target/review-boundaries-5/adversary-2-base/binding-input-first/generated/rust/demo' && env -u CARGO_TARGET_DIR cargo generate-lockfile --offline
 ```
 
 Output:
@@ -2423,15 +2423,15 @@ Exit: 0
 Command:
 
 ```text
-cd '/home/timo/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/target/review-boundaries-5/adversary-2-base/binding-input-later/generated/rust/demo' && env -u CARGO_TARGET_DIR cargo check --locked --offline --workspace --all-targets --target-dir target
+cd '~/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/target/review-boundaries-5/adversary-2-base/binding-input-later/generated/rust/demo' && env -u CARGO_TARGET_DIR cargo check --locked --offline --workspace --all-targets --target-dir target
 ```
 
 Output:
 
 ```text
-    Checking demo-types v1.0.0 (/home/timo/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/target/review-boundaries-5/adversary-2-base/binding-input-later/generated/rust/demo/crates/demo-types)
-    Checking worker v1.0.0 (/home/timo/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/target/review-boundaries-5/adversary-2-base/binding-input-later/generated/rust/demo/crates/worker)
-    Checking demo-system v1.0.0 (/home/timo/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/target/review-boundaries-5/adversary-2-base/binding-input-later/generated/rust/demo/crates/demo-system)
+    Checking demo-types v1.0.0 (~/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/target/review-boundaries-5/adversary-2-base/binding-input-later/generated/rust/demo/crates/demo-types)
+    Checking worker v1.0.0 (~/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/target/review-boundaries-5/adversary-2-base/binding-input-later/generated/rust/demo/crates/worker)
+    Checking demo-system v1.0.0 (~/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/target/review-boundaries-5/adversary-2-base/binding-input-later/generated/rust/demo/crates/demo-system)
 error[E0618]: expected function, found `Handle`
    --> crates/demo-system/src/lib.rs:156:29
     |
@@ -2475,14 +2475,14 @@ Exit: 101
 Command:
 
 ```text
-'/home/timo/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/target/review-boundaries-5/base-cli-for-pass-2/ess' synthesize --target rust --format text --path '/home/timo/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/target/review-boundaries-5/adversary-compiler/pass-2-binding-source-3308583-0' --out '/home/timo/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/target/review-boundaries-5/adversary-2-base/binding-input-later/generated/rust/demo'
+'~/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/target/review-boundaries-5/base-cli-for-pass-2/ess' synthesize --target rust --format text --path '~/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/target/review-boundaries-5/adversary-compiler/pass-2-binding-source-3308583-0' --out '~/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/target/review-boundaries-5/adversary-2-base/binding-input-later/generated/rust/demo'
 ```
 
 Output:
 
 ```text
 9 capabilities: 8 generated, 1 obligation(s), 0 refused
-12 artifact(s), written to /home/timo/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/target/review-boundaries-5/adversary-2-base/binding-input-later/generated/rust/demo
+12 artifact(s), written to ~/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/target/review-boundaries-5/adversary-2-base/binding-input-later/generated/rust/demo
 ```
 
 Exit: 0
@@ -2492,7 +2492,7 @@ Exit: 0
 Command:
 
 ```text
-cd '/home/timo/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/target/review-boundaries-5/adversary-2-base/binding-input-later/generated/rust/demo' && env -u CARGO_TARGET_DIR cargo generate-lockfile --offline
+cd '~/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/target/review-boundaries-5/adversary-2-base/binding-input-later/generated/rust/demo' && env -u CARGO_TARGET_DIR cargo generate-lockfile --offline
 ```
 
 Output:
@@ -2507,13 +2507,13 @@ Exit: 0
 Command:
 
 ```text
-cd '/home/timo/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/target/review-boundaries-5/adversary-2-base/boolean-map/generated/rust/demo' && env -u CARGO_TARGET_DIR cargo check --locked --offline --workspace --all-targets --target-dir target
+cd '~/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/target/review-boundaries-5/adversary-2-base/boolean-map/generated/rust/demo' && env -u CARGO_TARGET_DIR cargo check --locked --offline --workspace --all-targets --target-dir target
 ```
 
 Output:
 
 ```text
-    Checking demo-types v1.0.0 (/home/timo/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/target/review-boundaries-5/adversary-2-base/boolean-map/generated/rust/demo/crates/demo-types)
+    Checking demo-types v1.0.0 (~/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/target/review-boundaries-5/adversary-2-base/boolean-map/generated/rust/demo/crates/demo-types)
     Finished `dev` profile [unoptimized] target(s) in 0.17s
 ```
 
@@ -2524,14 +2524,14 @@ Exit: 0
 Command:
 
 ```text
-'/home/timo/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/target/review-boundaries-5/base-cli-for-pass-2/ess' synthesize --target rust --format text --path '/home/timo/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/target/review-boundaries-5/adversary-compiler/pass-2-map-Boolean-3371460-0/spec' --out '/home/timo/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/target/review-boundaries-5/adversary-2-base/boolean-map/generated/rust/demo'
+'~/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/target/review-boundaries-5/base-cli-for-pass-2/ess' synthesize --target rust --format text --path '~/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/target/review-boundaries-5/adversary-compiler/pass-2-map-Boolean-3371460-0/spec' --out '~/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/target/review-boundaries-5/adversary-2-base/boolean-map/generated/rust/demo'
 ```
 
 Output:
 
 ```text
 1 capabilities: 1 generated, 0 obligation(s), 0 refused
-7 artifact(s), written to /home/timo/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/target/review-boundaries-5/adversary-2-base/boolean-map/generated/rust/demo
+7 artifact(s), written to ~/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/target/review-boundaries-5/adversary-2-base/boolean-map/generated/rust/demo
 ```
 
 Exit: 0
@@ -2541,7 +2541,7 @@ Exit: 0
 Command:
 
 ```text
-cd '/home/timo/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/target/review-boundaries-5/adversary-2-base/boolean-map/generated/rust/demo' && env -u CARGO_TARGET_DIR cargo generate-lockfile --offline
+cd '~/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/target/review-boundaries-5/adversary-2-base/boolean-map/generated/rust/demo' && env -u CARGO_TARGET_DIR cargo generate-lockfile --offline
 ```
 
 Output:
@@ -2556,14 +2556,14 @@ Exit: 0
 Command:
 
 ```text
-cd '/home/timo/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/target/review-boundaries-5/adversary-2-base/boolean-map/generated/web/demo' && env -u CARGO_TARGET_DIR cargo check --locked --offline --workspace --all-targets --target-dir target --target wasm32-unknown-unknown
+cd '~/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/target/review-boundaries-5/adversary-2-base/boolean-map/generated/web/demo' && env -u CARGO_TARGET_DIR cargo check --locked --offline --workspace --all-targets --target-dir target --target wasm32-unknown-unknown
 ```
 
 Output:
 
 ```text
-    Checking demo-types v1.0.0 (/home/timo/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/target/review-boundaries-5/adversary-2-base/boolean-map/generated/rust/demo/crates/demo-types)
-    Checking demo-web v1.0.0 (/home/timo/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/target/review-boundaries-5/adversary-2-base/boolean-map/generated/web/demo/crates/demo-web)
+    Checking demo-types v1.0.0 (~/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/target/review-boundaries-5/adversary-2-base/boolean-map/generated/rust/demo/crates/demo-types)
+    Checking demo-web v1.0.0 (~/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/target/review-boundaries-5/adversary-2-base/boolean-map/generated/web/demo/crates/demo-web)
 error[E0425]: cannot find value `INPUT` in this scope
   --> crates/demo-web/src/lib.rs:87:5
    |
@@ -2630,14 +2630,14 @@ Exit: 101
 Command:
 
 ```text
-'/home/timo/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/target/review-boundaries-5/base-cli-for-pass-2/ess' synthesize --target web --format text --path '/home/timo/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/target/review-boundaries-5/adversary-compiler/pass-2-map-Boolean-3371460-0/spec' --out '/home/timo/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/target/review-boundaries-5/adversary-2-base/boolean-map/generated/web/demo'
+'~/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/target/review-boundaries-5/base-cli-for-pass-2/ess' synthesize --target web --format text --path '~/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/target/review-boundaries-5/adversary-compiler/pass-2-map-Boolean-3371460-0/spec' --out '~/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/target/review-boundaries-5/adversary-2-base/boolean-map/generated/web/demo'
 ```
 
 Output:
 
 ```text
 1 capabilities: 1 generated, 0 obligation(s), 0 refused
-14 artifact(s), written to /home/timo/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/target/review-boundaries-5/adversary-2-base/boolean-map/generated/web/demo
+14 artifact(s), written to ~/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/target/review-boundaries-5/adversary-2-base/boolean-map/generated/web/demo
 ```
 
 Exit: 0
@@ -2647,7 +2647,7 @@ Exit: 0
 Command:
 
 ```text
-cd '/home/timo/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/target/review-boundaries-5/adversary-2-base/boolean-map/generated/web/demo' && env -u CARGO_TARGET_DIR cargo generate-lockfile --offline
+cd '~/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/target/review-boundaries-5/adversary-2-base/boolean-map/generated/web/demo' && env -u CARGO_TARGET_DIR cargo generate-lockfile --offline
 ```
 
 Output:
@@ -2663,13 +2663,13 @@ Exit: 0
 Command:
 
 ```text
-cd '/home/timo/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/target/review-boundaries-5/adversary-2-base/bytes-map/generated/rust/demo' && env -u CARGO_TARGET_DIR cargo check --locked --offline --workspace --all-targets --target-dir target
+cd '~/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/target/review-boundaries-5/adversary-2-base/bytes-map/generated/rust/demo' && env -u CARGO_TARGET_DIR cargo check --locked --offline --workspace --all-targets --target-dir target
 ```
 
 Output:
 
 ```text
-    Checking demo-types v1.0.0 (/home/timo/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/target/review-boundaries-5/adversary-2-base/bytes-map/generated/rust/demo/crates/demo-types)
+    Checking demo-types v1.0.0 (~/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/target/review-boundaries-5/adversary-2-base/bytes-map/generated/rust/demo/crates/demo-types)
     Finished `dev` profile [unoptimized] target(s) in 0.23s
 ```
 
@@ -2680,14 +2680,14 @@ Exit: 0
 Command:
 
 ```text
-'/home/timo/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/target/review-boundaries-5/base-cli-for-pass-2/ess' synthesize --target rust --format text --path '/home/timo/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/target/review-boundaries-5/adversary-compiler/pass-2-map-Bytes-3371684-0/spec' --out '/home/timo/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/target/review-boundaries-5/adversary-2-base/bytes-map/generated/rust/demo'
+'~/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/target/review-boundaries-5/base-cli-for-pass-2/ess' synthesize --target rust --format text --path '~/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/target/review-boundaries-5/adversary-compiler/pass-2-map-Bytes-3371684-0/spec' --out '~/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/target/review-boundaries-5/adversary-2-base/bytes-map/generated/rust/demo'
 ```
 
 Output:
 
 ```text
 1 capabilities: 1 generated, 0 obligation(s), 0 refused
-7 artifact(s), written to /home/timo/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/target/review-boundaries-5/adversary-2-base/bytes-map/generated/rust/demo
+7 artifact(s), written to ~/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/target/review-boundaries-5/adversary-2-base/bytes-map/generated/rust/demo
 ```
 
 Exit: 0
@@ -2697,7 +2697,7 @@ Exit: 0
 Command:
 
 ```text
-cd '/home/timo/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/target/review-boundaries-5/adversary-2-base/bytes-map/generated/rust/demo' && env -u CARGO_TARGET_DIR cargo generate-lockfile --offline
+cd '~/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/target/review-boundaries-5/adversary-2-base/bytes-map/generated/rust/demo' && env -u CARGO_TARGET_DIR cargo generate-lockfile --offline
 ```
 
 Output:
@@ -2712,14 +2712,14 @@ Exit: 0
 Command:
 
 ```text
-cd '/home/timo/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/target/review-boundaries-5/adversary-2-base/bytes-map/generated/web/demo' && env -u CARGO_TARGET_DIR cargo check --locked --offline --workspace --all-targets --target-dir target --target wasm32-unknown-unknown
+cd '~/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/target/review-boundaries-5/adversary-2-base/bytes-map/generated/web/demo' && env -u CARGO_TARGET_DIR cargo check --locked --offline --workspace --all-targets --target-dir target --target wasm32-unknown-unknown
 ```
 
 Output:
 
 ```text
-    Checking demo-types v1.0.0 (/home/timo/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/target/review-boundaries-5/adversary-2-base/bytes-map/generated/rust/demo/crates/demo-types)
-    Checking demo-web v1.0.0 (/home/timo/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/target/review-boundaries-5/adversary-2-base/bytes-map/generated/web/demo/crates/demo-web)
+    Checking demo-types v1.0.0 (~/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/target/review-boundaries-5/adversary-2-base/bytes-map/generated/rust/demo/crates/demo-types)
+    Checking demo-web v1.0.0 (~/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/target/review-boundaries-5/adversary-2-base/bytes-map/generated/web/demo/crates/demo-web)
 error[E0425]: cannot find value `INPUT` in this scope
   --> crates/demo-web/src/lib.rs:87:5
    |
@@ -2786,14 +2786,14 @@ Exit: 101
 Command:
 
 ```text
-'/home/timo/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/target/review-boundaries-5/base-cli-for-pass-2/ess' synthesize --target web --format text --path '/home/timo/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/target/review-boundaries-5/adversary-compiler/pass-2-map-Bytes-3371684-0/spec' --out '/home/timo/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/target/review-boundaries-5/adversary-2-base/bytes-map/generated/web/demo'
+'~/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/target/review-boundaries-5/base-cli-for-pass-2/ess' synthesize --target web --format text --path '~/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/target/review-boundaries-5/adversary-compiler/pass-2-map-Bytes-3371684-0/spec' --out '~/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/target/review-boundaries-5/adversary-2-base/bytes-map/generated/web/demo'
 ```
 
 Output:
 
 ```text
 1 capabilities: 1 generated, 0 obligation(s), 0 refused
-14 artifact(s), written to /home/timo/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/target/review-boundaries-5/adversary-2-base/bytes-map/generated/web/demo
+14 artifact(s), written to ~/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/target/review-boundaries-5/adversary-2-base/bytes-map/generated/web/demo
 ```
 
 Exit: 0
@@ -2803,7 +2803,7 @@ Exit: 0
 Command:
 
 ```text
-cd '/home/timo/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/target/review-boundaries-5/adversary-2-base/bytes-map/generated/web/demo' && env -u CARGO_TARGET_DIR cargo generate-lockfile --offline
+cd '~/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/target/review-boundaries-5/adversary-2-base/bytes-map/generated/web/demo' && env -u CARGO_TARGET_DIR cargo generate-lockfile --offline
 ```
 
 Output:
@@ -2819,13 +2819,13 @@ Exit: 0
 Command:
 
 ```text
-cd '/home/timo/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/target/review-boundaries-5/adversary-2-base/nested-map/generated/rust/demo' && env -u CARGO_TARGET_DIR cargo check --locked --offline --workspace --all-targets --target-dir target
+cd '~/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/target/review-boundaries-5/adversary-2-base/nested-map/generated/rust/demo' && env -u CARGO_TARGET_DIR cargo check --locked --offline --workspace --all-targets --target-dir target
 ```
 
 Output:
 
 ```text
-    Checking demo-types v1.0.0 (/home/timo/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/target/review-boundaries-5/adversary-2-base/nested-map/generated/rust/demo/crates/demo-types)
+    Checking demo-types v1.0.0 (~/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/target/review-boundaries-5/adversary-2-base/nested-map/generated/rust/demo/crates/demo-types)
     Finished `dev` profile [unoptimized] target(s) in 0.25s
 ```
 
@@ -2836,14 +2836,14 @@ Exit: 0
 Command:
 
 ```text
-'/home/timo/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/target/review-boundaries-5/base-cli-for-pass-2/ess' synthesize --target rust --format text --path '/home/timo/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/target/review-boundaries-5/adversary-2-base/nested-map-spec' --out '/home/timo/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/target/review-boundaries-5/adversary-2-base/nested-map/generated/rust/demo'
+'~/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/target/review-boundaries-5/base-cli-for-pass-2/ess' synthesize --target rust --format text --path '~/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/target/review-boundaries-5/adversary-2-base/nested-map-spec' --out '~/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/target/review-boundaries-5/adversary-2-base/nested-map/generated/rust/demo'
 ```
 
 Output:
 
 ```text
 1 capabilities: 1 generated, 0 obligation(s), 0 refused
-7 artifact(s), written to /home/timo/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/target/review-boundaries-5/adversary-2-base/nested-map/generated/rust/demo
+7 artifact(s), written to ~/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/target/review-boundaries-5/adversary-2-base/nested-map/generated/rust/demo
 ```
 
 Exit: 0
@@ -2853,7 +2853,7 @@ Exit: 0
 Command:
 
 ```text
-cd '/home/timo/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/target/review-boundaries-5/adversary-2-base/nested-map/generated/rust/demo' && env -u CARGO_TARGET_DIR cargo generate-lockfile --offline
+cd '~/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/target/review-boundaries-5/adversary-2-base/nested-map/generated/rust/demo' && env -u CARGO_TARGET_DIR cargo generate-lockfile --offline
 ```
 
 Output:
@@ -2868,14 +2868,14 @@ Exit: 0
 Command:
 
 ```text
-cd '/home/timo/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/target/review-boundaries-5/adversary-2-base/nested-map/generated/web/demo' && env -u CARGO_TARGET_DIR cargo check --locked --offline --workspace --all-targets --target-dir target --target wasm32-unknown-unknown
+cd '~/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/target/review-boundaries-5/adversary-2-base/nested-map/generated/web/demo' && env -u CARGO_TARGET_DIR cargo check --locked --offline --workspace --all-targets --target-dir target --target wasm32-unknown-unknown
 ```
 
 Output:
 
 ```text
-    Checking demo-types v1.0.0 (/home/timo/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/target/review-boundaries-5/adversary-2-base/nested-map/generated/rust/demo/crates/demo-types)
-    Checking demo-web v1.0.0 (/home/timo/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/target/review-boundaries-5/adversary-2-base/nested-map/generated/web/demo/crates/demo-web)
+    Checking demo-types v1.0.0 (~/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/target/review-boundaries-5/adversary-2-base/nested-map/generated/rust/demo/crates/demo-types)
+    Checking demo-web v1.0.0 (~/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/target/review-boundaries-5/adversary-2-base/nested-map/generated/web/demo/crates/demo-web)
 error[E0425]: cannot find value `INPUT` in this scope
   --> crates/demo-web/src/lib.rs:87:5
    |
@@ -2942,14 +2942,14 @@ Exit: 101
 Command:
 
 ```text
-'/home/timo/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/target/review-boundaries-5/base-cli-for-pass-2/ess' synthesize --target web --format text --path '/home/timo/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/target/review-boundaries-5/adversary-2-base/nested-map-spec' --out '/home/timo/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/target/review-boundaries-5/adversary-2-base/nested-map/generated/web/demo'
+'~/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/target/review-boundaries-5/base-cli-for-pass-2/ess' synthesize --target web --format text --path '~/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/target/review-boundaries-5/adversary-2-base/nested-map-spec' --out '~/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/target/review-boundaries-5/adversary-2-base/nested-map/generated/web/demo'
 ```
 
 Output:
 
 ```text
 1 capabilities: 1 generated, 0 obligation(s), 0 refused
-14 artifact(s), written to /home/timo/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/target/review-boundaries-5/adversary-2-base/nested-map/generated/web/demo
+14 artifact(s), written to ~/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/target/review-boundaries-5/adversary-2-base/nested-map/generated/web/demo
 ```
 
 Exit: 0
@@ -2959,7 +2959,7 @@ Exit: 0
 Command:
 
 ```text
-cd '/home/timo/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/target/review-boundaries-5/adversary-2-base/nested-map/generated/web/demo' && env -u CARGO_TARGET_DIR cargo generate-lockfile --offline
+cd '~/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/target/review-boundaries-5/adversary-2-base/nested-map/generated/web/demo' && env -u CARGO_TARGET_DIR cargo generate-lockfile --offline
 ```
 
 Output:
@@ -3060,14 +3060,14 @@ Exit: 0
 Command:
 
 ```text
-'/home/timo/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/target/debug/ess' synthesize --target web --format text --path '/home/timo/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/target/review-boundaries-5/adversary-2-base/nested-map-spec' --out '/home/timo/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/target/review-boundaries-5/adversary-2-candidate-map/absent'
+'~/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/target/debug/ess' synthesize --target web --format text --path '~/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/target/review-boundaries-5/adversary-2-base/nested-map-spec' --out '~/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/target/review-boundaries-5/adversary-2-candidate-map/absent'
 ```
 
 Output:
 
 ```text
 1 capabilities: 1 generated, 0 obligation(s), 0 refused
-14 artifact(s), written to /home/timo/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/target/review-boundaries-5/adversary-2-candidate-map/absent
+14 artifact(s), written to ~/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/target/review-boundaries-5/adversary-2-candidate-map/absent
 ```
 
 Exit: 0
@@ -3093,14 +3093,14 @@ target.json
 Command:
 
 ```text
-'/home/timo/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/target/debug/ess' synthesize --target web --format text --path '/home/timo/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/target/review-boundaries-5/adversary-2-base/nested-map-spec' --out '/home/timo/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/target/review-boundaries-5/adversary-2-candidate-map/existing'
+'~/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/target/debug/ess' synthesize --target web --format text --path '~/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/target/review-boundaries-5/adversary-2-base/nested-map-spec' --out '~/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/target/review-boundaries-5/adversary-2-candidate-map/existing'
 ```
 
 Output:
 
 ```text
 1 capabilities: 1 generated, 0 obligation(s), 0 refused
-14 artifact(s), written to /home/timo/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/target/review-boundaries-5/adversary-2-candidate-map/existing
+14 artifact(s), written to ~/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/target/review-boundaries-5/adversary-2-candidate-map/existing
 ```
 
 Exit: 0
@@ -3133,9 +3133,9 @@ target.json
 
 ## 6. Resources, preserved evidence and relinquishment
 
-All pass-2 fixtures and output copies are in this managed unit. Scratch root: `/home/timo/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/target/review-boundaries-5`. New paths use `adversary-2-*`, `adversary-compiler/pass-2-*`, `adversary-cli/pass-2-*`, `adversary-2-base` and `adversary-2-candidate-map`. Existing pass-1 report SHA256 remains `344184edfa8144f2f8331dd690c173810babce29e0ca9f5225a90415b1915723`, and correction report remains the assigned hash. The opening binary and provenance copy were only read and invoked.
+All pass-2 fixtures and output copies are in this managed unit. Scratch root: `~/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/target/review-boundaries-5`. New paths use `adversary-2-*`, `adversary-compiler/pass-2-*`, `adversary-cli/pass-2-*`, `adversary-2-base` and `adversary-2-candidate-map`. Existing pass-1 report SHA256 remains `344184edfa8144f2f8331dd690c173810babce29e0ca9f5225a90415b1915723`, and correction report remains the assigned hash. The opening binary and provenance copy were only read and invoked.
 
-Each generated Cargo invocation used its own fixture target. Package Cargo used this unit's target; TMPDIR was `$PWD/target`; RUSTC_WRAPPER `/usr/bin/sccache`; SCCACHE_SERVER_UDS `/home/timo/.local/state/worktree/trees/b10x/ess/wt-752828a285ba/target/w4-cache.sock`; CARGO_INCREMENTAL=0; CARGO_PROFILE_DEV_DEBUG=0; CARGO_PROFILE_TEST_DEBUG=0; CARGO_CACHE_RUSTC_INFO=0; CARGO_NET_OFFLINE=true. No CARGO_TARGET_DIR was set, no target shared and no cache-server lifecycle operation was performed. The coordinator-owned cache service was used through its prescribed socket; no out-of-tree source/scratch path was written by this pass.
+Each generated Cargo invocation used its own fixture target. Package Cargo used this unit's target; TMPDIR was `$PWD/target`; RUSTC_WRAPPER `/usr/bin/sccache`; SCCACHE_SERVER_UDS `~/.local/state/worktree/trees/b10x/ess/wt-752828a285ba/target/w4-cache.sock`; CARGO_INCREMENTAL=0; CARGO_PROFILE_DEV_DEBUG=0; CARGO_PROFILE_TEST_DEBUG=0; CARGO_CACHE_RUSTC_INFO=0; CARGO_NET_OFFLINE=true. No CARGO_TARGET_DIR was set, no target shared and no cache-server lifecycle operation was performed. The coordinator-owned cache service was used through its prescribed socket; no out-of-tree source/scratch path was written by this pass.
 
 New pass-2 fixture/destination roots total 7,236,249 apparent bytes at the recorded measurement (generated targets included). The full assigned review scratch, including prior passes and the opening binary, measured 150,216,194 apparent bytes before this report tail. Those measurements are not a claim that the package build target is absent. Free disk was 41 GiB before pass-2 builds and 15 GiB after they ended, above the assigned 8 GiB floor; the coordinator was informed. No cleanup occurred.
 

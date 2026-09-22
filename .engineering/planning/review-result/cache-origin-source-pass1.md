@@ -12,7 +12,7 @@ unit: story:review-cache-origin — source 6fd6e796c580656b65d9199f9367ebe3b662f
 verdict: nothing found
 cases: executed 226→235, red 0
 origin: introduced 0 / pre-existing 0 / undecided 0
-wrote-outside-worktree: 1 assigned root — /home/timo/.cache/ess-w12-review1-tmp
+wrote-outside-worktree: 1 assigned root — ~/.cache/ess-w12-review1-tmp
 needs-coordinator: none
 
 1. git --no-pager diff --stat
@@ -73,10 +73,10 @@ Command: `cargo test --locked -p ess-cli --test cache_origin_adversary_pass1 dec
    Compiling dyn-clone v1.0.20
    Compiling serde_yaml v0.9.34+deprecated
    Compiling autocfg v1.5.1
-   Compiling ess-primitives v0.20.0 (/home/timo/.local/state/worktree/trees/b10x/ess/ess-cache-origin/crates/specify/ess-primitives)
+   Compiling ess-primitives v0.20.0 (~/.local/state/worktree/trees/b10x/ess/ess-cache-origin/crates/specify/ess-primitives)
    Compiling num-traits v0.2.19
    Compiling libc v0.2.189
-   Compiling ess-domain v0.20.0 (/home/timo/.local/state/worktree/trees/b10x/ess/ess-cache-origin/crates/specify/ess-domain)
+   Compiling ess-domain v0.20.0 (~/.local/state/worktree/trees/b10x/ess/ess-cache-origin/crates/specify/ess-domain)
    Compiling num-integer v0.1.47
    Compiling heck v0.5.0
    Compiling pulldown-cmark v0.13.4
@@ -85,7 +85,7 @@ Command: `cargo test --locked -p ess-cli --test cache_origin_adversary_pass1 dec
    Compiling version_check v0.9.5
    Compiling ahash v0.8.12
    Compiling num-bigint v0.4.8
-   Compiling ess-compiler v0.20.0 (/home/timo/.local/state/worktree/trees/b10x/ess/ess-cache-origin/crates/specify/ess-compiler)
+   Compiling ess-compiler v0.20.0 (~/.local/state/worktree/trees/b10x/ess/ess-cache-origin/crates/specify/ess-compiler)
    Compiling unicase v2.9.0
    Compiling pulldown-cmark-escape v0.11.0
    Compiling ref-cast v1.0.27
@@ -105,8 +105,8 @@ Command: `cargo test --locked -p ess-cli --test cache_origin_adversary_pass1 dec
    Compiling lock_api v0.4.14
    Compiling regex-automata v0.4.18
    Compiling num v0.4.3
-   Compiling ess-gen v0.20.0 (/home/timo/.local/state/worktree/trees/b10x/ess/ess-cache-origin/crates/generate/ess-gen)
-   Compiling infra-domain v0.20.0 (/home/timo/.local/state/worktree/trees/b10x/ess/ess-cache-origin/crates/infra/infra-domain)
+   Compiling ess-gen v0.20.0 (~/.local/state/worktree/trees/b10x/ess/ess-cache-origin/crates/generate/ess-gen)
+   Compiling infra-domain v0.20.0 (~/.local/state/worktree/trees/b10x/ess/ess-cache-origin/crates/infra/infra-domain)
    Compiling colorchoice v1.0.5
    Compiling bit-vec v0.8.0
    Compiling anstyle-query v1.1.5
@@ -115,7 +115,7 @@ Command: `cargo test --locked -p ess-cli --test cache_origin_adversary_pass1 dec
    Compiling is_terminal_polyfill v1.70.2
    Compiling borrow-or-share v0.2.4
    Compiling fluent-uri v0.4.1
-   Compiling infra-compiler v0.20.0 (/home/timo/.local/state/worktree/trees/b10x/ess/ess-cache-origin/crates/infra/infra-compiler)
+   Compiling infra-compiler v0.20.0 (~/.local/state/worktree/trees/b10x/ess/ess-cache-origin/crates/infra/infra-compiler)
    Compiling anstream v1.0.0
    Compiling bit-set v0.8.0
    Compiling fraction v0.17.0
@@ -134,7 +134,7 @@ Command: `cargo test --locked -p ess-cli --test cache_origin_adversary_pass1 dec
    Compiling uuid-simd v0.8.0
    Compiling referencing v0.52.1
    Compiling strum v0.28.0
-   Compiling infra-analyze v0.20.0 (/home/timo/.local/state/worktree/trees/b10x/ess/ess-cache-origin/crates/infra/infra-analyze)
+   Compiling infra-analyze v0.20.0 (~/.local/state/worktree/trees/b10x/ess/ess-cache-origin/crates/infra/infra-analyze)
    Compiling fancy-regex v0.19.0
    Compiling regex v1.13.1
    Compiling jsonschema-regex v0.52.1
@@ -144,20 +144,20 @@ Command: `cargo test --locked -p ess-cli --test cache_origin_adversary_pass1 dec
    Compiling data-encoding v2.11.1
    Compiling clap v4.6.6
    Compiling jsonschema v0.52.1
-   Compiling infra-spec v0.20.0 (/home/timo/.local/state/worktree/trees/b10x/ess/ess-cache-origin/crates/infra/infra-spec)
-   Compiling ess-conformance v0.20.0 (/home/timo/.local/state/worktree/trees/b10x/ess/ess-cache-origin/crates/verify/ess-conformance)
-   Compiling ess-realization v0.20.0 (/home/timo/.local/state/worktree/trees/b10x/ess/ess-cache-origin/crates/specify/ess-realization)
+   Compiling infra-spec v0.20.0 (~/.local/state/worktree/trees/b10x/ess/ess-cache-origin/crates/infra/infra-spec)
+   Compiling ess-conformance v0.20.0 (~/.local/state/worktree/trees/b10x/ess/ess-cache-origin/crates/verify/ess-conformance)
+   Compiling ess-realization v0.20.0 (~/.local/state/worktree/trees/b10x/ess/ess-cache-origin/crates/specify/ess-realization)
    Compiling semver v1.0.28
    Compiling base64 v0.22.1
-   Compiling ess-deployment v0.20.0 (/home/timo/.local/state/worktree/trees/b10x/ess/ess-cache-origin/crates/generate/ess-deployment)
-   Compiling schema-contract v0.20.0 (/home/timo/.local/state/worktree/trees/b10x/ess/ess-cache-origin/crates/generate/schema-contract)
-   Compiling ess-diff v0.20.0 (/home/timo/.local/state/worktree/trees/b10x/ess/ess-cache-origin/crates/verify/ess-diff)
-   Compiling infra-project v0.20.0 (/home/timo/.local/state/worktree/trees/b10x/ess/ess-cache-origin/crates/infra/infra-project)
-   Compiling ess-kubernetes v0.20.0 (/home/timo/.local/state/worktree/trees/b10x/ess/ess-cache-origin/crates/infra/ess-kubernetes)
-   Compiling ess-synth v0.20.0 (/home/timo/.local/state/worktree/trees/b10x/ess/ess-cache-origin/crates/generate/ess-synth)
-   Compiling ess-composition v0.20.0 (/home/timo/.local/state/worktree/trees/b10x/ess/ess-cache-origin/crates/specify/ess-composition)
-   Compiling ess-openapi v0.20.0 (/home/timo/.local/state/worktree/trees/b10x/ess/ess-cache-origin/crates/generate/ess-openapi)
-   Compiling ess-cli v0.20.0 (/home/timo/.local/state/worktree/trees/b10x/ess/ess-cache-origin/crates/edge/ess-cli)
+   Compiling ess-deployment v0.20.0 (~/.local/state/worktree/trees/b10x/ess/ess-cache-origin/crates/generate/ess-deployment)
+   Compiling schema-contract v0.20.0 (~/.local/state/worktree/trees/b10x/ess/ess-cache-origin/crates/generate/schema-contract)
+   Compiling ess-diff v0.20.0 (~/.local/state/worktree/trees/b10x/ess/ess-cache-origin/crates/verify/ess-diff)
+   Compiling infra-project v0.20.0 (~/.local/state/worktree/trees/b10x/ess/ess-cache-origin/crates/infra/infra-project)
+   Compiling ess-kubernetes v0.20.0 (~/.local/state/worktree/trees/b10x/ess/ess-cache-origin/crates/infra/ess-kubernetes)
+   Compiling ess-synth v0.20.0 (~/.local/state/worktree/trees/b10x/ess/ess-cache-origin/crates/generate/ess-synth)
+   Compiling ess-composition v0.20.0 (~/.local/state/worktree/trees/b10x/ess/ess-cache-origin/crates/specify/ess-composition)
+   Compiling ess-openapi v0.20.0 (~/.local/state/worktree/trees/b10x/ess/ess-cache-origin/crates/generate/ess-openapi)
+   Compiling ess-cli v0.20.0 (~/.local/state/worktree/trees/b10x/ess/ess-cache-origin/crates/edge/ess-cli)
     Finished `test` profile [unoptimized] target(s) in 43.15s
      Running tests/cache_origin_adversary_pass1.rs (target/debug/deps/cache_origin_adversary_pass1-fa392af442fc4775)
 
@@ -264,7 +264,7 @@ Direct exit: 0; wall seconds: 60.16754902806133. Original receipt: focused-7.jso
 Command: `cargo test --locked -p ess-cli --test cache_origin_adversary_pass1 self_consistent_other_original_bytes_cannot_replace_the_requested_identity -- --exact`
 
 ```text
-   Compiling ess-cli v0.20.0 (/home/timo/.local/state/worktree/trees/b10x/ess/ess-cache-origin/crates/edge/ess-cli)
+   Compiling ess-cli v0.20.0 (~/.local/state/worktree/trees/b10x/ess/ess-cache-origin/crates/edge/ess-cli)
     Finished `test` profile [unoptimized] target(s) in 0.36s
      Running tests/cache_origin_adversary_pass1.rs (target/debug/deps/cache_origin_adversary_pass1-fa392af442fc4775)
 
@@ -363,13 +363,13 @@ Command: `cargo clippy --locked -p ess-cli --all-targets -- -D warnings`
     Checking schemars v0.8.22
     Checking serde_yaml v0.9.34+deprecated
     Checking thiserror v2.0.20
-    Checking ess-primitives v0.20.0 (/home/timo/.local/state/worktree/trees/b10x/ess/ess-cache-origin/crates/specify/ess-primitives)
+    Checking ess-primitives v0.20.0 (~/.local/state/worktree/trees/b10x/ess/ess-cache-origin/crates/specify/ess-primitives)
     Checking num-traits v0.2.19
-    Checking ess-domain v0.20.0 (/home/timo/.local/state/worktree/trees/b10x/ess/ess-cache-origin/crates/specify/ess-domain)
+    Checking ess-domain v0.20.0 (~/.local/state/worktree/trees/b10x/ess/ess-cache-origin/crates/specify/ess-domain)
     Checking num-integer v0.1.47
     Checking libc v0.2.189
     Checking num-bigint v0.4.8
-    Checking ess-compiler v0.20.0 (/home/timo/.local/state/worktree/trees/b10x/ess/ess-cache-origin/crates/specify/ess-compiler)
+    Checking ess-compiler v0.20.0 (~/.local/state/worktree/trees/b10x/ess/ess-cache-origin/crates/specify/ess-compiler)
     Checking regex-syntax v0.8.11
     Checking pulldown-cmark-escape v0.11.0
     Checking unicase v2.9.0
@@ -392,15 +392,15 @@ Command: `cargo clippy --locked -p ess-cli --all-targets -- -D warnings`
     Checking regex-automata v0.4.18
     Checking ahash v0.8.12
     Checking num v0.4.3
-    Checking ess-gen v0.20.0 (/home/timo/.local/state/worktree/trees/b10x/ess/ess-cache-origin/crates/generate/ess-gen)
-    Checking infra-domain v0.20.0 (/home/timo/.local/state/worktree/trees/b10x/ess/ess-cache-origin/crates/infra/infra-domain)
+    Checking ess-gen v0.20.0 (~/.local/state/worktree/trees/b10x/ess/ess-cache-origin/crates/generate/ess-gen)
+    Checking infra-domain v0.20.0 (~/.local/state/worktree/trees/b10x/ess/ess-cache-origin/crates/infra/infra-domain)
     Checking anstyle v1.0.14
     Checking is_terminal_polyfill v1.70.2
     Checking bit-vec v0.8.0
     Checking borrow-or-share v0.2.4
     Checking anstyle-query v1.1.5
     Checking colorchoice v1.0.5
-    Checking infra-compiler v0.20.0 (/home/timo/.local/state/worktree/trees/b10x/ess/ess-cache-origin/crates/infra/infra-compiler)
+    Checking infra-compiler v0.20.0 (~/.local/state/worktree/trees/b10x/ess/ess-cache-origin/crates/infra/infra-compiler)
     Checking anstream v1.0.0
     Checking fluent-uri v0.4.1
     Checking bit-set v0.8.0
@@ -419,7 +419,7 @@ Command: `cargo clippy --locked -p ess-cli --all-targets -- -D warnings`
     Checking clap_builder v4.6.6
     Checking jsonschema-value v0.52.1
     Checking strum v0.28.0
-    Checking infra-analyze v0.20.0 (/home/timo/.local/state/worktree/trees/b10x/ess/ess-cache-origin/crates/infra/infra-analyze)
+    Checking infra-analyze v0.20.0 (~/.local/state/worktree/trees/b10x/ess/ess-cache-origin/crates/infra/infra-analyze)
     Checking fancy-regex v0.19.0
     Checking unicode-general-category v1.1.0
     Checking regex v1.13.1
@@ -427,22 +427,22 @@ Command: `cargo clippy --locked -p ess-cli --all-targets -- -D warnings`
     Checking email_address v0.2.9
     Checking data-encoding v2.11.1
     Checking clap v4.6.6
-    Checking infra-spec v0.20.0 (/home/timo/.local/state/worktree/trees/b10x/ess/ess-cache-origin/crates/infra/infra-spec)
+    Checking infra-spec v0.20.0 (~/.local/state/worktree/trees/b10x/ess/ess-cache-origin/crates/infra/infra-spec)
     Checking jsonschema v0.52.1
-    Checking ess-conformance v0.20.0 (/home/timo/.local/state/worktree/trees/b10x/ess/ess-cache-origin/crates/verify/ess-conformance)
-    Checking ess-realization v0.20.0 (/home/timo/.local/state/worktree/trees/b10x/ess/ess-cache-origin/crates/specify/ess-realization)
+    Checking ess-conformance v0.20.0 (~/.local/state/worktree/trees/b10x/ess/ess-cache-origin/crates/verify/ess-conformance)
+    Checking ess-realization v0.20.0 (~/.local/state/worktree/trees/b10x/ess/ess-cache-origin/crates/specify/ess-realization)
     Checking semver v1.0.28
     Checking base64 v0.22.1
-    Checking ess-deployment v0.20.0 (/home/timo/.local/state/worktree/trees/b10x/ess/ess-cache-origin/crates/generate/ess-deployment)
-    Checking schema-contract v0.20.0 (/home/timo/.local/state/worktree/trees/b10x/ess/ess-cache-origin/crates/generate/schema-contract)
-    Checking ess-diff v0.20.0 (/home/timo/.local/state/worktree/trees/b10x/ess/ess-cache-origin/crates/verify/ess-diff)
-    Checking infra-project v0.20.0 (/home/timo/.local/state/worktree/trees/b10x/ess/ess-cache-origin/crates/infra/infra-project)
-    Checking ess-kubernetes v0.20.0 (/home/timo/.local/state/worktree/trees/b10x/ess/ess-cache-origin/crates/infra/ess-kubernetes)
+    Checking ess-deployment v0.20.0 (~/.local/state/worktree/trees/b10x/ess/ess-cache-origin/crates/generate/ess-deployment)
+    Checking schema-contract v0.20.0 (~/.local/state/worktree/trees/b10x/ess/ess-cache-origin/crates/generate/schema-contract)
+    Checking ess-diff v0.20.0 (~/.local/state/worktree/trees/b10x/ess/ess-cache-origin/crates/verify/ess-diff)
+    Checking infra-project v0.20.0 (~/.local/state/worktree/trees/b10x/ess/ess-cache-origin/crates/infra/infra-project)
+    Checking ess-kubernetes v0.20.0 (~/.local/state/worktree/trees/b10x/ess/ess-cache-origin/crates/infra/ess-kubernetes)
     Checking anyhow v1.0.104
-    Checking ess-synth v0.20.0 (/home/timo/.local/state/worktree/trees/b10x/ess/ess-cache-origin/crates/generate/ess-synth)
-    Checking ess-composition v0.20.0 (/home/timo/.local/state/worktree/trees/b10x/ess/ess-cache-origin/crates/specify/ess-composition)
-    Checking ess-openapi v0.20.0 (/home/timo/.local/state/worktree/trees/b10x/ess/ess-cache-origin/crates/generate/ess-openapi)
-    Checking ess-cli v0.20.0 (/home/timo/.local/state/worktree/trees/b10x/ess/ess-cache-origin/crates/edge/ess-cli)
+    Checking ess-synth v0.20.0 (~/.local/state/worktree/trees/b10x/ess/ess-cache-origin/crates/generate/ess-synth)
+    Checking ess-composition v0.20.0 (~/.local/state/worktree/trees/b10x/ess/ess-cache-origin/crates/specify/ess-composition)
+    Checking ess-openapi v0.20.0 (~/.local/state/worktree/trees/b10x/ess/ess-cache-origin/crates/generate/ess-openapi)
+    Checking ess-cli v0.20.0 (~/.local/state/worktree/trees/b10x/ess/ess-cache-origin/crates/edge/ess-cli)
 error: more than 3 bools in function parameters
    --> crates/edge/ess-cli/tests/cache_origin_adversary_pass1.rs:100:5
     |
@@ -468,7 +468,7 @@ Direct exit: 101; wall seconds: 23.121921663056128. Receipt: clippy.json.
 Command: `cargo clippy --locked -p ess-cli --all-targets -- -D warnings`
 
 ```text
-    Checking ess-cli v0.20.0 (/home/timo/.local/state/worktree/trees/b10x/ess/ess-cache-origin/crates/edge/ess-cli)
+    Checking ess-cli v0.20.0 (~/.local/state/worktree/trees/b10x/ess/ess-cache-origin/crates/edge/ess-cli)
 error: this argument is passed by value, but not consumed in the function body
    --> crates/edge/ess-cli/tests/cache_origin_adversary_pass1.rs:105:50
     |
@@ -497,7 +497,7 @@ Direct exit: 101; wall seconds: 0.24564346997067332. Receipt: final-clippy.json.
 Command: `cargo clippy --locked -p ess-cli --all-targets -- -D warnings`
 
 ```text
-    Checking ess-cli v0.20.0 (/home/timo/.local/state/worktree/trees/b10x/ess/ess-cache-origin/crates/edge/ess-cli)
+    Checking ess-cli v0.20.0 (~/.local/state/worktree/trees/b10x/ess/ess-cache-origin/crates/edge/ess-cli)
     Finished `dev` profile [unoptimized] target(s) in 0.16s
 ```
 
@@ -513,7 +513,7 @@ Direct exit: 0; wall seconds: 0.20491094409953803. Receipt: sealed-format.json.
 Command: `cargo test --locked -p ess-cli`
 
 ```text
-   Compiling ess-cli v0.20.0 (/home/timo/.local/state/worktree/trees/b10x/ess/ess-cache-origin/crates/edge/ess-cli)
+   Compiling ess-cli v0.20.0 (~/.local/state/worktree/trees/b10x/ess/ess-cache-origin/crates/edge/ess-cli)
     Finished `test` profile [unoptimized] target(s) in 0.46s
      Running unittests src/main.rs (target/debug/deps/ess-63929f179d60f606)
 
@@ -1013,7 +1013,7 @@ The coordinator's full integration, public delivery and planning/Git lifecycle w
 The only assigned external writable root was:
 
 ```text
-/home/timo/.cache/ess-w12-review1-tmp
+~/.cache/ess-w12-review1-tmp
 ```
 
 All test/CLI temporary writes, including retained original-byte fixtures, locally compiled peer
