@@ -41,6 +41,5 @@ website/static/lab/
 # and was not recovered; this line is what survives of it — delete the line to reverse.
 .engineering/runs/
 .engineering/.aep-planning-writer*.lock
-.engineering/state/writer.lock
 .engineering/migrations/*/recovery/
 .engineering/migrations/*/stage/
