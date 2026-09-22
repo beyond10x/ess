@@ -52,7 +52,7 @@ scope:
   path: website/docs/reference
 - confidence: cited
   path: website/docs/status/where-this-stands.md
-revision: 13
+revision: 14
 ---
 ## Outcome
 
@@ -169,8 +169,6 @@ controls must survive unchanged; no filtering or waiver closes them.
 
 ## Verified source release
 
-# Retained command result replay: verified source release
-
 ESS 0.29.0 is published at the annotated tag object a6246e992bce4314a958a7df2c03a568012cf101,
 resolving to 8bef63a21766c54f0d809b4decf1d9f7bd587118. This commit is on main.
 The source integrated through [PR 59](https://github.com/beyond10x/ess/pull/59).
@@ -178,10 +176,10 @@ The bounded operator approval is recorded on
 decision-blocker:retained-result-release-qualification and integrated through
 [PR 60](https://github.com/beyond10x/ess/pull/60).
 
-## Executed qualification
+### Executed qualification
 
 At the exact tag commit, task check SKIP_CONSUMER_CHECKS=true exited zero:
-342 summaries; 0 passed, 0 failed, 0 ignored. The ignored cases are reported rather than
+342 summaries; 3331 passed, 0 failed, 14 ignored. The ignored cases are reported rather than
 counted as passes. task site-lab exited zero. Original logs, per-command
 statuses and the exact head remain in the private release evidence directory.
 Independent implementation and adversary records remain in this planning store.
@@ -204,7 +202,7 @@ on origin/main with published releases, dated changelog sections and recorded
 changes. The API lists github-actions[bot] as release author, from the
 repository's reviewed release workflow.
 
-## Preserved qualification boundary
+### Preserved qualification boundary
 
 The operator approved the existing CI/release profile for this release.
 Default local task check still refuses at the separately retained consumer
@@ -218,3 +216,12 @@ The final source7 capability includes retained result retries and complete
 wrong-state refusal observations; the versioned suites and reports are tested
 in ESS. EKR must adopt the released compiler and execute its own target.
 Documentation publication is asynchronous and is not claimed here.
+
+### Coordinator measurement correction
+
+The first release-summary record counted the numeric columns incorrectly and
+reported zero passes/ignores. Inspection of the original runner lines corrected
+the total above before the closure PR was opened. The measurement now adds
+fields 4, 6 and 8 of lines beginning with "test result: ok.", retaining the
+original logs and append-only journal. No test result or qualification changed.
+Owner: coordinator.

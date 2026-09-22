@@ -10,7 +10,7 @@ decision-blocker:retained-result-release-qualification and integrated through
 ## Executed qualification
 
 At the exact tag commit, task check SKIP_CONSUMER_CHECKS=true exited zero:
-342 summaries; 0 passed, 0 failed, 0 ignored. The ignored cases are reported rather than
+342 summaries; 3331 passed, 0 failed, 14 ignored. The ignored cases are reported rather than
 counted as passes. task site-lab exited zero. Original logs, per-command
 statuses and the exact head remain in the private release evidence directory.
 Independent implementation and adversary records remain in this planning store.
@@ -47,3 +47,12 @@ The final source7 capability includes retained result retries and complete
 wrong-state refusal observations; the versioned suites and reports are tested
 in ESS. EKR must adopt the released compiler and execute its own target.
 Documentation publication is asynchronous and is not claimed here.
+
+## Coordinator measurement correction
+
+The first release-summary record counted the numeric columns incorrectly and
+reported zero passes/ignores. Inspection of the original runner lines corrected
+the total above before the closure PR was opened. The measurement now adds
+fields 4, 6 and 8 of lines beginning with "test result: ok.", retaining the
+original logs and append-only journal. No test result or qualification changed.
+Owner: coordinator.
