@@ -274,6 +274,13 @@ fn readme(ir: &EssIr, suite: &ConformanceSuite) -> String {
 fn response_replay_supported(
     suite: &ConformanceSuite,
 ) -> Result<(), crate::admission::AdmissionError> {
+    if crate::fixtures::used_by(suite) {
+        return Err(crate::admission::AdmissionError::new(
+            "UnsupportedVocabulary",
+            "$suite.scenarios",
+            "browser replay cannot resolve independently provisioned fixture values",
+        ));
+    }
     if crate::response::used_by(suite) {
         return Err(crate::admission::AdmissionError::new(
             "UnsupportedVocabulary",

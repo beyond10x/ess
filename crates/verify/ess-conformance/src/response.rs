@@ -1,12 +1,10 @@
 //! Typed response observations bound to one command invocation and its emitted event.
 use crate::scenario::{CommandRef, EventRef, OutcomeRef};
 use crate::selection::Declaration;
-use ess_compiler::ir::{
-    EssIr, ResolvedBody, ResolvedCommand, ResolvedOutcome, ResolvedPayloadValue,
-};
+use ess_compiler::ir::{EssIr, ResolvedCommand, ResolvedOutcome, ResolvedPayloadValue};
 use ess_domain::{Field, QualifiedName, TypeRef};
 use ess_primitives::node::Node;
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::BTreeMap;
 
 /// Standalone declaration authority for a response-derived event payload.
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
@@ -85,57 +83,8 @@ impl Observation {
                 .iter()
                 .map(|f| Field::new(&f.name, crate::accessor::unresolve(&f.type_ref)))
                 .collect();
-            let mut declarations = BTreeMap::new();
-            let mut pending: Vec<_> = fields
-                .iter()
-                .chain(&targets)
-                .flat_map(|f| f.type_ref.named_dependencies().into_iter().cloned())
-                .collect();
-            while let Some(name) = pending.pop() {
-                if declarations.contains_key(&name) {
-                    continue;
-                }
-                if declarations.len() >= 4096 {
-                    return Err("response declaration resource limit".into());
-                }
-                let ty = ir.types().get(&name).ok_or("response type is absent")?;
-                if ty.reading.is_some()
-                    || matches!(&ty.body, ResolvedBody::Newtype { invariants, .. } | ResolvedBody::Struct { invariants, .. } if !invariants.is_empty())
-                {
-                    return Err(
-                        "response constrained type needs an executable invariant/reading observer"
-                            .into(),
-                    );
-                }
-                let body = match &ty.body {
-                    ResolvedBody::Newtype { of, .. } => Declaration::Newtype {
-                        of: crate::accessor::unresolve(of),
-                    },
-                    ResolvedBody::Struct { fields, .. } => Declaration::Struct {
-                        fields: fields
-                            .iter()
-                            .map(|f| Field::new(&f.name, crate::accessor::unresolve(&f.type_ref)))
-                            .collect(),
-                    },
-                    ResolvedBody::Enum { variants } => Declaration::Enum {
-                        variants: variants
-                            .iter()
-                            .map(|variant| variant.name().to_owned())
-                            .collect(),
-                    },
-                    ResolvedBody::Union { tag, variants } => Declaration::Union {
-                        tag: tag.clone(),
-                        variants: variants
-                            .iter()
-                            .map(|(tag, ty)| (tag.clone(), crate::accessor::unresolve(ty)))
-                            .collect(),
-                    },
-                };
-                for ty in body.references() {
-                    pending.extend(ty.named_dependencies().into_iter().cloned());
-                }
-                declarations.insert(name, body);
-            }
+            let declarations =
+                crate::typed_fields::declarations(ir, fields.iter().chain(&targets))?;
             let observation = Self {
                 command: CommandRef::new(command.name.clone()),
                 outcome: OutcomeRef::new(
@@ -167,34 +116,10 @@ impl Observation {
         if self.outcome.command != self.command {
             return Err("response outcome belongs to a different command".into());
         }
-        let mut registry = ess_domain::TypeRegistry::new();
-        for (name, body) in &self.declarations {
-            let declared = ess_domain::NamedType::try_from(ess_domain::types::RawNamedType {
-                name: name.clone(),
-                body: body.body(),
-                naming: ess_domain::Naming::default(),
-                reading: None,
-            })
-            .map_err(|e| e.to_string())?;
-            registry.insert(declared).map_err(|e| e.to_string())?;
-        }
-        let mut used = BTreeSet::new();
-        for fields in [&self.fields, &self.targets] {
-            let mut seen = BTreeSet::new();
-            for field in fields {
-                if field.name.is_empty() || !seen.insert(&field.name) {
-                    return Err("duplicate response contract field".into());
-                }
-                registry
-                    .resolve(&field.type_ref, "response")
-                    .into_result(())
-                    .map_err(|e| e.to_string())?;
-                self.check_type(&field.type_ref, &mut used, &mut BTreeSet::new(), 0)?;
-            }
-        }
-        if used.len() != self.declarations.len() {
-            return Err("response contract carries unrelated type declarations".into());
-        }
+        crate::typed_fields::validate(
+            [self.fields.as_slice(), self.targets.as_slice()],
+            &self.declarations,
+        )?;
         for target in &self.targets {
             let source = self
                 .mappings
@@ -207,52 +132,6 @@ impl Observation {
         }
         if serde_json::to_vec(self).map_err(|e| e.to_string())?.len() > 1_048_576 {
             return Err("response contract byte limit".into());
-        }
-        Ok(())
-    }
-    fn check_type(
-        &self,
-        ty: &TypeRef,
-        used: &mut BTreeSet<QualifiedName>,
-        stack: &mut BTreeSet<QualifiedName>,
-        depth: usize,
-    ) -> Result<(), String> {
-        if depth > 128 {
-            return Err("response type depth limit".into());
-        }
-        match ty {
-            TypeRef::Named(name) => {
-                if !stack.insert(name.clone()) {
-                    return Err("recursive response type cannot be finitely admitted".into());
-                }
-                if used.contains(name) {
-                    stack.remove(name);
-                    return Ok(());
-                }
-                for child in self
-                    .declarations
-                    .get(name)
-                    .ok_or("missing response type")?
-                    .references()
-                {
-                    self.check_type(child, used, stack, depth + 1)?;
-                }
-                used.insert(name.clone());
-                stack.remove(name);
-            }
-            TypeRef::Optional(of) | TypeRef::List(of) => {
-                self.check_type(of, used, stack, depth + 1)?;
-            }
-            TypeRef::Map(key, value) => {
-                if *key != ess_domain::Primitive::String {
-                    return Err("response map keys require String".into());
-                }
-                self.check_type(value, used, stack, depth + 1)?;
-            }
-            TypeRef::Primitive(ess_domain::Primitive::Binary64) => {
-                return Err("response Binary64 observation is not admitted".into())
-            }
-            TypeRef::Primitive(_) => {}
         }
         Ok(())
     }

@@ -2270,6 +2270,7 @@ lifecycle:
                 TypeRef::Named(name("billing.invoice.InvoiceId")),
             )],
             response: Vec::new(),
+            fixture_inputs: BTreeMap::new(),
             outcomes: vec![crate::command::Outcome {
                 name: crate::command::OutcomeName::new(outcome).expect("a valid outcome name"),
                 condition: crate::command::OutcomeCondition::Otherwise,

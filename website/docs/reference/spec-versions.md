@@ -25,6 +25,14 @@ about somebody's system, and blames the document for the age of the tool.
 A version number is per family. `ess/6` and `ess-conformance/11` are both current; they count
 separately and always have.
 
+The unreleased fixture-values candidate adds `ess/7`, `ess-scenario/3`,
+`ess-conformance/12` and `ess-conformance/13`. These versions are not in the published 0.28.0 release.
+Command `fixture_inputs` declarations and explicit authored `$fixture` references resolve
+typed values from an independent provider before scenario startup. Requests and assertions
+use the same copied values; an observed result cannot supply its own expectation.
+Suite 12 carries this vocabulary, and suite 13 also carries coverage. Older readers refuse
+the new formats; fixture-free suites keep their previous format. Browser replay refuses fixtures.
+
 ## `ess/` — the authored specification
 
 The format of the system a person writes. Read by `ess specify validate` and everything downstream

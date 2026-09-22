@@ -465,13 +465,8 @@ impl Inventory {
                 "explicit IDs differ from selected IDs",
             )?;
             require(
-                matches!(
-                    parent.version.as_str(),
-                    COVERAGE_SUITE_FORMAT
-                        | "ess-conformance/7"
-                        | "ess-conformance/9"
-                        | "ess-conformance/11"
-                ) && parent.version == suite.provenance.suite_version.to_string()
+                is_coverage_version(&parent.version)
+                    && parent.version == suite.provenance.suite_version.to_string()
                     && parent.digest_profile == "sha256-json-bytes/1"
                     && valid_digest(&parent.digest),
                 "invalid parent reference",
@@ -959,4 +954,15 @@ fn validate_parent(child: &AdmittedSuite, parent: &AdmittedSuite) -> Result<(), 
         )?;
     }
     Ok(())
+}
+
+fn is_coverage_version(version: &str) -> bool {
+    matches!(
+        version,
+        COVERAGE_SUITE_FORMAT
+            | "ess-conformance/7"
+            | "ess-conformance/9"
+            | "ess-conformance/11"
+            | "ess-conformance/13"
+    )
 }

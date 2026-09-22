@@ -199,7 +199,7 @@ use std::fmt;
 
 use ess_compiler::diagnostic::Code;
 use ess_compiler::ir::{EssIr, ResolvedField, ResolvedTypeRef};
-use ess_domain::command::OutcomeName;
+use ess_domain::command::{fixture_inputs::FixtureName, OutcomeName};
 use ess_domain::name::QualifiedName;
 use ess_domain::view::{AssertionStyle, Ranking};
 use ess_primitives::error::ParseError;
@@ -261,6 +261,9 @@ pub struct Document {
     pub scenario: AuthoredName,
     /// What it proves, in one line.
     pub summary: ScenarioPurpose,
+    /// Independently provisioned values and their source-owned types (scenario format 3).
+    #[serde(default)]
+    pub fixtures: BTreeMap<FixtureName, ess_domain::TypeRef>,
     /// The instances the timeline may bind.
     #[serde(default)]
     pub arrange: Vec<Arrangement>,
@@ -280,7 +283,7 @@ pub struct Arrangement {
     pub instance: InstanceName,
     /// The declared entity it is one of.
     pub entity: String,
-    /// Actual upstream-owned state to establish (`ess-scenario/2` only).
+    /// Actual upstream-owned state to establish (`ess-scenario/2` or newer).
     #[serde(default, deserialize_with = "deserialize_entity_setup")]
     pub setup: Option<EntitySetup>,
 }
@@ -653,6 +656,8 @@ impl<'de> serde::Deserialize<'de> for Moment {
 /// with, and a literal is written exactly as the model's own documents write one.
 #[derive(Debug, Clone, PartialEq)]
 pub enum Written {
+    /// A typed value resolved independently before the scenario starts.
+    Fixture(FixtureName),
     /// A value the author chose.
     Literal(Node),
     /// The identity bound under this name earlier in the scenario.
@@ -667,6 +672,8 @@ pub enum Written {
 }
 
 impl Written {
+    /// The sigil naming a pre-execution fixture.
+    pub const FIXTURE: &'static str = "$fixture";
     /// The sigil that begins a reference rather than a value.
     pub const INSTANCE: &'static str = "$instance";
     /// The sigil that names a value the run itself produced.
@@ -688,6 +695,14 @@ impl<'de> serde::Deserialize<'de> for Written {
             return Ok(Self::Literal(node));
         };
         match key {
+            Self::FIXTURE => {
+                let name = value
+                    .as_text()
+                    .ok_or_else(|| serde::de::Error::custom("$fixture names a fixture"))?;
+                FixtureName::new(name)
+                    .map(Self::Fixture)
+                    .map_err(serde::de::Error::custom)
+            }
             Self::INSTANCE => {
                 let name = value.as_text().ok_or_else(|| {
                     serde::de::Error::custom(format!("`{}` names an instance", Self::INSTANCE))
@@ -1139,7 +1154,7 @@ impl Cause {
                 "the document is YAML with the keys `type`, `domain`, `scenario` and `summary`; a \
                  key it does not know is refused rather than ignored"
             }
-            Self::UnsupportedFormat { .. } => "write `type: ess-scenario/1`, or `ess-scenario/2` for entity setup",
+            Self::UnsupportedFormat { .. } => "write `type: ess-scenario/1`, `ess-scenario/2` for entity setup, or `ess-scenario/3` for fixture values",
             Self::Duplicate { .. } => {
                 "two files name one scenario in one domain; rename one of them"
             }
@@ -1521,7 +1536,10 @@ pub(crate) fn compile_one(
             detail: error.to_string(),
         })
     })?;
-    if document.format != FORMAT && document.format != "ess-scenario/2" {
+    if document.format != FORMAT
+        && document.format != "ess-scenario/2"
+        && document.format != "ess-scenario/3"
+    {
         return Err(bare(Cause::UnsupportedFormat {
             found: document.format,
         }));
@@ -1529,6 +1547,11 @@ pub(crate) fn compile_one(
     if document.format == FORMAT && document.arrange.iter().any(|item| item.setup.is_some()) {
         return Err(bare(Cause::Unreadable {
             detail: "entity setup requires type: ess-scenario/2".into(),
+        }));
+    }
+    if document.format != "ess-scenario/3" && !document.fixtures.is_empty() {
+        return Err(bare(Cause::Unreadable {
+            detail: "fixture declarations require type: ess-scenario/3".into(),
         }));
     }
     let Ok(domain) = QualifiedName::new(&document.domain) else {
@@ -1552,6 +1575,9 @@ pub(crate) fn compile_one(
     }
 
     let mut compiler = Compiler {
+        fixtures: document.fixtures.clone(),
+        used_fixtures: BTreeSet::new(),
+        fixture_format: document.format == "ess-scenario/3",
         ir,
         origin: &source.origin,
         id: id.clone(),
@@ -1565,6 +1591,19 @@ pub(crate) fn compile_one(
         types: BTreeSet::new(),
     };
     compiler.run(&document);
+    if compiler.used_fixtures != document.fixtures.keys().cloned().collect() {
+        compiler.refuse(Cause::Unreadable {
+            detail: "fixture declarations must exactly match the referenced names".into(),
+        });
+    }
+    if !document.fixtures.is_empty() {
+        match crate::fixtures::Contract::of(ir, document.fixtures.clone()) {
+            Ok(fixtures) => compiler
+                .steps
+                .insert(0, ScenarioStep::ResolveFixtures { fixtures }),
+            Err(detail) => compiler.refuse(Cause::Unreadable { detail }),
+        }
+    }
     if !compiler.refusals.is_empty() {
         return Err(compiler.refusals);
     }
@@ -1592,6 +1631,9 @@ fn undeclared_domain(ir: &EssIr, written: &str) -> Cause {
 
 /// One scenario in flight: what it has resolved, bound and built so far.
 struct Compiler<'a> {
+    fixtures: BTreeMap<FixtureName, ess_domain::TypeRef>,
+    used_fixtures: BTreeSet<FixtureName>,
+    fixture_format: bool,
     ir: &'a EssIr,
     origin: &'a str,
     id: ScenarioId,
@@ -1959,14 +2001,38 @@ impl Compiler<'_> {
         let fields = declared.fields.clone();
         self.reach(&fields);
         self.source.insert(event.clone().into());
-        let payload = self.literals(&claim.payload, &fields, &Surface::Payload(event.clone()));
+        let (fixtures, literals): (BTreeMap<_, _>, BTreeMap<_, _>) = claim
+            .payload
+            .iter()
+            .map(|(field, value)| (field.clone(), value.clone()))
+            .partition(|(_, value)| matches!(value, Written::Fixture(_)));
+        let payload = self.literals(&literals, &fields, &Surface::Payload(event.clone()));
+        let mut dynamic = self.values(
+            &fixtures,
+            &fields,
+            &Surface::Payload(event.clone()),
+            Completeness::Partial,
+        );
         let shape = payload_shape(self.ir, &event);
         self.observed.insert(event.clone());
-        self.steps.push(ScenarioStep::ExpectEvent {
-            event,
-            payload,
-            shape,
-        });
+        if dynamic.is_empty() {
+            self.steps.push(ScenarioStep::ExpectEvent {
+                event,
+                payload,
+                shape,
+            });
+        } else {
+            dynamic.extend(
+                payload
+                    .into_iter()
+                    .map(|(key, value)| (key, ScenarioValue::literal(value))),
+            );
+            self.steps.push(ScenarioStep::ExpectEventValues {
+                event,
+                payload: dynamic,
+                shape,
+            });
+        }
     }
 
     /// Binding an identity an act published.
@@ -2200,6 +2266,30 @@ impl Compiler<'_> {
 
         for (field, value) in written {
             match value {
+                Written::Fixture(fixture) => {
+                    referenced.insert(field.clone());
+                    let target = fields.iter().find(|declared| declared.name == *field);
+                    let compatible =
+                        target
+                            .zip(self.fixtures.get(fixture))
+                            .is_some_and(|(target, source)| {
+                                crate::fixtures::assignable(
+                                    source,
+                                    &crate::accessor::unresolve(&target.type_ref),
+                                )
+                            });
+                    if !self.fixture_format || !compatible {
+                        self.refuse(Cause::Unreadable { detail: format!("fixture {fixture} needs scenario/3, a declared type, and a compatible target field {field}") });
+                    } else {
+                        self.used_fixtures.insert(fixture.clone());
+                        resolved.insert(
+                            field.clone(),
+                            ScenarioValue::Fixture {
+                                fixture: fixture.clone(),
+                            },
+                        );
+                    }
+                }
                 Written::Literal(node) => {
                     literals.insert(field.clone(), node.clone());
                 }

@@ -69,9 +69,18 @@ import {
   decodeResponseObservation,
   expectResponsePayload,
   responsePrimitiveAdmits,
+  responseEqual,
   snapshotResponseResult,
 } from './response.js';
 import type { ResponseObservation } from './response.js';
+import {
+  admitFixtures,
+  admitFixtureSteps,
+  copyFixtureValue,
+  fixtureName,
+  fixtureValues,
+} from './fixtures.js';
+import type { FixtureContract } from './fixtures.js';
 
 // ---- the value universe -------------------------------------------------------------------------
 
@@ -724,7 +733,8 @@ export function suiteReference(value: Node): void {
     (reference.version !== 'ess-conformance/5' &&
       reference.version !== 'ess-conformance/7' &&
       reference.version !== 'ess-conformance/9' &&
-      reference.version !== 'ess-conformance/11') ||
+      reference.version !== 'ess-conformance/11' &&
+      reference.version !== 'ess-conformance/13') ||
     reference.digest_profile !== 'sha256-json-bytes/1' ||
     typeof digest !== 'string' ||
     !digest.startsWith('sha256:') ||
@@ -1751,6 +1761,11 @@ export type Answer<T> = T | Promise<T>;
  * reported as skipped, which is a different fact from a failed one.
  */
 export interface Target {
+  /** Resolve independently provisioned values before beginScenario. The provider owns cleanup. */
+  fixtureValues?(
+    scenario: ScenarioContext,
+    contract: FixtureContract,
+  ): Answer<Record<string, Node>>;
   /** Identity names the implementation under test, for the report. */
   identity(): Answer<Identity>;
 
@@ -2159,6 +2174,7 @@ export interface Scenario {
  * a second spelling would be a second place for the two to disagree.
  */
 export interface Step {
+  fixtures?: FixtureContract;
   response?: ResponseObservation;
   check?: PeriodicCheck;
   left?: ReadingReference;
@@ -2227,6 +2243,7 @@ export interface OutcomeRef {
 
 /** Value is one value a step carries: written down, captured earlier, or read from an event. */
 export interface Value {
+  fixture?: string;
   selection?: SelectionObservation;
   accessor?: AccessorObservation;
   kind: string;
@@ -2327,7 +2344,9 @@ export async function runWith(
     (version === 'ess-conformance/8' ||
       version === 'ess-conformance/9' ||
       version === 'ess-conformance/10' ||
-      version === 'ess-conformance/11') &&
+      version === 'ess-conformance/11' ||
+      version === 'ess-conformance/12' ||
+      version === 'ess-conformance/13') &&
     config.version !== '2'
   ) {
     throw new Error('suite/8 and /9 require explicit ESS_REPORT_FORMAT=2 before execution');
@@ -2621,6 +2640,23 @@ export class ScenarioRun {
 
   async execute(id: string, scenario: Scenario): Promise<void> {
     const context: ScenarioContext = { scenario: id, correlation: this.correlation };
+    const first = scenario.steps[0];
+    if (first?.step === 'resolve_fixtures') {
+      try {
+        if (!this.target.fixtureValues) throw unsupported('no pre-execution fixture provider');
+        const contract = first.fixtures as FixtureContract;
+        const provided = await this.target.fixtureValues(
+          context,
+          copyFixtureValue(contract) as FixtureContract,
+        );
+        this.fixtures = fixtureValues(contract, provided);
+      } catch (error) {
+        this.callbacksComplete = true;
+        if (isUnsupported(error)) this.skip(`fixture values: ${errorText(error)}`);
+        this.status = statusFailed;
+        throw new FatalSignal(`fixture values: ${errorText(error)}`);
+      }
+    }
     try {
       await this.target.beginScenario(context);
     } catch (error) {
@@ -2635,7 +2671,11 @@ export class ScenarioRun {
       if (scenario.purpose !== '') {
         this.t.diagnostic(scenario.purpose);
       }
-      for (let index = 0; index < scenario.steps.length; index += 1) {
+      for (
+        let index = first?.step === 'resolve_fixtures' ? 1 : 0;
+        index < scenario.steps.length;
+        index += 1
+      ) {
         if (!(await this.step(index, itemAt(scenario.steps, index)))) {
           return;
         }
@@ -2663,6 +2703,12 @@ export class ScenarioRun {
    */
   async step(index: number, step: Step): Promise<boolean> {
     switch (step.step) {
+      case 'resolve_fixtures':
+        return this.fail(index, 'fixture resolution must precede scenario activity');
+      case 'expect_event_values': {
+        const payload = this.resolveAll(index, step.payload as Record<string, Value>);
+        return payload !== null && this.expectEventValues(index, { ...step, payload });
+      }
       case 'expect_response_payload':
         return expectResponsePayload(this, index, step);
       case 'check_periodic':
@@ -2801,6 +2847,16 @@ export class ScenarioRun {
       );
     }
     return true;
+  }
+
+  expectEventValues(index: number, step: Step): boolean {
+    // Match the Rust runner: select the first direct occurrence by name, never by its values.
+    const event = this.last.directEvents?.find((observed) => observed.event === step.event);
+    if (!event) return this.fail(index, `\`${step.event}\` was not emitted`);
+    if (!matches(event.payload, step.payload ?? {}))
+      return this.fail(index, `\`${step.event}\` carried different fixture values`);
+    const reason = holds(event.payload, step.shape ?? {});
+    return reason === '' || this.fail(index, `\`${step.event}\` was emitted, and ${reason}`);
   }
 
   expectEvent(index: number, step: Step): boolean {
@@ -3472,8 +3528,14 @@ export class ScenarioRun {
     return resolved;
   }
 
+  private fixtures: Record<string, Node> = {};
+
   resolve(value: Value): Node {
     switch (value.kind) {
+      case 'fixture':
+        if (!Object.hasOwn(this.fixtures, value.fixture as string))
+          throw new Error('fixture was not resolved');
+        return copyFixtureValue(this.fixtures[value.fixture as string]);
       case 'literal':
         return value.value;
       case 'instance': {
@@ -3582,6 +3644,15 @@ export function matches(row: { [field: string]: Node }, want: { [field: string]:
  * its default. Two runtimes that disagreed here would disagree about a duplicate entity identity.
  */
 export function equal(left: Node, right: Node): boolean {
+  if (left instanceof JsonNumber || right instanceof JsonNumber) {
+    try {
+      const a = copyFixtureValue(left),
+        b = copyFixtureValue(right);
+      return a instanceof JsonNumber && b instanceof JsonNumber && responseEqual(a, b);
+    } catch {
+      return false;
+    }
+  }
   if (isNil(left)) {
     return isNil(right);
   }
@@ -4212,6 +4283,8 @@ const SUITE_MAJORS: { [version: string]: number } = {
   'ess-conformance/9': 9,
   'ess-conformance/10': 10,
   'ess-conformance/11': 11,
+  'ess-conformance/12': 12,
+  'ess-conformance/13': 13,
 };
 
 export function admitSuite(raw: string): Suite {
@@ -4233,7 +4306,9 @@ export function admitSuiteDocument(raw: string, explicit: boolean): Suite {
     throw new Error(`unsupported suite version ${quoteGo(version)}`);
   }
   const carriesCoverage = Object.prototype.hasOwnProperty.call(root, 'coverage');
-  if (carriesCoverage !== (major === 5 || major === 7 || major === 9 || major === 11)) {
+  if (
+    carriesCoverage !== (major === 5 || major === 7 || major === 9 || major === 11 || major === 13)
+  ) {
     throw new Error('coverage is required exactly for suite/5, suite/7, suite/9 and suite/11');
   }
   for (const key of ['system', 'specification_version', 'spec_digest', 'contract_digest']) {
@@ -4275,6 +4350,7 @@ export function admitSuiteDocument(raw: string, explicit: boolean): Suite {
     }
     try {
       admitEntitySetups(steps);
+      admitFixtureSteps(steps);
     } catch (error) {
       throw new Error(`${id}: ${errorText(error)}`);
     }
@@ -4282,7 +4358,7 @@ export function admitSuiteDocument(raw: string, explicit: boolean): Suite {
       admitReference(source);
     }
   }
-  if (major === 5 || major === 7 || major === 9 || major === 11) {
+  if (major === 5 || major === 7 || major === 9 || major === 11 || major === 13) {
     const coverage = root.coverage as { [key: string]: Node };
     if (Array.isArray(coverage.refused)) {
       for (const item of coverage.refused as Node[]) {
@@ -4320,7 +4396,7 @@ export function admitSuiteDocument(raw: string, explicit: boolean): Suite {
     original: raw,
     document: root,
   };
-  if (major === 5 || major === 7 || major === 9 || major === 11) {
+  if (major === 5 || major === 7 || major === 9 || major === 11 || major === 13) {
     suite.coverage = root.coverage as { [key: string]: Node };
     // Original admission includes parents which will never execute. Retain their exact unsigned
     // metadata independently of the narrower execution view.
@@ -4432,6 +4508,7 @@ function decodeValues(value: Node): { [field: string]: Value } | undefined {
   for (const field of Object.keys(value)) {
     const written = value[field] as { [key: string]: Node };
     const decoded: Value = { kind: written.kind as string };
+    if (Object.hasOwn(written, 'fixture')) decoded.fixture = written.fixture as string;
     if (Object.prototype.hasOwnProperty.call(written, 'value')) {
       decoded.value = plainNumbers(written.value);
     }
@@ -4575,6 +4652,8 @@ function decodeStep(value: Node): Step {
   if (Object.prototype.hasOwnProperty.call(written, 'response')) {
     step.response = decodeResponseObservation(plainNumbers(written.response));
   }
+  if (Object.hasOwn(written, 'fixtures')) step.fixtures = admitFixtures(written.fixtures);
+  if (step.step === 'expect_event_values') step.payload = decodeValues(written.payload) ?? {};
   if (Object.prototype.hasOwnProperty.call(written, 'left')) {
     step.left = plainNumbers(written.left) as ReadingReference;
   }
@@ -4638,6 +4717,11 @@ export function admitValues(value: Node, major: number, accessors: boolean): voi
     }
     const kind = text(written.kind);
     switch (kind) {
+      case 'fixture':
+        if (major < 12) throw new Error('fixture references require suite/12 or /13');
+        closed(written, 'kind fixture', '');
+        fixtureName(written.fixture);
+        break;
       case 'literal':
         closed(written, 'kind value', '');
         admitPayload(written.value);
@@ -4992,6 +5076,15 @@ export function admitStep(value: Node, major: number): void {
   let required = 'step';
   let optional = '';
   switch (tag) {
+    case 'resolve_fixtures':
+      if (major < 12) throw new Error('fixture resolution requires suite/12 or /13');
+      required += ' fixtures';
+      break;
+    case 'expect_event_values':
+      if (major < 12) throw new Error('resolved event values require suite/12 or /13');
+      required += ' event payload';
+      optional = 'shape';
+      break;
     case 'expect_response_payload':
       if (major < 8) {
         throw new Error('response payload requires suite/8 or /9');
@@ -5102,6 +5195,9 @@ export function admitStep(value: Node, major: number): void {
   for (const key of Object.keys(value)) {
     const held = value[key];
     switch (key) {
+      case 'fixtures':
+        admitFixtures(held);
+        break;
       case 'response':
         admitResponse(held);
         break;
@@ -5160,6 +5256,10 @@ export function admitStep(value: Node, major: number): void {
         break;
       case 'payload':
       case 'fields':
+        if (tag === 'expect_event_values') {
+          admitValues(held, major, false);
+          break;
+        }
         if (!isObject(held)) {
           throw new Error('payload must be object');
         }

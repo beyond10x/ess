@@ -1008,6 +1008,17 @@ pub fn synthesize(ir: &EssIr) -> Synthesis {
     lifecycle(ir, &actors, &mut suite, &mut refusals);
     invariants(ir, &actors, &mut suite, &mut refusals);
     bindings(ir, &actors, &mut suite, &mut refusals);
+    for (id, reason) in crate::fixtures::install(ir, &mut suite) {
+        suite.scenarios.remove(&id);
+        refusals.push(Refusal::about(
+            &id,
+            RefusalCause::NoWitness(WitnessGap {
+                path: reason,
+                type_ref: "fixture inputs".into(),
+                reason: "typed fixture resolution cannot execute this contract",
+            }),
+        ));
+    }
     suite.select_fresh_format();
 
     Synthesis {
@@ -1162,6 +1173,7 @@ pub(crate) fn needs_of(
                 }
             }
             ScenarioStep::ExpectEvent { event, .. }
+            | ScenarioStep::ExpectEventValues { event, .. }
             | ScenarioStep::EventuallyEvent { event, .. }
             | ScenarioStep::RedeliverEvent { event, .. }
             | ScenarioStep::CaptureInstance { event, .. } => {
@@ -1191,6 +1203,7 @@ pub(crate) fn needs_of(
             // Fixture setup is an adapter capability, not a declared command/event realization.
             // Keep upstream-backed view witnesses in the component that owns the view.
             ScenarioStep::EstablishEntity { .. }
+            | ScenarioStep::ResolveFixtures { .. }
             | ScenarioStep::ExpectOutcome { .. }
             | ScenarioStep::ExpectNoError
             | ScenarioStep::ExpectError { .. }
@@ -1288,11 +1301,27 @@ fn exercise(
         });
     }
     for event in &emitted {
-        steps.push(ScenarioStep::ExpectEvent {
-            event: event.clone(),
-            payload: determined_payload(outcome, event, &run.input),
-            shape: crate::response::event_shape(ir, event, outcome),
-        });
+        let literals = determined_payload(outcome, event, &run.input);
+        let shape = crate::response::event_shape(ir, event, outcome);
+        let mut payload = crate::fixtures::event_values(outcome, event, &run.input);
+        if payload.is_empty() {
+            steps.push(ScenarioStep::ExpectEvent {
+                event: event.clone(),
+                payload: literals,
+                shape,
+            });
+        } else {
+            payload.extend(
+                literals
+                    .into_iter()
+                    .map(|(key, value)| (key, ScenarioValue::literal(value))),
+            );
+            steps.push(ScenarioStep::ExpectEventValues {
+                event: event.clone(),
+                payload,
+                shape,
+            });
+        }
     }
     match crate::response::Observation::of(ir, command, outcome) {
         Ok(observations) => steps.extend(
@@ -1414,6 +1443,7 @@ fn run(
         });
     }
     let supplied = supply(
+        command,
         &input,
         outcome.subject.as_ref(),
         setup.instance.as_ref(),
@@ -1880,7 +1910,13 @@ fn invoke(
             force: outcome_ref.clone(),
         });
     }
-    let supplied = supply(&input, driver.outcome.subject.as_ref(), instance, bound);
+    let supplied = supply(
+        driver.command,
+        &input,
+        driver.outcome.subject.as_ref(),
+        instance,
+        bound,
+    );
     let settled = settled(ir, driver.outcome, &supplied);
     steps.push(ScenarioStep::ExecuteCommand {
         command: command_ref.clone(),
@@ -2045,6 +2081,7 @@ fn instance_name(entity: &QualifiedName, distinction: Distinction) -> InstanceNa
 /// invariant 13 makes an identity opaque — so replacing them cannot invalidate the decision that
 /// chose the rest of the input.
 fn supply(
+    command: &ResolvedCommand,
     input: &BTreeMap<String, Node>,
     subject: Option<&ResolvedSubject>,
     instance: Option<&InstanceName>,
@@ -2063,7 +2100,12 @@ fn supply(
                 }
                 _ => match bound.get(field) {
                     Some(owner) => ScenarioValue::instance(owner.clone()),
-                    None => ScenarioValue::literal(value.clone()),
+                    None => command.fixture_inputs.get(field).map_or_else(
+                        || ScenarioValue::literal(value.clone()),
+                        |fixture| ScenarioValue::Fixture {
+                            fixture: fixture.clone(),
+                        },
+                    ),
                 },
             };
             (field.clone(), supplied)
@@ -3520,6 +3562,7 @@ fn refused_here(
         command: command_ref.clone(),
         actor: actors.get(command).cloned(),
         input: supply(
+            attempt.command,
             &input,
             attempt.outcome.subject.as_ref(),
             Some(&arrangement.instance),

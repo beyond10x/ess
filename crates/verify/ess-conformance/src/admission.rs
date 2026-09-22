@@ -124,6 +124,8 @@ impl AdmittedSuite {
         self::suite(&suite)?;
         payload_agrees_with_its_shape(&suite)?;
         entity_setup(&suite)?;
+        crate::fixtures::admit(&suite)
+            .map_err(|reason| AdmissionError::new("InvalidFixtures", "$suite.scenarios", reason))?;
         let coverage = value
             .object()?
             .get("coverage")
@@ -179,16 +181,16 @@ fn validate_suite(value: &Json) -> Result<(), AdmissionError> {
     )?;
     let version = SuiteFormat::parse(p["suite_version"].text()?)
         .map_err(|e| p["suite_version"].error("UnsupportedSuiteVersion", e.to_string()))?;
-    if !matches!(version.major(), 1..=11) {
+    if !matches!(version.major(), 1..=13) {
         return Err(p["suite_version"].error(
             "UnsupportedSuiteVersion",
-            "execution readers admit suite majors 1–11",
+            "execution readers admit suite majors 1–13",
         ));
     }
-    if matches!(version.major(), 5 | 7 | 9 | 11) != root.contains_key("coverage") {
+    if matches!(version.major(), 5 | 7 | 9 | 11 | 13) != root.contains_key("coverage") {
         return Err(value.error(
             "InvalidCoverage",
-            "coverage is required exactly for suite/5, suite/7, suite/9 and suite/11",
+            "coverage is required exactly for suite/5, suite/7, suite/9, suite/11 and suite/13",
         ));
     }
     for scenario in root["scenarios"].object()?.values() {
@@ -223,6 +225,11 @@ fn values(value: &Json, major: u32, accessors: bool) -> Result<(), AdmissionErro
             .ok_or_else(|| v.error("MissingField", "kind"))?
             .text()?;
         match tag {
+            "fixture" if major >= 12 => {
+                let fields = v.closed(&["kind", "fixture"], &[])?;
+                ess_domain::command::fixture_inputs::FixtureName::new(fields["fixture"].text()?)
+                    .map_err(|error| v.error("InvalidFixtureName", error.to_string()))?;
+            }
             "literal" => {
                 let f = v.closed(&["kind", "value"], &[])?;
                 f["value"].payload()?;
@@ -357,10 +364,13 @@ fn step_value(value: &Json, major: u32) -> Result<(), AdmissionError> {
         || (major < 4 && matches!(tag, "expect_halt" | "eventually_halt"))
         || (major < 6 && matches!(tag, "establish_entity" | "expect_reading_order"))
         || (major < 8 && tag == "expect_response_payload")
+        || (major < 12 && matches!(tag, "resolve_fixtures" | "expect_event_values"))
     {
         return Err(value.error("UnsupportedVocabulary", "step requires a newer suite major"));
     }
     let (required, optional): (&[&str], &[&str]) = match tag {
+        "resolve_fixtures" => (&["step", "fixtures"], &[]),
+        "expect_event_values" => (&["step", "event", "payload"], &["shape"]),
         "establish_entity" => (
             &["step", "instance", "entity", "identity", "fields", "state"],
             &[],
@@ -390,6 +400,11 @@ fn step_value(value: &Json, major: u32) -> Result<(), AdmissionError> {
     };
     for (key, field) in value.closed(required, optional)? {
         match key.as_str() {
+            "fixtures" if tag == "resolve_fixtures" => {
+                let _: crate::fixtures::Contract = serde_json::from_str(&field.raw)
+                    .map_err(|error| field.error("InvalidFixtures", error.to_string()))?;
+            }
+            "payload" if tag == "expect_event_values" => values(field, major, false)?,
             "response" if tag == "expect_response_payload" => {
                 let _: crate::response::Observation = serde_json::from_str(&field.raw)
                     .map_err(|error| field.error("InvalidResponse", error.to_string()))?;

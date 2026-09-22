@@ -320,6 +320,8 @@ fn shape(synthesis: &Synthesis, id: &str) -> Vec<&'static str> {
     steps(synthesis, id)
         .iter()
         .map(|step| match step {
+            ScenarioStep::ResolveFixtures { .. } => "resolve fixtures",
+            ScenarioStep::ExpectEventValues { .. } => "event values",
             ScenarioStep::ExpectResponsePayload { .. } => "response payload",
             ScenarioStep::EstablishEntity { .. } => "establish entity",
             ScenarioStep::ConfigureExternalOutcome { .. } => "inject",

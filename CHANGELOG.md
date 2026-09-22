@@ -2,6 +2,13 @@
 
 ## [Unreleased]
 
+- Typed pre-execution fixture values for conformance: `ess/7` command `fixture_inputs`
+  and `ess-scenario/3` explicit `$fixture` references compile to suite formats 12/13.
+  Rust, Go and TypeScript resolve and validate independent values before session startup,
+  copy them per scenario, and retain event-value equality. Invalid values stop execution;
+  missing provider capability remains unsupported. Earlier fixture-free documents retain
+  their vocabulary. Browser replay explicitly refuses fixtures.
+
 ## [0.28.0] — 2026-09-21
 
 ### Added

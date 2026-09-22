@@ -1,0 +1,31 @@
+format: ess/7
+system: fixturetest
+version: v1
+domain: fixturetest.session
+types:
+  - name: fixturetest.session.PrincipalId
+    kind: newtype
+    of: Uuid
+events:
+  - name: fixturetest.session.Opened
+    fields:
+      - {name: principal_id, type: fixturetest.session.PrincipalId}
+      - {name: email, type: String}
+      - {name: region, type: String}
+commands:
+  - name: fixturetest.session.Open
+    input:
+      - {name: principal_id, type: fixturetest.session.PrincipalId}
+      - {name: email, type: String}
+      - {name: region, type: String}
+    fixture_inputs:
+      principal_id: current-principal-id
+      email: current-principal-email
+    outcomes:
+      - name: opened
+        emits: [fixturetest.session.Opened]
+        payload:
+          fixturetest.session.Opened:
+            principal_id: input.principal_id
+            email: input.email
+            region: input.region

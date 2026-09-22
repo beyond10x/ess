@@ -288,6 +288,7 @@ fn advance(
         next.steps.extend(observed);
         next.source.insert(view.into());
         let supplied = supply(
+            driver.command,
             &input,
             driver.outcome.subject.as_ref(),
             Some(&arrangement.instance),

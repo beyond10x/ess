@@ -199,6 +199,7 @@
 //! have shared since wave 1.
 
 pub mod finite;
+pub mod fixture_inputs;
 pub mod subject_fact;
 pub mod subject_state;
 
@@ -1250,6 +1251,9 @@ pub struct CommandSpec {
     pub name: QualifiedName,
     /// What the caller supplies, in declaration order.
     pub input: Vec<Field>,
+    /// Independently provisioned conformance inputs, keyed by declared input field.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub fixture_inputs: BTreeMap<String, fixture_inputs::FixtureName>,
     /// Closed fields of the response returned by this command.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub response: Vec<Field>,
@@ -1332,6 +1336,7 @@ impl CommandSpec {
 
         let (inputs, input_errors) = self.declared_input();
         errors.extend(input_errors);
+        errors.extend(fixture_inputs::validate(self));
         errors.extend(field_shape_at(&self.response, &self.site().key("response")));
         if let Some(types) = types {
             for field in &self.response {
@@ -2138,8 +2143,29 @@ fn check_payload_entry(
 /// Admit response vocabulary and the source-version-specific emitted payload completeness rule.
 pub(crate) fn validate_response_contracts(spec: &crate::Specification) -> ValidationErrors {
     let mut errors = ValidationErrors::new();
+    let mut fixture_types = std::collections::BTreeMap::new();
     let modern = spec.system().format.major() >= 4;
     for command in spec.commands().values() {
+        for (field, name) in &command.fixture_inputs {
+            if let Some(input) = command.input_field(field) {
+                if let Some(prior) = fixture_types.insert(name, &input.type_ref) {
+                    if prior != &input.type_ref {
+                        errors.push(ValidationError::at(
+                            command.site().key("fixture_inputs").named(field),
+                            ValidationCode::ConflictingDeclaration,
+                            format!("fixture `{name}` has incompatible declared types"),
+                        ));
+                    }
+                }
+            }
+        }
+        if spec.system().format.major() < 7 && !command.fixture_inputs.is_empty() {
+            errors.push(ValidationError::at(
+                command.site().key("fixture_inputs"),
+                ValidationCode::UnsupportedFormatVersion,
+                "fixture input declarations require specification format ess/7",
+            ));
+        }
         if !modern && !command.response.is_empty() {
             errors.push(ValidationError::at(
                 command.site().key("response"),
@@ -2708,6 +2734,9 @@ pub struct RawCommandSpec {
     /// What the caller supplies.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub input: Vec<Field>,
+    /// Independently provisioned conformance inputs, keyed by declared input field.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub fixture_inputs: BTreeMap<String, fixture_inputs::FixtureName>,
     /// Closed fields of the response returned by this command.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub response: Vec<Field>,
@@ -3317,6 +3346,7 @@ impl TryFrom<RawCommandSpec> for CommandSpec {
         let spec = Self {
             name: raw.name,
             input: raw.input,
+            fixture_inputs: raw.fixture_inputs,
             response: raw.response,
             outcomes,
             naming: raw.naming,
@@ -3465,6 +3495,7 @@ impl From<CommandSpec> for RawCommandSpec {
         Self {
             name: command.name,
             input: command.input,
+            fixture_inputs: command.fixture_inputs,
             response: command.response,
             outcomes: command.outcomes.into_iter().map(RawOutcome::from).collect(),
             naming: command.naming,
@@ -3580,6 +3611,7 @@ outcomes:
                 TypeRef::Named(name("billing.invoice.Money")),
             )],
             response: Vec::new(),
+            fixture_inputs: BTreeMap::new(),
             outcomes,
             naming: Naming::default(),
             refs: Refs::new(),
@@ -4747,6 +4779,7 @@ outcomes:
                 Field::new("amount", TypeRef::Named(name("billing.invoice.Money"))),
             ],
             response: Vec::new(),
+            fixture_inputs: BTreeMap::new(),
             outcomes: vec![
                 Outcome::when(
                     outcome_name("settled"),

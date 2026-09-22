@@ -2101,6 +2101,7 @@ on_failure: {escalate: {emits: billing.email.DeliveryEscalated}}
                 .map(|(field, kind)| Field::new(*field, type_ref(kind)))
                 .collect(),
             response: Vec::new(),
+            fixture_inputs: BTreeMap::new(),
             outcomes: Vec::new(),
             naming: Naming::default(),
             refs: Refs::new(),

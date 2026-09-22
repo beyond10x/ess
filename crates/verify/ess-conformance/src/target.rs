@@ -9,6 +9,7 @@
 //! | method | the construct that obliges it | the step that reaches it |
 //! |---|---|---|
 //! | [`identity`](ConformanceTarget::identity) | none — it names the implementation under test, which a report needs (§30) and a specification never mentions | — |
+//! | [`fixture_values`](ConformanceTarget::fixture_values) | explicit typed fixture declarations, independently resolved before scenario activity | [`ResolveFixtures`](crate::scenario::ScenarioStep::ResolveFixtures) |
 //! | [`begin_scenario`](ConformanceTarget::begin_scenario) / [`end_scenario`](ConformanceTarget::end_scenario) | scenario isolation (§8): observations from one scenario may not satisfy another | every scenario |
 //! | [`execute_command`](ConformanceTarget::execute_command) | `commands:`, their `outcomes:`, the `error:` a branch declares and what it `emits:` | [`ExecuteCommand`](crate::scenario::ScenarioStep::ExecuteCommand) |
 //! | [`query_view`](ConformanceTarget::query_view) | `views:` and their `consistency:` | [`QueryView`](crate::scenario::ScenarioStep::QueryView), [`EventuallyView`](crate::scenario::ScenarioStep::EventuallyView) |
@@ -20,13 +21,13 @@
 //! | [`observe_elapsed`](ConformanceTarget::observe_elapsed) | a timer, a wrap-up window, a TTL: a length of time the system's own behaviour turns on | [`ExpectNotBefore`](crate::scenario::ScenarioStep::ExpectNotBefore), [`ExpectWithin`](crate::scenario::ScenarioStep::ExpectWithin), [`ExpectQuiet`](crate::scenario::ScenarioStep::ExpectQuiet) |
 //! | [`scan_view`](ConformanceTarget::scan_view) | a view's `order_by:` read one row at a time: whether a consumer can stop the producer | [`ExpectHalt`](crate::scenario::ScenarioStep::ExpectHalt), [`EventuallyHalt`](crate::scenario::ScenarioStep::EventuallyHalt) |
 //!
-//! Seven of those twelve are §7's. The five that are not were added because a step in the closed
+//! Seven of these methods are §7's. The others were added because a step in the closed
 //! vocabulary could not otherwise be executed at all, and each is argued on its own method. None is
 //! a shortcut past a semantic: `redeliver_event` is the only way to perform the claim the word
 //! `at_least_once` makes, `observe_invocations` is the one §16 explicitly refuses to require, the
 //! two before `scan_view` are what a duration claim needs from a system that owns its own clock,
 //! and `scan_view` is the only place an implementation's own iteration is observable at all. Those
-//! four are the methods with a default body that answers [`TargetError::Unsupported`], which is what
+//! optional capabilities have a default body that answers [`TargetError::Unsupported`], which is what
 //! keeps a target written against the earlier interface compiling — and what stops it being read as
 //! agreeing with a claim it never checked.
 //!
@@ -35,6 +36,12 @@
 //! No clock, no seed, no id source — §7 says so and §37 says why: the runner owns every source of
 //! variation and hands it to the target. A target that needs a correlation id or a deadline is
 //! **given** one in the request.
+//!
+//! Explicit fixture values are the versioned exception for a deployed resource whose identity or
+//! canonical input was assigned outside the runner. The source declares each key and its type;
+//! [`fixture_values`](ConformanceTarget::fixture_values) supplies only pre-execution data, never a
+//! result-dependent expectation or an outcome. The runner validates and copies the complete result
+//! before opening the scenario. Provisioning and cleanup remain the provider's responsibility.
 //!
 //! [`observe_elapsed`](ConformanceTarget::observe_elapsed) does not put a clock here, and the
 //! distinction is worth stating because it looks like one. The runner still reads no clock of the
@@ -85,6 +92,20 @@ use crate::scenario::{
 /// See the [module documentation](self) for why it has exactly these methods and no assertion among
 /// them.
 pub trait ConformanceTarget {
+    /// Supply independently provisioned values before `BeginScenario` or any command.
+    ///
+    /// The provider owns provisioning and cleanup. It returns values, never expectations read
+    /// from the tested implementation's post-state. The runtime validates and freezes its answer.
+    fn fixture_values(
+        &self,
+        _scenario: &ScenarioContext,
+        _contract: &crate::fixtures::Contract,
+    ) -> Result<BTreeMap<String, Node>, TargetError> {
+        Err(TargetError::unsupported(
+            "fixture values",
+            "no pre-execution fixture provider",
+        ))
+    }
     /// Bind and re-admit the declared host authority, then activate the actual periodic loop.
     /// Named types, nested values and invariants must match this host's authoritative contract.
     fn open_periodic(

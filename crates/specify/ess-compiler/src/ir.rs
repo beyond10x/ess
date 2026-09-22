@@ -868,6 +868,9 @@ pub struct ResolvedCommand {
     pub domain: DomainHandle,
     /// Its input, in declaration order.
     pub input: Vec<ResolvedField>,
+    /// Source-declared fixture inputs; no generator-chosen placeholder may replace them.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub fixture_inputs: BTreeMap<String, ess_domain::command::fixture_inputs::FixtureName>,
     /// Closed declared response fields, omitted for legacy commands.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub response: Vec<ResolvedField>,

@@ -86,7 +86,7 @@ function decodeAccessorField(value: unknown): AccessorField {
   };
 }
 
-function decodeDeclaration(value: unknown): SelectionDeclaration {
+export function decodeDeclaration(value: unknown): SelectionDeclaration {
   const body = closed(value, '', 'kind of fields variants tag');
   return {
     kind: decodedString(body.kind, 'a declaration kind'),
@@ -202,23 +202,10 @@ export function validateResponseObservation(observation: ResponseObservation): v
   for (const label of [observation.command, observation.event]) {
     name(label, false);
   }
-  const used = new Set<string>();
   const roots = new Map<string, string>();
-  for (const list of [observation.fields, observation.targets]) {
-    const seen = new Set<string>();
-    for (const field of list) {
-      if (field.name === '' || seen.has(field.name)) {
-        throw new Error('duplicate/empty response field');
-      }
-      seen.add(field.name);
-      checkType(observation, field.type, used, new Set<string>(), 0);
-    }
-  }
+  validateTypedFields([observation.fields, observation.targets], observation.declarations);
   for (const field of observation.fields) {
     roots.set(field.name, field.type);
-  }
-  if (used.size !== declarationCount) {
-    throw new Error('unrelated response declarations');
   }
   for (const target of observation.targets) {
     const source = owned(observation.mappings, target.name);
@@ -229,6 +216,27 @@ export function validateResponseObservation(observation: ResponseObservation): v
   }
   if (goBytes(marshalShape(observation)) > BYTE_LIMIT) {
     throw new Error('response contract byte limit');
+  }
+}
+
+/** Admit a closed finite type graph for independently owned values. */
+export function validateTypedFields(
+  groups: AccessorField[][],
+  declarations: Record<string, SelectionDeclaration>,
+): void {
+  const used = new Set<string>();
+  for (const list of groups) {
+    const seen = new Set<string>();
+    for (const field of list) {
+      if (field.name === '' || seen.has(field.name)) {
+        throw new Error('duplicate/empty response field');
+      }
+      seen.add(field.name);
+      checkType({ declarations }, field.type, used, new Set<string>(), 0);
+    }
+  }
+  if (used.size !== Object.keys(declarations).length) {
+    throw new Error('unrelated response declarations');
   }
 }
 
@@ -245,7 +253,7 @@ export function responseAssignable(from: string, to: string): boolean {
 }
 
 function checkType(
-  observation: ResponseObservation,
+  observation: Pick<ResponseObservation, 'declarations'>,
   source: string,
   used: Set<string>,
   stack: Set<string>,
@@ -447,7 +455,17 @@ export function expectResponsePayload(run: ResponseRun, index: number, step: Ste
 export function admitResponse(value: unknown): void {
   const root = closed(value, 'command outcome event fields declarations mappings targets', '');
   admitOutcome(root.outcome);
-  const declarations = root.declarations;
+  admitTypedDeclarations(root.declarations);
+  for (const key of ['fields', 'targets']) {
+    for (const field of array(root[key])) {
+      admitAccessorField(field);
+    }
+  }
+  decodeResponseObservation(value);
+}
+
+/** The closed declaration grammar shared by response and fixture authority. */
+export function admitTypedDeclarations(declarations: unknown): void {
   if (typeof declarations !== 'object' || declarations === null || Array.isArray(declarations)) {
     throw new Error('response declarations must be object');
   }
@@ -480,12 +498,6 @@ export function admitResponse(value: unknown): void {
       }
     }
   }
-  for (const key of ['fields', 'targets']) {
-    for (const field of array(root[key])) {
-      admitAccessorField(field);
-    }
-  }
-  decodeResponseObservation(value);
 }
 
 // ---- snapshotting a returned result ---------------------------------------------------------------

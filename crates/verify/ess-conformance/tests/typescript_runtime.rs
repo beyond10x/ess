@@ -330,6 +330,16 @@ fn the_emitted_package_typechecks_as_an_adopter_compiles_it() {
     }
 
     let package = out.join(ess_conformance::ts::PACKAGE);
+    std::fs::write(
+        package.join("src/fixture-provider.ts"),
+        "import type { FixtureContract, Target } from './index.js';\n\
+         export const provider: NonNullable<Target['fixtureValues']> = (_context, contract: FixtureContract) => {\n\
+           const values: Record<string, unknown> = {};\n\
+           for (const field of contract.fields) values[field.name] = 'independently provisioned';\n\
+           return values;\n\
+         };\n",
+    )
+    .expect("an adopter can name the fixture provider contract through the package entry");
     let (ok, printed) = typecheck(&tsc, &package.join("tsconfig.json"), &modules);
     assert!(
         ok,

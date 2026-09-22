@@ -145,3 +145,22 @@ Exactly the three RootDefinitionsContainer rows are re-reviewed at that shape. N
 is exempted and no behavior coverage is claimed. The separate pre-existing missing classification
 for `ess_cli::bin(ess)::enum::SuiteTarget/variant/Typescript` still refuses consumer accounting;
 this container review does not repair or conceal that registry debt.
+
+## ess/7 container review — 2026-09-22
+
+The schema gains `RawCommand.fixture_inputs` and its `FixtureName` declaration.
+These are authored-domain semantics with their own descendant obligations. They
+do not change the three CLI pipelines into consumers of the JSON Schema document.
+The root dialect, six literal relationships, consumer profile fingerprints and
+executed metadata guard remain unchanged.
+
+The existing wire extractor computes the root-definitions shape as
+`eb15e1888a628f69e5b1c1b6f74ee6e6851eb311adeaa8a7b2c7e450ac592c06`, replacing
+`68e68c7cb8cc7b6a3a0dbe854c1b74ab54c9da825009a85770efa2d4f3e23322`.
+Only the three RootDefinitionsContainer shape pins change. This review adds no
+classification, baseline exception or behavioral coverage claim. The separate
+consumer-entry classification refusal noted above remains unresolved.
+
+Other schema changes require recomputing this conservative hash from the combined
+generated schema before integration; choosing one branch's hash does not qualify
+the combined container or any descendant.
