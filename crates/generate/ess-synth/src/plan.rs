@@ -626,6 +626,9 @@ fn behavior_contract(command: &ResolvedCommand) -> String {
                 subject.entity
             );
         }
+        if let Some(replay) = &outcome.replays {
+            let _ = write!(branch, ", returns the exact retained result of `{}` without errors, events, or subject changes", replay.origin);
+        }
         for event in &outcome.emits {
             let _ = write!(branch, ", emits `{event}`");
         }

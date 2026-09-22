@@ -179,16 +179,16 @@ fn validate_suite(value: &Json) -> Result<(), AdmissionError> {
     )?;
     let version = SuiteFormat::parse(p["suite_version"].text()?)
         .map_err(|e| p["suite_version"].error("UnsupportedSuiteVersion", e.to_string()))?;
-    if !matches!(version.major(), 1..=11) {
+    if !matches!(version.major(), 1..=13) {
         return Err(p["suite_version"].error(
             "UnsupportedSuiteVersion",
-            "execution readers admit suite majors 1–11",
+            "execution readers admit suite majors 1–13",
         ));
     }
-    if matches!(version.major(), 5 | 7 | 9 | 11) != root.contains_key("coverage") {
+    if matches!(version.major(), 5 | 7 | 9 | 11 | 13) != root.contains_key("coverage") {
         return Err(value.error(
             "InvalidCoverage",
-            "coverage is required exactly for suite/5, suite/7, suite/9 and suite/11",
+            "coverage is required exactly for suite/5, suite/7, suite/9, suite/11 and suite/13",
         ));
     }
     for scenario in root["scenarios"].object()?.values() {
@@ -367,6 +367,12 @@ fn step_value(value: &Json, major: u32) -> Result<(), AdmissionError> {
         ),
         "expect_reading_order" => (&["step", "left", "right", "order"], &[]),
         "expect_response_payload" => (&["step", "response"], &[]),
+        "capture_command_result" | "expect_replay_result" if major >= 12 => {
+            (&["step", "capture"], &[])
+        }
+        "expect_no_events" if major >= 12 => (&["step"], &[]),
+        "snapshot_complete_subject" if major >= 12 => (&["step", "view", "subject", "shape"], &[]),
+        "expect_complete_subject_unchanged" if major >= 12 => (&["step", "view"], &[]),
         "configure_external_outcome" => (&["step", "force"], &[]),
         "execute_command" => (&["step", "command"], &["actor", "input"]),
         "expect_outcome" => (&["step", "outcome"], &[]),
@@ -390,6 +396,10 @@ fn step_value(value: &Json, major: u32) -> Result<(), AdmissionError> {
     };
     for (key, field) in value.closed(required, optional)? {
         match key.as_str() {
+            "capture" if matches!(tag, "capture_command_result" | "expect_replay_result") => {
+                let _: crate::replay::Observation = serde_json::from_str(&field.raw)
+                    .map_err(|error| field.error("InvalidReplay", error.to_string()))?;
+            }
             "response" if tag == "expect_response_payload" => {
                 let _: crate::response::Observation = serde_json::from_str(&field.raw)
                     .map_err(|error| field.error("InvalidResponse", error.to_string()))?;
@@ -409,6 +419,10 @@ fn step_value(value: &Json, major: u32) -> Result<(), AdmissionError> {
             "fields" | "payload" => {
                 field.object()?;
                 field.payload()?;
+            }
+            "shape" if tag == "snapshot_complete_subject" => {
+                let _: crate::subject::SubjectShape = serde_json::from_str(&field.raw)
+                    .map_err(|error| field.error("InvalidSubjectShape", error.to_string()))?;
             }
             "shape" => shape(field)?,
             "expectation" => expectation(field, major)?,
@@ -447,6 +461,7 @@ fn response_payloads(suite: &ConformanceSuite) -> Result<(), AdmissionError> {
 
 /// Check directly constructed suites before artifact creation or target effects.
 pub fn suite(suite: &ConformanceSuite) -> Result<(), AdmissionError> {
+    crate::replay::admit_suite(suite)?;
     crate::quoted_predicate_format::admit_suite(suite)?;
     response_payloads(suite)?;
     entity_setup(suite)?;

@@ -1385,6 +1385,7 @@ fn outcome_changes(
                 // Canonical equality, per D-1: a `when:` rewritten with different spacing resolves
                 // to the same predicate and is silent here; anything canonically different is
                 // *changed*, and nothing below reads a predicate's content beyond `==`.
+                outcome_observations(old, new, name, push);
                 if old.condition != new.condition {
                     push(CommandChange::OutcomeConditionChanged {
                         outcome: (*name).to_owned(),
@@ -2104,6 +2105,9 @@ fn residual_command(declaration: &mut serde_json::Value) {
                         "condition",
                         "subject",
                         "test_strategy",
+                        "complete_refusal",
+                        "replays",
+                        "retains_result",
                         "emits",
                         "payload",
                         "error",
@@ -2114,6 +2118,30 @@ fn residual_command(declaration: &mut serde_json::Value) {
                 );
             });
         }
+    }
+}
+
+fn outcome_observations(
+    old: &ResolvedOutcome,
+    new: &ResolvedOutcome,
+    name: &str,
+    push: &mut impl FnMut(CommandChange),
+) {
+    if old.complete_refusal != new.complete_refusal {
+        push(CommandChange::OutcomeObservationChanged {
+            outcome: name.to_owned(),
+            before: old.complete_refusal,
+            after: new.complete_refusal,
+        });
+    }
+    let before = old.replays.as_ref().map(|r| r.origin.to_string());
+    let after = new.replays.as_ref().map(|r| r.origin.to_string());
+    if before != after {
+        push(CommandChange::OutcomeReplayChanged {
+            outcome: name.to_owned(),
+            before,
+            after,
+        });
     }
 }
 

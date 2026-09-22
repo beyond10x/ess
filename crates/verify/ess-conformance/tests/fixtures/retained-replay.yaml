@@ -1,0 +1,47 @@
+format: ess/7
+system: retained
+version: v1
+domain: retained.core
+entities:
+  - name: retained.core.Record
+    identity: {name: record_id, type: Uuid}
+    fields:
+      - {name: value, type: String}
+      - {name: stamp, type: Timestamp}
+    lifecycle:
+      initial: Committed
+      states: [Committed]
+      terminal: [Committed]
+commands:
+  - name: retained.core.Seed
+    input: [{name: document, type: String}]
+    response:
+      - {name: revision_id, type: Uuid}
+      - {name: stamp, type: Timestamp}
+      - {name: number, type: Integer}
+      - {name: optional, type: Optional<String>}
+      - {name: values, type: List<Integer>}
+    outcomes:
+      - name: seeded
+        creates: retained.core.Record
+        instance: record_id
+        sets: {value: input.document}
+        emits: [retained.core.Seeded]
+        payload:
+          retained.core.Seeded:
+            record_id: {generated: true}
+      - name: replayed
+        external: retained logical input and trusted context match
+        replays: seeded
+events:
+  - name: retained.core.Seeded
+    fields: [{name: record_id, type: Uuid}]
+views:
+  - name: retained.core.Records
+    source: retained.core.Record
+    consistency: read_your_writes
+    fields:
+      - {name: record_id, type: Uuid}
+      - {name: value, type: String}
+      - {name: stamp, type: Timestamp}
+      - {name: state, type: retained.core.Record.State}

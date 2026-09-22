@@ -254,12 +254,12 @@ this block, a count that does not match, and a listed file that has none, are ea
 accessor.rs 1 0
 actor.rs 1 0
 binding.rs 28 0
-command.rs 13 36
+command.rs 13 40
 component.rs 15 9
 domain.rs 5 0
 entity.rs 16 4
 expression.rs 1 0
-primitive_admission.rs 7 3
+primitive_admission.rs 7 4
 selection.rs 2 0
 spec.rs 7 0
 system.rs 10 0

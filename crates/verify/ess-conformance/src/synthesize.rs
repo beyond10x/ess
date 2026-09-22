@@ -1006,6 +1006,7 @@ pub fn synthesize(ir: &EssIr) -> Synthesis {
         }
     }
     lifecycle(ir, &actors, &mut suite, &mut refusals);
+    state_refusals(ir, &actors, &mut suite, &mut refusals);
     invariants(ir, &actors, &mut suite, &mut refusals);
     bindings(ir, &actors, &mut suite, &mut refusals);
     suite.select_fresh_format();
@@ -1135,6 +1136,9 @@ pub(crate) fn needs_of(
     let mut needs: BTreeSet<EssSemanticRef> = BTreeSet::new();
     for step in &scenario.steps {
         match step {
+            ScenarioStep::CaptureCommandResult { capture } | ScenarioStep::ExpectReplayResult { capture } => {
+                if !handles(ir, component, capture.origin.command.name()) { needs.insert(capture.origin.command.clone().into()); }
+            }
             ScenarioStep::ExpectResponsePayload { response } => {
                 if !handles(ir, component, response.command.name()) { needs.insert(response.command.clone().into()); }
                 if !emits(ir, component, response.event.name()) { needs.insert(response.event.clone().into()); }
@@ -1170,6 +1174,8 @@ pub(crate) fn needs_of(
                 }
             }
             ScenarioStep::QueryView { view, .. }
+            | ScenarioStep::SnapshotCompleteSubject { view, .. }
+            | ScenarioStep::ExpectCompleteSubjectUnchanged { view }
             | ScenarioStep::SnapshotSubject { view, .. }
             | ScenarioStep::ExpectSubjectUnchanged { view }
             | ScenarioStep::ExpectView { view, .. }
@@ -1191,6 +1197,7 @@ pub(crate) fn needs_of(
             // Fixture setup is an adapter capability, not a declared command/event realization.
             // Keep upstream-backed view witnesses in the component that owns the view.
             ScenarioStep::EstablishEntity { .. }
+            | ScenarioStep::ExpectNoEvents
             | ScenarioStep::ExpectOutcome { .. }
             | ScenarioStep::ExpectNoError
             | ScenarioStep::ExpectError { .. }
@@ -1390,6 +1397,24 @@ fn run(
     outcome: &ResolvedOutcome,
     actors: &BTreeMap<QualifiedName, ActorRef>,
 ) -> Result<Run, RefusalCause> {
+    if let Some(replay) = &outcome.replays {
+        return run_replay(ir, command, outcome, replay, actors);
+    }
+    if is_state_refusal(command, outcome) {
+        let subject = command
+            .selection_subject(outcome)
+            .expect("validated common selection subject");
+        let mut first = None;
+        for state in &ir.entity(&subject.entity).lifecycle.states {
+            match run_state_refusal(ir, command, outcome, state, actors) {
+                Ok(run) => return Ok(run),
+                Err(reason) => {
+                    first.get_or_insert(reason);
+                }
+            }
+        }
+        return Err(first.expect("nonempty finite lifecycle"));
+    }
     let (mut setup, input) = if subject_fact::uses(command) && outcome.subject.is_some() {
         subject_fact::prepare(ir, command, outcome, actors)?
     } else if has_subject_guards(command) {
@@ -1470,6 +1495,363 @@ fn run(
         source,
         settled,
     })
+}
+
+fn is_state_refusal(command: &ResolvedCommand, outcome: &ResolvedOutcome) -> bool {
+    has_subject_guards(command)
+        && state_default(outcome)
+        && outcome.error.is_some()
+        && outcome.subject.is_none()
+}
+
+fn run_state_refusal(
+    ir: &EssIr,
+    command: &ResolvedCommand,
+    outcome: &ResolvedOutcome,
+    state: &StateName,
+    actors: &BTreeMap<QualifiedName, ActorRef>,
+) -> Result<Run, RefusalCause> {
+    let input = reach_in_state(ir, command, outcome, state, Distinction::PLAIN)?;
+    let subject = command
+        .selection_subject(outcome)
+        .expect("validated common selection subject");
+    let arranged = arrange_first(
+        ir,
+        &subject.entity,
+        std::slice::from_ref(state),
+        actors,
+        Distinction::PLAIN,
+        &[],
+    )
+    .map_err(|reason| RefusalCause::InstanceRequired {
+        entity: EntityRef::from(&subject.entity),
+        need: InstanceNeed::Updates,
+        reason,
+    })?;
+    let input = supply(
+        &input,
+        Some(subject),
+        Some(&arranged.instance),
+        &BTreeMap::new(),
+    );
+    let setup = Setup {
+        instance: Some(arranged.instance.clone()),
+        after: Some(state.clone()),
+        settled: arranged.settled.clone(),
+        ..Setup::none()
+    };
+    let preservation = subject_fact::preserve_complete_subject(ir, subject, &setup)?;
+    let (observed, view) = observe_selection_subject(
+        ir,
+        subject,
+        &arranged.instance,
+        state,
+        &outcome.name.to_string(),
+    )?;
+    let mut steps = arranged.steps;
+    steps.extend(observed);
+    steps.extend(preservation.before);
+    let actor = actors.get(&command.name).cloned();
+    let mut invoke = vec![
+        ScenarioStep::ExecuteCommand {
+            command: CommandRef::new(command.name.clone()),
+            actor: actor.clone(),
+            input: input.clone(),
+        },
+        ScenarioStep::ExpectOutcome {
+            outcome: OutcomeRef::new(CommandRef::new(command.name.clone()), outcome.name.clone()),
+        },
+        ScenarioStep::ExpectNoEvents,
+    ];
+    invoke.extend(preservation.after);
+    let mut source = arranged.source;
+    source.extend(preservation.source);
+    source.insert(view.into());
+    source.insert(
+        OutcomeRef::new(CommandRef::new(command.name.clone()), outcome.name.clone()).into(),
+    );
+    Ok(Run {
+        setup: steps,
+        invoke,
+        after: Some(state.clone()),
+        instance: Some(arranged.instance),
+        actor,
+        input,
+        source,
+        settled: arranged.settled,
+    })
+}
+
+fn state_refusals(
+    ir: &EssIr,
+    actors: &BTreeMap<QualifiedName, ActorRef>,
+    suite: &mut ConformanceSuite,
+    refusals: &mut Vec<Refusal>,
+) {
+    for command in ir.commands().values() {
+        for outcome in command
+            .outcomes
+            .iter()
+            .filter(|o| is_state_refusal(command, o))
+        {
+            let subject = command
+                .selection_subject(outcome)
+                .expect("validated common selection subject");
+            for state in &ir.entity(&subject.entity).lifecycle.states {
+                let id = ScenarioId::Refusal {
+                    entity: EntityRef::from(&subject.entity),
+                    state: state.clone(),
+                    command: CommandRef::new(command.name.clone()),
+                    refuses: true,
+                };
+                match run_state_refusal(ir, command, outcome, state, actors) {
+                    Ok(run) => {
+                        let mut steps = run.steps();
+                        steps.push(ScenarioStep::ExpectError {
+                            error: ErrorRef::from(outcome.error.as_ref().expect("named refusal")),
+                            fields: BTreeMap::new(),
+                        });
+                        insert(
+                            suite,
+                            id,
+                            ConformanceScenario::new(
+                                ScenarioPurpose::new(format!(
+                                    "`{}` refuses in held state `{state}` without effects",
+                                    command.name
+                                ))
+                                .expect("nonempty purpose"),
+                                steps,
+                                run.source,
+                            ),
+                            refusals,
+                        );
+                    }
+                    Err(RefusalCause::GuardUnsatisfiable { .. }) => {}
+                    Err(cause) => refusals.push(Refusal::about(&id, cause)),
+                }
+            }
+        }
+    }
+}
+
+fn run_replay(
+    ir: &EssIr,
+    command: &ResolvedCommand,
+    outcome: &ResolvedOutcome,
+    replay: &ess_compiler::ir::ResolvedReplay,
+    actors: &BTreeMap<QualifiedName, ActorRef>,
+) -> Result<Run, RefusalCause> {
+    let original = command.replay_origin(replay);
+    let origin = run(ir, command, original, actors)?;
+    let instance = origin.instance.clone().unwrap_or_else(|| {
+        instance_name(&ir.entity(&replay.subject.entity).name, Distinction::PLAIN)
+    });
+    let (eligible_steps, eligible_source) =
+        replay_eligibility(ir, command, outcome, &origin, &replay.subject, &instance)?;
+    let capture = crate::replay::Observation::of(ir, command, outcome, instance.clone()).map_err(
+        |reason| {
+            RefusalCause::NoWitness(WitnessGap {
+                path: format!("{}.response: {reason}", command.name),
+                type_ref: "retained response".into(),
+                reason: "exact retained-result observation cannot execute this response contract",
+            })
+        },
+    )?;
+    let mut setup = origin.steps();
+    setup.push(ScenarioStep::ExpectNoError);
+    for event in &original.emits {
+        let event = EventRef::from(event);
+        setup.push(ScenarioStep::ExpectEvent {
+            payload: determined_payload(original, &event, &origin.input),
+            shape: crate::response::event_shape(ir, &event, original),
+            event,
+        });
+    }
+    if let ResolvedInstance::Observed { event, field } = &replay.subject.instance {
+        setup.push(ScenarioStep::CaptureInstance {
+            instance: instance.clone(),
+            entity: EntityRef::from(&replay.subject.entity),
+            event: EventRef::from(event),
+            field: field.name.clone(),
+        });
+    }
+    setup.push(ScenarioStep::CaptureCommandResult {
+        capture: capture.clone(),
+    });
+    setup.extend(eligible_steps);
+    let preservation = subject_fact::preserve_complete_subject(
+        ir,
+        &replay.subject,
+        &Setup {
+            instance: Some(instance.clone()),
+            after: origin.after.clone(),
+            settled: origin.settled.clone(),
+            ..Setup::none()
+        },
+    )?;
+    setup.extend(preservation.before);
+    let mut invoke = vec![
+        ScenarioStep::ExecuteCommand {
+            command: capture.replay.command.clone(),
+            actor: origin.actor.clone(),
+            input: origin.input.clone(),
+        },
+        ScenarioStep::ExpectOutcome {
+            outcome: capture.replay.clone(),
+        },
+        ScenarioStep::ExpectReplayResult { capture },
+    ];
+    invoke.extend(preservation.after);
+    let mut source = origin.source;
+    source.extend(eligible_source);
+    source.extend(preservation.source);
+    source.insert(
+        OutcomeRef::new(CommandRef::new(command.name.clone()), original.name.clone()).into(),
+    );
+    source.insert(EntityRef::from(&replay.subject.entity).into());
+    Ok(Run {
+        setup,
+        invoke,
+        instance: Some(instance),
+        after: origin.after,
+        actor: origin.actor,
+        input: origin.input,
+        source,
+        settled: origin.settled,
+    })
+}
+
+fn replay_eligibility(
+    ir: &EssIr,
+    command: &ResolvedCommand,
+    outcome: &ResolvedOutcome,
+    origin: &Run,
+    subject: &ResolvedSubject,
+    instance: &InstanceName,
+) -> Result<(Vec<ScenarioStep>, BTreeSet<EssSemanticRef>), RefusalCause> {
+    let facts = crate::input::replay_facts(ir, command, &origin.input)
+        .map_err(RefusalCause::WitnessRejected)?;
+    let held = origin
+        .after
+        .as_ref()
+        .expect("replay origin creates or moves its subject");
+    let mut observed = BTreeSet::new();
+    let eligible = match &outcome.condition {
+        ResolvedCondition::External { .. } => true,
+        ResolvedCondition::ExternalWhen { predicate, .. } => decides(&facts, &[predicate], true)?,
+        _ => {
+            let mut selected = Vec::new();
+            for branch in command
+                .outcomes
+                .iter()
+                .filter(|branch| !state_default(branch))
+            {
+                if replay_condition(ir, command, branch, subject, origin, &facts, &mut observed)? {
+                    selected.push(branch);
+                }
+            }
+            if selected.is_empty() {
+                selected.extend(
+                    command
+                        .outcomes
+                        .iter()
+                        .filter(|branch| state_default(branch)),
+                );
+            }
+            selected.len() == 1 && selected[0].name == outcome.name
+        }
+    };
+    if !eligible {
+        return Err(RefusalCause::GuardUnsatisfiable {
+            predicate: format!(
+                "{} selected on the identical original input in post-origin state {held}",
+                outcome.name
+            ),
+            tried: 1,
+        });
+    }
+    let mut steps = Vec::new();
+    let mut source = BTreeSet::new();
+    if observed.remove(EntitySpec::STATE) {
+        let (observation, view) =
+            observe_selection_subject(ir, subject, instance, held, outcome.name.as_str())?;
+        steps.extend(observation);
+        source.insert(view.into());
+    }
+    let arrangement = Arrangement {
+        instance: instance.clone(),
+        state: held.clone(),
+        steps: Vec::new(),
+        source: BTreeSet::new(),
+        settled: origin.settled.clone(),
+    };
+    for field in observed {
+        let (observation, view) = subject_fact::observe(ir, &subject.entity, &field, &arrangement)?;
+        steps.extend(observation);
+        source.insert(view.into());
+    }
+    Ok((steps, source))
+}
+
+fn replay_condition(
+    ir: &EssIr,
+    command: &ResolvedCommand,
+    branch: &ResolvedOutcome,
+    subject: &ResolvedSubject,
+    origin: &Run,
+    facts: &crate::InputFacts<'_>,
+    observed: &mut BTreeSet<String>,
+) -> Result<bool, RefusalCause> {
+    let held = origin
+        .after
+        .as_ref()
+        .expect("replay origin has a post-state");
+    let settled = &origin.settled;
+    let predicate = match &branch.condition {
+        ResolvedCondition::When { predicate } => Some(predicate),
+        ResolvedCondition::SubjectState { predicate, .. }
+        | ResolvedCondition::StateChange { predicate, .. } => {
+            observed.insert(EntitySpec::STATE.into());
+            if !admits_held_state(&branch.condition, held) {
+                return Ok(false);
+            }
+            predicate.as_ref()
+        }
+        ResolvedCondition::SubjectField {
+            field,
+            equals,
+            predicate,
+        } => {
+            observed.insert(field.clone());
+            let actual = settled
+                .get(field)
+                .and_then(|value| value.value.as_literal())
+                .and_then(Node::as_text)
+                .ok_or_else(|| {
+                    RefusalCause::NoWitness(WitnessGap {
+                        path: format!("{}.{}", subject.entity, field),
+                        type_ref: "post-origin subject fact".into(),
+                        reason:
+                            "the original invocation did not establish the replay selection fact",
+                    })
+                })?;
+            if actual != equals {
+                return Ok(false);
+            }
+            predicate.as_ref()
+        }
+        ResolvedCondition::WrongState => {
+            observed.insert(EntitySpec::STATE.into());
+            return Ok(ir
+                .wrong_states(command)
+                .get(&subject.entity)
+                .is_some_and(|states| states.contains(held)));
+        }
+        ResolvedCondition::Otherwise
+        | ResolvedCondition::External { .. }
+        | ResolvedCondition::ExternalWhen { .. } => return Ok(false),
+    };
+    decides(facts, &predicate.into_iter().collect::<Vec<_>>(), true)
 }
 
 /// What has to be true before a branch can be run, and what is true of its subject afterwards.
@@ -2264,6 +2646,16 @@ fn observe_subject_state(
         .ok_or(RefusalCause::StrategyWithoutGuard {
             strategy: outcome.test_strategy,
         })?;
+    observe_selection_subject(ir, subject, instance, state, &outcome.name.to_string())
+}
+
+fn observe_selection_subject(
+    ir: &EssIr,
+    subject: &ResolvedSubject,
+    instance: &InstanceName,
+    state: &StateName,
+    label: &str,
+) -> Result<(Vec<ScenarioStep>, ViewRef), RefusalCause> {
     let entity = ir.entity(&subject.entity);
     let view = ir.views().values().find(|view| {
         view.source == subject.entity && view.params.is_empty() && view.filter.is_none()
@@ -2271,7 +2663,7 @@ fn observe_subject_state(
             && view.field(&entity.identity.name).is_some_and(|field| field.type_ref == entity.identity.type_ref)
             && view.field(EntitySpec::STATE).is_some_and(|field| field.type_ref == entity.state_field().type_ref)
     }).ok_or_else(|| RefusalCause::NoWitness(WitnessGap {
-        path: format!("{}.subject_state", outcome.name),
+        path: format!("{label}.subject_state"),
         type_ref: entity.name.to_string(),
         reason: "subject-state selection requires a declared unfiltered immediate view projecting identity and lifecycle state",
     }))?;
@@ -2338,7 +2730,9 @@ fn reach(
     outcome: &ResolvedOutcome,
     distinction: Distinction,
 ) -> Result<BTreeMap<String, Node>, RefusalCause> {
-    if matches!(outcome.condition, ResolvedCondition::ExternalWhen { .. }) {
+    // External setup chooses a declared cause independently of the ordinary state partition.
+    // Both guarded and unguarded external outcomes still use their own input eligibility.
+    if outcome.test_strategy == TestStrategy::InjectFault {
         return reach_external(ir, command, outcome, distinction);
     }
     // `SubjectState` names exactly one state, so the input can be chosen against it here.
@@ -2376,6 +2770,7 @@ fn reach(
         // back an arbitrary candidate presented as the one that reaches the branch, which is the
         // invention this crate refuses everywhere else — so it is a drift alarm.
         TestStrategy::ArrangeState
+        | TestStrategy::ReplayResult
         | TestStrategy::ConstructInputInState
         | TestStrategy::ObserveSubjectFact => {
             return Err(RefusalCause::StrategyWithoutGuard { strategy })
@@ -3317,6 +3712,7 @@ pub(crate) fn reachable_types(
 /// One line saying what the scenario proves, for the person reading a report.
 fn purpose(command: &ResolvedCommand, outcome: &ResolvedOutcome) -> ScenarioPurpose {
     let reached = match outcome.test_strategy {
+        TestStrategy::ReplayResult => "an observed originating success and its retained result",
         TestStrategy::ConstructInput => "an input that satisfies that branch's guard",
         TestStrategy::ObserveSubjectFact => {
             "an independently observed subject enum fact and an eligible input"
@@ -3490,32 +3886,20 @@ fn refused_here(
         .collect();
     let attempt = movers.first().copied()?;
 
-    let arrangement = match arrange(ir, handle, state, actors, Distinction::PLAIN, &[]) {
-        Ok(arrangement) => arrangement,
-        Err(reason) => {
-            refusals.push(Refusal::about(
-                id,
-                RefusalCause::InstanceRequired {
-                    entity,
-                    need: InstanceNeed::InState {
-                        state: state.clone(),
-                    },
-                    reason,
-                },
-            ));
-            return None;
-        }
-    };
-    let input = match reach(ir, attempt.command, attempt.outcome, Distinction::PLAIN) {
-        Ok(input) => input,
-        Err(cause) => {
-            refusals.push(Refusal::about(id, cause));
-            return None;
-        }
-    };
+    let (arrangement, input) = refusal_arrangement(ir, handle, state, actors, attempt)
+        .map_err(|cause| refusals.push(Refusal::about(id, cause)))
+        .ok()?;
 
     let command_ref = CommandRef::new(command.clone());
+    let preservation = complete_wrong_state(ir, attempt, &arrangement)
+        .map_err(|cause| {
+            refusals.push(Refusal::about(id, cause));
+        })
+        .ok()?;
     let mut steps = arrangement.steps;
+    if let Some(preservation) = &preservation {
+        steps.extend(preservation.before.iter().cloned());
+    }
     steps.push(ScenarioStep::ExecuteCommand {
         command: command_ref.clone(),
         actor: actors.get(command).cloned(),
@@ -3590,6 +3974,12 @@ fn refused_here(
     }
     source.extend(forbidden.into_iter().map(EssSemanticRef::from));
 
+    if let Some(preservation) = preservation {
+        steps.push(ScenarioStep::ExpectNoEvents);
+        steps.extend(preservation.after);
+        source.extend(preservation.source);
+    }
+
     let text = match (&reported, accepted) {
         (Some(error), _) => format!(
             "`{command}` does not move a `{entity}` that is in `{state}`, and reports `{error}`"
@@ -3600,6 +3990,51 @@ fn refused_here(
         (None, false) => format!("`{command}` does not move a `{entity}` that is in `{state}`"),
     };
     Some(ConformanceScenario::new(clipped(&text), steps, source))
+}
+
+/// One line saying which move a transition scenario proves, and by which verb.
+fn refusal_arrangement(
+    ir: &EssIr,
+    handle: &EntityHandle,
+    state: &StateName,
+    actors: &BTreeMap<QualifiedName, ActorRef>,
+    attempt: &Driver<'_>,
+) -> Result<(Arrangement, BTreeMap<String, Node>), RefusalCause> {
+    let arrangement =
+        arrange(ir, handle, state, actors, Distinction::PLAIN, &[]).map_err(|reason| {
+            RefusalCause::InstanceRequired {
+                entity: EntityRef::from(handle),
+                need: InstanceNeed::InState {
+                    state: state.clone(),
+                },
+                reason,
+            }
+        })?;
+    let input = reach(ir, attempt.command, attempt.outcome, Distinction::PLAIN)?;
+    Ok((arrangement, input))
+}
+
+/// Full refusal observation is an explicit compiler obligation of the new source profile.
+fn complete_wrong_state(
+    ir: &EssIr,
+    attempt: &Driver<'_>,
+    arrangement: &Arrangement,
+) -> Result<Option<subject_fact::Preservation>, RefusalCause> {
+    if !attempt
+        .command
+        .outcomes
+        .iter()
+        .any(|outcome| outcome.complete_refusal)
+    {
+        return Ok(None);
+    }
+    let setup = Setup {
+        instance: Some(arrangement.instance.clone()),
+        after: Some(arrangement.state.clone()),
+        settled: arrangement.settled.clone(),
+        ..Setup::none()
+    };
+    subject_fact::preserve_complete_subject(ir, subject(attempt), &setup).map(Some)
 }
 
 /// One line saying which move a transition scenario proves, and by which verb.

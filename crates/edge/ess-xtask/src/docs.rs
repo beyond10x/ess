@@ -93,11 +93,13 @@ const FORMAT_RELEASES: &[(&str, u32, Option<&str>)] = &[
     ("ess", 4, Some("0.23.0")),
     ("ess", 5, Some("0.27.0")),
     ("ess", 6, Some("0.28.0")),
+    ("ess", 7, Some("0.29.0")),
     ("ess-diff", 1, Some("0.1.0")),
     ("ess-diff", 2, Some("0.19.0")),
     ("ess-diff", 3, Some("0.23.0")),
     ("ess-diff", 4, Some("0.23.0")),
     ("ess-diff", 5, Some("0.27.0")),
+    ("ess-diff", 6, Some("0.29.0")),
     ("ess-conformance", 1, Some("0.1.0")),
     ("ess-conformance", 2, Some("0.7.0")),
     ("ess-conformance", 3, Some("0.16.0")),
@@ -109,6 +111,8 @@ const FORMAT_RELEASES: &[(&str, u32, Option<&str>)] = &[
     ("ess-conformance", 9, Some("0.23.0")),
     ("ess-conformance", 10, Some("0.28.0")),
     ("ess-conformance", 11, Some("0.28.0")),
+    ("ess-conformance", 12, Some("0.29.0")),
+    ("ess-conformance", 13, Some("0.29.0")),
 ];
 
 /// Checks the published documents against the source and the changelog.
@@ -471,11 +475,10 @@ mod tests {
 
     #[test]
     fn a_format_version_no_release_ships_may_still_be_called_unreleased() {
-        // A future version with no release in `FORMAT_RELEASES` never reaches the
-        // released map, so the sentence that announces it before its release is not a defect.
-        assert!(
-            stale_claims("page.md", "The unreleased `ess/7` format.\n", &released()).is_empty()
-        );
+        // A fixed release inventory keeps this pre-release example valid when the real
+        // format registry gains another published version.
+        let released = BTreeMap::from([(("ess", 1), "0.1.0")]);
+        assert!(stale_claims("page.md", "The unreleased `ess/2` format.\n", &released).is_empty());
     }
 
     #[test]

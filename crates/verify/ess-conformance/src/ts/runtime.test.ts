@@ -99,6 +99,32 @@ class Recorder implements TestScope {
 
 const digest = 'a'.repeat(64);
 
+test('retained-result envelopes and mislabeled steps refuse before target callbacks', async () => {
+  let callbacks = 0;
+  const target = (): Target => {
+    callbacks += 1;
+    throw new Error('target must not be constructed');
+  };
+  for (const major of [12, 13]) {
+    const raw = JSON.parse(suiteText());
+    raw.provenance.suite_version = `ess-conformance/${major}`;
+    await assert.rejects(
+      runWith(new Recorder('retained'), target, JSON.stringify(raw)),
+      /unsupported suite version/,
+    );
+  }
+  for (const step of ['capture_command_result', 'expect_replay_result', 'expect_no_events']) {
+    const raw = JSON.parse(suiteText());
+    raw.provenance.suite_version = 'ess-conformance/10';
+    raw.scenarios['billing.CreateInvoice/outcome/created'].steps.push({ step });
+    await assert.rejects(
+      runWith(new Recorder('retained'), target, JSON.stringify(raw)),
+      /unsupported step/,
+    );
+  }
+  assert.equal(callbacks, 0);
+});
+
 function suiteText(): string {
   return JSON.stringify({
     provenance: {

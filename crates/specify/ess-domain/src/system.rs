@@ -50,7 +50,7 @@ use crate::name::{Naming, QualifiedName, Version};
 use crate::types::{NamedType, TypeBody, TypeRef, TypeRegistry};
 
 /// Specification format major versions this build implements.
-pub const SUPPORTED_FORMATS: &[u32] = &[1, 2, 3, 4, 5, 6];
+pub const SUPPORTED_FORMATS: &[u32] = &[1, 2, 3, 4, 5, 6, 7];
 
 /// `true` when this build implements `format`.
 pub fn is_supported_format(format: FormatVersion) -> bool {
@@ -79,6 +79,8 @@ impl FormatVersion {
     pub const V5: Self = Self(5);
     /// Input eligibility on externally decided outcomes.
     pub const V6: Self = Self(6);
+    /// Retained command results and effect-free finite state refusals.
+    pub const V7: Self = Self(7);
 
     /// How a format version is written.
     pub const PREFIX: &'static str = "ess/";
@@ -1248,7 +1250,8 @@ domains:
         assert!(FormatVersion::V4.is_supported());
         assert!(FormatVersion::V5.is_supported());
         assert!(FormatVersion::V6.is_supported());
-        assert!(!FormatVersion::parse("ess/7")
+        assert!(FormatVersion::V7.is_supported());
+        assert!(!FormatVersion::parse("ess/8")
             .expect("parses")
             .is_supported());
     }
@@ -1257,7 +1260,7 @@ domains:
     fn a_document_in_a_later_format_is_refused_rather_than_guessed_at() {
         let errors = system(
             r"
-format: ess/7
+format: ess/8
 system: billing
 ",
         )
@@ -1269,7 +1272,7 @@ system: billing
         );
         let error = &errors.as_slice()[0];
         assert_eq!(error.location, "system.format");
-        assert!(error.message.contains("ess/7"), "{error}");
+        assert!(error.message.contains("ess/8"), "{error}");
         assert!(
             error
                 .hint

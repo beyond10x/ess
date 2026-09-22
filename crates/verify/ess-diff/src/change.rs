@@ -342,6 +342,12 @@ impl SemanticChange {
     /// The first document version that can represent this change without losing meaning.
     pub const fn minimum_format(&self) -> u32 {
         match self {
+            Self::Command {
+                changed:
+                    CommandChange::OutcomeReplayChanged { .. }
+                    | CommandChange::OutcomeObservationChanged { .. },
+                ..
+            } => 6,
             Self::Type {
                 changed:
                     TypeChange::VariantWireNameChanged { .. }
@@ -1953,6 +1959,24 @@ impl EntityChange {
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 #[serde(tag = "kind", rename_all = "kebab-case")]
 pub enum CommandChange {
+    /// Complete effect-free refusal observation changed, without changing product effects.
+    OutcomeObservationChanged {
+        /// Declaring outcome.
+        outcome: String,
+        /// Previous complete-refusal requirement.
+        before: bool,
+        /// Current complete-refusal requirement.
+        after: bool,
+    },
+    /// A command-local retained-result origin changed.
+    OutcomeReplayChanged {
+        /// Branch whose retained authority changed.
+        outcome: String,
+        /// Former original outcome, absent for an ordinary branch.
+        before: Option<String>,
+        /// Current original outcome, absent for an ordinary branch.
+        after: Option<String>,
+    },
     /// Response or explicitly generated payload ownership changed on an outcome.
     OutcomeResponsePayloadChanged {
         /// The declaring branch.
@@ -2162,6 +2186,8 @@ impl CommandChange {
     pub const fn kind(&self) -> &'static str {
         match self {
             Self::ResponseChanged { .. } => "response-changed",
+            Self::OutcomeReplayChanged { .. } => "outcome-replay-changed",
+            Self::OutcomeObservationChanged { .. } => "outcome-observation-changed",
             Self::OutcomeResponsePayloadChanged { .. } => "outcome-response-payload-changed",
             Self::OutcomeSetsChanged { .. } => "outcome-sets-changed",
             Self::OutcomeRefusesChanged { .. } => "outcome-refuses-changed",
@@ -2199,7 +2225,9 @@ impl CommandChange {
             | Self::InputWireNameChanged { field, .. }
             | Self::InputDisplayNameChanged { field, .. }
             | Self::InputSummaryChanged { field, .. } => Some(field.clone()),
-            Self::OutcomeSetsChanged { outcome, .. }
+            Self::OutcomeReplayChanged { outcome, .. }
+            | Self::OutcomeObservationChanged { outcome, .. }
+            | Self::OutcomeSetsChanged { outcome, .. }
             | Self::OutcomeRefusesChanged { outcome, .. }
             | Self::OutcomeAdded { outcome }
             | Self::OutcomeRemoved { outcome }
@@ -2224,6 +2252,11 @@ impl CommandChange {
     /// One clause saying what moved.
     pub fn describe(&self) -> String {
         match self {
+            Self::OutcomeObservationChanged {
+                outcome,
+                before,
+                after,
+            } => format!("outcome `{outcome}` complete refusal observation {before} → {after}"),
             Self::OutcomeSetsChanged { outcome, .. } => {
                 format!("outcome `{outcome}` determined subject fields changed")
             }
@@ -2254,13 +2287,7 @@ impl CommandChange {
                 after,
             } => format!("input `{field}` is shown as `{after}`, was `{before}`"),
             Self::InputSummaryChanged { field, .. } => format!("input `{field}` summary changed"),
-            Self::InputOrderChanged { before, after } => {
-                format!(
-                    "inputs reordered: {} → {}",
-                    before.join(", "),
-                    after.join(", ")
-                )
-            }
+            Self::InputOrderChanged { before, after } => reordered("inputs", before, after),
             Self::OutcomeAdded { outcome } => format!("outcome `{outcome}` added"),
             Self::OutcomeRemoved { outcome } => format!("outcome `{outcome}` removed"),
             Self::OutcomeConditionChanged {
@@ -2268,6 +2295,11 @@ impl CommandChange {
                 before,
                 after,
             } => format!("outcome `{outcome}` is decided by `{after}`, was `{before}`"),
+            Self::OutcomeReplayChanged {
+                outcome,
+                before,
+                after,
+            } => format!("outcome `{outcome}` retains {after:?}, retained {before:?} before"),
             Self::OutcomeSubjectChanged {
                 outcome,
                 before,
@@ -2302,13 +2334,7 @@ impl CommandChange {
             Self::OutcomeSummaryChanged { outcome, .. } => {
                 format!("outcome `{outcome}` summary changed")
             }
-            Self::OutcomeOrderChanged { before, after } => {
-                format!(
-                    "outcomes reordered: {} → {}",
-                    before.join(", "),
-                    after.join(", ")
-                )
-            }
+            Self::OutcomeOrderChanged { before, after } => reordered("outcomes", before, after),
             Self::WireNameChanged { before, after } => format!("wire name `{before}` → `{after}`"),
             Self::DisplayNameChanged { before, after } => {
                 format!("display name `{before}` → `{after}`")
@@ -2320,6 +2346,14 @@ impl CommandChange {
             ),
         }
     }
+}
+
+fn reordered(kind: &str, before: &[String], after: &[String]) -> String {
+    format!(
+        "{kind} reordered: {} → {}",
+        before.join(", "),
+        after.join(", ")
+    )
 }
 
 /// What moved about a view.

@@ -1704,6 +1704,15 @@ impl<'a> Resolver<'a> {
                 name: outcome.name.clone(),
                 condition: condition_of(outcome, subject.as_ref()),
                 subject,
+                replays: None,
+                complete_refusal: self.spec.system().format.major() >= 7
+                    && outcome.condition == OutcomeCondition::WrongState
+                    && outcome.error.is_some(),
+                retains_result: outcome.replays.is_some()
+                    || command
+                        .outcomes
+                        .iter()
+                        .any(|o| o.replays.as_ref() == Some(&outcome.name)),
                 test_strategy: outcome.test_strategy(),
                 emits,
                 payload,
@@ -1714,7 +1723,27 @@ impl<'a> Resolver<'a> {
                 sets,
             });
         }
+        if complete {
+            Self::replay_origins(command, &mut resolved)?;
+        }
         complete.then_some(resolved)
+    }
+
+    /// Bind retained identities after every original branch has resolved, regardless of order.
+    fn replay_origins(command: &CommandSpec, resolved: &mut [ResolvedOutcome]) -> Option<()> {
+        for (index, outcome) in command.outcomes.iter().enumerate() {
+            if let Some(origin) = &outcome.replays {
+                let original = resolved.iter().position(|o| &o.name == origin)?;
+                let subject = resolved[original].subject.clone()?;
+                resolved[index].condition = condition_of(outcome, Some(&subject));
+                resolved[index].replays = Some(crate::ir::ResolvedReplay {
+                    origin: origin.clone(),
+                    subject,
+                    index: original,
+                });
+            }
+        }
+        Some(())
     }
 
     /// One outcome's declared entity state, resolved against the subject it acts on.

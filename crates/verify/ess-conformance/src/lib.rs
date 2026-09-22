@@ -141,11 +141,14 @@ pub mod periodic;
 pub mod quoted_predicate_format;
 pub mod reading;
 pub mod reference;
+/// Exact observations of retained command results.
+pub mod replay;
 pub mod report;
 pub mod response;
 pub mod runner;
 pub mod scenario;
 pub mod selection;
+pub mod subject;
 pub mod synthesize;
 pub mod target;
 pub mod ts;

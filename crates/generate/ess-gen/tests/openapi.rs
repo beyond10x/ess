@@ -103,6 +103,35 @@ fn generated(ir: &EssIr) -> BTreeMap<String, Artifact> {
     ess_gen::artifact::run(&OpenApi, ir).expect("no two documents claim one path")
 }
 
+#[test]
+fn retained_result_projection_keeps_origin_and_complete_response_without_new_events() {
+    let model = include_str!("../../../verify/ess-conformance/tests/fixtures/retained-replay.yaml");
+    let components = "components:\n  - component: retained-service\n    owns:\n      domains: [retained.core]\n    accepts:\n      commands: [retained.core.Seed]\n    publishes:\n      events: [retained.core.Seeded]\n";
+    let ir = inline(&[("replay.yaml", model), ("components.yaml", components)]);
+    let artifacts = generated(&ir);
+    assert_eq!(artifacts.len(), 1);
+    let document = parsed(artifacts.values().next().unwrap());
+    let schemas = &document["components"]["schemas"];
+    let result = &schemas["retained.core.Seed.Result"];
+    assert_eq!(result["properties"].as_object().unwrap().len(), 5);
+    for outcome in ["seeded", "replayed"] {
+        let response = &schemas[format!("retained.core.Seed.{outcome}.Response")];
+        assert!(response["required"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|field| field == "response"));
+        assert_eq!(
+            response["properties"]["response"]["$ref"],
+            "#/components/schemas/retained.core.Seed.Result"
+        );
+    }
+    assert_eq!(
+        schemas["retained.core.Seed.replayed.Response"]["x-ess-replays"]["outcome"],
+        "seeded"
+    );
+}
+
 /// One document, parsed back from the bytes that were written.
 ///
 /// Through JSON rather than as a `serde_yaml::Value`, so that the same walk works on the schemas —

@@ -195,10 +195,11 @@ ESS_REPORT_OUT=$PWD/report.json go test ./...
 
 fn runtime() -> String {
     format!(
-        "{}\n{}\n{}\n{}",
+        "{}\n{}\n{}\n{}\n{}",
         include_str!("runtime.go"),
         include_str!("reading.go"),
         include_str!("response.go"),
+        include_str!("replay.go"),
         include_str!("../../../../specify/ess-domain/src/reading/coordinate.go")
     )
 }

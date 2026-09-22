@@ -108,6 +108,40 @@ explicit synthesis refusal. This uses existing command and view assertions;
 the state guard alone does not require a newer suite vocabulary. The source
 declaration requires `ess/3`.
 
+## Observe retries of the original result
+
+Source `ess/7`, introduced in 0.29.0, lets an outcome declare `replays` with
+the name of an earlier successful outcome in the same command. The generated
+witness executes that original outcome, captures its actual result and subject
+identity, then retries the same input with the same actor. The retry must return
+the exact original typed response without an error, direct event or subject
+change.
+
+Synthesis must establish that the retry's own condition holds immediately after
+the original command. An unreachable or unprovable immediate retry produces a
+named refusal. A valid model can still require an authored witness for a retry
+that becomes eligible only after later activity.
+
+The target must expose the complete subject through declared immediate,
+unfiltered views. Complete observations check required fields and their types
+in both actual query results before comparing all returned fields. Returning
+only the identity fails even when that partial row stays unchanged. Optional
+absence is distinct from null; extra returned fields also participate in the
+comparison. Declared Integer values must reach the adapter without rounding.
+Recursive Decimal and Binary64 response or complete-row positions are outside
+this observation profile and refuse.
+
+Source `ess/7` uses the same complete observations for ordinary `wrong_state`
+refusal witnesses. Existing independent snapshot steps remain available with
+their original, weaker contract. A generic error assertion alone does not
+establish subject preservation.
+
+These observations select suite/12 or declared-coverage suite/13 and require
+report/2 in Rust and generated Go. TypeScript and browser runners refuse these
+envelopes before invoking the target. An immediate retry witness does not prove
+restart recovery, retries after a later head, or absence of physical writes;
+those remain implementation-specific acceptance.
+
 ## Observe selection, periodic activity and clock evidence
 
 Selection observations, introduced in 0.23.0, compare actual source occurrences and selected

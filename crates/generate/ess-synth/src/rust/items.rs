@@ -259,7 +259,7 @@ fn outcome_variant(
         let _ = writeln!(out, "    ///\n    /// {}", summary.trim());
     }
     let variant = name::pascal(outcome.name.as_str());
-    if outcome.emits.is_empty() && outcome.error.is_none() {
+    if outcome.emits.is_empty() && outcome.error.is_none() && !response_bearing(outcome) {
         let _ = writeln!(out, "    {variant},");
         return;
     }
@@ -418,6 +418,10 @@ pub(super) fn invariant_doc(out: &mut String, invariants: &[Invariant]) {
 
 /// Whether this branch reads the returned response into an event.
 pub(crate) fn response_bearing(outcome: &ResolvedOutcome) -> bool {
+    outcome.retains_result || response_mapped(outcome)
+}
+
+pub(crate) fn response_mapped(outcome: &ResolvedOutcome) -> bool {
     outcome.payload.iter().flat_map(|p| &p.fields).any(|f| {
         matches!(
             f.value,
@@ -427,14 +431,14 @@ pub(crate) fn response_bearing(outcome: &ResolvedOutcome) -> bool {
 }
 
 fn response_checks(out: &mut String, emit: &Emit<'_>, command: &ResolvedCommand) {
-    if !command.outcomes.iter().any(response_bearing) {
+    if !command.outcomes.iter().any(response_mapped) {
         return;
     }
     let ty = emit.layout.type_name(&command.name);
     let _=writeln!(out,"\nimpl {ty}Outcome {{\n    /// Compare the actual returned response with response-mapped emitted fields.\n    pub fn response_payload_matches(&self) -> bool {{\n        match self {{");
     for outcome in &command.outcomes {
         let variant = name::pascal(outcome.name.as_str());
-        if !response_bearing(outcome) {
+        if !response_mapped(outcome) {
             let _ = writeln!(out, "            Self::{variant} {{ .. }} => true,");
             continue;
         }

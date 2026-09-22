@@ -145,3 +145,20 @@ Exactly the three RootDefinitionsContainer rows are re-reviewed at that shape. N
 is exempted and no behavior coverage is claimed. The separate pre-existing missing classification
 for `ess_cli::bin(ess)::enum::SuiteTarget/variant/Typescript` still refuses consumer accounting;
 this container review does not repair or conceal that registry debt.
+
+## ess/7 container review — 2026-09-22
+
+The generated schema adds only the optional `RawOutcome.replays` property, a
+reference to the existing `OutcomeName` definition. The source7 retained-result
+relation is authored-domain behavior; it does not make these CLI pipelines
+consumers of the generated schema document. Its descendants keep their ordinary
+behavioral obligations.
+
+The unchanged wire extractor measured the definitions-container shape changing
+from `68e68c7cb8cc7b6a3a0dbe854c1b74ab54c9da825009a85770efa2d4f3e23322`
+to `fb4c0b29d046e5f20a7379422ae41f77ebc0caed42167716ed130e38de329873`.
+Review updates only the three existing RootDefinitionsContainer shape pins.
+The root dialect, six literal relationships, consumer profiles, guard source,
+baseline and behavioral accounting remain unchanged. The metadata guard and
+fresh-provider qualification still have to execute; this review grants no new
+exemption or runtime conformance claim.

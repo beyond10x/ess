@@ -1648,7 +1648,7 @@ events:
             file(
                 "system.yaml",
                 r"
-format: ess/7
+format: ess/8
 system: shop
 version: v1
 ",
