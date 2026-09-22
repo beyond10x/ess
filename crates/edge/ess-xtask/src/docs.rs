@@ -475,11 +475,10 @@ mod tests {
 
     #[test]
     fn a_format_version_no_release_ships_may_still_be_called_unreleased() {
-        // A future version with no release in `FORMAT_RELEASES` never reaches the
-        // released map, so the sentence that announces it before its release is not a defect.
-        assert!(
-            stale_claims("page.md", "The unreleased `ess/7` format.\n", &released()).is_empty()
-        );
+        // A fixed release inventory keeps this pre-release example valid when the real
+        // format registry gains another published version.
+        let released = BTreeMap::from([(("ess", 1), "0.1.0")]);
+        assert!(stale_claims("page.md", "The unreleased `ess/2` format.\n", &released).is_empty());
     }
 
     #[test]
