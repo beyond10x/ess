@@ -89,10 +89,7 @@ pub(super) fn generate(
     }
     match input.format {
         Format::Json => print!("{json}"),
-        Format::Yaml => super::render(
-            &serde_json::from_str::<serde_json::Value>(json)?,
-            Format::Yaml,
-        )?,
+        Format::Yaml => super::render(&ess_primitives::json::from_str(json)?, Format::Yaml)?,
         Format::Text => {
             for refusal in &inventory.refused {
                 println!("refused[{}]: {}", refusal.code, refusal.message);

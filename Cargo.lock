@@ -534,6 +534,7 @@ name = "ess-kubernetes"
 version = "0.30.0"
 dependencies = [
  "clap",
+ "ess-primitives",
  "infra-domain",
  "rcgen",
  "rustls",
@@ -1422,6 +1423,7 @@ dependencies = [
  "ess-compiler",
  "ess-domain",
  "ess-gen",
+ "ess-primitives",
  "fluent-uri",
  "jsonschema",
  "serde",

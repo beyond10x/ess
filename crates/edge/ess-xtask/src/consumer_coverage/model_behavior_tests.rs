@@ -60,6 +60,27 @@ fn closed_authority_accepts_one_exact_case_and_claim() {
     assert!(super::model_behavior::read_authority(&bytes).is_ok());
 }
 
+/// The authority reader holds a number as `serde_json` does without `arbitrary_precision`.
+///
+/// `entity-core` enables that feature and Cargo unifies it into any build holding both, which
+/// hands this reader's visitor a number as a one-entry map, and `-0` as the integer `0`.
+#[test]
+fn authority_numbers_read_the_same_in_every_serde_json_build() {
+    let read = |text: &str| super::model_behavior::unique_value(text.as_bytes());
+    assert_eq!(
+        read("[1.50,1E2,-0,18446744073709551616,7,-7]")
+            .unwrap()
+            .to_string(),
+        "[1.5,100.0,-0.0,1.8446744073709552e+19,7,-7]"
+    );
+    assert_eq!(
+        read(r#"{"n":{"m":2.50}}"#).unwrap().to_string(),
+        r#"{"n":{"m":2.5}}"#
+    );
+    assert!(read("[1e400]").is_err());
+    assert!(read(r#"{"a":1,"a":1.5}"#).is_err());
+}
+
 #[test]
 fn authority_rejects_duplicate_keys_before_a_json_value_exists() {
     let duplicate = br#"{"format":"ess-consumer-model-behavior/1","format":"ess-consumer-model-behavior/1","cases":{},"claims":[]}"#;

@@ -42,6 +42,13 @@ tasks:
   test:
     cmds:
       - cargo test --workspace --exclude ess-xtask --locked
+      # The workspace run has serde_json's `arbitrary_precision` on: entity-core enables it, and
+      # ess-entity-runtime unifies it in. This run selects packages that do not depend on
+      # entity-core, so it has the feature off; ESS number semantics must hold in both.
+      - >-
+        cargo test --locked
+        --package ess-primitives --package ess-conformance --package schema-contract
+        --package ess-cli --package ess-kubernetes
       # The metadata authority regression executes the compiled provider. Its test
       # build needs the consumer-check profile. Keep that native profile scoped to
       # xtask: workspace tests also build Wasm, whose linker rejects native flags.

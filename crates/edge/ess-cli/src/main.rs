@@ -1273,7 +1273,7 @@ fn realization(command: &RealizationCommand) -> Result<ExitCode> {
 
 fn render<T: serde::Serialize>(value: &T, format: Format) -> Result<()> {
     match format {
-        Format::Text | Format::Yaml => print!("{}", serde_yaml::to_string(value)?),
+        Format::Text | Format::Yaml => print!("{}", ess_primitives::json::to_yaml_string(value)?),
         Format::Json => println!("{}", serde_json::to_string_pretty(value)?),
     }
     Ok(())
@@ -2275,7 +2275,7 @@ fn inspect(path: &Path, name: &str, format: Format) -> Result<ExitCode> {
     }
     let value = serde_json::Value::Object(matches);
     match format {
-        Format::Text | Format::Yaml => print!("{}", serde_yaml::to_string(&value)?),
+        Format::Text | Format::Yaml => print!("{}", ess_primitives::json::to_yaml_string(&value)?),
         Format::Json => println!("{}", serde_json::to_string_pretty(&value)?),
     }
     Ok(ExitCode::SUCCESS)

@@ -203,6 +203,37 @@ fn canonical_reading_refuses_duplicate_keys_and_floating_point_numbers() {
     );
 }
 
+/// The integer-only rule is `serde_json`'s float rule, in every `serde_json` build.
+///
+/// Without `arbitrary_precision`, `-0` and an integer past 64 bits are binary64s and are refused
+/// like `1.5`. With it — `entity-core` unifies it in — `-0` arrives as the integer `0` and a wide
+/// integer as a spelling, and each must still be refused.
+#[test]
+fn canonical_reading_refuses_negative_zero_and_wide_integers_in_every_serde_json_build() {
+    for number in [
+        "-0",
+        "18446744073709551616",
+        "-9223372036854775809",
+        "1e2",
+        "1E2",
+    ] {
+        assert!(
+            canonical_value(&format!(r#"{{"a":{number}}}"#)).is_err(),
+            "{number}"
+        );
+        assert!(
+            canonical_value(&format!(r#"{{"a":[{number}]}}"#)).is_err(),
+            "[{number}]"
+        );
+    }
+    for number in ["0", "-1", "18446744073709551615", "-9223372036854775808"] {
+        assert!(
+            canonical_value(&format!(r#"{{"a":{number}}}"#)).is_ok(),
+            "{number}"
+        );
+    }
+}
+
 /// A valid document that is not its own canonical spelling is refused, not normalized.
 #[test]
 fn a_noncanonical_spelling_of_a_valid_record_is_refused_rather_than_normalized() {

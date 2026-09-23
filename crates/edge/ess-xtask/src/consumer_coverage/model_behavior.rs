@@ -91,10 +91,7 @@ impl Behavior {
 }
 
 pub(super) fn read_authority(bytes: &[u8]) -> Result<Authority> {
-    let mut deserializer = serde_json::Deserializer::from_slice(bytes);
-    let value = UniqueValue.deserialize(&mut deserializer)?;
-    deserializer.end()?;
-    let authority: Authority = serde_json::from_value(value)?;
+    let authority: Authority = serde_json::from_value(unique_value(bytes)?)?;
     validate_authority(&authority)?;
     Ok(authority)
 }
@@ -654,6 +651,53 @@ fn validate_digest(value: &str) -> Result<()> {
     Ok(())
 }
 
+/// One JSON document without duplicate object keys, its numbers held as `serde_json` holds them
+/// without `arbitrary_precision`.
+pub(super) fn unique_value(bytes: &[u8]) -> Result<Value> {
+    let mut deserializer = serde_json::Deserializer::from_slice(bytes);
+    let value = UniqueValue.deserialize(&mut deserializer)?;
+    deserializer.end()?;
+    Ok(value)
+}
+
+/// The key `serde_json` hands a visitor a number under when `arbitrary_precision` is on.
+///
+/// `entity-core` enables that feature and Cargo unifies it into any build holding both. With it,
+/// a number that is not a 64-bit integer arrives as a one-entry map under this key, and `-0` as
+/// `visit_i64(0)`; without it, both arrive through `visit_f64`. `ess_primitives::json` is the
+/// shared form of this rule; this crate keeps its own copy because it does not depend on it.
+const ARBITRARY_PRECISION_NUMBER: &str = "$serde_json::private::Number";
+
+fn from_arbitrary_precision<E>() -> bool {
+    static ON: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    *ON.get_or_init(|| {
+        serde_json::from_str::<Value>("1.50").is_ok_and(|value| {
+            value
+                .as_number()
+                .is_some_and(|number| number.to_string() == "1.50")
+        })
+    }) && std::any::type_name::<E>() == std::any::type_name::<serde_json::Error>()
+}
+
+/// The number `serde_json` without `arbitrary_precision` reads for a token.
+fn spelled<E: serde::de::Error>(spelling: &str) -> std::result::Result<Value, E> {
+    if !spelling.contains(['.', 'e', 'E']) {
+        if let Ok(value) = spelling.parse::<u64>() {
+            return Ok(value.into());
+        }
+        if let Ok(value) = spelling.parse::<i64>() {
+            if value < 0 {
+                return Ok(value.into());
+            }
+        }
+    }
+    serde_json::from_str::<f64>(spelling)
+        .ok()
+        .and_then(serde_json::Number::from_f64)
+        .map(Value::Number)
+        .ok_or_else(|| E::custom("non-finite JSON number"))
+}
+
 struct UniqueValue;
 
 impl<'de> DeserializeSeed<'de> for UniqueValue {
@@ -680,7 +724,13 @@ impl<'de> Visitor<'de> for UniqueValueVisitor {
         Ok(Value::Bool(value))
     }
 
-    fn visit_i64<E>(self, value: i64) -> std::result::Result<Value, E> {
+    fn visit_i64<E>(self, value: i64) -> std::result::Result<Value, E>
+    where
+        E: serde::de::Error,
+    {
+        if value == 0 && from_arbitrary_precision::<E>() {
+            return spelled("-0");
+        }
         Ok(value.into())
     }
 
@@ -737,6 +787,13 @@ impl<'de> Visitor<'de> for UniqueValueVisitor {
     {
         let mut values = serde_json::Map::new();
         while let Some(key) = map.next_key::<String>()? {
+            if key == ARBITRARY_PRECISION_NUMBER
+                && values.is_empty()
+                && from_arbitrary_precision::<A::Error>()
+            {
+                let spelling: String = map.next_value()?;
+                return spelled(&spelling);
+            }
             if values.contains_key(&key) {
                 return Err(serde::de::Error::custom(format!(
                     "duplicate JSON object key `{key}`"

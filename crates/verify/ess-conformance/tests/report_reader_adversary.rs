@@ -25,7 +25,13 @@ fn assert_routes(value: &Value, expected: bool) {
 
 fn assert_routes_with_yaml(value: &Value, expected: bool, yaml_expected: bool) {
     let text = value.to_string();
-    let yaml = serde_yaml::to_string(value).expect("fixture is YAML");
+    // From the JSON text, not from the `Value`: with serde_json's `arbitrary_precision` unified into
+    // the build, a `Value`'s numbers serialise through serde as a private one-entry struct, and
+    // serde_yaml writes that as a mapping rather than as the number.
+    let yaml = serde_yaml::to_string(
+        &serde_yaml::from_str::<serde_yaml::Value>(&text).expect("fixture JSON is YAML"),
+    )
+    .expect("fixture is YAML");
     let seed = report(&[], 0, "passed");
     let mut destination: StandaloneConformanceReport =
         serde_json::from_value(seed).expect("valid in-place destination");
@@ -143,7 +149,11 @@ fn closed_wire_fields_preserve_their_formats_scalar_contracts() {
         let opaque_identity = matches!(field.as_str(), "specification" | "implementation");
         assert_routes_with_yaml(&null, false, opaque_identity);
         if opaque_identity {
-            let yaml = serde_yaml::to_string(&null).expect("YAML fixture");
+            let yaml = serde_yaml::to_string(
+                &serde_yaml::from_str::<serde_yaml::Value>(&null.to_string())
+                    .expect("fixture JSON is YAML"),
+            )
+            .expect("YAML fixture");
             let read: StandaloneConformanceReport =
                 serde_yaml::from_str(&yaml).expect("YAML string coercion remains compatible");
             assert_eq!(

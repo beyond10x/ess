@@ -42,7 +42,7 @@ pub(crate) fn validate(input: &Input) -> Result<ExitCode> {
     match input.model.format {
         crate::Format::Json => println!("{}", binding.to_canonical_json()),
         crate::Format::Yaml => {
-            let value: serde_json::Value = serde_json::from_str(&binding.to_canonical_json())?;
+            let value = ess_primitives::json::from_str(&binding.to_canonical_json())?;
             crate::render(&value, crate::Format::Yaml)?;
         }
         crate::Format::Text => println!(

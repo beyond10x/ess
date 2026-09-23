@@ -32,7 +32,10 @@ pub enum Node {
 
 impl<'de> serde::Deserialize<'de> for Node {
     fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
-        let value = serde_json::Value::deserialize(deserializer)?;
+        // Not `serde_json::Value::deserialize`: under serde_json's `arbitrary_precision` that keeps
+        // a number's spelling, reads `-0` as `0`, and admits `1e400` (`crate::json`).
+        let value =
+            serde::de::DeserializeSeed::deserialize(crate::json::CanonicalValue, deserializer)?;
         Self::from_value(value).map_err(serde::de::Error::custom)
     }
 }
