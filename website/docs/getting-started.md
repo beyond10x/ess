@@ -18,21 +18,21 @@ for four native targets:
 | macOS Intel | `x86_64-apple-darwin` |
 | macOS Apple Silicon | `aarch64-apple-darwin` |
 
-Choose the target for your machine. This example downloads the latest published release, `0.29.0`,
+Choose the target for your machine. This example downloads the latest published release, `0.30.0`,
 for Apple Silicon, verifies the archive before extracting it, and runs the binary in place:
 
 ```shell-session
-$ version=0.29.0
+$ version=0.30.0
 $ target=aarch64-apple-darwin
 $ archive="ess-${version}-${target}.tar.gz"
 $ base="https://github.com/beyond10x/ess/releases/download/${version}"
 $ curl --fail --location --remote-name "${base}/${archive}"
 $ curl --fail --location --remote-name "${base}/SHA256SUMS"
 $ grep -F "  ${archive}" SHA256SUMS | shasum -a 256 --check
-ess-0.29.0-aarch64-apple-darwin.tar.gz: OK
+ess-0.30.0-aarch64-apple-darwin.tar.gz: OK
 $ tar -xzf "${archive}"
 $ "./ess-${version}-${target}/ess" --version
-ess 0.29.0
+ess 0.30.0
 ```
 
 `SHA256SUMS` covers all four archives. Filtering the exact filename lets the checksum tool verify
@@ -44,7 +44,7 @@ locked Rust workspace from a source checkout:
 ```shell-session
 $ cargo build --locked --release --bin ess
 $ ./target/release/ess --version
-ess 0.29.0
+ess 0.30.0
 ```
 
 The walkthrough uses the source-checkout form so every path names a file in the repository. You can
@@ -52,7 +52,8 @@ replace `cargo run --quiet --locked --bin ess --` with the verified `ess` binary
 below.
 
 The first level of `ess` is the four areas the tool is built out of — `specify`, `generate`,
-`verify`, `infra` — and every verb is also spelled flat at the top level as a hidden alias, so
+`verify`, `infra`, followed by `ess skill`, which prints the agent guidance built into the binary —
+and every verb is also spelled flat at the top level as a hidden alias, so
 `ess validate --path .` still runs `ess specify validate --path .` and prints the same bytes. See
 [Flat spellings](./reference/cli.md#flat-spellings).
 

@@ -12,6 +12,7 @@ mod release_evidence;
 mod schema;
 mod schema_bundle;
 mod site;
+mod skill;
 
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -35,6 +36,11 @@ struct Cli {
 ///
 /// One per `crates/<area>/` directory: the command surface says what the crate tree says.
 const AREAS: &[&str] = &["specify", "generate", "verify", "infra"];
+
+/// First-level verbs that belong to no area because they read no specification.
+///
+/// `skill` prints the agent guidance embedded from `plugins/ess/`; it is listed after the areas.
+const TOOLS: &[&str] = &["skill"];
 
 #[derive(Debug, Subcommand)]
 enum Command {
@@ -68,6 +74,8 @@ enum Command {
         #[command(subcommand)]
         command: InfraAreaCommand,
     },
+    /// Print the agent skills and agents this binary was built with.
+    Skill(skill::Input),
     /// The flat spellings of the `specify` verbs. Hidden by [`command`], never deprecated.
     #[command(flatten)]
     FlatSpecify(SpecifyCommand),
@@ -998,7 +1006,7 @@ fn command() -> clap::Command {
     let flat: Vec<String> = command
         .get_subcommands()
         .map(|sub| sub.get_name().to_owned())
-        .filter(|name| !AREAS.contains(&name.as_str()))
+        .filter(|name| !AREAS.contains(&name.as_str()) && !TOOLS.contains(&name.as_str()))
         .collect();
     let command = flat.into_iter().fold(command, |command, name| {
         command.mut_subcommand(name, |sub| sub.hide(true))
@@ -1007,6 +1015,7 @@ fn command() -> clap::Command {
     // here rather than left to the order they were declared in.
     let command = AREAS
         .iter()
+        .chain(TOOLS)
         .enumerate()
         .fold(command, |command, (position, area)| {
             command.mut_subcommand(area, |sub| sub.display_order(position))
@@ -1074,6 +1083,7 @@ fn run(cli: Cli) -> Result<ExitCode> {
         Command::Verify { command } | Command::FlatVerify(command) => verify_area(command),
         Command::Infra { command } => infra_area(command),
         Command::FlatImport(command) => import_area(command),
+        Command::Skill(input) => skill::run(&input),
     }
 }
 
@@ -3874,20 +3884,27 @@ mod tests {
     /// `tests/command_surface.rs`: `mut_subcommand` moves what it touches to the end of the list,
     /// so this order is not the one `--help` prints and asserting on it would say nothing.
     #[test]
-    fn the_first_level_is_exactly_the_four_areas() {
+    fn the_first_level_is_exactly_the_four_areas_and_the_tools() {
         let command = command();
         let listed: BTreeSet<&str> = command
             .get_subcommands()
             .filter(|sub| !sub.is_hide_set())
             .map(clap::Command::get_name)
             .collect();
-        assert_eq!(listed, AREAS.iter().copied().collect::<BTreeSet<_>>());
+        assert_eq!(
+            listed,
+            AREAS.iter().chain(TOOLS).copied().collect::<BTreeSet<_>>()
+        );
     }
 
     #[test]
     fn every_leaf_has_its_area_path_and_each_legacy_leaf_keeps_its_flat_spelling() {
         let command = command();
-        let leaves = leaf_paths(&command);
+        // A tool has no area and so no flat spelling to keep.
+        let leaves: Vec<Vec<String>> = leaf_paths(&command)
+            .into_iter()
+            .filter(|path| !TOOLS.contains(&path[0].as_str()))
+            .collect();
         let (grouped, flat): (Vec<Vec<String>>, Vec<Vec<String>>) = leaves
             .iter()
             .cloned()

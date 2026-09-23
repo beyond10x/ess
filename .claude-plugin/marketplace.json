@@ -1,0 +1,14 @@
+{
+  "name": "ess",
+  "owner": { "name": "beyond10x" },
+  "metadata": {
+    "description": "The ESS agent plugin, released with the ess binary at the same version."
+  },
+  "plugins": [
+    {
+      "name": "ess",
+      "source": "./plugins/ess",
+      "description": "Write, retrofit, validate and project ESS specifications, and audit conformance suites."
+    }
+  ]
+}

@@ -1,0 +1,18 @@
+{
+  "name": "ess",
+  "version": "0.30.0",
+  "description": "Write, retrofit, validate and project Executable System Specifications, and hold implementations to them with conformance suites.",
+  "author": {
+    "name": "Beyond10x"
+  },
+  "skills": "./skills/",
+  "interface": {
+    "displayName": "ESS",
+    "shortDescription": "Write, retrofit and conformance-test typed ESS specifications.",
+    "longDescription": "Draft a new ESS domain or retrofit one onto an existing system, validate and compile it, project deterministic JSON Schema and OpenAPI, and raise or audit a conformance suite against a real implementation.",
+    "developerName": "Beyond10x",
+    "category": "Productivity",
+    "capabilities": [],
+    "defaultPrompt": "Use ess to write, retrofit or conformance-test this system's specification."
+  }
+}

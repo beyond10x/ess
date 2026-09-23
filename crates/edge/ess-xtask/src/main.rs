@@ -2,6 +2,7 @@
 
 mod consumer_coverage;
 mod docs;
+mod plugin;
 mod support;
 mod whats_changed;
 
@@ -101,6 +102,17 @@ enum Command {
         #[command(subcommand)]
         command: ReleaseCommand,
     },
+    /// Check the agent plugin under `plugins/ess/` against the workspace.
+    Plugin {
+        #[command(subcommand)]
+        command: PluginCommand,
+    },
+}
+
+#[derive(Debug, Subcommand)]
+enum PluginCommand {
+    /// Refuse a manifest, marketplace, skill or agent that disagrees with the workspace.
+    Check,
 }
 
 #[derive(Debug, Subcommand)]
@@ -163,9 +175,16 @@ fn run(cli: Cli) -> Result<String, String> {
                 ));
             }
             release_notes(&changelog, version)?;
+            plugin::check(&root, version)?;
             Ok(format!(
-                "release {version}: workspace version and changelog agree\n"
+                "release {version}: workspace version, changelog and plugin agree\n"
             ))
+        }
+        Command::Plugin {
+            command: PluginCommand::Check,
+        } => {
+            let (version, _) = release_inputs(&root)?;
+            plugin::check(&root, &version)
         }
         Command::Release {
             command: ReleaseCommand::Notes { version },

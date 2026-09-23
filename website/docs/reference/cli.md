@@ -10,7 +10,7 @@ description: The canonical ESS command, the four areas its first level is made o
 semantics, unsupported projection, or a failed check.
 
 Its first level is the four areas ESS is built out of, one per crate directory, and `ess --help`
-lists exactly those:
+lists exactly those, then `skill`:
 
 | Area | The verbs it holds |
 |---|---|
@@ -18,6 +18,19 @@ lists exactly those:
 | `ess generate` | `generate`, `cli`, `types`, `synthesize`, `project`, `schema`, `output`, `build`, `component`, `release`, `stack`, `deployment` |
 | `ess verify` | `bindings`, `conform`, `diff`, `impact` |
 | `ess infra` | `infra`, `import` |
+
+`ess skill` follows the areas. It belongs to none because it reads no specification: it prints the
+agent skills and agents embedded in the binary from `plugins/ess/`, so an agent reads the guidance
+for the exact `ess` it runs.
+
+| Call | Prints |
+|---|---|
+| `ess skill` | the front-door skill and an index of every skill and agent |
+| `ess skill <skill>` | that skill's `SKILL.md` on stdout, and `ess <version>: <path>` on stderr |
+| `ess skill agents/<agent>` | that agent's charter |
+| `ess skill --json` | the index as `{version, entries: [{path, kind, name, description}]}` |
+
+An unknown path exits `2` and lists every path the binary carries.
 
 ## Flat spellings
 

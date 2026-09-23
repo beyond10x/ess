@@ -2,6 +2,22 @@
 
 ## [Unreleased]
 
+## [0.30.0] — 2026-09-23
+
+### Added
+
+- The ESS agent plugin lives in this repository. `plugins/ess/` carries the skills `ess` (front
+  door), `specify`, `coverage` and `retrofit`, and the Claude agents `author`, `retrofitter` and
+  `conformance`. `.claude-plugin/marketplace.json` and `.agents/plugins/marketplace.json` serve it
+  as `ess@ess` for Claude Code and Codex. `specify` and `coverage` move from the `ess-specify`
+  plugin in `beyond10x/agentplugins`.
+- `ess skill [<path>]` prints the skills and agents embedded in the binary: the front door and an
+  index with no path, one file with a path, the index as JSON with `--json`. An unknown path exits
+  `2` and lists the valid ones. `ess --help` lists `skill` after the four areas.
+- `cargo xtask plugin check`, run by `cargo xtask release verify`, refuses a plugin manifest whose
+  version differs from the workspace, a marketplace under another identity, a skill named unlike
+  its folder, and an agent wrapper that names no existing skill.
+
 ## [0.29.0] — 2026-09-22
 
 ### Added
