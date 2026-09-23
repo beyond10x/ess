@@ -8,6 +8,7 @@ members = [
     "crates/specify/ess-composition",
     "crates/specify/ess-realization",
     "crates/specify/ess-cli-contract",
+    "crates/specify/ess-service-contract",
     # generate — that IR becomes artifacts; nothing here applies anything.
     "crates/generate/ess-gen",
     "crates/generate/ess-synth",
@@ -15,6 +16,7 @@ members = [
     "crates/generate/schema-contract",
     "crates/generate/ess-deployment",
     "crates/generate/ess-cli-project",
+    "crates/generate/ess-entity-runtime",
     # verify — an implementation is measured against the specification.
     "crates/verify/ess-conformance",
     "crates/verify/ess-diff",
@@ -54,7 +56,9 @@ ess-compiler = { path = "crates/specify/ess-compiler", version = "0.30.0" }
 ess-composition = { path = "crates/specify/ess-composition", version = "0.30.0" }
 ess-realization = { path = "crates/specify/ess-realization", version = "0.30.0" }
 ess-cli-contract = { path = "crates/specify/ess-cli-contract", version = "0.30.0" }
+ess-service-contract = { path = "crates/specify/ess-service-contract", version = "0.30.0" }
 ess-cli-project = { path = "crates/generate/ess-cli-project", version = "0.30.0" }
+ess-entity-runtime = { path = "crates/generate/ess-entity-runtime", version = "0.30.0" }
 ess-deployment = { path = "crates/generate/ess-deployment", version = "0.30.0" }
 ess-gen = { path = "crates/generate/ess-gen", version = "0.30.0" }
 ess-conformance = { path = "crates/verify/ess-conformance", version = "0.30.0" }
@@ -81,6 +85,8 @@ anyhow = "1"
 # plan board another tool rendered. Parsing *input* into the IR is the opposite of the round trip
 # this layer exists to remove — nothing here re-reads bytes this crate produced.
 pulldown-cmark = { version = "0.13", default-features = false, features = ["html"] }
+sha2 = "0.11"
+entity-core = { git = "https://github.com/beyond10x/entity-runtime", tag = "0.19.0" }
 
 [workspace.lints.rust]
 missing_docs = "warn"

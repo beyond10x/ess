@@ -329,6 +329,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "entity-core"
+version = "0.19.0"
+source = "git+https://github.com/beyond10x/entity-runtime?tag=0.19.0#13f88d982f8ac90651e4023bdf6286332d042b33"
+dependencies = [
+ "serde",
+ "serde_json",
+]
+
+[[package]]
 name = "equivalent"
 version = "1.0.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -491,6 +500,21 @@ dependencies = [
 ]
 
 [[package]]
+name = "ess-entity-runtime"
+version = "0.29.0"
+dependencies = [
+ "entity-core",
+ "ess-compiler",
+ "ess-domain",
+ "ess-primitives",
+ "ess-service-contract",
+ "ess-synth",
+ "serde_json",
+ "serde_yaml",
+ "sha2",
+]
+
+[[package]]
 name = "ess-gen"
 version = "0.30.0"
 dependencies = [
@@ -551,6 +575,15 @@ dependencies = [
  "serde_json",
  "serde_yaml",
  "sha2",
+]
+
+[[package]]
+name = "ess-service-contract"
+version = "0.29.0"
+dependencies = [
+ "ess-compiler",
+ "ess-domain",
+ "ess-synth",
 ]
 
 [[package]]

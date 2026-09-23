@@ -1,13 +1,23 @@
 //! Stage 1: closed extraction and unaccepted candidate accounting.
 mod account;
+#[cfg(test)]
+mod accounting_v2_tests;
+#[cfg(test)]
+mod accounting_v3_tests;
+mod aggregate;
 mod consumer;
 mod enforce;
 mod executor;
 mod metadata;
+mod model_behavior;
+#[cfg(test)]
+mod model_behavior_tests;
 mod native;
 mod preservation;
 mod proposal;
+mod reconciliation;
 mod rust;
+mod scenario_acquisition;
 #[cfg(test)]
 mod tests;
 mod wire;
@@ -359,9 +369,13 @@ pub(super) fn check(root: &Path, selected_output: Option<&Path>) -> Result<Strin
             .ok()
             .and_then(|plan| plan["pending_metadata_candidates"].as_u64())
             .unwrap_or(0);
+        let pending_acquisition = read_extraction(&output, "scenario-acquisition-plan.json")
+            .ok()
+            .and_then(|plan| plan["required_rows"].as_u64())
+            .unwrap_or(0);
         write_json(
             &output.join("refusal.json"),
-            &json!({"format":account::FORMAT,"status":"CHECK_REFUSED","error":format!("{error:#}"),"Supported":0,"Refused":0,"SchemaDocumentMetadata":0,"pending_metadata_candidates":pending_metadata,"note":"No completed qualification receipt was produced; partial case/guard evidence remains diagnostic only."}),
+            &json!({"format":account::FORMAT_V3,"status":"CHECK_REFUSED","error":format!("{error:#}"),"Supported":0,"Refused":0,"SchemaDocumentMetadata":0,"AggregateClosure":0,"pending_metadata_candidates":pending_metadata,"pending_acquisition_rows":pending_acquisition,"note":"No completed qualification receipt was produced; partial case/guard evidence remains diagnostic only."}),
         )?;
     }
     result.with_context(|| format!("consumer evidence directory {}", output.display()))
@@ -372,10 +386,10 @@ fn reconcile_extraction(extraction: Result<String>, accounting: Result<Value>) -
         (Err(error), accounting) => {
             let diagnostic = match accounting {
                 Ok(plan) => {
-                    json!({"format":account::FORMAT,"status":"PROVISIONAL_ONLY_CLASSIFICATION_REFUSED","discovered_models":plan["discovered_models"],"bound_profiles":plan["bound_profiles"],"candidate_initial_unknowns":plan["BaselineUnknown"],"pending_metadata_candidates":plan["pending_metadata_candidates"],"Supported":0,"Refused":0,"BaselineUnknown":0,"SchemaDocumentMetadata":0})
+                    json!({"format":account::FORMAT_V3,"status":"PROVISIONAL_ONLY_CLASSIFICATION_REFUSED","discovered_models":plan["discovered_models"],"bound_profiles":plan["bound_profiles"],"candidate_initial_unknowns":plan["BaselineUnknown"],"pending_metadata_candidates":plan["pending_metadata_candidates"],"pending_acquisition_rows":8,"Supported":0,"Refused":0,"BaselineUnknown":0,"SchemaDocumentMetadata":0,"AggregateClosure":0})
                 }
                 Err(error) => {
-                    json!({"format":account::FORMAT,"status":"PROVISIONAL_ACCOUNTING_REFUSAL","details":error.to_string(),"SchemaDocumentMetadata":0,"no_cells_admitted":true})
+                    json!({"format":account::FORMAT_V3,"status":"PROVISIONAL_ACCOUNTING_REFUSAL","details":error.to_string(),"SchemaDocumentMetadata":0,"AggregateClosure":0,"no_cells_admitted":true})
                 }
             };
             bail!("extraction/classification refused: {error:#}; accounting diagnostics: {diagnostic}");
@@ -385,7 +399,7 @@ fn reconcile_extraction(extraction: Result<String>, accounting: Result<Value>) -
 fn read_extraction(extraction: &Path, name: &str) -> Result<Value> {
     Ok(serde_json::from_slice(&fs::read(extraction.join(name))?)?)
 }
-fn extracted_accounting_inputs(extraction: &Path) -> Result<(Value, Value, Value)> {
+fn extracted_models(extraction: &Path) -> Result<Value> {
     let rust = read_extraction(extraction, "rust-inventory.json")?;
     let wire = read_extraction(extraction, "wire-inventory.json")?;
     let mut models = rust["obligations"]
@@ -400,13 +414,106 @@ fn extracted_accounting_inputs(extraction: &Path) -> Result<(Value, Value, Value
             bail!("duplicate Rust/wire obligation {id}");
         }
     }
+    Ok(json!(models))
+}
+fn extracted_accounting_inputs(extraction: &Path) -> Result<(Value, Value, Value)> {
+    let models = extracted_models(extraction)?;
     let (profiles, claims) = proposal::accounting_inputs(
         &read_extraction(extraction, "consumer-inventory-unclassified.json")?,
         &read_extraction(extraction, "source-profile.json")?,
     )?;
-    Ok((json!(models), profiles, claims))
+    Ok((models, profiles, claims))
 }
-fn plan_extraction(extraction: &Path) -> Result<Value> {
+fn read_reviewed(root: &Path, name: &str) -> Result<Value> {
+    let path = root
+        .join("crates/edge/ess-xtask/src/consumer_coverage")
+        .join(name);
+    serde_json::from_slice(&fs::read(&path)?)
+        .with_context(|| format!("read reviewed consumer authority {}", path.display()))
+}
+
+pub(super) fn behavior(root: &Path, output: &Path) -> Result<String> {
+    preservation::check(root)?;
+    fs::create_dir(output).with_context(|| {
+        format!(
+            "model-behavior diagnostic requires a fresh output directory: {}",
+            output.display()
+        )
+    })?;
+    let extraction = output.join("extraction");
+    run(root, &extraction)?;
+    let authority_path =
+        root.join("crates/edge/ess-xtask/src/consumer_coverage/reviewed-model-behavior.json");
+    let authority =
+        model_behavior::read_authority(&fs::read(&authority_path).with_context(|| {
+            format!("read reviewed model behavior {}", authority_path.display())
+        })?)?;
+    let source_profile = read_extraction(&extraction, "source-profile.json")?;
+    let profiles = read_extraction(&extraction, "consumer-profiles.json")?;
+    let inventory = read_extraction(&extraction, "consumer-inventory-unclassified.json")?;
+    let metadata = read_extraction(&extraction, "cargo-metadata.json")?;
+    let models = extracted_models(&extraction)?;
+    let candidate = model_behavior::candidate(
+        &authority,
+        &models,
+        &source_profile,
+        &profiles,
+        &inventory,
+        &metadata,
+    )?;
+    write_json(&output.join("model-behavior-candidate.json"), &candidate)?;
+    let plan = model_behavior::plan(
+        &candidate,
+        &authority,
+        &models,
+        &source_profile,
+        &profiles,
+        &inventory,
+        &metadata,
+    )?;
+    write_json(&output.join("model-behavior-plan.json"), &plan)?;
+    let execution = native::execute_model_behavior(
+        root,
+        &output.join("cases"),
+        &source_profile,
+        &plan,
+        &metadata,
+    )?;
+    let fresh_candidate = model_behavior::candidate(
+        &authority,
+        &models,
+        &source_profile,
+        &profiles,
+        &inventory,
+        &metadata,
+    )?;
+    let claims = model_behavior::verify_execution(&execution, &plan, &fresh_candidate)?;
+    if json!(source_files(root)?) != source_profile["source"] {
+        bail!("source changed before final model-behavior diagnostic")
+    }
+    let result = json!({
+        "format": model_behavior::EXECUTION_FORMAT,
+        "stage": "executed",
+        "authority_sha256": execution["authority_sha256"],
+        "source_sha256": execution["source_sha256"],
+        "provider_profile_sha256": execution["provider_profile_sha256"],
+        "selected_cases": execution["selected_cases"],
+        "executed_cases": execution["receipts"].as_object().context("model-behavior receipts")?.len(),
+        "claims": claims.len(),
+        "qualified_cells": 0,
+        "status": "DIAGNOSTIC_ONLY"
+    });
+    write_json(&output.join("model-behavior-result.json"), &result)?;
+    Ok(format!("Consumer model behavior: {result}\n"))
+}
+
+fn plan_extraction(
+    root: &Path,
+    extraction: &Path,
+    acquisition_plan: &Value,
+    model_candidate: &Value,
+    model_plan: &Value,
+) -> Result<Value> {
     let (models, profiles, claims) = extracted_accounting_inputs(extraction)?;
     if extraction.join("unaccepted-cells.json").is_file() {
         let candidates =
@@ -421,18 +528,136 @@ fn plan_extraction(extraction: &Path) -> Result<Value> {
     }
     let baseline: Value = serde_json::from_slice(baseline_bytes)?;
     let metadata = metadata::candidates(&models, &profiles)?;
-    enforce::plan_with_metadata(&models, &profiles, &baseline, &claims, Some(&metadata))
+    let acquisition_profiles = scenario_acquisition::profile_identities(&read_extraction(
+        extraction,
+        "consumer-profiles.json",
+    )?)?;
+    let reconciliation_authority = read_reviewed(root, "reviewed-reconciliation.json")?;
+    let reconciliation = reconciliation::resolve(
+        &baseline,
+        &hash_bytes(baseline_bytes),
+        &models,
+        &profiles,
+        &acquisition_profiles,
+        &reconciliation_authority,
+    )?;
+    let aggregate_authority = read_reviewed(root, "reviewed-aggregate-closures.json")?;
+    let structures = aggregate::capture(
+        &read_extraction(extraction, "rust-inventory.json")?,
+        &read_extraction(extraction, "wire-inventory.json")?,
+    )?;
+    aggregate::verify_reconciliation(
+        &aggregate_authority,
+        &reconciliation,
+        &hash_bytes(baseline_bytes),
+    )?;
+    aggregate::verify_parent_identities(&aggregate_authority, &structures)?;
+    let v3_candidates = json!({
+        "format":account::FORMAT_V3,
+        "stage":"candidate",
+        "cells":read_extraction(extraction, "unaccepted-cells.json")?["cells"],
+        "reconciliation_sha256":reconciliation.digest,
+        "scenario_acquisition_format":scenario_acquisition::FORMAT,
+        "acquisition_rows":acquisition_plan["required_rows"],
+        "aggregate_rows":aggregate::claims(&aggregate_authority)?.len(),
+        "model_behavior_candidate":model_candidate,
+    });
+    account::read_candidates_v3(&v3_candidates)?;
+    write_json(
+        &extraction.join("accounting-v3-candidates.json"),
+        &v3_candidates,
+    )?;
+    enforce::plan_v3(enforce::PlanV3Inputs {
+        accounting: enforce::PlanV2Inputs {
+            models: &models,
+            profiles: &profiles,
+            claims: &claims,
+            metadata: &metadata,
+            reconciliation: &reconciliation,
+            baseline_sha256: &hash_bytes(baseline_bytes),
+            acquisition_plan,
+            aggregate_authority: &aggregate_authority,
+        },
+        model_behavior_plan: model_plan,
+    })
 }
+fn prepare_model_behavior(root: &Path, extraction: &Path, output: &Path) -> Result<(Value, Value)> {
+    let authority_path =
+        root.join("crates/edge/ess-xtask/src/consumer_coverage/reviewed-model-behavior.json");
+    let authority = model_behavior::read_authority(&fs::read(&authority_path)?)?;
+    let source_profile = read_extraction(extraction, "source-profile.json")?;
+    let profiles = read_extraction(extraction, "consumer-profiles.json")?;
+    let inventory = read_extraction(extraction, "consumer-inventory-unclassified.json")?;
+    let cargo_metadata = read_extraction(extraction, "cargo-metadata.json")?;
+    let models = extracted_models(extraction)?;
+    let candidate = model_behavior::candidate(
+        &authority,
+        &models,
+        &source_profile,
+        &profiles,
+        &inventory,
+        &cargo_metadata,
+    )?;
+    let plan = model_behavior::plan(
+        &candidate,
+        &authority,
+        &models,
+        &source_profile,
+        &profiles,
+        &inventory,
+        &cargo_metadata,
+    )?;
+    write_json(&output.join("model-behavior-candidate.json"), &candidate)?;
+    write_json(&output.join("model-behavior-plan.json"), &plan)?;
+    Ok((candidate, plan))
+}
+
 fn check_at(root: &Path, output: &Path) -> Result<String> {
     preservation::check(root)?;
     let extraction = output.join("extraction");
     let extracted = run(root, &extraction);
+    let (model_candidate, model_plan) = if extracted.is_ok() {
+        prepare_model_behavior(root, &extraction, output)?
+    } else {
+        (json!({}), json!({}))
+    };
+    let (acquisition_plan, qualified_acquisition) = if extracted.is_ok() {
+        let candidate = read_extraction(&extraction, "scenario-acquisition-candidates.json")?;
+        let authority = read_reviewed(root, "reviewed-scenario-acquisition.json")?;
+        let plan = scenario_acquisition::plan(&candidate, &authority)?;
+        write_json(&output.join("scenario-acquisition-plan.json"), &plan)?;
+        let source_profile = read_extraction(&extraction, "source-profile.json")?;
+        let proof = native::execute_acquisition(
+            root,
+            &output.join("acquisition-cases"),
+            &source_profile,
+            &plan,
+            &read_extraction(&extraction, "cargo-metadata.json")?,
+        )?;
+        let qualified = scenario_acquisition::qualify(&plan, &proof)?;
+        write_json(
+            &output.join("qualified-scenario-acquisition.json"),
+            &qualified,
+        )?;
+        (plan, qualified)
+    } else {
+        (json!({}), json!({}))
+    };
     // Diagnostics use the same model, canonical fingerprint and accounting code even
     // when finite API classification refuses. Only both successful paths reach execution.
-    let plan = reconcile_extraction(extracted, plan_extraction(&extraction))?;
+    let plan = reconcile_extraction(
+        extracted,
+        plan_extraction(
+            root,
+            &extraction,
+            &acquisition_plan,
+            &model_candidate,
+            &model_plan,
+        ),
+    )?;
     let read = |name: &str| read_extraction(&extraction, name);
     write_json(&output.join("execution-plan.json"), &plan)?;
-    let required = serde_json::from_value(plan["required_cases"].clone())?;
+    let required = serde_json::from_value(plan["required_legacy_cases"].clone())?;
     let source_profile = read("source-profile.json")?;
     let authority = metadata::Authority::capture(root, &source_profile)?;
     let (models, profiles, _) = extracted_accounting_inputs(&extraction)?;
@@ -452,12 +677,38 @@ fn check_at(root: &Path, output: &Path) -> Result<String> {
         &required,
         &read("cargo-metadata.json")?,
     )?;
-    let result = enforce::qualify(&plan, &verified, &authority, &metadata)?;
+    let model_execution = native::execute_model_behavior(
+        root,
+        &output.join("model-behavior-cases"),
+        &source_profile,
+        &model_plan,
+        &read("cargo-metadata.json")?,
+    )?;
+    let aggregate_authority = read_reviewed(root, "reviewed-aggregate-closures.json")?;
+    let structures =
+        aggregate::capture(&read("rust-inventory.json")?, &read("wire-inventory.json")?)?;
+    let aggregate = aggregate::verify(
+        &aggregate_authority,
+        &structures,
+        &enforce::aggregate_cells(&plan)?,
+        &json!(verified.ids()),
+    )?;
+    write_json(&output.join("aggregate-proof.json"), &aggregate)?;
+    let result = enforce::qualify_v3(
+        &plan,
+        &verified,
+        &authority,
+        &metadata,
+        &qualified_acquisition,
+        &aggregate,
+        &model_candidate,
+        &model_execution,
+    )?;
     if json!(source_files(root)?) != source_profile["source"] {
         bail!("source changed before final consumer admission");
     }
     write_json(&output.join("qualified-cells.json"), &result)?;
-    let summary = json!({"format":account::FORMAT,"stage":"qualified","discovered_models":plan["discovered_models"],"bound_profiles":plan["bound_profiles"],"cells":result["cells"].as_array().context("qualified cells")?.len(),"counts":result["counts"],"executed_cases":verified.ids().len(),"executed_metadata_guards":1,"source_sha256":hash_json(&source_profile["source"]),"provider_sha256":source_profile["provider_executable_sha256"],"output":output,"unknown_limit":"Accepted initial gaps remain unproven; schema metadata is bookkeeping, not behavioral coverage; this is not complete consumer support."});
+    let summary = json!({"format":account::FORMAT_V3,"stage":"qualified","discovered_models":plan["discovered_models"],"bound_profiles":plan["bound_profiles"],"cells":result["cells"].as_array().context("qualified cells")?.len(),"counts":result["counts"],"historical_retirements":result["historical_retirements"],"qualified_acquisition_rows":8,"qualified_aggregate_closures":aggregate["qualified_closures"],"executed_cases":result["executed_case_count"],"executed_metadata_guards":1,"source_sha256":hash_json(&source_profile["source"]),"provider_sha256":source_profile["provider_executable_sha256"],"output":output,"unknown_limit":"Accepted initial gaps and aggregate residuals remain unproven; acquisition and retirement totals are separate from current cells; this is not complete consumer support."});
     write_json(&output.join("summary.json"), &summary)?;
     Ok(format!("Consumer coverage: {summary}\n"))
 }

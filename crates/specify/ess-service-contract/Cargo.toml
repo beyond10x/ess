@@ -1,0 +1,17 @@
+[package]
+name = "ess-service-contract"
+description = "Borrowed service-scoped contracts extracted from a resolved ESS model and its synthesis plan."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+
+[dependencies]
+ess-compiler.workspace = true
+ess-domain.workspace = true
+ess-synth.workspace = true
+
+[lints]
+workspace = true

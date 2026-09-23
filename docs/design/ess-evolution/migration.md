@@ -1,89 +1,106 @@
 # Migration sequence
 
-## 0. Preserve the source and acceptance baseline
+Authority: approved ESS evolution plan ess-evolution-20260915 revision 1.
 
-Record exact commits, dirty/index/untracked changes, lockfiles, generator identities and toolchains
-for ESS, ER, Eventlog, AEP, Service SDK, Connectors v2, a second internal adopter and downstream server/controller
-sources. Preserve user edits. Evidence is tied to the actual source/dependency/configuration vector;
-unrelated repository movement does not invalidate another slice's completed evidence.
+## 1. Preserve sources and reconcile scope
 
-## 1. Shared persistence and execution
+Record exact commits, dirty/index/untracked changes, lockfiles, generator identities, toolchains,
+configuration and store inventories for Eventlog, Entity Runtime, Service SDK, ESS, Connectors v2
+and AEP. Preserve existing edits. Evidence belongs to its exact source/dependency/configuration
+vector. Select one authoritative planning journal per repository; never concatenate independent
+histories. Establish owner-local work/designs and the coordinated cross-repository migration ADR.
 
-Eventlog gains a separate atomic-group capability. One tenant, ordered stream appends, one group
-identity; changed content under that identity is refused. Earlier appends in the group affect later
-expectations. Lock streams deterministically but apply in request order. Guards, required inline
-projections and bookkeeping commit or roll back together. Never loop over independent commits.
-Provide transaction-scoped blob reads, without re-entering the outer locked store.
+## 2. Qualify existing Eventlog
 
-File storage uses versioned JSONL transaction frames with sequence and previous-frame digest.
-Process-safe locking serializes writers; referenced content and journal are durable before success.
-Use the existing blob port; indexes/snapshots are disposable. Recover only provably incomplete,
-uncommitted trailing writes; committed corruption and divergent Git histories are refusals. No
-concatenating merge driver. Preserve active-store erasure/redaction; Git history is a retained archive.
+File storage and atomic groups already exist. Qualify their current implementations rather than
+rebuilding them. Groups have one tenant and durable identity with ordered stream appends; changed
+content under that identity refuses. Earlier appends affect later expectations. Deterministic
+locking does not reorder requests. Guards, required inline projections and bookkeeping commit or
+roll back together. Transaction-scoped blob reads must not re-enter the outer store.
 
-ER adds asynchronous recorded-store ports and executor outside entity-core, then an Eventlog adapter.
-Retain explicit synchronous compatibility adapters, without nested block_on in the kernel. Store
-complete pinned definition, command, result and emitted events, including accepted zero-event
-history. Observations do not change state. Entity revision is distinct from physical position.
-Preserve record-ID equality/conflict, ordered atomic batches, query/transaction capabilities and
-readable legacy provider layouts. SQLite/PostgreSQL packages become compatible facades.
+Preserve eventlog-file/1 bytes, sequence and previous-frame digest, process-safe writer locking,
+referenced content durability, erasure/redaction and recovery boundaries. Only provably incomplete
+uncommitted tails may recover; committed corruption and divergent histories refuse. Verify shared
+file/SQLite/PostgreSQL behavior, including retries, blobs, snapshots and crash/reopen. Missing
+backend execution or end-to-end crash evidence remains missing.
 
-## 2. AEP: one bounded story
+## 3. Asynchronous recorded ER execution
 
-Exactly one AEP story owns Eventlog file authority with Markdown projections. Provider prerequisites
-stay outside it. Include configuration/defaults, dry-run inventories of Markdown/hybrid/database
-stores, identity/revision/relation/body/evidence/history migration, divergent-input refusal, staged
-verification before switching configuration, projection generation/drift/rebuild and removal of
-hybrid runtime selection. Preserve available history; snapshot-only data enters at a legacy-import
-boundary. Never invent past commands.
+Add async recorded-store ports and an executor outside entity-core, then an Eventlog adapter.
+Persist complete definitions, commands, results and nested emitted events, including accepted
+zero-domain-event decisions. Observations append ordered history without advancing entity revision;
+physical positions and entity revisions are distinct. Preserve global record-ID equality/conflict,
+ordered atomic multi-entity batches, transaction-local expectations and verifiable replay. Record
+content uses Eventlog blobs.
 
-Track .engineering/state/manifest.json, events.jsonl and blobs; ignore only disposable .cache.
-Markdown remains tracked but derived. Direct edits are drift, never silent import or overwrite.
-Post-commit projection failure carries the durable receipt. Projection retry never repeats mutation.
-Use one planning-store writer per repository. After acceptance, AEP leaves the critical path.
+Retain explicit synchronous compatibility outside the kernel without nested block_on. Preserve
+query/session contracts and readable legacy layouts; SQLite/PostgreSQL packages become compatible
+facades with explicit imports. Missing legacy command history is represented as an import boundary,
+not invented genesis evidence. New adapter envelope meaning requires its own format version.
 
-## 3. Service semantics and ER convergence
+## 4. Exactly one AEP migration story
 
-Extract reusable Service SDK lowering into ess-service-contract. Keep authorization/hosting/content
-policy and external effects in bindings. Crosswalk create/update/transitions, predicates/invariants/
-branches, identities/relations/revisions, exact values, zero/one/multiple events and external outcomes.
-Implement missing ER semantics in its kernel; never weaken ESS for lowering. Add ess-entity-runtime;
-service-engine delegates decisions and replay. Preserve auth/admission ordering/query/effect/transport
-behavior and public entrypoints. New artifacts opt into ER; old readers and explicit conversion
-remain. Event-only legacy service history is not a full decision history.
+One AEP story owns Eventlog file authority with Markdown projections. Provider prerequisites remain
+in their owning repositories. Add aep plan store inventory, migration dry-run/apply, verification
+and projection rebuild, with aep.project/2 for changed authority/default semantics. Retain legacy
+configuration readers for Markdown, hybrid, SQLite and PostgreSQL migration.
 
-## 4. Protocol, UI and independent tests
+Preserve identities, revisions, relations, bodies, evidence and available history. Refuse divergent
+inputs. Stage destination state, verify equivalence, recheck source identity under the writer
+fence, then switch configuration. Track .engineering/state/manifest.json, events.jsonl, blobs and
+provider-required durable metadata. Ignore only disposable caches and runtime-local operational
+files; durable authority remains tracked.
 
-Imports produce candidates, source references, accounting and unresolved questions. Ground private
-application contracts in client and downstream source. Protobuf stays authoritative until descriptor,
-wire and consumer compatibility pass; then ESS and explicit bindings generate existing proto paths
-and pinned Buf emits language code. Preserve names, numbers, reserved fields, presence, oneofs,
-enums, JSON mappings, streaming and HTTP annotations.
+Markdown remains tracked and derived. Direct edits are drift. A committed mutation with a failed
+projection returns the durable receipt; projection rebuild never repeats the mutation. Remove
+hybrid selection from new runtime configuration.
 
-UiIr covers every implemented screen/journey and loading/empty/failure/permission/reconnect state.
-Generate one complete journey at a time around existing theme roles, translations, widgets, SDK and
-media interfaces. Own only generated composition/routes/actions/views. Keep local drafts/navigation
-separate from server-owned agent/call business state. Independent cache vectors verify patch handling.
-Extend conformance's Go runner and fault injection with UI observations and Flutter/Playwright emitters.
-Expected behavior stays upstream of lowering; targets report observations, runners judge them.
+## 5. Cut over the six real planning stores
 
-## 5. Applications and infrastructure
+Rehearse on preserved snapshots, then migrate in this order:
 
-Connectors retains adapter-owned kinds and GitLab/Kubernetes/SQL reads. Bind generated Handler,
-protected Sources and dynamic validation to real setup, adapter supervision, connection management
-and schema-bound invocation. Linux Secret Service holds credentials; ER/Eventlog holds references
-and metadata. Preserve ordered keyring-to-metadata publication, executable verification, bounded
-startup, restart policy, revocation fencing, protected-input and uncertain-outcome rules. Preserve
-describe/invoke/serve. Broader modeled governance/mutations remain outside selected acceptance.
-Advance exact ESS pins and lockfiles only after compatibility, including excluded CLI workspace.
+1. Eventlog.
+2. Entity Runtime.
+3. Service SDK.
+4. ESS.
+5. Connectors v2.
+6. AEP, using the explicitly qualified new executable.
 
-a second internal adopter keeps Go AgentView, Subscribe/Send, acknowledgement versus streamed-error distinction,
-Connect/gRPC-web and CGO_ENABLED=0. Preserve backend-call-ID correlation/field ownership, server Faye
-and WebSocket behavior, authoritative presence lookup, outbound-only auto-answer, inbound accept/
-reject, native/web auth, embed origins and media permissions. No Rust FFI. Keep SIP/media in native
-bindings. Generate composition without redesigning the application.
+After each switch verify history, queries, mutation, restart and projection rebuild. Retain original
+legacy recovery copies. Once new commands commit, recovery follows Eventlog authority; never
+reactivate stale writers as rollback.
 
-Link selected deployment requirements to existing infrastructure expectations/projections. Cover
-a second internal adopter server/web and Helm inputs, and Connectors local processes. Render manifests and use
-captured/synthetic observations locally. Never infer observed state from desired declarations.
+## 6. ESS and Service SDK convergence
 
+Extract reusable ServiceIr lowering into ess-service-contract and add ess-entity-runtime for ER
+definitions and binding plans. Crosswalk creation, updates, transitions, predicates, invariants,
+branches, identity, relations, revisions, exact values, outcomes and zero/one/multiple events.
+Implement missing ER semantics before admitting lowering; never weaken ESS to fit it.
+
+Service SDK delegates decisions and replay to ER. Bindings retain authentication, authorization,
+hosting, queries, content policy, transport and effects, preserving ordering and public entrypoints.
+Opt-in service-runtime-ir/4 and service-realization-plan/4 select ER; existing readers and meanings
+remain. Explicit legacy event-only conversion does not claim complete decision history.
+
+## 7. Connectors and infrastructure acceptance
+
+Migrate existing local SQLite metadata to ER/Eventlog SQLite while preserving identities,
+credential references, revisions, fences and audit history. Linux Secret Service retains credential
+custody. Preserve generated CLI behavior, existing provider reads, ordered credential-to-metadata
+publication, executable verification, bounded supervision/startup, restart reuse, repair/revoke
+races, protected input, schema-bound invocation and uncertain outcomes.
+
+Advance exact ESS/AEP pins, generated sources and lockfiles, including the excluded CLI workspace.
+Retain the digest-pinned AEP correction until equivalent upstream behavior is verified. Do not
+expand provider or governance capabilities as a side effect.
+
+Link selected service and local-process requirements to deterministic infrastructure projections
+and independent observations. Rendering never applies infrastructure or infers actual state from
+desired declarations. Preserve credential redaction and its mutation checks.
+
+## Compiler minima and deferred work
+
+Eventlog-backed runtimes move to Rust 1.91; independently supported pure libraries retain their
+minima and separate checks. Generic protobuf/UI/Flutter is recorded in
+task:deferred-protocol-ui-bindings, outside this initiative's completion. Local acceptance does not
+authorize releases, publication or deployment.

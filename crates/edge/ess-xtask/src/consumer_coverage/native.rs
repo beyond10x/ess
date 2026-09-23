@@ -31,6 +31,11 @@ impl VerifiedCases {
         &self.cases
     }
 }
+
+#[cfg(test)]
+pub(super) fn test_verified_cases(cases: BTreeSet<String>, receipt: Value) -> VerifiedCases {
+    VerifiedCases { cases, receipt }
+}
 struct Session<'a> {
     root: &'a Path,
     directory: &'a Path,
@@ -228,7 +233,7 @@ pub(super) fn execute(
     session.authority()?;
     let provider = session.retain(&std::env::current_exe()?)?;
     super::write_json(&directory.join("provider-native.json"), &json!(provider))?;
-    let mut targets = BTreeMap::<(String, String), Native>::new();
+    let mut targets = BTreeMap::<(String, String, String, String), Native>::new();
     let mut passed = BTreeSet::new();
     let mut receipts = BTreeMap::new();
     for id in required {
@@ -246,7 +251,12 @@ pub(super) fn execute(
         {
             bail!("unreviewed executable case contract {id}");
         }
-        let key = (identity.package.clone(), identity.target_name.clone());
+        let key = (
+            identity.package.clone(),
+            "test".to_owned(),
+            identity.target_name.clone(),
+            identity.target_profile.clone(),
+        );
         if !targets.contains_key(&key) {
             let native = build_target(
                 &mut session,
@@ -268,7 +278,15 @@ pub(super) fn execute(
         super::executor::execute_case(&mut exact, &identity.full_name)
             .with_context(|| format!("exact consumer case {id}"))?;
         passed.insert(id.clone());
-        receipts.insert(id.clone(),json!({"identity":identity,"native":native,"source_sha256":super::hash_json(&profile["source"]),"provider_profile_sha256":super::hash_json(profile),"executed":1,"passed":1,"failed":0,"ignored":0,"nested_runtime":"none claimed"}));
+        receipts.insert(
+            id.clone(),
+            legacy_receipt_value(
+                &serde_json::to_value(identity)?,
+                &serde_json::to_value(native)?,
+                &super::hash_json(&profile["source"]),
+                &super::hash_json(profile),
+            ),
+        );
         super::write_json(&directory.join("executed-cases.json"), &json!(receipts))?;
     }
     session.authority()?;
@@ -276,6 +294,277 @@ pub(super) fn execute(
         cases: passed,
         receipt: json!(receipts),
     })
+}
+
+fn legacy_receipt_value(
+    identity: &Value,
+    native: &Value,
+    source_sha256: &str,
+    provider_profile_sha256: &str,
+) -> Value {
+    json!({"identity":identity,"native":native,"source_sha256":source_sha256,"provider_profile_sha256":provider_profile_sha256,"executed":1,"passed":1,"failed":0,"ignored":0,"nested_runtime":"none claimed"})
+}
+
+#[cfg(test)]
+pub(super) fn test_legacy_receipt(
+    identity: &Value,
+    native: &Value,
+    source_sha256: &str,
+    provider_profile_sha256: &str,
+) -> Value {
+    legacy_receipt_value(identity, native, source_sha256, provider_profile_sha256)
+}
+
+pub(super) fn execute_acquisition(
+    root: &Path,
+    directory: &Path,
+    profile: &Value,
+    plan: &Value,
+    metadata: &Value,
+) -> Result<Value> {
+    fs::create_dir(directory)?;
+    fs::create_dir(directory.join("native"))?;
+    let mut session = Session {
+        root,
+        directory,
+        profile,
+        environment: environment(profile)?,
+        sequence: 0,
+        observations: Vec::new(),
+    };
+    session.authority()?;
+    let cases = super::scenario_acquisition::required_cases(plan)?;
+    let mut targets = BTreeMap::<(String, String, String), Native>::new();
+    let mut passed = BTreeSet::new();
+    let mut receipts = BTreeMap::new();
+    for (id, identity) in cases {
+        if profile["source"][&identity.source] != identity.source_file_sha256 {
+            bail!("acquisition case source bytes differ from reviewed authority: {id}");
+        }
+        if !identity.features.is_empty()
+            || identity.target_profile != "x86_64-unknown-linux-gnu/default"
+            || identity.nested_runtime != "None claimed; direct Rust assertions only"
+            || identity.tool_requirements
+                != ["frozen Rust 1.98.1; locked offline owner-target build"]
+        {
+            bail!("unreviewed executable acquisition contract {id}");
+        }
+        let key = (
+            identity.package.clone(),
+            "bin".to_owned(),
+            identity.target_name.clone(),
+        );
+        if !targets.contains_key(&key) {
+            let native = build_acquisition_target(&mut session, &identity, metadata)?;
+            super::write_json(
+                &directory.join(format!("artifact-{}.json", super::hash_json(&json!(key)))),
+                &json!(native),
+            )?;
+            targets.insert(key.clone(), native);
+        }
+        let native = &targets[&key];
+        let mut exact = ExactCase {
+            session: &mut session,
+            native,
+        };
+        super::executor::execute_case(&mut exact, &identity.full_name)
+            .with_context(|| format!("exact scenario-acquisition case {id}"))?;
+        passed.insert(id.clone());
+        receipts.insert(id,json!({"identity":identity,"native":native,"source_sha256":super::hash_json(&profile["source"]),"provider_profile_sha256":super::hash_json(profile),"executed":1,"passed":1,"failed":0,"ignored":0,"nested_runtime":"none claimed"}));
+        super::write_json(
+            &directory.join("executed-acquisition-cases.json"),
+            &json!(receipts),
+        )?;
+    }
+    session.authority()?;
+    let proof = super::scenario_acquisition::execution_proof(plan, &passed)?;
+    super::write_json(&directory.join("acquisition-proof.json"), &proof)?;
+    Ok(proof)
+}
+
+pub(super) fn execute_model_behavior(
+    root: &Path,
+    directory: &Path,
+    profile: &Value,
+    plan: &Value,
+    metadata: &Value,
+) -> Result<Value> {
+    fs::create_dir(directory)?;
+    fs::create_dir(directory.join("native"))?;
+    let mut session = Session {
+        root,
+        directory,
+        profile,
+        environment: environment(profile)?,
+        sequence: 0,
+        observations: Vec::new(),
+    };
+    session.authority()?;
+    let cases = super::model_behavior::required_cases(plan)?;
+    let authority_sha256 = plan["authority_sha256"]
+        .as_str()
+        .context("model-behavior plan authority digest")?;
+    let plan_sha256 = super::hash_json(plan);
+    let source_sha256 = super::hash_json(&profile["source"]);
+    let provider_profile_sha256 = super::hash_json(profile);
+    let mut targets = BTreeMap::<(String, String, String, String), Native>::new();
+    let mut receipts = BTreeMap::new();
+    for (id, case) in cases {
+        let identity = &case.identity;
+        let key = (
+            identity.package.clone(),
+            identity.target_kind.clone(),
+            identity.target_name.clone(),
+            identity.target_profile.clone(),
+        );
+        if !targets.contains_key(&key) {
+            let native = build_binary_target(
+                &mut session,
+                &identity.package,
+                &identity.target_name,
+                &case.target_source,
+                metadata,
+            )?;
+            super::write_json(
+                &directory.join(format!("artifact-{}.json", super::hash_json(&json!(key)))),
+                &json!(native),
+            )?;
+            targets.insert(key.clone(), native);
+        }
+        let native = &targets[&key];
+        let mut exact = ExactCase {
+            session: &mut session,
+            native,
+        };
+        super::executor::execute_case(&mut exact, &identity.full_name)
+            .with_context(|| format!("exact model-behavior case {id}"))?;
+        receipts.insert(
+            id,
+            super::model_behavior::Receipt {
+                format: super::model_behavior::CASE_FORMAT.to_owned(),
+                authority_sha256: authority_sha256.to_owned(),
+                plan_sha256: plan_sha256.clone(),
+                identity: identity.clone(),
+                target_source: case.target_source,
+                target_source_file_sha256: case.target_source_file_sha256,
+                source: case.source,
+                source_file_sha256: case.source_file_sha256,
+                case_ast_sha256: case.case_ast_sha256,
+                native: serde_json::to_value(native)?,
+                source_sha256: source_sha256.clone(),
+                provider_profile_sha256: provider_profile_sha256.clone(),
+                executed: 1,
+                passed: 1,
+                failed: 0,
+                ignored: 0,
+                nested_runtime: "none claimed".to_owned(),
+            },
+        );
+        super::write_json(
+            &directory.join("executed-model-behavior-cases.json"),
+            &serde_json::to_value(&receipts)?,
+        )?;
+    }
+    session.authority()?;
+    let execution = super::model_behavior::executed(plan, receipts)?;
+    super::write_json(&directory.join("model-behavior-execution.json"), &execution)?;
+    Ok(execution)
+}
+
+fn build_acquisition_target(
+    session: &mut Session<'_>,
+    identity: &super::scenario_acquisition::Case,
+    metadata: &Value,
+) -> Result<Native> {
+    build_binary_target(
+        session,
+        &identity.package,
+        &identity.target_name,
+        &identity.target_source,
+        metadata,
+    )
+}
+
+fn build_binary_target(
+    session: &mut Session<'_>,
+    package_name: &str,
+    target_name: &str,
+    target_source: &str,
+    metadata: &Value,
+) -> Result<Native> {
+    session.authority()?;
+    let package = metadata["packages"]
+        .as_array()
+        .context("Cargo metadata packages")?
+        .iter()
+        .find(|package| package["name"] == package_name)
+        .context("acquisition owner package missing from current metadata")?;
+    let target = package["targets"]
+        .as_array()
+        .context("Cargo package targets")?
+        .iter()
+        .find(|target| {
+            target["name"] == target_name
+                && target["kind"]
+                    .as_array()
+                    .is_some_and(|kinds| kinds.iter().any(|kind| kind == "bin"))
+        })
+        .context("binary-unit target missing from current Cargo metadata")?;
+    if target["src_path"]
+        != session
+            .root
+            .join(target_source)
+            .to_str()
+            .context("binary target source path UTF-8")?
+    {
+        bail!("binary-unit target root differs from reviewed target source");
+    }
+    let package_id = package["id"].as_str().context("Cargo package identity")?;
+    let cargo = PathBuf::from(
+        session.profile["compiled_build"]["tools"]["CARGO"]["path"]
+            .as_str()
+            .context("compiled Cargo path")?,
+    );
+    let args = [
+        "test",
+        "--locked",
+        "--offline",
+        "--no-run",
+        "--message-format=json-render-diagnostics",
+        "-p",
+        package_name,
+        "--bin",
+        target_name,
+    ]
+    .map(str::to_owned);
+    let output = session.command(&cargo, &args)?;
+    if output.exit != Some(0) {
+        bail!(
+            "binary-unit owner-target compilation failed: {} {} {:?}",
+            package_name,
+            target_name,
+            output.exit
+        );
+    }
+    session.authority()?;
+    let artifact = super::executor::binary_unit_artifact(
+        &output.stdout,
+        package_id,
+        target_name,
+        session
+            .root
+            .join(target_source)
+            .to_str()
+            .context("target source UTF-8")?,
+    )?;
+    if artifact["manifest_path"] != package["manifest_path"] {
+        bail!("binary-unit Cargo artifact manifest differs from owner metadata");
+    }
+    session.retain(Path::new(
+        artifact["executable"]
+            .as_str()
+            .context("native binary-unit Cargo artifact")?,
+    ))
 }
 fn build_target(
     session: &mut Session<'_>,

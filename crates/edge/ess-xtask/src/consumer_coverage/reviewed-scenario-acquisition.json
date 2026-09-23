@@ -1,0 +1,245 @@
+{
+  "format": "ess-consumer-scenario-acquisition/2",
+  "rows": [
+    {
+      "case": {
+        "case_ast_sha256": "09881796727bd951fdb6ae2a885a1de31c9e493d568a49da2564cf165b1696a9",
+        "case_source": "crates/edge/ess-cli/src/input_discovery_accounting_tests.rs",
+        "features": [],
+        "full_name": "input_discovery::accounting_tests::acquisition_authored_direct_file",
+        "id": "ess-cli:bin:ess:input_discovery::accounting_tests::acquisition_authored_direct_file",
+        "nested_runtime": "None claimed; direct Rust assertions only",
+        "package": "ess-cli",
+        "source_file_sha256": "5aad488f9e441d453fc1c81aa1ec72a6dbb29c14b3091aa8861b7d4931e96688",
+        "target_kind": "bin",
+        "target_name": "ess",
+        "target_profile": "x86_64-unknown-linux-gnu/default",
+        "target_source": "crates/edge/ess-cli/src/main.rs",
+        "tool_requirements": [
+          "frozen Rust 1.98.1; locked offline owner-target build"
+        ]
+      },
+      "entrypoint": "ess_cli::bin(ess)::input_discovery::fn::authored",
+      "entrypoint_ast_sha256": "bebcf2dc5172a473ae6a2c66ee0199ae30e530025cc823f95438778fecbb637b",
+      "entrypoint_sha256": "9361078c64d9014df12ee542e0c813f42b2322cd69275be8d498c05386ee6860",
+      "entrypoint_source": "crates/edge/ess-cli/src/input_discovery.rs",
+      "entrypoint_source_file_sha256": "4676a0532f14af1a5da4ce37323e1f7bd9d26cfece212d69a54fddca64d6bbc6",
+      "mode": "DirectFile",
+      "profile": "acquisition-authored-direct-file",
+      "profile_sha256": "2772052e950dbc86aab7bb9fd25e834654585103f7bd37a1a6b247e84251c236",
+      "review_reference": "story:consumer-accounting-baseline-never-extended",
+      "role": "Authored",
+      "source_reference": "crates/edge/ess-cli/src/input_discovery_accounting_tests.rs"
+    },
+    {
+      "case": {
+        "case_ast_sha256": "0fc5242cc06458d27a0bbf98ea9f40864e1ef07b9d5bae85887f4557a55df757",
+        "case_source": "crates/edge/ess-cli/src/input_discovery_accounting_tests.rs",
+        "features": [],
+        "full_name": "input_discovery::accounting_tests::acquisition_authored_legacy_directory",
+        "id": "ess-cli:bin:ess:input_discovery::accounting_tests::acquisition_authored_legacy_directory",
+        "nested_runtime": "None claimed; direct Rust assertions only",
+        "package": "ess-cli",
+        "source_file_sha256": "5aad488f9e441d453fc1c81aa1ec72a6dbb29c14b3091aa8861b7d4931e96688",
+        "target_kind": "bin",
+        "target_name": "ess",
+        "target_profile": "x86_64-unknown-linux-gnu/default",
+        "target_source": "crates/edge/ess-cli/src/main.rs",
+        "tool_requirements": [
+          "frozen Rust 1.98.1; locked offline owner-target build"
+        ]
+      },
+      "entrypoint": "ess_cli::bin(ess)::input_discovery::fn::authored",
+      "entrypoint_ast_sha256": "bebcf2dc5172a473ae6a2c66ee0199ae30e530025cc823f95438778fecbb637b",
+      "entrypoint_sha256": "9361078c64d9014df12ee542e0c813f42b2322cd69275be8d498c05386ee6860",
+      "entrypoint_source": "crates/edge/ess-cli/src/input_discovery.rs",
+      "entrypoint_source_file_sha256": "4676a0532f14af1a5da4ce37323e1f7bd9d26cfece212d69a54fddca64d6bbc6",
+      "mode": "LegacyDirectory",
+      "profile": "acquisition-authored-legacy-directory",
+      "profile_sha256": "3bdd9a73df0f99b0b045c473b8850bb91492fb801be2cf83ade192719f059e9f",
+      "review_reference": "story:consumer-accounting-baseline-never-extended",
+      "role": "Authored",
+      "source_reference": "crates/edge/ess-cli/src/input_discovery_accounting_tests.rs"
+    },
+    {
+      "case": {
+        "case_ast_sha256": "b43ec5cf97db69c14a44fafbee1cf76ffdd844ffecf369eaaeedb6c947d8904b",
+        "case_source": "crates/edge/ess-cli/src/input_discovery_accounting_tests.rs",
+        "features": [],
+        "full_name": "input_discovery::accounting_tests::acquisition_authored_manifest",
+        "id": "ess-cli:bin:ess:input_discovery::accounting_tests::acquisition_authored_manifest",
+        "nested_runtime": "None claimed; direct Rust assertions only",
+        "package": "ess-cli",
+        "source_file_sha256": "5aad488f9e441d453fc1c81aa1ec72a6dbb29c14b3091aa8861b7d4931e96688",
+        "target_kind": "bin",
+        "target_name": "ess",
+        "target_profile": "x86_64-unknown-linux-gnu/default",
+        "target_source": "crates/edge/ess-cli/src/main.rs",
+        "tool_requirements": [
+          "frozen Rust 1.98.1; locked offline owner-target build"
+        ]
+      },
+      "entrypoint": "ess_cli::bin(ess)::input_discovery::fn::authored",
+      "entrypoint_ast_sha256": "bebcf2dc5172a473ae6a2c66ee0199ae30e530025cc823f95438778fecbb637b",
+      "entrypoint_sha256": "9361078c64d9014df12ee542e0c813f42b2322cd69275be8d498c05386ee6860",
+      "entrypoint_source": "crates/edge/ess-cli/src/input_discovery.rs",
+      "entrypoint_source_file_sha256": "4676a0532f14af1a5da4ce37323e1f7bd9d26cfece212d69a54fddca64d6bbc6",
+      "mode": "Manifest",
+      "profile": "acquisition-authored-manifest",
+      "profile_sha256": "7d25ba478fed1c497bae71b6eef1db41fe06cff6c4a295fb24b823e44eaa9529",
+      "review_reference": "story:consumer-accounting-baseline-never-extended",
+      "role": "Authored",
+      "source_reference": "crates/edge/ess-cli/src/input_discovery_accounting_tests.rs"
+    },
+    {
+      "case": {
+        "case_ast_sha256": "ba3b61da6ad7fa28da46e3c2584838b69ab45e56bd925bfc56599ad7e2ff0c5f",
+        "case_source": "crates/edge/ess-cli/src/input_discovery_accounting_tests.rs",
+        "features": [],
+        "full_name": "input_discovery::accounting_tests::acquisition_authored_omitted_scenarios",
+        "id": "ess-cli:bin:ess:input_discovery::accounting_tests::acquisition_authored_omitted_scenarios",
+        "nested_runtime": "None claimed; direct Rust assertions only",
+        "package": "ess-cli",
+        "source_file_sha256": "5aad488f9e441d453fc1c81aa1ec72a6dbb29c14b3091aa8861b7d4931e96688",
+        "target_kind": "bin",
+        "target_name": "ess",
+        "target_profile": "x86_64-unknown-linux-gnu/default",
+        "target_source": "crates/edge/ess-cli/src/main.rs",
+        "tool_requirements": [
+          "frozen Rust 1.98.1; locked offline owner-target build"
+        ]
+      },
+      "entrypoint": "ess_cli::bin(ess)::input_discovery::fn::authored",
+      "entrypoint_ast_sha256": "bebcf2dc5172a473ae6a2c66ee0199ae30e530025cc823f95438778fecbb637b",
+      "entrypoint_sha256": "9361078c64d9014df12ee542e0c813f42b2322cd69275be8d498c05386ee6860",
+      "entrypoint_source": "crates/edge/ess-cli/src/input_discovery.rs",
+      "entrypoint_source_file_sha256": "4676a0532f14af1a5da4ce37323e1f7bd9d26cfece212d69a54fddca64d6bbc6",
+      "mode": "Omitted",
+      "profile": "acquisition-authored-omitted-scenarios",
+      "profile_sha256": "047928830afc2cb5048f6bc0b06ed514ff653955f2223cebb53f7c57dc5d23eb",
+      "review_reference": "story:consumer-accounting-baseline-never-extended",
+      "role": "Authored",
+      "source_reference": "crates/edge/ess-cli/src/input_discovery_accounting_tests.rs"
+    },
+    {
+      "case": {
+        "case_ast_sha256": "48a51966d9fb003fe5285af67cefd4f844417f61f1f57358cde40a915bcaaacd",
+        "case_source": "crates/edge/ess-cli/src/input_discovery_accounting_tests.rs",
+        "features": [],
+        "full_name": "input_discovery::accounting_tests::acquisition_coverage_direct_file",
+        "id": "ess-cli:bin:ess:input_discovery::accounting_tests::acquisition_coverage_direct_file",
+        "nested_runtime": "None claimed; direct Rust assertions only",
+        "package": "ess-cli",
+        "source_file_sha256": "5aad488f9e441d453fc1c81aa1ec72a6dbb29c14b3091aa8861b7d4931e96688",
+        "target_kind": "bin",
+        "target_name": "ess",
+        "target_profile": "x86_64-unknown-linux-gnu/default",
+        "target_source": "crates/edge/ess-cli/src/main.rs",
+        "tool_requirements": [
+          "frozen Rust 1.98.1; locked offline owner-target build"
+        ]
+      },
+      "entrypoint": "ess_cli::bin(ess)::input_discovery::fn::authored",
+      "entrypoint_ast_sha256": "bebcf2dc5172a473ae6a2c66ee0199ae30e530025cc823f95438778fecbb637b",
+      "entrypoint_sha256": "9361078c64d9014df12ee542e0c813f42b2322cd69275be8d498c05386ee6860",
+      "entrypoint_source": "crates/edge/ess-cli/src/input_discovery.rs",
+      "entrypoint_source_file_sha256": "4676a0532f14af1a5da4ce37323e1f7bd9d26cfece212d69a54fddca64d6bbc6",
+      "mode": "DirectFile",
+      "profile": "acquisition-coverage-direct-file",
+      "profile_sha256": "dd0aa4e98a3c8683e5a492f81e65c7cad82a74bcf78ff7877a55dac03f987b93",
+      "review_reference": "story:consumer-accounting-baseline-never-extended",
+      "role": "Coverage",
+      "source_reference": "crates/edge/ess-cli/src/input_discovery_accounting_tests.rs"
+    },
+    {
+      "case": {
+        "case_ast_sha256": "0d07c977707a383a30b1e54c398f9abea9a83911544d1248d41bb2900475db5c",
+        "case_source": "crates/edge/ess-cli/src/input_discovery_accounting_tests.rs",
+        "features": [],
+        "full_name": "input_discovery::accounting_tests::acquisition_coverage_legacy_directory",
+        "id": "ess-cli:bin:ess:input_discovery::accounting_tests::acquisition_coverage_legacy_directory",
+        "nested_runtime": "None claimed; direct Rust assertions only",
+        "package": "ess-cli",
+        "source_file_sha256": "5aad488f9e441d453fc1c81aa1ec72a6dbb29c14b3091aa8861b7d4931e96688",
+        "target_kind": "bin",
+        "target_name": "ess",
+        "target_profile": "x86_64-unknown-linux-gnu/default",
+        "target_source": "crates/edge/ess-cli/src/main.rs",
+        "tool_requirements": [
+          "frozen Rust 1.98.1; locked offline owner-target build"
+        ]
+      },
+      "entrypoint": "ess_cli::bin(ess)::input_discovery::fn::authored",
+      "entrypoint_ast_sha256": "bebcf2dc5172a473ae6a2c66ee0199ae30e530025cc823f95438778fecbb637b",
+      "entrypoint_sha256": "9361078c64d9014df12ee542e0c813f42b2322cd69275be8d498c05386ee6860",
+      "entrypoint_source": "crates/edge/ess-cli/src/input_discovery.rs",
+      "entrypoint_source_file_sha256": "4676a0532f14af1a5da4ce37323e1f7bd9d26cfece212d69a54fddca64d6bbc6",
+      "mode": "LegacyDirectory",
+      "profile": "acquisition-coverage-legacy-directory",
+      "profile_sha256": "fac374039e4d030b8005758ffc40f16751e522b44a2057663c5357d5762d3441",
+      "review_reference": "story:consumer-accounting-baseline-never-extended",
+      "role": "Coverage",
+      "source_reference": "crates/edge/ess-cli/src/input_discovery_accounting_tests.rs"
+    },
+    {
+      "case": {
+        "case_ast_sha256": "259f87bfb8aca94638a0e09b2db4f5f6f9945486ba83bb08a80e0e6ebdfd5724",
+        "case_source": "crates/edge/ess-cli/src/input_discovery_accounting_tests.rs",
+        "features": [],
+        "full_name": "input_discovery::accounting_tests::acquisition_coverage_manifest",
+        "id": "ess-cli:bin:ess:input_discovery::accounting_tests::acquisition_coverage_manifest",
+        "nested_runtime": "None claimed; direct Rust assertions only",
+        "package": "ess-cli",
+        "source_file_sha256": "5aad488f9e441d453fc1c81aa1ec72a6dbb29c14b3091aa8861b7d4931e96688",
+        "target_kind": "bin",
+        "target_name": "ess",
+        "target_profile": "x86_64-unknown-linux-gnu/default",
+        "target_source": "crates/edge/ess-cli/src/main.rs",
+        "tool_requirements": [
+          "frozen Rust 1.98.1; locked offline owner-target build"
+        ]
+      },
+      "entrypoint": "ess_cli::bin(ess)::input_discovery::fn::authored",
+      "entrypoint_ast_sha256": "bebcf2dc5172a473ae6a2c66ee0199ae30e530025cc823f95438778fecbb637b",
+      "entrypoint_sha256": "9361078c64d9014df12ee542e0c813f42b2322cd69275be8d498c05386ee6860",
+      "entrypoint_source": "crates/edge/ess-cli/src/input_discovery.rs",
+      "entrypoint_source_file_sha256": "4676a0532f14af1a5da4ce37323e1f7bd9d26cfece212d69a54fddca64d6bbc6",
+      "mode": "Manifest",
+      "profile": "acquisition-coverage-manifest",
+      "profile_sha256": "519cf36cc7f51ea01d0109148d1e6f362250d6e5ecbc983dfb5df56aff1288ff",
+      "review_reference": "story:consumer-accounting-baseline-never-extended",
+      "role": "Coverage",
+      "source_reference": "crates/edge/ess-cli/src/input_discovery_accounting_tests.rs"
+    },
+    {
+      "case": {
+        "case_ast_sha256": "ee593dd3510469d44fb2fc71d4a4c30e156b8232a8c97f6058fd1e5e9e5d7408",
+        "case_source": "crates/edge/ess-cli/src/input_discovery_accounting_tests.rs",
+        "features": [],
+        "full_name": "input_discovery::accounting_tests::acquisition_coverage_omitted_scenarios",
+        "id": "ess-cli:bin:ess:input_discovery::accounting_tests::acquisition_coverage_omitted_scenarios",
+        "nested_runtime": "None claimed; direct Rust assertions only",
+        "package": "ess-cli",
+        "source_file_sha256": "5aad488f9e441d453fc1c81aa1ec72a6dbb29c14b3091aa8861b7d4931e96688",
+        "target_kind": "bin",
+        "target_name": "ess",
+        "target_profile": "x86_64-unknown-linux-gnu/default",
+        "target_source": "crates/edge/ess-cli/src/main.rs",
+        "tool_requirements": [
+          "frozen Rust 1.98.1; locked offline owner-target build"
+        ]
+      },
+      "entrypoint": "ess_cli::bin(ess)::input_discovery::fn::authored",
+      "entrypoint_ast_sha256": "bebcf2dc5172a473ae6a2c66ee0199ae30e530025cc823f95438778fecbb637b",
+      "entrypoint_sha256": "9361078c64d9014df12ee542e0c813f42b2322cd69275be8d498c05386ee6860",
+      "entrypoint_source": "crates/edge/ess-cli/src/input_discovery.rs",
+      "entrypoint_source_file_sha256": "4676a0532f14af1a5da4ce37323e1f7bd9d26cfece212d69a54fddca64d6bbc6",
+      "mode": "Omitted",
+      "profile": "acquisition-coverage-omitted-scenarios",
+      "profile_sha256": "b9779a47744d0c86903ef028b039229cb28fcfa7d885df3d356c2b25664a2602",
+      "review_reference": "story:consumer-accounting-baseline-never-extended",
+      "role": "Coverage",
+      "source_reference": "crates/edge/ess-cli/src/input_discovery_accounting_tests.rs"
+    }
+  ]
+}

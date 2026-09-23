@@ -1,0 +1,29 @@
+domain: selection.control
+
+types:
+  - name: selection.control.Leg
+    kind: struct
+    fields:
+      - name: id
+        type: String
+
+  - name: selection.control.UnusedLeg
+    kind: struct
+    fields:
+      - name: id
+        type: String
+
+events:
+  - name: selection.control.Arrived
+    fields:
+      - name: data
+        type: String
+
+  - name: selection.control.Seen
+
+commands:
+  - name: selection.control.Receive
+    outcomes:
+      - name: received
+        emits:
+          - selection.control.Seen

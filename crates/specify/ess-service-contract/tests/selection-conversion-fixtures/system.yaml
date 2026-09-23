@@ -1,0 +1,5 @@
+format: ess/4
+system: selection
+version: v1
+domains:
+  - selection.core

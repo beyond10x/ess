@@ -5,6 +5,8 @@ use serde_json::Value;
 use std::collections::BTreeSet;
 
 pub(super) const FORMAT: &str = "ess-consumer-accounting/1";
+pub(super) const FORMAT_V2: &str = "ess-consumer-accounting/2";
+pub(super) const FORMAT_V3: &str = "ess-consumer-accounting/3";
 
 #[derive(Debug, Serialize, Deserialize)]
 pub(super) enum Format {
@@ -35,6 +37,107 @@ pub(super) struct Candidates {
 }
 pub(super) fn read_candidates(value: &Value) -> Result<Candidates> {
     Ok(serde_json::from_value(value.clone())?)
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub(super) enum FormatV2 {
+    #[serde(rename = "ess-consumer-accounting/2")]
+    V2,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub(super) enum ScenarioAcquisitionFormat {
+    #[serde(rename = "ess-consumer-scenario-acquisition/2")]
+    V2,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+#[allow(
+    dead_code,
+    reason = "the accounting/2 reader remains a required compatibility boundary"
+)]
+pub(super) struct CandidatesV2 {
+    format: FormatV2,
+    stage: CandidateStage,
+    cells: Vec<CellV2>,
+    reconciliation_sha256: String,
+    scenario_acquisition_format: ScenarioAcquisitionFormat,
+    acquisition_rows: usize,
+    aggregate_rows: usize,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct CellV2 {
+    model: String,
+    shape: String,
+    consumer: String,
+    profile: String,
+    status: Status,
+    disposition: DispositionV2,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+#[serde(tag = "kind", deny_unknown_fields)]
+enum DispositionV2 {
+    PendingOwner {
+        reason: String,
+    },
+    UnknownProposal {
+        owner: String,
+        follow_up: String,
+        reason: String,
+    },
+    MandatoryUnqualified {
+        requirement: String,
+        reason: String,
+    },
+    CaseCandidate {
+        requirement: String,
+        cases: Vec<String>,
+        reason: String,
+    },
+    SchemaDocumentMetadataCandidate {
+        evidence: super::metadata::Row,
+    },
+    AggregateClosureCandidate {
+        closure: String,
+        reason: String,
+    },
+}
+
+#[allow(
+    dead_code,
+    reason = "the accounting/2 reader remains a required compatibility boundary"
+)]
+pub(super) fn read_candidates_v2(value: &Value) -> Result<CandidatesV2> {
+    Ok(serde_json::from_value(value.clone())?)
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub(super) enum FormatV3 {
+    #[serde(rename = "ess-consumer-accounting/3")]
+    V3,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub(super) struct CandidatesV3 {
+    format: FormatV3,
+    stage: CandidateStage,
+    cells: Vec<CellV2>,
+    reconciliation_sha256: String,
+    scenario_acquisition_format: ScenarioAcquisitionFormat,
+    acquisition_rows: usize,
+    aggregate_rows: usize,
+    model_behavior_candidate: super::model_behavior::Candidate,
+}
+
+pub(super) fn read_candidates_v3(value: &Value) -> Result<CandidatesV3> {
+    let candidates: CandidatesV3 = serde_json::from_value(value.clone())?;
+    super::model_behavior::read_candidate(&value["model_behavior_candidate"])?;
+    Ok(candidates)
 }
 
 #[derive(Debug, Serialize, Deserialize)]

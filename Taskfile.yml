@@ -17,11 +17,13 @@ tasks:
         --package ess-diff
         --package ess-deployment
         --package ess-domain
+        --package ess-entity-runtime
         --package ess-gen
         --package ess-kubernetes
         --package ess-openapi
         --package ess-primitives
         --package ess-realization
+        --package ess-service-contract
         --package ess-synth
         --package ess-xtask
         --package gatepass-realization

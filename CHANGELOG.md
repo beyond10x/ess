@@ -2,6 +2,19 @@
 
 ## [Unreleased]
 
+### Added
+
+- `ess-entity-runtime` projects an admitted service contract into validated Entity Runtime
+  definitions and typed host binding obligations. It preserves conditional outcome selection,
+  exact values and event order, and makes omitted operation-field actions explicit without
+  executing a service or choosing the host's policy.
+  Subject-field, state-change and external conditions lower to ER predicates; an operation
+  that clears a field and a preserve that returns no response are refused by name
+  (`ClearedValueUnsupported`, `SilentPreserveUnsupported`).
+- `ess-service-contract` extracts a borrowed service contract for an exact component and
+  synthesis plan, preserving selected compiler values, contextual capabilities, obligations,
+  refusals and their original order.
+
 ## [0.30.0] — 2026-09-23
 
 ### Added

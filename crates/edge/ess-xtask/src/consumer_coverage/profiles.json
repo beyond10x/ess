@@ -629,7 +629,7 @@
     ],
     "claim_boundary": "authored acquisition under manifest: exact input identities/bytes, role-specific filesystem checking and discovery refusal before output; authored(None, coverage=false/true) remains empty before acquisition; specification requires an explicit path.",
     "execution_profile": "default-rust",
-    "classification": "model-consumer",
+    "classification": "scenario-acquisition",
     "evidence_status": "UNACCEPTED_SOURCE_CANDIDATE",
     "follow_up": null,
     "owner": null
@@ -641,7 +641,7 @@
     ],
     "claim_boundary": "authored acquisition under legacy-directory: exact input identities/bytes, role-specific filesystem checking and discovery refusal before output; authored(None, coverage=false/true) remains empty before acquisition; specification requires an explicit path.",
     "execution_profile": "default-rust",
-    "classification": "model-consumer",
+    "classification": "scenario-acquisition",
     "evidence_status": "UNACCEPTED_SOURCE_CANDIDATE",
     "follow_up": null,
     "owner": null
@@ -653,7 +653,7 @@
     ],
     "claim_boundary": "authored acquisition under direct-file: exact input identities/bytes, role-specific filesystem checking and discovery refusal before output; authored(None, coverage=false/true) remains empty before acquisition; specification requires an explicit path.",
     "execution_profile": "default-rust",
-    "classification": "model-consumer",
+    "classification": "scenario-acquisition",
     "evidence_status": "UNACCEPTED_SOURCE_CANDIDATE",
     "follow_up": null,
     "owner": null
@@ -665,7 +665,7 @@
     ],
     "claim_boundary": "authored acquisition under omitted-scenarios: exact input identities/bytes, role-specific filesystem checking and discovery refusal before output; authored(None, coverage=false/true) remains empty before acquisition; specification requires an explicit path.",
     "execution_profile": "default-rust",
-    "classification": "model-consumer",
+    "classification": "scenario-acquisition",
     "evidence_status": "UNACCEPTED_SOURCE_CANDIDATE",
     "follow_up": null,
     "owner": null
@@ -677,7 +677,7 @@
     ],
     "claim_boundary": "coverage acquisition under manifest: exact input identities/bytes, role-specific filesystem checking and discovery refusal before output; authored(None, coverage=false/true) remains empty before acquisition; specification requires an explicit path.",
     "execution_profile": "default-rust",
-    "classification": "model-consumer",
+    "classification": "scenario-acquisition",
     "evidence_status": "UNACCEPTED_SOURCE_CANDIDATE",
     "follow_up": null,
     "owner": null
@@ -689,7 +689,7 @@
     ],
     "claim_boundary": "coverage acquisition under legacy-directory: exact input identities/bytes, role-specific filesystem checking and discovery refusal before output; authored(None, coverage=false/true) remains empty before acquisition; specification requires an explicit path.",
     "execution_profile": "default-rust",
-    "classification": "model-consumer",
+    "classification": "scenario-acquisition",
     "evidence_status": "UNACCEPTED_SOURCE_CANDIDATE",
     "follow_up": null,
     "owner": null
@@ -701,7 +701,7 @@
     ],
     "claim_boundary": "coverage acquisition under direct-file: exact input identities/bytes, role-specific filesystem checking and discovery refusal before output; authored(None, coverage=false/true) remains empty before acquisition; specification requires an explicit path.",
     "execution_profile": "default-rust",
-    "classification": "model-consumer",
+    "classification": "scenario-acquisition",
     "evidence_status": "UNACCEPTED_SOURCE_CANDIDATE",
     "follow_up": null,
     "owner": null
@@ -713,7 +713,7 @@
     ],
     "claim_boundary": "coverage acquisition under omitted-scenarios: exact input identities/bytes, role-specific filesystem checking and discovery refusal before output; authored(None, coverage=false/true) remains empty before acquisition; specification requires an explicit path.",
     "execution_profile": "default-rust",
-    "classification": "model-consumer",
+    "classification": "scenario-acquisition",
     "evidence_status": "UNACCEPTED_SOURCE_CANDIDATE",
     "follow_up": null,
     "owner": null

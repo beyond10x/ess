@@ -1,0 +1,32 @@
+domain: selection.core
+
+types:
+  - name: selection.core.Leg
+    kind: struct
+    fields:
+      - name: id
+        type: String
+
+events:
+  - name: selection.core.Arrived
+    fields:
+      - name: data
+        type: String
+
+  - name: selection.core.Seen
+    fields:
+      - name: selected
+        type: Optional<String>
+
+commands:
+  - name: selection.core.Receive
+    input:
+      - name: selected
+        type: Optional<String>
+    outcomes:
+      - name: received
+        emits:
+          - selection.core.Seen
+        payload:
+          selection.core.Seen:
+            selected: input.selected

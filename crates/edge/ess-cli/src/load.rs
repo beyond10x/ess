@@ -7,6 +7,10 @@ use anyhow::{bail, Context, Result};
 use ess_compiler::source::SourceMap;
 use ess_compiler::{Diagnostics, EssIr};
 
+#[cfg(test)]
+#[path = "load_accounting_tests.rs"]
+mod accounting_tests;
+
 /// A loaded specification or every accumulated diagnostic.
 pub(crate) enum LoadedSpec {
     /// The specification compiled to a resolved IR.

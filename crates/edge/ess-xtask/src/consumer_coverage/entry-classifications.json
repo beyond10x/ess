@@ -37245,6 +37245,16 @@
     "macro_ast_sha256": null,
     "reason": "Exact gate accounting envelope, planning or qualification helper under docs/design/cli-schema-metadata-accounting.md. Behavioral proof still requires exact executed cases; the six metadata relationships require a separate opaque current-run guard proof."
   },
+  "ess_xtask::bin(ess-xtask)::consumer_coverage::account::const::FORMAT_V2": {
+    "class": "OwnedHelper",
+    "macro_ast_sha256": null,
+    "reason": "Exact consumer-accounting v2 reconciliation, acquisition, aggregate-provenance or historical-witness gate infrastructure under docs/design/consumer-accounting-reconciliation.md and docs/design/consumer-accounting-applicability.md. This entry grants no ESS model behavior; qualification still requires exact root-reviewed authority and actual executed owner cases."
+  },
+  "ess_xtask::bin(ess-xtask)::consumer_coverage::account::const::FORMAT_V3": {
+    "class": "OwnedHelper",
+    "macro_ast_sha256": null,
+    "reason": "Concrete accounting/3 and native model-behavior authority, validation, execution, diagnostic and command-surface infrastructure under docs/design/consumer-model-behavior-native-cases.md. This entry grants no ESS model behavior; qualification remains attributed only to root-reviewed claims and actual binary-unit owner cases."
+  },
   "ess_xtask::bin(ess-xtask)::consumer_coverage::account::enum::CandidateStage": {
     "class": "OwnedHelper",
     "macro_ast_sha256": null,
@@ -37285,6 +37295,41 @@
     "macro_ast_sha256": null,
     "reason": "Maintenance/extractor infrastructure entry. Its source and fixture tests are inventoried; it emits evidence or proposals and grants no ESS semantic behavior support."
   },
+  "ess_xtask::bin(ess-xtask)::consumer_coverage::account::enum::DispositionV2": {
+    "class": "OwnedHelper",
+    "macro_ast_sha256": null,
+    "reason": "Exact consumer-accounting v2 reconciliation, acquisition, aggregate-provenance or historical-witness gate infrastructure under docs/design/consumer-accounting-reconciliation.md and docs/design/consumer-accounting-applicability.md. This entry grants no ESS model behavior; qualification still requires exact root-reviewed authority and actual executed owner cases."
+  },
+  "ess_xtask::bin(ess-xtask)::consumer_coverage::account::enum::DispositionV2/variant/AggregateClosureCandidate": {
+    "class": "OwnedHelper",
+    "macro_ast_sha256": null,
+    "reason": "Exact consumer-accounting v2 reconciliation, acquisition, aggregate-provenance or historical-witness gate infrastructure under docs/design/consumer-accounting-reconciliation.md and docs/design/consumer-accounting-applicability.md. This entry grants no ESS model behavior; qualification still requires exact root-reviewed authority and actual executed owner cases."
+  },
+  "ess_xtask::bin(ess-xtask)::consumer_coverage::account::enum::DispositionV2/variant/CaseCandidate": {
+    "class": "OwnedHelper",
+    "macro_ast_sha256": null,
+    "reason": "Exact consumer-accounting v2 reconciliation, acquisition, aggregate-provenance or historical-witness gate infrastructure under docs/design/consumer-accounting-reconciliation.md and docs/design/consumer-accounting-applicability.md. This entry grants no ESS model behavior; qualification still requires exact root-reviewed authority and actual executed owner cases."
+  },
+  "ess_xtask::bin(ess-xtask)::consumer_coverage::account::enum::DispositionV2/variant/MandatoryUnqualified": {
+    "class": "OwnedHelper",
+    "macro_ast_sha256": null,
+    "reason": "Exact consumer-accounting v2 reconciliation, acquisition, aggregate-provenance or historical-witness gate infrastructure under docs/design/consumer-accounting-reconciliation.md and docs/design/consumer-accounting-applicability.md. This entry grants no ESS model behavior; qualification still requires exact root-reviewed authority and actual executed owner cases."
+  },
+  "ess_xtask::bin(ess-xtask)::consumer_coverage::account::enum::DispositionV2/variant/PendingOwner": {
+    "class": "OwnedHelper",
+    "macro_ast_sha256": null,
+    "reason": "Exact consumer-accounting v2 reconciliation, acquisition, aggregate-provenance or historical-witness gate infrastructure under docs/design/consumer-accounting-reconciliation.md and docs/design/consumer-accounting-applicability.md. This entry grants no ESS model behavior; qualification still requires exact root-reviewed authority and actual executed owner cases."
+  },
+  "ess_xtask::bin(ess-xtask)::consumer_coverage::account::enum::DispositionV2/variant/SchemaDocumentMetadataCandidate": {
+    "class": "OwnedHelper",
+    "macro_ast_sha256": null,
+    "reason": "Exact consumer-accounting v2 reconciliation, acquisition, aggregate-provenance or historical-witness gate infrastructure under docs/design/consumer-accounting-reconciliation.md and docs/design/consumer-accounting-applicability.md. This entry grants no ESS model behavior; qualification still requires exact root-reviewed authority and actual executed owner cases."
+  },
+  "ess_xtask::bin(ess-xtask)::consumer_coverage::account::enum::DispositionV2/variant/UnknownProposal": {
+    "class": "OwnedHelper",
+    "macro_ast_sha256": null,
+    "reason": "Exact consumer-accounting v2 reconciliation, acquisition, aggregate-provenance or historical-witness gate infrastructure under docs/design/consumer-accounting-reconciliation.md and docs/design/consumer-accounting-applicability.md. This entry grants no ESS model behavior; qualification still requires exact root-reviewed authority and actual executed owner cases."
+  },
   "ess_xtask::bin(ess-xtask)::consumer_coverage::account::enum::ExecutionStage": {
     "class": "OwnedHelper",
     "macro_ast_sha256": null,
@@ -37305,6 +37350,26 @@
     "macro_ast_sha256": null,
     "reason": "Exact gate accounting envelope, planning or qualification helper under docs/design/cli-schema-metadata-accounting.md. Behavioral proof still requires exact executed cases; the six metadata relationships require a separate opaque current-run guard proof."
   },
+  "ess_xtask::bin(ess-xtask)::consumer_coverage::account::enum::FormatV2": {
+    "class": "OwnedHelper",
+    "macro_ast_sha256": null,
+    "reason": "Exact consumer-accounting v2 reconciliation, acquisition, aggregate-provenance or historical-witness gate infrastructure under docs/design/consumer-accounting-reconciliation.md and docs/design/consumer-accounting-applicability.md. This entry grants no ESS model behavior; qualification still requires exact root-reviewed authority and actual executed owner cases."
+  },
+  "ess_xtask::bin(ess-xtask)::consumer_coverage::account::enum::FormatV2/variant/V2": {
+    "class": "OwnedHelper",
+    "macro_ast_sha256": null,
+    "reason": "Exact consumer-accounting v2 reconciliation, acquisition, aggregate-provenance or historical-witness gate infrastructure under docs/design/consumer-accounting-reconciliation.md and docs/design/consumer-accounting-applicability.md. This entry grants no ESS model behavior; qualification still requires exact root-reviewed authority and actual executed owner cases."
+  },
+  "ess_xtask::bin(ess-xtask)::consumer_coverage::account::enum::FormatV3": {
+    "class": "OwnedHelper",
+    "macro_ast_sha256": null,
+    "reason": "Concrete accounting/3 and native model-behavior authority, validation, execution, diagnostic and command-surface infrastructure under docs/design/consumer-model-behavior-native-cases.md. This entry grants no ESS model behavior; qualification remains attributed only to root-reviewed claims and actual binary-unit owner cases."
+  },
+  "ess_xtask::bin(ess-xtask)::consumer_coverage::account::enum::FormatV3/variant/V3": {
+    "class": "OwnedHelper",
+    "macro_ast_sha256": null,
+    "reason": "Concrete accounting/3 and native model-behavior authority, validation, execution, diagnostic and command-surface infrastructure under docs/design/consumer-model-behavior-native-cases.md. This entry grants no ESS model behavior; qualification remains attributed only to root-reviewed claims and actual binary-unit owner cases."
+  },
   "ess_xtask::bin(ess-xtask)::consumer_coverage::account::enum::QualifiedStage": {
     "class": "OwnedHelper",
     "macro_ast_sha256": null,
@@ -37314,6 +37379,16 @@
     "class": "OwnedHelper",
     "macro_ast_sha256": null,
     "reason": "Exact gate accounting envelope, planning or qualification helper under docs/design/cli-schema-metadata-accounting.md. Behavioral proof still requires exact executed cases; the six metadata relationships require a separate opaque current-run guard proof."
+  },
+  "ess_xtask::bin(ess-xtask)::consumer_coverage::account::enum::ScenarioAcquisitionFormat": {
+    "class": "OwnedHelper",
+    "macro_ast_sha256": null,
+    "reason": "Exact consumer-accounting v2 acquisition source-binding gate infrastructure under docs/design/consumer-accounting-applicability.md and review-result:consumer-accounting-acquisition-source-inspection. This entry grants no ESS model behavior; qualification still requires exact root-reviewed /2 authority and actual executed owner cases."
+  },
+  "ess_xtask::bin(ess-xtask)::consumer_coverage::account::enum::ScenarioAcquisitionFormat/variant/V2": {
+    "class": "OwnedHelper",
+    "macro_ast_sha256": null,
+    "reason": "Exact consumer-accounting v2 acquisition source-binding gate infrastructure under docs/design/consumer-accounting-applicability.md and review-result:consumer-accounting-acquisition-source-inspection. This entry grants no ESS model behavior; qualification still requires exact root-reviewed /2 authority and actual executed owner cases."
   },
   "ess_xtask::bin(ess-xtask)::consumer_coverage::account::enum::Status": {
     "class": "OwnedHelper",
@@ -37335,6 +37410,16 @@
     "macro_ast_sha256": null,
     "reason": "Exact gate accounting envelope, planning or qualification helper under docs/design/cli-schema-metadata-accounting.md. Behavioral proof still requires exact executed cases; the six metadata relationships require a separate opaque current-run guard proof."
   },
+  "ess_xtask::bin(ess-xtask)::consumer_coverage::account::fn::read_candidates_v2": {
+    "class": "OwnedHelper",
+    "macro_ast_sha256": null,
+    "reason": "Exact consumer-accounting v2 reconciliation, acquisition, aggregate-provenance or historical-witness gate infrastructure under docs/design/consumer-accounting-reconciliation.md and docs/design/consumer-accounting-applicability.md. This entry grants no ESS model behavior; qualification still requires exact root-reviewed authority and actual executed owner cases."
+  },
+  "ess_xtask::bin(ess-xtask)::consumer_coverage::account::fn::read_candidates_v3": {
+    "class": "OwnedHelper",
+    "macro_ast_sha256": null,
+    "reason": "Concrete accounting/3 and native model-behavior authority, validation, execution, diagnostic and command-surface infrastructure under docs/design/consumer-model-behavior-native-cases.md. This entry grants no ESS model behavior; qualification remains attributed only to root-reviewed claims and actual binary-unit owner cases."
+  },
   "ess_xtask::bin(ess-xtask)::consumer_coverage::account::module": {
     "class": "OwnedHelper",
     "macro_ast_sha256": null,
@@ -37345,10 +37430,205 @@
     "macro_ast_sha256": null,
     "reason": "Exact gate accounting envelope, planning or qualification helper under docs/design/cli-schema-metadata-accounting.md. Behavioral proof still requires exact executed cases; the six metadata relationships require a separate opaque current-run guard proof."
   },
+  "ess_xtask::bin(ess-xtask)::consumer_coverage::account::struct::CandidatesV2": {
+    "class": "OwnedHelper",
+    "macro_ast_sha256": null,
+    "reason": "Exact consumer-accounting v2 reconciliation, acquisition, aggregate-provenance or historical-witness gate infrastructure under docs/design/consumer-accounting-reconciliation.md and docs/design/consumer-accounting-applicability.md. This entry grants no ESS model behavior; qualification still requires exact root-reviewed authority and actual executed owner cases."
+  },
+  "ess_xtask::bin(ess-xtask)::consumer_coverage::account::struct::CandidatesV3": {
+    "class": "OwnedHelper",
+    "macro_ast_sha256": null,
+    "reason": "Concrete accounting/3 and native model-behavior authority, validation, execution, diagnostic and command-surface infrastructure under docs/design/consumer-model-behavior-native-cases.md. This entry grants no ESS model behavior; qualification remains attributed only to root-reviewed claims and actual binary-unit owner cases."
+  },
   "ess_xtask::bin(ess-xtask)::consumer_coverage::account::struct::Cell": {
     "class": "OwnedHelper",
     "macro_ast_sha256": null,
     "reason": "Maintenance/extractor infrastructure entry. Its source and fixture tests are inventoried; it emits evidence or proposals and grants no ESS semantic behavior support."
+  },
+  "ess_xtask::bin(ess-xtask)::consumer_coverage::account::struct::CellV2": {
+    "class": "OwnedHelper",
+    "macro_ast_sha256": null,
+    "reason": "Exact consumer-accounting v2 reconciliation, acquisition, aggregate-provenance or historical-witness gate infrastructure under docs/design/consumer-accounting-reconciliation.md and docs/design/consumer-accounting-applicability.md. This entry grants no ESS model behavior; qualification still requires exact root-reviewed authority and actual executed owner cases."
+  },
+  "ess_xtask::bin(ess-xtask)::consumer_coverage::aggregate::const::ALLOWED": {
+    "class": "OwnedHelper",
+    "macro_ast_sha256": null,
+    "reason": "Exact consumer-accounting v2 reconciliation, acquisition, aggregate-provenance or historical-witness gate infrastructure under docs/design/consumer-accounting-reconciliation.md and docs/design/consumer-accounting-applicability.md. This entry grants no ESS model behavior; qualification still requires exact root-reviewed authority and actual executed owner cases."
+  },
+  "ess_xtask::bin(ess-xtask)::consumer_coverage::aggregate::const::FORMAT": {
+    "class": "OwnedHelper",
+    "macro_ast_sha256": null,
+    "reason": "Exact consumer-accounting v2 reconciliation, acquisition, aggregate-provenance or historical-witness gate infrastructure under docs/design/consumer-accounting-reconciliation.md and docs/design/consumer-accounting-applicability.md. This entry grants no ESS model behavior; qualification still requires exact root-reviewed authority and actual executed owner cases."
+  },
+  "ess_xtask::bin(ess-xtask)::consumer_coverage::aggregate::enum::ChildDisposition": {
+    "class": "OwnedHelper",
+    "macro_ast_sha256": null,
+    "reason": "Exact consumer-accounting v2 reconciliation, acquisition, aggregate-provenance or historical-witness gate infrastructure under docs/design/consumer-accounting-reconciliation.md and docs/design/consumer-accounting-applicability.md. This entry grants no ESS model behavior; qualification still requires exact root-reviewed authority and actual executed owner cases."
+  },
+  "ess_xtask::bin(ess-xtask)::consumer_coverage::aggregate::enum::ChildDisposition/variant/AggregateClosure": {
+    "class": "OwnedHelper",
+    "macro_ast_sha256": null,
+    "reason": "Exact consumer-accounting v2 reconciliation, acquisition, aggregate-provenance or historical-witness gate infrastructure under docs/design/consumer-accounting-reconciliation.md and docs/design/consumer-accounting-applicability.md. This entry grants no ESS model behavior; qualification still requires exact root-reviewed authority and actual executed owner cases."
+  },
+  "ess_xtask::bin(ess-xtask)::consumer_coverage::aggregate::enum::ChildDisposition/variant/Refused": {
+    "class": "OwnedHelper",
+    "macro_ast_sha256": null,
+    "reason": "Exact consumer-accounting v2 reconciliation, acquisition, aggregate-provenance or historical-witness gate infrastructure under docs/design/consumer-accounting-reconciliation.md and docs/design/consumer-accounting-applicability.md. This entry grants no ESS model behavior; qualification still requires exact root-reviewed authority and actual executed owner cases."
+  },
+  "ess_xtask::bin(ess-xtask)::consumer_coverage::aggregate::enum::ChildDisposition/variant/Removed": {
+    "class": "OwnedHelper",
+    "macro_ast_sha256": null,
+    "reason": "Exact consumer-accounting v2 reconciliation, acquisition, aggregate-provenance or historical-witness gate infrastructure under docs/design/consumer-accounting-reconciliation.md and docs/design/consumer-accounting-applicability.md. This entry grants no ESS model behavior; qualification still requires exact root-reviewed authority and actual executed owner cases."
+  },
+  "ess_xtask::bin(ess-xtask)::consumer_coverage::aggregate::enum::ChildDisposition/variant/Supported": {
+    "class": "OwnedHelper",
+    "macro_ast_sha256": null,
+    "reason": "Exact consumer-accounting v2 reconciliation, acquisition, aggregate-provenance or historical-witness gate infrastructure under docs/design/consumer-accounting-reconciliation.md and docs/design/consumer-accounting-applicability.md. This entry grants no ESS model behavior; qualification still requires exact root-reviewed authority and actual executed owner cases."
+  },
+  "ess_xtask::bin(ess-xtask)::consumer_coverage::aggregate::enum::Mode": {
+    "class": "OwnedHelper",
+    "macro_ast_sha256": null,
+    "reason": "Exact consumer-accounting v2 reconciliation, acquisition, aggregate-provenance or historical-witness gate infrastructure under docs/design/consumer-accounting-reconciliation.md and docs/design/consumer-accounting-applicability.md. This entry grants no ESS model behavior; qualification still requires exact root-reviewed authority and actual executed owner cases."
+  },
+  "ess_xtask::bin(ess-xtask)::consumer_coverage::aggregate::enum::Mode/variant/CompleteCurrentSubtree": {
+    "class": "OwnedHelper",
+    "macro_ast_sha256": null,
+    "reason": "Exact consumer-accounting v2 reconciliation, acquisition, aggregate-provenance or historical-witness gate infrastructure under docs/design/consumer-accounting-reconciliation.md and docs/design/consumer-accounting-applicability.md. This entry grants no ESS model behavior; qualification still requires exact root-reviewed authority and actual executed owner cases."
+  },
+  "ess_xtask::bin(ess-xtask)::consumer_coverage::aggregate::enum::Mode/variant/ShapeDelta": {
+    "class": "OwnedHelper",
+    "macro_ast_sha256": null,
+    "reason": "Exact consumer-accounting v2 reconciliation, acquisition, aggregate-provenance or historical-witness gate infrastructure under docs/design/consumer-accounting-reconciliation.md and docs/design/consumer-accounting-applicability.md. This entry grants no ESS model behavior; qualification still requires exact root-reviewed authority and actual executed owner cases."
+  },
+  "ess_xtask::bin(ess-xtask)::consumer_coverage::aggregate::enum::QualifiedKind": {
+    "class": "OwnedHelper",
+    "macro_ast_sha256": null,
+    "reason": "Exact consumer-accounting v2 reconciliation, acquisition, aggregate-provenance or historical-witness gate infrastructure under docs/design/consumer-accounting-reconciliation.md and docs/design/consumer-accounting-applicability.md. This entry grants no ESS model behavior; qualification still requires exact root-reviewed authority and actual executed owner cases."
+  },
+  "ess_xtask::bin(ess-xtask)::consumer_coverage::aggregate::enum::QualifiedKind/variant/AggregateClosure": {
+    "class": "OwnedHelper",
+    "macro_ast_sha256": null,
+    "reason": "Exact consumer-accounting v2 reconciliation, acquisition, aggregate-provenance or historical-witness gate infrastructure under docs/design/consumer-accounting-reconciliation.md and docs/design/consumer-accounting-applicability.md. This entry grants no ESS model behavior; qualification still requires exact root-reviewed authority and actual executed owner cases."
+  },
+  "ess_xtask::bin(ess-xtask)::consumer_coverage::aggregate::enum::QualifiedKind/variant/Refused": {
+    "class": "OwnedHelper",
+    "macro_ast_sha256": null,
+    "reason": "Exact consumer-accounting v2 reconciliation, acquisition, aggregate-provenance or historical-witness gate infrastructure under docs/design/consumer-accounting-reconciliation.md and docs/design/consumer-accounting-applicability.md. This entry grants no ESS model behavior; qualification still requires exact root-reviewed authority and actual executed owner cases."
+  },
+  "ess_xtask::bin(ess-xtask)::consumer_coverage::aggregate::enum::QualifiedKind/variant/Supported": {
+    "class": "OwnedHelper",
+    "macro_ast_sha256": null,
+    "reason": "Exact consumer-accounting v2 reconciliation, acquisition, aggregate-provenance or historical-witness gate infrastructure under docs/design/consumer-accounting-reconciliation.md and docs/design/consumer-accounting-applicability.md. This entry grants no ESS model behavior; qualification still requires exact root-reviewed authority and actual executed owner cases."
+  },
+  "ess_xtask::bin(ess-xtask)::consumer_coverage::aggregate::fn::capture": {
+    "class": "OwnedHelper",
+    "macro_ast_sha256": null,
+    "reason": "Exact consumer-accounting v2 reconciliation, acquisition, aggregate-provenance or historical-witness gate infrastructure under docs/design/consumer-accounting-reconciliation.md and docs/design/consumer-accounting-applicability.md. This entry grants no ESS model behavior; qualification still requires exact root-reviewed authority and actual executed owner cases."
+  },
+  "ess_xtask::bin(ess-xtask)::consumer_coverage::aggregate::fn::claims": {
+    "class": "OwnedHelper",
+    "macro_ast_sha256": null,
+    "reason": "Exact consumer-accounting v2 reconciliation, acquisition, aggregate-provenance or historical-witness gate infrastructure under docs/design/consumer-accounting-reconciliation.md and docs/design/consumer-accounting-applicability.md. This entry grants no ESS model behavior; qualification still requires exact root-reviewed authority and actual executed owner cases."
+  },
+  "ess_xtask::bin(ess-xtask)::consumer_coverage::aggregate::fn::covered": {
+    "class": "OwnedHelper",
+    "macro_ast_sha256": null,
+    "reason": "Exact consumer-accounting v2 reconciliation, acquisition, aggregate-provenance or historical-witness gate infrastructure under docs/design/consumer-accounting-reconciliation.md and docs/design/consumer-accounting-applicability.md. This entry grants no ESS model behavior; qualification still requires exact root-reviewed authority and actual executed owner cases."
+  },
+  "ess_xtask::bin(ess-xtask)::consumer_coverage::aggregate::fn::descendant": {
+    "class": "OwnedHelper",
+    "macro_ast_sha256": null,
+    "reason": "Exact consumer-accounting v2 reconciliation, acquisition, aggregate-provenance or historical-witness gate infrastructure under docs/design/consumer-accounting-reconciliation.md and docs/design/consumer-accounting-applicability.md. This entry grants no ESS model behavior; qualification still requires exact root-reviewed authority and actual executed owner cases."
+  },
+  "ess_xtask::bin(ess-xtask)::consumer_coverage::aggregate::fn::historical_witness": {
+    "class": "OwnedHelper",
+    "macro_ast_sha256": null,
+    "reason": "Exact consumer-accounting v2 reconciliation, acquisition, aggregate-provenance or historical-witness gate infrastructure under docs/design/consumer-accounting-reconciliation.md and docs/design/consumer-accounting-applicability.md. This entry grants no ESS model behavior; qualification still requires exact root-reviewed authority and actual executed owner cases."
+  },
+  "ess_xtask::bin(ess-xtask)::consumer_coverage::aggregate::fn::reference_delta_paths": {
+    "class": "OwnedHelper",
+    "macro_ast_sha256": null,
+    "reason": "Exact consumer-accounting v2 reconciliation, acquisition, aggregate-provenance or historical-witness gate infrastructure under docs/design/consumer-accounting-reconciliation.md and docs/design/consumer-accounting-applicability.md. This entry grants no ESS model behavior; qualification still requires exact root-reviewed authority and actual executed owner cases."
+  },
+  "ess_xtask::bin(ess-xtask)::consumer_coverage::aggregate::fn::required_cases": {
+    "class": "OwnedHelper",
+    "macro_ast_sha256": null,
+    "reason": "Exact consumer-accounting v2 reconciliation, acquisition, aggregate-provenance or historical-witness gate infrastructure under docs/design/consumer-accounting-reconciliation.md and docs/design/consumer-accounting-applicability.md. This entry grants no ESS model behavior; qualification still requires exact root-reviewed authority and actual executed owner cases."
+  },
+  "ess_xtask::bin(ess-xtask)::consumer_coverage::aggregate::fn::structure": {
+    "class": "OwnedHelper",
+    "macro_ast_sha256": null,
+    "reason": "Exact consumer-accounting v2 reconciliation, acquisition, aggregate-provenance or historical-witness gate infrastructure under docs/design/consumer-accounting-reconciliation.md and docs/design/consumer-accounting-applicability.md. This entry grants no ESS model behavior; qualification still requires exact root-reviewed authority and actual executed owner cases."
+  },
+  "ess_xtask::bin(ess-xtask)::consumer_coverage::aggregate::fn::validate": {
+    "class": "OwnedHelper",
+    "macro_ast_sha256": null,
+    "reason": "Exact consumer-accounting v2 reconciliation, acquisition, aggregate-provenance or historical-witness gate infrastructure under docs/design/consumer-accounting-reconciliation.md and docs/design/consumer-accounting-applicability.md. This entry grants no ESS model behavior; qualification still requires exact root-reviewed authority and actual executed owner cases."
+  },
+  "ess_xtask::bin(ess-xtask)::consumer_coverage::aggregate::fn::verify": {
+    "class": "OwnedHelper",
+    "macro_ast_sha256": null,
+    "reason": "Exact consumer-accounting v2 reconciliation, acquisition, aggregate-provenance or historical-witness gate infrastructure under docs/design/consumer-accounting-reconciliation.md and docs/design/consumer-accounting-applicability.md. This entry grants no ESS model behavior; qualification still requires exact root-reviewed authority and actual executed owner cases."
+  },
+  "ess_xtask::bin(ess-xtask)::consumer_coverage::aggregate::fn::verify_parent_identities": {
+    "class": "OwnedHelper",
+    "macro_ast_sha256": null,
+    "reason": "Exact consumer-accounting v2 reconciliation, acquisition, aggregate-provenance or historical-witness gate infrastructure under docs/design/consumer-accounting-reconciliation.md and docs/design/consumer-accounting-applicability.md. This entry grants no ESS model behavior; qualification still requires exact root-reviewed authority and actual executed owner cases."
+  },
+  "ess_xtask::bin(ess-xtask)::consumer_coverage::aggregate::fn::verify_reconciliation": {
+    "class": "OwnedHelper",
+    "macro_ast_sha256": null,
+    "reason": "Exact consumer-accounting v2 reconciliation, acquisition, aggregate-provenance or historical-witness gate infrastructure under docs/design/consumer-accounting-reconciliation.md and docs/design/consumer-accounting-applicability.md. This entry grants no ESS model behavior; qualification still requires exact root-reviewed authority and actual executed owner cases."
+  },
+  "ess_xtask::bin(ess-xtask)::consumer_coverage::aggregate::fn::visit_dependencies": {
+    "class": "OwnedHelper",
+    "macro_ast_sha256": null,
+    "reason": "Exact consumer-accounting v2 reconciliation, acquisition, aggregate-provenance or historical-witness gate infrastructure under docs/design/consumer-accounting-reconciliation.md and docs/design/consumer-accounting-applicability.md. This entry grants no ESS model behavior; qualification still requires exact root-reviewed authority and actual executed owner cases."
+  },
+  "ess_xtask::bin(ess-xtask)::consumer_coverage::aggregate::module": {
+    "class": "OwnedHelper",
+    "macro_ast_sha256": null,
+    "reason": "Exact consumer-accounting v2 reconciliation, acquisition, aggregate-provenance or historical-witness gate infrastructure under docs/design/consumer-accounting-reconciliation.md and docs/design/consumer-accounting-applicability.md. This entry grants no ESS model behavior; qualification still requires exact root-reviewed authority and actual executed owner cases."
+  },
+  "ess_xtask::bin(ess-xtask)::consumer_coverage::aggregate::struct::FreshStructures": {
+    "class": "OwnedHelper",
+    "macro_ast_sha256": null,
+    "reason": "Exact consumer-accounting v2 reconciliation, acquisition, aggregate-provenance or historical-witness gate infrastructure under docs/design/consumer-accounting-reconciliation.md and docs/design/consumer-accounting-applicability.md. This entry grants no ESS model behavior; qualification still requires exact root-reviewed authority and actual executed owner cases."
+  },
+  "ess_xtask::bin(ess-xtask)::consumer_coverage::aggregate::struct::Frontier": {
+    "class": "OwnedHelper",
+    "macro_ast_sha256": null,
+    "reason": "Exact consumer-accounting v2 reconciliation, acquisition, aggregate-provenance or historical-witness gate infrastructure under docs/design/consumer-accounting-reconciliation.md and docs/design/consumer-accounting-applicability.md. This entry grants no ESS model behavior; qualification still requires exact root-reviewed authority and actual executed owner cases."
+  },
+  "ess_xtask::bin(ess-xtask)::consumer_coverage::aggregate::struct::Manifest": {
+    "class": "OwnedHelper",
+    "macro_ast_sha256": null,
+    "reason": "Exact consumer-accounting v2 reconciliation, acquisition, aggregate-provenance or historical-witness gate infrastructure under docs/design/consumer-accounting-reconciliation.md and docs/design/consumer-accounting-applicability.md. This entry grants no ESS model behavior; qualification still requires exact root-reviewed authority and actual executed owner cases."
+  },
+  "ess_xtask::bin(ess-xtask)::consumer_coverage::aggregate::struct::QualifiedCell": {
+    "class": "OwnedHelper",
+    "macro_ast_sha256": null,
+    "reason": "Exact consumer-accounting v2 reconciliation, acquisition, aggregate-provenance or historical-witness gate infrastructure under docs/design/consumer-accounting-reconciliation.md and docs/design/consumer-accounting-applicability.md. This entry grants no ESS model behavior; qualification still requires exact root-reviewed authority and actual executed owner cases."
+  },
+  "ess_xtask::bin(ess-xtask)::consumer_coverage::aggregate::struct::Reference": {
+    "class": "OwnedHelper",
+    "macro_ast_sha256": null,
+    "reason": "Exact consumer-accounting v2 reconciliation, acquisition, aggregate-provenance or historical-witness gate infrastructure under docs/design/consumer-accounting-reconciliation.md and docs/design/consumer-accounting-applicability.md. This entry grants no ESS model behavior; qualification still requires exact root-reviewed authority and actual executed owner cases."
+  },
+  "ess_xtask::bin(ess-xtask)::consumer_coverage::aggregate::struct::Residual": {
+    "class": "OwnedHelper",
+    "macro_ast_sha256": null,
+    "reason": "Exact consumer-accounting v2 reconciliation, acquisition, aggregate-provenance or historical-witness gate infrastructure under docs/design/consumer-accounting-reconciliation.md and docs/design/consumer-accounting-applicability.md. This entry grants no ESS model behavior; qualification still requires exact root-reviewed authority and actual executed owner cases."
+  },
+  "ess_xtask::bin(ess-xtask)::consumer_coverage::aggregate::struct::Row": {
+    "class": "OwnedHelper",
+    "macro_ast_sha256": null,
+    "reason": "Exact consumer-accounting v2 reconciliation, acquisition, aggregate-provenance or historical-witness gate infrastructure under docs/design/consumer-accounting-reconciliation.md and docs/design/consumer-accounting-applicability.md. This entry grants no ESS model behavior; qualification still requires exact root-reviewed authority and actual executed owner cases."
+  },
+  "ess_xtask::bin(ess-xtask)::consumer_coverage::aggregate::struct::Structures": {
+    "class": "OwnedHelper",
+    "macro_ast_sha256": null,
+    "reason": "Exact consumer-accounting v2 reconciliation, acquisition, aggregate-provenance or historical-witness gate infrastructure under docs/design/consumer-accounting-reconciliation.md and docs/design/consumer-accounting-applicability.md. This entry grants no ESS model behavior; qualification still requires exact root-reviewed authority and actual executed owner cases."
   },
   "ess_xtask::bin(ess-xtask)::consumer_coverage::consumer::fn::associated_contract": {
     "class": "OwnedHelper",
@@ -37554,6 +37834,36 @@
     "macro_ast_sha256": null,
     "reason": "Exact consumer gate infrastructure entry: parses finite accounting or runs and records reviewed Rust cases. This entry does not itself establish ESS model semantics; consumer behavior remains attributed only to the separately named owner cases."
   },
+  "ess_xtask::bin(ess-xtask)::consumer_coverage::enforce::enum::DispositionV2": {
+    "class": "OwnedHelper",
+    "macro_ast_sha256": null,
+    "reason": "Exact consumer-accounting v2 reconciliation, acquisition, aggregate-provenance or historical-witness gate infrastructure under docs/design/consumer-accounting-reconciliation.md and docs/design/consumer-accounting-applicability.md. This entry grants no ESS model behavior; qualification still requires exact root-reviewed authority and actual executed owner cases."
+  },
+  "ess_xtask::bin(ess-xtask)::consumer_coverage::enforce::enum::DispositionV2/variant/AggregateClosure": {
+    "class": "OwnedHelper",
+    "macro_ast_sha256": null,
+    "reason": "Exact consumer-accounting v2 reconciliation, acquisition, aggregate-provenance or historical-witness gate infrastructure under docs/design/consumer-accounting-reconciliation.md and docs/design/consumer-accounting-applicability.md. This entry grants no ESS model behavior; qualification still requires exact root-reviewed authority and actual executed owner cases."
+  },
+  "ess_xtask::bin(ess-xtask)::consumer_coverage::enforce::enum::DispositionV2/variant/BaselineUnknown": {
+    "class": "OwnedHelper",
+    "macro_ast_sha256": null,
+    "reason": "Exact consumer-accounting v2 reconciliation, acquisition, aggregate-provenance or historical-witness gate infrastructure under docs/design/consumer-accounting-reconciliation.md and docs/design/consumer-accounting-applicability.md. This entry grants no ESS model behavior; qualification still requires exact root-reviewed authority and actual executed owner cases."
+  },
+  "ess_xtask::bin(ess-xtask)::consumer_coverage::enforce::enum::DispositionV2/variant/Refused": {
+    "class": "OwnedHelper",
+    "macro_ast_sha256": null,
+    "reason": "Exact consumer-accounting v2 reconciliation, acquisition, aggregate-provenance or historical-witness gate infrastructure under docs/design/consumer-accounting-reconciliation.md and docs/design/consumer-accounting-applicability.md. This entry grants no ESS model behavior; qualification still requires exact root-reviewed authority and actual executed owner cases."
+  },
+  "ess_xtask::bin(ess-xtask)::consumer_coverage::enforce::enum::DispositionV2/variant/SchemaDocumentMetadata": {
+    "class": "OwnedHelper",
+    "macro_ast_sha256": null,
+    "reason": "Exact consumer-accounting v2 reconciliation, acquisition, aggregate-provenance or historical-witness gate infrastructure under docs/design/consumer-accounting-reconciliation.md and docs/design/consumer-accounting-applicability.md. This entry grants no ESS model behavior; qualification still requires exact root-reviewed authority and actual executed owner cases."
+  },
+  "ess_xtask::bin(ess-xtask)::consumer_coverage::enforce::enum::DispositionV2/variant/Supported": {
+    "class": "OwnedHelper",
+    "macro_ast_sha256": null,
+    "reason": "Exact consumer-accounting v2 reconciliation, acquisition, aggregate-provenance or historical-witness gate infrastructure under docs/design/consumer-accounting-reconciliation.md and docs/design/consumer-accounting-applicability.md. This entry grants no ESS model behavior; qualification still requires exact root-reviewed authority and actual executed owner cases."
+  },
   "ess_xtask::bin(ess-xtask)::consumer_coverage::enforce::enum::Pending": {
     "class": "OwnedHelper",
     "macro_ast_sha256": null,
@@ -37564,52 +37874,72 @@
     "macro_ast_sha256": null,
     "reason": "Exact gate accounting envelope, planning or qualification helper under docs/design/cli-schema-metadata-accounting.md. Behavioral proof still requires exact executed cases; the six metadata relationships require a separate opaque current-run guard proof."
   },
-  "ess_xtask::bin(ess-xtask)::consumer_coverage::enforce::fn::baseline_cells": {
+  "ess_xtask::bin(ess-xtask)::consumer_coverage::enforce::fn::aggregate_cells": {
     "class": "OwnedHelper",
     "macro_ast_sha256": null,
-    "reason": "Exact gate accounting envelope, planning or qualification helper under docs/design/cli-schema-metadata-accounting.md. Behavioral proof still requires exact executed cases; the six metadata relationships require a separate opaque current-run guard proof."
+    "reason": "Exact consumer-accounting v2 reconciliation, acquisition, aggregate-provenance or historical-witness gate infrastructure under docs/design/consumer-accounting-reconciliation.md and docs/design/consumer-accounting-applicability.md. This entry grants no ESS model behavior; qualification still requires exact root-reviewed authority and actual executed owner cases."
   },
   "ess_xtask::bin(ess-xtask)::consumer_coverage::enforce::fn::behavior": {
     "class": "OwnedHelper",
     "macro_ast_sha256": null,
     "reason": "Exact consumer gate infrastructure entry: parses finite accounting or runs and records reviewed Rust cases. This entry does not itself establish ESS model semantics; consumer behavior remains attributed only to the separately named owner cases."
   },
-  "ess_xtask::bin(ess-xtask)::consumer_coverage::enforce::fn::insert": {
+  "ess_xtask::bin(ess-xtask)::consumer_coverage::enforce::fn::behavior_v2": {
     "class": "OwnedHelper",
     "macro_ast_sha256": null,
-    "reason": "Exact consumer gate infrastructure entry: parses finite accounting or runs and records reviewed Rust cases. This entry does not itself establish ESS model semantics; consumer behavior remains attributed only to the separately named owner cases."
+    "reason": "Exact consumer-accounting v2 reconciliation, acquisition, aggregate-provenance or historical-witness gate infrastructure under docs/design/consumer-accounting-reconciliation.md and docs/design/consumer-accounting-applicability.md. This entry grants no ESS model behavior; qualification still requires exact root-reviewed authority and actual executed owner cases."
   },
-  "ess_xtask::bin(ess-xtask)::consumer_coverage::enforce::fn::plan_with_metadata": {
+  "ess_xtask::bin(ess-xtask)::consumer_coverage::enforce::fn::insert_v2": {
     "class": "OwnedHelper",
     "macro_ast_sha256": null,
-    "reason": "Exact gate accounting envelope, planning or qualification helper under docs/design/cli-schema-metadata-accounting.md. Behavioral proof still requires exact executed cases; the six metadata relationships require a separate opaque current-run guard proof."
+    "reason": "Exact consumer-accounting v2 reconciliation, acquisition, aggregate-provenance or historical-witness gate infrastructure under docs/design/consumer-accounting-reconciliation.md and docs/design/consumer-accounting-applicability.md. This entry grants no ESS model behavior; qualification still requires exact root-reviewed authority and actual executed owner cases."
   },
-  "ess_xtask::bin(ess-xtask)::consumer_coverage::enforce::fn::qualify": {
+  "ess_xtask::bin(ess-xtask)::consumer_coverage::enforce::fn::model_claim_matches": {
     "class": "OwnedHelper",
     "macro_ast_sha256": null,
-    "reason": "Exact consumer gate infrastructure entry: parses finite accounting or runs and records reviewed Rust cases. This entry does not itself establish ESS model semantics; consumer behavior remains attributed only to the separately named owner cases."
+    "reason": "Concrete accounting/3 and native model-behavior authority, validation, execution, diagnostic and command-surface infrastructure under docs/design/consumer-model-behavior-native-cases.md. This entry grants no ESS model behavior; qualification remains attributed only to root-reviewed claims and actual binary-unit owner cases."
   },
-  "ess_xtask::bin(ess-xtask)::consumer_coverage::enforce::fn::qualify_cells": {
+  "ess_xtask::bin(ess-xtask)::consumer_coverage::enforce::fn::plan_v2": {
     "class": "OwnedHelper",
     "macro_ast_sha256": null,
-    "reason": "Exact gate accounting envelope, planning or qualification helper under docs/design/cli-schema-metadata-accounting.md. Behavioral proof still requires exact executed cases; the six metadata relationships require a separate opaque current-run guard proof."
+    "reason": "Exact consumer-accounting v2 reconciliation, acquisition, aggregate-provenance or historical-witness gate infrastructure under docs/design/consumer-accounting-reconciliation.md and docs/design/consumer-accounting-applicability.md. This entry grants no ESS model behavior; qualification still requires exact root-reviewed authority and actual executed owner cases."
   },
-  "ess_xtask::bin(ess-xtask)::consumer_coverage::enforce::fn::read_plan": {
+  "ess_xtask::bin(ess-xtask)::consumer_coverage::enforce::fn::plan_v3": {
     "class": "OwnedHelper",
     "macro_ast_sha256": null,
-    "reason": "Exact gate accounting envelope, planning or qualification helper under docs/design/cli-schema-metadata-accounting.md. Behavioral proof still requires exact executed cases; the six metadata relationships require a separate opaque current-run guard proof."
+    "reason": "Concrete accounting/3 and native model-behavior authority, validation, execution, diagnostic and command-surface infrastructure under docs/design/consumer-model-behavior-native-cases.md. This entry grants no ESS model behavior; qualification remains attributed only to root-reviewed claims and actual binary-unit owner cases."
   },
-  "ess_xtask::bin(ess-xtask)::consumer_coverage::enforce::fn::validate_header": {
+  "ess_xtask::bin(ess-xtask)::consumer_coverage::enforce::fn::qualify_v2": {
     "class": "OwnedHelper",
     "macro_ast_sha256": null,
-    "reason": "Exact consumer gate infrastructure entry: parses finite accounting or runs and records reviewed Rust cases. This entry does not itself establish ESS model semantics; consumer behavior remains attributed only to the separately named owner cases."
+    "reason": "Exact consumer-accounting v2 reconciliation, acquisition, aggregate-provenance or historical-witness gate infrastructure under docs/design/consumer-accounting-reconciliation.md and docs/design/consumer-accounting-applicability.md. This entry grants no ESS model behavior; qualification still requires exact root-reviewed authority and actual executed owner cases."
+  },
+  "ess_xtask::bin(ess-xtask)::consumer_coverage::enforce::fn::qualify_v3": {
+    "class": "OwnedHelper",
+    "macro_ast_sha256": null,
+    "reason": "Concrete accounting/3 and native model-behavior authority, validation, execution, diagnostic and command-surface infrastructure under docs/design/consumer-model-behavior-native-cases.md. This entry grants no ESS model behavior; qualification remains attributed only to root-reviewed claims and actual binary-unit owner cases."
+  },
+  "ess_xtask::bin(ess-xtask)::consumer_coverage::enforce::fn::read_plan_v2": {
+    "class": "OwnedHelper",
+    "macro_ast_sha256": null,
+    "reason": "Exact consumer-accounting v2 reconciliation, acquisition, aggregate-provenance or historical-witness gate infrastructure under docs/design/consumer-accounting-reconciliation.md and docs/design/consumer-accounting-applicability.md. This entry grants no ESS model behavior; qualification still requires exact root-reviewed authority and actual executed owner cases."
+  },
+  "ess_xtask::bin(ess-xtask)::consumer_coverage::enforce::fn::read_plan_v3": {
+    "class": "OwnedHelper",
+    "macro_ast_sha256": null,
+    "reason": "Concrete accounting/3 and native model-behavior authority, validation, execution, diagnostic and command-surface infrastructure under docs/design/consumer-model-behavior-native-cases.md. This entry grants no ESS model behavior; qualification remains attributed only to root-reviewed claims and actual binary-unit owner cases."
+  },
+  "ess_xtask::bin(ess-xtask)::consumer_coverage::enforce::fn::replacement_matches": {
+    "class": "OwnedHelper",
+    "macro_ast_sha256": null,
+    "reason": "Exact consumer-accounting v2 reconciliation, acquisition, aggregate-provenance or historical-witness gate infrastructure under docs/design/consumer-accounting-reconciliation.md and docs/design/consumer-accounting-applicability.md. This entry grants no ESS model behavior; qualification still requires exact root-reviewed authority and actual executed owner cases."
+  },
+  "ess_xtask::bin(ess-xtask)::consumer_coverage::enforce::fn::validate_case_partition": {
+    "class": "OwnedHelper",
+    "macro_ast_sha256": null,
+    "reason": "Concrete accounting/3 and native model-behavior authority, validation, execution, diagnostic and command-surface infrastructure under docs/design/consumer-model-behavior-native-cases.md. This entry grants no ESS model behavior; qualification remains attributed only to root-reviewed claims and actual binary-unit owner cases."
   },
   "ess_xtask::bin(ess-xtask)::consumer_coverage::enforce::module": {
-    "class": "OwnedHelper",
-    "macro_ast_sha256": null,
-    "reason": "Exact consumer gate infrastructure entry: parses finite accounting or runs and records reviewed Rust cases. This entry does not itself establish ESS model semantics; consumer behavior remains attributed only to the separately named owner cases."
-  },
-  "ess_xtask::bin(ess-xtask)::consumer_coverage::enforce::struct::Baseline": {
     "class": "OwnedHelper",
     "macro_ast_sha256": null,
     "reason": "Exact consumer gate infrastructure entry: parses finite accounting or runs and records reviewed Rust cases. This entry does not itself establish ESS model semantics; consumer behavior remains attributed only to the separately named owner cases."
@@ -37619,25 +37949,45 @@
     "macro_ast_sha256": null,
     "reason": "Exact consumer gate infrastructure entry: parses finite accounting or runs and records reviewed Rust cases. This entry does not itself establish ESS model semantics; consumer behavior remains attributed only to the separately named owner cases."
   },
-  "ess_xtask::bin(ess-xtask)::consumer_coverage::enforce::struct::ExecutionPlan": {
+  "ess_xtask::bin(ess-xtask)::consumer_coverage::enforce::struct::ExecutionPlanV2": {
     "class": "OwnedHelper",
     "macro_ast_sha256": null,
-    "reason": "Exact gate accounting envelope, planning or qualification helper under docs/design/cli-schema-metadata-accounting.md. Behavioral proof still requires exact executed cases; the six metadata relationships require a separate opaque current-run guard proof."
+    "reason": "Exact consumer-accounting v2 reconciliation, acquisition, aggregate-provenance or historical-witness gate infrastructure under docs/design/consumer-accounting-reconciliation.md and docs/design/consumer-accounting-applicability.md. This entry grants no ESS model behavior; qualification still requires exact root-reviewed authority and actual executed owner cases."
   },
-  "ess_xtask::bin(ess-xtask)::consumer_coverage::enforce::struct::Group": {
+  "ess_xtask::bin(ess-xtask)::consumer_coverage::enforce::struct::ExecutionPlanV3": {
     "class": "OwnedHelper",
     "macro_ast_sha256": null,
-    "reason": "Exact consumer gate infrastructure entry: parses finite accounting or runs and records reviewed Rust cases. This entry does not itself establish ESS model semantics; consumer behavior remains attributed only to the separately named owner cases."
+    "reason": "Concrete accounting/3 and native model-behavior authority, validation, execution, diagnostic and command-surface infrastructure under docs/design/consumer-model-behavior-native-cases.md. This entry grants no ESS model behavior; qualification remains attributed only to root-reviewed claims and actual binary-unit owner cases."
   },
-  "ess_xtask::bin(ess-xtask)::consumer_coverage::enforce::struct::PlannedCell": {
+  "ess_xtask::bin(ess-xtask)::consumer_coverage::enforce::struct::PlanV2Inputs": {
     "class": "OwnedHelper",
     "macro_ast_sha256": null,
-    "reason": "Exact consumer gate infrastructure entry: parses finite accounting or runs and records reviewed Rust cases. This entry does not itself establish ESS model semantics; consumer behavior remains attributed only to the separately named owner cases."
+    "reason": "Exact consumer-accounting v2 reconciliation, acquisition, aggregate-provenance or historical-witness gate infrastructure under docs/design/consumer-accounting-reconciliation.md and docs/design/consumer-accounting-applicability.md. This entry grants no ESS model behavior; qualification still requires exact root-reviewed authority and actual executed owner cases."
+  },
+  "ess_xtask::bin(ess-xtask)::consumer_coverage::enforce::struct::PlanV3Inputs": {
+    "class": "OwnedHelper",
+    "macro_ast_sha256": null,
+    "reason": "Concrete accounting/3 and native model-behavior authority, validation, execution, diagnostic and command-surface infrastructure under docs/design/consumer-model-behavior-native-cases.md. This entry grants no ESS model behavior; qualification remains attributed only to root-reviewed claims and actual binary-unit owner cases."
+  },
+  "ess_xtask::bin(ess-xtask)::consumer_coverage::enforce::struct::PlannedCellV2": {
+    "class": "OwnedHelper",
+    "macro_ast_sha256": null,
+    "reason": "Exact consumer-accounting v2 reconciliation, acquisition, aggregate-provenance or historical-witness gate infrastructure under docs/design/consumer-accounting-reconciliation.md and docs/design/consumer-accounting-applicability.md. This entry grants no ESS model behavior; qualification still requires exact root-reviewed authority and actual executed owner cases."
   },
   "ess_xtask::bin(ess-xtask)::consumer_coverage::executor::fn::artifact": {
     "class": "OwnedHelper",
     "macro_ast_sha256": null,
     "reason": "Exact consumer gate infrastructure entry: parses finite accounting or runs and records reviewed Rust cases. This entry does not itself establish ESS model semantics; consumer behavior remains attributed only to the separately named owner cases."
+  },
+  "ess_xtask::bin(ess-xtask)::consumer_coverage::executor::fn::binary_unit_artifact": {
+    "class": "OwnedHelper",
+    "macro_ast_sha256": null,
+    "reason": "Exact consumer-accounting v2 reconciliation, acquisition, aggregate-provenance or historical-witness gate infrastructure under docs/design/consumer-accounting-reconciliation.md and docs/design/consumer-accounting-applicability.md. This entry grants no ESS model behavior; qualification still requires exact root-reviewed authority and actual executed owner cases."
+  },
+  "ess_xtask::bin(ess-xtask)::consumer_coverage::executor::fn::cargo_artifact": {
+    "class": "OwnedHelper",
+    "macro_ast_sha256": null,
+    "reason": "Exact consumer-accounting v2 reconciliation, acquisition, aggregate-provenance or historical-witness gate infrastructure under docs/design/consumer-accounting-reconciliation.md and docs/design/consumer-accounting-applicability.md. This entry grants no ESS model behavior; qualification still requires exact root-reviewed authority and actual executed owner cases."
   },
   "ess_xtask::bin(ess-xtask)::consumer_coverage::executor::fn::execute_case": {
     "class": "OwnedHelper",
@@ -37682,6 +38032,11 @@
     "class": "OwnedHelper",
     "reason": "Checker command boundary captures actual subprocess streams and exit; a trait declaration is not an execution receipt. This exact declaration grants no behavioral support; execution remains attributed to separately bound consumer profiles."
   },
+  "ess_xtask::bin(ess-xtask)::consumer_coverage::fn::behavior": {
+    "class": "OwnedHelper",
+    "macro_ast_sha256": null,
+    "reason": "Concrete accounting/3 and native model-behavior authority, validation, execution, diagnostic and command-surface infrastructure under docs/design/consumer-model-behavior-native-cases.md. This entry grants no ESS model behavior; qualification remains attributed only to root-reviewed claims and actual binary-unit owner cases."
+  },
   "ess_xtask::bin(ess-xtask)::consumer_coverage::fn::check": {
     "class": "OwnedHelper",
     "macro_ast_sha256": null,
@@ -37696,6 +38051,11 @@
     "class": "OwnedHelper",
     "macro_ast_sha256": null,
     "reason": "Exact gate accounting envelope, planning or qualification helper under docs/design/cli-schema-metadata-accounting.md. Behavioral proof still requires exact executed cases; the six metadata relationships require a separate opaque current-run guard proof."
+  },
+  "ess_xtask::bin(ess-xtask)::consumer_coverage::fn::extracted_models": {
+    "class": "OwnedHelper",
+    "macro_ast_sha256": null,
+    "reason": "Exact gate infrastructure helper shared by accounting and native behavior diagnostics: merges current extracted Rust and wire model obligations and refuses duplicate identities. It grants no ESS model support; each behavioral claim still requires its exact current identity and executed owner case."
   },
   "ess_xtask::bin(ess-xtask)::consumer_coverage::fn::hash_bytes": {
     "class": "OwnedHelper",
@@ -37717,10 +38077,20 @@
     "macro_ast_sha256": null,
     "reason": "Exact consumer gate infrastructure entry: source-derived accounting diagnostics or bundled tool measurement. It cannot admit a failed classification and adds no ESS semantic support claim."
   },
+  "ess_xtask::bin(ess-xtask)::consumer_coverage::fn::prepare_model_behavior": {
+    "class": "OwnedHelper",
+    "macro_ast_sha256": null,
+    "reason": "Concrete accounting/3 and native model-behavior authority, validation, execution, diagnostic and command-surface infrastructure under docs/design/consumer-model-behavior-native-cases.md. This entry grants no ESS model behavior; qualification remains attributed only to root-reviewed claims and actual binary-unit owner cases."
+  },
   "ess_xtask::bin(ess-xtask)::consumer_coverage::fn::read_extraction": {
     "class": "OwnedHelper",
     "macro_ast_sha256": null,
     "reason": "Exact consumer gate infrastructure entry: source-derived accounting diagnostics or bundled tool measurement. It cannot admit a failed classification and adds no ESS semantic support claim."
+  },
+  "ess_xtask::bin(ess-xtask)::consumer_coverage::fn::read_reviewed": {
+    "class": "OwnedHelper",
+    "macro_ast_sha256": null,
+    "reason": "Exact consumer-accounting v2 reconciliation, acquisition, aggregate-provenance or historical-witness gate infrastructure under docs/design/consumer-accounting-reconciliation.md and docs/design/consumer-accounting-applicability.md. This entry grants no ESS model behavior; qualification still requires exact root-reviewed authority and actual executed owner cases."
   },
   "ess_xtask::bin(ess-xtask)::consumer_coverage::fn::reconcile_extraction": {
     "class": "OwnedHelper",
@@ -37922,10 +38292,315 @@
     "macro_ast_sha256": null,
     "reason": "Exact gate-owned schema metadata manifest, role or current-provider proof helper under docs/design/cli-schema-metadata-accounting.md. It accounts for six literal schema-document relationships, grants no behavioral support, and cannot expand the frozen baseline."
   },
+  "ess_xtask::bin(ess-xtask)::consumer_coverage::model_behavior::const::CASE_FORMAT": {
+    "class": "OwnedHelper",
+    "macro_ast_sha256": null,
+    "reason": "Concrete accounting/3 and native model-behavior authority, validation, execution, diagnostic and command-surface infrastructure under docs/design/consumer-model-behavior-native-cases.md. This entry grants no ESS model behavior; qualification remains attributed only to root-reviewed claims and actual binary-unit owner cases."
+  },
+  "ess_xtask::bin(ess-xtask)::consumer_coverage::model_behavior::const::EXECUTION_FORMAT": {
+    "class": "OwnedHelper",
+    "macro_ast_sha256": null,
+    "reason": "Concrete accounting/3 and native model-behavior authority, validation, execution, diagnostic and command-surface infrastructure under docs/design/consumer-model-behavior-native-cases.md. This entry grants no ESS model behavior; qualification remains attributed only to root-reviewed claims and actual binary-unit owner cases."
+  },
+  "ess_xtask::bin(ess-xtask)::consumer_coverage::model_behavior::const::FORMAT": {
+    "class": "OwnedHelper",
+    "macro_ast_sha256": null,
+    "reason": "Concrete accounting/3 and native model-behavior authority, validation, execution, diagnostic and command-surface infrastructure under docs/design/consumer-model-behavior-native-cases.md. This entry grants no ESS model behavior; qualification remains attributed only to root-reviewed claims and actual binary-unit owner cases."
+  },
+  "ess_xtask::bin(ess-xtask)::consumer_coverage::model_behavior::const::NESTED_RUNTIME": {
+    "class": "OwnedHelper",
+    "macro_ast_sha256": null,
+    "reason": "Concrete accounting/3 and native model-behavior authority, validation, execution, diagnostic and command-surface infrastructure under docs/design/consumer-model-behavior-native-cases.md. This entry grants no ESS model behavior; qualification remains attributed only to root-reviewed claims and actual binary-unit owner cases."
+  },
+  "ess_xtask::bin(ess-xtask)::consumer_coverage::model_behavior::const::TARGET_PROFILE": {
+    "class": "OwnedHelper",
+    "macro_ast_sha256": null,
+    "reason": "Concrete accounting/3 and native model-behavior authority, validation, execution, diagnostic and command-surface infrastructure under docs/design/consumer-model-behavior-native-cases.md. This entry grants no ESS model behavior; qualification remains attributed only to root-reviewed claims and actual binary-unit owner cases."
+  },
+  "ess_xtask::bin(ess-xtask)::consumer_coverage::model_behavior::const::TOOL_REQUIREMENT": {
+    "class": "OwnedHelper",
+    "macro_ast_sha256": null,
+    "reason": "Concrete accounting/3 and native model-behavior authority, validation, execution, diagnostic and command-surface infrastructure under docs/design/consumer-model-behavior-native-cases.md. This entry grants no ESS model behavior; qualification remains attributed only to root-reviewed claims and actual binary-unit owner cases."
+  },
+  "ess_xtask::bin(ess-xtask)::consumer_coverage::model_behavior::enum::Behavior": {
+    "class": "OwnedHelper",
+    "macro_ast_sha256": null,
+    "reason": "Concrete accounting/3 and native model-behavior authority, validation, execution, diagnostic and command-surface infrastructure under docs/design/consumer-model-behavior-native-cases.md. This entry grants no ESS model behavior; qualification remains attributed only to root-reviewed claims and actual binary-unit owner cases."
+  },
+  "ess_xtask::bin(ess-xtask)::consumer_coverage::model_behavior::enum::Behavior/variant/Refused": {
+    "class": "OwnedHelper",
+    "macro_ast_sha256": null,
+    "reason": "Concrete accounting/3 and native model-behavior authority, validation, execution, diagnostic and command-surface infrastructure under docs/design/consumer-model-behavior-native-cases.md. This entry grants no ESS model behavior; qualification remains attributed only to root-reviewed claims and actual binary-unit owner cases."
+  },
+  "ess_xtask::bin(ess-xtask)::consumer_coverage::model_behavior::enum::Behavior/variant/Supported": {
+    "class": "OwnedHelper",
+    "macro_ast_sha256": null,
+    "reason": "Concrete accounting/3 and native model-behavior authority, validation, execution, diagnostic and command-surface infrastructure under docs/design/consumer-model-behavior-native-cases.md. This entry grants no ESS model behavior; qualification remains attributed only to root-reviewed claims and actual binary-unit owner cases."
+  },
+  "ess_xtask::bin(ess-xtask)::consumer_coverage::model_behavior::enum::CandidateStage": {
+    "class": "OwnedHelper",
+    "macro_ast_sha256": null,
+    "reason": "Concrete accounting/3 and native model-behavior authority, validation, execution, diagnostic and command-surface infrastructure under docs/design/consumer-model-behavior-native-cases.md. This entry grants no ESS model behavior; qualification remains attributed only to root-reviewed claims and actual binary-unit owner cases."
+  },
+  "ess_xtask::bin(ess-xtask)::consumer_coverage::model_behavior::enum::CandidateStage/variant/Candidate": {
+    "class": "OwnedHelper",
+    "macro_ast_sha256": null,
+    "reason": "Concrete accounting/3 and native model-behavior authority, validation, execution, diagnostic and command-surface infrastructure under docs/design/consumer-model-behavior-native-cases.md. This entry grants no ESS model behavior; qualification remains attributed only to root-reviewed claims and actual binary-unit owner cases."
+  },
+  "ess_xtask::bin(ess-xtask)::consumer_coverage::model_behavior::enum::ExecutedStage": {
+    "class": "OwnedHelper",
+    "macro_ast_sha256": null,
+    "reason": "Concrete accounting/3 and native model-behavior authority, validation, execution, diagnostic and command-surface infrastructure under docs/design/consumer-model-behavior-native-cases.md. This entry grants no ESS model behavior; qualification remains attributed only to root-reviewed claims and actual binary-unit owner cases."
+  },
+  "ess_xtask::bin(ess-xtask)::consumer_coverage::model_behavior::enum::ExecutedStage/variant/Executed": {
+    "class": "OwnedHelper",
+    "macro_ast_sha256": null,
+    "reason": "Concrete accounting/3 and native model-behavior authority, validation, execution, diagnostic and command-surface infrastructure under docs/design/consumer-model-behavior-native-cases.md. This entry grants no ESS model behavior; qualification remains attributed only to root-reviewed claims and actual binary-unit owner cases."
+  },
+  "ess_xtask::bin(ess-xtask)::consumer_coverage::model_behavior::enum::ExecutionFormat": {
+    "class": "OwnedHelper",
+    "macro_ast_sha256": null,
+    "reason": "Concrete accounting/3 and native model-behavior authority, validation, execution, diagnostic and command-surface infrastructure under docs/design/consumer-model-behavior-native-cases.md. This entry grants no ESS model behavior; qualification remains attributed only to root-reviewed claims and actual binary-unit owner cases."
+  },
+  "ess_xtask::bin(ess-xtask)::consumer_coverage::model_behavior::enum::ExecutionFormat/variant/V1": {
+    "class": "OwnedHelper",
+    "macro_ast_sha256": null,
+    "reason": "Concrete accounting/3 and native model-behavior authority, validation, execution, diagnostic and command-surface infrastructure under docs/design/consumer-model-behavior-native-cases.md. This entry grants no ESS model behavior; qualification remains attributed only to root-reviewed claims and actual binary-unit owner cases."
+  },
+  "ess_xtask::bin(ess-xtask)::consumer_coverage::model_behavior::enum::PlanStage": {
+    "class": "OwnedHelper",
+    "macro_ast_sha256": null,
+    "reason": "Concrete accounting/3 and native model-behavior authority, validation, execution, diagnostic and command-surface infrastructure under docs/design/consumer-model-behavior-native-cases.md. This entry grants no ESS model behavior; qualification remains attributed only to root-reviewed claims and actual binary-unit owner cases."
+  },
+  "ess_xtask::bin(ess-xtask)::consumer_coverage::model_behavior::enum::PlanStage/variant/Plan": {
+    "class": "OwnedHelper",
+    "macro_ast_sha256": null,
+    "reason": "Concrete accounting/3 and native model-behavior authority, validation, execution, diagnostic and command-surface infrastructure under docs/design/consumer-model-behavior-native-cases.md. This entry grants no ESS model behavior; qualification remains attributed only to root-reviewed claims and actual binary-unit owner cases."
+  },
+  "ess_xtask::bin(ess-xtask)::consumer_coverage::model_behavior::fn::authority_value": {
+    "class": "OwnedHelper",
+    "macro_ast_sha256": null,
+    "reason": "Concrete accounting/3 and native model-behavior authority, validation, execution, diagnostic and command-surface infrastructure under docs/design/consumer-model-behavior-native-cases.md. This entry grants no ESS model behavior; qualification remains attributed only to root-reviewed claims and actual binary-unit owner cases."
+  },
+  "ess_xtask::bin(ess-xtask)::consumer_coverage::model_behavior::fn::candidate": {
+    "class": "OwnedHelper",
+    "macro_ast_sha256": null,
+    "reason": "Concrete accounting/3 and native model-behavior authority, validation, execution, diagnostic and command-surface infrastructure under docs/design/consumer-model-behavior-native-cases.md. This entry grants no ESS model behavior; qualification remains attributed only to root-reviewed claims and actual binary-unit owner cases."
+  },
+  "ess_xtask::bin(ess-xtask)::consumer_coverage::model_behavior::fn::case_ids": {
+    "class": "OwnedHelper",
+    "macro_ast_sha256": null,
+    "reason": "Concrete accounting/3 and native model-behavior authority, validation, execution, diagnostic and command-surface infrastructure under docs/design/consumer-model-behavior-native-cases.md. This entry grants no ESS model behavior; qualification remains attributed only to root-reviewed claims and actual binary-unit owner cases."
+  },
+  "ess_xtask::bin(ess-xtask)::consumer_coverage::model_behavior::fn::claims": {
+    "class": "OwnedHelper",
+    "macro_ast_sha256": null,
+    "reason": "Concrete accounting/3 and native model-behavior authority, validation, execution, diagnostic and command-surface infrastructure under docs/design/consumer-model-behavior-native-cases.md. This entry grants no ESS model behavior; qualification remains attributed only to root-reviewed claims and actual binary-unit owner cases."
+  },
+  "ess_xtask::bin(ess-xtask)::consumer_coverage::model_behavior::fn::executed": {
+    "class": "OwnedHelper",
+    "macro_ast_sha256": null,
+    "reason": "Concrete accounting/3 and native model-behavior authority, validation, execution, diagnostic and command-surface infrastructure under docs/design/consumer-model-behavior-native-cases.md. This entry grants no ESS model behavior; qualification remains attributed only to root-reviewed claims and actual binary-unit owner cases."
+  },
+  "ess_xtask::bin(ess-xtask)::consumer_coverage::model_behavior::fn::plan": {
+    "class": "OwnedHelper",
+    "macro_ast_sha256": null,
+    "reason": "Concrete accounting/3 and native model-behavior authority, validation, execution, diagnostic and command-surface infrastructure under docs/design/consumer-model-behavior-native-cases.md. This entry grants no ESS model behavior; qualification remains attributed only to root-reviewed claims and actual binary-unit owner cases."
+  },
+  "ess_xtask::bin(ess-xtask)::consumer_coverage::model_behavior::fn::read_authority": {
+    "class": "OwnedHelper",
+    "macro_ast_sha256": null,
+    "reason": "Concrete accounting/3 and native model-behavior authority, validation, execution, diagnostic and command-surface infrastructure under docs/design/consumer-model-behavior-native-cases.md. This entry grants no ESS model behavior; qualification remains attributed only to root-reviewed claims and actual binary-unit owner cases."
+  },
+  "ess_xtask::bin(ess-xtask)::consumer_coverage::model_behavior::fn::read_candidate": {
+    "class": "OwnedHelper",
+    "macro_ast_sha256": null,
+    "reason": "Concrete accounting/3 and native model-behavior authority, validation, execution, diagnostic and command-surface infrastructure under docs/design/consumer-model-behavior-native-cases.md. This entry grants no ESS model behavior; qualification remains attributed only to root-reviewed claims and actual binary-unit owner cases."
+  },
+  "ess_xtask::bin(ess-xtask)::consumer_coverage::model_behavior::fn::required_cases": {
+    "class": "OwnedHelper",
+    "macro_ast_sha256": null,
+    "reason": "Concrete accounting/3 and native model-behavior authority, validation, execution, diagnostic and command-surface infrastructure under docs/design/consumer-model-behavior-native-cases.md. This entry grants no ESS model behavior; qualification remains attributed only to root-reviewed claims and actual binary-unit owner cases."
+  },
+  "ess_xtask::bin(ess-xtask)::consumer_coverage::model_behavior::fn::valid_native": {
+    "class": "OwnedHelper",
+    "macro_ast_sha256": null,
+    "reason": "Concrete accounting/3 and native model-behavior authority, validation, execution, diagnostic and command-surface infrastructure under docs/design/consumer-model-behavior-native-cases.md. This entry grants no ESS model behavior; qualification remains attributed only to root-reviewed claims and actual binary-unit owner cases."
+  },
+  "ess_xtask::bin(ess-xtask)::consumer_coverage::model_behavior::fn::validate_authority": {
+    "class": "OwnedHelper",
+    "macro_ast_sha256": null,
+    "reason": "Concrete accounting/3 and native model-behavior authority, validation, execution, diagnostic and command-surface infrastructure under docs/design/consumer-model-behavior-native-cases.md. This entry grants no ESS model behavior; qualification remains attributed only to root-reviewed claims and actual binary-unit owner cases."
+  },
+  "ess_xtask::bin(ess-xtask)::consumer_coverage::model_behavior::fn::validate_digest": {
+    "class": "OwnedHelper",
+    "macro_ast_sha256": null,
+    "reason": "Concrete accounting/3 and native model-behavior authority, validation, execution, diagnostic and command-surface infrastructure under docs/design/consumer-model-behavior-native-cases.md. This entry grants no ESS model behavior; qualification remains attributed only to root-reviewed claims and actual binary-unit owner cases."
+  },
+  "ess_xtask::bin(ess-xtask)::consumer_coverage::model_behavior::fn::validate_plan_shape": {
+    "class": "OwnedHelper",
+    "macro_ast_sha256": null,
+    "reason": "Concrete accounting/3 and native model-behavior authority, validation, execution, diagnostic and command-surface infrastructure under docs/design/consumer-model-behavior-native-cases.md. This entry grants no ESS model behavior; qualification remains attributed only to root-reviewed claims and actual binary-unit owner cases."
+  },
+  "ess_xtask::bin(ess-xtask)::consumer_coverage::model_behavior::fn::validate_target": {
+    "class": "OwnedHelper",
+    "macro_ast_sha256": null,
+    "reason": "Concrete accounting/3 and native model-behavior authority, validation, execution, diagnostic and command-surface infrastructure under docs/design/consumer-model-behavior-native-cases.md. This entry grants no ESS model behavior; qualification remains attributed only to root-reviewed claims and actual binary-unit owner cases."
+  },
+  "ess_xtask::bin(ess-xtask)::consumer_coverage::model_behavior::fn::verify_execution": {
+    "class": "OwnedHelper",
+    "macro_ast_sha256": null,
+    "reason": "Concrete accounting/3 and native model-behavior authority, validation, execution, diagnostic and command-surface infrastructure under docs/design/consumer-model-behavior-native-cases.md. This entry grants no ESS model behavior; qualification remains attributed only to root-reviewed claims and actual binary-unit owner cases."
+  },
+  "ess_xtask::bin(ess-xtask)::consumer_coverage::model_behavior::impl<Behavior;>::validate": {
+    "class": "OwnedHelper",
+    "macro_ast_sha256": null,
+    "reason": "Concrete accounting/3 and native model-behavior authority, validation, execution, diagnostic and command-surface infrastructure under docs/design/consumer-model-behavior-native-cases.md. This entry grants no ESS model behavior; qualification remains attributed only to root-reviewed claims and actual binary-unit owner cases."
+  },
+  "ess_xtask::bin(ess-xtask)::consumer_coverage::model_behavior::impl<UniqueValue;DeserializeSeed < 'de >>::deserialize": {
+    "class": "OwnedHelper",
+    "macro_ast_sha256": null,
+    "reason": "Concrete accounting/3 and native model-behavior authority, validation, execution, diagnostic and command-surface infrastructure under docs/design/consumer-model-behavior-native-cases.md. This entry grants no ESS model behavior; qualification remains attributed only to root-reviewed claims and actual binary-unit owner cases."
+  },
+  "ess_xtask::bin(ess-xtask)::consumer_coverage::model_behavior::impl<UniqueValue;DeserializeSeed < 'de >>::type::Value": {
+    "class": "OwnedHelper",
+    "macro_ast_sha256": null,
+    "reason": "Concrete accounting/3 and native model-behavior authority, validation, execution, diagnostic and command-surface infrastructure under docs/design/consumer-model-behavior-native-cases.md. This entry grants no ESS model behavior; qualification remains attributed only to root-reviewed claims and actual binary-unit owner cases."
+  },
+  "ess_xtask::bin(ess-xtask)::consumer_coverage::model_behavior::impl<UniqueValueVisitor;Visitor < 'de >>::expecting": {
+    "class": "OwnedHelper",
+    "macro_ast_sha256": null,
+    "reason": "Concrete accounting/3 and native model-behavior authority, validation, execution, diagnostic and command-surface infrastructure under docs/design/consumer-model-behavior-native-cases.md. This entry grants no ESS model behavior; qualification remains attributed only to root-reviewed claims and actual binary-unit owner cases."
+  },
+  "ess_xtask::bin(ess-xtask)::consumer_coverage::model_behavior::impl<UniqueValueVisitor;Visitor < 'de >>::type::Value": {
+    "class": "OwnedHelper",
+    "macro_ast_sha256": null,
+    "reason": "Concrete accounting/3 and native model-behavior authority, validation, execution, diagnostic and command-surface infrastructure under docs/design/consumer-model-behavior-native-cases.md. This entry grants no ESS model behavior; qualification remains attributed only to root-reviewed claims and actual binary-unit owner cases."
+  },
+  "ess_xtask::bin(ess-xtask)::consumer_coverage::model_behavior::impl<UniqueValueVisitor;Visitor < 'de >>::visit_bool": {
+    "class": "OwnedHelper",
+    "macro_ast_sha256": null,
+    "reason": "Concrete accounting/3 and native model-behavior authority, validation, execution, diagnostic and command-surface infrastructure under docs/design/consumer-model-behavior-native-cases.md. This entry grants no ESS model behavior; qualification remains attributed only to root-reviewed claims and actual binary-unit owner cases."
+  },
+  "ess_xtask::bin(ess-xtask)::consumer_coverage::model_behavior::impl<UniqueValueVisitor;Visitor < 'de >>::visit_f64": {
+    "class": "OwnedHelper",
+    "macro_ast_sha256": null,
+    "reason": "Concrete accounting/3 and native model-behavior authority, validation, execution, diagnostic and command-surface infrastructure under docs/design/consumer-model-behavior-native-cases.md. This entry grants no ESS model behavior; qualification remains attributed only to root-reviewed claims and actual binary-unit owner cases."
+  },
+  "ess_xtask::bin(ess-xtask)::consumer_coverage::model_behavior::impl<UniqueValueVisitor;Visitor < 'de >>::visit_i64": {
+    "class": "OwnedHelper",
+    "macro_ast_sha256": null,
+    "reason": "Concrete accounting/3 and native model-behavior authority, validation, execution, diagnostic and command-surface infrastructure under docs/design/consumer-model-behavior-native-cases.md. This entry grants no ESS model behavior; qualification remains attributed only to root-reviewed claims and actual binary-unit owner cases."
+  },
+  "ess_xtask::bin(ess-xtask)::consumer_coverage::model_behavior::impl<UniqueValueVisitor;Visitor < 'de >>::visit_map": {
+    "class": "OwnedHelper",
+    "macro_ast_sha256": null,
+    "reason": "Concrete accounting/3 and native model-behavior authority, validation, execution, diagnostic and command-surface infrastructure under docs/design/consumer-model-behavior-native-cases.md. This entry grants no ESS model behavior; qualification remains attributed only to root-reviewed claims and actual binary-unit owner cases."
+  },
+  "ess_xtask::bin(ess-xtask)::consumer_coverage::model_behavior::impl<UniqueValueVisitor;Visitor < 'de >>::visit_none": {
+    "class": "OwnedHelper",
+    "macro_ast_sha256": null,
+    "reason": "Concrete accounting/3 and native model-behavior authority, validation, execution, diagnostic and command-surface infrastructure under docs/design/consumer-model-behavior-native-cases.md. This entry grants no ESS model behavior; qualification remains attributed only to root-reviewed claims and actual binary-unit owner cases."
+  },
+  "ess_xtask::bin(ess-xtask)::consumer_coverage::model_behavior::impl<UniqueValueVisitor;Visitor < 'de >>::visit_seq": {
+    "class": "OwnedHelper",
+    "macro_ast_sha256": null,
+    "reason": "Concrete accounting/3 and native model-behavior authority, validation, execution, diagnostic and command-surface infrastructure under docs/design/consumer-model-behavior-native-cases.md. This entry grants no ESS model behavior; qualification remains attributed only to root-reviewed claims and actual binary-unit owner cases."
+  },
+  "ess_xtask::bin(ess-xtask)::consumer_coverage::model_behavior::impl<UniqueValueVisitor;Visitor < 'de >>::visit_some": {
+    "class": "OwnedHelper",
+    "macro_ast_sha256": null,
+    "reason": "Concrete accounting/3 and native model-behavior authority, validation, execution, diagnostic and command-surface infrastructure under docs/design/consumer-model-behavior-native-cases.md. This entry grants no ESS model behavior; qualification remains attributed only to root-reviewed claims and actual binary-unit owner cases."
+  },
+  "ess_xtask::bin(ess-xtask)::consumer_coverage::model_behavior::impl<UniqueValueVisitor;Visitor < 'de >>::visit_str": {
+    "class": "OwnedHelper",
+    "macro_ast_sha256": null,
+    "reason": "Concrete accounting/3 and native model-behavior authority, validation, execution, diagnostic and command-surface infrastructure under docs/design/consumer-model-behavior-native-cases.md. This entry grants no ESS model behavior; qualification remains attributed only to root-reviewed claims and actual binary-unit owner cases."
+  },
+  "ess_xtask::bin(ess-xtask)::consumer_coverage::model_behavior::impl<UniqueValueVisitor;Visitor < 'de >>::visit_string": {
+    "class": "OwnedHelper",
+    "macro_ast_sha256": null,
+    "reason": "Concrete accounting/3 and native model-behavior authority, validation, execution, diagnostic and command-surface infrastructure under docs/design/consumer-model-behavior-native-cases.md. This entry grants no ESS model behavior; qualification remains attributed only to root-reviewed claims and actual binary-unit owner cases."
+  },
+  "ess_xtask::bin(ess-xtask)::consumer_coverage::model_behavior::impl<UniqueValueVisitor;Visitor < 'de >>::visit_u64": {
+    "class": "OwnedHelper",
+    "macro_ast_sha256": null,
+    "reason": "Concrete accounting/3 and native model-behavior authority, validation, execution, diagnostic and command-surface infrastructure under docs/design/consumer-model-behavior-native-cases.md. This entry grants no ESS model behavior; qualification remains attributed only to root-reviewed claims and actual binary-unit owner cases."
+  },
+  "ess_xtask::bin(ess-xtask)::consumer_coverage::model_behavior::impl<UniqueValueVisitor;Visitor < 'de >>::visit_unit": {
+    "class": "OwnedHelper",
+    "macro_ast_sha256": null,
+    "reason": "Concrete accounting/3 and native model-behavior authority, validation, execution, diagnostic and command-surface infrastructure under docs/design/consumer-model-behavior-native-cases.md. This entry grants no ESS model behavior; qualification remains attributed only to root-reviewed claims and actual binary-unit owner cases."
+  },
+  "ess_xtask::bin(ess-xtask)::consumer_coverage::model_behavior::module": {
+    "class": "OwnedHelper",
+    "macro_ast_sha256": null,
+    "reason": "Concrete accounting/3 and native model-behavior authority, validation, execution, diagnostic and command-surface infrastructure under docs/design/consumer-model-behavior-native-cases.md. This entry grants no ESS model behavior; qualification remains attributed only to root-reviewed claims and actual binary-unit owner cases."
+  },
+  "ess_xtask::bin(ess-xtask)::consumer_coverage::model_behavior::struct::Authority": {
+    "class": "OwnedHelper",
+    "macro_ast_sha256": null,
+    "reason": "Concrete accounting/3 and native model-behavior authority, validation, execution, diagnostic and command-surface infrastructure under docs/design/consumer-model-behavior-native-cases.md. This entry grants no ESS model behavior; qualification remains attributed only to root-reviewed claims and actual binary-unit owner cases."
+  },
+  "ess_xtask::bin(ess-xtask)::consumer_coverage::model_behavior::struct::Candidate": {
+    "class": "OwnedHelper",
+    "macro_ast_sha256": null,
+    "reason": "Concrete accounting/3 and native model-behavior authority, validation, execution, diagnostic and command-surface infrastructure under docs/design/consumer-model-behavior-native-cases.md. This entry grants no ESS model behavior; qualification remains attributed only to root-reviewed claims and actual binary-unit owner cases."
+  },
+  "ess_xtask::bin(ess-xtask)::consumer_coverage::model_behavior::struct::Case": {
+    "class": "OwnedHelper",
+    "macro_ast_sha256": null,
+    "reason": "Concrete accounting/3 and native model-behavior authority, validation, execution, diagnostic and command-surface infrastructure under docs/design/consumer-model-behavior-native-cases.md. This entry grants no ESS model behavior; qualification remains attributed only to root-reviewed claims and actual binary-unit owner cases."
+  },
+  "ess_xtask::bin(ess-xtask)::consumer_coverage::model_behavior::struct::CaseIdentity": {
+    "class": "OwnedHelper",
+    "macro_ast_sha256": null,
+    "reason": "Concrete accounting/3 and native model-behavior authority, validation, execution, diagnostic and command-surface infrastructure under docs/design/consumer-model-behavior-native-cases.md. This entry grants no ESS model behavior; qualification remains attributed only to root-reviewed claims and actual binary-unit owner cases."
+  },
+  "ess_xtask::bin(ess-xtask)::consumer_coverage::model_behavior::struct::Claim": {
+    "class": "OwnedHelper",
+    "macro_ast_sha256": null,
+    "reason": "Concrete accounting/3 and native model-behavior authority, validation, execution, diagnostic and command-surface infrastructure under docs/design/consumer-model-behavior-native-cases.md. This entry grants no ESS model behavior; qualification remains attributed only to root-reviewed claims and actual binary-unit owner cases."
+  },
+  "ess_xtask::bin(ess-xtask)::consumer_coverage::model_behavior::struct::Executed": {
+    "class": "OwnedHelper",
+    "macro_ast_sha256": null,
+    "reason": "Concrete accounting/3 and native model-behavior authority, validation, execution, diagnostic and command-surface infrastructure under docs/design/consumer-model-behavior-native-cases.md. This entry grants no ESS model behavior; qualification remains attributed only to root-reviewed claims and actual binary-unit owner cases."
+  },
+  "ess_xtask::bin(ess-xtask)::consumer_coverage::model_behavior::struct::Plan": {
+    "class": "OwnedHelper",
+    "macro_ast_sha256": null,
+    "reason": "Concrete accounting/3 and native model-behavior authority, validation, execution, diagnostic and command-surface infrastructure under docs/design/consumer-model-behavior-native-cases.md. This entry grants no ESS model behavior; qualification remains attributed only to root-reviewed claims and actual binary-unit owner cases."
+  },
+  "ess_xtask::bin(ess-xtask)::consumer_coverage::model_behavior::struct::Receipt": {
+    "class": "OwnedHelper",
+    "macro_ast_sha256": null,
+    "reason": "Concrete accounting/3 and native model-behavior authority, validation, execution, diagnostic and command-surface infrastructure under docs/design/consumer-model-behavior-native-cases.md. This entry grants no ESS model behavior; qualification remains attributed only to root-reviewed claims and actual binary-unit owner cases."
+  },
+  "ess_xtask::bin(ess-xtask)::consumer_coverage::model_behavior::struct::UniqueValue": {
+    "class": "OwnedHelper",
+    "macro_ast_sha256": null,
+    "reason": "Concrete accounting/3 and native model-behavior authority, validation, execution, diagnostic and command-surface infrastructure under docs/design/consumer-model-behavior-native-cases.md. This entry grants no ESS model behavior; qualification remains attributed only to root-reviewed claims and actual binary-unit owner cases."
+  },
+  "ess_xtask::bin(ess-xtask)::consumer_coverage::model_behavior::struct::UniqueValueVisitor": {
+    "class": "OwnedHelper",
+    "macro_ast_sha256": null,
+    "reason": "Concrete accounting/3 and native model-behavior authority, validation, execution, diagnostic and command-surface infrastructure under docs/design/consumer-model-behavior-native-cases.md. This entry grants no ESS model behavior; qualification remains attributed only to root-reviewed claims and actual binary-unit owner cases."
+  },
   "ess_xtask::bin(ess-xtask)::consumer_coverage::module": {
     "class": "OwnedHelper",
     "macro_ast_sha256": null,
     "reason": "Maintenance/extractor infrastructure entry. Its source and fixture tests are inventoried; it emits evidence or proposals and grants no ESS semantic behavior support."
+  },
+  "ess_xtask::bin(ess-xtask)::consumer_coverage::native::fn::build_acquisition_target": {
+    "class": "OwnedHelper",
+    "macro_ast_sha256": null,
+    "reason": "Exact consumer-accounting v2 reconciliation, acquisition, aggregate-provenance or historical-witness gate infrastructure under docs/design/consumer-accounting-reconciliation.md and docs/design/consumer-accounting-applicability.md. This entry grants no ESS model behavior; qualification still requires exact root-reviewed authority and actual executed owner cases."
+  },
+  "ess_xtask::bin(ess-xtask)::consumer_coverage::native::fn::build_binary_target": {
+    "class": "OwnedHelper",
+    "macro_ast_sha256": null,
+    "reason": "Concrete accounting/3 and native model-behavior authority, validation, execution, diagnostic and command-surface infrastructure under docs/design/consumer-model-behavior-native-cases.md. This entry grants no ESS model behavior; qualification remains attributed only to root-reviewed claims and actual binary-unit owner cases."
   },
   "ess_xtask::bin(ess-xtask)::consumer_coverage::native::fn::build_target": {
     "class": "OwnedHelper",
@@ -37941,6 +38616,21 @@
     "class": "OwnedHelper",
     "macro_ast_sha256": null,
     "reason": "Exact consumer gate infrastructure entry: parses finite accounting or runs and records reviewed Rust cases. This entry does not itself establish ESS model semantics; consumer behavior remains attributed only to the separately named owner cases."
+  },
+  "ess_xtask::bin(ess-xtask)::consumer_coverage::native::fn::execute_acquisition": {
+    "class": "OwnedHelper",
+    "macro_ast_sha256": null,
+    "reason": "Exact consumer-accounting v2 reconciliation, acquisition, aggregate-provenance or historical-witness gate infrastructure under docs/design/consumer-accounting-reconciliation.md and docs/design/consumer-accounting-applicability.md. This entry grants no ESS model behavior; qualification still requires exact root-reviewed authority and actual executed owner cases."
+  },
+  "ess_xtask::bin(ess-xtask)::consumer_coverage::native::fn::execute_model_behavior": {
+    "class": "OwnedHelper",
+    "macro_ast_sha256": null,
+    "reason": "Concrete accounting/3 and native model-behavior authority, validation, execution, diagnostic and command-surface infrastructure under docs/design/consumer-model-behavior-native-cases.md. This entry grants no ESS model behavior; qualification remains attributed only to root-reviewed claims and actual binary-unit owner cases."
+  },
+  "ess_xtask::bin(ess-xtask)::consumer_coverage::native::fn::legacy_receipt_value": {
+    "class": "OwnedHelper",
+    "macro_ast_sha256": null,
+    "reason": "Concrete accounting/3 and native model-behavior authority, validation, execution, diagnostic and command-surface infrastructure under docs/design/consumer-model-behavior-native-cases.md. This entry grants no ESS model behavior; qualification remains attributed only to root-reviewed claims and actual binary-unit owner cases."
   },
   "ess_xtask::bin(ess-xtask)::consumer_coverage::native::impl<ExactCase < '_ , '_ >;CaseRunner>::authority": {
     "class": "OwnedHelper",
@@ -38082,6 +38772,11 @@
     "macro_ast_sha256": null,
     "reason": "Maintenance/extractor infrastructure entry. Its source and fixture tests are inventoried; it emits evidence or proposals and grants no ESS semantic behavior support."
   },
+  "ess_xtask::bin(ess-xtask)::consumer_coverage::proposal::enum::ProfileClass/variant/ScenarioAcquisition": {
+    "class": "OwnedHelper",
+    "macro_ast_sha256": null,
+    "reason": "Exact consumer-accounting v2 reconciliation, acquisition, aggregate-provenance or historical-witness gate infrastructure under docs/design/consumer-accounting-reconciliation.md and docs/design/consumer-accounting-applicability.md. This entry grants no ESS model behavior; qualification still requires exact root-reviewed authority and actual executed owner cases."
+  },
   "ess_xtask::bin(ess-xtask)::consumer_coverage::proposal::enum::TestTarget": {
     "class": "OwnedHelper",
     "macro_ast_sha256": null,
@@ -38177,6 +38872,111 @@
     "macro_ast_sha256": null,
     "reason": "Maintenance/extractor infrastructure entry. Its source and fixture tests are inventoried; it emits evidence or proposals and grants no ESS semantic behavior support."
   },
+  "ess_xtask::bin(ess-xtask)::consumer_coverage::reconciliation::const::FORMAT": {
+    "class": "OwnedHelper",
+    "macro_ast_sha256": null,
+    "reason": "Exact consumer-accounting v2 reconciliation, acquisition, aggregate-provenance or historical-witness gate infrastructure under docs/design/consumer-accounting-reconciliation.md and docs/design/consumer-accounting-applicability.md. This entry grants no ESS model behavior; qualification still requires exact root-reviewed authority and actual executed owner cases."
+  },
+  "ess_xtask::bin(ess-xtask)::consumer_coverage::reconciliation::enum::Action": {
+    "class": "OwnedHelper",
+    "macro_ast_sha256": null,
+    "reason": "Exact consumer-accounting v2 reconciliation, acquisition, aggregate-provenance or historical-witness gate infrastructure under docs/design/consumer-accounting-reconciliation.md and docs/design/consumer-accounting-applicability.md. This entry grants no ESS model behavior; qualification still requires exact root-reviewed authority and actual executed owner cases."
+  },
+  "ess_xtask::bin(ess-xtask)::consumer_coverage::reconciliation::enum::Action/variant/Replace": {
+    "class": "OwnedHelper",
+    "macro_ast_sha256": null,
+    "reason": "Exact consumer-accounting v2 reconciliation, acquisition, aggregate-provenance or historical-witness gate infrastructure under docs/design/consumer-accounting-reconciliation.md and docs/design/consumer-accounting-applicability.md. This entry grants no ESS model behavior; qualification still requires exact root-reviewed authority and actual executed owner cases."
+  },
+  "ess_xtask::bin(ess-xtask)::consumer_coverage::reconciliation::enum::Action/variant/RetireConsumerProfile": {
+    "class": "OwnedHelper",
+    "macro_ast_sha256": null,
+    "reason": "Exact consumer-accounting v2 reconciliation, acquisition, aggregate-provenance or historical-witness gate infrastructure under docs/design/consumer-accounting-reconciliation.md and docs/design/consumer-accounting-applicability.md. This entry grants no ESS model behavior; qualification still requires exact root-reviewed authority and actual executed owner cases."
+  },
+  "ess_xtask::bin(ess-xtask)::consumer_coverage::reconciliation::enum::Action/variant/RetireModel": {
+    "class": "OwnedHelper",
+    "macro_ast_sha256": null,
+    "reason": "Exact consumer-accounting v2 reconciliation, acquisition, aggregate-provenance or historical-witness gate infrastructure under docs/design/consumer-accounting-reconciliation.md and docs/design/consumer-accounting-applicability.md. This entry grants no ESS model behavior; qualification still requires exact root-reviewed authority and actual executed owner cases."
+  },
+  "ess_xtask::bin(ess-xtask)::consumer_coverage::reconciliation::enum::ReplacementClaim": {
+    "class": "OwnedHelper",
+    "macro_ast_sha256": null,
+    "reason": "Exact consumer-accounting v2 reconciliation, acquisition, aggregate-provenance or historical-witness gate infrastructure under docs/design/consumer-accounting-reconciliation.md and docs/design/consumer-accounting-applicability.md. This entry grants no ESS model behavior; qualification still requires exact root-reviewed authority and actual executed owner cases."
+  },
+  "ess_xtask::bin(ess-xtask)::consumer_coverage::reconciliation::enum::ReplacementClaim/variant/AggregateClosure": {
+    "class": "OwnedHelper",
+    "macro_ast_sha256": null,
+    "reason": "Exact consumer-accounting v2 reconciliation, acquisition, aggregate-provenance or historical-witness gate infrastructure under docs/design/consumer-accounting-reconciliation.md and docs/design/consumer-accounting-applicability.md. This entry grants no ESS model behavior; qualification still requires exact root-reviewed authority and actual executed owner cases."
+  },
+  "ess_xtask::bin(ess-xtask)::consumer_coverage::reconciliation::enum::ReplacementClaim/variant/Refused": {
+    "class": "OwnedHelper",
+    "macro_ast_sha256": null,
+    "reason": "Exact consumer-accounting v2 reconciliation, acquisition, aggregate-provenance or historical-witness gate infrastructure under docs/design/consumer-accounting-reconciliation.md and docs/design/consumer-accounting-applicability.md. This entry grants no ESS model behavior; qualification still requires exact root-reviewed authority and actual executed owner cases."
+  },
+  "ess_xtask::bin(ess-xtask)::consumer_coverage::reconciliation::enum::ReplacementClaim/variant/Supported": {
+    "class": "OwnedHelper",
+    "macro_ast_sha256": null,
+    "reason": "Exact consumer-accounting v2 reconciliation, acquisition, aggregate-provenance or historical-witness gate infrastructure under docs/design/consumer-accounting-reconciliation.md and docs/design/consumer-accounting-applicability.md. This entry grants no ESS model behavior; qualification still requires exact root-reviewed authority and actual executed owner cases."
+  },
+  "ess_xtask::bin(ess-xtask)::consumer_coverage::reconciliation::fn::resolve": {
+    "class": "OwnedHelper",
+    "macro_ast_sha256": null,
+    "reason": "Exact consumer-accounting v2 reconciliation, acquisition, aggregate-provenance or historical-witness gate infrastructure under docs/design/consumer-accounting-reconciliation.md and docs/design/consumer-accounting-applicability.md. This entry grants no ESS model behavior; qualification still requires exact root-reviewed authority and actual executed owner cases."
+  },
+  "ess_xtask::bin(ess-xtask)::consumer_coverage::reconciliation::fn::validate_behavior": {
+    "class": "OwnedHelper",
+    "macro_ast_sha256": null,
+    "reason": "Exact consumer-accounting v2 reconciliation, acquisition, aggregate-provenance or historical-witness gate infrastructure under docs/design/consumer-accounting-reconciliation.md and docs/design/consumer-accounting-applicability.md. This entry grants no ESS model behavior; qualification still requires exact root-reviewed authority and actual executed owner cases."
+  },
+  "ess_xtask::bin(ess-xtask)::consumer_coverage::reconciliation::impl<ReplacementClaim;>::validate": {
+    "class": "OwnedHelper",
+    "macro_ast_sha256": null,
+    "reason": "Exact consumer-accounting v2 reconciliation, acquisition, aggregate-provenance or historical-witness gate infrastructure under docs/design/consumer-accounting-reconciliation.md and docs/design/consumer-accounting-applicability.md. This entry grants no ESS model behavior; qualification still requires exact root-reviewed authority and actual executed owner cases."
+  },
+  "ess_xtask::bin(ess-xtask)::consumer_coverage::reconciliation::module": {
+    "class": "OwnedHelper",
+    "macro_ast_sha256": null,
+    "reason": "Exact consumer-accounting v2 reconciliation, acquisition, aggregate-provenance or historical-witness gate infrastructure under docs/design/consumer-accounting-reconciliation.md and docs/design/consumer-accounting-applicability.md. This entry grants no ESS model behavior; qualification still requires exact root-reviewed authority and actual executed owner cases."
+  },
+  "ess_xtask::bin(ess-xtask)::consumer_coverage::reconciliation::struct::Baseline": {
+    "class": "OwnedHelper",
+    "macro_ast_sha256": null,
+    "reason": "Exact consumer-accounting v2 reconciliation, acquisition, aggregate-provenance or historical-witness gate infrastructure under docs/design/consumer-accounting-reconciliation.md and docs/design/consumer-accounting-applicability.md. This entry grants no ESS model behavior; qualification still requires exact root-reviewed authority and actual executed owner cases."
+  },
+  "ess_xtask::bin(ess-xtask)::consumer_coverage::reconciliation::struct::Decision": {
+    "class": "OwnedHelper",
+    "macro_ast_sha256": null,
+    "reason": "Exact consumer-accounting v2 reconciliation, acquisition, aggregate-provenance or historical-witness gate infrastructure under docs/design/consumer-accounting-reconciliation.md and docs/design/consumer-accounting-applicability.md. This entry grants no ESS model behavior; qualification still requires exact root-reviewed authority and actual executed owner cases."
+  },
+  "ess_xtask::bin(ess-xtask)::consumer_coverage::reconciliation::struct::Group": {
+    "class": "OwnedHelper",
+    "macro_ast_sha256": null,
+    "reason": "Exact consumer-accounting v2 reconciliation, acquisition, aggregate-provenance or historical-witness gate infrastructure under docs/design/consumer-accounting-reconciliation.md and docs/design/consumer-accounting-applicability.md. This entry grants no ESS model behavior; qualification still requires exact root-reviewed authority and actual executed owner cases."
+  },
+  "ess_xtask::bin(ess-xtask)::consumer_coverage::reconciliation::struct::Identity": {
+    "class": "OwnedHelper",
+    "macro_ast_sha256": null,
+    "reason": "Exact consumer-accounting v2 reconciliation, acquisition, aggregate-provenance or historical-witness gate infrastructure under docs/design/consumer-accounting-reconciliation.md and docs/design/consumer-accounting-applicability.md. This entry grants no ESS model behavior; qualification still requires exact root-reviewed authority and actual executed owner cases."
+  },
+  "ess_xtask::bin(ess-xtask)::consumer_coverage::reconciliation::struct::Manifest": {
+    "class": "OwnedHelper",
+    "macro_ast_sha256": null,
+    "reason": "Exact consumer-accounting v2 reconciliation, acquisition, aggregate-provenance or historical-witness gate infrastructure under docs/design/consumer-accounting-reconciliation.md and docs/design/consumer-accounting-applicability.md. This entry grants no ESS model behavior; qualification still requires exact root-reviewed authority and actual executed owner cases."
+  },
+  "ess_xtask::bin(ess-xtask)::consumer_coverage::reconciliation::struct::Replacement": {
+    "class": "OwnedHelper",
+    "macro_ast_sha256": null,
+    "reason": "Exact consumer-accounting v2 reconciliation, acquisition, aggregate-provenance or historical-witness gate infrastructure under docs/design/consumer-accounting-reconciliation.md and docs/design/consumer-accounting-applicability.md. This entry grants no ESS model behavior; qualification still requires exact root-reviewed authority and actual executed owner cases."
+  },
+  "ess_xtask::bin(ess-xtask)::consumer_coverage::reconciliation::struct::Resolution": {
+    "class": "OwnedHelper",
+    "macro_ast_sha256": null,
+    "reason": "Exact consumer-accounting v2 reconciliation, acquisition, aggregate-provenance or historical-witness gate infrastructure under docs/design/consumer-accounting-reconciliation.md and docs/design/consumer-accounting-applicability.md. This entry grants no ESS model behavior; qualification still requires exact root-reviewed authority and actual executed owner cases."
+  },
+  "ess_xtask::bin(ess-xtask)::consumer_coverage::reconciliation::struct::Unknown": {
+    "class": "OwnedHelper",
+    "macro_ast_sha256": null,
+    "reason": "Exact consumer-accounting v2 reconciliation, acquisition, aggregate-provenance or historical-witness gate infrastructure under docs/design/consumer-accounting-reconciliation.md and docs/design/consumer-accounting-applicability.md. This entry grants no ESS model behavior; qualification still requires exact root-reviewed authority and actual executed owner cases."
+  },
   "ess_xtask::bin(ess-xtask)::consumer_coverage::rust::const::ROOTS": {
     "class": "OwnedHelper",
     "macro_ast_sha256": null,
@@ -38215,6 +39015,11 @@
     "class": "OwnedHelper",
     "macro_ast_sha256": null,
     "reason": "Maintenance/extractor infrastructure entry. Its source and fixture tests are inventoried; it emits evidence or proposals and grants no ESS semantic behavior support."
+  },
+  "ess_xtask::bin(ess-xtask)::consumer_coverage::rust::fn::historical_raw_outcome_witness": {
+    "class": "OwnedHelper",
+    "macro_ast_sha256": null,
+    "reason": "Exact consumer-accounting v2 reconciliation, acquisition, aggregate-provenance or historical-witness gate infrastructure under docs/design/consumer-accounting-reconciliation.md and docs/design/consumer-accounting-applicability.md. This entry grants no ESS model behavior; qualification still requires exact root-reviewed authority and actual executed owner cases."
   },
   "ess_xtask::bin(ess-xtask)::consumer_coverage::rust::fn::imports": {
     "class": "OwnedHelper",
@@ -38326,6 +39131,161 @@
     "macro_ast_sha256": null,
     "reason": "Maintenance/extractor infrastructure entry. Its source and fixture tests are inventoried; it emits evidence or proposals and grants no ESS semantic behavior support."
   },
+  "ess_xtask::bin(ess-xtask)::consumer_coverage::scenario_acquisition::const::CANDIDATE_FORMAT": {
+    "class": "OwnedHelper",
+    "macro_ast_sha256": null,
+    "reason": "Exact consumer-accounting v2 reconciliation, acquisition, aggregate-provenance or historical-witness gate infrastructure under docs/design/consumer-accounting-reconciliation.md and docs/design/consumer-accounting-applicability.md. This entry grants no ESS model behavior; qualification still requires exact root-reviewed authority and actual executed owner cases."
+  },
+  "ess_xtask::bin(ess-xtask)::consumer_coverage::scenario_acquisition::const::CASE_SOURCE": {
+    "class": "OwnedHelper",
+    "macro_ast_sha256": null,
+    "reason": "Exact consumer-accounting v2 reconciliation, acquisition, aggregate-provenance or historical-witness gate infrastructure under docs/design/consumer-accounting-reconciliation.md and docs/design/consumer-accounting-applicability.md. This entry grants no ESS model behavior; qualification still requires exact root-reviewed authority and actual executed owner cases."
+  },
+  "ess_xtask::bin(ess-xtask)::consumer_coverage::scenario_acquisition::const::ENTRYPOINT": {
+    "class": "OwnedHelper",
+    "macro_ast_sha256": null,
+    "reason": "Exact consumer-accounting v2 reconciliation, acquisition, aggregate-provenance or historical-witness gate infrastructure under docs/design/consumer-accounting-reconciliation.md and docs/design/consumer-accounting-applicability.md. This entry grants no ESS model behavior; qualification still requires exact root-reviewed authority and actual executed owner cases."
+  },
+  "ess_xtask::bin(ess-xtask)::consumer_coverage::scenario_acquisition::const::ENTRYPOINT_SOURCE": {
+    "class": "OwnedHelper",
+    "macro_ast_sha256": null,
+    "reason": "Exact consumer-accounting v2 acquisition source-binding gate infrastructure under docs/design/consumer-accounting-applicability.md and review-result:consumer-accounting-acquisition-source-inspection. This entry grants no ESS model behavior; qualification still requires exact root-reviewed /2 authority and actual executed owner cases."
+  },
+  "ess_xtask::bin(ess-xtask)::consumer_coverage::scenario_acquisition::const::FORMAT": {
+    "class": "OwnedHelper",
+    "macro_ast_sha256": null,
+    "reason": "Exact consumer-accounting v2 reconciliation, acquisition, aggregate-provenance or historical-witness gate infrastructure under docs/design/consumer-accounting-reconciliation.md and docs/design/consumer-accounting-applicability.md. This entry grants no ESS model behavior; qualification still requires exact root-reviewed authority and actual executed owner cases."
+  },
+  "ess_xtask::bin(ess-xtask)::consumer_coverage::scenario_acquisition::const::PLAN_FORMAT": {
+    "class": "OwnedHelper",
+    "macro_ast_sha256": null,
+    "reason": "Exact consumer-accounting v2 acquisition source-binding gate infrastructure under docs/design/consumer-accounting-applicability.md and review-result:consumer-accounting-acquisition-source-inspection. This entry grants no ESS model behavior; qualification still requires exact root-reviewed /2 authority and actual executed owner cases."
+  },
+  "ess_xtask::bin(ess-xtask)::consumer_coverage::scenario_acquisition::const::PROOF_FORMAT": {
+    "class": "OwnedHelper",
+    "macro_ast_sha256": null,
+    "reason": "Exact consumer-accounting v2 acquisition source-binding gate infrastructure under docs/design/consumer-accounting-applicability.md and review-result:consumer-accounting-acquisition-source-inspection. This entry grants no ESS model behavior; qualification still requires exact root-reviewed /2 authority and actual executed owner cases."
+  },
+  "ess_xtask::bin(ess-xtask)::consumer_coverage::scenario_acquisition::const::TARGET_SOURCE": {
+    "class": "OwnedHelper",
+    "macro_ast_sha256": null,
+    "reason": "Exact consumer-accounting v2 reconciliation, acquisition, aggregate-provenance or historical-witness gate infrastructure under docs/design/consumer-accounting-reconciliation.md and docs/design/consumer-accounting-applicability.md. This entry grants no ESS model behavior; qualification still requires exact root-reviewed authority and actual executed owner cases."
+  },
+  "ess_xtask::bin(ess-xtask)::consumer_coverage::scenario_acquisition::enum::Mode": {
+    "class": "OwnedHelper",
+    "macro_ast_sha256": null,
+    "reason": "Exact consumer-accounting v2 reconciliation, acquisition, aggregate-provenance or historical-witness gate infrastructure under docs/design/consumer-accounting-reconciliation.md and docs/design/consumer-accounting-applicability.md. This entry grants no ESS model behavior; qualification still requires exact root-reviewed authority and actual executed owner cases."
+  },
+  "ess_xtask::bin(ess-xtask)::consumer_coverage::scenario_acquisition::enum::Mode/variant/DirectFile": {
+    "class": "OwnedHelper",
+    "macro_ast_sha256": null,
+    "reason": "Exact consumer-accounting v2 reconciliation, acquisition, aggregate-provenance or historical-witness gate infrastructure under docs/design/consumer-accounting-reconciliation.md and docs/design/consumer-accounting-applicability.md. This entry grants no ESS model behavior; qualification still requires exact root-reviewed authority and actual executed owner cases."
+  },
+  "ess_xtask::bin(ess-xtask)::consumer_coverage::scenario_acquisition::enum::Mode/variant/LegacyDirectory": {
+    "class": "OwnedHelper",
+    "macro_ast_sha256": null,
+    "reason": "Exact consumer-accounting v2 reconciliation, acquisition, aggregate-provenance or historical-witness gate infrastructure under docs/design/consumer-accounting-reconciliation.md and docs/design/consumer-accounting-applicability.md. This entry grants no ESS model behavior; qualification still requires exact root-reviewed authority and actual executed owner cases."
+  },
+  "ess_xtask::bin(ess-xtask)::consumer_coverage::scenario_acquisition::enum::Mode/variant/Manifest": {
+    "class": "OwnedHelper",
+    "macro_ast_sha256": null,
+    "reason": "Exact consumer-accounting v2 reconciliation, acquisition, aggregate-provenance or historical-witness gate infrastructure under docs/design/consumer-accounting-reconciliation.md and docs/design/consumer-accounting-applicability.md. This entry grants no ESS model behavior; qualification still requires exact root-reviewed authority and actual executed owner cases."
+  },
+  "ess_xtask::bin(ess-xtask)::consumer_coverage::scenario_acquisition::enum::Mode/variant/Omitted": {
+    "class": "OwnedHelper",
+    "macro_ast_sha256": null,
+    "reason": "Exact consumer-accounting v2 reconciliation, acquisition, aggregate-provenance or historical-witness gate infrastructure under docs/design/consumer-accounting-reconciliation.md and docs/design/consumer-accounting-applicability.md. This entry grants no ESS model behavior; qualification still requires exact root-reviewed authority and actual executed owner cases."
+  },
+  "ess_xtask::bin(ess-xtask)::consumer_coverage::scenario_acquisition::enum::Role": {
+    "class": "OwnedHelper",
+    "macro_ast_sha256": null,
+    "reason": "Exact consumer-accounting v2 reconciliation, acquisition, aggregate-provenance or historical-witness gate infrastructure under docs/design/consumer-accounting-reconciliation.md and docs/design/consumer-accounting-applicability.md. This entry grants no ESS model behavior; qualification still requires exact root-reviewed authority and actual executed owner cases."
+  },
+  "ess_xtask::bin(ess-xtask)::consumer_coverage::scenario_acquisition::enum::Role/variant/Authored": {
+    "class": "OwnedHelper",
+    "macro_ast_sha256": null,
+    "reason": "Exact consumer-accounting v2 reconciliation, acquisition, aggregate-provenance or historical-witness gate infrastructure under docs/design/consumer-accounting-reconciliation.md and docs/design/consumer-accounting-applicability.md. This entry grants no ESS model behavior; qualification still requires exact root-reviewed authority and actual executed owner cases."
+  },
+  "ess_xtask::bin(ess-xtask)::consumer_coverage::scenario_acquisition::enum::Role/variant/Coverage": {
+    "class": "OwnedHelper",
+    "macro_ast_sha256": null,
+    "reason": "Exact consumer-accounting v2 reconciliation, acquisition, aggregate-provenance or historical-witness gate infrastructure under docs/design/consumer-accounting-reconciliation.md and docs/design/consumer-accounting-applicability.md. This entry grants no ESS model behavior; qualification still requires exact root-reviewed authority and actual executed owner cases."
+  },
+  "ess_xtask::bin(ess-xtask)::consumer_coverage::scenario_acquisition::enum::TargetKind": {
+    "class": "OwnedHelper",
+    "macro_ast_sha256": null,
+    "reason": "Exact consumer-accounting v2 reconciliation, acquisition, aggregate-provenance or historical-witness gate infrastructure under docs/design/consumer-accounting-reconciliation.md and docs/design/consumer-accounting-applicability.md. This entry grants no ESS model behavior; qualification still requires exact root-reviewed authority and actual executed owner cases."
+  },
+  "ess_xtask::bin(ess-xtask)::consumer_coverage::scenario_acquisition::enum::TargetKind/variant/BinaryUnit": {
+    "class": "OwnedHelper",
+    "macro_ast_sha256": null,
+    "reason": "Exact consumer-accounting v2 reconciliation, acquisition, aggregate-provenance or historical-witness gate infrastructure under docs/design/consumer-accounting-reconciliation.md and docs/design/consumer-accounting-applicability.md. This entry grants no ESS model behavior; qualification still requires exact root-reviewed authority and actual executed owner cases."
+  },
+  "ess_xtask::bin(ess-xtask)::consumer_coverage::scenario_acquisition::fn::candidates": {
+    "class": "OwnedHelper",
+    "macro_ast_sha256": null,
+    "reason": "Exact consumer-accounting v2 reconciliation, acquisition, aggregate-provenance or historical-witness gate infrastructure under docs/design/consumer-accounting-reconciliation.md and docs/design/consumer-accounting-applicability.md. This entry grants no ESS model behavior; qualification still requires exact root-reviewed authority and actual executed owner cases."
+  },
+  "ess_xtask::bin(ess-xtask)::consumer_coverage::scenario_acquisition::fn::execution_proof": {
+    "class": "OwnedHelper",
+    "macro_ast_sha256": null,
+    "reason": "Exact consumer-accounting v2 reconciliation, acquisition, aggregate-provenance or historical-witness gate infrastructure under docs/design/consumer-accounting-reconciliation.md and docs/design/consumer-accounting-applicability.md. This entry grants no ESS model behavior; qualification still requires exact root-reviewed authority and actual executed owner cases."
+  },
+  "ess_xtask::bin(ess-xtask)::consumer_coverage::scenario_acquisition::fn::expected": {
+    "class": "OwnedHelper",
+    "macro_ast_sha256": null,
+    "reason": "Exact consumer-accounting v2 reconciliation, acquisition, aggregate-provenance or historical-witness gate infrastructure under docs/design/consumer-accounting-reconciliation.md and docs/design/consumer-accounting-applicability.md. This entry grants no ESS model behavior; qualification still requires exact root-reviewed authority and actual executed owner cases."
+  },
+  "ess_xtask::bin(ess-xtask)::consumer_coverage::scenario_acquisition::fn::plan": {
+    "class": "OwnedHelper",
+    "macro_ast_sha256": null,
+    "reason": "Exact consumer-accounting v2 reconciliation, acquisition, aggregate-provenance or historical-witness gate infrastructure under docs/design/consumer-accounting-reconciliation.md and docs/design/consumer-accounting-applicability.md. This entry grants no ESS model behavior; qualification still requires exact root-reviewed authority and actual executed owner cases."
+  },
+  "ess_xtask::bin(ess-xtask)::consumer_coverage::scenario_acquisition::fn::profile_identities": {
+    "class": "OwnedHelper",
+    "macro_ast_sha256": null,
+    "reason": "Exact consumer-accounting v2 reconciliation, acquisition, aggregate-provenance or historical-witness gate infrastructure under docs/design/consumer-accounting-reconciliation.md and docs/design/consumer-accounting-applicability.md. This entry grants no ESS model behavior; qualification still requires exact root-reviewed authority and actual executed owner cases."
+  },
+  "ess_xtask::bin(ess-xtask)::consumer_coverage::scenario_acquisition::fn::qualify": {
+    "class": "OwnedHelper",
+    "macro_ast_sha256": null,
+    "reason": "Exact consumer-accounting v2 reconciliation, acquisition, aggregate-provenance or historical-witness gate infrastructure under docs/design/consumer-accounting-reconciliation.md and docs/design/consumer-accounting-applicability.md. This entry grants no ESS model behavior; qualification still requires exact root-reviewed authority and actual executed owner cases."
+  },
+  "ess_xtask::bin(ess-xtask)::consumer_coverage::scenario_acquisition::fn::required_cases": {
+    "class": "OwnedHelper",
+    "macro_ast_sha256": null,
+    "reason": "Exact consumer-accounting v2 reconciliation, acquisition, aggregate-provenance or historical-witness gate infrastructure under docs/design/consumer-accounting-reconciliation.md and docs/design/consumer-accounting-applicability.md. This entry grants no ESS model behavior; qualification still requires exact root-reviewed authority and actual executed owner cases."
+  },
+  "ess_xtask::bin(ess-xtask)::consumer_coverage::scenario_acquisition::fn::validate_rows": {
+    "class": "OwnedHelper",
+    "macro_ast_sha256": null,
+    "reason": "Exact consumer-accounting v2 reconciliation, acquisition, aggregate-provenance or historical-witness gate infrastructure under docs/design/consumer-accounting-reconciliation.md and docs/design/consumer-accounting-applicability.md. This entry grants no ESS model behavior; qualification still requires exact root-reviewed authority and actual executed owner cases."
+  },
+  "ess_xtask::bin(ess-xtask)::consumer_coverage::scenario_acquisition::module": {
+    "class": "OwnedHelper",
+    "macro_ast_sha256": null,
+    "reason": "Exact consumer-accounting v2 reconciliation, acquisition, aggregate-provenance or historical-witness gate infrastructure under docs/design/consumer-accounting-reconciliation.md and docs/design/consumer-accounting-applicability.md. This entry grants no ESS model behavior; qualification still requires exact root-reviewed authority and actual executed owner cases."
+  },
+  "ess_xtask::bin(ess-xtask)::consumer_coverage::scenario_acquisition::struct::Authority": {
+    "class": "OwnedHelper",
+    "macro_ast_sha256": null,
+    "reason": "Exact consumer-accounting v2 reconciliation, acquisition, aggregate-provenance or historical-witness gate infrastructure under docs/design/consumer-accounting-reconciliation.md and docs/design/consumer-accounting-applicability.md. This entry grants no ESS model behavior; qualification still requires exact root-reviewed authority and actual executed owner cases."
+  },
+  "ess_xtask::bin(ess-xtask)::consumer_coverage::scenario_acquisition::struct::Candidates": {
+    "class": "OwnedHelper",
+    "macro_ast_sha256": null,
+    "reason": "Exact consumer-accounting v2 reconciliation, acquisition, aggregate-provenance or historical-witness gate infrastructure under docs/design/consumer-accounting-reconciliation.md and docs/design/consumer-accounting-applicability.md. This entry grants no ESS model behavior; qualification still requires exact root-reviewed authority and actual executed owner cases."
+  },
+  "ess_xtask::bin(ess-xtask)::consumer_coverage::scenario_acquisition::struct::Case": {
+    "class": "OwnedHelper",
+    "macro_ast_sha256": null,
+    "reason": "Exact consumer-accounting v2 reconciliation, acquisition, aggregate-provenance or historical-witness gate infrastructure under docs/design/consumer-accounting-reconciliation.md and docs/design/consumer-accounting-applicability.md. This entry grants no ESS model behavior; qualification still requires exact root-reviewed authority and actual executed owner cases."
+  },
+  "ess_xtask::bin(ess-xtask)::consumer_coverage::scenario_acquisition::struct::Row": {
+    "class": "OwnedHelper",
+    "macro_ast_sha256": null,
+    "reason": "Exact consumer-accounting v2 reconciliation, acquisition, aggregate-provenance or historical-witness gate infrastructure under docs/design/consumer-accounting-reconciliation.md and docs/design/consumer-accounting-applicability.md. This entry grants no ESS model behavior; qualification still requires exact root-reviewed authority and actual executed owner cases."
+  },
   "ess_xtask::bin(ess-xtask)::consumer_coverage::wire::fn::escape": {
     "class": "OwnedHelper",
     "macro_ast_sha256": null,
@@ -38335,6 +39295,11 @@
     "class": "OwnedHelper",
     "macro_ast_sha256": null,
     "reason": "Maintenance/extractor infrastructure entry. Its source and fixture tests are inventoried; it emits evidence or proposals and grants no ESS semantic behavior support."
+  },
+  "ess_xtask::bin(ess-xtask)::consumer_coverage::wire::fn::historical_witness": {
+    "class": "OwnedHelper",
+    "macro_ast_sha256": null,
+    "reason": "Exact consumer-accounting v2 reconciliation, acquisition, aggregate-provenance or historical-witness gate infrastructure under docs/design/consumer-accounting-reconciliation.md and docs/design/consumer-accounting-applicability.md. This entry grants no ESS model behavior; qualification still requires exact root-reviewed authority and actual executed owner cases."
   },
   "ess_xtask::bin(ess-xtask)::consumer_coverage::wire::fn::inventory": {
     "class": "OwnedHelper",
@@ -38365,6 +39330,11 @@
     "class": "OwnedHelper",
     "macro_ast_sha256": null,
     "reason": "Maintenance/extractor infrastructure entry. Its source and fixture tests are inventoried; it emits evidence or proposals and grants no ESS semantic behavior support."
+  },
+  "ess_xtask::bin(ess-xtask)::enum::Command/variant/ConsumerBehavior": {
+    "class": "OwnedHelper",
+    "macro_ast_sha256": null,
+    "reason": "Concrete accounting/3 and native model-behavior authority, validation, execution, diagnostic and command-surface infrastructure under docs/design/consumer-model-behavior-native-cases.md. This entry grants no ESS model behavior; qualification remains attributed only to root-reviewed claims and actual binary-unit owner cases."
   },
   "ess_xtask::bin(ess-xtask)::enum::Command/variant/ConsumerCheck": {
     "class": "OwnedHelper",
