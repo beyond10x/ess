@@ -1,7 +1,7 @@
 //! The first level of `ess`, and the flat spelling of every verb under it.
 //!
 //! Two things a caller can observe and the derive cannot promise on its own. `ess --help` offers
-//! the four areas and nothing else, and a verb spelled flat — `ess validate --path …`, which is
+//! the four areas and `skill` and nothing else, and a verb spelled flat — `ess validate --path …`, which is
 //! what every pinned caller and every published example says — prints the same bytes, on both
 //! streams, with the same status, as the area path that replaced it. Byte-identical is the whole
 //! claim: an alias that printed a deprecation line would be a different output and would break a
@@ -44,13 +44,13 @@ fn offered(help: &str) -> Vec<String> {
 }
 
 #[test]
-fn the_help_offers_exactly_the_four_areas() {
+fn the_help_offers_exactly_the_four_areas_then_skill() {
     let output = ess(&["--help"]);
     assert!(output.status.success(), "`ess --help` failed");
     let help = String::from_utf8(output.stdout).expect("the help is UTF-8");
     assert_eq!(
         offered(&help),
-        ["specify", "generate", "verify", "infra"],
+        ["specify", "generate", "verify", "infra", "skill"],
         "{help}"
     );
 }
