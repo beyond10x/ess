@@ -501,7 +501,7 @@ dependencies = [
 
 [[package]]
 name = "ess-entity-runtime"
-version = "0.29.0"
+version = "0.30.0"
 dependencies = [
  "entity-core",
  "ess-compiler",
@@ -580,7 +580,7 @@ dependencies = [
 
 [[package]]
 name = "ess-service-contract"
-version = "0.29.0"
+version = "0.30.0"
 dependencies = [
  "ess-compiler",
  "ess-domain",
